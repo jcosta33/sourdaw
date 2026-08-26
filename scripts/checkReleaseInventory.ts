@@ -542,25 +542,6 @@ function readRepositoryRegularBuffer(
     }
 }
 
-function readTrackedSourceFile(
-    rootRealPath: string,
-    absolutePath: string,
-    readFile: RepositorySnapshotFileReader,
-    budget: RepositoryReadBudget
-): Buffer {
-    const beforeRead = lstatSync(absolutePath);
-    if (!beforeRead.isSymbolicLink()) {
-        return readRepositoryRegularBuffer(rootRealPath, absolutePath, readFile, budget);
-    }
-
-    const target = readlinkSync(absolutePath, { encoding: 'buffer' });
-    const afterRead = lstatSync(absolutePath);
-    if (!afterRead.isSymbolicLink() || beforeRead.dev !== afterRead.dev || beforeRead.ino !== afterRead.ino) {
-        throw new Error(`path changed while reading: ${absolutePath}`);
-    }
-    return target;
-}
-
 function readRepositoryRegularText(
     rootRealPath: string,
     absolutePath: string,
@@ -727,7 +708,7 @@ function trackedFilesSha256(
         hash.update(file);
         hash.update('\0');
         try {
-            hash.update(readTrackedSourceFile(rootRealPath, absolutePath, readFile, budget));
+            hash.update(readRepositoryRegularBuffer(rootRealPath, absolutePath, readFile, budget));
         } catch {
             throw new Error(`Grand Boule release source is unsafe: ${file}`);
         }

@@ -434,7 +434,8 @@ const INDEPENDENT_GRAND_BOULE_PROJECT_STATE_PATHS = [
     'src/app/bootstrap.ts',
     'src/app/getProductionCommandHandlerMaps.ts',
     'src/utils/handlerContract.ts',
-] as const;
+    ...GRAND_BOULE_PROVIDER_POLICY_SYMLINK_PATHS.map((path) => `:(exclude)${path}`),
+];
 
 function readIndependentTrackedEntry(absolutePath: string): Buffer {
     let fileDescriptor: number | undefined;
@@ -1963,13 +1964,9 @@ describe('release inventory', () => {
             const providerSymlinkPath = join(root, 'src/modules/GrandBoule/CLAUDE.md');
             rmSync(providerSymlinkPath);
             symlinkSync('OTHER.md', providerSymlinkPath);
-            const symlinkChanged = grandBouleReleaseInventoryContract(root);
-            const symlinkChangedProjectStateDigest = findDigestByLabel(
-                symlinkChanged.digests,
-                'grand-boule-project-state'
+            expect(() => grandBouleReleaseInventoryContract(root)).toThrow(
+                'Grand Boule provider-policy symlink checkout target is not AGENTS.md'
             );
-            expect(symlinkChangedProjectStateDigest).toBe(independentGrandBouleProjectStateDigest(root));
-            expect(symlinkChangedProjectStateDigest).not.toBe(projectStateDigest);
             rmSync(providerSymlinkPath);
             symlinkSync('AGENTS.md', providerSymlinkPath);
             expect(
