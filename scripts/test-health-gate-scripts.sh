@@ -587,16 +587,26 @@ expect(
 );
 expectShardFailureWarning(unitFailureWarning, 'unit', 'Unit suite', '2');
 expectShardFailureWarning(e2eFailureWarning, 'e2e', 'End-to-end', '11');
-expect(gate?.name === 'Gate', 'required Gate job name must stay exact');
-const gateIf =
-    "${{ always() && (github.event_name != 'workflow_dispatch' || github.ref == format('refs/heads/{0}', github.event.repository.default_branch)) }}";
-expect(gate?.if === gateIf, 'Gate must evaluate failed or cancelled dependencies and skip non-default manual dispatches');
-function gateRunsForEvent(event, ref, defaultBranch) {
-    return event !== 'workflow_dispatch' || ref === `refs/heads/${defaultBranch}`;
+const gateName =
+    "${{ github.event_name == 'workflow_dispatch' && github.ref != format('refs/heads/{0}', github.event.repository.default_branch) && 'Manual health gate' || 'Gate' }}";
+expect(
+    gate?.name === gateName,
+    'non-default workflow_dispatch must resolve the aggregate job display name to Manual health gate, not Gate'
+);
+function expectedGateDisplayName(event, ref, defaultBranch) {
+    if (event === 'workflow_dispatch' && ref !== `refs/heads/${defaultBranch}`) {
+        return 'Manual health gate';
+    }
+    return 'Gate';
 }
-expect(gateRunsForEvent('schedule', 'refs/heads/main', 'main'), 'scheduled Gate must run');
-expect(gateRunsForEvent('workflow_dispatch', 'refs/heads/main', 'main'), 'default-branch dispatch Gate must run');
-expect(!gateRunsForEvent('workflow_dispatch', 'refs/heads/repair-gate', 'main'), 'non-default dispatch must not mint a Gate');
+expect(expectedGateDisplayName('pull_request', 'refs/pull/2870/merge', 'main') === 'Gate', 'pull_request must report exactly Gate');
+expect(expectedGateDisplayName('schedule', 'refs/heads/main', 'main') === 'Gate', 'schedule must report exactly Gate');
+expect(expectedGateDisplayName('workflow_dispatch', 'refs/heads/main', 'main') === 'Gate', 'default-branch dispatch must report exactly Gate');
+expect(
+    expectedGateDisplayName('workflow_dispatch', 'refs/heads/repair-gate', 'main') === 'Manual health gate',
+    'non-default workflow_dispatch must not report Gate'
+);
+expect(gate?.if === '${{ always() }}', 'aggregate shell must run and evaluate dependencies for every event');
 expect(
     Array.isArray(gateNeeds) &&
         gateNeeds.length === expectedGateNeeds.length &&

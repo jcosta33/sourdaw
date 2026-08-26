@@ -47,11 +47,12 @@ async function renameProject(page: Page, name: string): Promise<void> {
 }
 
 async function openSavedProjectInFreshContext(browser: Browser, page: Page, name: string) {
+    const appRootUrl = new URL('/', page.url()).toString();
     const storageState = await page.context().storageState({ indexedDB: true });
     const context = await browser.newContext({ storageState });
     const reopenedPage = await context.newPage();
     const assertOffline = await blockExternalRequests(reopenedPage);
-    await reopenedPage.goto('/');
+    await reopenedPage.goto(appRootUrl);
     await launch_new_project(reopenedPage);
     await reopenedPage.getByRole('button', { name: 'Project menu' }).click();
     await reopenedPage.getByRole('menuitem', { name }).click();

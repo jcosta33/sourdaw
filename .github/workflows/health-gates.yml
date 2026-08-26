@@ -687,11 +687,10 @@ jobs:
           fi
 
   gate:
-    # Named distinctly from the workflow so the required check is unambiguous in
-    # the ruleset and in the checks list. Renaming it silently breaks the
-    # requirement: the ruleset matches by name, and a required check that no job
-    # reports leaves every pull request pending forever.
-    name: Gate
+    # Pull requests, schedules, and default-branch manual runs keep the required
+    # check name exact. A manual run from another branch uses a distinct display
+    # name so GitHub cannot treat that unrelated result as the required Gate.
+    name: ${{ github.event_name == 'workflow_dispatch' && github.ref != format('refs/heads/{0}', github.event.repository.default_branch) && 'Manual health gate' || 'Gate' }}
     # The single required status check. It runs whatever happened upstream, so
     # a pull request that legitimately skips every heavy leg still reports a
     # conclusion instead of sitting pending.
@@ -700,9 +699,8 @@ jobs:
     # applicable pull-request heads. The full suite joins the same aggregate
     # only on scheduled and manually dispatched health runs.
     # `always()` makes the shell evaluate every terminal dependency result,
-    # including cancellation, instead of silently skipping Gate. A manual run
-    # from another branch cannot report the required default-branch Gate.
-    if: ${{ always() && (github.event_name != 'workflow_dispatch' || github.ref == format('refs/heads/{0}', github.event.repository.default_branch)) }}
+    # including cancellation, instead of silently skipping the aggregate.
+    if: ${{ always() }}
     needs:
       - decide
       - static
