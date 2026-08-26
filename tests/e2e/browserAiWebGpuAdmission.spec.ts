@@ -78,6 +78,23 @@ async function getBrowserAiCapabilityReport(page: Page, testInfo: TestInfo): Pro
     return observedReport;
 }
 
+async function waitForDdspRenderProbe(page: Page): Promise<void> {
+    await expect
+        .poll(() =>
+            page
+                .evaluate(() => typeof window.__SOURDAW_DDSP_RENDER_PROBE__)
+                .catch((error: unknown) => {
+                    // Vite re-optimizes the probe's worker dependencies on first import and
+                    // reloads the page mid-poll; a sentinel keeps polling across the reload.
+                    if (error instanceof Error && error.message.includes('Execution context was destroyed')) {
+                        return 'reloading';
+                    }
+                    throw error;
+                })
+        )
+        .toBe('object');
+}
+
 async function renderDdspAfterViteWorkerOptimization(
     page: Page
 ): Promise<Awaited<ReturnType<DdspRenderProbe['renderOffline']>>> {
@@ -88,7 +105,7 @@ async function renderDdspAfterViteWorkerOptimization(
             throw error;
         }
         await page.waitForLoadState('load');
-        await expect.poll(() => page.evaluate(() => typeof window.__SOURDAW_DDSP_RENDER_PROBE__)).toBe('object');
+        await waitForDdspRenderProbe(page);
         expect(page.url()).toContain('/tests/e2e/ddspRenderProbe.html');
         return page.evaluate(() => window.__SOURDAW_DDSP_RENDER_PROBE__!.renderOffline());
     }
@@ -168,7 +185,7 @@ test('renders an exact-duration DDSP preview from verified OPFS artifacts with h
     }
 
     await page.goto('/tests/e2e/ddspRenderProbe.html');
-    await expect.poll(() => page.evaluate(() => typeof window.__SOURDAW_DDSP_RENDER_PROBE__)).toBe('object');
+    await waitForDdspRenderProbe(page);
 
     const prepared = await page.evaluate(() => window.__SOURDAW_DDSP_RENDER_PROBE__!.prepare());
     expect(prepared).toEqual({ ready: true, artifactCount: 3 });
