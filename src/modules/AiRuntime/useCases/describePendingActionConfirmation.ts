@@ -7,19 +7,7 @@ import { type ProjectContext } from '../models/ProjectContext';
 import { type WholeProjectVibeMixPlan } from '../models/WholeProjectVibeMixPlan';
 import { type WorkflowCapabilityId } from '../models/WorkflowCapability';
 
-import { getArticulationTransferPromptScope } from './agentReference/getArticulationTransferPromptScope';
-import { getBackingVocalPlatePromptScope } from './agentReference/getBackingVocalPlatePromptScope';
-import { getBassProcessingCopyPromptScope } from './agentReference/getBassProcessingCopyPromptScope';
-import { getBulkDeviceInsertionTrackScope } from './agentReference/getBulkDeviceInsertionTrackScope';
-import { getDeviceParameterPromptScope } from './agentReference/getDeviceParameterPromptScope';
-import { getDrumPreviewBranchesPromptScope } from './agentReference/getDrumPreviewBranchesPromptScope';
-import { getDrumRenderComparisonPromptScope } from './agentReference/getDrumRenderComparisonPromptScope';
-import { getDrumRoutingPromptScope } from './agentReference/getDrumRoutingPromptScope';
-import { getMidiOverlapTransformPromptScope } from './agentReference/getMidiOverlapTransformPromptScope';
-import { getMutedEmptyTrackDeletionScope } from './agentReference/getMutedEmptyTrackDeletionScope';
-import { getSharedVocalFxBusesPromptScope } from './agentReference/getSharedVocalFxBusesPromptScope';
-import { getSidechainRoutingPromptScope } from './agentReference/getSidechainRoutingPromptScope';
-import { getSyncopatedArpeggioPromptScope } from './agentReference/getSyncopatedArpeggioPromptScope';
+import { getApplicationProtectedObjects } from './agentReference/getApplicationProtectedObjects';
 import { describePlannedAction } from './describePlannedAction';
 import { getPlannedActionAffectedIds } from './getPlannedActionAffectedIds';
 
@@ -40,13 +28,6 @@ const riskRank = {
     'external-effect': 5,
     unclassified: 6,
 } as const;
-
-function normalizeText(value: string): string {
-    return value
-        .toLocaleLowerCase()
-        .replaceAll(/[^\p{L}\p{N}]+/gu, ' ')
-        .trim();
-}
 
 function formatParameterValue(value: number, unit: string): string {
     if (unit === ':1') {
@@ -117,116 +98,6 @@ function describeDeviceParameterAction(
     }
     const deviceName = device.name ?? device.type;
     return `Set "${owner.name}" (${owner.id}) device "${deviceName}" (${device.id}, ${device.type}) parameter "${parameter.name}" (${parameter.id}) from ${formatParameterValue(previousValue, parameter.unit)} to ${formatParameterValue(action.payload.value, parameter.unit)}`;
-}
-
-function getProtectedUnchangedTracks(
-    prompt: string,
-    context: ProjectContext,
-    actions: readonly AppAction[],
-    wholeProjectVibeMixPlan?: WholeProjectVibeMixPlan,
-    workflowCapabilityId?: WorkflowCapabilityId
-): Array<{ id: string; name: string }> {
-    const protectedScopes = [
-        ...prompt.matchAll(/\b(?:leave|leaving|keep|keeping|preserve|preserving)\s+(.+?)\s+unchanged\b/giu),
-    ].flatMap((match) => (match[1] ? [normalizeText(match[1])] : []));
-    const excludedFrozenTrackIds = new Set(
-        getBulkDeviceInsertionTrackScope(prompt, context)?.excludedFrozenTrackIds ?? []
-    );
-    const structurallyProtectedTrackIds = new Set(
-        getMutedEmptyTrackDeletionScope(prompt, context)?.protectedTrackIds ?? []
-    );
-    const protectedTracks = context.tracks.filter((track) => {
-        const normalizedName = normalizeText(track.name);
-        return (
-            excludedFrozenTrackIds.has(track.id) ||
-            structurallyProtectedTrackIds.has(track.id) ||
-            protectedScopes.some((scope) => ` ${scope} `.includes(` ${normalizedName} `))
-        );
-    });
-    const deviceParameterScope = getDeviceParameterPromptScope(prompt, context);
-    let protectedParameters: Array<{ id: string; name: string }> = [];
-    if (deviceParameterScope) {
-        const deviceName = deviceParameterScope.device.name ?? deviceParameterScope.device.type;
-        protectedParameters = deviceParameterScope.protectedParameters.map((parameter) => ({
-            id: `${deviceParameterScope.device.id}:${parameter.id}`,
-            name: `${deviceParameterScope.track.name} ${deviceName} ${parameter.name} = ${String(parameter.value)}${parameter.unit === ':1' ? ':1' : ` ${parameter.unit}`}`,
-        }));
-    }
-    const planProtections = wholeProjectVibeMixPlan?.globalConstraints.map(({ id, name }) => ({ id, name })) ?? [];
-    const drumRoutingScope = workflowCapabilityId === 'drum-routing' ? getDrumRoutingPromptScope(context) : null;
-    const drumRoutingProtections =
-        drumRoutingScope?.status === 'request'
-            ? [{ id: drumRoutingScope.protectedReturnId, name: drumRoutingScope.protectedReturnName }]
-            : [];
-    const drumRenderComparisonScope =
-        workflowCapabilityId === 'drum-render-comparison' ? getDrumRenderComparisonPromptScope(context) : null;
-    const drumRenderComparisonProtections =
-        drumRenderComparisonScope?.status === 'request' ? drumRenderComparisonScope.protectedObjects : [];
-    const drumPreviewBranchesScope =
-        workflowCapabilityId === 'drum-preview-branches' ? getDrumPreviewBranchesPromptScope(context) : null;
-    const drumPreviewBranchProtections =
-        drumPreviewBranchesScope?.status === 'request' ? drumPreviewBranchesScope.protectedObjects : [];
-    const sidechainRoutingScope = getSidechainRoutingPromptScope(prompt, context);
-    const sidechainRoutingProtections =
-        sidechainRoutingScope.status === 'request'
-            ? sidechainRoutingScope.protectedTargets.map(({ id, name }) => ({ id, name }))
-            : [];
-    const sharedVocalFxBusesScope =
-        workflowCapabilityId === 'shared-vocal-fx-buses' ? getSharedVocalFxBusesPromptScope(context) : null;
-    const sharedVocalFxBusesProtections =
-        sharedVocalFxBusesScope?.status === 'request' ? sharedVocalFxBusesScope.protectedObjects : [];
-    const articulationTransferScope =
-        workflowCapabilityId === 'articulation-transfer' ? getArticulationTransferPromptScope(context) : null;
-    const articulationProtections =
-        articulationTransferScope?.status === 'request'
-            ? [
-                  ...articulationTransferScope.protectedClipIds.map((clipId) => ({
-                      id: clipId,
-                      name:
-                          context.tracks.flatMap((track) => track.clips).find((clip) => clip.id === clipId)?.name ??
-                          clipId,
-                  })),
-                  ...articulationTransferScope.clipPairs.map((pair) => ({
-                      id: `${pair.targetClipId}:non-articulation`,
-                      name: `${pair.targetClipName} pitches, velocities, timing, and expression`,
-                  })),
-              ]
-            : [];
-    const backingVocalPlateScope =
-        workflowCapabilityId === 'backing-vocal-plate' ? getBackingVocalPlatePromptScope(context) : null;
-    const backingVocalPlateProtections =
-        backingVocalPlateScope?.status === 'request' ? backingVocalPlateScope.protectedObjects : [];
-    const bassProcessingCopyScope =
-        workflowCapabilityId === 'bass-processing-copy' ? getBassProcessingCopyPromptScope(context) : null;
-    const bassProcessingCopyProtections =
-        bassProcessingCopyScope?.status === 'request' ? bassProcessingCopyScope.protectedObjects : [];
-    const midiOverlapTransformScope =
-        workflowCapabilityId === 'midi-overlap-shortening' ? getMidiOverlapTransformPromptScope(context) : null;
-    const midiOverlapTransformProtections =
-        midiOverlapTransformScope?.status === 'request' ? midiOverlapTransformScope.protectedObjects : [];
-    const syncopatedArpeggioScope =
-        workflowCapabilityId === 'syncopated-arpeggio' ? getSyncopatedArpeggioPromptScope(context) : null;
-    const syncopatedArpeggioProtections =
-        syncopatedArpeggioScope?.status === 'request' ? syncopatedArpeggioScope.protectedObjects : [];
-    const protections = [
-        ...(actions.some((action) => action.type === 'importStemSet')
-            ? context.tracks.map(({ id, name }) => ({ id, name }))
-            : []),
-        ...protectedTracks.map(({ id, name }) => ({ id, name })),
-        ...protectedParameters,
-        ...planProtections,
-        ...drumRoutingProtections,
-        ...drumRenderComparisonProtections,
-        ...drumPreviewBranchProtections,
-        ...sidechainRoutingProtections,
-        ...sharedVocalFxBusesProtections,
-        ...articulationProtections,
-        ...backingVocalPlateProtections,
-        ...bassProcessingCopyProtections,
-        ...midiOverlapTransformProtections,
-        ...syncopatedArpeggioProtections,
-    ];
-    return [...new Map(protections.map((protection) => [protection.id, protection])).values()];
 }
 
 function describeWholeProjectVibeMixPlan(plan: WholeProjectVibeMixPlan): string {
@@ -411,13 +282,13 @@ export function describePendingActionConfirmation({
             reason: 'This applies the same change to multiple project targets.',
         };
     }
-    const protectedUnchanged = getProtectedUnchangedTracks(
-        prompt,
-        context,
+    const protectedUnchanged = getApplicationProtectedObjects({
         actions,
+        context,
+        prompt,
         wholeProjectVibeMixPlan,
-        workflowCapabilityId
-    );
+        workflowCapabilityId,
+    });
     const intendedChanges = actions
         .map((action, index) => `- **${action.type}**: ${actionLabels[index] ?? action.type}`)
         .join('\n');

@@ -1,5 +1,5 @@
 const DATABASE_NAME = 'sourdaw-collaboration-original-assets';
-const DATABASE_VERSION = 5;
+const DATABASE_VERSION = 6;
 export const ASSET_STORE = 'assets';
 export const LEASE_STORE = 'leases';
 export const ASSET_OWNER_INDEX = 'by-owner';
@@ -13,7 +13,8 @@ export const PROMOTION_RECOVERY_OWNER_INDEX = 'by-owner';
 export const PROMOTION_RECOVERY_LEASE_INDEX = 'by-lease';
 export const RECORD_SCHEMA_VERSION = 2;
 export const OWNER_HANDOFF_SCHEMA_VERSION = 1;
-export const PROMOTION_RECOVERY_SCHEMA_VERSION = 1;
+const LEGACY_PROMOTION_RECOVERY_SCHEMA_VERSION = 1;
+export const PROMOTION_RECOVERY_SCHEMA_VERSION = 2;
 export const OWNER_AUTHORITY_SCHEMA_VERSION = 1;
 export const DEFAULT_STAGE_RECOVERY_PREFIX = 'asset-stage-default-release:';
 
@@ -48,24 +49,37 @@ export type OwnerAuthorityRecord = {
     canonicalOwnerId: string;
     epoch: number;
 };
-export type PromotionRecoveryRecord = {
+type PromotionRecoveryRecordBase = {
     schemaVersion: typeof PROMOTION_RECOVERY_SCHEMA_VERSION;
     recoveryId: string;
     ownerId: string;
     leaseIds: string[];
     bindings: Array<{ leaseId: string; expectedHash: string }>;
-    disposition?: 'promote' | 'release';
-    promotionState?: 'prepared' | 'committed';
     recoveryKind?: 'default-release' | 'explicit';
-    commitProof?: {
-        projectId: string;
-        idempotencyKey: string;
-        contentHash: string;
-        runId: string;
-        batchId: string;
-    };
     preparedAt: number;
 };
+type PromotionCommitProof = {
+    projectId: string;
+    idempotencyKey: string;
+    contentHash: string;
+    runId: string;
+    batchId: string;
+    baseRevision: string;
+    commands: Array<{ commandId: string; operation: string }>;
+};
+export type PromotionRecoveryRecord = PromotionRecoveryRecordBase &
+    (
+        | {
+              disposition: 'promote';
+              promotionState: 'prepared' | 'committed';
+              commitProof?: PromotionCommitProof;
+          }
+        | {
+              disposition: 'release';
+              promotionState?: never;
+              commitProof?: never;
+          }
+    );
 
 let databasePromise: Promise<IDBDatabase> | null = null;
 
@@ -128,6 +142,42 @@ function migrateVersionOneRecords(assetStore: IDBObjectStore, leaseStore: IDBObj
     };
 }
 
+function migrateLegacyPromotionRecoveryRecords(store: IDBObjectStore): void {
+    const request = store.openCursor();
+    request.onsuccess = () => {
+        const cursor = request.result;
+        if (!cursor) {
+            return;
+        }
+        const value: unknown = cursor.value;
+        if (!isLegacyPromotionRecoveryRecord(value)) {
+            cursor.continue();
+            return;
+        }
+        const {
+            commitProof: _legacyCommitProof,
+            disposition: _legacyDisposition,
+            promotionState: _legacyPromotionState,
+            ...record
+        } = value;
+        if (value.disposition === 'release') {
+            cursor.update({
+                ...record,
+                schemaVersion: PROMOTION_RECOVERY_SCHEMA_VERSION,
+                disposition: 'release',
+            });
+        } else {
+            cursor.update({
+                ...record,
+                schemaVersion: PROMOTION_RECOVERY_SCHEMA_VERSION,
+                disposition: 'promote',
+                promotionState: value.promotionState === 'committed' ? 'committed' : 'prepared',
+            });
+        }
+        cursor.continue();
+    };
+}
+
 function ensureIndexes(request: IDBOpenDBRequest, oldVersion: number): void {
     const database = request.result;
     const assetStore = database.objectStoreNames.contains(ASSET_STORE)
@@ -165,6 +215,9 @@ function ensureIndexes(request: IDBOpenDBRequest, oldVersion: number): void {
     }
     if (oldVersion === 1) {
         migrateVersionOneRecords(assetStore, leaseStore);
+    }
+    if (oldVersion < DATABASE_VERSION) {
+        migrateLegacyPromotionRecoveryRecords(promotionRecoveryStore);
     }
 }
 
@@ -232,6 +285,92 @@ function awaitTransaction(transaction: IDBTransaction): Promise<void> {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isPromotionCommitProof(value: unknown): value is NonNullable<PromotionRecoveryRecord['commitProof']> {
+    const fields = [
+        'projectId',
+        'idempotencyKey',
+        'contentHash',
+        'runId',
+        'batchId',
+        'baseRevision',
+        'commands',
+    ] as const;
+    if (
+        !isRecord(value) ||
+        Object.keys(value).length !== fields.length ||
+        !fields.every((field) => Object.hasOwn(value, field)) ||
+        !Array.isArray(value.commands) ||
+        value.commands.length === 0
+    ) {
+        return false;
+    }
+    const commandFields = ['commandId', 'operation'] as const;
+    const commandIds = new Set<string>();
+    for (const command of value.commands) {
+        if (
+            !isRecord(command) ||
+            Object.keys(command).length !== commandFields.length ||
+            !commandFields.every((field) => Object.hasOwn(command, field)) ||
+            typeof command.commandId !== 'string' ||
+            command.commandId.length === 0 ||
+            typeof command.operation !== 'string' ||
+            command.operation.length === 0 ||
+            commandIds.has(command.commandId)
+        ) {
+            return false;
+        }
+        commandIds.add(command.commandId);
+    }
+    return (
+        typeof value.projectId === 'string' &&
+        value.projectId.length > 0 &&
+        typeof value.idempotencyKey === 'string' &&
+        value.idempotencyKey.length > 0 &&
+        /^sha256:[a-f0-9]{64}$/.test(String(value.contentHash)) &&
+        typeof value.runId === 'string' &&
+        value.runId.length > 0 &&
+        typeof value.batchId === 'string' &&
+        value.batchId.length > 0 &&
+        typeof value.baseRevision === 'string' &&
+        value.baseRevision.length > 0
+    );
+}
+
+type LegacyPromotionCommitProof = {
+    projectId: string;
+    idempotencyKey: string;
+    contentHash: string;
+    runId: string;
+    batchId: string;
+};
+
+type LegacyPromotionRecoveryRecord = Omit<PromotionRecoveryRecordBase, 'schemaVersion'> & {
+    schemaVersion: typeof LEGACY_PROMOTION_RECOVERY_SCHEMA_VERSION;
+    disposition?: 'promote' | 'release';
+    promotionState?: 'prepared' | 'committed';
+    commitProof?: LegacyPromotionCommitProof;
+};
+
+function isLegacyPromotionCommitProof(value: unknown): value is LegacyPromotionCommitProof {
+    if (!isRecord(value)) {
+        return false;
+    }
+    const fields = ['projectId', 'idempotencyKey', 'contentHash', 'runId', 'batchId'] as const;
+    return (
+        Object.keys(value).length === fields.length &&
+        fields.every((field) => Object.hasOwn(value, field)) &&
+        typeof value.projectId === 'string' &&
+        value.projectId.length > 0 &&
+        typeof value.idempotencyKey === 'string' &&
+        value.idempotencyKey.length > 0 &&
+        /^sha256:[a-f0-9]{64}$/.test(String(value.contentHash)) &&
+        typeof value.runId === 'string' &&
+        value.runId.length > 0 &&
+        typeof value.batchId === 'string' &&
+        value.batchId.length > 0
+    );
 }
 
 function isAssetRecord(value: unknown): value is AssetRecord {
@@ -307,16 +446,16 @@ function isOwnerAuthorityRecord(value: unknown): value is OwnerAuthorityRecord {
     );
 }
 
-function isPromotionRecoveryRecord(value: unknown): value is PromotionRecoveryRecord {
-    if (typeof value !== 'object' || value === null) {
-        return false;
-    }
-    const record = value as Record<string, unknown>;
+function hasValidPromotionRecoveryFields(
+    record: Record<string, unknown>,
+    schemaVersion: number,
+    isValidCommitProof: (value: unknown) => boolean
+): boolean {
     const recoveryLeaseIds = Array.isArray(record.leaseIds)
         ? record.leaseIds.filter((leaseId): leaseId is string => typeof leaseId === 'string')
         : [];
     if (
-        record.schemaVersion !== PROMOTION_RECOVERY_SCHEMA_VERSION ||
+        record.schemaVersion !== schemaVersion ||
         typeof record.recoveryId !== 'string' ||
         record.recoveryId.length === 0 ||
         typeof record.ownerId !== 'string' ||
@@ -325,8 +464,8 @@ function isPromotionRecoveryRecord(value: unknown): value is PromotionRecoveryRe
         recoveryLeaseIds.length !== record.leaseIds.length ||
         !Array.isArray(record.bindings) ||
         record.bindings.length === 0 ||
-        (record.disposition !== undefined && record.disposition !== 'promote' && record.disposition !== 'release') ||
-        (record.promotionState !== undefined &&
+        (record.disposition !== 'promote' && record.disposition !== 'release') ||
+        (record.disposition === 'promote' &&
             record.promotionState !== 'prepared' &&
             record.promotionState !== 'committed') ||
         (record.disposition === 'release' && record.promotionState !== undefined) ||
@@ -334,13 +473,7 @@ function isPromotionRecoveryRecord(value: unknown): value is PromotionRecoveryRe
             record.recoveryKind !== 'default-release' &&
             record.recoveryKind !== 'explicit') ||
         (record.recoveryKind === 'default-release' && record.disposition !== 'release') ||
-        (record.commitProof !== undefined &&
-            (!isRecord(record.commitProof) ||
-                typeof record.commitProof.projectId !== 'string' ||
-                typeof record.commitProof.idempotencyKey !== 'string' ||
-                !/^sha256:[a-f0-9]{64}$/.test(String(record.commitProof.contentHash)) ||
-                typeof record.commitProof.runId !== 'string' ||
-                typeof record.commitProof.batchId !== 'string')) ||
+        (record.commitProof !== undefined && !isValidCommitProof(record.commitProof)) ||
         (record.commitProof !== undefined && record.disposition !== 'promote') ||
         typeof record.preparedAt !== 'number' ||
         !Number.isSafeInteger(record.preparedAt)
@@ -363,6 +496,32 @@ function isPromotionRecoveryRecord(value: unknown): value is PromotionRecoveryRe
         leaseIds.add((binding as { leaseId: string }).leaseId);
     }
     return leaseIds.size === recoveryLeaseIds.length && recoveryLeaseIds.every((leaseId) => leaseIds.has(leaseId));
+}
+
+function isLegacyPromotionRecoveryRecord(value: unknown): value is LegacyPromotionRecoveryRecord {
+    if (!isRecord(value)) {
+        return false;
+    }
+    if (value.disposition !== undefined && value.disposition !== 'promote' && value.disposition !== 'release') {
+        return false;
+    }
+    const disposition = value.disposition === 'release' ? 'release' : 'promote';
+    return hasValidPromotionRecoveryFields(
+        {
+            ...value,
+            disposition,
+            ...(disposition === 'promote' ? { promotionState: value.promotionState ?? 'prepared' } : {}),
+        },
+        LEGACY_PROMOTION_RECOVERY_SCHEMA_VERSION,
+        isLegacyPromotionCommitProof
+    );
+}
+
+function isPromotionRecoveryRecord(value: unknown): value is PromotionRecoveryRecord {
+    return (
+        isRecord(value) &&
+        hasValidPromotionRecoveryFields(value, PROMOTION_RECOVERY_SCHEMA_VERSION, isPromotionCommitProof)
+    );
 }
 
 async function hashBlob(blob: Blob): Promise<string> {

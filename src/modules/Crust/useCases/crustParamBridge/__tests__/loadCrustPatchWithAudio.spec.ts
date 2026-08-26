@@ -34,6 +34,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 
 vi.mock('#/modules/Arrangement/stores', () => ({
     trackStore: mocks.trackStore,
+    adjustmentLayerStore: { value: null },
     persistDeviceParam: mocks.persistDeviceParam,
     resolveEligibleDeviceWriteTarget: mocks.resolveEligibleDeviceWriteTarget,
     // Not exercised by this spec — reached transitively through the

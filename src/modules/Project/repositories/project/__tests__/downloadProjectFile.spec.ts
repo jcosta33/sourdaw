@@ -14,6 +14,20 @@ vi.mock('../../nativeProjectFiles/saveProjectToFile', () => ({
     saveProjectToFile: vi.fn(),
 }));
 
+function createDeferred<Value>(): {
+    promise: Promise<Value>;
+    reject: (reason?: unknown) => void;
+    resolve: (value: Value) => void;
+} {
+    let rejectDeferred!: (reason?: unknown) => void;
+    let resolveDeferred!: (value: Value) => void;
+    const promise = new Promise<Value>((resolve, reject) => {
+        resolveDeferred = resolve;
+        rejectDeferred = reject;
+    });
+    return { promise, reject: rejectDeferred, resolve: resolveDeferred };
+}
+
 describe('downloadProjectFile', () => {
     const projectData = {
         meta: { name: 'Test Project' },
@@ -30,18 +44,76 @@ describe('downloadProjectFile', () => {
     });
 
     afterEach(() => {
+        vi.restoreAllMocks();
         vi.unstubAllGlobals();
         vi.useRealTimers();
+    });
+
+    it('rejects stale authority at entry before any platform side effect', async () => {
+        vi.mocked(isDesktopRuntime).mockReturnValue(false);
+        const writable = {
+            write: vi.fn(),
+            close: vi.fn(),
+            abort: vi.fn(),
+        };
+        const createWritable = vi.fn().mockResolvedValue(writable);
+        const showSaveFilePicker = vi.fn().mockResolvedValue({ createWritable });
+        vi.stubGlobal('showSaveFilePicker', showSaveFilePicker);
+        const anchor = document.createElement('a');
+        const clickAnchor = vi.spyOn(anchor, 'click').mockImplementation(() => undefined);
+        vi.spyOn(document, 'createElement').mockImplementation(() => anchor);
+        const appendChild = vi.spyOn(document.body, 'appendChild').mockImplementation((node) => node);
+        const shouldWrite = vi.fn(() => false);
+
+        await expect(downloadProjectFile({ data: projectData, shouldWrite })).resolves.toBe('rejected-stale');
+
+        expect(shouldWrite).toHaveBeenCalledOnce();
+        expect(isDesktopRuntime).not.toHaveBeenCalled();
+        expect(desktopSaveDialog).not.toHaveBeenCalled();
+        expect(showSaveFilePicker).not.toHaveBeenCalled();
+        expect(createWritable).not.toHaveBeenCalled();
+        expect(writable.write).not.toHaveBeenCalled();
+        expect(appendChild).not.toHaveBeenCalled();
+        expect(clickAnchor).not.toHaveBeenCalled();
+        expect(URL.createObjectURL).not.toHaveBeenCalled();
+        expect(saveProjectToFile).not.toHaveBeenCalled();
     });
 
     it('should use the native save dialog on desktop', async () => {
         vi.mocked(isDesktopRuntime).mockReturnValue(true);
         vi.mocked(desktopSaveDialog).mockResolvedValue('/path/to/save.sourdaw');
 
-        await downloadProjectFile(projectData);
+        const outcome = await downloadProjectFile({ data: projectData, shouldWrite: () => true });
 
         expect(desktopSaveDialog).toHaveBeenCalled();
         expect(saveProjectToFile).toHaveBeenCalledWith('/path/to/save.sourdaw', projectData);
+        expect(outcome).toBe('written');
+    });
+
+    it('rejects a desktop write when authority changes during the save dialog', async () => {
+        vi.mocked(isDesktopRuntime).mockReturnValue(true);
+        const dialog = createDeferred<string | null>();
+        vi.mocked(desktopSaveDialog).mockReturnValue(dialog.promise);
+        let shouldWrite = true;
+
+        const download = downloadProjectFile({ data: projectData, shouldWrite: () => shouldWrite });
+        await vi.waitFor(() => {
+            expect(desktopSaveDialog).toHaveBeenCalledTimes(1);
+        });
+        shouldWrite = false;
+        dialog.resolve('/path/to/stale.sourdaw');
+
+        await expect(download).resolves.toBe('rejected-stale');
+        expect(saveProjectToFile).not.toHaveBeenCalled();
+    });
+
+    it('reports a cancelled desktop save dialog without writing', async () => {
+        vi.mocked(isDesktopRuntime).mockReturnValue(true);
+        vi.mocked(desktopSaveDialog).mockResolvedValue(null);
+
+        await expect(downloadProjectFile({ data: projectData, shouldWrite: () => true })).resolves.toBe('cancelled');
+
+        expect(saveProjectToFile).not.toHaveBeenCalled();
     });
 
     it('should use showSaveFilePicker in browser if supported', async () => {
@@ -56,11 +128,91 @@ describe('downloadProjectFile', () => {
         const showSaveFilePicker = vi.fn().mockResolvedValue(mockHandle);
         vi.stubGlobal('showSaveFilePicker', showSaveFilePicker);
 
-        await downloadProjectFile(projectData);
+        const outcome = await downloadProjectFile({ data: projectData, shouldWrite: () => true });
 
         expect(showSaveFilePicker).toHaveBeenCalled();
         expect(mockWritable.write).toHaveBeenCalled();
         expect(mockWritable.close).toHaveBeenCalled();
+        expect(outcome).toBe('written');
+    });
+
+    it('rejects a web write when authority changes during the save picker', async () => {
+        vi.mocked(isDesktopRuntime).mockReturnValue(false);
+        const createWritable = vi.fn();
+        const picker = createDeferred<{ createWritable: typeof createWritable }>();
+        const showSaveFilePicker = vi.fn().mockReturnValue(picker.promise);
+        vi.stubGlobal('showSaveFilePicker', showSaveFilePicker);
+        let shouldWrite = true;
+
+        const download = downloadProjectFile({ data: projectData, shouldWrite: () => shouldWrite });
+        await vi.waitFor(() => {
+            expect(showSaveFilePicker).toHaveBeenCalledTimes(1);
+        });
+        shouldWrite = false;
+        picker.resolve({ createWritable });
+
+        await expect(download).resolves.toBe('rejected-stale');
+        expect(createWritable).not.toHaveBeenCalled();
+    });
+
+    it('rejects a web write when authority changes while creating the writable target', async () => {
+        vi.mocked(isDesktopRuntime).mockReturnValue(false);
+        const writable = {
+            write: vi.fn(),
+            close: vi.fn(),
+            abort: vi.fn(),
+        };
+        const writableTarget = createDeferred<typeof writable>();
+        const createWritable = vi.fn().mockReturnValue(writableTarget.promise);
+        vi.stubGlobal('showSaveFilePicker', vi.fn().mockResolvedValue({ createWritable }));
+        let shouldWrite = true;
+
+        const download = downloadProjectFile({ data: projectData, shouldWrite: () => shouldWrite });
+        await vi.waitFor(() => {
+            expect(createWritable).toHaveBeenCalledTimes(1);
+        });
+        shouldWrite = false;
+        writableTarget.resolve(writable);
+
+        await expect(download).resolves.toBe('rejected-stale');
+        expect(writable.abort).toHaveBeenCalledTimes(1);
+        expect(writable.write).not.toHaveBeenCalled();
+        expect(writable.close).not.toHaveBeenCalled();
+    });
+
+    it('aborts a web write when authority changes while writing the snapshot', async () => {
+        vi.mocked(isDesktopRuntime).mockReturnValue(false);
+        const writeResult = createDeferred<void>();
+        const writable = {
+            write: vi.fn().mockReturnValue(writeResult.promise),
+            close: vi.fn(),
+            abort: vi.fn(),
+        };
+        const createWritable = vi.fn().mockResolvedValue(writable);
+        vi.stubGlobal('showSaveFilePicker', vi.fn().mockResolvedValue({ createWritable }));
+        let shouldWrite = true;
+
+        const download = downloadProjectFile({ data: projectData, shouldWrite: () => shouldWrite });
+        await vi.waitFor(() => {
+            expect(writable.write).toHaveBeenCalledTimes(1);
+        });
+        shouldWrite = false;
+        writeResult.resolve();
+
+        await expect(download).resolves.toBe('rejected-stale');
+        expect(writable.abort).toHaveBeenCalledTimes(1);
+        expect(writable.close).not.toHaveBeenCalled();
+    });
+
+    it('reports a cancelled web picker without falling back to a download', async () => {
+        vi.mocked(isDesktopRuntime).mockReturnValue(false);
+        const cancellation = new Error('cancelled');
+        cancellation.name = 'AbortError';
+        vi.stubGlobal('showSaveFilePicker', vi.fn().mockRejectedValue(cancellation));
+
+        await expect(downloadProjectFile({ data: projectData, shouldWrite: () => true })).resolves.toBe('cancelled');
+
+        expect(URL.createObjectURL).not.toHaveBeenCalled();
     });
 
     it('should fallback to anchor download if picker fails or missing', async () => {
@@ -77,13 +229,41 @@ describe('downloadProjectFile', () => {
         vi.spyOn(document.body, 'appendChild').mockImplementation(() => mockAnchor as any);
         vi.spyOn(document.body, 'removeChild').mockImplementation(() => mockAnchor as any);
 
-        await downloadProjectFile(projectData);
+        const outcome = await downloadProjectFile({ data: projectData, shouldWrite: () => true });
 
         expect(mockAnchor.click).toHaveBeenCalled();
         expect(mockAnchor.download).toBe('Test_Project.sourdaw');
+        expect(outcome).toBe('written');
 
         vi.runAllTimers();
         expect(document.body.removeChild).toHaveBeenCalled();
         expect(URL.revokeObjectURL).toHaveBeenCalled();
+    });
+
+    it('rejects fallback download when authority changes while the picker fails', async () => {
+        vi.mocked(isDesktopRuntime).mockReturnValue(false);
+        const picker = createDeferred<FileSystemFileHandle>();
+        const showSaveFilePicker = vi.fn().mockReturnValue(picker.promise);
+        vi.stubGlobal('showSaveFilePicker', showSaveFilePicker);
+        const mockAnchor = {
+            click: vi.fn(),
+            style: {},
+            href: '',
+            download: '',
+        };
+        vi.spyOn(document, 'createElement').mockReturnValue(mockAnchor as any);
+        vi.spyOn(document.body, 'appendChild').mockImplementation(() => mockAnchor as any);
+        vi.spyOn(document.body, 'removeChild').mockImplementation(() => mockAnchor as any);
+        let shouldWrite = true;
+
+        const download = downloadProjectFile({ data: projectData, shouldWrite: () => shouldWrite });
+        await vi.waitFor(() => {
+            expect(showSaveFilePicker).toHaveBeenCalledTimes(1);
+        });
+        shouldWrite = false;
+        picker.reject(new Error('picker failed'));
+
+        await expect(download).resolves.toBe('rejected-stale');
+        expect(mockAnchor.click).not.toHaveBeenCalled();
     });
 });

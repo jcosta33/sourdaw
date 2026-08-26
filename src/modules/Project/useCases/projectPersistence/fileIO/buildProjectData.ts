@@ -194,6 +194,9 @@ export async function buildProjectData({
     const audioBuffers: Record<string, ProjectExportedAudioBuffer> = includeAudioBuffers
         ? await exportCachedAudioBuffers({ bufferIds: [...allBufferIds] })
         : {};
+    if (agentProjectRepairStateStore.value !== null) {
+        return null;
+    }
     for (const id of frozenBufferIds) {
         const buffer = audioBuffers[id];
         if (buffer && !ordinaryBufferIds.has(id)) {
