@@ -332,6 +332,7 @@ fn polarization_decay_hz(note_frequency_hz: f32) -> PolarizationDecay {
     }
 }`,
         ],
+        ['src/modules/GrandBoule/AGENTS.md', 'fixture provider policy'],
         ['src/modules/GrandBoule/models/GrandBouleConfig.ts', 'export type GrandBouleConfig = {};'],
         [
             'src/modules/GrandBoule/models/GrandBouleMorphState.ts',
@@ -396,8 +397,27 @@ fn polarization_decay_hz(note_frequency_hz: f32) -> PolarizationDecay {
         mkdirSync(dirname(join(root, path)), { recursive: true });
         writeFileSync(join(root, path), contents);
     }
+    for (const path of GRAND_BOULE_PROVIDER_POLICY_SYMLINK_PATHS) {
+        const linkPath = join(root, path);
+        rmSync(linkPath, { force: true });
+        symlinkSync('AGENTS.md', linkPath);
+    }
     execFileSync('git', ['init', '--quiet'], { cwd: root });
     execFileSync('git', ['add', '.'], { cwd: root });
+    let hasStagedChanges = true;
+    try {
+        execFileSync('git', ['diff', '--cached', '--quiet'], { cwd: root, stdio: 'ignore' });
+        hasStagedChanges = false;
+    } catch {
+        // A fixture reset has changes to commit; an unchanged fixture is already current.
+    }
+    if (hasStagedChanges) {
+        execFileSync(
+            'git',
+            ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.test', 'commit', '-qm', 'source'],
+            { cwd: root }
+        );
+    }
 }
 
 function writeGrandBouleMeasurementFixture(root: string): { jsonPath: string; revision: string } {
@@ -1596,37 +1616,121 @@ describe('release inventory', () => {
         }
     });
 
-    it('excludes only the known Grand Boule provider-policy symlinks from tracked digests', () => {
-        const base = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-policy-symlinks-'));
-        const root = join(base, 'repository');
-        const outside = join(base, 'outside.md');
-        writeGrandBouleReleaseFixture(root);
-        writeFileSync(outside, 'provider policy');
+    it('requires canonical committed Grand Boule provider-policy symlinks before excluding them', () => {
+        const projectState = GRAND_BOULE_RELEASE_REGISTRY.boundaries.find(
+            ({ digestLabel }) => digestLabel === 'grand-boule-project-state'
+        );
+        expect(projectState?.excludedPaths).toEqual(GRAND_BOULE_PROVIDER_POLICY_SYMLINK_PATHS);
+        expect(projectState?.gitPathspecs).toEqual(
+            expect.arrayContaining(GRAND_BOULE_PROVIDER_POLICY_SYMLINK_PATHS.map((path) => `:(exclude)${path}`))
+        );
 
+        const canonicalBase = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-policy-symlinks-canonical-'));
+        const canonicalRoot = join(canonicalBase, 'repository');
+        writeGrandBouleReleaseFixture(canonicalRoot);
         try {
-            const projectState = GRAND_BOULE_RELEASE_REGISTRY.boundaries.find(
-                ({ digestLabel }) => digestLabel === 'grand-boule-project-state'
-            );
-            expect(projectState?.excludedPaths).toEqual(GRAND_BOULE_PROVIDER_POLICY_SYMLINK_PATHS);
-            expect(projectState?.gitPathspecs).toEqual(
-                expect.arrayContaining(GRAND_BOULE_PROVIDER_POLICY_SYMLINK_PATHS.map((path) => `:(exclude)${path}`))
-            );
+            expect(() => grandBouleReleaseInventoryContract(canonicalRoot)).not.toThrow();
+        } finally {
+            rmSync(canonicalBase, { recursive: true, force: true });
+        }
 
-            const baseline = grandBouleReleaseInventoryContract(root).digests;
-            for (const path of GRAND_BOULE_PROVIDER_POLICY_SYMLINK_PATHS) {
-                symlinkSync(outside, join(root, path));
-                execFileSync('git', ['add', path], { cwd: root });
+        const checkoutBase = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-policy-symlinks-checkout-'));
+        const checkoutRoot = join(checkoutBase, 'repository');
+        writeGrandBouleReleaseFixture(checkoutRoot);
+        try {
+            const checkoutPath = join(checkoutRoot, GRAND_BOULE_PROVIDER_POLICY_SYMLINK_PATHS[0]);
+            rmSync(checkoutPath);
+            symlinkSync('OTHER.md', checkoutPath);
+            expect(() => grandBouleReleaseInventoryContract(checkoutRoot)).toThrow(
+                'Grand Boule provider-policy symlink checkout target is not AGENTS.md'
+            );
+        } finally {
+            rmSync(checkoutBase, { recursive: true, force: true });
+        }
+
+        const mutations = [
+            {
+                name: 'missing entry',
+                error: 'Grand Boule provider-policy symlink is not tracked',
+                mutate: (root: string, path: string, _outside: string) => {
+                    rmSync(join(root, path));
+                    execFileSync('git', ['rm', '--cached', '--', path], { cwd: root });
+                },
+            },
+            {
+                name: 'regular-file substitution',
+                error: 'Grand Boule provider-policy symlink is not tracked as a symlink',
+                mutate: (root: string, path: string, _outside: string) => {
+                    rmSync(join(root, path));
+                    writeFileSync(join(root, path), 'not a symlink');
+                    execFileSync('git', ['add', '--', path], { cwd: root });
+                },
+            },
+            {
+                name: 'wrong relative target',
+                error: 'Grand Boule provider-policy symlink commit target is not AGENTS.md',
+                mutate: (root: string, path: string, _outside: string) => {
+                    rmSync(join(root, path));
+                    symlinkSync('OTHER.md', join(root, path));
+                    execFileSync('git', ['add', '--', path], { cwd: root });
+                },
+            },
+            {
+                name: 'absolute outside target',
+                error: 'Grand Boule provider-policy symlink commit target is not AGENTS.md',
+                mutate: (root: string, path: string, outside: string) => {
+                    rmSync(join(root, path));
+                    symlinkSync(outside, join(root, path));
+                    execFileSync('git', ['add', '--', path], { cwd: root });
+                },
+            },
+        ] as const;
+
+        for (const [index, mutation] of mutations.entries()) {
+            const base = mkdtempSync(join(tmpdir(), `sourdaw-grand-boule-policy-symlinks-${index}-`));
+            const root = join(base, 'repository');
+            const outside = join(base, 'outside.md');
+            writeGrandBouleReleaseFixture(root);
+            writeFileSync(outside, 'provider policy');
+            try {
+                const path =
+                    GRAND_BOULE_PROVIDER_POLICY_SYMLINK_PATHS[
+                        index % GRAND_BOULE_PROVIDER_POLICY_SYMLINK_PATHS.length
+                    ]!;
+                mutation.mutate(root, path, outside);
+                execFileSync(
+                    'git',
+                    [
+                        '-c',
+                        'user.name=Fixture',
+                        '-c',
+                        'user.email=fixture@example.test',
+                        'commit',
+                        '-qm',
+                        mutation.name,
+                    ],
+                    { cwd: root }
+                );
+                expect(() => grandBouleReleaseInventoryContract(root)).toThrow(mutation.error);
+            } finally {
+                rmSync(base, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
             }
-            expect(grandBouleReleaseInventoryContract(root).digests).toEqual(baseline);
+        }
 
+        const unexpectedBase = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-policy-symlinks-unexpected-'));
+        const unexpectedRoot = join(unexpectedBase, 'repository');
+        const outside = join(unexpectedBase, 'outside.md');
+        writeGrandBouleReleaseFixture(unexpectedRoot);
+        writeFileSync(outside, 'provider policy');
+        try {
             const unexpected = 'src/modules/GrandBoule/unexpected-policy.md';
-            symlinkSync(outside, join(root, unexpected));
-            execFileSync('git', ['add', unexpected], { cwd: root });
-            expect(() => grandBouleReleaseInventoryContract(root)).toThrow(
+            symlinkSync(outside, join(unexpectedRoot, unexpected));
+            execFileSync('git', ['add', '--', unexpected], { cwd: unexpectedRoot });
+            expect(() => grandBouleReleaseInventoryContract(unexpectedRoot)).toThrow(
                 `Grand Boule release source is unsafe: ${unexpected}`
             );
         } finally {
-            rmSync(base, { recursive: true, force: true });
+            rmSync(unexpectedBase, { recursive: true, force: true });
         }
     });
 
