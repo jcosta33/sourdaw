@@ -16,6 +16,8 @@ const mocks = vi.hoisted(() => ({
     notifyUser: vi.fn<(message: string, level?: 'info' | 'success' | 'warning' | 'error') => void>(),
     buildProjectData: vi.fn<() => Promise<{ data: unknown } | null>>(),
     migrateActiveProjectIdentity: vi.fn(() => Promise.resolve(false)),
+    repairState: { value: null },
+    writeNamedProjectJsonByKey: vi.fn<(key: string, json: string) => Promise<void>>(),
 }));
 
 vi.mock('../../fileIO/buildProjectData', () => ({
@@ -37,6 +39,13 @@ vi.mock('../../../../stores/projectStore', () => ({
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     captureProjectRevision: mocks.captureProjectRevision,
     persistCrdtProject: mocks.persistCrdtProject,
+}));
+vi.mock('#/modules/CrdtDocument/stores', () => ({
+    agentProjectRepairStateStore: mocks.repairState,
+}));
+
+vi.mock('../../../../repositories/project/writeNamedProjectJsonByKey', () => ({
+    writeNamedProjectJsonByKey: mocks.writeNamedProjectJsonByKey,
 }));
 
 vi.mock('../../../recentProjects/addToRecentProjects', () => ({
@@ -70,6 +79,8 @@ describe('saveProject', () => {
         mocks.captureProjectRevision.mockReturnValue('saved-revision');
         mocks.buildProjectData.mockResolvedValue({ data: { version: 1, meta: { name: 'My Song' } } });
         mocks.migrateActiveProjectIdentity.mockResolvedValue(false);
+        mocks.repairState.value = null;
+        mocks.writeNamedProjectJsonByKey.mockResolvedValue(undefined);
         projectLoadFailureStore.set(null);
     });
 
@@ -162,6 +173,40 @@ describe('saveProject', () => {
         await vi.waitFor(() => {
             expect(mocks.addToRecentProjects).toHaveBeenCalledTimes(1);
         });
+    });
+
+    it('rejects a snapshot when repair becomes required during CRDT persistence', async () => {
+        let resolvePersist: (() => void) | undefined;
+        mocks.persistCrdtProject.mockReturnValue(
+            new Promise<void>((resolve) => {
+                resolvePersist = resolve;
+            })
+        );
+
+        const saving = saveProject();
+        await vi.waitFor(() => {
+            expect(mocks.persistCrdtProject).toHaveBeenCalledTimes(1);
+        });
+        mocks.repairState.value = {
+            audioGraphValid: true,
+            detectedRevision: 'repair-entered-during-crdt-persist',
+            inspectionAvailable: true,
+            projectInvariantsValid: false,
+            rawProjectRetained: true,
+            repairCandidates: [
+                {
+                    kind: 'repair-project-invariants',
+                    targetIds: ['@project/raw/adjustmentLayers'],
+                },
+            ],
+            status: 'repair-required',
+        };
+        resolvePersist?.();
+
+        await expect(saving).resolves.toBe(false);
+        expect(mocks.writeNamedProjectJsonByKey).not.toHaveBeenCalled();
+        expect(mocks.addToRecentProjects).not.toHaveBeenCalled();
+        expect(mocks.projectStoreSet).not.toHaveBeenCalledWith(expect.objectContaining({ dirty: false }));
     });
 
     it('resolves true once persistence succeeds', async () => {

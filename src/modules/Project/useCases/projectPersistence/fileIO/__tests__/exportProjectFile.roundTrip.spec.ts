@@ -28,7 +28,7 @@ import { exportProjectFile } from '../exportProjectFile';
 // Heavy / side-effecting boundaries — stubbed so the export runs deterministically
 // against the real stores we seed below. vi.mock is hoisted above these imports.
 vi.mock('../../../../repositories/project/downloadProjectFile', () => ({
-    downloadProjectFile: vi.fn(() => Promise.resolve()),
+    downloadProjectFile: vi.fn(() => Promise.resolve('written' as const)),
 }));
 vi.mock('../../../arrangement/syncCurrentArrangementToStore', () => ({ syncCurrentArrangementToStore: vi.fn() }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
@@ -43,7 +43,7 @@ vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => ({
 }));
 
 function written(): ProjectData {
-    return vi.mocked(downloadProjectFile).mock.calls[0]?.[0] as ProjectData;
+    return vi.mocked(downloadProjectFile).mock.calls[0]?.[0].data as ProjectData;
 }
 
 function seedSavableProject(createdAt: number): void {

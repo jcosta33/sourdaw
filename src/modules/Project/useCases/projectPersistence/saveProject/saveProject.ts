@@ -1,4 +1,5 @@
 import { logger } from '#/infra/logger/appLogger';
+import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
 import { captureProjectRevision, persistCrdtProject } from '#/modules/CrdtDocument/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
@@ -11,6 +12,12 @@ import { buildProjectData } from '../fileIO/buildProjectData';
 import { migrateActiveProjectIdentity } from '../migrateActiveProjectIdentity';
 
 import { captureExternalPluginStates } from './captureExternalPluginStates';
+
+function assertProjectSnapshotAuthority(): void {
+    if (agentProjectRepairStateStore.value !== null) {
+        throw new Error('[saveProject] Project repair became required before snapshot persistence');
+    }
+}
 
 export async function saveProject(): Promise<boolean> {
     // Everything below assumes `projectStore` identifies the project the other
@@ -101,6 +108,7 @@ export async function saveProject(): Promise<boolean> {
         // buildProjectData synchronizes the current arrangement projection into
         // project truth, then persist it.
         await persistCrdtProject();
+        assertProjectSnapshotAuthority();
 
         // Capture the revision AFTER the save's own CRDT bookkeeping
         // (buildProjectData's arrangement sync + the incremental persist) has
@@ -115,11 +123,13 @@ export async function saveProject(): Promise<boolean> {
 
         // Awaited, so a rejected transaction reaches the catch below rather
         // than being reported as a successful save.
+        assertProjectSnapshotAuthority();
         await writeNamedProjectJsonByKey(recentKey, JSON.stringify(built.data));
 
         // Only record the recent-projects entry once the snapshot write is
         // observed to have committed — otherwise we'd list a project that
         // was never actually saved.
+        assertProjectSnapshotAuthority();
         addToRecentProjects(project.name, recentKey);
 
         // A save clears dirty only when the complete project authority still
@@ -127,7 +137,11 @@ export async function saveProject(): Promise<boolean> {
         // transition during the async snapshot write keeps dirty asserted so
         // the next autosave cannot be suppressed by a stale completion.
         const latest = projectStore.value;
-        if (latest?.createdAt === project.createdAt && captureProjectRevision() === savedRevision) {
+        if (
+            agentProjectRepairStateStore.value === null &&
+            latest?.createdAt === project.createdAt &&
+            captureProjectRevision() === savedRevision
+        ) {
             projectStore.set({ ...latest, dirty: false });
         }
         return true;

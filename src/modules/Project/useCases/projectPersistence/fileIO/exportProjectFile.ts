@@ -1,3 +1,4 @@
+import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { downloadProjectFile } from '../../../repositories/project/downloadProjectFile';
@@ -25,6 +26,12 @@ export async function exportProjectFile(): Promise<void> {
         );
     }
 
-    await downloadProjectFile(data);
+    const outcome = await downloadProjectFile({
+        data,
+        shouldWrite: () => agentProjectRepairStateStore.value === null,
+    });
+    if (outcome !== 'written') {
+        return;
+    }
     notifyUser('Project exported successfully', 'info');
 }

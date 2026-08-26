@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { exportCachedAudioBuffers } from '#/modules/AudioEngine/useCases';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { CURRENT_PROJECT_VERSION, type ProjectData } from '../../../../models/ProjectData';
 import { downloadProjectFile } from '../../../../repositories/project/downloadProjectFile';
@@ -10,7 +11,7 @@ const captureExternalPluginStatesMock = vi.hoisted(() => vi.fn<() => Promise<voi
 const agentProjectRepairStateStoreMock = vi.hoisted((): { value: unknown } => ({ value: null }));
 
 vi.mock('../../../../repositories/project/downloadProjectFile', () => ({
-    downloadProjectFile: vi.fn(() => Promise.resolve()),
+    downloadProjectFile: vi.fn(() => Promise.resolve('written' as const)),
 }));
 vi.mock('../../../arrangement/syncCurrentArrangementToStore', () => ({ syncCurrentArrangementToStore: vi.fn() }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
@@ -71,6 +72,7 @@ describe('exportProjectFile', () => {
     beforeEach(() => {
         agentProjectRepairStateStoreMock.value = null;
         vi.mocked(downloadProjectFile).mockClear();
+        vi.mocked(notifyUser).mockClear();
         vi.mocked(exportCachedAudioBuffers).mockClear();
         vi.mocked(exportCachedAudioBuffers).mockResolvedValue({});
         captureExternalPluginStatesMock.mockClear();
@@ -80,7 +82,7 @@ describe('exportProjectFile', () => {
         await exportProjectFile();
 
         expect(downloadProjectFile).toHaveBeenCalledTimes(1);
-        const written = vi.mocked(downloadProjectFile).mock.calls[0]?.[0] as ProjectData;
+        const written = vi.mocked(downloadProjectFile).mock.calls[0]?.[0].data as ProjectData;
         expect(written.version).toBe(CURRENT_PROJECT_VERSION);
     });
 
@@ -149,4 +151,15 @@ describe('exportProjectFile', () => {
 
         expect(downloadProjectFile).not.toHaveBeenCalled();
     });
+
+    it.each(['cancelled', 'rejected-stale'] as const)(
+        'does not announce success when download is %s',
+        async (outcome) => {
+            vi.mocked(downloadProjectFile).mockResolvedValueOnce(outcome);
+
+            await exportProjectFile();
+
+            expect(notifyUser).not.toHaveBeenCalledWith('Project exported successfully', 'info');
+        }
+    );
 });
