@@ -25,9 +25,7 @@ import { cutSelectedClip } from '../../useCases/clipboard/cutSelectedClip';
 import { pasteClip } from '../../useCases/clipboard/pasteClip';
 import { lockClip } from '../../useCases/clipEditing/lockClip';
 import { muteClip } from '../../useCases/clipEditing/muteClip';
-import { normalizeClip } from '../../useCases/clipEditing/normalizeClip';
 import { renameClip } from '../../useCases/clipEditing/renameClip';
-import { reverseClip } from '../../useCases/clipEditing/reverseClip';
 import { setClipColor } from '../../useCases/clipEditing/setClipColor';
 import { splitClipWithUndo } from '../../useCases/clipEditing/splitClipWithUndo';
 import { toggleInlineEditing } from '../../useCases/clipEditing/toggleInlineEditing';
@@ -87,10 +85,16 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
 
     const renderAudioActions = (): ReactElement => (
         <>
-            <DawMenuButton role="menuitem" onClick={act(() => normalizeClip(clipId))}>
+            <DawMenuButton
+                role="menuitem"
+                onClick={act(() => void executeAppAction({ type: 'normalizeClip', payload: { clipId } }))}
+            >
                 Normalize
             </DawMenuButton>
-            <DawMenuButton role="menuitem" onClick={act(() => reverseClip(clipId))}>
+            <DawMenuButton
+                role="menuitem"
+                onClick={act(() => void executeAppAction({ type: 'reverseClip', payload: { clipId } }))}
+            >
                 Reverse
             </DawMenuButton>
             <DawMenuButton role="menuitem" onClick={act(() => stripSilence(clipId))}>
