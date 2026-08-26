@@ -400,10 +400,14 @@ function getProviderContext(userMessage: string): Record<string, unknown> {
  * (`getScopeTargetIds` / `getVersionedCommandTargetReferences`) treats as stable
  * target references for each action type used by this fixture file. `planAgentRun`
  * compares scopes by sorted membership, so declaration order here does not need
- * to match the application's own `parameters.properties` order. Device-only
- * arguments (e.g. `targetDeviceId`) are intentionally excluded: the application
- * only tracks track/bus identities in `scope.targetIds`, and `renderProjectSections`
- * has no target rules at all.
+ * to match the application's own `parameters.properties` order. An argument
+ * belongs in this mirror exactly when the action's registry `targetRules` names
+ * it, whatever kind of object that argument identifies — track, bus or device.
+ * `addSidechainRoute`'s `targetDeviceId` is a `sidechain-capable-device` target
+ * rule, so the compiled scope carries the device beside the two tracks and a
+ * fixture omitting it declares a short scope that `planAgentRun` rejects as
+ * scope omission. `renderProjectSections` has no target rules at all, which is
+ * why it has no entry here.
  */
 const SCOPE_TARGET_ARGUMENTS: Readonly<Record<string, readonly string[]>> = {
     setTrackOutput: ['trackId', 'outputId'],
@@ -2676,7 +2680,17 @@ describe('drum bus prompt workflow', () => {
         }
     );
 
-    it('rejects collaborator-staled EX-06 routing atomically without a receipt or runtime prefix', async () => {
+    /**
+     * Settling the collaborator's write is what makes this deterministic, and it
+     * is also what the confirmation gate reads: `captureProjectRevision` folds
+     * any settled mutation into the revision, and the batch is refused there
+     * before a single command is revalidated. The exact generic project-changed
+     * reason asserted below is the proof of that — the divergence-classified
+     * refusal carries a different message. So the route conflict is realistic
+     * setup, not the cause, and what this pins is the revision gate refusing the
+     * whole batch atomically. Any settled post-proposal mutation lands here.
+     */
+    it('refuses EX-06 routing atomically when the project changes after the proposal, leaving no receipt or runtime prefix', async () => {
         setMf06Project();
         const originalTracks = structuredClone(trackStore.value?.tracks);
         useMf06WebLlmFixture();
@@ -2890,7 +2904,8 @@ describe('drum bus prompt workflow', () => {
         });
     });
 
-    it('invalidates the whole MF-06 batch before runtime when a collaborator claims one device route', async () => {
+    /** Same revision-gate contract as the EX-06 case, over the MF-06 batch. */
+    it('refuses the whole MF-06 batch before runtime when the project changes after the proposal', async () => {
         setMf06Project();
         useMf06WebLlmFixture();
         await sendChatMessage(MF06_PROMPT);
