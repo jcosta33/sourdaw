@@ -2,8 +2,11 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { Container } from '#/infra/di/Container';
 import { createEventBus } from '#/infra/events/createEventBus';
-import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
-import { clearHandlerRegistry, macroStore, registerHandlerMap } from '#/modules/Command/stores';
+import {
+    configureAutomergeStoragePort,
+    runWithAutomergeStorageTransaction,
+} from '#/infra/store/storage/createAutomergeStorage';
+import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
     executeAppActionBatch,
@@ -14,6 +17,7 @@ import {
 } from '#/modules/Command/useCases';
 import {
     createCrdtDoc,
+    getCrdtDoc,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
     resetCrdtProjectAuthority,
@@ -30,20 +34,41 @@ import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { trackStore } from '../../../stores/trackStore';
 import { getArrangementHandlers } from '../../../useCases/getArrangementHandlers';
 
+type NotificationEvents = {
+    'ui.notify': NotifyPayload;
+    'ui.confirm': ConfirmPayload;
+    'ui.prompt': PromptPayload;
+};
+
+type MidiState = NonNullable<typeof midiStore.value>;
+type RootProjectDocument = { tracks?: unknown; midi?: unknown };
+
+let notifications: NotifyPayload[] = [];
+let unsubscribeFromNotifications: () => void = () => undefined;
+
 const noActionHistoryMetadataPort = {
     record: () => [],
     markReverted: () => ({ status: 'unavailable' as const }),
     clear: () => undefined,
 };
 
-let notifications: NotifyPayload[] = [];
-let unsubscribeFromNotifications: () => void = () => undefined;
+function replaceMidiNotes(notesByClipId: MidiState['notesByClipId']): void {
+    const transaction = runWithAutomergeStorageTransaction(undefined, () => {
+        midiStore.set({ ...midiStore.value!, notesByClipId });
+    });
+    if (transaction.status !== 'returned') {
+        throw transaction.error;
+    }
+    transaction.commit();
+}
 
-type NotificationEvents = {
-    'ui.notify': NotifyPayload;
-    'ui.confirm': ConfirmPayload;
-    'ui.prompt': PromptPayload;
-};
+function authoritativeProjectSlots(): RootProjectDocument {
+    const document = getCrdtDoc<RootProjectDocument>('root');
+    if (!document) {
+        throw new Error('Expected root CRDT document');
+    }
+    return structuredClone({ tracks: document.tracks, midi: document.midi });
+}
 
 describe('handleAddClip atomic integration', () => {
     beforeEach(() => {
@@ -138,27 +163,34 @@ describe('handleAddClip atomic integration', () => {
             { source: 'prompt', requireCompensation: true }
         );
         const created = trackStore.value!.tracks[0]!.clips[0]!;
-        midiStore.set({
-            ...midiStore.value!,
-            notesByClipId: {
-                ...midiStore.value!.notesByClipId,
-                [created.id]: [{ id: 'external-note', pitch: 60, startBeat: 0, duration: 1, velocity: 100 }],
-            },
+        replaceMidiNotes({
+            ...midiStore.value!.notesByClipId,
+            [created.id]: [{ id: 'external-note', pitch: 60, startBeat: 0, duration: 1, velocity: 100 }],
         });
+        const trackProjectionBeforeRejectedUndo = structuredClone(trackStore.value);
+        const midiProjectionBeforeRejectedUndo = structuredClone(midiStore.value);
+        const historyBeforeRejectedUndo = structuredClone(undoStore.value);
+        const authoritativeBeforeRejectedUndo = authoritativeProjectSlots();
+        expect(authoritativeBeforeRejectedUndo.midi).toBeDefined();
 
+        expect(notifications).toEqual([]);
         await undo();
 
-        expect(notifications).toEqual([
-            { message: 'Cannot undo "Add clip "Editable"": project state has changed', level: 'warning' },
-        ]);
-
+        expect(trackStore.value).toEqual(trackProjectionBeforeRejectedUndo);
+        expect(midiStore.value).toEqual(midiProjectionBeforeRejectedUndo);
+        expect(undoStore.value).toEqual(historyBeforeRejectedUndo);
+        const authoritativeAfterRejectedUndo = authoritativeProjectSlots();
+        expect(authoritativeAfterRejectedUndo).toEqual(authoritativeBeforeRejectedUndo);
         expect(trackStore.value!.tracks[0]!.clips).toMatchObject([{ id: created.id, name: 'Editable' }]);
         expect(midiStore.value!.notesByClipId[created.id]).toMatchObject([{ id: 'external-note' }]);
+        expect(notifications).toEqual([
+            {
+                message: 'Cannot undo "Add clip "Editable"": project state has changed',
+                level: 'warning',
+            },
+        ]);
 
-        midiStore.set({
-            ...midiStore.value!,
-            notesByClipId: {},
-        });
+        replaceMidiNotes({});
         await undo();
         expect(notifications).toEqual([
             { message: 'Cannot undo "Add clip "Editable"": project state has changed', level: 'warning' },
@@ -184,12 +216,8 @@ describe('handleAddClip atomic integration', () => {
             { source: 'prompt', requireCompensation: true }
         );
         const created = trackStore.value!.tracks[0]!.clips[0]!;
-        midiStore.set({
-            ...midiStore.value!,
-            notesByClipId: {
-                ...midiStore.value!.notesByClipId,
-                [created.id]: [],
-            },
+        replaceMidiNotes({
+            [created.id]: [],
         });
 
         await undo();
@@ -201,10 +229,7 @@ describe('handleAddClip atomic integration', () => {
         expect(trackStore.value!.tracks[0]!.clips).toMatchObject([{ id: created.id, name: 'Initialized' }]);
         expect(midiStore.value!.notesByClipId).toHaveProperty(created.id, []);
 
-        midiStore.set({
-            ...midiStore.value!,
-            notesByClipId: {},
-        });
+        replaceMidiNotes({});
         await undo();
         expect(notifications).toEqual([
             { message: 'Cannot undo "Add clip "Initialized"": project state has changed', level: 'warning' },
