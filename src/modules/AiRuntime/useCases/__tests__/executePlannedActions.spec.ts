@@ -164,6 +164,13 @@ async function createReceipt(fixture: BatchFixture, result: BatchExecutionObserv
     });
 }
 
+async function committedReceipt(fixture: BatchFixture) {
+    return createReceipt(fixture, {
+        status: 'committed',
+        actions: [receiptAction(fixture)],
+    });
+}
+
 const deviceEffectFailure = 'native engine unavailable';
 const deviceEffectWarning = `addDevice post-commit effect failed: ${deviceEffectFailure}`;
 const devicePendingEffect = {
@@ -356,10 +363,7 @@ describe('executePlannedActions', () => {
     });
 
     it('returns a durable idempotent replay without duplicating AI history or notifications', async () => {
-        const receipt = await createReceipt(projectFixture, {
-            status: 'committed',
-            actions: [receiptAction(projectFixture)],
-        });
+        const receipt = await committedReceipt(projectFixture);
         vi.mocked(executeVersionedCommandBatchEnvelope).mockResolvedValue({
             status: 'idempotent-replay',
             actions: [],
@@ -379,10 +383,7 @@ describe('executePlannedActions', () => {
     });
 
     it('returns the verified receipt from a fresh apply commit', async () => {
-        const receipt = await createReceipt(projectFixture, {
-            status: 'committed',
-            actions: [receiptAction(projectFixture)],
-        });
+        const receipt = await committedReceipt(projectFixture);
         vi.mocked(executeVersionedCommandBatchEnvelope).mockResolvedValue({
             status: 'committed',
             actions: [{ ...receiptAction(projectFixture), label: 'Mute track' }],
@@ -422,10 +423,7 @@ describe('executePlannedActions', () => {
     });
 
     it('forwards the commit-prepared observer to the authoritative Command boundary', async () => {
-        const receipt = await createReceipt(projectFixture, {
-            status: 'committed',
-            actions: [receiptAction(projectFixture)],
-        });
+        const receipt = await committedReceipt(projectFixture);
         const onProjectCommitPrepared = vi.fn();
         vi.mocked(executeVersionedCommandBatchEnvelope).mockImplementation(async (input) => {
             input.onProjectCommitPrepared?.();
@@ -643,10 +641,7 @@ describe('executePlannedActions', () => {
     });
 
     it('preserves a committed result when post-commit reporting fails', async () => {
-        const receipt = await createReceipt(projectFixture, {
-            status: 'committed',
-            actions: [receiptAction(projectFixture)],
-        });
+        const receipt = await committedReceipt(projectFixture);
         vi.mocked(executeVersionedCommandBatchEnvelope).mockResolvedValue({
             status: 'committed',
             actions: [{ ...receiptAction(projectFixture), label: 'Mute track' }],
@@ -710,10 +705,7 @@ describe('executePlannedActions', () => {
     });
 
     it('preserves a committed result when the success notification throws', async () => {
-        const receipt = await createReceipt(projectFixture, {
-            status: 'committed',
-            actions: [receiptAction(projectFixture)],
-        });
+        const receipt = await committedReceipt(projectFixture);
         vi.mocked(executeVersionedCommandBatchEnvelope).mockResolvedValue({
             status: 'committed',
             actions: [{ ...receiptAction(projectFixture), label: 'Mute track' }],

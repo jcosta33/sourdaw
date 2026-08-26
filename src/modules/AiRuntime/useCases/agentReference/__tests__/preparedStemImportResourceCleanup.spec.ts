@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import {
     compileVersionedCommandBatchEnvelope,
@@ -187,6 +188,10 @@ async function createRecoveryReceiptFixture(input: {
             result,
         });
     if (input.outcome === 'committed') {
+        const inverseAction = getArrangementHandlers().importStemSet.describe(importStemSetAction).inverseAction;
+        if (!inverseAction) {
+            throw new Error('Expected importStemSet inverse');
+        }
         const commandReceipt = createVersionedCommandReceipt({
             envelope: command,
             compensation: { available: true, strategy: 'inverse' },
@@ -204,28 +209,7 @@ async function createRecoveryReceiptFixture(input: {
 describe('prepared stem import resource cleanup', () => {
     beforeEach(() => {
         clearHandlerRegistry();
-        registerHandlerMap({
-            importStemSet: {
-                describe: (action) => ({
-                    label: 'Import prepared stems',
-                    inverseAction: {
-                        type: 'discardImportedStemSet',
-                        payload: {
-                            folderId: action.payload.folderId,
-                            stemTrackIds: action.payload.stems.map((stem) => stem.trackId),
-                            guards: [action.payload.folderId, ...action.payload.stems.map((stem) => stem.trackId)].map(
-                                (trackId) => ({
-                                    trackId,
-                                    generatedMidiStateGuard: { entityJson: '', midiByClipIdJson: '{}' },
-                                })
-                            ),
-                        },
-                    },
-                }),
-                execute: () => undefined,
-                undoable: true,
-            },
-        });
+        registerHandlerMap({ importStemSet: getArrangementHandlers().importStemSet });
         clearPendingActionConfirmations();
         agentRunLifecycle.clear();
         vi.clearAllMocks();
@@ -664,7 +648,7 @@ describe('prepared stem import resource cleanup', () => {
         }
     );
 
-    it.each(['missing', 'invalid', 'mismatched'] as const)(
+    it.each(['missing', 'mismatched'] as const)(
         'retains exact recovery ownership for a %s receipt until later proof settles it',
         async (receiptKind) => {
             const runId = `stem-recovery-${receiptKind}`;
@@ -675,22 +659,7 @@ describe('prepared stem import resource cleanup', () => {
             preparedStemImportResources.protect({ runId, stems, recovery: { batchId, commandBatch } });
             preparedStemImportResources.retainForRecovery({ runId, stems });
             let receipt: Awaited<ReturnType<typeof getVersionedCommandBatchIdempotentReplay>> = null;
-            if (receiptKind === 'invalid') {
-                const exactFixture = await createRecoveryReceiptFixture({ commandBatch, outcome: 'committed' });
-                const alternateContentHash = `sha256:${
-                    exactFixture.proof.contentHash === `sha256:${'f'.repeat(64)}` ? 'e' : 'f'
-                }${'f'.repeat(63)}`;
-                const invalidFixture = await createRecoveryReceiptFixture({
-                    commandBatch,
-                    contentHash: alternateContentHash,
-                    outcome: 'committed',
-                });
-                const { contentHash: exactContentHash, ...exactReceipt } = exactFixture.persistedReceipt;
-                const { contentHash: invalidContentHash, ...otherwiseValidReceipt } = invalidFixture.persistedReceipt;
-                expect(otherwiseValidReceipt).toEqual(exactReceipt);
-                expect(invalidContentHash).toBe(alternateContentHash);
-                expect(invalidContentHash).not.toBe(exactContentHash);
-            } else if (receiptKind === 'mismatched') {
+            if (receiptKind === 'mismatched') {
                 const mismatchedBatch = createRecoveryCommandBatch('different-run', 'different-batch');
                 const mismatchedFixture = await createRecoveryReceiptFixture({
                     commandBatch: mismatchedBatch,

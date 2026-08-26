@@ -306,8 +306,10 @@ describe('executePromptActionGroup', () => {
     beforeEach(async () => {
         vi.resetAllMocks();
         agentRunLifecycle.clear();
-        registerHandlerMap(getArrangementHandlers());
-        registerHandlerMap(getTransportHandlers());
+        registerHandlerMap({
+            importStemSet: getArrangementHandlers().importStemSet,
+            stopPlayback: getTransportHandlers().stopPlayback,
+        } satisfies Parameters<typeof registerHandlerMap>[0]);
         const commandUseCases =
             await vi.importActual<typeof import('#/modules/Command/useCases')>('#/modules/Command/useCases');
         batchFixtures = {
