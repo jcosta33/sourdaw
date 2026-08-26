@@ -1,0 +1,95 @@
+release/open-source-inventory.json
+  s_0202ff8054d37c::t_6c94c07979d1ee 935
+crates/sourdaw-native/src/addon/mod.rs
+  s_0202ff8054d37c::t_a90f2397f9b1e5 399-403
+crates/sourdaw-native/src/commands/plugins.rs
+  s_0202ff8054d37c::t_4e71e685541a58 371-384,3287-3313
+electron/__tests__/commands.spec.ts
+  s_0202ff8054d37c::t_ed11a5c0bc2f3f 350
+electron/commands.ts
+  s_0202ff8054d37c::t_143fc328a8c501 67
+src/modules/Arrangement/handlers/clip/__tests__/handleAddClip.integration.spec.ts
+  s_0202ff8054d37c::t_43027e09c0f72e 5-9,20,37-40,43-45,49-52,55-72,166-168,170-174,176,179-183,186-191,193,219-220,232
+src/modules/Arrangement/handlers/track/__tests__/handleImportStemSet.spec.ts
+  s_0202ff8054d37c::t_5f02b632b8051b 6,8,19,28,195-302,327,336,343-350,363,375-378
+src/modules/Arrangement/presentations/hooks/__tests__/useTimelineInteractions.gestureCancel.spec.tsx
+  s_0202ff8054d37c::t_1eb0efc9a2dd8b 1,4-10,12-18,21-22,24-67,71-76,78,82-123,125-140,142-235,239-250,252-352,354-376,379-395,397-402,404-406,409-446,449-455,457,459-464
+src/modules/Arrangement/presentations/hooks/__tests__/useTimelineInteractions.selectionDrag.spec.tsx
+  s_0202ff8054d37c::t_2a54fbc755496b 1-1242
+src/modules/Arrangement/presentations/hooks/__tests__/useTimelineInteractions.spec.tsx
+  s_0202ff8054d37c::t_a68efeb990fcd7 61,120,197-199,288,914-915,950-952,1286
+src/modules/Arrangement/presentations/hooks/useTimelineInteractions.ts
+  s_0202ff8054d37c::t_7966422561ee50 10,23,43,50-51,112-124,167-249,269-275,363-374,387-391,402-403,412-415,419-424,427,481-483,613-615,619-624,626-668,674,678-683,687-736,878,892,899-943,945-951,953-966,969,971,973-974,978-986,993-1012,1016-1022,1029,1044-1058,1064-1073,1076-1104,1106-1107,1109-1120,1123-1125,1127-1154,1156,1158-1159,1162-1188,1214,1344
+src/modules/Arrangement/presentations/views/BeatRulerBar.tsx
+  s_0202ff8054d37c::t_b0b05f2296daa6 9,311-353
+src/modules/Arrangement/presentations/views/TimelineSurface.tsx
+  s_0202ff8054d37c::t_902aa5ee79494e 49,433
+src/modules/Arrangement/presentations/views/__tests__/BeatRulerBar.spec.tsx
+  s_0202ff8054d37c::t_c3b4041dae77d2 1,8,181-213
+src/modules/Arrangement/presentations/views/__tests__/TimelineSurface.spec.tsx
+  s_0202ff8054d37c::t_d9e136b091a3be 151,269,296,531-563,570
+src/modules/Arrangement/stores/timelineGestureCancelerRef.ts
+  s_0202ff8054d37c::t_b374f15c36e4ec 1-13
+src/modules/Arrangement/useCases/clip/__tests__/duplicateClipCore.spec.ts
+  s_0202ff8054d37c::t_16312eb7ec1df0 355-420
+src/modules/Arrangement/useCases/clip/duplicateClipCore.ts
+  s_0202ff8054d37c::t_b00cb412fdfa07 15-16,28,39,69
+src/modules/Arrangement/useCases/index.ts
+  s_0202ff8054d37c::t_6cdec2546b9682 114-117
+src/modules/Arrangement/useCases/timelineInteractions/__tests__/cancelActiveTimelineGesture.spec.ts
+  s_0202ff8054d37c::t_27801ee255b8f4 1-36
+src/modules/Arrangement/useCases/timelineInteractions/__tests__/clipDropRejectionReason.spec.ts
+  s_0202ff8054d37c::t_78c61344be089b 1-14
+src/modules/Arrangement/useCases/timelineInteractions/__tests__/isClipDropCompatible.spec.ts
+  s_0202ff8054d37c::t_10b48083c3160a 1-21
+src/modules/Arrangement/useCases/timelineInteractions/cancelActiveTimelineGesture.ts
+  s_0202ff8054d37c::t_0e32f49a1ee21e 1-14
+src/modules/Arrangement/useCases/timelineInteractions/clipDropRejectionReason.ts
+  s_0202ff8054d37c::t_27e610c302a038 1-12
+src/modules/Arrangement/useCases/timelineInteractions/isClipDropCompatible.ts
+  s_0202ff8054d37c::t_3df23f7f5e2fb3 1-21
+src/modules/Arrangement/useCases/timelineInteractions/registerTimelineGestureCanceler.ts
+  s_0202ff8054d37c::t_795c14d5a6a84d 1-13
+src/modules/AudioEngine/presentations/views/PluginScanSettings.tsx
+  s_0202ff8054d37c::t_a4f5f6d495c262 32,61-64,66-67,69-75,122,128,135-137,145-151
+src/modules/AudioEngine/presentations/views/__tests__/PluginScanSettings.spec.tsx
+  s_0202ff8054d37c::t_aaa08443b23d20 65,193-226
+src/modules/CommandInterface/useCases/keyboardShortcutActions/handleKeyboardShortcut/__tests__/handleKeydown.spec.ts
+  s_0202ff8054d37c::t_7330e417ce4d8f 7,103,333-382
+src/modules/CommandInterface/useCases/keyboardShortcutActions/handleKeyboardShortcut/handleKeydown.ts
+  s_0202ff8054d37c::t_9bbc96ccc6f0ea 6,225-230,238-244
+src/modules/PluginHost/repositories/pluginBridge/__tests__/pluginBridge.spec.ts
+  s_0202ff8054d37c::t_3405b0f582d4e8 6,102-118
+src/modules/PluginHost/repositories/pluginBridge/isScanPathAuthorized.ts
+  s_0202ff8054d37c::t_c28a252fb50d80 1-15
+src/modules/PluginHost/stores/pluginScanStore.ts
+  s_0202ff8054d37c::t_23a42d169af8fa 218-222
+src/modules/PluginHost/useCases/pluginScan/__tests__/startPluginScan.spec.ts
+  s_0202ff8054d37c::t_0f69e43a93f65d 25-26,66-69,91
+src/modules/PluginHost/useCases/pluginScan/scanning/__tests__/addScanPath.spec.ts
+  s_0202ff8054d37c::t_42e60b8646ce5e 1,3,6-59,62-82,85-87,90-119
+src/modules/PluginHost/useCases/pluginScan/scanning/__tests__/startPluginScan.spec.ts
+  s_0202ff8054d37c::t_c9474425b35559 65-66,88-91,106,184-225,233-238
+src/modules/PluginHost/useCases/pluginScan/scanning/addScanPath.ts
+  s_0202ff8054d37c::t_16e4534e9632a4 1-2,7-18,21-42,44-45
+src/modules/PluginHost/useCases/pluginScan/scanning/startPluginScan.ts
+  s_0202ff8054d37c::t_fc8f34f304675d 2,21-41,54-59,75
+src/utils/sourdawCommandArguments.ts
+  s_0202ff8054d37c::t_bef37fe7a6f742 52
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "ebcdd813f4eea8969f2c3ae6a2e6d51e51c4f455",
+  "prompts": {},
+  "sessions": {
+    "s_0202ff8054d37c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "22edd3d4-6930-4288-aacd-3eeb0b792868",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
