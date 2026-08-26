@@ -1,4 +1,4 @@
-import { type ReactElement, useState } from 'react';
+import { type ReactElement, useEffect, useRef, useState } from 'react';
 
 import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
@@ -12,11 +12,12 @@ import {
     trimClipStart,
     trimClipEnd,
     setClipFade,
-    setClipGain,
     setClipColor,
     renameClip,
     setClipFollowAction,
 } from '#/modules/Arrangement/useCases';
+import { executeAppAction } from '#/modules/Command/useCases';
+import { dbToGain, formatGainDb, gainToDb, SEND_MIN_DB } from '#/utils/audioLevelLaw';
 import { CLIP_COLOR_PRESETS } from '#/utils/UI/colorPresets';
 
 import { type Clip, type FollowAction } from '../../../models/TrackViewTypes';
@@ -27,6 +28,23 @@ import { InspectorDetailHeader } from '../../components/Inspector/InspectorDetai
 import { ClipAudioAiSection } from './ClipAudioAiSection';
 import { ClipGainEnvelopeSection } from './ClipGainEnvelopeSection';
 import { ClipMidiAiSection } from './ClipMidiAiSection';
+
+/**
+ * The gain slider travels in decibels: the floor is the effectively-silent
+ * -60 dB (and commits as a hard 0, the way a closed send does), the ceiling is
+ * `clampClipGain`'s gain-2 cap so the whole legal range is reachable.
+ */
+const CLIP_GAIN_MIN_DB = SEND_MIN_DB;
+const CLIP_GAIN_MAX_DB = gainToDb(2);
+
+function parseGainDbText(text: string): number | null {
+    const trimmed = text.trim().toLowerCase();
+    if (trimmed === '-inf' || trimmed === '-infinity' || trimmed === '-∞') {
+        return Number.NEGATIVE_INFINITY;
+    }
+    const parsed = Number.parseFloat(trimmed);
+    return Number.isFinite(parsed) ? parsed : null;
+}
 
 type ClipInspectorProps = {
     clip: Clip;
@@ -47,6 +65,63 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
             renameClip(clip.id, trimmed);
         }
         setEditingName(false);
+    };
+
+    // Clip gain edits are one undoable action per gesture. The drag never
+    // writes the store (scheduled clips would not react mid-playthrough anyway,
+    // and per-tick writes would churn project truth), so the gesture start is
+    // still the live gain at commit time and can anchor the write's
+    // compensable expectedGain.
+    const [gainDragDb, setGainDragDb] = useState<number | null>(null);
+    const gainGestureStart = useRef<number | null>(null);
+    const [gainText, setGainText] = useState<string | null>(null);
+    const [fineGainStep, setFineGainStep] = useState(false);
+
+    useEffect(() => {
+        const onKeyDown = (event: KeyboardEvent) => {
+            if (event.key === 'Shift') {
+                setFineGainStep(true);
+            }
+        };
+        const onKeyUp = (event: KeyboardEvent) => {
+            if (event.key === 'Shift') {
+                setFineGainStep(false);
+            }
+        };
+        window.addEventListener('keydown', onKeyDown);
+        window.addEventListener('keyup', onKeyUp);
+        return () => {
+            window.removeEventListener('keydown', onKeyDown);
+            window.removeEventListener('keyup', onKeyUp);
+        };
+    }, []);
+
+    const clipGainDb = clip.gain <= 0 ? CLIP_GAIN_MIN_DB : gainToDb(clip.gain);
+
+    const commitClipGain = (db: number): void => {
+        const gestureStart = gainGestureStart.current ?? clip.gain;
+        gainGestureStart.current = null;
+        setGainDragDb(null);
+        const gain = db <= CLIP_GAIN_MIN_DB ? 0 : dbToGain(db);
+        if (gain === gestureStart) {
+            return;
+        }
+        void executeAppAction({
+            type: 'setClipGain',
+            payload: { clipId: clip.id, gain, expectedGain: gestureStart },
+        });
+    };
+
+    const commitGainText = (): void => {
+        if (gainText === null) {
+            return;
+        }
+        const parsed = parseGainDbText(gainText);
+        setGainText(null);
+        if (parsed === null) {
+            return;
+        }
+        commitClipGain(parsed);
     };
 
     return (
@@ -191,18 +266,53 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
             <section>
                 <DawHeaderBand compact className="mb-2 rounded-sm" title="Gain" />
                 <div>
-                    <ControlHeader className="mb-1" label="Clip Gain" value={`${(clip.gain * 100).toFixed(0)}%`} />
-                    <Slider
-                        value={[clip.gain * 100]}
-                        onValueChange={([value]) => {
-                            if (value !== undefined) {
-                                setClipGain(clip.id, value / 100);
-                            }
-                        }}
-                        max={200}
-                        step={1}
-                        aria-label="Clip gain"
+                    <ControlHeader
+                        className="mb-1"
+                        label="Clip Gain"
+                        value={gainDragDb === null ? `${formatGainDb(clip.gain)} dB` : `${gainDragDb.toFixed(1)} dB`}
+                        valueClassName="text-foreground"
                     />
+                    <Row align="center" gap={2}>
+                        <div className="grow">
+                            <Slider
+                                value={[gainDragDb ?? clipGainDb]}
+                                onValueChange={([value]) => {
+                                    if (value === undefined) {
+                                        return;
+                                    }
+                                    if (gainGestureStart.current === null) {
+                                        gainGestureStart.current = clip.gain;
+                                    }
+                                    setGainDragDb(value);
+                                }}
+                                onValueCommit={([value]) => {
+                                    if (value !== undefined) {
+                                        commitClipGain(value);
+                                    }
+                                }}
+                                min={CLIP_GAIN_MIN_DB}
+                                max={CLIP_GAIN_MAX_DB}
+                                step={fineGainStep ? 0.1 : 1}
+                                aria-label="Clip gain"
+                            />
+                        </div>
+                        <DawCompactInput
+                            value={gainText ?? formatGainDb(clip.gain)}
+                            onChange={(event) => setGainText(event.target.value)}
+                            onBlur={commitGainText}
+                            onKeyDown={(event) => {
+                                if (event.key === 'Enter') {
+                                    commitGainText();
+                                }
+                                if (event.key === 'Escape') {
+                                    setGainText(null);
+                                }
+                            }}
+                            size="micro"
+                            className="w-14"
+                            aria-label="Clip gain value"
+                        />
+                    </Row>
                 </div>
             </section>
             <Separator />

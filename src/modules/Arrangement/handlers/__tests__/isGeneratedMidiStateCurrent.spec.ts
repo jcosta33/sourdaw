@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
     getTrackStoreState: vi.fn(),
     hasNonDefaultWarpState: vi.fn(),
     modulationStore: { value: { modulators: [] } },
+    serializeClipSatelliteEntries: vi.fn(),
     serializeMidiStateForClips: vi.fn(),
     takeLaneStore: { value: { lanes: [] } },
 }));
@@ -19,6 +20,9 @@ vi.mock('#/modules/Automation/useCases', () => ({ getAutomationLanes: mocks.getA
 vi.mock('#/modules/MIDI/useCases', () => ({ serializeMidiStateForClips: mocks.serializeMidiStateForClips }));
 vi.mock('#/modules/Routing/useCases', () => ({ getAllSidechainRoutes: mocks.getAllSidechainRoutes }));
 vi.mock('../../stores/gainEnvelopeStore', () => ({ getEnvelope: mocks.getEnvelope }));
+vi.mock('../../stores/clipSatelliteState', () => ({
+    serializeClipSatelliteEntries: mocks.serializeClipSatelliteEntries,
+}));
 vi.mock('../../stores/takeLaneStore', () => ({ takeLaneStore: mocks.takeLaneStore }));
 vi.mock('../../stores/warpStates', () => ({ hasNonDefaultWarpState: mocks.hasNonDefaultWarpState }));
 vi.mock('../../useCases/getTrackStoreState', () => ({ getTrackStoreState: mocks.getTrackStoreState }));
@@ -125,5 +129,50 @@ describe('isGeneratedMidiStateCurrent', () => {
             })
         ).toBe(false);
         expect(mocks.hasNonDefaultWarpState).toHaveBeenCalledWith('generated-clip');
+    });
+
+    it('accepts generation-written satellites that still match the captured guard, and rejects user-moved ones', () => {
+        const generatedTrack = {
+            ...createTrack({ id: 'generated-track', name: 'Bass', kind: 'midi' }),
+            clips: [generatedClip],
+        };
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [generatedTrack] });
+        // The duplicate left an envelope on the copy — presence alone must not conflict.
+        mocks.getEnvelope.mockReturnValue({ clipId: 'generated-clip', enabled: true, points: [] });
+        mocks.serializeClipSatelliteEntries.mockReturnValue('captured-satellites');
+        const guard = {
+            entityJson: JSON.stringify(generatedClip),
+            midiByClipIdJson: 'exact-midi',
+            clipSatellitesJson: 'captured-satellites',
+        };
+
+        expect(isGeneratedMidiStateCurrent({ entityId: generatedClip.id, entityType: 'clip', guard })).toBe(true);
+        expect(mocks.serializeClipSatelliteEntries).toHaveBeenCalledWith(['generated-clip']);
+
+        // The user edited the copy's envelope after the duplicate: undo must refuse.
+        mocks.serializeClipSatelliteEntries.mockReturnValue('edited-satellites');
+        expect(isGeneratedMidiStateCurrent({ entityId: generatedClip.id, entityType: 'clip', guard })).toBe(false);
+    });
+
+    it('still rejects a clip-scoped automation lane when the satellite guard matches', () => {
+        const generatedTrack = {
+            ...createTrack({ id: 'generated-track', name: 'Bass', kind: 'midi' }),
+            clips: [generatedClip],
+        };
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [generatedTrack] });
+        mocks.serializeClipSatelliteEntries.mockReturnValue('captured-satellites');
+        mocks.getAutomationLanes.mockReturnValue([{ id: 'lane-1', clipId: 'generated-clip' }]);
+
+        expect(
+            isGeneratedMidiStateCurrent({
+                entityId: generatedClip.id,
+                entityType: 'clip',
+                guard: {
+                    entityJson: JSON.stringify(generatedClip),
+                    midiByClipIdJson: 'exact-midi',
+                    clipSatellitesJson: 'captured-satellites',
+                },
+            })
+        ).toBe(false);
     });
 });

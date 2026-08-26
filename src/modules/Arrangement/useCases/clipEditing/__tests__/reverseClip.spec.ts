@@ -114,6 +114,45 @@ describe('reverseClip', () => {
         expect(reversedData[99]).toBe(1.0);
     });
 
+    it('mirrors the clip fades so the reversed audio keeps its drawn edges', () => {
+        const mockClip = {
+            id: 'c1',
+            type: 'audio',
+            audioBufferId: 'buf1',
+            name: 'Sample',
+            fadeInBeats: 0.5,
+            fadeOutBeats: 2,
+        };
+        let publishedClip: typeof mockClip | undefined;
+        mocks.getTrackState.mockReturnValue({
+            tracks: [{ id: 'track-1', clips: [mockClip] }],
+        });
+        mocks.updateClip.mockImplementation(
+            (_clipId: string, updater: (candidate: typeof mockClip) => typeof mockClip) => {
+                publishedClip = updater(mockClip);
+                return true;
+            }
+        );
+        mocks.getCachedAudioBuffer.mockReturnValue({
+            numberOfChannels: 1,
+            length: 4,
+            sampleRate: 44100,
+            getChannelData: vi.fn(() => new Float32Array(4)),
+        });
+        mockCtx.createBuffer.mockReturnValue({
+            numberOfChannels: 1,
+            length: 4,
+            getChannelData: vi.fn(() => new Float32Array(4)),
+        });
+
+        reverseClip('c1');
+
+        // The fade-in at the original head now sits at the reversed tail, and the
+        // fade-out at the original tail now opens the clip.
+        expect(publishedClip?.fadeInBeats).toBe(2);
+        expect(publishedClip?.fadeOutBeats).toBe(0.5);
+    });
+
     it('clears the clip pitch contour after a successful reverse because the audio changed', () => {
         const mockClip = { id: 'c1', type: 'audio', audioBufferId: 'buf1', name: 'Sample' };
         mocks.getTrackState.mockReturnValue({
