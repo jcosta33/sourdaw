@@ -455,6 +455,7 @@ export const PianoRoll = ({
                                     clipId={clipId}
                                     trackId={trackId}
                                     selectedNoteIds={selectedNoteIds}
+                                    openedClipNotes={openedClipNotes}
                                     beatWidth={beatWidth}
                                     scrollRef={expressionScrollRef}
                                     getValue={(node) => {
