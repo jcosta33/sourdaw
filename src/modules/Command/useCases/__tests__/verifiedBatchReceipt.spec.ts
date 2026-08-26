@@ -621,6 +621,96 @@ describe('verified batch receipt', () => {
         ).toBeNull();
     });
 
+    it('accepts only coherent stored command-outcome families', async () => {
+        const batch = compileBatch();
+        const result = await executeVersionedCommandBatchEnvelope({
+            authority: batch.authority,
+            confirmed: true,
+            serialized: batch.serialized,
+        });
+        const receipt = receiptFrom(result);
+        const commandOutcomes = receipt.commandOutcomes as Array<Record<string, unknown>>;
+        const pendingExternalEffect = {
+            commandId: GAIN_COMMAND_ID,
+            kind: 'external-effect',
+            operation: 'setTrackGain',
+            reason: 'render completion is pending',
+            remediation: 'reconcile',
+            state: 'pending',
+        };
+        const serializeReceipt = (input: {
+            atomicity: 'atomic' | 'durable-atomic-with-non-atomic-effects';
+            commandOutcome: 'committed' | 'executed' | 'no-op' | 'unknown' | 'not-applied';
+            outcome:
+                | 'committed'
+                | 'committed-with-warning'
+                | 'partially-committed'
+                | 'executed'
+                | 'executed-with-warning'
+                | 'no-op'
+                | 'ambiguous'
+                | 'rejected'
+                | 'conflicted'
+                | 'cancelled'
+                | 'failed'
+                | 'verification-failed';
+            pendingEffects?: unknown[];
+        }) =>
+            JSON.stringify({
+                ...receipt,
+                atomicity: input.atomicity,
+                commandOutcomes: commandOutcomes.map((command) => ({ ...command, outcome: input.commandOutcome })),
+                outcome: input.outcome,
+                pendingEffects: input.pendingEffects ?? [],
+            });
+        const parseReceipt = (serializedReceipt: string) =>
+            parseStoredVerifiedBatchReceipt({
+                baseRevision: revision(0),
+                batchId: 'batch-receipt',
+                commands: [
+                    { commandId: GAIN_COMMAND_ID, operation: 'setTrackGain' },
+                    { commandId: PAN_COMMAND_ID, operation: 'setTrackPan' },
+                ],
+                runId: 'run-receipt',
+                serializedReceipt,
+            });
+
+        const validFamilies = [
+            ['committed', 'committed', 'atomic'],
+            ['committed-with-warning', 'committed', 'atomic'],
+            ['partially-committed', 'committed', 'durable-atomic-with-non-atomic-effects', [pendingExternalEffect]],
+            ['executed', 'executed', 'atomic'],
+            ['executed-with-warning', 'executed', 'atomic'],
+            ['no-op', 'no-op', 'atomic'],
+            ['ambiguous', 'unknown', 'atomic'],
+            ['rejected', 'not-applied', 'atomic'],
+            ['conflicted', 'not-applied', 'atomic'],
+            ['cancelled', 'not-applied', 'atomic'],
+            ['failed', 'not-applied', 'atomic'],
+            ['verification-failed', 'not-applied', 'atomic'],
+        ] as const;
+        for (const [outcome, commandOutcome, atomicity, pendingEffects] of validFamilies) {
+            expect(
+                parseReceipt(serializeReceipt({ outcome, commandOutcome, atomicity, pendingEffects }))
+            ).not.toBeNull();
+        }
+
+        const malformedFamilies = [
+            ['executed', 'committed'],
+            ['executed-with-warning', 'committed'],
+            ['no-op', 'committed'],
+            ['ambiguous', 'committed'],
+            ['rejected', 'committed'],
+            ['conflicted', 'committed'],
+            ['cancelled', 'committed'],
+            ['failed', 'committed'],
+            ['verification-failed', 'committed'],
+        ] as const;
+        for (const [outcome, commandOutcome] of malformedFamilies) {
+            expect(parseReceipt(serializeReceipt({ outcome, commandOutcome, atomicity: 'atomic' }))).toBeNull();
+        }
+    });
+
     it('reports observer warnings without claiming a partial project commit', async () => {
         mocks.recordActionHistoryMetadata.mockImplementationOnce(() => {
             throw new Error('history observer unavailable');

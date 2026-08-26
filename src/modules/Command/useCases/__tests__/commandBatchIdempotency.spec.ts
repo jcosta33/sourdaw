@@ -471,6 +471,9 @@ describe('command batch idempotency', () => {
         await expect(
             getVersionedCommandBatchCommitDisposition({ ...proof, idempotencyKey: 'other-client-request' })
         ).resolves.toBe('unknown');
+        await expect(getVersionedCommandBatchCommitDisposition({ ...proof, projectId: 'other-project' })).resolves.toBe(
+            'unknown'
+        );
 
         lookup.mockResolvedValueOnce({ status: 'missing' });
         await expect(getVersionedCommandBatchCommitDisposition(proof)).resolves.toBe('unknown');
