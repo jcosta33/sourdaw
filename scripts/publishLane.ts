@@ -944,14 +944,6 @@ export async function runPublishLaneCli(args: string[]): Promise<number> {
     ) {
         fail('lane:publish trusted repository binding does not match the protected primary checkout');
     }
-    spawnRun(runtime.gitPath, ['fetch', GITHUB_HTTPS_REMOTE, '+refs/heads/main:refs/remotes/origin/main'], {
-        cwd: primaryRoot,
-        env: authorizationEnv,
-    });
-    const baseSha = spawnCapture(runtime.gitPath, ['rev-parse', '--verify', 'refs/remotes/origin/main^{commit}'], {
-        cwd: primaryRoot,
-        env: authorizationEnv,
-    });
     const localWorktrees = parsePublishWorktrees(
         spawnCapture(runtime.gitPath, ['worktree', 'list', '--porcelain', '-z'], {
             cwd: primaryRoot,
@@ -970,6 +962,14 @@ export async function runPublishLaneCli(args: string[]): Promise<number> {
             fail('--lane must name the exact author worktree root');
         }
     }
+    spawnRun(runtime.gitPath, ['fetch', GITHUB_HTTPS_REMOTE, '+refs/heads/main:refs/remotes/origin/main'], {
+        cwd: primaryRoot,
+        env: authorizationEnv,
+    });
+    const baseSha = spawnCapture(runtime.gitPath, ['rev-parse', '--verify', 'refs/remotes/origin/main^{commit}'], {
+        cwd: primaryRoot,
+        env: authorizationEnv,
+    });
     const auth = await authenticatePublishingAuthor({
         primaryRoot,
         lane: { path: authenticationLane.path, branch: authenticationLane.branch },
