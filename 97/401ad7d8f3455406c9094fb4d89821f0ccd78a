@@ -1,0 +1,30 @@
+scripts/__tests__/checkReleaseInventory.spec.ts
+  s_a40848e8f8cca9::t_78cadc322653db 1705
+  s_a40848e8f8cca9::t_36673aeebf8113 1637-1645,1647-1649
+  s_a40848e8f8cca9::t_ae40aa013e6133 1619-1626,1628-1630,1632-1636,1651-1704,1707-1716,1718,1720-1723,1728-1729
+  s_a40848e8f8cca9::t_9b99625ceaefef 335,400-404,407-420
+  s_a40848e8f8cca9::t_32ede3e934a898 1706,1724-1725,1727,1733
+scripts/checkReleaseInventory.ts
+  s_a40848e8f8cca9::t_47e85468617206 1405-1410
+  s_a40848e8f8cca9::t_43eea4877f963c 12,445-500,504-526
+  s_a40848e8f8cca9::t_6fd89de9b203f7 501-503
+  s_a40848e8f8cca9::t_f7b641fa5e1561 527
+release/open-source-inventory.json
+  s_a40848e8f8cca9::t_881f7f89c6f925 937
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "97401ad7d8f3455406c9094fb4d89821f0ccd78a",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
