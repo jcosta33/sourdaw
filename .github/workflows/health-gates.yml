@@ -264,7 +264,7 @@ jobs:
     # Documentation and repository metadata can change release obligations.
     # This job installs the frozen dependency graph needed by the project-native
     # inventory script, but deliberately does not compile application code.
-    if: github.event_name == 'pull_request' && needs.decide.outputs.web != 'true' && needs.decide.outputs.rust != 'true' && needs.decide.outputs.server != 'true' && needs.decide.outputs.e2e != 'true'
+    if: github.event_name == 'pull_request' && (needs.decide.outputs.metadata == 'true' || (needs.decide.outputs.web != 'true' && needs.decide.outputs.rust != 'true' && needs.decide.outputs.server != 'true' && needs.decide.outputs.e2e != 'true'))
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

@@ -443,6 +443,12 @@ expect(
         smokeSpec.includes('await observedAudioContext.suspend();'),
     'playback smoke must capture and suspend its real AudioContext through a document-only test control'
 );
+expect(
+    smokeSpec.includes("document.addEventListener('sourdaw-test-read-audio-context-state'") &&
+        smokeSpec.includes("document.documentElement.dataset.audioContextResumeState = observedAudioContext?.state ?? 'missing';") &&
+        smokeSpec.includes("document.dispatchEvent(new Event('sourdaw-test-read-audio-context-state'))"),
+    'every playback state assertion must request the captured AudioContext live state through the document control'
+);
 expect(smokeSpec.includes('const nativeStart = OscillatorNode.prototype.start;'), 'playback smoke must observe the production oscillator scheduling boundary');
 expect(smokeSpec.includes('document.documentElement.dataset.scheduledOscillatorCount'), 'playback smoke must expose scheduled oscillator count through a test-only dataset signal');
 expect(smokeSpec.includes('await createPlayableMidiClip(page);'), 'playback smoke must create deterministic playable MIDI material before transport starts');
@@ -514,8 +520,8 @@ expect(dependencyReview?.if === "github.event_name == 'pull_request'", 'dependen
 expect(prSecrets?.if === "github.event_name == 'pull_request'", 'PR diff secret scan must run only for pull-request events');
 expect(
     releaseInventory?.if ===
-        "github.event_name == 'pull_request' && needs.decide.outputs.web != 'true' && needs.decide.outputs.rust != 'true' && needs.decide.outputs.server != 'true' && needs.decide.outputs.e2e != 'true'",
-    'release inventory must run only for documentation or metadata pull requests'
+        "github.event_name == 'pull_request' && (needs.decide.outputs.metadata == 'true' || (needs.decide.outputs.web != 'true' && needs.decide.outputs.rust != 'true' && needs.decide.outputs.server != 'true' && needs.decide.outputs.e2e != 'true'))",
+    'release inventory must run for metadata pull requests and non-code pull requests'
 );
 expect(releaseInventory?.name === 'Release inventory', 'documentation-only release inventory job must remain present');
 expect(releaseInventory?.['runs-on'] === 'ubuntu-latest', 'documentation-only release inventory must run on a hosted Linux runner');
@@ -573,7 +579,7 @@ function startedPullRequestJobs(scopes) {
     if (scopes.e2e === 'true') jobs.push('smoke');
     if (scopes.rust === 'true' || scopes.server === 'true') jobs.push('rust');
     if (scopes.rust === 'true') jobs.push('native-macos', 'native-windows');
-    if (!codeBearing) {
+    if (scopes.metadata === 'true' || !codeBearing) {
         jobs.push('release-inventory');
     }
     jobs.push('gate');
@@ -731,6 +737,26 @@ for (const fixture of [
         unclassified: 'false',
         scopes: { rust: 'false', server: 'false', e2e: 'false', web: 'false', metadata: 'true' },
         jobs: ['decide', 'dependency-review', 'pr-secrets', 'release-inventory', 'gate'],
+        metadataContract: true,
+    },
+    {
+        name: 'mixed issue-template and TypeScript code',
+        paths: ['.github/ISSUE_TEMPLATE/bug_report.yml', 'src/modules/Project/useCases/createFreshProjectMetadata.ts'],
+        unclassified: 'false',
+        scopes: { rust: 'false', server: 'false', e2e: 'true', web: 'true', metadata: 'true' },
+        jobs: [
+            'decide',
+            'dependency-review',
+            'pr-secrets',
+            'static',
+            'lint',
+            'boundaries',
+            'unit',
+            'build',
+            'smoke',
+            'release-inventory',
+            'gate',
+        ],
         metadataContract: true,
     },
     {

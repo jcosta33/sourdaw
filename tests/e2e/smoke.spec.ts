@@ -46,7 +46,7 @@ async function blockExternalRequests(page: Page): Promise<() => void> {
 }
 
 type AudioContextTestControl = {
-    resumeState: () => Promise<string | undefined>;
+    resumeState: () => Promise<string>;
     suspend: () => Promise<string | undefined>;
 };
 
@@ -59,6 +59,10 @@ async function observeAudioContextResumeState(page: Page): Promise<AudioContextT
             await nativeResume.call(this);
             document.documentElement.dataset.audioContextResumeState = this.state;
         };
+        document.addEventListener('sourdaw-test-read-audio-context-state', () => {
+            document.documentElement.dataset.audioContextResumeState = observedAudioContext?.state ?? 'missing';
+            document.dispatchEvent(new Event('sourdaw-test-audio-context-state-read'));
+        });
         document.addEventListener('sourdaw-test-suspend-audio-context', () => {
             void (async () => {
                 if (!observedAudioContext) {
@@ -72,7 +76,18 @@ async function observeAudioContextResumeState(page: Page): Promise<AudioContextT
         });
     });
     return {
-        resumeState: () => page.evaluate(() => document.documentElement.dataset.audioContextResumeState),
+        resumeState: () =>
+            page.evaluate(
+                () =>
+                    new Promise<string>((resolve) => {
+                        document.addEventListener(
+                            'sourdaw-test-audio-context-state-read',
+                            () => resolve(document.documentElement.dataset.audioContextResumeState ?? 'missing'),
+                            { once: true }
+                        );
+                        document.dispatchEvent(new Event('sourdaw-test-read-audio-context-state'));
+                    })
+            ),
         suspend: () =>
             page.evaluate(
                 () =>
