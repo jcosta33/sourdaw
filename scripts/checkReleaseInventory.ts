@@ -626,6 +626,89 @@ function trackedFiles(root: string, pathspecs: readonly string[]): string[] {
         .sort();
 }
 
+type GitTreeEntry = {
+    mode: string;
+    object: string;
+    path: string;
+};
+
+function gitTreeEntries(root: string, path: string): GitTreeEntry[] {
+    return execFileSync('git', ['ls-tree', '-rz', 'HEAD', '--', path], {
+        cwd: root,
+        encoding: 'utf8',
+    })
+        .split('\0')
+        .filter(Boolean)
+        .map((entry) => {
+            const tab = entry.indexOf('\t');
+            const [mode, , object] = entry.slice(0, tab).split(' ');
+            return { mode, object, path: entry.slice(tab + 1) };
+        });
+}
+
+function gitIndexEntries(root: string, path: string): GitTreeEntry[] {
+    return execFileSync('git', ['ls-files', '--stage', '-z', '--', path], {
+        cwd: root,
+        encoding: 'utf8',
+    })
+        .split('\0')
+        .filter(Boolean)
+        .map((entry) => {
+            const tab = entry.indexOf('\t');
+            const [mode, object] = entry.slice(0, tab).split(' ');
+            return { mode, object, path: entry.slice(tab + 1) };
+        });
+}
+
+function gitBlob(root: string, object: string): Buffer {
+    return execFileSync('git', ['cat-file', 'blob', object], { cwd: root });
+}
+
+function assertCanonicalGrandBouleProviderPolicySymlink(root: string, path: string): void {
+    const indexEntry = gitIndexEntries(root, path).find((entry) => entry.path === path);
+    if (indexEntry === undefined) {
+        throw new Error(`Grand Boule provider-policy symlink is not tracked: ${path}`);
+    }
+    if (indexEntry.mode !== '120000') {
+        throw new Error(`Grand Boule provider-policy symlink is not tracked as a symlink: ${path}`);
+    }
+
+    const committedEntry = gitTreeEntries(root, path).find((entry) => entry.path === path);
+    if (committedEntry === undefined) {
+        throw new Error(`Grand Boule provider-policy symlink is not committed: ${path}`);
+    }
+    if (committedEntry.mode !== '120000') {
+        throw new Error(`Grand Boule provider-policy symlink commit is not a symlink: ${path}`);
+    }
+    if (!gitBlob(root, committedEntry.object).equals(Buffer.from('AGENTS.md'))) {
+        throw new Error(`Grand Boule provider-policy symlink commit target is not AGENTS.md: ${path}`);
+    }
+    if (!gitBlob(root, indexEntry.object).equals(Buffer.from('AGENTS.md'))) {
+        throw new Error(`Grand Boule provider-policy symlink index target is not AGENTS.md: ${path}`);
+    }
+
+    const absolutePath = resolve(root, path);
+    let before;
+    try {
+        before = lstatSync(absolutePath);
+    } catch {
+        throw new Error(`Grand Boule provider-policy symlink checkout is missing: ${path}`);
+    }
+    if (!before.isSymbolicLink() || readlinkSync(absolutePath) !== 'AGENTS.md') {
+        throw new Error(`Grand Boule provider-policy symlink checkout target is not AGENTS.md: ${path}`);
+    }
+    const after = lstatSync(absolutePath);
+    if (!after.isSymbolicLink() || before.dev !== after.dev || before.ino !== after.ino) {
+        throw new Error(`Grand Boule provider-policy symlink checkout changed while checking: ${path}`);
+    }
+}
+
+function assertCanonicalGrandBouleProviderPolicySymlinks(root: string, paths: readonly string[]): void {
+    for (const path of paths) {
+        assertCanonicalGrandBouleProviderPolicySymlink(root, path);
+    }
+}
+
 function trackedFilesSha256(
     root: string,
     files: readonly string[],
@@ -1353,9 +1436,18 @@ export function assertProjectLicenseDistributionReleaseInventory(
 
 type GrandBouleReleaseBoundary = {
     paths: readonly string[];
+    excludedPaths?: readonly string[];
     gitPathspecs: readonly string[];
     digestLabel: string;
 };
+
+export const GRAND_BOULE_PROVIDER_POLICY_SYMLINK_PATHS = [
+    'src/modules/GrandBoule/CLAUDE.md',
+    'src/modules/GrandBoule/CODEX.md',
+    'src/modules/GrandBoule/GEMINI.md',
+    'src/modules/GrandBoule/KIMI.md',
+    'src/modules/GrandBoule/ZCODE.md',
+] as const;
 
 export const GRAND_BOULE_RELEASE_REGISTRY = {
     kind: 'project-source',
@@ -1435,8 +1527,10 @@ export const GRAND_BOULE_RELEASE_REGISTRY = {
                 'src/app/getProductionCommandHandlerMaps.ts',
                 'src/utils/handlerContract.ts',
             ],
+            excludedPaths: GRAND_BOULE_PROVIDER_POLICY_SYMLINK_PATHS,
             gitPathspecs: [
                 'src/modules/GrandBoule',
+                ...GRAND_BOULE_PROVIDER_POLICY_SYMLINK_PATHS.map((path) => `:(exclude)${path}`),
                 'src/modules/Command/useCases/versionedCommandArgumentKeys.ts',
                 'src/modules/Arrangement/useCases/index.ts',
                 'src/modules/Arrangement/useCases/device/setDeviceState.ts',
@@ -1505,6 +1599,12 @@ export function grandBouleReleaseInventoryContract(
     | 'licenses'
     | 'productSurfaces'
 > {
+    for (const { excludedPaths } of GRAND_BOULE_RELEASE_REGISTRY.boundaries) {
+        if (excludedPaths !== undefined) {
+            assertCanonicalGrandBouleProviderPolicySymlinks(root, excludedPaths);
+        }
+    }
+
     const budget = repositoryReadBudget(readFile);
     return {
         kind: GRAND_BOULE_RELEASE_REGISTRY.kind,

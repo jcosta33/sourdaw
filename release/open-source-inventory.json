@@ -42,8 +42,8 @@
                 ".prettierrc",
                 "AGENTS.md",
                 "CLAUDE.md",
-                "CODEX.md",
                 "CONTRIBUTING.md",
+                "CODEX.md",
                 "Cargo.lock",
                 "Cargo.toml",
                 "GEMINI.md",
@@ -932,9 +932,9 @@
                 "tracked-set-sha256:17e9646737f2d49baf0917ffcec42c1b43ed47f9990bd7180b2fe5a126693451:grand-boule-discovery-catalog",
                 "tracked-set-sha256:a4b6f7d5b32d31ed0c0cf027344718219bd87dc3f6a345a2b9bebd90f1f45205:grand-boule-factory-admission",
                 "tracked-set-sha256:b2b40500eaaea3294d2126ce420b953fb05494d4552a24f9e32a02766a9bf9e7:grand-boule-live-runtime",
-                "tracked-set-sha256:994a32cef9d564d50e85c64374e86c2c64e2d5009eff1a647087da6899573e01:grand-boule-project-state",
+                "tracked-set-sha256:ad4ec8d5ad3f55ed3bc4f8bb523c6a189639df5af6e0ce3a375608deefb04d6e:grand-boule-project-state",
                 "tracked-set-sha256:c24bb1c0672ac22d04c8d36c344bbf3c0efdc315ec8317af1d1674eaeb0cbd89:grand-boule-offline-composition",
-                "tracked-set-sha256:60a85c0600237d693429081d44f8846ddbd20b3340a06ead63d7355fd05c67f9:grand-boule-release-proof"
+                "tracked-set-sha256:7c6e40d45db8cb785cb394a8923d88fc6e457993f3ff4720ec52add214bab252:grand-boule-release-proof"
             ],
             "licenses": ["Apache-2.0"],
             "productSurfaces": ["Grand Boule source, browser WASM, and desktop runtime"],
@@ -1150,11 +1150,11 @@
                 "src/modules/ContentBrowser/presentations/views/Sidebar/OnlineSampleBrowser.tsx",
                 "src/modules/FactorySynthesis/useCases/bass.ts",
                 "src/modules/FactorySynthesis/useCases/keys.ts",
-                "src/modules/Fermenter/AGENTS.md",
                 "src/modules/Fermenter/models/FermenterPatch.ts",
                 "src/modules/Fermenter/presentations/components/FilterSection.tsx",
                 "src/modules/Fermenter/presentations/components/PresetBrowser.tsx",
                 "src/modules/Fermenter/repositories/fermenterPresets.ts",
+                "src/modules/Fermenter/AGENTS.md",
                 "src/modules/Gluten/models/GlutenPatch.ts",
                 "src/modules/Gluten/models/GlutenTopologyGating.ts",
                 "src/modules/Grinder/models/GrinderPatch.ts",
@@ -1869,11 +1869,11 @@
             "paths": [
                 "src/modules/Arrangement/repositories/presets/faustInstrumentPresets.ts",
                 "docs/manual/devices/17-fermenter.md",
-                "src/modules/Fermenter/AGENTS.md",
                 "src/modules/Fermenter/models/FermenterPatch.ts",
                 "src/modules/Fermenter/presentations/components/FilterSection.tsx",
                 "src/modules/Fermenter/presentations/components/PresetBrowser.tsx",
                 "src/modules/Fermenter/repositories/fermenterPresets.ts",
+                "src/modules/Fermenter/AGENTS.md",
                 "src/modules/PluginHost/useCases/faustEngine/builtinDSP.ts"
             ]
         },
@@ -1995,10 +1995,10 @@
             "value": "MS-20",
             "paths": [
                 "docs/manual/devices/17-fermenter.md",
-                "src/modules/Fermenter/AGENTS.md",
                 "src/modules/Fermenter/models/FermenterPatch.ts",
                 "src/modules/Fermenter/presentations/components/FilterSection.tsx",
-                "src/modules/Fermenter/repositories/fermenterPresets.ts"
+                "src/modules/Fermenter/repositories/fermenterPresets.ts",
+                "src/modules/Fermenter/AGENTS.md"
             ]
         },
         {
@@ -2017,10 +2017,10 @@
             "value": "SEM",
             "paths": [
                 "docs/manual/devices/17-fermenter.md",
-                "src/modules/Fermenter/AGENTS.md",
                 "src/modules/Fermenter/models/FermenterPatch.ts",
                 "src/modules/Fermenter/presentations/components/FilterSection.tsx",
                 "src/modules/Fermenter/repositories/fermenterPresets.ts",
+                "src/modules/Fermenter/AGENTS.md",
                 "src/modules/Project/useCases/demoProjects/nebulaDrift/createNebulaDriftDemo.ts"
             ]
         },

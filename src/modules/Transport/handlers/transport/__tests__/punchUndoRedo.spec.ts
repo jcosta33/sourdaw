@@ -128,18 +128,21 @@ describe('Transport punch action undo/redo', () => {
             await executeAppAction(action);
 
             expect(get_punch_region()).toEqual(after);
+            expect(notifications).toEqual([]);
             expect(undoStore.value?.past).toHaveLength(1);
             expect(undoStore.value?.future).toHaveLength(0);
 
             await undo();
 
             expect(get_punch_region()).toEqual(before);
+            expect(notifications).toEqual([]);
             expect(undoStore.value?.past).toHaveLength(0);
             expect(undoStore.value?.future).toHaveLength(1);
 
             await redo();
 
             expect(get_punch_region()).toEqual(after);
+            expect(notifications).toEqual([]);
             expect(undoStore.value?.past).toHaveLength(1);
             expect(undoStore.value?.future).toHaveLength(0);
         }
@@ -160,6 +163,10 @@ describe('Transport punch action undo/redo', () => {
             'Cannot undo "Set punch in at beat 20": project state has changed'
         );
 
+        expect(notifications).toEqual([
+            { message: 'Cannot undo "Set punch in at beat 20": project state has changed', level: 'warning' },
+        ]);
+
         expect(get_punch_region()).toEqual({ punchInBeat: 20, punchOutBeat: 40 });
         expect(undoStore.value?.past).toHaveLength(1);
         expect(undoStore.value?.future).toHaveLength(0);
@@ -167,6 +174,9 @@ describe('Transport punch action undo/redo', () => {
         setPunchIn(before.punchInBeat);
         setPunchOut(before.punchOutBeat);
         await undo();
+        expect(notifications).toEqual([
+            { message: 'Cannot undo "Set punch in at beat 20": project state has changed', level: 'warning' },
+        ]);
 
         expect(get_punch_region()).toEqual(before);
         expect(undoStore.value?.past).toHaveLength(0);
@@ -189,12 +199,19 @@ describe('Transport punch action undo/redo', () => {
             'Cannot redo "Set punch out at beat 2": project state has changed'
         );
 
+        expect(notifications).toEqual([
+            { message: 'Cannot redo "Set punch out at beat 2": project state has changed', level: 'warning' },
+        ]);
+
         expect(get_punch_region()).toEqual({ punchInBeat: 6, punchOutBeat: 12 });
         expect(undoStore.value?.past).toHaveLength(0);
         expect(undoStore.value?.future).toHaveLength(1);
 
         setPunchOut(after.punchOutBeat);
         await redo();
+        expect(notifications).toEqual([
+            { message: 'Cannot redo "Set punch out at beat 2": project state has changed', level: 'warning' },
+        ]);
 
         expect(get_punch_region()).toEqual(after);
         expect(undoStore.value?.past).toHaveLength(1);
@@ -307,12 +324,18 @@ describe('Transport punch action undo/redo', () => {
         const busyUndoNotification = notifications.length;
         await undo();
         expectWarningNotification(busyUndoNotification, 'Cannot undo "Enable Punch In/Out": project state has changed');
+        expect(notifications).toEqual([
+            { message: 'Cannot undo "Enable Punch In/Out": project state has changed', level: 'warning' },
+        ]);
         expect(transportStore.value?.punchInEnabled).toBe(true);
         expect(undoStore.value?.past).toHaveLength(1);
         expect(undoStore.value?.future).toHaveLength(0);
 
         transportStore.set({ ...transportStore.value!, isPlaying: false });
         await undo();
+        expect(notifications).toEqual([
+            { message: 'Cannot undo "Enable Punch In/Out": project state has changed', level: 'warning' },
+        ]);
         expect(transportStore.value?.punchInEnabled).toBe(false);
         expect(undoStore.value?.future).toHaveLength(1);
 
@@ -320,12 +343,20 @@ describe('Transport punch action undo/redo', () => {
         const busyRedoNotification = notifications.length;
         await redo();
         expectWarningNotification(busyRedoNotification, 'Cannot redo "Enable Punch In/Out": project state has changed');
+        expect(notifications).toEqual([
+            { message: 'Cannot undo "Enable Punch In/Out": project state has changed', level: 'warning' },
+            { message: 'Cannot redo "Enable Punch In/Out": project state has changed', level: 'warning' },
+        ]);
         expect(transportStore.value?.punchInEnabled).toBe(false);
         expect(undoStore.value?.past).toHaveLength(0);
         expect(undoStore.value?.future).toHaveLength(1);
 
         transportStore.set({ ...transportStore.value!, isRecording: false });
         await redo();
+        expect(notifications).toEqual([
+            { message: 'Cannot undo "Enable Punch In/Out": project state has changed', level: 'warning' },
+            { message: 'Cannot redo "Enable Punch In/Out": project state has changed', level: 'warning' },
+        ]);
         expect(transportStore.value?.punchInEnabled).toBe(true);
         expect(undoStore.value?.past).toHaveLength(1);
         expect(undoStore.value?.future).toHaveLength(0);
