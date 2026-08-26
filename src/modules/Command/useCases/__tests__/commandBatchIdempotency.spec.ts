@@ -380,6 +380,62 @@ describe('command batch idempotency', () => {
             base: { normalizedRevision: string };
             commandOutcomes: Array<{ commandId: string; operation: string; outcome: string }>;
         };
+        const committedReceipts = [
+            JSON.stringify(
+                createVerifiedBatchReceipt({
+                    envelope: parsed.envelope,
+                    observedBaseRevision: parsed.envelope.baseRevision,
+                    resultingRevision: revision(1),
+                    result: {
+                        actions: [
+                            {
+                                action: {
+                                    type: 'setTrackGain',
+                                    payload: { trackId: 'track-vocal', gain: 0.8, expectedGain: 1 },
+                                },
+                                receipt: createVersionedCommandReceipt({ envelope: command }),
+                            },
+                        ],
+                        status: 'committed-with-warning',
+                        warning: 'history observer unavailable',
+                    },
+                })
+            ),
+            JSON.stringify(
+                createVerifiedBatchReceipt({
+                    envelope: parsed.envelope,
+                    observedBaseRevision: parsed.envelope.baseRevision,
+                    resultingRevision: revision(1),
+                    result: {
+                        actions: [
+                            {
+                                action: {
+                                    type: 'setTrackGain',
+                                    payload: { trackId: 'track-vocal', gain: 0.8, expectedGain: 1 },
+                                },
+                                receipt: createVersionedCommandReceipt({ envelope: command }),
+                            },
+                        ],
+                        status: 'committed-with-warning',
+                        warningDetails: [
+                            {
+                                kind: 'external-effect',
+                                commandId: command.commandId,
+                                message: 'runtime graph update failed',
+                                pendingEffect: {
+                                    kind: 'runtime-graph',
+                                    commandId: command.commandId,
+                                    operation: command.operation,
+                                    reason: 'runtime graph update failed',
+                                    remediation: 'retry',
+                                    state: 'pending',
+                                },
+                            },
+                        ],
+                    },
+                })
+            ),
+        ];
         const receiptWithOutcome = (outcome: string, commandOutcome: string) =>
             JSON.stringify({
                 ...receiptRecord,
@@ -405,6 +461,10 @@ describe('command batch idempotency', () => {
         });
 
         await expect(getVersionedCommandBatchCommitDisposition(proof)).resolves.toBe('committed');
+        for (const serializedReceipt of committedReceipts) {
+            lookup.mockResolvedValueOnce({ status: 'complete', serializedReceipt });
+            await expect(getVersionedCommandBatchCommitDisposition(proof)).resolves.toBe('committed');
+        }
         await expect(
             getVersionedCommandBatchCommitDisposition({ ...proof, contentHash: `sha256:${'f'.repeat(64)}` })
         ).resolves.toBe('unknown');
