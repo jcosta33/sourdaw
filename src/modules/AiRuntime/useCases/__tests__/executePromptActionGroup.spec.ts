@@ -371,6 +371,7 @@ describe('executePromptActionGroup', () => {
             actionHashes: [getExactAgentActionHash({ operation: command.operation, arguments: command.arguments })],
             sourceRevision: fixture.envelope.baseRevision,
             targetFingerprints: {},
+            advertisedTargetFingerprints: {},
             consequences: {
                 audioUpload: fixture.envelope.grants.audioUpload,
                 fileAccess: fixture.envelope.grants.file,
