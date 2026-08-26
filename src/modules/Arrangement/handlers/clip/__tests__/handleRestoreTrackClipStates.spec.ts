@@ -78,6 +78,24 @@ function trackFields() {
 }
 
 /**
+ * The two-lane shape the hidden-lane cases use, following this file's own `alt-1`/
+ * `alt-9` idiom: `alt-1` is the active lane — `trackFields()` names it in
+ * `activeAlternativeId` — and stays empty on both sides, so the only divergence
+ * anywhere is inside non-active `alt-9`, the lane under test. A clip edited while a
+ * lane is active and then switched away is the one reachable state that leaves
+ * `track.clips` matching the snapshot, which is what makes `alt-9` the lane these
+ * cases must diverge rather than the active one. Fresh objects per call, for the
+ * reason `trackFields` gives: a live lane and a snapshot lane are never the same
+ * reference, so the comparison has something to do.
+ */
+function lanesWith(laneClips: Clip[]) {
+    return [
+        { id: 'alt-1', name: 'Alternative 1', clips: [] as Clip[] },
+        { id: 'alt-9', name: 'Alternative 9', clips: laneClips },
+    ];
+}
+
+/**
  * The clips both sides of the guard are built from.
  *
  * One helper for the live track and the snapshot deliberately. `ClipDummy.create`
@@ -551,17 +569,17 @@ describe('handleRestoreTrackClipStates', () => {
 
         it('refuses when a clip inside a hidden take lane was edited since capture', () => {
             // The hidden-lane counterpart of the in-place-edit test above, and the case
-            // that makes an id sequence insufficient here. A non-active lane renders
-            // nowhere, so an edit inside it has no visible surface and no other
-            // backstop: the restore replaces the whole lane, clips included, and an
-            // id-sequence-only guard reports `written` while dropping the edit — a loss
-            // that surfaces only when the musician switches back to the take, by which
-            // point the undo history has moved on.
+            // that makes an id sequence insufficient here. The take was edited while
+            // active and switched away, so at restore time `track.clips` matches the
+            // snapshot and the edit lives only inside non-active `alt-9`. Variation-lane
+            // rendering draws that lane too, but read-only, so this comparison is the
+            // only thing standing between the restore and the edit: an id-sequence-only
+            // guard reports `written` while dropping the edit — a loss that surfaces
+            // only when the musician switches back to the take, by which point the undo
+            // history has moved on.
             const [captured] = clipsFor('t1', ['c1']);
             const track = liveTrack('t1', ['c1'], {
-                alternatives: [
-                    { id: 'alt-1', name: 'Alternative 1', clips: [{ ...captured!, gain: 0.25, endBeat: 9 }] },
-                ],
+                alternatives: lanesWith([{ ...captured!, gain: 0.25, endBeat: 9 }]),
             });
             mocks.getTrackStoreState.mockReturnValue({ tracks: [track] });
 
@@ -570,10 +588,7 @@ describe('handleRestoreTrackClipStates', () => {
                 payload: {
                     expected: [
                         snapshotFor('t1', ['c1'], {
-                            trackFields: {
-                                ...trackFields(),
-                                alternatives: [{ id: 'alt-1', name: 'Alternative 1', clips: [captured!] }],
-                            },
+                            trackFields: { ...trackFields(), alternatives: lanesWith([captured!]) },
                         }),
                     ],
                     replacement: [snapshotFor('t1', [])],
@@ -584,7 +599,7 @@ describe('handleRestoreTrackClipStates', () => {
             expect(mocks.updateTrack).not.toHaveBeenCalled();
         });
 
-        it('still restores when the only divergence in a take lane is an inline editor left open', () => {
+        it('still restores when the only divergence in a hidden take lane is an inline editor left open', () => {
             // The consistency guarantee: the lane's clips ride the same `clipsMatch` as
             // the live sequence, so the comparator's exclusions reach them too. An
             // editor open on a hidden lane's clip is not project content, and refusing
@@ -592,9 +607,7 @@ describe('handleRestoreTrackClipStates', () => {
             // stack.
             const [captured] = clipsFor('t1', ['c1']);
             const track = liveTrack('t1', ['c1'], {
-                alternatives: [
-                    { id: 'alt-1', name: 'Alternative 1', clips: [{ ...captured!, isInlineEditing: true }] },
-                ],
+                alternatives: lanesWith([{ ...captured!, isInlineEditing: true }]),
             });
             mocks.getTrackStoreState.mockReturnValue({ tracks: [track] });
 
@@ -603,13 +616,14 @@ describe('handleRestoreTrackClipStates', () => {
                 payload: {
                     expected: [
                         snapshotFor('t1', ['c1'], {
-                            trackFields: {
-                                ...trackFields(),
-                                alternatives: [{ id: 'alt-1', name: 'Alternative 1', clips: [captured!] }],
-                            },
+                            trackFields: { ...trackFields(), alternatives: lanesWith([captured!]) },
                         }),
                     ],
-                    replacement: [snapshotFor('t1', ['c1'])],
+                    replacement: [
+                        snapshotFor('t1', ['c1'], {
+                            trackFields: { ...trackFields(), alternatives: lanesWith([captured!]) },
+                        }),
+                    ],
                 },
             });
 
@@ -617,7 +631,7 @@ describe('handleRestoreTrackClipStates', () => {
             expect(mocks.updateTrack).toHaveBeenCalledTimes(1);
         });
 
-        it('still restores when a take-lane clip acquired a Knead state the snapshot never carried', () => {
+        it('still restores when a clip in a hidden take lane acquired a Knead state the snapshot never carried', () => {
             // The seeded-analysis case one level down. The snapshot has no `kneadState`
             // for the lane's clip, so the guard declines to compare it — and the write
             // must decline with it, because the lane's clips go through the same
@@ -631,22 +645,21 @@ describe('handleRestoreTrackClipStates', () => {
                 formantPreserve: true,
             };
             const track = liveTrack('t1', ['c1'], {
-                alternatives: [{ id: 'alt-1', name: 'Alternative 1', clips: [{ ...captured!, kneadState }] }],
+                alternatives: lanesWith([{ ...captured!, kneadState }]),
             });
             mocks.getTrackStoreState.mockReturnValue({ tracks: [track] });
-            const laneClip = { id: 'alt-1', name: 'Alternative 1', clips: [captured!] };
 
             const result = handleRestoreTrackClipStates.execute({
                 type: 'restoreTrackClipStates',
                 payload: {
                     expected: [
                         snapshotFor('t1', ['c1'], {
-                            trackFields: { ...trackFields(), alternatives: [laneClip] },
+                            trackFields: { ...trackFields(), alternatives: lanesWith([captured!]) },
                         }),
                     ],
                     replacement: [
                         snapshotFor('t1', ['c1'], {
-                            trackFields: { ...trackFields(), alternatives: [laneClip] },
+                            trackFields: { ...trackFields(), alternatives: lanesWith([captured!]) },
                         }),
                     ],
                 },
@@ -654,7 +667,8 @@ describe('handleRestoreTrackClipStates', () => {
 
             expect(result).toEqual({ status: 'written' });
             const [, updater] = mocks.updateTrack.mock.calls[0]!;
-            expect(updater(track).alternatives[0]?.clips[0]?.kneadState).toEqual(kneadState);
+            // `alt-9`, the non-active lane under test, is the second lane written.
+            expect(updater(track).alternatives[1]?.clips[0]?.kneadState).toEqual(kneadState);
         });
 
         it('refuses when a device was pointed at a different plugin instance since capture', () => {
