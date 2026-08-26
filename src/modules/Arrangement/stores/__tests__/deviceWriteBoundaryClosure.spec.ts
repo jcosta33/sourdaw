@@ -1,6 +1,38 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
+import {
+    type ArrowFunction,
+    type CallExpression,
+    type Expression,
+    type FunctionDeclaration,
+    type FunctionExpression,
+    type Node,
+    ScriptKind,
+    ScriptTarget,
+    createSourceFile,
+    forEachChild,
+    isArrayLiteralExpression,
+    isArrowFunction,
+    isAsExpression,
+    isBlock,
+    isCallExpression,
+    isComputedPropertyName,
+    isConditionalExpression,
+    isFunctionDeclaration,
+    isFunctionExpression,
+    isIdentifier,
+    isNonNullExpression,
+    isObjectLiteralExpression,
+    isParenthesizedExpression,
+    isPropertyAccessExpression,
+    isPropertyAssignment,
+    isReturnStatement,
+    isSatisfiesExpression,
+    isShorthandPropertyAssignment,
+    isStringLiteral,
+    isVariableDeclaration,
+} from 'typescript';
 import { describe, expect, it } from 'vitest';
 
 type CountByPath = Readonly<Record<string, number>>;
@@ -333,6 +365,9 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // Grand Boule's state; the three Mix knobs now persist through
         // `grandBouleParamBridge/helpers.ts`, and calibration remains the
         // exception rather than the rule.
+        // The runtime projection owns the one direct engine parameter write;
+        // settled edits route through the undoable command instead.
+        'src/modules/GrandBoule/useCases/applyGrandBouleMorphState.ts': 1,
         // Count provenance: new file entry, measured 1 — a single doc-comment
         // mention of `CrumbsNode.setParam`, naming the worklet the commit now
         // reaches through `setDeviceParameter`. No executable `setParam` here:
@@ -360,7 +395,9 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // GrandBoule on a track hosting two before the scope was added.
         'src/modules/GrandBoule/useCases/resolveGrandBouleEngine.ts': 3,
         'src/modules/GrandBoule/useCases/setGrandBouleAttackBite.ts': 1,
-        'src/modules/GrandBoule/useCases/setGrandBouleMorphPosition.ts': 7,
+        // This now delegates to the command/runtime split; its remaining match
+        // is the explanatory `setParam` comment.
+        'src/modules/GrandBoule/useCases/setGrandBouleMorphPosition.ts': 1,
         'src/modules/GrandBoule/useCases/setGrandBoulePerNoteParam/resetGrandBoulePerNoteParams.ts': 1,
         'src/modules/GrandBoule/useCases/setGrandBoulePerNoteParam/setGrandBoulePerNoteParam.ts': 1,
         'src/modules/GrandBoule/useCases/setGrandBouleStretchAmount.ts': 1,
@@ -477,17 +514,21 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // versioned Command executor, not a hydration path.
         'src/modules/AiRuntime/useCases/confirmPendingChatActions.ts': 4,
         'src/modules/AiRuntime/useCases/describeAgentRiskApproval.ts': 3,
-        // Count provenance: command-palette execution now owns immutable batch
-        // compilation and approval policy in this use case rather than its React
-        // caller. The three hits name compiler metadata only.
-        'src/modules/AiRuntime/useCases/executePromptActionGroup.ts': 3,
+        // Pending-effect continuation records keep only command-envelope types;
+        // their two matches are type imports and type projections, never device IO.
+        'src/modules/AiRuntime/useCases/createAgentRunPendingEffectContinuation.ts': 2,
         'src/modules/AiRuntime/useCases/issueAgentCommandApprovalBinding.ts': 3,
         'src/modules/AiRuntime/useCases/validateAgentRiskApproval.ts': 7,
-        'src/modules/AiRuntime/useCases/index.ts': 2,
+        'src/modules/AiRuntime/useCases/prepareAgentRunPendingEffectContinuation.ts': 2,
+        'src/modules/AiRuntime/useCases/recordAgentRunPendingEffectContinuation.ts': 2,
+        'src/modules/AiRuntime/useCases/recordAgentRunReceiptSaga.ts': 2,
         // Count provenance: was 3, measured 5 — `compileAgentActionExecution`
         // import plus two calls, and `providerProtocol.compileRequest` once.
         // Command-envelope / provider-request compilers; no device hydration.
         'src/modules/AiRuntime/useCases/sendChatMessage.ts': 5,
+        // Prompt admission owns immutable action-execution compilation; the import,
+        // module path, and call are metadata construction, not hydration.
+        'src/modules/AiRuntime/useCases/submitAdmittedPromptRequest.ts': 3,
         // Count provenance: the versioned-command argument compiler and its two
         // callers only project immutable envelope metadata. These are bare
         // `compileCommandArgumentMetadata` references, not device compilation,
@@ -521,11 +562,9 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // Counts are bare `compile[A-Z]…` identifier references (import + call
         // sites), censused so any future real sink added to these files still
         // trips the closure.
-        // Count provenance: 4 = the compileAutomationSegments import line
-        // (matched twice: named import + module path), its single call site,
-        // and one doc-comment mention added by the AU-3 affine-scale fix
-        // (#765). The executable call surface is unchanged and singular.
-        'src/modules/AudioEngine/repositories/offlineScheduler/automationScheduling.ts': 4,
+        // The shared offline scheduler names its pure compiler six times; it
+        // schedules runtime events but does not write project device state.
+        'src/modules/AudioEngine/repositories/offlineScheduler/automationScheduling.ts': 6,
         'src/modules/AudioEngine/repositories/offlineScheduler/compileAutomationEvents.ts': 1,
         'src/modules/AudioEngine/repositories/offlineScheduler/compileAutomationSegments.ts': 4,
         'src/modules/AudioEngine/repositories/offlineScheduler/scheduleAutomationOnParam.ts': 3,
@@ -563,6 +602,9 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/Gluten/useCases/index.ts': 1,
         'src/modules/Gluten/presentations/views/GlutenPanel.tsx': 3,
         'src/modules/GrandBoule/presentations/components/PianoModel3D.tsx': 4,
+        // Event contract and subscription project serialized state to the ready
+        // Grand Boule engine; neither writes project truth.
+        'src/modules/GrandBoule/useCases/grandBouleSubscriber.ts': 2,
         'src/modules/Grinder/useCases/grinderParamBridge/loadGrinderPatchWithAudio.ts': 2,
         'src/modules/Grinder/useCases/grinderParamBridge/syncGrinderPatchToAudio.ts': 1,
         'src/modules/Grinder/useCases/index.ts': 1,
@@ -691,6 +733,9 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
 
 const DEVICE_DATA_COUNTS = {
     executable: {
+        // Guarded clip-state restoration rebuilds the stored device chain inside
+        // the registered action transaction.
+        'src/modules/Arrangement/handlers/clip/handleRestoreTrackClipStates.ts': 3,
         // Count provenance: measured 1 — `devices:` on the after-track snapshot
         // the Arrangement handler commits through executeAppAction. Project
         // writer is `writeDeviceToProject`; this is the handler's topology
@@ -724,9 +769,13 @@ const DEVICE_DATA_COUNTS = {
         'src/modules/Arrangement/repositories/trackTemplate/loadTrackTemplates.ts': 2,
         'src/modules/Arrangement/services/computeTrackHash.ts': 1,
         'src/modules/Arrangement/services/createTrackFreezeSourceSignature.ts': 2,
-        'src/modules/Arrangement/stores/persistDeviceParam.ts': 1,
+        // The explicit parameter map and shorthand returned device chain are both
+        // part of the owning store write.
+        'src/modules/Arrangement/stores/persistDeviceParam.ts': 2,
         'src/modules/Arrangement/stores/resolveEligibleDeviceWriteTarget.ts': 1,
         'src/modules/Arrangement/stores/trackStore.ts': 2,
+        // Snapshot capture reads serializable device topology for a later command.
+        'src/modules/Arrangement/useCases/captureTrackClipStates.ts': 1,
         'src/modules/Arrangement/useCases/device/addDevice.ts': 2,
         'src/modules/Arrangement/useCases/device/addExternalDevice.ts': 2,
         'src/modules/Arrangement/useCases/device/addMidiFx.ts': 1,
@@ -736,37 +785,13 @@ const DEVICE_DATA_COUNTS = {
         // prepareRemoveDevice is the Arrangement-owned compiler for the
         // registered remove handler.
         'src/modules/Arrangement/useCases/device/prepareRemoveDevice.ts': 2,
-        // Count provenance: 0 -> 1, measured. New sink from `c7d271e15`
-        // ("make device lifecycle executable"), which added `restoreDevice` as
-        // the compensating action for `removeDevice`'s undo and did not update
-        // this census. The single hit is `parameterValues: { ...snapshot }` — it
-        // rebuilds a Device from a DeviceSnapshot and writes through
-        // `updateTrack` inside a handler, i.e. inside an executeAppAction
-        // transaction, the same shape as `addDevice` and `removeDevice` above.
-        // Not a param-write path, so correctly absent from GUARDED_EXECUTABLE_PATHS
-        // as its siblings are; not in RUNTIME_ACTION_TYPES, so not AI-reachable.
-        //
-        // The file's actual store write is `return { ...current, devices };` —
-        // shorthand, no colon — which this census's pattern cannot see, so the
-        // measured 1 undercounts the writes in this file by one. Recorded as the
-        // measurement it is rather than rounded up to what the file does.
-        //
-        // Which means this census did not really catch `restoreDevice`: it caught
-        // the unrelated `parameterValues:` on line 37. A file that writes devices
-        // only in shorthand scores 0 and is never asked for. One already exists —
-        // `useCases/device/reorderDevices.ts` writes `return { ...time, devices };`
-        // and appears nowhere in this census, unclassified and fully live. Widening
-        // the pattern would surface that file and about nine more that are
-        // undercounted the same way, each needing a human verdict, so it is not
-        // being done in a commit whose job is getting main green. Written down here
-        // rather than left to be rediscovered.
-        'src/modules/Arrangement/useCases/device/restoreDevice.ts': 1,
-        'src/modules/Arrangement/useCases/device/setDeviceParameter/persistDevicePatch.ts': 1,
-        // Count provenance: measured 1 after presence-aware deletion introduced
-        // a local `parameterValues` copy and returned it with property shorthand.
-        // The remaining `devices:` hit is the same guarded CRDT-backed write;
-        // shorthand is outside this census pattern, as documented above.
-        'src/modules/Arrangement/useCases/device/setDeviceParameter/setDeviceParameter.ts': 1,
+        // Device reconstruction and the shorthand chain replacement are the
+        // registered restore action's complete project write.
+        'src/modules/Arrangement/useCases/device/restoreDevice.ts': 2,
+        // Each parameter mutation returns its updated shorthand map alongside the
+        // explicit device-chain replacement.
+        'src/modules/Arrangement/useCases/device/setDeviceParameter/persistDevicePatch.ts': 2,
+        'src/modules/Arrangement/useCases/device/setDeviceParameter/setDeviceParameter.ts': 2,
         // Count provenance: PH-3 (#730) — setExternalPluginState maps track
         // devices to store the captured native-plugin state chunk; the single
         // `devices:` is the reviewed CRDT-backed write through executeAppAction.
@@ -807,6 +832,8 @@ const DEVICE_DATA_COUNTS = {
         'src/modules/Project/stores/arrangementStore.ts': 3,
         'src/modules/Project/useCases/demoProjects/demoUtils/applyPreset.ts': 4,
         'src/modules/Project/useCases/demoProjects/nebulaDrift/createNebulaDriftDemo.ts': 8,
+        // Immutable agent-facing project projection; it performs no write.
+        'src/modules/Project/useCases/getAgentProjectModelContract.ts': 1,
         'src/modules/Project/useCases/projectPersistence/fileIO/hydrateArrangementTracks.ts': 1,
         'src/modules/Project/useCases/projectPersistence/helpers/migrateLegacyVcaGroups.ts': 1,
         'src/modules/Project/useCases/projectTemplates/templateHelpers/addDeviceChain.ts': 1,
@@ -861,6 +888,7 @@ const DEVICE_DATA_COUNTS = {
         // shouldCreateLiveTrackStrip can read device types for folder-strip
         // eligibility (#584) — a static declaration, not an executable access.
         'src/modules/Arrangement/stores/trackEligibility.ts': 1,
+        'src/modules/Project/models/AgentProjectModelContract.ts': 1,
         'src/modules/Project/models/ProjectData.ts': 4,
         'src/modules/Project/models/VcaTrackMigration.ts': 1,
         'src/modules/Project/useCases/projectTemplates/templateFiles/ambient.ts': 3,
@@ -958,6 +986,208 @@ function countByPath(files: ReadonlyArray<ProductionSource>, definition: SinkDef
     return result;
 }
 
+const DEVICE_DATA_PROPERTIES = new Set(['devices', 'parameterValues']);
+
+type LocalUpdater = ArrowFunction | FunctionDeclaration | FunctionExpression;
+type LexicalScope = {
+    readonly parent: LexicalScope | null;
+    readonly bindings: Map<string, LocalUpdater | null>;
+};
+
+function addLocalBinding(scope: LexicalScope, name: string, updater: LocalUpdater | null): void {
+    scope.bindings.set(name, scope.bindings.has(name) ? null : updater);
+}
+
+function indexLocalUpdaters(sourceFile: Node): ReadonlyMap<Node, LexicalScope> {
+    const scopeByNode = new Map<Node, LexicalScope>();
+    const rootScope: LexicalScope = { parent: null, bindings: new Map() };
+    const visit = (node: Node, scope: LexicalScope): void => {
+        scopeByNode.set(node, scope);
+        if (isFunctionDeclaration(node) && node.name) {
+            addLocalBinding(scope, node.name.text, node);
+        }
+        if (isVariableDeclaration(node) && isIdentifier(node.name)) {
+            const initializer = node.initializer;
+            const updater =
+                initializer && (isArrowFunction(initializer) || isFunctionExpression(initializer)) ? initializer : null;
+            addLocalBinding(scope, node.name.text, updater);
+        }
+
+        let childScope = scope;
+        if (isArrowFunction(node) || isFunctionExpression(node) || isFunctionDeclaration(node)) {
+            childScope = { parent: scope, bindings: new Map() };
+            for (const parameter of node.parameters) {
+                if (isIdentifier(parameter.name)) {
+                    addLocalBinding(childScope, parameter.name.text, null);
+                }
+            }
+        } else if (isBlock(node)) {
+            childScope = { parent: scope, bindings: new Map() };
+        }
+        forEachChild(node, (child) => visit(child, childScope));
+    };
+    visit(sourceFile, rootScope);
+    return scopeByNode;
+}
+
+function resolveLocalUpdater(name: string, scope: LexicalScope | undefined): LocalUpdater | null {
+    for (let current = scope; current; current = current.parent) {
+        if (current.bindings.has(name)) {
+            return current.bindings.get(name) ?? null;
+        }
+    }
+    return null;
+}
+
+function isUpdateTrackCall(node: Node): node is CallExpression {
+    return isCallExpression(node) && isIdentifier(node.expression) && node.expression.text === 'updateTrack';
+}
+
+function isTrackStoreSetCall(node: Node): node is CallExpression {
+    return (
+        isCallExpression(node) &&
+        isPropertyAccessExpression(node.expression) &&
+        isIdentifier(node.expression.expression) &&
+        node.expression.expression.text === 'trackStore' &&
+        node.expression.name.text === 'set'
+    );
+}
+
+function unwrapStateExpression(expression: Expression): Expression {
+    if (
+        isParenthesizedExpression(expression) ||
+        isAsExpression(expression) ||
+        isSatisfiesExpression(expression) ||
+        isNonNullExpression(expression)
+    ) {
+        return unwrapStateExpression(expression.expression);
+    }
+    return expression;
+}
+
+function returnedStateExpressions(updater: LocalUpdater): Expression[] {
+    if (!isBlock(updater.body)) {
+        return [updater.body];
+    }
+
+    const expressions: Expression[] = [];
+    const visit = (node: Node): void => {
+        if (
+            node !== updater.body &&
+            (isArrowFunction(node) || isFunctionExpression(node) || isFunctionDeclaration(node))
+        ) {
+            return;
+        }
+        if (isReturnStatement(node)) {
+            if (node.expression) {
+                expressions.push(node.expression);
+            }
+            return;
+        }
+        forEachChild(node, visit);
+    };
+    visit(updater.body);
+    return expressions;
+}
+
+function countDeviceDataAstWrites(file: ProductionSource): number {
+    const sourceFile = createSourceFile(
+        file.path,
+        file.source,
+        ScriptTarget.Latest,
+        true,
+        file.path.endsWith('.tsx') ? ScriptKind.TSX : ScriptKind.TS
+    );
+    const scopeByNode = indexLocalUpdaters(sourceFile);
+    const writes = new Set<Node>();
+
+    const collectStateExpression = (candidate: Expression): void => {
+        const expression = unwrapStateExpression(candidate);
+        if (isObjectLiteralExpression(expression)) {
+            for (const property of expression.properties) {
+                if (isShorthandPropertyAssignment(property) && DEVICE_DATA_PROPERTIES.has(property.name.text)) {
+                    writes.add(property);
+                    continue;
+                }
+                if (!isPropertyAssignment(property)) {
+                    continue;
+                }
+                if (
+                    isComputedPropertyName(property.name) &&
+                    isStringLiteral(property.name.expression) &&
+                    DEVICE_DATA_PROPERTIES.has(property.name.expression.text)
+                ) {
+                    writes.add(property);
+                }
+                collectStateExpression(property.initializer);
+            }
+            return;
+        }
+        if (isArrayLiteralExpression(expression)) {
+            for (const element of expression.elements) {
+                collectStateExpression(element);
+            }
+            return;
+        }
+        if (isConditionalExpression(expression)) {
+            collectStateExpression(expression.whenTrue);
+            collectStateExpression(expression.whenFalse);
+            return;
+        }
+        if (isCallExpression(expression)) {
+            for (const argument of expression.arguments) {
+                if (isArrowFunction(argument) || isFunctionExpression(argument)) {
+                    for (const returned of returnedStateExpressions(argument)) {
+                        collectStateExpression(returned);
+                    }
+                }
+            }
+        }
+    };
+
+    const collectUpdater = (updater: LocalUpdater): void => {
+        for (const expression of returnedStateExpressions(updater)) {
+            collectStateExpression(expression);
+        }
+    };
+
+    const visit = (node: Node): void => {
+        if (isUpdateTrackCall(node)) {
+            const updaterArgument = node.arguments[1];
+            if (updaterArgument && (isArrowFunction(updaterArgument) || isFunctionExpression(updaterArgument))) {
+                collectUpdater(updaterArgument);
+            } else if (updaterArgument && isIdentifier(updaterArgument)) {
+                const updater = resolveLocalUpdater(updaterArgument.text, scopeByNode.get(node));
+                if (updater) {
+                    collectUpdater(updater);
+                }
+            }
+        } else if (isTrackStoreSetCall(node)) {
+            const stateArgument = node.arguments[0];
+            if (stateArgument) {
+                collectStateExpression(stateArgument);
+            }
+        }
+        forEachChild(node, visit);
+    };
+    visit(sourceFile);
+    return writes.size;
+}
+
+function countDeviceDataByPath(files: ReadonlyArray<ProductionSource>): CountByPath {
+    const result = countByPath(files, {
+        pattern: /\b(?:parameterValues|devices)\s*:/g,
+        includes: includeAllPaths,
+    });
+    for (const file of files) {
+        const astWrites = countDeviceDataAstWrites(file);
+        if (astWrites > 0) {
+            result[file.path] = (result[file.path] ?? 0) + astWrites;
+        }
+    }
+    return result;
+}
+
 function sortedEntries(counts: CountByPath): Array<[string, number]> {
     return Object.entries(counts).sort(([left], [right]) => left.localeCompare(right));
 }
@@ -996,14 +1226,7 @@ function assertProductionClosure(files: ReadonlyArray<ProductionSource>): void {
     const projectDataFiles = files.filter(
         (file) => file.path.startsWith('src/modules/Arrangement/') || file.path.startsWith('src/modules/Project/')
     );
-    assertCounts(
-        'device-data',
-        countByPath(projectDataFiles, {
-            pattern: /\b(?:parameterValues|devices)\s*:/g,
-            includes: includeAllPaths,
-        }),
-        classifiedDeviceDataCounts()
-    );
+    assertCounts('device-data', countDeviceDataByPath(projectDataFiles), classifiedDeviceDataCounts());
 
     const sourceByPath = new Map(files.map((file) => [file.path, file.source]));
     for (const path of GUARDED_EXECUTABLE_PATHS) {
@@ -1018,6 +1241,48 @@ describe('device write boundary closure', () => {
     it('classifies every production sink by family, path, and exact count', () => {
         const files = productionSources(process.cwd());
         expect(() => assertProductionClosure(files)).not.toThrow();
+    });
+
+    it('does not classify read-only destructuring or projection as a shorthand write', () => {
+        expect(
+            countDeviceDataAstWrites({
+                path: 'src/modules/Arrangement/readDeviceData.ts',
+                source: 'const { devices, parameterValues } = track; const snapshot = { devices, parameterValues };',
+            })
+        ).toBe(0);
+    });
+
+    it('does not classify a discarded projection inside an updater as a device-data write', () => {
+        expect(
+            countDeviceDataAstWrites({
+                path: 'src/modules/Arrangement/discardedDeviceProjection.ts',
+                source: 'const devices = []; const parameterValues = {}; updateTrack("track", (current) => { const snapshot = { devices, parameterValues }; void snapshot; return current; });',
+            })
+        ).toBe(0);
+    });
+
+    it('does not classify a discarded projection inside trackStore.set as a device-data write', () => {
+        expect(
+            countDeviceDataAstWrites({
+                path: 'src/modules/Arrangement/discardedSetProjection.ts',
+                source: 'trackStore.set({ ...state, tracks: state.tracks.map((track) => { const devices = track.devices; const parameterValues = devices[0]?.parameterValues; const snapshot = { devices, parameterValues }; void snapshot; return track; }) });',
+            })
+        ).toBe(0);
+    });
+
+    it('resolves only the nearest local updater declaration', () => {
+        expect(
+            countDeviceDataAstWrites({
+                path: 'src/modules/Arrangement/localUpdater.ts',
+                source: 'const devices = []; function replace(current) { return { ...current, devices }; } updateTrack("track", replace);',
+            })
+        ).toBe(1);
+        expect(
+            countDeviceDataAstWrites({
+                path: 'src/modules/Arrangement/shadowedUpdater.ts',
+                source: 'const devices = []; const replace = (current) => ({ ...current, devices }); { const replace = (current) => ({ ...current }); updateTrack("track", replace); }',
+            })
+        ).toBe(0);
     });
 
     it.each([
@@ -1059,12 +1324,27 @@ describe('device write boundary closure', () => {
         {
             name: 'a direct devices writer',
             path: 'src/modules/Arrangement/newDeviceWriter.ts',
-            source: 'const next = { devices: [] };',
+            source: 'const devices = []; updateTrack("track", (current) => ({ ...current, devices }));',
+        },
+        {
+            name: 'an extracted direct devices writer',
+            path: 'src/modules/Arrangement/newExtractedDeviceWriter.ts',
+            source: 'const devices = []; const replace = (current) => ({ ...current, devices }); updateTrack("track", replace);',
+        },
+        {
+            name: 'a direct trackStore.set shorthand writer',
+            path: 'src/modules/Arrangement/newSetDeviceWriter.ts',
+            source: 'const devices = []; trackStore.set({ ...state, devices });',
+        },
+        {
+            name: 'a computed devices writer',
+            path: 'src/modules/Arrangement/newComputedDeviceWriter.ts',
+            source: 'const devices = []; updateTrack("track", (current) => ({ ...current, ["devices"]: devices }));',
         },
         {
             name: 'a direct parameterValues writer',
             path: 'src/modules/Project/newParameterWriter.ts',
-            source: 'const next = { parameterValues: {} };',
+            source: 'const parameterValues = {}; updateTrack("track", (current) => ({ ...current, parameterValues }));',
         },
     ])('rejects $name through the production closure assertion', ({ path, source }) => {
         const files = productionSources(process.cwd());
