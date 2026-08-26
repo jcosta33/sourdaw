@@ -31,7 +31,9 @@ describe('handleBounceToNewTrack', () => {
         });
 
         expect(mocks.bounceToNewTrack).toHaveBeenCalledWith('t1', { deferUndoEntry: expect.any(Function) });
-        if (!result.afterCommit || !result.afterAmbiguousCommit) {
+        // `execute` types as `void | HandlerExecutionResult` — the void arm is
+        // the no-write path, which this case exists to rule out.
+        if (result === undefined || !result.afterCommit || !result.afterAmbiguousCommit) {
             throw new Error('expected the written result to carry the post-commit hooks');
         }
 

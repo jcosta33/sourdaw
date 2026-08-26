@@ -9,7 +9,7 @@ import {
     CASE_SECOND_BEAT,
     CONFORMANCE_SAMPLE_BEATS,
 } from '#/utils/__tests__/automationCurveCases';
-import { evaluateAutomationCurve } from '#/utils/automationCurve';
+import { evaluateAutomationCurve, type AutomationCurvePoint } from '#/utils/automationCurve';
 import { boundAutomationLaneValue } from '#/utils/automationLaneBound';
 
 import { type AutomationPoint } from '../../../models/Automation';
@@ -83,7 +83,9 @@ function laneFromCase(boundCase: AutomationLaneBoundCase): AutomationLane {
  * segment's fraction 0.
  */
 function boundedLiveValueAtBeat(boundCase: AutomationLaneBoundCase, beat: number): number {
-    const points = [
+    // Annotated with the kernel's own point type so the `curve` literals check
+    // against the shape union instead of widening to `string`.
+    const points: AutomationCurvePoint[] = [
         { beat: CASE_PREVIOUS_BEAT, value: boundCase.previousValue, curve: 'linear', tension: 0 },
         { beat: CASE_FIRST_BEAT, value: boundCase.segmentFirstValue, curve: 'smooth', tension: 0 },
         { beat: CASE_SECOND_BEAT, value: boundCase.segmentSecondValue, curve: 'linear', tension: 0 },

@@ -4,6 +4,7 @@ import { automationStore, type AutomationLane as AutomationStoreLane } from '#/m
 import { getAutomationValueAtBeat } from '#/modules/Automation/useCases';
 
 import { type AutomationLane } from '../../../models/AutomationViewTypes';
+import { type ScheduleTrackAutomationInput } from '../automationScheduling';
 
 import { scheduleTrackAutomationFixture } from './scheduleTrackAutomationFixture';
 
@@ -189,6 +190,9 @@ describe('offline lane overshoot bound parity — pan, send and device lanes (#2
             quantiseValue: ({ value }: { deviceType: string; paramId: string; value: number }) => value,
         };
         const deviceParam = makeParam();
+        // `satisfies` the real entry type so the binding literal (its `kind`
+        // union and target shape) is checked against what the scheduler takes,
+        // not widened to plain string/object by standing alone.
         const deviceEntries = [
             {
                 deviceId: 'device-1',
@@ -203,7 +207,7 @@ describe('offline lane overshoot bound parity — pan, send and device lanes (#2
                             : null,
                 },
             },
-        ];
+        ] satisfies ScheduleTrackAutomationInput['deviceEntries'];
 
         automationStore.set({ lanes: [storeLane('device-live', 'device-1:width-amount', 0, DECLARED_MAX)] });
         const live = getAutomationValueAtBeat('device-live', OVERSHOOT_BEAT);

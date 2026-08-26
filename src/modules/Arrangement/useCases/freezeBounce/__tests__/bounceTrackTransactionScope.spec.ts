@@ -104,7 +104,8 @@ const replaceBounce: BounceOptions = {
 // pin for `commitPitchEdit`.
 describe('bounceTrack storage transaction scope (issue #2544)', () => {
     let doc: Record<string, unknown>;
-    let trackMutations: number[];
+    // Serialized `doc.tracks` snapshots, one per storage mutation.
+    let trackMutations: string[];
 
     beforeEach(() => {
         vi.clearAllMocks();
