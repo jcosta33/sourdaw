@@ -139,7 +139,7 @@ async function observeScheduledOscillatorCount(page: Page): Promise<ScheduledOsc
     };
 }
 
-async function openNewProject(page: Page): Promise<() => void> {
+async function openNewProject(page: Page): Promise<() => Promise<void>> {
     const assertOffline = await blockExternalRequests(page);
     await setupWorkspace(page);
     await launch_new_project(page);

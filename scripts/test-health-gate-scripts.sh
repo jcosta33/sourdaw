@@ -437,6 +437,10 @@ expect(
         smokeSpec.includes('await page.waitForTimeout(OFFLINE_IDLE_WINDOW_MS);'),
     'offline assertions must wait through the bounded idle window before inspecting captured endpoints'
 );
+expect(
+    smokeSpec.includes('async function openNewProject(page: Page): Promise<() => Promise<void>>'),
+    'new-project setup must preserve the await-required offline assertion callback type'
+);
 const awaitedOfflineAssertions = smokeSpec.match(/await (?:reopened\.)?assertOffline\(\);/gu) ?? [];
 const offlineAssertions = smokeSpec.match(/(?:reopened\.)?assertOffline\(\);/gu) ?? [];
 expect(awaitedOfflineAssertions.length === 6, 'every offline assertion must be awaited after the last visible action or assertion');
