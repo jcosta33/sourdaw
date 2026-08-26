@@ -264,7 +264,7 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
     const agentRunState = useStore(agentRunStore, { schemaVersion: 1, runs: [] });
     const decisionRuns: AgentRunDecisionControl[] =
         agentRunState.schemaVersion === 1
-            ? agentRunControls.list().flatMap((run) => (run.decision === null ? [] : [run]))
+            ? agentRunControls.list().filter((run): run is AgentRunDecisionControl => run.decision !== null)
             : [];
     const pendingEffectContinuations = selectAgentRunPendingEffectRecoveries(agentRunState);
     const preparedStemManualRepairs = selectPreparedStemImportManualRepairs(agentRunState);
