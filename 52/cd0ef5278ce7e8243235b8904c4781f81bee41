@@ -1,0 +1,213 @@
+release/open-source-inventory.json
+  s_a40848e8f8cca9::t_4e1e4074b50711 935
+src/app/__tests__/bootstrap.spec.ts
+  s_a40848e8f8cca9::t_6431ca69d75e04 8,27-37,76-80,96,108-114,146-147,149-150,265-266,268,278,399-404,502-514,586-645,656-658
+src/app/bootstrap.ts
+  s_a40848e8f8cca9::t_c293a37d39ea54 66-73,85,131,220-225,292-313
+src/modules/AiRuntime/stores/__tests__/pendingActionConfirmationStore.spec.ts
+  s_a40848e8f8cca9::t_66e6970c985668 4,7,9-10,231-384
+src/modules/AiRuntime/stores/pendingActionConfirmationStore.ts
+  s_a40848e8f8cca9::t_4ed1f4f74cb9a6 1,148,150-153,156-157,159-190,193-276,306,309-311,315,322,360-366,373,565,567,571-607,613,615-619,622,625-639,642-650
+src/modules/AiRuntime/useCases/__tests__/aiWorkflowCommandPreflightFixture.spec.ts
+  s_a40848e8f8cca9::t_8e4d691b54cc3b 1-78
+src/modules/AiRuntime/useCases/__tests__/aiWorkflowCommandPreflightFixture.ts
+  s_a40848e8f8cca9::t_99d828fe34510a 15-19
+src/modules/AiRuntime/useCases/__tests__/bassCompressorPromptWorkflow.spec.ts
+  s_a40848e8f8cca9::t_b7b65d4371c092 730,733,785,788
+src/modules/AiRuntime/useCases/__tests__/bassProcessingCopyPromptWorkflow.spec.ts
+  s_a40848e8f8cca9::t_0b3e9e0ceff40e 3-6,407,758
+src/modules/AiRuntime/useCases/__tests__/cancelPendingChatActions.spec.ts
+  s_a40848e8f8cca9::t_065ed988cfac57 17
+src/modules/AiRuntime/useCases/__tests__/confirmPendingChatActions.spec.ts
+  s_a40848e8f8cca9::t_1d6214bab71311 478-560,807-815,826-831
+src/modules/AiRuntime/useCases/__tests__/executePromptActionGroup.spec.ts
+  s_a40848e8f8cca9::t_16b636861fa800 3-7,21,23-27,39-48,70-76,101,128,134,136-137,139,143-144,234-241,279,297-309,318,322-335,356,366,380,384-394,412,416-420,622,626-630,652,656-664
+src/modules/AiRuntime/useCases/__tests__/pendingChatActions.spec.ts
+  s_a40848e8f8cca9::t_41ad2be4c15aa8 3,14,17,129-132,141,243,362-368,384,386-394,403-411,422-461
+src/modules/AiRuntime/useCases/__tests__/promptStemImportRecovery.spec.ts
+  s_a40848e8f8cca9::t_f89eb1d972f12f 33-37,113-117,140,167-171,241,273-281,287,298-301,307-317
+src/modules/AiRuntime/useCases/__tests__/sendChatMessage.spec.ts
+  s_a40848e8f8cca9::t_eef282760e51ac 270-271
+src/modules/AiRuntime/useCases/__tests__/stemImportStartingMixWorkflow.spec.ts
+  s_a40848e8f8cca9::t_aaa02f19795f17 3-6,66-70,84-87,95,160-169,193-200,612,619,661-663,744,766,843,855,887,903,1022
+src/modules/AiRuntime/useCases/agentReference/__tests__/prepareStemImportBudget.spec.ts
+  s_a40848e8f8cca9::t_3dfadaf02873ec 4-15,17,19,21-23,27,34,50-56,103,108-246
+src/modules/AiRuntime/useCases/agentReference/__tests__/preparedStemImportResourceCleanup.spec.ts
+  s_a40848e8f8cca9::t_eb5d66d5df070f 3-5,7-13,16-17,25-38,51,54-74,77-78,80-81,83-131,176-178,181,196-201,222,227-268,270,275-296,298-302,304,306-335,411-412,526-527,533-534,537,599-601,665-666
+src/modules/AiRuntime/useCases/agentReference/createStemImportConfirmationResourceLease.ts
+  s_a40848e8f8cca9::t_cd3e642421a35c 2-3,7,10-68,70-72,74-78,84-112,115-151,153,155-175
+src/modules/AiRuntime/useCases/agentReference/discardPreparedStemImportResources.ts
+  s_a40848e8f8cca9::t_4ce3ccbddcd71d 1,7,11-42,45-54,56,58-80,82-116
+src/modules/AiRuntime/useCases/agentReference/prepareStemImport.ts
+  s_a40848e8f8cca9::t_6b0e052365b754 8,139-141,143-152,156
+src/modules/AiRuntime/useCases/agentReference/registerPreparedStemImportResources.ts
+  s_a40848e8f8cca9::t_a9381f04772498 12,60,306
+src/modules/AiRuntime/useCases/cancelPendingChatActions.ts
+  s_a40848e8f8cca9::t_ec9bf1020da97d 5,36-39
+src/modules/AiRuntime/useCases/confirmPendingChatActions.ts
+  s_a40848e8f8cca9::t_561a95e93ba535 26,28,33,99-115,264,284,315,336,339,864,901,926,1014,1161,1172,1191,1207,1242,1246,1250,1265,1285,1309,1313-1315,1328
+src/modules/AiRuntime/useCases/executePromptActionGroup.ts
+  s_a40848e8f8cca9::t_3c464c232971d1 12,267-318,320-322,332,350,396,411,420,431,450
+src/modules/AiRuntime/useCases/planPromptActions.ts
+  s_a40848e8f8cca9::t_2961b3c66a5872 10,112,214-216
+src/modules/AiRuntime/useCases/sendChatMessage.ts
+  s_a40848e8f8cca9::t_224fae8356c60e 546,596,674,817,891-895
+src/modules/Arrangement/handlers/clip/__tests__/handleRestoreTrackClipStates.spec.ts
+  s_a40848e8f8cca9::t_4a26dc5c620452 80-97,570-673
+src/modules/Arrangement/handlers/clip/handleRestoreTrackClipStates.ts
+  s_a40848e8f8cca9::t_79f13b025a4199 363-376
+src/modules/Arrangement/handlers/track/__tests__/handleImportStemSet.spec.ts
+  s_a40848e8f8cca9::t_9f092a6259659c 32,68-71,194-198,245-248,253,257-274
+src/modules/Arrangement/handlers/track/handleImportStemSet.ts
+  s_a40848e8f8cca9::t_87babae619bb1b 78,88,95-97,102-105,154-159,169
+src/modules/Arrangement/stores/__tests__/adjustmentLayer.spec.ts
+  s_a40848e8f8cca9::t_8660a7213463f5 1-239
+src/modules/Arrangement/stores/adjustmentLayer.ts
+  s_a40848e8f8cca9::t_db9fa949d6f8c3 8-10,58-224,226-232,234
+src/modules/Collaboration/repositories/durableAssetIndexedDb.ts
+  s_a40848e8f8cca9::t_e9883a6b4aa900 1-387
+src/modules/Collaboration/repositories/durableAssetOwnerHandoffLifecycle.ts
+  s_a40848e8f8cca9::t_deac4b152e7c7f 1-454
+src/modules/Collaboration/repositories/durableAssetOwnerResolution.ts
+  s_a40848e8f8cca9::t_da577ae85b4583 1-46
+src/modules/Collaboration/repositories/durableAssetOwnershipLifecycle.ts
+  s_a40848e8f8cca9::t_dcf5bd2e2c8cea 1-392
+src/modules/Collaboration/repositories/durableAssetPromotionRecoveryLifecycle.ts
+  s_a40848e8f8cca9::t_32493600dbf28c 1-577
+src/modules/Collaboration/repositories/durableAssetReceiptRetention.ts
+  s_a40848e8f8cca9::t_7645740b370cc9 1-40
+src/modules/Collaboration/repositories/durableAssetRecordAccess.ts
+  s_a40848e8f8cca9::t_3448e4272cede7 1-74
+src/modules/Collaboration/repositories/durableAssetRecoveryFence.ts
+  s_a40848e8f8cca9::t_20aeba9d4236d8 1-33
+src/modules/Collaboration/repositories/durableAssetRepository.ts
+  s_a40848e8f8cca9::t_8a40423ca9793f 1-58
+src/modules/Collaboration/repositories/durableAssetRepositoryContract.ts
+  s_a40848e8f8cca9::t_d3f288039d5adf 1-130
+src/modules/Collaboration/repositories/durableAssetStageLifecycle.ts
+  s_a40848e8f8cca9::t_e3061129d31198 1-305
+src/modules/Collaboration/useCases/__tests__/assetTransfer.spec.ts
+  s_a40848e8f8cca9::t_45468dc8881181 1,16,20-28,58-66,94-102,114,119,432-440,788-806,817-905
+src/modules/Collaboration/useCases/__tests__/assetTransferDurability.spec.ts
+  s_a40848e8f8cca9::t_44fe3c9e5c2274 1-459
+src/modules/Collaboration/useCases/__tests__/automergeSync.spec.ts
+  s_a40848e8f8cca9::t_9f2dd82eed1c22 6-7,9,18,29,34-35,38,47,50-55,68-75,105-106,144,166,209-903,958,1704
+src/modules/Collaboration/useCases/__tests__/automergeSyncReplay.integration.spec.ts
+  s_a40848e8f8cca9::t_e30a22c3f2c1a1 19,25,51,172-242
+src/modules/Collaboration/useCases/__tests__/durableAssetOwnership.spec.ts
+  s_a40848e8f8cca9::t_c1e40eef4590be 1-1527
+src/modules/Collaboration/useCases/__tests__/fakeDurableAssetIndexedDb.spec.ts
+  s_a40848e8f8cca9::t_f5a9cc2fb0dc03 1-89
+src/modules/Collaboration/useCases/__tests__/fakeDurableAssetIndexedDb.ts
+  s_a40848e8f8cca9::t_e3c6c199bc2610 1-620
+src/modules/Collaboration/useCases/assetTransfer.ts
+  s_a40848e8f8cca9::t_fc06bdde31ea59 18-33,36-41,87-150,160-171,174-175,239-245,248-263,274-277,288-292,298-300,310,313-315,327,344,359-822,825,830,847-855,886-888,910-912,947-949,984-1001,1014,1030-1032,1053-1055,1060-1062,1082-1084,1086,1128-1130,1251-1253,1259-1261
+src/modules/Collaboration/useCases/automergeSync.ts
+  s_a40848e8f8cca9::t_eaf9e89e63a744 6,28,34,157-162,173-191,217-235,286-288,324,335-346,423-425,429-470,475-476,500,532-535,550-628,631-707,710-717,719
+src/modules/Collaboration/useCases/collaboration/__tests__/createSession.spec.ts
+  s_a40848e8f8cca9::t_4cfe8adb02e6b6 14,23-25,46
+src/modules/Collaboration/useCases/collaboration/__tests__/getAssetTransfer.durability.spec.ts
+  s_a40848e8f8cca9::t_6e5a5f6a3a8a66 1-118
+src/modules/Collaboration/useCases/collaboration/__tests__/getAssetTransfer.spec.ts
+  s_a40848e8f8cca9::t_83825c7426e4f8 16-24,27-54,59-61,64-66,75-111
+src/modules/Collaboration/useCases/collaboration/__tests__/getCollaborationAssetOwnerId.spec.ts
+  s_a40848e8f8cca9::t_68b15d5826375f 1-28
+src/modules/Collaboration/useCases/collaboration/__tests__/joinSession.spec.ts
+  s_a40848e8f8cca9::t_aec7342a9b09d4 18-24,35-37,119-125
+src/modules/Collaboration/useCases/collaboration/__tests__/sessionManagement.spec.ts
+  s_a40848e8f8cca9::t_0bbeb98be41e25 1,12,47-51,53,55-67,85-95,101-104,151,174-178,180,182-194,220-225,228-253,260,284-287,425-426,437,440-443,453,462-776,781,798-799,805,815,823,831,839,847,855,870,883,899,910,920,929,938,959,979,984,1003,1016,1032,1044,1064,1083,1096,1110,1131,1150,1160,1174,1191,1206,1294,1311,1322,1595,1609,1619,1634,1646,1661,1685,1712,1740,1755,1768,1785,1806,1818,1830,1850,1864
+src/modules/Collaboration/useCases/collaboration/createSession.ts
+  s_a40848e8f8cca9::t_9725611edb94b8 3,15
+src/modules/Collaboration/useCases/collaboration/getAssetTransfer.ts
+  s_a40848e8f8cca9::t_bd562c49db8e13 1-2,4,7-26,28-38
+src/modules/Collaboration/useCases/collaboration/getCollaborationAssetOwnerId.ts
+  s_a40848e8f8cca9::t_e1b973cb1779f4 1-20
+src/modules/Collaboration/useCases/collaboration/joinSession.ts
+  s_a40848e8f8cca9::t_242a0244d0cb61 5,11,89-92
+src/modules/Collaboration/useCases/collaboration/sessionManagement.ts
+  s_a40848e8f8cca9::t_3bef00fad9305b 19,21,85-94,108-109,374-383,400-407,411-419,477-485,501-523,525-571,578,1038
+src/modules/Collaboration/useCases/configureDurableAssetCommitProof.ts
+  s_a40848e8f8cca9::t_85dadf44e7d054 1-22
+src/modules/Collaboration/useCases/index.ts
+  s_a40848e8f8cca9::t_e7950d72acbf4d 9-10
+src/modules/Command/useCases/__tests__/commandBatchIdempotency.spec.ts
+  s_a40848e8f8cca9::t_74c94d7952baa8 24-25,286-303,451-452
+src/modules/Command/useCases/getVersionedCommandBatchCommitDisposition.ts
+  s_a40848e8f8cca9::t_c593b4c3aa68c4 1-69
+src/modules/Command/useCases/getVersionedCommandBatchCommitProof.ts
+  s_a40848e8f8cca9::t_073d270bd588a5 1-21
+src/modules/Command/useCases/index.ts
+  s_a40848e8f8cca9::t_410f4a793d9efa 56-57
+src/modules/CrdtDocument/repositories/__tests__/automergeRepository.transact.spec.ts
+  s_a40848e8f8cca9::t_884175dc891e46 130-162
+src/modules/CrdtDocument/repositories/automergeRepository.ts
+  s_a40848e8f8cca9::t_cf0c1db9f1ba1e 230-231,583,619-629,643
+src/modules/CrdtDocument/useCases/__tests__/crdtPersistenceQueueCoordinator.spec.ts
+  s_a40848e8f8cca9::t_d0656dcdcec85c 15,21-26,60-83
+src/modules/CrdtDocument/useCases/crdtPersistenceQueueCoordinator.ts
+  s_a40848e8f8cca9::t_c96899b5186deb 139-175,177-180,191,193-194,196,198-200,202,211-221,897
+src/modules/CrdtDocument/useCases/index.ts
+  s_a40848e8f8cca9::t_bf7ff4cfff984e 20
+src/modules/CrdtDocument/useCases/persistCrdtProject.ts
+  s_a40848e8f8cca9::t_0431f9c314bba5 10-11
+src/modules/CrdtDocument/useCases/projection/projectSlotProjections.ts
+  s_a40848e8f8cca9::t_39347dc2b101a3 1-8,92
+src/modules/CrdtDocument/useCases/runCrdtPersistenceBarrier.ts
+  s_a40848e8f8cca9::t_798b111e2032c2 1-9
+src/modules/CrdtDocument/useCases/runCrdtPersistenceOperation.ts
+  s_a40848e8f8cca9::t_ed8c7d54877ed4 3-7
+src/modules/Project/stores/__tests__/projectStore.spec.ts
+  s_a40848e8f8cca9::t_61bf0a66fa9bf5 9-17,168-216
+src/modules/Project/stores/index.ts
+  s_a40848e8f8cca9::t_a20c620f708a12 8-16
+src/modules/Project/stores/projectStore.ts
+  s_a40848e8f8cca9::t_23a4cdeb691d7c 384-420
+src/modules/Project/useCases/__tests__/projectPersistence.spec.ts
+  s_a40848e8f8cca9::t_9c25600b958f38 13-23,32,40-42,72,76-82,120-122,124,201-222
+src/modules/Project/useCases/projectPersistence/__tests__/loadProject.spec.ts
+  s_a40848e8f8cca9::t_8e67c3e6fd2956 17-18,20-28,46-48,95-101,113-116,132,136-142,294-313
+src/modules/Project/useCases/projectPersistence/__tests__/missingMediaOnLoad.spec.ts
+  s_a40848e8f8cca9::t_b94e9ba36d8720 29-37,44-45
+src/modules/Project/useCases/projectPersistence/__tests__/newProject.spec.ts
+  s_a40848e8f8cca9::t_0db29ceb095699 74,165,242,252,288,347,354
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/buildProjectData.spec.ts
+  s_a40848e8f8cca9::t_e456a003c9c66b 3-6,12-15,112,117,132-157
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/exportProjectFile.roundTrip.spec.ts
+  s_a40848e8f8cca9::t_4386965158dbc5 6-14,19-20,23-25,44-100,148-152,157-158,321-351
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/exportProjectFile.spec.ts
+  s_a40848e8f8cca9::t_addd6dd24b3cac 10,17-19,72,97-118
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/pickAndImportProjectFile.spec.ts
+  s_a40848e8f8cca9::t_f1f664c390a0a1 13
+src/modules/Project/useCases/projectPersistence/fileIO/buildProjectData.ts
+  s_a40848e8f8cca9::t_ecc70f9663df5c 12,143-146
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/replaceProjectData.spec.ts
+  s_a40848e8f8cca9::t_e3ae9570afdde0 149,155-156
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/runProjectLoadTransaction.spec.ts
+  s_a40848e8f8cca9::t_384359f6c01b49 35-36,54
+src/modules/Project/useCases/projectPersistence/helpers/runProjectLoadTransaction.ts
+  s_a40848e8f8cca9::t_de4a2d66fab580 21,28,74,80-94,115,119,130,138,145,158-160,162,166,177-179,181,185
+src/modules/Project/useCases/projectPersistence/loadProject.ts
+  s_a40848e8f8cca9::t_7c182577dd8ef1 17,26,118-127
+src/modules/Project/useCases/projectPersistence/projectIdentityTransitionDependencies.ts
+  s_a40848e8f8cca9::t_3f15e79e8abbaa 3-8
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/interruptedProjectLoadDirtyTracking.integration.spec.ts
+  s_a40848e8f8cca9::t_2f0f1e1fb91f1d 189,210
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.durability.spec.ts
+  s_a40848e8f8cca9::t_8136585144e959 178,184
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "52cd0ef5278ce7e8243235b8904c4781f81bee41",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
