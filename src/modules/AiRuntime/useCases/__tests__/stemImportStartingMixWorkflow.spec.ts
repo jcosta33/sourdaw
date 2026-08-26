@@ -200,12 +200,12 @@ const notificationEventBus = {
 };
 
 function expectPreparedStemResourcesReleased(): void {
-    for (const sourceName of STEM_SOURCE_NAMES) {
-        const audioBufferId = `buffer-${sourceName}`;
-        const assetLeaseId = `lease-${sourceName}`;
-        expect(mocks.releasePreviewAudioBuffer.mock.calls.filter(([id]) => id === audioBufferId)).toHaveLength(1);
-        expect(mocks.releaseStagedAsset.mock.calls.filter(([id]) => id === assetLeaseId)).toHaveLength(1);
-    }
+    expect(mocks.releasePreviewAudioBuffer.mock.calls.map(([id]) => id).sort()).toEqual(
+        STEM_SOURCE_NAMES.map((sourceName) => `buffer-${sourceName}`).sort()
+    );
+    expect(mocks.releaseStagedAsset.mock.calls.map(([id]) => id).sort()).toEqual(
+        STEM_SOURCE_NAMES.map((sourceName) => `lease-${sourceName}`).sort()
+    );
 }
 
 function expectPreparedStemLifecyclePending(runId: string): void {
@@ -1164,8 +1164,7 @@ describe('stem import and starting mix workflow', () => {
         });
 
         await vi.waitFor(() => {
-            expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledTimes(6);
-            expect(mocks.releaseStagedAsset).toHaveBeenCalledTimes(6);
+            expectPreparedStemResourcesReleased();
         });
         expect(trackStore.value?.tracks).toEqual([createTrack('track-guide', 'Guide Mix')]);
     });

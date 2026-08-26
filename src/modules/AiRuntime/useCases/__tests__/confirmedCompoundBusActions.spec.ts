@@ -98,6 +98,17 @@ const noActionHistoryMetadataPort = {
     clear: () => undefined,
 };
 
+function expectNoRuntimeMutations(): void {
+    expect(runtimeMocks.addDeviceToStrip).not.toHaveBeenCalled();
+    expect(runtimeMocks.applyRuntimeGraphDelta).not.toHaveBeenCalled();
+    expect(runtimeMocks.clearReportedLatency).not.toHaveBeenCalled();
+    expect(runtimeMocks.engineRemoveSend).not.toHaveBeenCalled();
+    expect(runtimeMocks.engineSetSend).not.toHaveBeenCalled();
+    expect(runtimeMocks.removeDeviceFromStrip).not.toHaveBeenCalled();
+    expect(runtimeMocks.removeTrackStrip).not.toHaveBeenCalled();
+    expect(runtimeMocks.updateDeviceParam).not.toHaveBeenCalled();
+}
+
 const BUS_ID = 'bus-ai-00000000-0000-4000-8000-000000000001';
 const BUS_ALTERNATIVE_ID = 'alternative-ai-00000000-0000-4000-8000-000000000001';
 
@@ -544,8 +555,7 @@ describe('confirmed compound bus actions', () => {
         expect(result.status).toBe('failed');
         expect(trackStore.value?.tracks.some((track) => track.id === BUS_ID)).toBe(false);
         expect(trackStore.value?.tracks.find((track) => track.id === 'track-vocals')?.sends).toEqual([]);
-        expect(runtimeMocks.applyRuntimeGraphDelta).not.toHaveBeenCalled();
-        expect(runtimeMocks.engineSetSend).not.toHaveBeenCalled();
+        expectNoRuntimeMutations();
         expect(undoStore.value?.past).toEqual([]);
         expect(getPendingActionConfirmation('confirmation-conflict')?.status).toBe('failed');
     });
