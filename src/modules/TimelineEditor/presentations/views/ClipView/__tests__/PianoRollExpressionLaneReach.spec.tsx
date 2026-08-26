@@ -27,6 +27,10 @@ import { setNoteVelocity } from '#/modules/MIDI/useCases';
 
 import { PianoRoll } from '../PianoRoll';
 
+// Shared jsdom 2d-context stub (src/setupTests.ts) — one object serves every
+// canvas, so spying on it observes the lane's draws.
+const ctx2d = document.createElement('canvas').getContext('2d')!;
+
 type ProbeNote = { id: string; pitch: number; startBeat: number; duration: number; velocity: number };
 type ProbeMidiState = {
     notesByClipId: Record<string, ProbeNote[]>;
@@ -286,5 +290,35 @@ describe('PianoRoll expression lane reachability (real NotePropertyLane)', () =>
         fireEvent.pointerDown(laneCanvas, { pointerId: 2, clientX: 102, clientY: 2 });
 
         expect(setNoteVelocity).toHaveBeenCalledWith('clip-1', 'n-far', 127);
+    });
+
+    it("scopes the lane to the selection's clips, so a cross-clip selection edits secondary-clip notes here too", () => {
+        midiState.notesByClipId = {
+            'clip-1': [{ id: 'n1', pitch: 60, startBeat: 0, duration: 1, velocity: 100 }],
+            'clip-2': [{ id: 'n2', pitch: 65, startBeat: 2, duration: 1, velocity: 80 }],
+        };
+        // The draw runs inside the act that toggles the panel in, so the spy
+        // has to be seated before the toggle fires.
+        const roundRect = vi.spyOn(ctx2d, 'roundRect');
+
+        render(
+            <PianoRoll {...defaultProps} openedClipIds={['clip-1', 'clip-2']} selectedNoteIds={new Set(['n1', 'n2'])} />
+        );
+        act(() => {
+            invokeToolbarHandler('onToggleExpressionView');
+        });
+
+        // The selection reaches into clip-2, so its note is a bar in this lane
+        // — at its own beat, in the timeline's shared beat space: x = 2*40+1.
+        expect(roundRect).toHaveBeenCalledWith(81, expect.any(Number), 38, 80, [2, 2, 0, 0]);
+
+        const laneCanvas = screen.getByLabelText('velocity lane').querySelector('canvas');
+        if (!laneCanvas) {
+            throw new Error('Expected the expression lane canvas');
+        }
+
+        // And painting it addresses clip-2, not the primary clip.
+        fireEvent.pointerDown(laneCanvas, { pointerId: 1, clientX: 90, clientY: 2 });
+        expect(setNoteVelocity).toHaveBeenCalledWith('clip-2', 'n2', 127);
     });
 });

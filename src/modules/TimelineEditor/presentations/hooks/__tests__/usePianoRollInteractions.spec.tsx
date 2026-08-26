@@ -1,6 +1,6 @@
 import { type ReactElement, useEffect, useRef } from 'react';
 
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { render, screen, fireEvent, act, cleanup } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { usePianoRollInteractions } from '../usePianoRollInteractions';
@@ -846,6 +846,179 @@ describe('usePianoRollInteractions', () => {
             redoFn();
             expect(mocks.setNoteVelocity).toHaveBeenCalledWith('clip-1', 'n1', 90);
             expect(mocks.setNoteVelocity).toHaveBeenCalledWith('clip-2', 'n2', 90);
+        });
+    });
+
+    // Issue #2425. The toolbar's "Focused clip for note input" selector is a
+    // promise about WHERE new notes land, so every creation gesture — and the
+    // undo/redo closures that retract and replay it — must address the focused
+    // clip, not the primary one. A focus whose clip is no longer open, and an
+    // unset focusedClipId, both fall back to the primary clip.
+    describe('focused-clip routing of note creation', () => {
+        const focusedOnSecondary = {
+            focusedClipId: 'clip-2',
+            openedClipNotes: { 'clip-2': [] },
+        };
+
+        it('step-input click lands the note in the focused clip and undoes and redoes there', () => {
+            const { canvas } = renderRoll({ ...focusedOnSecondary, stepInput: true, stepBeat: 4 });
+
+            fireEvent.mouseDown(canvas, { clientX: 45, clientY: yForPitch(70) });
+
+            expect(mocks.addMidiNote).toHaveBeenCalledWith('clip-2', 70, 4, 1, 100);
+            const undoFn = mocks.pushUndoEntry.mock.calls[0]?.[1];
+            undoFn();
+            expect(mocks.removeMidiNote).toHaveBeenCalledWith('clip-2', mocks.addMidiNote.mock.results[0]?.value.id);
+            const redoFn = mocks.pushUndoEntry.mock.calls[0]?.[2];
+            redoFn();
+            expect(mocks.addMidiNote).toHaveBeenLastCalledWith('clip-2', 70, 4, 1, 100);
+        });
+
+        it('chord stamp lands the chord in the focused clip and undoes and redoes there', () => {
+            mocks.stampChord.mockReturnValue([{ id: 'ch1' }, { id: 'ch2' }]);
+            const { canvas } = renderRoll({ ...focusedOnSecondary, chordMode: true, chordType: 'min7' });
+
+            fireEvent.mouseDown(canvas, { clientX: 45, clientY: yForPitch(70) });
+
+            expect(mocks.stampChord).toHaveBeenCalledWith('clip-2', 70, 1, 1, 100, 'min7');
+            const undoFn = mocks.pushUndoEntry.mock.calls[0]?.[1];
+            undoFn();
+            expect(mocks.removeNotesByIds).toHaveBeenCalledWith('clip-2', ['ch1', 'ch2']);
+            const redoFn = mocks.pushUndoEntry.mock.calls[0]?.[2];
+            redoFn();
+            expect(mocks.stampChord).toHaveBeenLastCalledWith('clip-2', 70, 1, 1, 100, 'min7');
+        });
+
+        it('click without drag stamps into the focused clip and undoes and redoes there', () => {
+            const { canvas } = renderRoll(focusedOnSecondary);
+
+            fireEvent.mouseDown(canvas, { clientX: 45, clientY: yForPitch(70) });
+            fireEvent.mouseUp(canvas, { clientX: 45, clientY: yForPitch(70) });
+
+            expect(mocks.addMidiNote).toHaveBeenCalledWith('clip-2', 70, 1, 1, 100);
+            const undoFn = mocks.pushUndoEntry.mock.calls[0]?.[1];
+            undoFn();
+            expect(mocks.removeMidiNote).toHaveBeenCalledWith('clip-2', mocks.addMidiNote.mock.results[0]?.value.id);
+            const redoFn = mocks.pushUndoEntry.mock.calls[0]?.[2];
+            redoFn();
+            expect(mocks.addMidiNote).toHaveBeenLastCalledWith('clip-2', 70, 1, 1, 100);
+        });
+
+        it('paint adds each crossed cell once to the focused clip, deduping against its list, and undoes and redoes there', () => {
+            // The focused clip already owns a note at beat 2, and the add mock
+            // appends into that same live list — the store subscription the
+            // real component sees — so both a pre-existing note and the notes
+            // created mid-gesture must stop the brush from re-adding a cell.
+            const focusedNotes: Note[] = [makeNote('existing-2', 70, 2, 1)];
+            const { canvas } = renderRoll({
+                focusedClipId: 'clip-2',
+                openedClipNotes: { 'clip-2': focusedNotes },
+                paintMode: true,
+                notes: [],
+            });
+            mocks.addMidiNote.mockImplementation((_clipId, pitch, startBeat, duration, velocity) => {
+                const note = { id: mocks.nextId(), pitch, startBeat, duration, velocity };
+                focusedNotes.push(note);
+                return note;
+            });
+
+            fireEvent.mouseDown(canvas, { clientX: 45, clientY: yForPitch(70) });
+            fireEvent.mouseMove(canvas, { clientX: 125, clientY: yForPitch(70) });
+            fireEvent.mouseMove(canvas, { clientX: 45, clientY: yForPitch(70) });
+
+            // Beat 1 (mousedown) and beat 3 (drag) once each; beat 2
+            // pre-existed, and the back-pass over all three cells adds
+            // nothing.
+            expect(mocks.addMidiNote.mock.calls.map((call) => call[2])).toEqual([1, 3]);
+            for (const call of mocks.addMidiNote.mock.calls) {
+                expect(call[0]).toBe('clip-2');
+            }
+
+            fireEvent.mouseUp(canvas, { clientX: 45, clientY: yForPitch(70) });
+            const paintedIds = mocks.addMidiNote.mock.results.map((result) => result.value.id);
+            const paintEntry = mocks.pushUndoEntry.mock.calls.find((call) => String(call[0]).startsWith('Paint '));
+            if (!paintEntry) {
+                throw new Error('paint gesture pushed no undo entry');
+            }
+            paintEntry[1]();
+            for (const id of paintedIds) {
+                expect(mocks.removeMidiNote).toHaveBeenCalledWith('clip-2', id);
+            }
+            // The gesture phase already recorded these tuples, so the mock is
+            // cleared here: the assertions below observe only what the redo
+            // closure re-adds.
+            mocks.addMidiNote.mockClear();
+            paintEntry[2]();
+            expect(mocks.addMidiNote).toHaveBeenCalledWith('clip-2', 70, 1, 1, 100);
+            expect(mocks.addMidiNote).toHaveBeenCalledWith('clip-2', 70, 3, 1, 100);
+        });
+
+        it('a focused clip that is no longer open falls back to the primary clip', () => {
+            // The multi-selection can drop the focused clip while the primary
+            // stays open (deselected or deleted in the arrangement). Routing
+            // into the stale clip would hide every created note, so every
+            // gesture must fall back to the primary.
+            const staleFocus = { focusedClipId: 'clip-gone', openedClipNotes: { 'clip-2': [] } };
+
+            const stamp = renderRoll({ ...staleFocus, notes: [] });
+            fireEvent.mouseDown(stamp.canvas, { clientX: 45, clientY: yForPitch(70) });
+            fireEvent.mouseUp(stamp.canvas, { clientX: 45, clientY: yForPitch(70) });
+            expect(mocks.addMidiNote).toHaveBeenLastCalledWith('clip-1', 70, 1, 1, 100);
+
+            // Paint dedupe must read the fallback target's list — the
+            // primary's — including notes created earlier in the gesture.
+            const primaryNotes: Note[] = [makeNote('p-primary', 70, 2, 1)];
+            cleanup();
+            mocks.addMidiNote.mockClear();
+            const paint = renderRoll({ ...staleFocus, paintMode: true, notes: primaryNotes });
+            mocks.addMidiNote.mockImplementation((_clipId, pitch, startBeat, duration, velocity) => {
+                const note = { id: mocks.nextId(), pitch, startBeat, duration, velocity };
+                primaryNotes.push(note);
+                return note;
+            });
+            fireEvent.mouseDown(paint.canvas, { clientX: 45, clientY: yForPitch(70) });
+            fireEvent.mouseMove(paint.canvas, { clientX: 125, clientY: yForPitch(70) });
+            fireEvent.mouseMove(paint.canvas, { clientX: 45, clientY: yForPitch(70) });
+            expect(mocks.addMidiNote.mock.calls.map((call) => call[2])).toEqual([1, 3]);
+            for (const call of mocks.addMidiNote.mock.calls) {
+                expect(call[0]).toBe('clip-1');
+            }
+        });
+
+        it('the pending-stamp preview sounds the focused clip’s own track instrument', () => {
+            // clip-2 lives on track-2 in the track fixture; since the stamp
+            // will land in clip-2, its mousedown preview must sound track-2,
+            // not the primary clip's instrument.
+            const { canvas } = renderRoll(focusedOnSecondary);
+
+            fireEvent.mouseDown(canvas, { clientX: 45, clientY: yForPitch(70) });
+
+            expect(mocks.playAuditionNote).toHaveBeenCalledWith('track-2', 70, 100);
+        });
+
+        it('with no focused clip, every creation gesture still targets the primary clip', () => {
+            // Identity with the pre-selector behaviour: an unset focusedClipId
+            // is the single-clip case, and nothing about it may change.
+            const stamp = renderRoll({ notes: [] });
+            fireEvent.mouseDown(stamp.canvas, { clientX: 45, clientY: yForPitch(70) });
+            fireEvent.mouseUp(stamp.canvas, { clientX: 45, clientY: yForPitch(70) });
+            expect(mocks.addMidiNote).toHaveBeenLastCalledWith('clip-1', 70, 1, 1, 100);
+
+            cleanup();
+            const step = renderRoll({ notes: [], stepInput: true, stepBeat: 4 });
+            fireEvent.mouseDown(step.canvas, { clientX: 45, clientY: yForPitch(70) });
+            expect(mocks.addMidiNote).toHaveBeenLastCalledWith('clip-1', 70, 4, 1, 100);
+
+            cleanup();
+            mocks.stampChord.mockReturnValue([{ id: 'ch1' }]);
+            const chord = renderRoll({ notes: [], chordMode: true, chordType: 'min7' });
+            fireEvent.mouseDown(chord.canvas, { clientX: 45, clientY: yForPitch(70) });
+            expect(mocks.stampChord).toHaveBeenLastCalledWith('clip-1', 70, 1, 1, 100, 'min7');
+
+            cleanup();
+            const paint = renderRoll({ notes: [], paintMode: true });
+            fireEvent.mouseDown(paint.canvas, { clientX: 45, clientY: yForPitch(70) });
+            expect(mocks.addMidiNote).toHaveBeenLastCalledWith('clip-1', 70, 1, 1, 100);
         });
     });
 
