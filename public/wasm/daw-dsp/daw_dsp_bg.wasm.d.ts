@@ -1,4 +1,4 @@
-// @wasm-bindgen-dts crate-source: sha256:12603973c6ecc95707d1c304117fdf640c569e1e789bf4e13b9e43a86c3f5e43
+// @wasm-bindgen-dts crate-source: sha256:4411bedeb3d9f68f6519682966804909147872f43cf7a65aa7b498ef6a4a39c4
 /* tslint:disable */
 /* eslint-disable */
 export const memory: WebAssembly.Memory;
@@ -104,6 +104,7 @@ export const crumbsinstance_process: (a: number, b: number) => number;
 export const crumbsinstance_set_active_sample: (a: number, b: number) => void;
 export const crumbsinstance_set_mode: (a: number, b: number, c: number) => void;
 export const crumbsinstance_set_param: (a: number, b: number, c: number, d: number) => void;
+export const init_panic_hook: () => void;
 export const levaininstance_abort_sample_bank: (a: number) => void;
 export const levaininstance_active_voices: (a: number) => number;
 export const levaininstance_add_legato_transition: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
@@ -207,7 +208,6 @@ export const grinderinstance_process: (a: number, b: number) => number;
 export const grinderinstance_process_automated: (a: number, b: number) => number;
 export const grinderinstance_reset: (a: number) => void;
 export const grinderinstance_set_param: (a: number, b: number, c: number, d: number) => void;
-export const init_panic_hook: () => void;
 export const __wbindgen_free: (a: number, b: number, c: number) => void;
 export const __wbindgen_malloc: (a: number, b: number) => number;
 export const __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
