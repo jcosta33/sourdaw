@@ -679,21 +679,28 @@ function hasDurablyCommittedRetryableSectionRender(confirmation: PendingAppActio
     if (parsedBatch.status !== 'valid') {
         return false;
     }
-    const approvedCommandIds = new Set(parsedBatch.envelope.commands.map(({ commandId }) => commandId));
+    const approvedCommandsById = new Map(parsedBatch.envelope.commands.map((command) => [command.commandId, command]));
+    if (
+        approvedCommandsById.size !== parsedBatch.envelope.commands.length ||
+        confirmation.executedActions.length !== approvedCommandsById.size
+    ) {
+        return false;
+    }
     const committedCommandIds = new Set<string>();
     for (const execution of confirmation.executedActions) {
+        const approvedCommand = execution.commandId ? approvedCommandsById.get(execution.commandId) : undefined;
         if (
-            !execution.commandId ||
-            execution.commandSchemaVersion === undefined ||
+            !approvedCommand ||
+            committedCommandIds.has(approvedCommand.commandId) ||
+            execution.commandSchemaVersion !== approvedCommand.schemaVersion ||
             execution.executionKind !== 'project' ||
-            (execution.outcome !== 'committed' && execution.outcome !== 'committed-with-warning') ||
-            !approvedCommandIds.has(execution.commandId)
+            (execution.outcome !== 'committed' && execution.outcome !== 'committed-with-warning')
         ) {
             return false;
         }
-        committedCommandIds.add(execution.commandId);
+        committedCommandIds.add(approvedCommand.commandId);
     }
-    if (committedCommandIds.size !== approvedCommandIds.size) {
+    if (committedCommandIds.size !== approvedCommandsById.size) {
         return false;
     }
     const approvedRenderCommandIds = new Set(

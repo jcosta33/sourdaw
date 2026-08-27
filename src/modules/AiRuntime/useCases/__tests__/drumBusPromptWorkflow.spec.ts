@@ -48,9 +48,7 @@ import {
     getPendingActionConfirmation,
     pendingActionConfirmationStore,
     proposePendingActionConfirmation,
-    replacePendingActionExecutions,
-    updatePendingActionConfirmationStatus,
-    updatePendingActionFollowUp,
+    type PendingAppActionConfirmation,
 } from '../../stores/pendingActionConfirmationStore';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { sendChatMessage as sendChatMessageUseCase } from '../sendChatMessage';
@@ -1591,6 +1589,11 @@ describe('drum bus prompt workflow', () => {
         if (!confirmation) {
             throw new Error('Expected EX-11 confirmation');
         }
+        const renderAction = confirmation.actions.find((action) => action.type === 'renderProjectSections');
+        const failedJob = renderAction?.type === 'renderProjectSections' ? renderAction.payload.jobs?.[1] : undefined;
+        if (!failedJob || failedJob.sectionName !== 'Chorus One') {
+            throw new Error('Expected the materialized Chorus One render job');
+        }
         runtimeMocks.renderOffline.mockImplementation((options: { startBeat?: number }) => {
             if (options.startBeat === 16) {
                 return Promise.reject(new Error('comparison renderer unavailable'));
@@ -1646,42 +1649,112 @@ describe('drum bus prompt workflow', () => {
         if (!committedConfirmation) {
             throw new Error('Expected committed render confirmation');
         }
-        updatePendingActionFollowUp({ confirmationId: confirmation.id, status: 'failed' });
-        await expect(confirmPendingChatActions({ confirmationId: confirmation.id })).resolves.toEqual({
-            status: 'not_pending',
-            currentStatus: 'failed',
+        const approvedBatch = committedConfirmation.approvalSnapshot.commandBatch;
+        const firstExecution = committedConfirmation.executedActions[0];
+        if (!approvedBatch || !firstExecution || firstExecution.commandSchemaVersion === undefined) {
+            throw new Error('Expected approved command and execution receipt evidence');
+        }
+        const setStoredConfirmation = (candidate: PendingAppActionConfirmation): void => {
+            const state = pendingActionConfirmationStore.value;
+            if (!state) {
+                throw new Error('Expected pending confirmation state');
+            }
+            pendingActionConfirmationStore.set({
+                confirmations: state.confirmations.map((entry) =>
+                    entry.id === confirmation.id ? structuredClone(candidate) : entry
+                ),
+            });
+        };
+        const expectRetryRefused = async (label: string, candidate: PendingAppActionConfirmation): Promise<void> => {
+            setStoredConfirmation(candidate);
+            const renderCallCount = runtimeMocks.renderOffline.mock.calls.length;
+            const result = await confirmPendingChatActions({ confirmationId: confirmation.id });
+            expect(result, label).toEqual({ status: 'not_pending', currentStatus: candidate.status });
+            expect(runtimeMocks.renderOffline, `${label}: render call count`).toHaveBeenCalledTimes(renderCallCount);
+        };
+        const withFirstExecution = (
+            update: Partial<PendingAppActionConfirmation['executedActions'][number]>
+        ): PendingAppActionConfirmation => ({
+            ...committedConfirmation,
+            executedActions: committedConfirmation.executedActions.map((execution, index) =>
+                index === 0 ? { ...execution, ...update } : execution
+            ),
         });
-        expect(runtimeMocks.renderOffline).toHaveBeenCalledTimes(3);
-        updatePendingActionFollowUp({ confirmationId: confirmation.id, status: 'retryable' });
-        updatePendingActionConfirmationStatus({ confirmationId: confirmation.id, status: 'invalidated' });
-        await expect(confirmPendingChatActions({ confirmationId: confirmation.id })).resolves.toEqual({
-            status: 'not_pending',
-            currentStatus: 'invalidated',
+        const withAdditionalExecution = (
+            update: Partial<PendingAppActionConfirmation['executedActions'][number]>
+        ): PendingAppActionConfirmation => ({
+            ...committedConfirmation,
+            executedActions: [...committedConfirmation.executedActions, { ...firstExecution, ...update }],
         });
-        expect(runtimeMocks.renderOffline).toHaveBeenCalledTimes(3);
-        updatePendingActionConfirmationStatus({
-            confirmationId: confirmation.id,
-            status: 'failed',
-            error: committedConfirmation.error ?? undefined,
+
+        await expectRetryRefused('non-retryable follow-up must fail closed', {
+            ...committedConfirmation,
+            followUpStatus: 'failed',
         });
-        replacePendingActionExecutions({ confirmationId: confirmation.id, executions: [] });
-        await expect(confirmPendingChatActions({ confirmationId: confirmation.id })).resolves.toEqual({
-            status: 'not_pending',
-            currentStatus: 'failed',
+        await expectRetryRefused('invalidated confirmation must fail closed', {
+            ...committedConfirmation,
+            status: 'invalidated',
         });
-        expect(runtimeMocks.renderOffline).toHaveBeenCalledTimes(3);
-        replacePendingActionExecutions({
-            confirmationId: confirmation.id,
-            executions: committedConfirmation.executedActions,
+        await expectRetryRefused('empty execution evidence must fail closed', {
+            ...committedConfirmation,
+            executedActions: [],
         });
+        await expectRetryRefused('missing follow-up project revision must fail closed', {
+            ...committedConfirmation,
+            followUpProjectRevision: null,
+        });
+        await expectRetryRefused('malformed approved command batch must fail closed', {
+            ...committedConfirmation,
+            approvalSnapshot: {
+                ...committedConfirmation.approvalSnapshot,
+                commandBatch: { ...approvedBatch, serialized: '{' },
+            },
+        });
+        await expectRetryRefused('duplicate execution receipt must fail closed', {
+            ...committedConfirmation,
+            executedActions: [...committedConfirmation.executedActions, structuredClone(firstExecution)],
+        });
+        await expectRetryRefused(
+            'wrong execution schema version must fail closed',
+            withFirstExecution({ commandSchemaVersion: firstExecution.commandSchemaVersion + 1 })
+        );
+        await expectRetryRefused(
+            'complete receipt set plus wrong schema receipt must fail closed',
+            withAdditionalExecution({ commandSchemaVersion: firstExecution.commandSchemaVersion + 1 })
+        );
+        await expectRetryRefused(
+            'complete receipt set plus unknown command receipt must fail closed',
+            withAdditionalExecution({ commandId: 'unauthorized-command-id' })
+        );
+        await expectRetryRefused(
+            'complete receipt set plus non-project receipt must fail closed',
+            withAdditionalExecution({ executionKind: 'runtime' })
+        );
+        await expectRetryRefused(
+            'complete receipt set plus non-committed receipt must fail closed',
+            withAdditionalExecution({ outcome: 'executed-with-warning' })
+        );
+        setStoredConfirmation(committedConfirmation);
         const committedTracks = structuredClone(trackStore.value?.tracks ?? []);
 
-        await expect(confirmPendingChatActions({ confirmationId: confirmation.id })).resolves.toMatchObject({
+        const failedRetryCallIndex = runtimeMocks.renderOffline.mock.calls.length;
+        const failedRetry = await confirmPendingChatActions({ confirmationId: confirmation.id });
+        expect(failedRetry).toMatchObject({
             status: 'failed',
             reason: expect.stringContaining('comparison renderer unavailable'),
         });
+        if (failedRetry.status !== 'failed') {
+            throw new Error(`Expected failed render retry, received ${failedRetry.status}`);
+        }
+        expect(failedRetry.reason).toContain(failedJob.jobId);
 
         expect(runtimeMocks.renderOffline).toHaveBeenCalledTimes(4);
+        expect(runtimeMocks.renderOffline.mock.calls[failedRetryCallIndex]?.[0]).toMatchObject({
+            durationBeats: failedJob.endBeat - failedJob.startBeat,
+            sampleRate: failedJob.sampleRate,
+            startBeat: failedJob.startBeat,
+            tailSeconds: failedJob.tailSeconds,
+        });
         expect(trackStore.value?.tracks).toEqual(committedTracks);
         expect(undoStore.value?.past).toHaveLength(9);
         expect(getPendingActionConfirmation(confirmation.id)).toMatchObject({
@@ -1690,15 +1763,31 @@ describe('drum bus prompt workflow', () => {
         });
         runtimeMocks.renderOffline.mockResolvedValue(createTestAudioBuffer());
 
+        const successfulRetryCallIndex = runtimeMocks.renderOffline.mock.calls.length;
         await expect(confirmPendingChatActions({ confirmationId: confirmation.id })).resolves.toEqual({
             status: 'executed',
         });
 
         expect(runtimeMocks.renderOffline).toHaveBeenCalledTimes(5);
+        expect(runtimeMocks.renderOffline.mock.calls[successfulRetryCallIndex]?.[0]).toMatchObject({
+            durationBeats: failedJob.endBeat - failedJob.startBeat,
+            sampleRate: failedJob.sampleRate,
+            startBeat: failedJob.startBeat,
+            tailSeconds: failedJob.tailSeconds,
+        });
         expect(getAgentSectionRenderArtifacts().map((artifact) => artifact.sectionId)).toEqual([
             'section-verse-one',
             'section-chorus-one',
         ]);
+        expect(getAgentSectionRenderArtifacts()).toContainEqual(
+            expect.objectContaining({
+                endBeat: failedJob.endBeat,
+                jobId: failedJob.jobId,
+                sectionId: failedJob.sectionId,
+                sectionName: failedJob.sectionName,
+                startBeat: failedJob.startBeat,
+            })
+        );
         expect(trackStore.value?.tracks).toEqual(committedTracks);
         expect(undoStore.value?.past).toHaveLength(9);
         expect(getPendingActionConfirmation(confirmation.id)).toMatchObject({
