@@ -1,0 +1,97 @@
+crates/sourdaw-native/src/commands/plugin_gui.rs
+  s_1b9333aca53d4d::t_8cfd94ecbee108 157-160,163-170,181-188
+  s_1b9333aca53d4d::t_8e6853213c7791 65-79
+  s_1b9333aca53d4d::t_c19d5a65bb7fac 957-977
+electron/main.ts
+  s_1b9333aca53d4d::t_20d79f23d196e5 410
+  s_1b9333aca53d4d::t_7e1bb1141d3efd 333-346
+  s_1b9333aca53d4d::t_c2363796ced13e 16-27
+crates/daw-plugin-host/src/vst3_wrapper.rs
+  s_1b9333aca53d4d::t_615d38b903e1e3 1043
+  s_1b9333aca53d4d::t_3549c27cf6c96c 972-975
+  s_1b9333aca53d4d::t_4c0da27d325d06 1184
+  s_1b9333aca53d4d::t_f4ec1592cfc86f 1678-1681
+  s_1b9333aca53d4d::t_7009a16e36d9cf 16
+crates/daw-plugin-host/src/vst3_run_loop.rs
+  s_1b9333aca53d4d::t_51a96b5b509735 214-241,245-253,255-256,262-286,290-298,300,305,308-318
+  s_1b9333aca53d4d::t_eb3de7054cea2a 340-350,371,374-387,389-405,410,418-424,431,434,436,438-439
+  s_1b9333aca53d4d::t_85689e1d646bcf 497-501
+  s_1b9333aca53d4d::t_a982b65771d84e 12-14
+  s_1b9333aca53d4d::t_3a840cdd071084 98-102,104-110
+  s_1b9333aca53d4d::t_4ea0bc7c9d5128 670-798
+  s_1b9333aca53d4d::t_c28be86246cde1 437
+  s_1b9333aca53d4d::t_55db1835c33118 21,34-37,39-42
+  s_1b9333aca53d4d::t_ac6e9c52a0e725 213,339,496,669
+crates/daw-plugin-host/src/lib.rs
+  s_1b9333aca53d4d::t_783817d907304e 27
+crates/sourdaw-native/src/state.rs
+  s_1b9333aca53d4d::t_5655ca0f515145 46-53
+crates/daw-plugin-host/src/traits.rs
+  s_1b9333aca53d4d::t_0547407506069a 44-50
+  s_1b9333aca53d4d::t_f648e9263a7ef7 237-245
+crates/sourdaw-native/src/host/plugin_window.rs
+  s_1b9333aca53d4d::t_cb4d8e76b98299 159-172
+crates/daw-plugin-host/src/vst3_editor.rs
+  s_1b9333aca53d4d::t_cd6bd6e72f4b44 397
+  s_1b9333aca53d4d::t_ca46838254155d 547-550,557
+  s_1b9333aca53d4d::t_e11318fa6e09c3 40,44-46,53,59-78,80-86
+  s_1b9333aca53d4d::t_c81b42cdc25d0a 581-586
+  s_1b9333aca53d4d::t_647db81aab8d0e 616-632,637
+  s_1b9333aca53d4d::t_77eea5c8569115 652-653,672,676-680,685,691,693-696,699-700
+  s_1b9333aca53d4d::t_cf55f7d1a67281 260-266,269-273,276,282,287,291,296,301-313,317-324,329-340,345-362,372-387
+  s_1b9333aca53d4d::t_cbff2d5b0c12b0 448-458,477-487,490-494
+  s_1b9333aca53d4d::t_6f94f9b2d0167b 711-717,724-726,732-734
+  s_1b9333aca53d4d::t_1eb8addee3185d 765,768-775,785-794
+  s_1b9333aca53d4d::t_d827080ab94099 413
+  s_1b9333aca53d4d::t_b7b5cecc8bba07 11-26,33-34
+  s_1b9333aca53d4d::t_9dc16d35e1ea61 388,735,909-1025
+  s_1b9333aca53d4d::t_6c40ccac8e53e1 129-178
+  s_1b9333aca53d4d::t_4aa1690812e8c0 389
+crates/sourdaw-native/src/addon/windows.rs
+  s_1b9333aca53d4d::t_9bbbc8a5ea0c7c 236,245-252
+  s_1b9333aca53d4d::t_ee2014b5439394 199,209-210
+  s_1b9333aca53d4d::t_9af3f81f6a3070 51-54
+  s_1b9333aca53d4d::t_ab9cdff0c795a1 133-138,142
+  s_1b9333aca53d4d::t_2f81aa7533504d 154-159
+electron/pluginGui.ts
+  s_1b9333aca53d4d::t_55b10ba53d0ee4 155-160
+  s_1b9333aca53d4d::t_398838579d45da 38-43
+  s_1b9333aca53d4d::t_cbc3c7c95f8956 94-103
+  s_1b9333aca53d4d::t_99cc5535d53909 77-78
+  s_1b9333aca53d4d::t_64315859b3bfb8 104-110
+electron/__tests__/pluginGui.spec.ts
+  s_1b9333aca53d4d::t_87f39aff62b908 359
+  s_1b9333aca53d4d::t_d7d3e9ff3ee4c3 346
+  s_1b9333aca53d4d::t_6ec786e2f74217 85
+  s_1b9333aca53d4d::t_34c4e855af9c50 293
+  s_1b9333aca53d4d::t_a781c23d2a7e71 105-118
+crates/daw-plugin-host/src/vst3_wrapper/tests.rs
+  s_1b9333aca53d4d::t_d401f792486c90 1298-1302,1321-1325
+  s_1b9333aca53d4d::t_bcc5cd290c98da 2610-2613
+  s_1b9333aca53d4d::t_9a1645f4c514b6 2561-2566
+  s_1b9333aca53d4d::t_9985dd6a406a3e 1199,1201-1204
+  s_1b9333aca53d4d::t_4761b2f7b73918 1068-1074,1077-1083,1087-1088
+  s_1b9333aca53d4d::t_97dbb870864222 1145-1148
+  s_1b9333aca53d4d::t_7c4d28fa275b44 1149-1157
+  s_1b9333aca53d4d::t_9710e5802afc70 1252,1262-1265
+  s_1b9333aca53d4d::t_e6b8bb2c29b1a6 2949-2961
+  s_1b9333aca53d4d::t_4931e7ddcee6b8 2609,2783-2948,2962-3050
+  s_1b9333aca53d4d::t_6d20cc112e0b5f 1113
+  s_1b9333aca53d4d::t_b79557eaa4f447 3051,3073
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "ccd99b861f8879bd8c7d646f529cee01c15cfd7b",
+  "prompts": {},
+  "sessions": {
+    "s_1b9333aca53d4d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "188b0d45-7765-49bd-8d6e-1eebbd450613",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
