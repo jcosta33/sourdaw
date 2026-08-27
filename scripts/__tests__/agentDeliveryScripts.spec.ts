@@ -374,7 +374,37 @@ describe('package scripts and gitignore', () => {
 
         expect(result).toBe(17);
         expect(resolves).toBe(1);
-        expect(originReads).toEqual(paths.map((path) => `pinned-sha:${path}`));
+        // The gating workflow is read at that same pinned commit, and only for `deliver`. Reading it
+        // at a ref, a `HEAD`, or a second resolution would let the merge gate be decided by a commit
+        // other than the one this closure was snapshotted from.
+        expect(originReads).toEqual([
+            ...paths.map((path) => `pinned-sha:${path}`),
+            'pinned-sha:.github/workflows/health-gates.yml',
+        ]);
+    });
+
+    /**
+     * `lane:publish` and `issue:reconcile` decide no merge, so neither reads a workflow. A launcher
+     * that read one for every command would make them fail over a file and a parser they never use.
+     */
+    it.each(['lane:publish', 'issue:reconcile'] as const)('reads no gating workflow for %s', async (command) => {
+        const originReads: string[] = [];
+        let gateWorkflow: unknown = 'unset';
+
+        await runTrustedGithubWriteCommand(command, [], {
+            resolveOriginMain: () => 'pinned-sha',
+            readOriginSource: (_commit, path) => {
+                originReads.push(path);
+                return 'trusted';
+            },
+            executeSnapshot: async (_command, _args, snapshot) => {
+                gateWorkflow = snapshot.gateWorkflow;
+                return 0;
+            },
+        });
+
+        expect(originReads).toEqual([...trustedDependencyPaths(command)]);
+        expect(gateWorkflow).toBeUndefined();
     });
 
     it('binds the launcher to the primary checkout instead of a worktree alias', () => {

@@ -17,12 +17,14 @@ import { fileURLToPath } from 'node:url';
 export type TrustedGithubWriteCommand = 'deliver' | 'issue:reconcile' | 'lane:publish';
 
 export const BOOTSTRAP_PATH = 'scripts/trustedGithubWriteBootstrap.ts';
+export const HEALTH_GATES_WORKFLOW_PATH = '.github/workflows/health-gates.yml';
 
 export const TRUSTED_PRIMARY_ROOT_ENV = 'SOURDAW_TRUSTED_PRIMARY_ROOT';
 export const TRUSTED_COMMON_DIR_ENV = 'SOURDAW_TRUSTED_COMMON_DIR';
 export const TRUSTED_GIT_PATH_ENV = 'SOURDAW_TRUSTED_GIT_PATH';
 export const TRUSTED_GH_PATH_ENV = 'SOURDAW_TRUSTED_GH_PATH';
 export const TRUSTED_ORIGIN_COMMIT_ENV = 'SOURDAW_TRUSTED_ORIGIN_COMMIT';
+export const TRUSTED_GATE_WORKFLOW_ENV = 'SOURDAW_TRUSTED_GATE_WORKFLOW';
 
 export type TrustedLauncherBinding = {
     primaryRoot: string;
@@ -31,10 +33,20 @@ export type TrustedLauncherBinding = {
     ghPath: string;
 };
 
+/**
+ * What the health-gates workflow says about one job, carried to the gate unresolved. A `name` is
+ * whatever the workflow declares — absent, null, a string, or something that is not a name at all —
+ * because deciding what a declaration means is the gate's rule to apply, not the launcher's.
+ */
+export type TrustedWorkflowJob = { name?: unknown; needs?: unknown; uses?: unknown };
+
+export type TrustedGateWorkflow = { jobs: Record<string, TrustedWorkflowJob> } | { unreadable: string };
+
 export type TrustedSourceSnapshot = {
     commit: string;
     sources: ReadonlyMap<string, string>;
     launcher?: TrustedLauncherBinding;
+    gateWorkflow?: TrustedGateWorkflow;
 };
 
 type TrustedSourcePort = {
@@ -103,12 +115,47 @@ export function assertTrustedSourceGraph(
         if (!pathSet.has(path)) {
             throw new Error(`trusted snapshot contains unexpected source ${path}`);
         }
-        for (const dependency of localModuleDependencies(path, source)) {
-            if (!pathSet.has(dependency)) {
-                throw new Error(`${path} imports unchecked local dependency ${dependency}`);
-            }
+        assertSnapshotResolvableImports(path, source, pathSet);
+    }
+}
+
+/**
+ * A bare specifier is the one import shape the snapshot cannot satisfy. It holds nothing but
+ * `scripts/`, so Node resolves `node_modules` upward from a temporary directory, finds none, and the
+ * command dies mid-delivery with `ERR_MODULE_NOT_FOUND` instead of refusing anything. Only `node:`
+ * builtins and the pinned siblings are reachable there, and checking local specifiers alone left
+ * that failure invisible until it happened.
+ *
+ * The loader is exempt because the launcher executes it from the protected primary checkout, where
+ * the repository's packages do resolve. That exemption is only sound while no snapshot source
+ * imports it, which is the second rule here.
+ */
+function assertSnapshotResolvableImports(path: string, source: string, pathSet: ReadonlySet<string>): void {
+    for (const dependency of localModuleDependencies(path, source)) {
+        if (!pathSet.has(dependency)) {
+            throw new Error(`${path} imports unchecked local dependency ${dependency}`);
+        }
+        if (dependency === BOOTSTRAP_PATH) {
+            throw new Error(`${path} imports ${BOOTSTRAP_PATH}, which the trusted snapshot never executes`);
         }
     }
+    if (path === BOOTSTRAP_PATH) {
+        return;
+    }
+    for (const specifier of bareModuleSpecifiers(source)) {
+        throw new Error(`${path} imports ${specifier}, which does not resolve in the trusted snapshot`);
+    }
+}
+
+function bareModuleSpecifiers(source: string): string[] {
+    const specifiers = new Set<string>();
+    for (const match of source.matchAll(/\bfrom\s+['"]([^'"]+)['"]/g)) {
+        const specifier = match[1];
+        if (specifier !== undefined && !specifier.startsWith('.') && !specifier.startsWith('node:')) {
+            specifiers.add(specifier);
+        }
+    }
+    return [...specifiers];
 }
 
 function localModuleDependencies(path: string, source: string): string[] {
@@ -164,7 +211,75 @@ async function runTrustedGithubWriteCommandAtCommit(
         sources.set(path, port.readOriginSource(commit, path));
     }
     assertTrustedSourceGraph(command, sources);
-    return port.executeSnapshot(command, args, { commit, sources });
+    const gateWorkflow = command === 'deliver' ? await readGateWorkflow(port, commit) : undefined;
+    return port.executeSnapshot(command, args, { commit, sources, gateWorkflow });
+}
+
+function errorDetail(error: unknown): string {
+    return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * The one dependency this loader takes beyond Node's builtins, and deliberately so: `yaml` is the
+ * parser the GitHub-adjacent tooling in this repository already uses, and the launcher runs from the
+ * protected primary checkout where it resolves.
+ *
+ * It is imported here rather than at the top of the file for two reasons. Only `deliver` needs a
+ * workflow, so `lane:publish` and `issue:reconcile` must not fail to start over a package neither
+ * one reads. And a failure to resolve it arrives as a rejected promise the caller turns into a
+ * refusal, where a static import would instead kill the process with `ERR_MODULE_NOT_FOUND` — the
+ * merge gate must refuse when it cannot parse the workflow, never crash past the question.
+ */
+async function parseYaml(source: string): Promise<unknown> {
+    const { parse } = await import('yaml');
+    return parse(source);
+}
+
+/**
+ * Only `deliver` reads a workflow, and it reads it at the same pinned commit its own code came from
+ * — never the working tree, never a local `HEAD`, either of which would let one unpulled or
+ * uncommitted edit reshape the merge gate.
+ *
+ * An unreadable workflow is carried across as a reason rather than thrown here, so the refusal is
+ * worded and owned by the gate. Nothing is resolved or filtered on the way: whatever the workflow
+ * declares for a job arrives as it was written.
+ */
+async function readGateWorkflow(port: TrustedSourcePort, commit: string): Promise<TrustedGateWorkflow> {
+    let source: string;
+    try {
+        source = port.readOriginSource(commit, HEALTH_GATES_WORKFLOW_PATH);
+    } catch (error) {
+        return { unreadable: `it cannot be read at ${commit}: ${errorDetail(error)}` };
+    }
+    return summarizeGateWorkflow(source);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * The parse the gate cannot perform for itself. A real YAML parser is the point: a line-oriented
+ * reader diverges from it on continuation, key spelling, comment separators, block scalars, anchors,
+ * aliases, tags and field indentation, and each divergence silently yields a check name GitHub never
+ * reports — which matches nothing, and tolerates the cancellation it was meant to catch.
+ */
+export async function summarizeGateWorkflow(source: string): Promise<TrustedGateWorkflow> {
+    let workflow: unknown;
+    try {
+        workflow = await parseYaml(source);
+    } catch (error) {
+        return { unreadable: `it is not valid YAML: ${errorDetail(error)}` };
+    }
+    const jobs = isRecord(workflow) ? workflow.jobs : undefined;
+    if (!isRecord(jobs)) {
+        return { unreadable: 'it declares no jobs mapping' };
+    }
+    const summary: Record<string, TrustedWorkflowJob> = {};
+    for (const [jobId, job] of Object.entries(jobs)) {
+        summary[jobId] = isRecord(job) ? { name: job.name, needs: job.needs, uses: job.uses } : {};
+    }
+    return { jobs: summary };
 }
 
 export async function executeTrustedSnapshot(
@@ -237,6 +352,9 @@ export function trustedSnapshotEnv(
     parent: NodeJS.ProcessEnv = process.env
 ): NodeJS.ProcessEnv {
     const env = trustedGitReadEnv(parent);
+    if (snapshot.gateWorkflow !== undefined) {
+        env[TRUSTED_GATE_WORKFLOW_ENV] = JSON.stringify(snapshot.gateWorkflow);
+    }
     const launcher = snapshot.launcher;
     if (launcher === undefined) {
         return env;

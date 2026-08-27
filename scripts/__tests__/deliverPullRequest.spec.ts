@@ -1,10 +1,10 @@
-import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { parse } from 'yaml';
 
 import {
     deliverPullRequest as deliverPullRequestWithTracker,
@@ -26,6 +26,47 @@ import {
     REQUIRED_BASE_BRANCH,
     REVIEWER_BOT_NODE_ID,
 } from '../githubAppIdentity.ts';
+import { summarizeGateWorkflow } from '../trustedGithubWriteBootstrap.ts';
+
+const WORKFLOW_PATH = '.github/workflows/health-gates.yml';
+
+/**
+ * The launcher's own parse, serialized exactly as it reaches the snapshot. Going through it rather
+ * than a fixture keeps these cases honest about the whole path a delivery actually takes.
+ */
+async function gatingNamesFor(workflowSource: string): Promise<ReadonlySet<string>> {
+    return gateRequiredCheckNames(JSON.stringify(await summarizeGateWorkflow(workflowSource)));
+}
+
+async function refusalFor(workflowSource: string): Promise<string> {
+    try {
+        await gatingNamesFor(workflowSource);
+    } catch (error) {
+        return String(error);
+    }
+    return 'no refusal';
+}
+
+/**
+ * What the `yaml` package says the check name is, derived here independently of the gate: a job's
+ * declared `name`, or its job id when it declares none. Every shape below is asserted against this
+ * rather than against a hand-copied expectation, so a divergence from the parser fails the test.
+ */
+function parserCheckName(workflowSource: string, jobId: string): string {
+    const workflow = parse(workflowSource) as { jobs?: Record<string, { name?: unknown } | null> };
+    const declared = workflow.jobs?.[jobId]?.name;
+    return typeof declared === 'string' && declared !== '' ? declared : jobId;
+}
+
+/** The job ids the gate declares, read with the `yaml` package rather than derived by the gate. */
+function parserGateNeeds(workflowSource: string): string[] {
+    const workflow = parse(workflowSource) as { jobs?: Record<string, { needs?: unknown } | null> };
+    const needs = workflow.jobs?.gate?.needs;
+    if (!Array.isArray(needs)) {
+        throw new TypeError(`${WORKFLOW_PATH} declares no gate needs list`);
+    }
+    return needs as string[];
+}
 
 function relationshipBody(relationship: string): string {
     return `### 🎯 What does this PR do?
@@ -217,23 +258,17 @@ function checkRun(overrides: Partial<HeadCheckRun> = {}): HeadCheckRun {
     return { name: 'Gate', status: 'COMPLETED', conclusion: 'SUCCESS', ...overrides };
 }
 
+const LIVE_WORKFLOW_SOURCE = readFileSync(join(import.meta.dirname, '../..', WORKFLOW_PATH), 'utf8');
+
 /**
- * Written out rather than read from the workflow, so a wrong derivation changes the production set
- * alone and these expectations still say what the check names are.
+ * Derived from the live workflow with the `yaml` package rather than copied out of it. A pinned list
+ * says what the names were on the day it was written: this repository gated on twelve jobs while the
+ * copy here still named eleven, and the missing one was invisible precisely because nothing compared
+ * the two. Deriving it means promoting a job into the gate updates these fixtures with the workflow.
  */
-const gatingCheckNames: ReadonlySet<string> = new Set([
-    'Decide scope',
-    'Types and contracts',
-    'Lint',
-    'Module boundaries',
-    'Dependency review',
-    'Production build',
-    'Rust workspace and collaboration server',
-    'Native audio backend (macOS)',
-    'Windows device layer',
-    'CodeQL',
-    'Secret scan',
-]);
+const gatingCheckNames: ReadonlySet<string> = new Set(
+    parserGateNeeds(LIVE_WORKFLOW_SOURCE).map((jobId) => parserCheckName(LIVE_WORKFLOW_SOURCE, jobId))
+);
 
 /**
  * The shape an approving review leaves behind when its own run cancels the push run still in
@@ -1036,6 +1071,52 @@ describe('pull-request delivery', () => {
     });
 
     /**
+     * The merge a hard-locked field indent used to wave through. `lint` declares `name: Lint` at
+     * indent 6 — legal YAML, accepted by GitHub, reported as the check `Lint` — and a reader that
+     * only looked for job fields at indent 4 saw no name at all, derived `lint`, and matched nothing
+     * on a head where `Lint` was cancelled with no success beside it. Deriving the gating set
+     * through the real parser is what turns that silent merge into this refusal.
+     */
+    it('refuses a head whose cancelled check belongs to a gated job declaring its name at a deeper indent', async () => {
+        const workflowSource = [
+            'name: Health gates',
+            'jobs:',
+            '  lint:',
+            '      name: Lint',
+            '      runs-on: ubuntu-latest',
+            '  gate:',
+            '    name: Gate',
+            '    needs: lint',
+        ].join('\n');
+        const derived = await gatingNamesFor(workflowSource);
+
+        expect([...derived]).toEqual(['Lint']);
+        expect(parserCheckName(workflowSource, 'lint')).toBe('Lint');
+
+        const { port, calls } = fakePort({
+            primary: [pullRequest({ mergeStateStatus: 'UNSTABLE' })],
+            headCheckRuns: [
+                checkRun({ name: 'Lint', conclusion: 'CANCELLED' }),
+                checkRun({ name: 'Native audio backend (macOS)', conclusion: 'SKIPPED' }),
+                checkRun(),
+            ],
+            gateRequiredCheckNames: derived,
+        });
+
+        let thrown: unknown;
+        try {
+            deliverPullRequest(42, port);
+        } catch (error) {
+            thrown = error;
+        }
+
+        expect(String(thrown)).toBe(
+            'Error: PR #42 merge state is UNSTABLE and check Lint was cancelled and never succeeded on head'
+        );
+        expect(calls).not.toContain('merge:42:head');
+    });
+
+    /**
      * The rule keys on a cancellation, not on the absence of a success: a job the workflow simply
      * never ran on this head has nothing to supersede and nothing to prove.
      */
@@ -1168,8 +1249,6 @@ describe('pull-request delivery', () => {
 });
 
 describe('gating check names', () => {
-    const WORKFLOW_PATH = '.github/workflows/health-gates.yml';
-
     function workflow(...jobs: string[]): string {
         return ['name: Health gates', 'on:', '  pull_request:', 'jobs:', ...jobs].join('\n');
     }
@@ -1211,8 +1290,8 @@ describe('gating check names', () => {
      * The name GitHub labels a check with is the job's `name:`, and its job id only when the job
      * declares none — which is how `boundaries` appears in the checks list.
      */
-    it('maps every job the gate needs to the name GitHub labels its check with', () => {
-        const names = gateRequiredCheckNames(workflow(decide, boundaries, dependencyReview, nightly, gate));
+    it('maps every job the gate needs to the name GitHub labels its check with', async () => {
+        const names = await gatingNamesFor(workflow(decide, boundaries, dependencyReview, nightly, gate));
 
         expect([...names].sort()).toEqual(['Decide scope', 'Dependency review', 'boundaries']);
     });
@@ -1221,16 +1300,16 @@ describe('gating check names', () => {
      * A job that reports on a schedule is not merge evidence, however loudly it is cancelled on a
      * superseded pull-request run.
      */
-    it('leaves a job outside the gate needs out of the gating set', () => {
-        const names = gateRequiredCheckNames(workflow(decide, boundaries, dependencyReview, nightly, gate));
+    it('leaves a job outside the gate needs out of the gating set', async () => {
+        const names = await gatingNamesFor(workflow(decide, boundaries, dependencyReview, nightly, gate));
 
         expect(names.has('Nightly failure report')).toBe(false);
     });
 
-    it('reads a gate that needs one job written inline', () => {
+    it('reads a gate that needs one job written inline', async () => {
         const inlineGate = ['  gate:', '    name: Gate', '    needs: dependency-review'].join('\n');
 
-        expect([...gateRequiredCheckNames(workflow(decide, dependencyReview, inlineGate))]).toEqual([
+        expect([...(await gatingNamesFor(workflow(decide, dependencyReview, inlineGate)))]).toEqual([
             'Dependency review',
         ]);
     });
@@ -1240,135 +1319,129 @@ describe('gating check names', () => {
     }
 
     /**
-     * A quoted name is one of the two spellings this reader accepts, and a single-quoted value
-     * spells an apostrophe by doubling it.
-     */
-    it('reads a quoted job name and its doubled single quote', () => {
-        const lint = ['  lint:', "    name: 'Lint''s pass'", '    runs-on: ubuntu-latest'].join('\n');
-
-        expect([...gateRequiredCheckNames(workflow(lint, gateNeeding('lint')))]).toEqual(["Lint's pass"]);
-    });
-
-    /**
-     * Every spelling here parses as valid YAML and none of them is a name this reader can resolve.
-     * Handing back the raw text instead would name a check GitHub never reports, and every
-     * cancellation under the real name would then be tolerated in silence.
+     * Every shape here is legal YAML that GitHub accepts, and every one of them used to refuse — or,
+     * worse, resolve to something GitHub never reports — because a line-oriented reader cannot see
+     * what a parser sees. Three consecutive review rounds each closed one of these and left the next
+     * open, which is why the parse now belongs to the `yaml` package.
+     *
+     * Each case asserts the derived name against `parserCheckName`, which reads the same source with
+     * that package independently. Pinning the literal too would only restate the derivation.
      */
     it.each([
-        { label: 'a plain name ending in a comment', declared: '    name: Lint # the fast lane' },
-        { label: 'an anchored name', declared: '    name: &fast Lint' },
-        { label: 'an aliased name', declared: '    name: *fast' },
-        { label: 'a tagged name', declared: '    name: !!str Lint' },
-        { label: 'a folded block name', declared: '    name: >-' },
-        { label: 'a literal block name', declared: '    name: |' },
-        { label: 'a double-quoted name carrying an escape', declared: '    name: "Lint \\"fast\\""' },
-    ])('refuses $label', ({ declared }) => {
-        const lint = ['  lint:', declared, '    runs-on: ubuntu-latest'].join('\n');
-
-        let thrown: unknown;
-        try {
-            gateRequiredCheckNames(workflow(lint, gateNeeding('lint')));
-        } catch (error) {
-            thrown = error;
-        }
-
-        expect(String(thrown)).toBe(
-            `Error: cannot read ${declared.slice('    name: '.length)} in ${WORKFLOW_PATH} as a plain or quoted scalar`
-        );
-    });
-
-    function unresolvableJobField(detail: string): string {
-        return (
-            `Error: the static job in ${WORKFLOW_PATH} ${detail}, ` +
-            'which this reader cannot resolve to the name GitHub reports'
-        );
-    }
-
-    /**
-     * A YAML scalar does not end where its line ends. `Types and` continued on a deeper line is one
-     * value GitHub reports as `Types and contracts`, and a value that is only a comment is null, so
-     * GitHub labels that check with the job id. Read one line at a time, each of these resolves to a
-     * name GitHub never reports, and the cancellation this gate exists to catch passes unseen.
-     */
-    it.each([
+        { label: 'a name field indented three spaces', job: ['  lint:', '   name: Lint'], expected: 'Lint' },
+        { label: 'a name field indented five spaces', job: ['  lint:', '     name: Lint'], expected: 'Lint' },
+        { label: 'a name field indented six spaces', job: ['  lint:', '      name: Lint'], expected: 'Lint' },
         {
-            label: 'a plain name wrapped onto the next line',
-            declaration: ['    name: Types and', '      contracts'],
-            message: unresolvableJobField('continues its name onto the next line'),
+            label: 'a name ending at a tab-separated comment',
+            job: ['  lint:', '    name: Lint\t# only lints'],
+            expected: 'Lint',
         },
         {
-            label: 'a double-quoted name wrapped onto the next line',
-            declaration: ['    name: "Types and', '      contracts"'],
-            message: unresolvableJobField('continues its name onto the next line'),
+            label: 'a name ending at a space-separated comment',
+            job: ['  lint:', '    name: Lint # the fast lane'],
+            expected: 'Lint',
         },
         {
-            label: 'a name that is only a comment',
-            declaration: ['    name: # the type lane'],
-            message: unresolvableJobField('declares a name that is only a comment'),
+            label: 'a plain name continued onto the next line',
+            job: ['  lint:', '    name: Types and', '      contracts'],
+            expected: 'Types and contracts',
         },
-    ])('refuses $label', ({ declaration, message }) => {
-        const source = workflow(
-            ['  static:', ...declaration, '    runs-on: ubuntu-latest'].join('\n'),
-            gateNeeding('static')
-        );
+        {
+            label: 'a double-quoted name continued onto the next line',
+            job: ['  lint:', '    name: "Types and', '      contracts"'],
+            expected: 'Types and contracts',
+        },
+        { label: 'a name key with space before its colon', job: ['  lint:', '    name : Lint'], expected: 'Lint' },
+        { label: 'a double-quoted name key', job: ['  lint:', '    "name": Lint'], expected: 'Lint' },
+        { label: 'a single-quoted name key', job: ['  lint:', "    'name': Lint"], expected: 'Lint' },
+        { label: 'an anchored name', job: ['  lint:', '    name: &fast Lint'], expected: 'Lint' },
+        { label: 'a tagged name', job: ['  lint:', '    name: !!str Lint'], expected: 'Lint' },
+        { label: 'a folded block name', job: ['  lint:', '    name: >-', '      Lint'], expected: 'Lint' },
+        { label: 'a literal block name', job: ['  lint:', '    name: |-', '      Lint'], expected: 'Lint' },
+        {
+            label: 'a double-quoted name carrying an escape',
+            job: ['  lint:', '    name: "Lint \\"fast\\""'],
+            expected: 'Lint "fast"',
+        },
+        {
+            label: 'a single-quoted name doubling its apostrophe',
+            job: ['  lint:', "    name: 'Lint''s pass'"],
+            expected: "Lint's pass",
+        },
+        { label: 'a name that is only a comment', job: ['  lint:', '    name: # the fast lane'], expected: 'lint' },
+        { label: 'a name declared empty', job: ['  lint:', '    name:'], expected: 'lint' },
+        { label: 'no name at all', job: ['  lint:', '    runs-on: ubuntu-latest'], expected: 'lint' },
+    ])('resolves $label to the name the yaml package produces', async ({ job, expected }) => {
+        const source = workflow(job.join('\n'), gateNeeding('lint'));
 
-        let thrown: unknown;
-        try {
-            gateRequiredCheckNames(source);
-        } catch (error) {
-            thrown = error;
-        }
-
-        expect(String(thrown)).toBe(message);
+        expect([...(await gatingNamesFor(source))]).toEqual([parserCheckName(source, 'lint')]);
+        expect([...(await gatingNamesFor(source))]).toEqual([expected]);
     });
 
     /**
-     * The single-line control: the same name written on one line resolves, so each refusal above
-     * pins the wrapping rather than the name.
+     * An alias resolves against an anchor declared elsewhere in the document, which no reader that
+     * looks at one line at a time can do. GitHub reports the anchored value.
      */
-    it('reads a job name that ends on the line it started on', () => {
+    it('resolves an aliased name to the name the yaml package produces', async () => {
         const source = workflow(
-            ['  static:', '    name: Types and contracts', '    runs-on: ubuntu-latest'].join('\n'),
-            gateNeeding('static')
+            ['  decide:', '    name: &fast Lint'].join('\n'),
+            ['  lint:', '    name: *fast'].join('\n'),
+            gateNeeding('lint')
         );
 
-        expect([...gateRequiredCheckNames(source)]).toEqual(['Types and contracts']);
+        expect([...(await gatingNamesFor(source))]).toEqual([parserCheckName(source, 'lint')]);
+        expect([...(await gatingNamesFor(source))]).toEqual(['Lint']);
     });
 
     /**
-     * Every one of these spells the same key GitHub reads as `name`, and a prefix test sees none of
-     * them. The job then reads as declaring no name at all and the gating set takes the job id —
-     * `static` where GitHub reports `Types and contracts`, which is a plausible enough name to
-     * escape notice while matching no check on the head.
+     * A block sequence may sit at its key's own indent. This used to refuse with `needs no job`,
+     * which was simply false — the gate needed three.
      */
-    it.each([
-        { label: 'a name key with space before its colon', declared: '    name : Types and contracts' },
-        { label: 'a double-quoted name key', declared: '    "name": Types and contracts' },
-        { label: 'a single-quoted name key', declared: "    'name': Types and contracts" },
-    ])('refuses $label', ({ declared }) => {
-        const source = workflow(
-            ['  static:', declared, '    runs-on: ubuntu-latest'].join('\n'),
-            gateNeeding('static')
-        );
+    it('reads a needs block sequence written at the key own indent', async () => {
+        const ownIndentGate = [
+            '  gate:',
+            '    name: Gate',
+            '    needs:',
+            '    - decide',
+            '    - dependency-review',
+        ].join('\n');
 
-        let thrown: unknown;
-        try {
-            gateRequiredCheckNames(source);
-        } catch (error) {
-            thrown = error;
-        }
+        expect([...(await gatingNamesFor(workflow(decide, dependencyReview, ownIndentGate)))].sort()).toEqual([
+            'Decide scope',
+            'Dependency review',
+        ]);
+    });
 
-        expect(String(thrown)).toBe(
-            unresolvableJobField(`spells its name key as ${declared.trim().split(':')[0] ?? ''}:`)
-        );
+    /**
+     * A trailing comment on a job-id line used to refuse with the generic "cannot read the jobs in",
+     * which pointed nowhere near its cause. It is an ordinary comment and resolves.
+     */
+    it('reads a job whose id line carries a trailing comment', async () => {
+        const source = workflow(['  lint: # the fast lane', '    name: Lint'].join('\n'), gateNeeding('lint'));
+
+        expect([...(await gatingNamesFor(source))]).toEqual(['Lint']);
+    });
+
+    /**
+     * `jobs:` is not the last block in this workflow, and a top-level key that follows it is not a
+     * job however it is spelled.
+     */
+    it('reads only the jobs block when another top-level key follows it', async () => {
+        const source = [
+            workflow(decide, boundaries, dependencyReview, nightly, gate),
+            'permissions:',
+            '  contents: read',
+        ].join('\n');
+
+        expect([...(await gatingNamesFor(source))].sort()).toEqual(['Decide scope', 'Dependency review', 'boundaries']);
     });
 
     /**
      * `unit` and `e2e` are one line away from joining the gate, and GitHub reports one check per
      * shard with the expression substituted. The declared name matches none of them, so promoting
-     * such a job silently adds an entry that can never fire.
+     * such a job silently adds an entry that can never fire. Recorded as issue #2924.
      */
-    it('refuses a matrix job promoted into the gate rather than gating on a name GitHub never reports', () => {
+    it('refuses a matrix job promoted into the gate rather than gating on a name GitHub never reports', async () => {
         const unit = [
             '  unit:',
             '    name: Unit suite ${{ matrix.shard }}/4',
@@ -1377,63 +1450,31 @@ describe('gating check names', () => {
             '        shard: [1, 2, 3, 4]',
         ].join('\n');
 
-        let thrown: unknown;
-        try {
-            gateRequiredCheckNames(workflow(unit, gateNeeding('unit')));
-        } catch (error) {
-            thrown = error;
-        }
-
-        expect(String(thrown)).toBe(
+        expect(await refusalFor(workflow(unit, gateNeeding('unit')))).toBe(
             `Error: the unit job in ${WORKFLOW_PATH} names its check Unit suite \${{ matrix.shard }}/4, ` +
                 'which GitHub substitutes per matrix job before reporting it'
         );
     });
 
     /**
-     * A job that declares `name:` and leaves it empty is labelled with its job id, exactly as one
-     * that declares no name at all.
+     * A reusable workflow reports one check per inner job, named `<job name> / <inner job name>`.
+     * The single name derived here matches none of them, so promoting such a job into the gate would
+     * add an entry that can never fire — the same failure as a matrix name, from a different cause.
      */
-    it('labels a job declaring an empty name with its job id', () => {
-        const lint = ['  lint:', '    name:', '    runs-on: ubuntu-latest'].join('\n');
+    it('refuses a gated job that calls a reusable workflow', async () => {
+        const release = ['  release:', '    name: Release', '    uses: ./.github/workflows/release.yml'].join('\n');
 
-        expect([...gateRequiredCheckNames(workflow(lint, gateNeeding('lint')))]).toEqual(['lint']);
-    });
-
-    /**
-     * `jobs:` is not the last block in this workflow, and a top-level key that follows it is not a
-     * job however it is spelled.
-     */
-    it('reads only the jobs block when another top-level key follows it', () => {
-        const source = [
-            workflow(decide, boundaries, dependencyReview, nightly, gate),
-            'permissions:',
-            '  contents: read',
-        ].join('\n');
-
-        expect([...gateRequiredCheckNames(source)].sort()).toEqual(['Decide scope', 'Dependency review', 'boundaries']);
+        expect(await refusalFor(workflow(release, gateNeeding('release')))).toBe(
+            `Error: the release job in ${WORKFLOW_PATH} calls a reusable workflow, ` +
+                'whose checks GitHub reports as one name per inner job rather than the one name this gate derives'
+        );
     });
 
     it.each([
         {
-            label: 'a workflow declaring no jobs',
-            source: 'name: Health gates\non:\n  pull_request:\n',
-            message: `Error: cannot read the jobs in ${WORKFLOW_PATH} to determine which checks gate the merge`,
-        },
-        {
-            label: 'a jobs block that is not a mapping of job ids',
-            source: workflow('  - decide', gate),
-            message: `Error: cannot read the jobs in ${WORKFLOW_PATH} to determine which checks gate the merge`,
-        },
-        {
-            label: 'a job field standing outside any job',
-            source: workflow('    name: Orphan', gate),
-            message: `Error: cannot read the jobs in ${WORKFLOW_PATH} to determine which checks gate the merge`,
-        },
-        {
-            label: 'a needs list indented where this reader cannot place it',
-            source: workflow(decide, ['  gate:', '    name: Gate', '    needs:', '        - decide'].join('\n')),
-            message: `Error: the gate job in ${WORKFLOW_PATH} needs no job, so no check can be proven to gate the merge`,
+            label: 'a jobs block that is a sequence rather than a mapping of job ids',
+            source: workflow('  - decide', '  - gate'),
+            message: `Error: cannot read ${WORKFLOW_PATH} to determine which checks gate the merge: it declares no jobs mapping`,
         },
         {
             label: 'a workflow with no gate job',
@@ -1451,148 +1492,140 @@ describe('gating check names', () => {
             message: `Error: the gate job in ${WORKFLOW_PATH} needs no job, so no check can be proven to gate the merge`,
         },
         {
+            label: 'a gate job whose needs entry is not a job id',
+            source: workflow(decide, ['  gate:', '    name: Gate', '    needs: [decide, 7]'].join('\n')),
+            message:
+                `Error: the gate job in ${WORKFLOW_PATH} needs an entry that is not a job id, ` +
+                'so no check can be proven to gate the merge',
+        },
+        {
             label: 'a gate job needing a job the workflow does not define',
             source: workflow(decide, ['  gate:', '    name: Gate', '    needs:', '      - typo'].join('\n')),
             message: `Error: the gate job in ${WORKFLOW_PATH} needs typo, which no job in that workflow defines`,
         },
-    ])('refuses $label', ({ source, message }) => {
-        let thrown: unknown;
-        try {
-            gateRequiredCheckNames(source);
-        } catch (error) {
-            thrown = error;
-        }
-
-        expect(String(thrown)).toBe(message);
+        {
+            label: 'a gated job whose name is not text',
+            source: workflow(['  lint:', '    name: [Lint, Fast]'].join('\n'), gateNeeding('lint')),
+            message:
+                `Error: the lint job in ${WORKFLOW_PATH} declares a name that is not text, ` +
+                'which cannot be the name GitHub reports',
+        },
+    ])('refuses $label', async ({ source, message }) => {
+        expect(await refusalFor(source)).toBe(message);
     });
 
-    type WorkflowRepository = { root: string; commits: string[] };
-
-    function workflowRepository(committed: string[], workingTree?: string): WorkflowRepository {
-        const root = mkdtempSync(join(tmpdir(), 'sourdaw-health-gates-'));
-        const git = (...args: string[]): string =>
-            execFileSync('git', ['-C', root, '-c', 'core.hooksPath=', ...args], { encoding: 'utf8', stdio: 'pipe' });
-        git('init', '--quiet', '--initial-branch=main');
-        git('config', 'user.email', 'lane@example.invalid');
-        git('config', 'user.name', 'Lane');
-        mkdirSync(join(root, '.github', 'workflows'), { recursive: true });
-        const commits = committed.map((source, index) => {
-            writeFileSync(join(root, WORKFLOW_PATH), source, 'utf8');
-            git('add', WORKFLOW_PATH);
-            git('commit', '--quiet', '--no-verify', '-m', `health gates revision ${index}`);
-            return git('rev-parse', 'HEAD').trim();
-        });
-        if (workingTree !== undefined) {
-            writeFileSync(join(root, WORKFLOW_PATH), workingTree, 'utf8');
-        }
-        return { root, commits };
-    }
-
-    function pinned(commit: string): NodeJS.ProcessEnv {
-        return { SOURDAW_TRUSTED_ORIGIN_COMMIT: commit };
-    }
-
-    const UNPINNED_GATE_REFUSAL =
-        'Error: deliver must run through the protected primary checkout launcher, which pins ' +
-        'SOURDAW_TRUSTED_ORIGIN_COMMIT to the commit that decides which checks gate the merge';
+    const UNLAUNCHED_GATE_REFUSAL =
+        'Error: deliver must run through the protected primary checkout launcher, which passes ' +
+        `SOURDAW_TRUSTED_GATE_WORKFLOW from ${WORKFLOW_PATH} at the pinned origin/main commit`;
 
     /**
-     * The workflow decides which checks gate an irreversible merge, so it is read as the git object
-     * at the commit the launcher pinned rather than from the working tree beside it. A working-tree
-     * file is not a pinned input: one stray uncommitted edit would reshape the gate for every
-     * delivery, silently, in either direction. Here the working tree gates on one job and the
-     * pinned commit on three.
-     */
-    it('reads the workflow at the pinned commit and not the working tree beside it', () => {
-        const { root, commits } = workflowRepository(
-            [workflow(decide, boundaries, dependencyReview, nightly, gate)],
-            workflow(decide, ['  gate:', '    name: Gate', '    needs: decide'].join('\n'))
-        );
-        try {
-            expect([...readGateRequiredCheckNames(root, undefined, pinned(commits[0] ?? ''))].sort()).toEqual([
-                'Decide scope',
-                'Dependency review',
-                'boundaries',
-            ]);
-        } finally {
-            rmSync(root, { recursive: true, force: true });
-        }
-    });
-
-    /**
-     * `HEAD` is wherever the operator's local `main` happens to sit, and the launcher's pinned
-     * `origin/main` is what the delivery closure itself is snapshotted from. A checkout that has
-     * not pulled would otherwise read a superseded `needs` list and tolerate the cancellation of a
-     * job promoted into the gate since. Here `HEAD` gates on one job and the pinned commit on three.
-     */
-    it('reads the workflow at the pinned commit and not at the checkout HEAD', () => {
-        const { root, commits } = workflowRepository([
-            workflow(decide, boundaries, dependencyReview, nightly, gate),
-            workflow(decide, ['  gate:', '    name: Gate', '    needs: decide'].join('\n')),
-        ]);
-        try {
-            expect([...readGateRequiredCheckNames(root, undefined, pinned(commits[0] ?? ''))].sort()).toEqual([
-                'Decide scope',
-                'Dependency review',
-                'boundaries',
-            ]);
-        } finally {
-            rmSync(root, { recursive: true, force: true });
-        }
-    });
-
-    /**
-     * Without the pinned commit this gate cannot say which revision of the workflow decides the
-     * merge, and a ref name is not that commit either: it resolves to whatever it points at now. A
-     * gate that cannot name its own input refuses rather than falling back to a local one.
+     * The launcher parses the workflow at the pinned commit and hands the summary across; nothing in
+     * the snapshot can read a workflow for itself. A `deliver` that never came through the launcher
+     * therefore cannot say which checks decide the merge, and refuses rather than tolerating every
+     * cancellation on the head.
      */
     it.each([
-        { label: 'no pinned origin commit', env: {} },
-        { label: 'an unpinned ref where the pinned commit belongs', env: pinned('origin/main') },
-        { label: 'a truncated commit', env: pinned('b2ec72d') },
+        { label: 'no gating workflow from the launcher', env: {} },
+        { label: 'an empty gating workflow', env: { SOURDAW_TRUSTED_GATE_WORKFLOW: '' } },
     ])('refuses $label', ({ env }) => {
-        const { root } = workflowRepository([workflow(decide, boundaries, dependencyReview, nightly, gate)]);
         let thrown: unknown;
         try {
-            readGateRequiredCheckNames(root, undefined, env);
+            readGateRequiredCheckNames(env);
         } catch (error) {
             thrown = error;
-        } finally {
-            rmSync(root, { recursive: true, force: true });
         }
 
-        expect(String(thrown)).toBe(UNPINNED_GATE_REFUSAL);
+        expect(String(thrown)).toBe(UNLAUNCHED_GATE_REFUSAL);
+    });
+
+    it('derives the gating set from the workflow summary the launcher passed', async () => {
+        const names = readGateRequiredCheckNames({
+            SOURDAW_TRUSTED_GATE_WORKFLOW: JSON.stringify(
+                await summarizeGateWorkflow(workflow(decide, boundaries, dependencyReview, nightly, gate))
+            ),
+        });
+
+        expect([...names].sort()).toEqual(['Decide scope', 'Dependency review', 'boundaries']);
     });
 
     /**
-     * An unreadable workflow leaves this gate unable to say which checks decide the merge, and a
-     * gate that cannot work that out must refuse rather than tolerate every cancellation on the head.
+     * The summary crosses a process boundary as JSON, so the gate reads it as untrusted text. A
+     * value it cannot read is not a gating set, and merging on one would be merging on nothing.
      */
-    it('refuses a repository whose health-gates workflow it cannot read', () => {
-        const root = mkdtempSync(join(tmpdir(), 'sourdaw-health-gates-'));
+    it.each([
+        {
+            label: 'a summary that is not JSON',
+            serialized: '{',
+            expected: `${WORKFLOW_PATH} to determine which checks gate the merge: SOURDAW_TRUSTED_GATE_WORKFLOW is not JSON:`,
+        },
+        {
+            label: 'a summary that is not an object',
+            serialized: '["gate"]',
+            expected: 'SOURDAW_TRUSTED_GATE_WORKFLOW is not a workflow summary',
+        },
+        {
+            label: 'a summary carrying no jobs mapping',
+            serialized: '{"jobs":"gate"}',
+            expected: 'SOURDAW_TRUSTED_GATE_WORKFLOW carries no jobs mapping',
+        },
+        {
+            label: 'a summary whose job is not a mapping',
+            serialized: '{"jobs":{"gate":"needed"}}',
+            expected: 'the gate job is not a mapping',
+        },
+    ])('refuses $label', ({ serialized, expected }) => {
         let thrown: unknown;
         try {
-            readGateRequiredCheckNames(root, undefined, pinned('0'.repeat(40)));
+            gateRequiredCheckNames(serialized);
         } catch (error) {
             thrown = error;
-        } finally {
-            rmSync(root, { recursive: true, force: true });
         }
 
-        expect(String(thrown)).toContain(
-            `Error: cannot read ${WORKFLOW_PATH} to determine which checks gate the merge: `
+        expect(String(thrown)).toContain(expected);
+    });
+
+    /**
+     * The launcher carries a workflow it could not parse across as a reason rather than throwing, so
+     * the refusal is worded and owned here. Both arms name what was wrong with the file.
+     */
+    it.each([
+        {
+            label: 'a workflow that is not valid YAML',
+            source: 'jobs:\n  gate:\n   - "unterminated',
+            reason: 'not valid YAML',
+        },
+        {
+            label: 'a workflow declaring no jobs mapping',
+            source: 'name: Health gates\non:\n  pull_request:\n',
+            reason: 'it declares no jobs mapping',
+        },
+    ])('refuses $label', async ({ source, reason }) => {
+        expect(await refusalFor(source)).toContain(
+            `cannot read ${WORKFLOW_PATH} to determine which checks gate the merge:`
         );
+        expect(await refusalFor(source)).toContain(reason);
+    });
+
+    /**
+     * The set this repository's own workflow produces, compared against the `yaml` package reading
+     * the same file. A hand-copied expectation here would only restate whatever the gate derived;
+     * comparing with an independent parse is what makes a divergence fail.
+     */
+    it('derives the same gating set from the live workflow as the yaml package does', async () => {
+        const expected = parserGateNeeds(LIVE_WORKFLOW_SOURCE).map((jobId) =>
+            parserCheckName(LIVE_WORKFLOW_SOURCE, jobId)
+        );
+
+        expect([...(await gatingNamesFor(LIVE_WORKFLOW_SOURCE))].sort()).toEqual([...expected].sort());
+        expect(expected.length).toBeGreaterThan(0);
     });
 
     /**
      * The rollup on PR #2795 carried exactly two names cancelled with no success beside them:
      * `Dependency review`, which `Gate` needs, and `Nightly failure report`, which it does not.
      */
-    it('gates on the dependency scan and not on the nightly report in this repository', () => {
-        const root = join(import.meta.dirname, '../..');
-        const head = execFileSync('git', ['-C', root, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
-
-        const names = readGateRequiredCheckNames(root, undefined, pinned(head));
+    it('gates on the dependency scan and not on the nightly report in this repository', async () => {
+        const names = await gatingNamesFor(LIVE_WORKFLOW_SOURCE);
 
         expect(names.has('Dependency review')).toBe(true);
         expect(names.has('Nightly failure report')).toBe(false);
@@ -1692,19 +1725,16 @@ describe('delivery shell boundary', () => {
     });
 
     /**
-     * The gating workflow is read as a git object at the primary checkout this port was given, not
-     * from whatever directory the process happens to run in, not from its working tree, and not at
-     * its `HEAD` — at the `origin/main` commit the launcher pinned into the environment.
+     * The gating set comes from the launcher's environment, not from a file this port reads. Nothing
+     * in the snapshot can reach a workflow — no working tree, no checkout, no `git show` — so a port
+     * that ran a command to answer this would be reading something the launcher never pinned.
      */
-    it('reads the gating workflow as a git object at the launcher-pinned commit', () => {
-        vi.stubEnv('SOURDAW_TRUSTED_ORIGIN_COMMIT', 'a'.repeat(40));
-        const captures: Array<{ command: string; args: string[] }> = [];
-        const port = shellPort(
-            'jcosta33/sourdaw',
-            {
-                capture: (command, args) => {
-                    captures.push({ command, args });
-                    return [
+    it('takes the gating set from the launcher environment without reading any file', async () => {
+        vi.stubEnv(
+            'SOURDAW_TRUSTED_GATE_WORKFLOW',
+            JSON.stringify(
+                await summarizeGateWorkflow(
+                    [
                         'name: Health gates',
                         'jobs:',
                         '  dependency-review:',
@@ -1712,20 +1742,21 @@ describe('delivery shell boundary', () => {
                         '  gate:',
                         '    name: Gate',
                         '    needs: dependency-review',
-                    ].join('\n');
-                },
-                run: () => undefined,
-            },
-            { repositoryRoot: '/primary/checkout' }
+                    ].join('\n')
+                )
+            )
         );
+        const captures: Array<{ command: string; args: string[] }> = [];
+        const port = shellPort('jcosta33/sourdaw', {
+            capture: (command, args) => {
+                captures.push({ command, args });
+                return '';
+            },
+            run: () => undefined,
+        });
 
         expect([...port.gateRequiredCheckNames()]).toEqual(['Dependency review']);
-        expect(captures).toEqual([
-            {
-                command: 'git',
-                args: ['-C', '/primary/checkout', 'show', `${'a'.repeat(40)}:.github/workflows/health-gates.yml`],
-            },
-        ]);
+        expect(captures).toEqual([]);
     });
 
     /**
@@ -1782,6 +1813,54 @@ describe('delivery shell boundary', () => {
         }
 
         expect(String(thrown)).toBe('Error: cannot read all 19 checks on PR #42: got 1');
+    });
+
+    /**
+     * `hasNextPage` decides on its own whether another page exists. Without it the reader would page
+     * on a cursor GitHub left behind on a finished connection, and a rollup it should have refused as
+     * truncated would quietly complete itself from a page it was never told to ask for. Here the
+     * first page stops short of `totalCount` and still carries a cursor: reading `hasNextPage` means
+     * refusing, ignoring it means merging on a second page that was never offered.
+     */
+    it('refuses a short page that carries a stale cursor without claiming another page', () => {
+        const { captures, port } = rollupPort([
+            { nodes: rollupNodes([checkRun()]), totalCount: 2, hasNextPage: false, endCursor: 'Y3Vyc29yOjE=' },
+            { nodes: rollupNodes([checkRun({ name: 'Lint' })]), totalCount: 2 },
+        ]);
+
+        let thrown: unknown;
+        try {
+            port.headCheckRuns(42, 'head');
+        } catch (error) {
+            thrown = error;
+        }
+
+        expect(String(thrown)).toBe('Error: cannot read all 2 checks on PR #42: got 1');
+        expect(rollupCaptures(captures)).toHaveLength(1);
+    });
+
+    /**
+     * `nodes.length < totalCount` is what stops the paging once the head is fully accounted for.
+     * GitHub can report `hasNextPage` true beside a cursor on a connection whose `totalCount` the
+     * first page already satisfies; without this arm the reader fetches again, overshoots the total,
+     * and the completeness check then refuses a rollup that was complete on arrival.
+     */
+    it('stops paging once the nodes account for the total even while a further page is offered', () => {
+        const { captures, port } = rollupPort([
+            {
+                nodes: rollupNodes([checkRun(), checkRun({ name: 'Lint' })]),
+                totalCount: 2,
+                hasNextPage: true,
+                endCursor: 'Y3Vyc29yOjI=',
+            },
+            { nodes: rollupNodes([checkRun({ name: 'Secret scan' })]), totalCount: 2 },
+        ]);
+
+        expect(port.headCheckRuns(42, 'head')).toEqual([
+            { name: 'Gate', status: 'COMPLETED', conclusion: 'SUCCESS' },
+            { name: 'Lint', status: 'COMPLETED', conclusion: 'SUCCESS' },
+        ]);
+        expect(rollupCaptures(captures)).toHaveLength(1);
     });
 
     it('refuses to guess at an entry matching neither arm', () => {

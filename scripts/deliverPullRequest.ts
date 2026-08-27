@@ -216,208 +216,114 @@ function isSuccessfulRequiredCheck(check: HeadCheckRun): boolean {
 
 const HEALTH_GATES_WORKFLOW_PATH = '.github/workflows/health-gates.yml';
 const GATE_JOB_ID = 'gate';
-const JOB_INDENT = 2;
-const JOB_FIELD_INDENT = 4;
-const JOB_SEQUENCE_INDENT = 6;
-const JOB_ID_PATTERN = /^([A-Za-z_][A-Za-z0-9_-]*):$/;
-const SEQUENCE_ITEM_PREFIX = '- ';
 const EXPRESSION_OPENER = '${{';
+const GATE_WORKFLOW_ENV = 'SOURDAW_TRUSTED_GATE_WORKFLOW';
 
-type WorkflowLine = { indent: number; text: string };
-type WorkflowJobs = ReadonlyMap<string, readonly WorkflowLine[]>;
+/** One job as the workflow declares it. Every value is unresolved, because resolving one is a rule. */
+type WorkflowJob = { name?: unknown; needs?: unknown; uses?: unknown };
+type WorkflowJobs = Record<string, WorkflowJob>;
 
-function failUnreadableWorkflowJobs(): never {
-    return fail(`cannot read the jobs in ${HEALTH_GATES_WORKFLOW_PATH} to determine which checks gate the merge`);
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function failUnreadableWorkflow(reason: string): never {
+    return fail(`cannot read ${HEALTH_GATES_WORKFLOW_PATH} to determine which checks gate the merge: ${reason}`);
 }
 
 /**
- * The delivery scripts execute from a snapshot directory that holds nothing but `scripts/`, so a
- * bare package specifier does not resolve there and the repository's YAML parser is out of reach at
- * the exact moment this runs. What the gate needs is one list and one field per named job, so this
- * reads that shape and nothing else — an indentation the file does not match is a shape this code
- * cannot claim to understand, and it refuses rather than guessing at a narrower answer.
+ * The launcher parses the workflow with a real YAML parser and hands the result over as JSON; this
+ * side decides what that result means. Splitting it that way is what lets every shape a line-oriented
+ * reader used to trip over — a continued scalar, a quoted or spaced key, a tab before a comment, a
+ * block scalar, an anchor, an alias, a tag, a field at any indent — resolve to exactly the name
+ * GitHub reports, while every rule that can refuse an irreversible merge stays here, in the closure
+ * pinned to `origin/main`.
+ *
+ * The snapshot holds nothing but `scripts/`, so `JSON.parse` is the only parser reachable here.
  */
-function workflowLines(source: string): WorkflowLine[] {
-    return source
-        .split('\n')
-        .map((line) => line.replace(/\r$/, ''))
-        .map((line) => ({ indent: line.length - line.trimStart().length, text: line.trim() }))
-        .filter((line) => line.text !== '' && !line.text.startsWith('#'));
-}
-
-function jobsSection(lines: readonly WorkflowLine[]): readonly WorkflowLine[] {
-    const start = lines.findIndex((line) => line.indent === 0 && line.text === 'jobs:');
-    if (start < 0) {
-        failUnreadableWorkflowJobs();
+export function gateRequiredCheckNames(serialized: string): ReadonlySet<string> {
+    const jobs = workflowJobs(serialized);
+    const gate = jobs[GATE_JOB_ID];
+    if (gate === undefined) {
+        fail(
+            `${HEALTH_GATES_WORKFLOW_PATH} declares no ${GATE_JOB_ID} job, ` +
+                `so no check can be proven to gate the merge`
+        );
     }
-    const body = lines.slice(start + 1);
-    const end = body.findIndex((line) => line.indent === 0);
-    return end < 0 ? body : body.slice(0, end);
+    return new Set(gateNeeds(gate.needs).map((jobId) => requiredCheckName(jobId, jobs)));
 }
 
-function parseWorkflowJobs(source: string): WorkflowJobs {
-    const jobs = new Map<string, WorkflowLine[]>();
-    let current: WorkflowLine[] | undefined;
-    for (const line of jobsSection(workflowLines(source))) {
-        if (line.indent === JOB_INDENT) {
-            const id = JOB_ID_PATTERN.exec(line.text)?.[1] ?? failUnreadableWorkflowJobs();
-            current = [];
-            jobs.set(id, current);
-            continue;
+function workflowJobs(serialized: string): WorkflowJobs {
+    let summary: unknown;
+    try {
+        summary = JSON.parse(serialized);
+    } catch (error) {
+        failUnreadableWorkflow(`${GATE_WORKFLOW_ENV} is not JSON: ${error instanceof Error ? error.message : ''}`);
+    }
+    if (!isRecord(summary)) {
+        failUnreadableWorkflow(`${GATE_WORKFLOW_ENV} is not a workflow summary`);
+    }
+    if (typeof summary.unreadable === 'string') {
+        failUnreadableWorkflow(summary.unreadable);
+    }
+    const jobs = summary.jobs;
+    if (!isRecord(jobs)) {
+        failUnreadableWorkflow(`${GATE_WORKFLOW_ENV} carries no jobs mapping`);
+    }
+    const declared: WorkflowJobs = {};
+    for (const [jobId, job] of Object.entries(jobs)) {
+        if (!isRecord(job)) {
+            failUnreadableWorkflow(`the ${jobId} job is not a mapping`);
         }
-        if (line.indent < JOB_INDENT || current === undefined) {
-            failUnreadableWorkflowJobs();
-        }
-        current.push(line);
+        declared[jobId] = job;
     }
-    return jobs;
+    return declared;
 }
 
 /**
- * A check name that does not match what GitHub reports is worse than no name at all: it silently
- * matches nothing, and every cancellation under the real name is then tolerated. This reads the two
- * spellings a workflow uses for a name — plain and quoted — and refuses every other one rather than
- * handing back a string that only looks like a name. A block scalar, an anchor, an alias and a tag
- * all begin with a character no plain scalar may start with; an unquoted value carrying ` #` ends at
- * the comment; and an escape inside a double-quoted value is a spelling this reader cannot resolve.
+ * `needs` is a single job id or a list of them. A gate that needs nothing proves nothing, so it
+ * refuses rather than deriving an empty gating set that tolerates every cancellation on the head.
  */
-const UNREADABLE_SCALAR_PREFIXES = ['|', '>', '&', '*', '!'];
-const PLAIN_SCALAR_COMMENT = ' #';
-const COMMENT_OPENER = '#';
-const KEY_SEPARATOR = ':';
-
-function failUnreadableScalar(text: string): never {
-    return fail(`cannot read ${text} in ${HEALTH_GATES_WORKFLOW_PATH} as a plain or quoted scalar`);
-}
-
-function scalarValue(text: string): string {
-    const trimmed = text.trim();
-    const quote = trimmed.slice(0, 1);
-    if ((quote === "'" || quote === '"') && trimmed.length > 1 && trimmed.endsWith(quote)) {
-        return quotedScalarValue(trimmed, quote);
+function gateNeeds(declared: unknown): string[] {
+    const entries = typeof declared === 'string' ? [declared] : declared;
+    if (!Array.isArray(entries) || entries.length === 0) {
+        fail(
+            `the ${GATE_JOB_ID} job in ${HEALTH_GATES_WORKFLOW_PATH} needs no job, ` +
+                `so no check can be proven to gate the merge`
+        );
     }
-    if (UNREADABLE_SCALAR_PREFIXES.includes(quote) || trimmed.includes(PLAIN_SCALAR_COMMENT)) {
-        failUnreadableScalar(trimmed);
+    const needs = entries.filter((entry): entry is string => typeof entry === 'string' && entry !== '');
+    if (needs.length !== entries.length) {
+        fail(
+            `the ${GATE_JOB_ID} job in ${HEALTH_GATES_WORKFLOW_PATH} needs an entry that is not a job id, ` +
+                `so no check can be proven to gate the merge`
+        );
     }
-    return trimmed;
-}
-
-function quotedScalarValue(trimmed: string, quote: string): string {
-    const inner = trimmed.slice(1, -1);
-    if (quote === "'") {
-        return inner.replaceAll("''", "'");
-    }
-    if (inner.includes('\\')) {
-        failUnreadableScalar(trimmed);
-    }
-    return inner;
-}
-
-function failUnresolvableJobField(jobId: string, detail: string): never {
-    return fail(
-        `the ${jobId} job in ${HEALTH_GATES_WORKFLOW_PATH} ${detail}, ` +
-            `which this reader cannot resolve to the name GitHub reports`
-    );
-}
-
-function unquotedKey(text: string): string {
-    const quote = text.slice(0, 1);
-    return (quote === "'" || quote === '"') && text.length > 1 && text.endsWith(quote) ? text.slice(1, -1) : text;
-}
-
-type JobField = { key: string; spelling: string; value: string };
-
-/**
- * A mapping key is not the text a line starts with. YAML spells the same key quoted or with space
- * before its colon, and each of those spellings is invisible to a prefix test — the job then reads
- * as declaring no name at all, and the gating set silently takes the job id where GitHub reports the
- * declared name. The key is parsed and unquoted so every spelling of it is recognized, and the
- * spellings this reader cannot resolve are refused rather than passed over.
- */
-function jobField(line: WorkflowLine): JobField | undefined {
-    const separator = line.text.indexOf(KEY_SEPARATOR);
-    if (separator < 0) {
-        return undefined;
-    }
-    const spelling = line.text.slice(0, separator);
-    return { key: unquotedKey(spelling.trim()), spelling, value: line.text.slice(separator + 1) };
+    return needs;
 }
 
 /**
- * YAML does not end a scalar where its line ends: a plain or quoted value continues on a more
- * deeply indented line below, and a value that is nothing but a comment is null. Read one line at a
- * time, both spellings resolve to a string GitHub never reports — a truncated name, or the comment
- * text where GitHub labels the check with the job id — so every cancellation under the real name
- * would pass unseen. Neither is resolved here; both refuse.
- */
-function jobFieldValue(jobId: string, job: readonly WorkflowLine[], key: string): string | undefined {
-    const index = job.findIndex((line) => line.indent === JOB_FIELD_INDENT && jobField(line)?.key === key);
-    const declaration = job[index];
-    const field = declaration === undefined ? undefined : jobField(declaration);
-    if (declaration === undefined || field === undefined) {
-        return undefined;
-    }
-    if (field.spelling !== key) {
-        failUnresolvableJobField(jobId, `spells its ${key} key as ${field.spelling}${KEY_SEPARATOR}`);
-    }
-    if ((job[index + 1]?.indent ?? declaration.indent) > declaration.indent) {
-        failUnresolvableJobField(jobId, `continues its ${key} onto the next line`);
-    }
-    if (field.value.trim().startsWith(COMMENT_OPENER)) {
-        failUnresolvableJobField(jobId, `declares a ${key} that is only a comment`);
-    }
-    return scalarValue(field.value);
-}
-
-function flowSequenceItems(text: string): string[] {
-    return text
-        .slice(1, -1)
-        .split(',')
-        .map(scalarValue)
-        .filter((item) => item !== '');
-}
-
-function blockSequenceItems(job: readonly WorkflowLine[], declaration: WorkflowLine): string[] {
-    const items: string[] = [];
-    for (const line of job.slice(job.indexOf(declaration) + 1)) {
-        if (line.indent !== JOB_SEQUENCE_INDENT || !line.text.startsWith(SEQUENCE_ITEM_PREFIX)) {
-            break;
-        }
-        items.push(scalarValue(line.text.slice(SEQUENCE_ITEM_PREFIX.length)));
-    }
-    return items;
-}
-
-function jobNeeds(job: readonly WorkflowLine[]): string[] {
-    const declaration = job.find((line) => line.indent === JOB_FIELD_INDENT && line.text.startsWith('needs:'));
-    if (declaration === undefined) {
-        return [];
-    }
-    const inline = declaration.text.slice('needs:'.length).trim();
-    if (inline === '') {
-        return blockSequenceItems(job, declaration);
-    }
-    return inline.startsWith('[') && inline.endsWith(']') ? flowSequenceItems(inline) : [scalarValue(inline)];
-}
-
-/**
- * The name a job declares is a template, and GitHub reports one check per matrix job with the
- * expression substituted, so a matrix job's declared name matches no check GitHub ever reports and
- * every cancellation under a real shard name would pass unseen. Promoting such a job into the gate
- * refuses here rather than adding an entry that matches nothing.
+ * The name GitHub labels a job's check with, or a refusal where this gate cannot produce it. A
+ * matrix name is a template GitHub substitutes per shard, and a reusable workflow reports one check
+ * per inner job as `<job name> / <inner job name>` — in both cases the declared name matches no
+ * check on the head, so it would silently match nothing and tolerate every real cancellation. Both
+ * refuse instead. The matrix refusal is recorded as issue #2924.
  */
 function requiredCheckName(jobId: string, jobs: WorkflowJobs): string {
-    const job = jobs.get(jobId);
+    const job = jobs[jobId];
     if (job === undefined) {
         fail(
             `the ${GATE_JOB_ID} job in ${HEALTH_GATES_WORKFLOW_PATH} needs ${jobId}, ` +
                 `which no job in that workflow defines`
         );
     }
-    const name = jobFieldValue(jobId, job, 'name');
-    if (name === undefined || name === '') {
-        return jobId;
+    if (job.uses !== undefined && job.uses !== null) {
+        fail(
+            `the ${jobId} job in ${HEALTH_GATES_WORKFLOW_PATH} calls a reusable workflow, ` +
+                `whose checks GitHub reports as one name per inner job rather than the one name this gate derives`
+        );
     }
+    const name = declaredCheckName(jobId, job.name);
     if (name.includes(EXPRESSION_OPENER)) {
         fail(
             `the ${jobId} job in ${HEALTH_GATES_WORKFLOW_PATH} names its check ${name}, ` +
@@ -427,77 +333,39 @@ function requiredCheckName(jobId: string, jobs: WorkflowJobs): string {
     return name;
 }
 
-/**
- * The names GitHub labels the checks that decide this merge with. Only `Gate` is required by the
- * ruleset, and `Gate` passes when each job it needs succeeded or was skipped, so the jobs in that
- * `needs` list are exactly the ones whose verdict the merge rests on. Deriving the list from the
- * workflow keeps a job promoted into the gate from silently escaping this gate, and a job that
- * never gated it from blocking one. A gate that cannot work out what it must check refuses.
- */
-export function gateRequiredCheckNames(workflowSource: string): ReadonlySet<string> {
-    const jobs = parseWorkflowJobs(workflowSource);
-    const gate = jobs.get(GATE_JOB_ID);
-    if (gate === undefined) {
+/** A job that declares no name is labelled with its job id, which is what GitHub reports for it. */
+function declaredCheckName(jobId: string, name: unknown): string {
+    if (name === undefined || name === null || name === '') {
+        return jobId;
+    }
+    if (typeof name !== 'string') {
         fail(
-            `${HEALTH_GATES_WORKFLOW_PATH} declares no ${GATE_JOB_ID} job, ` +
-                `so no check can be proven to gate the merge`
+            `the ${jobId} job in ${HEALTH_GATES_WORKFLOW_PATH} declares a name that is not text, ` +
+                `which cannot be the name GitHub reports`
         );
     }
-    const needs = jobNeeds(gate);
-    if (needs.length === 0) {
-        fail(
-            `the ${GATE_JOB_ID} job in ${HEALTH_GATES_WORKFLOW_PATH} needs no job, ` +
-                `so no check can be proven to gate the merge`
-        );
-    }
-    return new Set(needs.map((jobId) => requiredCheckName(jobId, jobs)));
-}
-
-const TRUSTED_ORIGIN_COMMIT_ENV = 'SOURDAW_TRUSTED_ORIGIN_COMMIT';
-const TRUSTED_ORIGIN_COMMIT_PATTERN = /^[0-9a-f]{40,64}$/;
-
-/**
- * The launcher resolves `origin/main` before any delivery code runs and exports that commit, which
- * is the same commit the trusted script closure is snapshotted from. Anything else is a moving
- * target: a ref resolves to whatever it points at now, and the primary checkout's `HEAD` is only
- * wherever the operator's local `main` happens to sit, so a checkout that has not pulled reads a
- * `needs` list `main` has already replaced and tolerates the cancellation of a job since promoted
- * into the gate. An absent or unpinned value leaves this gate unable to say which commit decides
- * the merge, and it refuses rather than falling back to one.
- */
-function trustedOriginCommit(env: NodeJS.ProcessEnv): string {
-    const commit = env[TRUSTED_ORIGIN_COMMIT_ENV];
-    if (commit === undefined || !TRUSTED_ORIGIN_COMMIT_PATTERN.test(commit)) {
-        fail(
-            `deliver must run through the protected primary checkout launcher, which pins ` +
-                `${TRUSTED_ORIGIN_COMMIT_ENV} to the commit that decides which checks gate the merge`
-        );
-    }
-    return commit;
+    return name;
 }
 
 /**
- * Read from the primary checkout, because a lane's copy of the workflow is the very thing under
- * review and must not decide its own merge gate — and read as the git object at the commit the
- * launcher pinned, because neither a working-tree file nor a local branch tip is a pinned input:
- * one stray uncommitted edit, or one unpulled commit, would silently reshape the gate for every
- * delivery, in either direction. `<commit>:` is spelled out; the bare `:path` form reads the index
- * rather than a commit, and misresolves a path that looks like a stage prefix.
+ * The gating set comes from the launcher, which read the workflow as a git object at the pinned
+ * `origin/main` commit — the same commit this closure was snapshotted from. Nothing here reads a
+ * lane's copy, a working tree, or a local `HEAD`: a lane's copy is the very thing under review, and
+ * neither an uncommitted edit nor an unpulled commit is a pinned input, so either would silently
+ * reshape the gate for every delivery, in both directions.
+ *
+ * Absent, the gate cannot say which checks decide the merge and refuses rather than merging with no
+ * verdict — which is also what a `deliver` run outside the protected launcher looks like from here.
  */
-export function readGateRequiredCheckNames(
-    repositoryRoot: string,
-    shell: ShellRunner = { capture, run },
-    env: NodeJS.ProcessEnv = process.env
-): ReadonlySet<string> {
-    const commit = trustedOriginCommit(env);
-    let source: string;
-    try {
-        source = shell.capture('git', ['-C', repositoryRoot, 'show', `${commit}:${HEALTH_GATES_WORKFLOW_PATH}`]);
-    } catch (error) {
-        const detail = error instanceof Error ? error.message : String(error);
-        fail(`cannot read ${HEALTH_GATES_WORKFLOW_PATH} to determine which checks gate the merge: ${detail}`);
+export function readGateRequiredCheckNames(env: NodeJS.ProcessEnv = process.env): ReadonlySet<string> {
+    const serialized = env[GATE_WORKFLOW_ENV];
+    if (serialized === undefined || serialized === '') {
+        fail(
+            `deliver must run through the protected primary checkout launcher, which passes ` +
+                `${GATE_WORKFLOW_ENV} from ${HEALTH_GATES_WORKFLOW_PATH} at the pinned origin/main commit`
+        );
     }
-    return gateRequiredCheckNames(source);
+    return gateRequiredCheckNames(serialized);
 }
 
 function trackerCompletionTarget(pullRequest: PullRequestSnapshot): number | undefined {
@@ -983,7 +851,7 @@ function toDeliveryReceiptComment(value: unknown): DeliveryReceiptComment {
 export function shellPort(
     repository: string,
     shell: ShellRunner = { capture, run },
-    options: { gitToken?: string; helperDir?: string; repositoryRoot?: string } = {}
+    options: { gitToken?: string; helperDir?: string } = {}
 ): DeliveryPort {
     const [owner, name] = repository.split('/');
     if (owner === undefined || name === undefined) {
@@ -1048,7 +916,7 @@ export function shellPort(
             ),
         headCheckRuns: (number, headRefOid) =>
             readHeadCheckRuns(number, (cursor) => readRollupPage(number, headRefOid, cursor)),
-        gateRequiredCheckNames: () => readGateRequiredCheckNames(options.repositoryRoot ?? process.cwd(), shell),
+        gateRequiredCheckNames: () => readGateRequiredCheckNames(),
         reviewState: (number, expectedHead) => {
             const query = `query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){reviews(last:100){nodes{state submittedAt author{login __typename ... on Bot{id}} commit{oid}} pageInfo{hasPreviousPage}} reviewThreads(first:100){nodes{isResolved} pageInfo{hasNextPage}}}}}`;
             const response = parseJson<{
@@ -1258,7 +1126,6 @@ function defaultDeliveryCoordinatorDependencies(cwd: string): DeliveryCoordinato
             return shellPort(repository, shell, {
                 gitToken: authentication.minted.token,
                 helperDir: authentication.session.configDir,
-                repositoryRoot: primaryRoot,
             });
         },
         trackerPort: (session) => trackerIssueShellPort(session, cwd),
