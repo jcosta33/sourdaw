@@ -113,13 +113,16 @@ fn open_editor_or_release_host_window<Plugin: AudioPlugin + ?Sized>(
 /// Windows.
 ///
 /// Flow:
-/// 1. Create a bare native window (no WebView) through the shell's window host,
+/// 1. Find the instance and which map owns it, and refuse one with no editor
+/// 2. Refuse an instance whose editor is already open — a recorded window label
+///    the shell still has is what that means
+/// 3. Create a bare native window (no WebView) through the shell's window host,
 ///    owned by the DAW window (Windows owner / macOS child window / X11
 ///    transient-for) so it floats above the DAW and nothing else
-/// 2. Extract the native window handle (NSView/HWND/X11)
-/// 3. Give the plugin the host's window resizer, then pass the handle to
+/// 4. Extract the native window handle (NSView/HWND/X11)
+/// 5. Give the plugin the host's window resizer, then pass the handle to
 ///    `open_gui`, which runs that format's editor lifecycle
-/// 4. Resize the window to match the plugin's preferred size
+/// 6. Publish the window and resize it to the plugin's preferred size
 pub async fn open_plugin_gui(
     instance_id: String,
     windows_host: &dyn PluginWindowHost,
@@ -162,8 +165,7 @@ pub async fn open_plugin_gui(
         }
     };
 
-    // 2. Create a bare native window (no WebView) for the plugin editor
-    // Already open? The recorded label is the only way to ask: a label names one
+    // 2. Already open? The recorded label is the only way to ask: a label names one
     // opening, so there is nothing to derive and hand the shell. Recorded but
     // gone from the shell is a stale entry the publish below replaces.
     let open_window_label = {
@@ -177,6 +179,7 @@ pub async fn open_plugin_gui(
         return Err("Plugin GUI is already open".to_string());
     }
 
+    // 3. Create a bare native window (no WebView) for the plugin editor
     let window_label = plugin_editor_window_label(&instance_id, next_editor_open_sequence());
 
     // Shared rather than owned: the resizer installed below outlives this
@@ -184,7 +187,7 @@ pub async fn open_plugin_gui(
     let plugin_window: Arc<dyn PluginEditorWindow> =
         Arc::from(windows_host.create_editor_window(&window_label, &plugin_name, &instance_id)?);
 
-    // 3. Extract the native window handle
+    // 4. Extract the native window handle
     let handle_ptr = match plugin_window.native_handle_ptr() {
         Ok(handle_ptr) => handle_ptr,
         Err(error) => {
@@ -193,7 +196,7 @@ pub async fn open_plugin_gui(
         }
     };
 
-    // 4. Give the plugin the host window — how to resize it, and what scale it
+    // 5. Give the plugin the host window — how to resize it, and what scale it
     //    runs at — then open its GUI.
     let resize_window = editor_window_resizer(&plugin_window);
     let scale_factor = plugin_window.scale_factor();

@@ -62,6 +62,11 @@ type EnginePlugins = Arc<Mutex<HashMap<String, EnginePluginInstanceData>>>;
 /// Called from the plugin's own callback thread. Never blocks (the channel is
 /// unbounded) and is a no-op before the watcher starts, so a plugin loaded in a
 /// headless or test build records its ask and nothing else happens.
+///
+/// It does allocate — the id is copied and the send takes a node — and that is
+/// deliberate. CLAP annotates both callbacks that reach here `[main-thread]`, so
+/// this is not the audio thread, and the flag is stored before the wake: a wake
+/// that could not be sent costs a follow-up, never the record behind it.
 pub fn notify_plugin_host_request(instance_id: &str, request: PluginHostRequest) {
     queue_request((instance_id.to_string(), request, 0));
 }
