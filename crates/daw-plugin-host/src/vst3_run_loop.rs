@@ -83,6 +83,12 @@ struct TimerRegistration {
 /// anything and leaves the registry thread-safe.
 type HandlerIdentity = usize;
 
+/// One event-handler registration, named by what does not change under it: the
+/// handler's identity and the descriptor it was registered on. The pair, not the
+/// descriptor alone, because a descriptor number is reused as soon as it is
+/// closed and the same handler may watch more than one.
+type DeadRegistration = (HandlerIdentity, FileDescriptor);
+
 /// Ask an interface pointer for the object behind it.
 ///
 /// A `queryInterface` call into plugin code, so every caller takes it before
@@ -285,12 +291,15 @@ impl HostRunLoop {
         }
 
         let polled = poll_descriptors(&watched, timeout);
+        // Which registrations the dead descriptors belong to is settled before
+        // the dispatch, and the dispatch's own wakes decide nothing about it.
+        let doomed = self.registrations_on(&polled.dead);
         // Woken first, forgotten second. A descriptor that hung up is in both
-        // sets, and dropping its registration first would take the handler out
+        // sets, and forgetting its registration first would take the handler out
         // of the registry the dispatch reads — swallowing the very last wake a
         // dying connection is owed.
         let dispatched = self.dispatch_ready(&polled.ready);
-        self.drop_registrations_for(&polled.dead);
+        self.drop_registrations(&doomed);
 
         if dispatched == 0 {
             sleep_remainder(timeout, started.elapsed());
@@ -334,17 +343,42 @@ impl HostRunLoop {
         due.len()
     }
 
-    /// Forget the registrations on descriptors that will never be readable
-    /// again. Keeping one is not politeness: its `revents` are sticky, so every
-    /// later `poll` returns immediately on it.
-    fn drop_registrations_for(&self, dead: &HashSet<FileDescriptor>) {
-        if dead.is_empty() {
+    /// Which registrations are on these descriptors right now.
+    ///
+    /// Named rather than counted, because a descriptor number is not a lasting
+    /// name for anything: the moment one is closed the kernel is free to hand
+    /// the same number back for the next thing opened.
+    fn registrations_on(&self, descriptors: &HashSet<FileDescriptor>) -> HashSet<DeadRegistration> {
+        if descriptors.is_empty() {
+            return HashSet::new();
+        }
+        let registry = self.lock();
+        registry
+            .event_handlers
+            .iter()
+            .filter(|registration| descriptors.contains(&registration.descriptor))
+            .map(|registration| (registration.identity, registration.descriptor))
+            .collect()
+    }
+
+    /// Forget exactly these registrations, because the descriptors they are on
+    /// will never be readable again. Keeping one is not politeness: its
+    /// `revents` are sticky, so every later `poll` returns immediately on it.
+    ///
+    /// By registration, never by descriptor number. A plugin is entitled to act
+    /// on the wake it was just given: unregister, close the connection,
+    /// reconnect, and register a new handler — and the reconnection is handed
+    /// the lowest free descriptor number, which is the one it just released.
+    /// Forgetting by number would retain that new registration out and leave the
+    /// reconnected editor silently deaf.
+    fn drop_registrations(&self, doomed: &HashSet<DeadRegistration>) {
+        if doomed.is_empty() {
             return;
         }
         let mut registry = self.lock();
-        registry
-            .event_handlers
-            .retain(|registration| !dead.contains(&registration.descriptor));
+        registry.event_handlers.retain(|registration| {
+            !doomed.contains(&(registration.identity, registration.descriptor))
+        });
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, Registry> {
@@ -794,6 +828,59 @@ mod tests {
             kResultFalse,
             "the registry must no longer watch the ended descriptor"
         );
+    }
+
+    /// A plugin is entitled to act on the last wake it is given: unregister,
+    /// close the connection, reconnect, and register a new handler. The kernel
+    /// hands the reconnection the lowest free descriptor number, which is the
+    /// one just released — so the pass that is about to forget the dead
+    /// registration finds a live one wearing the same number. Forgetting by
+    /// number takes the reconnected editor's handler with it and the editor goes
+    /// deaf without a sound.
+    #[test]
+    fn a_registration_made_during_a_pass_survives_that_pass_forgetting_its_number() {
+        let run_loop = HostRunLoop::new();
+        let pipe = Pipe::open();
+        let ending = ComWrapper::new(RecordingEventHandler::default());
+        let reconnected = ComWrapper::new(RecordingEventHandler::default());
+        let raw = |handler: &ComWrapper<RecordingEventHandler>| {
+            handler
+                .as_com_ref::<IEventHandler>()
+                .expect("the fake handler implements IEventHandler")
+                .as_ptr()
+        };
+
+        // SAFETY: both raw pointers borrow live handlers this test owns.
+        unsafe {
+            assert_eq!(
+                run_loop.register_event_handler(raw(&ending), pipe.read),
+                kResultOk
+            );
+
+            // What the pass settles before it dispatches: the registration that
+            // was on the descriptor when `poll` reported it dead.
+            let doomed = run_loop.registrations_on(&HashSet::from([pipe.read]));
+
+            // What the plugin does while being dispatched: a new handler appears
+            // on the same descriptor number.
+            assert_eq!(
+                run_loop.register_event_handler(raw(&reconnected), pipe.read),
+                kResultOk
+            );
+
+            run_loop.drop_registrations(&doomed);
+
+            assert_eq!(
+                run_loop.unregister_event_handler(raw(&ending)),
+                kResultFalse,
+                "the registration the pass found dead must be gone"
+            );
+            assert_eq!(
+                run_loop.unregister_event_handler(raw(&reconnected)),
+                kResultOk,
+                "the registration made during the pass must have survived it"
+            );
+        }
     }
 
     /// A descriptor the kernel refuses is never readable and never will be, and
