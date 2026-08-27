@@ -1,17 +1,20 @@
 //! Plugin GUI window management.
 //!
-//! A CLAP editor is drawn by the plugin into a bare native window the host
+//! A plugin editor is drawn by the plugin into a bare native window the host
 //! creates and owns. Creating that window is the shell's job
-//! ([`PluginWindowHost`]); the CLAP lifecycle around it — open, publish, resize,
+//! ([`PluginWindowHost`]); the lifecycle around it — open, publish, resize,
 //! close, and the bookkeeping that decides whether an editor is open at all —
-//! is this module's.
+//! is this module's, and it reaches every format through `AudioPlugin`.
 
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
 use crate::commands::plugins::PluginUnloadResult;
-use crate::host::plugin_window::{plugin_editor_window_label, PluginWindowHost};
+use crate::host::plugin_window::{
+    plugin_editor_window_label, PluginEditorWindow, PluginWindowHost,
+};
 use crate::state::AppState;
-use daw_plugin_host::AudioPlugin;
+use daw_plugin_host::{AudioPlugin, EditorWindowResizer};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PluginGuiInfo {
@@ -49,6 +52,16 @@ pub async fn is_plugin_gui_supported(
     Err(format!("No plugin instance: {}", instance_id))
 }
 
+/// The host's answer to a plugin that resizes its own editor.
+///
+/// Format-neutral by construction: the plugin's backend calls this while it is
+/// mid-handshake with its view, and all it may know about the host is that a
+/// size can be delivered.
+fn editor_window_resizer(window: &Arc<dyn PluginEditorWindow>) -> EditorWindowResizer {
+    let window = Arc::clone(window);
+    Arc::new(move |width, height| window.set_size(width, height))
+}
+
 /// Open the plugin GUI in a floating native window.
 ///
 /// MUST be async — creating windows from a synchronous command deadlocks on
@@ -59,7 +72,8 @@ pub async fn is_plugin_gui_supported(
 ///    owned by the DAW window (Windows owner / macOS child window / X11
 ///    transient-for) so it floats above the DAW and nothing else
 /// 2. Extract the native window handle (NSView/HWND/X11)
-/// 3. Pass the handle to `open_gui`, which runs the CLAP GUI lifecycle
+/// 3. Give the plugin the host's window resizer, then pass the handle to
+///    `open_gui`, which runs that format's editor lifecycle
 /// 4. Resize the window to match the plugin's preferred size
 pub async fn open_plugin_gui(
     instance_id: String,
@@ -111,8 +125,10 @@ pub async fn open_plugin_gui(
         return Err("Plugin GUI is already open".to_string());
     }
 
-    let plugin_window =
-        windows_host.create_editor_window(&window_label, &plugin_name, &instance_id)?;
+    // Shared rather than owned: the resizer installed below outlives this
+    // command, because a plugin editor resizes itself while it is open.
+    let plugin_window: Arc<dyn PluginEditorWindow> =
+        Arc::from(windows_host.create_editor_window(&window_label, &plugin_name, &instance_id)?);
 
     // 3. Extract the native window handle
     let handle_ptr = match plugin_window.native_handle_ptr() {
@@ -123,9 +139,15 @@ pub async fn open_plugin_gui(
         }
     };
 
-    // 4. Open the plugin GUI (CLAP lifecycle: create → scale → get_size → set_parent → show)
+    // 4. Give the plugin a way to resize this window, then open its GUI.
+    //
+    // The resizer goes in first: a view laying itself out against its new parent
+    // may ask for a size during the attach itself, and a plugin that asks before
+    // the host can answer draws at a size the window never took.
     let gui_size_result = if let Some(runtime) = engine_runtime.as_ref() {
+        let resize_window = editor_window_resizer(&plugin_window);
         runtime.with_control(std::time::Duration::from_secs(2), |plugin| {
+            plugin.set_editor_window_resizer(resize_window);
             plugin.open_gui(handle_ptr)
         })
     } else {
@@ -137,6 +159,7 @@ pub async fn open_plugin_gui(
             .get_mut(&instance_id)
             .ok_or_else(|| format!("No plugin instance: {}", instance_id))?;
 
+        instance.set_editor_window_resizer(editor_window_resizer(&plugin_window));
         instance.open_gui(handle_ptr)
     };
 

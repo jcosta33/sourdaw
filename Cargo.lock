@@ -638,6 +638,7 @@ version = "0.1.0"
 dependencies = [
  "clap-sys",
  "core-foundation-sys",
+ "libc",
  "libloading 0.9.0",
  "serde",
  "serde_json",

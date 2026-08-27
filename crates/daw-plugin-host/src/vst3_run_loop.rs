@@ -1,0 +1,573 @@
+//! The `IRunLoop` a VST3 editor is given on X11.
+//!
+//! On Linux a VST3 editor does not run at all unless the host answers
+//! `IPlugFrame::queryInterface(IRunLoop)`: the plugin has no event loop of its
+//! own there, so it hands the host the file descriptor of its X11 connection and
+//! the timers its animation needs, and waits to be called back. A host that
+//! refuses the query leaves an attached editor that never draws and never
+//! responds.
+//!
+//! This type is the registry and the dispatcher; [`RunLoopService`] is the
+//! thread that drives it. They are split because the driving is the part a host
+//! with its own UI loop would replace: `service_timers` and
+//! `service_file_descriptors` are the whole of the work, and a shell that owns
+//! an event thread can call them from it instead of letting the service thread
+//! run. Sourdaw's plugin-host crate has no UI thread of its own — the native
+//! editor window belongs to the desktop shell — so the service thread is what
+//! makes registered handlers fire today, and the split is what lets that change
+//! without touching the registry.
+//!
+//! Nothing here is reachable from the audio thread.
+
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
+use std::thread::JoinHandle;
+use std::time::{Duration, Instant};
+
+use vst3::Steinberg::Linux::{
+    FileDescriptor, IEventHandler, IEventHandlerTrait, ITimerHandler, ITimerHandlerTrait,
+    TimerInterval,
+};
+use vst3::Steinberg::{kInvalidArgument, kResultFalse, kResultOk, tresult};
+use vst3::{ComPtr, ComRef};
+
+/// How long one service pass waits on the registered descriptors before looking
+/// at the timers again.
+///
+/// A ceiling on timer lateness rather than a poll interval: a pass returns as
+/// soon as any descriptor is readable, so an idle editor costs nothing and a
+/// busy one is never delayed by this number.
+const SERVICE_POLL_SLICE: Duration = Duration::from_millis(16);
+
+/// The floor a plugin's requested timer interval is held to.
+///
+/// A plugin asking for a 0 ms timer is asking to be called as fast as the host
+/// can manage, which on a shared machine is a spin. Every established host
+/// clamps; 1 ms is below any editor's real animation rate.
+const MIN_TIMER_INTERVAL: Duration = Duration::from_millis(1);
+
+/// One editor file descriptor and the handler waiting on it.
+struct EventHandlerRegistration {
+    handler: ComPtr<IEventHandler>,
+    descriptor: FileDescriptor,
+}
+
+/// One editor timer.
+struct TimerRegistration {
+    handler: ComPtr<ITimerHandler>,
+    interval: Duration,
+    due: Instant,
+}
+
+#[derive(Default)]
+struct Registry {
+    event_handlers: Vec<EventHandlerRegistration>,
+    timers: Vec<TimerRegistration>,
+}
+
+/// The registered editor descriptors and timers, and the dispatch that services
+/// them.
+#[derive(Default)]
+pub struct HostRunLoop {
+    registry: Mutex<Registry>,
+}
+
+// SAFETY: every COM pointer held here belongs to an interface the VST3 bindings
+// declare `Send + Sync`, and the registry itself is behind a mutex.
+unsafe impl Send for HostRunLoop {}
+unsafe impl Sync for HostRunLoop {}
+
+impl HostRunLoop {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Take ownership of a raw plugin-supplied interface pointer.
+    ///
+    /// The plugin hands a borrowed pointer and keeps its own reference; the host
+    /// retains for as long as it holds the registration, which is what `ComRef`
+    /// to `ComPtr` does.
+    ///
+    /// # Safety
+    /// `pointer` is the argument of an `IRunLoop` call, so it is either null or
+    /// a live interface of the named type.
+    unsafe fn retain<I: vst3::Interface>(pointer: *mut I) -> Option<ComPtr<I>> {
+        ComRef::from_raw(pointer).map(|borrowed| borrowed.to_com_ptr())
+    }
+
+    /// Whether two COM pointers name the same object.
+    ///
+    /// Identity is the raw pointer: `unregister` is always called with the same
+    /// pointer `register` was given, and comparing anything else would let one
+    /// editor unregister another's handler.
+    fn same_object<I: vst3::Interface>(left: &ComPtr<I>, right: *mut I) -> bool {
+        std::ptr::eq(left.as_ptr().cast_const(), right.cast_const())
+    }
+
+    /// # Safety
+    /// `handler` is the pointer the plugin passed to `registerEventHandler`.
+    pub unsafe fn register_event_handler(
+        &self,
+        handler: *mut IEventHandler,
+        descriptor: FileDescriptor,
+    ) -> tresult {
+        if descriptor < 0 {
+            return kInvalidArgument;
+        }
+        let Some(handler) = Self::retain(handler) else {
+            return kInvalidArgument;
+        };
+        let mut registry = self.lock();
+        registry.event_handlers.push(EventHandlerRegistration {
+            handler,
+            descriptor,
+        });
+        kResultOk
+    }
+
+    /// # Safety
+    /// `handler` is the pointer the plugin passed to `unregisterEventHandler`.
+    pub unsafe fn unregister_event_handler(&self, handler: *mut IEventHandler) -> tresult {
+        if handler.is_null() {
+            return kInvalidArgument;
+        }
+        let mut registry = self.lock();
+        let before = registry.event_handlers.len();
+        registry
+            .event_handlers
+            .retain(|registration| !Self::same_object(&registration.handler, handler));
+        removal_result(before, registry.event_handlers.len())
+    }
+
+    /// # Safety
+    /// `handler` is the pointer the plugin passed to `registerTimer`.
+    pub unsafe fn register_timer(
+        &self,
+        handler: *mut ITimerHandler,
+        milliseconds: TimerInterval,
+    ) -> tresult {
+        let Some(handler) = Self::retain(handler) else {
+            return kInvalidArgument;
+        };
+        let interval = Duration::from_millis(milliseconds).max(MIN_TIMER_INTERVAL);
+        let mut registry = self.lock();
+        registry.timers.push(TimerRegistration {
+            handler,
+            interval,
+            due: Instant::now() + interval,
+        });
+        kResultOk
+    }
+
+    /// # Safety
+    /// `handler` is the pointer the plugin passed to `unregisterTimer`.
+    pub unsafe fn unregister_timer(&self, handler: *mut ITimerHandler) -> tresult {
+        if handler.is_null() {
+            return kInvalidArgument;
+        }
+        let mut registry = self.lock();
+        let before = registry.timers.len();
+        registry
+            .timers
+            .retain(|registration| !Self::same_object(&registration.handler, handler));
+        removal_result(before, registry.timers.len())
+    }
+
+    /// Fire every timer due at `now` and return how many fired.
+    ///
+    /// The handlers are taken out from under the lock before any of them is
+    /// called: `onTimer` is editor code, and an editor that registers or
+    /// unregisters from inside its own callback would otherwise deadlock against
+    /// the registry it is already inside.
+    pub fn service_timers(&self, now: Instant) -> usize {
+        let due = {
+            let mut registry = self.lock();
+            let mut due = Vec::new();
+            for timer in registry.timers.iter_mut() {
+                if timer.due > now {
+                    continue;
+                }
+                // Scheduled from `now` rather than from the missed deadline, so a
+                // pass that ran late does not then fire the same timer repeatedly
+                // to catch up.
+                timer.due = now + timer.interval;
+                due.push(timer.handler.clone());
+            }
+            due
+        };
+
+        for handler in &due {
+            // SAFETY: the handler is retained by this registration and the call
+            // is made off the audio thread.
+            unsafe { handler.onTimer() };
+        }
+        due.len()
+    }
+
+    /// Wait up to `timeout` for any registered descriptor to become readable and
+    /// hand each ready one to its handler. Returns how many handlers were called.
+    ///
+    /// Handlers are taken out from under the lock for the same reason timers are.
+    pub fn service_file_descriptors(&self, timeout: Duration) -> usize {
+        let watched: Vec<(ComPtr<IEventHandler>, FileDescriptor)> = {
+            let registry = self.lock();
+            registry
+                .event_handlers
+                .iter()
+                .map(|registration| (registration.handler.clone(), registration.descriptor))
+                .collect()
+        };
+        if watched.is_empty() {
+            std::thread::sleep(timeout);
+            return 0;
+        }
+
+        let mut ready = poll_readable(
+            &watched
+                .iter()
+                .map(|(_, descriptor)| *descriptor)
+                .collect::<Vec<_>>(),
+            timeout,
+        );
+        if ready.is_empty() {
+            return 0;
+        }
+
+        let mut dispatched = 0;
+        for (handler, descriptor) in &watched {
+            if !ready.remove(descriptor) {
+                continue;
+            }
+            // SAFETY: the handler is retained by this registration and the call
+            // is made off the audio thread.
+            unsafe { handler.onFDIsSet(*descriptor) };
+            dispatched += 1;
+        }
+        dispatched
+    }
+
+    /// How many descriptors and timers are registered. The frame's own teardown
+    /// reads it to decide whether a service thread is still owed any work.
+    pub fn registration_count(&self) -> usize {
+        let registry = self.lock();
+        registry.event_handlers.len() + registry.timers.len()
+    }
+
+    fn lock(&self) -> std::sync::MutexGuard<'_, Registry> {
+        self.registry
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+}
+
+/// `kResultOk` when something was removed, `kResultFalse` when the handler was
+/// not registered. VST3 callers treat a false here as "already gone", which is
+/// the truth, where `kResultOk` would claim a removal that never happened.
+fn removal_result(before: usize, after: usize) -> tresult {
+    if after < before {
+        kResultOk
+    } else {
+        kResultFalse
+    }
+}
+
+/// The descriptors out of `descriptors` that are readable within `timeout`.
+fn poll_readable(
+    descriptors: &[FileDescriptor],
+    timeout: Duration,
+) -> std::collections::HashSet<FileDescriptor> {
+    let mut poll_fds: Vec<libc::pollfd> = descriptors
+        .iter()
+        .map(|descriptor| libc::pollfd {
+            fd: *descriptor,
+            events: libc::POLLIN,
+            revents: 0,
+        })
+        .collect();
+
+    let milliseconds = i32::try_from(timeout.as_millis()).unwrap_or(i32::MAX);
+    // SAFETY: `poll_fds` is a live, correctly sized array of `pollfd`, and the
+    // length is its own element count.
+    let ready = unsafe {
+        libc::poll(
+            poll_fds.as_mut_ptr(),
+            poll_fds.len() as libc::nfds_t,
+            milliseconds,
+        )
+    };
+    if ready <= 0 {
+        return std::collections::HashSet::new();
+    }
+
+    poll_fds
+        .iter()
+        // `POLLERR`/`POLLHUP` count as readable: a plugin whose connection died
+        // has to be told, and it learns that from the read it makes in its own
+        // handler. Silently withholding the wake leaves it waiting forever.
+        .filter(|poll_fd| poll_fd.revents & (libc::POLLIN | libc::POLLERR | libc::POLLHUP) != 0)
+        .map(|poll_fd| poll_fd.fd)
+        .collect()
+}
+
+/// The thread that services a [`HostRunLoop`] when nothing else does.
+///
+/// Started on the first registration and stopped when the frame that owns it is
+/// dropped.
+pub struct RunLoopService {
+    stop: Arc<AtomicBool>,
+    thread: Option<JoinHandle<()>>,
+}
+
+impl RunLoopService {
+    pub fn start(run_loop: Arc<HostRunLoop>) -> Self {
+        let stop = Arc::new(AtomicBool::new(false));
+        let thread_stop = Arc::clone(&stop);
+        let thread = std::thread::Builder::new()
+            .name("vst3-editor-run-loop".to_string())
+            .spawn(move || {
+                while !thread_stop.load(Ordering::Acquire) {
+                    run_loop.service_timers(Instant::now());
+                    run_loop.service_file_descriptors(SERVICE_POLL_SLICE);
+                }
+            })
+            .ok();
+
+        Self { stop, thread }
+    }
+}
+
+impl Drop for RunLoopService {
+    fn drop(&mut self) {
+        self.stop.store(true, Ordering::Release);
+        if let Some(thread) = self.thread.take() {
+            // Joined rather than detached: the thread calls into editor code
+            // through retained handler pointers, and letting it outlive the
+            // registration that holds them is a call into a released object.
+            let _ = thread.join();
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::AtomicUsize;
+    use vst3::{Class, ComWrapper};
+
+    /// A plugin's timer handler, counting the wakes it was given.
+    #[derive(Default)]
+    struct CountingTimerHandler {
+        wakes: AtomicUsize,
+    }
+
+    impl Class for CountingTimerHandler {
+        type Interfaces = (ITimerHandler,);
+    }
+
+    impl ITimerHandlerTrait for CountingTimerHandler {
+        unsafe fn onTimer(&self) {
+            self.wakes.fetch_add(1, Ordering::AcqRel);
+        }
+    }
+
+    /// A plugin's event handler, recording the descriptors it was woken for.
+    #[derive(Default)]
+    struct RecordingEventHandler {
+        woken_for: Mutex<Vec<FileDescriptor>>,
+    }
+
+    impl Class for RecordingEventHandler {
+        type Interfaces = (IEventHandler,);
+    }
+
+    impl IEventHandlerTrait for RecordingEventHandler {
+        unsafe fn onFDIsSet(&self, fd: FileDescriptor) {
+            self.woken_for
+                .lock()
+                .expect("descriptor log mutex")
+                .push(fd);
+        }
+    }
+
+    /// A pipe whose read end a test registers and whose write end it makes
+    /// readable on demand.
+    struct Pipe {
+        read: FileDescriptor,
+        write: FileDescriptor,
+    }
+
+    impl Pipe {
+        fn open() -> Self {
+            let mut ends: [libc::c_int; 2] = [0; 2];
+            // SAFETY: `ends` is a live two-element array, which is what `pipe`
+            // documents its argument to be.
+            let created = unsafe { libc::pipe(ends.as_mut_ptr()) };
+            assert_eq!(created, 0, "the test pipe must open");
+            Self {
+                read: ends[0],
+                write: ends[1],
+            }
+        }
+
+        fn make_readable(&self) {
+            let byte = b"x";
+            // SAFETY: one byte from a live buffer onto an open descriptor.
+            let written = unsafe { libc::write(self.write, byte.as_ptr().cast(), 1) };
+            assert_eq!(written, 1, "the test pipe must accept a byte");
+        }
+    }
+
+    impl Drop for Pipe {
+        fn drop(&mut self) {
+            // SAFETY: both descriptors are open and owned by this value.
+            unsafe {
+                libc::close(self.read);
+                libc::close(self.write);
+            }
+        }
+    }
+
+    /// A registered timer must actually be called, and calling it is the whole
+    /// reason a Linux editor animates at all.
+    #[test]
+    fn a_registered_timer_fires_when_it_comes_due() {
+        let run_loop = HostRunLoop::new();
+        let handler = ComWrapper::new(CountingTimerHandler::default());
+        let raw = handler
+            .as_com_ref::<ITimerHandler>()
+            .expect("the fake handler implements ITimerHandler")
+            .as_ptr();
+
+        // SAFETY: `raw` borrows a live handler this test owns.
+        assert_eq!(unsafe { run_loop.register_timer(raw, 10) }, kResultOk);
+
+        // Before the interval elapses nothing is due, so a pass that fired here
+        // would be firing on registration rather than on time.
+        assert_eq!(run_loop.service_timers(Instant::now()), 0);
+        assert_eq!(
+            run_loop.service_timers(Instant::now() + Duration::from_millis(10)),
+            1
+        );
+        assert_eq!(handler.wakes.load(Ordering::Acquire), 1);
+    }
+
+    /// A timer the plugin has taken back must stop firing. A host that keeps
+    /// calling one is calling into an object the editor has finished with.
+    #[test]
+    fn unregistering_a_timer_stops_it_firing() {
+        let run_loop = HostRunLoop::new();
+        let handler = ComWrapper::new(CountingTimerHandler::default());
+        let raw = handler
+            .as_com_ref::<ITimerHandler>()
+            .expect("the fake handler implements ITimerHandler")
+            .as_ptr();
+
+        // SAFETY: `raw` borrows a live handler this test owns.
+        unsafe {
+            assert_eq!(run_loop.register_timer(raw, 10), kResultOk);
+            assert_eq!(
+                run_loop.service_timers(Instant::now() + Duration::from_millis(10)),
+                1
+            );
+            assert_eq!(run_loop.unregister_timer(raw), kResultOk);
+        }
+
+        assert_eq!(
+            run_loop.service_timers(Instant::now() + Duration::from_secs(1)),
+            0,
+            "an unregistered timer must not fire again"
+        );
+        assert_eq!(handler.wakes.load(Ordering::Acquire), 1);
+    }
+
+    /// The descriptor is the editor's own connection. A handler that is not
+    /// called when it becomes readable is an editor that never processes an
+    /// event.
+    #[test]
+    fn a_registered_event_handler_is_called_when_its_descriptor_is_readable() {
+        let run_loop = HostRunLoop::new();
+        let pipe = Pipe::open();
+        let handler = ComWrapper::new(RecordingEventHandler::default());
+        let raw = handler
+            .as_com_ref::<IEventHandler>()
+            .expect("the fake handler implements IEventHandler")
+            .as_ptr();
+
+        // SAFETY: `raw` borrows a live handler this test owns.
+        assert_eq!(
+            unsafe { run_loop.register_event_handler(raw, pipe.read) },
+            kResultOk
+        );
+
+        // Nothing has been written, so a handler called here would be called on
+        // registration rather than on readiness.
+        assert_eq!(
+            run_loop.service_file_descriptors(Duration::from_millis(0)),
+            0
+        );
+
+        pipe.make_readable();
+        assert_eq!(
+            run_loop.service_file_descriptors(Duration::from_millis(50)),
+            1
+        );
+        assert_eq!(
+            *handler.woken_for.lock().expect("descriptor log mutex"),
+            vec![pipe.read],
+            "the handler must be told which descriptor woke it"
+        );
+    }
+
+    /// A descriptor the plugin has taken back must stop waking it, even while
+    /// the descriptor stays readable.
+    #[test]
+    fn unregistering_an_event_handler_stops_it_being_called() {
+        let run_loop = HostRunLoop::new();
+        let pipe = Pipe::open();
+        let handler = ComWrapper::new(RecordingEventHandler::default());
+        let raw = handler
+            .as_com_ref::<IEventHandler>()
+            .expect("the fake handler implements IEventHandler")
+            .as_ptr();
+
+        // SAFETY: `raw` borrows a live handler this test owns.
+        unsafe {
+            assert_eq!(run_loop.register_event_handler(raw, pipe.read), kResultOk);
+            pipe.make_readable();
+            assert_eq!(
+                run_loop.service_file_descriptors(Duration::from_millis(50)),
+                1
+            );
+            assert_eq!(run_loop.unregister_event_handler(raw), kResultOk);
+        }
+
+        assert_eq!(
+            run_loop.service_file_descriptors(Duration::from_millis(0)),
+            0,
+            "an unregistered handler must not be called again"
+        );
+        assert_eq!(
+            handler
+                .woken_for
+                .lock()
+                .expect("descriptor log mutex")
+                .len(),
+            1
+        );
+    }
+
+    /// Unregistering something that was never registered has removed nothing,
+    /// and saying `kResultOk` would claim otherwise.
+    #[test]
+    fn unregistering_an_unknown_handler_reports_that_nothing_was_removed() {
+        let run_loop = HostRunLoop::new();
+        let timer = ComWrapper::new(CountingTimerHandler::default());
+        let raw = timer
+            .as_com_ref::<ITimerHandler>()
+            .expect("the fake handler implements ITimerHandler")
+            .as_ptr();
+
+        // SAFETY: `raw` borrows a live handler this test owns.
+        assert_eq!(unsafe { run_loop.unregister_timer(raw) }, kResultFalse);
+    }
+}

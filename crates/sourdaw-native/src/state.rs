@@ -2,6 +2,7 @@ use crate::host::native_bridge::SharedHostedPlugin;
 use daw_engine::audio_bridge::{PluginAudioBridgeHandle, MAX_BLOCK_FRAMES};
 use daw_engine::EngineHandle;
 use daw_plugin_host::AudioPlugin;
+use daw_plugin_host::EditorWindowResizer;
 use daw_plugin_host::HostedRuntime;
 use daw_plugin_host::PluginParameter;
 use std::collections::HashMap;
@@ -16,11 +17,11 @@ pub struct PluginInstanceData {
 
 /// Every method here reaches the plugin through `AudioPlugin` and nothing else.
 ///
-/// These four used to downcast to `ClapWrapper` and answer "no editor", "not a
-/// CLAP plugin" or nothing at all for anything else — which made the CLAP-only
-/// assumption invisible at the call site and wrong for any second format. The
-/// honest answers now live on the trait, where a backend states its own, and
-/// `as_any`/`as_any_mut` are gone with the downcasts they existed for.
+/// The editor path used to downcast to `ClapWrapper` and answer "no editor",
+/// "not a CLAP plugin" or nothing at all for anything else — which made the
+/// CLAP-only assumption invisible at the call site and wrong for any second
+/// format. The honest answers now live on the trait, where a backend states its
+/// own, and `as_any`/`as_any_mut` are gone with the downcasts they existed for.
 impl PluginInstanceData {
     /// Check if this plugin instance supports a custom GUI.
     pub fn has_gui(&self) -> bool {
@@ -30,6 +31,16 @@ impl PluginInstanceData {
     /// Get the display name of this plugin.
     pub fn get_name(&self) -> &str {
         self.plugin.get_name()
+    }
+
+    /// Hand the plugin the host's own window resizer.
+    ///
+    /// A plugin editor resizes itself, and no return value can carry that: the
+    /// request arrives while the editor is open, from inside the plugin's own
+    /// call into the host. Installed before `open_gui`, because a view laying
+    /// itself out against its new parent may ask during the attach.
+    pub fn set_editor_window_resizer(&mut self, resize: EditorWindowResizer) {
+        self.plugin.set_editor_window_resizer(resize);
     }
 
     /// Open the plugin GUI, parenting it into the given native handle.
@@ -366,7 +377,7 @@ mod tests {
 
     /// A hosted plugin that is not a `ClapWrapper`.
     ///
-    /// The four methods below used to be reachable only by downcasting the
+    /// The editor methods below used to be reachable only by downcasting the
     /// boxed plugin to that one concrete type, so a backend like this one got
     /// "Plugin", "no editor" and a refusal naming CLAP no matter what it
     /// implemented. Restore either downcast and every assertion in
@@ -412,7 +423,96 @@ mod tests {
         }
     }
 
-    /// A backend that overrides none of the four and takes the trait defaults.
+    /// A backend that resizes its own editor, the way a real one does from
+    /// inside the plugin's own call into the host.
+    struct SelfResizingTestPlugin {
+        /// Every editor call in order, so a resizer installed after the open is
+        /// visible as one.
+        calls: Arc<Mutex<Vec<&'static str>>>,
+        resize: Option<EditorWindowResizer>,
+    }
+
+    impl AudioPlugin for SelfResizingTestPlugin {
+        fn process(&mut self, _: &[&[f32]], _: &mut [&mut [f32]], _: usize) {}
+
+        fn set_parameter(&mut self, _: u32, _: f64) {}
+
+        fn get_parameters(&self) -> Vec<PluginParameter> {
+            Vec::new()
+        }
+
+        fn get_state(&self) -> Result<Vec<u8>, String> {
+            Ok(Vec::new())
+        }
+
+        fn set_state(&mut self, _: &[u8]) -> Result<(), String> {
+            Ok(())
+        }
+
+        fn has_gui(&self) -> bool {
+            true
+        }
+
+        fn set_editor_window_resizer(&mut self, resize: EditorWindowResizer) {
+            self.calls.lock().expect("call log").push("resizer");
+            self.resize = Some(resize);
+        }
+
+        fn open_gui(&mut self, _: *mut c_void) -> Result<(u32, u32), String> {
+            self.calls.lock().expect("call log").push("open");
+            // What a view does while it lays itself out against its new parent.
+            let resize = self
+                .resize
+                .as_ref()
+                .ok_or_else(|| "the host installed no resizer before the open".to_string())?;
+            resize(1024, 768);
+            Ok((1024, 768))
+        }
+    }
+
+    /// The host window a self-resizing editor reaches.
+    fn recording_resizer(
+        calls: &Arc<Mutex<Vec<&'static str>>>,
+    ) -> (EditorWindowResizer, Arc<Mutex<Vec<(u32, u32)>>>) {
+        let sizes = Arc::new(Mutex::new(Vec::new()));
+        let recorded = Arc::clone(&sizes);
+        let calls = Arc::clone(calls);
+        let resize: EditorWindowResizer = Arc::new(move |width, height| {
+            calls.lock().expect("call log").push("window");
+            recorded.lock().expect("sizes").push((width, height));
+        });
+        (resize, sizes)
+    }
+
+    /// A plugin editor resizes itself, and it may do so during the attach — so
+    /// the host's window has to be reachable before the editor is opened, not
+    /// after it reports a size.
+    #[test]
+    fn the_window_resizer_reaches_the_plugin_before_its_editor_opens() {
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        let (resize, sizes) = recording_resizer(&calls);
+        let mut instance = PluginInstanceData {
+            plugin: Box::new(SelfResizingTestPlugin {
+                calls: Arc::clone(&calls),
+                resize: None,
+            }),
+        };
+
+        instance.set_editor_window_resizer(resize);
+        let size = instance
+            .open_gui(std::ptr::null_mut())
+            .expect("a plugin given a resizer before the open can use it during one");
+
+        assert_eq!(size, (1024, 768));
+        assert_eq!(
+            *calls.lock().expect("call log"),
+            ["resizer", "open", "window"],
+            "the resizer must be installed before the open, and reach the host window from inside it"
+        );
+        assert_eq!(*sizes.lock().expect("sizes"), [(1024, 768)]);
+    }
+
+    /// A backend that overrides no editor method and takes the trait defaults.
     struct SilentTestPlugin;
 
     impl AudioPlugin for SilentTestPlugin {

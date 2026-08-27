@@ -13,8 +13,8 @@
 use crate::clap_wrapper::ClapWrapper;
 use crate::params::PluginParameter;
 use crate::traits::{
-    AudioPlugin, HostParameterUpdate, HostTransport, HostedPluginRuntime, LatencyChangeNotifier,
-    ProcessingGate,
+    AudioPlugin, EditorWindowResizer, HostParameterUpdate, HostTransport, HostedPluginRuntime,
+    LatencyChangeNotifier, ProcessingGate,
 };
 use crate::vst3_wrapper::Vst3Wrapper;
 use std::ffi::c_void;
@@ -86,6 +86,10 @@ impl AudioPlugin for HostedRuntime {
 
     fn close_gui(&mut self) {
         delegate!(self, backend => backend.close_gui())
+    }
+
+    fn set_editor_window_resizer(&mut self, resize: EditorWindowResizer) {
+        delegate!(self, backend => backend.set_editor_window_resizer(resize))
     }
 
     fn accepts_midi(&self) -> bool {

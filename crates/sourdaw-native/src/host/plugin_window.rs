@@ -142,9 +142,13 @@ pub fn native_handle_from_bytes(bytes: &[u8]) -> Result<usize, String> {
 
 /// One live editor window.
 ///
-/// Held only for the duration of `open_plugin_gui`; afterwards the window is
-/// addressed by label through [`PluginWindowHost`], because the recorded label
-/// is what survives across commands.
+/// Commands address a window by label through [`PluginWindowHost`], because the
+/// recorded label is what survives across them. This handle outlives
+/// `open_plugin_gui` for one reason: a plugin editor resizes *itself*, at any
+/// point while it is open and from inside its own call into the host, and the
+/// resizer it is given has to reach a window without a command to carry it. An
+/// implementation therefore holds a label rather than a live window object, and
+/// tolerates being asked to size a window the platform has already ended.
 pub trait PluginEditorWindow: Send + Sync {
     /// The native handle to hand the plugin, already cast for this platform.
     fn native_handle_ptr(&self) -> Result<*mut c_void, String>;

@@ -12,20 +12,22 @@
 
 use crate::params::PluginParameter;
 use crate::traits::{
-    AudioPlugin, HostParameterUpdate, HostTransport, HostedPluginRuntime, LatencyChangeNotifier,
-    ProcessingGate,
+    AudioPlugin, EditorWindowResizer, HostParameterUpdate, HostTransport, HostedPluginRuntime,
+    LatencyChangeNotifier, ProcessingGate,
 };
 use crate::vst3_bus_layout::{
     activate_main_audio_bus, negotiate_bus_layout, silent_channel_flags, BusGeometry, BusLayout,
     HOST_CHANNELS,
 };
 use crate::vst3_class_id::same_class_id;
+use crate::vst3_editor::{plugin_offers_an_editor, EditorSession, EditorSize, Vst3Editor};
 use crate::vst3_host::{read_string128, MessageTarget, Vst3HostContext, Vst3HostState};
 use crate::vst3_module::Vst3Module;
 use std::cell::Cell;
+use std::ffi::c_void;
 use std::path::Path;
 use std::ptr;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use vst3::Steinberg::Vst::{
     AudioBusBuffers, BusDirections_, Event, Event_::EventTypes_, Event__type0, IAudioProcessor,
     IAudioProcessorTrait, IComponent, IComponentTrait, IConnectionPoint, IConnectionPointTrait,
@@ -951,8 +953,22 @@ impl Drop for Vst3Instance {
 /// Field order is drop order: the wrapper's own `Drop` leaves the processing and
 /// active states before `instance` releases the plugin.
 pub struct Vst3Wrapper {
+    /// The open editor, if one is. First field because it holds objects the
+    /// plugin's controller created, and those must be released before `instance`
+    /// terminates the plugin that owns them.
+    editor: Option<Vst3Editor>,
     processor: Option<ComPtr<IAudioProcessor>>,
     instance: Vst3Instance,
+
+    /// Whether the plugin offers an editor, as answered once by its own
+    /// `createView`. Cached because that answer costs a real view creation and
+    /// the question is asked on every editor open, every capability report and
+    /// every close.
+    has_editor: OnceLock<bool>,
+    /// How the host resizes the window an editor is drawn into, once it has told
+    /// the backend. Held here rather than in the editor because it is installed
+    /// before the editor exists.
+    editor_window: Option<EditorWindowResizer>,
 
     descriptor_id: String,
     sample_rate: f64,
@@ -1014,9 +1030,12 @@ impl Vst3Wrapper {
         sample_rate: f64,
     ) -> Result<Self, String> {
         let mut wrapper = Self {
+            editor: None,
             processor: None,
             accepts_midi: instance.accepts_midi(),
             instance,
+            has_editor: OnceLock::new(),
+            editor_window: None,
             descriptor_id: format_class_id(&class_id),
             sample_rate,
             activated: false,
@@ -1119,6 +1138,58 @@ impl Vst3Wrapper {
     /// install wins, so the wake cannot be hijacked mid-life.
     pub fn set_latency_change_notifier(&self, notifier: LatencyChangeNotifier) -> bool {
         self.instance.host.state.set_latency_notifier(notifier)
+    }
+
+    // ── Editor ──────────────────────────────────────────────────────────
+
+    /// Whether this plugin offers an editor.
+    ///
+    /// `createView` is the only question VST3 has, and asking it creates a real
+    /// view — so the answer is cached and the probe runs once per instance.
+    pub fn has_editor(&self) -> bool {
+        *self.has_editor.get_or_init(|| {
+            self.instance
+                .controller()
+                .is_some_and(plugin_offers_an_editor)
+        })
+    }
+
+    /// Create the plugin's editor and attach it to the native window `parent`
+    /// names, returning the size the host window has to be.
+    pub fn open_editor(&mut self, parent: *mut c_void) -> Result<EditorSize, String> {
+        if self.editor.is_some() {
+            return Err(format!(
+                "[VST3] '{}' already has an open editor",
+                self.instance.name()
+            ));
+        }
+        let controller = self.instance.controller().ok_or_else(|| {
+            format!(
+                "[VST3] '{}' has no edit controller, and so no editor",
+                self.instance.name()
+            )
+        })?;
+
+        let editor = Vst3Editor::open(
+            controller,
+            parent,
+            self.instance.name(),
+            EditorSession::current(),
+            self.editor_window.clone(),
+        )?;
+        let size = editor.size();
+        self.editor = Some(editor);
+        Ok(size)
+    }
+
+    /// Detach and release the editor. A plugin with none open has nothing to do.
+    pub fn close_editor(&mut self) {
+        self.editor = None;
+    }
+
+    /// The open editor, for a host-initiated resize or a size read.
+    pub fn editor(&self) -> Option<&Vst3Editor> {
+        self.editor.as_ref()
     }
 
     /// The class CID this instance was created from, as the scanner spells it.
@@ -1432,6 +1503,9 @@ impl Drop for Vst3Wrapper {
     /// terminated while still active is a plugin asked to tear down state it
     /// believes is in use.
     fn drop(&mut self) {
+        // Before anything else: the editor is detached and released while the
+        // plugin that created its view is still initialised.
+        self.close_editor();
         self.force_stop_processing_off_audio_thread();
 
         if !self.activated {
@@ -1579,10 +1653,22 @@ impl AudioPlugin for Vst3Wrapper {
         self.accepts_midi
     }
 
-    // The editor path is not implemented yet, so the trait's honest defaults —
-    // no editor, nothing to open, nothing to close — are exactly what this
-    // backend can truthfully say. Overriding them with a stub that returns a
-    // size would claim an editor the host cannot embed.
+    fn has_gui(&self) -> bool {
+        self.has_editor()
+    }
+
+    fn open_gui(&mut self, handle_ptr: *mut c_void) -> Result<(u32, u32), String> {
+        self.open_editor(handle_ptr)
+            .map(|size| (size.width, size.height))
+    }
+
+    fn close_gui(&mut self) {
+        self.close_editor();
+    }
+
+    fn set_editor_window_resizer(&mut self, resize: EditorWindowResizer) {
+        self.editor_window = Some(resize);
+    }
 }
 
 impl HostedPluginRuntime for Vst3Wrapper {

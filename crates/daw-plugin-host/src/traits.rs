@@ -27,6 +27,20 @@ use std::sync::Arc;
 /// latency change, and each backend's host callbacks install one of these.
 pub type LatencyChangeNotifier = Box<dyn Fn() + Send + Sync>;
 
+/// Host-supplied resize of the native window one plugin's editor is drawn into.
+///
+/// Every format lets a plugin ask its host for a different editor size —
+/// VST3 through `IPlugFrame::resizeView`, CLAP through
+/// `clap_host_gui::request_resize` — and none of them can be answered by
+/// returning a value, because the ask arrives from inside the plugin rather than
+/// from a host call. So the host installs the one thing the backend cannot do
+/// for itself: change the size of the window it was handed a handle to.
+///
+/// Seam vocabulary rather than a VST3 one, and shared rather than owned, because
+/// the backend hands a clone to whichever host object the format routes the
+/// request through. Called on the control path only.
+pub type EditorWindowResizer = Arc<dyn Fn(u32, u32) + Send + Sync>;
+
 /// One host-side parameter write waiting to reach a plugin.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct HostParameterUpdate {
@@ -204,6 +218,14 @@ pub trait AudioPlugin: Send + Sync {
 
     /// Close the plugin's editor. A plugin with no editor has nothing to close.
     fn close_gui(&mut self) {}
+
+    /// Install the host's editor-window resizer, before the editor is opened.
+    ///
+    /// Installed rather than passed to `open_gui` because the request it answers
+    /// arrives after the open has returned, from inside the plugin. The default
+    /// is empty for the same reason the rest of the GUI four carry defaults: a
+    /// backend with no editor has no resize to answer.
+    fn set_editor_window_resizer(&mut self, _resize: EditorWindowResizer) {}
 
     /// Whether the plugin accepts note events.
     ///
