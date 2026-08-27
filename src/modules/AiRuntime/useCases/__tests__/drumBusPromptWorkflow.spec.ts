@@ -45,6 +45,7 @@ import { setNotificationEventBus } from '#/utils/Notification/notificationEventB
 import { cloudSession } from '../../repositories/cloudLlm/cloudSession';
 import { generateWebLlmCompletion } from '../../repositories/webLlm/generateWebLlmCompletion';
 import { replacePendingActionConfirmationForTest } from '../../stores/__tests__/pendingActionConfirmationStoreTestSupport';
+import { readAgentRunState } from '../../stores/agentRunStore';
 import { clearAiHistory } from '../../stores/aiActionHistoryStore';
 import { chatStore } from '../../stores/chatStore';
 import {
@@ -99,6 +100,27 @@ function settleFixtureProjectWrites(): void {
 function sendChatMessage(prompt: string) {
     settleFixtureProjectWrites();
     return sendChatMessageUseCase(prompt);
+}
+
+function deferNextIdempotencyLookup(): { lookupStarted: Promise<void>; releaseLookup: () => void } {
+    let releaseLookup = (): void => undefined;
+    let reportLookupStarted = (): void => undefined;
+    const lookupGate = new Promise<void>((resolve) => {
+        releaseLookup = resolve;
+    });
+    const lookupStarted = new Promise<void>((resolve) => {
+        reportLookupStarted = resolve;
+    });
+    vi.stubGlobal('navigator', {
+        ...navigator,
+        locks: {
+            request: (_name: string, _options: LockOptions, task: () => unknown) => {
+                reportLookupStarted();
+                return lookupGate.then(task);
+            },
+        },
+    });
+    return { lookupStarted, releaseLookup };
 }
 
 const providerPlan = [
@@ -1659,7 +1681,7 @@ describe('drum bus prompt workflow', () => {
             ]),
         });
         const committedConfirmation = getPendingActionConfirmation(confirmation.id);
-        if (!committedConfirmation) {
+        if (!committedConfirmation?.followUpProjectRevision) {
             throw new Error('Expected committed render confirmation');
         }
         const approvedBatch = committedConfirmation.approvalSnapshot.commandBatch;
@@ -1798,7 +1820,7 @@ describe('drum bus prompt workflow', () => {
         const withDurableReceiptFixture = async (
             label: string,
             suffix: string,
-            pendingEffects: typeof durableReceipt.pendingEffects
+            receiptFixture: typeof durableReceipt
         ): Promise<void> => {
             const originalRecords = localStorage.getItem('sourdaw:command-batch-idempotency:v1');
             const records: unknown = JSON.parse(originalRecords ?? '[]');
@@ -1834,14 +1856,25 @@ describe('drum bus prompt workflow', () => {
                         idempotencyKey,
                         contentHash: durableReceipt.contentHash,
                         state: 'complete',
-                        serializedReceipt: JSON.stringify({ ...durableReceipt, pendingEffects }),
+                        serializedReceipt: JSON.stringify(receiptFixture),
                         updatedAt: Date.now(),
                     },
                 ])
             );
+            agentRunLifecycle.recordPendingEffectContinuation({
+                runId: committedConfirmation.runId,
+                continuation: {
+                    ...pendingEffectContinuation,
+                    serializedBatch: candidate.approvalSnapshot.commandBatch?.serialized ?? '',
+                },
+            });
             try {
                 await expectRetryProofRejected(label, candidate);
             } finally {
+                agentRunLifecycle.recordPendingEffectContinuation({
+                    runId: committedConfirmation.runId,
+                    continuation: pendingEffectContinuation,
+                });
                 if (originalRecords === null) {
                     localStorage.removeItem('sourdaw:command-batch-idempotency:v1');
                 } else {
@@ -1855,6 +1888,14 @@ describe('drum bus prompt workflow', () => {
             ...committedConfirmation,
             executedActions: committedConfirmation.executedActions.map((execution, index) =>
                 index === 0 ? { ...execution, ...update } : execution
+            ),
+        });
+        const withWarnedRenderExecution = (
+            update: Partial<PendingAppActionConfirmation['executedActions'][number]>
+        ): PendingAppActionConfirmation => ({
+            ...committedConfirmation,
+            executedActions: committedConfirmation.executedActions.map((execution) =>
+                execution.commandId === warnedRenderExecution.commandId ? { ...execution, ...update } : execution
             ),
         });
         const withDuplicateExecutionId = (): PendingAppActionConfirmation => ({
@@ -1950,8 +1991,17 @@ describe('drum bus prompt workflow', () => {
         ];
 
         for (const { label, pendingEffects, suffix } of durablePendingEffectCases) {
-            await withDurableReceiptFixture(label, suffix, pendingEffects);
+            await withDurableReceiptFixture(label, suffix, { ...durableReceipt, pendingEffects });
         }
+
+        await withDurableReceiptFixture('durable render command no-op must fail closed', 'render-command-no-op', {
+            ...durableReceipt,
+            commandOutcomes: durableReceipt.commandOutcomes.map((commandOutcome) =>
+                commandOutcome.commandId === warnedRenderExecution.commandId
+                    ? { ...commandOutcome, outcome: 'no-op' }
+                    : commandOutcome
+            ),
+        });
 
         const durableBatchBindingCases: ReadonlyArray<{
             candidate: PendingAppActionConfirmation;
@@ -2103,6 +2153,10 @@ describe('drum bus prompt workflow', () => {
             'same-count non-committed receipt must fail closed',
             withFirstExecution({ outcome: 'executed-with-warning' })
         );
+        await expectRetryProofRejected(
+            'render execution without the committed warning must fail closed',
+            withWarnedRenderExecution({ outcome: 'committed' })
+        );
         setStoredConfirmation(committedConfirmation);
         const committedTracks = structuredClone(trackStore.value?.tracks ?? []);
 
@@ -2173,12 +2227,71 @@ describe('drum bus prompt workflow', () => {
                 'Missing section render artifacts completed without replaying project actions'
             ),
         });
+        expect(
+            agentRunLifecycle
+                .get(committedConfirmation.runId)
+                ?.pendingEffectContinuations.filter(({ batchId }) => batchId === committedConfirmation.groupId)
+        ).toEqual([]);
+        expect(
+            (readAgentRunState().pendingEffectRecoveryLedger ?? []).filter(
+                ({ runId, batchId }) =>
+                    runId === committedConfirmation.runId && batchId === committedConfirmation.groupId
+            )
+        ).toEqual([]);
 
         await undo();
 
         expect(trackStore.value?.tracks.some((track) => track.name === 'Drum Bus')).toBe(false);
         expect(trackStore.value?.tracks.some((track) => track.name === 'Parallel Compression')).toBe(false);
         expect(getAgentSectionRenderArtifacts()).toEqual([]);
+    });
+
+    it('does not treat matching section render artifacts from a stale project revision as complete', async () => {
+        setEx11Project();
+        useEx11WebLlmFixture();
+        await sendChatMessage(EX11_PROMPT);
+        const confirmation = getPendingActionConfirmation(
+            chatStore.value?.messages.find((message) => message.pendingActionConfirmationId)
+                ?.pendingActionConfirmationId ?? ''
+        );
+        const renderAction = confirmation?.approvalSnapshot.actions.find(
+            (action) => action.type === 'renderProjectSections'
+        );
+        const jobs = renderAction?.type === 'renderProjectSections' ? renderAction.payload.jobs : undefined;
+        if (!confirmation || !jobs) {
+            throw new Error('Expected materialized EX-11 render jobs');
+        }
+        await retryAgentProjectSectionRenders({ jobs, sourceRevision: confirmation.projectRevision });
+        expect(getAgentSectionRenderArtifacts()).toEqual(
+            jobs.map((job) =>
+                expect.objectContaining({
+                    endBeat: job.endBeat,
+                    jobId: job.jobId,
+                    sampleRate: job.sampleRate,
+                    sectionId: job.sectionId,
+                    sectionName: job.sectionName,
+                    sourceRevision: confirmation.projectRevision,
+                    startBeat: job.startBeat,
+                    tailSeconds: job.tailSeconds,
+                })
+            )
+        );
+        const renderCallCount = runtimeMocks.renderOffline.mock.calls.length;
+
+        await expect(confirmPendingChatActions({ confirmationId: confirmation.id })).resolves.toMatchObject({
+            status: 'failed',
+            durableCommit: true,
+        });
+
+        expect(runtimeMocks.renderOffline).toHaveBeenCalledTimes(renderCallCount);
+        expect(getPendingActionConfirmation(confirmation.id)).toMatchObject({
+            status: 'failed',
+            followUpStatus: 'retryable',
+            followUpProjectRevision: expect.any(String),
+        });
+        expect(getPendingActionConfirmation(confirmation.id)?.followUpProjectRevision).not.toBe(
+            confirmation.projectRevision
+        );
     });
 
     it('rejects a current-revision graft that is not bound to the durable agent run', async () => {
@@ -2300,32 +2413,54 @@ describe('drum bus prompt workflow', () => {
             },
         };
         replacePendingActionConfirmationForTest(retryCandidate);
-        let releaseLookup = (): void => undefined;
-        let reportLookupStarted = (): void => undefined;
-        const lookupGate = new Promise<void>((resolve) => {
-            releaseLookup = resolve;
-        });
-        const lookupStarted = new Promise<void>((resolve) => {
-            reportLookupStarted = resolve;
-        });
-        vi.stubGlobal('navigator', {
-            ...navigator,
-            locks: {
-                request: (_name: string, _options: LockOptions, task: () => unknown) => {
-                    reportLookupStarted();
-                    return lookupGate.then(task);
-                },
-            },
-        });
         const renderCallCount = runtimeMocks.renderOffline.mock.calls.length;
+        const invalidatedLookup = deferNextIdempotencyLookup();
 
         const pendingRetry = confirmPendingChatActions({ confirmationId: confirmation.id });
-        await lookupStarted;
+        await invalidatedLookup.lookupStarted;
         replacePendingActionConfirmationForTest({ ...retryCandidate, status: 'invalidated' });
-        releaseLookup();
+        invalidatedLookup.releaseLookup();
 
         await expect(pendingRetry).resolves.toEqual({ status: 'not_pending', currentStatus: 'invalidated' });
         expect(runtimeMocks.renderOffline).toHaveBeenCalledTimes(renderCallCount);
+
+        replacePendingActionConfirmationForTest(retryCandidate);
+        const missingLookup = deferNextIdempotencyLookup();
+        const pendingMissingRetry = confirmPendingChatActions({ confirmationId: confirmation.id });
+        await missingLookup.lookupStarted;
+        clearPendingActionConfirmations();
+        missingLookup.releaseLookup();
+
+        await expect(pendingMissingRetry).resolves.toEqual({ status: 'missing' });
+        expect(runtimeMocks.renderOffline).toHaveBeenCalledTimes(renderCallCount);
+    });
+
+    it('does not execute a proposal that stops being proposed during durable receipt lookup', async () => {
+        setEx11Project();
+        useEx11WebLlmFixture();
+        await sendChatMessage(EX11_PROMPT);
+        const confirmation = getPendingActionConfirmation(
+            chatStore.value?.messages.find((message) => message.pendingActionConfirmationId)
+                ?.pendingActionConfirmationId ?? ''
+        );
+        if (!confirmation) {
+            throw new Error('Expected proposed EX-11 confirmation');
+        }
+        const tracksBeforeConfirmation = structuredClone(trackStore.value?.tracks ?? []);
+        const undoCount = undoStore.value?.past.length ?? 0;
+        const renderCallCount = runtimeMocks.renderOffline.mock.calls.length;
+        const proposedLookup = deferNextIdempotencyLookup();
+
+        const pendingConfirmation = confirmPendingChatActions({ confirmationId: confirmation.id });
+        await proposedLookup.lookupStarted;
+        replacePendingActionConfirmationForTest({ ...confirmation, status: 'cancelled' });
+        proposedLookup.releaseLookup();
+
+        await expect(pendingConfirmation).resolves.toEqual({ status: 'not_pending', currentStatus: 'cancelled' });
+        expect(trackStore.value?.tracks).toEqual(tracksBeforeConfirmation);
+        expect(undoStore.value?.past).toHaveLength(undoCount);
+        expect(runtimeMocks.renderOffline).toHaveBeenCalledTimes(renderCallCount);
+        expect(getAgentSectionRenderArtifacts()).toEqual([]);
     });
 
     it('synchronizes completed retry state when every render artifact already exists', async () => {
@@ -2389,6 +2524,17 @@ describe('drum bus prompt workflow', () => {
             content: expect.stringContaining('All section render artifacts are complete'),
         });
         expect(message?.error).toBeUndefined();
+        expect(
+            agentRunLifecycle
+                .get(committedConfirmation.runId)
+                ?.pendingEffectContinuations.filter(({ batchId }) => batchId === committedConfirmation.groupId)
+        ).toEqual([]);
+        expect(
+            (readAgentRunState().pendingEffectRecoveryLedger ?? []).filter(
+                ({ runId, batchId }) =>
+                    runId === committedConfirmation.runId && batchId === committedConfirmation.groupId
+            )
+        ).toEqual([]);
     });
 
     it('keeps persistent chat retry state synchronized when render retry exceeds budget', async () => {
