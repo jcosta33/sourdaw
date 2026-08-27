@@ -96,6 +96,8 @@ const AGENT_RUN_PERSISTENCE_WARNING =
     'Agent run recovery state could not be persisted after execution. The verified command receipt remains authoritative; do not retry automatically.';
 const AGENT_RUN_STALE_COMPLETION_WARNING =
     'Agent work completed after its run lease was cancelled or replaced. The durable receipt was retained without reopening the terminal run.';
+const RENDER_RETRY_PROOF_MISMATCH_REASON =
+    'The retained render retry proof no longer matches the committed project batch.';
 
 async function settlePendingActionResourcesBestEffort(input: {
     confirmationId: string;
@@ -721,8 +723,14 @@ function hasExactApprovedCommandBatchIdentity(
     return (
         candidate !== undefined &&
         candidate.serialized === expected.serialized &&
-        getExactAgentActionHash({ operation: 'commandBatchAuthority', arguments: candidate.authority }) ===
-            getExactAgentActionHash({ operation: 'commandBatchAuthority', arguments: expected.authority })
+        hasExactCanonicalCommandBatchAuthority(expected.authority, candidate.authority)
+    );
+}
+
+function hasExactCanonicalCommandBatchAuthority(expected: unknown, candidate: unknown): boolean {
+    return (
+        getExactAgentActionHash({ operation: 'commandBatchAuthority', arguments: candidate }) ===
+        getExactAgentActionHash({ operation: 'commandBatchAuthority', arguments: expected })
     );
 }
 
@@ -851,6 +859,58 @@ function hasExactConfirmationDurableBatchBinding(
     );
 }
 
+function hasExactTrackedAgentRunRetryBinding(
+    confirmation: PendingAppActionConfirmation,
+    receipt: CommandVerifiedBatchReceipt | null
+): boolean {
+    const approvedCommandBatch = confirmation.approvalSnapshot.commandBatch;
+    if (!receipt || !approvedCommandBatch) {
+        return false;
+    }
+    const trackedRun = agentRunLifecycle.get(confirmation.runId);
+    if (!trackedRun || trackedRun.revisions.committed !== confirmation.followUpProjectRevision) {
+        return false;
+    }
+    const receiptIdentity = getVerifiedReceiptIdentity(receipt);
+    const matchingReceipts = trackedRun.receipts.filter(({ workId }) => workId === receipt.batchId);
+    if (matchingReceipts.length !== 1 || matchingReceipts[0]?.receiptIdentity !== receiptIdentity) {
+        return false;
+    }
+    const matchingContinuations = trackedRun.pendingEffectContinuations.filter(
+        ({ batchId }) => batchId === receipt.batchId
+    );
+    const continuation = matchingContinuations[0];
+    return (
+        matchingContinuations.length === 1 &&
+        continuation?.receiptIdentity === receiptIdentity &&
+        continuation.recovery === 'reconcile-batch' &&
+        continuation.serializedBatch === approvedCommandBatch.serialized &&
+        hasExactCanonicalCommandBatchAuthority(approvedCommandBatch.authority, continuation.authority)
+    );
+}
+
+function failCommittedSectionRenderRetryProof(
+    confirmation: PendingAppActionConfirmation
+): ConfirmPendingChatActionsResult {
+    updatePendingActionFollowUp({
+        confirmationId: confirmation.id,
+        error: RENDER_RETRY_PROOF_MISMATCH_REASON,
+        status: 'failed',
+    });
+    updatePendingActionConfirmationStatus({
+        confirmationId: confirmation.id,
+        status: 'failed',
+        error: RENDER_RETRY_PROOF_MISMATCH_REASON,
+    });
+    updateChatMessage(confirmation.assistantMessageId, {
+        pendingActionConfirmationStatus: 'failed',
+        pendingActionFollowUpStatus: 'failed',
+        error: RENDER_RETRY_PROOF_MISMATCH_REASON,
+        content: `The project changes remain committed, but the retained render retry proof no longer matches the committed batch. Project actions were not replayed.`,
+    });
+    return { status: 'failed', reason: RENDER_RETRY_PROOF_MISMATCH_REASON };
+}
+
 function hasDurablyCommittedRetryableSectionRender(
     confirmation: PendingAppActionConfirmation,
     durableReceipt: CommandVerifiedBatchReceipt | null
@@ -866,6 +926,7 @@ function hasDurablyCommittedRetryableSectionRender(
     return (
         renderBinding !== null &&
         hasExactConfirmationDurableBatchBinding(confirmation, approvedBatch, durableReceipt) &&
+        hasExactTrackedAgentRunRetryBinding(confirmation, durableReceipt) &&
         hasExactDurableRenderRecoveryReceipt(durableReceipt, renderBinding)
     );
 }
@@ -905,6 +966,9 @@ export async function confirmPendingChatActions(
     }
     if (hasDurablyCommittedRetryableSectionRender(confirmation, priorVerifiedBatchReceipt)) {
         return retryCommittedSectionRenders(confirmation);
+    }
+    if (wasRetryEligible && isEligibleForCommittedSectionRenderRetry(confirmation)) {
+        return failCommittedSectionRenderRetryProof(confirmation);
     }
     if (confirmation.status !== 'proposed') {
         return { status: 'not_pending', currentStatus: confirmation.status };

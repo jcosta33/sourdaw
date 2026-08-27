@@ -1750,10 +1750,45 @@ describe('drum bus prompt workflow', () => {
         ) {
             throw new Error('Expected independently mutable durable render recovery evidence');
         }
+        const receiptIdentity = `${String(durableReceipt.schemaVersion)}:${durableReceipt.runId}:${durableReceipt.batchId}:${durableReceipt.outcome}`;
+        const trackedRun = agentRunLifecycle.get(committedConfirmation.runId);
+        const matchingRunReceipts = trackedRun?.receipts.filter(({ workId }) => workId === durableReceipt.batchId);
+        const matchingContinuations = trackedRun?.pendingEffectContinuations.filter(
+            ({ batchId }) => batchId === durableReceipt.batchId
+        );
+        expect(trackedRun?.revisions.committed).toBe(committedConfirmation.followUpProjectRevision);
+        expect(matchingRunReceipts).toEqual([
+            expect.objectContaining({ workId: durableReceipt.batchId, receiptIdentity }),
+        ]);
+        expect(matchingContinuations).toEqual([
+            expect.objectContaining({
+                authority: approvedBatch.authority,
+                batchId: durableReceipt.batchId,
+                receiptIdentity,
+                recovery: 'reconcile-batch',
+                serializedBatch: approvedBatch.serialized,
+            }),
+        ]);
+        const pendingEffectContinuation = matchingContinuations?.[0];
+        if (!trackedRun?.revisions.committed || !pendingEffectContinuation) {
+            throw new Error('Expected durable agent-run retry evidence');
+        }
         const setStoredConfirmation = (candidate: PendingAppActionConfirmation): void => {
             replacePendingActionConfirmationForTest(candidate);
         };
-        const expectRetryRefused = async (label: string, candidate: PendingAppActionConfirmation): Promise<void> => {
+        const retryProofMismatchReason =
+            'The retained render retry proof no longer matches the committed project batch.';
+        const expectRetryProofRejected = async (
+            label: string,
+            candidate: PendingAppActionConfirmation
+        ): Promise<void> => {
+            setStoredConfirmation(candidate);
+            const renderCallCount = runtimeMocks.renderOffline.mock.calls.length;
+            const result = await confirmPendingChatActions({ confirmationId: confirmation.id });
+            expect(result, label).toEqual({ status: 'failed', reason: retryProofMismatchReason });
+            expect(runtimeMocks.renderOffline, `${label}: render call count`).toHaveBeenCalledTimes(renderCallCount);
+        };
+        const expectRetryNotPending = async (label: string, candidate: PendingAppActionConfirmation): Promise<void> => {
             setStoredConfirmation(candidate);
             const renderCallCount = runtimeMocks.renderOffline.mock.calls.length;
             const result = await confirmPendingChatActions({ confirmationId: confirmation.id });
@@ -1805,7 +1840,7 @@ describe('drum bus prompt workflow', () => {
                 ])
             );
             try {
-                await expectRetryRefused(label, candidate);
+                await expectRetryProofRejected(label, candidate);
             } finally {
                 if (originalRecords === null) {
                     localStorage.removeItem('sourdaw:command-batch-idempotency:v1');
@@ -1939,69 +1974,130 @@ describe('drum bus prompt workflow', () => {
             },
         ];
         for (const { candidate, label } of durableBatchBindingCases) {
-            await expectRetryRefused(label, candidate);
+            await expectRetryProofRejected(label, candidate);
         }
 
-        const wrongFollowUpRevision = {
-            ...committedConfirmation,
-            followUpProjectRevision: `${committedConfirmation.followUpProjectRevision}:graft`,
-        };
-        setStoredConfirmation(wrongFollowUpRevision);
-        const wrongFollowUpRenderCallCount = runtimeMocks.renderOffline.mock.calls.length;
-        await expect(confirmPendingChatActions({ confirmationId: confirmation.id })).resolves.toEqual({
-            status: 'failed',
-            reason: expect.stringContaining('Project changed after the committed render receipt'),
+        agentRunLifecycle.recordCommittedWork({
+            runId: committedConfirmation.runId,
+            workId: durableReceipt.batchId,
+            receiptIdentity: `${receiptIdentity}:graft`,
+            committedRevision: trackedRun.revisions.committed,
+            completesRun: false,
         });
-        expect(runtimeMocks.renderOffline, 'wrong follow-up revision: render call count').toHaveBeenCalledTimes(
-            wrongFollowUpRenderCallCount
-        );
+        await expectRetryProofRejected('agent-run receipt identity graft must fail closed', committedConfirmation);
+        agentRunLifecycle.recordCommittedWork({
+            runId: committedConfirmation.runId,
+            workId: durableReceipt.batchId,
+            receiptIdentity,
+            committedRevision: trackedRun.revisions.committed,
+            completesRun: false,
+        });
 
-        await expectRetryRefused('non-retryable follow-up must fail closed', {
+        const continuationGraftCases = [
+            {
+                label: 'agent-run continuation receipt identity graft must fail closed',
+                continuation: { ...pendingEffectContinuation, receiptIdentity: `${receiptIdentity}:graft` },
+            },
+            {
+                label: 'agent-run continuation serialized batch graft must fail closed',
+                continuation: {
+                    ...pendingEffectContinuation,
+                    serializedBatch: `${pendingEffectContinuation.serializedBatch} `,
+                },
+            },
+            {
+                label: 'agent-run continuation authority graft must fail closed',
+                continuation: {
+                    ...pendingEffectContinuation,
+                    authority: {
+                        ...pendingEffectContinuation.authority,
+                        projectId: `${pendingEffectContinuation.authority.projectId}:graft`,
+                    },
+                },
+            },
+        ];
+        for (const { continuation, label } of continuationGraftCases) {
+            try {
+                agentRunLifecycle.recordPendingEffectContinuation({
+                    runId: committedConfirmation.runId,
+                    continuation,
+                });
+            } catch (error) {
+                throw new Error(label, { cause: error });
+            }
+            await expectRetryProofRejected(label, committedConfirmation);
+            agentRunLifecycle.recordPendingEffectContinuation({
+                runId: committedConfirmation.runId,
+                continuation: pendingEffectContinuation,
+            });
+        }
+
+        await expectRetryNotPending('non-retryable follow-up must fail closed', {
             ...committedConfirmation,
             followUpStatus: 'failed',
         });
-        await expectRetryRefused('invalidated confirmation must fail closed', {
+        await expectRetryNotPending('invalidated confirmation must fail closed', {
             ...committedConfirmation,
             status: 'invalidated',
         });
-        await expectRetryRefused(
+        await expectRetryProofRejected(
             'missing one non-render committed execution receipt must fail closed',
             withMissingCommittedExecution()
         );
-        await expectRetryRefused('missing follow-up project revision must fail closed', {
+        await expectRetryNotPending('missing follow-up project revision must fail closed', {
             ...committedConfirmation,
             followUpProjectRevision: null,
         });
-        await expectRetryRefused('malformed approved command batch must fail closed', {
+        await expectRetryProofRejected('malformed approved command batch must fail closed', {
             ...committedConfirmation,
             approvalSnapshot: {
                 ...committedConfirmation.approvalSnapshot,
                 commandBatch: { ...approvedBatch, serialized: '{' },
             },
         });
-        await expectRetryRefused('altered approved render job payload must fail closed', withAlteredRenderJobPayload());
-        await expectRetryRefused(
-            'valid-looking retry without a durable batch receipt must fail closed',
-            withUncheckpointedBatchIdentity()
+        await expectRetryProofRejected(
+            'altered approved render job payload must fail closed',
+            withAlteredRenderJobPayload()
         );
-        await expectRetryRefused('same-count duplicate execution IDs must fail closed', withDuplicateExecutionId());
-        await expectRetryRefused(
+        const absentDurableReceiptConfirmation = withUncheckpointedBatchIdentity();
+        await expectRetryProofRejected(
+            'valid-looking retry without a durable batch receipt must fail closed',
+            absentDurableReceiptConfirmation
+        );
+        expect(getPendingActionConfirmation(confirmation.id)).toMatchObject({
+            status: 'failed',
+            followUpStatus: 'failed',
+            error: retryProofMismatchReason,
+        });
+        expect(
+            chatStore.value?.messages.find((message) => message.pendingActionConfirmationId === confirmation.id)
+        ).toMatchObject({
+            pendingActionConfirmationStatus: 'failed',
+            pendingActionFollowUpStatus: 'failed',
+            error: retryProofMismatchReason,
+            content: expect.stringMatching(/retry proof no longer matches.*project actions were not replayed/iu),
+        });
+        await expectRetryProofRejected(
+            'same-count duplicate execution IDs must fail closed',
+            withDuplicateExecutionId()
+        );
+        await expectRetryProofRejected(
             'same-count wrong execution schema version must fail closed',
             withFirstExecution({ commandSchemaVersion: firstExecution.commandSchemaVersion + 1 })
         );
-        await expectRetryRefused(
+        await expectRetryProofRejected(
             'same-count unknown command receipt must fail closed',
             withFirstExecution({ commandId: 'unauthorized-command-id' })
         );
-        await expectRetryRefused(
+        await expectRetryProofRejected(
             'same-count non-project receipt must fail closed',
             withFirstExecution({ executionKind: 'runtime' })
         );
-        await expectRetryRefused(
+        await expectRetryProofRejected(
             'same-count execution operation mismatch must fail closed',
             withMismatchedExecutionOperation()
         );
-        await expectRetryRefused(
+        await expectRetryProofRejected(
             'same-count non-committed receipt must fail closed',
             withFirstExecution({ outcome: 'executed-with-warning' })
         );
@@ -2081,6 +2177,57 @@ describe('drum bus prompt workflow', () => {
         expect(trackStore.value?.tracks.some((track) => track.name === 'Drum Bus')).toBe(false);
         expect(trackStore.value?.tracks.some((track) => track.name === 'Parallel Compression')).toBe(false);
         expect(getAgentSectionRenderArtifacts()).toEqual([]);
+    });
+
+    it('rejects a current-revision graft that is not bound to the durable agent run', async () => {
+        setEx11Project();
+        useEx11WebLlmFixture();
+        await sendChatMessage(EX11_PROMPT);
+        const confirmation = getPendingActionConfirmation(
+            chatStore.value?.messages.find((message) => message.pendingActionConfirmationId)
+                ?.pendingActionConfirmationId ?? ''
+        );
+        if (!confirmation) {
+            throw new Error('Expected EX-11 confirmation');
+        }
+        runtimeMocks.renderOffline.mockImplementation((options: { startBeat?: number }) => {
+            if (options.startBeat === 16) {
+                return Promise.reject(new Error('comparison renderer unavailable'));
+            }
+            return Promise.resolve(createTestAudioBuffer());
+        });
+        await expect(confirmPendingChatActions({ confirmationId: confirmation.id })).resolves.toMatchObject({
+            status: 'failed',
+            durableCommit: true,
+        });
+        const committedConfirmation = getPendingActionConfirmation(confirmation.id);
+        if (!committedConfirmation?.followUpProjectRevision || !trackStore.value) {
+            throw new Error('Expected retryable committed confirmation');
+        }
+        const durableCommittedRevision = agentRunLifecycle.get(confirmation.runId)?.revisions.committed;
+        expect(durableCommittedRevision).toBe(committedConfirmation.followUpProjectRevision);
+        trackStore.set({
+            ...trackStore.value,
+            tracks: trackStore.value.tracks.map((track) =>
+                track.id === 'track-bass' ? { ...track, name: `${track.name} changed` } : track
+            ),
+        });
+        flushFixtureStorageOwner('tracks');
+        const currentRevision = captureProjectRevision();
+        expect(currentRevision).not.toBe(durableCommittedRevision);
+        replacePendingActionConfirmationForTest({
+            ...committedConfirmation,
+            followUpProjectRevision: currentRevision,
+        });
+        const renderCallCount = runtimeMocks.renderOffline.mock.calls.length;
+
+        await expect(confirmPendingChatActions({ confirmationId: confirmation.id })).resolves.toEqual({
+            status: 'failed',
+            reason: 'The retained render retry proof no longer matches the committed project batch.',
+        });
+
+        expect(runtimeMocks.renderOffline).toHaveBeenCalledTimes(renderCallCount);
+        expect(agentRunLifecycle.get(confirmation.runId)?.revisions.committed).toBe(durableCommittedRevision);
     });
 
     it('fails closed when retry eligibility changes during durable receipt lookup', async () => {
@@ -2263,6 +2410,14 @@ describe('drum bus prompt workflow', () => {
             status: 'failed',
             durableCommit: true,
         });
+        const durableRun = agentRunLifecycle.get(confirmation.runId);
+        const durableReceiptEntry = durableRun?.receipts.find((receipt) => receipt.workId === confirmation.groupId);
+        const durableContinuation = durableRun?.pendingEffectContinuations.find(
+            (continuation) => continuation.batchId === confirmation.groupId
+        );
+        if (!durableRun?.revisions.committed || !durableReceiptEntry || !durableContinuation) {
+            throw new Error('Expected durable retry evidence before replacing the run budget');
+        }
         agentRunLifecycle.clear();
         agentRunLifecycle.create({
             runId: confirmation.runId,
@@ -2270,6 +2425,17 @@ describe('drum bus prompt workflow', () => {
             mode: 'macro',
             createdRevision: confirmation.projectRevision,
             budgets: { limits: { maxRenderJobs: 0 }, consumed: {} },
+        });
+        agentRunLifecycle.recordCommittedWork({
+            runId: confirmation.runId,
+            workId: durableReceiptEntry.workId,
+            receiptIdentity: durableReceiptEntry.receiptIdentity,
+            committedRevision: durableRun.revisions.committed,
+            completesRun: false,
+        });
+        agentRunLifecycle.recordPendingEffectContinuation({
+            runId: confirmation.runId,
+            continuation: durableContinuation,
         });
         const renderCallCount = runtimeMocks.renderOffline.mock.calls.length;
 
