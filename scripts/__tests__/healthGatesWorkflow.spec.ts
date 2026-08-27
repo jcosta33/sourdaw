@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -85,13 +85,23 @@ const GATE_MEMBERS = [
 const CURRENT_NON_GATING_JOBS = ['unit', 'e2e'] as const;
 const DEPLOY_WEB_JOB = 'deploy-web';
 const DEPLOY_WEB_JOB_NAME = 'Daily web deploy';
-// A dispatch runs on whichever ref the person firing it chose, and the
-// Production environment carries no branch policy, so the branch constraint has
-// to live here.
+// A dispatch runs on whichever ref the person firing it chose, so the branch
+// constraint has to live here for every honest path. A dispatched *copy* of
+// this workflow carries its own condition; the environment's branch policy is
+// what binds that one, and no test in this repository can observe it.
 const DEPLOY_WEB_CONDITION =
     "github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')";
 const DEPLOY_WEB_CONCURRENCY_GROUP = 'deploy-web-production';
 const DEPLOY_WEB_GUARD_STEP = 'Require a validated revision of main';
+const DEPLOY_WEB_FRESHNESS_STEP = 'Refuse a stale candidate revision';
+const DEPLOY_WEB_CREDENTIAL_REPORT_STEP = 'Report the missing deployment credential';
+// Arming the leg takes all four, and the fourth is the one a reader forgets.
+const DEPLOY_ARMING_PRECONDITIONS = [
+    'VERCEL_TOKEN',
+    'VERCEL_ORG_ID',
+    'VERCEL_PROJECT_ID',
+    'deployment branch policy limited to `main`',
+] as const;
 const DEPLOYMENT_URL_REFERENCE = '${{ steps.deployment.outputs.url }}';
 const VERCEL_TOKEN_REFERENCE = '${{ secrets.VERCEL_TOKEN }}';
 const VERCEL_CLI_STEPS = [
@@ -117,8 +127,12 @@ const DEPLOY_WEB_NEEDS = [
 ] as const;
 const DEPLOY_CREDENTIAL_REFERENCE = "${{ secrets.VERCEL_TOKEN != '' }}";
 const DEPLOY_CREDENTIAL_CONDITION = "env.DEPLOY_CREDENTIAL_PRESENT == 'true'";
-const DEPLOY_CHANGED_REVISION_CONDITION = `${DEPLOY_CREDENTIAL_CONDITION} && steps.production.outputs.deploy == 'true'`;
-const DEPLOY_CREDENTIAL_GATED_STEPS = [
+const DEPLOY_FRESH_REVISION_CONDITION = `${DEPLOY_CREDENTIAL_CONDITION} && steps.freshness.outputs.fresh == 'true'`;
+const DEPLOY_CHANGED_REVISION_CONDITION = `${DEPLOY_FRESH_REVISION_CONDITION} && steps.production.outputs.deploy == 'true'`;
+// Only the freshness check itself runs on credential presence alone; it decides
+// for everything after it, and its output is empty when it never ran.
+const DEPLOY_CREDENTIAL_GATED_STEPS = [DEPLOY_WEB_FRESHNESS_STEP] as const;
+const DEPLOY_FRESH_GATED_STEPS = [
     'Checkout the validated revision',
     'Enable Corepack',
     'Set up Node',
@@ -506,7 +520,9 @@ function assertCrossOriginIsolationHeaders(config: UnknownRecord): void {
     }
 }
 
-function assertDailyDeployTrain(candidate: UnknownRecord): string {
+type DeployTrainScripts = { readonly validation: string; readonly freshness: string };
+
+function assertDailyDeployTrain(candidate: UnknownRecord): DeployTrainScripts {
     const job = jobAt(candidate, DEPLOY_WEB_JOB);
     if (job.name !== DEPLOY_WEB_JOB_NAME) {
         throw new Error('the daily deploy train must retain its stable name');
@@ -543,6 +559,11 @@ function assertDailyDeployTrain(candidate: UnknownRecord): string {
     for (const name of DEPLOY_CREDENTIAL_GATED_STEPS) {
         if (stepNamed(job, name).if !== DEPLOY_CREDENTIAL_CONDITION) {
             throw new Error(`${name} must not run without the deployment credential`);
+        }
+    }
+    for (const name of DEPLOY_FRESH_GATED_STEPS) {
+        if (stepNamed(job, name).if !== DEPLOY_FRESH_REVISION_CONDITION) {
+            throw new Error(`${name} must not run for a revision that is no longer the tip of main`);
         }
     }
     for (const name of DEPLOY_REVISION_GATED_STEPS) {
@@ -585,11 +606,31 @@ function assertDailyDeployTrain(candidate: UnknownRecord): string {
     if (arrayAt(jobAt(candidate, 'gate'), 'needs').includes(DEPLOY_WEB_JOB)) {
         throw new Error('the daily deploy train must stay outside the Gate summary');
     }
+    const armingReport = stringAt(stepNamed(job, DEPLOY_WEB_CREDENTIAL_REPORT_STEP), 'run');
+    for (const precondition of DEPLOY_ARMING_PRECONDITIONS) {
+        if (!armingReport.includes(precondition)) {
+            throw new Error(`the gated-off report must name every arming precondition, including ${precondition}`);
+        }
+    }
     const guardStep = stepNamed(job, DEPLOY_WEB_GUARD_STEP);
     if (recordAt(guardStep, 'env').TRAIN_REF !== '${{ github.ref }}') {
         throw new Error('the daily deploy train must read the ref it is about to deploy');
     }
-    return stringAt(guardStep, 'run');
+    const freshnessStep = stepNamed(job, DEPLOY_WEB_FRESHNESS_STEP);
+    if (freshnessStep.id !== 'freshness') {
+        throw new Error('the daily deploy train must publish its freshness decision under a stable step id');
+    }
+    if (recordAt(freshnessStep, 'env').CANDIDATE_REVISION !== '${{ github.sha }}') {
+        throw new Error('the freshness check must read the revision this run is about to deploy');
+    }
+    const freshness = stringAt(freshnessStep, 'run');
+    if (!freshness.includes('git ls-remote "https://github.com/$GITHUB_REPOSITORY.git" refs/heads/main')) {
+        throw new Error('the freshness check must read the current tip of main from the remote');
+    }
+    if (!freshness.includes('"$tip" != "$CANDIDATE_REVISION"')) {
+        throw new Error('the freshness check must compare the candidate against that tip');
+    }
+    return { validation: stringAt(guardStep, 'run'), freshness };
 }
 
 function assertGateContract(candidate: UnknownRecord): string {
@@ -618,6 +659,55 @@ function runResultsGuard(
         env: { ...process.env, RESULTS: results, ...extraEnvironment },
         shell: false,
     }).status;
+}
+
+type FreshnessRun = {
+    readonly status: number | null;
+    readonly stdout: string;
+    readonly outputs: string;
+    readonly summary: string;
+};
+
+/**
+ * Runs the freshness step's own script against a stubbed `git ls-remote`. The
+ * stub answering with no ref at all is the case that decides whether an
+ * unreadable tip fails the job or deploys blind.
+ */
+function runFreshnessGuard(script: string, candidateRevision: string, remoteTip: string): FreshnessRun {
+    const directory = mkdtempSync(join(tmpdir(), 'sourdaw-health-freshness-'));
+    const binaries = join(directory, 'bin');
+    const outputPath = join(directory, 'github-output');
+    const summaryPath = join(directory, 'step-summary');
+    try {
+        mkdirSync(binaries);
+        writeFileSync(
+            join(binaries, 'git'),
+            `#!/bin/sh\nif [ -n "${remoteTip}" ]; then printf '%s\\trefs/heads/main\\n' "${remoteTip}"; fi\n`
+        );
+        chmodSync(join(binaries, 'git'), 0o755);
+        writeFileSync(outputPath, '');
+        writeFileSync(summaryPath, '');
+        const result = spawnSync('bash', ['-c', script], {
+            encoding: 'utf8',
+            env: {
+                ...process.env,
+                PATH: `${binaries}:${process.env.PATH ?? ''}`,
+                GITHUB_REPOSITORY: 'jcosta33/sourdaw',
+                CANDIDATE_REVISION: candidateRevision,
+                GITHUB_OUTPUT: outputPath,
+                GITHUB_STEP_SUMMARY: summaryPath,
+            },
+            shell: false,
+        });
+        return {
+            status: result.status,
+            stdout: result.stdout,
+            outputs: readFileSync(outputPath, 'utf8'),
+            summary: readFileSync(summaryPath, 'utf8'),
+        };
+    } finally {
+        rmSync(directory, { recursive: true, force: true });
+    }
 }
 
 function assertCredentiallessScanner(candidate: UnknownRecord): void {
@@ -975,7 +1065,27 @@ describe('health gates workflow contract', () => {
     it('promotes the validated revision daily, only with a credential and only when it changed', () => {
         expect(() => assertGitDeploymentsDisabled(vercelConfig)).not.toThrow();
         expect(() => assertCrossOriginIsolationHeaders(vercelConfig)).not.toThrow();
-        const validationGuard = assertDailyDeployTrain(workflow);
+        const { validation: validationGuard, freshness: freshnessGuard } = assertDailyDeployTrain(workflow);
+
+        const candidate = '1'.repeat(40);
+        const newerTip = '2'.repeat(40);
+        const fresh = runFreshnessGuard(freshnessGuard, candidate, candidate);
+        expect(fresh.status).toBe(0);
+        expect(fresh.outputs).toContain('fresh=true');
+        expect(fresh.stdout).toContain('the candidate is the current tip of main');
+
+        // A queue reordered by needs-completion, or a re-run replaying an older
+        // run's SHA, both arrive here as a candidate that main has moved past.
+        // Benign refusal, not an incident: green job, loud notice, no deploy.
+        const stale = runFreshnessGuard(freshnessGuard, candidate, newerTip);
+        expect(stale.status).toBe(0);
+        expect(stale.outputs).toContain('fresh=false');
+        expect(stale.outputs).not.toContain('fresh=true');
+        expect(stale.stdout).toContain(`stale candidate ${candidate}, main is now ${newerTip}, deploying nothing`);
+        expect(stale.summary).toContain(`stale candidate \`${candidate}\`, main is now \`${newerTip}\``);
+
+        // An unreadable tip is the one case that must not resolve to a deploy.
+        expect(runFreshnessGuard(freshnessGuard, candidate, '').status).not.toBe(0);
 
         const onMain = { TRAIN_REF: 'refs/heads/main' };
         expect(runResultsGuard(validationGuard, needsResults(workflow, DEPLOY_WEB_JOB, 'success'), onMain)).toBe(0);
@@ -1091,10 +1201,46 @@ describe('health gates workflow contract', () => {
         );
 
         const credentiallessDeploy = asRecord(structuredClone(workflow), 'credentialless deploy train');
-        stepNamed(jobAt(credentiallessDeploy, DEPLOY_WEB_JOB), 'Resolve the current production revision').if =
+        stepNamed(jobAt(credentiallessDeploy, DEPLOY_WEB_JOB), DEPLOY_WEB_FRESHNESS_STEP).if =
             "github.event_name == 'schedule'";
         expect(() => assertDailyDeployTrain(credentiallessDeploy)).toThrow(
-            'Resolve the current production revision must not run without the deployment credential'
+            `${DEPLOY_WEB_FRESHNESS_STEP} must not run without the deployment credential`
+        );
+
+        const unfreshResolver = asRecord(structuredClone(workflow), 'stale-tolerant deploy train');
+        stepNamed(jobAt(unfreshResolver, DEPLOY_WEB_JOB), 'Resolve the current production revision').if =
+            DEPLOY_CREDENTIAL_CONDITION;
+        expect(() => assertDailyDeployTrain(unfreshResolver)).toThrow(
+            'Resolve the current production revision must not run for a revision that is no longer the tip of main'
+        );
+
+        const untippedTrain = asRecord(structuredClone(workflow), 'untipped deploy train');
+        const untippedStep = stepNamed(jobAt(untippedTrain, DEPLOY_WEB_JOB), DEPLOY_WEB_FRESHNESS_STEP);
+        untippedStep.run = stringAt(untippedStep, 'run').replace(
+            'git ls-remote "https://github.com/$GITHUB_REPOSITORY.git" refs/heads/main',
+            'git rev-parse HEAD'
+        );
+        expect(() => assertDailyDeployTrain(untippedTrain)).toThrow(
+            'the freshness check must read the current tip of main from the remote'
+        );
+
+        const uncomparedTip = asRecord(structuredClone(workflow), 'uncompared-tip deploy train');
+        const uncomparedStep = stepNamed(jobAt(uncomparedTip, DEPLOY_WEB_JOB), DEPLOY_WEB_FRESHNESS_STEP);
+        uncomparedStep.run = stringAt(uncomparedStep, 'run').replace('"$tip" != "$CANDIDATE_REVISION"', '1 -eq 2');
+        expect(() => assertDailyDeployTrain(uncomparedTip)).toThrow(
+            'the freshness check must compare the candidate against that tip'
+        );
+
+        // The structural pins above cannot see a stale path that still writes
+        // `fresh=true`; running the script is what does.
+        const alwaysFresh = stringAt(uncomparedStep, 'run');
+        expect(runFreshnessGuard(alwaysFresh, candidate, newerTip).outputs).toContain('fresh=true');
+
+        const halfArmedReport = asRecord(structuredClone(workflow), 'half-armed deploy train');
+        const reportStep = stepNamed(jobAt(halfArmedReport, DEPLOY_WEB_JOB), DEPLOY_WEB_CREDENTIAL_REPORT_STEP);
+        reportStep.run = stringAt(reportStep, 'run').replace('deployment branch policy limited to `main`', 'nothing');
+        expect(() => assertDailyDeployTrain(halfArmedReport)).toThrow(
+            'the gated-off report must name every arming precondition, including deployment branch policy limited to `main`'
         );
 
         const floatingCli = asRecord(structuredClone(workflow), 'floating-CLI deploy train');
