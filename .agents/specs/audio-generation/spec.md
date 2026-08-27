@@ -55,8 +55,8 @@ Verify with: `pnpm cargo:test -- -p src-tauri model_router`
 
 ### AC-004 — Model registry downloads with SHA256 verification
 
-Voicebanks and vocoders must download through the existing `model_download` path with
-per-file SHA256 verification, persisting to the model cache across restarts.
+Voicebanks and vocoders require a separately admitted artifact repository with per-file SHA256
+verification and persistent caching. The read-only Whisper cache module is not a downloader.
 
 Verify with: `pnpm cargo:test -- -p src-tauri model_registry`
 
@@ -297,7 +297,7 @@ Verify with: `pnpm test:run -- executeDsoEdit`
 - `src-tauri/src/commands/` (`render_singing_phrase`, `cancel_singing_render`, `get_render_queue`,
   `list_voice_models`, `download_voice_model`, `remove_voice_model`, `get_gpu_capabilities`,
   `apply_rvc_conversion`)
-- `src-tauri/src/commands/model_download.rs` (registry extension)
+- a separately admitted singing-model artifact repository; never the read-only Whisper cache module
 - `src-tauri/sidecar/rvc.py` after complete RVC stack admission (`rvc_load`, `rvc_convert`)
 - reuses `crates/daw-io/src/audio_decode.rs` and `audio_postprocess.rs` for playback/crossfade
 

@@ -160,9 +160,9 @@ impl DeviceParam {
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct TimelineRtDiagnosticsSnapshot {
     /// A track, bus, clip, send, or device-chain entry that would have pushed
-    /// its collection past the fixed capacity it was built with, or an effect
-    /// or audio bridge the scheduler's own fixed tables refused for the same
-    /// reason.
+    /// its collection past the fixed capacity it was built with, or an
+    /// effect, audio bridge, or MIDI FX chain slot the scheduler's own fixed
+    /// tables refused for the same reason.
     pub capacity_refusals: u64,
     /// An add command naming an id another live node already holds.
     pub id_collisions: u64,

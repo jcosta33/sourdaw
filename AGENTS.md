@@ -406,10 +406,14 @@ through the reviewer App only while GitHub's head still matches the bundle.
 
 Review the diff as that teammate. Read every changed line. If a hunk is not enough to judge, read
 the surrounding code. When something is wrong, comment on that line: what is wrong, why it matters,
-what done looks like. Supply that as three fields — the defect, its consequence, and what done looks
-like. The tooling composes them into one comment. The contract caps length rather than demanding a
-minimum: padding a comment to reach a length is not a virtue, and one precise sentence per field is
-the target. One problem per comment. Talk about the code, not the author.
+what done looks like. Supply that as three fields keyed literally `defect`, `consequence`, and
+`done` — the retired single `body` key is refused, and the error names the replacement. Each field
+is a single line, non-empty, with no leading or trailing whitespace. The tooling joins the three
+with a space, appending a period to any field that does not already end in terminal punctuation, and
+the composed comment must fit within 600 bytes, measured in bytes rather than characters. The
+contract caps length rather than demanding a minimum: padding a comment to reach a length is not a
+virtue, and one precise sentence per field is the target. One problem per comment. Talk about the
+code, not the author.
 
 Request changes when this head must not merge, and post every blocking comment with that review. The
 summary is a short pointer to those comments, not a report.
