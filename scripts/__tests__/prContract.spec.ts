@@ -410,10 +410,18 @@ describe('pull-request contract', () => {
 
     it('fails when a field has leading or trailing whitespace', () => {
         expect(() => composeReviewCommentBody({ defect: ' a', consequence: 'b', done: 'c' })).toThrow(
-            /review comment defect must be one line/
+            /review comment defect has leading or trailing whitespace/
         );
         expect(() => composeReviewCommentBody({ defect: 'a', consequence: 'b', done: 'c ' })).toThrow(
-            /review comment done must be one line/
+            /review comment done has leading or trailing whitespace/
+        );
+    });
+
+    it('reports whitespace, not a line break, when a field has both a trailing space and an interior newline', () => {
+        // Pins the evaluation order: whitespace is checked first, so a field with both defects is
+        // reported for the whitespace, not the line break — never leaving that order incidental.
+        expect(() => composeReviewCommentBody({ defect: 'a\nb ', consequence: 'c', done: 'd' })).toThrow(
+            /review comment defect has leading or trailing whitespace/
         );
     });
 

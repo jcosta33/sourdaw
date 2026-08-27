@@ -478,7 +478,10 @@ export function composeReviewCommentBody(content: ReviewCommentContent, context 
         if (value.trim() === '') {
             fail(`${context} ${field} is empty`);
         }
-        if (value.trim() !== value || LINE_TERMINATOR.test(value)) {
+        if (value.trim() !== value) {
+            fail(`${context} ${field} has leading or trailing whitespace`);
+        }
+        if (LINE_TERMINATOR.test(value)) {
             fail(`${context} ${field} must be one line`);
         }
     }
