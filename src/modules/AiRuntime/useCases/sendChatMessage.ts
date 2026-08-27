@@ -1169,7 +1169,7 @@ export async function sendChatMessage(
                     });
                 }
             } else if (result.rejectionReason) {
-                agentRunLifecycle.recordError({
+                tryRecordProviderFailure({
                     runId,
                     error: normalizeAgentFailure({
                         category: /schema/i.test(result.rejectionReason) ? 'schema' : 'resolution',
@@ -1229,7 +1229,7 @@ export async function sendChatMessage(
                     terminalState: 'failed',
                     settle: agentRunWorkLease.settle,
                 });
-                agentRunLifecycle.recordError({
+                tryRecordProviderFailure({
                     runId,
                     error: normalizeAgentFailure({
                         category: 'internal',
