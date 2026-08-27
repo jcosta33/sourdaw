@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
     deliverPullRequest as deliverPullRequestWithTracker,
@@ -1277,6 +1277,92 @@ describe('gating check names', () => {
         );
     });
 
+    function unresolvableJobField(detail: string): string {
+        return (
+            `Error: the static job in ${WORKFLOW_PATH} ${detail}, ` +
+            'which this reader cannot resolve to the name GitHub reports'
+        );
+    }
+
+    /**
+     * A YAML scalar does not end where its line ends. `Types and` continued on a deeper line is one
+     * value GitHub reports as `Types and contracts`, and a value that is only a comment is null, so
+     * GitHub labels that check with the job id. Read one line at a time, each of these resolves to a
+     * name GitHub never reports, and the cancellation this gate exists to catch passes unseen.
+     */
+    it.each([
+        {
+            label: 'a plain name wrapped onto the next line',
+            declaration: ['    name: Types and', '      contracts'],
+            message: unresolvableJobField('continues its name onto the next line'),
+        },
+        {
+            label: 'a double-quoted name wrapped onto the next line',
+            declaration: ['    name: "Types and', '      contracts"'],
+            message: unresolvableJobField('continues its name onto the next line'),
+        },
+        {
+            label: 'a name that is only a comment',
+            declaration: ['    name: # the type lane'],
+            message: unresolvableJobField('declares a name that is only a comment'),
+        },
+    ])('refuses $label', ({ declaration, message }) => {
+        const source = workflow(
+            ['  static:', ...declaration, '    runs-on: ubuntu-latest'].join('\n'),
+            gateNeeding('static')
+        );
+
+        let thrown: unknown;
+        try {
+            gateRequiredCheckNames(source);
+        } catch (error) {
+            thrown = error;
+        }
+
+        expect(String(thrown)).toBe(message);
+    });
+
+    /**
+     * The single-line control: the same name written on one line resolves, so each refusal above
+     * pins the wrapping rather than the name.
+     */
+    it('reads a job name that ends on the line it started on', () => {
+        const source = workflow(
+            ['  static:', '    name: Types and contracts', '    runs-on: ubuntu-latest'].join('\n'),
+            gateNeeding('static')
+        );
+
+        expect([...gateRequiredCheckNames(source)]).toEqual(['Types and contracts']);
+    });
+
+    /**
+     * Every one of these spells the same key GitHub reads as `name`, and a prefix test sees none of
+     * them. The job then reads as declaring no name at all and the gating set takes the job id —
+     * `static` where GitHub reports `Types and contracts`, which is a plausible enough name to
+     * escape notice while matching no check on the head.
+     */
+    it.each([
+        { label: 'a name key with space before its colon', declared: '    name : Types and contracts' },
+        { label: 'a double-quoted name key', declared: '    "name": Types and contracts' },
+        { label: 'a single-quoted name key', declared: "    'name': Types and contracts" },
+    ])('refuses $label', ({ declared }) => {
+        const source = workflow(
+            ['  static:', declared, '    runs-on: ubuntu-latest'].join('\n'),
+            gateNeeding('static')
+        );
+
+        let thrown: unknown;
+        try {
+            gateRequiredCheckNames(source);
+        } catch (error) {
+            thrown = error;
+        }
+
+        expect(String(thrown)).toBe(
+            unresolvableJobField(`spells its name key as ${declared.trim().split(':')[0] ?? ''}:`)
+        );
+    });
+
     /**
      * `unit` and `e2e` are one line away from joining the gate, and GitHub reports one check per
      * shard with the expression substituted. The declared name matches none of them, so promoting
@@ -1380,37 +1466,50 @@ describe('gating check names', () => {
         expect(String(thrown)).toBe(message);
     });
 
-    function workflowRepository(committed: string, workingTree?: string): string {
+    type WorkflowRepository = { root: string; commits: string[] };
+
+    function workflowRepository(committed: string[], workingTree?: string): WorkflowRepository {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-health-gates-'));
-        const git = (...args: string[]): void => {
-            execFileSync('git', ['-C', root, '-c', 'core.hooksPath=', ...args], { stdio: 'pipe' });
-        };
+        const git = (...args: string[]): string =>
+            execFileSync('git', ['-C', root, '-c', 'core.hooksPath=', ...args], { encoding: 'utf8', stdio: 'pipe' });
         git('init', '--quiet', '--initial-branch=main');
         git('config', 'user.email', 'lane@example.invalid');
         git('config', 'user.name', 'Lane');
         mkdirSync(join(root, '.github', 'workflows'), { recursive: true });
-        writeFileSync(join(root, WORKFLOW_PATH), committed, 'utf8');
-        git('add', WORKFLOW_PATH);
-        git('commit', '--quiet', '--no-verify', '-m', 'add the health gates workflow');
+        const commits = committed.map((source, index) => {
+            writeFileSync(join(root, WORKFLOW_PATH), source, 'utf8');
+            git('add', WORKFLOW_PATH);
+            git('commit', '--quiet', '--no-verify', '-m', `health gates revision ${index}`);
+            return git('rev-parse', 'HEAD').trim();
+        });
         if (workingTree !== undefined) {
             writeFileSync(join(root, WORKFLOW_PATH), workingTree, 'utf8');
         }
-        return root;
+        return { root, commits };
     }
+
+    function pinned(commit: string): NodeJS.ProcessEnv {
+        return { SOURDAW_TRUSTED_ORIGIN_COMMIT: commit };
+    }
+
+    const UNPINNED_GATE_REFUSAL =
+        'Error: deliver must run through the protected primary checkout launcher, which pins ' +
+        'SOURDAW_TRUSTED_ORIGIN_COMMIT to the commit that decides which checks gate the merge';
 
     /**
      * The workflow decides which checks gate an irreversible merge, so it is read as the git object
-     * at the repository's `HEAD` rather than from its working tree. A working-tree file is not a
-     * pinned input: one stray uncommitted edit would reshape the gate for every delivery, silently,
-     * in either direction. Here the working tree gates on one job and the commit on three.
+     * at the commit the launcher pinned rather than from the working tree beside it. A working-tree
+     * file is not a pinned input: one stray uncommitted edit would reshape the gate for every
+     * delivery, silently, in either direction. Here the working tree gates on one job and the
+     * pinned commit on three.
      */
-    it('reads the committed workflow at HEAD and not the working tree beside it', () => {
-        const root = workflowRepository(
-            workflow(decide, boundaries, dependencyReview, nightly, gate),
+    it('reads the workflow at the pinned commit and not the working tree beside it', () => {
+        const { root, commits } = workflowRepository(
+            [workflow(decide, boundaries, dependencyReview, nightly, gate)],
             workflow(decide, ['  gate:', '    name: Gate', '    needs: decide'].join('\n'))
         );
         try {
-            expect([...readGateRequiredCheckNames(root)].sort()).toEqual([
+            expect([...readGateRequiredCheckNames(root, undefined, pinned(commits[0] ?? ''))].sort()).toEqual([
                 'Decide scope',
                 'Dependency review',
                 'boundaries',
@@ -1421,6 +1520,51 @@ describe('gating check names', () => {
     });
 
     /**
+     * `HEAD` is wherever the operator's local `main` happens to sit, and the launcher's pinned
+     * `origin/main` is what the delivery closure itself is snapshotted from. A checkout that has
+     * not pulled would otherwise read a superseded `needs` list and tolerate the cancellation of a
+     * job promoted into the gate since. Here `HEAD` gates on one job and the pinned commit on three.
+     */
+    it('reads the workflow at the pinned commit and not at the checkout HEAD', () => {
+        const { root, commits } = workflowRepository([
+            workflow(decide, boundaries, dependencyReview, nightly, gate),
+            workflow(decide, ['  gate:', '    name: Gate', '    needs: decide'].join('\n')),
+        ]);
+        try {
+            expect([...readGateRequiredCheckNames(root, undefined, pinned(commits[0] ?? ''))].sort()).toEqual([
+                'Decide scope',
+                'Dependency review',
+                'boundaries',
+            ]);
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    /**
+     * Without the pinned commit this gate cannot say which revision of the workflow decides the
+     * merge, and a ref name is not that commit either: it resolves to whatever it points at now. A
+     * gate that cannot name its own input refuses rather than falling back to a local one.
+     */
+    it.each([
+        { label: 'no pinned origin commit', env: {} },
+        { label: 'an unpinned ref where the pinned commit belongs', env: pinned('origin/main') },
+        { label: 'a truncated commit', env: pinned('b2ec72d') },
+    ])('refuses $label', ({ env }) => {
+        const { root } = workflowRepository([workflow(decide, boundaries, dependencyReview, nightly, gate)]);
+        let thrown: unknown;
+        try {
+            readGateRequiredCheckNames(root, undefined, env);
+        } catch (error) {
+            thrown = error;
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+
+        expect(String(thrown)).toBe(UNPINNED_GATE_REFUSAL);
+    });
+
+    /**
      * An unreadable workflow leaves this gate unable to say which checks decide the merge, and a
      * gate that cannot work that out must refuse rather than tolerate every cancellation on the head.
      */
@@ -1428,7 +1572,7 @@ describe('gating check names', () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-health-gates-'));
         let thrown: unknown;
         try {
-            readGateRequiredCheckNames(root);
+            readGateRequiredCheckNames(root, undefined, pinned('0'.repeat(40)));
         } catch (error) {
             thrown = error;
         } finally {
@@ -1445,7 +1589,10 @@ describe('gating check names', () => {
      * `Dependency review`, which `Gate` needs, and `Nightly failure report`, which it does not.
      */
     it('gates on the dependency scan and not on the nightly report in this repository', () => {
-        const names = readGateRequiredCheckNames(join(import.meta.dirname, '../..'));
+        const root = join(import.meta.dirname, '../..');
+        const head = execFileSync('git', ['-C', root, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+
+        const names = readGateRequiredCheckNames(root, undefined, pinned(head));
 
         expect(names.has('Dependency review')).toBe(true);
         expect(names.has('Nightly failure report')).toBe(false);
@@ -1467,6 +1614,10 @@ describe('delivery CLI', () => {
 });
 
 describe('delivery shell boundary', () => {
+    afterEach(() => {
+        vi.unstubAllEnvs();
+    });
+
     function rollupPort(pages: Array<RollupPageFixture | string>) {
         const captures: Array<{ command: string; args: string[] }> = [];
         const remaining = [...pages];
@@ -1542,9 +1693,11 @@ describe('delivery shell boundary', () => {
 
     /**
      * The gating workflow is read as a git object at the primary checkout this port was given, not
-     * from whatever directory the process happens to run in and not from its working tree.
+     * from whatever directory the process happens to run in, not from its working tree, and not at
+     * its `HEAD` — at the `origin/main` commit the launcher pinned into the environment.
      */
-    it('reads the gating workflow as a git object at the injected repository root', () => {
+    it('reads the gating workflow as a git object at the launcher-pinned commit', () => {
+        vi.stubEnv('SOURDAW_TRUSTED_ORIGIN_COMMIT', 'a'.repeat(40));
         const captures: Array<{ command: string; args: string[] }> = [];
         const port = shellPort(
             'jcosta33/sourdaw',
@@ -1570,7 +1723,7 @@ describe('delivery shell boundary', () => {
         expect(captures).toEqual([
             {
                 command: 'git',
-                args: ['-C', '/primary/checkout', 'show', 'HEAD:.github/workflows/health-gates.yml'],
+                args: ['-C', '/primary/checkout', 'show', `${'a'.repeat(40)}:.github/workflows/health-gates.yml`],
             },
         ]);
     });

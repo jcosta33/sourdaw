@@ -283,6 +283,8 @@ function parseWorkflowJobs(source: string): WorkflowJobs {
  */
 const UNREADABLE_SCALAR_PREFIXES = ['|', '>', '&', '*', '!'];
 const PLAIN_SCALAR_COMMENT = ' #';
+const COMMENT_OPENER = '#';
+const KEY_SEPARATOR = ':';
 
 function failUnreadableScalar(text: string): never {
     return fail(`cannot read ${text} in ${HEALTH_GATES_WORKFLOW_PATH} as a plain or quoted scalar`);
@@ -311,9 +313,60 @@ function quotedScalarValue(trimmed: string, quote: string): string {
     return inner;
 }
 
-function jobFieldValue(job: readonly WorkflowLine[], key: string): string | undefined {
-    const field = job.find((line) => line.indent === JOB_FIELD_INDENT && line.text.startsWith(`${key}:`));
-    return field === undefined ? undefined : scalarValue(field.text.slice(`${key}:`.length));
+function failUnresolvableJobField(jobId: string, detail: string): never {
+    return fail(
+        `the ${jobId} job in ${HEALTH_GATES_WORKFLOW_PATH} ${detail}, ` +
+            `which this reader cannot resolve to the name GitHub reports`
+    );
+}
+
+function unquotedKey(text: string): string {
+    const quote = text.slice(0, 1);
+    return (quote === "'" || quote === '"') && text.length > 1 && text.endsWith(quote) ? text.slice(1, -1) : text;
+}
+
+type JobField = { key: string; spelling: string; value: string };
+
+/**
+ * A mapping key is not the text a line starts with. YAML spells the same key quoted or with space
+ * before its colon, and each of those spellings is invisible to a prefix test — the job then reads
+ * as declaring no name at all, and the gating set silently takes the job id where GitHub reports the
+ * declared name. The key is parsed and unquoted so every spelling of it is recognized, and the
+ * spellings this reader cannot resolve are refused rather than passed over.
+ */
+function jobField(line: WorkflowLine): JobField | undefined {
+    const separator = line.text.indexOf(KEY_SEPARATOR);
+    if (separator < 0) {
+        return undefined;
+    }
+    const spelling = line.text.slice(0, separator);
+    return { key: unquotedKey(spelling.trim()), spelling, value: line.text.slice(separator + 1) };
+}
+
+/**
+ * YAML does not end a scalar where its line ends: a plain or quoted value continues on a more
+ * deeply indented line below, and a value that is nothing but a comment is null. Read one line at a
+ * time, both spellings resolve to a string GitHub never reports — a truncated name, or the comment
+ * text where GitHub labels the check with the job id — so every cancellation under the real name
+ * would pass unseen. Neither is resolved here; both refuse.
+ */
+function jobFieldValue(jobId: string, job: readonly WorkflowLine[], key: string): string | undefined {
+    const index = job.findIndex((line) => line.indent === JOB_FIELD_INDENT && jobField(line)?.key === key);
+    const declaration = job[index];
+    const field = declaration === undefined ? undefined : jobField(declaration);
+    if (declaration === undefined || field === undefined) {
+        return undefined;
+    }
+    if (field.spelling !== key) {
+        failUnresolvableJobField(jobId, `spells its ${key} key as ${field.spelling}${KEY_SEPARATOR}`);
+    }
+    if ((job[index + 1]?.indent ?? declaration.indent) > declaration.indent) {
+        failUnresolvableJobField(jobId, `continues its ${key} onto the next line`);
+    }
+    if (field.value.trim().startsWith(COMMENT_OPENER)) {
+        failUnresolvableJobField(jobId, `declares a ${key} that is only a comment`);
+    }
+    return scalarValue(field.value);
 }
 
 function flowSequenceItems(text: string): string[] {
@@ -361,7 +414,7 @@ function requiredCheckName(jobId: string, jobs: WorkflowJobs): string {
                 `which no job in that workflow defines`
         );
     }
-    const name = jobFieldValue(job, 'name');
+    const name = jobFieldValue(jobId, job, 'name');
     if (name === undefined || name === '') {
         return jobId;
     }
@@ -400,21 +453,46 @@ export function gateRequiredCheckNames(workflowSource: string): ReadonlySet<stri
     return new Set(needs.map((jobId) => requiredCheckName(jobId, jobs)));
 }
 
+const TRUSTED_ORIGIN_COMMIT_ENV = 'SOURDAW_TRUSTED_ORIGIN_COMMIT';
+const TRUSTED_ORIGIN_COMMIT_PATTERN = /^[0-9a-f]{40,64}$/;
+
+/**
+ * The launcher resolves `origin/main` before any delivery code runs and exports that commit, which
+ * is the same commit the trusted script closure is snapshotted from. Anything else is a moving
+ * target: a ref resolves to whatever it points at now, and the primary checkout's `HEAD` is only
+ * wherever the operator's local `main` happens to sit, so a checkout that has not pulled reads a
+ * `needs` list `main` has already replaced and tolerates the cancellation of a job since promoted
+ * into the gate. An absent or unpinned value leaves this gate unable to say which commit decides
+ * the merge, and it refuses rather than falling back to one.
+ */
+function trustedOriginCommit(env: NodeJS.ProcessEnv): string {
+    const commit = env[TRUSTED_ORIGIN_COMMIT_ENV];
+    if (commit === undefined || !TRUSTED_ORIGIN_COMMIT_PATTERN.test(commit)) {
+        fail(
+            `deliver must run through the protected primary checkout launcher, which pins ` +
+                `${TRUSTED_ORIGIN_COMMIT_ENV} to the commit that decides which checks gate the merge`
+        );
+    }
+    return commit;
+}
+
 /**
  * Read from the primary checkout, because a lane's copy of the workflow is the very thing under
- * review and must not decide its own merge gate — and read as the git object at that checkout's
- * `HEAD`, because a working-tree file is not a pinned input: one stray uncommitted edit there would
- * silently reshape the gate for every delivery, in either direction. `HEAD:` is spelled out; the
- * bare `:path` form reads the index rather than the commit, and misresolves a path that looks like a
- * stage prefix.
+ * review and must not decide its own merge gate — and read as the git object at the commit the
+ * launcher pinned, because neither a working-tree file nor a local branch tip is a pinned input:
+ * one stray uncommitted edit, or one unpulled commit, would silently reshape the gate for every
+ * delivery, in either direction. `<commit>:` is spelled out; the bare `:path` form reads the index
+ * rather than a commit, and misresolves a path that looks like a stage prefix.
  */
 export function readGateRequiredCheckNames(
     repositoryRoot: string,
-    shell: ShellRunner = { capture, run }
+    shell: ShellRunner = { capture, run },
+    env: NodeJS.ProcessEnv = process.env
 ): ReadonlySet<string> {
+    const commit = trustedOriginCommit(env);
     let source: string;
     try {
-        source = shell.capture('git', ['-C', repositoryRoot, 'show', `HEAD:${HEALTH_GATES_WORKFLOW_PATH}`]);
+        source = shell.capture('git', ['-C', repositoryRoot, 'show', `${commit}:${HEALTH_GATES_WORKFLOW_PATH}`]);
     } catch (error) {
         const detail = error instanceof Error ? error.message : String(error);
         fail(`cannot read ${HEALTH_GATES_WORKFLOW_PATH} to determine which checks gate the merge: ${detail}`);
