@@ -153,17 +153,104 @@ describe('review prepare', () => {
         }
     });
 
-    it('preserves a caller-written file nested in a subdirectory', () => {
+    it('preserves a caller-written file nested in a subdirectory when the previous generated set is known', () => {
+        // Distinct from the manifest-less case below: here the previous manifest's own `generated`
+        // field is present and valid, so the union rule applies and a nested caller file survives
+        // even though it is not literally named in that field. The two rules must not collapse.
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-bundle-'));
         const destination = join(root, '42-head');
         try {
             mkdirSync(join(destination, 'notes'), { recursive: true });
-            writeFileSync(join(destination, 'manifest.json'), '{"pr":42}\n');
+            writeFileSync(
+                join(destination, 'manifest.json'),
+                `${JSON.stringify({ pr: 42, generated: ['manifest.json'] })}\n`
+            );
             writeFileSync(join(destination, 'notes', 'caller-note.md'), 'keep me\n');
+
+            installBundleAtomically(destination, {
+                'manifest.json': `${JSON.stringify({ pr: 42, headSha: 'new', generated: ['manifest.json'] })}\n`,
+            });
+
+            expect(readFileSync(join(destination, 'notes', 'caller-note.md'), 'utf8')).toBe('keep me\n');
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('drops a nested file but keeps a root file when the previous generated set is unknown', () => {
+        // No manifest.json at all, so the previous generated set is unknown: classification falls
+        // back to position rather than name. The root caller file survives; the nested one — which
+        // looks exactly like a decision file a since-moved base stopped producing — does not.
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-bundle-'));
+        const destination = join(root, '42-head');
+        try {
+            mkdirSync(join(destination, 'contracts', '.agents', 'decisions'), { recursive: true });
+            writeFileSync(join(destination, 'review.json'), 'caller content\n');
+            writeFileSync(
+                join(destination, 'contracts', '.agents', 'decisions', '0027-doomed.md'),
+                'a decision main has since deleted\n'
+            );
 
             installBundleAtomically(destination, { 'manifest.json': '{"pr":42,"headSha":"new"}\n' });
 
-            expect(readFileSync(join(destination, 'notes', 'caller-note.md'), 'utf8')).toBe('keep me\n');
+            expect(readFileSync(join(destination, 'review.json'), 'utf8')).toBe('caller content\n');
+            expect(existsSync(join(destination, 'contracts', '.agents', 'decisions', '0027-doomed.md'))).toBe(false);
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('preserves review.json across a re-install of a bundle with no manifest.json', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-bundle-'));
+        const destination = join(root, '42-head');
+        try {
+            mkdirSync(destination, { recursive: true });
+            writeFileSync(join(destination, 'review.json'), 'caller content\n');
+
+            installBundleAtomically(destination, { 'manifest.json': '{"pr":42,"headSha":"new"}\n' });
+
+            expect(readFileSync(join(destination, 'review.json'), 'utf8')).toBe('caller content\n');
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('preserves review.json across a re-install of a bundle with an unparseable manifest.json', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-bundle-'));
+        const destination = join(root, '42-head');
+        try {
+            mkdirSync(destination, { recursive: true });
+            writeFileSync(join(destination, 'manifest.json'), 'not json{{{\n');
+            writeFileSync(join(destination, 'review.json'), 'caller content\n');
+
+            installBundleAtomically(destination, { 'manifest.json': '{"pr":42,"headSha":"new"}\n' });
+
+            expect(readFileSync(join(destination, 'review.json'), 'utf8')).toBe('caller content\n');
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('treats a manifest generated array containing a non-string element as unknown, dropping a nested file', () => {
+        // If the element-type guard were relaxed to accept anything, `[ 'manifest.json', 7 ]` would
+        // be read as a KNOWN previous set and the nested file below would survive under the union
+        // rule instead of being dropped under the unknown-set rootOnly rule — that difference is
+        // what this test observes, not just whether the root file survives (both paths keep that).
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-bundle-'));
+        const destination = join(root, '42-head');
+        try {
+            mkdirSync(join(destination, 'contracts'), { recursive: true });
+            writeFileSync(
+                join(destination, 'manifest.json'),
+                `${JSON.stringify({ pr: 42, generated: ['manifest.json', 7] })}\n`
+            );
+            writeFileSync(join(destination, 'review.json'), 'caller content\n');
+            writeFileSync(join(destination, 'contracts', 'nested.md'), 'nested\n');
+
+            installBundleAtomically(destination, { 'manifest.json': '{"pr":42,"headSha":"new"}\n' });
+
+            expect(readFileSync(join(destination, 'review.json'), 'utf8')).toBe('caller content\n');
+            expect(existsSync(join(destination, 'contracts', 'nested.md'))).toBe(false);
         } finally {
             rmSync(root, { recursive: true, force: true });
         }

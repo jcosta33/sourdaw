@@ -94,12 +94,13 @@ export function prepareReview(number: number, port: PrepareReviewPort): string {
 }
 
 /**
- * The `generated` list a previous install recorded in its own `manifest.json`, or an empty set when
- * the destination has no manifest, an unreadable one, or one predating this field. That fallback
- * reduces to preserving nothing beyond what this run generates — today's behaviour before this field
- * existed, and never worse than the base's own "everything not generated survives" rule.
+ * The `generated` list a previous install recorded in its own `manifest.json`, or `undefined` when
+ * that record is unavailable: no manifest, an unparseable one, one whose `generated` field is
+ * missing, or one whose `generated` field holds something other than an array of strings.
+ * `undefined` means the previous generated set is unknown, not empty — `preserveCallerFiles` treats
+ * those two differently; see its doc comment.
  */
-function previousGeneratedSet(destination: string): ReadonlySet<string> {
+function previousGeneratedSet(destination: string): ReadonlySet<string> | undefined {
     try {
         const manifest = JSON.parse(readFileSync(join(destination, 'manifest.json'), 'utf8')) as {
             generated?: unknown;
@@ -107,28 +108,45 @@ function previousGeneratedSet(destination: string): ReadonlySet<string> {
         return Array.isArray(manifest.generated) &&
             manifest.generated.every((entry): entry is string => typeof entry === 'string')
             ? new Set(manifest.generated)
-            : new Set();
+            : undefined;
     } catch {
-        return new Set();
+        return undefined;
     }
 }
 
 /**
- * Copies every file under `source` whose relative path is absent from `generated` into `target`,
- * preserving subdirectories. `generated` is the union of what THIS run generates and what the
- * PREVIOUS run recorded generating: the bundle directory is keyed by head sha, but `contracts/` is
- * derived from the base sha, which is the moving tip of `main`. A file this run does not generate is
- * not necessarily caller-written — it can be an artifact a previous base produced and the current
- * base no longer does, such as a decision file `main` has since deleted. The previous run's own
- * record of what it generated is what tells the two apart; this run's generated set alone cannot,
- * because anything the base stopped producing looks identical to something a caller wrote.
+ * Copies files from `source` into `target`, preserving subdirectories, except files whose relative
+ * path is in `generated`. `generated` is the union of what THIS run generates and — when the
+ * previous run's own record is known — what THAT run recorded generating: the bundle directory is
+ * keyed by head sha, but `contracts/` is derived from the base sha, which is the moving tip of
+ * `main`. A file this run does not generate is not necessarily caller-written — it can be an
+ * artifact a previous base produced that the current base no longer does, such as a decision file
+ * `main` has since deleted. The previous run's own record of what it generated is what tells the two
+ * apart; this run's generated set alone cannot, because anything the base stopped producing looks
+ * identical to something a caller wrote.
+ *
+ * `rootOnly` is set whenever that previous record is unknown — no manifest, one predating this
+ * field, or one this function cannot parse. Without it, there is no way to tell a caller's file from
+ * a stale artifact of a base that has since moved, so classification falls back to position instead
+ * of name: the caller writes `review.json` and `discarded.json` beside each other at the bundle
+ * root, and every nested path belongs to the script. A nested file is therefore presumed generated
+ * and dropped, not carried forward on a guess.
  */
-function preserveCallerFiles(source: string, target: string, generated: ReadonlySet<string>, prefix = ''): void {
+function preserveCallerFiles(
+    source: string,
+    target: string,
+    generated: ReadonlySet<string>,
+    rootOnly: boolean,
+    prefix = ''
+): void {
     for (const entry of readdirSync(source, { withFileTypes: true })) {
         const relative = prefix === '' ? entry.name : `${prefix}/${entry.name}`;
         const from = join(source, entry.name);
         if (entry.isDirectory()) {
-            preserveCallerFiles(from, target, generated, relative);
+            if (rootOnly) {
+                continue;
+            }
+            preserveCallerFiles(from, target, generated, rootOnly, relative);
             continue;
         }
         if (generated.has(relative)) {
@@ -158,8 +176,9 @@ export function installBundleAtomically(destination: string, files: Record<strin
             writeFileSync(target, contents);
         }
         if (existsSync(destination)) {
-            const generated = new Set([...previousGeneratedSet(destination), ...Object.keys(files)]);
-            preserveCallerFiles(destination, staging, generated);
+            const previousGenerated = previousGeneratedSet(destination);
+            const generated = new Set([...(previousGenerated ?? []), ...Object.keys(files)]);
+            preserveCallerFiles(destination, staging, generated, previousGenerated === undefined);
             renameSync(destination, previous);
             renameSync(staging, destination);
             rmSync(previous, { recursive: true, force: true });

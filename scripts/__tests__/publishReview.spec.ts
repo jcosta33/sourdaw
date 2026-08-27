@@ -30,6 +30,7 @@ function fakePort(
 ) {
     const calls: string[] = [];
     const logs: string[] = [];
+    const posted: { review?: Parameters<PublishReviewPort['postReview']>[0] } = {};
     let head = input.head ?? 'headsha';
     const port: PublishReviewPort = {
         primaryRoot: () => '/repo',
@@ -49,6 +50,7 @@ function fakePort(
         },
         postReview: (review) => {
             calls.push(`post:${review.commitId}:${review.event}:${review.body}`);
+            posted.review = review;
             return {
                 id: 99,
                 actorNodeId: input.actorNodeId ?? REVIEWER_BOT_NODE_ID,
@@ -57,7 +59,7 @@ function fakePort(
         },
         log: (message) => logs.push(message),
     };
-    return { port, calls, logs };
+    return { port, calls, logs, posted };
 }
 
 describe('review publish', () => {
@@ -71,13 +73,17 @@ describe('review publish', () => {
     });
 
     it('posts REQUEST_CHANGES body and comments when valid', () => {
-        const { port, calls } = fakePort({
+        const { port, calls, posted } = fakePort({
             json: { event: 'REQUEST_CHANGES', body: 'Please fix the merge gate.', comments: [validComment] },
         });
 
         publishReview(42, port);
 
         expect(calls[1]).toContain('REQUEST_CHANGES:Please fix the merge gate.');
+        // The recorded call string above never carries the comments array, so it cannot prove the
+        // parsed document's comments actually reached postReview — only the captured argument can.
+        // This must go red if `publishReview` ever forwards an empty or substituted comments array.
+        expect(posted.review?.comments).toEqual([validComment]);
     });
 
     it('rejects the renamed reviewer login when the posted review has the wrong actor ID', () => {
@@ -94,18 +100,34 @@ describe('review publish', () => {
         expect(calls.some((call) => call.startsWith('post:'))).toBe(false);
     });
 
+    // A bare `toThrow()` is satisfied by any failure, including the wrong one — a mutant that
+    // removes one guard but leaves a different, coincidentally-firing guard in place keeps the row
+    // green. Every row therefore asserts the specific message its own guard raises.
     it.each([
-        ['COMMENT', { event: 'COMMENT', comments: [] }],
-        ['missing event', { comments: [] }],
-        ['empty REQUEST_CHANGES comments', { event: 'REQUEST_CHANGES', body: 'n', comments: [] }],
-        ['blank REQUEST_CHANGES body', { event: 'REQUEST_CHANGES', body: '  ', comments: [validComment] }],
-        ['invalid json object', '{'],
-        ['APPROVE carrying comments', { event: 'APPROVE', body: 'ok', comments: [validComment] }],
-        ['APPROVE with a blank body', { event: 'APPROVE', body: '  ', comments: [] }],
-        ['APPROVE with a missing body', { event: 'APPROVE', comments: [] }],
+        ['COMMENT', { event: 'COMMENT', comments: [] }, /event must be APPROVE or REQUEST_CHANGES/],
+        ['missing event', { comments: [] }, /event must be APPROVE or REQUEST_CHANGES/],
+        [
+            'empty REQUEST_CHANGES comments',
+            { event: 'REQUEST_CHANGES', body: 'n', comments: [] },
+            /REQUEST_CHANGES requires comments/,
+        ],
+        [
+            'blank REQUEST_CHANGES body',
+            { event: 'REQUEST_CHANGES', body: '  ', comments: [validComment] },
+            /REQUEST_CHANGES requires a top-level body/,
+        ],
+        ['invalid json object', '{', /review\.json must be an object/],
+        [
+            'APPROVE carrying comments',
+            { event: 'APPROVE', body: 'ok', comments: [validComment] },
+            /APPROVE must carry no comments/,
+        ],
+        ['APPROVE with a blank body', { event: 'APPROVE', body: '  ', comments: [] }, /APPROVE requires a body/],
+        ['APPROVE with a missing body', { event: 'APPROVE', comments: [] }, /APPROVE requires a body/],
         [
             'a comment supplying legacy body instead of the field contract',
             { event: 'REQUEST_CHANGES', body: 'n', comments: [{ path: 'a.ts', line: 1, side: 'RIGHT', body: 'text' }] },
+            /uses body; supply defect, consequence, and done instead/,
         ],
         [
             'a comment with an empty defect',
@@ -114,6 +136,7 @@ describe('review publish', () => {
                 body: 'n',
                 comments: [{ path: 'a.ts', line: 1, side: 'RIGHT', defect: '', consequence: 'c', done: 'd' }],
             },
+            /review\.json comments\[0\] defect is empty/,
         ],
         [
             'a comment with a missing defect',
@@ -122,13 +145,30 @@ describe('review publish', () => {
                 body: 'n',
                 comments: [{ path: 'a.ts', line: 1, side: 'RIGHT', consequence: 'c', done: 'd' }],
             },
+            /review\.json comments\[0\] defect is invalid/,
         ],
-        ['comments that are not an array', { event: 'REQUEST_CHANGES', body: 'n', comments: 'nope' }],
-    ])('does not post %s', (_case, json) => {
+        [
+            'comments that are not an array',
+            { event: 'REQUEST_CHANGES', body: 'n', comments: 'nope' },
+            /review\.json comments must be an array/,
+        ],
+    ])('does not post %s', (_case, json, message) => {
         const { port, calls } = fakePort({ json });
 
-        expect(() => publishReview(42, port)).toThrow();
+        expect(() => publishReview(42, port)).toThrow(message);
         expect(calls.some((call) => call.startsWith('post:'))).toBe(false);
+    });
+
+    it('refuses an APPROVE document whose comments field is not an array', () => {
+        // Unlike the REQUEST_CHANGES row above — where a broken array guard still fails, just for
+        // the wrong reason (REQUEST_CHANGES requires comments) — an APPROVE document has nothing
+        // else to object: with the array guard gone, this posts cleanly with the malformed field
+        // silently dropped. This is the document that actually discriminates the guard.
+        const { port } = fakePort({
+            json: { event: 'APPROVE', body: 'Attacked the merge gate; it held.', comments: 'nope' },
+        });
+
+        expect(() => publishReview(42, port)).toThrow(/review\.json comments must be an array/);
     });
 
     // A single-element `comments` array cannot tell a real index from a hardcoded `comments[0]`
