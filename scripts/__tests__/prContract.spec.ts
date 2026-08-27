@@ -2,19 +2,21 @@ import { describe, expect, it } from 'vitest';
 
 import {
     REQUIRED_BODY_HEADINGS,
+    REVIEW_COMMENT_MAX_BYTES,
     assertConventionalSubject,
     assertLaneSlug,
     assertPullRequestBody,
-    assertReviewCommentBody,
     canonicalIssueReferenceFromBody,
     composeDeliveryReceipt,
     composePublishBody,
+    composeReviewCommentBody,
     fail,
     issueRelationshipFromBody,
     laneBranchName,
     parseDeliveryReceipt,
     supersessionCommentBody,
     supersessionReplacement,
+    type ReviewCommentContent,
 } from '../prContract.ts';
 
 const WHAT_HEADING = '### 🎯 What does this PR do?';
@@ -321,14 +323,154 @@ describe('pull-request contract', () => {
         expect(supersessionReplacement(body)).toBeUndefined();
     });
 
-    it('requires one-paragraph review comments with defect, consequence, and outcome', () => {
-        assertReviewCommentBody(
-            'The merge path still accepts COMMENT. Delivery could merge without reviewer APPROVE. Require jcosta33-reviewer[bot] APPROVED on the current head.'
-        );
-        expect(() => assertReviewCommentBody('Looks wrong.')).toThrow(/defect/);
-        expect(() =>
-            assertReviewCommentBody('First paragraph.\n\nSecond paragraph continues the essay and must be refused.')
-        ).toThrow(/one paragraph/);
+    it('rethrows the given message from fail', () => {
         expect(() => fail('boom')).toThrow(/boom/);
+    });
+
+    it('composes the three fields into one space-joined body', () => {
+        expect(composeReviewCommentBody({ defect: 'Defect.', consequence: 'Consequence.', done: 'Done.' })).toBe(
+            'Defect. Consequence. Done.'
+        );
+    });
+
+    it('accepts a one-sentence-per-field comment the old sentence floor would have rejected', () => {
+        // Each field is a single sentence with no internal period, so the retired sentence-splitting
+        // rule would have counted one sentence overall and refused it. The field contract accepts it
+        // because every field is present, not because of how many sentences it reads as. Each field
+        // also gains its own terminal period, since none supplied one.
+        const content: ReviewCommentContent = {
+            defect: 'The gate accepts a coerced review state',
+            consequence: 'A silently coerced review could still report success',
+            done: 'Compare the recorded state against the requested event',
+        };
+        expect(composeReviewCommentBody(content)).toBe(
+            'The gate accepts a coerced review state. A silently coerced review could still report success. Compare the recorded state against the requested event.'
+        );
+    });
+
+    it('appends a period to a field with no terminal punctuation', () => {
+        expect(composeReviewCommentBody({ defect: 'Bad thing', consequence: 'Breaks stuff', done: 'Fix it' })).toBe(
+            'Bad thing. Breaks stuff. Fix it.'
+        );
+    });
+
+    it('preserves a field already ending in terminal punctuation, including a question', () => {
+        expect(
+            composeReviewCommentBody({
+                defect: 'Is this intentional?',
+                consequence: 'Ship it!',
+                done: 'Confirm the intent.',
+            })
+        ).toBe('Is this intentional? Ship it! Confirm the intent.');
+    });
+
+    it('does not append a second period after a closing quote that already ends in terminal punctuation', () => {
+        expect(composeReviewCommentBody({ defect: 'It says "do X."', consequence: 'b', done: 'c' })).toBe(
+            'It says "do X." b. c.'
+        );
+    });
+
+    it('treats an ellipsis as terminal punctuation', () => {
+        expect(composeReviewCommentBody({ defect: 'It trails off…', consequence: 'b', done: 'c' })).toBe(
+            'It trails off… b. c.'
+        );
+    });
+
+    it('prefixes failure messages with a custom context', () => {
+        expect(() =>
+            composeReviewCommentBody({ defect: '', consequence: 'c', done: 'd' }, 'review.json comments[2]')
+        ).toThrow(/review\.json comments\[2\] defect is empty/);
+    });
+
+    it.each([
+        ['defect', { defect: '', consequence: 'c', done: 'd' }],
+        ['consequence', { defect: 'a', consequence: '', done: 'd' }],
+        ['done', { defect: 'a', consequence: 'b', done: '' }],
+    ])('fails when %s is blank', (field, content) => {
+        expect(() => composeReviewCommentBody(content)).toThrow(new RegExp(`review comment ${field} is empty`));
+    });
+
+    it.each([
+        ['defect', { defect: 'a\nb', consequence: 'c', done: 'd' }],
+        ['consequence', { defect: 'a', consequence: 'b\nc', done: 'd' }],
+        ['done', { defect: 'a', consequence: 'b', done: 'c\nd' }],
+    ])('fails when %s contains a newline', (field, content) => {
+        expect(() => composeReviewCommentBody(content)).toThrow(new RegExp(`review comment ${field} must be one line`));
+    });
+
+    it.each([
+        ['CR', 'a\rb'],
+        ['U+2028 line separator', 'a\u2028b'],
+        ['U+2029 paragraph separator', 'a\u2029b'],
+    ])('fails when defect contains an interior %s', (_label, defect) => {
+        expect(() => composeReviewCommentBody({ defect, consequence: 'c', done: 'd' })).toThrow(
+            /review comment defect must be one line/
+        );
+    });
+
+    it('fails when a field has leading or trailing whitespace', () => {
+        expect(() => composeReviewCommentBody({ defect: ' a', consequence: 'b', done: 'c' })).toThrow(
+            /review comment defect has leading or trailing whitespace/
+        );
+        expect(() => composeReviewCommentBody({ defect: 'a', consequence: 'b', done: 'c ' })).toThrow(
+            /review comment done has leading or trailing whitespace/
+        );
+    });
+
+    it('reports whitespace, not a line break, when a field has both a trailing space and an interior newline', () => {
+        // Pins the evaluation order: whitespace is checked first, so a field with both defects is
+        // reported for the whitespace, not the line break — never leaving that order incidental.
+        expect(() => composeReviewCommentBody({ defect: 'a\nb ', consequence: 'c', done: 'd' })).toThrow(
+            /review comment defect has leading or trailing whitespace/
+        );
+    });
+
+    it('fails when the composed body exceeds the byte limit', () => {
+        const longField = 'x'.repeat(300);
+        expect(() => composeReviewCommentBody({ defect: longField, consequence: longField, done: longField })).toThrow(
+            new RegExp(`exceeding the ${REVIEW_COMMENT_MAX_BYTES}-byte limit`)
+        );
+    });
+
+    it('fails on a multi-byte UTF-8 body that is under the limit in characters but over it in bytes', () => {
+        // Each euro sign is one character but three UTF-8 bytes, so this body reads as well under the
+        // limit by character count while its true byte length exceeds it — proof the check counts bytes.
+        const content: ReviewCommentContent = {
+            defect: '€'.repeat(100),
+            consequence: '€'.repeat(100),
+            done: 'd',
+        };
+        const composed = `${content.defect} ${content.consequence} ${content.done}`;
+        expect(composed.length).toBeLessThan(REVIEW_COMMENT_MAX_BYTES);
+        expect(() => composeReviewCommentBody(content)).toThrow(
+            new RegExp(`exceeding the ${REVIEW_COMMENT_MAX_BYTES}-byte limit`)
+        );
+    });
+
+    it('accepts a body exactly at the byte limit', () => {
+        // Each field already ends in a period, so normalization does not touch it, and the raw field
+        // lengths plus the two separating spaces are independently checked against the limit — not
+        // derived from whatever composeReviewCommentBody happens to return — so a composer that drops
+        // a separator, or measures only the fields, cannot pass this by accident.
+        const defect = `${'a'.repeat(199)}.`;
+        const consequence = `${'b'.repeat(199)}.`;
+        const done = `${'c'.repeat(197)}.`;
+        expect(defect.length + consequence.length + done.length + 2).toBe(REVIEW_COMMENT_MAX_BYTES);
+
+        const composed = composeReviewCommentBody({ defect, consequence, done });
+
+        expect(composed).toBe(`${defect} ${consequence} ${done}`);
+        expect(Buffer.byteLength(composed, 'utf8')).toBe(REVIEW_COMMENT_MAX_BYTES);
+    });
+
+    it('rejects a body one byte over the limit', () => {
+        const defect = `${'a'.repeat(200)}.`;
+        const consequence = `${'b'.repeat(199)}.`;
+        const done = `${'c'.repeat(197)}.`;
+        expect(defect.length + consequence.length + done.length + 2).toBe(REVIEW_COMMENT_MAX_BYTES + 1);
+
+        expect(() => composeReviewCommentBody({ defect, consequence, done })).toThrow(
+            new RegExp(`exceeding the ${REVIEW_COMMENT_MAX_BYTES}-byte limit`)
+        );
     });
 });

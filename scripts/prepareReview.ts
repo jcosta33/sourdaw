@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -66,15 +66,6 @@ export function prepareReview(number: number, port: PrepareReviewPort): string {
     const claude = port.showFile(pullRequest.baseRefOid, 'CLAUDE.md');
     const decisionFiles = port.listDecisionFiles(pullRequest.baseRefOid);
     const files: Record<string, string> = {
-        'manifest.json': `${JSON.stringify(
-            {
-                pr: pullRequest.number,
-                baseSha: pullRequest.baseRefOid,
-                headSha: pullRequest.headRefOid,
-            },
-            null,
-            4
-        )}\n`,
         'diff.patch': port.diff(pullRequest.baseRefOid, pullRequest.headRefOid),
         'pr.md': `# ${pullRequest.title}\n\n${pullRequest.body ?? ''}\n`,
         'contracts/AGENTS.md': agents,
@@ -83,12 +74,97 @@ export function prepareReview(number: number, port: PrepareReviewPort): string {
     for (const path of decisionFiles) {
         files[`contracts/${path}`] = port.showFile(pullRequest.baseRefOid, path);
     }
+    // The manifest's own `generated` field is derived from the files assembled above, plus itself,
+    // so the recorded list always matches what this run actually writes.
+    const generated = [...Object.keys(files), 'manifest.json'].sort();
+    files['manifest.json'] = `${JSON.stringify(
+        {
+            pr: pullRequest.number,
+            baseSha: pullRequest.baseRefOid,
+            headSha: pullRequest.headRefOid,
+            generated,
+        },
+        null,
+        4
+    )}\n`;
     const destination = reviewBundlePath(port.primaryRoot(), pullRequest.number, pullRequest.headRefOid);
     port.installBundle(destination, files);
     port.log(destination);
     return destination;
 }
 
+/**
+ * The `generated` list a previous install recorded in its own `manifest.json`, or `undefined` when
+ * that record is unavailable: no manifest, an unparseable one, one whose `generated` field is
+ * missing, or one whose `generated` field holds something other than an array of strings.
+ * `undefined` means the previous generated set is unknown, not empty — `preserveCallerFiles` treats
+ * those two differently; see its doc comment.
+ */
+function previousGeneratedSet(destination: string): ReadonlySet<string> | undefined {
+    try {
+        const manifest = JSON.parse(readFileSync(join(destination, 'manifest.json'), 'utf8')) as {
+            generated?: unknown;
+        };
+        return Array.isArray(manifest.generated) &&
+            manifest.generated.every((entry): entry is string => typeof entry === 'string')
+            ? new Set(manifest.generated)
+            : undefined;
+    } catch {
+        return undefined;
+    }
+}
+
+/**
+ * Copies files from `source` into `target`, preserving subdirectories, except files whose relative
+ * path is in `generated`. `generated` is the union of what THIS run generates and — when the
+ * previous run's own record is known — what THAT run recorded generating: the bundle directory is
+ * keyed by head sha, but `contracts/` is derived from the base sha, which is the moving tip of
+ * `main`. A file this run does not generate is not necessarily caller-written — it can be an
+ * artifact a previous base produced that the current base no longer does, such as a decision file
+ * `main` has since deleted. The previous run's own record of what it generated is what tells the two
+ * apart; this run's generated set alone cannot, because anything the base stopped producing looks
+ * identical to something a caller wrote.
+ *
+ * `rootOnly` is set whenever that previous record is unknown — no manifest, one predating this
+ * field, or one this function cannot parse. Without it, there is no way to tell a caller's file from
+ * a stale artifact of a base that has since moved, so classification falls back to position instead
+ * of name: the caller writes `review.json` and `discarded.json` beside each other at the bundle
+ * root, and every nested path belongs to the script. A nested file is therefore presumed generated
+ * and dropped, not carried forward on a guess.
+ */
+function preserveCallerFiles(
+    source: string,
+    target: string,
+    generated: ReadonlySet<string>,
+    rootOnly: boolean,
+    prefix = ''
+): void {
+    for (const entry of readdirSync(source, { withFileTypes: true })) {
+        const relative = prefix === '' ? entry.name : `${prefix}/${entry.name}`;
+        const from = join(source, entry.name);
+        if (entry.isDirectory()) {
+            if (rootOnly) {
+                continue;
+            }
+            preserveCallerFiles(from, target, generated, rootOnly, relative);
+            continue;
+        }
+        if (generated.has(relative)) {
+            continue;
+        }
+        const to = join(target, relative);
+        mkdirSync(join(to, '..'), { recursive: true });
+        writeFileSync(to, readFileSync(from));
+    }
+}
+
+/**
+ * Preservation reads directly from the live `destination` before either rename, so a failure there
+ * leaves `destination` exactly as it was — it was never touched. That makes the swap itself two
+ * adjacent renames with nothing between them, the same shape the base had before this function
+ * existed: no window where the bundle directory is provably absent, and no rollback branch to keep
+ * correct, because none is reachable.
+ */
 export function installBundleAtomically(destination: string, files: Record<string, string>): void {
     const staging = `${destination}.staging-${process.pid}-${Date.now()}`;
     const previous = `${destination}.previous-${process.pid}-${Date.now()}`;
@@ -99,13 +175,16 @@ export function installBundleAtomically(destination: string, files: Record<strin
             mkdirSync(join(target, '..'), { recursive: true });
             writeFileSync(target, contents);
         }
-        try {
+        if (existsSync(destination)) {
+            const previousGenerated = previousGeneratedSet(destination);
+            const generated = new Set([...(previousGenerated ?? []), ...Object.keys(files)]);
+            preserveCallerFiles(destination, staging, generated, previousGenerated === undefined);
             renameSync(destination, previous);
-        } catch {
-            // Destination did not exist.
+            renameSync(staging, destination);
+            rmSync(previous, { recursive: true, force: true });
+        } else {
+            renameSync(staging, destination);
         }
-        renameSync(staging, destination);
-        rmSync(previous, { recursive: true, force: true });
     } catch (error) {
         rmSync(staging, { recursive: true, force: true });
         throw error;
