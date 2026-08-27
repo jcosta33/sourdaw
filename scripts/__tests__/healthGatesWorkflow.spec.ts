@@ -25,6 +25,7 @@ const FORCED_SCOPE_OUTPUTS = {
     server: 'true',
     e2e: 'true',
     web: 'true',
+    code: 'true',
 };
 const SCOPE_OUTPUT_REFERENCES = {
     heavy: '${{ steps.scope.outputs.heavy }}',
@@ -32,7 +33,11 @@ const SCOPE_OUTPUT_REFERENCES = {
     server: '${{ steps.scope.outputs.server }}',
     e2e: '${{ steps.scope.outputs.e2e }}',
     web: '${{ steps.scope.outputs.web }}',
+    code: '${{ steps.scope.outputs.code }}',
 };
+const CODE_CONDITION = "needs.decide.outputs.code == 'true'";
+const SMOKE_CONDITION = "github.event_name == 'pull_request' && needs.decide.outputs.e2e == 'true'";
+const SMOKE_COMMAND = 'pnpm test:e2e tests/e2e/smoke.spec.ts --retries=0';
 const PULL_REQUEST_CONCURRENCY_GROUP =
     "health-gates-${{ (github.event_name == 'pull_request' || (github.event_name == 'pull_request_review' && github.event.review.state == 'approved')) && github.event.pull_request.number || github.run_id }}";
 const PULL_REQUEST_CONCURRENCY_CANCELLATION =
@@ -133,7 +138,11 @@ function assertWorkflowPermissions(candidate: UnknownRecord): void {
     }
 }
 
-function runScopeScript(script: string, eventName: string): UnknownRecord {
+function runScopeScript(
+    script: string,
+    eventName: string,
+    filters: Readonly<Record<string, string>> = {}
+): UnknownRecord {
     const directory = mkdtempSync(join(tmpdir(), 'sourdaw-health-scope-'));
     const outputPath = join(directory, 'github-output');
     try {
@@ -146,6 +155,8 @@ function runScopeScript(script: string, eventName: string): UnknownRecord {
                 SERVER: 'false',
                 E2E: 'false',
                 WEB: 'false',
+                UNCLASSIFIED: 'false',
+                ...filters,
                 GITHUB_OUTPUT: outputPath,
             },
             shell: false,
@@ -183,6 +194,78 @@ function assertScopeContract(candidate: UnknownRecord): string {
         throw new Error('Resolve scope must retain the scope step id');
     }
     return stringAt(scope, 'run');
+}
+
+function unclassifiedPatterns(candidate: UnknownRecord): string[] {
+    const filterStep = stepNamed(jobAt(candidate, 'decide'), 'Filter changed paths');
+    const options = recordAt(filterStep, 'with');
+    if (options['predicate-quantifier'] !== 'some-with-excludes') {
+        throw new Error('path filters must subtract negated patterns instead of matching on any one of them');
+    }
+    const filters = asRecord(parseDocument(stringAt(options, 'filters')).toJS(), 'path filters');
+    return arrayAt(filters, 'unclassified').map(String);
+}
+
+function assertUnclassifiedFallback(candidate: UnknownRecord): void {
+    const patterns = unclassifiedPatterns(candidate);
+    if (!patterns.includes('**')) {
+        throw new Error('the unclassified filter must start from every changed path');
+    }
+    const exempt = patterns.filter((pattern) => pattern.startsWith('!'));
+    const prose = exempt.filter((pattern) => pattern === '!docs/**' || pattern === '!*.md');
+    if (prose.length !== 2) {
+        throw new Error('documentation must be exempt from the unclassified fallback');
+    }
+    const metadata = exempt.find((pattern) => pattern.includes('.github'));
+    if (metadata !== undefined) {
+        throw new Error(`repository metadata is machine-read and must not be exempt: ${metadata}`);
+    }
+}
+
+function assertProseSkippingJobs(candidate: UnknownRecord): void {
+    for (const jobName of ['lint', 'boundaries']) {
+        if (jobAt(candidate, jobName).if !== CODE_CONDITION) {
+            throw new Error(`${jobName} must skip a head that carries only prose`);
+        }
+    }
+    if (jobAt(candidate, 'static').if !== undefined) {
+        throw new Error('release inventory answers to prose changes, so static must stay unconditional');
+    }
+}
+
+function assertOfflineSmokeJob(candidate: UnknownRecord): void {
+    const smoke = jobAt(candidate, 'smoke');
+    if (smoke.needs !== 'decide' || smoke.if !== SMOKE_CONDITION) {
+        throw new Error('the offline smoke job must run on every pull request that touches the browser surface');
+    }
+    if (stringAt(stepNamed(smoke, 'Run offline smoke set'), 'run') !== SMOKE_COMMAND) {
+        throw new Error('the offline smoke job must run the smoke spec without retries');
+    }
+}
+
+function assertPullRequestSecretScan(candidate: UnknownRecord): void {
+    const prSecrets = jobAt(candidate, 'pr-secrets');
+    if (prSecrets.needs !== 'decide' || prSecrets.if !== "github.event_name == 'pull_request'") {
+        throw new Error('the pull-request secret scan must run on every pull-request push');
+    }
+    if (TOKEN_REFERENCE.test(JSON.stringify(prSecrets))) {
+        throw new Error('pull-request secret scan must not reference GitHub tokens or repository secrets');
+    }
+    const trustedScanner = recordAt(stepNamed(prSecrets, 'Checkout trusted scanner'), 'with');
+    if (
+        trustedScanner.ref !== '${{ github.event.pull_request.base.sha }}' ||
+        trustedScanner.path !== 'trusted-scanner' ||
+        trustedScanner['persist-credentials'] !== false
+    ) {
+        throw new Error('pull-request scanner config must come from the trusted base and retain no credentials');
+    }
+    const scan = stringAt(stepNamed(prSecrets, 'Scan pull request diff for secrets'), 'run');
+    if (!scan.includes('--log-opts="$BASE_SHA..$HEAD_SHA -m"')) {
+        throw new Error('pull-request secret scan must scan the commits this head adds to its base');
+    }
+    if (!scan.includes('--ignore-gitleaks-allow')) {
+        throw new Error('pull-request secret scan must reject head-authored gitleaks:allow annotations');
+    }
 }
 
 function assertJobGraph(candidate: UnknownRecord): void {
@@ -419,6 +502,7 @@ describe('health gates workflow contract', () => {
             server: 'false',
             e2e: 'false',
             web: 'false',
+            code: 'false',
         });
         expect(runScopeScript(scopeScript, 'pull_request_review')).toMatchObject({ heavy: 'true' });
         for (const eventName of ['schedule', 'workflow_dispatch']) {
@@ -431,6 +515,83 @@ describe('health gates workflow contract', () => {
         recordAt(jobAt(undisclosedWebScope, 'decide'), 'outputs').web = HEAVY_OUTPUT_REFERENCE;
         expect(() => assertScopeContract(undisclosedWebScope)).toThrow(
             'decide web output must expose steps.scope.outputs.web'
+        );
+    });
+
+    it('treats an unclassified path as code-bearing and prose as nothing to check', () => {
+        const scopeScript = assertScopeContract(workflow);
+        expect(() => assertUnclassifiedFallback(workflow)).not.toThrow();
+        expect(() => assertProseSkippingJobs(workflow)).not.toThrow();
+
+        expect(runScopeScript(scopeScript, 'pull_request', { UNCLASSIFIED: 'true' })).toEqual({
+            heavy: 'false',
+            rust: 'true',
+            server: 'true',
+            e2e: 'true',
+            web: 'true',
+            code: 'true',
+        });
+        expect(runScopeScript(scopeScript, 'pull_request', { WEB: 'true' })).toMatchObject({
+            rust: 'false',
+            code: 'true',
+        });
+
+        const exemptMetadata = asRecord(structuredClone(workflow), 'metadata-exempt workflow');
+        const filterOptions = recordAt(stepNamed(jobAt(exemptMetadata, 'decide'), 'Filter changed paths'), 'with');
+        filterOptions.filters = stringAt(filterOptions, 'filters').replace(
+            "- '!docs/**'",
+            "- '!docs/**'\n  - '!.github/ISSUE_TEMPLATE/**'"
+        );
+        expect(() => assertUnclassifiedFallback(exemptMetadata)).toThrow(
+            'repository metadata is machine-read and must not be exempt'
+        );
+
+        const anyPatternWins = asRecord(structuredClone(workflow), 'any-pattern workflow');
+        recordAt(stepNamed(jobAt(anyPatternWins, 'decide'), 'Filter changed paths'), 'with')['predicate-quantifier'] =
+            'some';
+        expect(() => assertUnclassifiedFallback(anyPatternWins)).toThrow(
+            'path filters must subtract negated patterns instead of matching on any one of them'
+        );
+
+        const conditionalInventory = asRecord(structuredClone(workflow), 'conditional inventory workflow');
+        jobAt(conditionalInventory, 'static').if = CODE_CONDITION;
+        expect(() => assertProseSkippingJobs(conditionalInventory)).toThrow(
+            'release inventory answers to prose changes, so static must stay unconditional'
+        );
+
+        const alwaysLinting = asRecord(structuredClone(workflow), 'unconditional lint workflow');
+        delete jobAt(alwaysLinting, 'lint').if;
+        expect(() => assertProseSkippingJobs(alwaysLinting)).toThrow('lint must skip a head that carries only prose');
+    });
+
+    it('gives every pull request an offline smoke set and a diff secret scan', () => {
+        expect(() => assertOfflineSmokeJob(workflow)).not.toThrow();
+        expect(() => assertPullRequestSecretScan(workflow)).not.toThrow();
+
+        const retryingSmoke = asRecord(structuredClone(workflow), 'retrying smoke workflow');
+        stepNamed(jobAt(retryingSmoke, 'smoke'), 'Run offline smoke set').run = 'pnpm test:e2e tests/e2e/smoke.spec.ts';
+        expect(() => assertOfflineSmokeJob(retryingSmoke)).toThrow(
+            'the offline smoke job must run the smoke spec without retries'
+        );
+
+        const heavySmoke = asRecord(structuredClone(workflow), 'heavy smoke workflow');
+        jobAt(heavySmoke, 'smoke').if = "needs.decide.outputs.heavy == 'true'";
+        expect(() => assertOfflineSmokeJob(heavySmoke)).toThrow(
+            'the offline smoke job must run on every pull request that touches the browser surface'
+        );
+
+        const historyScanningDiff = asRecord(structuredClone(workflow), 'history-scanning diff workflow');
+        const diffScan = stepNamed(jobAt(historyScanningDiff, 'pr-secrets'), 'Scan pull request diff for secrets');
+        diffScan.run = stringAt(diffScan, 'run').replace('--log-opts="$BASE_SHA..$HEAD_SHA -m"', '--log-opts=--all');
+        expect(() => assertPullRequestSecretScan(historyScanningDiff)).toThrow(
+            'pull-request secret scan must scan the commits this head adds to its base'
+        );
+
+        const headControlledScanner = asRecord(structuredClone(workflow), 'head-controlled scanner workflow');
+        recordAt(stepNamed(jobAt(headControlledScanner, 'pr-secrets'), 'Checkout trusted scanner'), 'with').ref =
+            '${{ github.event.pull_request.head.sha }}';
+        expect(() => assertPullRequestSecretScan(headControlledScanner)).toThrow(
+            'pull-request scanner config must come from the trusted base and retain no credentials'
         );
     });
 
