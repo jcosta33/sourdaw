@@ -5,9 +5,11 @@ import { getAllSidechainRoutes } from '#/modules/Routing/useCases';
 import { type GeneratedMidiStateGuard } from '#/utils/handlerContract';
 
 import { collectTrackClipIds } from '../services/collectTrackClipIds';
+import { serializeClipSatelliteEntries } from '../stores/clipSatelliteState';
 import { getEnvelope } from '../stores/gainEnvelopeStore';
 import { takeLaneStore } from '../stores/takeLaneStore';
 import { hasNonDefaultWarpState } from '../stores/warpStates';
+import { serializeClipScopedAutomationLanes } from '../useCases/clip/serializeClipScopedAutomationLanes';
 import { getTrackStoreState } from '../useCases/getTrackStoreState';
 
 type IsGeneratedMidiStateCurrentInput = {
@@ -17,12 +19,51 @@ type IsGeneratedMidiStateCurrentInput = {
     allowedReferencingTrackIds?: readonly string[];
 };
 
-function hasClipSatelliteState(clipIds: readonly string[]): boolean {
+function hasEnvelopeOrWarpState(clipIds: readonly string[]): boolean {
+    return clipIds.some((clipId) => getEnvelope(clipId) !== undefined || hasNonDefaultWarpState(clipId));
+}
+
+function hasClipScopedAutomationLane(clipIds: readonly string[]): boolean {
     const clipIdSet = new Set(clipIds);
-    if (clipIds.some((clipId) => getEnvelope(clipId) !== undefined || hasNonDefaultWarpState(clipId))) {
-        return true;
-    }
     return getAutomationLanes().some((lane) => lane.clipId !== undefined && clipIdSet.has(lane.clipId));
+}
+
+function hasClipSatelliteState(clipIds: readonly string[]): boolean {
+    return hasEnvelopeOrWarpState(clipIds) || hasClipScopedAutomationLane(clipIds);
+}
+
+/**
+ * A generation that itself writes satellites (a clip duplicate clones the
+ * source's envelope and warp state) captures what it produced in
+ * `clipSatellitesJson`; the guard then refuses only when the user moved those
+ * satellites since. Clip-scoped automation lanes are captured the same way in
+ * `clipAutomationLanesJson` — a separate field because the lanes live in
+ * Automation's store, not the satellite pair. Either capture left absent keeps
+ * that leg on the absence check, so a regeneration guard that captured nothing
+ * still disqualifies on any satellite state at all.
+ */
+function clipSatelliteStateMatches(clipIds: readonly string[], guard: GeneratedMidiStateGuard): boolean {
+    if (guard.clipSatellitesJson === undefined && guard.clipAutomationLanesJson === undefined) {
+        return !hasClipSatelliteState(clipIds);
+    }
+    return (
+        clipSatelliteEntriesMatch(clipIds, guard.clipSatellitesJson) &&
+        clipAutomationLanesMatch(clipIds, guard.clipAutomationLanesJson)
+    );
+}
+
+function clipSatelliteEntriesMatch(clipIds: readonly string[], captured: string | undefined): boolean {
+    if (captured === undefined) {
+        return !hasEnvelopeOrWarpState(clipIds);
+    }
+    return serializeClipSatelliteEntries(clipIds) === captured;
+}
+
+function clipAutomationLanesMatch(clipIds: readonly string[], captured: string | undefined): boolean {
+    if (captured === undefined) {
+        return !hasClipScopedAutomationLane(clipIds);
+    }
+    return serializeClipScopedAutomationLanes(clipIds) === captured;
 }
 
 export function isGeneratedMidiStateCurrent({
@@ -58,7 +99,7 @@ export function isGeneratedMidiStateCurrent({
     if (JSON.stringify(entity) !== guard.entityJson) {
         return false;
     }
-    if (serializeMidiStateForClips(clipIds) !== guard.midiByClipIdJson || hasClipSatelliteState(clipIds)) {
+    if (serializeMidiStateForClips(clipIds) !== guard.midiByClipIdJson || !clipSatelliteStateMatches(clipIds, guard)) {
         return false;
     }
 

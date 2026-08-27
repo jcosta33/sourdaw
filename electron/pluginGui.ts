@@ -35,6 +35,12 @@ export type CreateEditorWindowRequest = {
 export type CreateEditorWindowResponse = {
     readonly handle: Buffer | null;
     readonly parented: boolean;
+    /**
+     * The display scale the window was created at. The shell is the only side
+     * that can measure it, and a plugin whose editor rect is in physical pixels
+     * — VST3 on Windows and X11 — cannot be sized correctly without it.
+     */
+    readonly scaleFactor: number;
     readonly error: string | null;
 };
 
@@ -68,6 +74,8 @@ export type PluginWindowHostDeps = {
     readonly createWindow: (options: EditorWindowOptions) => EditorWindow;
     /** The live DAW window, re-read per create because it is replaced on a renderer crash. */
     readonly getParentWindow: () => BaseWindow | undefined;
+    /** The scale of the display the editor window is created on. */
+    readonly getScaleFactor: () => number;
     /** Reports an OS-level close to the addon. Must only schedule, never block. */
     readonly notifyClosed: (instanceId: string, label: string) => void;
 };
@@ -83,7 +91,23 @@ export type PluginWindowHost = {
     readonly show: (label: string) => void;
 };
 
-const failure = (error: string): CreateEditorWindowResponse => ({ handle: null, parented: false, error });
+/**
+ * The scale reported when the platform's own answer is unusable.
+ *
+ * One converts nothing, which is the only answer that cannot make an editor the
+ * wrong size on a display nobody could measure.
+ */
+const UNSCALED = 1;
+
+const usableScaleFactor = (reported: number): number =>
+    Number.isFinite(reported) && reported > 0 ? reported : UNSCALED;
+
+const failure = (error: string): CreateEditorWindowResponse => ({
+    handle: null,
+    parented: false,
+    scaleFactor: UNSCALED,
+    error,
+});
 
 export const createPluginWindowHost = (deps: PluginWindowHostDeps): PluginWindowHost => {
     const editors = new Map<string, EditorWindow>();
@@ -128,7 +152,12 @@ export const createPluginWindowHost = (deps: PluginWindowHostDeps): PluginWindow
         editors.set(request.label, window);
 
         try {
-            return { handle: window.getNativeWindowHandle(), parented, error: null };
+            return {
+                handle: window.getNativeWindowHandle(),
+                parented,
+                scaleFactor: usableScaleFactor(deps.getScaleFactor()),
+                error: null,
+            };
         } catch (error) {
             editors.delete(request.label);
             window.destroy();

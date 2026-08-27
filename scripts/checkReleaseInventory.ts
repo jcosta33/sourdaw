@@ -1272,6 +1272,47 @@ const GRAND_BOULE_MEASUREMENT_SOURCE_PATHS = [
     'crates/daw-dsp/benches/wasm/quantumCostProcessor.js',
     'public/wasm/daw-dsp/daw_dsp_bg.wasm',
 ] as const;
+const FULL_HEXADECIMAL_GIT_REVISION = /^[0-9a-f]{40}$/u;
+
+function assertGrandBouleRevisionIsCommit(root: string, revision: string): void {
+    const objectType = execFileSync('git', ['cat-file', '-t', revision], { cwd: root, encoding: 'utf8' }).trim();
+    if (objectType !== 'commit') {
+        throw new Error(`Grand Boule measurement source revision is a ${objectType} object`);
+    }
+}
+
+/**
+ * A shallow checkout (`actions/checkout` defaults to `fetch-depth: 1`) keeps only the tip
+ * commit's object graph, so an older `sourceRevision` an earlier commit pinned is genuinely
+ * absent even though it is a real ancestor of HEAD. `git show` cannot materialize a commit it
+ * has never fetched, so deepen just that one revision on demand before reading it. A developer
+ * clone, and any checkout that already fetched full history, already has the object and this is
+ * a no-op probe.
+ */
+function ensureGrandBouleRevisionFetched(root: string, revision: string): void {
+    try {
+        assertGrandBouleRevisionIsCommit(root, revision);
+        return;
+    } catch {
+        // Falls through to a targeted fetch; a missing object is expected under a shallow checkout.
+    }
+    try {
+        execFileSync(
+            'git',
+            ['-c', 'credential.interactive=false', 'fetch', '--no-tags', '--depth', '1', 'origin', revision],
+            {
+                cwd: root,
+                env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+                stdio: 'ignore',
+                timeout: 10_000,
+            }
+        );
+    } catch {
+        // Best effort: no network, no `origin`, or the revision is genuinely gone. The final
+        // commit probe preserves the caller's path-specific failure.
+    }
+    assertGrandBouleRevisionIsCommit(root, revision);
+}
 
 export function assertGrandBouleMeasurementAdmission(root: string): void {
     const jsonPath = 'crates/daw-dsp/benches/quantum-cost-table.json';
@@ -1290,12 +1331,22 @@ export function assertGrandBouleMeasurementAdmission(root: string): void {
         }>;
     };
     const revision = data.sourceRevision;
-    if (!revision || revision !== data.machine?.gitSha || data.machine?.workingTree !== 'clean') {
+    if (!revision || !FULL_HEXADECIMAL_GIT_REVISION.test(revision)) {
+        throw new Error('Grand Boule measurement source revision must be a full hexadecimal commit ID');
+    }
+    if (revision !== data.machine?.gitSha || data.machine?.workingTree !== 'clean') {
         throw new Error('Grand Boule measurement must name one clean implementation source revision');
     }
     const digestPaths = Object.keys(data.sourceDigests ?? {}).sort();
     if (JSON.stringify(digestPaths) !== JSON.stringify([...GRAND_BOULE_MEASUREMENT_SOURCE_PATHS].sort())) {
         throw new Error('Grand Boule measurement source-digest census is incomplete');
+    }
+    try {
+        ensureGrandBouleRevisionFetched(root, revision);
+    } catch {
+        throw new Error(
+            `Grand Boule measurement source revision ${revision} cannot provide ${GRAND_BOULE_MEASUREMENT_SOURCE_PATHS[0]}`
+        );
     }
     for (const path of GRAND_BOULE_MEASUREMENT_SOURCE_PATHS) {
         let sourceAtRevision: Buffer;

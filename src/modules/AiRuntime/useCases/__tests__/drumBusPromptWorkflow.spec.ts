@@ -1,23 +1,32 @@
 import { afterEach, beforeEach, describe, expect, it, type MockInstance, vi } from 'vitest';
 
+import {
+    captureAgentProjectInspectionState,
+    captureCommandBatchPreflightState,
+} from '#/app/captureCommandBatchPreflightState';
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
+import * as aiRuntimeUseCases from '#/modules/AiRuntime/useCases';
 import { markerStore, trackStore, type Track } from '#/modules/Arrangement/stores';
 import { getArrangementHandlers, runtimeGraphTopology, setArrangementEventBus } from '#/modules/Arrangement/useCases';
+import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import * as audioEngineUseCases from '#/modules/AudioEngine/useCases';
 import {
     clearAgentSectionRenderArtifacts,
     getAgentSectionRenderArtifacts,
     getAudioRenderingHandlers,
 } from '#/modules/AudioRendering/useCases';
+import * as collaborationUseCases from '#/modules/Collaboration/useCases';
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
+    commandBatchPreflightPort,
     commandTrackDefaultsPort,
     redo,
     resetActionReplayAuthority,
     setActionHistoryMetadataPort,
     undo,
 } from '#/modules/Command/useCases';
+import * as crdtDocumentUseCases from '#/modules/CrdtDocument/useCases';
 import {
     captureProjectRevision,
     captureUnownedProjectMutations,
@@ -43,10 +52,6 @@ import {
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { sendChatMessage as sendChatMessageUseCase } from '../sendChatMessage';
 
-import {
-    configureAiWorkflowCommandPreflightFixture,
-    resetAiWorkflowCommandPreflightFixture,
-} from './aiWorkflowCommandPreflightFixture';
 import { withWorkflowCapabilitySelection } from './workflowCapabilitySelectionFixture';
 
 const PROMPT = 'Create a Drum Bus and route Kick, Snare, and Hats into it, leaving Parallel Compression unchanged.';
@@ -81,7 +86,7 @@ function flushFixtureStorageOwner(key: string): void {
 }
 
 function settleFixtureProjectWrites(): void {
-    for (const key of ['tracks', 'markers', 'sidechainRoutes']) {
+    for (const key of ['tracks', 'markers', 'sidechainRoutes', 'adjustmentLayers']) {
         flushFixtureStorageOwner(key);
     }
 }
@@ -400,14 +405,18 @@ function getProviderContext(userMessage: string): Record<string, unknown> {
  * (`getScopeTargetIds` / `getVersionedCommandTargetReferences`) treats as stable
  * target references for each action type used by this fixture file. `planAgentRun`
  * compares scopes by sorted membership, so declaration order here does not need
- * to match the application's own `parameters.properties` order. Device-only
- * arguments (e.g. `targetDeviceId`) are intentionally excluded: the application
- * only tracks track/bus identities in `scope.targetIds`, and `renderProjectSections`
- * has no target rules at all.
+ * to match the application's own `parameters.properties` order. An argument
+ * belongs in this mirror exactly when the action's registry `targetRules` names
+ * it, whatever kind of object that argument identifies — track, bus or device.
+ * `addSidechainRoute`'s `targetDeviceId` is a `sidechain-capable-device` target
+ * rule, so the compiled scope carries the device beside the two tracks and a
+ * fixture omitting it declares a short scope that `planAgentRun` rejects as
+ * scope omission. `renderProjectSections` has no target rules at all, which is
+ * why it has no entry here.
  */
 const SCOPE_TARGET_ARGUMENTS: Readonly<Record<string, readonly string[]>> = {
     setTrackOutput: ['trackId', 'outputId'],
-    addSidechainRoute: ['sourceTrackId', 'targetTrackId'],
+    addSidechainRoute: ['sourceTrackId', 'targetTrackId', 'targetDeviceId'],
     addDevice: ['trackId'],
     addSend: ['trackId', 'busId'],
     setTrackGain: ['trackId'],
@@ -1052,7 +1061,10 @@ describe('drum bus prompt workflow', () => {
         removeCrdtDoc('root');
         createCrdtDoc('root');
         registerCrdtStorageRuntime();
-        configureAiWorkflowCommandPreflightFixture();
+        commandBatchPreflightPort.setProvider(captureCommandBatchPreflightState);
+        collaborationUseCases.configureCollaborationAssetOwner({
+            captureOwnerId: () => 'project:drum-bus-workflow',
+        });
         audioEngineUseCases.configureRuntimeGraphProjectRevisionValidator(
             (expectedProjectRevision) => captureProjectRevision() === expectedProjectRevision
         );
@@ -1104,7 +1116,9 @@ describe('drum bus prompt workflow', () => {
         commandTrackDefaultsPort.setTrackColorProvider(null);
         clearAiHistory();
         clearPendingActionConfirmations();
-        resetAiWorkflowCommandPreflightFixture();
+        commandBatchPreflightPort.setProvider(null);
+        audioEngineUseCases.configureRuntimeGraphProjectRevisionValidator(null);
+        audioEngineUseCases.configureRuntimeGraphTopologyValidator(null);
         clearAgentSectionRenderArtifacts();
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         markerStore.set({ markers: [], sections: [] });
@@ -1132,6 +1146,78 @@ describe('drum bus prompt workflow', () => {
             },
         });
         expect(captureUnownedProjectMutations()).toBe(unownedMutationBaseline + 1);
+    });
+
+    it('captures the production master target fingerprint while reaching confirmation', async () => {
+        setEx11Project();
+        useEx11WebLlmFixture();
+
+        await sendChatMessage(EX11_PROMPT);
+
+        const confirmation = getPendingActionConfirmation(
+            chatStore.value?.messages.find((message) => message.pendingActionConfirmationId)
+                ?.pendingActionConfirmationId ?? ''
+        );
+        expect(confirmation).not.toBeNull();
+        expect(confirmation?.approvalSnapshot.agentApproval?.targetFingerprints.master).toBe('system-output:master');
+    });
+
+    it('inspects only the supplied project document and preserves a real master-track fingerprint', () => {
+        setEx11Project();
+        const rawDocument = getCrdtDoc<Record<string, unknown>>('root');
+        if (!rawDocument) {
+            throw new TypeError('Expected root project document');
+        }
+        const rawTracks = rawDocument.tracks;
+        if (!isRecord(rawTracks) || !Array.isArray(rawTracks.tracks)) {
+            throw new TypeError('Expected raw project tracks');
+        }
+        const historicalMaster = {
+            ...createTrack('master', 'Historical Master', 'master'),
+            gain: 0.73,
+            outputId: 'hw_out',
+        };
+        const suppliedDocument: Record<string, unknown> = {
+            ...structuredClone(rawDocument),
+            tracks: {
+                ...structuredClone(rawTracks),
+                tracks: [...structuredClone(rawTracks.tracks), historicalMaster],
+            },
+        };
+        const ambientFailure = () => {
+            throw new Error('document inspection touched ambient preflight state');
+        };
+        const ambientSpies = [
+            vi.spyOn(aiRuntimeUseCases, 'getProjectContext').mockImplementation(ambientFailure),
+            vi.spyOn(audioBufferCache, 'has').mockImplementation(ambientFailure),
+            vi.spyOn(collaborationUseCases, 'getAssetTransfer').mockImplementation(ambientFailure),
+            vi.spyOn(crdtDocumentUseCases, 'captureProjectRevision').mockImplementation(ambientFailure),
+        ];
+        let historicalInspection: ReturnType<typeof captureAgentProjectInspectionState>;
+        let repeatedInspection: ReturnType<typeof captureAgentProjectInspectionState>;
+        try {
+            historicalInspection = captureAgentProjectInspectionState({
+                projectDocument: suppliedDocument,
+                targetIds: ['master'],
+            });
+
+            const liveMaster = { ...createTrack('master', 'Ambient Live Master', 'master'), gain: 0.19 };
+            trackStore.set({ tracks: [liveMaster], selectedTrackId: null, ghostClips: [] });
+            repeatedInspection = captureAgentProjectInspectionState({
+                projectDocument: suppliedDocument,
+                targetIds: ['master'],
+            });
+        } finally {
+            for (const spy of ambientSpies) {
+                spy.mockRestore();
+            }
+        }
+
+        expect(repeatedInspection).toEqual(historicalInspection);
+        expect(historicalInspection.audioGraphValid).toBe(true);
+        expect(historicalInspection.projectInvariantsValid).toBe(true);
+        expect(historicalInspection.targetFingerprints.master).toContain('Historical Master');
+        expect(historicalInspection.targetFingerprints.master).not.toBe('system-output:master');
     });
 
     it('grounds EX-11 into the dependency-ordered drum, parallel, gain, and render batch', async () => {
@@ -1497,7 +1583,7 @@ describe('drum bus prompt workflow', () => {
         expect(undoStore.value?.past).toEqual([]);
     });
 
-    it('receipts a partial comparison render as committed with warning and keeps the group undoable', async () => {
+    it('receipts a partial comparison render as durably committed with a pending effect and keeps the group undoable', async () => {
         setEx11Project();
         useEx11WebLlmFixture();
         await sendChatMessage(EX11_PROMPT);
@@ -1515,8 +1601,24 @@ describe('drum bus prompt workflow', () => {
             return Promise.resolve(createTestAudioBuffer());
         });
 
-        await expect(confirmPendingChatActions({ confirmationId: confirmation.id })).resolves.toEqual({
-            status: 'executed',
+        await expect(confirmPendingChatActions({ confirmationId: confirmation.id })).resolves.toMatchObject({
+            status: 'failed',
+            durableCommit: true,
+            reason: expect.stringContaining('comparison renderer unavailable'),
+            effects: [
+                {
+                    kind: 'external-effect',
+                    operation: 'renderProjectSections',
+                    state: 'pending',
+                    remediation: 'reconcile',
+                    reason: expect.stringContaining('comparison renderer unavailable'),
+                },
+            ],
+            continuation: {
+                authority: 'authoritative-collaboration-host',
+                idempotency: 'project-checkpoint',
+                kind: 'reconcile-exact-batch',
+            },
         });
 
         expect(getAgentSectionRenderArtifacts()).toEqual([expect.objectContaining({ sectionId: 'section-verse-one' })]);
@@ -1524,9 +1626,11 @@ describe('drum bus prompt workflow', () => {
         const receipt = chatStore.value?.messages.find(
             (message) => message.pendingActionConfirmationId === confirmation.id
         );
-        expect(receipt?.content).toContain('The project change committed with a follow-up warning');
+        expect(receipt?.content).toContain('The project change is durably committed:');
+        expect(receipt?.content).toContain('Outcome: committed-with-warning');
+        expect(receipt?.content).toContain('At least one external effect remains pending');
         expect(receipt?.content).toContain('comparison renderer unavailable');
-        expect(receipt?.content).toContain('Do not replay the confirmed project actions');
+        expect(receipt?.content).toContain('the project mutation will not replay');
         expect(undoStore.value?.past).toHaveLength(9);
 
         await undo();
@@ -2493,6 +2597,62 @@ describe('drum bus prompt workflow', () => {
         expect(undoStore.value?.past).toHaveLength(3);
     });
 
+    it('rejects an unflushed sidechain target-device identity drift through production fingerprints', async () => {
+        setMf06Project();
+        useMf06WebLlmFixture();
+        settleFixtureProjectWrites();
+        const projectBeforePlanning = structuredClone(getCrdtDoc<Record<string, unknown>>('root'));
+        const tracksBeforePlanning = structuredClone(trackStore.value);
+        const routesBeforePlanning = structuredClone(sidechainStore.value);
+        const undoBeforePlanning = structuredClone(undoStore.value);
+        const runtimeCallsBeforePlanning = runtimeMocks.wireSidechainRoute.mock.calls.length;
+
+        await sendChatMessage(MF06_PROMPT);
+        const confirmation = getPendingActionConfirmation(
+            chatStore.value?.messages.find((message) => message.pendingActionConfirmationId)
+                ?.pendingActionConfirmationId ?? ''
+        );
+        const approvedRevision = captureProjectRevision();
+        expect(confirmation?.approvalSnapshot.agentApproval?.targetFingerprints['device-bass-comp-a']).toBeDefined();
+        expect(getCrdtDoc<Record<string, unknown>>('root')).toEqual(projectBeforePlanning);
+        expect(trackStore.value).toEqual(tracksBeforePlanning);
+        expect(sidechainStore.value).toEqual(routesBeforePlanning);
+        expect(undoStore.value).toEqual(undoBeforePlanning);
+        expect(runtimeMocks.wireSidechainRoute.mock.calls).toHaveLength(runtimeCallsBeforePlanning);
+
+        trackStore.set({
+            ...trackStore.value!,
+            tracks: trackStore.value!.tracks.map((track) =>
+                track.id === 'track-bass-synth'
+                    ? {
+                          ...track,
+                          devices: track.devices.map((device) =>
+                              device.id === 'device-bass-comp-a'
+                                  ? { ...device, id: 'device-bass-comp-a-collaborator' }
+                                  : device
+                          ),
+                      }
+                    : track
+            ),
+        });
+        const collaboratorState = structuredClone(trackStore.value);
+        expect(captureProjectRevision()).toBe(approvedRevision);
+
+        const result = await confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' });
+
+        expect(result.status).toBe('failed');
+        expect(getCrdtDoc<Record<string, unknown>>('root')).toEqual(projectBeforePlanning);
+        expect(trackStore.value).toEqual(collaboratorState);
+        expect(sidechainStore.value).toEqual(routesBeforePlanning);
+        expect(runtimeMocks.wireSidechainRoute.mock.calls).toHaveLength(runtimeCallsBeforePlanning);
+        expect(undoStore.value).toEqual(undoBeforePlanning);
+        expect(getPendingActionConfirmation(confirmation?.id ?? '')?.executedActions).toEqual([]);
+        expect(
+            chatStore.value?.messages.find((message) => message.pendingActionConfirmationId === confirmation?.id)
+                ?.content
+        ).toContain('The approved target fingerprints no longer match.');
+    });
+
     it('reduces kick/bass masking without replacing either sound through the complete WebLLM workflow', async () => {
         setMf06Project();
         const originalTracks = structuredClone(trackStore.value?.tracks);
@@ -2659,7 +2819,17 @@ describe('drum bus prompt workflow', () => {
         }
     );
 
-    it('rejects stale EX-06 routing atomically without a receipt or runtime prefix', async () => {
+    /**
+     * Settling the collaborator's write is what makes this deterministic, and it
+     * is also what the confirmation gate reads: `captureProjectRevision` folds
+     * any settled mutation into the revision, and the batch is refused there
+     * before a single command is revalidated. The exact generic project-changed
+     * reason asserted below is the proof of that — the divergence-classified
+     * refusal carries a different message. So the route conflict is realistic
+     * setup, not the cause, and what this pins is the revision gate refusing the
+     * whole batch atomically. Any settled post-proposal mutation lands here.
+     */
+    it('refuses EX-06 routing atomically when the project changes after the proposal, leaving no receipt or runtime prefix', async () => {
         setMf06Project();
         const originalTracks = structuredClone(trackStore.value?.tracks);
         useMf06WebLlmFixture();
@@ -2677,18 +2847,25 @@ describe('drum bus prompt workflow', () => {
             gain: 0.5,
         };
         sidechainStore.set({ routes: [collaboratorRoute] });
+        settleFixtureProjectWrites();
 
         const result = await confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' });
 
-        expect(result.status).toBe('failed');
+        expect(result).toEqual({
+            status: 'invalidated',
+            reason: 'The project changed after this proposal was created. Review and submit the command again.',
+        });
         expect(trackStore.value?.tracks).toEqual(originalTracks);
         expect(sidechainStore.value?.routes).toEqual([collaboratorRoute]);
         expect(runtimeMocks.wireSidechainRoute).not.toHaveBeenCalled();
         expect(undoStore.value?.past).toEqual([]);
+        expect(getPendingActionConfirmation(confirmation?.id ?? '')?.executedActions).toEqual([]);
         const terminalMessage = chatStore.value?.messages.find(
             (message) => message.pendingActionConfirmationId === confirmation?.id
         );
-        expect(terminalMessage?.content).not.toContain('Outcome: committed');
+        expect(terminalMessage?.content).toBe(
+            'This proposal was not executed because the project changed after it was created. Review the current project and submit the command again.'
+        );
     });
 
     it('normalizes a reversed hosted MF-06 plan to the app-owned WebLLM action order', async () => {
@@ -2866,7 +3043,8 @@ describe('drum bus prompt workflow', () => {
         });
     });
 
-    it('aborts the whole MF-06 batch before runtime when one device route becomes stale', async () => {
+    /** Same revision-gate contract as the EX-06 case, over the MF-06 batch. */
+    it('refuses the whole MF-06 batch before runtime when the project changes after the proposal', async () => {
         setMf06Project();
         useMf06WebLlmFixture();
         await sendChatMessage(MF06_PROMPT);
@@ -2883,13 +3061,24 @@ describe('drum bus prompt workflow', () => {
             gain: 0.5,
         };
         sidechainStore.set({ routes: [collaboratorRoute] });
+        settleFixtureProjectWrites();
 
         const result = await confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' });
 
-        expect(result.status).toBe('failed');
+        expect(result).toEqual({
+            status: 'invalidated',
+            reason: 'The project changed after this proposal was created. Review and submit the command again.',
+        });
         expect(sidechainStore.value?.routes).toEqual([collaboratorRoute]);
         expect(runtimeMocks.wireSidechainRoute).not.toHaveBeenCalled();
         expect(undoStore.value?.past).toEqual([]);
+        expect(getPendingActionConfirmation(confirmation?.id ?? '')?.executedActions).toEqual([]);
+        expect(
+            chatStore.value?.messages.find((message) => message.pendingActionConfirmationId === confirmation?.id)
+                ?.content
+        ).toBe(
+            'This proposal was not executed because the project changed after it was created. Review the current project and submit the command again.'
+        );
     });
 
     it('reconciles a transient MF-06 runtime failure from committed durable routes', async () => {

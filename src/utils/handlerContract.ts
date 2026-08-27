@@ -444,6 +444,14 @@ export type ClipSplitActionSnapshot = {
     readonly rightClipIndex: number;
     readonly sourceMidi: MidiClipDataActionSnapshot;
     readonly rightMidi: MidiClipDataActionSnapshot;
+    /**
+     * The source clip's gain envelope and warp state, already repartitioned
+     * across both halves. Optional so split actions captured before satellites
+     * joined this snapshot still decode. On the undo leg (`previous`) the list
+     * carries an explicit null entry for the right clip id, so restoring it
+     * clears the right half's satellites rather than leaving them behind.
+     */
+    readonly clipSatellites?: readonly ClipSatelliteEntrySnapshot[];
 };
 export type RippleShiftSnapshot = {
     readonly clipId: string;
@@ -693,6 +701,25 @@ type LegacyVcaTrackMembershipPatch = {
 export type GeneratedMidiStateGuard = {
     entityJson: string;
     midiByClipIdJson: string;
+    /**
+     * Canonical JSON of the generated entity's per-clip satellite entries (gain
+     * envelope, warp state), captured by producers whose generation writes
+     * satellites — a clip duplicate clones the source's. Absent means the guard
+     * requires the entity to carry no satellites at all, the pre-satellite
+     * contract. When present, the guard instead requires the satellites to be
+     * exactly what generation left behind, so undo refuses only after the user
+     * has actually edited them.
+     */
+    clipSatellitesJson?: string;
+    /**
+     * Canonical JSON of the clip-scoped automation lanes the generated clips
+     * carry, captured by producers whose generation writes them — a clip
+     * duplicate clones the source's lanes onto the copy. A separate field from
+     * `clipSatellitesJson` because the lanes live in Automation's store, not
+     * the Arrangement satellite pair; either field may be captured without the
+     * other, and an absent one keeps that leg on the absence check.
+     */
+    clipAutomationLanesJson?: string;
 };
 
 export type DrumPreviewRecipe = 'ghost-note-pocket' | 'half-time-space' | 'syncopated-hats';
@@ -1539,6 +1566,10 @@ export type AppAction =
               expectedAudioBufferId: string;
               audioBufferId: string;
               name: string;
+              /** Fades the restore puts back; optional so undo entries captured
+               *  before reverse mirrored them still decode. */
+              fadeInBeats?: number;
+              fadeOutBeats?: number;
               blobs?: KneadPitchBlobSnapshot[];
               contour?: PitchContourSnapshot;
           };

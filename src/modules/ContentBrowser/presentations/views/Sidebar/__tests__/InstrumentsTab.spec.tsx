@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
 
+import { type PreviewHandle } from '../../../hooks/usePreviewAudio';
 import { InstrumentsTab } from '../InstrumentsTab';
 import { type SidebarPanelActions } from '../SidebarTypes';
 
@@ -129,8 +130,11 @@ describe('InstrumentsTab', () => {
         followChordTrack: false,
         midiFx: [],
     };
-    const mockPreview = {
+    const mockPreview: PreviewHandle = {
+        playingId: null,
         play: vi.fn(),
+        playTone: vi.fn(),
+        playFile: vi.fn(async () => {}),
         stop: vi.fn(),
     };
     const mockRoute = { id: 'instruments', title: 'Instruments' };
@@ -153,7 +157,7 @@ describe('InstrumentsTab', () => {
                 selectedTrack={mockTrack}
                 favorites={new Set()}
                 onToggleFavorite={vi.fn()}
-                preview={mockPreview as any}
+                preview={mockPreview}
                 currentRoute={mockRoute}
                 pushRoute={vi.fn()}
             />
@@ -169,7 +173,7 @@ describe('InstrumentsTab', () => {
                 selectedTrack={mockTrack}
                 favorites={new Set()}
                 onToggleFavorite={vi.fn()}
-                preview={mockPreview as any}
+                preview={mockPreview}
                 currentRoute={mockRoute}
                 pushRoute={vi.fn()}
             />
@@ -185,7 +189,7 @@ describe('InstrumentsTab', () => {
                 selectedTrack={mockTrack}
                 favorites={new Set()}
                 onToggleFavorite={vi.fn()}
-                preview={mockPreview as any}
+                preview={mockPreview}
                 currentRoute={mockRoute}
                 pushRoute={vi.fn()}
             />
@@ -222,7 +226,7 @@ describe('InstrumentsTab', () => {
                 selectedTrack={mockTrack}
                 favorites={new Set()}
                 onToggleFavorite={vi.fn()}
-                preview={mockPreview as any}
+                preview={mockPreview}
                 currentRoute={mockRoute}
                 pushRoute={vi.fn()}
             />
@@ -252,7 +256,7 @@ describe('InstrumentsTab', () => {
                 selectedTrack={mockTrack}
                 favorites={new Set()}
                 onToggleFavorite={vi.fn()}
-                preview={mockPreview as any}
+                preview={mockPreview}
                 currentRoute={mockRoute}
                 pushRoute={vi.fn()}
                 panelActions={makePanelActions({ showLevain })}
@@ -287,7 +291,7 @@ describe('InstrumentsTab', () => {
                 selectedTrack={mockTrack}
                 favorites={new Set()}
                 onToggleFavorite={vi.fn()}
-                preview={mockPreview as any}
+                preview={mockPreview}
                 currentRoute={mockRoute}
                 pushRoute={vi.fn()}
                 panelActions={makePanelActions({ showToaster })}
@@ -313,7 +317,7 @@ describe('InstrumentsTab', () => {
                 selectedTrack={mockTrack}
                 favorites={new Set()}
                 onToggleFavorite={vi.fn()}
-                preview={mockPreview as any}
+                preview={mockPreview}
                 currentRoute={mockRoute}
                 pushRoute={vi.fn()}
                 panelActions={makePanelActions()}
@@ -321,6 +325,90 @@ describe('InstrumentsTab', () => {
         );
 
         expect(screen.getByRole('button', { name: /^Grand Boule/ })).toBeInTheDocument();
+    });
+
+    it('keeps the canonical Crumbs preset out of ordinary rows while exposing its card on a supported platform', () => {
+        arrangementMocks.getFactoryPresets.mockReturnValue([
+            {
+                id: 'sampler-default',
+                name: 'Sampler',
+                category: 'keys',
+                description: 'Unified Sampler Suite',
+                trackKind: 'midi',
+                devices: [{ type: 'builtin-crumbs', name: 'Sampler', parameterValues: {} }],
+                tags: ['sampler', 'sample', 'playback'],
+                author: 'Sourdaw',
+                isFactory: true,
+            },
+        ]);
+
+        const category = renderWithTooltip(
+            <InstrumentsTab
+                selectedTrackId={mockTrack.id}
+                searchQuery=""
+                selectedTrack={mockTrack}
+                favorites={new Set()}
+                onToggleFavorite={vi.fn()}
+                preview={mockPreview}
+                currentRoute={{ id: 'instruments-keys', title: 'Keys' }}
+                pushRoute={vi.fn()}
+                panelActions={makePanelActions()}
+            />
+        );
+
+        expect(screen.queryAllByText('Sampler')).toHaveLength(0);
+        category.unmount();
+
+        renderWithTooltip(
+            <InstrumentsTab
+                selectedTrackId={mockTrack.id}
+                searchQuery=""
+                selectedTrack={mockTrack}
+                favorites={new Set()}
+                onToggleFavorite={vi.fn()}
+                preview={mockPreview}
+                currentRoute={mockRoute}
+                pushRoute={vi.fn()}
+                panelActions={makePanelActions()}
+            />
+        );
+
+        expect(screen.getByRole('button', { name: /^Crumbs/ })).toBeInTheDocument();
+    });
+
+    it('does not advertise Crumbs when the platform-filtered catalogue withholds its sampler preset', () => {
+        const root = renderWithTooltip(
+            <InstrumentsTab
+                selectedTrackId={mockTrack.id}
+                searchQuery=""
+                selectedTrack={mockTrack}
+                favorites={new Set()}
+                onToggleFavorite={vi.fn()}
+                preview={mockPreview}
+                currentRoute={mockRoute}
+                pushRoute={vi.fn()}
+                panelActions={makePanelActions()}
+            />
+        );
+
+        expect(screen.queryByRole('button', { name: /^Crumbs/ })).not.toBeInTheDocument();
+        root.unmount();
+
+        renderWithTooltip(
+            <InstrumentsTab
+                selectedTrackId={mockTrack.id}
+                searchQuery="crumbs"
+                selectedTrack={mockTrack}
+                favorites={new Set()}
+                onToggleFavorite={vi.fn()}
+                preview={mockPreview}
+                currentRoute={mockRoute}
+                pushRoute={vi.fn()}
+                panelActions={makePanelActions()}
+            />
+        );
+
+        expect(screen.queryByRole('button', { name: /^Crumbs/ })).not.toBeInTheDocument();
     });
 
     it('explains why a preserved preset with a withheld device cannot load', () => {
@@ -346,7 +434,7 @@ describe('InstrumentsTab', () => {
                 selectedTrack={mockTrack}
                 favorites={new Set()}
                 onToggleFavorite={vi.fn()}
-                preview={mockPreview as any}
+                preview={mockPreview}
                 currentRoute={mockRoute}
                 pushRoute={vi.fn()}
             />
@@ -374,7 +462,7 @@ describe('InstrumentsTab', () => {
                 selectedTrack={selectedTrack}
                 favorites={new Set()}
                 onToggleFavorite={vi.fn()}
-                preview={mockPreview as any}
+                preview={mockPreview}
                 currentRoute={mockRoute}
                 pushRoute={vi.fn()}
             />

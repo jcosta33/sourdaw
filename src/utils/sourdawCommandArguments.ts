@@ -53,7 +53,7 @@ export const SOURDAW_COMMAND_ARGUMENTS: ReadonlyMap<string, readonly string[]> =
     ['list_directory', ['path']],
     ['list_midi_inputs', []],
     ['load_cached_whisper_model', []],
-    ['load_plugin', ['plugin_id', 'instance_id']],
+    ['load_plugin', ['plugin_id', 'instance_id', 'sample_rate']],
     ['load_sample', ['instance_id', 'file_path']],
     ['map_graph_batch', ['prior', 'batch', 'sample_rate', 'session']],
     ['open_midi_input', ['port_index']],

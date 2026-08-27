@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+
 import { launch_from_template, launch_new_project, open_browser_instrument, setupWorkspace } from './e2eUtils';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
@@ -63,9 +64,8 @@ test.describe('Session view', () => {
 
     test('Adding a track adds a session column for that track', async ({ page }) => {
         await add_track(page, 'MIDI');
-        await page.waitForTimeout(500);
-        // The new track's scene slots appear as gridcells.
-        await expect(page.getByRole('gridcell', { name: /MIDI scene 1/i })).toBeVisible();
+        // The new track's disabled empty-slot buttons prove its session column rendered.
+        await expect(page.getByRole('button', { name: 'MIDI scene 1 - empty' })).toBeVisible();
     });
 });
 

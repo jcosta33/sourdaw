@@ -210,6 +210,10 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
     const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     /** R-A13: ID of the note currently under the debounce timer. */
     const hoverNoteIdRef = useRef<string | null>(null);
+    /** Auto-stop timer for the audition the hover preview started. */
+    const previewStopTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    /** Stop function for that audition, so unmount can end a sounding preview. */
+    const previewStopRef = useRef<(() => void) | null>(null);
     // Default drag in empty area starts a rubber-band selection (DAW
     // convention). A click without drag still stamps a note at the clicked
     // grid cell; we stash the intended pitch/beat here so the mouse-up handler
@@ -279,6 +283,30 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
             canvas.removeEventListener('wheel', onWheel);
         };
     }, [canvasRef, setZoom, setScrollX]);
+
+    // Closing the clip view while a hover preview is pending (or sounding) must
+    // not fire `playAuditionNote` into an editor that no longer exists: the
+    // stray note has no visible source and nothing left to stop it. Cancel the
+    // pending debounce, and stop every audition this hook started — the hover
+    // preview above, and a note still held from a mousedown whose mouseup will
+    // never arrive on an unmounted canvas.
+    useEffect(() => {
+        return () => {
+            if (hoverTimerRef.current !== null) {
+                clearTimeout(hoverTimerRef.current);
+                hoverTimerRef.current = null;
+            }
+            hoverNoteIdRef.current = null;
+            if (previewStopTimerRef.current !== null) {
+                clearTimeout(previewStopTimerRef.current);
+                previewStopTimerRef.current = null;
+            }
+            previewStopRef.current?.();
+            previewStopRef.current = null;
+            auditionRef.current?.();
+            auditionRef.current = null;
+        };
+    }, []);
 
     // ── Helpers ───────────────────────────────────────────────────────
     /**
@@ -602,8 +630,16 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                             hoverTimerRef.current = null;
                             const auditionTrackId = resolveTrackIdForClip(hit.ownerClipId, trackId);
                             const stopFn = playAuditionNote(auditionTrackId, hit.note.pitch, hit.note.velocity);
-                            // Auto-stop after 500ms to keep audition brief
-                            setTimeout(() => stopFn(), 500);
+                            previewStopRef.current = stopFn;
+                            // Auto-stop after 500ms to keep audition brief. Both the
+                            // timer and the stop are held in refs so the unmount
+                            // cleanup below can end this preview when the clip view
+                            // closes mid-audition.
+                            previewStopTimerRef.current = setTimeout(() => {
+                                previewStopTimerRef.current = null;
+                                previewStopRef.current = null;
+                                stopFn();
+                            }, 500);
                         }, 200);
                     }
                 } else {

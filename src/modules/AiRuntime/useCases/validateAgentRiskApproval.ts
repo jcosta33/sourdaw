@@ -27,7 +27,11 @@ export function validateAgentRiskApproval(input: ValidateAgentRiskApprovalInput)
     if (JSON.stringify(current.actionHashes) !== JSON.stringify(input.approval.actionHashes)) {
         return { status: 'invalid' as const, reason: 'The approved action hashes no longer match.' };
     }
-    if (JSON.stringify(current.targetFingerprints) !== JSON.stringify(input.approval.targetFingerprints)) {
+    if (
+        JSON.stringify(current.targetFingerprints) !== JSON.stringify(input.approval.targetFingerprints) ||
+        JSON.stringify(current.advertisedTargetFingerprints) !==
+            JSON.stringify(input.approval.advertisedTargetFingerprints)
+    ) {
         return { status: 'invalid' as const, reason: 'The approved target fingerprints no longer match.' };
     }
     if (JSON.stringify(current.consequences) !== JSON.stringify(input.approval.consequences)) {

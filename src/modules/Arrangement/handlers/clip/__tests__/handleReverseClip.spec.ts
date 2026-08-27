@@ -23,7 +23,16 @@ describe('handleReverseClip', () => {
             tracks: [
                 {
                     id: 't1',
-                    clips: [{ id: 'c1', type: 'audio', name: 'Verse', audioBufferId: 'buffer-1' }],
+                    clips: [
+                        {
+                            id: 'c1',
+                            type: 'audio',
+                            name: 'Verse',
+                            audioBufferId: 'buffer-1',
+                            fadeInBeats: 0.25,
+                            fadeOutBeats: 1.5,
+                        },
+                    ],
                 },
             ],
         });
@@ -62,7 +71,8 @@ describe('handleReverseClip', () => {
         });
 
         // Reversing again would mint a third buffer, append a second " (reversed)" and
-        // clear the pitch analysis for good. The inverse restores all three instead.
+        // clear the pitch analysis for good. The inverse restores all three instead —
+        // and the fades the forward run mirrored.
         expect(description.inverseAction).toEqual({
             type: 'restoreReversedClip',
             payload: {
@@ -70,6 +80,8 @@ describe('handleReverseClip', () => {
                 expectedAudioBufferId: 'reversed-command-1',
                 audioBufferId: 'buffer-1',
                 name: 'Verse',
+                fadeInBeats: 0.25,
+                fadeOutBeats: 1.5,
                 blobs: [{ id: 'b1', pitchCurveCents: [1, 2] }],
                 contour: { points: [{ time: 0 }], sample_rate: 48000, hop_size: 256 },
             },
@@ -81,6 +93,8 @@ describe('handleReverseClip', () => {
                 expectedAudioBufferId: 'buffer-1',
                 audioBufferId: 'reversed-command-1',
                 name: 'Verse (reversed)',
+                fadeInBeats: 1.5,
+                fadeOutBeats: 0.25,
             },
         });
     });

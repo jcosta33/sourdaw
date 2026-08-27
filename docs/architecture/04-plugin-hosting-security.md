@@ -7,24 +7,47 @@ opens vendor editor windows, and scans filesystem locations outside the project 
 must stay native-owned. The renderer may request a scan, but it does not grant itself filesystem authority
 by sending raw path strings over IPC.
 
+Every hosted format crosses the same boundary and is held to the same rules here: a format is either
+implemented behind the shared host seam or refused by name with its reason, and a refused format is
+never advertised and never loaded. VST is a registered trademark of Steinberg Media Technologies GmbH.
+
 ## 1. Scan roots
 
 Built-in scan roots are owned by the native layer. `get_default_plugin_paths` returns the platform roots
 that Sourdaw is willing to scan by default, and `scan_plugins` accepts only those roots or their
 descendants.
 
-Current defaults:
+The default set is each format's own installation folders on the running platform, as those formats'
+specifications define them. `crates/sourdaw-native/src/host/plugin_scan_policy.rs` is the list; this
+document states the rules it has to satisfy rather than repeating it.
 
-- macOS: `~/Library/Audio/Plug-Ins/{VST3,CLAP,Components}` and `/Library/Audio/Plug-Ins/{VST3,CLAP,Components}`
-- Windows: `C:\Program Files\Common Files\{VST3,CLAP}`
-- Linux: `~/.vst3`, `~/.clap`, `/usr/lib/vst3`, and `/usr/lib/clap`
+The order of that list is a contract, not presentation. It runs most specific first — per-user
+folders, then machine-wide, then network — because the scan keeps the first copy of a plugin identity
+it meets and drops the rest. That is the VST® 3 specification's own rule for its folders, and Sourdaw
+applies it to every hosted format, so a plugin installed twice is hosted from the copy the user
+installed most deliberately.
 
 Custom plugin folders require a future native grant or trusted preference flow before they can be scanned.
 A renderer-provided absolute path is not enough authority.
 
 The scanner also refuses symlinked plugin paths, including paths with symlinked ancestors. A symlink
 under or at an allowed root must not become an implicit grant to scan or load a target outside the
-native-owned root set.
+native-owned root set. What a scan walks is the path the policy resolved, never the caller's spelling
+of it: a check made against one path and a walk made against another is not a check.
+
+### Network scan roots are an accepted risk
+
+The macOS default set includes the network-mounted plug-in folder that the VST® 3 specification
+defines, and that folder is administered by whoever controls the mount rather than by the person
+running Sourdaw. A plugin found there is third-party dynamic code from a source this machine does not
+own, and scanning it means loading it in the bounded worker.
+
+This is deliberate, and the reason is that a shared studio installs its plugins there — refusing the
+folder would not make the code untrusted, it would make the plugins invisible while the same binaries
+stay loadable through every other host on the machine. The risk is bounded the same way every other
+root is: last in the priority order, so a local copy of the same plugin always wins; symlinks refused;
+descriptors read in the bounded child-process worker. It is named here so that a reader of this policy
+does not mistake the mount for machine-owned.
 
 ## 2. IPC boundary
 

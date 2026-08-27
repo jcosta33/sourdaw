@@ -1,4 +1,4 @@
-import { reportLatency } from '#/modules/AudioEngine/useCases';
+import { getLiveEngineSampleRate, reportBridgeRoundTripFrames, reportLatency } from '#/modules/AudioEngine/useCases';
 import { activateExternalPlugin, findSupportedPlugin } from '#/modules/PluginHost/useCases';
 import { createHandler } from '#/utils/createHandler';
 
@@ -114,10 +114,24 @@ export const handleLoadExternalPlugin = createHandler<'loadExternalPlugin'>({
                 pluginActivationSettled = true;
                 return;
             }
+            // The live engine's own rate: the plugin is fed audio this engine
+            // renders, so it has to run on the same clock. Absent when the
+            // engine is on its silent fallback shim, which is a state a user
+            // reaching this handler cannot usefully be in — so it is raised
+            // here, where the post-commit contract routes it to graph repair,
+            // rather than substituted for and never heard about again.
+            const engineSampleRate = getLiveEngineSampleRate();
+            if (engineSampleRate === undefined) {
+                throw new Error(
+                    `Cannot activate external plugin ${externalInstanceId}: the audio engine is not rendering audio, so there is no sample rate to activate at`
+                );
+            }
             const activation = await activateExternalPlugin({
                 pluginId: externalPluginId,
                 instanceId: externalInstanceId,
+                engineSampleRate,
                 onLatencyMs: (latencyMs) => reportLatency(committedDevice.id, latencyMs),
+                onBridgeRoundTripFrames: (frames) => reportBridgeRoundTripFrames(committedDevice.id, frames),
             });
             if (activation.status === 'failed') {
                 throw new Error(activation.reason);
