@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
+import {
+    configureAutomergeStoragePort,
+    flushAutomergeStorageWrites,
+} from '#/infra/store/storage/createAutomergeStorage';
 import { trackStore, type Track } from '#/modules/Arrangement/stores';
 import {
     getArrangementHandlers,
@@ -50,7 +53,7 @@ import {
 import { getDeviceParameterPromptScope } from '../agentReference/getDeviceParameterPromptScope';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { getProjectContext } from '../getProjectContext';
-import { sendChatMessage } from '../sendChatMessage';
+import { sendChatMessage as sendChatMessageWithoutDocumentFlush } from '../sendChatMessage';
 
 import {
     configureAiWorkflowCommandPreflightFixture,
@@ -132,6 +135,11 @@ const noActionHistoryMetadataPort = {
     markReverted: () => ({ status: 'unavailable' as const }),
     clear: () => undefined,
 };
+
+async function sendChatMessage(prompt: string): Promise<void> {
+    flushAutomergeStorageWrites();
+    await sendChatMessageWithoutDocumentFlush(prompt);
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);

@@ -304,11 +304,14 @@ loader/preload settings and Git, GitHub CLI, GitHub Actions, and App overrides, 
 resolved `git` and `gh` executables.
 
 Hosted checks run. `.github/workflows/health-gates.yml` has two lanes: a fast one on every push to
-a pull request, and a heavy one on an approving review, on a nightly schedule, and on dispatch. Only
-`gate` is required by the ruleset, and only `gate` may be — it depends on every other job and passes
-when each either succeeded or was skipped, so a pull request that skips a path-filtered leg still
-reports a conclusion. Requiring a filtered job by name would leave it pending forever. Do not rename
-`gate`.
+a pull request, and a heavy one on an approving review, on a nightly schedule, and on dispatch.
+`gate` is the stable workflow summary: it depends on every job whose result currently decides the
+summary, and passes when each either succeeded or was skipped, so a pull request that skips a
+conditional leg still reports a conclusion. It is informational today: the live ruleset requires no
+status checks. GitHub can require workflow job checks, but Sourdaw deliberately keeps
+pull-request-editable workflows out of merge authority; that is a Sourdaw trust policy, not a GitHub
+platform restriction. A required check from a workflow skipped by trigger-level path, branch, or
+commit-message filters remains pending. Do not rename `gate`.
 
 Hosted checks exist so that nobody runs those checks on this machine. Lanes share one machine, and
 several agents each running a repository-wide typecheck, lint, or suite exhaust it and stall each
@@ -321,8 +324,9 @@ the pipeline runs all of them on every push, and a second copy on this machine b
 contention.
 
 `main` is covered by a ruleset. Read what it actually does: it blocks deletion and non-fast-forward,
-forces a squashed pull request, and demands resolved threads. Whether it also requires `gate` is
-repository configuration, not something this file can promise.
+forces a squashed pull request, and demands resolved threads. The exact live enforcement remains
+repository configuration, not something this file can promise; Sourdaw's policy separately keeps
+pull-request-editable workflows out of merge authority.
 
 Some crates compile to wasm packages that ship as committed artifacts. `scripts/wasm-artifacts.ts`
 is the list, and it carries each package's build script because that name is not derivable from the

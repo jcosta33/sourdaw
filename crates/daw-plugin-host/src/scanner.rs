@@ -284,12 +284,12 @@ pub struct ScanResult {
     pub errors: Vec<String>,
     /// What the scan wants the user to know about a healthy run.
     ///
-    /// Format refusals live here and not in `errors`. Sourdaw scans the VST3
-    /// roots by default on every platform, so a user who owns a single VST3
-    /// plugin gets the VST3 refusal on every scan — as an error it would make a
-    /// completely successful scan render red forever and permanently withhold
-    /// the success badge, which teaches the user to ignore the channel that
-    /// reports real failures.
+    /// Format refusals live here and not in `errors`. Sourdaw scans the roots
+    /// of every format it recognises, so a user who owns a single plugin in a
+    /// refused format gets that refusal on every scan — as an error it would
+    /// make a completely successful scan render red forever and permanently
+    /// withhold the success badge, which teaches the user to ignore the channel
+    /// that reports real failures.
     pub notices: Vec<String>,
     pub scan_duration_ms: u64,
 }
@@ -316,7 +316,6 @@ pub fn stable_id(path: &Path) -> String {
 /// in `.agents/decisions/0031-native-plugin-format-strategy.md`; this is the
 /// single place they are worded, so the scanner and `load_plugin` cannot drift
 /// into telling a user two different stories about the same file.
-pub const VST3_REFUSAL: &str = "VST3 plugins are recognised but not loaded yet: Sourdaw's VST3 host is not implemented. CLAP plugins load today.";
 pub const VST2_REFUSAL: &str = "VST2 plugins are not loaded and never will be: Steinberg stopped issuing the VST2 licence agreement in October 2018, so no host written since can ship VST2 support. Use the CLAP or VST3 build of this plugin if its vendor offers one.";
 pub const AUDIO_UNIT_REFUSAL: &str = "Audio Unit plugins are not loaded: Audio Units are macOS-only, and Sourdaw hosts the cross-platform formats instead. Use the CLAP or VST3 build of this plugin if its vendor offers one.";
 
@@ -383,14 +382,14 @@ impl PluginFormat {
     /// Whether the scan has a descriptor extractor for this format, and the
     /// reason to give the user when it has not.
     ///
-    /// CLAP is the only format with an extractor. The reasons are decided in
+    /// The reasons are decided in
     /// `.agents/decisions/0031-native-plugin-format-strategy.md` and worded in
     /// the constants above, so the scanner and `load_plugin` cannot drift into
     /// telling a user two different stories about the same file.
     pub fn scan_support(self) -> FormatScanSupport {
         match self {
             Self::Clap => FormatScanSupport::Extractor,
-            Self::Vst3 => FormatScanSupport::NoExtractor(VST3_REFUSAL),
+            Self::Vst3 => FormatScanSupport::Extractor,
             Self::Vst2 => FormatScanSupport::NoExtractor(VST2_REFUSAL),
             Self::AudioUnit => FormatScanSupport::NoExtractor(AUDIO_UNIT_REFUSAL),
         }
@@ -770,13 +769,16 @@ mod tests {
         scan_directory(&temp_root, &mut plugins, &mut errors, &mut notices);
         let _ = std::fs::remove_dir_all(&temp_root);
 
-        assert!(
-            plugins.is_empty(),
-            "unsupported VST3, VST2 and Audio Unit bundles must not appear loadable: {plugins:?}"
+        assert_eq!(
+            plugins
+                .iter()
+                .map(|candidate| candidate.format)
+                .collect::<Vec<_>>(),
+            vec![PluginFormat::Vst3],
+            "only the hosted formats may be collected as candidates: {plugins:?}"
         );
         // Skipped in silence, an unloadable format is indistinguishable from an
         // empty folder. Each refusal names the format and why.
-        assert!(notices.contains(&VST3_REFUSAL.to_string()), "{notices:?}");
         assert!(notices.contains(&VST2_REFUSAL.to_string()), "{notices:?}");
         assert!(
             notices.contains(&AUDIO_UNIT_REFUSAL.to_string()),
@@ -787,7 +789,7 @@ mod tests {
         assert!(errors.is_empty(), "{errors:?}");
     }
 
-    /// One line per format, not one per plugin. A user with a folder of VST3
+    /// One line per format, not one per plugin. A user with a folder of VST2
     /// bundles gets the reason once; this list is shown to them verbatim, and
     /// repeating it two hundred times buries everything else in it.
     #[test]
@@ -801,8 +803,8 @@ mod tests {
                     .expect("temp path should have a final component"),
             );
         for index in 0..5 {
-            std::fs::create_dir_all(temp_root.join(format!("Vendor{index}.vst3")))
-                .expect("VST3 placeholder should be created");
+            std::fs::create_dir_all(temp_root.join(format!("Vendor{index}.vst")))
+                .expect("VST2 placeholder should be created");
         }
 
         let mut plugins = Vec::new();
@@ -812,15 +814,15 @@ mod tests {
         let _ = std::fs::remove_dir_all(&temp_root);
 
         assert!(plugins.is_empty());
-        assert_eq!(notices, vec![VST3_REFUSAL.to_string()]);
+        assert_eq!(notices, vec![VST2_REFUSAL.to_string()]);
         assert!(errors.is_empty(), "{errors:?}");
     }
 
-    /// Sourdaw scans the VST3 roots by default on every platform, so this is
-    /// the *ordinary* outcome for a user who owns any VST3 plugin at all. On
-    /// the error channel it would render the scan destructively and withhold
-    /// the success badge forever, on every scan, for a run in which nothing
-    /// went wrong.
+    /// Sourdaw scans the roots of every format it recognises, so this is the
+    /// *ordinary* outcome for a user who owns any plugin in a refused format at
+    /// all. On the error channel it would render the scan destructively and
+    /// withhold the success badge forever, on every scan, for a run in which
+    /// nothing went wrong.
     #[test]
     fn a_scan_that_only_refused_formats_reports_no_error() {
         let temp_root = std::env::current_dir()
@@ -831,8 +833,8 @@ mod tests {
                     .file_name()
                     .expect("temp path should have a final component"),
             );
-        std::fs::create_dir_all(temp_root.join("Vendor.vst3"))
-            .expect("VST3 placeholder should be created");
+        std::fs::create_dir_all(temp_root.join("Vendor.vst"))
+            .expect("VST2 placeholder should be created");
         std::fs::create_dir_all(temp_root.join("Vendor.component"))
             .expect("Audio Unit placeholder should be created");
 
@@ -854,10 +856,6 @@ mod tests {
     /// refused. "Unsupported" sends a user looking for a setting to turn on.
     #[test]
     fn every_refusal_names_its_format_and_its_reason() {
-        let vst3 = unsupported_format_refusal("vst3").expect("VST3 must be refused, not loaded");
-        assert!(vst3.contains("VST3"), "{vst3}");
-        assert!(vst3.contains("not implemented"), "{vst3}");
-
         let vst2 = unsupported_format_refusal("vst2").expect("VST2 must be refused, not loaded");
         assert!(vst2.contains("VST2"), "{vst2}");
         assert!(vst2.contains("October 2018"), "{vst2}");
@@ -866,11 +864,13 @@ mod tests {
         assert!(audio_unit.contains("Audio Unit"), "{audio_unit}");
         assert!(audio_unit.contains("macOS-only"), "{audio_unit}");
 
-        assert_eq!(
-            unsupported_format_refusal("clap"),
-            None,
-            "the format Sourdaw does load must not carry a refusal"
-        );
+        for hosted in ["clap", "vst3"] {
+            assert_eq!(
+                unsupported_format_refusal(hosted),
+                None,
+                "{hosted} is hosted, so it must not carry a refusal"
+            );
+        }
     }
 
     /// `ALL` is what every registry-wide check iterates, so a format missing
@@ -919,16 +919,15 @@ mod tests {
         assert_eq!(PluginFormat::from_wire_name(""), None);
     }
 
-    /// The one format with a scan extractor, stated as a property of the
-    /// registry rather than of any one call site. Every other recognised format
-    /// carries a refusal, so the walk can never pass a file over in silence.
+    /// Which formats have a scan extractor, stated as a property of the registry
+    /// rather than of any one call site. Every other recognised format carries a
+    /// refusal, so the walk can never pass a file over in silence.
     #[test]
-    fn clap_is_the_only_format_with_a_scan_extractor() {
+    fn only_the_hosted_formats_have_a_scan_extractor() {
         for format in PluginFormat::ALL {
             match format.scan_support() {
-                FormatScanSupport::Extractor => assert_eq!(
-                    format,
-                    PluginFormat::Clap,
+                FormatScanSupport::Extractor => assert!(
+                    matches!(format, PluginFormat::Clap | PluginFormat::Vst3),
                     "{} gained an extractor without the packet that implements one",
                     format.wire_name()
                 ),

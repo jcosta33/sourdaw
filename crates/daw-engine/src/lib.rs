@@ -21,7 +21,9 @@ use scheduler::{
     graph_progress_channel, BuiltinEffectType, GraphCommand, GraphProgressReader,
     GraphProgressSnapshot, PluginCore, RetiredGraphObjects, EFFECT_TABLE_CAPACITY,
 };
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::Sender;
+use std::sync::Arc;
 use timeline::{
     timeline_rt_diagnostics_channel, AutomationTarget, AutomationWrite, ChainEntry, ClipPlacement,
     ClipPlayback, DeviceParam, RouteTarget, SendTap, TimelineBus, TimelineClip,
@@ -103,6 +105,9 @@ pub struct EngineHandle {
     /// The rate the stream actually opened at. Every command that names a time
     /// in seconds is converted to frames against this and nothing else.
     sample_rate: f32,
+    /// What the render callback last published as the bridge's settled round
+    /// trip, in frames. Written by the audio thread, read here.
+    bridge_round_trip_frames: Arc<AtomicUsize>,
 }
 
 impl EngineHandle {
@@ -132,7 +137,7 @@ impl EngineHandle {
             timeline_rt_diagnostics_channel();
         let (graph_progress_tx, graph_progress_reader) = graph_progress_channel();
         let (engine_event_tx, engine_event_rx) = engine_event_channel();
-        let (thread_handle, sample_rate, retired_adoption_tx) =
+        let (thread_handle, sample_rate, bridge_round_trip_frames, retired_adoption_tx) =
             spawn_audio_thread_with_diagnostics(
                 rx,
                 diagnostics_tx,
@@ -153,12 +158,32 @@ impl EngineHandle {
             graph_progress: graph_progress_reader,
             engine_events: engine_event_rx,
             sample_rate,
+            bridge_round_trip_frames,
         })
     }
 
     /// The sample rate the running stream renders at.
     pub const fn sample_rate(&self) -> f32 {
         self.sample_rate
+    }
+
+    /// Frames of latency the worklet↔plugin audio bridge adds, as the render
+    /// callback last measured its own device period.
+    ///
+    /// The bridge's depth is decided by that period and nothing else, so this
+    /// is the only place the number is known; a host compensating a bridged
+    /// plugin adds it to the latency the plugin reports for itself. Seeded from
+    /// the negotiated period until the first callback runs, because a handle is
+    /// usable before the device has called back and a plugin loaded in that
+    /// window would otherwise be compensated at zero for as long as it lives.
+    ///
+    /// Published every callback, but read once — at load — and never revised.
+    /// A device or period change mid-session therefore leaves an already-loaded
+    /// instance compensating the old period. No revision machinery is being
+    /// built for it: jcosta33/sourdaw#2230 replaces the relay with the native
+    /// graph, and the whole round trip this reports goes with it.
+    pub fn bridge_round_trip_frames(&self) -> usize {
+        self.bridge_round_trip_frames.load(Ordering::Relaxed)
     }
 
     /// Publish one validated batch with all-or-nothing visibility.
@@ -719,6 +744,8 @@ pub fn engine_handle_for_command_capture(
             graph_progress: graph_progress_reader,
             engine_events: engine_event_rx,
             sample_rate: 48_000.0,
+            // Seeded exactly as a real stream is before its first callback.
+            bridge_round_trip_frames: audio_thread::new_bridge_round_trip_slot(),
         },
         command_rx,
         retired_adoption_rx,
@@ -745,6 +772,22 @@ mod tests {
     /// its own — the rate below is the one the capture handle reports.
     fn knead_instance() -> PluginCore {
         PluginCore::builtin(BuiltinEffectType::Knead, 48_000.0)
+    }
+
+    /// A handle exists and takes plugin loads before its device has called back
+    /// once. Reporting zero there would compensate every instance loaded in
+    /// that window at zero for as long as it lives, because the load reads this
+    /// number once and never revisits it.
+    #[test]
+    fn a_handle_whose_stream_has_not_called_back_still_reports_a_round_trip() {
+        let (engine, _command_rx, _retired_adoption_rx) = engine_handle_for_command_capture(16);
+
+        assert_eq!(
+            engine.bridge_round_trip_frames(),
+            crate::audio_bridge::settled_round_trip_frames(
+                crate::audio_thread::PREFERRED_BUFFER_FRAMES as usize
+            )
+        );
     }
 
     /// Overwrites whatever it is handed, so a block it never touched is

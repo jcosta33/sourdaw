@@ -3,12 +3,15 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { handleAiDenoiseClip } from '#/modules/AiGeneration/useCases';
 import { describeDetectedKey, detectKey, detectTempo } from '#/modules/AudioAnalysis/useCases';
+import { executeAppAction } from '#/modules/Command/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { clipSelectionStore, defaultClipSelectionState } from '../../../stores/clipSelectionStore';
 import { duplicateClip } from '../../../useCases/clip/duplicateClip';
 import { removeClip } from '../../../useCases/clip/removeClip';
+import { normalizeClip } from '../../../useCases/clipEditing/normalizeClip';
 import { renameClip } from '../../../useCases/clipEditing/renameClip';
+import { reverseClip } from '../../../useCases/clipEditing/reverseClip';
 import { ClipContextMenu } from '../ClipContextMenu';
 
 type TrackStoreSubscribe = (typeof import('../../../stores/trackStore'))['trackStore']['subscribe'];
@@ -146,6 +149,14 @@ vi.mock('../../../useCases/clipEditing/muteClip', () => ({
 
 vi.mock('../../../useCases/clipEditing/lockClip', () => ({
     lockClip: vi.fn(),
+}));
+
+vi.mock('../../../useCases/clipEditing/normalizeClip', () => ({
+    normalizeClip: vi.fn(),
+}));
+
+vi.mock('../../../useCases/clipEditing/reverseClip', () => ({
+    reverseClip: vi.fn(),
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
@@ -364,6 +375,26 @@ describe('ClipContextMenu', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Denoise' }));
 
         expect(handleAiDenoiseClip).toHaveBeenCalledWith('buffer-2', 0.7);
+    });
+
+    it('routes Normalize through the undoable command path, not the bare use case', () => {
+        render(<ClipContextMenu x={100} y={100} clipId="clip1" splitBeat={4} onClose={mockOnClose} />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Normalize' }));
+
+        expect(executeAppAction).toHaveBeenCalledWith({ type: 'normalizeClip', payload: { clipId: 'clip1' } });
+        expect(normalizeClip).not.toHaveBeenCalled();
+        expect(mockOnClose).toHaveBeenCalled();
+    });
+
+    it('routes Reverse through the undoable command path, not the bare use case', () => {
+        render(<ClipContextMenu x={100} y={100} clipId="clip1" splitBeat={4} onClose={mockOnClose} />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Reverse' }));
+
+        expect(executeAppAction).toHaveBeenCalledWith({ type: 'reverseClip', payload: { clipId: 'clip1' } });
+        expect(reverseClip).not.toHaveBeenCalled();
+        expect(mockOnClose).toHaveBeenCalled();
     });
 
     it('does not dispatch denoise for a clip without an audioBufferId', () => {

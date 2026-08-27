@@ -373,6 +373,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "com-scrape-types"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5ce183b975b8fc736a20919c4002717255fbd867df575c792aeefa9a56a73ad0"
+
+[[package]]
 name = "combine"
 version = "4.6.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -631,9 +637,13 @@ name = "daw-plugin-host"
 version = "0.1.0"
 dependencies = [
  "clap-sys",
+ "core-foundation-sys",
+ "libc",
  "libloading 0.9.0",
  "serde",
+ "serde_json",
  "sha2",
+ "vst3",
 ]
 
 [[package]]
@@ -3156,6 +3166,15 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.119",
+]
+
+[[package]]
+name = "vst3"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e31e3fe7a6f028ded8c5a9984cf283319e6dc63572c9b71da1d4ee9d71d3b6bf"
+dependencies = [
+ "com-scrape-types",
 ]
 
 [[package]]

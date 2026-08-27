@@ -1,6 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { type getProjectContext } from '#/modules/AiRuntime/useCases';
+import {
+    commandBatchPreflightPort,
+    compileVersionedCommandBatchEnvelope,
+    createVersionedCommandEnvelope,
+    executeVersionedCommandBatchEnvelope,
+    serializeVersionedCommandEnvelope,
+} from '#/modules/Command/useCases';
 
 import { captureCommandBatchPreflightState } from '../captureCommandBatchPreflightState';
 
@@ -150,11 +157,40 @@ describe('captureCommandBatchPreflightState', () => {
         mocks.captureProjectRevision.mockReturnValue('document-identity-a');
         mocks.getProjectContext.mockReturnValue(projectContext());
         mocks.getCrdtDoc.mockReturnValue({
-            tracks: [
-                { id: 'track-vocal', gain: 1 },
-                { id: 'bus-vocal', gain: 1 },
-                { id: 'master', gain: 1 },
-            ],
+            tracks: {
+                tracks: [
+                    {
+                        id: 'track-vocal',
+                        kind: 'audio',
+                        gain: 1,
+                        pan: 0,
+                        outputId: 'bus-vocal',
+                        clips: [],
+                        devices: [],
+                        sends: [],
+                    },
+                    {
+                        id: 'bus-vocal',
+                        kind: 'bus',
+                        gain: 1,
+                        pan: 0,
+                        outputId: 'master',
+                        clips: [],
+                        devices: [],
+                        sends: [],
+                    },
+                    {
+                        id: 'master',
+                        kind: 'master',
+                        gain: 1,
+                        pan: 0,
+                        outputId: 'hw_out',
+                        clips: [],
+                        devices: [],
+                        sends: [],
+                    },
+                ],
+            },
         });
         mocks.hasAudioBuffer.mockImplementation((id) => id === 'buffer-vocal');
         mocks.getAssetTransfer.mockReturnValue({ hasAsset: (hash: string) => hash === 'sha256:vocal' });
@@ -211,6 +247,212 @@ describe('captureCommandBatchPreflightState', () => {
         expect(state.targetFingerprints['device-compressor:comp-attack']).toBe(
             JSON.stringify([JSON.stringify({ deviceId: 'device-compressor', parameterId: 'comp-attack', value: 12 })])
         );
+    });
+
+    it('does not let projection-only tracks, devices, or layers establish writable target authority', () => {
+        const context = projectContext();
+        context.tracks[0] = {
+            ...context.tracks[0]!,
+            id: 'track-projection-only',
+            devices: [
+                {
+                    id: 'device-projection-only',
+                    name: 'Projection Compressor',
+                    type: 'builtin-compressor',
+                    bypassed: false,
+                },
+            ],
+        };
+        context.adjustmentLayers = [
+            {
+                id: 'layer-projection-only',
+                name: 'Projection EQ',
+                effectType: 'eq',
+                parameters: [],
+                affectedTrackIds: ['track-projection-only'],
+                insertionIndex: 0,
+                regions: [],
+                enabled: true,
+                mix: 1,
+                color: '#ffffff',
+            },
+        ];
+        mocks.getProjectContext.mockReturnValue(context);
+
+        const state = captureCommandBatchPreflightState({
+            assetReferences: [],
+            projectDocument: { tracks: { tracks: [] } },
+            targetIds: ['track-projection-only', 'device-projection-only', 'layer-projection-only'],
+        });
+
+        expect(state.targetFingerprints).toEqual({});
+        expect(state.advertisedTargetFingerprints).toEqual({});
+    });
+
+    it('fails targets-exist when the requested target exists only in the live projection', async () => {
+        const context = projectContext();
+        context.tracks[0] = { ...context.tracks[0]!, id: 'track-projection-only' };
+        mocks.getProjectContext.mockReturnValue(context);
+        mocks.getCrdtDoc.mockReturnValue({ tracks: { tracks: [] } });
+        commandBatchPreflightPort.setProvider(captureCommandBatchPreflightState);
+        const command = createVersionedCommandEnvelope({
+            action: {
+                type: 'setTrackGain',
+                payload: { trackId: 'track-projection-only', gain: 0.8, expectedGain: 1 },
+            },
+            availableDeviceVersions: {},
+            expectedEffect: 'Set the projected track gain.',
+            normalizedProjectRevision: 'document-identity-a',
+            objectReferences: [{ argument: 'trackId', id: 'track-projection-only', scope: 'stable' }],
+            parameterUnits: [
+                { argument: 'gain', unit: 'linear-gain' },
+                { argument: 'expectedGain', unit: 'linear-gain' },
+            ],
+            reason: 'Prove projection state cannot authorize a write.',
+            time: [],
+        });
+        const batch = compileVersionedCommandBatchEnvelope({
+            baseRevision: 'document-identity-a',
+            batchId: 'batch-projection-only',
+            commands: [serializeVersionedCommandEnvelope(command)],
+            intent: 'Attempt a projection-only write',
+            mode: 'preview',
+            projectId: 'document-identity-a',
+            runId: 'run-projection-only',
+        });
+
+        try {
+            const result = await executeVersionedCommandBatchEnvelope({
+                authority: batch.authority,
+                serialized: batch.serialized,
+            });
+
+            expect(result).toMatchObject({
+                status: 'rejected',
+                reason: 'Command batch target does not exist: track-projection-only',
+                actions: [],
+            });
+        } finally {
+            commandBatchPreflightPort.setProvider(null);
+        }
+    });
+
+    it('reports advertised drift for a document-backed target without moving its document fingerprint', () => {
+        const document = {
+            tracks: {
+                tracks: [
+                    {
+                        id: 'track-vocal',
+                        kind: 'audio',
+                        gain: 1,
+                        pan: 0,
+                        outputId: 'master',
+                        clips: [],
+                        devices: [],
+                        sends: [],
+                    },
+                ],
+            },
+        };
+        const approved = captureCommandBatchPreflightState({
+            assetReferences: [],
+            projectDocument: document,
+            targetIds: ['track-vocal'],
+        });
+        const driftedContext = projectContext();
+        driftedContext.tracks[0] = { ...driftedContext.tracks[0]!, gain: 0.25 };
+        mocks.getProjectContext.mockReturnValue(driftedContext);
+
+        const drifted = captureCommandBatchPreflightState({
+            assetReferences: [],
+            projectDocument: document,
+            targetIds: ['track-vocal'],
+        });
+
+        expect(approved.targetFingerprints['track-vocal']).toContain('track-vocal');
+        expect(drifted.targetFingerprints['track-vocal']).toBe(approved.targetFingerprints['track-vocal']);
+        expect(approved.advertisedTargetFingerprints['track-vocal']).toBeDefined();
+        expect(drifted.advertisedTargetFingerprints['track-vocal']).not.toBe(
+            approved.advertisedTargetFingerprints['track-vocal']
+        );
+    });
+
+    it('captures an adjustment layer from its document-owned slot', () => {
+        const state = captureCommandBatchPreflightState({
+            assetReferences: [],
+            projectDocument: {
+                adjustmentLayers: {
+                    layers: [
+                        {
+                            id: 'layer-bass-eq',
+                            name: 'Bass EQ',
+                            effectType: 'eq',
+                            parameters: [],
+                            affectedTrackIds: ['track-bass'],
+                            insertionIndex: 0,
+                            regions: [],
+                            enabled: true,
+                            mix: 0.8,
+                            color: '#ffffff',
+                        },
+                    ],
+                },
+                tracks: {
+                    tracks: [
+                        {
+                            id: 'track-bass',
+                            kind: 'audio',
+                            gain: 1,
+                            pan: 0,
+                            outputId: 'master',
+                            clips: [],
+                            devices: [],
+                            sends: [],
+                        },
+                    ],
+                },
+            },
+            targetIds: ['layer-bass-eq'],
+        });
+
+        expect(state.targetFingerprints['layer-bass-eq']).toContain('Bass EQ');
+    });
+
+    it('prefers a real master identity while keeping output fallbacks system-scoped', () => {
+        const realMaster = captureCommandBatchPreflightState({
+            assetReferences: [],
+            projectDocument: {
+                tracks: {
+                    tracks: [
+                        {
+                            id: 'master',
+                            name: 'Document Master',
+                            kind: 'master',
+                            gain: 0.73,
+                            pan: 0,
+                            outputId: 'hw_out',
+                            clips: [],
+                            devices: [],
+                            sends: [],
+                        },
+                    ],
+                },
+            },
+            targetIds: ['master', 'hw_out'],
+        });
+        const fallbacks = captureCommandBatchPreflightState({
+            assetReferences: [],
+            projectDocument: { tracks: { tracks: [] } },
+            targetIds: ['master', 'hw_out', 'track-projection-only'],
+        });
+
+        expect(realMaster.targetFingerprints.master).toContain('Document Master');
+        expect(realMaster.targetFingerprints.master).not.toBe('system-output:master');
+        expect(realMaster.targetFingerprints.hw_out).toBe('system-output:hw_out');
+        expect(fallbacks.targetFingerprints).toEqual({
+            master: 'system-output:master',
+            hw_out: 'system-output:hw_out',
+        });
     });
 
     it('reports a cycle already present in the complete routing graph', () => {
@@ -416,5 +658,24 @@ describe('captureCommandBatchPreflightState', () => {
 
         expect(live.audioGraphValid).toBe(true);
         expect(staged).toMatchObject({ audioGraphValid: true, projectInvariantsValid: true });
+    });
+
+    it('fails closed when there is no project document at all', () => {
+        mocks.getCrdtDoc.mockReturnValue(undefined);
+
+        const state = captureCommandBatchPreflightState({
+            assetReferences: [{ assetHash: 'sha256:vocal', audioBufferId: 'buffer-vocal' }],
+            targetIds: ['track-vocal', 'master'],
+        });
+
+        expect(state).toMatchObject({
+            audioGraphValid: false,
+            availableAssetHashes: [],
+            availableAudioBufferIds: [],
+            lockedRanges: [],
+            projectId: 'document-identity-a',
+            projectInvariantsValid: false,
+            targetFingerprints: { master: 'system-output:master' },
+        });
     });
 });

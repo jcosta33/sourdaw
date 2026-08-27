@@ -240,6 +240,7 @@ function getReferenceCandidates(input: ResolveAgentReferenceInput): ReferenceCan
                 isAgentReferenceCapabilityCandidate({
                     capability: input.capability,
                     context: input.context,
+                    dependencyId: track.id,
                     id: device.id,
                 })
                     ? [

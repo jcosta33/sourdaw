@@ -1,13 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import {
+    configureAutomergeStoragePort,
+    resetAutomergeStorageProjections,
+} from '#/infra/store/storage/createAutomergeStorage';
+import {
+    adjustmentLayerStore,
     gainEnvelopeStore,
     vcaGroupStore,
+    type AdjustmentLayerState,
     type GainEnvelopeStoreState,
     type VcaGroupState,
 } from '#/modules/Arrangement/stores';
 
+import { projectChangedCrdtSlots } from '../projectChangedCrdtSlots';
 import { projectCrdtToStores } from '../projectProjection';
 
 type TrackStoreSubscribe = (typeof import('#/modules/Arrangement/stores'))['trackStore']['subscribe'];
@@ -181,19 +187,39 @@ const envelopeState: GainEnvelopeStoreState = {
     },
 };
 
+const adjustmentLayerState: AdjustmentLayerState = {
+    layers: [
+        {
+            id: 'layer-bass-eq',
+            name: 'Bass EQ',
+            effectType: 'eq',
+            parameters: [{ name: 'Low Cut', value: 90, min: 20, max: 500, unit: 'Hz' }],
+            affectedTrackIds: ['track-bass'],
+            insertionIndex: 0,
+            regions: [],
+            enabled: true,
+            mix: 0.8,
+            color: '#ffffff',
+        },
+    ],
+};
+
 describe('projectCrdtToStores — mix state slot survival', () => {
     beforeEach(async () => {
         vi.clearAllMocks();
         configureAutomergeStoragePort(null);
+        adjustmentLayerStore.set({ layers: [] });
         vcaGroupStore.set({ groups: [] });
         gainEnvelopeStore.set({ envelopes: {} });
         await flushPendingFrame();
+        resetAutomergeStorageProjections('root');
         clearFakeDoc();
         configureFakePort();
     });
 
     afterEach(async () => {
         configureAutomergeStoragePort(null);
+        adjustmentLayerStore.set({ layers: [] });
         vcaGroupStore.set({ groups: [] });
         gainEnvelopeStore.set({ envelopes: {} });
         await flushPendingFrame();
@@ -237,16 +263,36 @@ describe('projectCrdtToStores — mix state slot survival', () => {
         expect(gainEnvelopeStore.value?.envelopes['clip-1']?.points[1]?.gainDb).toBe(2.5);
     });
 
+    it('rehydrates adjustment layers during a full document projection', () => {
+        expect(adjustmentLayerStore.value).toEqual({ layers: [] });
+        fakeDoc.adjustmentLayers = adjustmentLayerState;
+
+        projectCrdtToStores();
+
+        expect(adjustmentLayerStore.value).toEqual(adjustmentLayerState);
+    });
+
+    it('rehydrates adjustment layers after a document-origin slot change', () => {
+        expect(adjustmentLayerStore.value).toEqual({ layers: [] });
+        fakeDoc.adjustmentLayers = adjustmentLayerState;
+
+        projectChangedCrdtSlots({ changedSlots: ['adjustmentLayers'], origin: 'document' });
+
+        expect(adjustmentLayerStore.value).toEqual(adjustmentLayerState);
+    });
+
     it('clears the outgoing project mix state when the document carries no slot', () => {
         // A document without the slot must reset the store, not leave the
         // previous project's masters attenuating the incoming one's tracks.
         vcaGroupStore.set(vcaState);
         gainEnvelopeStore.set(envelopeState);
+        adjustmentLayerStore.set(adjustmentLayerState);
         clearFakeDoc();
 
         projectCrdtToStores();
 
         expect(vcaGroupStore.value).toEqual({ groups: [] });
         expect(gainEnvelopeStore.value).toEqual({ envelopes: {} });
+        expect(adjustmentLayerStore.value).toEqual({ layers: [] });
     });
 });

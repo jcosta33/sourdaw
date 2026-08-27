@@ -694,6 +694,11 @@ describe('track-state guarded undo integration', () => {
             // that caused the conflict. The history beneath stays blocked while the
             // divergence stands; see #2881.
             expect(track('track-1')?.disabled).toBe(true);
+
+            // Retrying while the divergence stands does not skip the failed inverse
+            // either: the conflicted entry stays at the top of history for retry.
+            await undo();
+            expect(track('track-1')?.disabled).toBe(true);
         });
 
         it('keeps a conflicted entry undoable once the divergence that blocked it is gone', async () => {

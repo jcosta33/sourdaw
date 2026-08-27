@@ -27,6 +27,7 @@ test.describe('SpatialPanner and ArrangementSelector', () => {
 
         const inspector = page.getByRole('complementary', { name: 'Inspector panel' });
         await expect(inspector.getByText('Analysis & Metering')).toBeVisible();
+        await inspector.getByRole('combobox', { name: 'Analyzer' }).selectOption('panner');
 
         const panner = page.getByRole('slider', { name: /Spatial panner:/ });
         await expect(panner).toBeVisible();
@@ -50,9 +51,8 @@ test.describe('SpatialPanner and ArrangementSelector', () => {
         // second snapshot through the product use case first.
         await expect(selector).toHaveCount(0);
         await page.evaluate(async () => {
-            const { createArrangement } = await import(
-                '/src/modules/Project/useCases/arrangement/createArrangement.ts'
-            );
+            const { createArrangement } =
+                await import('/src/modules/Project/useCases/arrangement/createArrangement.ts');
             createArrangement('Arrangement 2');
         });
         await expect(selector).toBeVisible();
