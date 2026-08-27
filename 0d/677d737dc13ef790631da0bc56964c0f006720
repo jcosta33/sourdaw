@@ -1,0 +1,31 @@
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  s_0202ff8054d37c::t_c4e3ce73698d4e 70-101
+  s_0202ff8054d37c::t_da057fdb89ad54 218-220,228-233,235-243,245-264,270-271
+scripts/__tests__/deliverPullRequest.spec.ts
+  s_0202ff8054d37c::t_89dc7e0b86ac10 1321-1363
+scripts/deliverPullRequest.ts
+  s_0202ff8054d37c::t_40ca03bbd32036 273-277
+scripts/trustedGithubWriteBootstrap.ts
+  s_0202ff8054d37c::t_bea87c3c40e2b2 129-131,147-149,154-155,157,166,189-190
+  s_0202ff8054d37c::t_9233ccff05cec5 296-299,301,306-323
+  s_0202ff8054d37c::t_730a335b947517 161,167-173,175,177-178,185-188,192-195
+  s_0202ff8054d37c::t_4bb625b51e74b4 158-160,162-165
+  s_0202ff8054d37c::t_748862a6bd51cb 132-135
+  s_0202ff8054d37c::t_ebaa17ad521f1c 191,295
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "0d677d737dc13ef790631da0bc56964c0f006720",
+  "prompts": {},
+  "sessions": {
+    "s_0202ff8054d37c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "22edd3d4-6930-4288-aacd-3eeb0b792868",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
