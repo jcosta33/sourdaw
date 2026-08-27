@@ -674,6 +674,15 @@ describe('sendChatMessage retained-provider selection', () => {
             expect(agentRunLifecycle.get(admittedRunId ?? '')).toEqual(
                 expect.objectContaining({
                     phase: 'failed',
+                    workLeases: expect.arrayContaining([
+                        expect.objectContaining({
+                            workId: 'provider-planning',
+                            terminalState: 'completed',
+                            leaseId: expect.any(String),
+                            receiptIdentity: expect.any(String),
+                            settledAt: expect.any(Number),
+                        }),
+                    ]),
                     errors: expect.arrayContaining([
                         expect.objectContaining({
                             code: 'agent.resolution',
