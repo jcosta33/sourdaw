@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -66,15 +66,6 @@ export function prepareReview(number: number, port: PrepareReviewPort): string {
     const claude = port.showFile(pullRequest.baseRefOid, 'CLAUDE.md');
     const decisionFiles = port.listDecisionFiles(pullRequest.baseRefOid);
     const files: Record<string, string> = {
-        'manifest.json': `${JSON.stringify(
-            {
-                pr: pullRequest.number,
-                baseSha: pullRequest.baseRefOid,
-                headSha: pullRequest.headRefOid,
-            },
-            null,
-            4
-        )}\n`,
         'diff.patch': port.diff(pullRequest.baseRefOid, pullRequest.headRefOid),
         'pr.md': `# ${pullRequest.title}\n\n${pullRequest.body ?? ''}\n`,
         'contracts/AGENTS.md': agents,
@@ -83,6 +74,19 @@ export function prepareReview(number: number, port: PrepareReviewPort): string {
     for (const path of decisionFiles) {
         files[`contracts/${path}`] = port.showFile(pullRequest.baseRefOid, path);
     }
+    // The manifest's own `generated` field is derived from the files assembled above, plus itself,
+    // so the recorded list always matches what this run actually writes.
+    const generated = [...Object.keys(files), 'manifest.json'].sort();
+    files['manifest.json'] = `${JSON.stringify(
+        {
+            pr: pullRequest.number,
+            baseSha: pullRequest.baseRefOid,
+            headSha: pullRequest.headRefOid,
+            generated,
+        },
+        null,
+        4
+    )}\n`;
     const destination = reviewBundlePath(port.primaryRoot(), pullRequest.number, pullRequest.headRefOid);
     port.installBundle(destination, files);
     port.log(destination);
@@ -90,12 +94,34 @@ export function prepareReview(number: number, port: PrepareReviewPort): string {
 }
 
 /**
- * Copies every file under `source` whose relative path is not one of `generated` into `target`,
- * preserving subdirectories. The bundle directory is keyed by head sha, so a directory already
- * sitting at the destination describes the same head the new bundle describes — it is not stale.
- * Whatever the caller wrote there (`review.json`, `discarded.json`, or anything that follows) is an
- * input to delivery that no generated file can reconstruct, so carrying it across the swap is
- * unconditionally correct here.
+ * The `generated` list a previous install recorded in its own `manifest.json`, or an empty set when
+ * the destination has no manifest, an unreadable one, or one predating this field. That fallback
+ * reduces to preserving nothing beyond what this run generates — today's behaviour before this field
+ * existed, and never worse than the base's own "everything not generated survives" rule.
+ */
+function previousGeneratedSet(destination: string): ReadonlySet<string> {
+    try {
+        const manifest = JSON.parse(readFileSync(join(destination, 'manifest.json'), 'utf8')) as {
+            generated?: unknown;
+        };
+        return Array.isArray(manifest.generated) &&
+            manifest.generated.every((entry): entry is string => typeof entry === 'string')
+            ? new Set(manifest.generated)
+            : new Set();
+    } catch {
+        return new Set();
+    }
+}
+
+/**
+ * Copies every file under `source` whose relative path is absent from `generated` into `target`,
+ * preserving subdirectories. `generated` is the union of what THIS run generates and what the
+ * PREVIOUS run recorded generating: the bundle directory is keyed by head sha, but `contracts/` is
+ * derived from the base sha, which is the moving tip of `main`. A file this run does not generate is
+ * not necessarily caller-written — it can be an artifact a previous base produced and the current
+ * base no longer does, such as a decision file `main` has since deleted. The previous run's own
+ * record of what it generated is what tells the two apart; this run's generated set alone cannot,
+ * because anything the base stopped producing looks identical to something a caller wrote.
  */
 function preserveCallerFiles(source: string, target: string, generated: ReadonlySet<string>, prefix = ''): void {
     for (const entry of readdirSync(source, { withFileTypes: true })) {
@@ -114,6 +140,13 @@ function preserveCallerFiles(source: string, target: string, generated: Readonly
     }
 }
 
+/**
+ * Preservation reads directly from the live `destination` before either rename, so a failure there
+ * leaves `destination` exactly as it was — it was never touched. That makes the swap itself two
+ * adjacent renames with nothing between them, the same shape the base had before this function
+ * existed: no window where the bundle directory is provably absent, and no rollback branch to keep
+ * correct, because none is reachable.
+ */
 export function installBundleAtomically(destination: string, files: Record<string, string>): void {
     const staging = `${destination}.staging-${process.pid}-${Date.now()}`;
     const previous = `${destination}.previous-${process.pid}-${Date.now()}`;
@@ -124,24 +157,14 @@ export function installBundleAtomically(destination: string, files: Record<strin
             mkdirSync(join(target, '..'), { recursive: true });
             writeFileSync(target, contents);
         }
-        let hadPrevious = false;
-        try {
+        if (existsSync(destination)) {
+            const generated = new Set([...previousGeneratedSet(destination), ...Object.keys(files)]);
+            preserveCallerFiles(destination, staging, generated);
             renameSync(destination, previous);
-            hadPrevious = true;
-        } catch {
-            // Destination did not exist.
-        }
-        if (hadPrevious) {
-            try {
-                preserveCallerFiles(previous, staging, new Set(Object.keys(files)));
-            } catch (error) {
-                renameSync(previous, destination);
-                throw error;
-            }
-        }
-        renameSync(staging, destination);
-        if (hadPrevious) {
+            renameSync(staging, destination);
             rmSync(previous, { recursive: true, force: true });
+        } else {
+            renameSync(staging, destination);
         }
     } catch (error) {
         rmSync(staging, { recursive: true, force: true });

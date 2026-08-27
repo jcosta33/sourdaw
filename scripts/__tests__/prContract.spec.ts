@@ -364,6 +364,18 @@ describe('pull-request contract', () => {
         ).toBe('Is this intentional? Ship it! Confirm the intent.');
     });
 
+    it('does not append a second period after a closing quote that already ends in terminal punctuation', () => {
+        expect(composeReviewCommentBody({ defect: 'It says "do X."', consequence: 'b', done: 'c' })).toBe(
+            'It says "do X." b. c.'
+        );
+    });
+
+    it('treats an ellipsis as terminal punctuation', () => {
+        expect(composeReviewCommentBody({ defect: 'It trails off…', consequence: 'b', done: 'c' })).toBe(
+            'It trails off… b. c.'
+        );
+    });
+
     it('prefixes failure messages with a custom context', () => {
         expect(() =>
             composeReviewCommentBody({ defect: '', consequence: 'c', done: 'd' }, 'review.json comments[2]')
@@ -384,6 +396,16 @@ describe('pull-request contract', () => {
         ['done', { defect: 'a', consequence: 'b', done: 'c\nd' }],
     ])('fails when %s contains a newline', (field, content) => {
         expect(() => composeReviewCommentBody(content)).toThrow(new RegExp(`review comment ${field} must be one line`));
+    });
+
+    it.each([
+        ['CR', 'a\rb'],
+        ['U+2028 line separator', 'a\u2028b'],
+        ['U+2029 paragraph separator', 'a\u2029b'],
+    ])('fails when defect contains an interior %s', (_label, defect) => {
+        expect(() => composeReviewCommentBody({ defect, consequence: 'c', done: 'd' })).toThrow(
+            /review comment defect must be one line/
+        );
     });
 
     it('fails when a field has leading or trailing whitespace', () => {

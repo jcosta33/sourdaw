@@ -442,9 +442,20 @@ export const REVIEW_COMMENT_MAX_BYTES = 600;
 
 const REVIEW_COMMENT_FIELDS = ['defect', 'consequence', 'done'] as const;
 
-const TERMINAL_PUNCTUATION = /[.?!]$/;
+// The full ECMAScript LineTerminator set: LF, CR, U+2028 LINE SEPARATOR, U+2029 PARAGRAPH
+// SEPARATOR. Written as escapes rather than the literal characters, which render as an
+// invisible trap in most editors — indistinguishable from a plain space.
+const LINE_TERMINATOR = /[\n\r\u2028\u2029]/;
 
-/** Appends a period unless the field already ends in `.`, `?`, or `!` — a question stays a question. */
+// A terminal mark followed by any number of closing quotes or brackets still ends the field: a
+// quoted sentence like `It says "do X."` must not gain a second, stray period after the quote.
+const TERMINAL_PUNCTUATION = /[.?!…][)\]}'"’”]*$/;
+
+/**
+ * Appends a period unless the field already ends in terminal punctuation (`.`, `?`, `!`, or `…`),
+ * optionally followed by closing quotes or brackets — a question stays a question, and a field that
+ * closes a quotation does not get a second period stacked after it.
+ */
 function normalizedReviewCommentField(value: string): string {
     return TERMINAL_PUNCTUATION.test(value) ? value : `${value}.`;
 }
@@ -467,7 +478,7 @@ export function composeReviewCommentBody(content: ReviewCommentContent, context 
         if (value.trim() === '') {
             fail(`${context} ${field} is empty`);
         }
-        if (value.trim() !== value || value.includes('\n')) {
+        if (value.trim() !== value || LINE_TERMINATOR.test(value)) {
             fail(`${context} ${field} must be one line`);
         }
     }

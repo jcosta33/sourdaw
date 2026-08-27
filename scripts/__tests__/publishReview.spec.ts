@@ -123,6 +123,7 @@ describe('review publish', () => {
                 comments: [{ path: 'a.ts', line: 1, side: 'RIGHT', consequence: 'c', done: 'd' }],
             },
         ],
+        ['comments that are not an array', { event: 'REQUEST_CHANGES', body: 'n', comments: 'nope' }],
     ])('does not post %s', (_case, json) => {
         const { port, calls } = fakePort({ json });
 
@@ -130,16 +131,23 @@ describe('review publish', () => {
         expect(calls.some((call) => call.startsWith('post:'))).toBe(false);
     });
 
-    it('names the field and index when a comment supplies a non-string value', () => {
+    // A single-element `comments` array cannot tell a real index from a hardcoded `comments[0]`
+    // literal, so every index-observing test here puts a VALID comment first and the invalid one
+    // second, asserting `comments[1]` — that fails if the message ever hardcodes the wrong index.
+    it.each([
+        ['defect', { path: 'a.ts', line: 1, side: 'RIGHT' as const, defect: 42, consequence: 'c', done: 'd' }],
+        ['consequence', { path: 'a.ts', line: 1, side: 'RIGHT' as const, defect: 'a', consequence: 42, done: 'd' }],
+        ['done', { path: 'a.ts', line: 1, side: 'RIGHT' as const, defect: 'a', consequence: 'c', done: 42 }],
+    ])('names the %s field and the comment index when it supplies a non-string value', (field, invalidComment) => {
         const { port } = fakePort({
             json: {
                 event: 'REQUEST_CHANGES',
                 body: 'n',
-                comments: [{ path: 'a.ts', line: 1, side: 'RIGHT', defect: 42, consequence: 'c', done: 'd' }],
+                comments: [validComment, invalidComment],
             },
         });
 
-        expect(() => publishReview(42, port)).toThrow(/review\.json comments\[0\] defect is invalid/);
+        expect(() => publishReview(42, port)).toThrow(new RegExp(`review\\.json comments\\[1\\] ${field} is invalid`));
     });
 
     it("fires the APPROVE-carries-comments refusal before parsing that comment's fields", () => {
@@ -157,6 +165,7 @@ describe('review publish', () => {
                 event: 'REQUEST_CHANGES',
                 body: 'n',
                 comments: [
+                    validComment,
                     {
                         path: 'a.ts',
                         line: 1,
@@ -170,7 +179,7 @@ describe('review publish', () => {
         });
 
         expect(() => publishReview(42, port)).toThrow(
-            /review\.json comments\[0\] is \d+ bytes, exceeding the 600-byte limit/
+            /review\.json comments\[1\] is \d+ bytes, exceeding the 600-byte limit/
         );
     });
 

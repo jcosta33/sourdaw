@@ -71,6 +71,14 @@ describe('review prepare', () => {
                 pr: 42,
                 baseSha: 'basesha',
                 headSha: 'headsha',
+                generated: [
+                    'contracts/.agents/decisions/0026-ownership-by-exception.md',
+                    'contracts/AGENTS.md',
+                    'contracts/CLAUDE.md',
+                    'diff.patch',
+                    'manifest.json',
+                    'pr.md',
+                ],
             });
             expect(files['diff.patch']).toBe('diff basesha headsha\n');
             expect(files['pr.md']).toContain('feat(vcs): add identities');
@@ -175,6 +183,80 @@ describe('review prepare', () => {
 
             expect(readFileSync(join(destination, 'manifest.json'), 'utf8')).toBe('{"pr":42}\n');
             expect(readFileSync(join(destination, 'review.json'), 'utf8')).toBe('caller content\n');
+            expect(readdirSync(root)).toEqual(['42-head']);
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('leaves the destination and its caller files untouched when a preservation copy fails', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-bundle-'));
+        const destination = join(root, '42-head');
+        try {
+            mkdirSync(destination, { recursive: true });
+            writeFileSync(join(destination, 'manifest.json'), '{"pr":42}\n');
+            writeFileSync(join(destination, 'review.json'), 'caller content\n');
+            // A caller file literally named `contracts` collides with the `contracts/` directory
+            // this install generates: staging already holds `contracts/AGENTS.md` as a directory by
+            // the time preservation tries to write the caller's flat file to that same path, so the
+            // copy hits EISDIR. This must fail while `destination` is still live and untouched — it
+            // would fail with `destination` already renamed away if preservation ran after the
+            // destination-to-previous rename instead of before it.
+            writeFileSync(join(destination, 'contracts'), 'not a directory\n');
+
+            expect(() => installBundleAtomically(destination, { 'contracts/AGENTS.md': 'agents content\n' })).toThrow();
+
+            expect(readFileSync(join(destination, 'manifest.json'), 'utf8')).toBe('{"pr":42}\n');
+            expect(readFileSync(join(destination, 'review.json'), 'utf8')).toBe('caller content\n');
+            expect(readFileSync(join(destination, 'contracts'), 'utf8')).toBe('not a directory\n');
+            expect(readdirSync(root)).toEqual(['42-head']);
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('drops a file the previous run generated but this run does not, rather than treating it as caller-written', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-bundle-'));
+        const destination = join(root, '42-head');
+        try {
+            mkdirSync(join(destination, 'contracts'), { recursive: true });
+            writeFileSync(
+                join(destination, 'manifest.json'),
+                `${JSON.stringify({
+                    pr: 42,
+                    baseSha: 'old-base',
+                    headSha: 'head',
+                    generated: ['manifest.json', 'contracts/0027-old.md'],
+                })}\n`
+            );
+            writeFileSync(join(destination, 'contracts', '0027-old.md'), 'a decision main has since deleted\n');
+            writeFileSync(join(destination, 'review.json'), 'caller content\n');
+
+            installBundleAtomically(destination, {
+                'manifest.json': `${JSON.stringify({
+                    pr: 42,
+                    baseSha: 'new-base',
+                    headSha: 'head',
+                    generated: ['manifest.json'],
+                })}\n`,
+            });
+
+            expect(existsSync(join(destination, 'contracts', '0027-old.md'))).toBe(false);
+            expect(readFileSync(join(destination, 'review.json'), 'utf8')).toBe('caller content\n');
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('leaves no .previous- or .staging- sibling after a successful re-install', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-bundle-'));
+        const destination = join(root, '42-head');
+        try {
+            mkdirSync(destination, { recursive: true });
+            writeFileSync(join(destination, 'manifest.json'), '{"pr":42}\n');
+
+            installBundleAtomically(destination, { 'manifest.json': '{"pr":42,"headSha":"new"}\n' });
+
             expect(readdirSync(root)).toEqual(['42-head']);
         } finally {
             rmSync(root, { recursive: true, force: true });
