@@ -83,6 +83,46 @@ const GATE_MEMBERS = [
     'secrets',
 ] as const;
 const CURRENT_NON_GATING_JOBS = ['unit', 'e2e'] as const;
+const DEPLOY_WEB_JOB = 'deploy-web';
+const DEPLOY_WEB_JOB_NAME = 'Daily web deploy';
+const DEPLOY_WEB_CONDITION = "github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'";
+// Every leg a scheduled run performs. The train promotes a revision only once
+// each of them has reported success on that same revision.
+const DEPLOY_WEB_NEEDS = [
+    'static',
+    'lint',
+    'boundaries',
+    'unit',
+    'build',
+    'rust',
+    'native-macos',
+    'native-windows',
+    'e2e',
+    'browser-ai-webgpu',
+    'codeql',
+    'secrets',
+] as const;
+const DEPLOY_CREDENTIAL_REFERENCE = "${{ secrets.VERCEL_TOKEN != '' }}";
+const DEPLOY_CREDENTIAL_CONDITION = "env.DEPLOY_CREDENTIAL_PRESENT == 'true'";
+const DEPLOY_CHANGED_REVISION_CONDITION = `${DEPLOY_CREDENTIAL_CONDITION} && steps.production.outputs.deploy == 'true'`;
+const DEPLOY_CREDENTIAL_GATED_STEPS = [
+    'Checkout the validated revision',
+    'Enable Corepack',
+    'Set up Node',
+    'Resolve the current production revision',
+] as const;
+const DEPLOY_REVISION_GATED_STEPS = [
+    'Install dependencies',
+    'Pull the production environment',
+    'Build the validated revision',
+    'Deploy the prebuilt revision',
+    'Assert cross-origin isolation on the deployment',
+] as const;
+const DEPLOY_ENVIRONMENT = 'Production';
+const VERCEL_CLI_PIN = /^vercel@\d+\.\d+\.\d+$/u;
+// A daily web deployment carries no release identity: nothing here may write a
+// version, a tag, a GitHub Release or a changelog entry.
+const RELEASE_SIDE_EFFECTS = [/git tag/u, /gh release/u, /CHANGELOG/u, /npm version/u, /pnpm version/u] as const;
 const CURRENT_NON_GATING_JOB_WIRING = {
     unit: { needs: 'decide', if: "needs.decide.outputs.web == 'true'" },
     e2e: { needs: 'decide', if: "needs.decide.outputs.heavy == 'true' && needs.decide.outputs.e2e == 'true'" },
@@ -100,6 +140,8 @@ if (workflowDocument.errors.length > 0) {
     );
 }
 const workflow = asRecord(workflowDocument.toJS(), 'workflow');
+const parsedVercelConfig: unknown = JSON.parse(readFileSync(join(repositoryRoot, 'vercel.json'), 'utf8'));
+const vercelConfig = asRecord(parsedVercelConfig, 'Vercel configuration');
 
 function asRecord(value: unknown, label: string): UnknownRecord {
     if (value === null || typeof value !== 'object' || Array.isArray(value)) {
@@ -411,19 +453,110 @@ function assertBrowserAiWebGpuProofChain(manifest: UnknownRecord, config: Unknow
     }
 }
 
-function gateResults(
+function needsResults(
     candidate: UnknownRecord,
+    jobName: string,
     result: JobResult,
     overrides: Readonly<Record<string, JobResult>> = {}
 ): string {
     return JSON.stringify(
         Object.fromEntries(
-            arrayAt(jobAt(candidate, 'gate'), 'needs').map((name) => {
-                const jobName = String(name);
-                return [jobName, { result: overrides[jobName] ?? result }];
+            arrayAt(jobAt(candidate, jobName), 'needs').map((name) => {
+                const dependency = String(name);
+                return [dependency, { result: overrides[dependency] ?? result }];
             })
         )
     );
+}
+
+function assertGitDeploymentsDisabled(config: UnknownRecord): void {
+    const deploymentEnabled = recordAt(recordAt(config, 'git'), 'deploymentEnabled');
+    if (deploymentEnabled.main !== false) {
+        throw new Error('the Git integration must not deploy main');
+    }
+    if (deploymentEnabled['**'] !== false) {
+        throw new Error('the Git integration must not deploy any other branch');
+    }
+}
+
+function assertCrossOriginIsolationHeaders(config: UnknownRecord): void {
+    const headers = arrayAt(config, 'headers').flatMap((rule) =>
+        arrayAt(asRecord(rule, 'header rule'), 'headers').map((header) => asRecord(header, 'header'))
+    );
+    const served = (key: string, value: string): boolean =>
+        headers.some((header) => header.key === key && header.value === value);
+    if (
+        !served('Cross-Origin-Opener-Policy', 'same-origin') ||
+        !served('Cross-Origin-Embedder-Policy', 'require-corp')
+    ) {
+        throw new Error('the deployed application must stay cross-origin isolated');
+    }
+}
+
+function assertDailyDeployTrain(candidate: UnknownRecord): string {
+    const job = jobAt(candidate, DEPLOY_WEB_JOB);
+    if (job.name !== DEPLOY_WEB_JOB_NAME) {
+        throw new Error('the daily deploy train must retain its stable name');
+    }
+    if (job.if !== DEPLOY_WEB_CONDITION) {
+        throw new Error('the daily deploy train must run only on the schedule and the manual dispatch');
+    }
+    const needs = arrayAt(job, 'needs').map(String);
+    for (const leg of DEPLOY_WEB_NEEDS) {
+        if (!needs.includes(leg)) {
+            throw new Error(`the daily deploy train must depend on ${leg}`);
+        }
+    }
+    if (needs.length !== DEPLOY_WEB_NEEDS.length) {
+        throw new Error('the daily deploy train must depend on exactly the scheduled validation legs');
+    }
+    if (job.environment !== DEPLOY_ENVIRONMENT) {
+        throw new Error('the daily deploy train must draw its credential from the Production environment');
+    }
+    const jobEnvironment = recordAt(job, 'env');
+    if (jobEnvironment.DEPLOY_CREDENTIAL_PRESENT !== DEPLOY_CREDENTIAL_REFERENCE) {
+        throw new Error('the daily deploy train must resolve credential presence without exposing the token');
+    }
+    if (!VERCEL_CLI_PIN.test(String(jobEnvironment.VERCEL_CLI))) {
+        throw new Error('the daily deploy train must pin an exact Vercel CLI version');
+    }
+    for (const name of DEPLOY_CREDENTIAL_GATED_STEPS) {
+        if (stepNamed(job, name).if !== DEPLOY_CREDENTIAL_CONDITION) {
+            throw new Error(`${name} must not run without the deployment credential`);
+        }
+    }
+    for (const name of DEPLOY_REVISION_GATED_STEPS) {
+        if (stepNamed(job, name).if !== DEPLOY_CHANGED_REVISION_CONDITION) {
+            throw new Error(`${name} must not run for a revision production already serves`);
+        }
+    }
+    if (recordAt(stepNamed(job, 'Checkout the validated revision'), 'with').ref !== '${{ github.sha }}') {
+        throw new Error('the daily deploy train must build the revision its validation legs reported on');
+    }
+    const deployment = stringAt(stepNamed(job, 'Deploy the prebuilt revision'), 'run');
+    if (!deployment.includes('deploy --prebuilt --prod')) {
+        throw new Error('the daily deploy train must deploy the artifact it built from the validated revision');
+    }
+    if (!deployment.includes('--meta githubCommitSha="$GITHUB_SHA"')) {
+        throw new Error('the daily deploy train must record the deployed revision on the deployment');
+    }
+    const isolation = stringAt(stepNamed(job, 'Assert cross-origin isolation on the deployment'), 'run');
+    if (
+        !isolation.includes('cross-origin-opener-policy: same-origin') ||
+        !isolation.includes('cross-origin-embedder-policy: require-corp')
+    ) {
+        throw new Error('the daily deploy train must read the isolation headers back off the deployment');
+    }
+    const serialised = JSON.stringify(job);
+    for (const sideEffect of RELEASE_SIDE_EFFECTS) {
+        if (sideEffect.test(serialised)) {
+            throw new Error(`a daily web deployment must not carry a release side effect: ${sideEffect.source}`);
+        }
+    }
+    if (arrayAt(jobAt(candidate, 'gate'), 'needs').includes(DEPLOY_WEB_JOB)) {
+        throw new Error('the daily deploy train must stay outside the Gate summary');
+    }
+    return stringAt(stepNamed(job, 'Require every validation leg to have succeeded'), 'run');
 }
 
 function assertGateContract(candidate: UnknownRecord): string {
@@ -442,7 +575,7 @@ function assertGateContract(candidate: UnknownRecord): string {
     return script;
 }
 
-function runGateScript(script: string, results: string): number | null {
+function runResultsGuard(script: string, results: string): number | null {
     return spawnSync('bash', ['-c', script], {
         encoding: 'utf8',
         env: { ...process.env, RESULTS: results },
@@ -778,10 +911,10 @@ describe('health gates workflow contract', () => {
 
     it('requires every gate dependency to have succeeded or been skipped', () => {
         const gateScript = assertGateContract(workflow);
-        expect(runGateScript(gateScript, gateResults(workflow, 'success'))).toBe(0);
-        expect(runGateScript(gateScript, gateResults(workflow, 'skipped'))).toBe(0);
-        expect(runGateScript(gateScript, gateResults(workflow, 'failure'))).not.toBe(0);
-        expect(runGateScript(gateScript, gateResults(workflow, 'cancelled'))).not.toBe(0);
+        expect(runResultsGuard(gateScript, needsResults(workflow, 'gate', 'success'))).toBe(0);
+        expect(runResultsGuard(gateScript, needsResults(workflow, 'gate', 'skipped'))).toBe(0);
+        expect(runResultsGuard(gateScript, needsResults(workflow, 'gate', 'failure'))).not.toBe(0);
+        expect(runResultsGuard(gateScript, needsResults(workflow, 'gate', 'cancelled'))).not.toBe(0);
         const renamedGate = asRecord(structuredClone(workflow), 'renamed gate workflow');
         jobAt(renamedGate, 'gate').name = 'Health summary';
         expect(() => assertGateContract(renamedGate)).toThrow('the Gate job must always report under its stable name');
@@ -799,6 +932,123 @@ describe('health gates workflow contract', () => {
         jobAt(tokenBearingScanner, 'secrets').env = { GH_TOKEN: '${{ secrets.GITHUB_TOKEN }}' };
         expect(() => assertCredentiallessScanner(tokenBearingScanner)).toThrow(
             'secret scan job must not reference GitHub tokens or repository secrets'
+        );
+    });
+
+    it('promotes the validated revision daily, only with a credential and only when it changed', () => {
+        expect(() => assertGitDeploymentsDisabled(vercelConfig)).not.toThrow();
+        expect(() => assertCrossOriginIsolationHeaders(vercelConfig)).not.toThrow();
+        const validationGuard = assertDailyDeployTrain(workflow);
+
+        expect(runResultsGuard(validationGuard, needsResults(workflow, DEPLOY_WEB_JOB, 'success'))).toBe(0);
+        const degraded: JobResult[] = ['failure', 'cancelled', 'skipped'];
+        for (const result of degraded) {
+            expect(
+                runResultsGuard(validationGuard, needsResults(workflow, DEPLOY_WEB_JOB, 'success', { e2e: result }))
+            ).not.toBe(0);
+        }
+
+        const gitDeployingMain = asRecord(structuredClone(vercelConfig), 'git-deploying Vercel configuration');
+        recordAt(recordAt(gitDeployingMain, 'git'), 'deploymentEnabled').main = true;
+        expect(() => assertGitDeploymentsDisabled(gitDeployingMain)).toThrow(
+            'the Git integration must not deploy main'
+        );
+
+        const gitDeployingBranches = asRecord(structuredClone(vercelConfig), 'branch-deploying Vercel configuration');
+        recordAt(recordAt(gitDeployingBranches, 'git'), 'deploymentEnabled')['**'] = true;
+        expect(() => assertGitDeploymentsDisabled(gitDeployingBranches)).toThrow(
+            'the Git integration must not deploy any other branch'
+        );
+
+        const unisolated = asRecord(structuredClone(vercelConfig), 'unisolated Vercel configuration');
+        asRecord(arrayAt(unisolated, 'headers')[0], 'header rule').headers = [];
+        expect(() => assertCrossOriginIsolationHeaders(unisolated)).toThrow(
+            'the deployed application must stay cross-origin isolated'
+        );
+
+        const pullRequestTrain = asRecord(structuredClone(workflow), 'pull-request deploy train');
+        jobAt(pullRequestTrain, DEPLOY_WEB_JOB).if = PULL_REQUEST_PAYLOAD_CONDITION;
+        expect(() => assertDailyDeployTrain(pullRequestTrain)).toThrow(
+            'the daily deploy train must run only on the schedule and the manual dispatch'
+        );
+
+        const unvalidatedTrain = asRecord(structuredClone(workflow), 'unvalidated deploy train');
+        const trainNeeds = arrayAt(jobAt(unvalidatedTrain, DEPLOY_WEB_JOB), 'needs');
+        trainNeeds.splice(trainNeeds.indexOf('codeql'), 1);
+        expect(() => assertDailyDeployTrain(unvalidatedTrain)).toThrow('the daily deploy train must depend on codeql');
+
+        const widenedTrain = asRecord(structuredClone(workflow), 'widened deploy train');
+        arrayAt(jobAt(widenedTrain, DEPLOY_WEB_JOB), 'needs').push('smoke');
+        expect(() => assertDailyDeployTrain(widenedTrain)).toThrow(
+            'the daily deploy train must depend on exactly the scheduled validation legs'
+        );
+
+        const unscopedTrain = asRecord(structuredClone(workflow), 'unscoped deploy train');
+        delete jobAt(unscopedTrain, DEPLOY_WEB_JOB).environment;
+        expect(() => assertDailyDeployTrain(unscopedTrain)).toThrow(
+            'the daily deploy train must draw its credential from the Production environment'
+        );
+
+        const ungatedTrain = asRecord(structuredClone(workflow), 'ungated deploy train');
+        delete recordAt(jobAt(ungatedTrain, DEPLOY_WEB_JOB), 'env').DEPLOY_CREDENTIAL_PRESENT;
+        expect(() => assertDailyDeployTrain(ungatedTrain)).toThrow(
+            'the daily deploy train must resolve credential presence without exposing the token'
+        );
+
+        const credentiallessDeploy = asRecord(structuredClone(workflow), 'credentialless deploy train');
+        stepNamed(jobAt(credentiallessDeploy, DEPLOY_WEB_JOB), 'Resolve the current production revision').if =
+            "github.event_name == 'schedule'";
+        expect(() => assertDailyDeployTrain(credentiallessDeploy)).toThrow(
+            'Resolve the current production revision must not run without the deployment credential'
+        );
+
+        const floatingCli = asRecord(structuredClone(workflow), 'floating-CLI deploy train');
+        recordAt(jobAt(floatingCli, DEPLOY_WEB_JOB), 'env').VERCEL_CLI = 'vercel@latest';
+        expect(() => assertDailyDeployTrain(floatingCli)).toThrow(
+            'the daily deploy train must pin an exact Vercel CLI version'
+        );
+
+        const movingTarget = asRecord(structuredClone(workflow), 'moving-target deploy train');
+        recordAt(stepNamed(jobAt(movingTarget, DEPLOY_WEB_JOB), 'Checkout the validated revision'), 'with').ref =
+            '${{ github.ref }}';
+        expect(() => assertDailyDeployTrain(movingTarget)).toThrow(
+            'the daily deploy train must build the revision its validation legs reported on'
+        );
+
+        const duplicatingTrain = asRecord(structuredClone(workflow), 'duplicating deploy train');
+        stepNamed(jobAt(duplicatingTrain, DEPLOY_WEB_JOB), 'Deploy the prebuilt revision').if =
+            DEPLOY_CREDENTIAL_CONDITION;
+        expect(() => assertDailyDeployTrain(duplicatingTrain)).toThrow(
+            'Deploy the prebuilt revision must not run for a revision production already serves'
+        );
+
+        const anonymousDeploy = asRecord(structuredClone(workflow), 'anonymous deploy train');
+        const deployStep = stepNamed(jobAt(anonymousDeploy, DEPLOY_WEB_JOB), 'Deploy the prebuilt revision');
+        deployStep.run = stringAt(deployStep, 'run').replace('--meta githubCommitSha="$GITHUB_SHA"', '');
+        expect(() => assertDailyDeployTrain(anonymousDeploy)).toThrow(
+            'the daily deploy train must record the deployed revision on the deployment'
+        );
+
+        const unassertedIsolation = asRecord(structuredClone(workflow), 'unasserted-isolation deploy train');
+        stepNamed(jobAt(unassertedIsolation, DEPLOY_WEB_JOB), 'Assert cross-origin isolation on the deployment').run =
+            'curl --fail --silent --head "$DEPLOYMENT_URL"';
+        expect(() => assertDailyDeployTrain(unassertedIsolation)).toThrow(
+            'the daily deploy train must read the isolation headers back off the deployment'
+        );
+
+        const taggingTrain = asRecord(structuredClone(workflow), 'tagging deploy train');
+        arrayAt(jobAt(taggingTrain, DEPLOY_WEB_JOB), 'steps').push({
+            name: 'Tag the deployed revision',
+            run: 'git tag "web-$GITHUB_SHA"',
+        });
+        expect(() => assertDailyDeployTrain(taggingTrain)).toThrow(
+            'a daily web deployment must not carry a release side effect: git tag'
+        );
+
+        const gatingTrain = asRecord(structuredClone(workflow), 'gating deploy train');
+        arrayAt(jobAt(gatingTrain, 'gate'), 'needs').push(DEPLOY_WEB_JOB);
+        expect(() => assertDailyDeployTrain(gatingTrain)).toThrow(
+            'the daily deploy train must stay outside the Gate summary'
         );
     });
 });

@@ -214,6 +214,14 @@ function runWorkflowShell(label, body, env) {
     return result;
 }
 
+function workflowShellStatus(body, env) {
+    return spawnSync('bash', ['-c', body], {
+        cwd: process.env.TEST_TEMP_ROOT,
+        encoding: 'utf8',
+        env: { ...process.env, ...env },
+    }).status;
+}
+
 function expectShardFailureWarning(step, slug, suite, shard) {
     const summaryPath = `${process.env.TEST_TEMP_ROOT}/${slug}-shard-summary.md`;
     writeFileSync(summaryPath, '');
@@ -597,6 +605,83 @@ expect(
         gateRun.includes("printf 'every job succeeded or was skipped\\n'"),
     'Gate must keep rejecting failed dependencies while accepting successful or skipped dependencies'
 );
+// The daily web train. It is the only route to production now that the Vercel
+// Git integration is off, so what it refuses to deploy from matters as much as
+// what it deploys.
+const deployWeb = workflow.jobs?.['deploy-web'];
+const deployWebNeeds = deployWeb?.needs ?? [];
+const expectedDeployWebNeeds = [
+    'static',
+    'lint',
+    'boundaries',
+    'unit',
+    'build',
+    'rust',
+    'native-macos',
+    'native-windows',
+    'e2e',
+    'browser-ai-webgpu',
+    'codeql',
+    'secrets',
+];
+const deployWebGuardRun = stepNamed(deployWeb, 'Require every validation leg to have succeeded')?.run ?? '';
+const deployWebDeployRun = stepNamed(deployWeb, 'Deploy the prebuilt revision')?.run ?? '';
+const vercelConfig = JSON.parse(readFileSync(`${process.env.REPO_ROOT}/vercel.json`, 'utf8'));
+
+expect(
+    vercelConfig?.git?.deploymentEnabled?.main === false,
+    'the Vercel Git integration must not deploy main, which is what leaves the schedule as the only route to production'
+);
+expect(
+    vercelConfig?.git?.deploymentEnabled?.['**'] === false,
+    'the Vercel Git integration must not deploy any other branch'
+);
+expect(
+    deployWeb?.if === "github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'",
+    'the daily web deploy must run only on the version-controlled schedule and the manual dispatch'
+);
+expect(
+    deployWeb?.environment === 'Production',
+    'the daily web deploy must draw its credential from the Production environment'
+);
+expect(
+    deployWeb?.env?.DEPLOY_CREDENTIAL_PRESENT === "${{ secrets.VERCEL_TOKEN != '' }}",
+    'the daily web deploy must gate its deploying steps on credential presence rather than on the token value'
+);
+expect(
+    /^vercel@\d+\.\d+\.\d+$/u.test(deployWeb?.env?.VERCEL_CLI ?? ''),
+    'the daily web deploy must pin an exact Vercel CLI version'
+);
+expect(
+    Array.isArray(deployWebNeeds) &&
+        deployWebNeeds.length === expectedDeployWebNeeds.length &&
+        deployWebNeeds.every((need, index) => need === expectedDeployWebNeeds[index]),
+    `the daily web deploy must depend on exactly: ${expectedDeployWebNeeds.join(', ')}`
+);
+expect(
+    !gateNeeds.includes('deploy-web'),
+    'the daily web deploy must stay outside Gate, which reports what a pull request proved'
+);
+expect(
+    deployWebDeployRun.includes('deploy --prebuilt --prod') &&
+        deployWebDeployRun.includes('--meta githubCommitSha="$GITHUB_SHA"'),
+    'the daily web deploy must ship the prebuilt artifact and record the revision it was built from'
+);
+const deployWebResults = (result, overrides = {}) =>
+    JSON.stringify(
+        Object.fromEntries(deployWebNeeds.map((need) => [need, { result: overrides[need] ?? result }]))
+    );
+expect(
+    workflowShellStatus(deployWebGuardRun, { RESULTS: deployWebResults('success') }) === 0,
+    'the daily web deploy must proceed when every validation leg succeeded'
+);
+for (const result of ['failure', 'cancelled', 'skipped']) {
+    expect(
+        workflowShellStatus(deployWebGuardRun, { RESULTS: deployWebResults('success', { unit: result }) }) !== 0,
+        `the daily web deploy must refuse to promote a revision whose unit leg was ${result}`
+    );
+}
+
 expect(nightlyReport?.name === 'Nightly failure report', 'nightly report job must remain present');
 expect(
     nightlyReportCheckout !== undefined,
