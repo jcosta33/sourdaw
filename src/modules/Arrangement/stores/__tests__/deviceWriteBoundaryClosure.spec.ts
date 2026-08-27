@@ -11,6 +11,7 @@ import {
     NodeFlags,
     ScriptKind,
     ScriptTarget,
+    createPrinter,
     createSourceFile,
     forEachChild,
     isArrayLiteralExpression,
@@ -38,7 +39,10 @@ import {
 import { describe, expect, it } from 'vitest';
 
 type CountByPath = Readonly<Record<string, number>>;
-type ProductionSource = { path: string; source: string };
+type SourceText = { path: string; source: string };
+// The census counts writes in code, not prose: `code` carries the file text
+// with comments removed, and every registered count is measured against it.
+type ProductionSource = { path: string; source: string; code: string };
 type SinkFamily = 'persistence-runtime' | 'strip-add' | 'direct-built-in' | 'load-compile-hydration';
 
 type SinkDefinition = {
@@ -92,45 +96,31 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // Automerge transaction restores project truth separately; this sink
         // returns the already-applied runtime parameter to its pre-batch value.
         'src/modules/Arrangement/handlers/device/handleSetDeviceParameter.ts': 2,
-        // Count provenance: new file entry, measured 1 — a single doc-comment
-        // mention of `persistDeviceParam`, and no write. Measured with `grep -o`
-        // over the four sink identifiers: persistDeviceParam 1, the other three
-        // 0. `quantiseDeviceParameterValue` explains why quantisation is applied
-        // at delivery instead of inside `clampDeviceParameterValue`, and half
-        // that reason is which callers of the clamp persist: rounding on the
-        // persistence path would silently rewrite stored project data for every
-        // stepped parameter. The file is a pure model and reaches no sink.
-        'src/modules/Arrangement/models/DeviceParameterLaw.ts': 1,
-        // Count provenance: new file entry, measured 1 — a single doc-comment
-        // mention of `updateDeviceParam`, and no write. Measured with `grep -o`
-        // over the four sink identifiers: updateDeviceParam 1, the other three
-        // 0. The Grinder descriptor's gate rows carry a note explaining that
-        // this table, not the module's `DEFAULT_PATCH`, is what a freshly added
-        // device sends to the engine — `addDevice` writes every `param.value`
-        // through `updateDeviceParam`, while `syncGrinderPatchToAudio` runs only
-        // on preset load and snapshot recall. Naming the sink is the point of
-        // the note; the file is a pure descriptor table and reaches no sink.
-        'src/modules/Arrangement/models/PluginDescriptors/GrinderDescriptor.ts': 1,
-        // Count provenance: new file entry, measured 1 — a single doc-comment
-        // mention of `updateDeviceParam`, and no write. Measured with `grep -o`
-        // over the four sink identifiers: updateDeviceParam 1, the other three
-        // 0. The Dutch Oven's `damping` row carries a note recording why it
-        // ships at 0.3 rather than Dattorro's 0.0005 (#1546), and the reason the
-        // descriptor is the leg that had to move is precisely that `addDevice`
-        // pushes `param.value` through `updateDeviceParam` at add time. Naming
-        // the sink is the point of the note; the file is a pure descriptor
-        // table and reaches no sink.
-        'src/modules/Arrangement/models/PluginDescriptors/NativeDspDescriptors.ts': 1,
+        // Count provenance: 0 in code, was 1 lexical — the single mention was a
+        // doc-comment note in `quantiseDeviceParameterValue` explaining why
+        // quantisation is applied at delivery instead of inside
+        // `clampDeviceParameterValue`. Pure model, reaches no sink; row removed
+        // rather than zeroed, since this census only records files that match.
+        // 'src/modules/Arrangement/models/DeviceParameterLaw.ts': removed (0),
+        // Count provenance: 0 in code, was 1 lexical — the single mention was a
+        // doc-comment note on the Grinder gate rows explaining that `addDevice`
+        // writes every `param.value` through `updateDeviceParam` while
+        // `syncGrinderPatchToAudio` runs only on preset load and recall. Pure
+        // descriptor table, reaches no sink.
+        // 'src/modules/Arrangement/models/PluginDescriptors/GrinderDescriptor.ts': removed (0),
+        // Count provenance: 0 in code, was 1 lexical — the single mention was a
+        // doc-comment note on the Dutch Oven `damping` row (#1546) recording
+        // that the descriptor is the leg that had to move because `addDevice`
+        // pushes `param.value` through `updateDeviceParam` at add time. Pure
+        // descriptor table, reaches no sink.
+        // 'src/modules/Arrangement/models/PluginDescriptors/NativeDspDescriptors.ts': removed (0),
         'src/modules/Arrangement/stores/index.ts': 2,
-        // Count provenance: measured 3, all three doc-comment mentions — this
-        // file holds no write at all. `clampDeviceParamWrite` resolves a device
-        // type from the store and returns the value the declared range allows.
-        // Its header names `updateDeviceParam` (the caller the law binds at) and
-        // `persistDeviceParam` (the store-side twin it explains itself against),
-        // and the device-type index cites `persistDeviceParam` again as the
-        // writer that establishes the replace-don't-mutate invariant the index
-        // keys on. Neither identifier is called here.
-        'src/modules/Arrangement/stores/clampDeviceParamWrite.ts': 3,
+        // Count provenance: 0 in code, was 3 lexical — all three were
+        // doc-comment mentions (`clampDeviceParamWrite`'s header naming
+        // `updateDeviceParam` and `persistDeviceParam`, the device-type index
+        // citing `persistDeviceParam` as the replace-don't-mutate writer). The
+        // file holds no write at all.
+        // 'src/modules/Arrangement/stores/clampDeviceParamWrite.ts': removed (0),
         'src/modules/Arrangement/stores/persistDeviceParam.ts': 1,
         // Count provenance: measured 2 — import + one afterCommit loop pushing
         // committed parameterValues through AudioEngine `updateDeviceParam`.
@@ -156,30 +146,23 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/Arrangement/useCases/setTrackGainPan/setTrackPan.ts': 2,
         'src/modules/AudioEngine/models/AudioEngineState.ts': 2,
         'src/modules/AudioEngine/repositories/createWebAudioEngine.ts': 2,
-        // Count provenance: new file entry, measured 2 — both doc-comment
-        // mentions of `updateDeviceParam`, and no write. Measured with `grep -o`
-        // over the four sink identifiers: updateDeviceParam 2, the other three
-        // 0. Both name the live delivery this offline path is being made to
-        // match: `applyAutomation` filters continuously and calls
-        // `updateDeviceParam(quantise(smoothed))`, and the two comments say why
-        // the quantiser is passed as `quantiseEmit` (emitted value only) rather
-        // than folded into `clampStep` (the recurrence's feedback). This is a
-        // repository scheduling AudioParams and worklet segments; it holds no
-        // device write of its own.
-        'src/modules/AudioEngine/repositories/offlineScheduler/automationScheduling.ts': 2,
-        // Count provenance: new file entry, measured 1 — one doc-comment mention
-        // of `updateDeviceParam` on the `quantiseEmit` option, naming the live
-        // call the option replicates. The other three sink identifiers score 0.
-        // The file compiles automation points into timed events and writes
-        // nothing.
-        'src/modules/AudioEngine/repositories/offlineScheduler/compileAutomationEvents.ts': 1,
-        // Count provenance: measured 3, was 2. The declared-range law now binds
-        // at this use case — the single door every device-param write reaches
-        // the DSP through — so the file gained a doc-comment mention of the
-        // store-side twin `persistDeviceParam`. The executable surface is
-        // unchanged and still singular: the function declaration plus its one
-        // `audioEngine.updateDeviceParam` call.
-        'src/modules/AudioEngine/useCases/deviceControls/updateDeviceParam.ts': 3,
+        // Count provenance: 0 in code, was 2 lexical — both were doc-comment
+        // mentions of `updateDeviceParam` explaining why the offline scheduler
+        // passes the quantiser as `quantiseEmit` rather than folding it into
+        // `clampStep`, naming the live `applyAutomation` delivery this offline
+        // path mirrors. The repository schedules AudioParams and worklet
+        // segments; it holds no device write of its own.
+        // 'src/modules/AudioEngine/repositories/offlineScheduler/automationScheduling.ts': removed (0),
+        // Count provenance: 0 in code, was 1 lexical — a doc-comment mention of
+        // `updateDeviceParam` on the `quantiseEmit` option, naming the live call
+        // the option replicates. The file compiles automation points into timed
+        // events and writes nothing.
+        // 'src/modules/AudioEngine/repositories/offlineScheduler/compileAutomationEvents.ts': removed (0),
+        // Count provenance: measured 2 in code — the function declaration plus
+        // its one `audioEngine.updateDeviceParam` call, the single door every
+        // device-param write reaches the DSP through, where the declared-range
+        // law binds.
+        'src/modules/AudioEngine/useCases/deviceControls/updateDeviceParam.ts': 2,
         'src/modules/AudioEngine/useCases/deviceControls/updateDevicePatch.ts': 2,
         'src/modules/AudioEngine/useCases/index.ts': 4,
         // Count provenance: pre-#597 this file scored 2 — a doc-comment mention
@@ -191,30 +174,27 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/Automation/useCases/modulation/applyModulationToEngine.ts': 1,
         'src/modules/Automation/useCases/modulation/modulationDependencies.ts': 1,
         'src/modules/Automation/useCases/modulation/revertMappingsToBase.ts': 1,
-        'src/modules/Bacteria/models/BacteriaPatch.ts': 1,
         'src/modules/Bacteria/useCases/bacteriaParamBridge/bacteriaParamBridgeDependencies.ts': 4,
         'src/modules/Bacteria/useCases/bacteriaParamBridge/helpers.ts': 4,
         'src/modules/Bacteria/useCases/bacteriaParamBridge/loadBacteriaPatchWithAudio.ts': 2,
         'src/modules/Bacteria/useCases/bacteriaParamBridge/setBacteriaBandParamWithAudio.ts': 2,
         'src/modules/Bacteria/useCases/bacteriaParamBridge/setBacteriaParamWithAudio.ts': 2,
-        // Count provenance: new file entry, measured 3 — all `updateDeviceParam`
-        // (persistDeviceParam 0, persistDevicePatch 0, updateDevicePatch 0): the
-        // import, one doc-comment mention naming the route to the worklet, and a
-        // single call on the transient branch. The **commit** branch reaches no
-        // sink here at all; it dispatches `setDeviceParameter` through
-        // `executeAppAction`, so project truth and the engine are both written
-        // behind the action. Crumbs knob values were previously persisted nowhere
-        // and its only engine write went to the *native* instance, which is not
-        // the one that renders.
-        'src/modules/Crumbs/useCases/setCrumbsParamWithAudio.ts': 3,
-        // Count provenance: new file entry, measured 1 — a single doc-comment
-        // mention of `updateDeviceParam` naming the route the three voice-stack
-        // ids now take, and no write of its own. The file delegates every field
-        // to `setCrumbsParamWithAudio`, which is where the sink is counted; it
-        // used to call `setCrumbsParamThrottled` only, which is the native
-        // instance and not a sink in this family at all — the reason a census
-        // that counts sinks could not see the defect.
-        'src/modules/Crumbs/useCases/voiceStacking.ts': 1,
+        // Count provenance: measured 2 in code, both `updateDeviceParam` — the
+        // import and a single call on the transient branch. The **commit**
+        // branch reaches no sink here at all; it dispatches
+        // `setDeviceParameter` through `executeAppAction`, so project truth and
+        // the engine are both written behind the action. Crumbs knob values were
+        // previously persisted nowhere and its only engine write went to the
+        // *native* instance, which is not the one that renders.
+        'src/modules/Crumbs/useCases/setCrumbsParamWithAudio.ts': 2,
+        // Count provenance: 0 in code, was 1 lexical — a doc-comment mention of
+        // `updateDeviceParam` naming the route the three voice-stack ids take.
+        // The file delegates every field to `setCrumbsParamWithAudio`, which is
+        // where the sink is counted; it used to call
+        // `setCrumbsParamThrottled` only, which is the native instance and not
+        // a sink in this family at all — the reason a census that counts sinks
+        // could not see the defect.
+        // 'src/modules/Crumbs/useCases/voiceStacking.ts': removed (0),
         'src/modules/Crust/useCases/crustParamBridge/createFlushHandlers.ts': 4,
         'src/modules/Crust/useCases/crustParamBridge/helpers.ts': 8,
         // Count provenance: new file entry, measured 2 — the `updateDeviceParam`
@@ -223,17 +203,14 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // session true-peak maximum, so a store-only reset is undone by the
         // next meter poll.
         'src/modules/Crust/useCases/resetCrustTruePeakIndicator.ts': 2,
-        // Count provenance: measured 5, was 4. This file is a type declaration
-        // plus the holder — it performs no write, and all five matches are the
-        // declared DI signatures and prose about them. The new one is a
-        // doc-comment mention of `updateDeviceParam` on the added
-        // `clampDeviceParameterValue` port, explaining why the range has to be
-        // resolved before Fermenter's camelCase key is mapped to its snake_case
-        // DSP key: `updateDeviceParam`'s own clamp looks the parameter up on
-        // the descriptor and the DSP key matches no entry there. Measured with
-        // `grep -o` over the four sink identifiers: persistDeviceParam 1,
-        // persistDevicePatch 1, updateDevicePatch 1, updateDeviceParam 2.
-        'src/modules/Fermenter/useCases/fermenterDependencies.ts': 5,
+        // Count provenance: measured 4 in code — the four declared DI
+        // signatures, one per identifier. This file is a type declaration plus
+        // the holder — it performs no write. The `clampDeviceParameterValue`
+        // port's doc comment explains why the range has to be resolved before
+        // Fermenter's camelCase key is mapped to its snake_case DSP key:
+        // `updateDeviceParam`'s own clamp looks the parameter up on the
+        // descriptor and the DSP key matches no entry there.
+        'src/modules/Fermenter/useCases/fermenterDependencies.ts': 4,
         // Runtime automation maps and clamps Fermenter's descriptor key before
         // one engine-only write. The two matches are the destructured
         // updateDeviceParam dependency and its single guarded call; this path
@@ -253,27 +230,20 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // persistDeviceParam 2, persistDevicePatch 0, updateDevicePatch 0.
         'src/modules/Gluten/useCases/glutenParamBridge/createFlushHandlers.ts': 5,
         'src/modules/Gluten/useCases/glutenParamBridge/helpers.ts': 8,
-        // Count provenance: new entry, measured 2, and **both matches are
-        // doc-comment prose — this file performs no write**. #1437 rewrote the
-        // header to explain why a drag is one edit rather than ninety: it names
-        // `persistDeviceParam` as what the transient half no longer calls, and
-        // `updateDeviceParam` as what `setDeviceParameter` calls on its behalf.
-        // The commit now goes through `executeAppAction`, so the sink
-        // identifiers appear here only as references to the path that was left
-        // behind and the one that replaced it. Measured with `grep -o` over the
-        // four sink identifiers: persistDeviceParam 1, updateDeviceParam 1,
-        // persistDevicePatch 0, updateDevicePatch 0.
-        'src/modules/Gluten/useCases/glutenParamBridge/setGlutenParamWithAudio.ts': 2,
-        // Count provenance: new file entry, measured 1, and **the single match is
-        // doc-comment prose — this file performs no `updateDeviceParam` write**.
-        // The comment records why the commit branch does *not* also push at the
-        // Grand Boule engine handle: `setDeviceParameter` already reaches the same
-        // worklet controls through `updateDeviceParam`, so a second direct push
-        // would be a redundant message per gesture and a second place that could
-        // disagree about the clamped value. The transient branch writes the engine
-        // through `GrandBouleEngineHandle.setParam`, which is the `direct-built-in`
-        // family, not this one.
-        'src/modules/GrandBoule/useCases/grandBouleParamBridge/helpers.ts': 1,
+        // Count provenance: 0 in code, was 2 lexical — both matches were
+        // doc-comment prose in the header explaining why a drag is one edit
+        // rather than ninety: it names `persistDeviceParam` as what the
+        // transient half no longer calls and `updateDeviceParam` as what
+        // `setDeviceParameter` calls on its behalf. The commit goes through
+        // `executeAppAction`, so this file performs no write.
+        // 'src/modules/Gluten/useCases/glutenParamBridge/setGlutenParamWithAudio.ts': removed (0),
+        // Count provenance: 0 in code, was 1 lexical — a doc-comment mention
+        // recording why the commit branch does *not* also push at the Grand
+        // Boule engine handle: `setDeviceParameter` already reaches the same
+        // worklet controls through `updateDeviceParam`. The transient branch
+        // writes the engine through `GrandBouleEngineHandle.setParam`, which is
+        // the `direct-built-in` family, not this one.
+        // 'src/modules/GrandBoule/useCases/grandBouleParamBridge/helpers.ts': removed (0),
         'src/modules/Grinder/useCases/grinderParamBridge/grinderParamBridgeDependencies.ts': 6,
         'src/modules/Grinder/useCases/grinderParamBridge/helpers.ts': 4,
         'src/modules/Grinder/useCases/grinderParamBridge/loadGrinderPatchWithAudio.ts': 3,
@@ -282,26 +252,27 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/Grinder/useCases/grinderParamBridge/setGrinderMicParamWithAudio.ts': 2,
         'src/modules/Grinder/useCases/grinderParamBridge/setGrinderParamWithAudio.ts': 2,
         'src/modules/Grinder/useCases/grinderParamBridge/setGrinderPedalParamWithAudio.ts': 2,
-        // Count provenance: measured 1, a single doc-comment mention. This model
-        // is the codec for Levain's `Device.deviceState` chunk and performs no
-        // write of any kind — the mention is `persistDevicePatch` named as the
-        // reason the chunk exists at all: it keeps only finite numbers, so the
-        // instrument id and articulation it drops are the two fields this codec
-        // carries instead. The write itself is `commitLevainDeviceState`, which
-        // goes through `executeAppAction`.
-        'src/modules/Levain/models/LevainDeviceState.ts': 1,
-        'src/modules/Levain/useCases/levainParamBridge/helpers.ts': 6,
-        'src/modules/Levain/useCases/levainParamBridge/levainBridge.ts': 1,
+        // Count provenance: 0 in code, was 1 lexical — a doc-comment mention of
+        // `persistDevicePatch` as the reason this codec for Levain's
+        // `Device.deviceState` chunk exists: it keeps only finite numbers, so
+        // the instrument id and articulation it drops are the two fields this
+        // codec carries instead. The write itself is `commitLevainDeviceState`,
+        // which goes through `executeAppAction`.
+        // 'src/modules/Levain/models/LevainDeviceState.ts': removed (0),
+        // Count provenance: measured 4 in code — the `persistDeviceParam`
+        // import, the DI type field and its `typeof` twin, and the one
+        // committing call in `flushParam`.
+        'src/modules/Levain/useCases/levainParamBridge/helpers.ts': 4,
         'src/modules/Levain/useCases/levainParamBridge/levainBridgeDependencies.ts': 2,
         'src/modules/Proof/useCases/proofParamBridge/loadProofPatchWithAudio.ts': 2,
         'src/modules/Proof/useCases/proofParamBridge/setProofParam.ts': 2,
         'src/modules/Proof/useCases/proofParamBridge/setProofParamWithPatch.ts': 3,
         'src/modules/Proof/useCases/proofParamBridge/setProofTarget.ts': 2,
-        // Count provenance: pre-#746 this file scored 2 (import + the single
-        // canonical updateDeviceParam call). #746/#760 (slew snap + a-rate
-        // gain/pan scheduling) restructured the tick path and added one
-        // doc-comment mention; the reviewed live write path stays singular.
-        'src/modules/Transport/useCases/scheduling/applyAutomation/applyAutomation.ts': 3,
+        // Count provenance: measured 2 in code — the `updateDeviceParam`
+        // import plus the single canonical call on the tick path (#746/#760
+        // slew snap + a-rate gain/pan scheduling restructured around it); the
+        // reviewed live write path stays singular.
+        'src/modules/Transport/useCases/scheduling/applyAutomation/applyAutomation.ts': 2,
         // Count provenance: #807 added the lane-stop base restore, split out of
         // the drive path above. The 2 are the `updateDeviceParam` import plus its
         // single call site.
@@ -324,12 +295,9 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // path above and as the modulation twin `revertMappingsToBase`, both of
         // which are censused here and guard-listed below.
         'src/modules/Transport/useCases/scheduling/applyAutomation/restoreAutomationBaseValue.ts': 2,
-        // Count provenance: new file entry, measured 4 with `grep -o` over the
-        // four sink identifiers — updateDeviceParam 4, the other three 0. The 4
-        // are the import, one call site, and two doc-comment mentions (one
-        // naming the route the transient preview takes, one recording that the
-        // committing branch reaches the same identifier behind
-        // `setDeviceParameter`).
+        // Count provenance: measured 2 in code — the `updateDeviceParam`
+        // import and its single call site, both on the transient preview
+        // branch.
         //
         // Engine-only, and deliberately so. The tuner's concert-A reference knob
         // used to write `tunerStore` and stop, so the panel readout moved and
@@ -344,7 +312,7 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // Guard-listed below: the transient branch addresses the engine directly
         // and carries the same `resolveEligibleDeviceWriteTarget` ownership gate
         // as every other device bridge.
-        'src/modules/Tuner/useCases/setA4Reference.ts': 4,
+        'src/modules/Tuner/useCases/setA4Reference.ts': 2,
     },
     'strip-add': {
         // Count provenance: measured 4 — the identifier now lives only as the
@@ -370,56 +338,49 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // The runtime projection owns the one direct engine parameter write;
         // settled edits route through the undoable command instead.
         'src/modules/GrandBoule/useCases/applyGrandBouleMorphState.ts': 1,
-        // Count provenance: new file entry, measured 1 — a single doc-comment
-        // mention of `CrumbsNode.setParam`, naming the worklet the commit now
-        // reaches through `setDeviceParameter`. No executable `setParam` here:
-        // the Crumbs bridge calls `setCrumbsParam`, which does not match this
-        // family's pattern.
-        'src/modules/Crumbs/useCases/setCrumbsParamWithAudio.ts': 1,
+        // Count provenance: 0 in code, was 1 lexical — a doc-comment mention of
+        // `CrumbsNode.setParam` naming the worklet the commit now reaches
+        // through `setDeviceParameter`. The Crumbs bridge calls
+        // `setCrumbsParam`, which does not match this family's pattern.
+        // 'src/modules/Crumbs/useCases/setCrumbsParamWithAudio.ts': removed (0),
         'src/modules/GrandBoule/useCases/calibrateGrandBouleMidi/syncMidiCalibrationToEngine.ts': 2,
-        // Count provenance: measured 3 — the transient preview and rejected-
-        // commit reconciliation each call `engine.setParam`, plus one doc-comment
-        // mention recording why a successful commit does not also push at the
-        // handle (`setDeviceParameter` reaches the same worklet controls through
-        // `updateDeviceParam`). This is the write the three Mix setters used to
-        // each hold one of: `setGrandBouleMasterGain.ts`,
-        // `setGrandBouleSoundboardSend.ts` and `setGrandBouleSympatheticSend.ts`
-        // each scored 1 and now score 0, so they leave this table. They clamp to
-        // their declared range and delegate; nothing else changed about them.
-        'src/modules/GrandBoule/useCases/grandBouleParamBridge/helpers.ts': 3,
+        // Count provenance: measured 2 in code — the transient preview and
+        // rejected-commit reconciliation each call `engine.setParam`. This is
+        // the write the three Mix setters used to each hold one of:
+        // `setGrandBouleMasterGain.ts`, `setGrandBouleSoundboardSend.ts` and
+        // `setGrandBouleSympatheticSend.ts` each scored 1 and now score 0, so
+        // they leave this table. They clamp to their declared range and
+        // delegate; nothing else changed about them.
+        'src/modules/GrandBoule/useCases/grandBouleParamBridge/helpers.ts': 2,
         'src/modules/GrandBoule/useCases/loadGrandBoulePreset.ts': 4,
-        // Count provenance: measured 3 with `grep -o`, was 2. The two
-        // executable hits are unchanged — the `setParam` handle on the returned
-        // engine and the `controls.setParam` call it forwards to. The new one
-        // is a comment mention: the node selector now scopes on
-        // `candidateNode.deviceId === input.deviceId`, and the comment names
-        // the handle members (`setParam` among them) that all drove the *first*
-        // GrandBoule on a track hosting two before the scope was added.
-        'src/modules/GrandBoule/useCases/resolveGrandBouleEngine.ts': 3,
+        // Count provenance: measured 2 in code — the `setParam` handle on the
+        // returned engine and the `controls.setParam` call it forwards to. The
+        // node selector scopes on `candidateNode.deviceId === input.deviceId`;
+        // the handle-member prose that used to add a third match sits in a
+        // doc comment and no longer counts.
+        'src/modules/GrandBoule/useCases/resolveGrandBouleEngine.ts': 2,
         'src/modules/GrandBoule/useCases/setGrandBouleAttackBite.ts': 1,
-        // This now delegates to the command/runtime split; its remaining match
-        // is the explanatory `setParam` comment.
-        'src/modules/GrandBoule/useCases/setGrandBouleMorphPosition.ts': 1,
+        // Count provenance: 0 in code, was 1 lexical — the file delegates to
+        // the command/runtime split, and its remaining match was the
+        // explanatory `setParam` doc comment.
+        // 'src/modules/GrandBoule/useCases/setGrandBouleMorphPosition.ts': removed (0),
         'src/modules/GrandBoule/useCases/setGrandBoulePerNoteParam/resetGrandBoulePerNoteParams.ts': 1,
         'src/modules/GrandBoule/useCases/setGrandBoulePerNoteParam/setGrandBoulePerNoteParam.ts': 1,
         'src/modules/GrandBoule/useCases/setGrandBouleStretchAmount.ts': 1,
         'src/modules/GrandBoule/useCases/setGrandBouleVelocityCurve.ts': 1,
-        // Count provenance: measured 10, was 11. Registration no longer routes
+        // Count provenance: measured 8 in code. Registration no longer routes
         // patch initialization through the rAF write batcher: it applies the
         // complete runtime patch synchronously before sample loading and performs
         // no project persistence. The retired match was that registration-time
         // `queueParam` path; explicit user edits remain the only persisted sinks.
-        'src/modules/Levain/useCases/levainParamBridge/helpers.ts': 10,
-        // Count provenance: measured 1, was 0 (new file). The single match is a
-        // doc-comment mention of `setParam` — this file holds no device write at
-        // all. It reads the persisted chain order off the project and posts one
-        // `reorder` message to the offline worklet port; the comment names
-        // `setParam` because it has to explain why the offline param replay does
-        // *not* deliver order (the worklet's `set_param` matches no
-        // `chain_order_` prefix and drops all five values). Deleting the word
-        // would drop this row to 0, so a future real sink added here still trips
-        // the closure.
-        'src/modules/Proof/useCases/prepareOfflineProof.ts': 1,
+        'src/modules/Levain/useCases/levainParamBridge/helpers.ts': 8,
+        // Count provenance: 0 in code, was 1 lexical — a doc-comment mention of
+        // `setParam`. The file reads the persisted chain order off the project
+        // and posts one `reorder` message to the offline worklet port; the
+        // comment names `setParam` because it has to explain why the offline
+        // param replay does *not* deliver order (the worklet's `set_param`
+        // matches no `chain_order_` prefix and drops all five values).
+        // 'src/modules/Proof/useCases/prepareOfflineProof.ts': removed (0),
         'src/modules/Proof/useCases/proofParamBridge/helpers.ts': 1,
         'src/modules/Proof/useCases/proofParamBridge/setProofParam.ts': 1,
         'src/modules/Proof/useCases/proofParamBridge/setProofParamWithPatch.ts': 2,
@@ -449,31 +410,25 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // omit them. A row moving *down* here is a copy retiring; measured with
         // the census pattern, not estimated.
         'src/modules/Toaster/useCases/loadToasterKit.ts': 2,
-        'src/modules/Toaster/useCases/projectToasterKitToEngineMessages.ts': 4,
         'src/modules/Toaster/useCases/setPadParamImmediate.ts': 1,
-        // Count provenance: measured 3 with `grep -o` (setPadParam 2, setParam
-        // 1), was 1. All three are doc-comment mentions — this file holds no
-        // write and no longer re-declares a controls type either; it derives
-        // the real one from the strip. It is the readiness gate for the three
-        // pad-param paths, and its comment has to name both identifiers to
-        // record why readiness is *not* shared with the kit path: a loading
-        // device's placeholder `setPadParam` is an empty function that drops
-        // the write, while its `setParam` buffers into `pendingParams` and is
-        // replayed on load. Deleting the explanation would drop this row toward
-        // 0, so a real sink added here still trips the closure.
-        'src/modules/Toaster/useCases/toasterParamBridge/findReadyToasterControlsOnStrip.ts': 3,
+        // Count provenance: 0 in code, was 3 lexical — all three matches were
+        // doc-comment mentions (`setPadParam` 2, `setParam` 1). The file holds
+        // no write; it is the readiness gate for the three pad-param paths, and
+        // its comment names both identifiers to record why readiness is *not*
+        // shared with the kit path: a loading device's placeholder
+        // `setPadParam` is an empty function that drops the write, while its
+        // `setParam` buffers into `pendingParams` and is replayed on load.
+        // 'src/modules/Toaster/useCases/toasterParamBridge/findReadyToasterControlsOnStrip.ts': removed (0),
         // findToasterNodeOnStrip.ts is absent on purpose: measured 0. It is the
         // id-scoping half, shared by every caller, and names neither sink.
         'src/modules/Toaster/useCases/toasterParamBridge/setPadEngineImmediate.ts': 1,
-        // Count provenance: measured 2 with `grep -o`, was 1. The single
-        // executable sink is unchanged — one `setParam` call on the flush path.
-        // The added hit is a comment mention explaining why this flush scopes
-        // by `deviceId` but deliberately does *not* gate on `ready`: the
-        // placeholder controller for a loading Toaster buffers `setParam` into
-        // `pendingParams` and the loader replays it, so skipping a not-ready
-        // node here would discard kit edits made during load instead of
-        // deferring them.
-        'src/modules/Toaster/useCases/toasterParamBridge/setToasterKitParam.ts': 2,
+        // Count provenance: measured 1 in code — the single `setParam` call on
+        // the flush path, unchanged. The flush scopes by `deviceId` but
+        // deliberately does *not* gate on `ready`: the placeholder controller
+        // for a loading Toaster buffers `setParam` into `pendingParams` and the
+        // loader replays it, so skipping a not-ready node here would discard kit
+        // edits made during load instead of deferring them.
+        'src/modules/Toaster/useCases/toasterParamBridge/setToasterKitParam.ts': 1,
         'src/modules/Toaster/useCases/toasterParamBridge/setToasterPadParam.ts': 1,
         'src/modules/Toaster/useCases/toasterSubscriber.ts': 2,
     },
@@ -485,13 +440,13 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // AudioEngine write.
         'src/app/captureCommandBatchPreflightState.ts': 3,
         'src/app/registerDependencies.ts': 1,
-        // Count provenance: new file entry, measured 1 — a doc-comment
+        // Count provenance: 0 in code, was 1 lexical — a doc-comment
         // cross-reference to `compileAutomationEvents`, naming the second of the
         // two callers that feed `clampDeviceParameterValue`'s result back in as
         // the state of a one-pole IIR slew. That is why
         // `quantiseDeviceParameterValue` is a separate function: rounding inside
         // the clamp would dead-zone both recurrences. The model holds no write.
-        'src/modules/Arrangement/models/DeviceParameterLaw.ts': 1,
+        // 'src/modules/Arrangement/models/DeviceParameterLaw.ts': removed (0),
         // Count provenance: the versioned-command preview compiler and its two
         // chat-planning call sites create immutable Command envelopes only; they
         // neither hydrate a device nor write engine state.
@@ -508,13 +463,13 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // hydrates, or writes a device or AudioEngine node.
         'src/modules/AiRuntime/useCases/compileAgentActionExecution.ts': 10,
         'src/modules/AiRuntime/useCases/compileAgentRiskApproval.ts': 1,
-        // Count provenance: one hit, `compileAgentRiskApproval` in the
-        // in-flight gate's doc comment, naming the compiler whose standalone
-        // actor fallback the actor re-check mirrors (#1927). Kept rather than
-        // reworded: the sentence is the reason the fallback matches. The file
-        // holds no load, compile, or hydration sink — its writes go through the
-        // versioned Command executor, not a hydration path.
-        'src/modules/AiRuntime/useCases/confirmPendingChatActions.ts': 4,
+        // Count provenance: measured 3 in code — the `compileAgentRiskApproval`
+        // import, its module path in that same import, and the one call in the
+        // in-flight gate, whose standalone actor fallback the actor re-check
+        // mirrors (#1927). The file holds no load, compile, or hydration sink —
+        // its writes go through the versioned Command executor, not a hydration
+        // path.
+        'src/modules/AiRuntime/useCases/confirmPendingChatActions.ts': 3,
         'src/modules/AiRuntime/useCases/describeAgentRiskApproval.ts': 3,
         // Pending-effect continuation records keep only command-envelope types;
         // their two matches are type imports and type projections, never device IO.
@@ -547,15 +502,15 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/Command/useCases/parseVersionedCommandEnvelope.ts': 2,
         'src/modules/Command/useCases/refreshVersionedCommandBatchForApproval.ts': 3,
         'src/modules/Command/useCases/resolveVersionedCommandBatchBindings.ts': 2,
-        // Count provenance: doc-comment cross-reference to `compileAutomationEvents`
-        // in the editor-readout evaluator's AU-1 delegation note (#747) — the
-        // transformer computes curve values only, holds no device writes.
-        'src/modules/Arrangement/transformers/automationTransformers.ts': 1,
-        // Count provenance: doc-comment cross-reference to `compileAutomationEvents`
-        // in the live evaluator's AU-1 delegation note (#747) — not a sink.
-        'src/modules/Automation/services/automationPointAlgorithms.ts': 1,
-        'src/modules/AudioEngine/engine/LevainNode.ts': 1,
-        'src/modules/AudioEngine/engine/wasmDeviceRegistry.ts': 1,
+        // Count provenance: 0 in code, was 1 lexical — a doc-comment
+        // cross-reference to `compileAutomationEvents` in the editor-readout
+        // evaluator's AU-1 delegation note (#747). The transformer computes
+        // curve values only, holds no device writes.
+        // 'src/modules/Arrangement/transformers/automationTransformers.ts': removed (0),
+        // Count provenance: 0 in code, was 1 lexical — a doc-comment
+        // cross-reference to `compileAutomationEvents` in the live evaluator's
+        // AU-1 delegation note (#747) — not a sink.
+        // 'src/modules/Automation/services/automationPointAlgorithms.ts': removed (0),
         'src/modules/AudioEngine/repositories/faustDeviceFactory.ts': 3,
         // Count provenance: the offline automation compilers
         // (compileAutomationEvents/compileAutomationSegments and their callers)
@@ -564,13 +519,10 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // Counts are bare `compile[A-Z]…` identifier references (import + call
         // sites), censused so any future real sink added to these files still
         // trips the closure.
-        // The shared offline scheduler names its pure compiler seven times; it
-        // schedules runtime events but does not write project device state.
-        // Measured 7, was 6: the shared lane-bound kernel extraction
-        // (src/utils/automationLaneBound.ts) rewrote the `clampToLaneRange`
-        // wrapper's doc comment and added one more `compileAutomationEvents`
-        // mention naming the caller that supplies the bracket pair.
-        'src/modules/AudioEngine/repositories/offlineScheduler/automationScheduling.ts': 7,
+        // The shared offline scheduler names its pure compilers four times in
+        // code; it schedules runtime events but does not write project device
+        // state.
+        'src/modules/AudioEngine/repositories/offlineScheduler/automationScheduling.ts': 4,
         'src/modules/AudioEngine/repositories/offlineScheduler/compileAutomationEvents.ts': 1,
         'src/modules/AudioEngine/repositories/offlineScheduler/compileAutomationSegments.ts': 4,
         'src/modules/AudioEngine/repositories/offlineScheduler/scheduleAutomationOnParam.ts': 3,
@@ -581,7 +533,6 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/AudioEngine/useCases/compileAudioGraphTopology.ts': 1,
         'src/modules/AudioEngine/useCases/deviceResolvers/createFaustDeviceNode.ts': 2,
         'src/modules/AudioEngine/useCases/index.ts': 4,
-        'src/modules/Bacteria/models/BacteriaPatch.ts': 3,
         'src/modules/Bacteria/presentations/views/BacteriaPanel.tsx': 3,
         'src/modules/Bacteria/useCases/bacteriaParamBridge/loadBacteriaPatchWithAudio.ts': 2,
         'src/modules/Crumbs/useCases/crumbsParamBridge/setCrumbsParamImmediate.ts': 1,
@@ -596,23 +547,20 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/Crust/useCases/crustParamBridge/loadCrustPatchWithAudio.ts': 1,
         'src/modules/Crust/presentations/views/CrustPanel.tsx': 3,
         'src/modules/Fermenter/useCases/fermenterParamBridge/loadFermenterPatchWithAudio.ts': 1,
-        // Count provenance: applyMorphedPatch's flushMorph references the sibling
-        // loadFermenterPatchWithAudio path (its engine write now goes through the
-        // same mapFermenterPatchToDspPatch DSP-id mapping — #548). The write is the
-        // same class as the sibling's rAF-batched full-patch engine write; its
-        // updateDevicePatch/persistDevicePatch sinks stay censused under
+        // Count provenance: 0 in code, was 1 lexical — a doc-comment reference
+        // to the sibling loadFermenterPatchWithAudio path in `flushMorph` (the
+        // engine write now goes through the same mapFermenterPatchToDspPatch
+        // DSP-id mapping — #548). That write class stays censused under
         // 'persistence-runtime' at count 6.
-        'src/modules/Fermenter/useCases/presetMorph/applyMorphedPatch.ts': 1,
+        // 'src/modules/Fermenter/useCases/presetMorph/applyMorphedPatch.ts': removed (0),
         'src/modules/Fermenter/presentations/views/FermenterPanel.tsx': 7,
         'src/modules/Gluten/useCases/glutenParamBridge/loadGlutenPatchWithAudio.ts': 2,
-        'src/modules/Gluten/useCases/index.ts': 1,
         'src/modules/Gluten/presentations/views/GlutenPanel.tsx': 3,
         'src/modules/GrandBoule/presentations/components/PianoModel3D.tsx': 4,
         // Event contract and subscription project serialized state to the ready
         // Grand Boule engine; neither writes project truth.
         'src/modules/GrandBoule/useCases/grandBouleSubscriber.ts': 2,
         'src/modules/Grinder/useCases/grinderParamBridge/loadGrinderPatchWithAudio.ts': 2,
-        'src/modules/Grinder/useCases/grinderParamBridge/syncGrinderPatchToAudio.ts': 1,
         'src/modules/Grinder/useCases/index.ts': 1,
         'src/modules/Grinder/presentations/views/GrinderPanel.tsx': 3,
         'src/modules/Levain/useCases/levainParamBridge/helpers.ts': 3,
@@ -625,42 +573,40 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/PluginHost/useCases/index.ts': 2,
         'src/modules/Proof/useCases/proofParamBridge/loadProofPatchWithAudio.ts': 1,
         'src/modules/Proof/presentations/views/ProofPanel.tsx': 3,
-        // Count provenance: new file entry, measured 1 with `grep -oE` over the
-        // family pattern — a single doc-comment mention of `setPadParamImmediate`,
-        // naming one of the two pad-param entry points that call this transform.
-        // The other sink families score 0. `toPadStoreUpdate` is a pure function
-        // from (key, numeric value) to the `Partial<PadState>` its callers write:
-        // it holds no store write, no engine write, and no import beyond the
+        // Count provenance: 0 in code, was 1 lexical — a doc-comment mention of
+        // `setPadParamImmediate` naming one of the two pad-param entry points
+        // that call this transform. `toPadStoreUpdate` is a pure function from
+        // (key, numeric value) to the `Partial<PadState>` its callers write: it
+        // holds no store write, no engine write, and no import beyond the
         // `PadState` type.
-        'src/modules/Toaster/models/PadStoreUpdate.ts': 1,
-        // Count provenance: one hit, `audioDevice.loaded` in the doc comment on
-        // the pending-kit-update queue, naming the event whose handler creates
-        // the store record that the queued writes wait for. Kept rather than
-        // reworded for the same reason as prepareOfflineToaster: the sentence is
-        // the reason the queue exists. The file's executable writes are
-        // register/unregister/loadKit/updateKit store writes, none of which is
-        // a load/compile/hydration sink.
-        'src/modules/Toaster/stores/toasterStore.ts': 1,
+        // 'src/modules/Toaster/models/PadStoreUpdate.ts': removed (0),
+        // Count provenance: 0 in code, was 1 lexical — `audioDevice.loaded` in
+        // the doc comment on the pending-kit-update queue, naming the event
+        // whose handler creates the store record the queued writes wait for.
+        // The file's executable writes are register/unregister/loadKit/updateKit
+        // store writes, none of which is a load/compile/hydration sink.
+        // 'src/modules/Toaster/stores/toasterStore.ts': removed (0),
         'src/modules/Toaster/useCases/loadToasterKit.ts': 1,
-        // Count provenance: one hit, `audioDevice.loaded` in the doc comment
-        // explaining why an offline path is needed — that event never fires
-        // offline, so the live subscriber never runs. No load or hydration sink
-        // in the file. Kept rather than reworded: the sentence is the reason.
-        'src/modules/Toaster/useCases/prepareOfflineToaster.ts': 1,
+        // Count provenance: 0 in code, was 1 lexical — `audioDevice.loaded` in
+        // the doc comment explaining why an offline path is needed: that event
+        // never fires offline, so the live subscriber never runs. No load or
+        // hydration sink in the file.
+        // 'src/modules/Toaster/useCases/prepareOfflineToaster.ts': removed (0),
         'src/modules/Toaster/useCases/setPadParamImmediate.ts': 1,
         'src/modules/Toaster/useCases/toasterParamBridge/setPadEngineImmediate.ts': 1,
         'src/modules/Toaster/useCases/toasterSubscriber.ts': 2,
         'src/modules/Toaster/useCases/trigger16Level.ts': 5,
         'src/modules/Toaster/presentations/views/ToasterPanel.tsx': 2,
-        // Count provenance: doc-comment cross-reference to the sibling offline
-        // compiler `compileAutomationEvents` from the AU-1 shared curve kernel
-        // (#747) — a pure curve-math utility, not a device-write sink.
-        'src/utils/automationCurve.ts': 1,
-        // Count provenance: new file entry, measured 1 — a doc-comment mention
-        // of `compileAutomationEvents` naming the offline compile path that
+        // Count provenance: 0 in code, was 1 lexical — a doc-comment
+        // cross-reference to the sibling offline compiler
+        // `compileAutomationEvents` from the AU-1 shared curve kernel (#747) —
+        // a pure curve-math utility, not a device-write sink.
+        // 'src/utils/automationCurve.ts': removed (0),
+        // Count provenance: 0 in code, was 1 lexical — a doc-comment mention of
+        // `compileAutomationEvents` naming the offline compile path that
         // evaluates this shared lane bound per segment. The kernel is pure
         // clamp arithmetic over an interpolated value; it holds no write.
-        'src/utils/automationLaneBound.ts': 1,
+        // 'src/utils/automationLaneBound.ts': removed (0),
         // Count provenance (#1994): lexical compile* matches after the
         // runtime-graph-delta split. None is a new raw store write.
         // AiRuntime: compileRequest / command-envelope compilers (not device
@@ -847,7 +793,10 @@ const DEVICE_DATA_COUNTS = {
         'src/modules/Arrangement/useCases/runtimeGraphTopology.ts': 2,
         'src/modules/Project/stores/arrangementStore.ts': 3,
         'src/modules/Project/useCases/demoProjects/demoUtils/applyPreset.ts': 4,
-        'src/modules/Project/useCases/demoProjects/nebulaDrift/createNebulaDriftDemo.ts': 8,
+        // Count provenance: measured 7 in code — the `parameterValues:` patch
+        // literals. A header-comment mention of `devices: []` on the child MIDI
+        // tracks no longer counts.
+        'src/modules/Project/useCases/demoProjects/nebulaDrift/createNebulaDriftDemo.ts': 7,
         // Immutable agent-facing project projection; it performs no write.
         'src/modules/Project/useCases/getAgentProjectModelContract.ts': 1,
         'src/modules/Project/useCases/projectPersistence/fileIO/hydrateArrangementTracks.ts': 1,
@@ -967,6 +916,24 @@ const GUARDED_EXECUTABLE_PATHS = [
     'src/modules/Tuner/useCases/setA4Reference.ts',
 ] as const;
 
+// Compiler-printer comment removal, not hand-rolled scanning: censused sources
+// carry comment-like text inside string literals (`'audio/*,.wav'` accept
+// filters), and only the parser reliably tells a comment from a string.
+function stripComments(path: string, source: string): string {
+    const sourceFile = createSourceFile(
+        path,
+        source,
+        ScriptTarget.Latest,
+        true,
+        path.endsWith('.tsx') ? ScriptKind.TSX : ScriptKind.TS
+    );
+    return createPrinter({ removeComments: true }).printFile(sourceFile);
+}
+
+function productionSource(path: string, source: string): ProductionSource {
+    return { path, source, code: stripComments(path, source) };
+}
+
 function productionSources(root: string): ProductionSource[] {
     const files: ProductionSource[] = [];
     function visit(directory: string): void {
@@ -981,7 +948,7 @@ function productionSources(root: string): ProductionSource[] {
             if (!/\.tsx?$/.test(entry.name) || entry.name.endsWith('.spec.ts') || entry.name.endsWith('.spec.tsx')) {
                 continue;
             }
-            files.push({ path: relative(root, absolutePath), source: readFileSync(absolutePath, 'utf8') });
+            files.push(productionSource(relative(root, absolutePath), readFileSync(absolutePath, 'utf8')));
         }
     }
     visit(join(root, 'src'));
@@ -994,7 +961,7 @@ function countByPath(files: ReadonlyArray<ProductionSource>, definition: SinkDef
         if (!definition.includes(file.path)) {
             continue;
         }
-        const matches = file.source.match(definition.pattern);
+        const matches = file.code.match(definition.pattern);
         if (matches && matches.length > 0) {
             result[file.path] = matches.length;
         }
@@ -1132,7 +1099,7 @@ function returnedStateExpressions(updater: LocalUpdater): Expression[] {
     return expressions;
 }
 
-function countDeviceDataAstWrites(file: ProductionSource): number {
+function countDeviceDataAstWrites(file: SourceText): number {
     const sourceFile = createSourceFile(
         file.path,
         file.source,
@@ -1303,10 +1270,12 @@ function assertProductionClosure(files: ReadonlyArray<ProductionSource>): void {
     );
     assertCounts('device-data', countDeviceDataByPath(projectDataFiles), classifiedDeviceDataCounts());
 
-    const sourceByPath = new Map(files.map((file) => [file.path, file.source]));
+    // The guard must appear in code: a doc-comment mention names the guard, it
+    // does not apply it.
+    const codeByPath = new Map(files.map((file) => [file.path, file.code]));
     for (const path of GUARDED_EXECUTABLE_PATHS) {
-        const source = sourceByPath.get(path);
-        if (!source?.includes('resolveEligibleDeviceWriteTarget')) {
+        const code = codeByPath.get(path);
+        if (!code?.includes('resolveEligibleDeviceWriteTarget')) {
             throw new Error(`guard missing from executable path: ${path}`);
         }
     }
@@ -1316,6 +1285,67 @@ describe('device write boundary closure', () => {
     it('classifies every production sink by family, path, and exact count', () => {
         const files = productionSources(process.cwd());
         expect(() => assertProductionClosure(files)).not.toThrow();
+    });
+
+    it('does not count device-data properties quoted in comments', () => {
+        const counts = countDeviceDataByPath([
+            productionSource(
+                'src/modules/Arrangement/proseDeviceData.ts',
+                [
+                    '// devices: [] was the chain this handler replaced',
+                    '/* parameterValues: { gain: 1 } is rebuilt by the owner */',
+                    'export const unchanged = true;',
+                ].join('\n')
+            ),
+        ]);
+        expect(counts['src/modules/Arrangement/proseDeviceData.ts']).toBeUndefined();
+    });
+
+    it('does not count sink identifiers quoted in comments', () => {
+        const counts = countByPath(
+            [
+                productionSource(
+                    'src/modules/Arrangement/proseSink.ts',
+                    '// persistDeviceParam owns project truth; updateDeviceParam reaches the engine.'
+                ),
+            ],
+            SINK_DEFINITIONS['persistence-runtime']
+        );
+        expect(counts['src/modules/Arrangement/proseSink.ts']).toBeUndefined();
+    });
+
+    it('does not treat comment-like text inside string literals as comments', () => {
+        const counts = countDeviceDataByPath([
+            productionSource(
+                'src/modules/Arrangement/stringLiteralCommentText.ts',
+                [
+                    'const accept = "audio/*,.wav,.flac";',
+                    'const docs = "https://sourdaw.dev/panels";',
+                    'const devices: string[] = [];',
+                ].join('\n')
+            ),
+        ]);
+        expect(counts['src/modules/Arrangement/stringLiteralCommentText.ts']).toBe(1);
+    });
+
+    it('still counts code occurrences after comment stripping', () => {
+        const deviceData = countDeviceDataByPath([
+            productionSource(
+                'src/modules/Arrangement/codeDeviceData.ts',
+                'const before = { devices: [], parameterValues: {} }; // devices: [] replaced'
+            ),
+        ]);
+        expect(deviceData['src/modules/Arrangement/codeDeviceData.ts']).toBe(2);
+        const sinks = countByPath(
+            [
+                productionSource(
+                    'src/modules/Arrangement/codeSink.ts',
+                    'updateDeviceParam("track", "device", "gain", 1); // updateDeviceParam again'
+                ),
+            ],
+            SINK_DEFINITIONS['persistence-runtime']
+        );
+        expect(sinks['src/modules/Arrangement/codeSink.ts']).toBe(1);
     });
 
     it('does not classify read-only destructuring or projection as a shorthand write', () => {
@@ -1477,6 +1507,8 @@ describe('device write boundary closure', () => {
         },
     ])('rejects $name through the production closure assertion', ({ path, source }) => {
         const files = productionSources(process.cwd());
-        expect(() => assertProductionClosure([...files, { path, source }])).toThrow(/sink census changed/);
+        expect(() => assertProductionClosure([...files, productionSource(path, source)])).toThrow(
+            /sink census changed/
+        );
     });
 });
