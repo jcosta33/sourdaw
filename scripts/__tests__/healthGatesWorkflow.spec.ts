@@ -281,12 +281,32 @@ function assertPullRequestSecretScan(candidate: UnknownRecord): void {
     ) {
         throw new Error('pull-request scanner config must come from the trusted base and retain no credentials');
     }
+    // This job always carries a pull request, so its scan target pins the head
+    // SHA outright rather than the history job's event-SHA fallback.
+    const scanTarget = recordAt(stepNamed(prSecrets, 'Checkout scan target'), 'with');
+    if (
+        scanTarget.ref !== '${{ github.event.pull_request.head.sha }}' ||
+        scanTarget.path !== 'scan-target' ||
+        scanTarget['fetch-depth'] !== 0 ||
+        scanTarget['persist-credentials'] !== false
+    ) {
+        throw new Error('pull-request scan target must retain the complete untrusted history without credentials');
+    }
     const scan = stringAt(stepNamed(prSecrets, 'Scan pull request diff for secrets'), 'run');
     if (!scan.includes('--log-opts="$BASE_SHA..$HEAD_SHA -m"')) {
         throw new Error('pull-request secret scan must scan the commits this head adds to its base');
     }
     if (!scan.includes('--ignore-gitleaks-allow')) {
         throw new Error('pull-request secret scan must reject head-authored gitleaks:allow annotations');
+    }
+    // The control proves detection survives head-authored suppression, so it
+    // has to refuse those annotations on its own invocation too.
+    if (
+        !stringAt(stepNamed(prSecrets, 'Validate PR merge diff secret scanner'), 'run').includes(
+            '--ignore-gitleaks-allow'
+        )
+    ) {
+        throw new Error('merge-diff positive control must reject head-authored gitleaks:allow annotations');
     }
 }
 
