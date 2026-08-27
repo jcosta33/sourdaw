@@ -43,8 +43,17 @@ pub struct PluginStateDirty {
     pub instance_id: String,
 }
 
+/// How many times one ask may be carried out. Small on purpose: the retries
+/// exist for a control path momentarily held by the audio thread, and each one
+/// already waits [`CONTROL_TIMEOUT`] before it gives up.
+const MAX_FOLLOW_UP_ATTEMPTS: u8 = 3;
+
+/// One queued ask: which instance made it, what it was, and how many times it
+/// has already been carried to the plugin.
+type QueuedRequest = (String, PluginHostRequest, u8);
+
 /// Set once, when the watcher thread starts. `None` until then.
-static REQUEST_SENDER: OnceLock<Sender<(String, PluginHostRequest)>> = OnceLock::new();
+static REQUEST_SENDER: OnceLock<Sender<QueuedRequest>> = OnceLock::new();
 
 type EnginePlugins = Arc<Mutex<HashMap<String, EnginePluginInstanceData>>>;
 
@@ -54,9 +63,32 @@ type EnginePlugins = Arc<Mutex<HashMap<String, EnginePluginInstanceData>>>;
 /// unbounded) and is a no-op before the watcher starts, so a plugin loaded in a
 /// headless or test build records its ask and nothing else happens.
 pub fn notify_plugin_host_request(instance_id: &str, request: PluginHostRequest) {
+    queue_request((instance_id.to_string(), request, 0));
+}
+
+fn queue_request(queued: QueuedRequest) {
     if let Some(sender) = REQUEST_SENDER.get() {
-        let _ = sender.send((instance_id.to_string(), request));
+        let _ = sender.send(queued);
     }
+}
+
+/// Decide whether a follow-up that could not reach the plugin should be queued
+/// again.
+///
+/// A wake is spent whether or not the follow-up reached the plugin, and only a
+/// wake drains a recorded flag — so a failure that simply returned would lose
+/// the ask for good: an edit the project is never told about, or a resize the
+/// plugin was already answered `true` for. Both flags are idempotent and
+/// read-and-clear, so replaying one costs nothing and can only find what is
+/// still there.
+///
+/// Retried only while the instance still accepts public control. That is the
+/// difference between a control path busy right now — the audio thread is inside
+/// a block, and the next attempt finds it free — and an instance that is
+/// unloading or retired, which will refuse every attempt until the budget runs
+/// out and is never coming back.
+fn should_retry_follow_up(attempt: u8, control_still_allowed: bool) -> bool {
+    control_still_allowed && attempt + 1 < MAX_FOLLOW_UP_ATTEMPTS
 }
 
 /// Decide what one state-change wake should emit.
@@ -89,24 +121,27 @@ pub fn state_dirty_payload(
 /// Replay the size the plugin asked for at the window its editor is drawn into.
 ///
 /// Nothing is emitted: the answer to a resize is the window changing size, and
-/// the frontend neither asked for it nor owns that window.
-fn apply_editor_resize(runtime: &SharedHostedPlugin, instance_id: &str) {
+/// the frontend neither asked for it nor owns that window. Reports whether the
+/// follow-up reached the plugin, which is what decides a retry.
+fn apply_editor_resize(runtime: &SharedHostedPlugin, instance_id: &str) -> Result<(), String> {
     let applied = runtime.with_control(CONTROL_TIMEOUT, |plugin| {
         Ok(plugin.apply_pending_editor_resize())
     });
 
-    if let Err(error) = applied {
+    if let Err(error) = &applied {
         eprintln!(
             "[Plugin] editor resize failed for instance {}: {}",
             instance_id, error
         );
     }
+
+    applied.map(|_| ())
 }
 
 /// Start the watcher thread. Idempotent: a second call is ignored, so the sender
 /// installed by the first `start` stays the one the host callbacks reach.
 pub fn start(events: Arc<dyn EventSink>, engine_plugins: EnginePlugins) {
-    let (sender, receiver) = channel::<(String, PluginHostRequest)>();
+    let (sender, receiver) = channel::<QueuedRequest>();
     if REQUEST_SENDER.set(sender).is_err() {
         return;
     }
@@ -116,7 +151,7 @@ pub fn start(events: Arc<dyn EventSink>, engine_plugins: EnginePlugins) {
         .spawn(move || {
             // Blocks until a plugin asks. The static sender is never dropped, so
             // this loop lives for the process.
-            while let Ok((instance_id, request)) = receiver.recv() {
+            while let Ok((instance_id, request, attempt)) = receiver.recv() {
                 let Some(runtime) =
                     runtime_for_instance(&engine_plugins, &instance_id, "plugin host request")
                 else {
@@ -124,17 +159,26 @@ pub fn start(events: Arc<dyn EventSink>, engine_plugins: EnginePlugins) {
                     continue;
                 };
 
-                match request {
-                    PluginHostRequest::EditorResize => {
-                        apply_editor_resize(&runtime, &instance_id);
-                    }
+                let followed_up = match request {
+                    PluginHostRequest::EditorResize => apply_editor_resize(&runtime, &instance_id),
                     PluginHostRequest::StateDirty => {
                         let taken = runtime
                             .with_control(CONTROL_TIMEOUT, |plugin| Ok(plugin.take_state_dirty()));
+                        let reached_plugin = taken.as_ref().map(|_| ()).map_err(String::clone);
                         if let Some(payload) = state_dirty_payload(&instance_id, taken) {
                             events.emit(PLUGIN_STATE_DIRTY_EVENT, payload);
                         }
+                        reached_plugin
                     }
+                };
+
+                if followed_up.is_err()
+                    && should_retry_follow_up(
+                        attempt,
+                        runtime.ensure_public_control_allowed().is_ok(),
+                    )
+                {
+                    queue_request((instance_id, request, attempt + 1));
                 }
             }
         });
@@ -199,7 +243,42 @@ mod tests {
         let runtime = SharedHostedPlugin::new(wrapper.into());
         runtime.begin_unload();
 
-        apply_editor_resize(&runtime, "inst-1");
+        assert!(
+            apply_editor_resize(&runtime, "inst-1").is_err(),
+            "an instance that refuses public control cannot have been resized"
+        );
+    }
+
+    /// The wake is spent by the attempt that failed, and only a wake drains the
+    /// flag — so without the replay the signal behind it is gone for good.
+    #[test]
+    fn a_follow_up_that_could_not_reach_a_live_plugin_is_carried_back_to_the_queue() {
+        assert!(should_retry_follow_up(0, true));
+    }
+
+    /// The retries are for a control path held right now. A refusal is a
+    /// lifecycle state, identical on every attempt, so replaying against it only
+    /// spends the budget.
+    #[test]
+    fn a_follow_up_for_an_instance_that_refuses_control_is_not_retried() {
+        let wrapper =
+            ClapWrapper::new_engine_owned_command_fixture("Request Fixture", vec![], true);
+        let runtime: SharedHostedPlugin = SharedHostedPlugin::new(wrapper.into());
+        runtime.begin_unload();
+
+        assert!(!should_retry_follow_up(
+            0,
+            runtime.ensure_public_control_allowed().is_ok()
+        ));
+    }
+
+    #[test]
+    fn replaying_one_ask_stops_at_the_attempt_budget() {
+        assert!(
+            should_retry_follow_up(MAX_FOLLOW_UP_ATTEMPTS - 2, true),
+            "the budget must allow more than the first attempt"
+        );
+        assert!(!should_retry_follow_up(MAX_FOLLOW_UP_ATTEMPTS - 1, true));
     }
 
     #[test]

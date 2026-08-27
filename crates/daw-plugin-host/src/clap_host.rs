@@ -137,13 +137,22 @@ impl HostCallbackState {
     /// State whether there is a host window the plugin's editor can be resized
     /// in. Control path only, either side of the editor's life.
     pub fn set_editor_resize_available(&self, available: bool) {
-        self.editor_resize_available
-            .store(available, Ordering::Release);
         if !available {
-            // A size asked for against the window that just went away must not
-            // be applied to whichever window opens next.
+            // Withdraw first, so nothing further is accepted, then drop the size
+            // asked for against the window that is going away.
+            self.editor_resize_available.store(false, Ordering::Release);
             self.pending_editor_resize.store(0, Ordering::Release);
+            return;
         }
+
+        // Clearing on the way in is what actually closes the race: a plugin
+        // thread that read availability just before the withdrawal can still
+        // store its size after the clear above, and only this clear stops that
+        // dead window's size being applied to the one opening now. Safe because
+        // no request is accepted until the flag below is set, and both calls are
+        // control path.
+        self.pending_editor_resize.store(0, Ordering::Release);
+        self.editor_resize_available.store(true, Ordering::Release);
     }
 
     /// Record an editor size the plugin asked for, and report whether it will
@@ -536,6 +545,15 @@ mod tests {
             None,
             "taking the size clears it, so one ask is applied once"
         );
+
+        // Consumption must clear the slot, not disarm it: a plugin resizes its
+        // editor repeatedly over one editor's life.
+        assert!(unsafe { host_gui_request_resize(&host as *const clap_host, 800, 600) });
+        assert_eq!(
+            state.take_editor_resize(),
+            Some((800, 600)),
+            "an ask made after the last one was consumed is recorded in its turn"
+        );
     }
 
     /// Width and height are packed into one atomic, so a swap cannot report one
@@ -601,6 +619,31 @@ mod tests {
         assert_eq!(state.take_editor_resize(), None);
     }
 
+    /// The plugin thread stores its size without holding anything, so a store
+    /// can land *after* the release has withdrawn availability and cleared the
+    /// slot — the withdrawal cannot order a call that already read the flag.
+    /// Only clearing on the way back in stops that dead window's size being
+    /// applied to the editor opening now.
+    #[test]
+    fn a_size_that_raced_the_editors_release_is_not_applied_to_the_next_editor() {
+        let (state, _requests) = state_with_open_editor();
+
+        state.set_editor_resize_available(false);
+        // The raced store, reconstructed: the plugin thread had already passed
+        // the availability check when the release ran.
+        state
+            .pending_editor_resize
+            .store(pack_editor_size(1024, 768), Ordering::Release);
+
+        state.set_editor_resize_available(true);
+
+        assert_eq!(
+            state.take_editor_resize(),
+            None,
+            "the next editor must open with nothing pending against it"
+        );
+    }
+
     /// With no wake installed nothing carries the ask onto the control path, so
     /// accepting it would be a claim the host cannot keep.
     #[test]
@@ -629,6 +672,14 @@ mod tests {
         assert!(
             !state.take_state_dirty(),
             "taking the flag clears it, so one edit marks the project dirty once"
+        );
+
+        // Clearing must re-arm rather than disarm, or only a session's first
+        // plugin edit would ever reach the project.
+        unsafe { host_state_mark_dirty(&host as *const clap_host) };
+        assert!(
+            state.take_state_dirty(),
+            "an edit made after the last one was consumed is recorded in its turn"
         );
     }
 

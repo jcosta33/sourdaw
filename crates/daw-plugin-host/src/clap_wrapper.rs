@@ -1898,6 +1898,20 @@ mod tests {
         );
     }
 
+    /// An instance the host never installed a wake on — one the native engine
+    /// did not take, whose asks nothing would ever carry to the control path —
+    /// must refuse the resize rather than accept it and drop it. A refused
+    /// plugin lays itself out at the size it has; an accepted one waits forever
+    /// for a window that never changes.
+    #[test]
+    fn an_editor_resize_is_refused_while_no_wake_carries_it_to_the_control_path() {
+        let mut wrapper = stub_wrapper(stub_plugin_ptr());
+        wrapper.set_editor_window_resizer(Arc::new(|_, _| {}));
+
+        assert!(!wrapper.host_state.request_editor_resize(1024, 768));
+        assert_eq!(wrapper.apply_pending_editor_resize(), None);
+    }
+
     /// An edit inside the plugin's own editor has to cross from the callback
     /// thread to the control path, and be reported exactly once so the project
     /// is marked dirty per edit rather than on every later wake.
