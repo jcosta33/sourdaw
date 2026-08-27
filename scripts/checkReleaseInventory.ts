@@ -1274,6 +1274,10 @@ const GRAND_BOULE_MEASUREMENT_SOURCE_PATHS = [
 ] as const;
 const FULL_HEXADECIMAL_GIT_REVISION = /^[0-9a-f]{40}$/u;
 
+function assertGrandBouleRevisionIsCommit(root: string, revision: string): void {
+    execFileSync('git', ['cat-file', '-e', `${revision}^{commit}`], { cwd: root, stdio: 'ignore' });
+}
+
 /**
  * A shallow checkout (`actions/checkout` defaults to `fetch-depth: 1`) keeps only the tip
  * commit's object graph, so an older `sourceRevision` an earlier commit pinned is genuinely
@@ -1284,7 +1288,7 @@ const FULL_HEXADECIMAL_GIT_REVISION = /^[0-9a-f]{40}$/u;
  */
 function ensureGrandBouleRevisionFetched(root: string, revision: string): void {
     try {
-        execFileSync('git', ['cat-file', '-e', `${revision}^{commit}`], { cwd: root, stdio: 'ignore' });
+        assertGrandBouleRevisionIsCommit(root, revision);
         return;
     } catch {
         // Falls through to a targeted fetch; a missing object is expected under a shallow checkout.
@@ -1301,9 +1305,10 @@ function ensureGrandBouleRevisionFetched(root: string, revision: string): void {
             }
         );
     } catch {
-        // Best effort: no network, no `origin`, or the revision is genuinely gone. `git show`
-        // below still runs and reports the precise, unchanged failure.
+        // Best effort: no network, no `origin`, or the revision is genuinely gone. The final
+        // commit probe preserves the caller's path-specific failure.
     }
+    assertGrandBouleRevisionIsCommit(root, revision);
 }
 
 export function assertGrandBouleMeasurementAdmission(root: string): void {
@@ -1333,7 +1338,13 @@ export function assertGrandBouleMeasurementAdmission(root: string): void {
     if (JSON.stringify(digestPaths) !== JSON.stringify([...GRAND_BOULE_MEASUREMENT_SOURCE_PATHS].sort())) {
         throw new Error('Grand Boule measurement source-digest census is incomplete');
     }
-    ensureGrandBouleRevisionFetched(root, revision);
+    try {
+        ensureGrandBouleRevisionFetched(root, revision);
+    } catch {
+        throw new Error(
+            `Grand Boule measurement source revision ${revision} cannot provide ${GRAND_BOULE_MEASUREMENT_SOURCE_PATHS[0]}`
+        );
+    }
     for (const path of GRAND_BOULE_MEASUREMENT_SOURCE_PATHS) {
         let sourceAtRevision: Buffer;
         try {

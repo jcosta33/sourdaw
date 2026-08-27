@@ -219,30 +219,35 @@ describe('project license', () => {
         }
     });
 
-    it('parses pnpm-lock.yaml once per artifact build while validating multiple npm proofs', () => {
-        const manifest = readDependencyLicenseProofManifest(process.cwd());
-        expect(
-            Object.keys(manifest.packages).filter((packageId) => packageId.startsWith('npm:')).length
-        ).toBeGreaterThan(1);
-
+    it('parses pnpm-lock.yaml once per artifact build across repeated pnpm proof lookups', () => {
         let parseCount = 0;
+        let pnpmLookupCount = 0;
         const loadPnpmLockPackages = (root: string) => {
             parseCount += 1;
             const document = parseDocument(readFileSync(join(root, 'pnpm-lock.yaml'), 'utf8'));
             if (document.errors.length > 0) {
                 throw new Error(document.errors[0]!.message);
             }
-            return (
+            const packages =
                 (document.toJS() as { packages?: Record<string, { resolution?: { integrity?: unknown } }> }).packages ??
-                {}
-            );
+                {};
+            return new Proxy(packages, {
+                ownKeys: (target) => {
+                    pnpmLookupCount += 1;
+                    return Reflect.ownKeys(target);
+                },
+            });
         };
 
         const first = buildDependencyLicenseArtifacts(process.cwd(), { loadPnpmLockPackages });
+        const firstBuildLookupCount = pnpmLookupCount;
         const second = buildDependencyLicenseArtifacts(process.cwd(), { loadPnpmLockPackages });
+        const secondBuildLookupCount = pnpmLookupCount - firstBuildLookupCount;
 
         expect(first.report).toBe(readFileSync(join(process.cwd(), DEPENDENCY_LICENSE_REPORT_PATH), 'utf8'));
         expect(second.report).toBe(first.report);
+        expect(firstBuildLookupCount).toBeGreaterThan(1);
+        expect(secondBuildLookupCount).toBeGreaterThan(1);
         expect(parseCount).toBe(2);
     });
 

@@ -2363,6 +2363,41 @@ describe('release inventory', () => {
         }
     });
 
+    it('rejects a full tree object ID even when it provides every measured source path', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-measurement-tree-'));
+        try {
+            const { jsonPath, revision } = writeGrandBouleMeasurementFixture(root);
+            const treeRevision = execFileSync('git', ['rev-parse', 'HEAD^{tree}'], {
+                cwd: root,
+                encoding: 'utf8',
+            }).trim();
+            const measuredSourcePath = 'crates/daw-dsp/benches/quantum.rs';
+            expect(treeRevision).toMatch(/^[0-9a-f]{40}$/u);
+            expect(() =>
+                execFileSync('git', ['show', `${treeRevision}:${measuredSourcePath}`], {
+                    cwd: root,
+                    stdio: 'ignore',
+                })
+            ).not.toThrow();
+
+            const data = JSON.parse(readFileSync(jsonPath, 'utf8')) as {
+                sourceRevision: string;
+                machine: { gitSha: string };
+            };
+            data.sourceRevision = treeRevision;
+            data.machine.gitSha = treeRevision;
+            writeFileSync(jsonPath, JSON.stringify(data));
+            const markdownPath = join(root, 'crates/daw-dsp/benches/quantum-cost-table.md');
+            writeFileSync(markdownPath, readFileSync(markdownPath, 'utf8').replaceAll(revision, treeRevision));
+
+            expect(() => assertGrandBouleMeasurementAdmission(root)).toThrow(
+                `Grand Boule measurement source revision ${treeRevision} cannot provide ${measuredSourcePath}`
+            );
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
     it('cleans shallow measurement fixture directories when setup fails', () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-measurement-setup-failure-'));
         let clone: string | undefined;
