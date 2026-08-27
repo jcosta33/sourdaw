@@ -60,7 +60,7 @@ whisper-rs = { version = "0.16", features = ["metal"] }
 
 [target.'cfg(unix)'.dependencies]
 # Already in the dependency tree transitively; declared here for the
-# free-space measurement (statfs/statvfs) in commands/model_download.rs.
+# no-follow cached-model read in commands/model_download.rs.
 libc = "0.2"
 
 [dev-dependencies]

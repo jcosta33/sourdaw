@@ -5,9 +5,9 @@ title: Drum machine text-to-pattern generation
 status: in-progress
 owner: The Sourdaw team
 sources:
-  - ../drum-machine/spec.md
-  - ../midi-generation/research.md
-  - ../ai-ghost-surfaces/spec.md
+    - ../drum-machine/spec.md
+    - ../midi-generation/research.md
+    - ../ai-ghost-surfaces/spec.md
 ---
 
 # Drum machine text-to-pattern generation
@@ -17,8 +17,9 @@ sources:
 Let a user type a short prompt (e.g. "slow boom-bap with ghost snares on 3e") and receive a
 candidate drum pattern as strict structured JSON, converted to a `PatternDelta`, previewed on the
 step grid, and committed only on explicit Accept through the same mutator path as a manual edit.
-Inference runs off the audio thread via a small local LLM (`ort` native / ONNX Runtime Web) or an
-opt-in cloud endpoint, both emitting the same JSON shape.
+Inference runs off the audio thread through the shared AI provider contract: browser-local WebLLM
+or an explicitly configured hosted provider, both emitting the same JSON shape. The desktop build
+uses WebLLM in its renderer over WebGPU; there is no native local language-model route.
 
 ## Non-goals
 
@@ -58,10 +59,10 @@ Verify with: `manual` — run the canonical prompt suite and confirm the per-pro
 
 ### AC-005 — Generation runs off the audio thread within budget
 
-Inference must run in the Rust/Web worker (never the audio thread) and reach preview within 3 s on
-the native target (6 s on web), with cancellable progress beyond that.
+Inference must never run on the audio thread and must reach preview within 6 s on the reference
+WebLLM target, with cancellable progress beyond that.
 
-Verify with: `manual` — time prompt-to-preview on the reference native target and confirm ≤3 s, audio thread untouched
+Verify with: `manual` — time prompt-to-preview on browser and desktop WebLLM and confirm ≤6 s, audio thread untouched
 
 ### AC-006 — Four-on-the-floor prompt places kick on every downbeat
 
@@ -72,15 +73,15 @@ Verify with: `manual` — run the canonical prompt suite and confirm the per-pro
 
 ## Open questions
 
-- [ ] (blocking) Model choice for local inference (Phi-3-mini / Llama-3.2-1B / Qwen2.5-0.5B) that
-  meets the latency and prompt-adherence bars under a commercial-distribution-compatible license.
-- [ ] (non-blocking) Bundle vs first-use download of model weights.
+- [ ] (blocking) Which admitted WebLLM model meets the latency and prompt-adherence bars?
+- [ ] (non-blocking) Whether the existing first-use WebLLM artifact admission is sufficient for
+      this feature's prompt suite.
 
 ## Affected areas
 
-- Rust `ort` worker / ONNX Runtime Web worker; optional cloud endpoint adapter
+- shared WebLLM and hosted-provider adapters
 - sequencer prompt field (Level 3+); `PatternDelta` commit path
-- `resources/ai-models/` with license/provenance metadata
+- existing WebLLM license/provenance metadata
 
 ## Dropped from sources
 

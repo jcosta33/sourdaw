@@ -5,7 +5,7 @@ title: Symbolic-MIDI generation via local inference
 status: open
 owner: The Sourdaw team
 sources:
-  - "Question: what is the most viable local architecture for Session-Players-class MIDI generation?"
+    - 'Question: what is the most viable local architecture for Session-Players-class MIDI generation?'
 ---
 
 # Research: Symbolic-MIDI generation via local inference
@@ -13,7 +13,7 @@ sources:
 ## Question
 
 What is the most viable architecture for a local, offline "Session Players"-class
-symbolic-MIDI generator in a Tauri DAW — which models, tokenizers, and runtime — and
+symbolic-MIDI generator in a cross-platform DAW — which models, tokenizers, and runtime — and
 what product behaviours must it inherit?
 
 ## Findings
@@ -60,17 +60,17 @@ what product behaviours must it inherit?
 - **Confidence:** high
 - **Bears on:** AC-008 (registry license allowlist).
 
-### R-007 — The current generator is LLM-backed; the local pipeline is a planned migration
+### R-007 — The current generator is LLM-backed; specialized local inference remains research
 
 - **Claim:** The current MIDI path uses structured prompting in
-  `src/modules/AiGeneration/useCases/llmMidiGeneration.ts`, resolving native, WebLLM, or cloud
-  backends and falling back to built-in pattern templates. Magenta.js (`@magenta/music`,
-  MusicVAE/MusicRNN) and `@huggingface/transformers` are not package dependencies. The local
-  rule-plus-transformer and `ort` pipeline in this research is therefore a future replacement or
-  extension, not a description of the current runtime; the current cloud surface is Claude via
-  Anthropic only, with no OpenAI or Replicate dependency.
+  `src/modules/AiGeneration/useCases/llmMidiGeneration.ts`, resolving browser-local WebLLM or a
+  configured hosted provider and falling back to built-in pattern templates. The supported hosted
+  routes are Anthropic, OpenAI, and OpenAI-compatible providers. There is no native local language
+  model route. Magenta.js (`@magenta/music`, MusicVAE/MusicRNN), `@huggingface/transformers`, and
+  `ort` are not package dependencies. The rule-plus-transformer and `ort` pipeline in this research
+  is therefore an unadmitted future experiment, not a description of the current runtime.
 - **Evidence:** the current generator source and `package.json` (`@mlc-ai/web-llm` and
-  `@anthropic-ai/sdk` are present; Magenta, Transformers.js, OpenAI, and Replicate are absent).
+  `@anthropic-ai/sdk` are present; Magenta, Transformers.js, and Replicate are absent).
 - **Confidence:** high
 - **Bears on:** migration sequencing, bundle/licensing tradeoffs, and the boundary between the
   current prompt path and the local inference contract; it adds no v1 dependency.
@@ -96,8 +96,8 @@ what product behaviours must it inherit?
 - [ ] Q-002 — Real residency of AMT-medium + acoustic models on 8 GB machines; optional-download vs RAM-gated.
 - [ ] Q-003 — Per-feature CPU/GPU routing table once benchmarks land.
 - [ ] Q-004 — When the local pipeline ships, should it replace or coexist with the current
-  prompt-based generator? Preserve standard MIDI output and route any future cloud fallback
-  through the AI trust/policy boundary rather than creating a second mutation path.
+      prompt-based generator? Preserve standard MIDI output and route any future cloud fallback
+      through the AI trust/policy boundary rather than creating a second mutation path.
 
 ## Recommendation
 
@@ -193,6 +193,10 @@ Each user control maps to a specific encoding strategy:
 
 The FIGARO model (von Rütte et al., 2023) demonstrates the most comprehensive description-based conditioning: per-bar tokens specifying time signature, active instruments, chord, note density, mean pitch, mean velocity, and mean duration. This architecture allows bar-level control over all musical parameters and represents the upper bound of what conditioning can achieve.
 
-### Candle over mistral.rs for custom architectures (restores R-LOST-5)
+### A specialized symbolic runtime is separate from the language-model stack (restores R-LOST-5)
 
-**mistral.rs** only supports standard LLM architectures (Llama, Mistral, Phi, Qwen). A purpose-built music transformer with relative attention or custom tokenization **will not work** with mistral.rs. The correct alternative is **Candle** (HuggingFace's Rust ML framework), which mistral.rs is built on. Candle provides a PyTorch-like API with GPU support (CUDA + Metal), safetensors weight loading, and WASM compilation. A custom `MusicTransformer` struct implementing the model architecture can load weights from any PyTorch checkpoint. Music models at 20–360M parameters need **well under 1GB at FP16**, negligible compared to LLMs.
+A purpose-built music transformer with relative attention or custom tokenization does not belong in
+the retired native language-model route. If this research is admitted later, it requires its own
+specialized runtime decision, licensing proof, and performance evidence. It must not revive or
+reuse a native Mistral language-model backend. Music models at 20–360M parameters are expected to
+need **well under 1GB at FP16**, but that estimate is not an admission decision.

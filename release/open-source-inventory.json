@@ -131,7 +131,7 @@
                 "sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4:LICENSE",
                 "sha256:c148064afc3d904d474c5f20ee39052ff86085a02d148552ce59f4d0ebd7aeb9:NOTICE",
                 "sha256:03be9429f428e7f8f427a01a79317eef00dd6ab5dc2ffb130c4a6300f579fead:public/legal/DEPENDENCY-LICENSES.txt",
-                "sha256:b1ef475c9236ca73f377965c215526768ec4406bf9159fde77042f02420ba72b:release/dependency-license-proofs.json"
+                "sha256:9b7da0236309c6347f5e7f2d261f6911bdd0ba2e4475bc9eda8e1dd59d5e3efa:release/dependency-license-proofs.json"
             ],
             "licenses": ["Apache-2.0", "per-package terms:public/legal/DEPENDENCY-LICENSES.txt"],
             "productSurfaces": [
@@ -476,7 +476,7 @@
                 "mixed-license-materials:Apache-TVM-root-and-full-referenced-license-notice-trees",
                 "accepted-residual:no-exact-base-checkpoint-mapping-or-hermetic-build-input-record"
             ],
-            "productSurfaces": ["browser-local language model", "desktop-local language model"],
+            "productSurfaces": ["browser-local WebLLM", "desktop renderer browser-local WebLLM over WebGPU"],
             "evidence": [
                 "The manifest pins each model revision and verifies the exact downloaded artifact bytes by SHA-256 before storage or inference.",
                 "The binary-mlc-llm-libs merge contains the admitted WASM bytes; its merged PR 165 attests exact MLC-LLM and Apache TVM source revisions, and TVM pins tvm-ffi 3c35034fd1026011736e19a4e0e1ed0f22058c42. MLC-LLM's notice, TVM's root LICENSE and NOTICE, and tvm-ffi's root and referenced legal files are shipped byte-for-byte.",
