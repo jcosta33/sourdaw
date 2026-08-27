@@ -167,6 +167,9 @@ async function assertBrowserAiCapabilityBoundary({
 }
 
 test('proves the live Chromium Browser AI admission boundary without skipping', async ({ page }, testInfo) => {
+    // This is the dedicated job's first navigation, so it must cover Vite's cold
+    // transform before the launch-screen readiness gate can observe the app.
+    test.setTimeout(180_000);
     await setupWorkspace(page);
     await launch_new_project(page);
 
