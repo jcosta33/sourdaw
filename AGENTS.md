@@ -75,10 +75,28 @@ audio, security, data loss, irreversible change, or a disputed severe finding.
 Review test validity as its own stance. A passing check is not evidence. Ask what would have to
 break for this check to fail, and whether it observes the thing its name claims.
 
+Each reviewer's stance names a posture, not only a surface. A reviewer's job is to try to break the
+change and report the strongest thing it found — with a concrete failure scenario, the inputs or
+state that produce the wrong behaviour — or to report that nothing survived its attempts. Nothing
+surviving is a successful review, not a wasted one, and a reviewer must never manufacture a finding
+to justify its run. A hedged finding — one that says a thing might or could be a problem without
+naming what breaks — is discarded on arrival, and reviewers are told so when dispatched.
+
+The evidence a finding owes scales with what it claims. A finding is checked against the live head,
+not inferred from the diff alone — a hunk shows what changed, not what the code now does, and a
+finding reasoned only from it guesses at surrounding code never read. A finding that would block a
+merge carries the reproduction that produced it: the input, the state, or the mutation, and the
+result observed. A test-validity finding names the mutation that should have failed the check and
+did not.
+
 The orchestrator owns every finding. Validate each one against the live code before acting on it:
 discard what is wrong, out of scope, or personal style, and never forward it. Send the survivors to
 the implementing agent as a precise repair task. An implementing agent never judges a finding
-against its own work, never accepts that work, and never merges it.
+against its own work, never accepts that work, and never merges it. The orchestrator writes a
+discarded finding, with its one-line reason, into the review bundle as `discarded.json`, beside
+`review.json` — the same way the caller writes `review.json` itself; no script produces either file.
+Discarding is the orchestrator's own judgement about a blind reviewer's work, and an unrecorded
+discard is indistinguishable from never having read the finding.
 
 Order matters, because the pull request is public and a posted finding is expensive to retract.
 Blind stances report to the orchestrator, never straight to GitHub. Only findings that survive
@@ -304,11 +322,14 @@ loader/preload settings and Git, GitHub CLI, GitHub Actions, and App overrides, 
 resolved `git` and `gh` executables.
 
 Hosted checks run. `.github/workflows/health-gates.yml` has two lanes: a fast one on every push to
-a pull request, and a heavy one on an approving review, on a nightly schedule, and on dispatch. Only
-`gate` is required by the ruleset, and only `gate` may be — it depends on every other job and passes
-when each either succeeded or was skipped, so a pull request that skips a path-filtered leg still
-reports a conclusion. Requiring a filtered job by name would leave it pending forever. Do not rename
-`gate`.
+a pull request, and a heavy one on an approving review, on a nightly schedule, and on dispatch.
+`gate` is the stable workflow summary: it depends on every job whose result currently decides the
+summary, and passes when each either succeeded or was skipped, so a pull request that skips a
+conditional leg still reports a conclusion. It is informational today: the live ruleset requires no
+status checks. GitHub can require workflow job checks, but Sourdaw deliberately keeps
+pull-request-editable workflows out of merge authority; that is a Sourdaw trust policy, not a GitHub
+platform restriction. A required check from a workflow skipped by trigger-level path, branch, or
+commit-message filters remains pending. Do not rename `gate`.
 
 Hosted checks exist so that nobody runs those checks on this machine. Lanes share one machine, and
 several agents each running a repository-wide typecheck, lint, or suite exhaust it and stall each
@@ -321,8 +342,9 @@ the pipeline runs all of them on every push, and a second copy on this machine b
 contention.
 
 `main` is covered by a ruleset. Read what it actually does: it blocks deletion and non-fast-forward,
-forces a squashed pull request, and demands resolved threads. Whether it also requires `gate` is
-repository configuration, not something this file can promise.
+forces a squashed pull request, and demands resolved threads. The exact live enforcement remains
+repository configuration, not something this file can promise; Sourdaw's policy separately keeps
+pull-request-editable workflows out of merge authority.
 
 Some crates compile to wasm packages that ship as committed artifacts. `scripts/wasm-artifacts.ts`
 is the list, and it carries each package's build script because that name is not derivable from the
@@ -374,27 +396,35 @@ say what changed, why, and how to test. Leave session diaries, unpublished round
 tables off the pull request.
 
 `review:prepare` prints a bundle path on the primary root: `manifest.json`, `diff.patch`, `pr.md`,
-and base-commit `contracts/`. The caller writes `review.json` for **this** head. A reviewer agent
-gets that bundle, not the author transcript. `review:publish` prints the review id and posts through
-the reviewer App only while GitHub's head still matches the bundle.
+and base-commit `contracts/`. The caller writes `review.json` for **this** head, and later
+`discarded.json` beside it. Re-preparing a bundle for that same head — for instance to refresh
+`pr.md` after `lane:publish` rewrites the pull-request body — does not discard what the caller
+already wrote there: the bundle path is keyed by head sha, so an existing bundle directory always
+describes the head the new one describes, and only the generated files are replaced. A reviewer
+agent gets that bundle, not the author transcript. `review:publish` prints the review id and posts
+through the reviewer App only while GitHub's head still matches the bundle.
 
 Review the diff as that teammate. Read every changed line. If a hunk is not enough to judge, read
 the surrounding code. When something is wrong, comment on that line: what is wrong, why it matters,
-what done looks like. One problem per comment. Talk about the code, not the author.
+what done looks like. Supply that as three fields — the defect, its consequence, and what done looks
+like. The tooling composes them into one comment. The contract caps length rather than demanding a
+minimum: padding a comment to reach a length is not a virtue, and one precise sentence per field is
+the target. One problem per comment. Talk about the code, not the author.
 
 Request changes when this head must not merge, and post every blocking comment with that review. The
 summary is a short pointer to those comments, not a report.
 
 Approve when the change improves the system, even if it is not perfect. Do not approve a change that
-makes it worse. Style-guide and code-craft violations block; personal style does not. Leave the
-approval empty or write one sentence about the code.
+makes it worse. Style-guide and code-craft violations block; personal style does not. An approval is
+never empty: its body states what the reviewer attacked and what held.
 
 Keep an approval free of inline comments. Every inline comment opens a review thread, the ruleset
 refuses to merge while one is unresolved, and `review:resolve` clears a thread only by replying
 `Done` on it — so a note meant not to block is exactly what blocks, and clearing it asserts a repair
-that never happened. Put a non-blocking observation in the approval body, prefixed `Nit:` or
-`Optional:`, or file it. Inline comments belong to a `CHANGES_REQUESTED` review, where the thread is
-meant to stop the merge and a new head clears it.
+that never happened. `review:publish` refuses an APPROVE document that carries any comments: the
+contract does not depend on reviewer discipline to keep one out. Put a non-blocking observation in
+the approval body, prefixed `Nit:` or `Optional:`, or file it. Inline comments belong to a
+`CHANGES_REQUESTED` review, where the thread is meant to stop the merge and a new head clears it.
 
 When answering, push the fix first; `review:resolve` then posts a bare `Done` as the author bot and
 resolves the thread, pinned to that head. The reply body is fixed and no script writes free-form
@@ -424,10 +454,29 @@ test that fails when the change is reverted, a measurement at the boundary users
 proof stays in the session; it is not the GitHub review.
 
 `pnpm deliver` squash-merges only after the immutable reviewer actor `APPROVED` the current head,
-the pull request is not a draft, merge state is `CLEAN`, and threads are resolved. It merges into `main`
-and nothing else: `lane:publish` opens every pull request there, so any other base is a retarget the
-delivery scripts did not make, and `deliver` refuses it rather than squashing onto a branch the
-change was never reviewed against. Do not merge any other way.
+the pull request is not a draft, the head is green, and threads are resolved. Green is `CLEAN`, or
+`UNSTABLE` where `Gate` succeeded on that head and every check whose verdict gates the merge was at
+worst cancelled beside a success under its own name — the shape an approving review leaves behind
+when its own run cancels the push run it supersedes. A cancellation with no success under that name
+is not that shape: the job carries no verdict, a skipped sibling is not one, and `Gate` passes on
+`skipped` so a green `Gate` does not supply one either. What gates the merge is read from the jobs
+`Gate` needs in `.github/workflows/health-gates.yml`, never restated in the script, so promoting a
+job into the gate binds this refusal to it and a job outside the gate — a nightly reporter, say —
+never blocks a delivery it was never evidence for. The copy that governs is the one committed at the
+`origin/main` commit the launcher pinned — the same commit the delivery closure is snapshotted from
+— never a lane's: a lane's copy is the very thing under review, and neither a working-tree file nor
+a local `HEAD` is a pinned input, so one uncommitted edit or one unpulled commit would silently
+reshape the gate for every delivery, in either direction. The launcher reads and parses that copy
+and hands the result to the gate, because the snapshot holds nothing but `scripts/` and can resolve
+no parser of its own; a `deliver` that did not come through the launcher therefore has no gating set
+at all and refuses outright rather than merging with no verdict. Any other merge state refuses, and
+so does a real
+failure, an unfinished check, a head no `Gate` ever passed on, a check rollup that cannot be read
+complete, and a workflow that cannot be read for what it gates on. It merges into `main` and nothing
+else: `lane:publish` opens every pull request
+there, so any other base is a retarget the delivery scripts did not make, and `deliver` refuses it
+rather than squashing onto a branch the change was never reviewed against. Do not merge any other
+way.
 
 Keep batches small, live lanes few, merges prompt. A finished change waits only on that GitHub
 review. Enable hooks: `git config core.hooksPath .githooks`.

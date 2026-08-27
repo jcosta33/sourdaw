@@ -210,6 +210,7 @@ describe('agent risk approval', () => {
             actionHashes: [getExactAgentActionHash({ operation: command.operation, arguments: command.arguments })],
             sourceRevision: revision,
             targetFingerprints: { 'track-vocal': targetFingerprint },
+            advertisedTargetFingerprints: {},
             consequences: {
                 audioUpload: false,
                 fileAccess: false,

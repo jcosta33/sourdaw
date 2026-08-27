@@ -1,7 +1,7 @@
 {
     "schemaVersion": 4,
     "cargoRuntimeInventory": {
-        "cargoLockSha256": "bad8592c5c5d9104f7b79f57bf23564bfdf7ead00659e93c202d0a2a7662b34e",
+        "cargoLockSha256": "bfe1982d1cdc8225a5076e82d2dbb5e2d839c7092a0fc2536d014bc4230b8a10",
         "sourceInputs": [
             {
                 "path": ".cargo/config.toml",
@@ -33,7 +33,7 @@
             },
             {
                 "path": "crates/daw-plugin-host/Cargo.toml",
-                "sha256": "b485d0f7144a4dea305719f03ea9adad2ad26df8a8f18a2a8e296344b66ce39f"
+                "sha256": "f00187fa85d5febd316ff907be1d7bfdae61e8c72e57076e22b32b72a0906ee6"
             },
             {
                 "path": "crates/daw-wasm-decoder/Cargo.toml",
@@ -57,7 +57,7 @@
             },
             {
                 "path": "package.json",
-                "sha256": "7d77f05c1ea7dccb25fa09c7b602e18c190ede0b2969ade782e900d8e097787e"
+                "sha256": "bce692f158d47a31f82efec868c4685e72f15ffb5777d59860911e80780cc4f8"
             },
             {
                 "path": "rust-toolchain.toml",
@@ -664,6 +664,25 @@
                     {
                         "label": "LICENSE-MIT",
                         "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+                    }
+                ]
+            },
+            {
+                "name": "com-scrape-types",
+                "version": "0.1.1",
+                "source": "registry+https://github.com/rust-lang/crates.io-index",
+                "license": "MIT OR Apache-2.0",
+                "legalFiles": [],
+                "metadataFiles": [
+                    {
+                        "label": "Cargo.toml",
+                        "sha256": "1bbd6887b07e3ff756d6aa358363adbb105e3d9e71cd3fb3819755290fb253fd"
+                    }
+                ],
+                "reportedLegalFiles": [
+                    {
+                        "label": "assembled license record from lock-resolved package metadata and SPDX 3.28.0",
+                        "sha256": "6a5338e2ef149f0c9fffa7a007a4796bb38cf78570355d9d35258405064e7a37"
                     }
                 ]
             },
@@ -6272,6 +6291,32 @@
                 ]
             },
             {
+                "name": "vst3",
+                "version": "0.3.0",
+                "source": "registry+https://github.com/rust-lang/crates.io-index",
+                "license": "MIT OR Apache-2.0",
+                "legalFiles": [
+                    {
+                        "label": "LICENSE-APACHE",
+                        "sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594"
+                    },
+                    {
+                        "label": "LICENSE-MIT",
+                        "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+                    }
+                ],
+                "reportedLegalFiles": [
+                    {
+                        "label": "LICENSE-APACHE",
+                        "sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594"
+                    },
+                    {
+                        "label": "LICENSE-MIT",
+                        "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+                    }
+                ]
+            },
+            {
                 "name": "want",
                 "version": "0.3.1",
                 "source": "registry+https://github.com/rust-lang/crates.io-index",
@@ -8561,6 +8606,21 @@
                     "sha256": "2b29dcfe0d6471f7e8c92c5fb38c9f93edee10330937055440192f1832b1ecef"
                 }
             ]
+        },
+        "cargo:com-scrape-types@0.1.1": {
+            "source": "https://crates.io/api/v1/crates/com-scrape-types/0.1.1/download",
+            "revision": "sha256:5ce183b975b8fc736a20919c4002717255fbd867df575c792aeefa9a56a73ad0",
+            "assembled": {
+                "metadata": [
+                    {
+                        "sourcePath": "Cargo.toml",
+                        "sha256": "1bbd6887b07e3ff756d6aa358363adbb105e3d9e71cd3fb3819755290fb253fd"
+                    }
+                ],
+                "licenses": [
+                    "MIT"
+                ]
+            }
         }
     }
 }

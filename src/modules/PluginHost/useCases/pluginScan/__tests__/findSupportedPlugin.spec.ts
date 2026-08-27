@@ -25,7 +25,7 @@ describe('findSupportedPlugin', () => {
             ...defaultPluginScanState,
             scannedPlugins: [
                 clapPlugin,
-                { ...clapPlugin, id: 'legacy-vst', descriptor_id: '', name: 'Legacy VST', format: 'vst3' },
+                { ...clapPlugin, id: 'legacy-vst', descriptor_id: '', name: 'Legacy VST', format: 'vst2' },
             ],
         });
     });
@@ -70,7 +70,10 @@ describe('findSupportedPlugin', () => {
 
     it('answers the format question case-insensitively on the wire value', () => {
         expect(isSupportedPluginFormat('CLAP')).toBe(true);
-        expect(isSupportedPluginFormat('vst3')).toBe(false);
+        expect(isSupportedPluginFormat('VST3')).toBe(true);
+        expect(isSupportedPluginFormat('vst2')).toBe(false);
+        expect(isSupportedPluginFormat('au')).toBe(false);
         expect(SUPPORTED_PLUGIN_FORMATS).toContain('clap');
+        expect(SUPPORTED_PLUGIN_FORMATS).toContain('vst3');
     });
 });

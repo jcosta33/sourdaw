@@ -74,6 +74,12 @@ const context: ProjectContext = {
     ],
 };
 
+function parseMessageSection(message: string, heading: string): unknown {
+    const start = message.indexOf(`${heading}:\n`);
+    const end = message.indexOf('\n\n', start);
+    return JSON.parse(message.slice(start + heading.length + 2, end === -1 ? undefined : end));
+}
+
 describe('buildAgentContext', () => {
     afterEach(() => {
         agentRunLifecycle.clear();
@@ -156,6 +162,53 @@ describe('buildAgentContext', () => {
         expect(built.message).not.toContain('failure-0');
         expect(built.message).toContain('failure-23');
         expect(built.evidence.included.validationFailures).toEqual({ total: 24, retained: 16, omitted: 8 });
+    });
+
+    it('keeps one receipt within the aggregate evidence budget while producing valid bounded evidence JSON', () => {
+        const built = buildAgentContext({
+            fixedPolicy: 'policy',
+            prompt: 'adjust',
+            context,
+            receipts: [{ id: 'generic-receipt', summary: 'x'.repeat(600) }],
+        });
+
+        const relevantEvidence = parseMessageSection(built.message, 'relevant_evidence') as {
+            receipts: Array<{ id: string; summary: { value: string; truncated: boolean } }>;
+        };
+        expect(relevantEvidence.receipts).toEqual([
+            {
+                id: 'generic-receipt',
+                summary: { value: 'x'.repeat(600), truncated: false },
+            },
+        ]);
+    });
+
+    it('shares the bounded aggregate evidence budget fairly across retained receipts', () => {
+        const built = buildAgentContext({
+            fixedPolicy: 'policy',
+            prompt: 'adjust',
+            context,
+            receipts: [
+                { id: 'generic-receipt', summary: 'generic'.repeat(100) },
+                {
+                    id: 'application-receipt',
+                    summary: 'application'.repeat(800),
+                },
+            ],
+        });
+
+        const relevantEvidence = parseMessageSection(built.message, 'relevant_evidence') as {
+            receipts: Array<{ id: string; summary: { value: string; truncated: boolean } }>;
+        };
+        const summaries = relevantEvidence.receipts.map((receipt) => receipt.summary);
+        expect(summaries.reduce((length, summary) => length + summary.value.length, 0)).toBeLessThanOrEqual(8_192);
+        expect(relevantEvidence.receipts).toEqual([
+            { id: 'generic-receipt', summary: { value: 'generic'.repeat(100), truncated: false } },
+            {
+                id: 'application-receipt',
+                summary: { value: 'application'.repeat(800).slice(0, 4_096), truncated: true },
+            },
+        ]);
     });
 
     it('marks authority incomplete when every bounded lock is relevant to the exact selection', () => {

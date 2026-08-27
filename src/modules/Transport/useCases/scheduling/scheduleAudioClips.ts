@@ -140,6 +140,12 @@ export function scheduleAudioClips(
             // scheduler's policy and stays here, outside the law.
             const stretchRatio =
                 clip.stretchMode && clip.stretchMode !== 'off' ? boundStretchRatio(clip.stretchRatio ?? 1) : 1;
+            // The clip's own level is the plateau every fade ramp below targets,
+            // exactly as the offline render folds `clipGainValue` into its fade
+            // gain (`scheduleOfflineClipSource`): live ramps run 0 → clipGain → 0,
+            // never 0 → 1 → 0, or a gained clip monitors at the wrong level while
+            // the export prints the right one.
+            const clipGain = clip.gain;
             const clipTempo = getTempoAtBeat(changes, clip.startBeat, transport.tempo);
             const clipBeatsPerSecond = clipTempo / 60;
 
@@ -300,7 +306,8 @@ export function scheduleAudioClips(
                     // one there is nothing to ramp until the source reaches
                     // sample 0. The fade *window* below stays measured from the
                     // clip head, so a pre-roll that outruns it leaves the gain
-                    // already at 1 — the ramp happened during the silence.
+                    // already at the clip's plateau — the ramp happened during
+                    // the silence.
                     const effectiveStart = Math.max(soundStartTime, now);
 
                     if (isFirstIter && clip.fadeInBeats > 0) {
@@ -317,8 +324,8 @@ export function scheduleAudioClips(
                         const fadeInEnd = iterStartTime + fadeInSeconds;
                         if (effectiveStart < fadeInEnd) {
                             const progressRatio = Math.max(0, effectiveStart - iterStartTime) / fadeInSeconds;
-                            fadeGain.gain.setValueAtTime(progressRatio, effectiveStart);
-                            fadeGain.gain.linearRampToValueAtTime(1, fadeInEnd);
+                            fadeGain.gain.setValueAtTime(progressRatio * clipGain, effectiveStart);
+                            fadeGain.gain.linearRampToValueAtTime(clipGain, fadeInEnd);
                         } else if (preRollSeconds > 0) {
                             // The drawn fade window fully elapsed inside the pre-roll
                             // silence, so `effectiveStart` lands past `fadeInEnd` with
@@ -326,21 +333,21 @@ export function scheduleAudioClips(
                             // that says "no click here", and the source is about to
                             // start on a discontinuity regardless. Give it the same
                             // anti-click MICRO_FADE_SECONDS gives an undrawn fade,
-                            // rather than jumping straight to unity. This leaves the
-                            // no-pre-roll transport-resume case (preRollSeconds === 0)
-                            // alone: that one starts mid-buffer, where the
-                            // discontinuity is unavoidable and a ramp would only mask
-                            // real material.
+                            // rather than jumping straight to the clip's level. This
+                            // leaves the no-pre-roll transport-resume case
+                            // (preRollSeconds === 0) alone: that one starts mid-buffer,
+                            // where the discontinuity is unavoidable and a ramp would
+                            // only mask real material.
                             fadeGain.gain.setValueAtTime(0, effectiveStart);
-                            fadeGain.gain.linearRampToValueAtTime(1, effectiveStart + MICRO_FADE_SECONDS);
+                            fadeGain.gain.linearRampToValueAtTime(clipGain, effectiveStart + MICRO_FADE_SECONDS);
                         } else {
-                            fadeGain.gain.setValueAtTime(1, effectiveStart);
+                            fadeGain.gain.setValueAtTime(clipGain, effectiveStart);
                         }
                     } else if (needsMicroFadeIn) {
                         fadeGain.gain.setValueAtTime(0, effectiveStart);
-                        fadeGain.gain.linearRampToValueAtTime(1, effectiveStart + MICRO_FADE_SECONDS);
+                        fadeGain.gain.linearRampToValueAtTime(clipGain, effectiveStart + MICRO_FADE_SECONDS);
                     } else {
-                        fadeGain.gain.setValueAtTime(1, effectiveStart);
+                        fadeGain.gain.setValueAtTime(clipGain, effectiveStart);
                     }
 
                     if (isLastIter && clip.fadeOutBeats > 0) {
@@ -353,11 +360,14 @@ export function scheduleAudioClips(
                                 clip.endBeat,
                                 transport.tempo
                             );
-                        fadeGain.gain.setValueAtTime(1, Math.max(fadeOutStart, effectiveStart));
+                        fadeGain.gain.setValueAtTime(clipGain, Math.max(fadeOutStart, effectiveStart));
                         fadeGain.gain.linearRampToValueAtTime(0, clipEndTime);
                     } else if (needsMicroFadeOut) {
                         const iterEndTime = effectiveStart + playDuration;
-                        fadeGain.gain.setValueAtTime(1, Math.max(effectiveStart, iterEndTime - MICRO_FADE_SECONDS));
+                        fadeGain.gain.setValueAtTime(
+                            clipGain,
+                            Math.max(effectiveStart, iterEndTime - MICRO_FADE_SECONDS)
+                        );
                         fadeGain.gain.linearRampToValueAtTime(0, iterEndTime);
                     }
                 }

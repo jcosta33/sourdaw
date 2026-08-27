@@ -40,6 +40,8 @@ export const handleReverseClip = createHandler<'reverseClip'>({
                     expectedAudioBufferId: reversedBufferId,
                     audioBufferId: clip.audioBufferId,
                     name: clip.name,
+                    fadeInBeats: clip.fadeInBeats,
+                    fadeOutBeats: clip.fadeOutBeats,
                     ...analysis,
                 },
             },
@@ -50,6 +52,9 @@ export const handleReverseClip = createHandler<'reverseClip'>({
                     expectedAudioBufferId: clip.audioBufferId,
                     audioBufferId: reversedBufferId,
                     name: `${clip.name} (reversed)`,
+                    // The forward path mirrors the fades along with the audio.
+                    fadeInBeats: clip.fadeOutBeats,
+                    fadeOutBeats: clip.fadeInBeats,
                     // The forward path clears pitch analysis, so redo restores none.
                 },
             },

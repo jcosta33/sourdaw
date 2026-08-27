@@ -16,7 +16,7 @@ import {
     spawnCapture,
     type GhSession,
 } from './githubAppIdentity.ts';
-import { assertReviewCommentBody, fail } from './prContract.ts';
+import { composeReviewCommentBody, fail, type ReviewCommentContent } from './prContract.ts';
 import { reviewBundlePath } from './prepareReview.ts';
 
 export type ReviewEvent = 'APPROVE' | 'REQUEST_CHANGES';
@@ -38,7 +38,9 @@ export type ReviewComment = {
     path: string;
     line: number;
     side: 'LEFT' | 'RIGHT';
-    body: string;
+    defect: string;
+    consequence: string;
+    done: string;
 };
 
 export type ReviewDocument = {
@@ -83,7 +85,11 @@ export function parseReviewDocument(value: unknown): ReviewDocument {
     if (record.event !== 'APPROVE' && record.event !== 'REQUEST_CHANGES') {
         fail('review.json event must be APPROVE or REQUEST_CHANGES');
     }
-    const comments = parseComments(record.comments);
+    const rawComments = commentsArray(record.comments);
+    if (record.event === 'APPROVE' && rawComments.length > 0) {
+        fail('APPROVE must carry no comments; an inline comment opens a thread that blocks the merge');
+    }
+    const comments = parseCommentEntries(rawComments);
     const body = typeof record.body === 'string' ? record.body : '';
     if (record.event === 'REQUEST_CHANGES') {
         if (comments.length === 0) {
@@ -92,6 +98,9 @@ export function parseReviewDocument(value: unknown): ReviewDocument {
         if (body.trim() === '') {
             fail('REQUEST_CHANGES requires a top-level body');
         }
+    }
+    if (record.event === 'APPROVE' && body.trim() === '') {
+        fail('APPROVE requires a body stating what was attacked and held');
     }
     return { event: record.event, body, comments };
 }
@@ -169,7 +178,7 @@ export function shellPort(
                             path: comment.path,
                             line: comment.line,
                             side: comment.side,
-                            body: comment.body,
+                            body: composeReviewCommentBody(comment),
                         })),
                     })
                 ),
@@ -196,22 +205,56 @@ export function shellPort(
     };
 }
 
-function parseComments(value: unknown): ReviewComment[] {
+function commentsArray(value: unknown): unknown[] {
     if (value === undefined) {
         return [];
     }
     if (!Array.isArray(value)) {
         fail('review.json comments must be an array');
     }
-    return value.map((entry, index) => {
+    return value;
+}
+
+/**
+ * The one place `defect` / `consequence` / `done` are still `unknown`: everything upstream of this
+ * function reads raw JSON, and everything downstream trusts `ReviewCommentContent`. Each `typeof`
+ * check below narrows a genuinely unknown value, unlike a check written against an input already
+ * typed `string` — that version compiles clean but is unreachable, and an "unnecessary condition"
+ * cleanup would delete it as dead code with nothing to object. Composing through
+ * `composeReviewCommentBody` here, rather than after returning, keeps the byte-ceiling and format
+ * failures for this comment's fields naming this comment's index too.
+ */
+function parseReviewCommentContent(
+    fields: { defect: unknown; consequence: unknown; done: unknown },
+    index: number
+): ReviewCommentContent {
+    const { defect, consequence, done } = fields;
+    if (typeof defect !== 'string') {
+        fail(`review.json comments[${index}] defect is invalid`);
+    }
+    if (typeof consequence !== 'string') {
+        fail(`review.json comments[${index}] consequence is invalid`);
+    }
+    if (typeof done !== 'string') {
+        fail(`review.json comments[${index}] done is invalid`);
+    }
+    const content: ReviewCommentContent = { defect, consequence, done };
+    composeReviewCommentBody(content, `review.json comments[${index}]`);
+    return content;
+}
+
+function parseCommentEntries(entries: unknown[]): ReviewComment[] {
+    return entries.map((entry, index) => {
         if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) {
             fail(`review.json comments[${index}] must be an object`);
         }
         const record = entry as Record<string, unknown>;
+        if ('body' in record) {
+            fail(`review.json comments[${index}] uses body; supply defect, consequence, and done instead`);
+        }
         const path = record.path;
         const line = record.line;
         const side = record.side;
-        const body = record.body;
         if (typeof path !== 'string' || path === '') {
             fail(`review.json comments[${index}] path is invalid`);
         }
@@ -221,11 +264,11 @@ function parseComments(value: unknown): ReviewComment[] {
         if (side !== 'LEFT' && side !== 'RIGHT') {
             fail(`review.json comments[${index}] side must be LEFT or RIGHT`);
         }
-        if (typeof body !== 'string') {
-            fail(`review.json comments[${index}] body is invalid`);
-        }
-        assertReviewCommentBody(body);
-        return { path, line, side, body };
+        const content = parseReviewCommentContent(
+            { defect: record.defect, consequence: record.consequence, done: record.done },
+            index
+        );
+        return { path, line, side, ...content };
     });
 }
 

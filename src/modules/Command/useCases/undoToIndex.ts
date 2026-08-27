@@ -65,11 +65,12 @@ export async function undoToIndex(targetIndex: number): Promise<void> {
             undoTreeMoveTo(currentEntryId(newPast));
             continue;
         }
-        const lengthBefore = state.past.length;
-        await undo();
-        const after = undoStore.value;
-        if (!after || after.past.length >= lengthBefore) {
-            // No-progress guard: undo() declined to consume anything.
+        const outcome = await undo();
+        if (!outcome.headConsumed) {
+            // The head entry is still applied, so this sweep cannot reach the target.
+            // Stack length cannot stand in for progress: one undo() also drops any
+            // inert entries it passes, so `past` shortening says nothing about
+            // whether the entry the sweep stopped at was undone.
             return;
         }
     }

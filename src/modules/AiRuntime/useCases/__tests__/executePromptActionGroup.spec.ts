@@ -247,6 +247,7 @@ function admitted(fixture: BatchFixture, agentApproval: AgentApproval = null) {
 type VerifiedReceipt = ReturnType<typeof createVerifiedBatchReceipt>;
 type ReceiptResult = Parameters<typeof createVerifiedBatchReceipt>[0]['result'];
 type PendingEffect = NonNullable<ReceiptResult['warningDetails']>[number]['pendingEffect'];
+type ExternalPendingEffect = Extract<NonNullable<PendingEffect>, { kind: 'external-effect' }>;
 
 function buildVerifiedReceipt(input: { fixture: BatchFixture; result: ReceiptResult }): VerifiedReceipt {
     return createVerifiedBatchReceipt({
@@ -290,14 +291,17 @@ function executedReceipt(fixture: BatchFixture): VerifiedReceipt {
     });
 }
 
-function pendingEffect(fixture: BatchFixture): NonNullable<PendingEffect> {
+function pendingEffect(
+    fixture: BatchFixture,
+    remediation: ExternalPendingEffect['remediation'] = 'reconcile'
+): ExternalPendingEffect {
     const command = getReceiptCommandFixture(fixture);
     return {
         commandId: command.commandId,
         kind: 'external-effect',
         operation: command.operation,
         reason: 'Imported stem runtime reconciliation remains incomplete',
-        remediation: 'reconcile',
+        remediation,
         state: 'pending',
     };
 }
@@ -371,6 +375,7 @@ describe('executePromptActionGroup', () => {
             actionHashes: [getExactAgentActionHash({ operation: command.operation, arguments: command.arguments })],
             sourceRevision: fixture.envelope.baseRevision,
             targetFingerprints: {},
+            advertisedTargetFingerprints: {},
             consequences: {
                 audioUpload: fixture.envelope.grants.audioUpload,
                 fileAccess: fixture.envelope.grants.file,
@@ -742,6 +747,59 @@ describe('executePromptActionGroup', () => {
         expect(readAgentRunState().runs.find((run) => run.runId === RUN_ID)).toMatchObject({
             pendingEffectContinuations: [expectedContinuation],
         });
+    });
+
+    it('exposes manual repair instead of a reconcile-batch continuation for a manual-repair receipt', async () => {
+        const fixture = getBatchFixtures().stem;
+        const effect = pendingEffect(fixture, 'manual-repair');
+        const receipt = buildVerifiedReceipt({
+            fixture,
+            result: {
+                status: 'committed-with-warning',
+                actions: [receiptAction(fixture)],
+                warning: 'Manual repair required.',
+                warningDetails: [
+                    {
+                        kind: 'external-effect',
+                        commandId: effect.commandId,
+                        message: 'Manual repair required.',
+                        pendingEffect: effect,
+                    },
+                ],
+            },
+        });
+        seedRun(fixture);
+        mocks.executePlannedActions.mockResolvedValue({
+            status: 'committed',
+            actions: [{ actionType: 'importStemSet', label: 'Import stems' }],
+            receipt,
+        });
+
+        await expect(
+            executePromptActionGroup({
+                actions: fixture.actions,
+                prompt: 'Import stems',
+                projectRevision: 'revision-1',
+                ...admitted(fixture),
+            })
+        ).resolves.toEqual({ status: 'committed' });
+
+        const expectedContinuation = {
+            batchId: BATCH_ID,
+            effects: [effect],
+            recovery: 'manual-repair',
+            serializedBatch: fixture.commandBatch.serialized,
+            authority: fixture.commandBatch.authority,
+        };
+        expect(agentRunLifecycle.get(RUN_ID)).toMatchObject({ pendingEffectContinuations: [expectedContinuation] });
+        expect(agentRunLifecycle.get(RUN_ID)?.pendingEffectContinuations).not.toContainEqual(
+            expect.objectContaining({ recovery: 'reconcile-batch' })
+        );
+        const persistedRun = readAgentRunState().runs.find((run) => run.runId === RUN_ID);
+        expect(persistedRun).toMatchObject({ pendingEffectContinuations: [expectedContinuation] });
+        expect(persistedRun?.pendingEffectContinuations).not.toContainEqual(
+            expect.objectContaining({ recovery: 'reconcile-batch' })
+        );
     });
 
     it.each([

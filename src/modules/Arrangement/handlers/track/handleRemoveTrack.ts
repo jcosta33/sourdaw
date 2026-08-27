@@ -129,6 +129,7 @@ export const handleRemoveTrack = createHandler<'removeTrack'>({
                     });
                 }
             },
+            postCommitEffect: { kind: 'external-effect', remediation: 'manual-repair' },
         };
     },
     describe: (alpha) => {

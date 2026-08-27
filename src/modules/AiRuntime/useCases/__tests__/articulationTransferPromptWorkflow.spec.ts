@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
+import {
+    configureAutomergeStoragePort,
+    flushAutomergeStorageWrites,
+} from '#/infra/store/storage/createAutomergeStorage';
 import { markerStore, trackStore, type Clip, type Track } from '#/modules/Arrangement/stores';
 import { clearHandlerRegistry, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import {
@@ -28,7 +31,7 @@ import {
     getPendingActionConfirmation,
 } from '../../stores/pendingActionConfirmationStore';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
-import { sendChatMessage } from '../sendChatMessage';
+import { sendChatMessage as sendChatMessageWithoutDocumentFlush } from '../sendChatMessage';
 
 import {
     configureAiWorkflowCommandPreflightFixture,
@@ -188,6 +191,18 @@ function addSecondMidiAndAudioTracks(): void {
             ],
         },
     });
+}
+
+/**
+ * A CRDT-backed store write reaches the Automerge project document on a
+ * deferred animation frame, so a confirm flow that starts in the same tick
+ * races that frame: it observes the edit only when the frame happens to land
+ * inside one of its awaits. A collaborator edit is not an edit to this project
+ * until the document holds it, so commit the pending write first and let the
+ * confirm flow judge the proposal against a project state every run shares.
+ */
+function landCollaboratorEditInProjectDocument(): void {
+    flushAutomergeStorageWrites();
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -471,6 +486,11 @@ function getConfirmationId(): string {
     );
 }
 
+async function sendChatMessage(prompt: string): Promise<void> {
+    flushAutomergeStorageWrites();
+    await sendChatMessageWithoutDocumentFlush(prompt);
+}
+
 describe('MF-03 articulation transfer prompt workflow', () => {
     beforeEach(async () => {
         configureAiWorkflowCommandPreflightFixture();
@@ -533,6 +553,7 @@ describe('MF-03 articulation transfer prompt workflow', () => {
             ccByClipId: {},
             pitchBendByClipId: {},
         });
+        flushAutomergeStorageWrites();
         setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         chatStore.set({ messages: [], isGenerating: false, enableReasoning: true, chatMode: 'prompt' });
     });
@@ -711,6 +732,7 @@ describe('MF-03 articulation transfer prompt workflow', () => {
 
     it('includes every unambiguous MIDI chorus pair and protects audio clips and non-articulation fields', async () => {
         addSecondMidiAndAudioTracks();
+        flushAutomergeStorageWrites();
 
         await sendChatMessage(PROMPT);
 
@@ -883,6 +905,8 @@ describe('MF-03 articulation transfer prompt workflow', () => {
         expect(getConfirmationId()).toBe('');
     });
 
+    // Invalidation here follows from the project changing at all, not from the
+    // changed target being one this proposal names — see #2894.
     it('invalidates a confirmed proposal after a collaborator changes a source articulation', async () => {
         await sendChatMessage(PROMPT);
         const confirmationId = getConfirmationId();
@@ -896,11 +920,12 @@ describe('MF-03 articulation transfer prompt workflow', () => {
                 ),
             },
         });
+        landCollaboratorEditInProjectDocument();
 
         await confirmPendingChatActions({ confirmationId });
 
         expect(getPendingActionConfirmation(confirmationId)).toMatchObject({
-            status: 'failed',
+            status: 'invalidated',
             executedActions: [],
         });
         expect(midiStore.value?.notesByClipId['clip-chorus-two']?.map((note) => note.articulation)).toEqual([
@@ -951,6 +976,7 @@ describe('MF-03 articulation transfer prompt workflow', () => {
 
     it('keeps a grouped redo retryable when a collaborator changes a source articulation after undo', async () => {
         addSecondMidiAndAudioTracks();
+        flushAutomergeStorageWrites();
         await sendChatMessage(PROMPT);
         await confirmPendingChatActions({ confirmationId: getConfirmationId() });
         await undo();
@@ -1044,6 +1070,7 @@ describe('MF-03 articulation transfer prompt workflow', () => {
         ],
     ])('keeps grouped undo retryable when replay eligibility changes through %s', async (_label, mutateGuard) => {
         addSecondMidiAndAudioTracks();
+        flushAutomergeStorageWrites();
         await sendChatMessage(PROMPT);
         await confirmPendingChatActions({ confirmationId: getConfirmationId() });
         const eligibleTrackState = structuredClone(trackStore.value!);
@@ -1105,8 +1132,15 @@ describe('MF-03 articulation transfer prompt workflow', () => {
         ]);
     });
 
-    it('rolls back the whole group without receipt or history residue when a later pair conflicts', async () => {
+    // The edit below conflicts with the second pair this proposal names, but the
+    // status, reason and receipt asserted here are what *any* project change
+    // after the proposal produces — renaming an unrelated audio track reaches
+    // the same terminal state through the same code path. This test therefore
+    // pins the project-changed disposition, not target-conflict detection; that
+    // the two are indistinguishable is the production defect filed as #2894.
+    it('leaves no receipt or history residue when the project changes before confirmation', async () => {
         addSecondMidiAndAudioTracks();
+        flushAutomergeStorageWrites();
         await sendChatMessage(PROMPT);
         const confirmationId = getConfirmationId();
         const state = midiStore.value!;
@@ -1119,8 +1153,12 @@ describe('MF-03 articulation transfer prompt workflow', () => {
                 ),
             },
         });
+        landCollaboratorEditInProjectDocument();
 
-        await confirmPendingChatActions({ confirmationId });
+        expect(await confirmPendingChatActions({ confirmationId })).toEqual({
+            status: 'invalidated',
+            reason: 'The project changed after this proposal was created. Review and submit the command again.',
+        });
 
         expect(midiStore.value?.notesByClipId['clip-chorus-two']?.map((note) => note.articulation)).toEqual([
             'legato',
@@ -1131,9 +1169,14 @@ describe('MF-03 articulation transfer prompt workflow', () => {
             'sustain',
         ]);
         expect(getPendingActionConfirmation(confirmationId)).toMatchObject({
-            status: 'failed',
+            status: 'invalidated',
             executedActions: [],
         });
         expect(undoStore.value?.past).toEqual([]);
+        expect(
+            chatStore.value?.messages.find((message) => message.pendingActionConfirmationId === confirmationId)?.content
+        ).toBe(
+            'This proposal was not executed because the project changed after it was created. Review the current project and submit the command again.'
+        );
     });
 });

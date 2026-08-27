@@ -125,7 +125,8 @@ mod tests {
                         "Retired Fixture",
                         Vec::new(),
                         false,
-                    ),
+                    )
+                    .into(),
                 ),
             ));
     }

@@ -3,7 +3,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
+    runWithAutomergeStorageTransaction,
 } from '#/infra/store/storage/createAutomergeStorage';
+import { automationStore, type AutomationStoreState } from '#/modules/Automation/stores';
 import { clearHandlerRegistry, macroStore, registerHandlerMap } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
@@ -14,6 +16,7 @@ import {
 } from '#/modules/Command/useCases';
 import {
     createCrdtDoc,
+    getCrdtDoc,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
     resetCrdtProjectAuthority,
@@ -22,6 +25,7 @@ import { LEGACY_MIDI_PROBABILITY_SEED, midiStore, type MidiStoreState } from '#/
 import { setMidiStoreState } from '#/modules/MIDI/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
+import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { trackStore } from '../../../stores/trackStore';
 import { handleDiscardImportedStemSet, handleImportStemSet } from '../handleImportStemSet';
@@ -188,6 +192,114 @@ function validateDiscard(inverse: DiscardImportedStemSetAction): boolean | undef
     return handleDiscardImportedStemSet.validate?.(inverse, { actions: [inverse], actionIndex: 0 });
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function readAuthoritativeProjectTruth(): Record<'tracks' | 'midi' | 'automation', unknown> {
+    const document = getCrdtDoc<Record<string, unknown>>('root');
+    if (!document) {
+        throw new Error('Expected root CRDT document');
+    }
+    const parsed: unknown = JSON.parse(JSON.stringify(document));
+    if (!isRecord(parsed)) {
+        throw new Error('Expected serializable root CRDT document');
+    }
+    for (const slot of ['tracks', 'midi', 'automation'] as const) {
+        if (!Object.hasOwn(parsed, slot)) {
+            throw new Error(`Expected authoritative ${slot} slot`);
+        }
+    }
+    return {
+        tracks: parsed.tracks,
+        midi: parsed.midi,
+        automation: parsed.automation,
+    };
+}
+
+function expectSeededAuthoritativeProjectTruth(truth: Record<'tracks' | 'midi' | 'automation', unknown>): void {
+    expect(truth).toMatchObject({
+        tracks: {
+            tracks: [
+                {
+                    id: 'track-existing-midi',
+                    clips: [{ id: 'clip-existing-midi', trackId: 'track-existing-midi', type: 'midi' }],
+                },
+            ],
+        },
+        midi: {
+            notesByClipId: { 'clip-existing-midi': [{ id: 'note-existing-midi' }] },
+            ccByClipId: { 'clip-existing-midi': [{ id: 'cc-existing-midi' }] },
+            pitchBendByClipId: { 'clip-existing-midi': [{ id: 'bend-existing-midi' }] },
+        },
+        automation: {
+            lanes: [
+                {
+                    id: 'automation-existing-midi-volume',
+                    trackId: 'track-existing-midi',
+                    clipId: 'clip-existing-midi',
+                    points: [{ id: 'point-existing-midi' }],
+                },
+            ],
+        },
+    });
+}
+
+function seedUnrelatedProjectTruth(): void {
+    const clip = ClipDummy.create({
+        id: 'clip-existing-midi',
+        trackId: 'track-existing-midi',
+        name: 'Existing MIDI',
+        type: 'midi',
+        audioBufferId: undefined,
+    });
+    const track = TrackDummy.create({
+        id: 'track-existing-midi',
+        name: 'Existing MIDI',
+        kind: 'midi',
+        clips: [clip],
+    });
+    const automation: AutomationStoreState = {
+        lanes: [
+            {
+                id: 'automation-existing-midi-volume',
+                trackId: track.id,
+                clipId: clip.id,
+                parameterId: 'volume',
+                parameterName: 'Volume',
+                points: [{ id: 'point-existing-midi', beat: 1, value: 0.75, curve: 'linear', tension: 0 }],
+                objects: [],
+                visible: true,
+                enabled: true,
+                collapsed: false,
+                minValue: 0,
+                maxValue: 1,
+            },
+        ],
+    };
+
+    const seedTransaction = runWithAutomergeStorageTransaction(undefined, () => {
+        trackStore.set({ tracks: [track], selectedTrackId: track.id, ghostClips: [] });
+        setMidiStoreState({
+            ...emptyMidiStoreState,
+            notesByClipId: {
+                [clip.id]: [{ id: 'note-existing-midi', pitch: 64, startBeat: 1, duration: 2, velocity: 96 }],
+            },
+            ccByClipId: {
+                [clip.id]: [{ id: 'cc-existing-midi', controller: 1, value: 0.5, beat: 1, channel: 0 }],
+            },
+            pitchBendByClipId: {
+                [clip.id]: [{ id: 'bend-existing-midi', value: 0.25, beat: 1, channel: 0 }],
+            },
+        });
+        automationStore.set(automation);
+    });
+    if (seedTransaction.status !== 'returned') {
+        throw seedTransaction.error;
+    }
+    seedTransaction.commit();
+}
+
 describe('handleImportStemSet', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -212,6 +324,7 @@ describe('handleImportStemSet', () => {
         macroStore.set({ macros: [], recording: false, currentRecording: [] });
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         setMidiStoreState(emptyMidiStoreState);
+        automationStore.set({ lanes: [] });
     });
 
     afterEach(() => {
@@ -220,12 +333,21 @@ describe('handleImportStemSet', () => {
         clearHandlerRegistry();
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         setMidiStoreState(emptyMidiStoreState);
+        automationStore.set({ lanes: [] });
         flushAutomergeStorageWrites();
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
     });
 
     it('admits a guarded stem import into an atomic batch and undo executes the inverse exactly', async () => {
+        seedUnrelatedProjectTruth();
+        const preImportTruth = {
+            tracks: structuredClone(requireTrackState()),
+            midi: structuredClone(requireMidiState()),
+            automation: structuredClone(automationStore.value),
+        };
+        const preImportDocumentTruth = readAuthoritativeProjectTruth();
+        expectSeededAuthoritativeProjectTruth(preImportDocumentTruth);
         const action = createStemImportAction();
         const preApplyInverse = describeImportInverse(action);
 
@@ -238,6 +360,7 @@ describe('handleImportStemSet', () => {
 
         expect(result).toMatchObject({ status: 'committed' });
         expect(requireTrackState().tracks.map((track) => track.id)).toEqual([
+            'track-existing-midi',
             'folder-starter-stems',
             'track-kick',
             'track-vocal',
@@ -249,7 +372,10 @@ describe('handleImportStemSet', () => {
 
         await undo();
 
-        expect(requireTrackState().tracks).toEqual([]);
+        expect(readAuthoritativeProjectTruth()).toEqual(preImportDocumentTruth);
+        expect(requireTrackState()).toEqual(preImportTruth.tracks);
+        expect(requireMidiState()).toEqual(preImportTruth.midi);
+        expect(automationStore.value).toEqual(preImportTruth.automation);
         expect(mocks.promoteDurableStagedAsset).toHaveBeenCalledTimes(2);
         expect(mocks.publishTrackRemoved).toHaveBeenCalledTimes(3);
     });
@@ -270,6 +396,68 @@ describe('handleImportStemSet', () => {
         expect(mocks.promoteDurableStagedAsset).toHaveBeenNthCalledWith(1, 'lease-kick', 'hash-kick');
         expect(mocks.promoteDurableStagedAsset).toHaveBeenNthCalledWith(2, 'lease-kick', 'hash-kick');
         expect(mocks.promoteStagedAsset).not.toHaveBeenCalled();
+    });
+
+    it('declares manual repair when both post-commit attempts cannot prove exact recovery', async () => {
+        const result = await handleImportStemSet.execute(createStemImportAction());
+
+        expect(result).toMatchObject({
+            status: 'written',
+            postCommitEffect: { kind: 'external-effect', remediation: 'manual-repair' },
+        });
+    });
+
+    it('commits stem import once and preserves a manual-repair pending effect when both deferred attempts fail', async () => {
+        const document: Record<string, unknown> = {};
+        let projectCommitCount = 0;
+        const action = createStemImportAction();
+        const onProjectCommitPrepared = vi.fn();
+        flushAutomergeStorageWrites();
+        configureAutomergeStoragePort({
+            getDoc: () => document,
+            getSemanticMessage: () => undefined,
+            hasDoc: () => true,
+            mutateDoc: ({ changeFn }) => {
+                changeFn(document);
+                projectCommitCount += 1;
+            },
+        });
+        mocks.promoteDurableStagedAsset.mockResolvedValue({ status: 'failed', reason: 'asset promotion unavailable' });
+
+        const result = await executeAppActionBatch([action], { onProjectCommitPrepared });
+
+        expect(requireTrackState().tracks.map((track) => track.id)).toEqual([
+            'folder-starter-stems',
+            'track-kick',
+            'track-vocal',
+        ]);
+        expect(document).toMatchObject({
+            tracks: {
+                tracks: [{ id: 'folder-starter-stems' }, { id: 'track-kick' }, { id: 'track-vocal' }],
+            },
+        });
+        expect(projectCommitCount).toBe(1);
+        expect(mocks.promoteDurableStagedAsset).toHaveBeenCalledTimes(4);
+        expect(result).toMatchObject({
+            status: 'committed-with-warning',
+            warningDetails: [
+                {
+                    kind: 'external-effect',
+                    pendingEffect: { kind: 'external-effect', remediation: 'manual-repair', state: 'pending' },
+                },
+            ],
+        });
+        expect(onProjectCommitPrepared).toHaveBeenCalledWith(
+            expect.objectContaining({
+                pendingEffects: [
+                    expect.objectContaining({
+                        kind: 'external-effect',
+                        remediation: 'manual-repair',
+                        state: 'pending',
+                    }),
+                ],
+            })
+        );
     });
 
     it('rejects guarded compensation after generated project truth diverges', async () => {

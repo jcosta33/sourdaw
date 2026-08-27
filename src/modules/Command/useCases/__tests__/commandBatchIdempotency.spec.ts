@@ -1842,6 +1842,57 @@ describe('command batch idempotency', () => {
         expect(repairRuntimeFromProject).not.toHaveBeenCalled();
     });
 
+    it('preserves declared manual repair in the durable receipt without exposing reconciliation', async () => {
+        clearHandlerRegistry();
+        const gainStorage = createAutomergeStorage<{ value: number }>('root', 'trackGain');
+        expect(gainStorage.hydrate?.()).toBe(true);
+        const reconcile = vi.fn().mockRejectedValue(new Error('manual repair required'));
+        commandRuntimeRepairPort.setProvider(vi.fn());
+        registerHandlerMap({
+            setTrackGain: createHandler({
+                execute: () => {
+                    gainStorage.set({ value: 0.8 });
+                    return {
+                        status: 'written',
+                        afterCommit: () => Promise.reject(new Error('external effect unavailable')),
+                        afterAmbiguousCommit: reconcile,
+                        postCommitEffect: { kind: 'external-effect', remediation: 'manual-repair' },
+                    };
+                },
+            }),
+        });
+        const batch = compileBatch({ batchId: 'batch-manual-repair-effect', runId: 'run-manual-repair-effect' });
+
+        const first = await executeVersionedCommandBatchEnvelope({
+            authority: batch.authority,
+            confirmed: true,
+            serialized: batch.serialized,
+        });
+        commandBatchIdempotencyPort.setRepository({
+            lookup: () => Promise.resolve({ status: 'missing' }),
+            claim: () => Promise.resolve({ status: 'claimed' }),
+            complete: () => Promise.resolve(),
+            tryAcquireRecoveryLease: () => Promise.resolve(true),
+            release: () => Promise.resolve(),
+        });
+        const retry = await executeVersionedCommandBatchEnvelope({
+            authority: batch.authority,
+            serialized: batch.serialized,
+        });
+
+        expect(first).toMatchObject({
+            status: 'committed-with-warning',
+            receipt: {
+                pendingEffects: [expect.objectContaining({ kind: 'external-effect', remediation: 'manual-repair' })],
+            },
+        });
+        expect(retry).toMatchObject({
+            status: 'ambiguous',
+            reason: 'Pending external effect requires manual repair',
+        });
+        expect(reconcile).toHaveBeenCalledOnce();
+    });
+
     it('does not consume the idempotency key before commit authority is confirmed', async () => {
         const batch = compileBatch();
 

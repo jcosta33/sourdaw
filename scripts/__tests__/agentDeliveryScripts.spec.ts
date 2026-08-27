@@ -13,6 +13,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
+import { parseDocument } from 'yaml';
 
 import { coordinateDelivery } from '../deliverPullRequest.ts';
 import { AUTHOR_BOT_NODE_ID } from '../githubAppIdentity.ts';
@@ -35,6 +36,19 @@ function runGit(repository: string, args: string[]): string {
     delete env.GIT_DIR;
     delete env.GIT_WORK_TREE;
     return execFileSync('git', args, { cwd: repository, env, encoding: 'utf8' }).trim();
+}
+
+function runPackageRoute(repository: string, args: string[]): string {
+    const pnpmCli = process.env.npm_execpath;
+    if (!pnpmCli) {
+        throw new Error('The package-route fixture requires the active pnpm CLI path');
+    }
+    return execFileSync(process.execPath, [pnpmCli, ...args], {
+        cwd: repository,
+        env: process.env,
+        encoding: 'utf8',
+        timeout: 5_000,
+    });
 }
 
 function trustedPublishFixture(root: string, policy: string): void {
@@ -67,6 +81,112 @@ function trustedPublishFixture(root: string, policy: string): void {
     runGit(root, ['update-ref', 'refs/remotes/origin/main', 'HEAD']);
 }
 
+/**
+ * Runs `deliver` through the launcher with one poisoned executed source and answers with the
+ * refusal. Nothing may execute: a rule that refuses only once the command has started refuses
+ * nothing, because `ERR_MODULE_NOT_FOUND` has already killed the delivery by then.
+ */
+async function snapshotRefusalFor(poisoned: string): Promise<string> {
+    let executed = false;
+    const run = runTrustedGithubWriteCommand('deliver', ['42'], {
+        resolveOriginMain: () => 'trusted-sha',
+        readOriginSource: (_commit, candidate) =>
+            candidate === 'scripts/deliverPullRequest.ts' ? poisoned : 'trusted',
+        executeSnapshot: async () => {
+            executed = true;
+            return 0;
+        },
+    });
+    const refusal = await run.then(
+        () => 'no refusal',
+        (error: unknown) => String(error)
+    );
+    expect(executed).toBe(false);
+    return refusal;
+}
+
+function runTrustedDeliverWithLoader(loader: string): Promise<number> {
+    return runTrustedGithubWriteCommand('deliver', ['42'], {
+        resolveOriginMain: () => 'trusted-sha',
+        readOriginSource: (_commit, candidate) => (candidate === BOOTSTRAP_PATH ? loader : 'trusted'),
+        executeSnapshot: async () => 0,
+    });
+}
+
+type WorkflowRecord = Record<string, unknown>;
+
+const AUTHORIZED_APPROVAL_CONDITION =
+    "github.event_name != 'pull_request_review' || github.event.review.state == 'approved'";
+const REVIEW_ISOLATED_CONCURRENCY_GROUP = 'health-gates-${{ github.event.pull_request.number || github.ref }}';
+const AUTHORIZED_CANCELLATION_CONDITION = "${{ github.event_name == 'pull_request' }}";
+const GATE_SUMMARY_NAME = 'Gate';
+const AUTHORIZED_GATE_CONDITION = 'always()';
+const CODEQL_CONDITION = "needs.decide.outputs.heavy == 'true'";
+
+function asWorkflowRecord(value: unknown, label: string): WorkflowRecord {
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+        throw new TypeError(`${label} must be a mapping`);
+    }
+    return value as WorkflowRecord;
+}
+
+function workflowRecordAt(record: WorkflowRecord, key: string): WorkflowRecord {
+    return asWorkflowRecord(record[key], key);
+}
+
+function workflowArrayAt(record: WorkflowRecord, key: string): unknown[] {
+    const value = record[key];
+    if (!Array.isArray(value)) {
+        throw new TypeError(`${key} must be an array`);
+    }
+    return value;
+}
+
+function workflowJob(candidate: WorkflowRecord, name: string): WorkflowRecord {
+    return workflowRecordAt(workflowRecordAt(candidate, 'jobs'), name);
+}
+
+function workflowStep(owner: WorkflowRecord, name: string): WorkflowRecord {
+    const step = workflowArrayAt(owner, 'steps').find(
+        (candidate: unknown) => asWorkflowRecord(candidate, 'step').name === name
+    );
+    if (step === undefined) {
+        throw new Error(`missing workflow step: ${name}`);
+    }
+    return asWorkflowRecord(step, name);
+}
+
+function healthGateWorkflow(): { document: ReturnType<typeof parseDocument>; workflow: WorkflowRecord } {
+    const source = readFileSync(join(import.meta.dirname, '../../.github/workflows/health-gates.yml'), 'utf8');
+    const document = parseDocument(source);
+    if (document.errors.length > 0) {
+        throw new Error(
+            `health-gates.yml is invalid YAML: ${document.errors.map((error) => error.message).join('; ')}`
+        );
+    }
+    return { document, workflow: asWorkflowRecord(document.toJS(), 'workflow') };
+}
+
+function stableInformationalGateSummary(workflow: WorkflowRecord): WorkflowRecord {
+    for (const [jobId, value] of Object.entries(workflowRecordAt(workflow, 'jobs'))) {
+        const name = asWorkflowRecord(value, jobId).name;
+        if (typeof name !== 'string') {
+            throw new TypeError(`${jobId} name must be a string`);
+        }
+        if (/\$\{\{\s*github\.(?:event|ref)/.test(name)) {
+            throw new Error('workflow job check names must be event-independent');
+        }
+        if (jobId !== 'gate' && (name === GATE_SUMMARY_NAME || /['"]Gate['"]/.test(name))) {
+            throw new Error('only the gate job may emit the stable Gate summary check name');
+        }
+    }
+    const gate = workflowJob(workflow, 'gate');
+    if (gate.name !== GATE_SUMMARY_NAME) {
+        throw new Error('the gate job must emit the stable Gate summary check name');
+    }
+    return gate;
+}
+
 describe('package scripts and gitignore', () => {
     it('defines the trusted pnpm commands as direct node invocations', () => {
         const pkg = JSON.parse(readFileSync(join(import.meta.dirname, '../../package.json'), 'utf8')) as {
@@ -87,6 +207,59 @@ describe('package scripts and gitignore', () => {
         const gitignore = readFileSync(join(import.meta.dirname, '../../.gitignore'), 'utf8');
         expect(gitignore).toContain('.env.*');
         expect(gitignore).toContain('.agents/review-bundles/');
+    });
+
+    it('keeps the informational Gate summary stable and validates job outcomes', () => {
+        const { document, workflow } = healthGateWorkflow();
+        expect(document.errors).toEqual([]);
+        const events = workflowRecordAt(workflow, 'on');
+        expect(workflowRecordAt(events, 'pull_request_review').types).toEqual(['submitted']);
+
+        const concurrency = workflowRecordAt(workflow, 'concurrency');
+        expect(concurrency.group).toBe(REVIEW_ISOLATED_CONCURRENCY_GROUP);
+        expect(concurrency['cancel-in-progress']).toBe(AUTHORIZED_CANCELLATION_CONDITION);
+        expect(workflowJob(workflow, 'decide').if).toBe(AUTHORIZED_APPROVAL_CONDITION);
+
+        const gate = stableInformationalGateSummary(workflow);
+        const eventDependentGate = structuredClone(workflow);
+        workflowJob(eventDependentGate, 'gate').name =
+            "${{ github.event_name == 'workflow_dispatch' && 'Gate' || 'Gate' }}";
+        expect(() => stableInformationalGateSummary(eventDependentGate)).toThrow(
+            'workflow job check names must be event-independent'
+        );
+        const renamedGate = structuredClone(workflow);
+        workflowJob(renamedGate, 'gate').name = 'Health summary';
+        expect(() => stableInformationalGateSummary(renamedGate)).toThrow(
+            'the gate job must emit the stable Gate summary check name'
+        );
+        const duplicateGate = structuredClone(workflow);
+        workflowJob(duplicateGate, 'lint').name = GATE_SUMMARY_NAME;
+        expect(() => stableInformationalGateSummary(duplicateGate)).toThrow(
+            'only the gate job may emit the stable Gate summary check name'
+        );
+        expect(gate.if).toBe(AUTHORIZED_GATE_CONDITION);
+        const gateStep = workflowStep(gate, 'Require every job to have succeeded or been skipped');
+        expect(workflowRecordAt(gateStep, 'env')).toEqual({ RESULTS: '${{ toJSON(needs) }}' });
+    });
+
+    it('runs CodeQL only in the approved heavy lane', () => {
+        const { workflow } = healthGateWorkflow();
+        const events = workflowRecordAt(workflow, 'on');
+        expect(Object.hasOwn(events, 'pull_request')).toBe(true);
+        expect(Object.hasOwn(events, 'pull_request_target')).toBe(false);
+
+        const codeql = workflowJob(workflow, 'codeql');
+        expect(codeql.if).toBe(CODEQL_CONDITION);
+        expect(workflowRecordAt(codeql, 'permissions')).toEqual({
+            contents: 'read',
+            'security-events': 'write',
+            actions: 'read',
+        });
+        expect(Object.hasOwn(workflowStep(codeql, 'Checkout'), 'if')).toBe(false);
+
+        const analyze = workflowStep(codeql, 'Analyse');
+        expect(analyze.uses).toBe('github/codeql-action/analyze@c16c0f3f2812ec4bb3750a5ed64873fe2ce0fbef');
+        expect(Object.hasOwn(analyze, 'with')).toBe(false);
     });
 
     /**
@@ -177,6 +350,74 @@ describe('package scripts and gitignore', () => {
         expect(executedUncheckedDependency).toBe(false);
     });
 
+    /**
+     * The snapshot is a temporary directory holding nothing but `scripts/`, so Node resolves a bare
+     * specifier upward from there, finds no `node_modules`, and kills the command with
+     * `ERR_MODULE_NOT_FOUND` partway through a delivery. Checking only local specifiers left that
+     * failure mode invisible until it happened, which is why it is refused before anything executes.
+     *
+     * A bare package is named by three shapes, not one. A rule that read only a `from` clause let the
+     * side-effect statement and the dynamic call straight through — and the dynamic call is the shape
+     * the loader itself uses, so the rule passed on that file by never seeing its import at all.
+     */
+    it.each([
+        {
+            label: 'a bare package specifier no snapshot can resolve',
+            poisoned: "import { parse } from 'yaml';",
+        },
+        {
+            label: 'a re-exported bare package specifier',
+            poisoned: "export { parse } from 'yaml';",
+        },
+        {
+            label: 'a bare package imported for its side effects alone',
+            poisoned: "import 'yaml';",
+        },
+        {
+            label: 'a bare package reached through a dynamic import',
+            poisoned: "const { parse } = await import('yaml');",
+        },
+    ])('refuses $label', async ({ poisoned }) => {
+        expect(await snapshotRefusalFor(poisoned)).toMatch(
+            /scripts\/deliverPullRequest\.ts imports yaml, which does not resolve in the trusted snapshot/
+        );
+    });
+
+    it('refuses an import of the loader the snapshot never executes', async () => {
+        expect(await snapshotRefusalFor("import { BOOTSTRAP_PATH } from './trustedGithubWriteBootstrap.ts';")).toMatch(
+            /scripts\/deliverPullRequest\.ts imports scripts\/trustedGithubWriteBootstrap\.ts, which the trusted snapshot never executes/
+        );
+    });
+
+    /**
+     * The loader's exemption is one package in one file, and it is sound only because that import
+     * never resolves from a snapshot: the launcher runs the loader from the protected primary
+     * checkout, where the repository's packages do resolve, and the snapshot writes the loader
+     * without ever importing it. The real loader is fed through the rule here rather than a fixture,
+     * so widening the exemption — or letting the loader take a second package — fails.
+     */
+    it('exempts the loader own yaml dependency and no other bare package in it', async () => {
+        const loader = readFileSync(join(import.meta.dirname, '../trustedGithubWriteBootstrap.ts'), 'utf8');
+
+        await expect(runTrustedDeliverWithLoader(loader)).resolves.toBe(0);
+        await expect(runTrustedDeliverWithLoader(`${loader}\nawait import('chalk');\n`)).rejects.toThrow(
+            /scripts\/trustedGithubWriteBootstrap\.ts imports chalk, which does not resolve in the trusted snapshot/
+        );
+    });
+
+    /**
+     * The exemption above is only sound while the loader itself needs it, and it does: `deliver`
+     * parses the gating workflow with the repository's YAML package, which no snapshot can reach.
+     * Behind a dynamic call, because `lane:publish` and `issue:reconcile` read no workflow and must
+     * not fail to start over a package neither one uses.
+     */
+    it('imports the yaml parser only from the loader, and never statically', () => {
+        const loader = readFileSync(join(import.meta.dirname, '../trustedGithubWriteBootstrap.ts'), 'utf8');
+
+        expect(loader).not.toMatch(/^import .*from ['"]yaml['"]/m);
+        expect(loader).toMatch(/await import\('yaml'\)/);
+    });
+
     it('runs the package route only from the protected primary root and snapshots modified helpers', () => {
         expect(trustedDependencyPaths('lane:publish')).toEqual([
             'scripts/trustedGithubWriteBootstrap.ts',
@@ -196,11 +437,7 @@ describe('package scripts and gitignore', () => {
                 'export const publishingPermission = "workflow-write";\n'
             );
 
-            execFileSync('pnpm', ['lane:publish', policyLog], {
-                cwd: checkout,
-                env: process.env,
-                encoding: 'utf8',
-            });
+            runPackageRoute(checkout, ['lane:publish', policyLog]);
 
             expect(readFileSync(policyLog, 'utf8')).toBe('checkout:ordinary\n');
 
@@ -208,19 +445,17 @@ describe('package scripts and gitignore', () => {
                 join(checkout, 'scripts/trustedGithubWriteBootstrap.ts'),
                 `${readFileSync(join(checkout, 'scripts/trustedGithubWriteBootstrap.ts'), 'utf8')}\n// lane-local drift\n`
             );
-            expect(() =>
-                execFileSync('pnpm', ['lane:publish', policyLog], { cwd: checkout, env: process.env, encoding: 'utf8' })
-            ).toThrow(/protected primary launcher does not match/);
+            expect(() => runPackageRoute(checkout, ['lane:publish', policyLog])).toThrow(
+                /protected primary launcher does not match/
+            );
 
             runGit(checkout, ['restore', 'scripts/trustedGithubWriteBootstrap.ts']);
             runGit(checkout, ['worktree', 'add', '-b', 'agent/test/current-route', lane]);
-            expect(() =>
-                execFileSync('pnpm', ['lane:publish', policyLog], { cwd: lane, env: process.env, encoding: 'utf8' })
-            ).toThrow(/protected primary checkout/);
+            expect(() => runPackageRoute(lane, ['lane:publish', policyLog])).toThrow(/protected primary checkout/);
         } finally {
             rmSync(fixtureRoot, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
         }
-    });
+    }, 15_000);
 
     it('publishes a pre-migration lane through the primary package without executing its package route', () => {
         const fixtureRoot = mkdtempSync(join(tmpdir(), 'sourdaw-primary-lane-route-'));
@@ -248,11 +483,7 @@ describe('package scripts and gitignore', () => {
                 `import { writeFileSync } from 'node:fs'; writeFileSync(${JSON.stringify(poisonLog)}, 'entered');\n`
             );
 
-            execFileSync('pnpm', ['lane:publish', '--lane', lane, policyLog], {
-                cwd: primary,
-                env: process.env,
-                encoding: 'utf8',
-            });
+            runPackageRoute(primary, ['lane:publish', '--lane', lane, policyLog]);
 
             expect(readFileSync(policyLog, 'utf8')).toBe('primary:ordinary\n');
             expect(existsSync(poisonLog)).toBe(false);
@@ -374,7 +605,37 @@ describe('package scripts and gitignore', () => {
 
         expect(result).toBe(17);
         expect(resolves).toBe(1);
-        expect(originReads).toEqual(paths.map((path) => `pinned-sha:${path}`));
+        // The gating workflow is read at that same pinned commit, and only for `deliver`. Reading it
+        // at a ref, a `HEAD`, or a second resolution would let the merge gate be decided by a commit
+        // other than the one this closure was snapshotted from.
+        expect(originReads).toEqual([
+            ...paths.map((path) => `pinned-sha:${path}`),
+            'pinned-sha:.github/workflows/health-gates.yml',
+        ]);
+    });
+
+    /**
+     * `lane:publish` and `issue:reconcile` decide no merge, so neither reads a workflow. A launcher
+     * that read one for every command would make them fail over a file and a parser they never use.
+     */
+    it.each(['lane:publish', 'issue:reconcile'] as const)('reads no gating workflow for %s', async (command) => {
+        const originReads: string[] = [];
+        let gateWorkflow: unknown = 'unset';
+
+        await runTrustedGithubWriteCommand(command, [], {
+            resolveOriginMain: () => 'pinned-sha',
+            readOriginSource: (_commit, path) => {
+                originReads.push(path);
+                return 'trusted';
+            },
+            executeSnapshot: async (_command, _args, snapshot) => {
+                gateWorkflow = snapshot.gateWorkflow;
+                return 0;
+            },
+        });
+
+        expect(originReads).toEqual([...trustedDependencyPaths(command)]);
+        expect(gateWorkflow).toBeUndefined();
     });
 
     it('binds the launcher to the primary checkout instead of a worktree alias', () => {
@@ -466,6 +727,29 @@ describe('package scripts and gitignore', () => {
         expect(existsSync(snapshotDirectory)).toBe(false);
     });
 
+    it('passes the exact publisher argv tuple into the trusted snapshot runner', async () => {
+        const expectedArgs = ['12', '--test', 'Run the focused publisher specs and confirm they pass.'];
+        await expect(
+            executeTrustedSnapshot('lane:publish', expectedArgs, {
+                commit: 'pinned-sha',
+                sources: new Map([
+                    [
+                        'scripts/publishLane.ts',
+                        `export async function runPublishLaneCli(args) {
+    return args.length === 3
+        && args[0] === '12'
+        && args[1] === '--test'
+        && args[2] === 'Run the focused publisher specs and confirm they pass.'
+        ? 0
+        : 1;
+}
+`,
+                    ],
+                ]),
+            })
+        ).resolves.toBe(0);
+    });
+
     it('wires PR operations and the regular-issue adapter to distinct least-privilege sessions', async () => {
         const disposed: string[] = [];
         const authentication = (token: string, permissions: Record<string, string>): DeliveryAuthentication => ({
@@ -481,6 +765,8 @@ describe('package scripts and gitignore', () => {
         const deliveryPort: DeliveryPort = {
             fetch: () => undefined,
             pullRequest: () => expect.fail('delivery domain should be injected in this coordinator test'),
+            gateRequiredCheckNames: () => expect.fail('delivery domain should be injected in this coordinator test'),
+            headCheckRuns: () => expect.fail('delivery domain should be injected in this coordinator test'),
             reviewState: () => expect.fail('delivery domain should be injected in this coordinator test'),
             dependents: () => [],
             repositoryDeletesMergedBranches: () => false,

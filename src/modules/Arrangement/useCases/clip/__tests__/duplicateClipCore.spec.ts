@@ -11,6 +11,8 @@ const mocks = vi.hoisted(() => ({
     getWarpState: vi.fn(),
     resolveEligibleClipWriteTarget: vi.fn(),
     setWarpState: vi.fn(),
+    getEnvelope: vi.fn(),
+    setEnvelope: vi.fn(),
 }));
 
 vi.mock('../../../repositories/track/getTrackState', () => ({
@@ -44,6 +46,11 @@ vi.mock('../../../stores/warpStates', async (importOriginal) => {
         setWarpState: mocks.setWarpState,
     };
 });
+
+vi.mock('../../../stores/gainEnvelopeStore', () => ({
+    getEnvelope: mocks.getEnvelope,
+    setEnvelope: mocks.setEnvelope,
+}));
 
 vi.mock('../../../stores/resolveEligibleClipWriteTarget', () => ({
     resolveEligibleClipWriteTarget: mocks.resolveEligibleClipWriteTarget,
@@ -212,6 +219,68 @@ describe('duplicateClipCore', () => {
         expect(mocks.setWarpState).not.toHaveBeenCalled();
     });
 
+    it('clones the gain envelope re-keyed to the duplicate, with its own point objects', () => {
+        const source = {
+            id: 'c1',
+            trackId: 't1',
+            name: 'Take',
+            startBeat: 0,
+            endBeat: 4,
+            type: 'audio' as const,
+            fadeInBeats: 0,
+            fadeOutBeats: 0,
+            gain: 1,
+            color: '',
+            locked: false,
+            muted: false,
+        };
+        mocks.getTrackState.mockReturnValue({ tracks: [{ id: 't1', clips: [source] }] });
+        mocks.addClip.mockReturnValue({ id: 'c2', type: 'audio' });
+        const sourcePoints = [
+            { id: 'p1', beatOffset: 0, gainDb: -3 },
+            { id: 'p2', beatOffset: 2, gainDb: 1.5 },
+        ];
+        mocks.getEnvelope.mockReturnValue({ clipId: 'c1', enabled: true, points: sourcePoints });
+
+        expect(duplicateClipCore({ clipId: 'c1', computeStartBeat: (clip) => clip.endBeat })).toBe(true);
+
+        expect(mocks.getEnvelope).toHaveBeenCalledWith('c1');
+        expect(mocks.setEnvelope).toHaveBeenCalledWith('c2', {
+            clipId: 'c2',
+            enabled: true,
+            points: sourcePoints,
+        });
+        // A shared point array would alias the two clips' envelopes: editing one
+        // would edit the other. The clone must own its copies.
+        const written = mocks.setEnvelope.mock.calls[0]?.[1] as { points: unknown[] };
+        expect(written.points).not.toBe(sourcePoints);
+        expect(written.points[0]).not.toBe(sourcePoints[0]);
+    });
+
+    it('writes no envelope for the duplicate when the source clip has none', () => {
+        const source = {
+            id: 'c1',
+            trackId: 't1',
+            name: 'Take',
+            startBeat: 0,
+            endBeat: 4,
+            type: 'audio' as const,
+            fadeInBeats: 0,
+            fadeOutBeats: 0,
+            gain: 1,
+            color: '',
+            locked: false,
+            muted: false,
+        };
+        mocks.getTrackState.mockReturnValue({ tracks: [{ id: 't1', clips: [source] }] });
+        mocks.addClip.mockReturnValue({ id: 'c2', type: 'audio' });
+        mocks.getEnvelope.mockReturnValue(undefined);
+
+        expect(duplicateClipCore({ clipId: 'c1', computeStartBeat: (clip) => clip.endBeat })).toBe(true);
+
+        expect(mocks.setEnvelope).not.toHaveBeenCalled();
+    });
+
     it('rejects an ineligible source before computing or publishing any effect', () => {
         const computeStartBeat = vi.fn(() => 4);
         mocks.resolveEligibleClipWriteTarget.mockReturnValue({ status: 'ineligible' });
@@ -230,6 +299,8 @@ describe('duplicateClipCore', () => {
         expect(mocks.duplicateClipAutomation).not.toHaveBeenCalled();
         expect(mocks.getWarpState).not.toHaveBeenCalled();
         expect(mocks.setWarpState).not.toHaveBeenCalled();
+        expect(mocks.getEnvelope).not.toHaveBeenCalled();
+        expect(mocks.setEnvelope).not.toHaveBeenCalled();
         expect(mocks.duplicateClipNotes).not.toHaveBeenCalled();
     });
 
@@ -350,6 +421,72 @@ describe('duplicateClipCore', () => {
             expect(duplicateClipCore({ clipId: 'c1' } as never)).toBe(false);
             expect(mocks.resolveEligibleClipWriteTarget).not.toHaveBeenCalled();
         });
+    });
+
+    it('adds the copy to an explicit destination track when one is given', () => {
+        const source = {
+            id: 'c1',
+            trackId: 't1',
+            name: 'Take',
+            startBeat: 0,
+            endBeat: 4,
+            type: 'audio' as const,
+        };
+        mocks.resolveEligibleClipWriteTarget.mockImplementation((input: { clipId?: string; trackId?: string }) => {
+            if (input.clipId === 'c1') {
+                return { status: 'eligible', clipId: 'c1', trackId: 't1' };
+            }
+            if (input.trackId === 't2') {
+                return { status: 'eligible', trackId: 't2' };
+            }
+            return { status: 'missing' };
+        });
+        mocks.getTrackState.mockReturnValue({
+            tracks: [
+                { id: 't1', clips: [source] },
+                { id: 't2', clips: [] },
+            ],
+        });
+        mocks.addClip.mockReturnValue({ id: 'c2', type: 'audio' });
+
+        expect(duplicateClipCore({ clipId: 'c1', destinationTrackId: 't2', computeStartBeat: () => 8 })).toBe(true);
+
+        // The destination track — not the source track — is eligibility-checked
+        // and receives the copy.
+        expect(mocks.resolveEligibleClipWriteTarget).toHaveBeenCalledWith({ trackId: 't2' });
+        expect(mocks.addClip).toHaveBeenCalledWith(expect.objectContaining({ trackId: 't2', startBeat: 8 }));
+    });
+
+    it('aborts when an explicit destination track is not eligible', () => {
+        const computeStartBeat = vi.fn(() => 8);
+        const source = {
+            id: 'c1',
+            trackId: 't1',
+            name: 'Take',
+            startBeat: 0,
+            endBeat: 4,
+            type: 'audio' as const,
+        };
+        mocks.resolveEligibleClipWriteTarget.mockImplementation((input: { clipId?: string; trackId?: string }) => {
+            if (input.clipId === 'c1') {
+                return { status: 'eligible', clipId: 'c1', trackId: 't1' };
+            }
+            if (input.trackId === 't2') {
+                return { status: 'ineligible' };
+            }
+            return { status: 'missing' };
+        });
+        mocks.getTrackState.mockReturnValue({
+            tracks: [
+                { id: 't1', clips: [source] },
+                { id: 't2', clips: [] },
+            ],
+        });
+
+        expect(duplicateClipCore({ clipId: 'c1', destinationTrackId: 't2', computeStartBeat })).toBe(false);
+
+        expect(computeStartBeat).not.toHaveBeenCalled();
+        expect(mocks.addClip).not.toHaveBeenCalled();
     });
 
     it('aborts when destination track write is not eligible', () => {

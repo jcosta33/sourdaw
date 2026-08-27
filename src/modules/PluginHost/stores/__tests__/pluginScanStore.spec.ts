@@ -45,7 +45,7 @@ describe('pluginScanStore', () => {
             isScanning: false,
             lastScanTime: 1_700_000_000_000,
             errors: ['Failed to load plugin c'],
-            notices: ['VST3 plugins are recognised but not loaded yet.'],
+            notices: ['VST2 plugins are not loaded and never will be.'],
         };
 
         pluginScanStore.set(finished);
@@ -212,7 +212,7 @@ describe('pluginScanStore hydration', () => {
                 isScanning: true,
                 lastScanTime: null,
                 errors: ['Failed to load plugin c'],
-                notices: ['VST3 plugins are recognised but not loaded yet.'],
+                notices: ['VST2 plugins are not loaded and never will be.'],
             })
         );
 

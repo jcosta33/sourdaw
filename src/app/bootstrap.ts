@@ -169,7 +169,10 @@ import {
 import { logCapabilities } from '#/utils/capabilities';
 import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
-import { captureCommandBatchPreflightState } from './captureCommandBatchPreflightState';
+import {
+    captureAgentProjectInspectionState,
+    captureCommandBatchPreflightState,
+} from './captureCommandBatchPreflightState';
 import { getProductionCommandHandlerMaps } from './getProductionCommandHandlerMaps';
 import { prepareOfflineDeviceSetup } from './prepareOfflineDeviceSetup';
 import { eventBus, logger } from './registerDependencies';
@@ -199,9 +202,7 @@ configureRuntimeGraphProjectRevisionValidator(
 );
 configureRuntimeGraphTopologyValidator(runtimeGraphTopology.matchesCurrentProject);
 commandBatchPreflightPort.setProvider(captureCommandBatchPreflightState);
-agentProjectInspectionPort.setProvider(({ projectDocument, targetIds }) =>
-    captureCommandBatchPreflightState({ assetReferences: [], projectDocument, targetIds })
-);
+agentProjectInspectionPort.setProvider(captureAgentProjectInspectionState);
 commandProjectDivergencePort.setProvider(inspectAgentProjectDivergence);
 commandBatchPreviewPort.setProvider(createCommandPreviewWorkspace);
 commandBatchPreviewPort.setRecoveryProvider(createCommandRecoveryWorkspace);

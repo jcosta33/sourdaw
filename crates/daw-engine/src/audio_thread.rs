@@ -20,6 +20,7 @@ use crate::scheduler::{
 use crate::timeline::{timeline_rt_diagnostics_channel, TimelineRtDiagnosticsSnapshot};
 use rtrb::{Consumer, Producer, RingBuffer};
 use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, OnceLock};
 use std::thread;
@@ -216,7 +217,7 @@ pub fn spawn_audio_thread(command_rx: Consumer<GraphCommand>) -> Result<AudioThr
         engine_event_tx,
         false,
     )
-    .map(|(handle, _sample_rate, _retired_adoption_tx)| handle)
+    .map(|(handle, _sample_rate, _bridge_round_trip_frames, _retired_adoption_tx)| handle)
 }
 
 /// Spawn the audio thread and report the sample rate the stream actually
@@ -238,6 +239,7 @@ pub(crate) fn spawn_audio_thread_with_diagnostics(
     (
         AudioThreadHandle,
         f32,
+        Arc<AtomicUsize>,
         Sender<Consumer<RetiredGraphObjects>>,
     ),
     String,
@@ -246,6 +248,8 @@ pub(crate) fn spawn_audio_thread_with_diagnostics(
     let (reclaimer_shutdown_tx, retired_adoption_tx) = spawn_retirement_reclaimer(retired_rx)?;
     let sample_rate_cell = Arc::new(OnceLock::new());
     let sample_rate_slot = Arc::clone(&sample_rate_cell);
+    let bridge_round_trip_frames = new_bridge_round_trip_slot();
+    let bridge_round_trip_slot = Arc::clone(&bridge_round_trip_frames);
 
     let handle = spawn_owned_audio_stream(move || {
         match build_audio_stream(
@@ -257,6 +261,7 @@ pub(crate) fn spawn_audio_thread_with_diagnostics(
             engine_event_tx,
             force_default_buffer,
             &sample_rate_slot,
+            Arc::clone(&bridge_round_trip_slot),
         ) {
             Ok(stream) => Ok(StreamWithReclaimerShutdown(
                 Some(stream),
@@ -275,7 +280,12 @@ pub(crate) fn spawn_audio_thread_with_diagnostics(
     let sample_rate = *sample_rate_cell
         .get()
         .ok_or_else(|| "Audio stream started without reporting its sample rate".to_string())?;
-    Ok((handle, sample_rate, retired_adoption_tx))
+    Ok((
+        handle,
+        sample_rate,
+        bridge_round_trip_frames,
+        retired_adoption_tx,
+    ))
 }
 
 /// Write the engine's internal stereo pair (`left`/`right`, always rendered
@@ -371,6 +381,44 @@ pub(crate) fn effective_buffer_size(
     negotiated_buffer_size(supported)
 }
 
+/// Publish the bridge round trip this device period settles at.
+///
+/// The period is what decides how deep the round trip settles, and the host has
+/// to compensate that depth. Only the render callback sees the period, so it
+/// publishes the frames a control thread would otherwise have to guess. A
+/// relaxed store is the one wait-free, allocation-free publish this callback
+/// may do; nothing downstream orders anything against it.
+///
+/// Temporary, with the bridge: jcosta33/sourdaw#2230 replaces the relay with
+/// the native graph, and this publication goes with it.
+#[inline]
+fn publish_bridge_round_trip(slot: &AtomicUsize, callback_frames: usize) {
+    slot.store(
+        crate::audio_bridge::settled_round_trip_frames(callback_frames),
+        Ordering::Relaxed,
+    );
+}
+
+/// The slot the render callback publishes the round trip into, seeded with what
+/// the round trip is assumed to be until the first callback measures it.
+///
+/// A stream is built, and the `EngineHandle` that owns it is usable, before the
+/// device has called back even once — the driver's own start latency. A plugin
+/// loaded in that window reads this slot, and it reads it exactly once, so a
+/// zero here would compensate that instance at zero for as long as it lives:
+/// silently uncompensated bridged audio, which is the defect the slot exists to
+/// remove. The negotiated period is the engine's own request and very nearly
+/// always what the device grants, so seeding it means the first callback
+/// refines a close estimate rather than replacing a wrong answer.
+///
+/// Every construction of the slot goes through here so no call site can
+/// reintroduce that zero.
+pub(crate) fn new_bridge_round_trip_slot() -> Arc<AtomicUsize> {
+    Arc::new(AtomicUsize::new(
+        crate::audio_bridge::settled_round_trip_frames(PREFERRED_BUFFER_FRAMES as usize),
+    ))
+}
+
 #[allow(clippy::too_many_arguments)]
 fn build_audio_stream(
     command_rx: Consumer<GraphCommand>,
@@ -381,6 +429,7 @@ fn build_audio_stream(
     mut engine_event_tx: Producer<EngineEvent>,
     force_default_buffer: bool,
     sample_rate_out: &OnceLock<f32>,
+    bridge_round_trip_slot: Arc<AtomicUsize>,
 ) -> Result<PlatformStream, String> {
     let open = PlatformOutputBackend::open_default_output(DeviceOpenRequest {
         force_default_period: force_default_buffer,
@@ -431,7 +480,9 @@ fn build_audio_stream(
         // The device's frame count for this period is the budget:
         // a bridge may spend it plus one quantum of catch-up, so a
         // backlog never renders as one spike inside the deadline.
-        scheduler.process_audio_bridges(data.len() / channels);
+        let callback_frames = data.len() / channels;
+        publish_bridge_round_trip(&bridge_round_trip_slot, callback_frames);
+        scheduler.process_audio_bridges(callback_frames);
 
         // 3. Process the native effects chain (for standalone native rendering).
         // Scratch is fixed-size and captured by the callback, so no heap
@@ -484,12 +535,15 @@ fn build_audio_stream(
 #[cfg(test)]
 mod tests {
     use super::{
-        spawn_owned_audio_stream, spawn_owned_audio_stream_with_timeout,
-        spawn_retirement_reclaimer, AudioThreadHandle, StreamWithReclaimerShutdown,
+        new_bridge_round_trip_slot, publish_bridge_round_trip, spawn_owned_audio_stream,
+        spawn_owned_audio_stream_with_timeout, spawn_retirement_reclaimer, AudioThreadHandle,
+        StreamWithReclaimerShutdown,
     };
+    use crate::audio_bridge::settled_round_trip_frames;
     use cpal::{BufferSize, SupportedBufferSize};
     use rtrb::RingBuffer;
     use std::rc::Rc;
+    use std::sync::atomic::Ordering;
     use std::sync::mpsc;
     use std::thread;
     use std::time::{Duration, Instant};
@@ -506,6 +560,43 @@ mod tests {
                 .send((self.created_on, thread::current().id()))
                 .expect("drop observation receiver should remain connected");
         }
+    }
+
+    /// The callback publishes the round trip its own period settles at, not a
+    /// constant and not the one the slot was seeded with. Nothing else on the
+    /// callback side is observable without a device, so this is where the
+    /// wiring between a device period and the number a host compensates is
+    /// pinned.
+    #[test]
+    fn the_callback_publishes_the_round_trip_its_own_period_settles_at() {
+        let slot = new_bridge_round_trip_slot();
+
+        publish_bridge_round_trip(&slot, 256);
+        assert_eq!(slot.load(Ordering::Relaxed), settled_round_trip_frames(256));
+
+        // A device that grants a different period than the engine asked for
+        // must move the published number, or every such device compensates
+        // against a period it never ran at.
+        publish_bridge_round_trip(&slot, 1024);
+        assert_eq!(
+            slot.load(Ordering::Relaxed),
+            settled_round_trip_frames(1024)
+        );
+    }
+
+    /// A stream is usable before its device has called back once. A plugin
+    /// loaded in that window reads this slot exactly once and keeps the answer
+    /// for as long as it lives, so a zero here is a permanently uncompensated
+    /// instance with nothing logged.
+    #[test]
+    fn a_slot_no_callback_has_touched_yet_reports_the_negotiated_period() {
+        let slot = new_bridge_round_trip_slot();
+
+        assert_eq!(
+            slot.load(Ordering::Relaxed),
+            settled_round_trip_frames(super::PREFERRED_BUFFER_FRAMES as usize)
+        );
+        assert_ne!(slot.load(Ordering::Relaxed), 0);
     }
 
     struct BlockingDropResource {

@@ -9,7 +9,7 @@
  * for. Formats the scan reports and the host cannot load are deliberately
  * absent.
  */
-export const SUPPORTED_PLUGIN_FORMATS: readonly string[] = ['clap'];
+export const SUPPORTED_PLUGIN_FORMATS: readonly string[] = ['clap', 'vst3'];
 
 /** Whether a scanned plugin's wire format is one the host can load. */
 export function isSupportedPluginFormat(format: string): boolean {

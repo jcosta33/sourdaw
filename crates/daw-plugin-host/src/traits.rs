@@ -16,6 +16,38 @@ use std::ffi::c_void;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
 
+/// Host-supplied wake invoked whenever a plugin flags a latency change.
+///
+/// Runs on whatever thread the plugin called the host callback from, so it must
+/// not block, allocate unboundedly, or re-enter the wrapper. The host
+/// application installs it to wake its own control path; keeping it an opaque
+/// closure is what lets this crate stay free of any transport dependency.
+///
+/// Seam vocabulary rather than a CLAP one: every format has a plugin-initiated
+/// latency change, and each backend's host callbacks install one of these.
+pub type LatencyChangeNotifier = Box<dyn Fn() + Send + Sync>;
+
+/// Host-supplied resize of the native window one plugin's editor is drawn into.
+///
+/// Every format lets a plugin ask its host for a different editor size —
+/// VST3 through `IPlugFrame::resizeView`, CLAP through
+/// `clap_host_gui::request_resize` — and none of them can be answered by
+/// returning a value, because the ask arrives from inside the plugin rather than
+/// from a host call. So the host installs the one thing the backend cannot do
+/// for itself: change the size of the window it was handed a handle to.
+///
+/// Seam vocabulary rather than a VST3 one, and shared rather than owned, because
+/// the backend hands a clone to whichever host object the format routes the
+/// request through. Called on the control path only.
+pub type EditorWindowResizer = Arc<dyn Fn(u32, u32) + Send + Sync>;
+
+/// The display scale a backend assumes until the host states one.
+///
+/// One converts nothing, which is the right answer wherever a format's editor
+/// rect is already in the units the host's window seam speaks — and the only
+/// answer that cannot be wrong when nothing has been measured.
+pub const DEFAULT_EDITOR_CONTENT_SCALE: f64 = 1.0;
+
 /// One host-side parameter write waiting to reach a plugin.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct HostParameterUpdate {
@@ -160,8 +192,12 @@ pub trait AudioPlugin: Send + Sync {
     /// Get all parameters exposed by the plugin
     fn get_parameters(&self) -> Vec<PluginParameter>;
 
-    /// Get the opaque binary state of the plugin
-    fn get_state(&self) -> Vec<u8>;
+    /// The opaque binary state of the plugin, or why the plugin would not give
+    /// it.
+    ///
+    /// Fallible because a refusal and an empty state are different answers, and
+    /// only the first one must never be written over a project's last good save.
+    fn get_state(&self) -> Result<Vec<u8>, String>;
 
     /// Set the opaque binary state of the plugin.
     fn set_state(&mut self, state: &[u8]) -> Result<(), String>;
@@ -189,6 +225,35 @@ pub trait AudioPlugin: Send + Sync {
 
     /// Close the plugin's editor. A plugin with no editor has nothing to close.
     fn close_gui(&mut self) {}
+
+    /// Install the host's editor-window resizer, before the editor is opened.
+    ///
+    /// Installed rather than passed to `open_gui` because the request it answers
+    /// arrives after the open has returned, from inside the plugin. The default
+    /// is empty for the same reason the rest of the GUI four carry defaults: a
+    /// backend with no editor has no resize to answer.
+    fn set_editor_window_resizer(&mut self, _resize: EditorWindowResizer) {}
+
+    /// State the display scale the editor's host window runs at, before the
+    /// editor is opened.
+    ///
+    /// Installed rather than passed to `open_gui` for the same reason the
+    /// resizer is: it is a property of the window, which exists before the
+    /// editor does. A backend that is never told one keeps
+    /// [`DEFAULT_EDITOR_CONTENT_SCALE`].
+    fn set_editor_content_scale(&mut self, _scale: f64) {}
+
+    /// Whether the plugin accepts note events.
+    ///
+    /// The default is `true` because that is the answer the engine's plugin slot
+    /// has always given for every plugin, and changing it here would change CLAP
+    /// routing in a patch about a different format. It is a placeholder, not a
+    /// fact: CLAP states this in `clap.note-ports`, and reading it there is
+    /// still owed. A backend that can answer truthfully overrides this — the
+    /// VST3 backend reads the plugin's own event bus declaration.
+    fn accepts_midi(&self) -> bool {
+        true
+    }
 }
 
 /// What the shared runtime owner requires of a hosted plugin backend.
@@ -233,6 +298,17 @@ pub trait HostedPluginRuntime: AudioPlugin {
         midi_events: &[(u8, u8, i16, bool)], // (note, velocity, channel, is_on)
         parameter_updates: &[HostParameterUpdate],
     );
+
+    /// Tell the plugin's editor about a parameter the host wrote. Control path
+    /// only, and never the audio thread.
+    ///
+    /// A host-side write reaches the processor through the audio thread's own
+    /// queue, which the editor never sees. A format that keeps its editor in a
+    /// separate object therefore has to be told a second time, or its knob keeps
+    /// showing the value the user moved away from. The default is empty because a
+    /// format whose editor reads the same object the processor writes has already
+    /// been told.
+    fn apply_host_parameter_write_to_editor(&mut self, _param_id: u32, _value: f64) {}
 
     /// Apply a latency change the plugin flagged, returning the new latency in
     /// frames, or `None` when nothing was pending. Control path only.

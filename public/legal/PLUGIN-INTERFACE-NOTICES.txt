@@ -1,0 +1,78 @@
+Plugin interface notices
+========================
+
+Sourdaw hosts third-party audio plugins by declaring the plugin formats' own
+interfaces. It bundles no plugin-format SDK, links no Steinberg or CLAP binary,
+and redistributes no plugin.
+
+Two Rust crates carry those interface declarations into Sourdaw:
+
+  * `vst3` 0.3.0 (with `com-scrape-types` 0.1.1), which reproduces the VST 3
+    interface declarations.
+  * `clap-sys` 0.5.0, which reproduces the CLAP interface declarations.
+
+Both crates are published under MIT OR Apache-2.0 and ship the license texts of
+their own authors. Neither ships the interface authors' notice, so the notices
+those interfaces require are reproduced here.
+
+
+VST 3 interfaces
+----------------
+
+Provenance of the notice below
+..............................
+
+The interface declarations Sourdaw compiles are the ones committed in the `vst3`
+0.3.0 crate, at `src/bindings.rs`. That file states which release of the
+interfaces it was generated from: `SDKVersionString` is the string `"VST 3.8.0"`.
+
+The upstream those declarations come from is the VST 3 plug-in interfaces
+repository, `github.com/steinbergmedia/vst3_pluginterfaces`, tag
+`v3.8.0_build_66` (2025-10-20), whose licence terms are in `LICENSE.txt` at the
+root of that tag. That tag and that file are the verification route: they are
+what a reader compares this notice against.
+
+The text reproduced below is the canonical MIT License text carrying Steinberg
+Media Technologies GmbH's copyright line, which is the form those interfaces are
+licensed under. It was not fetched from the network and has not been
+byte-compared with the upstream file named above, so this record does not
+authenticate that file; it states which release the compiled declarations
+identify themselves as, and where the authoritative text for that release lives.
+
+MIT License
+
+Copyright (c) 2025 Steinberg Media Technologies GmbH
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+associated documentation files (the "Software"), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the
+following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial
+portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT
+LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO
+EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+VST is a registered trademark of Steinberg Media Technologies GmbH. Sourdaw is
+not affiliated with, sponsored by, or endorsed by Steinberg, and ships none of
+Steinberg's logos.
+
+
+CLAP interfaces
+---------------
+
+`clap-sys` is published under MIT OR Apache-2.0. Its retained MIT and Apache-2.0
+texts, and the exact package identity they belong to, are recorded in
+DEPENDENCY-LICENSES.txt beside this file.
+
+
+Package identities
+------------------
+
+Exact registry package, version, archive hash, and retained legal-file evidence
+for every crate named above are in DEPENDENCY-LICENSES.txt.
