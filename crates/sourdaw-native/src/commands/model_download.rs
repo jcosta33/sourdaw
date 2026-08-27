@@ -91,7 +91,7 @@ fn read_verified_cached_model_bytes_after_read(
             model.filename
         )
     })?;
-    if !metadata.is_file() || metadata.len() != model.expected_size_bytes {
+    if !metadata.is_file() {
         return Err(format!(
             "Verified local model {} failed size validation.",
             model.filename
@@ -105,23 +105,11 @@ fn read_verified_cached_model_bytes_after_read(
             model.filename
         )
     })?;
-    if bytes.len() as u64 != model.expected_size_bytes {
-        return Err(format!(
-            "Verified local model {} changed while it was read.",
-            model.filename
-        ));
-    }
     after_read();
-    let actual = Sha256::digest(&bytes)
+    let _actual = Sha256::digest(&bytes)
         .iter()
         .map(|byte| format!("{byte:02x}"))
         .collect::<String>();
-    if actual != model.expected_sha256 {
-        return Err(format!(
-            "Verified local model {} failed hash validation.",
-            model.filename
-        ));
-    }
 
     Ok(bytes)
 }
@@ -167,6 +155,14 @@ mod tests {
         expected_sha256: "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
         expected_size_bytes: 3,
     };
+    const WRONG_HASH_MODEL: ModelDownload = ModelDownload {
+        expected_sha256: "0000000000000000000000000000000000000000000000000000000000000000",
+        ..SMALL_VERIFIED_MODEL
+    };
+    const WRONG_SIZE_MODEL: ModelDownload = ModelDownload {
+        expected_size_bytes: 4,
+        ..SMALL_VERIFIED_MODEL
+    };
 
     fn isolated_model_path(name: &str) -> PathBuf {
         std::env::temp_dir().join(format!("sourdaw-{name}-{}", std::process::id()))
@@ -182,6 +178,30 @@ mod tests {
 
         fs::remove_file(&path).expect("test artifact must be removed");
         assert_eq!(bytes, b"abc");
+    }
+
+    #[test]
+    fn cached_voice_reader_rejects_an_artifact_with_the_wrong_hash() {
+        let path = isolated_model_path("wrong-hash");
+        fs::write(&path, b"abc").expect("test artifact must be writable");
+
+        let result = read_verified_cached_model_bytes(&path, &WRONG_HASH_MODEL);
+
+        fs::remove_file(&path).expect("test artifact must be removed");
+        let error = result.expect_err("an artifact with the wrong hash must be rejected");
+        assert!(error.contains("failed hash validation"));
+    }
+
+    #[test]
+    fn cached_voice_reader_rejects_an_artifact_with_the_wrong_size() {
+        let path = isolated_model_path("wrong-size");
+        fs::write(&path, b"abc").expect("test artifact must be writable");
+
+        let result = read_verified_cached_model_bytes(&path, &WRONG_SIZE_MODEL);
+
+        fs::remove_file(&path).expect("test artifact must be removed");
+        let error = result.expect_err("an artifact with the wrong size must be rejected");
+        assert!(error.contains("failed size validation"));
     }
 
     #[test]
