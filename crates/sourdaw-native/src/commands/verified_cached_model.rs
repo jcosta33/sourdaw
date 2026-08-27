@@ -34,17 +34,34 @@ fn read_verified_cached_model_bytes(
     path: &Path,
     model: &VerifiedCachedModel,
 ) -> Result<Vec<u8>, String> {
-    read_verified_cached_model_bytes_after_read(path, model, || {})
+    read_verified_cached_model_bytes_with_hooks(
+        path,
+        model,
+        #[cfg(test)]
+        || {},
+        #[cfg(test)]
+        || {},
+    )
 }
 
 /// Read the artifact exactly once, then hash the bytes that will be returned.
 /// The callback exists to pin the former verify-then-rewind boundary in a
 /// regression: replacing the on-disk file after this point cannot alter the
 /// already-owned buffer handed to Whisper.
+#[cfg(test)]
 fn read_verified_cached_model_bytes_after_read(
     path: &Path,
     model: &VerifiedCachedModel,
     after_read: impl FnOnce(),
+) -> Result<Vec<u8>, String> {
+    read_verified_cached_model_bytes_with_hooks(path, model, || {}, after_read)
+}
+
+fn read_verified_cached_model_bytes_with_hooks(
+    path: &Path,
+    model: &VerifiedCachedModel,
+    #[cfg(test)] after_metadata: impl FnOnce(),
+    #[cfg(test)] after_read: impl FnOnce(),
 ) -> Result<Vec<u8>, String> {
     let link_metadata = std::fs::symlink_metadata(path).map_err(|error| {
         format!(
@@ -94,6 +111,8 @@ fn read_verified_cached_model_bytes_after_read(
             model.filename
         ));
     }
+    #[cfg(test)]
+    after_metadata();
 
     let mut bytes = Vec::with_capacity(model.expected_size_bytes as usize);
     file.read_to_end(&mut bytes).map_err(|error| {
@@ -108,6 +127,7 @@ fn read_verified_cached_model_bytes_after_read(
             model.filename
         ));
     }
+    #[cfg(test)]
     after_read();
     let actual = Sha256::digest(&bytes)
         .iter()
@@ -156,6 +176,7 @@ fn validate_sha256(expected: &str) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::Cell;
     use std::fs;
 
     const SMALL_VERIFIED_MODEL: VerifiedCachedModel = VerifiedCachedModel {
@@ -217,15 +238,35 @@ mod tests {
     {
         let path = isolated_model_path("same-length-overwrite");
         fs::write(&path, b"abc").expect("test artifact must be writable");
+        let callback_ran = Cell::new(false);
 
         let bytes =
             read_verified_cached_model_bytes_after_read(&path, &SMALL_VERIFIED_MODEL, || {
+                callback_ran.set(true);
                 fs::write(&path, b"xyz").expect("same-length replacement must be writable");
             })
             .expect("the initially read, verified bytes must remain the returned bytes");
 
         fs::remove_file(&path).expect("test artifact must be removed");
+        assert!(callback_ran.get(), "the path replacement hook must run");
         assert_eq!(bytes, b"abc");
+    }
+
+    #[test]
+    fn cached_voice_reader_rejects_length_changed_after_opened_file_metadata_check() {
+        let path = isolated_model_path("truncate-after-metadata");
+        fs::write(&path, b"abc").expect("test artifact must be writable");
+
+        let result = read_verified_cached_model_bytes_with_hooks(
+            &path,
+            &SMALL_VERIFIED_MODEL,
+            || fs::write(&path, b"a").expect("test artifact must be truncatable"),
+            || {},
+        );
+
+        fs::remove_file(&path).expect("test artifact must be removed");
+        let error = result.expect_err("a file truncated after metadata must be rejected");
+        assert!(error.contains("changed while it was read"));
     }
 
     #[cfg(unix)]
