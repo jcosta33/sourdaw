@@ -1,0 +1,22 @@
+crates/sourdaw-native/src/commands/verified_cached_model.rs
+  s_a40848e8f8cca9::t_0fd2492cf06044 51,63-64,114,130
+  s_a40848e8f8cca9::t_19c389529bb42f 56-62,115,179,241,245,251,255-269
+  s_a40848e8f8cca9::t_2f9504463ba272 270-271
+  s_a40848e8f8cca9::t_2f0249fab74b5e 37-44
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "90d0e0d074b87261d9c20ead85376cbb29731ff4",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": null
+    }
+  }
+}
