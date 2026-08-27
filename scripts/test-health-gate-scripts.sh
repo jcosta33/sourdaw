@@ -270,7 +270,8 @@ const e2eRunStep = stepNamed(e2e, 'Run shard');
 const unitFailureWarning = stepNamed(unit, 'Report shard failure');
 const e2eFailureWarning = stepNamed(e2e, 'Report shard failure');
 const unitRun = unitRunStep?.run ?? '';
-const nightlyReportRun = stepNamed(nightlyReport, 'Open or update the nightly failure issue')?.run ?? '';
+const nightlyReportStep = stepNamed(nightlyReport, 'Open or update the nightly failure issue');
+const nightlyReportRun = nightlyReportStep?.run ?? '';
 const gateRun = stepNamed(gate, 'Require every job to have succeeded or been skipped')?.run ?? '';
 const gateNeeds = gate?.needs ?? [];
 const expectedGateNeeds = [
@@ -595,6 +596,10 @@ expect(
     'Gate must keep rejecting failed dependencies while accepting successful or skipped dependencies'
 );
 expect(nightlyReport?.name === 'Nightly failure report', 'nightly report job must remain present');
+expect(
+    nightlyReportStep?.env?.GH_REPO === '${{ github.repository }}',
+    'nightly reporter must pin GH_REPO so gh resolves the repository without consulting local git, since this job runs with no checkout and a gh build that still consults git for repo resolution fails outside one'
+);
 expect(
     nightlyReportRun.includes('gh issue list --repo "$GITHUB_REPOSITORY"') &&
         nightlyReportRun.includes('gh issue comment "$existing" --repo "$GITHUB_REPOSITORY"') &&

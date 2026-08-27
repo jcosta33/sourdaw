@@ -940,6 +940,15 @@ jobs:
     # A scheduled run nobody reads is a scheduled run that does not exist. The
     # nightly is the only thing that observes what path filters and the approval
     # gate skip, so its failures have to arrive somewhere a person looks.
+    #
+    # This job runs without a checkout, so nothing in it may depend on local git
+    # state. `gh` can still consult git for repo resolution even when every
+    # invocation already passes `--repo "$GITHUB_REPOSITORY"`: a runner-image
+    # regression made exactly that build fail every scheduled run from
+    # 2026-08-23 through 2026-08-26 with `fatal: not a git repository`, four red
+    # nightlies producing zero signal before the next image happened to fix it.
+    # `GH_REPO` pins repo resolution outside a git repository for any `gh` build
+    # that still consults one, so this job stops depending on that runner detail.
     if: ${{ failure() && github.event_name == 'schedule' }}
     needs:
       [static, lint, boundaries, unit, build, rust, native-macos, native-windows, e2e, browser-ai-webgpu, codeql, secrets]
@@ -952,6 +961,7 @@ jobs:
       - name: Open or update the nightly failure issue
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           RESULTS: ${{ toJSON(needs) }}
         run: |
