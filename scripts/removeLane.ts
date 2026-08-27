@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, realpathSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { basename, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -351,10 +351,13 @@ export const STRAND_USAGE = 'usage: pnpm lane:strand <worktree-path> --reason "<
  * Where strand receipts live: under the primary root, not under the lane. A receipt written inside
  * the worktree would be destroyed with it, and the whole point of the receipt is to outlive the
  * lane it records. `.agents/lane-strands/` is gitignored operational state, like review bundles.
+ * Receipts are keyed by lane directory name, which is deterministic — the conflict rule in
+ * `refuseReceiptConflict` is what keeps a reused name from spending another lane's record.
  */
 export const STRAND_RECEIPTS_DIR = '.agents/lane-strands';
 
 export type LaneStrandPort = LaneRemovalPort & {
+    readReceipt: (laneName: string) => string | undefined;
     writeReceipt: (laneName: string, body: string) => void;
     deleteBranch: (branch: string) => void;
     log: (message: string) => void;
@@ -434,6 +437,37 @@ function validateStrand(target: string, expected: Worktree, port: LaneRemovalPor
     return { head: current.head, branch: expected.branch, ignored: [...ignored].sort() };
 }
 
+function recordedReceiptHead(existing: string): string | undefined {
+    try {
+        const parsed = JSON.parse(existing) as { head?: unknown };
+        return typeof parsed.head === 'string' ? parsed.head : undefined;
+    } catch {
+        return undefined;
+    }
+}
+
+/**
+ * Lane directory names are deterministic, so a new lane can reuse a name the receipts already
+ * record. Overwriting on a differing head would silently erase the earlier abandonment's audit
+ * record — including the head that makes its branch recoverable — so that is a hard refusal naming
+ * both heads: a human decides which record is real, because appending or timestamping would fork
+ * the trail instead of settling it. An identical head is the idempotent retry of a stranding whose
+ * removal failed, and an unreadable receipt cannot prove either case, so it refuses too.
+ */
+function refuseReceiptConflict(laneName: string, head: string, port: LaneStrandPort): void {
+    const existing = port.readReceipt(laneName);
+    if (existing === undefined) {
+        return;
+    }
+    const prior = recordedReceiptHead(existing);
+    if (prior === undefined) {
+        fail(`strand receipt for ${laneName} exists but records no readable head; refusing to overwrite it`);
+    }
+    if (prior !== head) {
+        fail(`strand receipt for ${laneName} already records head ${prior}; refusing to overwrite it for head ${head}`);
+    }
+}
+
 /**
  * The receipted exit for lanes the strict gate can never prove: a branch whose head ownership is
  * unproven (late push), a closed pull request without a supersession receipt, a lane with no
@@ -458,6 +492,7 @@ export function strandLane(target: string, reason: string, port: LaneStrandPort)
             fail('worktree authority changed during stranding');
         }
         const laneName = basename(target);
+        refuseReceiptConflict(laneName, final.head, port);
         const receipt = `${JSON.stringify(
             {
                 lane: laneName,
@@ -647,6 +682,10 @@ export function shellPort(shell: ShellRunner = { capture, run }): LaneStrandPort
             shell.run('git', ['worktree', 'lock', '--reason', reason, path]),
         unlock: (path) => shell.run('git', ['worktree', 'unlock', path]),
         remove: (path) => shell.run('git', ['worktree', 'remove', path]),
+        readReceipt: (laneName) => {
+            const path = join(resolvePrimaryRoot(), STRAND_RECEIPTS_DIR, `${laneName}.json`);
+            return existsSync(path) ? readFileSync(path, 'utf8') : undefined;
+        },
         writeReceipt: (laneName, body) => {
             const directory = join(resolvePrimaryRoot(), STRAND_RECEIPTS_DIR);
             mkdirSync(directory, { recursive: true });
@@ -675,7 +714,9 @@ function main(): number {
             console.log('branch at all). It refuses a lane holding an open pull request or uncommitted');
             console.log('work, records a receipt (reason, date, branch, head) under');
             console.log('.agents/lane-strands/ in the primary checkout, then removes the worktree and');
-            console.log('force-deletes the branch; the recorded head keeps the tip recoverable.');
+            console.log('force-deletes the branch; the recorded head keeps the tip recoverable. A');
+            console.log('receipt already naming the same lane with a different head is refused, never');
+            console.log('overwritten.');
             return 0;
         }
         const cwd = process.cwd();

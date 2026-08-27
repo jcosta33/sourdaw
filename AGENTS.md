@@ -246,9 +246,13 @@ hits all of them.
 Removal requires a clean lane holding the head of exactly one pull request whose work reached
 `main`. Merging is one way there. Being superseded is the other: `pr:supersede` closes the old pull
 request unmerged but leaves a receipt naming the replacement, and removal reads that receipt and
-requires the replacement to be merged. Any other closed pull request is an abandonment and keeps its
-lane, because removing it would discard work that never landed. Delete a leftover local branch after
-success.
+requires the replacement to be merged. Any other closed pull request is an abandonment, and removing
+it would discard work that never landed — so an abandonment leaves through `lane:strand`, a receipted
+exit rather than a weakened gate. `lane:strand` refuses a lane holding an open pull request or
+uncommitted work, records the reason, date, branch, and head in `.agents/lane-strands/` under the
+primary checkout (the head keeps the abandoned tip recoverable), then removes the worktree and
+force-deletes the branch; a receipt already naming the same lane with a different head is refused,
+never overwritten. Delete a leftover local branch after a `lane:remove`.
 
 ## Artifacts
 
@@ -301,6 +305,8 @@ tracker state. Identity for a script-covered write is the App that script mints,
 | Squash-merge                | `pnpm deliver <pr>`                                                                                              |
 | Close a superseded PR       | `pnpm pr:supersede <old> --head <old-sha> --replacement <merged>`                                                |
 | Remove a spent lane         | `pnpm lane:remove <path>`                                                                                        |
+| Strand an abandoned lane    | `pnpm lane:strand <path> --reason "<text>"`                                                                      |
+| Prune lane artifacts        | `pnpm lane:prune <path> \| --all \| --stale-days <days>`                                                         |
 
 Credentials sit at the primary root (parent of `git rev-parse --git-common-dir`), gitignored:
 `.env.sourdaw-author` for `lane:publish`, `review:resolve`, `deliver`, and `pr:supersede`;

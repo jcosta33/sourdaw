@@ -126,10 +126,15 @@ function fakePort(input: FakeInput = {}) {
 function fakeStrandPort(input: FakeInput = {}) {
     const base = fakePort(input);
     const receipts: Array<{ laneName: string; body: string }> = [];
+    // The receipt files as the strand flow sees them: written by `writeReceipt`, read back by
+    // `readReceipt`, exactly like the primary root's `.agents/lane-strands/` directory.
+    const receiptFiles = new Map<string, string>();
     const port: LaneStrandPort = {
         ...base.port,
+        readReceipt: (laneName) => receiptFiles.get(laneName),
         writeReceipt: (laneName, body) => {
             receipts.push({ laneName, body });
+            receiptFiles.set(laneName, body);
             base.calls.push(`receipt:${laneName}`);
         },
         deleteBranch: (branch) => {
@@ -139,7 +144,7 @@ function fakeStrandPort(input: FakeInput = {}) {
             base.calls.push(`log:${message}`);
         },
     };
-    return { port, calls: base.calls, receipts };
+    return { port, calls: base.calls, receipts, receiptFiles };
 }
 
 describe('lane removal', () => {
@@ -520,6 +525,84 @@ describe('lane stranding', () => {
         expect(calls.some((call) => call.startsWith('branch:-D:'))).toBe(false);
     });
 
+    /**
+     * Lane directory names are deterministic, so a second lane can reuse a name the receipts
+     * already record. Overwriting that receipt would erase the first abandonment's audit record
+     * and the head that keeps its branch recoverable, so a differing head must refuse.
+     */
+    it('refuses a reused lane name whose receipt records a different head, keeping the first record', () => {
+        const strandedInput = {
+            pullRequests: [supersededPullRequest()],
+            comments: [],
+        };
+        const first = fakeStrandPort(strandedInput);
+        strandLane(target, 'first abandonment', first.port);
+        const firstReceipt = first.receiptFiles.get('feature');
+        expect(firstReceipt).toBeDefined();
+
+        const second = fakeStrandPort({
+            ...strandedInput,
+            lane: worktree({ head: 'other-head' }),
+        });
+        second.receiptFiles.set('feature', firstReceipt ?? '');
+
+        expect(() => strandLane(target, 'second abandonment under a spent name', second.port)).toThrow(
+            'strand receipt for feature already records head head; refusing to overwrite it for head other-head'
+        );
+
+        expect(second.receiptFiles.get('feature'), "the first abandonment's record was overwritten").toBe(firstReceipt);
+        expect(second.calls.some((call) => call.startsWith('receipt:'))).toBe(false);
+        expect(second.calls.some((call) => call.startsWith('remove:'))).toBe(false);
+        expect(second.calls.some((call) => call.startsWith('branch:-D:'))).toBe(false);
+    });
+
+    it('refuses a reused lane name whose receipt is unreadable, rather than guess at it', () => {
+        const { port, receiptFiles } = fakeStrandPort({
+            pullRequests: [supersededPullRequest()],
+            comments: [],
+        });
+        receiptFiles.set('feature', 'corrupted receipt');
+
+        expect(() => strandLane(target, 'attempt', port)).toThrow(/records no readable head/);
+        expect(receiptFiles.get('feature')).toBe('corrupted receipt');
+    });
+
+    /**
+     * The receipt is written before the worktree is removed, so a removal that fails leaves the
+     * lane and its receipt behind. Retrying the same strand — same head — must succeed rather than
+     * trip the conflict rule, or the receipt would shield its own lane from ever leaving.
+     */
+    it('allows the idempotent retry of a stranding whose removal failed', () => {
+        const strand = fakeStrandPort({
+            pullRequests: [supersededPullRequest()],
+            comments: [],
+        });
+        let removalFails = true;
+        const originalRemove = strand.port.remove;
+        strand.port.remove = (path) => {
+            if (removalFails) {
+                throw new Error('worktree remove failed');
+            }
+            originalRemove(path);
+        };
+
+        expect(() => strandLane(target, 'retry after a failed removal', strand.port)).toThrow(/worktree remove failed/);
+        expect(strand.receiptFiles.get('feature')).toBeDefined();
+
+        removalFails = false;
+        let thrown: unknown;
+        try {
+            strandLane(target, 'retry after a failed removal', strand.port);
+        } catch (error) {
+            thrown = error;
+        }
+
+        expect(thrown, 'a same-head retry was refused by its own receipt').toBeUndefined();
+        expect(strand.calls.filter((call) => call.startsWith('receipt:'))).toHaveLength(2);
+        expect(strand.calls).toContain(`remove:${target}`);
+        expect(strand.calls).toContain('branch:-D:feat/work');
+    });
+
     it.each([
         ['dirty', { dirty: true }, /dirty/],
         [
@@ -603,6 +686,7 @@ describe('lane stranding', () => {
                 remove: (path) => {
                     git(['worktree', 'remove', path]);
                 },
+                readReceipt: () => undefined,
                 writeReceipt: (laneName, body) => {
                     const directory = join(repository, STRAND_RECEIPTS_DIR);
                     mkdirSync(directory, { recursive: true });
