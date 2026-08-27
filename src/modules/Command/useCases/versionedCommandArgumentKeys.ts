@@ -151,6 +151,7 @@ const schemaDefinitions = [
             entityJson: 0,
             midiByClipIdJson: 0,
             clipSatellitesJson: 0,
+            clipAutomationLanesJson: 0,
         },
         required: ['entityJson', 'midiByClipIdJson'],
         additionalProperties: false,

@@ -370,7 +370,8 @@ describe('MIDI note transforms through AppAction execution', () => {
             notesByClipId: { ...state.notesByClipId, [CLIP_ID]: [...currentNotes(), laterNote] },
         });
 
-        await expect(undo()).resolves.toBeUndefined();
+        // The stale entry stays at the head of `past`, so the call consumed nothing.
+        await expect(undo()).resolves.toEqual({ headConsumed: false });
 
         expect(currentNotes()).toContainEqual(laterNote);
         expect(undoStore.value?.past).toHaveLength(1);

@@ -432,8 +432,14 @@ function getProviderContext(userMessage: string): Record<string, unknown> {
  * (`getScopeTargetIds` / `getVersionedCommandTargetReferences`) treats as stable
  * target references for each action type used by this fixture file. `planAgentRun`
  * compares scopes by sorted membership, so declaration order here does not need
- * to match the application's own `parameters.properties` order.
- * `renderProjectSections` has no target rules at all.
+ * to match the application's own `parameters.properties` order. An argument
+ * belongs in this mirror exactly when the action's registry `targetRules` names
+ * it, whatever kind of object that argument identifies — track, bus or device.
+ * `addSidechainRoute`'s `targetDeviceId` is a `sidechain-capable-device` target
+ * rule, so the compiled scope carries the device beside the two tracks and a
+ * fixture omitting it declares a short scope that `planAgentRun` rejects as
+ * scope omission. `renderProjectSections` has no target rules at all, which is
+ * why it has no entry here.
  */
 const SCOPE_TARGET_ARGUMENTS: Readonly<Record<string, readonly string[]>> = {
     setTrackOutput: ['trackId', 'outputId'],
@@ -1641,13 +1647,13 @@ describe('drum bus prompt workflow', () => {
             durableCommit: true,
             reason: expect.stringContaining('comparison renderer unavailable'),
             effects: [
-                expect.objectContaining({
+                {
                     kind: 'external-effect',
                     operation: 'renderProjectSections',
-                    reason: expect.stringContaining('comparison renderer unavailable'),
-                    remediation: 'reconcile',
                     state: 'pending',
-                }),
+                    remediation: 'reconcile',
+                    reason: expect.stringContaining('comparison renderer unavailable'),
+                },
             ],
             continuation: {
                 authority: 'authoritative-collaboration-host',
@@ -1661,7 +1667,9 @@ describe('drum bus prompt workflow', () => {
         const receipt = chatStore.value?.messages.find(
             (message) => message.pendingActionConfirmationId === confirmation.id
         );
-        expect(receipt?.content).toContain('durably committed');
+        expect(receipt?.content).toContain('The project change is durably committed:');
+        expect(receipt?.content).toContain('Outcome: committed-with-warning');
+        expect(receipt?.content).toContain('At least one external effect remains pending');
         expect(receipt?.content).toContain('comparison renderer unavailable');
         expect(receipt?.content).toContain('the project mutation will not replay');
         expect(undoStore.value?.past).toHaveLength(9);
@@ -3940,7 +3948,17 @@ describe('drum bus prompt workflow', () => {
         }
     );
 
-    it('rejects stale EX-06 routing atomically without a receipt or runtime prefix', async () => {
+    /**
+     * Settling the collaborator's write is what makes this deterministic, and it
+     * is also what the confirmation gate reads: `captureProjectRevision` folds
+     * any settled mutation into the revision, and the batch is refused there
+     * before a single command is revalidated. The exact generic project-changed
+     * reason asserted below is the proof of that — the divergence-classified
+     * refusal carries a different message. So the route conflict is realistic
+     * setup, not the cause, and what this pins is the revision gate refusing the
+     * whole batch atomically. Any settled post-proposal mutation lands here.
+     */
+    it('refuses EX-06 routing atomically when the project changes after the proposal, leaving no receipt or runtime prefix', async () => {
         setMf06Project();
         const originalTracks = structuredClone(trackStore.value?.tracks);
         useMf06WebLlmFixture();
@@ -3958,21 +3976,25 @@ describe('drum bus prompt workflow', () => {
             gain: 0.5,
         };
         sidechainStore.set({ routes: [collaboratorRoute] });
-        // Settle the foreign write into the document so confirmation observes the
-        // divergence deterministically instead of racing the rAF-deferred flush.
-        flushFixtureStorageOwner('sidechainRoutes');
+        settleFixtureProjectWrites();
 
         const result = await confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' });
 
-        expect(result.status).toBe('invalidated');
+        expect(result).toEqual({
+            status: 'invalidated',
+            reason: 'The project changed after this proposal was created. Review and submit the command again.',
+        });
         expect(trackStore.value?.tracks).toEqual(originalTracks);
         expect(sidechainStore.value?.routes).toEqual([collaboratorRoute]);
         expect(runtimeMocks.wireSidechainRoute).not.toHaveBeenCalled();
         expect(undoStore.value?.past).toEqual([]);
+        expect(getPendingActionConfirmation(confirmation?.id ?? '')?.executedActions).toEqual([]);
         const terminalMessage = chatStore.value?.messages.find(
             (message) => message.pendingActionConfirmationId === confirmation?.id
         );
-        expect(terminalMessage?.content).not.toContain('Outcome: committed');
+        expect(terminalMessage?.content).toBe(
+            'This proposal was not executed because the project changed after it was created. Review the current project and submit the command again.'
+        );
     });
 
     it('normalizes a reversed hosted MF-06 plan to the app-owned WebLLM action order', async () => {
@@ -4150,7 +4172,8 @@ describe('drum bus prompt workflow', () => {
         });
     });
 
-    it('aborts the whole MF-06 batch before runtime when one device route becomes stale', async () => {
+    /** Same revision-gate contract as the EX-06 case, over the MF-06 batch. */
+    it('refuses the whole MF-06 batch before runtime when the project changes after the proposal', async () => {
         setMf06Project();
         useMf06WebLlmFixture();
         await sendChatMessage(MF06_PROMPT);
@@ -4167,16 +4190,24 @@ describe('drum bus prompt workflow', () => {
             gain: 0.5,
         };
         sidechainStore.set({ routes: [collaboratorRoute] });
-        // Settle the foreign write into the document so confirmation observes the
-        // divergence deterministically instead of racing the rAF-deferred flush.
-        flushFixtureStorageOwner('sidechainRoutes');
+        settleFixtureProjectWrites();
 
         const result = await confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' });
 
-        expect(result.status).toBe('invalidated');
+        expect(result).toEqual({
+            status: 'invalidated',
+            reason: 'The project changed after this proposal was created. Review and submit the command again.',
+        });
         expect(sidechainStore.value?.routes).toEqual([collaboratorRoute]);
         expect(runtimeMocks.wireSidechainRoute).not.toHaveBeenCalled();
         expect(undoStore.value?.past).toEqual([]);
+        expect(getPendingActionConfirmation(confirmation?.id ?? '')?.executedActions).toEqual([]);
+        expect(
+            chatStore.value?.messages.find((message) => message.pendingActionConfirmationId === confirmation?.id)
+                ?.content
+        ).toBe(
+            'This proposal was not executed because the project changed after it was created. Review the current project and submit the command again.'
+        );
     });
 
     it('reconciles a transient MF-06 runtime failure from committed durable routes', async () => {

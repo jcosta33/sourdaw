@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
     hasNonDefaultWarpState: vi.fn(),
     modulationStore: { value: { modulators: [] } },
     serializeClipSatelliteEntries: vi.fn(),
+    serializeClipScopedAutomationLanes: vi.fn(),
     serializeMidiStateForClips: vi.fn(),
     takeLaneStore: { value: { lanes: [] } },
 }));
@@ -25,6 +26,9 @@ vi.mock('../../stores/clipSatelliteState', () => ({
 }));
 vi.mock('../../stores/takeLaneStore', () => ({ takeLaneStore: mocks.takeLaneStore }));
 vi.mock('../../stores/warpStates', () => ({ hasNonDefaultWarpState: mocks.hasNonDefaultWarpState }));
+vi.mock('../../useCases/clip/serializeClipScopedAutomationLanes', () => ({
+    serializeClipScopedAutomationLanes: mocks.serializeClipScopedAutomationLanes,
+}));
 vi.mock('../../useCases/getTrackStoreState', () => ({ getTrackStoreState: mocks.getTrackStoreState }));
 
 const generatedClip = {
@@ -174,5 +178,53 @@ describe('isGeneratedMidiStateCurrent', () => {
                 },
             })
         ).toBe(false);
+    });
+
+    it('rejects a clip-scoped automation lane under a regeneration guard that captured nothing', () => {
+        const generatedTrack = {
+            ...createTrack({ id: 'generated-track', name: 'Bass', kind: 'midi' }),
+            clips: [generatedClip],
+        };
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [generatedTrack] });
+        mocks.getAutomationLanes.mockReturnValue([{ id: 'lane-1', clipId: 'generated-clip' }]);
+
+        // No capture fields: a generation that wrote no satellites must refuse
+        // to undo over any satellite state at all, clip-scoped lanes included.
+        expect(
+            isGeneratedMidiStateCurrent({
+                entityId: generatedClip.id,
+                entityType: 'clip',
+                guard: {
+                    entityJson: JSON.stringify(generatedClip),
+                    midiByClipIdJson: 'exact-midi',
+                },
+            })
+        ).toBe(false);
+    });
+
+    it('accepts generation-cloned clip-scoped automation lanes that still match the captured guard, and rejects user-moved ones', () => {
+        const generatedTrack = {
+            ...createTrack({ id: 'generated-track', name: 'Bass', kind: 'midi' }),
+            clips: [generatedClip],
+        };
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [generatedTrack] });
+        // The duplicate cloned the source's lane onto the copy — presence alone
+        // must not conflict.
+        mocks.getAutomationLanes.mockReturnValue([{ id: 'lane-copy', clipId: 'generated-clip' }]);
+        mocks.serializeClipSatelliteEntries.mockReturnValue('captured-satellites');
+        mocks.serializeClipScopedAutomationLanes.mockReturnValue('captured-lanes');
+        const guard = {
+            entityJson: JSON.stringify(generatedClip),
+            midiByClipIdJson: 'exact-midi',
+            clipSatellitesJson: 'captured-satellites',
+            clipAutomationLanesJson: 'captured-lanes',
+        };
+
+        expect(isGeneratedMidiStateCurrent({ entityId: generatedClip.id, entityType: 'clip', guard })).toBe(true);
+        expect(mocks.serializeClipScopedAutomationLanes).toHaveBeenCalledWith(['generated-clip']);
+
+        // The user edited the copy's lane after the duplicate: undo must refuse.
+        mocks.serializeClipScopedAutomationLanes.mockReturnValue('edited-lanes');
+        expect(isGeneratedMidiStateCurrent({ entityId: generatedClip.id, entityType: 'clip', guard })).toBe(false);
     });
 });

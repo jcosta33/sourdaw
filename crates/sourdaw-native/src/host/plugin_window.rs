@@ -142,15 +142,33 @@ pub fn native_handle_from_bytes(bytes: &[u8]) -> Result<usize, String> {
 
 /// One live editor window.
 ///
-/// Held only for the duration of `open_plugin_gui`; afterwards the window is
-/// addressed by label through [`PluginWindowHost`], because the recorded label
-/// is what survives across commands.
+/// Commands address a window by label through [`PluginWindowHost`], because the
+/// recorded label is what survives across them. This handle outlives
+/// `open_plugin_gui` for one reason: a plugin editor resizes *itself*, at any
+/// point while it is open and from inside its own call into the host, and the
+/// resizer it is given has to reach a window without a command to carry it. An
+/// implementation therefore holds a label rather than a live window object, and
+/// tolerates being asked to size a window the platform has already ended.
 pub trait PluginEditorWindow: Send + Sync {
     /// The native handle to hand the plugin, already cast for this platform.
     fn native_handle_ptr(&self) -> Result<*mut c_void, String>;
 
     /// Resize to the plugin's preferred editor size, in logical units.
     fn set_size(&self, width: u32, height: u32);
+
+    /// The display scale this window was created at.
+    ///
+    /// A plugin editor is not always sized in the same units the window is: VST3
+    /// states its editor rect in physical pixels on Windows and X11, and expects
+    /// to be told the scale it is running at. The shell is the only side that
+    /// can measure it, so it reports it here, once, at creation.
+    ///
+    /// The default is [`daw_plugin_host::DEFAULT_EDITOR_CONTENT_SCALE`], for an
+    /// implementation with no display to measure — the scan worker and the tests
+    /// both have none.
+    fn scale_factor(&self) -> f64 {
+        daw_plugin_host::DEFAULT_EDITOR_CONTENT_SCALE
+    }
 
     /// Make the window visible and give it focus.
     fn show_and_focus(&self);

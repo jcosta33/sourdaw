@@ -22,13 +22,27 @@ export type PluginInstance = {
     parameters: PluginParameter[];
     is_active: boolean;
     /**
-     * Raw CLAP latency in frames of the rate the plugin was activated with (the
-     * native device rate). Informational only — this process does not share that
-     * clock, so converting it here would mis-scale. Use `latency_ms`.
+     * Raw CLAP latency in frames of the rate the plugin was activated with —
+     * the engine rate the caller supplied. Informational only: the value is
+     * reported again over the latency-change event, from a path with no caller
+     * to ask, so `latency_ms` is the one figure compensation reads.
      */
     latency_samples: number;
     /** Latency in milliseconds, converted host-side at the activation sample rate. */
     latency_ms: number;
+    /**
+     * Frames the native audio bridge adds on top of `latency_ms`, at the
+     * activation sample rate. Zero when no engine took the instance — nothing
+     * crosses a bridge that does not exist.
+     *
+     * The host measures this against the device period its audio callback
+     * actually runs on, which this process never sees; it is reported for that
+     * reason and cannot be derived here.
+     *
+     * Temporary, with the bridge: jcosta33/sourdaw#2230 replaces the worklet
+     * relay with the native graph, and this field goes with it.
+     */
+    bridge_round_trip_frames: number;
     /**
      * The id this instance was given inside the native audio engine, or `null`
      * when the load succeeded but no engine was running to attach it to.

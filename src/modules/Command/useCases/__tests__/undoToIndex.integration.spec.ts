@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { AppActionConflictError } from '../../errors/AppActionExecutionError';
 import { REDO_NOT_APPLIED } from '../redoResult';
 import { undoToIndex } from '../undoToIndex';
 
@@ -22,8 +23,13 @@ const mocks = vi.hoisted(() => {
         undoStoreValue,
         executeAppAction: vi.fn<typeof import('../executeAppAction').executeAppAction>(),
         undoTreeMoveTo: vi.fn<(currentEntryId: string | null) => void>(),
+        notifyUser: vi.fn<(message: string, level?: string) => void>(),
     };
 });
+
+vi.mock('#/utils/Notification/notifyUser', () => ({
+    notifyUser: mocks.notifyUser,
+}));
 
 vi.mock('../../stores/undoStore', () => ({
     undoStore: {
@@ -60,6 +66,11 @@ function inertEntry(id: string): ActionUndoEntry {
     return { ...undoableEntry(id), inverseAction: null };
 }
 
+/** The document has moved on beneath this entry: replaying its inverse aborts. */
+function conflictingEntry(id: string): ActionUndoEntry {
+    return { ...undoableEntry(id), inverseAction: { type: 'stopPlayback' } };
+}
+
 function notAppliedCallbackEntry(id: string): CallbackUndoEntry {
     return {
         kind: 'callback',
@@ -77,7 +88,69 @@ describe('undoToIndex via the Undo History panel path', () => {
         mocks.executeAppAction.mockReset();
         mocks.executeAppAction.mockResolvedValue(undefined);
         mocks.undoTreeMoveTo.mockReset();
+        mocks.notifyUser.mockReset();
         mocks.undoStoreValue.value = { past: [], future: [] };
+    });
+
+    /** The state the sweep left behind. Every spec here seeds one, so a missing
+     *  state is a defect in the sweep rather than a case to assert around. */
+    function settledUndoState(): UndoStoreState {
+        const state = mocks.undoStoreValue.value;
+        if (!state) {
+            throw new Error('undoToIndex left no undo state behind');
+        }
+        return state;
+    }
+
+    /** `past` is E0..E4 with only E4's inverse conflicting. */
+    function stackWithConflictingHead(): void {
+        mocks.undoStoreValue.value = {
+            past: [
+                undoableEntry('E0'),
+                undoableEntry('E1'),
+                undoableEntry('E2'),
+                undoableEntry('E3'),
+                conflictingEntry('E4'),
+            ],
+            future: [],
+        };
+        mocks.executeAppAction.mockImplementation(async (action) => {
+            if (action.type === 'stopPlayback') {
+                throw new AppActionConflictError('stopPlayback');
+            }
+        });
+    }
+
+    it('reverts nothing when the head conflicts and the clicked row is the one beneath it', async () => {
+        stackWithConflictingHead();
+
+        // Row 'E3' is index 3: the user asked for E4 gone and everything else kept.
+        await undoToIndex(3);
+
+        // E4's inverse writes nothing, so the row the user asked to remove is still
+        // applied and the sweep cannot advance. Reaching past E4 for E3 would revert
+        // precisely the row they clicked to keep.
+        const settled = settledUndoState();
+        expect(settled.past.map((entry) => entry.id)).toEqual(['E0', 'E1', 'E2', 'E3', 'E4']);
+        expect(settled.future).toEqual([]);
+        expect(mocks.undoTreeMoveTo).not.toHaveBeenCalled();
+        expect(mocks.notifyUser).toHaveBeenCalledTimes(1);
+        expect(mocks.notifyUser).toHaveBeenCalledWith('Cannot undo "E4": project state has changed', 'warning');
+    });
+
+    it('reverts nothing beneath the conflict when the clicked row is several rows lower', async () => {
+        stackWithConflictingHead();
+
+        // Row 'E0' is index 0: three undoable entries sit between it and the conflict.
+        await undoToIndex(0);
+
+        // None of them may be reverted. The history below a blocked entry is only
+        // reachable in the order the user recorded it.
+        const settled = settledUndoState();
+        expect(settled.past.map((entry) => entry.id)).toEqual(['E0', 'E1', 'E2', 'E3', 'E4']);
+        expect(settled.future).toEqual([]);
+        expect(mocks.notifyUser).toHaveBeenCalledTimes(1);
+        expect(mocks.notifyUser).toHaveBeenCalledWith('Cannot undo "E4": project state has changed', 'warning');
     });
 
     it('keeps the clicked undoable entry when an inert entry sits between it and the head', async () => {

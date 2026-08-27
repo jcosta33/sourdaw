@@ -35,6 +35,7 @@ use std::sync::atomic::{
 };
 use std::sync::{Mutex, OnceLock};
 use vst3::com_scrape_types::Guid;
+use vst3::Steinberg::Linux::IRunLoop;
 use vst3::Steinberg::Vst::{
     IAttributeList, IAttributeListTrait, IAttributeList_::AttrID, IComponentHandler,
     IComponentHandlerTrait, IHostApplication, IHostApplicationTrait, IMessage, IMessageTrait,
@@ -43,7 +44,7 @@ use vst3::Steinberg::Vst::{
 };
 use vst3::Steinberg::{
     int32, kInvalidArgument, kNotImplemented, kResultFalse, kResultOk, tresult, uint32, FIDString,
-    FUnknown, IBStream, TUID,
+    FUnknown, IBStream, IPlugFrame, IPlugView, TUID,
 };
 use vst3::{Class, ComPtr, ComWrapper, Interface};
 
@@ -513,9 +514,10 @@ impl IPlugInterfaceSupportTrait for Vst3HostApplication {
     ///
     /// A host that answers `kResultTrue` to everything is telling plugins to
     /// take paths it cannot serve; one that answers `kNotImplemented` is telling
-    /// them nothing. Both are worse than the list. `IPlugView` is absent because
-    /// the editor path is not implemented here, and claiming it would send a
-    /// plugin down a route that ends in a host with no frame to attach to.
+    /// them nothing. Both are worse than the list. `IWaylandHost` and
+    /// `IWaylandFrame` are absent because this host has no Wayland embedding
+    /// path, and claiming them would send a plugin down a route that ends in a
+    /// host with no surface to attach to.
     unsafe fn isPlugInterfaceSupported(&self, _iid: *const TUID) -> tresult {
         if _iid.is_null() {
             return kInvalidArgument;
@@ -529,11 +531,20 @@ impl IPlugInterfaceSupportTrait for Vst3HostApplication {
             IMessage::IID,
             IAttributeList::IID,
             IBStream::IID,
+            // The editor path: the host hosts an `IPlugView` and gives it an
+            // `IPlugFrame` of its own (`crate::vst3_editor`).
+            IPlugView::IID,
+            IPlugFrame::IID,
         ];
         if supported
             .iter()
             .any(|candidate| tuid_matches(&*_iid, candidate))
         {
+            return kResultOk;
+        }
+        // Only Linux advertises a run loop, for the same reason the frame only
+        // answers `queryInterface` for one there.
+        if cfg!(target_os = "linux") && tuid_matches(&*_iid, &IRunLoop::IID) {
             return kResultOk;
         }
         kResultFalse
@@ -846,7 +857,6 @@ impl Default for Vst3HostContext {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use vst3::Steinberg::IPlugView;
 
     fn drained(state: &Vst3HostState) -> Vec<HostParameterUpdate> {
         let mut buffer = [HostParameterUpdate::default(); MAX_PARAMETER_GESTURES];
@@ -1031,11 +1041,38 @@ mod tests {
             kResultOk
         );
 
+        // The editor path is implemented, so a plugin that asks whether it can
+        // put a view up gets a true answer rather than a refusal.
         let view = as_tuid(&IPlugView::IID);
         assert_eq!(
             unsafe { application.isPlugInterfaceSupported(&view) },
+            kResultOk
+        );
+
+        let wayland = as_tuid(&vst3::Steinberg::IWaylandHost::IID);
+        assert_eq!(
+            unsafe { application.isPlugInterfaceSupported(&wayland) },
             kResultFalse,
-            "the editor path is not implemented, and claiming it would be a lie"
+            "no Wayland embedding path is implemented, and claiming one would be a lie"
+        );
+    }
+
+    /// The run loop is the one host interface whose availability is a platform
+    /// fact rather than a code fact: on Linux an editor cannot run without it,
+    /// and everywhere else the platform's own loop already runs the editor.
+    #[test]
+    fn run_loop_support_is_answered_per_platform() {
+        let application = Vst3HostApplication;
+        let run_loop = tuid_from_guid(&IRunLoop::IID);
+
+        let expected = if cfg!(target_os = "linux") {
+            kResultOk
+        } else {
+            kResultFalse
+        };
+        assert_eq!(
+            unsafe { application.isPlugInterfaceSupported(&run_loop) },
+            expected
         );
     }
 

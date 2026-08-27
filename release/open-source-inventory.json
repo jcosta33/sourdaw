@@ -130,8 +130,8 @@
             "digests": [
                 "sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4:LICENSE",
                 "sha256:c148064afc3d904d474c5f20ee39052ff86085a02d148552ce59f4d0ebd7aeb9:NOTICE",
-                "sha256:8c2099aa01686376561e8ed2094de8f7d3e18a8a5dd6367bac5d49ca7c679c97:public/legal/DEPENDENCY-LICENSES.txt",
-                "sha256:4ce18233287ac1a927d7d2839fb3872cc42682191a09632770b7291e1a02a9cc:release/dependency-license-proofs.json"
+                "sha256:03be9429f428e7f8f427a01a79317eef00dd6ab5dc2ffb130c4a6300f579fead:public/legal/DEPENDENCY-LICENSES.txt",
+                "sha256:b1ef475c9236ca73f377965c215526768ec4406bf9159fde77042f02420ba72b:release/dependency-license-proofs.json"
             ],
             "licenses": ["Apache-2.0", "per-package terms:public/legal/DEPENDENCY-LICENSES.txt"],
             "productSurfaces": [
@@ -313,7 +313,7 @@
             "sources": ["Cargo.toml", "Cargo.lock", "public/legal/PLUGIN-INTERFACE-NOTICES.txt"],
             "revisions": ["exact Cargo lock graph"],
             "digests": [
-                "sha256:6d636daad5a06301eb62d540c565f7824b3291956d2bf9c65cc24fd7258713ac",
+                "sha256:bfe1982d1cdc8225a5076e82d2dbb5e2d839c7092a0fc2536d014bc4230b8a10",
                 "sha256:57f5b3fc8207b24fad956e3a8a52cfd2d527420cb753257bbd5f698d0cfc3e1e:public/legal/PLUGIN-INTERFACE-NOTICES.txt"
             ],
             "licenses": ["per-package declared terms, retained legal files, or assembled license records", "MIT:Steinberg-VST3-interface", "MIT:clap-sys"],
@@ -1288,7 +1288,7 @@
         },
         {
             "path": "Cargo.lock",
-            "sha256": "6d636daad5a06301eb62d540c565f7824b3291956d2bf9c65cc24fd7258713ac"
+            "sha256": "bfe1982d1cdc8225a5076e82d2dbb5e2d839c7092a0fc2536d014bc4230b8a10"
         },
         {
             "path": "src/modules/AiRuntime/repositories/webLlm/webLlmArtifactManifest.generated.json",

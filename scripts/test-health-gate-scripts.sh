@@ -239,6 +239,8 @@ const secrets = workflow.jobs?.secrets;
 const unit = workflow.jobs?.unit;
 const e2e = workflow.jobs?.e2e;
 const gate = workflow.jobs?.gate;
+const dependencyReview = workflow.jobs?.['dependency-review'];
+const dependencyReviewWith = stepNamed(dependencyReview, 'Review dependency changes')?.with ?? {};
 const browserAiWebGpu = workflow.jobs?.['browser-ai-webgpu'];
 const nightlyReport = workflow.jobs?.['nightly-report'];
 const resolveScopeRun = stepNamed(decide, 'Resolve scope')?.run ?? '';
@@ -443,6 +445,18 @@ expect(
 );
 expectShardFailureWarning(unitFailureWarning, 'unit', 'Unit suite', '2');
 expectShardFailureWarning(e2eFailureWarning, 'e2e', 'End-to-end', '11');
+expect(
+    dependencyReview?.if === 'github.event.pull_request != null',
+    'dependency review must gate on the pull request payload, not on the pull_request event, so an approval that cancels the push run still produces a verdict'
+);
+expect(
+    dependencyReviewWith['base-ref'] === '${{ github.event.pull_request.base.sha }}',
+    'dependency review must pass the explicit pull request base SHA, which the action cannot infer on a pull_request_review run'
+);
+expect(
+    dependencyReviewWith['head-ref'] === '${{ github.event.pull_request.head.sha }}',
+    'dependency review must pass the explicit pull request head SHA, which the action cannot infer on a pull_request_review run'
+);
 expect(gate?.name === 'Gate', 'required Gate job name must stay exact');
 expect(browserAiWebGpu !== undefined, 'browser-ai-webgpu job must remain connected to the workflow');
 expect(gateNeeds.includes('browser-ai-webgpu'), 'Gate must depend on browser-ai-webgpu');

@@ -467,7 +467,9 @@ describe('executeAppAction', () => {
             });
             releaseHandler?.();
 
-            await expect(replay).resolves.toBeUndefined();
+            // The conflicting entry stays at the head of `past`, so the call reports
+            // that it consumed nothing.
+            await expect(replay).resolves.toEqual({ headConsumed: false });
             expect(document.trackGain).toEqual({ value: 1 });
             expect(storage.get()).toEqual({ value: 1 });
             expect(undoStore.value).toEqual({ past, future: [] });
