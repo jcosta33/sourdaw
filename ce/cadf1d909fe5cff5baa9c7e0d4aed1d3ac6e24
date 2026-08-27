@@ -1,0 +1,19 @@
+src/modules/Command/useCases/__tests__/loadExternalPluginVersionedRecovery.spec.ts
+  s_1b9333aca53d4d::t_6c18de6dc82c78 39-48,126,237,259,261-262,266
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "cecadf1d909fe5cff5baa9c7e0d4aed1d3ac6e24",
+  "prompts": {},
+  "sessions": {
+    "s_1b9333aca53d4d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "188b0d45-7765-49bd-8d6e-1eebbd450613",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
