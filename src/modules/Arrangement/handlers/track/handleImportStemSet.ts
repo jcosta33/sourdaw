@@ -177,6 +177,7 @@ export const handleImportStemSet = createHandler<'importStemSet'>({
                 const committedIds = new Set(getTrackStoreState()?.tracks.map((track) => track.id) ?? []);
                 return reconcile(committedIds);
             },
+            postCommitEffect: { kind: 'external-effect', remediation: 'manual-repair' },
         };
     },
     describe: (action) => {

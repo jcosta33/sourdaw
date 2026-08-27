@@ -128,7 +128,7 @@ describe('grouped undo runtime graph reconciliation', () => {
         // bus. The device removal's runtime delta is finalized after that whole
         // batch commits, by which point the bus is gone from project truth — the
         // delta is void, and demanding manual repair for it wedges undo.
-        await expect(undo()).resolves.toBeUndefined();
+        await expect(undo()).resolves.toEqual({ headConsumed: true });
 
         expect(trackStore.value?.tracks.some((track) => track.id === BUS_ID)).toBe(false);
         expect(trackStore.value?.tracks.find((track) => track.id === 'track-vocals')?.sends).toEqual([]);
