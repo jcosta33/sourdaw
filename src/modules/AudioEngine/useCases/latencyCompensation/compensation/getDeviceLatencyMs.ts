@@ -1,4 +1,5 @@
 import { getAudioContext } from '../../engineAccess/getAudioContext';
+import { getLiveEngineSampleRate } from '../../engineAccess/getLiveEngineSampleRate';
 
 import { externalBridgeRoundTripFrames, externalLatencyRegistry } from './externalLatencyRegistry';
 import { deviceLatencyMap, WORKLET_BLOCK_SIZE } from './helpers';
@@ -33,7 +34,16 @@ function getBridgeRoundTripMs(deviceId: string): number {
     if (frames === undefined || frames <= 0) {
         return 0;
     }
-    return (frames / engineSampleRate()) * 1000;
+    // No fallback rate here, deliberately. The frames were counted at the rate
+    // the instance was activated with, and that activation refuses to happen
+    // without a live engine; converting them against a substituted rate would
+    // report a compensation nothing measured. With no engine there is also no
+    // bridged audio to compensate.
+    const rate = getLiveEngineSampleRate();
+    if (rate === undefined) {
+        return 0;
+    }
+    return (frames / rate) * 1000;
 }
 
 export function getDeviceLatencyMs(deviceId: string, deviceType: string): number {

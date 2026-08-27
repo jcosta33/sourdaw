@@ -32,9 +32,10 @@ pub struct PluginInstance {
     pub name: String,
     pub parameters: Vec<PluginParameter>,
     pub is_active: bool,
-    /// Raw CLAP latency, in frames of the rate the plugin was activated with.
-    /// Informational only — do not convert it outside this process, the frontend
-    /// does not share that clock. Use `latency_ms`.
+    /// Raw CLAP latency, in frames of the engine rate the caller supplied to
+    /// activate this instance. Informational only: `latency_ms` is the same
+    /// figure already converted against that rate, and duplicating the
+    /// conversion is how the two drift apart.
     pub latency_samples: u32,
     /// Latency in milliseconds, converted host-side at the activation sample rate.
     /// This is the value the frontend feeds into latency compensation.
@@ -45,8 +46,11 @@ pub struct PluginInstance {
     /// exist. The frontend adds it to `latency_ms` when compensating this
     /// device.
     ///
-    /// Temporary, with the bridge: jcosta33/sourdaw#2230 replaces the relay
-    /// with the native graph, and this field goes with it.
+    /// Reported once, at load, and never revised: a device or period change
+    /// mid-session leaves an already-loaded instance compensating the period it
+    /// was loaded under. No revision machinery is being built for it, because
+    /// jcosta33/sourdaw#2230 replaces the relay with the native graph and takes
+    /// this field, and the round trip it reports, with it.
     pub bridge_round_trip_frames: u32,
     pub engine_plugin_id: Option<usize>,
 }
@@ -2593,7 +2597,15 @@ mod tests {
     /// exists to remove.
     #[test]
     fn an_engine_rate_that_is_not_a_positive_number_is_refused_by_its_own_value() {
-        for rate in [0.0, -48_000.0, f64::NAN, f64::INFINITY] {
+        // Zero renders as the single character "0", which a substring check
+        // finds in almost any message — including one that named a different
+        // rate entirely. It gets the whole message compared instead.
+        assert_eq!(
+            engine_activation_sample_rate(0.0).expect_err("0 Hz is not a rate"),
+            "Cannot activate a plugin at an engine sample rate of 0: the rate must be a positive number of hertz"
+        );
+
+        for rate in [-48_000.0, f64::NAN, f64::INFINITY] {
             let refusal = engine_activation_sample_rate(rate)
                 .expect_err("a rate that is not a positive number must refuse");
             assert!(

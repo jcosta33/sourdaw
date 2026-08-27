@@ -1,4 +1,4 @@
-import { getAudioSampleRate, reportBridgeRoundTripFrames, reportLatency } from '#/modules/AudioEngine/useCases';
+import { getLiveEngineSampleRate, reportBridgeRoundTripFrames, reportLatency } from '#/modules/AudioEngine/useCases';
 import { activateExternalPlugin, findSupportedPlugin } from '#/modules/PluginHost/useCases';
 import { createHandler } from '#/utils/createHandler';
 
@@ -114,12 +114,22 @@ export const handleLoadExternalPlugin = createHandler<'loadExternalPlugin'>({
                 pluginActivationSettled = true;
                 return;
             }
+            // The live engine's own rate: the plugin is fed audio this engine
+            // renders, so it has to run on the same clock. A user cannot reach
+            // this handler without an engine to load into, so an absent rate is
+            // a broken invariant rather than a state to degrade through —
+            // raised here, where the post-commit contract routes it to graph
+            // repair, instead of substituted for and never heard about again.
+            const engineSampleRate = getLiveEngineSampleRate();
+            if (engineSampleRate === undefined) {
+                throw new Error(
+                    `Cannot activate external plugin ${externalInstanceId}: no live audio engine to state a sample rate`
+                );
+            }
             const activation = await activateExternalPlugin({
                 pluginId: externalPluginId,
                 instanceId: externalInstanceId,
-                // The live engine's own rate: the plugin is fed audio this
-                // engine renders, so it has to run on the same clock.
-                engineSampleRate: getAudioSampleRate(),
+                engineSampleRate,
                 onLatencyMs: (latencyMs) => reportLatency(committedDevice.id, latencyMs),
                 onBridgeRoundTripFrames: (frames) => reportBridgeRoundTripFrames(committedDevice.id, frames),
             });

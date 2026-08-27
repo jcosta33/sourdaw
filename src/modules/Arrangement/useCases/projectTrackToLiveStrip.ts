@@ -1,5 +1,6 @@
+import { logger } from '#/infra/logger/appLogger';
 import {
-    getAudioSampleRate,
+    getLiveEngineSampleRate,
     initializeTrackStripFromSnapshot,
     reportBridgeRoundTripFrames,
     reportLatency,
@@ -91,20 +92,31 @@ export function projectTrackToLiveStrip({
             instanceId = device.externalInstanceId;
         }
         const pluginId = device.externalPluginId;
+        // The live engine's own rate: the plugin is fed audio this engine
+        // renders, so it has to run on the same clock. With no engine there is
+        // no rate to run on, and this projection is the rebuild path — it says
+        // so and leaves the plugin dormant, which is what the next rebuild
+        // reverses. Activating on a substituted rate would not be reversible:
+        // the instance stays detuned until something unloads it.
+        const engineSampleRate = getLiveEngineSampleRate();
         if (instanceId && pluginId) {
-            // Idempotent load + state restore; skips if the instance is already live,
-            // so the project-open rebuild and every Play/record rebuild stay cheap.
-            const activation = activateExternalPlugin({
-                pluginId,
-                instanceId,
-                stateChunk: device.externalStateChunk,
-                // The live engine's own rate: the plugin is fed audio this
-                // engine renders, so it has to run on the same clock.
-                engineSampleRate: getAudioSampleRate(),
-                onLatencyMs: (latencyMs) => reportLatency(device.id, latencyMs),
-                onBridgeRoundTripFrames: (frames) => reportBridgeRoundTripFrames(device.id, frames),
-            });
-            onExternalPluginActivation?.(activation);
+            if (engineSampleRate === undefined) {
+                logger.warn(
+                    `Leaving external plugin ${instanceId} dormant on track ${track.id}: no live audio engine to state a sample rate`
+                );
+            } else {
+                // Idempotent load + state restore; skips if the instance is already live,
+                // so the project-open rebuild and every Play/record rebuild stay cheap.
+                const activation = activateExternalPlugin({
+                    pluginId,
+                    instanceId,
+                    stateChunk: device.externalStateChunk,
+                    engineSampleRate,
+                    onLatencyMs: (latencyMs) => reportLatency(device.id, latencyMs),
+                    onBridgeRoundTripFrames: (frames) => reportBridgeRoundTripFrames(device.id, frames),
+                });
+                onExternalPluginActivation?.(activation);
+            }
         }
         for (const [parameterId, value] of Object.entries(device.parameterValues)) {
             if (typeof value === 'number') {

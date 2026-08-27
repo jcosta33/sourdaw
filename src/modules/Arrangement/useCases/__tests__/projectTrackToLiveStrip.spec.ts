@@ -28,7 +28,7 @@ const mocks = vi.hoisted(() => ({
     updateDeviceParam: vi.fn(),
     updateDeviceBypass: vi.fn(),
     activateExternalPlugin: vi.fn(),
-    getAudioSampleRate: vi.fn(() => ENGINE_SAMPLE_RATE),
+    getLiveEngineSampleRate: vi.fn<() => number | undefined>(() => ENGINE_SAMPLE_RATE),
     reportBridgeRoundTripFrames: vi.fn(),
     warn: vi.fn(),
     setSend: vi.fn(),
@@ -57,7 +57,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     updateDeviceParam: mocks.updateDeviceParam,
     updateDeviceBypass: mocks.updateDeviceBypass,
     resolveToasterPadBinding: mocks.resolveToasterPadBinding,
-    getAudioSampleRate: mocks.getAudioSampleRate,
+    getLiveEngineSampleRate: mocks.getLiveEngineSampleRate,
     reportBridgeRoundTripFrames: mocks.reportBridgeRoundTripFrames,
     reportLatency: mocks.reportLatency,
     createRuntimeGraphTopologyFingerprint: vi.fn(),
@@ -95,11 +95,43 @@ const initializationFailureResults = [
 describe('projectTrackToLiveStrip', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        // `clearAllMocks` clears calls, not implementations, so a test that
+        // takes the engine away has to hand it back here.
+        mocks.getLiveEngineSampleRate.mockReturnValue(ENGINE_SAMPLE_RATE);
         mocks.activateExternalPlugin.mockReturnValue(Promise.resolve({ status: 'active' }));
         mocks.soloMode = 'sip';
         mocks.resolveToasterPadBinding.mockReturnValue(undefined);
         trackStore.set({ tracks: [], selectedTrackId: null });
         applySoloLogic({ resetSavedGains: true, applyActions: false });
+    });
+
+    it('leaves an external plugin dormant, and says so, when no engine can state a rate', () => {
+        const track = createTrack({ id: 'audio-1', name: 'Audio', kind: 'audio' });
+        track.outputId = 'master';
+        track.devices = [
+            {
+                id: 'device-1',
+                name: 'Native effect',
+                type: 'external-plugin',
+                bypassed: false,
+                parameterValues: {},
+                externalPluginId: 'persisted-native-plugin',
+                externalInstanceId: 'persisted-native-instance',
+            },
+        ];
+        trackStore.set({
+            tracks: [track, createTrack({ id: 'master', name: 'Master', kind: 'master' })],
+            selectedTrackId: null,
+        });
+        mocks.getLiveEngineSampleRate.mockReturnValue(undefined);
+
+        projectTrackToLiveStrip({ trackId: track.id, activateDormantExternalPlugins: true });
+
+        // Activating against a substituted rate detunes the instance for as
+        // long as it lives and reports a latency scaled by the same wrong
+        // number. Staying dormant is reversible: the next rebuild has a rate.
+        expect(mocks.activateExternalPlugin).not.toHaveBeenCalled();
+        expect(mocks.warn).toHaveBeenCalledWith(expect.stringContaining('persisted-native-instance'));
     });
 
     it('projects the current owned track in device-chain order and wires sidechains last', () => {

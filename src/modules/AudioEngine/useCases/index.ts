@@ -84,6 +84,7 @@ export { getMasterStereoAnalysers } from './engineAccess/getMasterStereoAnalyser
 export { getMasterPeakLevel } from './engineAccess/getMasterPeakLevel';
 export { setMasterGainValue } from './engineAccess/setMasterGainValue';
 export { getAudioSampleRate } from './engineAccess/getAudioSampleRate';
+export { getLiveEngineSampleRate } from './engineAccess/getLiveEngineSampleRate';
 export { getTrackAnalyser } from './engineAccess/getTrackAnalyser';
 export { getFaustMeterReading } from './engineAccess/getFaustMeterReading';
 export { getTrackStrip } from './engineAccess/getTrackStrip';

@@ -217,8 +217,10 @@ impl ClapWrapper {
     ///
     /// `plugin_path`: Path to the .clap file (shared library)
     /// `plugin_id`: The CLAP plugin ID to instantiate (from the descriptor)
-    /// `sample_rate`: The output device sample rate. Must match the running audio engine.
-    ///   Query via `cpal::default_host().default_output_device()?.default_output_config()?.sample_rate()`.
+    /// `sample_rate`: The rate the engine rendering this plugin's audio runs at,
+    ///   supplied by the caller. It is not the output device's rate: the two can
+    ///   differ, and the plugin only ever sees engine-rendered audio, so
+    ///   activating on the device's clock detunes everything the plugin does.
     pub fn new(plugin_path: &str, plugin_id: &str, sample_rate: f64) -> Result<Self, String> {
         unsafe {
             // 1. Load the shared library
@@ -1086,10 +1088,10 @@ impl ClapWrapper {
     /// The plugin's current reported latency in **milliseconds**.
     ///
     /// CLAP reports latency as a frame count in the clock the plugin was
-    /// ACTIVATED with (`self.sample_rate`, the CPAL device rate). This wrapper is
-    /// the only place that rate is known, so it is the only place the conversion
-    /// is sound — a consumer on another clock (e.g. a webview `AudioContext`
-    /// running at a different rate) would silently mis-scale the sample count.
+    /// ACTIVATED with (`self.sample_rate`, the engine rate the caller supplied).
+    /// Converting here keeps the frame count and the milliseconds derived from
+    /// one rate: a consumer that re-derived it against a rate of its own — a
+    /// device default, a hardcoded 48 kHz — would silently mis-scale it.
     pub fn latency_ms(&self) -> f64 {
         if !self.sample_rate.is_finite() || self.sample_rate <= 0.0 {
             return 0.0;
