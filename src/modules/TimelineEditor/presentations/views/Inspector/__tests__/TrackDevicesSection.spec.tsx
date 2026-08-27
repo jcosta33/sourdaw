@@ -16,7 +16,18 @@ type TestPluginDescriptor = {
 } | null;
 
 type TestPluginScanViewState = {
-    scannedPlugins: Array<{ id: string; name: string; format: string; descriptor_id?: string }>;
+    scannedPlugins: Array<{
+        id: string;
+        name: string;
+        format: string;
+        descriptor_id?: string;
+        has_custom_ui?: boolean;
+        capability_metadata_reason?: string;
+    }>;
+};
+
+type TestPluginGuiState = {
+    byInstanceId: Record<string, { isOpen: boolean; error?: string }>;
 };
 
 type TestActivationState = {
@@ -69,11 +80,13 @@ vi.mock('#/modules/Command/useCases', () => ({
 }));
 
 const mockOpenPluginGui = vi.fn<(instanceId: string) => Promise<void>>();
+const mockClosePluginGui = vi.fn<(instanceId: string) => Promise<void>>();
 vi.mock('#/modules/PluginHost/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/PluginHost/useCases')>();
     return {
         ...actual,
         openPluginGui: (instanceId: string): Promise<void> => mockOpenPluginGui(instanceId),
+        closePluginGui: (instanceId: string): Promise<void> => mockClosePluginGui(instanceId),
     };
 });
 
@@ -84,13 +97,22 @@ vi.mock('#/modules/WorkspaceShell/useCases', () => ({
     },
 }));
 
-const mockStores = vi.hoisted(() => ({ scan: {}, activation: {} }));
+const mockStores = vi.hoisted(() => ({ scan: {}, activation: {}, gui: {} }));
 const mockScanState = vi.fn<() => TestPluginScanViewState>(() => ({
     scannedPlugins: [],
 }));
 const mockActivationState = vi.fn<() => TestActivationState>(() => ({ byInstanceId: {} }));
+const mockGuiState = vi.fn<() => TestPluginGuiState>(() => ({ byInstanceId: {} }));
 vi.mock('#/infra/store/useStore', () => ({
-    useStore: (store: unknown) => (store === mockStores.activation ? mockActivationState() : mockScanState()),
+    useStore: (store: unknown): unknown => {
+        if (store === mockStores.activation) {
+            return mockActivationState();
+        }
+        if (store === mockStores.gui) {
+            return mockGuiState();
+        }
+        return mockScanState();
+    },
 }));
 
 vi.mock('#/modules/PluginHost/stores', async (importOriginal) => {
@@ -101,6 +123,8 @@ vi.mock('#/modules/PluginHost/stores', async (importOriginal) => {
         defaultPluginScanState: { scannedPlugins: [] },
         externalPluginActivationStore: mockStores.activation,
         defaultExternalPluginActivationState: { byInstanceId: {} },
+        pluginGuiStore: mockStores.gui,
+        defaultPluginGuiState: { byInstanceId: {} },
     };
 });
 
@@ -231,6 +255,7 @@ describe('TrackDevicesSection', () => {
         mockGetPlatformCapabilities.mockReturnValue({ hasNativePlugins: false });
         mockScanState.mockReturnValue({ scannedPlugins: [] });
         mockActivationState.mockReturnValue({ byInstanceId: {} });
+        mockGuiState.mockReturnValue({ byInstanceId: {} });
     });
 
     it('should render without crashing', () => {
@@ -343,11 +368,11 @@ describe('TrackDevicesSection', () => {
         expect(screen.queryByRole('menuitem', { name: 'Chorus' })).not.toBeInTheDocument();
     });
 
-    it('offers only supported CLAP plugins from stale scan state', () => {
+    it('offers only the plugin formats the host can load from stale scan state', () => {
         mockGetPlatformCapabilities.mockReturnValue({ hasNativePlugins: true });
         mockScanState.mockReturnValue({
             scannedPlugins: [
-                { id: 'vst-1', name: 'Stale VST', format: 'vst3' },
+                { id: 'vst-1', name: 'Working VST', format: 'vst3' },
                 { id: 'clap-1', name: 'Working CLAP', format: 'clap' },
                 { id: 'au-1', name: 'Stale AU', format: 'au' },
             ],
@@ -356,7 +381,10 @@ describe('TrackDevicesSection', () => {
         render(<TrackDevicesSection track={mockTrack} onSelectDevice={mockOnSelectDevice} />);
         fireEvent.click(screen.getByLabelText('Add device'));
 
-        expect(screen.queryByRole('menuitem', { name: /Stale VST/ })).not.toBeInTheDocument();
+        // The menu tracks what the host can actually load, and VST3 became
+        // loadable in #2869 — offering it is now correct, and hiding it was the
+        // stale assertion.
+        expect(screen.getByRole('menuitem', { name: /Working VST/ })).toBeInTheDocument();
         expect(screen.queryByRole('menuitem', { name: /Stale AU/ })).not.toBeInTheDocument();
 
         fireEvent.click(screen.getByRole('menuitem', { name: /Working CLAP/ }));
@@ -513,6 +541,125 @@ describe('TrackDevicesSection', () => {
             throw new Error('expected a choice card');
         }
         expect(firstCard).not.toHaveAttribute('title');
+    });
+
+    const externalPluginTrack = (externalPluginId: string, externalInstanceId: string, name: string): Track => ({
+        ...mockTrack,
+        devices: [
+            {
+                id: 'external-slot',
+                name,
+                type: 'external-plugin',
+                bypassed: false,
+                parameterValues: {},
+                externalPluginId,
+                externalInstanceId,
+            },
+        ],
+    });
+
+    it('offers no editor control for a plugin the scan reports has none', () => {
+        mockGetPlatformCapabilities.mockReturnValue({ hasNativePlugins: true });
+        mockScanState.mockReturnValue({
+            scannedPlugins: [{ id: 'path-hash', name: 'Headless CLAP', format: 'clap', has_custom_ui: false }],
+        });
+
+        render(
+            <TrackDevicesSection
+                track={externalPluginTrack('path-hash', 'headless-instance', 'Headless CLAP')}
+                onSelectDevice={mockOnSelectDevice}
+            />
+        );
+
+        expect(screen.queryByLabelText(/editor for Headless CLAP/)).not.toBeInTheDocument();
+        // Still a healthy device — it just has no editor of its own.
+        expect(screen.queryByText('Unavailable')).not.toBeInTheDocument();
+    });
+
+    it('keeps the editor control when the scan never queried the capability', () => {
+        mockGetPlatformCapabilities.mockReturnValue({ hasNativePlugins: true });
+        mockScanState.mockReturnValue({
+            scannedPlugins: [
+                {
+                    id: 'path-hash',
+                    name: 'Unqueried CLAP',
+                    format: 'clap',
+                    has_custom_ui: false,
+                    capability_metadata_reason: 'the scanner did not inspect this plugin',
+                },
+            ],
+        });
+
+        render(
+            <TrackDevicesSection
+                track={externalPluginTrack('path-hash', 'unqueried-instance', 'Unqueried CLAP')}
+                onSelectDevice={mockOnSelectDevice}
+            />
+        );
+
+        expect(screen.getByLabelText('Open editor for Unqueried CLAP')).toBeInTheDocument();
+    });
+
+    it('closes the editor from the control that opened it', () => {
+        mockGetPlatformCapabilities.mockReturnValue({ hasNativePlugins: true });
+        mockScanState.mockReturnValue({
+            scannedPlugins: [{ id: 'path-hash', name: 'Open CLAP', format: 'clap', has_custom_ui: true }],
+        });
+        mockGuiState.mockReturnValue({ byInstanceId: { 'open-instance': { isOpen: true } } });
+
+        render(
+            <TrackDevicesSection
+                track={externalPluginTrack('path-hash', 'open-instance', 'Open CLAP')}
+                onSelectDevice={mockOnSelectDevice}
+            />
+        );
+
+        const control = screen.getByLabelText('Close editor for Open CLAP');
+        expect(control).toHaveAttribute('aria-pressed', 'true');
+
+        fireEvent.click(control);
+
+        expect(mockClosePluginGui).toHaveBeenCalledWith('open-instance');
+        expect(mockOpenPluginGui).not.toHaveBeenCalled();
+    });
+
+    it('reads the editor as closed again once the OS ended its window', () => {
+        mockGetPlatformCapabilities.mockReturnValue({ hasNativePlugins: true });
+        mockScanState.mockReturnValue({
+            scannedPlugins: [{ id: 'path-hash', name: 'Open CLAP', format: 'clap', has_custom_ui: true }],
+        });
+        mockGuiState.mockReturnValue({ byInstanceId: { 'open-instance': { isOpen: true } } });
+        const track = externalPluginTrack('path-hash', 'open-instance', 'Open CLAP');
+        const { rerender } = render(<TrackDevicesSection track={track} onSelectDevice={mockOnSelectDevice} />);
+        expect(screen.getByLabelText('Close editor for Open CLAP')).toBeInTheDocument();
+
+        // What the host reports when the window was closed from its title bar.
+        mockGuiState.mockReturnValue({ byInstanceId: { 'open-instance': { isOpen: false } } });
+        rerender(<TrackDevicesSection track={{ ...track }} onSelectDevice={mockOnSelectDevice} />);
+
+        expect(screen.getByLabelText('Open editor for Open CLAP')).toBeInTheDocument();
+        fireEvent.click(screen.getByLabelText('Open editor for Open CLAP'));
+        expect(mockOpenPluginGui).toHaveBeenCalledWith('open-instance');
+        expect(mockClosePluginGui).not.toHaveBeenCalled();
+    });
+
+    it('surfaces the host refusal on the slot whose editor failed to open', () => {
+        mockGetPlatformCapabilities.mockReturnValue({ hasNativePlugins: true });
+        mockScanState.mockReturnValue({
+            scannedPlugins: [{ id: 'path-hash', name: 'Refusing CLAP', format: 'clap', has_custom_ui: true }],
+        });
+        mockGuiState.mockReturnValue({
+            byInstanceId: { 'refusing-instance': { isOpen: false, error: 'Plugin GUI is already open' } },
+        });
+
+        render(
+            <TrackDevicesSection
+                track={externalPluginTrack('path-hash', 'refusing-instance', 'Refusing CLAP')}
+                onSelectDevice={mockOnSelectDevice}
+            />
+        );
+
+        expect(screen.getByTestId('choice-card')).toHaveAttribute('title', 'Plugin GUI is already open');
     });
 
     it('should apply opacity to bypassed devices', () => {

@@ -15,6 +15,8 @@ export { getPluginHostHandlers } from './getPluginHostHandlers';
 export { loadPlugin } from './pluginLifecycle/loadPlugin';
 export { unloadPlugin } from './pluginLifecycle/unloadPlugin';
 export { openPluginGui } from './pluginLifecycle/openPluginGui';
+export { closePluginGui } from './pluginLifecycle/closePluginGui';
+export { watchPluginStateDirty } from './pluginLifecycle/watchPluginStateDirty';
 export { processAudioIPC } from './pluginLifecycle/processAudioIPC';
 export { setPluginParameter } from './pluginLifecycle/setPluginParameter';
 export { setPluginBypass } from './pluginLifecycle/setPluginBypass';
@@ -26,6 +28,7 @@ export { resetExternalPluginRuntimeForGraphRebuild } from './pluginLifecycle/res
 
 export { findPluginByName } from './pluginScan/queries';
 export { findSupportedPlugin } from './pluginScan/findSupportedPlugin';
+export { resolvePluginEditorCapability } from './pluginScan/resolvePluginEditorCapability';
 export { SUPPORTED_PLUGIN_FORMATS, isSupportedPluginFormat } from './pluginScan/supportedPluginFormats';
 export { getExternalPluginContractVersionForCommand } from './pluginScan/getExternalPluginContractVersionForCommand';
 export { getAgentDeviceFactoryManifest } from './getAgentDeviceFactoryManifest';
