@@ -1040,7 +1040,7 @@
                 "scoring sha256:c9744d5471f096d22b5404f545749df815c32b77cb722c94f0f233f51a616639"
             ],
             "digests": [
-                "sha256:50b69e55e96881334b95a31e09b2ab04098084dbf7613b80cfa3726761b0330e:public/wasm/manifest.json"
+                "sha256:f2891b04f8fd33f5f5c9c3363c6b3c1b755066d9d15954db0efea03ec1161aff:public/wasm/manifest.json"
             ],
             "licenses": ["Apache-2.0", "per-package terms:public/legal/DEPENDENCY-LICENSES.txt"],
             "productSurfaces": ["browser DSP", "desktop webview DSP"],
@@ -1300,7 +1300,7 @@
         },
         {
             "path": "public/wasm/manifest.json",
-            "sha256": "50b69e55e96881334b95a31e09b2ab04098084dbf7613b80cfa3726761b0330e"
+            "sha256": "f2891b04f8fd33f5f5c9c3363c6b3c1b755066d9d15954db0efea03ec1161aff"
         }
     ],
     "externalReferences": [
