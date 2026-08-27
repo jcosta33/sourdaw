@@ -8,6 +8,9 @@ pub struct ActiveMidiRtDiagnosticsSnapshot {
     /// already held by another effect or plugin. The command is rejected
     /// rather than silently misrouting later `SetParam`/`SetBypass`/
     /// `SendMidiNote`/etc. commands to whichever entry was inserted first.
+    /// The control-side effect-table ledger also reconciles against this
+    /// counter, so a refusal observed here returns the slot the ledger
+    /// counted for it.
     pub effect_id_collisions: u64,
     /// An `AddEffect` command named a `plugin_type` with no built-in mapping.
     /// Unreachable from this engine since the command's payload became the
