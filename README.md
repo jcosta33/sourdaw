@@ -104,5 +104,5 @@ terms; see the [third-party notices](./public/legal/THIRD-PARTY-NOTICES.md).
 
 - [Developer documentation](./docs/README.md)
 - [AI stack architecture](./docs/architecture/09-ai-stack.md)
-- [Release proof](./docs/release.md)
+- [Release](./docs/release.md)
 - [User manual](./docs/manual/README.md)

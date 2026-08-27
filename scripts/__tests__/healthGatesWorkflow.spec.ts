@@ -149,7 +149,15 @@ const DEPLOY_ENVIRONMENT = 'Production';
 const VERCEL_CLI_PIN = /^vercel@\d+\.\d+\.\d+$/u;
 // A daily web deployment carries no release identity: nothing here may write a
 // version, a tag, a GitHub Release or a changelog entry.
-const RELEASE_SIDE_EFFECTS = [/git tag/u, /gh release/u, /CHANGELOG/u, /npm version/u, /pnpm version/u] as const;
+const RELEASE_SIDE_EFFECTS = [
+    /git tag/u,
+    /gh release/u,
+    /CHANGELOG/u,
+    /npm version/u,
+    /pnpm version/u,
+    /release:propose/u,
+    /release:cut/u,
+] as const;
 const CURRENT_NON_GATING_JOB_WIRING = {
     unit: { needs: 'decide', if: "needs.decide.outputs.web == 'true'" },
     e2e: { needs: 'decide', if: "needs.decide.outputs.heavy == 'true' && needs.decide.outputs.e2e == 'true'" },

@@ -1,4 +1,64 @@
-# Release Proof
+# Release
+
+## Semantic version, changelog, and GitHub Release
+
+A version is created by an explicit operator command and by nothing else. No workflow trigger cuts
+one, so a deploy — daily or otherwise — leaves the version, the tags, the releases, and
+`CHANGELOG.md` exactly as it found them.
+
+Merged pull-request titles are the only source. A squash merge carries its pull request's title onto
+`main`, and both commands read the titles back from the pull requests the tag range names, never
+from a commit body.
+
+The increment comes from the strongest title in the range: a `!` on any type is breaking, `feat` is
+a feature, `fix` and `perf` are fixes, and every other conventional type asks for no version at all.
+A range that asks for nothing proposes nothing.
+
+While the major is `0` the leading zero already says the surface may change, so a breaking change
+and a feature both take the minor position and a fix takes the patch position. Automation never
+emits `1.0.0`: declaring a stable product surface is an owner decision, so the first `1.0.0` is a
+deliberate manual edit of `package.json` and the increments above resume from it under the standard
+mapping.
+
+The baseline is the latest `vX.Y.Z` tag, and `package.json` on `main` must agree with it. Until the
+first tag exists the baseline is whatever `package.json` on `main` says, so the first release is
+that version plus its increment.
+
+Propose the release from a lane:
+
+```sh
+pnpm lane:open release
+cd <lane>
+pnpm release:propose
+```
+
+It rewrites the version, the changelog entry, and every digest the release gates pin to
+`package.json`, all from the base revision, so running it again converges instead of stacking a
+second entry. Commit it with the conventional subject it prints, then open the pull request with
+`pnpm lane:publish` from the primary checkout, and deliver it the ordinary way — reviewed, then
+`pnpm deliver`.
+
+Cut the release from the primary checkout, against the squash commit that merge left on `main`:
+
+```sh
+git fetch origin main --tags
+pnpm release:cut <X.Y.Z> --commit <merge-sha>
+```
+
+It creates the annotated tag on that exact revision and one GitHub Release bound to it, through the
+same author App the delivery scripts mint. It refuses a tag or release that already exists, a commit
+`main` does not contain, a commit whose `package.json` is a different version, a version that does
+not advance the latest tag, and a committed changelog entry that disagrees with the notes the tag
+range produces — that last one means the range moved after the proposal, and re-proposing is the
+repair.
+
+`CHANGELOG.md` records every entry in the range. GitHub caps a release body, so a range too long to
+publish whole is cut at an entry boundary and the body points at the committed changelog for the
+rest — which is the shape a first release covering a long unreleased history takes.
+
+The release carries notes and source. It ships no desktop binaries.
+
+## Release proof
 
 A release candidate is one external directory whose source, web, and macOS
 arm64 desktop artifacts carry the same full Git revision. Assemble it from a
