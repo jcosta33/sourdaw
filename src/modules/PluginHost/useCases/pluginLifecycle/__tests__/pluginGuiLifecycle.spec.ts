@@ -129,6 +129,28 @@ describe('plugin editor open state', () => {
         expect(pluginGuiStore.value?.byInstanceId['inst-1']).toEqual({ isOpen: true });
     });
 
+    /**
+     * The rack's control has no pending state, so a double-click issues two
+     * calls against one window. Run concurrently they race: the close's IPC
+     * answers while the open is still in flight, the open's record lands last,
+     * and the store claims an editor is open that was just closed.
+     */
+    it('settles two overlapping editor calls in the order they were issued', async () => {
+        const openArrival = Promise.withResolvers<PluginGuiInfo>();
+        mocks.openGuiRepo.mockReturnValue(openArrival.promise);
+
+        const opening = openPluginGui('inst-1');
+        const closing = closePluginGui('inst-1');
+
+        expect(mocks.closeGuiRepo).not.toHaveBeenCalled();
+
+        openArrival.resolve(openedGui);
+        await opening;
+        await closing;
+
+        expect(pluginGuiStore.value?.byInstanceId['inst-1']).toEqual({ isOpen: false });
+    });
+
     it('subscribes to OS-initiated closes exactly once however many editors open', async () => {
         await openPluginGui('inst-1');
         await openPluginGui('inst-2');

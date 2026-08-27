@@ -28,7 +28,6 @@ export { resetExternalPluginRuntimeForGraphRebuild } from './pluginLifecycle/res
 
 export { findPluginByName } from './pluginScan/queries';
 export { findSupportedPlugin } from './pluginScan/findSupportedPlugin';
-export type { PluginEditorCapability, PluginEditorCapabilitySource } from './pluginScan/resolvePluginEditorCapability';
 export { resolvePluginEditorCapability } from './pluginScan/resolvePluginEditorCapability';
 export { SUPPORTED_PLUGIN_FORMATS, isSupportedPluginFormat } from './pluginScan/supportedPluginFormats';
 export { getExternalPluginContractVersionForCommand } from './pluginScan/getExternalPluginContractVersionForCommand';
