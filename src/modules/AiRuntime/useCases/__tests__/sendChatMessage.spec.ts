@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { logger } from '#/infra/logger/appLogger';
 import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import { commandBatchPreflightPort, commandTrackDefaultsPort } from '#/modules/Command/useCases';
@@ -10,6 +11,7 @@ import { type ProjectContext } from '../../models/ProjectContext';
 import { bridgeGroundedLlmToolCalls } from '../agentReference/bridgeGroundedLlmToolCalls';
 import { materializeBatchLocalActionIdentities } from '../agentReference/materializeBatchLocalActionIdentities';
 import { agentRunLifecycle } from '../agentRunLifecycle';
+import { agentRunWorkLease } from '../agentRunWorkLease';
 import { compileArbitraryCommandList } from '../compileArbitraryCommandList';
 import { materializeActionStateGuards } from '../materializeActionStateGuards';
 import { type planPromptActions } from '../planPromptActions';
@@ -518,6 +520,44 @@ describe('sendChatMessage retained-provider selection', () => {
         await expect(sendChatMessage('summarize this', { mode: 'explain' })).rejects.toThrow(
             'AI Engine is not initialized or not supported on this device.'
         );
+    });
+
+    it('preserves the provider failure message when provider lease settlement cannot persist', async () => {
+        const providerError = new Error('WebLLM provider failed');
+        const leaseSettlementError = new Error('lease persistence failed');
+        const loggerError = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+        const settle = vi.spyOn(agentRunWorkLease, 'settle').mockImplementation(() => {
+            throw leaseSettlementError;
+        });
+        vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+            callback(0);
+            return 0;
+        });
+        mocks.getLlmEngine.mockReturnValue({
+            interruptGenerate: vi.fn(),
+            chat: {
+                completions: {
+                    create: vi.fn().mockRejectedValue(providerError),
+                },
+            },
+        });
+
+        try {
+            await expect(sendChatMessage('summarize this', { mode: 'explain' })).resolves.toBeUndefined();
+            expect(mocks.updateChatMessage).toHaveBeenCalledWith(
+                expect.any(String),
+                expect.objectContaining({
+                    isStreaming: false,
+                    error: 'WebLLM provider failed',
+                    content: 'Sorry, I encountered an error while thinking about that.',
+                })
+            );
+            expect(loggerError).not.toHaveBeenCalled();
+        } finally {
+            settle.mockRestore();
+            loggerError.mockRestore();
+            vi.unstubAllGlobals();
+        }
     });
 
     it('forwards same-run live prepared-stem readiness into application planning', async () => {

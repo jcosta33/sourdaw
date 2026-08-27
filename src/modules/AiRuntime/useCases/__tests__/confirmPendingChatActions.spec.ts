@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { logger } from '#/infra/logger/appLogger';
 import { createStore } from '#/infra/store/createStore';
 import {
     configureAutomergeStoragePort,
@@ -59,6 +60,7 @@ import { createStemImportConfirmationResourceLease } from '../agentReference/cre
 import { preparedStemImportResources } from '../agentReference/registerPreparedStemImportResources';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { recoverInterruptedAgentRuns } from '../agentRunRecovery';
+import { agentRunWorkLease } from '../agentRunWorkLease';
 import { agentRunCancellation } from '../cancelAgentRun';
 import { compileAgentRiskApproval } from '../compileAgentRiskApproval';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
@@ -443,9 +445,32 @@ describe('confirmPendingChatActions transaction admission', () => {
             projectRevision,
         });
 
-        await expect(confirmPendingChatActions({ confirmationId: 'confirmation-batch' })).resolves.toEqual({
-            status: 'executed',
+        const leaseSettlementError = new Error('lease persistence failed');
+        const loggerError = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+        const settle = vi.spyOn(agentRunWorkLease, 'settle').mockImplementation(() => {
+            throw leaseSettlementError;
         });
+        try {
+            await expect(confirmPendingChatActions({ confirmationId: 'confirmation-batch' })).resolves.toEqual({
+                status: 'executed',
+            });
+            expect(loggerError).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    cause: leaseSettlementError,
+                    message: 'Agent run work lease settlement failed',
+                })
+            );
+            expect(chatStore.value?.messages[0]).toMatchObject({
+                error: 'Agent run recovery state could not be persisted after execution. The verified command receipt remains authoritative; do not retry automatically.',
+                pendingActionConfirmationStatus: 'executed',
+            });
+            expect(chatStore.value?.messages[0]?.content).toContain(
+                'Agent run recovery state could not be persisted after execution. The verified command receipt remains authoritative; do not retry automatically.'
+            );
+        } finally {
+            settle.mockRestore();
+            loggerError.mockRestore();
+        }
         expect(getCrdtDoc<Record<string, unknown>>('owned')).toMatchObject({ transport: { bpm: 132 } });
         expect(observedSignal).toBeInstanceOf(AbortSignal);
         expect(observedSignal?.aborted).toBe(false);

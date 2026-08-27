@@ -1,11 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { type AgentRunWorkLease } from '../../../models/AgentRun';
-import {
-    AGENT_RUN_PERSISTENCE_WARNING,
-    AGENT_RUN_STALE_COMPLETION_WARNING,
-    settleAgentRunWorkLeaseSafely,
-} from '../settleAgentRunWorkLeaseSafely';
+import { settleAgentRunWorkLeaseSafely } from '../settleAgentRunWorkLeaseSafely';
+
+const PERSISTENCE_WARNING =
+    'Agent run recovery state could not be persisted after execution. The verified command receipt remains authoritative; do not retry automatically.';
+const STALE_COMPLETION_WARNING =
+    'Agent work completed after its run lease was cancelled or replaced. The durable receipt was retained without reopening the terminal run.';
 
 const lease: AgentRunWorkLease = {
     leaseId: 'lease-1',
@@ -25,23 +26,26 @@ const lease: AgentRunWorkLease = {
 };
 
 describe('settleAgentRunWorkLeaseSafely', () => {
-    it('settles the full lease identity and accepts a settled result without warning', () => {
-        const settle = vi.fn(() => ({ status: 'settled' as const }));
+    it.each(['completed', 'failed', 'cancelled'] as const)(
+        'forwards the %s terminal state with the full lease identity',
+        (terminalState) => {
+            const settle = vi.fn(() => ({ status: 'settled' as const }));
 
-        expect(settleAgentRunWorkLeaseSafely({ lease, terminalState: 'completed', settle })).toEqual({
-            accepted: true,
-            warning: null,
-        });
-        expect(settle).toHaveBeenCalledWith({
-            runId: 'run-1',
-            workId: 'work-1',
-            leaseId: 'lease-1',
-            cancellationGeneration: 4,
-            idempotencyKey: 'idempotency-1',
-            receiptIdentity: 'receipt-1',
-            terminalState: 'completed',
-        });
-    });
+            expect(settleAgentRunWorkLeaseSafely({ lease, terminalState, settle })).toEqual({
+                accepted: true,
+                warning: null,
+            });
+            expect(settle).toHaveBeenCalledWith({
+                runId: 'run-1',
+                workId: 'work-1',
+                leaseId: 'lease-1',
+                cancellationGeneration: 4,
+                idempotencyKey: 'idempotency-1',
+                receiptIdentity: 'receipt-1',
+                terminalState,
+            });
+        }
+    );
 
     it.each(['missing-lease', 'stale', 'already-settled'] as const)(
         'rejects a %s settlement without reopening the run',
@@ -52,7 +56,7 @@ describe('settleAgentRunWorkLeaseSafely', () => {
                     terminalState: 'failed',
                     settle: () => ({ status }),
                 })
-            ).toEqual({ accepted: false, warning: AGENT_RUN_STALE_COMPLETION_WARNING });
+            ).toEqual({ accepted: false, warning: STALE_COMPLETION_WARNING });
         }
     );
 
@@ -69,7 +73,7 @@ describe('settleAgentRunWorkLeaseSafely', () => {
                 },
                 reportFailure,
             })
-        ).toEqual({ accepted: true, warning: AGENT_RUN_PERSISTENCE_WARNING });
+        ).toEqual({ accepted: true, warning: PERSISTENCE_WARNING });
         expect(reportFailure).toHaveBeenCalledWith(error);
     });
 });

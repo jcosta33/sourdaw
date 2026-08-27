@@ -1694,14 +1694,10 @@ export async function sendChatMessage(
             return undefined;
         }
         if (!wasAborted) {
-            agentRunWorkLease.settle({
-                runId,
-                workId: providerWorkId,
-                leaseId: providerLease.leaseId,
-                cancellationGeneration: providerLease.cancellationGeneration,
-                idempotencyKey: providerLease.idempotencyKey,
-                receiptIdentity: providerLease.receiptIdentity,
+            settleAgentRunWorkLeaseSafely({
+                lease: providerLease,
                 terminalState: 'failed',
+                settle: agentRunWorkLease.settle,
             });
         }
         if (wasAborted) {
