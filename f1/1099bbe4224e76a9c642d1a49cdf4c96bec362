@@ -1,0 +1,26 @@
+crates/daw-plugin-host/src/vst3_run_loop.rs
+  s_1b9333aca53d4d::t_19b81fa93f8afe 86-91
+  s_1b9333aca53d4d::t_7e160af2f33109 380
+  s_1b9333aca53d4d::t_ba2d4806b3326b 294-296,298,302
+  s_1b9333aca53d4d::t_33164115cc6408 346-353,355,358-375
+  s_1b9333aca53d4d::t_8e57df72757231 377,833-885
+  s_1b9333aca53d4d::t_9f42c180666d4d 376
+  s_1b9333aca53d4d::t_f13b93fba13cc8 378-379
+  s_1b9333aca53d4d::t_dc4500e19e916d 381
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "f11099bbe4224e76a9c642d1a49cdf4c96bec362",
+  "prompts": {},
+  "sessions": {
+    "s_1b9333aca53d4d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "188b0d45-7765-49bd-8d6e-1eebbd450613",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
