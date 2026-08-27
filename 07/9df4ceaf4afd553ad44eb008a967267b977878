@@ -1,0 +1,32 @@
+crates/daw-plugin-host/src/vst3_wrapper/tests.rs
+  s_1b9333aca53d4d::t_5bd75d073964f0 3067-3078
+crates/daw-plugin-host/src/vst3_wrapper.rs
+  s_1b9333aca53d4d::t_7f832f1dcd1274 1164
+  s_1b9333aca53d4d::t_b7b843565e3aa6 1189-1198
+  s_1b9333aca53d4d::t_66b1fd40314943 1165-1171
+  s_1b9333aca53d4d::t_0bccee48b497f0 1185-1188
+crates/daw-plugin-host/src/vst3_editor.rs
+  s_1b9333aca53d4d::t_4e11e6e380ff2a 569-580
+public/legal/DEPENDENCY-LICENSES.txt
+  s_1b9333aca53d4d::t_a1f1d7e00de506 9
+release/dependency-license-proofs.json
+  s_1b9333aca53d4d::t_4cc6ab60de54d1 4,36
+release/open-source-inventory.json
+  s_1b9333aca53d4d::t_35865f99430443 133-134,316,1291
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "079df4ceaf4afd553ad44eb008a967267b977878",
+  "prompts": {},
+  "sessions": {
+    "s_1b9333aca53d4d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "188b0d45-7765-49bd-8d6e-1eebbd450613",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
