@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { act, render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { ChatPanel } from '../ChatPanel';
@@ -23,10 +23,6 @@ vi.mock('#/modules/AiRuntime/stores/chatStore', () => ({
 
 vi.mock('#/modules/AiRuntime/stores/agentRunStore', () => ({
     agentRunStore: { kind: 'agent-runs' },
-}));
-
-vi.mock('#/modules/BrowserAi/stores', () => ({
-    capabilityStore: { kind: 'browser-ai-capability' },
 }));
 
 vi.mock('../../../useCases/getAgentRunControlProjection', () => ({
@@ -110,12 +106,14 @@ vi.mock('../../components/ChatComposer', () => ({
 
 // Import the mocked modules to access mock functions
 const { useStore } = await import('#/infra/store/useStore');
+const { useStore: useRealStore } =
+    await vi.importActual<typeof import('#/infra/store/useStore')>('#/infra/store/useStore');
 const { sendChatMessage } = await import('#/modules/AiRuntime/useCases/sendChatMessage');
 const { confirmPendingChatActions } = await import('../../../useCases/confirmPendingChatActions');
 const { cancelPendingChatActions } = await import('../../../useCases/cancelPendingChatActions');
 const { recoverAgentRunPendingEffects } = await import('../../../useCases/recoverAgentRunPendingEffects');
 const { agentRunStore } = await import('#/modules/AiRuntime/stores/agentRunStore');
-const { capabilityStore } = await import('#/modules/BrowserAi/stores');
+const { capabilityStore, isWebGpuAvailable } = await import('#/modules/BrowserAi/stores');
 const { toggleChat } = await import('#/modules/AiRuntime/useCases/aiPanelActions/toggleChat');
 const { isLlmAvailable } =
     await import('#/modules/AiRuntime/useCases/llmOrchestration/backendResolution/isLlmAvailable');
@@ -127,19 +125,35 @@ const chatState = {
     chatMode: 'chat',
     enableReasoning: false,
 };
-let browserAiCapabilityState: { phase: 'idle' | 'detecting' | 'done' | 'error' } = { phase: 'idle' };
+const capabilityReport = {
+    capability: 'supported' as const,
+    webGpu: { status: 'supported' as const },
+    webGpuTier: 'webgpu-fast' as const,
+    crossOriginIsolated: true,
+    workerAvailable: true,
+    opfsAvailable: true,
+    inference: {
+        status: 'measured' as const,
+        modelId: 'kokoro-82m-q8',
+        executionProviders: ['webgpu', 'wasm'],
+        audioSeconds: 4,
+        elapsedSeconds: 2,
+        realtimeFactor: 2,
+    },
+    detectedAt: 0,
+};
 
 describe('ChatPanel', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         Element.prototype.scrollIntoView = vi.fn();
-        browserAiCapabilityState = { phase: 'idle' };
+        capabilityStore.set({ phase: 'idle' });
         (useStore as ReturnType<typeof vi.fn>).mockImplementation((store: unknown) => {
             if (store === agentRunStore) {
                 return { schemaVersion: 1, runs: [] };
             }
             if (store === capabilityStore) {
-                return browserAiCapabilityState;
+                return useRealStore(capabilityStore);
             }
             return chatState;
         });
@@ -186,7 +200,7 @@ describe('ChatPanel', () => {
     });
 
     it('should show LLM unavailable warning when not available', () => {
-        browserAiCapabilityState = { phase: 'error' };
+        capabilityStore.set({ phase: 'error', message: 'adapter unavailable' });
         (isLlmAvailable as ReturnType<typeof vi.fn>).mockReturnValue(false);
 
         render(<ChatPanel />);
@@ -194,20 +208,19 @@ describe('ChatPanel', () => {
     });
 
     it('re-renders from capability checking to available when BrowserAi detection completes', () => {
-        browserAiCapabilityState = { phase: 'detecting' };
-        (isLlmAvailable as ReturnType<typeof vi.fn>).mockReturnValue(false);
-        const { rerender } = render(<ChatPanel />);
+        capabilityStore.set({ phase: 'detecting' });
+        (isLlmAvailable as ReturnType<typeof vi.fn>).mockImplementation(isWebGpuAvailable);
+        render(<ChatPanel />);
         expect(screen.getByText('Checking AI availability')).toBeInTheDocument();
         expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled();
 
-        browserAiCapabilityState = { phase: 'done' };
-        (isLlmAvailable as ReturnType<typeof vi.fn>).mockReturnValue(true);
-        rerender(<ChatPanel key="capability-ready" style={{ width: 401 }} />);
+        act(() => {
+            capabilityStore.set({ phase: 'done', report: capabilityReport });
+        });
 
         expect(screen.queryByText('Checking AI availability')).not.toBeInTheDocument();
         expect(screen.queryByText('AI Not Available')).not.toBeInTheDocument();
         expect(screen.getByRole('button', { name: 'Send' })).toBeEnabled();
-        expect(useStore).toHaveBeenCalledWith(capabilityStore, { phase: 'idle' });
     });
 
     it('should render ChatComposer component', () => {

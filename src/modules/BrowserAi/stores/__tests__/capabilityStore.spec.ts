@@ -2,10 +2,10 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import {
     capabilityStore,
+    beginCapabilityDetection,
     isWebGpuAvailable,
-    setCapabilityDetecting,
-    setCapabilityError,
-    setCapabilityReport,
+    settleCapabilityError,
+    settleCapabilityReport,
 } from '../capabilityStore';
 
 import type { CapabilityReport } from '../../models/CapabilityReport';
@@ -39,16 +39,17 @@ describe('capabilityStore', () => {
         expect(capabilityStore.value?.phase).toBe('idle');
     });
 
-    it('setCapabilityDetecting transitions to detecting phase', () => {
-        setCapabilityDetecting();
+    it('begins capability detection in the detecting phase', () => {
+        beginCapabilityDetection();
 
         expect(capabilityStore.value?.phase).toBe('detecting');
     });
 
-    it('setCapabilityReport transitions to done phase with the report', () => {
+    it('settles the current detection attempt with its report', () => {
         const report = createCapabilityReport();
 
-        setCapabilityReport(report);
+        const attempt = beginCapabilityDetection();
+        settleCapabilityReport(attempt, report);
 
         const state = capabilityStore.value;
         expect(state?.phase).toBe('done');
@@ -57,8 +58,9 @@ describe('capabilityStore', () => {
         }
     });
 
-    it('setCapabilityError transitions to error phase with a message', () => {
-        setCapabilityError('WebGPU not available');
+    it('settles the current detection attempt with its error', () => {
+        const attempt = beginCapabilityDetection();
+        settleCapabilityError(attempt, 'WebGPU not available');
 
         const state = capabilityStore.value;
         expect(state?.phase).toBe('error');
@@ -70,31 +72,48 @@ describe('capabilityStore', () => {
     it('admits WebGPU only after a completed supported probe', () => {
         expect(isWebGpuAvailable()).toBe(false);
 
-        setCapabilityDetecting();
+        const detectingAttempt = beginCapabilityDetection();
         expect(isWebGpuAvailable()).toBe(false);
 
-        setCapabilityError('WebGPU probe failed');
+        settleCapabilityError(detectingAttempt, 'WebGPU probe failed');
         expect(isWebGpuAvailable()).toBe(false);
 
-        setCapabilityReport(createCapabilityReport({ status: 'unavailable', reason: 'adapter-unavailable' }));
+        const unavailableAttempt = beginCapabilityDetection();
+        settleCapabilityReport(
+            unavailableAttempt,
+            createCapabilityReport({ status: 'unavailable', reason: 'adapter-unavailable' })
+        );
         expect(isWebGpuAvailable()).toBe(false);
 
-        setCapabilityReport(createCapabilityReport());
+        const supportedAttempt = beginCapabilityDetection();
+        settleCapabilityReport(supportedAttempt, createCapabilityReport());
         expect(isWebGpuAvailable()).toBe(true);
     });
 
     it('transitions detect → done → error cycle correctly', () => {
-        setCapabilityDetecting();
+        const supportedAttempt = beginCapabilityDetection();
         expect(capabilityStore.value?.phase).toBe('detecting');
 
-        setCapabilityReport(createCapabilityReport());
+        settleCapabilityReport(supportedAttempt, createCapabilityReport());
         expect(capabilityStore.value?.phase).toBe('done');
 
-        setCapabilityError('late failure');
+        const failedAttempt = beginCapabilityDetection();
+        settleCapabilityError(failedAttempt, 'late failure');
         const state = capabilityStore.value;
         expect(state?.phase).toBe('error');
         if (state?.phase === 'error') {
             expect(state.message).toBe('late failure');
         }
+    });
+
+    it('ignores a late report from an older probe after a newer probe fails', () => {
+        const olderAttempt = beginCapabilityDetection();
+        const newerAttempt = beginCapabilityDetection();
+
+        settleCapabilityError(newerAttempt, 'adapter unavailable');
+        settleCapabilityReport(olderAttempt, createCapabilityReport());
+
+        expect(capabilityStore.value).toEqual({ phase: 'error', message: 'adapter unavailable' });
+        expect(isWebGpuAvailable()).toBe(false);
     });
 });

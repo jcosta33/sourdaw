@@ -251,6 +251,9 @@ type ChatPanelProps = {
 };
 
 export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
+    // Backend availability reads the subscribed BrowserAi runtime state.
+    'use no memo';
+
     const [inputValue, setInputValue] = useState('');
     const [decisionStatusMessage, setDecisionStatusMessage] = useState<string | null>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
