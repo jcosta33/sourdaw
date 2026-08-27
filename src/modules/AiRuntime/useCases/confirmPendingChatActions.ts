@@ -927,6 +927,29 @@ function hasExactDurableRenderRecoveryReceipt(
     );
 }
 
+type AdmissibleSectionRenderRetry = {
+    approvedBatch: ParsedApprovedRetryBatch;
+    renderBinding: WarnedRenderPayloadBinding;
+};
+
+// The exact committed-batch shape a section-render retry may bind to, shared by
+// the arming decision and the retry gate so neither can admit a shape the other
+// would reject.
+function getAdmissibleSectionRenderRetry(
+    confirmation: PendingAppActionConfirmation,
+    receipt: CommandVerifiedBatchReceipt | null
+): AdmissibleSectionRenderRetry | null {
+    const approvedBatch = parseApprovedRetryBatch(confirmation);
+    if (!approvedBatch || !hasExactCommittedProjectReceiptBinding(confirmation, approvedBatch)) {
+        return null;
+    }
+    const renderBinding = getWarnedRenderPayloadBinding(confirmation, approvedBatch);
+    if (!renderBinding || !hasExactDurableRenderRecoveryReceipt(receipt, renderBinding)) {
+        return null;
+    }
+    return { approvedBatch, renderBinding };
+}
+
 function hasExactConfirmationDurableBatchBinding(
     confirmation: PendingAppActionConfirmation,
     approvedBatch: ParsedApprovedRetryBatch,
@@ -994,6 +1017,24 @@ function failCommittedSectionRenderRetryProof(
     return { status: 'failed', reason: RENDER_RETRY_PROOF_MISMATCH_REASON };
 }
 
+function failUnreadableCommitEvidence(
+    confirmation: PendingAppActionConfirmation,
+    error: unknown,
+    retryRemainsAvailable: boolean
+): ConfirmPendingChatActionsResult {
+    const detail = error instanceof Error ? error.message : String(error);
+    const reason = retryRemainsAvailable
+        ? `The durable commit evidence for the retained render retry could not be read: ${detail}. The render retry remains available.`
+        : `The durable commit evidence for the confirmed actions could not be read: ${detail}. The proposal remains pending.`;
+    updateChatMessage(confirmation.assistantMessageId, {
+        error: reason,
+        content: retryRemainsAvailable
+            ? `The missing section renders were not retried because the durable commit evidence could not be read: ${detail}. Project actions were not replayed and the render retry remains available.`
+            : `The confirmed actions were not executed because the durable commit evidence could not be read: ${detail}. Project actions were not replayed; the proposal remains pending.`,
+    });
+    return { status: 'failed', reason };
+}
+
 function hasDurablyCommittedRetryableSectionRender(
     confirmation: PendingAppActionConfirmation,
     durableReceipt: CommandVerifiedBatchReceipt | null
@@ -1001,16 +1042,11 @@ function hasDurablyCommittedRetryableSectionRender(
     if (!isEligibleForCommittedSectionRenderRetry(confirmation)) {
         return false;
     }
-    const approvedBatch = parseApprovedRetryBatch(confirmation);
-    if (!approvedBatch || !hasExactCommittedProjectReceiptBinding(confirmation, approvedBatch)) {
-        return false;
-    }
-    const renderBinding = getWarnedRenderPayloadBinding(confirmation, approvedBatch);
+    const admissible = getAdmissibleSectionRenderRetry(confirmation, durableReceipt);
     return (
-        renderBinding !== null &&
-        hasExactConfirmationDurableBatchBinding(confirmation, approvedBatch, durableReceipt) &&
-        hasExactTrackedAgentRunRetryBinding(confirmation, durableReceipt) &&
-        hasExactDurableRenderRecoveryReceipt(durableReceipt, renderBinding)
+        admissible !== null &&
+        hasExactConfirmationDurableBatchBinding(confirmation, admissible.approvedBatch, durableReceipt) &&
+        hasExactTrackedAgentRunRetryBinding(confirmation, durableReceipt)
     );
 }
 
@@ -1027,10 +1063,16 @@ export async function confirmPendingChatActions(
     const shouldInspectDurableReceipt = wasProposed || wasRetryEligible;
     let priorVerifiedBatchReceipt: CommandVerifiedBatchReceipt | null = null;
     if (approvedCommandBatch && shouldInspectDurableReceipt) {
-        priorVerifiedBatchReceipt = await getVersionedCommandBatchIdempotentReplay({
-            authority: approvedCommandBatch.authority,
-            serialized: approvedCommandBatch.serialized,
-        });
+        try {
+            priorVerifiedBatchReceipt = await getVersionedCommandBatchIdempotentReplay({
+                authority: approvedCommandBatch.authority,
+                serialized: approvedCommandBatch.serialized,
+            });
+        } catch (error) {
+            // Unreadable commit evidence is not absence: never fail the retry
+            // proof or re-execute against evidence that could not be read.
+            return failUnreadableCommitEvidence(confirmation, error, wasRetryEligible);
+        }
         const refreshedConfirmation = getPendingActionConfirmation(input.confirmationId);
         if (!refreshedConfirmation) {
             return { status: 'missing' };
@@ -1466,13 +1508,23 @@ export async function confirmPendingChatActions(
                 ...(effectsPending ? { error: warning } : {}),
             });
             const incompleteSectionRenders = getIncompleteSectionRenderJobs(confirmation, committedProjectRevision);
+            // Arm the render retry only for the exact committed-batch shape the
+            // retry gate will later admit; anything else must stay fail-closed.
+            // The binding predicates read executedActions, so they run against
+            // the freshly recorded confirmation rather than the stale local one.
+            const freshConfirmation = getPendingActionConfirmation(confirmation.id) ?? confirmation;
+            let retryableSectionRenders = false;
             if (incompleteSectionRenders && batchResult.status === 'committed-with-warning') {
-                updatePendingActionFollowUp({
-                    confirmationId: confirmation.id,
-                    error: batchResult.warning,
-                    projectRevision: committedProjectRevision,
-                    status: 'retryable',
-                });
+                retryableSectionRenders =
+                    getAdmissibleSectionRenderRetry(freshConfirmation, batchResult.receipt) !== null;
+                if (retryableSectionRenders) {
+                    updatePendingActionFollowUp({
+                        confirmationId: confirmation.id,
+                        error: batchResult.warning,
+                        projectRevision: committedProjectRevision,
+                        status: 'retryable',
+                    });
+                }
             }
             let content = `Executed after confirmation:\n\n${executionReceipt}`;
             if (receiptPersistenceWarning.effectsPending) {
@@ -1480,7 +1532,7 @@ export async function confirmPendingChatActions(
             }
             if (batchResult.status === 'committed-with-warning') {
                 content = `Applied after confirmation:\n\n${executionReceipt}\n\nThe project change committed with a follow-up warning: ${batchResult.warning}. Do not retry these confirmed actions.`;
-                if (incompleteSectionRenders) {
+                if (retryableSectionRenders) {
                     content = `Applied after confirmation:\n\n${executionReceipt}\n\nThe project change committed with a follow-up warning: ${batchResult.warning}. Do not replay the confirmed project actions. Retry missing renders below; only receipt-bound missing artifacts will run.`;
                 }
             }
@@ -1498,7 +1550,7 @@ export async function confirmPendingChatActions(
             }
             updateChatMessage(confirmation.assistantMessageId, {
                 pendingActionConfirmationStatus: effectsPending ? 'failed' : 'executed',
-                pendingActionFollowUpStatus: incompleteSectionRenders ? 'retryable' : undefined,
+                pendingActionFollowUpStatus: retryableSectionRenders ? 'retryable' : undefined,
                 error: warning,
                 content,
             });

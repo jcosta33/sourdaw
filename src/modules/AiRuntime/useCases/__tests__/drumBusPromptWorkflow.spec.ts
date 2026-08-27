@@ -2246,6 +2246,168 @@ describe('drum bus prompt workflow', () => {
         expect(getAgentSectionRenderArtifacts()).toEqual([]);
     });
 
+    it('keeps the render retry available when the durable commit evidence cannot be read', async () => {
+        setEx11Project();
+        useEx11WebLlmFixture();
+        await sendChatMessage(EX11_PROMPT);
+        const confirmation = getPendingActionConfirmation(
+            chatStore.value?.messages.find((message) => message.pendingActionConfirmationId)
+                ?.pendingActionConfirmationId ?? ''
+        );
+        if (!confirmation) {
+            throw new Error('Expected EX-11 confirmation');
+        }
+        runtimeMocks.renderOffline.mockImplementation((options: { startBeat?: number }) => {
+            if (options.startBeat === 16) {
+                return Promise.reject(new Error('comparison renderer unavailable'));
+            }
+            return Promise.resolve(createTestAudioBuffer());
+        });
+        await expect(confirmPendingChatActions({ confirmationId: confirmation.id })).resolves.toMatchObject({
+            status: 'failed',
+            durableCommit: true,
+        });
+        const committedConfirmation = getPendingActionConfirmation(confirmation.id);
+        const approvedBatch = committedConfirmation?.approvalSnapshot.commandBatch;
+        if (!committedConfirmation || !approvedBatch) {
+            throw new Error('Expected committed retry confirmation');
+        }
+        expect(committedConfirmation).toMatchObject({ status: 'failed', followUpStatus: 'retryable' });
+        // Route the replay probe past the project checkpoint into the durable
+        // port lookup, the same indirection the durable-receipt fixtures use.
+        const serializedBatch: unknown = JSON.parse(approvedBatch.serialized);
+        if (!isRecord(serializedBatch) || typeof serializedBatch.idempotencyKey !== 'string') {
+            throw new Error('Expected valid approved batch identity');
+        }
+        const lookupCandidate: PendingAppActionConfirmation = {
+            ...committedConfirmation,
+            approvalSnapshot: {
+                ...committedConfirmation.approvalSnapshot,
+                commandBatch: {
+                    ...approvedBatch,
+                    serialized: JSON.stringify({
+                        ...serializedBatch,
+                        idempotencyKey: `${serializedBatch.idempotencyKey}:unreadable-evidence`,
+                    }),
+                },
+            },
+        };
+        replacePendingActionConfirmationForTest(lookupCandidate);
+        const renderCallCount = runtimeMocks.renderOffline.mock.calls.length;
+        vi.stubGlobal('navigator', {
+            ...navigator,
+            locks: {
+                request: () => Promise.reject(new Error('idempotency store unavailable')),
+            },
+        });
+
+        const unreadableEvidence = await confirmPendingChatActions({ confirmationId: confirmation.id });
+
+        expect(unreadableEvidence).toMatchObject({
+            status: 'failed',
+            reason: expect.stringContaining(
+                'durable commit evidence for the retained render retry could not be read: idempotency store unavailable'
+            ),
+        });
+        if (unreadableEvidence.status !== 'failed') {
+            throw new Error(`Expected an unreadable-evidence failure, received ${unreadableEvidence.status}`);
+        }
+        expect(unreadableEvidence.reason).toContain('render retry remains available');
+        expect(unreadableEvidence.reason).not.toContain('no longer matches');
+        expect(runtimeMocks.renderOffline).toHaveBeenCalledTimes(renderCallCount);
+        expect(getPendingActionConfirmation(confirmation.id)).toMatchObject({
+            status: 'failed',
+            followUpStatus: 'retryable',
+        });
+        expect(
+            chatStore.value?.messages.find((message) => message.pendingActionConfirmationId === confirmation.id)
+        ).toMatchObject({
+            pendingActionConfirmationStatus: 'failed',
+            pendingActionFollowUpStatus: 'retryable',
+            error: expect.stringContaining('could not be read'),
+            content: expect.stringContaining('render retry remains available'),
+        });
+
+        vi.stubGlobal('navigator', {
+            ...navigator,
+            locks: {
+                request: (_name: string, _options: LockOptions, task: () => unknown) => Promise.resolve(task()),
+            },
+        });
+        replacePendingActionConfirmationForTest(committedConfirmation);
+        runtimeMocks.renderOffline.mockResolvedValue(createTestAudioBuffer());
+
+        await expect(confirmPendingChatActions({ confirmationId: confirmation.id })).resolves.toEqual({
+            status: 'executed',
+        });
+
+        expect(getPendingActionConfirmation(confirmation.id)).toMatchObject({
+            status: 'executed',
+            followUpStatus: 'complete',
+        });
+    });
+
+    it('arms no render retry when the durable receipt holds more than the exact render recovery effect', async () => {
+        setEx11Project();
+        useEx11WebLlmFixture();
+        await sendChatMessage(EX11_PROMPT);
+        const confirmation = getPendingActionConfirmation(
+            chatStore.value?.messages.find((message) => message.pendingActionConfirmationId)
+                ?.pendingActionConfirmationId ?? ''
+        );
+        if (!confirmation) {
+            throw new Error('Expected EX-11 confirmation');
+        }
+        runtimeMocks.renderOffline.mockImplementation((options: { startBeat?: number }) => {
+            if (options.startBeat === 16) {
+                return Promise.reject(new Error('comparison renderer unavailable'));
+            }
+            return Promise.resolve(createTestAudioBuffer());
+        });
+        runtimeMocks.setSend.mockImplementation(() => {
+            throw new Error('send engine unavailable');
+        });
+        try {
+            const result = await confirmPendingChatActions({ confirmationId: confirmation.id });
+
+            if (result.status !== 'failed' || !('effects' in result)) {
+                throw new Error(`Expected a durable partial commit, received ${result.status}`);
+            }
+            expect(result.durableCommit).toBe(true);
+            expect(result.effects).toHaveLength(2);
+            expect(result.effects).toEqual(
+                expect.arrayContaining([
+                    expect.objectContaining({ operation: 'addSend', state: 'pending' }),
+                    expect.objectContaining({
+                        kind: 'external-effect',
+                        operation: 'renderProjectSections',
+                        remediation: 'reconcile',
+                        state: 'pending',
+                    }),
+                ])
+            );
+            expect(getPendingActionConfirmation(confirmation.id)).toMatchObject({
+                status: 'failed',
+                followUpStatus: null,
+                followUpProjectRevision: null,
+            });
+            const message = chatStore.value?.messages.find(
+                (entry) => entry.pendingActionConfirmationId === confirmation.id
+            );
+            expect(message?.pendingActionFollowUpStatus).not.toBe('retryable');
+            expect(message?.content ?? '').not.toContain('Retry missing renders below');
+            const renderCallCount = runtimeMocks.renderOffline.mock.calls.length;
+
+            await expect(confirmPendingChatActions({ confirmationId: confirmation.id })).resolves.toEqual({
+                status: 'not_pending',
+                currentStatus: 'failed',
+            });
+            expect(runtimeMocks.renderOffline).toHaveBeenCalledTimes(renderCallCount);
+        } finally {
+            runtimeMocks.setSend.mockReset();
+        }
+    });
+
     it('does not treat matching section render artifacts from a stale project revision as complete', async () => {
         setEx11Project();
         useEx11WebLlmFixture();

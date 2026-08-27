@@ -34,10 +34,21 @@ export async function recoverAgentRunPendingEffects(input: {
         return { status: 'missing' };
     }
 
-    const priorReceipt = await getVersionedCommandBatchIdempotentReplay({
-        authority: continuation.authority,
-        serialized: continuation.serializedBatch,
-    });
+    let priorReceipt: Awaited<ReturnType<typeof getVersionedCommandBatchIdempotentReplay>>;
+    try {
+        priorReceipt = await getVersionedCommandBatchIdempotentReplay({
+            authority: continuation.authority,
+            serialized: continuation.serializedBatch,
+        });
+    } catch (error) {
+        // Unreadable evidence is not absence: leave the continuation pending so a
+        // later recovery pass can retry once the checkpoint store is readable again.
+        const detail = error instanceof Error ? error.message : String(error);
+        return {
+            status: 'failed',
+            reason: `The durable commit evidence for this pending-effect continuation could not be read: ${detail}`,
+        };
+    }
     if (!priorReceipt) {
         const reason = 'The durable project checkpoint for this pending-effect continuation is unavailable.';
         if (continuation.checkpoint === 'prepared') {
