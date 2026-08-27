@@ -398,6 +398,55 @@ describe('handleImportStemSet', () => {
         expect(mocks.promoteStagedAsset).not.toHaveBeenCalled();
     });
 
+    it('declares manual repair when both post-commit attempts cannot prove exact recovery', async () => {
+        const result = await handleImportStemSet.execute(createStemImportAction());
+
+        expect(result).toMatchObject({
+            status: 'written',
+            postCommitEffect: { kind: 'external-effect', remediation: 'manual-repair' },
+        });
+    });
+
+    it('commits stem import once and preserves a manual-repair pending effect when both deferred attempts fail', async () => {
+        const action = createStemImportAction();
+        const onProjectCommitPrepared = vi.fn();
+        mocks.promoteDurableStagedAsset.mockResolvedValue({ status: 'failed', reason: 'asset promotion unavailable' });
+
+        const result = await executeAppActionBatch([action], { onProjectCommitPrepared });
+
+        expect(requireTrackState().tracks.map((track) => track.id)).toEqual([
+            'folder-starter-stems',
+            'track-kick',
+            'track-vocal',
+        ]);
+        expect(JSON.parse(JSON.stringify(getCrdtDoc('root')))).toMatchObject({
+            tracks: {
+                tracks: [{ id: 'folder-starter-stems' }, { id: 'track-kick' }, { id: 'track-vocal' }],
+            },
+        });
+        expect(mocks.promoteDurableStagedAsset).toHaveBeenCalledTimes(4);
+        expect(result).toMatchObject({
+            status: 'committed-with-warning',
+            warningDetails: [
+                {
+                    kind: 'external-effect',
+                    pendingEffect: { kind: 'external-effect', remediation: 'manual-repair', state: 'pending' },
+                },
+            ],
+        });
+        expect(onProjectCommitPrepared).toHaveBeenCalledWith(
+            expect.objectContaining({
+                pendingEffects: [
+                    expect.objectContaining({
+                        kind: 'external-effect',
+                        remediation: 'manual-repair',
+                        state: 'pending',
+                    }),
+                ],
+            })
+        );
+    });
+
     it('rejects guarded compensation after generated project truth diverges', async () => {
         const action = createStemImportAction();
         const inverse = await applyStemImport(action);

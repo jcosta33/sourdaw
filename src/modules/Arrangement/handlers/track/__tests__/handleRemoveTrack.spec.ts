@@ -1,7 +1,27 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import {
+    configureAutomergeStoragePort,
+    flushAutomergeStorageWrites,
+} from '#/infra/store/storage/createAutomergeStorage';
+import { clearHandlerRegistry, macroStore, registerHandlerMap } from '#/modules/Command/stores';
+import {
+    clearUndoHistory,
+    executeAppActionBatch,
+    resetActionReplayAuthority,
+    setActionHistoryMetadataPort,
+} from '#/modules/Command/useCases';
+import {
+    createCrdtDoc,
+    getCrdtDoc,
+    registerCrdtStorageRuntime,
+    removeCrdtDoc,
+    resetCrdtProjectAuthority,
+} from '#/modules/CrdtDocument/useCases';
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
+import { trackStore } from '../../../stores/trackStore';
 import { handleRemoveTrack } from '../handleRemoveTrack';
 
 function createAutomationLane(id: string, trackId: string) {
@@ -53,6 +73,12 @@ const mocks = vi.hoisted(() => ({
     takeLaneStoreValue: { value: null } as any,
     readClipSatelliteEntry: vi.fn(),
 }));
+
+const noActionHistoryMetadataPort = {
+    record: () => [],
+    markReverted: () => ({ status: 'unavailable' as const }),
+    clear: () => undefined,
+};
 
 vi.mock('../../../useCases/getTrackStoreState', () => ({
     getTrackStoreState: mocks.getTrackStoreState,
@@ -116,6 +142,18 @@ vi.mock('../../../stores/clipSatelliteState', () => ({
 describe('handleRemoveTrack', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        configureAutomergeStoragePort(null);
+        resetCrdtProjectAuthority('remove track handler test');
+        removeCrdtDoc('root');
+        createCrdtDoc('root');
+        registerCrdtStorageRuntime();
+        clearHandlerRegistry();
+        registerHandlerMap({ removeTrack: handleRemoveTrack });
+        clearUndoHistory();
+        resetActionReplayAuthority();
+        setActionHistoryMetadataPort(noActionHistoryMetadataPort);
+        macroStore.set({ macros: [], recording: false, currentRecording: [] });
+        trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         mocks.automationStoreValue.value = null;
         mocks.modulationStoreValue.value = null;
         mocks.midiStoreValue.value = null;
@@ -135,6 +173,16 @@ describe('handleRemoveTrack', () => {
             afterCommit: mocks.finalizeModulationRemoval,
             afterAmbiguousCommit: mocks.finalizeModulationRemoval,
         });
+    });
+
+    afterEach(() => {
+        clearUndoHistory();
+        resetActionReplayAuthority();
+        clearHandlerRegistry();
+        trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
+        flushAutomergeStorageWrites();
+        configureAutomergeStoragePort(null);
+        removeCrdtDoc('root');
     });
 
     describe('execute', () => {
@@ -242,6 +290,68 @@ describe('handleRemoveTrack', () => {
             expect(mocks.finalizeRuntimeRemoval).not.toHaveBeenCalled();
             expect(mocks.publishTrackRemoved).not.toHaveBeenCalled();
             expect(mocks.wireSidechainRoutes).toHaveBeenCalledOnce();
+        });
+
+        it('declares manual repair when both post-commit attempts cannot prove exact recovery', async () => {
+            const result = await handleRemoveTrack.execute({
+                type: 'removeTrack',
+                payload: { trackId: 't1' },
+            });
+
+            expect(result).toMatchObject({
+                status: 'written',
+                postCommitEffect: { kind: 'external-effect', remediation: 'manual-repair' },
+            });
+        });
+
+        it('commits track removal once and preserves a manual-repair pending effect when both deferred attempts fail', async () => {
+            const track = TrackDummy.create({ id: 't1' });
+            const failure = new Error('runtime removal unavailable');
+            const onProjectCommitPrepared = vi.fn();
+            trackStore.set({ tracks: [track], selectedTrackId: 't1', ghostClips: [] });
+            mocks.getTrackStoreState.mockImplementation(() => trackStore.value);
+            mocks.removeTrack.mockImplementation((trackId: string) => {
+                const state = trackStore.value;
+                if (!state) {
+                    return { removed: false };
+                }
+                trackStore.set({
+                    ...state,
+                    tracks: state.tracks.filter((candidate) => candidate.id !== trackId),
+                    selectedTrackId: null,
+                });
+                return { removed: true, finalizeRuntimeRemoval: mocks.finalizeRuntimeRemoval };
+            });
+            mocks.finalizeRuntimeRemoval.mockRejectedValue(failure);
+
+            const result = await executeAppActionBatch([{ type: 'removeTrack', payload: { trackId: 't1' } }], {
+                onProjectCommitPrepared,
+            });
+
+            expect(trackStore.value?.tracks).toEqual([]);
+            expect(JSON.parse(JSON.stringify(getCrdtDoc('root')))).toMatchObject({ tracks: { tracks: [] } });
+            expect(mocks.removeTrack).toHaveBeenCalledOnce();
+            expect(mocks.finalizeRuntimeRemoval).toHaveBeenCalledTimes(2);
+            expect(result).toMatchObject({
+                status: 'committed-with-warning',
+                warningDetails: [
+                    {
+                        kind: 'external-effect',
+                        pendingEffect: { kind: 'external-effect', remediation: 'manual-repair', state: 'pending' },
+                    },
+                ],
+            });
+            expect(onProjectCommitPrepared).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    pendingEffects: [
+                        expect.objectContaining({
+                            kind: 'external-effect',
+                            remediation: 'manual-repair',
+                            state: 'pending',
+                        }),
+                    ],
+                })
+            );
         });
     });
 

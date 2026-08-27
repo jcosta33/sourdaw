@@ -745,6 +745,49 @@ describe('executePromptActionGroup', () => {
         });
     });
 
+    it('exposes manual repair instead of a reconcile-batch continuation for a manual-repair receipt', async () => {
+        const fixture = getBatchFixtures().stem;
+        const effect = { ...pendingEffect(fixture), remediation: 'manual-repair' as const };
+        const receipt = buildVerifiedReceipt({
+            fixture,
+            result: {
+                status: 'committed-with-warning',
+                actions: [receiptAction(fixture)],
+                warning: 'Manual repair required.',
+                warningDetails: [
+                    {
+                        kind: 'external-effect',
+                        commandId: effect.commandId,
+                        message: 'Manual repair required.',
+                        pendingEffect: effect,
+                    },
+                ],
+            },
+        });
+        seedRun(fixture);
+        mocks.executePlannedActions.mockResolvedValue({
+            status: 'committed',
+            actions: [{ actionType: 'importStemSet', label: 'Import stems' }],
+            receipt,
+        });
+
+        await expect(
+            executePromptActionGroup({
+                actions: fixture.actions,
+                prompt: 'Import stems',
+                projectRevision: 'revision-1',
+                ...admitted(fixture),
+            })
+        ).resolves.toEqual({ status: 'committed' });
+
+        expect(agentRunLifecycle.get(RUN_ID)).toMatchObject({
+            pendingEffectContinuations: [expect.objectContaining({ effects: [effect], recovery: 'manual-repair' })],
+        });
+        expect(agentRunLifecycle.get(RUN_ID)?.pendingEffectContinuations).not.toContainEqual(
+            expect.objectContaining({ recovery: 'reconcile-batch' })
+        );
+    });
+
     it.each([
         {
             label: 'missing',
