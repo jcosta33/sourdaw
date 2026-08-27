@@ -1065,11 +1065,27 @@ struct FakeEditor {
     view: AtomicPtr<IPlugView>,
     /// The size `getSize` reports.
     size: Mutex<(u32, u32)>,
+    /// An editor that states no size at all, whatever it is asked.
+    states_no_size: AtomicBool,
+    /// An editor that only knows its size once it can see its parent, which
+    /// several real ones are.
+    states_size_only_when_attached: AtomicBool,
+    /// Whether `attached` has run, which is what the flag above keys off.
+    attached_yet: AtomicBool,
     /// The size `onSize` was last told.
     on_size: Mutex<Option<(u32, u32)>>,
+    /// Where the rect `onSize` was told sat, which a host that normalises the
+    /// plugin's own rect to the origin loses.
+    on_size_origin: Mutex<Option<(int32, int32)>>,
+    /// An editor that refuses to move to the size it is told.
+    refuses_on_size: AtomicBool,
+    /// The origin of the rect this editor asks the host for.
+    ask_origin: Mutex<(int32, int32)>,
     /// A size this editor asks the host for from inside `attached`, which is
     /// where a real plugin discovers it needs one.
     resize_from_attach: Mutex<Option<(u32, u32)>>,
+    /// What the host answered that request with.
+    attach_resize_result: AtomicI32,
     /// Whether `resizeView` had already delivered `onSize` by the time it
     /// returned — the whole of what "synchronous, one callstack" means.
     on_size_arrived_before_resize_view_returned: AtomicBool,
@@ -1094,6 +1110,7 @@ impl FakeEditor {
     fn sized(width: u32, height: u32) -> Arc<Self> {
         let editor = Arc::new(Self {
             nested_resize_result: AtomicI32::new(NO_ANSWER),
+            attach_resize_result: AtomicI32::new(NO_ANSWER),
             ..Self::default()
         });
         *editor.size.lock().expect("size mutex") = (width, height);
@@ -1123,6 +1140,19 @@ impl FakeEditor {
 
     fn on_size(&self) -> Option<(u32, u32)> {
         *self.on_size.lock().expect("size mutex")
+    }
+
+    fn on_size_origin(&self) -> Option<(int32, int32)> {
+        *self.on_size_origin.lock().expect("size mutex")
+    }
+
+    /// Whether this editor has a size to state yet.
+    fn states_nothing_yet(&self) -> bool {
+        if self.states_no_size.load(Ordering::Acquire) {
+            return true;
+        }
+        self.states_size_only_when_attached.load(Ordering::Acquire)
+            && !self.attached_yet.load(Ordering::Acquire)
     }
 
     /// # Safety
@@ -1166,11 +1196,12 @@ impl FakeEditor {
         let Some(frame) = frame else {
             return kResultFalse;
         };
+        let (left, top) = *self.ask_origin.lock().expect("origin mutex");
         let mut rect = ViewRect {
-            left: 0,
-            top: 0,
-            right: size.0 as int32,
-            bottom: size.1 as int32,
+            left,
+            top,
+            right: left + size.0 as int32,
+            bottom: top + size.1 as int32,
         };
         frame.resizeView(self.view.load(Ordering::Acquire), &mut rect)
     }
@@ -1218,6 +1249,7 @@ impl IPlugViewTrait for FakeView {
         self.editor.record("attached");
         self.editor.record_platform_type(r#type);
         self.editor.attached_to.store(parent, Ordering::Release);
+        self.editor.attached_yet.store(true, Ordering::Release);
 
         let requested = self
             .editor
@@ -1227,7 +1259,10 @@ impl IPlugViewTrait for FakeView {
             .take();
         if let Some(size) = requested {
             let before = self.editor.call_count();
-            self.editor.ask_host_for_size(size);
+            let answer = self.editor.ask_host_for_size(size);
+            self.editor
+                .attach_resize_result
+                .store(answer, Ordering::Release);
             // Read at the instant `resizeView` returned: a host that deferred
             // the handshake to a later turn of an event loop has not called
             // `onSize` yet, and this is where that shows.
@@ -1260,7 +1295,11 @@ impl IPlugViewTrait for FakeView {
         if size.is_null() {
             return kInvalidArgument;
         }
-        let (width, height) = *self.editor.size.lock().expect("size mutex");
+        let (width, height) = if self.editor.states_nothing_yet() {
+            (0, 0)
+        } else {
+            *self.editor.size.lock().expect("size mutex")
+        };
         *size = ViewRect {
             left: 0,
             top: 0,
@@ -1279,6 +1318,11 @@ impl IPlugViewTrait for FakeView {
             ((*new_size).bottom - (*new_size).top) as u32,
         );
         self.editor.record("onSize");
+        *self.editor.on_size_origin.lock().expect("size mutex") =
+            Some(((*new_size).left, (*new_size).top));
+        if self.editor.refuses_on_size.load(Ordering::Acquire) {
+            return kResultFalse;
+        }
         *self.editor.size.lock().expect("size mutex") = size;
         *self.editor.on_size.lock().expect("size mutex") = Some(size);
 
@@ -2514,6 +2558,12 @@ fn a_view_that_refuses_this_platform_is_not_attached() {
 /// The nested ask is the other half. A plugin is entitled to ask again from
 /// inside `onSize`, and a host that answers it recurses until the stack runs
 /// out — so the second ask is refused rather than served.
+///
+/// What this pins is the host's own ordering. The resizer here applies the size
+/// synchronously; the production one crosses to the shell as a non-blocking
+/// call, so the window itself takes the size a turn of the shell's loop later.
+/// That seam limitation is tracked separately, and no assertion here observes
+/// it.
 #[test]
 fn a_plugins_resize_completes_on_one_callstack_and_a_nested_one_is_refused() {
     let editor = FakeEditor::sized(800, 600);
@@ -2555,6 +2605,11 @@ fn a_plugins_resize_completes_on_one_callstack_and_a_nested_one_is_refused() {
         editor.on_size(),
         Some((1024, 768)),
         "the view must be told the size the host granted"
+    );
+    assert_eq!(
+        editor.attach_resize_result.load(Ordering::Acquire),
+        kResultTrue,
+        "a granted resize must be reported as granted"
     );
     assert_eq!(
         editor.nested_resize_result.load(Ordering::Acquire),
@@ -2725,6 +2780,275 @@ fn a_size_the_view_refuses_outright_stops_the_host_resize() {
     assert_eq!(editor.on_size(), None);
 }
 
+/// A view is told the rectangle it asked for. A host that normalises the ask to
+/// the origin hands back a rect the plugin did not write, and a view that placed
+/// itself away from the origin lays out against a position it never chose.
+#[test]
+fn the_view_is_told_the_rect_it_asked_for_rather_than_one_moved_to_the_origin() {
+    let editor = FakeEditor::sized(800, 600);
+    *editor.ask_origin.lock().expect("origin mutex") = (20, 30);
+    *editor.resize_from_attach.lock().expect("resize mutex") = Some((1024, 768));
+    let (window, _sizes) = recording_window(&editor);
+    let state = state_with_editor(&editor);
+    let mut wrapper = load(&state, COMBINED_CID);
+    wrapper.set_editor_window_resizer(window);
+
+    wrapper
+        .open_gui(ptr::null_mut())
+        .expect("the fake editor opens");
+
+    assert_eq!(
+        editor.on_size_origin(),
+        Some((20, 30)),
+        "the origin the plugin wrote must survive the handshake"
+    );
+    assert_eq!(editor.on_size(), Some((1024, 768)));
+}
+
+/// A view may refuse the size it just asked for. The host has already moved its
+/// window by then, and leaving it there strands the editor inside a window of a
+/// shape it rejected — so the window and the recorded size both go back.
+#[test]
+fn a_view_that_refuses_the_size_it_asked_for_leaves_the_window_where_it_was() {
+    let editor = FakeEditor::sized(800, 600);
+    *editor.resize_from_attach.lock().expect("resize mutex") = Some((1024, 768));
+    editor.refuses_on_size.store(true, Ordering::Release);
+    let (window, window_sizes) = recording_window(&editor);
+    let state = state_with_editor(&editor);
+    let mut wrapper = load(&state, COMBINED_CID);
+    wrapper.set_editor_window_resizer(window);
+
+    let size = wrapper
+        .open_gui(ptr::null_mut())
+        .expect("the fake editor opens");
+
+    assert_eq!(
+        editor.attach_resize_result.load(Ordering::Acquire),
+        kResultFalse,
+        "a resize the view refused must be reported as refused"
+    );
+    assert_eq!(
+        *window_sizes.lock().expect("window size mutex"),
+        [(800, 600), (1024, 768), (800, 600)],
+        "the window must be put back to the size the view is still at"
+    );
+    assert_eq!(
+        size,
+        (800, 600),
+        "the host must not report a size the view refused"
+    );
+    assert_eq!(
+        wrapper.editor().expect("the editor is open").size().width,
+        800
+    );
+}
+
+/// The host's own resize is the same handshake in the same order: the window
+/// moves first, and only then is the view told to move into it. A view told to
+/// move first lays itself out against the window it is still in.
+#[test]
+fn a_host_initiated_resize_moves_the_window_before_it_tells_the_view() {
+    let editor = FakeEditor::sized(800, 600);
+    *editor.constrained_to.lock().expect("size mutex") = Some((640, 480));
+    let (window, _sizes) = recording_window(&editor);
+    let state = state_with_editor(&editor);
+    let mut wrapper = load(&state, COMBINED_CID);
+    wrapper.set_editor_window_resizer(window);
+    wrapper
+        .open_gui(ptr::null_mut())
+        .expect("the fake editor opens");
+
+    let opened = editor.call_count();
+    wrapper
+        .editor()
+        .expect("the editor is open")
+        .request_size(EditorSize {
+            width: 1000,
+            height: 900,
+        })
+        .expect("a resizable editor must accept a constrained size");
+
+    assert_eq!(
+        editor.calls_since(opened),
+        ["checkSizeConstraint", "resizeWindow", "onSize"],
+        "the host must resize its own window before it tells the view to move"
+    );
+}
+
+/// The same refusal on the host's side of the handshake: a view that will not
+/// move leaves the host holding a window it changed for nothing.
+#[test]
+fn a_host_initiated_resize_the_view_refuses_puts_the_window_back() {
+    let editor = FakeEditor::sized(800, 600);
+    *editor.constrained_to.lock().expect("size mutex") = Some((640, 480));
+    editor.refuses_on_size.store(true, Ordering::Release);
+    let (window, window_sizes) = recording_window(&editor);
+    let state = state_with_editor(&editor);
+    let mut wrapper = load(&state, COMBINED_CID);
+    wrapper.set_editor_window_resizer(window);
+    wrapper
+        .open_gui(ptr::null_mut())
+        .expect("the fake editor opens");
+
+    let opened = editor.call_count();
+    let refusal = wrapper
+        .editor()
+        .expect("the editor is open")
+        .request_size(EditorSize {
+            width: 1000,
+            height: 900,
+        })
+        .expect_err("a view that refuses to move must fail the resize");
+
+    assert!(
+        refusal.contains("refused to move to the constrained size"),
+        "got: {refusal}"
+    );
+    assert_eq!(
+        editor.calls_since(opened),
+        [
+            "checkSizeConstraint",
+            "resizeWindow",
+            "onSize",
+            "resizeWindow"
+        ],
+        "the window must be put back after the view refuses"
+    );
+    assert_eq!(
+        window_sizes.lock().expect("window size mutex").last(),
+        Some(&(800, 600))
+    );
+    assert_eq!(
+        wrapper.editor().expect("the editor is open").size(),
+        EditorSize {
+            width: 800,
+            height: 600
+        },
+        "a refused resize must leave the recorded size where it was"
+    );
+}
+
+/// Plugins exist that only know their editor's size once they can see a parent.
+/// Refusing them outright on the pre-attach read is refusing an editor that
+/// works; the host attaches and asks again instead.
+#[test]
+fn a_view_that_states_its_size_only_once_attached_still_opens() {
+    let editor = FakeEditor::sized(800, 600);
+    editor
+        .states_size_only_when_attached
+        .store(true, Ordering::Release);
+    let (window, window_sizes) = recording_window(&editor);
+    let state = state_with_editor(&editor);
+    let mut wrapper = load(&state, COMBINED_CID);
+    wrapper.set_editor_window_resizer(window);
+
+    let size = wrapper
+        .open_gui(ptr::null_mut())
+        .expect("a view that sizes itself after the attach must still open");
+
+    assert_eq!(
+        size,
+        (800, 600),
+        "the size read after the attach is the one the host reports"
+    );
+    assert!(
+        window_sizes.lock().expect("window size mutex").is_empty(),
+        "with no size to state yet there is no pre-attach resize to make, and the \
+         caller sizes the window from the size the open reported"
+    );
+    assert!(
+        editor.position_of("attached").is_some(),
+        "the host must attach before it can ask again, got: {:?}",
+        editor.calls()
+    );
+}
+
+/// A view that never states a size cannot be shown in any window, so the open
+/// fails — but it is attached by then, and a view released while attached leaves
+/// the plugin's child window parented to a window that is about to go away.
+#[test]
+fn a_view_that_never_states_a_size_is_detached_before_the_open_fails() {
+    let editor = FakeEditor::sized(800, 600);
+    editor.states_no_size.store(true, Ordering::Release);
+    let state = state_with_editor(&editor);
+    let mut wrapper = load(&state, COMBINED_CID);
+
+    let refusal = wrapper
+        .open_gui(ptr::null_mut())
+        .expect_err("an editor with no size must refuse to open");
+
+    assert!(refusal.contains("would not state a size"), "got: {refusal}");
+    let calls = editor.calls();
+    let attached = editor
+        .position_of("attached")
+        .expect("the host must have attached before it could ask again");
+    let removed = editor
+        .position_of("removed")
+        .expect("an attached view must be detached before it is released");
+    let released = editor
+        .position_of("release")
+        .expect("the host must release the view");
+    assert!(
+        attached < removed && removed < released,
+        "the failed open must detach before it releases, got: {calls:?}"
+    );
+}
+
+/// A closed editor's frame must stop answering for its view. A `resizeView`
+/// already in flight on another thread would otherwise be served through a view
+/// the close has released — and `setFrame(null)` alone does not stop it, because
+/// a plugin may hold the frame past it.
+#[test]
+fn a_resize_arriving_after_the_editor_closed_is_refused_rather_than_answered() {
+    let editor = FakeEditor::sized(800, 600);
+    let (window, window_sizes) = recording_window(&editor);
+    let state = state_with_editor(&editor);
+    let mut wrapper = load(&state, COMBINED_CID);
+    wrapper.set_editor_window_resizer(window);
+    wrapper
+        .open_gui(ptr::null_mut())
+        .expect("the fake editor opens");
+
+    let frame = editor
+        .frame
+        .lock()
+        .expect("frame mutex")
+        .clone()
+        .expect("the host must install a frame");
+    // Retained so the view outlives the editor that owned it: the question is
+    // what the host answers, and a released view could not be asked at all.
+    // SAFETY: the view is live and owned by the open editor at this point.
+    let view = unsafe { ComRef::from_raw(editor.view.load(Ordering::Acquire)) }
+        .expect("the fake plugin created a view")
+        .to_com_ptr();
+
+    wrapper.close_gui();
+
+    let mut rect = ViewRect {
+        left: 0,
+        top: 0,
+        right: 1024,
+        bottom: 768,
+    };
+    // SAFETY: the frame and the view are both retained by this test.
+    let answer = unsafe { frame.resizeView(view.as_ptr(), &mut rect) };
+
+    assert_eq!(
+        answer, kInvalidArgument,
+        "a frame whose editor is gone must not answer for it"
+    );
+    assert_eq!(
+        editor.on_size(),
+        None,
+        "no onSize may reach a view the host has released"
+    );
+    assert_eq!(
+        *window_sizes.lock().expect("window size mutex"),
+        [(800, 600)],
+        "a refused resize must not move the host window"
+    );
+}
+
 /// A Wayland session has no X11 window id to embed into, and the format's own
 /// Wayland route runs through host objects this host does not implement. The
 /// refusal has to name them, and it has to come before the plugin is put to the
@@ -2746,6 +3070,7 @@ fn a_wayland_session_refuses_before_the_plugin_is_asked_for_a_view() {
         "Fake Plugin",
         EditorSession::WaylandWithoutXServer,
         None,
+        DEFAULT_EDITOR_CONTENT_SCALE,
     ) else {
         panic!("a Wayland session must be refused");
     };

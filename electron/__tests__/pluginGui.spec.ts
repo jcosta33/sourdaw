@@ -82,6 +82,7 @@ const createHarness = (overrides: Partial<PluginWindowHostDeps> = {}): Harness =
             return window;
         },
         getParentWindow: () => undefined,
+        getScaleFactor: () => 1,
         notifyClosed,
         ...overrides,
     });
@@ -99,6 +100,20 @@ describe('createPluginWindowHost', () => {
         expect(response.parented).toBe(true);
         expect(response.handle).toEqual(Buffer.alloc(8, 1));
         expect(windows[0]?.options).toEqual({ title: 'Surge XT', parent, alwaysOnTop: false });
+    });
+
+    it('reports the display scale the window was created at', () => {
+        const { host } = createHarness({ getScaleFactor: () => 2 });
+
+        expect(host.create(request()).scaleFactor).toBe(2);
+    });
+
+    it('reports an unscaled window when the platform answers a scale nothing can be sized by', () => {
+        for (const unusable of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+            const { host } = createHarness({ getScaleFactor: () => unusable });
+
+            expect(host.create(request()).scaleFactor).toBe(1);
+        }
     });
 
     it('falls back to an unparented always-on-top window when there is no DAW window', () => {
@@ -275,6 +290,7 @@ describe('registerPluginWindowHost', () => {
                     return window;
                 },
                 getParentWindow: () => undefined,
+                getScaleFactor: () => 1,
             }
         );
         expect(registered).toBe(true);
@@ -327,6 +343,7 @@ describe('registerPluginWindowHost', () => {
                 return window;
             },
             getParentWindow: () => undefined,
+            getScaleFactor: () => 1,
         });
         const create = register.mock.calls[0]?.[0] as (req: CreateEditorWindowRequest) => unknown;
 
@@ -339,7 +356,7 @@ describe('registerPluginWindowHost', () => {
     it('survives an addon built before this packet', () => {
         const registered = registerPluginWindowHost(
             {},
-            { createWindow: createFakeWindow, getParentWindow: () => undefined }
+            { createWindow: createFakeWindow, getParentWindow: () => undefined, getScaleFactor: () => 1 }
         );
 
         expect(registered).toBe(false);

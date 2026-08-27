@@ -9,16 +9,16 @@
 //!
 //! This type is the registry and the dispatcher; [`RunLoopService`] is the
 //! thread that drives it. They are split because the driving is the part a host
-//! with its own UI loop would replace: `service_timers` and
-//! `service_file_descriptors` are the whole of the work, and a shell that owns
-//! an event thread can call them from it instead of letting the service thread
-//! run. Sourdaw's plugin-host crate has no UI thread of its own — the native
+//! with its own UI loop would replace: [`HostRunLoop::service_once`] is the
+//! whole of one pass, and a shell that owns an event thread can call it from
+//! there instead of letting the service thread run. Sourdaw's plugin-host crate has no UI thread of its own — the native
 //! editor window belongs to the desktop shell — so the service thread is what
 //! makes registered handlers fire today, and the split is what lets that change
 //! without touching the registry.
 //!
 //! Nothing here is reachable from the audio thread.
 
+use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
@@ -31,12 +31,15 @@ use vst3::Steinberg::Linux::{
 use vst3::Steinberg::{kInvalidArgument, kResultFalse, kResultOk, tresult};
 use vst3::{ComPtr, ComRef};
 
-/// How long one service pass waits on the registered descriptors before looking
-/// at the timers again.
+use crate::vst3_editor::com_identity;
+
+/// The longest one service pass waits on the registered descriptors before
+/// looking at the timers again.
 ///
-/// A ceiling on timer lateness rather than a poll interval: a pass returns as
-/// soon as any descriptor is readable, so an idle editor costs nothing and a
-/// busy one is never delayed by this number.
+/// A ceiling on how long a pass may block rather than a poll interval: a pass
+/// returns as soon as any descriptor is readable, and it never waits past the
+/// next timer that comes due, so an idle editor costs nothing and a timer is
+/// never held back by this number.
 const SERVICE_POLL_SLICE: Duration = Duration::from_millis(16);
 
 /// The floor a plugin's requested timer interval is held to.
@@ -72,11 +75,6 @@ pub struct HostRunLoop {
     registry: Mutex<Registry>,
 }
 
-// SAFETY: every COM pointer held here belongs to an interface the VST3 bindings
-// declare `Send + Sync`, and the registry itself is behind a mutex.
-unsafe impl Send for HostRunLoop {}
-unsafe impl Sync for HostRunLoop {}
-
 impl HostRunLoop {
     pub fn new() -> Self {
         Self::default()
@@ -97,11 +95,19 @@ impl HostRunLoop {
 
     /// Whether two COM pointers name the same object.
     ///
-    /// Identity is the raw pointer: `unregister` is always called with the same
-    /// pointer `register` was given, and comparing anything else would let one
-    /// editor unregister another's handler.
+    /// Compared on `FUnknown`, where COM defines identity: a plugin is entitled
+    /// to hand `unregister` a different interface pointer to the same object
+    /// than `register` was given — multiple inheritance alone produces one — and
+    /// comparing the interface pointers would then leave the handler registered
+    /// for ever, firing into an editor that has finished with it.
     fn same_object<I: vst3::Interface>(left: &ComPtr<I>, right: *mut I) -> bool {
-        std::ptr::eq(left.as_ptr().cast_const(), right.cast_const())
+        // SAFETY: `left` is retained by this registration, and `right` is the
+        // pointer the plugin passed into the call being served.
+        let (left, right) = unsafe { (com_identity(left.as_ptr()), com_identity(right)) };
+        match (left, right) {
+            (Some(left), Some(right)) => std::ptr::eq(left.cast_const(), right.cast_const()),
+            _ => false,
+        }
     }
 
     /// # Safety
@@ -204,53 +210,112 @@ impl HostRunLoop {
         due.len()
     }
 
+    /// How long a pass may block before the next registered timer comes due.
+    ///
+    /// Bounded above by [`SERVICE_POLL_SLICE`] so a loop with no timers still
+    /// wakes, and below by [`MIN_TIMER_INTERVAL`] so a timer already overdue
+    /// asks for a zero-length wait — which is a spin, not a poll.
+    pub fn service_slice(&self, now: Instant) -> Duration {
+        self.time_until_next_timer(now)
+            .map_or(SERVICE_POLL_SLICE, |until| {
+                until.clamp(MIN_TIMER_INTERVAL, SERVICE_POLL_SLICE)
+            })
+    }
+
+    fn time_until_next_timer(&self, now: Instant) -> Option<Duration> {
+        let registry = self.lock();
+        registry
+            .timers
+            .iter()
+            .map(|timer| timer.due.saturating_duration_since(now))
+            .min()
+    }
+
+    /// One pass of the loop: fire what is due, then wait for a descriptor no
+    /// longer than the next timer allows.
+    pub fn service_once(&self) {
+        let now = Instant::now();
+        self.service_timers(now);
+        self.service_file_descriptors(self.service_slice(now));
+    }
+
     /// Wait up to `timeout` for any registered descriptor to become readable and
     /// hand each ready one to its handler. Returns how many handlers were called.
     ///
-    /// Handlers are taken out from under the lock for the same reason timers are.
+    /// A pass always either blocks in `poll` or sleeps. A descriptor the kernel
+    /// refuses returns from `poll` instantly and for ever, so a pass that could
+    /// return without waiting would spin a core for as long as the editor is
+    /// open.
+    ///
+    /// Handlers are taken out from under the lock for the same reason timers are,
+    /// and the registry is read again after the wait: a descriptor unregistered
+    /// while `poll` was blocked may already be closed, and its number reused by
+    /// something else in this process.
     pub fn service_file_descriptors(&self, timeout: Duration) -> usize {
-        let watched: Vec<(ComPtr<IEventHandler>, FileDescriptor)> = {
-            let registry = self.lock();
-            registry
-                .event_handlers
-                .iter()
-                .map(|registration| (registration.handler.clone(), registration.descriptor))
-                .collect()
-        };
+        let started = Instant::now();
+        let watched = self.watched_descriptors();
         if watched.is_empty() {
             std::thread::sleep(timeout);
             return 0;
         }
 
-        let mut ready = poll_readable(
-            &watched
-                .iter()
-                .map(|(_, descriptor)| *descriptor)
-                .collect::<Vec<_>>(),
-            timeout,
-        );
-        if ready.is_empty() {
-            return 0;
-        }
+        let polled = poll_descriptors(&watched, timeout);
+        self.drop_registrations_for(&polled.dead);
 
-        let mut dispatched = 0;
-        for (handler, descriptor) in &watched {
-            if !ready.remove(descriptor) {
-                continue;
-            }
-            // SAFETY: the handler is retained by this registration and the call
-            // is made off the audio thread.
-            unsafe { handler.onFDIsSet(*descriptor) };
-            dispatched += 1;
+        let dispatched = self.dispatch_ready(&polled.ready);
+        if dispatched == 0 {
+            sleep_remainder(timeout, started.elapsed());
         }
         dispatched
     }
 
-    /// How many descriptors and timers are registered. The frame's own teardown
-    /// reads it to decide whether a service thread is still owed any work.
-    pub fn registration_count(&self) -> usize {
+    fn watched_descriptors(&self) -> Vec<FileDescriptor> {
         let registry = self.lock();
-        registry.event_handlers.len() + registry.timers.len()
+        registry
+            .event_handlers
+            .iter()
+            .map(|registration| registration.descriptor)
+            .collect()
+    }
+
+    /// Call every handler still registered on a ready descriptor.
+    ///
+    /// Every one of them: two handlers may share a descriptor, and waking only
+    /// the first leaves the second's editor deaf for as long as both are
+    /// registered.
+    fn dispatch_ready(&self, ready: &HashSet<FileDescriptor>) -> usize {
+        if ready.is_empty() {
+            return 0;
+        }
+        let due: Vec<(ComPtr<IEventHandler>, FileDescriptor)> = {
+            let registry = self.lock();
+            registry
+                .event_handlers
+                .iter()
+                .filter(|registration| ready.contains(&registration.descriptor))
+                .map(|registration| (registration.handler.clone(), registration.descriptor))
+                .collect()
+        };
+
+        for (handler, descriptor) in &due {
+            // SAFETY: the handler is retained by this registration and the call
+            // is made off the audio thread.
+            unsafe { handler.onFDIsSet(*descriptor) };
+        }
+        due.len()
+    }
+
+    /// Forget the registrations on descriptors that will never be readable
+    /// again. Keeping one is not politeness: its `revents` are sticky, so every
+    /// later `poll` returns immediately on it.
+    fn drop_registrations_for(&self, dead: &HashSet<FileDescriptor>) {
+        if dead.is_empty() {
+            return;
+        }
+        let mut registry = self.lock();
+        registry
+            .event_handlers
+            .retain(|registration| !dead.contains(&registration.descriptor));
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, Registry> {
@@ -271,11 +336,18 @@ fn removal_result(before: usize, after: usize) -> tresult {
     }
 }
 
-/// The descriptors out of `descriptors` that are readable within `timeout`.
-fn poll_readable(
-    descriptors: &[FileDescriptor],
-    timeout: Duration,
-) -> std::collections::HashSet<FileDescriptor> {
+/// What one `poll` said about the descriptors it was given.
+#[derive(Debug, Default, PartialEq, Eq)]
+struct PolledDescriptors {
+    /// Readable, or ended and owed one last wake.
+    ready: HashSet<FileDescriptor>,
+    /// Will never be readable again, and must not be polled again.
+    dead: HashSet<FileDescriptor>,
+}
+
+/// Wait up to `timeout` for any of `descriptors` to become readable, and report
+/// which of them ended while waiting.
+fn poll_descriptors(descriptors: &[FileDescriptor], timeout: Duration) -> PolledDescriptors {
     let mut poll_fds: Vec<libc::pollfd> = descriptors
         .iter()
         .map(|descriptor| libc::pollfd {
@@ -296,22 +368,46 @@ fn poll_readable(
         )
     };
     if ready <= 0 {
-        return std::collections::HashSet::new();
+        return PolledDescriptors::default();
     }
 
-    poll_fds
-        .iter()
-        // `POLLERR`/`POLLHUP` count as readable: a plugin whose connection died
+    let mut polled = PolledDescriptors::default();
+    for poll_fd in &poll_fds {
+        // `POLLNVAL` is the kernel refusing the descriptor outright — it is not
+        // open in this process. There is nothing for a handler to read and
+        // nothing to wake it about, and polling it again returns instantly, so
+        // it is dropped without a wake.
+        if poll_fd.revents & libc::POLLNVAL != 0 {
+            polled.dead.insert(poll_fd.fd);
+            continue;
+        }
+        if poll_fd.revents & libc::POLLIN != 0 {
+            polled.ready.insert(poll_fd.fd);
+        }
+        // `POLLERR`/`POLLHUP` earn one last wake: a plugin whose connection died
         // has to be told, and it learns that from the read it makes in its own
-        // handler. Silently withholding the wake leaves it waiting forever.
-        .filter(|poll_fd| poll_fd.revents & (libc::POLLIN | libc::POLLERR | libc::POLLHUP) != 0)
-        .map(|poll_fd| poll_fd.fd)
-        .collect()
+        // handler. Silently withholding the wake leaves it waiting forever. They
+        // are also the end of the descriptor and they are sticky, so the
+        // registration goes with the wake rather than reporting for ever.
+        if poll_fd.revents & (libc::POLLERR | libc::POLLHUP) != 0 {
+            polled.ready.insert(poll_fd.fd);
+            polled.dead.insert(poll_fd.fd);
+        }
+    }
+    polled
+}
+
+/// Sleep out whatever is left of a pass that did no work.
+fn sleep_remainder(timeout: Duration, elapsed: Duration) {
+    let remaining = timeout.saturating_sub(elapsed);
+    if !remaining.is_zero() {
+        std::thread::sleep(remaining);
+    }
 }
 
 /// The thread that services a [`HostRunLoop`] when nothing else does.
 ///
-/// Started on the first registration and stopped when the frame that owns it is
+/// Started when the editor opens and stopped when the editor that owns it is
 /// dropped.
 pub struct RunLoopService {
     stop: Arc<AtomicBool>,
@@ -319,20 +415,28 @@ pub struct RunLoopService {
 }
 
 impl RunLoopService {
-    pub fn start(run_loop: Arc<HostRunLoop>) -> Self {
+    /// Start the service thread, or report why the editor cannot run.
+    ///
+    /// Fallible because there is no degraded mode: an editor whose descriptors
+    /// and timers nobody services never draws and never answers a click, so a
+    /// caller that swallowed a failed spawn would report an editor that is
+    /// permanently dead.
+    pub fn start(run_loop: Arc<HostRunLoop>) -> Result<Self, String> {
         let stop = Arc::new(AtomicBool::new(false));
         let thread_stop = Arc::clone(&stop);
         let thread = std::thread::Builder::new()
             .name("vst3-editor-run-loop".to_string())
             .spawn(move || {
                 while !thread_stop.load(Ordering::Acquire) {
-                    run_loop.service_timers(Instant::now());
-                    run_loop.service_file_descriptors(SERVICE_POLL_SLICE);
+                    run_loop.service_once();
                 }
             })
-            .ok();
+            .map_err(|error| format!("the editor's run-loop thread would not start: {error}"))?;
 
-        Self { stop, thread }
+        Ok(Self {
+            stop,
+            thread: Some(thread),
+        })
     }
 }
 
@@ -388,6 +492,12 @@ mod tests {
                 .push(fd);
         }
     }
+
+    /// A descriptor number nothing in this process has open, so `poll` answers
+    /// `POLLNVAL` for it — what a plugin that closed its connection without
+    /// unregistering leaves behind. Far above any number the runtime can hand
+    /// out, so no concurrently running test can make it valid again.
+    const NEVER_OPEN_DESCRIPTOR: FileDescriptor = 1_000_000;
 
     /// A pipe whose read end a test registers and whose write end it makes
     /// readable on demand.
@@ -553,6 +663,136 @@ mod tests {
                 .expect("descriptor log mutex")
                 .len(),
             1
+        );
+    }
+
+    /// Two handlers may watch one descriptor — a plugin with two views on one
+    /// X11 connection is the ordinary case. Waking only the one that registered
+    /// first leaves the other's editor deaf for as long as both are registered.
+    #[test]
+    fn every_handler_registered_on_one_descriptor_is_woken() {
+        let run_loop = HostRunLoop::new();
+        let pipe = Pipe::open();
+        let first = ComWrapper::new(RecordingEventHandler::default());
+        let second = ComWrapper::new(RecordingEventHandler::default());
+
+        for handler in [&first, &second] {
+            let raw = handler
+                .as_com_ref::<IEventHandler>()
+                .expect("the fake handler implements IEventHandler")
+                .as_ptr();
+            // SAFETY: `raw` borrows a live handler this test owns.
+            assert_eq!(
+                unsafe { run_loop.register_event_handler(raw, pipe.read) },
+                kResultOk
+            );
+        }
+
+        pipe.make_readable();
+        assert_eq!(
+            run_loop.service_file_descriptors(Duration::from_millis(50)),
+            2,
+            "both handlers on the ready descriptor must be called"
+        );
+        for handler in [&first, &second] {
+            assert_eq!(
+                *handler.woken_for.lock().expect("descriptor log mutex"),
+                vec![pipe.read]
+            );
+        }
+    }
+
+    /// A descriptor the kernel refuses is never readable and never will be, and
+    /// `poll` returns on it instantly for ever. Keeping the registration turns
+    /// every later pass into a spin that costs a full core for as long as the
+    /// editor is open, so the registration goes and the pass still waits.
+    #[test]
+    fn a_descriptor_the_kernel_refuses_is_dropped_and_its_pass_still_waits() {
+        let run_loop = HostRunLoop::new();
+        let handler = ComWrapper::new(RecordingEventHandler::default());
+        let raw = handler
+            .as_com_ref::<IEventHandler>()
+            .expect("the fake handler implements IEventHandler")
+            .as_ptr();
+
+        // SAFETY: `raw` borrows a live handler this test owns.
+        assert_eq!(
+            unsafe { run_loop.register_event_handler(raw, NEVER_OPEN_DESCRIPTOR) },
+            kResultOk
+        );
+
+        let timeout = Duration::from_millis(20);
+        let started = Instant::now();
+        assert_eq!(run_loop.service_file_descriptors(timeout), 0);
+        let waited = started.elapsed();
+
+        assert!(
+            waited >= timeout / 2,
+            "a pass that neither waited nor dispatched is a busy spin, it took {waited:?}"
+        );
+        // SAFETY: `raw` borrows a live handler this test owns.
+        assert_eq!(
+            unsafe { run_loop.unregister_event_handler(raw) },
+            kResultFalse,
+            "the refused descriptor's registration must already be gone"
+        );
+        assert!(
+            handler
+                .woken_for
+                .lock()
+                .expect("descriptor log mutex")
+                .is_empty(),
+            "a descriptor that was never open has nothing for a handler to read"
+        );
+    }
+
+    /// A pass that always waited its full slice would make the shortest timer a
+    /// plugin can ask for unreachable: a 10 ms animation would run at the
+    /// slice's rate instead, and the editor would visibly stutter.
+    #[test]
+    fn a_pass_never_waits_past_the_timer_it_owes_next() {
+        let run_loop = HostRunLoop::new();
+        let handler = ComWrapper::new(CountingTimerHandler::default());
+        let raw = handler
+            .as_com_ref::<ITimerHandler>()
+            .expect("the fake handler implements ITimerHandler")
+            .as_ptr();
+
+        assert_eq!(
+            run_loop.service_slice(Instant::now()),
+            SERVICE_POLL_SLICE,
+            "with no timer to owe, a pass waits its whole slice"
+        );
+
+        // SAFETY: `raw` borrows a live handler this test owns.
+        assert_eq!(unsafe { run_loop.register_timer(raw, 10) }, kResultOk);
+
+        let slice = run_loop.service_slice(Instant::now());
+        assert!(
+            slice <= Duration::from_millis(10),
+            "a 10 ms timer must not wait out a longer slice, got {slice:?}"
+        );
+        assert!(slice >= MIN_TIMER_INTERVAL, "got {slice:?}");
+    }
+
+    /// An overdue timer asks for a zero-length wait, and a pass that took it
+    /// would poll without blocking — the same spin an unusable descriptor
+    /// causes. The floor is what keeps the loop a loop.
+    #[test]
+    fn an_overdue_timer_still_leaves_a_pass_something_to_wait_on() {
+        let run_loop = HostRunLoop::new();
+        let handler = ComWrapper::new(CountingTimerHandler::default());
+        let raw = handler
+            .as_com_ref::<ITimerHandler>()
+            .expect("the fake handler implements ITimerHandler")
+            .as_ptr();
+
+        // SAFETY: `raw` borrows a live handler this test owns.
+        assert_eq!(unsafe { run_loop.register_timer(raw, 10) }, kResultOk);
+
+        assert_eq!(
+            run_loop.service_slice(Instant::now() + Duration::from_secs(1)),
+            MIN_TIMER_INTERVAL
         );
     }
 

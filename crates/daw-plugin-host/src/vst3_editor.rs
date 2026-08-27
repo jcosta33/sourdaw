@@ -8,51 +8,82 @@
 //! the view is released, because releasing an attached view leaves the plugin's
 //! child window parented to a window the host is about to destroy.
 //!
-//! Every call in this module is a UI/control-path call. None of it is reachable
-//! from the audio thread, and none of it takes a lock the audio thread holds:
-//! the only shared state is this module's own frame state.
+//! That detach-before-release order is the host's own close path, where the
+//! native window is still alive when the editor is torn down. It does not hold
+//! when the OS ends the window instead: the shell reports that close only after
+//! the platform has already destroyed the window, so `removed` runs against a
+//! parent that is gone. The gap is known, is shared with the CLAP editor path,
+//! and is tracked separately — nothing in this module can close it, because by
+//! the time the report arrives there is nothing left to detach from.
+//!
+//! None of this is reachable from the audio thread, and none of it takes a lock
+//! the audio thread holds. What it does run on is a blocking worker of the
+//! host application's executor: an editor command reaches this module through
+//! the runtime owner's control claim, and that claim is what serialises view
+//! lifecycle against every other control call. It is not the platform's UI
+//! thread. `IPlugView` is specified to be driven from the thread that owns the
+//! parent window, and this host does not do that today — a known deviation,
+//! shared with the CLAP editor path, and tracked separately.
 //!
 //! `ViewRect` is not one unit on every platform. macOS states it in logical
 //! points and the window server applies the backing scale, while Windows and
 //! X11 state it in physical pixels and expect the host to have told the plugin
 //! what scale it is running at. That is why
 //! [`IPlugViewContentScaleSupport`](vst3::Steinberg::IPlugViewContentScaleSupport)
-//! is set on those two platforms and not on macOS.
+//! is set on those two platforms and not on macOS, and why every size crossing
+//! between a view and the host's window seam is converted at that boundary.
 
 use std::ffi::c_void;
 use std::ptr;
 use std::sync::atomic::{AtomicBool, AtomicPtr, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use vst3::Steinberg::Vst::{IEditController, IEditControllerTrait, ViewType};
 use vst3::Steinberg::{
-    kInvalidArgument, kResultFalse, kResultOk, kResultTrue, tresult, FIDString, IPlugFrame,
-    IPlugFrameTrait, IPlugView, IPlugViewContentScaleSupport, IPlugViewContentScaleSupportTrait,
-    IPlugViewTrait, ViewRect,
+    kInvalidArgument, kResultFalse, kResultOk, kResultTrue, tresult, FIDString, FUnknown,
+    IPlugFrame, IPlugFrameTrait, IPlugView, IPlugViewContentScaleSupport,
+    IPlugViewContentScaleSupportTrait, IPlugViewTrait, ViewRect,
 };
 use vst3::{Class, ComPtr, ComRef, ComWrapper};
 
 use crate::traits::EditorWindowResizer;
 
-#[cfg(unix)]
-use crate::vst3_run_loop::HostRunLoop;
 #[cfg(target_os = "linux")]
-use crate::vst3_run_loop::RunLoopService;
+use crate::vst3_run_loop::{HostRunLoop, RunLoopService};
 #[cfg(target_os = "linux")]
 use vst3::Steinberg::Linux::{
     FileDescriptor, IEventHandler, IRunLoop, IRunLoopTrait, ITimerHandler, TimerInterval,
 };
 
-/// The scale the host states to a plugin on the platforms whose `ViewRect` is in
-/// physical pixels.
+/// How long teardown waits for a resize handshake already in flight.
 ///
-/// One, because that is the scale the editor window actually runs at: the window
-/// seam sizes windows in logical units and reports no backing scale back, so
-/// there is no measurement to pass on. Stating it anyway is not ceremony — a
-/// VST3 editor that is never told a scale on Windows or X11 lays itself out
-/// against whatever it last assumed, and 1.0 is the truth for the 100% case this
-/// host currently creates.
-const HOST_CONTENT_SCALE: f32 = 1.0;
+/// The guarded section is one window resize and one `onSize`, so a handshake
+/// that has not finished inside this is one the editor is not going to finish;
+/// waiting longer would hang the close instead of ending it.
+const RESIZE_GUARD_TEARDOWN_WAIT: Duration = Duration::from_millis(250);
+
+/// The scale a host states when the shell could not measure a usable one.
+///
+/// A VST3 editor that is never told a scale on Windows or X11 lays itself out
+/// against whatever it last assumed, so the host states something; one is the
+/// only value that is never wrong by construction, because it converts nothing.
+const FALLBACK_CONTENT_SCALE: f64 = 1.0;
+
+/// The `FUnknown` pointer that *is* a COM object's identity.
+///
+/// COM defines identity on `FUnknown` and nowhere else. An object assembled by
+/// multiple inheritance presents a different address for each interface it
+/// implements, so two pointers to one object can compare unequal — which is why
+/// no identity question in this backend compares interface pointers directly.
+///
+/// # Safety
+/// `pointer` is null, or a live interface of the named type.
+pub(crate) unsafe fn com_identity<I: vst3::Interface>(pointer: *mut I) -> Option<*mut FUnknown> {
+    ComRef::from_raw(pointer)?
+        .cast::<FUnknown>()
+        .map(|identity| identity.as_ptr())
+}
 
 /// Why a Wayland session cannot host a VST3 editor here.
 ///
@@ -94,6 +125,56 @@ impl EditorSize {
             right: i32::try_from(self.width).unwrap_or(i32::MAX),
             bottom: i32::try_from(self.height).unwrap_or(i32::MAX),
         }
+    }
+
+    fn has_area(self) -> bool {
+        self.width > 0 && self.height > 0
+    }
+
+    /// This size scaled by `factor`, rounded, and never scaled away to nothing:
+    /// a window of zero extent is not a smaller editor, it is no editor.
+    fn scaled(self, factor: f64) -> Self {
+        let convert = |value: u32| {
+            (f64::from(value) * factor)
+                .round()
+                .clamp(1.0, f64::from(u32::MAX)) as u32
+        };
+        Self {
+            width: convert(self.width),
+            height: convert(self.height),
+        }
+    }
+
+    /// A size a view stated, in the logical units the window seam sizes in.
+    fn to_logical(self, view_units_per_logical: f64) -> Self {
+        self.scaled(1.0 / view_units_per_logical)
+    }
+
+    /// A size the host holds, in the units this platform's `ViewRect` speaks.
+    fn to_view_units(self, view_units_per_logical: f64) -> Self {
+        self.scaled(view_units_per_logical)
+    }
+}
+
+/// How many `ViewRect` units one logical window unit is worth on this platform.
+///
+/// One on macOS whatever the display reports: `ViewRect` there is already in the
+/// logical points the window seam sizes in, and dividing by the backing scale
+/// would halve every editor on a Retina display. On Windows and X11 the rect is
+/// physical pixels, so the display's own scale is the conversion — and the same
+/// number is what the view is told through
+/// [`IPlugViewContentScaleSupport`](vst3::Steinberg::IPlugViewContentScaleSupport).
+///
+/// A scale the shell could not measure — zero, negative, or not finite — falls
+/// back to converting nothing rather than destroying every size that crosses.
+fn view_units_per_logical_unit(scale_factor: f64) -> f64 {
+    if !platform_states_content_scale() {
+        return 1.0;
+    }
+    if scale_factor.is_finite() && scale_factor > 0.0 {
+        scale_factor
+    } else {
+        FALLBACK_CONTENT_SCALE
     }
 }
 
@@ -176,61 +257,107 @@ fn platform_states_content_scale() -> bool {
 /// Held behind an `Arc` because the frame object the plugin calls into and the
 /// [`Vst3Editor`] the host drives are two views onto the same state.
 pub struct EditorFrameState {
-    /// The view this frame belongs to. Held as a bare pointer for identity only:
-    /// the view holds the frame for its whole attached life, and retaining it
-    /// back would be a cycle neither side ever breaks.
-    view: AtomicPtr<IPlugView>,
+    /// The view this frame belongs to, as the `FUnknown` that is its COM
+    /// identity. Held as a bare pointer for identity only: the view holds the
+    /// frame for its whole attached life, and retaining it back would be a cycle
+    /// neither side ever breaks. Cleared before teardown, so a call arriving
+    /// from another thread is refused rather than answered through a vtable the
+    /// close is about to release.
+    view: AtomicPtr<FUnknown>,
     /// How the host resizes the native window the view is drawn into.
     window: Mutex<Option<EditorWindowResizer>>,
+    /// How many `ViewRect` units one logical window unit is worth here. Fixed
+    /// at open: an editor that moves to a display of a different scale is not
+    /// re-scaled, which is tracked separately.
+    view_units_per_logical: f64,
+    /// The size the host window is at, in logical units.
     granted_width: AtomicU32,
     granted_height: AtomicU32,
-    /// Whether a resize handshake is already on this callstack.
+    /// Whether a resize handshake is running. See [`Self::begin_resize`].
     resizing: AtomicBool,
     /// Nested `resizeView` calls this frame has refused. Read by tests; the
     /// count is what distinguishes "the guard held" from "the plugin never
     /// asked".
     refused_nested_resizes: AtomicU32,
-    #[cfg(unix)]
+    #[cfg(target_os = "linux")]
     run_loop: Arc<HostRunLoop>,
 }
 
-// SAFETY: the view pointer is used for identity comparison only, and every other
-// field is a synchronised primitive or behind a mutex.
-unsafe impl Send for EditorFrameState {}
-unsafe impl Sync for EditorFrameState {}
-
 impl EditorFrameState {
-    fn new(window: Option<EditorWindowResizer>) -> Self {
+    fn new(window: Option<EditorWindowResizer>, scale_factor: f64) -> Self {
         Self {
             view: AtomicPtr::new(ptr::null_mut()),
             window: Mutex::new(window),
+            view_units_per_logical: view_units_per_logical_unit(scale_factor),
             granted_width: AtomicU32::new(0),
             granted_height: AtomicU32::new(0),
             resizing: AtomicBool::new(false),
             refused_nested_resizes: AtomicU32::new(0),
-            #[cfg(unix)]
+            #[cfg(target_os = "linux")]
             run_loop: Arc::new(HostRunLoop::new()),
         }
     }
 
-    fn adopt(&self, view: &ComPtr<IPlugView>) {
-        self.view.store(view.as_ptr(), Ordering::Release);
+    /// Record which view this frame answers for, or report that the view will
+    /// not state its own identity.
+    fn adopt(&self, view: &ComPtr<IPlugView>) -> bool {
+        let Some(identity) = view.cast::<FUnknown>() else {
+            return false;
+        };
+        self.view.store(identity.as_ptr(), Ordering::Release);
+        true
+    }
+
+    /// Stop answering for the view. Every later frame call is refused.
+    fn disown(&self) {
+        self.view.store(ptr::null_mut(), Ordering::Release);
     }
 
     fn owns(&self, view: *mut IPlugView) -> bool {
-        !view.is_null() && ptr::eq(self.view.load(Ordering::Acquire), view)
+        let owned = self.view.load(Ordering::Acquire);
+        if owned.is_null() || view.is_null() {
+            return false;
+        }
+        // SAFETY: `view` is the pointer the plugin passed into this frame call,
+        // so it is a live interface for the duration of the call.
+        let asked = unsafe { com_identity(view) };
+        asked.is_some_and(|asked| ptr::eq(owned.cast_const(), asked.cast_const()))
     }
 
     /// Take the resize guard, or report that a handshake is already running.
     ///
-    /// The guard is against unbounded recursion, not against synchrony: a plugin
-    /// is entitled to ask for another size from inside `onSize` — setting the
-    /// content scale is one documented way it happens — and a host that answered
-    /// each one would recurse until the stack ran out. Refusing the nested
-    /// request leaves the plugin at the size the outer handshake granted, which
-    /// is a size it asked for.
+    /// Mutual exclusion for the whole frame, not a marker for one callstack: a
+    /// request from another thread is refused exactly as a nested one is. Both
+    /// refusals are wanted. A plugin is entitled to ask for another size from
+    /// inside `onSize` — setting the content scale is one documented way it
+    /// happens — and a host that answered each one would recurse until the stack
+    /// ran out; refusing leaves the plugin at the size the outer handshake
+    /// granted, which is a size it asked for. Two handshakes at once would
+    /// interleave a window resize with somebody else's `onSize` and leave the
+    /// window and the view at different sizes.
+    ///
+    /// Teardown takes the same guard, which is what keeps a resize in flight
+    /// from calling `onSize` through a view the close is releasing.
     fn begin_resize(&self) -> bool {
         !self.resizing.swap(true, Ordering::AcqRel)
+    }
+
+    /// Take the resize guard for teardown, waiting out a handshake in flight.
+    ///
+    /// Reports whether it was taken: past the deadline the close proceeds
+    /// anyway, because a teardown that never returns is worse than a race the
+    /// deadline makes vanishingly unlikely.
+    fn acquire_resize_guard_for_teardown(&self) -> bool {
+        let deadline = Instant::now() + RESIZE_GUARD_TEARDOWN_WAIT;
+        loop {
+            if self.begin_resize() {
+                return true;
+            }
+            if Instant::now() >= deadline {
+                return false;
+            }
+            std::thread::sleep(Duration::from_millis(1));
+        }
     }
 
     fn end_resize(&self) {
@@ -242,6 +369,24 @@ impl EditorFrameState {
         self.granted_height.store(size.height, Ordering::Release);
     }
 
+    /// Put the window and the recorded size back where a refused handshake
+    /// found them. A size with no area was never granted, so there is no window
+    /// size to restore to.
+    fn restore_granted(&self, previous: EditorSize) {
+        self.record_granted(previous);
+        if previous.has_area() {
+            self.resize_host_window(previous);
+        }
+    }
+
+    fn to_logical(&self, size: EditorSize) -> EditorSize {
+        size.to_logical(self.view_units_per_logical)
+    }
+
+    fn to_view_units(&self, size: EditorSize) -> EditorSize {
+        size.to_view_units(self.view_units_per_logical)
+    }
+
     fn granted(&self) -> EditorSize {
         EditorSize {
             width: self.granted_width.load(Ordering::Acquire),
@@ -249,7 +394,7 @@ impl EditorFrameState {
         }
     }
 
-    /// Resize the native window the view lives in.
+    /// Resize the native window the view lives in, in logical units.
     ///
     /// Absent when the caller opened the editor without a window to resize —
     /// the scan worker and the tests both do — in which case the granted size is
@@ -265,7 +410,7 @@ impl EditorFrameState {
         self.refused_nested_resizes.load(Ordering::Acquire)
     }
 
-    #[cfg(unix)]
+    #[cfg(target_os = "linux")]
     pub fn run_loop(&self) -> &Arc<HostRunLoop> {
         &self.run_loop
     }
@@ -300,6 +445,17 @@ impl IPlugFrameTrait for HostEditorFrame {
     /// of an event loop leaves the plugin drawing at the old size against a
     /// window that has already changed, which is the classic "editor content
     /// clipped after a preset change" symptom.
+    ///
+    /// The VST3 side of that handshake is synchronous here and the order is the
+    /// one the format states. The window itself is a separate matter: the
+    /// production window seam crosses to the shell as a non-blocking call, so
+    /// the host window is *asked* to resize before `onSize` and applies it a
+    /// turn of the shell's loop later. That seam limitation is shared with the
+    /// CLAP editor path and tracked separately.
+    ///
+    /// A view that refuses the size it just asked for leaves the host holding a
+    /// window it changed for nothing, so the refusal puts the window and the
+    /// recorded size back before it is reported.
     unsafe fn resizeView(&self, view: *mut IPlugView, new_size: *mut ViewRect) -> tresult {
         if new_size.is_null() || !self.state.owns(view) {
             return kInvalidArgument;
@@ -318,13 +474,24 @@ impl IPlugFrameTrait for HostEditorFrame {
             return kResultFalse;
         }
 
-        self.state.resize_host_window(requested);
-        self.state.record_granted(requested);
-        let mut granted = requested.to_rect();
-        let result = view.onSize(&mut granted);
+        let previous = self.state.granted();
+        let granted = self.state.to_logical(requested);
+        self.state.resize_host_window(granted);
+        self.state.record_granted(granted);
+
+        // The plugin's own rect, origin included: `onSize` is told the rectangle
+        // the view asked for, not a copy of its extent moved to the origin.
+        let accepted = view.onSize(new_size) == kResultOk;
+        if !accepted {
+            self.state.restore_granted(previous);
+        }
 
         self.state.end_resize();
-        result
+        if accepted {
+            kResultTrue
+        } else {
+            kResultFalse
+        }
     }
 }
 
@@ -370,11 +537,6 @@ pub struct Vst3Editor {
     run_loop_service: Option<RunLoopService>,
 }
 
-// SAFETY: as the rest of this backend — every VST3 object here is reached under
-// the runtime owner's control claim, and released by this type's `Drop`.
-unsafe impl Send for Vst3Editor {}
-unsafe impl Sync for Vst3Editor {}
-
 impl Vst3Editor {
     /// Create the plugin's editor and attach it to a native window.
     ///
@@ -382,12 +544,17 @@ impl Vst3Editor {
     /// give the view its frame, state the content scale, learn the size, size the
     /// host window to it, attach, and read the size back — because a plugin is
     /// entitled to settle on a different size once it can see its parent.
+    ///
+    /// `scale_factor` is the display scale the host window was created at, which
+    /// is what the view is told on the platforms whose `ViewRect` is physical
+    /// pixels, and what every size crossing that boundary is converted by.
     pub fn open(
         controller: &ComPtr<IEditController>,
         parent: *mut c_void,
         plugin_name: &str,
         session: EditorSession,
         window: Option<EditorWindowResizer>,
+        scale_factor: f64,
     ) -> Result<Self, String> {
         if let Some(refusal) = session.refusal() {
             return Err(format!("{refusal} ('{plugin_name}')"));
@@ -411,8 +578,12 @@ impl Vst3Editor {
             }
         }
 
-        let state = Arc::new(EditorFrameState::new(window));
-        state.adopt(&view);
+        let state = Arc::new(EditorFrameState::new(window, scale_factor));
+        if !state.adopt(&view) {
+            return Err(format!(
+                "[VST3] '{plugin_name}': its editor view does not answer for its own identity"
+            ));
+        }
         let frame = ComWrapper::new(HostEditorFrame {
             state: Arc::clone(&state),
         });
@@ -442,11 +613,28 @@ impl Vst3Editor {
             return Err(error);
         }
 
+        // An editor whose descriptors and timers nobody services never draws and
+        // never answers a click, so a service thread that will not start is a
+        // refusal rather than a degraded editor.
+        #[cfg(target_os = "linux")]
+        let run_loop_service = match RunLoopService::start(Arc::clone(state.run_loop())) {
+            Ok(service) => Some(service),
+            Err(error) => {
+                // SAFETY: the view is attached and live; this is the detach the
+                // failure path owes before the frame and the view are released.
+                unsafe {
+                    view.removed();
+                    view.setFrame(ptr::null_mut());
+                }
+                return Err(format!("[VST3] '{plugin_name}': {error}"));
+            }
+        };
+
         Ok(Self {
             view,
             _frame: frame,
             #[cfg(target_os = "linux")]
-            run_loop_service: Some(RunLoopService::start(Arc::clone(state.run_loop()))),
+            run_loop_service,
             state,
         })
     }
@@ -461,7 +649,8 @@ impl Vst3Editor {
         &self.state
     }
 
-    /// Resize the editor because the *host* wants a different size.
+    /// Resize the editor because the *host* wants a different size, stated in
+    /// the logical units the window seam speaks.
     ///
     /// The plugin decides what it will accept: `canResize` says whether the
     /// question may be asked at all, and `checkSizeConstraint` rewrites the rect
@@ -480,30 +669,35 @@ impl Vst3Editor {
             }
             let granted = self.negotiate_size(requested);
             self.state.end_resize();
-
-            let granted = granted?;
-            self.state.record_granted(granted);
-            self.state.resize_host_window(granted);
-            Ok(granted)
+            granted
         }
     }
 
+    /// Ask the view for a size, resize the window to what it allowed, and only
+    /// then tell the view to move — the same order the plugin's own request
+    /// takes, because a view told to move into a window that has not changed yet
+    /// lays itself out against the old one.
+    ///
     /// # Safety
     /// Called with the resize guard held, on the control path, with the view
     /// attached.
     unsafe fn negotiate_size(&self, requested: EditorSize) -> Result<EditorSize, String> {
-        let mut rect = requested.to_rect();
+        let mut rect = self.state.to_view_units(requested).to_rect();
         if self.view.checkSizeConstraint(&mut rect) != kResultTrue {
             return Err("[VST3] this editor refused the requested size".to_string());
         }
         let constrained = EditorSize::from_rect(&rect)
             .ok_or_else(|| "[VST3] this editor constrained the size to nothing".to_string())?;
+        let granted = self.state.to_logical(constrained);
 
-        let mut applied = constrained.to_rect();
-        if self.view.onSize(&mut applied) != kResultOk {
+        let previous = self.state.granted();
+        self.state.resize_host_window(granted);
+        if self.view.onSize(&mut rect) != kResultOk {
+            self.state.restore_granted(previous);
             return Err("[VST3] this editor refused to move to the constrained size".to_string());
         }
-        Ok(constrained)
+        self.state.record_granted(granted);
+        Ok(granted)
     }
 }
 
@@ -514,16 +708,30 @@ impl Drop for Vst3Editor {
     /// released while still attached leaves that window pointing at a host window
     /// that is about to go away. Clearing the frame afterwards means the plugin
     /// cannot call back into a host object whose last reference is about to drop.
+    ///
+    /// Before either of them the frame stops answering for the view and takes
+    /// the resize guard. `setFrame(null)` is not on its own enough: a plugin may
+    /// hold the frame past it, and a `resizeView` already in flight on another
+    /// thread — the Linux service thread, or the shell's — would otherwise
+    /// compare against a pointer this drop is about to free and call `onSize`
+    /// through a released vtable.
     fn drop(&mut self) {
         // The service thread calls into handlers the editor registered, so it
         // stops before anything the editor owns is torn down.
         #[cfg(target_os = "linux")]
         drop(self.run_loop_service.take());
 
+        self.state.disown();
+        let guarded = self.state.acquire_resize_guard_for_teardown();
+
         // SAFETY: the view is attached and live until these two calls.
         unsafe {
             self.view.removed();
             self.view.setFrame(ptr::null_mut());
+        }
+
+        if guarded {
+            self.state.end_resize();
         }
     }
 }
@@ -554,13 +762,17 @@ unsafe fn attach(
     plugin_name: &str,
 ) -> Result<(), String> {
     if platform_states_content_scale() {
-        apply_content_scale(view, HOST_CONTENT_SCALE);
+        apply_content_scale(view, state.view_units_per_logical as f32);
     }
 
-    let preferred = read_view_size(view)
-        .ok_or_else(|| format!("[VST3] '{plugin_name}' would not state a size for its editor"))?;
-    state.record_granted(preferred);
-    state.resize_host_window(preferred);
+    // A view that states no size yet is not a refusal: plugins exist that only
+    // know their size once they can see a parent, so the pre-attach window
+    // resize is skipped and the question asked again below.
+    let preferred = read_view_size(view).map(|size| state.to_logical(size));
+    if let Some(preferred) = preferred {
+        state.record_granted(preferred);
+        state.resize_host_window(preferred);
+    }
 
     if view.attached(parent, view_type) != kResultOk {
         return Err(format!(
@@ -570,9 +782,16 @@ unsafe fn attach(
 
     // A plugin may settle on a different size once it can see its parent, and the
     // window the host is about to show has to match.
-    if let Some(attached) = read_view_size(view) {
-        state.record_granted(attached);
-    }
+    let settled = read_view_size(view).map(|size| state.to_logical(size));
+    let Some(size) = settled.or(preferred) else {
+        // The view is attached now, so the caller's `setFrame(null)` is no
+        // longer enough on its own: the detach it owes has to run first.
+        view.removed();
+        return Err(format!(
+            "[VST3] '{plugin_name}' would not state a size for its editor"
+        ));
+    };
+    state.record_granted(size);
     Ok(())
 }
 
@@ -685,6 +904,123 @@ mod tests {
             }),
             None
         );
+    }
+
+    /// On the platforms whose `ViewRect` is physical pixels, a view's own size
+    /// is twice the window's on a 2x display. A host that hands that number
+    /// straight to a window seam that speaks logical units opens an editor at
+    /// double size with the plugin drawing in a quarter of it.
+    #[test]
+    fn a_physical_pixel_size_converts_both_ways_across_the_window_seam() {
+        let view_size = EditorSize {
+            width: 1600,
+            height: 1200,
+        };
+        let window_size = EditorSize {
+            width: 800,
+            height: 600,
+        };
+
+        assert_eq!(view_size.to_logical(2.0), window_size);
+        assert_eq!(window_size.to_view_units(2.0), view_size);
+    }
+
+    /// Fractional scales are the common Windows case (125%, 150%), and they do
+    /// not divide evenly. Rounding is the only answer a window can take, and a
+    /// size must never round away to nothing.
+    #[test]
+    fn a_fractional_scale_rounds_rather_than_truncating_or_vanishing() {
+        assert_eq!(
+            EditorSize {
+                width: 1001,
+                height: 751
+            }
+            .to_logical(1.25),
+            EditorSize {
+                width: 801,
+                height: 601
+            }
+        );
+        assert_eq!(
+            EditorSize {
+                width: 1,
+                height: 1
+            }
+            .to_logical(100.0),
+            EditorSize {
+                width: 1,
+                height: 1
+            }
+        );
+    }
+
+    /// macOS states `ViewRect` in the same logical points the window seam sizes
+    /// in, so converting there would halve every editor on a Retina display.
+    /// Windows and X11 state physical pixels, and the display's scale is the
+    /// conversion.
+    #[test]
+    fn only_the_platforms_whose_view_rect_is_physical_convert_by_the_display_scale() {
+        let expected = if cfg!(any(target_os = "windows", target_os = "linux")) {
+            2.0
+        } else {
+            1.0
+        };
+
+        assert_eq!(view_units_per_logical_unit(2.0), expected);
+    }
+
+    /// A scale the shell could not measure must convert nothing. Dividing by
+    /// zero or by a NaN destroys every size that crosses the seam.
+    #[test]
+    fn a_scale_the_shell_could_not_measure_converts_nothing() {
+        for unusable in [0.0, -2.0, f64::NAN, f64::INFINITY] {
+            assert_eq!(view_units_per_logical_unit(unusable), 1.0);
+        }
+    }
+
+    /// COM identity is defined on `FUnknown` alone. An object that implements
+    /// two interfaces hands out a different address for each, so comparing
+    /// interface pointers answers "different objects" about one object — which
+    /// is how a frame ends up refusing its own view's resize.
+    #[test]
+    fn one_object_has_one_identity_whatever_interface_it_is_asked_through() {
+        struct TwoFacedObject;
+
+        impl Class for TwoFacedObject {
+            type Interfaces = (IPlugFrame, IPlugViewContentScaleSupport);
+        }
+
+        impl IPlugFrameTrait for TwoFacedObject {
+            unsafe fn resizeView(&self, _view: *mut IPlugView, _size: *mut ViewRect) -> tresult {
+                kResultOk
+            }
+        }
+
+        impl IPlugViewContentScaleSupportTrait for TwoFacedObject {
+            unsafe fn setContentScaleFactor(&self, _scale: f32) -> tresult {
+                kResultOk
+            }
+        }
+
+        let object = ComWrapper::new(TwoFacedObject);
+        let frame = object
+            .as_com_ref::<IPlugFrame>()
+            .expect("the object implements IPlugFrame")
+            .as_ptr();
+        let scaling = object
+            .as_com_ref::<IPlugViewContentScaleSupport>()
+            .expect("the object implements IPlugViewContentScaleSupport")
+            .as_ptr();
+
+        assert!(
+            !ptr::eq(frame.cast::<u8>(), scaling.cast::<u8>()),
+            "the two interfaces must sit at different addresses, or this proves nothing"
+        );
+        // SAFETY: both pointers borrow the live object this test owns.
+        let (frame_identity, scaling_identity) =
+            unsafe { (com_identity(frame), com_identity(scaling)) };
+        assert!(frame_identity.is_some());
+        assert_eq!(frame_identity, scaling_identity);
     }
 
     /// A `ViewRect` is a rectangle, not an origin and a size: an editor placed

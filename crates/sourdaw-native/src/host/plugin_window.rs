@@ -156,6 +156,20 @@ pub trait PluginEditorWindow: Send + Sync {
     /// Resize to the plugin's preferred editor size, in logical units.
     fn set_size(&self, width: u32, height: u32);
 
+    /// The display scale this window was created at.
+    ///
+    /// A plugin editor is not always sized in the same units the window is: VST3
+    /// states its editor rect in physical pixels on Windows and X11, and expects
+    /// to be told the scale it is running at. The shell is the only side that
+    /// can measure it, so it reports it here, once, at creation.
+    ///
+    /// The default is [`daw_plugin_host::DEFAULT_EDITOR_CONTENT_SCALE`], for an
+    /// implementation with no display to measure — the scan worker and the tests
+    /// both have none.
+    fn scale_factor(&self) -> f64 {
+        daw_plugin_host::DEFAULT_EDITOR_CONTENT_SCALE
+    }
+
     /// Make the window visible and give it focus.
     fn show_and_focus(&self);
 

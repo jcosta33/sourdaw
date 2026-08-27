@@ -48,6 +48,10 @@ pub struct CreateEditorWindowResponse {
     /// refused a parent, the shell has already applied the always-on-top
     /// fallback.
     pub parented: bool,
+    /// The display scale the window was created at. The shell is the only side
+    /// that can measure it, and a plugin editor whose rect is in physical
+    /// pixels cannot be sized without it.
+    pub scale_factor: f64,
     pub error: Option<String>,
 }
 
@@ -126,10 +130,16 @@ fn window_exists_over_js(
         .map_err(|_| "Window host did not answer the existence probe in time".to_string())?
 }
 
+/// What a created editor window is: where to draw, and at what scale.
+struct CreatedWindow {
+    handle: usize,
+    scale_factor: f64,
+}
+
 fn create_over_js(
     callbacks: &JsWindowCallbacks,
     request: CreateEditorWindowRequest,
-) -> std::result::Result<usize, String> {
+) -> std::result::Result<CreatedWindow, String> {
     let label = request.label.clone();
     let (sender, receiver) = mpsc::channel();
     let status = callbacks.create.call_with_return_value(
@@ -141,7 +151,12 @@ fn create_over_js(
             let answer = match response {
                 Ok(response) => match (response.error, response.handle) {
                     (Some(error), _) => Err(error),
-                    (None, Some(handle)) => native_handle_from_bytes(&handle),
+                    (None, Some(handle)) => {
+                        native_handle_from_bytes(&handle).map(|handle| CreatedWindow {
+                            handle,
+                            scale_factor: response.scale_factor,
+                        })
+                    }
                     (None, None) => {
                         Err("Window host returned neither a handle nor an error".to_string())
                     }
@@ -181,7 +196,7 @@ impl PluginWindowHost for JsWindowHost {
         title: &str,
         instance_id: &str,
     ) -> std::result::Result<Box<dyn PluginEditorWindow>, String> {
-        let handle = create_over_js(
+        let created = create_over_js(
             &self.callbacks,
             CreateEditorWindowRequest {
                 label: label.to_string(),
@@ -191,7 +206,8 @@ impl PluginWindowHost for JsWindowHost {
         )?;
         Ok(Box::new(JsEditorWindow {
             label: label.to_string(),
-            handle,
+            handle: created.handle,
+            scale_factor: created.scale_factor,
             callbacks: Arc::clone(&self.callbacks),
         }))
     }
@@ -217,6 +233,7 @@ impl PluginWindowHost for JsWindowHost {
 struct JsEditorWindow {
     label: String,
     handle: usize,
+    scale_factor: f64,
     callbacks: Arc<JsWindowCallbacks>,
 }
 
@@ -225,6 +242,14 @@ impl PluginEditorWindow for JsEditorWindow {
         Ok(self.handle as *mut std::ffi::c_void)
     }
 
+    fn scale_factor(&self) -> f64 {
+        self.scale_factor
+    }
+
+    /// Queued, not applied: this crosses to the shell as a non-blocking call, so
+    /// the window takes the size a turn of the shell's loop later. A plugin
+    /// mid-handshake is told its granted size before that lands — a seam
+    /// limitation shared with the CLAP editor path, tracked separately.
     fn set_size(&self, width: u32, height: u32) {
         let _ = self.callbacks.set_size.call(
             EditorWindowSizeRequest {

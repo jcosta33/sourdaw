@@ -13,7 +13,7 @@
 use crate::params::PluginParameter;
 use crate::traits::{
     AudioPlugin, EditorWindowResizer, HostParameterUpdate, HostTransport, HostedPluginRuntime,
-    LatencyChangeNotifier, ProcessingGate,
+    LatencyChangeNotifier, ProcessingGate, DEFAULT_EDITOR_CONTENT_SCALE,
 };
 use crate::vst3_bus_layout::{
     activate_main_audio_bus, negotiate_bus_layout, silent_channel_flags, BusGeometry, BusLayout,
@@ -969,6 +969,10 @@ pub struct Vst3Wrapper {
     /// the backend. Held here rather than in the editor because it is installed
     /// before the editor exists.
     editor_window: Option<EditorWindowResizer>,
+    /// The display scale the host window an editor will be parented into runs
+    /// at, as the shell measured it. Held here for the same reason the resizer
+    /// is: it is stated before the editor exists.
+    editor_scale: f64,
 
     descriptor_id: String,
     sample_rate: f64,
@@ -1036,6 +1040,7 @@ impl Vst3Wrapper {
             instance,
             has_editor: OnceLock::new(),
             editor_window: None,
+            editor_scale: DEFAULT_EDITOR_CONTENT_SCALE,
             descriptor_id: format_class_id(&class_id),
             sample_rate,
             activated: false,
@@ -1176,6 +1181,7 @@ impl Vst3Wrapper {
             self.instance.name(),
             EditorSession::current(),
             self.editor_window.clone(),
+            self.editor_scale,
         )?;
         let size = editor.size();
         self.editor = Some(editor);
@@ -1668,6 +1674,10 @@ impl AudioPlugin for Vst3Wrapper {
 
     fn set_editor_window_resizer(&mut self, resize: EditorWindowResizer) {
         self.editor_window = Some(resize);
+    }
+
+    fn set_editor_content_scale(&mut self, scale: f64) {
+        self.editor_scale = scale;
     }
 }
 

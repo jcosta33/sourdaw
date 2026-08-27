@@ -43,6 +43,14 @@ impl PluginInstanceData {
         self.plugin.set_editor_window_resizer(resize);
     }
 
+    /// Tell the plugin the display scale its editor's host window runs at.
+    ///
+    /// Stated before `open_gui` for the same reason the resizer is: a view may
+    /// state its size, in units this scale converts, from inside the attach.
+    pub fn set_editor_content_scale(&mut self, scale: f64) {
+        self.plugin.set_editor_content_scale(scale);
+    }
+
     /// Open the plugin GUI, parenting it into the given native handle.
     pub fn open_gui(&mut self, handle_ptr: *mut c_void) -> Result<(u32, u32), String> {
         self.plugin.open_gui(handle_ptr)

@@ -13,7 +13,18 @@
 import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 
-import { app, BaseWindow, BrowserWindow, dialog, ipcMain, Menu, session, shell, utilityProcess } from 'electron';
+import {
+    app,
+    BaseWindow,
+    BrowserWindow,
+    dialog,
+    ipcMain,
+    Menu,
+    screen,
+    session,
+    shell,
+    utilityProcess,
+} from 'electron';
 
 import {
     registerDialogChannels,
@@ -319,6 +330,20 @@ const createUtilityScanSupervisor = (addonPath: string): ScanSupervisor =>
  * `resizable: false` because that size is the plugin's to choose. 800×600 is
  * only the pre-lifecycle placeholder the addon immediately resizes.
  */
+/**
+ * The scale of the display a new plugin editor window lands on.
+ *
+ * Matched against the DAW window, because that is where the editor opens: an
+ * editor sized against the primary display's scale is the wrong size on every
+ * other one. Read once per create — an editor dragged to a display of a
+ * different scale is not re-scaled, which is tracked separately.
+ */
+const editorWindowScaleFactor = (): number => {
+    const daw = mainWindow !== undefined && !mainWindow.isDestroyed() ? mainWindow : undefined;
+    const display = daw === undefined ? screen.getPrimaryDisplay() : screen.getDisplayMatching(daw.getBounds());
+    return display.scaleFactor;
+};
+
 const createEditorWindow = (options: EditorWindowOptions): EditorWindow =>
     new BaseWindow({
         width: 800,
@@ -382,6 +407,7 @@ const startNativeSurface = (): void => {
         registerPluginWindowHost(nativeHost, {
             createWindow: createEditorWindow,
             getParentWindow: () => (mainWindow !== undefined && !mainWindow.isDestroyed() ? mainWindow : undefined),
+            getScaleFactor: editorWindowScaleFactor,
         });
     }
 };

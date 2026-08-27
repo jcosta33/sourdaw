@@ -62,6 +62,21 @@ fn editor_window_resizer(window: &Arc<dyn PluginEditorWindow>) -> EditorWindowRe
     Arc::new(move |width, height| window.set_size(width, height))
 }
 
+/// Give the plugin everything about the host window, then open its editor.
+///
+/// The order is the point: a view laying itself out against its new parent may
+/// resize itself, and may state its size in units it has to be told the scale
+/// for, both from inside the attach. A plugin told either of those after the
+/// open draws at a size the window never took.
+fn open_editor_with_host_window_stated_first<Plugin: ?Sized, Opened>(
+    plugin: &mut Plugin,
+    state_host_window: impl FnOnce(&mut Plugin),
+    open_editor: impl FnOnce(&mut Plugin) -> Opened,
+) -> Opened {
+    state_host_window(plugin);
+    open_editor(plugin)
+}
+
 /// Open the plugin GUI in a floating native window.
 ///
 /// MUST be async — creating windows from a synchronous command deadlocks on
@@ -139,16 +154,20 @@ pub async fn open_plugin_gui(
         }
     };
 
-    // 4. Give the plugin a way to resize this window, then open its GUI.
-    //
-    // The resizer goes in first: a view laying itself out against its new parent
-    // may ask for a size during the attach itself, and a plugin that asks before
-    // the host can answer draws at a size the window never took.
+    // 4. Give the plugin the host window — how to resize it, and what scale it
+    //    runs at — then open its GUI.
+    let resize_window = editor_window_resizer(&plugin_window);
+    let scale_factor = plugin_window.scale_factor();
     let gui_size_result = if let Some(runtime) = engine_runtime.as_ref() {
-        let resize_window = editor_window_resizer(&plugin_window);
         runtime.with_control(std::time::Duration::from_secs(2), |plugin| {
-            plugin.set_editor_window_resizer(resize_window);
-            plugin.open_gui(handle_ptr)
+            open_editor_with_host_window_stated_first(
+                plugin,
+                |plugin| {
+                    plugin.set_editor_window_resizer(resize_window);
+                    plugin.set_editor_content_scale(scale_factor);
+                },
+                |plugin| plugin.open_gui(handle_ptr),
+            )
         })
     } else {
         let mut plugins = state
@@ -159,8 +178,14 @@ pub async fn open_plugin_gui(
             .get_mut(&instance_id)
             .ok_or_else(|| format!("No plugin instance: {}", instance_id))?;
 
-        instance.set_editor_window_resizer(editor_window_resizer(&plugin_window));
-        instance.open_gui(handle_ptr)
+        open_editor_with_host_window_stated_first(
+            instance,
+            |instance| {
+                instance.set_editor_window_resizer(resize_window);
+                instance.set_editor_content_scale(scale_factor);
+            },
+            |instance| instance.open_gui(handle_ptr),
+        )
     };
 
     let (width, height) = match gui_size_result {
@@ -927,6 +952,27 @@ mod tests {
 
         assert_eq!(result, Ok(()));
         assert_eq!(order.borrow().as_slice(), ["insert", "show"]);
+    }
+
+    /// A view lays itself out against its new parent from inside the attach, and
+    /// it may resize itself or state a size in scaled units while it does. Both
+    /// answers have to be installed before the open, or the editor draws at a
+    /// size the host window never took.
+    #[test]
+    fn open_editor_with_host_window_stated_first_states_the_window_before_the_open() {
+        let mut order: Vec<&'static str> = Vec::new();
+
+        let opened = open_editor_with_host_window_stated_first(
+            &mut order,
+            |order| order.push("window"),
+            |order| {
+                order.push("open");
+                (640, 480)
+            },
+        );
+
+        assert_eq!(opened, (640, 480));
+        assert_eq!(order.as_slice(), ["window", "open"]);
     }
 
     #[test]

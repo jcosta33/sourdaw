@@ -41,6 +41,13 @@ pub type LatencyChangeNotifier = Box<dyn Fn() + Send + Sync>;
 /// request through. Called on the control path only.
 pub type EditorWindowResizer = Arc<dyn Fn(u32, u32) + Send + Sync>;
 
+/// The display scale a backend assumes until the host states one.
+///
+/// One converts nothing, which is the right answer wherever a format's editor
+/// rect is already in the units the host's window seam speaks — and the only
+/// answer that cannot be wrong when nothing has been measured.
+pub const DEFAULT_EDITOR_CONTENT_SCALE: f64 = 1.0;
+
 /// One host-side parameter write waiting to reach a plugin.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct HostParameterUpdate {
@@ -226,6 +233,15 @@ pub trait AudioPlugin: Send + Sync {
     /// is empty for the same reason the rest of the GUI four carry defaults: a
     /// backend with no editor has no resize to answer.
     fn set_editor_window_resizer(&mut self, _resize: EditorWindowResizer) {}
+
+    /// State the display scale the editor's host window runs at, before the
+    /// editor is opened.
+    ///
+    /// Installed rather than passed to `open_gui` for the same reason the
+    /// resizer is: it is a property of the window, which exists before the
+    /// editor does. A backend that is never told one keeps
+    /// [`DEFAULT_EDITOR_CONTENT_SCALE`].
+    fn set_editor_content_scale(&mut self, _scale: f64) {}
 
     /// Whether the plugin accepts note events.
     ///
