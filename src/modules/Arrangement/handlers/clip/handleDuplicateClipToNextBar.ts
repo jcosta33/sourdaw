@@ -1,6 +1,8 @@
 import { serializeMidiStateForClips } from '#/modules/MIDI/useCases';
 import { createHandler } from '#/utils/createHandler';
+import { type GeneratedMidiStateGuard } from '#/utils/handlerContract';
 
+import { serializeClipSatelliteEntries } from '../../stores/clipSatelliteState';
 import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClipWriteTarget';
 import { duplicateClipToNextBar } from '../../useCases/clip/duplicateClipToNextBar';
 import { prepareDuplicateClipTargetId } from '../../useCases/clip/prepareDuplicateClipTargetId';
@@ -11,7 +13,7 @@ type DuplicateClipToNextBarAction = { payload: { clipId: string; targetClipId?: 
 
 type DuplicateClipToNextBarState = {
     targetClipId: string;
-    generatedMidiStateGuard: { entityJson: string; midiByClipIdJson: string };
+    generatedMidiStateGuard: GeneratedMidiStateGuard;
 };
 
 const duplicateClipToNextBarStates = new WeakMap<object, DuplicateClipToNextBarState>();
@@ -91,6 +93,9 @@ export const handleDuplicateClipToNextBar = createHandler<'duplicateClipToNextBa
         if (duplicatedClip) {
             state.generatedMidiStateGuard.entityJson = JSON.stringify(duplicatedClip);
             state.generatedMidiStateGuard.midiByClipIdJson = serializeMidiStateForClips([duplicatedClip.id]);
+            // Same contract as handleDuplicateClip: the duplicate itself clones
+            // the source's satellites, so the guard expects exactly those.
+            state.generatedMidiStateGuard.clipSatellitesJson = serializeClipSatelliteEntries([duplicatedClip.id]);
         }
         return toHandlerExecutionResult(true);
     },

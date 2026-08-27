@@ -125,6 +125,13 @@ describe('compound bus AppAction batch', () => {
         expect(bus?.devices[0]?.id).toMatch(/^device-/u);
         expect(bus?.devices[0]?.type).toBe('builtin-reverb');
         expect(vocals?.sends).toEqual([{ busId: BUS_ID, level: 0.25, preFader: false }]);
+        expect(runtimeMocks.applyRuntimeGraphDelta).toHaveBeenCalledWith(
+            expect.objectContaining({
+                command: 'replace-track-device-chain',
+                operation: 'add-device',
+                after: expect.objectContaining({ id: BUS_ID }),
+            })
+        );
         expect(runtimeMocks.engineSetSend).toHaveBeenCalledWith('track-vocals', BUS_ID, 0.25, false);
     });
 });

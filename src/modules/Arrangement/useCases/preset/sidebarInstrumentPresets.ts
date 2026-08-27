@@ -34,7 +34,7 @@ export const SIDEBAR_INSTRUMENT_PRESETS: readonly SoundPreset[] = Object.freeze(
         category: 'keys',
         description: 'Unified Sampler Suite',
         trackKind: 'midi',
-        devices: [{ type: 'builtin-sampler', name: 'Sampler', parameterValues: {} }],
+        devices: [{ type: 'builtin-crumbs', name: 'Sampler', parameterValues: {} }],
         tags: ['sampler', 'sample', 'playback'],
         author: 'Sourdaw',
         isFactory: true,

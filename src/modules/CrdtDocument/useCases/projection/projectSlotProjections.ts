@@ -85,11 +85,11 @@ function slotProjection(input: SlotProjectionInput): ProjectSlotProjection {
 /** Every project-state store backed by AutomergeStorage on the root document. */
 export const projectSlotProjections: readonly ProjectSlotProjection[] = [
     slotProjection({ slot: 'tracks', getStore: () => trackStore }),
+    slotProjection({ slot: 'adjustmentLayers', getStore: () => adjustmentLayerStore }),
     slotProjection({ slot: 'takeLanes', getStore: () => takeLaneStore }),
     slotProjection({ slot: 'markers', getStore: () => markerStore }),
     slotProjection({ slot: 'vcaGroups', getStore: () => vcaGroupStore }),
     slotProjection({ slot: 'gainEnvelopes', getStore: () => gainEnvelopeStore }),
-    slotProjection({ slot: 'adjustmentLayers', getStore: () => adjustmentLayerStore }),
     slotProjection({ slot: 'automation', getStore: () => automationStore }),
     slotProjection({ slot: 'modulation', getStore: () => modulationStore }),
     slotProjection({ slot: 'transport', getStore: () => transportStore }),

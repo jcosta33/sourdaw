@@ -67,7 +67,7 @@ describe('getFactoryPresets platform cache', () => {
         }
     });
 
-    it('rebuilds the cache when the runtime switches to the native desktop platform', async () => {
+    it('rebuilds the cache with native-only presets when the runtime switches to desktop', async () => {
         const { getFactoryPresets: freshGetFactoryPresets } = await import('../soundPresetLibrary');
 
         // Web platform (no desktop bridge): builds and caches the web catalogue.
@@ -80,7 +80,13 @@ describe('getFactoryPresets platform cache', () => {
 
         // Native rebuild invalidates the web cache entry, producing a fresh array.
         expect(nativePresets).not.toBe(webPresets);
-        // Release admission does not change by runtime.
-        expect(nativePresets.map((preset) => preset.id)).toEqual(webPresets.map((preset) => preset.id));
+        const webPresetIds = new Set(webPresets.map((preset) => preset.id));
+        const nativePresetIds = nativePresets.map((preset) => preset.id);
+
+        // Release admission is runtime-independent, but platform capability is
+        // not: Crumbs can acquire samples only through the desktop bridge, so
+        // its sampler shortcut is the one native-only catalogue entry.
+        expect(nativePresetIds.filter((id) => !webPresetIds.has(id))).toEqual(['sampler-default']);
+        expect(webPresets.every(({ id }) => nativePresetIds.includes(id))).toBe(true);
     });
 });

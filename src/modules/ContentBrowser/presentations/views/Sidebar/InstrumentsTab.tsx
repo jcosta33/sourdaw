@@ -61,7 +61,7 @@ const INSTRUMENT_GROUPS: InstrumentGroup[] = [
 ];
 
 // Device types that have their own internal preset explorers (excluded from Sounds)
-const CUSTOM_UI_DEVICE_TYPES = new Set(['fermenter', 'toaster', 'levain', 'builtin-sampler', 'grand-boule']);
+const CUSTOM_UI_DEVICE_TYPES = new Set(['fermenter', 'toaster', 'levain', 'builtin-crumbs', 'grand-boule']);
 const GRAND_BOULE_RELEASED = isDeviceReleaseAdmitted('grand-boule');
 
 // Categories that belong in the Effects tab, not here
@@ -118,6 +118,10 @@ export const InstrumentsTab = ({
 
     const factoryPresets = getFactoryPresets();
     const userPresets = getUserPresets();
+    // The catalogue is already filtered through the platform/preset support
+    // contract. Crumbs has no browser runtime, so only advertise its custom
+    // card when the canonical sampler preset is present for this platform.
+    const crumbsSupported = factoryPresets.some((preset) => preset.id === 'sampler-default');
     const query = searchQuery.toLowerCase().trim();
 
     const matchesSearch = (preset: SoundPreset): boolean => {
@@ -286,7 +290,7 @@ export const InstrumentsTab = ({
                         />
                     );
                 case 'crumbs':
-                    return (
+                    return crumbsSupported ? (
                         <InstrumentCard
                             icon={Disc3}
                             label="Crumbs"
@@ -295,7 +299,7 @@ export const InstrumentsTab = ({
                             onClick={handleAddCrumbsTrack}
                             theme={CRUMBS_THEME}
                         />
-                    );
+                    ) : null;
                 case 'grand-boule':
                     return GRAND_BOULE_RELEASED ? (
                         <InstrumentCard
@@ -313,6 +317,7 @@ export const InstrumentsTab = ({
         };
 
         const premiumMatches = ['fermenter', 'toaster', 'levain', 'crumbs', 'grand-boule']
+            .filter((id) => id !== 'crumbs' || crumbsSupported)
             .filter((id) => id !== 'grand-boule' || GRAND_BOULE_RELEASED)
             .filter((id) => {
                 const name = id.replace('-', ' ');
@@ -433,14 +438,16 @@ export const InstrumentsTab = ({
                     onClick={handleAddLevainTrack}
                     theme={LEVAIN_THEME}
                 />
-                <InstrumentCard
-                    icon={Disc3}
-                    label="Crumbs"
-                    badge="Sample"
-                    description="Quick · Drum · Slice · Warp — drag & drop any audio"
-                    onClick={handleAddCrumbsTrack}
-                    theme={CRUMBS_THEME}
-                />
+                {crumbsSupported ? (
+                    <InstrumentCard
+                        icon={Disc3}
+                        label="Crumbs"
+                        badge="Sample"
+                        description="Quick · Drum · Slice · Warp — drag & drop any audio"
+                        onClick={handleAddCrumbsTrack}
+                        theme={CRUMBS_THEME}
+                    />
+                ) : null}
                 {GRAND_BOULE_RELEASED ? (
                     <InstrumentCard
                         icon={Piano}

@@ -1,4 +1,4 @@
-import { fileURLToPath } from 'node:url';
+import { resolve } from 'node:path';
 
 import { defineConfig, devices } from '@playwright/test';
 
@@ -8,6 +8,7 @@ const WEBGPU_ADMISSION_ORIGIN = `http://localhost:${WEBGPU_ADMISSION_PORT}`;
 // This proof must exercise this checkout. Reusing the shared default Vite port
 // can silently attach it to another worktree's server and report stale code as
 // current evidence.
+// oxlint-disable-next-line import/no-default-export -- Playwright requires this export shape.
 export default defineConfig({
     testDir: '.',
     testMatch: 'browserAiWebGpuAdmission.spec.ts',
@@ -24,6 +25,9 @@ export default defineConfig({
     projects: [
         {
             name: 'chromium',
+            metadata: {
+                browserAiWebGpuHardware: 'required',
+            },
             use: {
                 ...devices['Desktop Chrome'],
                 headless: false,
@@ -32,7 +36,7 @@ export default defineConfig({
     ],
     webServer: {
         command: `pnpm dev --host 127.0.0.1 --port ${WEBGPU_ADMISSION_PORT} --strictPort`,
-        cwd: fileURLToPath(new URL('../..', import.meta.url)),
+        cwd: resolve(import.meta.dirname, '../..'),
         url: WEBGPU_ADMISSION_ORIGIN,
         reuseExistingServer: false,
         gracefulShutdown: { signal: 'SIGTERM', timeout: 5_000 },

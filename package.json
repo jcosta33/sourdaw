@@ -16,7 +16,7 @@
         "build": "vite build",
         "preview": "vite preview",
         "test:watch": "vitest",
-        "test:health-gates": "sh scripts/test-health-gate-scripts.sh",
+        "test:health-gates": "pnpm test:run scripts/__tests__/healthGatesWorkflow.spec.ts && sh scripts/test-health-gate-scripts.sh",
         "health:web:full": "sh scripts/health-gates-web.sh",
         "health:server:full": "sh scripts/health-gates-server.sh",
         "test:run": "node scripts/runVitestZeroTestGuard.ts",

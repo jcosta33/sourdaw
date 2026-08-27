@@ -301,10 +301,10 @@ describe('offline device-param automation capability coverage', () => {
         // change to a wire format the crate shares and is not what that PR did.
         expect(census.parameterLevelExemptions).toBe(23);
 
-        // (v) `knead` is a factory entry and a canonical native device type with
-        // no descriptor anywhere. It is not an exemption row: two of the three
-        // laws that read a descriptor fail *open* when none is found, so a
-        // Knead parameter is automatable and unclamped by default. AC-6 owns it.
+        // (v) Every native factory now has a descriptor. This stays a separate
+        // census class because an undescribed factory falls outside both the
+        // parameter range and automation laws; neither exemption table may hide
+        // it.
         expect(census.noDescriptorFactories).toEqual([...NO_DESCRIPTOR_NATIVE_DEVICE_TYPES]);
     });
 

@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
     resolveEligibleClipWriteTarget: vi.fn(),
     getTrackStoreState: vi.fn(),
     serializeMidiStateForClips: vi.fn(() => '{"notesByClipId":{}}'),
+    serializeClipSatelliteEntries: vi.fn(() => '[{"clipId":"clip-copy","gainEnvelope":null,"warpState":null}]'),
 }));
 
 vi.mock('../../../useCases/clip/duplicateClipToNextBar', () => ({
@@ -28,6 +29,10 @@ vi.mock('../../../useCases/getTrackStoreState', () => ({
 
 vi.mock('#/modules/MIDI/useCases', () => ({
     serializeMidiStateForClips: mocks.serializeMidiStateForClips,
+}));
+
+vi.mock('../../../stores/clipSatelliteState', () => ({
+    serializeClipSatelliteEntries: mocks.serializeClipSatelliteEntries,
 }));
 
 describe('handleDuplicateClipToNextBar', () => {
@@ -122,10 +127,12 @@ describe('handleDuplicateClipToNextBar', () => {
                 generatedMidiStateGuard: {
                     entityJson: JSON.stringify(duplicatedClip),
                     midiByClipIdJson: '{"notesByClipId":{}}',
+                    clipSatellitesJson: '[{"clipId":"clip-copy","gainEnvelope":null,"warpState":null}]',
                 },
             },
         });
         expect(mocks.serializeMidiStateForClips).toHaveBeenCalledWith(['clip-copy']);
+        expect(mocks.serializeClipSatelliteEntries).toHaveBeenCalledWith(['clip-copy']);
     });
 
     it('is undoable', () => {
