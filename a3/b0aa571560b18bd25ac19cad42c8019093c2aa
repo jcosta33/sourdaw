@@ -1,0 +1,116 @@
+src/modules/PluginHost/useCases/pluginLifecycle/__tests__/activateExternalPlugin.spec.ts
+  s_1b9333aca53d4d::t_096e1272faff6c 93,126,132-134,216,253-258,261-266,283-287,294,297-299,321,337,353,381
+  s_1b9333aca53d4d::t_5816da07243e5c 21,61-66,82-92,94-99,104,111,116,123-125,127-128,135-137,145,148,164,194-196,200-202,210-212,215,228,239,288,295-296,300-320,322-336,338-341,350-352,354-355,379-380,382-390,405-410,424-441,454-459
+crates/daw-engine/src/audio_thread.rs
+  s_1b9333aca53d4d::t_6e143880659269 220
+  s_1b9333aca53d4d::t_0f42059c5c87de 445-455
+  s_1b9333aca53d4d::t_1b5a9a5c9318c7 283-288
+  s_1b9333aca53d4d::t_7e95f4fc23e0cd 394
+  s_1b9333aca53d4d::t_20a0e2b8349797 23
+  s_1b9333aca53d4d::t_07eea1270b49a9 242,251-252,264
+src/modules/AudioEngine/useCases/latencyCompensation/compensation/externalLatencyRegistry.ts
+  s_1b9333aca53d4d::t_6181418d076049 4-21,31
+  s_1b9333aca53d4d::t_25effea192f810 3
+src/modules/PluginHost/repositories/pluginBridge/types.ts
+  s_1b9333aca53d4d::t_e7c67a47768300 25-28,33-45
+crates/daw-engine/src/audio_bridge.rs
+  s_1b9333aca53d4d::t_f70de9df0a87d0 38-85
+  s_1b9333aca53d4d::t_b4f3d503c66752 440-468,472-474
+  s_1b9333aca53d4d::t_caea8e1c83035b 216-219
+src/modules/Arrangement/useCases/projectTrackToLiveStrip.ts
+  s_1b9333aca53d4d::t_eb26ec01bf2503 2,4
+  s_1b9333aca53d4d::t_12edd9feab20ff 101-103,105
+crates/sourdaw-native/src/addon/mod.rs
+  s_1b9333aca53d4d::t_8b7be0977bc5ef 405-410,415
+src/modules/AudioEngine/useCases/latencyCompensation/compensation/__tests__/bridgeRoundTripCompensation.spec.ts
+  s_1b9333aca53d4d::t_cd42e66aba9b52 1-148
+src/modules/Arrangement/handlers/device/__tests__/handleLoadExternalPlugin.spec.ts
+  s_1b9333aca53d4d::t_bba450e59a4e41 215-221,227-229
+src/modules/Arrangement/useCases/__tests__/projectTrackToLiveStrip.spec.ts
+  s_1b9333aca53d4d::t_aa2c04377f40c8 10-12
+  s_1b9333aca53d4d::t_3a9cb3bc4316ee 173-176,180,185,189-190
+  s_817f0d665b5715::t_92bb728f87e620 31-32,60-61
+src/modules/PluginHost/repositories/pluginBridge/loadPlugin.ts
+  s_1b9333aca53d4d::t_bae0fe0757d2c7 5-13,23,27
+src/modules/AudioEngine/useCases/latencyCompensation/compensation/clearReportedLatency.ts
+  s_1b9333aca53d4d::t_6a3e74778c0f82 1,5
+src/modules/AudioEngine/useCases/index.ts
+  s_1b9333aca53d4d::t_2f4f4a4f7529ed 113
+crates/sourdaw-native/src/commands/plugins.rs
+  s_1b9333aca53d4d::t_3df852a121f318 873-877
+  s_1b9333aca53d4d::t_9af25ebdeb9819 1002
+  s_1b9333aca53d4d::t_3d23ebc4b6e8f5 968
+  s_1b9333aca53d4d::t_29e222a8c062ff 42-50
+  s_1b9333aca53d4d::t_b1a46ab35f740d 800,803-807
+  s_1b9333aca53d4d::t_5dfdc2dd5c49e2 897-902
+  s_1b9333aca53d4d::t_db04798d8f8e1e 981
+  s_1b9333aca53d4d::t_3b8945fbe71645 859-861
+  s_1b9333aca53d4d::t_03df7d155a2ae4 1700-1703
+  s_1b9333aca53d4d::t_6b21a0c5e7b8e7 2574-2669
+  s_1b9333aca53d4d::t_56c7242c066a3f 708-716,725-774
+  s_1b9333aca53d4d::t_2339f38c1ee29a 775
+  s_817f0d665b5715::t_f26e2f816007a5 2449,2694,2736,2908,2923,2977,3069
+src/modules/PluginHost/useCases/pluginLifecycle/activateExternalPlugin.ts
+  s_1b9333aca53d4d::t_62488c66e496a9 166
+  s_1b9333aca53d4d::t_712b4c76a09538 191-194
+  s_1b9333aca53d4d::t_1c14d47be6be98 25-37,45-46,49-57
+  s_1b9333aca53d4d::t_c9a31a20f626e8 92,94,98-107
+src/modules/PluginHost/useCases/pluginLifecycle/loadPlugin.ts
+  s_1b9333aca53d4d::t_6eb14688278cb4 5-14
+crates/daw-engine/src/lib.rs
+  s_1b9333aca53d4d::t_5bfe22ac0e632a 747-751
+  s_1b9333aca53d4d::t_a2c69edc7cae92 24,26
+  s_1b9333aca53d4d::t_4a22540312f884 108-110
+  s_1b9333aca53d4d::t_9ac69a1a75a53c 161,170-182
+  s_1b9333aca53d4d::t_37cff093ae8d0c 140
+  s_1b9333aca53d4d::t_a448fbe31e8934 743-746
+  s_1b9333aca53d4d::t_377997940c5551 183-184
+electron/__tests__/commands.spec.ts
+  s_1b9333aca53d4d::t_4c93a44a69a376 309-310
+  s_1b9333aca53d4d::t_b8291e58a8f51e 354
+  s_1b9333aca53d4d::t_a03814e0a316c8 395
+src/modules/Arrangement/handlers/device/handleLoadExternalPlugin.ts
+  s_1b9333aca53d4d::t_fd9bd5d7c4ee6e 1
+  s_1b9333aca53d4d::t_6d81329b96979e 120-122,124
+src/modules/AudioEngine/useCases/latencyCompensation/compensation/reportBridgeRoundTripFrames.ts
+  s_1b9333aca53d4d::t_734185c648104f 1-18
+src/modules/AudioEngine/useCases/latencyCompensation/compensation/getDeviceLatencyMs.ts
+  s_1b9333aca53d4d::t_5e4595e281bbb7 3,6-7,12-38,40-47,51
+crates/daw-engine/src/scheduler.rs
+  s_1b9333aca53d4d::t_bb51ec9d77f077 6
+  s_1b9333aca53d4d::t_a87e6322b976a0 1941-1943
+src/utils/sourdawCommandArguments.ts
+  s_1b9333aca53d4d::t_ab3e4a212c47dc 56
+src/modules/Arrangement/handlers/device/__tests__/handleLoadExternalPluginCommand.spec.ts
+  s_1b9333aca53d4d::t_b7f9a6e3bea00e 19-20,29-33
+src/modules/PluginHost/repositories/pluginBridge/__tests__/pluginBridge.spec.ts
+  s_1b9333aca53d4d::t_b2f3150cd64d39 33,43-48
+src/modules/PluginHost/useCases/pluginLifecycle/__tests__/lifecycle.spec.ts
+  s_1b9333aca53d4d::t_95c147d03a89fb 50-51,77,87,98,128,131,147,155
+src/modules/PluginHost/useCases/pluginLifecycle/__tests__/resetExternalPluginRuntimeForGraphRebuild.spec.ts
+  s_1b9333aca53d4d::t_3956f56e276699 45,65-69,92,99
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "a3b0aa571560b18bd25ac19cad42c8019093c2aa",
+  "prompts": {},
+  "sessions": {
+    "s_1b9333aca53d4d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "188b0d45-7765-49bd-8d6e-1eebbd450613",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_817f0d665b5715": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-af224ccd2411f5b33",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
