@@ -227,10 +227,11 @@ describe('handleReorderDevices', () => {
                 expectedBefore: currentTopology,
             },
         };
+        const batchContext: HandlerValidationContext = { actionIndex: 0, actions: [reorderAction] };
         mocks.getTrackStoreState.mockReturnValue({ tracks: [currentTrack] });
 
-        expect(handleReorderDevices.validate?.(reorderAction)).toBe(true);
-        expect(handleReorderDevices.execute(reorderAction)).toEqual({ status: 'no-write' });
+        expect(handleReorderDevices.validate?.(reorderAction, batchContext)).toBe(true);
+        expect(handleReorderDevices.execute(reorderAction, batchContext)).toEqual({ status: 'no-write' });
         expect(mocks.reorderDevicesInProject).not.toHaveBeenCalled();
         expect(mocks.applyDeviceChainRuntimeDelta).not.toHaveBeenCalled();
         expect(currentTrack.devices.map((device) => device.id)).toEqual(['device-1', 'device-2']);
