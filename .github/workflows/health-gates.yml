@@ -17,6 +17,12 @@ name: Health gates
 # already ran, which is deliberate — it costs nothing here, and the alternative
 # is a merge decided by results from an older head.
 #
+# A head that carries nothing but prose skips the legs that read only code. What
+# counts as prose is decided by exclusion: `docs/` and top-level Markdown, and
+# nothing else. Repository metadata is machine-read, so an issue template or a
+# workflow definition is a code-bearing change here, and so is any path nobody
+# has classified yet — the classifier fails towards running too much.
+#
 # `gate` is the stable workflow summary. It depends on every job whose result
 # currently decides that summary, and passes when each either succeeded or was
 # legitimately skipped. It is informational today: the live ruleset requires no
@@ -68,6 +74,7 @@ jobs:
       server: ${{ steps.scope.outputs.server }}
       e2e: ${{ steps.scope.outputs.e2e }}
       web: ${{ steps.scope.outputs.web }}
+      code: ${{ steps.scope.outputs.code }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -76,6 +83,10 @@ jobs:
         id: filter
         uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         with:
+          # Negated patterns only subtract under this quantifier. The default
+          # `some` would let `**` alone satisfy `unclassified`, which would then
+          # match every change and force the full lane on documentation too.
+          predicate-quantifier: some-with-excludes
           filters: |
             rust:
               - 'crates/**'
@@ -106,6 +117,32 @@ jobs:
               - 'pnpm-lock.yaml'
               - 'vite.config.ts'
               - 'tsconfig*.json'
+            # Everything the scopes above do not claim, minus the two places
+            # that hold nothing but prose. Repository metadata is machine-read,
+            # not documentation: issue templates, the pull-request template and
+            # workflow definitions all land here and force the fast lane that
+            # polices them. A path nobody has classified lands here too, which
+            # is the point — an unknown path costs a full lane rather than
+            # silently skipping the checks that would have observed it.
+            unclassified:
+              - '**'
+              - '!docs/**'
+              - '!*.md'
+              - '!crates/**'
+              - '!Cargo.toml'
+              - '!Cargo.lock'
+              - '!rust-toolchain.toml'
+              - '!server/**'
+              - '!src/**'
+              - '!public/**'
+              - '!electron/**'
+              - '!scripts/**'
+              - '!tests/e2e/**'
+              - '!package.json'
+              - '!pnpm-lock.yaml'
+              - '!vite.config.ts'
+              - '!playwright.config.ts'
+              - '!tsconfig*.json'
 
       - name: Resolve scope
         id: scope
@@ -115,22 +152,41 @@ jobs:
           SERVER: ${{ steps.filter.outputs.server }}
           E2E: ${{ steps.filter.outputs.e2e }}
           WEB: ${{ steps.filter.outputs.web }}
+          UNCLASSIFIED: ${{ steps.filter.outputs.unclassified }}
         run: |
           set -euo pipefail
           # A scheduled or dispatched run answers "is main healthy", which no
           # pull request's changed paths can narrow — every leg runs.
           if [ "$EVENT" = "schedule" ] || [ "$EVENT" = "workflow_dispatch" ]; then
-            printf 'heavy=true\nrust=true\nserver=true\ne2e=true\nweb=true\n' >> "$GITHUB_OUTPUT"
+            printf 'heavy=true\nrust=true\nserver=true\ne2e=true\nweb=true\ncode=true\n' >> "$GITHUB_OUTPUT"
             exit 0
           fi
           heavy=false
           if [ "$EVENT" = "pull_request_review" ]; then heavy=true; fi
+          rust=$RUST
+          server=$SERVER
+          e2e=$E2E
+          web=$WEB
+          if [ "$UNCLASSIFIED" = "true" ]; then
+            rust=true
+            server=true
+            e2e=true
+            web=true
+          fi
+          # `code` is the one question the scope-independent jobs ask: does this
+          # head carry anything but prose? Only a change that claims no scope at
+          # all — documentation — answers no.
+          code=false
+          if [ "$rust" = "true" ] || [ "$server" = "true" ] || [ "$e2e" = "true" ] || [ "$web" = "true" ]; then
+            code=true
+          fi
           {
             printf 'heavy=%s\n' "$heavy"
-            printf 'rust=%s\n' "$RUST"
-            printf 'server=%s\n' "$SERVER"
-            printf 'e2e=%s\n' "$E2E"
-            printf 'web=%s\n' "$WEB"
+            printf 'rust=%s\n' "$rust"
+            printf 'server=%s\n' "$server"
+            printf 'e2e=%s\n' "$e2e"
+            printf 'web=%s\n' "$web"
+            printf 'code=%s\n' "$code"
           } >> "$GITHUB_OUTPUT"
 
   # The fast lane is three concurrent jobs rather than one serial one. Measured
@@ -209,6 +265,10 @@ jobs:
   lint:
     name: Lint
     needs: decide
+    # Nothing here reads prose, so a documentation-only head has no way to fail
+    # it. `static` stays unconditional: its release-inventory leg answers to
+    # provenance records that a prose change can invalidate.
+    if: needs.decide.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -238,6 +298,8 @@ jobs:
   boundaries:
     name: Module boundaries
     needs: decide
+    # The import graph cannot move without a code-bearing path changing.
+    if: needs.decide.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -308,6 +370,45 @@ jobs:
           printf '::warning title=Unit suite shard failed::Shard %s failed; inspect the Run shard log.\n' "$SHARD"
           printf '### Unit suite shard %s failed\n\n' "$SHARD" >> "$GITHUB_STEP_SUMMARY"
           printf 'Inspect the `Run shard` step log for raw failure output.\n' >> "$GITHUB_STEP_SUMMARY"
+
+  smoke:
+    name: Offline browser smoke
+    needs: decide
+    # The one browser check a pull request can afford. `tests/e2e/smoke.spec.ts`
+    # blocks every non-loopback request and asserts nothing reached one, so it
+    # cannot fail on a third-party host being unreachable the way the full
+    # end-to-end suite does. The suite itself still owns breadth, nightly.
+    # Both events, for the reason `dependency-review` states: an approving review
+    # cancels the in-flight push run, so a job gated on `pull_request` alone can
+    # never complete on the run that reports. As a Gate member it has to. What
+    # keeps it off comment-only reviews is `decide` skipping and the implicit
+    # `success()` on `needs`.
+    if: github.event.pull_request != null && needs.decide.outputs.e2e == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright browsers
+        run: pnpm exec playwright install --with-deps chromium
+
+      # No retries: a smoke set that needs a second attempt is not the fast
+      # deterministic signal this job exists to give.
+      - name: Run offline smoke set
+        run: pnpm test:e2e tests/e2e/smoke.spec.ts --retries=0
 
   build:
     name: Production build
@@ -578,6 +679,160 @@ jobs:
           base-ref: ${{ github.event.pull_request.base.sha }}
           head-ref: ${{ github.event.pull_request.head.sha }}
 
+  pr-secrets:
+    name: PR diff secret scan
+    needs: decide
+    # A leak is cheapest to catch before it is pushed to a public repository, and
+    # scanning only this pull request's own commits costs seconds rather than the
+    # minutes the whole history costs. That full scan below is unchanged and
+    # still owns the history and the approval lane; this one is the early half.
+    # Both read their config from the trusted base revision, never from the head.
+    #
+    # Whichever run ultimately reports has to be the one that scans, exactly as
+    # for `dependency-review` above: the push run's concurrency group is
+    # cancelled by an approving review, so a gate on `pull_request` alone can
+    # leave every entry on a head either cancelled or skipped, with no success
+    # anywhere. Running on both events, off the already env-pinned base and head
+    # SHAs, means an approval that cancels the push run still produces a verdict.
+    # Skipped on schedule and dispatch runs, which carry no pull request to diff.
+    # A `commented` or `changes_requested` review carries one too, so this
+    # condition alone is true there; what keeps the scan off those runs is
+    # `decide` skipping and the implicit `success()` on `needs`.
+    if: github.event.pull_request != null
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GITLEAKS_VERSION: 8.30.1
+      GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - name: Checkout trusted scanner
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: trusted-scanner
+          persist-credentials: false
+
+      - name: Checkout scan target
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Leaving repository unset keeps origin at the base repository. The
+          # pinned head SHA is valid for both same-repository and fork PRs;
+          # the next step fetches the independently pinned base SHA there.
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: scan-target
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Fetch immutable base SHA
+        working-directory: scan-target
+        run: git fetch --no-tags --depth=1 origin "$BASE_SHA"
+
+      - name: Install trusted Gitleaks
+        working-directory: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          umask 077
+          gitleaks_archive="$RUNNER_TEMP/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          gitleaks_dir="$RUNNER_TEMP/gitleaks-${GITLEAKS_VERSION}"
+          gitleaks_url="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+
+          curl --fail --location --proto '=https' --tlsv1.2 --silent --show-error \
+            --output "$gitleaks_archive" \
+            "$gitleaks_url"
+          printf '%s  %s\n' "$GITLEAKS_SHA256" "$gitleaks_archive" | sha256sum --check --status
+          mkdir -p "$gitleaks_dir"
+          tar -xzf "$gitleaks_archive" -C "$gitleaks_dir" gitleaks
+          printf '%s\n' "$gitleaks_dir" >> "$GITHUB_PATH"
+
+      - name: Validate PR merge diff secret scanner
+        working-directory: ${{ github.workspace }}
+        env:
+          GITLEAKS_EXPECTED_LEAK_EXIT_CODE: 79
+        run: |
+          set -euo pipefail
+          umask 077
+          positive_control_repo=$(mktemp -d "$RUNNER_TEMP/gitleaks-pr-merge-control.XXXXXX")
+          trap 'rm -rf "$positive_control_repo"' EXIT
+
+          git -C "$positive_control_repo" init --initial-branch=main
+          git -C "$positive_control_repo" config user.email sourdaw-ci@example.invalid
+          git -C "$positive_control_repo" config user.name 'Sourdaw CI'
+          mkdir -p "$positive_control_repo/public/wasm"
+          printf 'base side\n' > "$positive_control_repo/public/wasm/fixture.js"
+          git -C "$positive_control_repo" add public/wasm/fixture.js
+          git -C "$positive_control_repo" commit -m 'base fixture'
+          base_sha=$(git -C "$positive_control_repo" rev-parse HEAD)
+          git -C "$positive_control_repo" checkout -b fixture-branch
+          printf 'branch side\n' > "$positive_control_repo/public/wasm/fixture.js"
+          git -C "$positive_control_repo" commit -am 'branch fixture'
+          git -C "$positive_control_repo" checkout main
+          printf 'main side\n' > "$positive_control_repo/public/wasm/fixture.js"
+          git -C "$positive_control_repo" commit -am 'main fixture'
+          set +e
+          git -C "$positive_control_repo" merge --no-ff fixture-branch
+          merge_status=$?
+          set -e
+          if [ "$merge_status" -eq 0 ]; then
+            printf 'expected merge fixture to require a merge-resolution commit\n' >&2
+            exit 1
+          fi
+          synthetic_access_key=$(printf '%s%s%s' 'AKIA' 'QAZ2WSX3' 'EDC4RFV5')
+          printf 'aws_access_key_id = "%s" // gitleaks:allow\n' "$synthetic_access_key" > "$positive_control_repo/public/wasm/fixture.js"
+          cat > "$positive_control_repo/.gitleaks.toml" <<'GITLEAKS_CONFIG'
+          title = "Untrusted suppression fixture"
+
+          [extend]
+          useDefault = true
+
+          [allowlist]
+          description = "Would suppress every finding if target-root config were loaded"
+          regexes = ['''.*''']
+          GITLEAKS_CONFIG
+          git -C "$positive_control_repo" add public/wasm/fixture.js .gitleaks.toml
+          git -C "$positive_control_repo" commit --no-edit
+          head_sha=$(git -C "$positive_control_repo" rev-parse HEAD)
+
+          set +e
+          gitleaks git \
+            --config "$GITHUB_WORKSPACE/trusted-scanner/.gitleaks.toml" \
+            --gitleaks-ignore-path "$GITHUB_WORKSPACE/trusted-scanner/.gitleaksignore" \
+            --ignore-gitleaks-allow \
+            --no-banner \
+            --no-color \
+            --redact=100 \
+            --verbose \
+            --exit-code="$GITLEAKS_EXPECTED_LEAK_EXIT_CODE" \
+            --log-opts="$base_sha..$head_sha -m" \
+            "$positive_control_repo/.git"
+          positive_control_status=$?
+          set -e
+
+          if [ "$positive_control_status" -ne "$GITLEAKS_EXPECTED_LEAK_EXIT_CODE" ]; then
+            printf 'expected merge-diff Gitleaks positive control to exit %s, got %s\n' \
+              "$GITLEAKS_EXPECTED_LEAK_EXIT_CODE" \
+              "$positive_control_status" >&2
+            exit 1
+          fi
+
+      - name: Scan pull request diff for secrets
+        working-directory: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+
+          gitleaks git \
+            --config "$GITHUB_WORKSPACE/trusted-scanner/.gitleaks.toml" \
+            --gitleaks-ignore-path "$GITHUB_WORKSPACE/trusted-scanner/.gitleaksignore" \
+            --ignore-gitleaks-allow \
+            --no-banner \
+            --no-color \
+            --redact=100 \
+            --verbose \
+            --exit-code=1 \
+            --log-opts="$BASE_SHA..$HEAD_SHA -m" \
+            "$GITHUB_WORKSPACE/scan-target/.git"
+
   codeql:
     name: CodeQL
     needs: decide
@@ -740,7 +995,13 @@ jobs:
     # `codeql` and `secrets` were held out until each had completed a run, on
     # the principle that gating on unobserved behaviour is the mistake that left
     # the previous end-to-end job broken in this file for months. Both have now
-    # passed, so both gate.
+    # passed, so both gate. `smoke` and `pr-secrets` cleared that same bar on
+    # their first hosted run and gate for the same reason: each is deterministic
+    # by construction — the smoke set reaches no network at all, and the diff
+    # scan carries a positive control that fails the job when the scanner stops
+    # detecting. Neither exclusion above is weakened by that: `unit` still
+    # carries a main baseline failure, and the general `e2e` suite still fetches
+    # a model from a third-party host.
     # `!cancelled()` still evaluates failed or skipped dependencies for a live
     # run. The review predicate prevents an intentionally skipped review run
     # from reporting a successful Gate from all-skipped dependencies.
@@ -751,6 +1012,8 @@ jobs:
       - lint
       - boundaries
       - dependency-review
+      - pr-secrets
+      - smoke
       - build
       - rust
       - native-macos

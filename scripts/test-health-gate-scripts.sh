@@ -196,6 +196,7 @@ function runResolveScope(event, scopes) {
             SERVER: scopes.server,
             E2E: scopes.e2e,
             WEB: scopes.web,
+            UNCLASSIFIED: scopes.unclassified ?? 'false',
             GITHUB_OUTPUT: outputPath,
         },
     });
@@ -235,6 +236,17 @@ function expectShardFailureWarning(step, slug, suite, shard) {
 const events = workflow.on;
 const concurrency = workflow.concurrency;
 const decide = workflow.jobs?.decide;
+const staticJob = workflow.jobs?.static;
+const lint = workflow.jobs?.lint;
+const boundaries = workflow.jobs?.boundaries;
+const smoke = workflow.jobs?.smoke;
+const prSecrets = workflow.jobs?.['pr-secrets'];
+const prSecretsTrustedCheckout = stepNamed(prSecrets, 'Checkout trusted scanner');
+const prSecretsTargetCheckout = stepNamed(prSecrets, 'Checkout scan target');
+const prSecretsScanRun = stepNamed(prSecrets, 'Scan pull request diff for secrets')?.run ?? '';
+const prMergeControl = stepNamed(prSecrets, 'Validate PR merge diff secret scanner');
+const prMergeControlRun = prMergeControl?.run ?? '';
+const TOKEN_PATTERN = /GITHUB_TOKEN|GH_TOKEN|github\.token|\$\{\{\s*secrets\./iu;
 const secrets = workflow.jobs?.secrets;
 const unit = workflow.jobs?.unit;
 const e2e = workflow.jobs?.e2e;
@@ -267,6 +279,8 @@ const expectedGateNeeds = [
     'lint',
     'boundaries',
     'dependency-review',
+    'pr-secrets',
+    'smoke',
     'build',
     'rust',
     'native-macos',
@@ -298,21 +312,120 @@ expect(
 const allFalseScopes = { rust: 'false', server: 'false', e2e: 'false', web: 'false' };
 const reviewScopes = { rust: 'false', server: 'true', e2e: 'false', web: 'true' };
 const pullRequestScopes = { rust: 'true', server: 'false', e2e: 'true', web: 'false' };
+const unclassifiedScopes = { ...allFalseScopes, unclassified: 'true' };
 expect(
-    runResolveScope('schedule', allFalseScopes) === 'heavy=true\nrust=true\nserver=true\ne2e=true\nweb=true\n',
+    runResolveScope('schedule', allFalseScopes) === 'heavy=true\nrust=true\nserver=true\ne2e=true\nweb=true\ncode=true\n',
     'schedule must enable the heavy path and every scope'
 );
 expect(
-    runResolveScope('workflow_dispatch', allFalseScopes) === 'heavy=true\nrust=true\nserver=true\ne2e=true\nweb=true\n',
+    runResolveScope('workflow_dispatch', allFalseScopes) === 'heavy=true\nrust=true\nserver=true\ne2e=true\nweb=true\ncode=true\n',
     'workflow_dispatch must enable the heavy path and every scope'
 );
 expect(
-    runResolveScope('pull_request_review', reviewScopes) === 'heavy=true\nrust=false\nserver=true\ne2e=false\nweb=true\n',
+    runResolveScope('pull_request_review', reviewScopes) === 'heavy=true\nrust=false\nserver=true\ne2e=false\nweb=true\ncode=true\n',
     'pull_request_review must enable the heavy path and preserve path-filter outputs'
 );
 expect(
-    runResolveScope('pull_request', pullRequestScopes) === 'heavy=false\nrust=true\nserver=false\ne2e=true\nweb=false\n',
+    runResolveScope('pull_request', pullRequestScopes) === 'heavy=false\nrust=true\nserver=false\ne2e=true\nweb=false\ncode=true\n',
     'pull_request must disable the heavy path and preserve path-filter outputs'
+);
+expect(
+    runResolveScope('pull_request', allFalseScopes) === 'heavy=false\nrust=false\nserver=false\ne2e=false\nweb=false\ncode=false\n',
+    'a head that claims no scope must report no code-bearing change'
+);
+expect(
+    runResolveScope('pull_request', unclassifiedScopes) === 'heavy=false\nrust=true\nserver=true\ne2e=true\nweb=true\ncode=true\n',
+    'an unclassified path must force every fast scope rather than skipping the checks that would observe it'
+);
+expect(
+    lint?.if === "needs.decide.outputs.code == 'true'" && boundaries?.if === "needs.decide.outputs.code == 'true'",
+    'lint and boundaries must skip a head that carries only prose'
+);
+expect(staticJob?.if === undefined, 'static must stay unconditional so release inventory observes prose changes too');
+expect(
+    smoke?.if === "github.event.pull_request != null && needs.decide.outputs.e2e == 'true'",
+    'the offline smoke set must run on every pull-request run that touches the browser surface, including the review run an approval leaves reporting'
+);
+expect(
+    stepNamed(smoke, 'Run offline smoke set')?.run === 'pnpm test:e2e tests/e2e/smoke.spec.ts --retries=0',
+    'the offline smoke set must run without retries, which would hide a flake instead of reporting it'
+);
+expect(
+    prSecrets?.if === 'github.event.pull_request != null',
+    'the diff secret scan must run on every run carrying a pull request, including the review run an approval leaves reporting'
+);
+expect(
+    !TOKEN_PATTERN.test(JSON.stringify(prSecrets)),
+    'diff secret scan must not reference GitHub tokens or repository secrets'
+);
+expect(
+    prSecretsTrustedCheckout?.with?.ref === '${{ github.event.pull_request.base.sha }}' &&
+        prSecretsTrustedCheckout?.with?.['persist-credentials'] === false,
+    'diff secret scan must read its config from the trusted base revision without persisting credentials'
+);
+// This job only ever runs on a head carrying a pull request, so its scan
+// target pins the head SHA outright rather than the history job's fallback.
+expect(
+    prSecretsTargetCheckout?.with?.ref === '${{ github.event.pull_request.head.sha }}' &&
+        prSecretsTargetCheckout?.with?.path === 'scan-target' &&
+        prSecretsTargetCheckout?.with?.['fetch-depth'] === 0 &&
+        prSecretsTargetCheckout?.with?.['persist-credentials'] === false,
+    'diff secret scan target must retain the complete untrusted history without persisting credentials'
+);
+expect(
+    prSecretsScanRun.includes('--log-opts="$BASE_SHA..$HEAD_SHA -m"'),
+    'diff secret scan must scan the commits this head adds to its base, including merge resolutions'
+);
+expect(
+    prSecretsScanRun.includes('--ignore-gitleaks-allow') && prSecretsScanRun.includes('--redact=100'),
+    'diff secret scan must reject head-authored allow annotations and redact what it prints'
+);
+// The merge-diff control proves the scanner still detects, and still refuses
+// head-authored suppression, on the path the diff scan actually takes. Each
+// half is pinned separately so deleting one is a named failure rather than a
+// control that silently stops controlling.
+expect(
+    prMergeControl?.env?.GITLEAKS_EXPECTED_LEAK_EXIT_CODE === 79,
+    'merge-diff positive control must use a distinct expected leak exit code'
+);
+expect(
+    prMergeControlRun.includes('mktemp -d "$RUNNER_TEMP/gitleaks-pr-merge-control.XXXXXX"'),
+    'merge-diff positive control must use a temporary runner path'
+);
+expect(
+    prMergeControlRun.includes("synthetic_access_key=$(printf '%s%s%s' 'AKIA' 'QAZ2WSX3' 'EDC4RFV5')"),
+    'merge-diff positive control secret must be assembled at runtime'
+);
+expect(
+    prMergeControlRun.includes('mkdir -p "$positive_control_repo/public/wasm"') &&
+        prMergeControlRun.includes('aws_access_key_id = "%s" // gitleaks:allow') &&
+        prMergeControlRun.includes('> "$positive_control_repo/public/wasm/fixture.js"'),
+    'merge-diff positive control must place an annotated secret under a formerly excluded path'
+);
+expect(
+    prMergeControlRun.includes('cat > "$positive_control_repo/.gitleaks.toml"') &&
+        prMergeControlRun.includes('regexes = [\'\'\'.*\'\'\']') &&
+        prMergeControlRun.includes('git -C "$positive_control_repo" add public/wasm/fixture.js .gitleaks.toml'),
+    'merge-diff positive control must commit a target-root config that would suppress the synthetic secret if loaded'
+);
+expect(
+    prMergeControlRun.includes('--config "$GITHUB_WORKSPACE/trusted-scanner/.gitleaks.toml"') &&
+        prMergeControlRun.includes('--exit-code="$GITLEAKS_EXPECTED_LEAK_EXIT_CODE"') &&
+        prMergeControlRun.includes('--log-opts="$base_sha..$head_sha -m"'),
+    'merge-diff positive control must scan the merge diff with the trusted config and the distinct leak exit code'
+);
+expect(
+    prMergeControlRun.includes('--ignore-gitleaks-allow'),
+    'merge-diff positive control must reject head-authored allow annotations, which is the suppression it exists to defeat'
+);
+expect(
+    prMergeControlRun.includes('positive_control_status') &&
+        prMergeControlRun.includes('-ne "$GITLEAKS_EXPECTED_LEAK_EXIT_CODE"'),
+    'merge-diff positive control must require the exact leak exit code'
+);
+expect(
+    prMergeControl?.['working-directory'] === '${{ github.workspace }}',
+    'merge-diff positive control must run outside the untrusted checkout'
 );
 expect(secrets?.if === "needs.decide.outputs.heavy == 'true'", 'secrets job must remain on the heavy path');
 expect(/^actions\/checkout@[0-9a-f]{40}$/u.test(trustedCheckout?.uses ?? ''), 'trusted scanner checkout action must be pinned to a full commit SHA');

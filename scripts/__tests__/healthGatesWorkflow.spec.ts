@@ -25,6 +25,7 @@ const FORCED_SCOPE_OUTPUTS = {
     server: 'true',
     e2e: 'true',
     web: 'true',
+    code: 'true',
 };
 const SCOPE_OUTPUT_REFERENCES = {
     heavy: '${{ steps.scope.outputs.heavy }}',
@@ -32,7 +33,16 @@ const SCOPE_OUTPUT_REFERENCES = {
     server: '${{ steps.scope.outputs.server }}',
     e2e: '${{ steps.scope.outputs.e2e }}',
     web: '${{ steps.scope.outputs.web }}',
+    code: '${{ steps.scope.outputs.code }}',
 };
+const CODE_CONDITION = "needs.decide.outputs.code == 'true'";
+// An approving review cancels the in-flight push run, so a job that gates on
+// the triggering event alone can never complete on the run that reports. Every
+// Gate member reading a pull request keys off the payload instead.
+const PULL_REQUEST_PAYLOAD_CONDITION = 'github.event.pull_request != null';
+const SMOKE_CONDITION = `${PULL_REQUEST_PAYLOAD_CONDITION} && needs.decide.outputs.e2e == 'true'`;
+const EVENT_GATED_SMOKE_CONDITION = "github.event_name == 'pull_request' && needs.decide.outputs.e2e == 'true'";
+const SMOKE_COMMAND = 'pnpm test:e2e tests/e2e/smoke.spec.ts --retries=0';
 const PULL_REQUEST_CONCURRENCY_GROUP =
     "health-gates-${{ (github.event_name == 'pull_request' || (github.event_name == 'pull_request_review' && github.event.review.state == 'approved')) && github.event.pull_request.number || github.run_id }}";
 const PULL_REQUEST_CONCURRENCY_CANCELLATION =
@@ -40,7 +50,6 @@ const PULL_REQUEST_CONCURRENCY_CANCELLATION =
 const GATE_CONDITION =
     "${{ !cancelled() && (github.event_name != 'pull_request_review' || github.event.review.state == 'approved') }}";
 const DEPENDENCY_REVIEW_ACTION = 'actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294';
-const DEPENDENCY_REVIEW_CONDITION = 'github.event.pull_request != null';
 const TRUSTED_SCANNER_REF = '${{ github.event.pull_request.base.sha || github.sha }}';
 const SCAN_TARGET_REF = '${{ github.event.pull_request.head.sha || github.sha }}';
 const TOKEN_REFERENCE = /GITHUB_TOKEN|GH_TOKEN|github\.token|\$\{\{\s*secrets\./i;
@@ -55,6 +64,24 @@ const BROWSER_AI_WEBGPU_PACKAGE_SCRIPT =
 const BROWSER_AI_WEBGPU_TEST_MATCH = 'browserAiWebGpuAdmission.spec.ts';
 const BROWSER_AI_WEBGPU_ORIGIN = 'http://localhost:5188';
 const BROWSER_AI_WEBGPU_SERVER_COMMAND = 'pnpm dev --host 127.0.0.1 --port 5188 --strictPort';
+// Exact rather than a subset: a job added to the Gate without a first observed
+// hosted run is the mistake this pin exists to catch.
+const GATE_MEMBERS = [
+    'decide',
+    'static',
+    'lint',
+    'boundaries',
+    'dependency-review',
+    'pr-secrets',
+    'smoke',
+    'build',
+    'rust',
+    'native-macos',
+    'native-windows',
+    'browser-ai-webgpu',
+    'codeql',
+    'secrets',
+] as const;
 const CURRENT_NON_GATING_JOBS = ['unit', 'e2e'] as const;
 const CURRENT_NON_GATING_JOB_WIRING = {
     unit: { needs: 'decide', if: "needs.decide.outputs.web == 'true'" },
@@ -133,7 +160,11 @@ function assertWorkflowPermissions(candidate: UnknownRecord): void {
     }
 }
 
-function runScopeScript(script: string, eventName: string): UnknownRecord {
+function runScopeScript(
+    script: string,
+    eventName: string,
+    filters: Readonly<Record<string, string>> = {}
+): UnknownRecord {
     const directory = mkdtempSync(join(tmpdir(), 'sourdaw-health-scope-'));
     const outputPath = join(directory, 'github-output');
     try {
@@ -146,6 +177,8 @@ function runScopeScript(script: string, eventName: string): UnknownRecord {
                 SERVER: 'false',
                 E2E: 'false',
                 WEB: 'false',
+                UNCLASSIFIED: 'false',
+                ...filters,
                 GITHUB_OUTPUT: outputPath,
             },
             shell: false,
@@ -185,9 +218,101 @@ function assertScopeContract(candidate: UnknownRecord): string {
     return stringAt(scope, 'run');
 }
 
+function unclassifiedPatterns(candidate: UnknownRecord): string[] {
+    const filterStep = stepNamed(jobAt(candidate, 'decide'), 'Filter changed paths');
+    const options = recordAt(filterStep, 'with');
+    if (options['predicate-quantifier'] !== 'some-with-excludes') {
+        throw new Error('path filters must subtract negated patterns instead of matching on any one of them');
+    }
+    const filters = asRecord(parseDocument(stringAt(options, 'filters')).toJS(), 'path filters');
+    return arrayAt(filters, 'unclassified').map(String);
+}
+
+function assertUnclassifiedFallback(candidate: UnknownRecord): void {
+    const patterns = unclassifiedPatterns(candidate);
+    if (!patterns.includes('**')) {
+        throw new Error('the unclassified filter must start from every changed path');
+    }
+    const exempt = patterns.filter((pattern) => pattern.startsWith('!'));
+    const prose = exempt.filter((pattern) => pattern === '!docs/**' || pattern === '!*.md');
+    if (prose.length !== 2) {
+        throw new Error('documentation must be exempt from the unclassified fallback');
+    }
+    const metadata = exempt.find((pattern) => pattern.includes('.github'));
+    if (metadata !== undefined) {
+        throw new Error(`repository metadata is machine-read and must not be exempt: ${metadata}`);
+    }
+}
+
+function assertProseSkippingJobs(candidate: UnknownRecord): void {
+    for (const jobName of ['lint', 'boundaries']) {
+        if (jobAt(candidate, jobName).if !== CODE_CONDITION) {
+            throw new Error(`${jobName} must skip a head that carries only prose`);
+        }
+    }
+    if (jobAt(candidate, 'static').if !== undefined) {
+        throw new Error('release inventory answers to prose changes, so static must stay unconditional');
+    }
+}
+
+function assertOfflineSmokeJob(candidate: UnknownRecord): void {
+    const smoke = jobAt(candidate, 'smoke');
+    if (smoke.needs !== 'decide' || smoke.if !== SMOKE_CONDITION) {
+        throw new Error('the offline smoke job must run on every pull-request run that touches the browser surface');
+    }
+    if (stringAt(stepNamed(smoke, 'Run offline smoke set'), 'run') !== SMOKE_COMMAND) {
+        throw new Error('the offline smoke job must run the smoke spec without retries');
+    }
+}
+
+function assertPullRequestSecretScan(candidate: UnknownRecord): void {
+    const prSecrets = jobAt(candidate, 'pr-secrets');
+    if (prSecrets.needs !== 'decide' || prSecrets.if !== PULL_REQUEST_PAYLOAD_CONDITION) {
+        throw new Error('the pull-request secret scan must run on every run carrying a pull request');
+    }
+    if (TOKEN_REFERENCE.test(JSON.stringify(prSecrets))) {
+        throw new Error('pull-request secret scan must not reference GitHub tokens or repository secrets');
+    }
+    const trustedScanner = recordAt(stepNamed(prSecrets, 'Checkout trusted scanner'), 'with');
+    if (
+        trustedScanner.ref !== '${{ github.event.pull_request.base.sha }}' ||
+        trustedScanner.path !== 'trusted-scanner' ||
+        trustedScanner['persist-credentials'] !== false
+    ) {
+        throw new Error('pull-request scanner config must come from the trusted base and retain no credentials');
+    }
+    // This job always carries a pull request, so its scan target pins the head
+    // SHA outright rather than the history job's event-SHA fallback.
+    const scanTarget = recordAt(stepNamed(prSecrets, 'Checkout scan target'), 'with');
+    if (
+        scanTarget.ref !== '${{ github.event.pull_request.head.sha }}' ||
+        scanTarget.path !== 'scan-target' ||
+        scanTarget['fetch-depth'] !== 0 ||
+        scanTarget['persist-credentials'] !== false
+    ) {
+        throw new Error('pull-request scan target must retain the complete untrusted history without credentials');
+    }
+    const scan = stringAt(stepNamed(prSecrets, 'Scan pull request diff for secrets'), 'run');
+    if (!scan.includes('--log-opts="$BASE_SHA..$HEAD_SHA -m"')) {
+        throw new Error('pull-request secret scan must scan the commits this head adds to its base');
+    }
+    if (!scan.includes('--ignore-gitleaks-allow')) {
+        throw new Error('pull-request secret scan must reject head-authored gitleaks:allow annotations');
+    }
+    // The control proves detection survives head-authored suppression, so it
+    // has to refuse those annotations on its own invocation too.
+    if (
+        !stringAt(stepNamed(prSecrets, 'Validate PR merge diff secret scanner'), 'run').includes(
+            '--ignore-gitleaks-allow'
+        )
+    ) {
+        throw new Error('merge-diff positive control must reject head-authored gitleaks:allow annotations');
+    }
+}
+
 function assertJobGraph(candidate: UnknownRecord): void {
     const dependencyReview = jobAt(candidate, 'dependency-review');
-    if (dependencyReview.needs !== 'decide' || dependencyReview.if !== DEPENDENCY_REVIEW_CONDITION) {
+    if (dependencyReview.needs !== 'decide' || dependencyReview.if !== PULL_REQUEST_PAYLOAD_CONDITION) {
         throw new Error('dependency review must gate on the pull request payload rather than the triggering event');
     }
     if (stepNamed(dependencyReview, 'Review dependency changes').uses !== DEPENDENCY_REVIEW_ACTION) {
@@ -200,19 +325,7 @@ function assertJobGraph(candidate: UnknownRecord): void {
         throw new Error('security scans must depend directly on decide');
     }
     const gateNeeds = arrayAt(jobAt(candidate, 'gate'), 'needs');
-    for (const job of [
-        'decide',
-        'static',
-        'lint',
-        'boundaries',
-        'dependency-review',
-        'build',
-        'rust',
-        'native-macos',
-        'native-windows',
-        'codeql',
-        'secrets',
-    ]) {
+    for (const job of GATE_MEMBERS) {
         if (!gateNeeds.includes(job)) {
             throw new Error(`gate must depend on ${job}`);
         }
@@ -226,6 +339,9 @@ function assertJobGraph(candidate: UnknownRecord): void {
         if (gateNeeds.includes(job)) {
             throw new Error(`${job} is currently non-gating`);
         }
+    }
+    if (gateNeeds.length !== GATE_MEMBERS.length) {
+        throw new Error('gate must depend on exactly the pinned member list');
     }
 }
 
@@ -419,6 +535,7 @@ describe('health gates workflow contract', () => {
             server: 'false',
             e2e: 'false',
             web: 'false',
+            code: 'false',
         });
         expect(runScopeScript(scopeScript, 'pull_request_review')).toMatchObject({ heavy: 'true' });
         for (const eventName of ['schedule', 'workflow_dispatch']) {
@@ -434,6 +551,89 @@ describe('health gates workflow contract', () => {
         );
     });
 
+    it('treats an unclassified path as code-bearing and prose as nothing to check', () => {
+        const scopeScript = assertScopeContract(workflow);
+        expect(() => assertUnclassifiedFallback(workflow)).not.toThrow();
+        expect(() => assertProseSkippingJobs(workflow)).not.toThrow();
+
+        expect(runScopeScript(scopeScript, 'pull_request', { UNCLASSIFIED: 'true' })).toEqual({
+            heavy: 'false',
+            rust: 'true',
+            server: 'true',
+            e2e: 'true',
+            web: 'true',
+            code: 'true',
+        });
+        expect(runScopeScript(scopeScript, 'pull_request', { WEB: 'true' })).toMatchObject({
+            rust: 'false',
+            code: 'true',
+        });
+
+        const exemptMetadata = asRecord(structuredClone(workflow), 'metadata-exempt workflow');
+        const filterOptions = recordAt(stepNamed(jobAt(exemptMetadata, 'decide'), 'Filter changed paths'), 'with');
+        filterOptions.filters = stringAt(filterOptions, 'filters').replace(
+            "- '!docs/**'",
+            "- '!docs/**'\n  - '!.github/ISSUE_TEMPLATE/**'"
+        );
+        expect(() => assertUnclassifiedFallback(exemptMetadata)).toThrow(
+            'repository metadata is machine-read and must not be exempt'
+        );
+
+        const anyPatternWins = asRecord(structuredClone(workflow), 'any-pattern workflow');
+        recordAt(stepNamed(jobAt(anyPatternWins, 'decide'), 'Filter changed paths'), 'with')['predicate-quantifier'] =
+            'some';
+        expect(() => assertUnclassifiedFallback(anyPatternWins)).toThrow(
+            'path filters must subtract negated patterns instead of matching on any one of them'
+        );
+
+        const conditionalInventory = asRecord(structuredClone(workflow), 'conditional inventory workflow');
+        jobAt(conditionalInventory, 'static').if = CODE_CONDITION;
+        expect(() => assertProseSkippingJobs(conditionalInventory)).toThrow(
+            'release inventory answers to prose changes, so static must stay unconditional'
+        );
+
+        const alwaysLinting = asRecord(structuredClone(workflow), 'unconditional lint workflow');
+        delete jobAt(alwaysLinting, 'lint').if;
+        expect(() => assertProseSkippingJobs(alwaysLinting)).toThrow('lint must skip a head that carries only prose');
+    });
+
+    it('gives every pull request an offline smoke set and a diff secret scan', () => {
+        expect(() => assertOfflineSmokeJob(workflow)).not.toThrow();
+        expect(() => assertPullRequestSecretScan(workflow)).not.toThrow();
+
+        const retryingSmoke = asRecord(structuredClone(workflow), 'retrying smoke workflow');
+        stepNamed(jobAt(retryingSmoke, 'smoke'), 'Run offline smoke set').run = 'pnpm test:e2e tests/e2e/smoke.spec.ts';
+        expect(() => assertOfflineSmokeJob(retryingSmoke)).toThrow(
+            'the offline smoke job must run the smoke spec without retries'
+        );
+
+        const eventGatedSmoke = asRecord(structuredClone(workflow), 'event-gated smoke workflow');
+        jobAt(eventGatedSmoke, 'smoke').if = EVENT_GATED_SMOKE_CONDITION;
+        expect(() => assertOfflineSmokeJob(eventGatedSmoke)).toThrow(
+            'the offline smoke job must run on every pull-request run that touches the browser surface'
+        );
+
+        const eventGatedDiffScan = asRecord(structuredClone(workflow), 'event-gated diff scan workflow');
+        jobAt(eventGatedDiffScan, 'pr-secrets').if = "github.event_name == 'pull_request'";
+        expect(() => assertPullRequestSecretScan(eventGatedDiffScan)).toThrow(
+            'the pull-request secret scan must run on every run carrying a pull request'
+        );
+
+        const historyScanningDiff = asRecord(structuredClone(workflow), 'history-scanning diff workflow');
+        const diffScan = stepNamed(jobAt(historyScanningDiff, 'pr-secrets'), 'Scan pull request diff for secrets');
+        diffScan.run = stringAt(diffScan, 'run').replace('--log-opts="$BASE_SHA..$HEAD_SHA -m"', '--log-opts=--all');
+        expect(() => assertPullRequestSecretScan(historyScanningDiff)).toThrow(
+            'pull-request secret scan must scan the commits this head adds to its base'
+        );
+
+        const headControlledScanner = asRecord(structuredClone(workflow), 'head-controlled scanner workflow');
+        recordAt(stepNamed(jobAt(headControlledScanner, 'pr-secrets'), 'Checkout trusted scanner'), 'with').ref =
+            '${{ github.event.pull_request.head.sha }}';
+        expect(() => assertPullRequestSecretScan(headControlledScanner)).toThrow(
+            'pull-request scanner config must come from the trusted base and retain no credentials'
+        );
+    });
+
     it('keeps the current fast, heavy, and non-gating job list', () => {
         expect(() => assertJobGraph(workflow)).not.toThrow();
         const eventGatedDependencyReview = asRecord(
@@ -444,6 +644,16 @@ describe('health gates workflow contract', () => {
         expect(() => assertJobGraph(eventGatedDependencyReview)).toThrow(
             'dependency review must gate on the pull request payload rather than the triggering event'
         );
+        const overGatedSummary = asRecord(structuredClone(workflow), 'over-gated summary workflow');
+        arrayAt(jobAt(overGatedSummary, 'gate'), 'needs').push('unit');
+        expect(() => assertJobGraph(overGatedSummary)).toThrow('unit is currently non-gating');
+        const widenedSummary = asRecord(structuredClone(workflow), 'widened summary workflow');
+        arrayAt(jobAt(widenedSummary, 'gate'), 'needs').push('e2e-report');
+        expect(() => assertJobGraph(widenedSummary)).toThrow('gate must depend on exactly the pinned member list');
+        const narrowedSummary = asRecord(structuredClone(workflow), 'narrowed summary workflow');
+        const narrowedNeeds = arrayAt(jobAt(narrowedSummary, 'gate'), 'needs');
+        narrowedNeeds.splice(narrowedNeeds.indexOf('smoke'), 1);
+        expect(() => assertJobGraph(narrowedSummary)).toThrow('gate must depend on smoke');
         const disconnected = asRecord(structuredClone(workflow), 'disconnected security workflow');
         jobAt(disconnected, 'secrets').needs = 'build';
         expect(() => assertJobGraph(disconnected)).toThrow('security scans must depend directly on decide');
