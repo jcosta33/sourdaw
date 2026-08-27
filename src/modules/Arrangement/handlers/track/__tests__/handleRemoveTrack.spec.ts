@@ -13,7 +13,6 @@ import {
 } from '#/modules/Command/useCases';
 import {
     createCrdtDoc,
-    getCrdtDoc,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
     resetCrdtProjectAuthority,
@@ -305,10 +304,24 @@ describe('handleRemoveTrack', () => {
         });
 
         it('commits track removal once and preserves a manual-repair pending effect when both deferred attempts fail', async () => {
+            const document: Record<string, unknown> = {};
+            let projectCommitCount = 0;
             const track = TrackDummy.create({ id: 't1' });
             const failure = new Error('runtime removal unavailable');
             const onProjectCommitPrepared = vi.fn();
+            flushAutomergeStorageWrites();
+            configureAutomergeStoragePort({
+                getDoc: () => document,
+                getSemanticMessage: () => undefined,
+                hasDoc: () => true,
+                mutateDoc: ({ changeFn }) => {
+                    changeFn(document);
+                    projectCommitCount += 1;
+                },
+            });
             trackStore.set({ tracks: [track], selectedTrackId: 't1', ghostClips: [] });
+            flushAutomergeStorageWrites();
+            projectCommitCount = 0;
             mocks.getTrackStoreState.mockImplementation(() => trackStore.value);
             mocks.removeTrack.mockImplementation((trackId: string) => {
                 const state = trackStore.value;
@@ -329,7 +342,8 @@ describe('handleRemoveTrack', () => {
             });
 
             expect(trackStore.value?.tracks).toEqual([]);
-            expect(JSON.parse(JSON.stringify(getCrdtDoc('root')))).toMatchObject({ tracks: { tracks: [] } });
+            expect(document).toMatchObject({ tracks: { tracks: [] } });
+            expect(projectCommitCount).toBe(1);
             expect(mocks.removeTrack).toHaveBeenCalledOnce();
             expect(mocks.finalizeRuntimeRemoval).toHaveBeenCalledTimes(2);
             expect(result).toMatchObject({

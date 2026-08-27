@@ -780,10 +780,20 @@ describe('executePromptActionGroup', () => {
             })
         ).resolves.toEqual({ status: 'committed' });
 
-        expect(agentRunLifecycle.get(RUN_ID)).toMatchObject({
-            pendingEffectContinuations: [expect.objectContaining({ effects: [effect], recovery: 'manual-repair' })],
-        });
+        const expectedContinuation = {
+            batchId: BATCH_ID,
+            effects: [effect],
+            recovery: 'manual-repair',
+            serializedBatch: fixture.commandBatch.serialized,
+            authority: fixture.commandBatch.authority,
+        };
+        expect(agentRunLifecycle.get(RUN_ID)).toMatchObject({ pendingEffectContinuations: [expectedContinuation] });
         expect(agentRunLifecycle.get(RUN_ID)?.pendingEffectContinuations).not.toContainEqual(
+            expect.objectContaining({ recovery: 'reconcile-batch' })
+        );
+        const persistedRun = readAgentRunState().runs.find((run) => run.runId === RUN_ID);
+        expect(persistedRun).toMatchObject({ pendingEffectContinuations: [expectedContinuation] });
+        expect(persistedRun?.pendingEffectContinuations).not.toContainEqual(
             expect.objectContaining({ recovery: 'reconcile-batch' })
         );
     });

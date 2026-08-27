@@ -408,8 +408,20 @@ describe('handleImportStemSet', () => {
     });
 
     it('commits stem import once and preserves a manual-repair pending effect when both deferred attempts fail', async () => {
+        const document: Record<string, unknown> = {};
+        let projectCommitCount = 0;
         const action = createStemImportAction();
         const onProjectCommitPrepared = vi.fn();
+        flushAutomergeStorageWrites();
+        configureAutomergeStoragePort({
+            getDoc: () => document,
+            getSemanticMessage: () => undefined,
+            hasDoc: () => true,
+            mutateDoc: ({ changeFn }) => {
+                changeFn(document);
+                projectCommitCount += 1;
+            },
+        });
         mocks.promoteDurableStagedAsset.mockResolvedValue({ status: 'failed', reason: 'asset promotion unavailable' });
 
         const result = await executeAppActionBatch([action], { onProjectCommitPrepared });
@@ -419,11 +431,12 @@ describe('handleImportStemSet', () => {
             'track-kick',
             'track-vocal',
         ]);
-        expect(JSON.parse(JSON.stringify(getCrdtDoc('root')))).toMatchObject({
+        expect(document).toMatchObject({
             tracks: {
                 tracks: [{ id: 'folder-starter-stems' }, { id: 'track-kick' }, { id: 'track-vocal' }],
             },
         });
+        expect(projectCommitCount).toBe(1);
         expect(mocks.promoteDurableStagedAsset).toHaveBeenCalledTimes(4);
         expect(result).toMatchObject({
             status: 'committed-with-warning',
