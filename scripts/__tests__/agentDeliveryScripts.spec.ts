@@ -85,10 +85,13 @@ type WorkflowRecord = Record<string, unknown>;
 
 const AUTHORIZED_APPROVAL_CONDITION =
     "github.event_name != 'pull_request_review' || github.event.review.state == 'approved'";
-const REVIEW_ISOLATED_CONCURRENCY_GROUP = 'health-gates-${{ github.event.pull_request.number || github.ref }}';
-const AUTHORIZED_CANCELLATION_CONDITION = "${{ github.event_name == 'pull_request' }}";
+const REVIEW_ISOLATED_CONCURRENCY_GROUP =
+    "health-gates-${{ (github.event_name == 'pull_request' || (github.event_name == 'pull_request_review' && github.event.review.state == 'approved')) && github.event.pull_request.number || github.run_id }}";
+const AUTHORIZED_CANCELLATION_CONDITION =
+    "${{ github.event_name == 'pull_request' || (github.event_name == 'pull_request_review' && github.event.review.state == 'approved') }}";
 const GATE_SUMMARY_NAME = 'Gate';
-const AUTHORIZED_GATE_CONDITION = 'always()';
+const AUTHORIZED_GATE_CONDITION =
+    "${{ !cancelled() && (github.event_name != 'pull_request_review' || github.event.review.state == 'approved') }}";
 const CODEQL_CONDITION = "needs.decide.outputs.heavy == 'true'";
 
 function asWorkflowRecord(value: unknown, label: string): WorkflowRecord {
