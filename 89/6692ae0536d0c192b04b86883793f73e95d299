@@ -1,0 +1,86 @@
+src/modules/PluginHost/stores/pluginGuiStore.ts
+  s_1b9333aca53d4d::t_cdaffd49de8a0d 1-32
+src/modules/PluginHost/useCases/pluginLifecycle/watchPluginGuiClosed.ts
+  s_1b9333aca53d4d::t_707920d4ca13a6 5
+  s_1b9333aca53d4d::t_cf2f57efc732f3 28
+  s_1b9333aca53d4d::t_6369f8ba95faa0 1-4,6-27,29-34
+src/app/__tests__/bootstrap.spec.ts
+  s_1b9333aca53d4d::t_45db308b86dae3 398
+src/modules/PluginHost/stores/index.ts
+  s_1b9333aca53d4d::t_0d3901b7a792c1 8-9
+src/modules/Project/useCases/projectPersistence/saveProject/initPluginStateDirtyTracking.ts
+  s_1b9333aca53d4d::t_903821f1cf6fd2 22-24
+  s_1b9333aca53d4d::t_537e6d967c2a21 1
+  s_1b9333aca53d4d::t_b19b2eb52c68e3 3-19,21,25-32
+  s_1b9333aca53d4d::t_f7bd9c9fa026a7 2
+  s_1b9333aca53d4d::t_31421e57789d34 20
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/pluginStateDirtyLifecycle.spec.ts
+  s_1b9333aca53d4d::t_18f687d84341e8 1-67
+src/modules/PluginHost/useCases/pluginLifecycle/closePluginGui.ts
+  s_1b9333aca53d4d::t_841c4c6de2a0b8 3,8-11,16,18-21
+  s_1b9333aca53d4d::t_a861a687c7b9d0 4-7,12-15,17,22
+src/modules/PluginHost/useCases/index.ts
+  s_1b9333aca53d4d::t_7f914ebd6c1821 18
+  s_1b9333aca53d4d::t_89b086951d0651 19
+  s_1b9333aca53d4d::t_cc5534f026bc57 31-32
+src/modules/PluginHost/repositories/pluginBridge/types.ts
+  s_1b9333aca53d4d::t_46db87c68e998e 71-90
+src/modules/PluginHost/repositories/pluginBridge/onPluginStateDirty.ts
+  s_1b9333aca53d4d::t_e56c69d9b63455 1-32
+src/modules/PluginHost/repositories/pluginBridge/onPluginGuiClosed.ts
+  s_1b9333aca53d4d::t_3dc616d8f11ac7 1-33
+src/modules/PluginHost/useCases/pluginLifecycle/__tests__/pluginGuiLifecycle.spec.ts
+  s_1b9333aca53d4d::t_8d5bce8cabf7cd 51
+  s_1b9333aca53d4d::t_10228373fff527 137
+  s_1b9333aca53d4d::t_6170adbf07a0d4 1-34,42-50,52-136,138-139
+  s_1b9333aca53d4d::t_b4f3ef19a78871 35-41
+src/modules/PluginHost/useCases/pluginLifecycle/openPluginGui.ts
+  s_1b9333aca53d4d::t_bc22286217bf72 3,23-24,26-29
+  s_1b9333aca53d4d::t_191246f2a6dba3 7,10-11,13-15,17,22
+  s_1b9333aca53d4d::t_0f4e84e2b29cad 4-6,8-9,12,16,18-21,25,30
+src/modules/PluginHost/useCases/pluginLifecycle/watchPluginStateDirty.ts
+  s_1b9333aca53d4d::t_23c99412e8a4ec 1-17
+src/modules/PluginHost/useCases/pluginLifecycle/pluginGuiState.ts
+  s_1b9333aca53d4d::t_bc2a73cf5611c9 1-2,16-23
+  s_1b9333aca53d4d::t_22ad2072d05569 3-15
+src/modules/PluginHost/useCases/pluginScan/resolvePluginEditorCapability.ts
+  s_1b9333aca53d4d::t_fd6179a5bac12f 1-44
+src/app/bootstrap.ts
+  s_1b9333aca53d4d::t_96d34494178170 477-479
+  s_1b9333aca53d4d::t_5ae4acc5322ed8 134
+src/modules/Project/useCases/index.ts
+  s_1b9333aca53d4d::t_98632c3534e2bc 8
+src/modules/TimelineEditor/presentations/views/Inspector/TrackDevicesSection.tsx
+  s_1b9333aca53d4d::t_12d8a46ead10b3 24-25,27-32
+  s_1b9333aca53d4d::t_961801ddcdbe63 109-149
+  s_1b9333aca53d4d::t_70966db359fda6 52-53
+  s_1b9333aca53d4d::t_adb955b7b4ebe9 63
+  s_1b9333aca53d4d::t_9acf7f2be23103 323
+  s_1b9333aca53d4d::t_284d0b038c7ecc 439-445,451-454
+  s_1b9333aca53d4d::t_fe364c185f3a25 324-325,427-428,435-436,455-456
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/TrackDevicesSection.spec.tsx
+  s_1b9333aca53d4d::t_402f167d8e73cb 19-30
+  s_1b9333aca53d4d::t_54f82b94e703d1 258
+  s_1b9333aca53d4d::t_3b59651bec512e 371,375,384-387
+  s_1b9333aca53d4d::t_60cb41482cde80 546-664
+  s_1b9333aca53d4d::t_a487484f02879b 100,105,107-115,126-127
+  s_1b9333aca53d4d::t_6e4d5597fd3288 83,89
+src/modules/PluginHost/useCases/pluginScan/__tests__/resolvePluginEditorCapability.spec.ts
+  s_1b9333aca53d4d::t_21a4b2cf1f90dd 1-37
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "896692ae0536d0c192b04b86883793f73e95d299",
+  "prompts": {},
+  "sessions": {
+    "s_1b9333aca53d4d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "188b0d45-7765-49bd-8d6e-1eebbd450613",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
