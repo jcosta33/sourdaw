@@ -1319,6 +1319,49 @@ describe('gating check names', () => {
     }
 
     /**
+     * A job id is workflow-controlled text, and GitHub accepts `__proto__` as one. The summary is
+     * built into a map on the launcher side and rebuilt into another on this side, and on an object
+     * literal that key moves the prototype instead of creating an own property — so the job is
+     * dropped by `JSON.stringify`, while the gate's own lookup still answers from the prototype and
+     * derives the id. The check GitHub reports is `Weird`, so a `Weird` cancelled with nothing
+     * beside it would merge with no verdict on a job the gate needs.
+     */
+    it('derives the declared name of a job whose id is __proto__', async () => {
+        const inherited = ['  __proto__:', '    name: Weird'].join('\n');
+
+        expect([...(await gatingNamesFor(workflow(inherited, gateNeeding('__proto__'))))]).toEqual(['Weird']);
+    });
+
+    /**
+     * These name members of `Object.prototype`, not jobs. A lookup that reaches the prototype answers
+     * with a function rather than `undefined`, so the gate skips the refusal it owes a `needs` entry
+     * the workflow never defines and labels a check after the function it found.
+     */
+    it.each(['toString', 'valueOf', 'constructor'])(
+        'refuses a gate needing %s, which names an inherited member and no job',
+        async (jobId) => {
+            expect(await refusalFor(workflow(decide, gateNeeding(jobId)))).toBe(
+                `Error: the gate job in ${WORKFLOW_PATH} needs ${jobId}, which no job in that workflow defines`
+            );
+        }
+    );
+
+    /**
+     * `.inf` and `.nan` are YAML floats, and JSON carries neither: `JSON.stringify` writes both as
+     * `null`, which the gate reads as "declares no name" and answers with the job id — the one thing
+     * a name that is not text must never resolve to. `42` refused already, so a fix that only reached
+     * the shapes JSON happens to survive would leave these two silently wrong.
+     */
+    it.each(['.inf', '.nan', '42'])('refuses a gated job whose name is the non-text scalar %s', async (scalar) => {
+        const source = workflow(['  lint:', `    name: ${scalar}`].join('\n'), gateNeeding('lint'));
+
+        expect(await refusalFor(source)).toBe(
+            `Error: the lint job in ${WORKFLOW_PATH} declares a name that is not text, ` +
+                'which cannot be the name GitHub reports'
+        );
+    });
+
+    /**
      * Every shape here is legal YAML that GitHub accepts, and every one of them used to refuse — or,
      * worse, resolve to something GitHub never reports — because a line-oriented reader cannot see
      * what a parser sees. Three consecutive review rounds each closed one of these and left the next

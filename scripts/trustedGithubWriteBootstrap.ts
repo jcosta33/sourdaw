@@ -126,13 +126,13 @@ export function assertTrustedSourceGraph(
  * builtins and the pinned siblings are reachable there, and checking local specifiers alone left
  * that failure invisible until it happened.
  *
- * The rule covers this loader too, with no exemption. It is the one file here the launcher also runs
- * from the protected primary checkout, where the repository's packages do resolve — but a static
- * bare import would then load for `lane:publish` and `issue:reconcile` as well, which read no
- * workflow and must not fail over a package they never use. Keeping the parser behind
- * `await import` inside `deliver`'s own path is what satisfies both, and this check holds it there.
- * The loader is also the one source the snapshot writes and never imports, which the second rule
- * keeps true.
+ * The loader carries exactly one exemption, named below, and every other source carries none. The
+ * loader is the one file the launcher also runs from the protected primary checkout, where the
+ * repository's packages do resolve, and it is the one source the snapshot writes and never imports —
+ * which the second rule keeps true — so its `yaml` dependency never resolves from a snapshot at all.
+ * What holds that parser behind a dynamic call is not this check but the reason it is written that
+ * way: a static bare dependency would load for `lane:publish` and `issue:reconcile` too, which read
+ * no workflow and must not fail over a package they never use. The spec pins that shape separately.
  */
 function assertSnapshotResolvableImports(path: string, source: string, pathSet: ReadonlySet<string>): void {
     for (const dependency of localModuleDependencies(path, source)) {
@@ -144,37 +144,53 @@ function assertSnapshotResolvableImports(path: string, source: string, pathSet: 
         }
     }
     for (const specifier of bareModuleSpecifiers(source)) {
+        if (path === BOOTSTRAP_PATH && specifier === LOADER_EXEMPT_SPECIFIER) {
+            continue;
+        }
         throw new Error(`${path} imports ${specifier}, which does not resolve in the trusted snapshot`);
     }
 }
 
-function bareModuleSpecifiers(source: string): string[] {
+/** The whole of the loader's exemption: this one package, in this one file, and nothing else. */
+const LOADER_EXEMPT_SPECIFIER = 'yaml';
+
+/**
+ * Every shape that names a module: a `from` clause, a side-effect statement that binds nothing, and
+ * a dynamic call. Both rules below read the same three, because a list that saw only `from` accepted
+ * the other two — and the dynamic call is the shape this loader itself uses, so the bare-specifier
+ * rule passed vacuously on the very file it was written to hold.
+ *
+ * A specifier written inside a comment or a string literal matches too. That is why the prose here
+ * spells none of these shapes out: the rule reads its own file, and an example in a comment would be
+ * refused as an unresolvable dependency.
+ */
+const MODULE_SPECIFIER_PATTERNS = [
+    /\bfrom\s+['"]([^'"]+)['"]/g,
+    /\bimport\s+['"]([^'"]+)['"]/g,
+    /\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/g,
+];
+
+function moduleSpecifiers(source: string): string[] {
     const specifiers = new Set<string>();
-    for (const match of source.matchAll(/\bfrom\s+['"]([^'"]+)['"]/g)) {
-        const specifier = match[1];
-        if (specifier !== undefined && !specifier.startsWith('.') && !specifier.startsWith('node:')) {
-            specifiers.add(specifier);
+    for (const pattern of MODULE_SPECIFIER_PATTERNS) {
+        for (const match of source.matchAll(pattern)) {
+            if (match[1] !== undefined) {
+                specifiers.add(match[1]);
+            }
         }
     }
     return [...specifiers];
 }
 
+function bareModuleSpecifiers(source: string): string[] {
+    return moduleSpecifiers(source).filter((specifier) => !specifier.startsWith('.') && !specifier.startsWith('node:'));
+}
+
 function localModuleDependencies(path: string, source: string): string[] {
-    const specifiers = new Set<string>();
-    const patterns = [
-        /\bfrom\s+['"](\.[^'"]+)['"]/g,
-        /\bimport\s+['"](\.[^'"]+)['"]/g,
-        /\bimport\s*\(\s*['"](\.[^'"]+)['"]\s*\)/g,
-    ];
-    for (const pattern of patterns) {
-        for (const match of source.matchAll(pattern)) {
-            const specifier = match[1];
-            if (specifier !== undefined) {
-                specifiers.add(posix.normalize(posix.join(posix.dirname(path), specifier)));
-            }
-        }
-    }
-    return [...specifiers];
+    const dependencies = moduleSpecifiers(source)
+        .filter((specifier) => specifier.startsWith('.'))
+        .map((specifier) => posix.normalize(posix.join(posix.dirname(path), specifier)));
+    return [...new Set(dependencies)];
 }
 
 export async function runTrustedGithubWriteCommand(
@@ -276,11 +292,33 @@ export async function summarizeGateWorkflow(source: string): Promise<TrustedGate
     if (!isRecord(jobs)) {
         return { unreadable: 'it declares no jobs mapping' };
     }
-    const summary: Record<string, TrustedWorkflowJob> = {};
+    // A job id is workflow-controlled text, and GitHub accepts `__proto__` as one. Assigning that
+    // key on an object literal moves the prototype instead of creating an own property, and
+    // `JSON.stringify` then drops the job from the summary entirely — so the gate never sees a job
+    // the workflow declares. A prototype-free map has no such key to hit.
+    const summary: Record<string, TrustedWorkflowJob> = Object.create(null) as Record<string, TrustedWorkflowJob>;
     for (const [jobId, job] of Object.entries(jobs)) {
-        summary[jobId] = isRecord(job) ? { name: job.name, needs: job.needs, uses: job.uses } : {};
+        summary[jobId] = isRecord(job) ? { name: carriedName(job.name), needs: job.needs, uses: job.uses } : {};
     }
     return { jobs: summary };
+}
+
+/** What a name that is not text crosses as, chosen so no `JSON.stringify` can turn it back into text. */
+const NON_TEXT_NAME = { notText: true };
+
+/**
+ * The summary crosses to the gate as JSON, which carries less than YAML produces: `Infinity` and
+ * `NaN` — what `.inf` and `.nan` parse to — are written as `null`, and a timestamp is written as a
+ * quoted string. Either way the gate stops seeing a name that is not text: `null` reads as "declares
+ * no name" and answers with the job id, and a quoted timestamp reads as a name GitHub never reports.
+ * Both erase the refusal such a declaration is owed, so anything but a string crosses as a value
+ * that is not text on either side of the boundary. Deciding what that means stays the gate's rule.
+ */
+function carriedName(name: unknown): unknown {
+    if (name === undefined || name === null || typeof name === 'string') {
+        return name;
+    }
+    return NON_TEXT_NAME;
 }
 
 export async function executeTrustedSnapshot(

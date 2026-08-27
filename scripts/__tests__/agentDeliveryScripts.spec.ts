@@ -67,6 +67,38 @@ function trustedPublishFixture(root: string, policy: string): void {
     runGit(root, ['update-ref', 'refs/remotes/origin/main', 'HEAD']);
 }
 
+/**
+ * Runs `deliver` through the launcher with one poisoned executed source and answers with the
+ * refusal. Nothing may execute: a rule that refuses only once the command has started refuses
+ * nothing, because `ERR_MODULE_NOT_FOUND` has already killed the delivery by then.
+ */
+async function snapshotRefusalFor(poisoned: string): Promise<string> {
+    let executed = false;
+    const run = runTrustedGithubWriteCommand('deliver', ['42'], {
+        resolveOriginMain: () => 'trusted-sha',
+        readOriginSource: (_commit, candidate) =>
+            candidate === 'scripts/deliverPullRequest.ts' ? poisoned : 'trusted',
+        executeSnapshot: async () => {
+            executed = true;
+            return 0;
+        },
+    });
+    const refusal = await run.then(
+        () => 'no refusal',
+        (error: unknown) => String(error)
+    );
+    expect(executed).toBe(false);
+    return refusal;
+}
+
+function runTrustedDeliverWithLoader(loader: string): Promise<number> {
+    return runTrustedGithubWriteCommand('deliver', ['42'], {
+        resolveOriginMain: () => 'trusted-sha',
+        readOriginSource: (_commit, candidate) => (candidate === BOOTSTRAP_PATH ? loader : 'trusted'),
+        executeSnapshot: async () => 0,
+    });
+}
+
 describe('package scripts and gitignore', () => {
     it('defines the trusted pnpm commands as direct node invocations', () => {
         const pkg = JSON.parse(readFileSync(join(import.meta.dirname, '../../package.json'), 'utf8')) as {
@@ -183,41 +215,60 @@ describe('package scripts and gitignore', () => {
      * `ERR_MODULE_NOT_FOUND` partway through a delivery. Checking only local specifiers left that
      * failure mode invisible until it happened, which is why it is refused before anything executes.
      *
-     * The loader is exempt: the launcher runs it from the protected primary checkout, where the
-     * repository's packages do resolve, and it is the one source in the snapshot nothing imports.
+     * A bare package is named by three shapes, not one. A rule that read only a `from` clause let the
+     * side-effect statement and the dynamic call straight through — and the dynamic call is the shape
+     * the loader itself uses, so the rule passed on that file by never seeing its import at all.
      */
     it.each([
         {
             label: 'a bare package specifier no snapshot can resolve',
             poisoned: "import { parse } from 'yaml';",
-            message: /scripts\/deliverPullRequest\.ts imports yaml, which does not resolve in the trusted snapshot/,
         },
         {
-            label: 'an import of the loader the snapshot never executes',
-            poisoned: "import { BOOTSTRAP_PATH } from './trustedGithubWriteBootstrap.ts';",
-            message:
-                /scripts\/deliverPullRequest\.ts imports scripts\/trustedGithubWriteBootstrap\.ts, which the trusted snapshot never executes/,
+            label: 'a re-exported bare package specifier',
+            poisoned: "export { parse } from 'yaml';",
         },
-    ])('refuses $label', async ({ poisoned, message }) => {
-        let executed = false;
+        {
+            label: 'a bare package imported for its side effects alone',
+            poisoned: "import 'yaml';",
+        },
+        {
+            label: 'a bare package reached through a dynamic import',
+            poisoned: "const { parse } = await import('yaml');",
+        },
+    ])('refuses $label', async ({ poisoned }) => {
+        expect(await snapshotRefusalFor(poisoned)).toMatch(
+            /scripts\/deliverPullRequest\.ts imports yaml, which does not resolve in the trusted snapshot/
+        );
+    });
 
-        await expect(
-            runTrustedGithubWriteCommand('deliver', ['42'], {
-                resolveOriginMain: () => 'trusted-sha',
-                readOriginSource: (_commit, candidate) =>
-                    candidate === 'scripts/deliverPullRequest.ts' ? poisoned : 'trusted',
-                executeSnapshot: async () => {
-                    executed = true;
-                    return 0;
-                },
-            })
-        ).rejects.toThrow(message);
-        expect(executed).toBe(false);
+    it('refuses an import of the loader the snapshot never executes', async () => {
+        expect(await snapshotRefusalFor("import { BOOTSTRAP_PATH } from './trustedGithubWriteBootstrap.ts';")).toMatch(
+            /scripts\/deliverPullRequest\.ts imports scripts\/trustedGithubWriteBootstrap\.ts, which the trusted snapshot never executes/
+        );
+    });
+
+    /**
+     * The loader's exemption is one package in one file, and it is sound only because that import
+     * never resolves from a snapshot: the launcher runs the loader from the protected primary
+     * checkout, where the repository's packages do resolve, and the snapshot writes the loader
+     * without ever importing it. The real loader is fed through the rule here rather than a fixture,
+     * so widening the exemption — or letting the loader take a second package — fails.
+     */
+    it('exempts the loader own yaml dependency and no other bare package in it', async () => {
+        const loader = readFileSync(join(import.meta.dirname, '../trustedGithubWriteBootstrap.ts'), 'utf8');
+
+        await expect(runTrustedDeliverWithLoader(loader)).resolves.toBe(0);
+        await expect(runTrustedDeliverWithLoader(`${loader}\nawait import('chalk');\n`)).rejects.toThrow(
+            /scripts\/trustedGithubWriteBootstrap\.ts imports chalk, which does not resolve in the trusted snapshot/
+        );
     });
 
     /**
      * The exemption above is only sound while the loader itself needs it, and it does: `deliver`
      * parses the gating workflow with the repository's YAML package, which no snapshot can reach.
+     * Behind a dynamic call, because `lane:publish` and `issue:reconcile` read no workflow and must
+     * not fail to start over a package neither one uses.
      */
     it('imports the yaml parser only from the loader, and never statically', () => {
         const loader = readFileSync(join(import.meta.dirname, '../trustedGithubWriteBootstrap.ts'), 'utf8');

@@ -270,7 +270,11 @@ function workflowJobs(serialized: string): WorkflowJobs {
     if (!isRecord(jobs)) {
         failUnreadableWorkflow(`${GATE_WORKFLOW_ENV} carries no jobs mapping`);
     }
-    const declared: WorkflowJobs = {};
+    // Every job id here is workflow-controlled text, so a plain object literal would let one resolve
+    // against `Object.prototype`: `__proto__` moves the prototype rather than becoming an own key,
+    // and `toString` or `constructor` answers a lookup no job declares. A prototype-free map is the
+    // only one where "the workflow declares this job" and "this key reads back" are the same claim.
+    const declared: WorkflowJobs = Object.create(null) as WorkflowJobs;
     for (const [jobId, job] of Object.entries(jobs)) {
         if (!isRecord(job)) {
             failUnreadableWorkflow(`the ${jobId} job is not a mapping`);
