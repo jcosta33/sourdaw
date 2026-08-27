@@ -14,7 +14,11 @@ import {
     refreshVersionedCommandBatchForApproval,
     type createVerifiedBatchReceipt,
 } from '#/modules/Command/useCases';
-import { captureProjectMutationAuthorization, captureProjectRevision } from '#/modules/CrdtDocument/useCases';
+import {
+    captureProjectMutationAuthorization,
+    captureProjectRevision,
+    captureUnownedProjectMutations,
+} from '#/modules/CrdtDocument/useCases';
 
 import { AiProposalInvalidatedError } from '../errors/AiProposalInvalidatedError';
 import {
@@ -1238,6 +1242,10 @@ export async function confirmPendingChatActions(
     // Capture before the batch owner exists. The check binds that exact owner
     // on its first in-transaction call and retains it across handler awaits.
     const isProjectMutationAuthorized = captureProjectMutationAuthorization();
+    // Ownerless-mutation baseline for the post-batch rebind gate. The batch's
+    // own writes (including its idempotency checkpoint) are owner-attributed,
+    // so only a foreign writer moves this counter.
+    const unownedMutationsBeforeBatch = captureUnownedProjectMutations();
     try {
         const executionOptions = {
             ...group,
@@ -1354,7 +1362,18 @@ export async function confirmPendingChatActions(
     }
 
     const committedProjectRevision = captureProjectRevision();
-    if (batchResult.status === 'committed' || batchResult.status === 'committed-with-warning') {
+    // The batch flight contains awaited boundaries, so a foreign project write
+    // can land between the last render and this capture. Relabelling fresh
+    // artifacts against a revision carrying one would defeat the retry's
+    // sourceRevision guard, so the rebind runs only when no ownerless mutation
+    // landed during the flight. The authorization check is not usable here: the
+    // batch's own idempotency checkpoint write falsifies it even on a clean
+    // success. A refused relabel leaves the renders detectably incomplete under
+    // the committed revision; the project changes themselves stay committed.
+    if (
+        (batchResult.status === 'committed' || batchResult.status === 'committed-with-warning') &&
+        captureUnownedProjectMutations() === unownedMutationsBeforeBatch
+    ) {
         rebindFreshSectionRenderArtifactsToCommittedRevision(
             confirmation,
             sectionRenderArtifactsBeforeExecution,
