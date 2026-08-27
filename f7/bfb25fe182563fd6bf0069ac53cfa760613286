@@ -1,0 +1,94 @@
+crates/daw-plugin-host/src/vst3_run_loop.rs
+  s_1b9333aca53d4d::t_df4e3583a7db01 1-102,104-569
+  s_1b9333aca53d4d::t_086441f9867f3d 103
+  s_1b9333aca53d4d::t_f81ec8db935d5c 570-572
+  s_24897c68937d24::t_93b990b4c19ce7 573
+crates/daw-plugin-host/src/traits.rs
+  s_1b9333aca53d4d::t_49fcbf71aa3075 222-229
+  s_1b9333aca53d4d::t_113eb8c7a50a77 30-43
+crates/daw-plugin-host/src/vst3_host.rs
+  s_1b9333aca53d4d::t_b5aaca8bc3f599 47
+  s_1b9333aca53d4d::t_abefbdca12e36c 517-520,534-537
+  s_1b9333aca53d4d::t_c29a81e802ad77 1044-1045,1049-1054,1056-1075
+  s_1b9333aca53d4d::t_9031ce3dae2b54 545-547
+  s_1b9333aca53d4d::t_088eefb285db6d 548-549
+  s_24897c68937d24::t_71be5c7edb9d29 38
+crates/daw-plugin-host/src/vst3_wrapper.rs
+  s_1b9333aca53d4d::t_67079acb13794f 1143-1194
+  s_1b9333aca53d4d::t_d6a049668d14ab 23,27,30
+  s_1b9333aca53d4d::t_8aac198e3757fa 956-959,963-971
+  s_1b9333aca53d4d::t_40d9a2111ff340 15-16
+  s_1b9333aca53d4d::t_49852ebe7485b5 1033,1037-1038
+  s_1b9333aca53d4d::t_ca3093c868542d 1656-1671
+  s_1b9333aca53d4d::t_f6afc54ed46410 1506-1508
+  s_1b9333aca53d4d::t_4c5c4c50964296 972
+crates/daw-plugin-host/src/runtime.rs
+  s_1b9333aca53d4d::t_fb53dbd811aac0 16-17
+  s_1b9333aca53d4d::t_fd562c3b2d9194 91-94
+crates/daw-plugin-host/src/lib.rs
+  s_1b9333aca53d4d::t_4f45a220c00908 9,13-17
+  s_1b9333aca53d4d::t_dfcdfb13b2d22d 26-27
+crates/daw-plugin-host/src/vst3_editor.rs
+  s_1b9333aca53d4d::t_1d7b4bfd7cf25c 426-434,436-442
+  s_1b9333aca53d4d::t_812aef35ce8779 540-578
+  s_1b9333aca53d4d::t_86d2dd7d821811 33
+  s_1b9333aca53d4d::t_fd33548006e159 303-304,307
+  s_1b9333aca53d4d::t_197fc2b061c4eb 1-32,34-302,305-306,308-425,435,443-539,579-705
+  s_1b9333aca53d4d::t_275a0dc886a18c 706-707
+crates/daw-plugin-host/src/vst3_wrapper/tests.rs
+  s_1b9333aca53d4d::t_505f819f65e9a7 1042-1340
+  s_1b9333aca53d4d::t_02e18e9c148658 13
+  s_1b9333aca53d4d::t_b0c699ffebb72f 971-976
+  s_1b9333aca53d4d::t_f614b6a5f4b6da 2737,2743-2745
+  s_1b9333aca53d4d::t_db78c7603c4cd3 21-24
+  s_1b9333aca53d4d::t_f6234f170ea294 2396-2736,2738-2742,2746-2955,2962
+  s_1b9333aca53d4d::t_80c82b2e57edba 1509-1532
+  s_1b9333aca53d4d::t_b945c3d2a3e962 106-109
+  s_1b9333aca53d4d::t_9cc976f0152409 1533-1534
+  s_1b9333aca53d4d::t_993a442d004e51 2956-2961
+  s_1b9333aca53d4d::t_ebf799d40921b8 2963-2964
+crates/sourdaw-native/src/host/plugin_window.rs
+  s_1b9333aca53d4d::t_d3a928f6e7c004 145-151
+crates/sourdaw-native/src/state.rs
+  s_1b9333aca53d4d::t_23d1ab2732c3e6 36-45
+  s_1b9333aca53d4d::t_6e97afd805f659 5
+  s_1b9333aca53d4d::t_e6093f29324c0e 380
+  s_1b9333aca53d4d::t_65e832c9db0379 426-515
+  s_1b9333aca53d4d::t_22d25404f9ce0c 20-24
+crates/sourdaw-native/src/commands/plugin_gui.rs
+  s_1b9333aca53d4d::t_a864ca8f11e0e9 3,5,7,10,13-15,17
+  s_1b9333aca53d4d::t_d9fa5b7674873c 142-146,150
+  s_1b9333aca53d4d::t_764b280693136a 55-64
+  s_1b9333aca53d4d::t_2f7b74afa7fb8a 148
+  s_1b9333aca53d4d::t_f15b9c65446be4 128-131
+  s_1b9333aca53d4d::t_1c2713791bd1fb 75-76
+  s_1b9333aca53d4d::t_693d572c455dee 162
+crates/daw-plugin-host/Cargo.toml
+  s_1b9333aca53d4d::t_280fae03daaa2c 29-38
+Cargo.lock
+  s_1b9333aca53d4d::t_8bb22af5078d11 641
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "f7bfb25fe182563fd6bf0069ac53cfa760613286",
+  "prompts": {},
+  "sessions": {
+    "s_1b9333aca53d4d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "188b0d45-7765-49bd-8d6e-1eebbd450613",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_24897c68937d24": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-aaab4a8229b6c658e",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
