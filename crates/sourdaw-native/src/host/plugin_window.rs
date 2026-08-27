@@ -11,6 +11,7 @@
 //! reaches the platform's window server.
 
 use std::ffi::c_void;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use raw_window_handle::RawWindowHandle;
 
@@ -24,11 +25,25 @@ pub const MAIN_WINDOW_LABEL: &str = "main";
 /// Label prefix every plugin editor window is created under.
 pub const PLUGIN_WINDOW_LABEL_PREFIX: &str = "plugin-";
 
-/// The window label for one instance's editor.
+/// The window label for one *opening* of one instance's editor.
 ///
-/// Derived from the instance id rather than stored, so the same instance always
-/// addresses the same window and a label can be recomputed on any path. Dots
-/// and colons are escaped because window labels are restricted to a smaller
+/// Two parts, separated by `:`. The instance id is escaped into the label
+/// charset, and `open_sequence` — a number no two openings in this process share
+/// — follows it.
+///
+/// The sequence is what makes a label name an opening rather than an instance.
+/// An editor can be closed and reopened, and the shell reports a close by
+/// echoing back the label it was given; a label that was a pure function of the
+/// instance id would make the report for a window that is already gone
+/// indistinguishable from a report for the editor that replaced it, and acting
+/// on it would tear down the live editor. With the sequence in the label, the
+/// recorded label and a superseded report simply do not match.
+///
+/// The separator is safe because the escaping below never emits `:` — it is
+/// encoded as `-c` — so the two parts cannot be confused for one another and the
+/// whole label stays injective.
+///
+/// Dots and colons are escaped because window labels are restricted to a smaller
 /// alphabet than instance ids are: labels accept only ASCII alphanumerics,
 /// `-`, `/`, `:` and `_`. The charset is the crate's own label contract
 /// (inherited from the strictest shell that ever consumed it), so a label is
@@ -58,7 +73,7 @@ pub const PLUGIN_WINDOW_LABEL_PREFIX: &str = "plugin-";
 /// back into the original id. A function with a well-defined left inverse is
 /// injective, so distinct ids always produce distinct labels — and every
 /// character in the output is inside the label charset.
-pub fn plugin_editor_window_label(instance_id: &str) -> String {
+pub fn plugin_editor_window_label(instance_id: &str, open_sequence: u64) -> String {
     let mut escaped = String::with_capacity(instance_id.len());
     for ch in instance_id.chars() {
         match ch {
@@ -71,7 +86,21 @@ pub fn plugin_editor_window_label(instance_id: &str) -> String {
             other => escaped.push_str(&format!("-x{:06x}", other as u32)),
         }
     }
-    format!("{}{}", PLUGIN_WINDOW_LABEL_PREFIX, escaped)
+    format!(
+        "{}{}:{}",
+        PLUGIN_WINDOW_LABEL_PREFIX, escaped, open_sequence
+    )
+}
+
+/// Claim the next editor-opening sequence number.
+///
+/// Process-global and monotonic, so no two openings — of one instance or of
+/// different ones — ever share a label. Not per instance: an instance id is
+/// reusable across a load/unload cycle, and a counter that restarted with it
+/// would hand a fresh editor a label a stale close report still names.
+pub fn next_editor_open_sequence() -> u64 {
+    static NEXT: AtomicU64 = AtomicU64::new(1);
+    NEXT.fetch_add(1, Ordering::Relaxed)
 }
 
 /// Whether every character in a window label is inside the label charset
@@ -251,11 +280,53 @@ mod tests {
     use super::*;
 
     #[test]
-    fn an_instance_id_maps_to_one_stable_window_label() {
+    fn an_instance_id_and_an_opening_map_to_one_stable_window_label() {
         assert_eq!(
-            plugin_editor_window_label("com.vendor.plugin:3"),
-            "plugin-com-dvendor-dplugin-c3"
+            plugin_editor_window_label("com.vendor.plugin:3", 12),
+            "plugin-com-dvendor-dplugin-c3:12"
         );
+    }
+
+    /// The whole point of the sequence: the shell reports a close by echoing the
+    /// label it was given, and a reopened editor must not answer to the label of
+    /// the window it replaced.
+    #[test]
+    fn reopening_one_instances_editor_produces_a_label_the_previous_opening_does_not_share() {
+        let instance_id = "com.vendor.plugin:3";
+
+        assert_ne!(
+            plugin_editor_window_label(instance_id, 1),
+            plugin_editor_window_label(instance_id, 2)
+        );
+    }
+
+    /// `:` separates the two parts and the escaping never emits one, which is
+    /// what lets the label be split back into the pair that built it. Asserted
+    /// through the split rather than by comparing two labels: ids and sequences
+    /// that differ produce labels that differ anyway, so a comparison passes
+    /// with the colon escaping deleted.
+    #[test]
+    fn a_label_splits_at_its_one_separator_back_into_the_opening_that_built_it() {
+        let label = plugin_editor_window_label("a:1", 2);
+
+        let mut parts = label.split(':');
+        let escaped_id = parts.next().expect("label has an id part");
+        let sequence = parts.next().expect("label has a sequence part");
+
+        assert_eq!(parts.next(), None, "the separator appears exactly once");
+        assert_eq!(
+            escaped_id, "plugin-a-c1",
+            "the colon in the id is escaped, so it cannot read as the separator"
+        );
+        assert_eq!(sequence, "2");
+    }
+
+    #[test]
+    fn no_two_claimed_openings_share_a_sequence() {
+        let first = next_editor_open_sequence();
+        let second = next_editor_open_sequence();
+
+        assert_ne!(first, second);
     }
 
     /// A flat `.`/`:` -> `-` substitution collapses these three ids onto the
@@ -265,25 +336,24 @@ mod tests {
     /// distinct.
     #[test]
     fn ids_that_collided_under_the_old_flat_substitution_now_get_distinct_labels() {
-        let dot = plugin_editor_window_label("a.b");
-        let colon = plugin_editor_window_label("a:b");
-        let dash = plugin_editor_window_label("a-b");
+        let dot = plugin_editor_window_label("a.b", 1);
+        let colon = plugin_editor_window_label("a:b", 1);
+        let dash = plugin_editor_window_label("a-b", 1);
 
         assert_ne!(dot, colon);
         assert_ne!(dot, dash);
         assert_ne!(colon, dash);
     }
 
-    /// The label is recomputed from the instance id on every path rather than
-    /// stored, so recomputation must be stable or the same instance would
-    /// address a different window depending on which path asked.
+    /// One opening's label is recomputable, which is what lets the open path
+    /// build it once and every later path compare against the recorded copy.
     #[test]
-    fn the_same_instance_id_always_recomputes_the_same_label() {
+    fn the_same_instance_id_and_opening_always_recompute_the_same_label() {
         let instance_id = "com.vendor.plugin:7";
 
         assert_eq!(
-            plugin_editor_window_label(instance_id),
-            plugin_editor_window_label(instance_id)
+            plugin_editor_window_label(instance_id, 4),
+            plugin_editor_window_label(instance_id, 4)
         );
     }
 
@@ -294,10 +364,10 @@ mod tests {
     /// failure or a collision.
     #[test]
     fn ids_with_characters_outside_the_label_charset_still_get_valid_distinct_labels() {
-        let space = plugin_editor_window_label("vendor plugin 1");
-        let punctuation = plugin_editor_window_label("vendor!plugin#1");
-        let replacement_char = plugin_editor_window_label("vendor\u{FFFD}plugin1");
-        let non_ascii = plugin_editor_window_label("vendor\u{1F4A9}plugin1");
+        let space = plugin_editor_window_label("vendor plugin 1", 1);
+        let punctuation = plugin_editor_window_label("vendor!plugin#1", 1);
+        let replacement_char = plugin_editor_window_label("vendor\u{FFFD}plugin1", 1);
+        let non_ascii = plugin_editor_window_label("vendor\u{1F4A9}plugin1", 1);
 
         for label in [&space, &punctuation, &replacement_char, &non_ascii] {
             assert!(is_valid_window_label(label), "invalid label: {label}");

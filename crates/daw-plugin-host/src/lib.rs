@@ -24,6 +24,7 @@ pub use runtime::HostedRuntime;
 pub use scanner::{PluginFormat, ScanResult, ScannedDescriptor, ScannedPlugin};
 pub use traits::{
     AudioPlugin, EditorWindowResizer, HostParameterUpdate, HostTransport, HostedPluginRuntime,
-    LatencyChangeNotifier, ProcessingGate, DEFAULT_EDITOR_CONTENT_SCALE,
+    LatencyChangeNotifier, PluginHostRequest, PluginHostRequestNotifier, ProcessingGate,
+    DEFAULT_EDITOR_CONTENT_SCALE,
 };
 pub use vst3_wrapper::Vst3Wrapper;

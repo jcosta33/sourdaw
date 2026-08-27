@@ -3,6 +3,7 @@ import {
     defaultExternalPluginActivationState,
     externalPluginActivationStore,
 } from '../../stores/externalPluginActivationStore';
+import { defaultPluginGuiState, pluginGuiStore } from '../../stores/pluginGuiStore';
 
 import { externalLatencyReporters } from './externalLatencyReporters';
 import { externalPluginActivationOutcomes, externalPluginActivationTasks } from './externalPluginActivationTasks';
@@ -18,6 +19,13 @@ function forgetPluginInstance(instanceId: string): void {
         const byInstanceId = { ...(state ?? defaultExternalPluginActivationState).byInstanceId };
         delete byInstanceId[instanceId];
         return { ...(state ?? defaultExternalPluginActivationState), byInstanceId };
+    });
+    // Unloading destroys the editor window without the OS reporting a close, so
+    // nothing else will ever retract an `isOpen` left standing here.
+    pluginGuiStore.update((state) => {
+        const byInstanceId = { ...(state ?? defaultPluginGuiState).byInstanceId };
+        delete byInstanceId[instanceId];
+        return { ...(state ?? defaultPluginGuiState), byInstanceId };
     });
 }
 

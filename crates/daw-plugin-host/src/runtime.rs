@@ -14,7 +14,7 @@ use crate::clap_wrapper::ClapWrapper;
 use crate::params::PluginParameter;
 use crate::traits::{
     AudioPlugin, EditorWindowResizer, HostParameterUpdate, HostTransport, HostedPluginRuntime,
-    LatencyChangeNotifier, ProcessingGate,
+    LatencyChangeNotifier, PluginHostRequestNotifier, ProcessingGate,
 };
 use crate::vst3_wrapper::Vst3Wrapper;
 use std::ffi::c_void;
@@ -90,6 +90,18 @@ impl AudioPlugin for HostedRuntime {
 
     fn set_editor_window_resizer(&mut self, resize: EditorWindowResizer) {
         delegate!(self, backend => backend.set_editor_window_resizer(resize))
+    }
+
+    fn set_editor_content_scale(&mut self, scale: f64) {
+        delegate!(self, backend => backend.set_editor_content_scale(scale))
+    }
+
+    fn apply_pending_editor_resize(&mut self) -> Option<(u32, u32)> {
+        delegate!(self, backend => backend.apply_pending_editor_resize())
+    }
+
+    fn take_state_dirty(&mut self) -> bool {
+        delegate!(self, backend => backend.take_state_dirty())
     }
 
     fn accepts_midi(&self) -> bool {
@@ -180,6 +192,21 @@ impl HostedRuntime {
     /// installed — first install wins, so the wake cannot be hijacked mid-life.
     pub fn set_latency_change_notifier(&self, notifier: LatencyChangeNotifier) -> bool {
         delegate!(self, backend => backend.set_latency_change_notifier(notifier))
+    }
+
+    /// Install the wake fired when this plugin raises a
+    /// [`crate::traits::PluginHostRequest`].
+    ///
+    /// A loader concern like the latency wake, and installed the same way.
+    /// Reports whether a wake was installed, which is `false` both for a second
+    /// install and for a format that raises none of these asks: VST3 answers its
+    /// editor resize synchronously on the frame the plugin calls into, and its
+    /// component handler is not the one that carries `setDirty`.
+    pub fn set_plugin_host_request_notifier(&self, notifier: PluginHostRequestNotifier) -> bool {
+        match self {
+            Self::Clap(backend) => backend.set_plugin_host_request_notifier(notifier),
+            Self::Vst3(_) => false,
+        }
     }
 
     /// Stage the parameter values the command fixture answers with.
