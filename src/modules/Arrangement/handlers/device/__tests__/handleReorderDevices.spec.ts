@@ -215,4 +215,24 @@ describe('handleReorderDevices', () => {
         expect(handleReorderDevices.execute(reorderAction, batchContext)).toEqual({ status: 'conflict' });
         expect(mocks.reorderDevicesInProject).not.toHaveBeenCalled();
     });
+
+    it('returns no-write when the target index is already the source index', () => {
+        const currentTrack = createAudioTrack();
+        const reorderAction: ReorderDevicesAction = {
+            type: 'reorderDevices',
+            payload: {
+                trackId: 'audio-1',
+                deviceId: 'device-1',
+                targetIndex: 0,
+                expectedBefore: currentTopology,
+            },
+        };
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [currentTrack] });
+
+        expect(handleReorderDevices.validate?.(reorderAction)).toBe(true);
+        expect(handleReorderDevices.execute(reorderAction)).toEqual({ status: 'no-write' });
+        expect(mocks.reorderDevicesInProject).not.toHaveBeenCalled();
+        expect(mocks.applyDeviceChainRuntimeDelta).not.toHaveBeenCalled();
+        expect(currentTrack.devices.map((device) => device.id)).toEqual(['device-1', 'device-2']);
+    });
 });
