@@ -819,6 +819,7 @@ describe('EX-05 drum preview-branch prompt workflow', () => {
                     : track
             ),
         });
+        flushAutomergeStorageWrites();
 
         expect(await confirmPendingChatActions({ confirmationId })).toEqual({
             status: 'invalidated',

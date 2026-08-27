@@ -548,6 +548,7 @@ describe('MF-03 articulation transfer prompt workflow', () => {
             ccByClipId: {},
             pitchBendByClipId: {},
         });
+        flushAutomergeStorageWrites();
         setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         chatStore.set({ messages: [], isGenerating: false, enableReasoning: true, chatMode: 'prompt' });
     });
@@ -726,6 +727,7 @@ describe('MF-03 articulation transfer prompt workflow', () => {
 
     it('includes every unambiguous MIDI chorus pair and protects audio clips and non-articulation fields', async () => {
         addSecondMidiAndAudioTracks();
+        flushAutomergeStorageWrites();
 
         await sendChatMessage(PROMPT);
 
@@ -969,6 +971,7 @@ describe('MF-03 articulation transfer prompt workflow', () => {
 
     it('keeps a grouped redo retryable when a collaborator changes a source articulation after undo', async () => {
         addSecondMidiAndAudioTracks();
+        flushAutomergeStorageWrites();
         await sendChatMessage(PROMPT);
         await confirmPendingChatActions({ confirmationId: getConfirmationId() });
         await undo();
@@ -1062,6 +1065,7 @@ describe('MF-03 articulation transfer prompt workflow', () => {
         ],
     ])('keeps grouped undo retryable when replay eligibility changes through %s', async (_label, mutateGuard) => {
         addSecondMidiAndAudioTracks();
+        flushAutomergeStorageWrites();
         await sendChatMessage(PROMPT);
         await confirmPendingChatActions({ confirmationId: getConfirmationId() });
         const eligibleTrackState = structuredClone(trackStore.value!);
@@ -1131,6 +1135,7 @@ describe('MF-03 articulation transfer prompt workflow', () => {
     // the two are indistinguishable is the production defect filed as #2894.
     it('leaves no receipt or history residue when the project changes before confirmation', async () => {
         addSecondMidiAndAudioTracks();
+        flushAutomergeStorageWrites();
         await sendChatMessage(PROMPT);
         const confirmationId = getConfirmationId();
         const state = midiStore.value!;
