@@ -4,6 +4,7 @@ import { collaborationStore } from '#/modules/Collaboration/stores';
 import {
     executeVersionedCommandBatchEnvelope,
     generateGroupId,
+    getVersionedCommandArgumentsDigest,
     getVersionedCommandBatchIdempotentReplay,
     parseVersionedCommandBatchEnvelope,
     parseVersionedCommandEnvelope,
@@ -733,18 +734,36 @@ function hasWarnedRenderPayloadBinding(
     confirmation: PendingAppActionConfirmation,
     approvedBatch: ParsedApprovedRetryBatch
 ): boolean {
-    if (!getSectionRenderReceiptScope(confirmation)) {
+    const approvedRenderCommands = approvedBatch.commands.filter(
+        (command) => command.operation === 'renderProjectSections'
+    );
+    const renderActions = confirmation.approvalSnapshot.actions.filter(
+        (action) => action.type === 'renderProjectSections'
+    );
+    if (approvedRenderCommands.length !== 1 || renderActions.length !== 1) {
         return false;
     }
-    return confirmation.executedActions.some((execution) => {
-        const approvedCommand = execution.commandId ? approvedBatch.commandsById.get(execution.commandId) : undefined;
-        return (
-            approvedCommand?.operation === 'renderProjectSections' &&
-            execution.actionType === approvedCommand.operation &&
+    const approvedRenderCommand = approvedRenderCommands[0];
+    const renderAction = renderActions[0];
+    if (!approvedRenderCommand || !renderAction || !getSectionRenderReceiptScope(confirmation)) {
+        return false;
+    }
+    const warnedRenderExecutions = confirmation.executedActions.filter(
+        (execution) =>
+            execution.commandId === approvedRenderCommand.commandId &&
+            execution.actionType === approvedRenderCommand.operation &&
             execution.executionKind === 'project' &&
             execution.outcome === 'committed-with-warning'
-        );
-    });
+    );
+    if (warnedRenderExecutions.length !== 1) {
+        return false;
+    }
+    return (
+        getVersionedCommandArgumentsDigest({
+            operation: renderAction.type,
+            arguments: renderAction.payload,
+        }) === approvedRenderCommand.argumentsDigest
+    );
 }
 
 function hasDurablyCommittedRetryableSectionRender(confirmation: PendingAppActionConfirmation): boolean {

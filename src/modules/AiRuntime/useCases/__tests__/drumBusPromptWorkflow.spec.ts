@@ -1684,6 +1684,25 @@ describe('drum bus prompt workflow', () => {
                 index === 1 ? structuredClone(firstExecution) : execution
             ),
         });
+        const withAlteredRenderJobPayload = (): PendingAppActionConfirmation => ({
+            ...committedConfirmation,
+            approvalSnapshot: {
+                ...committedConfirmation.approvalSnapshot,
+                actions: committedConfirmation.approvalSnapshot.actions.map((action) =>
+                    action.type === 'renderProjectSections' && action.payload.jobs
+                        ? {
+                              ...action,
+                              payload: {
+                                  ...action.payload,
+                                  jobs: action.payload.jobs.map((job) =>
+                                      job.jobId === failedJob.jobId ? { ...job, startBeat: job.startBeat + 1 } : job
+                                  ),
+                              },
+                          }
+                        : action
+                ),
+            },
+        });
 
         await expectRetryRefused('non-retryable follow-up must fail closed', {
             ...committedConfirmation,
@@ -1708,6 +1727,7 @@ describe('drum bus prompt workflow', () => {
                 commandBatch: { ...approvedBatch, serialized: '{' },
             },
         });
+        await expectRetryRefused('altered approved render job payload must fail closed', withAlteredRenderJobPayload());
         await expectRetryRefused('same-count duplicate execution IDs must fail closed', withDuplicateExecutionId());
         await expectRetryRefused(
             'same-count wrong execution schema version must fail closed',
