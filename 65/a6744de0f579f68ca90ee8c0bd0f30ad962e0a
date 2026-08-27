@@ -1,0 +1,30 @@
+src/modules/PluginHost/useCases/pluginLifecycle/__tests__/unloadPlugin.spec.ts
+  s_1b9333aca53d4d::t_db9338a6b7d6d1 1,3,6-11,13-17,23-39,42
+  s_1b9333aca53d4d::t_57b8f39be18867 40-41
+src/modules/PluginHost/useCases/pluginLifecycle/__tests__/pluginGuiLifecycle.spec.ts
+  s_1b9333aca53d4d::t_6ffde4ae7e4974 132-153
+src/modules/PluginHost/useCases/pluginLifecycle/openPluginGui.ts
+  s_1b9333aca53d4d::t_dbe05f3d22ff5f 4,14-19,24,27-39
+src/modules/PluginHost/useCases/pluginLifecycle/unloadPlugin.ts
+  s_1b9333aca53d4d::t_0b7681bd27ad58 23-28
+  s_1b9333aca53d4d::t_599af7f0539891 6
+  s_1b9333aca53d4d::t_0f929aa1526c4c 29
+src/modules/PluginHost/useCases/pluginLifecycle/closePluginGui.ts
+  s_1b9333aca53d4d::t_af190d602f69e2 4,9-12,18-29
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "65a6744de0f579f68ca90ee8c0bd0f30ad962e0a",
+  "prompts": {},
+  "sessions": {
+    "s_1b9333aca53d4d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "188b0d45-7765-49bd-8d6e-1eebbd450613",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
