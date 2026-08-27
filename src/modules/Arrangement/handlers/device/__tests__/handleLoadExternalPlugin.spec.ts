@@ -12,7 +12,7 @@ const mocks = vi.hoisted(() => ({
     getTrackStoreState: vi.fn(),
     reportLatency: vi.fn(),
     reportBridgeRoundTripFrames: vi.fn(),
-    getAudioSampleRate: vi.fn(() => 44_100),
+    getAudioSampleRate: vi.fn(() => 96_000),
     activateExternalPlugin: vi.fn(),
 }));
 
@@ -217,7 +217,7 @@ describe('handleLoadExternalPlugin', () => {
                 instanceId: 'instance-1',
                 // The rate this engine renders at, read live rather than
                 // assumed: the plugin processes the audio this graph produces.
-                engineSampleRate: 44_100,
+                engineSampleRate: 96_000,
             })
         );
         const activation = mocks.activateExternalPlugin.mock.calls[0]?.[0];

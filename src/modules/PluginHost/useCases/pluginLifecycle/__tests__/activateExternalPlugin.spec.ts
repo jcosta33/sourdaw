@@ -62,7 +62,7 @@ function emitLatencyChange(change: PluginLatencyChange): void {
  * The rate the caller's live engine renders at. Every activation states one,
  * because the host refuses a load that cannot.
  */
-const ENGINE_SAMPLE_RATE = 48_000;
+const ENGINE_SAMPLE_RATE = 44_100;
 
 // base64 'c2F2ZWQ=' decodes to the bytes of "saved".
 const SAVED_CHUNK = 'c2F2ZWQ=';

@@ -47,8 +47,8 @@ describe('Plugin Lifecycle Use Cases', () => {
     });
 
     it('loadPlugin delegates to repository', async () => {
-        await loadPlugin('p1', 'inst1', 48_000);
-        expect(mocks.loadPluginRepo).toHaveBeenCalledWith('p1', 'inst1', 48_000);
+        await loadPlugin('p1', 'inst1', 44_100);
+        expect(mocks.loadPluginRepo).toHaveBeenCalledWith('p1', 'inst1', 44_100);
     });
 
     it('rejects mismatched keyed unload ownership', async () => {
@@ -74,7 +74,7 @@ describe('Plugin Lifecycle Use Cases', () => {
 
         const unloadResult = unloadPlugin('ordered-instance');
         const duplicateUnload = unloadPlugin('ordered-instance');
-        const loadResult = loadPlugin('p1', 'ordered-instance', 48_000);
+        const loadResult = loadPlugin('p1', 'ordered-instance', 44_100);
         await Promise.resolve();
 
         expect(mocks.unloadPluginRepo).toHaveBeenCalledWith('ordered-instance');
@@ -84,7 +84,7 @@ describe('Plugin Lifecycle Use Cases', () => {
         await Promise.all([unloadResult, duplicateUnload, loadResult]);
 
         expect(mocks.unloadPluginRepo).toHaveBeenCalledTimes(1);
-        expect(mocks.loadPluginRepo).toHaveBeenCalledWith('p1', 'ordered-instance', 48_000);
+        expect(mocks.loadPluginRepo).toHaveBeenCalledWith('p1', 'ordered-instance', 44_100);
         expect(mocks.unloadPluginRepo.mock.invocationCallOrder[0]).toBeLessThan(
             mocks.loadPluginRepo.mock.invocationCallOrder[0]!
         );
@@ -95,7 +95,7 @@ describe('Plugin Lifecycle Use Cases', () => {
         let nestedResult: ReturnType<typeof loadPlugin> | undefined;
         mocks.unloadPluginRepo.mockImplementationOnce(() => {
             order.push('outer-start');
-            nestedResult = loadPlugin('p1', 'reentrant-instance', 48_000);
+            nestedResult = loadPlugin('p1', 'reentrant-instance', 44_100);
             order.push('outer-return');
             return Promise.resolve([['reentrant-instance'], []]);
         });
@@ -125,10 +125,10 @@ describe('Plugin Lifecycle Use Cases', () => {
         loadedExternalInstances.add('blocked-instance');
 
         const unloadResult = unloadPlugin('blocked-instance');
-        const loadResult = loadPlugin('p1', 'independent-instance', 48_000);
+        const loadResult = loadPlugin('p1', 'independent-instance', 44_100);
         await Promise.resolve();
 
-        expect(mocks.loadPluginRepo).toHaveBeenCalledWith('p1', 'independent-instance', 48_000);
+        expect(mocks.loadPluginRepo).toHaveBeenCalledWith('p1', 'independent-instance', 44_100);
 
         unloading.reject(failure);
         await expect(unloadResult).rejects.toBe(failure);
@@ -144,7 +144,7 @@ describe('Plugin Lifecycle Use Cases', () => {
         loadedExternalInstances.add('recovering-instance');
 
         const failedUnload = unloadPlugin('recovering-instance');
-        const recoveredLoad = loadPlugin('p1', 'recovering-instance', 48_000);
+        const recoveredLoad = loadPlugin('p1', 'recovering-instance', 44_100);
 
         expect(mocks.loadPluginRepo).not.toHaveBeenCalled();
         unloading.reject(failure);
@@ -152,7 +152,7 @@ describe('Plugin Lifecycle Use Cases', () => {
         await expect(recoveredLoad).rejects.toBe(failure);
         expect(mocks.loadPluginRepo).not.toHaveBeenCalled();
 
-        const retriedLoad = loadPlugin('p1', 'recovering-instance', 48_000);
+        const retriedLoad = loadPlugin('p1', 'recovering-instance', 44_100);
         await Promise.resolve();
         expect(mocks.loadPluginRepo).toHaveBeenCalledTimes(1);
         await expect(retriedLoad).resolves.toBe(pluginInstance);

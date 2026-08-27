@@ -8,7 +8,7 @@ import { projectTrackToLiveStrip } from '../projectTrackToLiveStrip';
 import { applySoloLogic } from '../toggleTrackState/applySoloLogic';
 
 /** The rate the live engine renders at, which is what a plugin must run at. */
-const ENGINE_SAMPLE_RATE = 44_100;
+const ENGINE_SAMPLE_RATE = 96_000;
 
 const mocks = vi.hoisted(() => ({
     getRuntimeGraphRevision: vi.fn(() => 0),
