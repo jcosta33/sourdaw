@@ -247,6 +247,7 @@ function admitted(fixture: BatchFixture, agentApproval: AgentApproval = null) {
 type VerifiedReceipt = ReturnType<typeof createVerifiedBatchReceipt>;
 type ReceiptResult = Parameters<typeof createVerifiedBatchReceipt>[0]['result'];
 type PendingEffect = NonNullable<ReceiptResult['warningDetails']>[number]['pendingEffect'];
+type ExternalPendingEffect = Extract<NonNullable<PendingEffect>, { kind: 'external-effect' }>;
 
 function buildVerifiedReceipt(input: { fixture: BatchFixture; result: ReceiptResult }): VerifiedReceipt {
     return createVerifiedBatchReceipt({
@@ -290,14 +291,17 @@ function executedReceipt(fixture: BatchFixture): VerifiedReceipt {
     });
 }
 
-function pendingEffect(fixture: BatchFixture): NonNullable<PendingEffect> {
+function pendingEffect(
+    fixture: BatchFixture,
+    remediation: ExternalPendingEffect['remediation'] = 'reconcile'
+): ExternalPendingEffect {
     const command = getReceiptCommandFixture(fixture);
     return {
         commandId: command.commandId,
         kind: 'external-effect',
         operation: command.operation,
         reason: 'Imported stem runtime reconciliation remains incomplete',
-        remediation: 'reconcile',
+        remediation,
         state: 'pending',
     };
 }
@@ -747,7 +751,7 @@ describe('executePromptActionGroup', () => {
 
     it('exposes manual repair instead of a reconcile-batch continuation for a manual-repair receipt', async () => {
         const fixture = getBatchFixtures().stem;
-        const effect = { ...pendingEffect(fixture), remediation: 'manual-repair' as const };
+        const effect = pendingEffect(fixture, 'manual-repair');
         const receipt = buildVerifiedReceipt({
             fixture,
             result: {
