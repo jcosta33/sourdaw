@@ -664,7 +664,7 @@ describe('track-state guarded undo integration', () => {
             expect(track('track-1')).toMatchObject({ frozen: true, freezeState: { status: 'frozen' } });
         });
 
-        it('conflicts rather than overwriting a take re-frozen after the unfreeze and allows older undo', async () => {
+        it('conflicts rather than overwriting a take re-frozen after the unfreeze and retains the retryable conflict', async () => {
             await run({ type: 'disableTrack', payload: { trackId: 'track-1', disabled: true } });
             divergeTrack('track-1', frozenState);
             await run({ type: 'unfreezeTrack', payload: { trackId: 'track-1' } });
@@ -685,9 +685,10 @@ describe('track-state guarded undo integration', () => {
                 freezeState: { freezeId: 'freeze-9' },
             });
 
-            // 2. Subsequent undo reaches the older disableTrack edit underneath
+            // 2. A singleton conflict stays at the top of history for retry; it
+            // does not skip the failed inverse and reach the older edit underneath.
             await undo();
-            expect(track('track-1')?.disabled).toBe(false);
+            expect(track('track-1')?.disabled).toBe(true);
         });
     });
 });

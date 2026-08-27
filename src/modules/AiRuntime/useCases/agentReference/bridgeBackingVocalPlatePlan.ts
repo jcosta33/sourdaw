@@ -20,6 +20,7 @@ type BridgeBackingVocalPlatePlanResult =
           actions: RuntimeAction[];
           identities: BatchLocalActionIdentity[];
           renderTailSeconds: number;
+          providerKnownTargetIds: string[];
       };
 
 const EX_01_ONLY_TOOL_NAMES = new Set(['automateSendRanges', 'renderProjectSections']);
@@ -161,5 +162,6 @@ export function bridgeBackingVocalPlatePlan({
             { actionType: 'addDevice', actionOrdinal: 1, deviceId: plateDeviceId },
         ],
         renderTailSeconds: values.renderTailSeconds,
+        providerKnownTargetIds: [...removableReverbIds, ...trackIds],
     };
 }

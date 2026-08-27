@@ -1,7 +1,10 @@
-/// <reference types="@webgpu/types" />
+import { expect, test, type Locator, type Page, type TestInfo } from '@playwright/test';
 
-import { expect, test, type Page } from '@playwright/test';
-
+import {
+    getBrowserAiWebGpuHardwareRequirement,
+    probeBrowserWebGpuHardware,
+    requireBrowserWebGpuHardware,
+} from './browserAiHardware';
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 const CAPABILITY_STORAGE_KEY = 'sourdaw-browser-ai-capability';
@@ -17,11 +20,79 @@ type DdspRenderProbe = {
     }>;
 };
 
+type BrowserAiCapabilityReport = {
+    capability: 'supported' | 'unsupported-browser';
+    crossOriginIsolated: boolean;
+    opfsAvailable: boolean;
+    webGpu: { reason?: string; status: 'supported' | 'unavailable' };
+    workerAvailable: boolean;
+};
+
 declare global {
     // oxlint-disable-next-line typescript/consistent-type-definitions -- Window must merge with the DOM global.
     interface Window {
         __SOURDAW_DDSP_RENDER_PROBE__?: DdspRenderProbe;
     }
+}
+
+function isBrowserAiCapabilityReport(value: unknown): value is BrowserAiCapabilityReport {
+    if (!isRecord(value)) {
+        return false;
+    }
+    const report = value;
+    const webGpu = report.webGpu;
+    return (
+        (report.capability === 'supported' || report.capability === 'unsupported-browser') &&
+        typeof report.crossOriginIsolated === 'boolean' &&
+        typeof report.opfsAvailable === 'boolean' &&
+        typeof report.workerAvailable === 'boolean' &&
+        isRecord(webGpu) &&
+        (webGpu.status === 'supported' || webGpu.status === 'unavailable')
+    );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+async function getBrowserAiCapabilityReport(page: Page, testInfo: TestInfo): Promise<BrowserAiCapabilityReport> {
+    await expect
+        .poll(() => page.evaluate((key) => window.localStorage.getItem(key) !== null, CAPABILITY_STORAGE_KEY))
+        .toBe(true);
+    const observedReport: unknown = await page.evaluate((key) => {
+        const cached = window.localStorage.getItem(key);
+        if (cached === null) {
+            return null;
+        }
+        const parsed: unknown = JSON.parse(cached);
+        return parsed;
+    }, CAPABILITY_STORAGE_KEY);
+    await testInfo.attach('browser-ai-capability-report', {
+        body: JSON.stringify(observedReport),
+        contentType: 'application/json',
+    });
+    expect(isBrowserAiCapabilityReport(observedReport)).toBe(true);
+    if (!isBrowserAiCapabilityReport(observedReport)) {
+        throw new Error('Browser AI capability report did not match its public runtime contract');
+    }
+    return observedReport;
+}
+
+async function waitForDdspRenderProbe(page: Page): Promise<void> {
+    await expect
+        .poll(() =>
+            page
+                .evaluate(() => typeof window.__SOURDAW_DDSP_RENDER_PROBE__)
+                .catch((error: unknown) => {
+                    // Vite re-optimizes the probe's worker dependencies on first import and
+                    // reloads the page mid-poll; a sentinel keeps polling across the reload.
+                    if (error instanceof Error && error.message.includes('Execution context was destroyed')) {
+                        return 'reloading';
+                    }
+                    throw error;
+                })
+        )
+        .toBe('object');
 }
 
 async function renderDdspAfterViteWorkerOptimization(
@@ -34,30 +105,46 @@ async function renderDdspAfterViteWorkerOptimization(
             throw error;
         }
         await page.waitForLoadState('load');
-        await expect.poll(() => page.evaluate(() => typeof window.__SOURDAW_DDSP_RENDER_PROBE__)).toBe('object');
+        await waitForDdspRenderProbe(page);
         expect(page.url()).toContain('/tests/e2e/ddspRenderProbe.html');
         return page.evaluate(() => window.__SOURDAW_DDSP_RENDER_PROBE__!.renderOffline());
     }
 }
 
-test('admits the live Chromium runtime from required Browser AI capabilities', async ({ page }, testInfo) => {
-    await setupWorkspace(page);
-    await launch_new_project(page);
+async function openBrowserAiPreferences(page: Page): Promise<Locator> {
+    await page.getByTestId('toggle-preferences').click();
+    const dialog = page.getByRole('dialog');
+    await dialog.getByRole('button', { name: 'AI', exact: true }).click();
+    return dialog;
+}
 
-    await expect
-        .poll(() => page.evaluate((key) => window.localStorage.getItem(key) !== null, CAPABILITY_STORAGE_KEY))
-        .toBe(true);
-    const observedReport: unknown = await page.evaluate((key) => {
-        const cached = window.localStorage.getItem(key);
-        if (cached === null) {
-            return null;
-        }
-        return JSON.parse(cached) as unknown;
-    }, CAPABILITY_STORAGE_KEY);
-    await testInfo.attach('browser-ai-capability-report', {
-        body: JSON.stringify(observedReport),
-        contentType: 'application/json',
-    });
+async function assertBrowserAiCapabilityBoundary({
+    page,
+    testInfo,
+}: {
+    page: Page;
+    testInfo: TestInfo;
+}): Promise<{ supportsHardwareWebGpu: boolean }> {
+    const hardwareProbe = await probeBrowserWebGpuHardware(page);
+    const hardwareRequirement = getBrowserAiWebGpuHardwareRequirement(testInfo.project.metadata);
+    if (hardwareRequirement === 'required') {
+        requireBrowserWebGpuHardware(hardwareProbe);
+    }
+
+    const observedReport = await getBrowserAiCapabilityReport(page, testInfo);
+    const dialog = await openBrowserAiPreferences(page);
+    if (hardwareProbe.status === 'unavailable') {
+        expect(observedReport).toEqual(
+            expect.objectContaining({
+                capability: 'unsupported-browser',
+                webGpu: { status: 'unavailable' },
+            })
+        );
+        await expect(dialog.getByText('Browser AI Unavailable', { exact: true })).toBeVisible();
+        await expect(dialog.getByRole('status', { name: 'Browser AI capabilities' })).toHaveCount(0);
+        return { supportsHardwareWebGpu: false };
+    }
+
     expect(observedReport).toEqual(
         expect.objectContaining({
             capability: 'supported',
@@ -69,25 +156,36 @@ test('admits the live Chromium runtime from required Browser AI capabilities', a
     );
     expect(observedReport).not.toHaveProperty('chromeVersion');
 
-    await page.getByTestId('toggle-preferences').click();
-    const dialog = page.getByRole('dialog');
-    await dialog.getByRole('button', { name: 'AI', exact: true }).click();
-
-    const capabilityStatus = page.getByRole('status', { name: 'Browser AI capabilities' });
+    const capabilityStatus = dialog.getByRole('status', { name: 'Browser AI capabilities' });
     await expect(capabilityStatus).toBeVisible();
     const webGpuRow = capabilityStatus.getByText('WebGPU', { exact: true }).locator('..');
     await expect(webGpuRow.getByText('Available', { exact: true })).toBeVisible();
     await expect(capabilityStatus.getByText('Cross-Origin Isolation', { exact: true })).toBeVisible();
     await expect(capabilityStatus.getByText('Web Workers', { exact: true })).toBeVisible();
     await expect(capabilityStatus.getByText('Not Measured', { exact: true })).toBeVisible();
+    return { supportsHardwareWebGpu: true };
+}
+
+test('proves the live Chromium Browser AI admission boundary without skipping', async ({ page }, testInfo) => {
+    await setupWorkspace(page);
+    await launch_new_project(page);
+
+    await assertBrowserAiCapabilityBoundary({ page, testInfo });
 });
 
 test('renders an exact-duration DDSP preview from verified OPFS artifacts with hardware WebGPU', async ({
     page,
 }, testInfo) => {
     test.setTimeout(180_000);
+    await setupWorkspace(page);
+    await launch_new_project(page);
+    const admission = await assertBrowserAiCapabilityBoundary({ page, testInfo });
+    if (!admission.supportsHardwareWebGpu) {
+        return;
+    }
+
     await page.goto('/tests/e2e/ddspRenderProbe.html');
-    await expect.poll(() => page.evaluate(() => typeof window.__SOURDAW_DDSP_RENDER_PROBE__)).toBe('object');
+    await waitForDdspRenderProbe(page);
 
     const prepared = await page.evaluate(() => window.__SOURDAW_DDSP_RENDER_PROBE__!.prepare());
     expect(prepared).toEqual({ ready: true, artifactCount: 3 });

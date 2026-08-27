@@ -754,7 +754,9 @@ describe('resource CLI', () => {
     });
 
     it('pins validation worker limits', () => {
-        expect(readFileSync(join(process.cwd(), 'vite.config.ts'), 'utf8')).toMatch(/maxWorkers:\s*2/);
+        expect(readFileSync(join(process.cwd(), 'vite.config.ts'), 'utf8')).toMatch(
+            /maxWorkers:\s*Number\(env\.VITEST_MAX_WORKERS \?\? 2\)/
+        );
         expect(readFileSync(join(process.cwd(), 'playwright.config.ts'), 'utf8')).toMatch(/workers:\s*1/);
     });
 

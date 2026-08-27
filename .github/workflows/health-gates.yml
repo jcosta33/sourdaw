@@ -17,11 +17,15 @@ name: Health gates
 # already ran, which is deliberate — it costs nothing here, and the alternative
 # is a merge decided by results from an older head.
 #
-# `gate` is the only job the branch ruleset requires by name. It depends on
-# every job whose result should decide a merge, and passes when each either
-# succeeded or was legitimately skipped. A required check naming a filtered job
-# directly would sit pending forever on any pull request that skips it, so
-# nothing else may be required and `gate` must not be renamed.
+# `gate` is the stable workflow summary. It depends on every job whose result
+# currently decides that summary, and passes when each either succeeded or was
+# legitimately skipped. It is informational today: the live ruleset requires no
+# status checks. GitHub can require workflow job checks, but Sourdaw deliberately
+# keeps pull-request-editable workflows out of merge authority; that is this
+# repository's trust policy, not a GitHub platform restriction. A required check
+# from a workflow skipped by trigger-level path, branch, or commit-message
+# filters remains pending; `gate` only makes conditional job skips resolve. Do
+# not rename `gate`.
 #
 # Runners are standard GitHub-hosted labels only. Public repositories bill
 # nothing for those; larger and GPU runners bill even here.
@@ -39,6 +43,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
 
 concurrency:
   # Pull-request runs and approved reviews share the PR-number group. Every
@@ -267,6 +272,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # `checkReleaseInventory.spec.ts` reads each measurement's pinned
+          # implementation source through `git show <revision>:<path>`.
+          # The unit matrix therefore needs the immutable source history.
+          fetch-depth: 0
 
       - name: Enable Corepack
         run: corepack enable
@@ -469,6 +479,38 @@ jobs:
           path: blob-report/
           retention-days: 7
 
+  browser-ai-webgpu:
+    name: Browser AI WebGPU admission
+    needs: decide
+    # The default Chromium matrix must prove the unsupported boundary on hosts
+    # without hardware WebGPU. This focused leg owns the complementary positive
+    # proof and therefore fails, rather than skips, when macOS cannot provide a
+    # core non-fallback adapter.
+    if: needs.decide.outputs.heavy == 'true' && needs.decide.outputs.e2e == 'true'
+    runs-on: macos-14
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Chromium
+        run: pnpm exec playwright install chromium
+
+      - name: Run Browser AI WebGPU admission
+        run: pnpm test:e2e:browser-ai-webgpu-admission
+
   e2e-report:
     name: End-to-end report
     needs: e2e
@@ -633,7 +675,8 @@ jobs:
     # nightly is the only thing that observes what path filters and the approval
     # gate skip, so its failures have to arrive somewhere a person looks.
     if: ${{ failure() && github.event_name == 'schedule' }}
-    needs: [static, lint, boundaries, unit, build, rust, native-macos, native-windows, e2e, codeql, secrets]
+    needs:
+      [static, lint, boundaries, unit, build, rust, native-macos, native-windows, e2e, browser-ai-webgpu, codeql, secrets]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -661,35 +704,27 @@ jobs:
           fi
 
   gate:
-    # Named distinctly from the workflow so the required check is unambiguous in
-    # the ruleset and in the checks list. Renaming it silently breaks the
-    # requirement: the ruleset matches by name, and a required check that no job
-    # reports leaves every pull request pending forever.
+    # Named distinctly from the workflow so the stable summary is unambiguous in
+    # the checks list. Renaming it breaks consumers of that summary.
     name: Gate
-    # The single required status check. It runs whatever happened upstream, so
-    # a pull request that legitimately skips every heavy leg still reports a
-    # conclusion instead of sitting pending.
+    # It runs whatever happened upstream, so a pull request that legitimately
+    # skips every heavy leg still reports a conclusion instead of sitting pending.
     #
-    # `unit` and `e2e` are deliberately absent. They run, and their results are
-    # visible on the pull request, but they do not decide the merge yet — a gate
-    # is only worth having if a red one means something, and each of these has a
-    # reason it does not yet. Each is promoted by one line here, and each should
-    # be, as soon as its reason expires. Red is a reason to fix the thing and
-    # then gate it, never a reason to leave it ungated.
+    # The full `unit` and general `e2e` jobs are deliberately absent. They run,
+    # and their results are visible on the pull request, but they do not decide
+    # this summary yet. The focused Browser AI hardware proof below is separate:
+    # its deterministic positive admission boundary does gate. The test pins the
+    # current non-gating job list, not a claimed future admission policy.
     #
-    # The unit suite fails 217 tests across 37 files on `main` today, none of
-    # them caused by any open pull request. Gating on it now would mean a red
-    # check that says "main was already broken" on every unrelated change, and
-    # would freeze the repository against a defect its author is not fixing.
-    # Promote it the moment `main` is green — it is deterministic, it is the
-    # feedback that replaces a local run, and it is the first of these four that
-    # should decide merges.
+    # The unit suite has an existing-main baseline failure. Gating on it now
+    # would mean a red check that says "main was already broken" on every
+    # unrelated change, and would freeze the repository against a defect its
+    # author is not fixing. Promote it once `main` is green and deterministic.
     #
-    # The end-to-end suite passed 895 of 928 on its first execution. Some of the
-    # remainder download a model from a third-party host at run time and fail
-    # with `Failed to fetch` when that host is unreachable, which makes the suite
-    # non-deterministic as a gate rather than merely red. Promote it once those
-    # tests no longer reach the network and the suite is green.
+    # Some end-to-end tests download a model from a third-party host at run time
+    # and fail with `Failed to fetch` when that host is unreachable, which makes
+    # the suite non-deterministic as a gate rather than merely red. Promote it
+    # once those tests no longer reach the network and the suite is green.
     #
     # `codeql` and `secrets` were held out until each had completed a run, on
     # the principle that gating on unobserved behaviour is the mistake that left
@@ -709,6 +744,7 @@ jobs:
       - rust
       - native-macos
       - native-windows
+      - browser-ai-webgpu
       - codeql
       - secrets
     runs-on: ubuntu-latest
