@@ -659,62 +659,103 @@ async function retryCommittedSectionRenders(
     return { status: 'executed' };
 }
 
-function hasDurablyCommittedRetryableSectionRender(confirmation: PendingAppActionConfirmation): boolean {
-    if (
-        (confirmation.status !== 'executed' && confirmation.status !== 'failed') ||
-        confirmation.followUpStatus !== 'retryable' ||
-        !confirmation.followUpProjectRevision
-    ) {
-        return false;
-    }
+type ValidApprovedCommandBatch = Extract<
+    ReturnType<typeof parseVersionedCommandBatchEnvelope>,
+    { status: 'valid' }
+>['envelope'];
+type ApprovedCommand = ValidApprovedCommandBatch['commands'][number];
+type ParsedApprovedRetryBatch = {
+    commands: ValidApprovedCommandBatch['commands'];
+    commandsById: ReadonlyMap<string, ApprovedCommand>;
+};
 
+function isEligibleForCommittedSectionRenderRetry(confirmation: PendingAppActionConfirmation): boolean {
+    return (
+        (confirmation.status === 'executed' || confirmation.status === 'failed') &&
+        confirmation.followUpStatus === 'retryable' &&
+        confirmation.followUpProjectRevision !== null
+    );
+}
+
+function parseApprovedRetryBatch(confirmation: PendingAppActionConfirmation): ParsedApprovedRetryBatch | null {
     const approvedCommandBatch = confirmation.approvalSnapshot.commandBatch;
     if (!approvedCommandBatch) {
-        return false;
+        return null;
     }
     const parsedBatch = parseVersionedCommandBatchEnvelope(
         approvedCommandBatch.serialized,
         approvedCommandBatch.authority
     );
     if (parsedBatch.status !== 'valid') {
-        return false;
+        return null;
     }
-    const approvedCommandsById = new Map(parsedBatch.envelope.commands.map((command) => [command.commandId, command]));
-    if (
-        approvedCommandsById.size !== parsedBatch.envelope.commands.length ||
-        confirmation.executedActions.length !== approvedCommandsById.size
-    ) {
+
+    const commandsById = new Map<string, ApprovedCommand>(
+        parsedBatch.envelope.commands.map((command) => [command.commandId, command])
+    );
+    return { commands: parsedBatch.envelope.commands, commandsById };
+}
+
+function hasExactCommittedProjectReceiptBinding(
+    confirmation: PendingAppActionConfirmation,
+    approvedBatch: ParsedApprovedRetryBatch
+): boolean {
+    if (confirmation.executedActions.length !== approvedBatch.commands.length) {
         return false;
     }
     const committedCommandIds = new Set<string>();
     for (const execution of confirmation.executedActions) {
-        const approvedCommand = execution.commandId ? approvedCommandsById.get(execution.commandId) : undefined;
-        if (
-            !approvedCommand ||
-            committedCommandIds.has(approvedCommand.commandId) ||
-            execution.commandSchemaVersion !== approvedCommand.schemaVersion ||
-            execution.executionKind !== 'project' ||
-            (execution.outcome !== 'committed' && execution.outcome !== 'committed-with-warning')
-        ) {
+        if (!execution.commandId) {
+            return false;
+        }
+        const approvedCommand = approvedBatch.commandsById.get(execution.commandId);
+        if (!approvedCommand) {
+            return false;
+        }
+        if (committedCommandIds.has(approvedCommand.commandId)) {
+            return false;
+        }
+        if (execution.commandSchemaVersion !== approvedCommand.schemaVersion) {
+            return false;
+        }
+        if (execution.executionKind !== 'project') {
+            return false;
+        }
+        if (execution.outcome !== 'committed' && execution.outcome !== 'committed-with-warning') {
             return false;
         }
         committedCommandIds.add(approvedCommand.commandId);
     }
-    if (committedCommandIds.size !== approvedCommandsById.size) {
+    return true;
+}
+
+function hasWarnedRenderPayloadBinding(
+    confirmation: PendingAppActionConfirmation,
+    approvedBatch: ParsedApprovedRetryBatch
+): boolean {
+    if (!getSectionRenderReceiptScope(confirmation)) {
         return false;
     }
-    const approvedRenderCommandIds = new Set(
-        parsedBatch.envelope.commands
-            .filter(({ operation }) => operation === 'renderProjectSections')
-            .map(({ commandId }) => commandId)
-    );
-    return confirmation.executedActions.some(
-        ({ actionType, commandId, executionKind, outcome }) =>
-            actionType === 'renderProjectSections' &&
-            executionKind === 'project' &&
-            outcome === 'committed-with-warning' &&
-            commandId !== undefined &&
-            approvedRenderCommandIds.has(commandId)
+    return confirmation.executedActions.some((execution) => {
+        const approvedCommand = execution.commandId ? approvedBatch.commandsById.get(execution.commandId) : undefined;
+        return (
+            approvedCommand?.operation === 'renderProjectSections' &&
+            execution.actionType === approvedCommand.operation &&
+            execution.executionKind === 'project' &&
+            execution.outcome === 'committed-with-warning'
+        );
+    });
+}
+
+function hasDurablyCommittedRetryableSectionRender(confirmation: PendingAppActionConfirmation): boolean {
+    if (!isEligibleForCommittedSectionRenderRetry(confirmation)) {
+        return false;
+    }
+    const approvedBatch = parseApprovedRetryBatch(confirmation);
+    return (
+        approvedBatch !== null &&
+        hasExactCommittedProjectReceiptBinding(confirmation, approvedBatch) &&
+        hasWarnedRenderPayloadBinding(confirmation, approvedBatch)
     );
 }
 

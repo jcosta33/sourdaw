@@ -41,12 +41,12 @@ import { setNotificationEventBus } from '#/utils/Notification/notificationEventB
 
 import { cloudSession } from '../../repositories/cloudLlm/cloudSession';
 import { generateWebLlmCompletion } from '../../repositories/webLlm/generateWebLlmCompletion';
+import { replacePendingActionConfirmationForTest } from '../../stores/__tests__/pendingActionConfirmationStoreTestSupport';
 import { clearAiHistory } from '../../stores/aiActionHistoryStore';
 import { chatStore } from '../../stores/chatStore';
 import {
     clearPendingActionConfirmations,
     getPendingActionConfirmation,
-    pendingActionConfirmationStore,
     proposePendingActionConfirmation,
     type PendingAppActionConfirmation,
 } from '../../stores/pendingActionConfirmationStore';
@@ -1651,19 +1651,17 @@ describe('drum bus prompt workflow', () => {
         }
         const approvedBatch = committedConfirmation.approvalSnapshot.commandBatch;
         const firstExecution = committedConfirmation.executedActions[0];
-        if (!approvedBatch || !firstExecution || firstExecution.commandSchemaVersion === undefined) {
+        const secondExecution = committedConfirmation.executedActions[1];
+        if (
+            !approvedBatch ||
+            !firstExecution ||
+            !secondExecution ||
+            firstExecution.commandSchemaVersion === undefined
+        ) {
             throw new Error('Expected approved command and execution receipt evidence');
         }
         const setStoredConfirmation = (candidate: PendingAppActionConfirmation): void => {
-            const state = pendingActionConfirmationStore.value;
-            if (!state) {
-                throw new Error('Expected pending confirmation state');
-            }
-            pendingActionConfirmationStore.set({
-                confirmations: state.confirmations.map((entry) =>
-                    entry.id === confirmation.id ? structuredClone(candidate) : entry
-                ),
-            });
+            replacePendingActionConfirmationForTest(candidate);
         };
         const expectRetryRefused = async (label: string, candidate: PendingAppActionConfirmation): Promise<void> => {
             setStoredConfirmation(candidate);
@@ -1680,11 +1678,11 @@ describe('drum bus prompt workflow', () => {
                 index === 0 ? { ...execution, ...update } : execution
             ),
         });
-        const withAdditionalExecution = (
-            update: Partial<PendingAppActionConfirmation['executedActions'][number]>
-        ): PendingAppActionConfirmation => ({
+        const withDuplicateExecutionId = (): PendingAppActionConfirmation => ({
             ...committedConfirmation,
-            executedActions: [...committedConfirmation.executedActions, { ...firstExecution, ...update }],
+            executedActions: committedConfirmation.executedActions.map((execution, index) =>
+                index === 1 ? structuredClone(firstExecution) : execution
+            ),
         });
 
         await expectRetryRefused('non-retryable follow-up must fail closed', {
@@ -1710,29 +1708,22 @@ describe('drum bus prompt workflow', () => {
                 commandBatch: { ...approvedBatch, serialized: '{' },
             },
         });
-        await expectRetryRefused('duplicate execution receipt must fail closed', {
-            ...committedConfirmation,
-            executedActions: [...committedConfirmation.executedActions, structuredClone(firstExecution)],
-        });
+        await expectRetryRefused('same-count duplicate execution IDs must fail closed', withDuplicateExecutionId());
         await expectRetryRefused(
-            'wrong execution schema version must fail closed',
+            'same-count wrong execution schema version must fail closed',
             withFirstExecution({ commandSchemaVersion: firstExecution.commandSchemaVersion + 1 })
         );
         await expectRetryRefused(
-            'complete receipt set plus wrong schema receipt must fail closed',
-            withAdditionalExecution({ commandSchemaVersion: firstExecution.commandSchemaVersion + 1 })
+            'same-count unknown command receipt must fail closed',
+            withFirstExecution({ commandId: 'unauthorized-command-id' })
         );
         await expectRetryRefused(
-            'complete receipt set plus unknown command receipt must fail closed',
-            withAdditionalExecution({ commandId: 'unauthorized-command-id' })
+            'same-count non-project receipt must fail closed',
+            withFirstExecution({ executionKind: 'runtime' })
         );
         await expectRetryRefused(
-            'complete receipt set plus non-project receipt must fail closed',
-            withAdditionalExecution({ executionKind: 'runtime' })
-        );
-        await expectRetryRefused(
-            'complete receipt set plus non-committed receipt must fail closed',
-            withAdditionalExecution({ outcome: 'executed-with-warning' })
+            'same-count non-committed receipt must fail closed',
+            withFirstExecution({ outcome: 'executed-with-warning' })
         );
         setStoredConfirmation(committedConfirmation);
         const committedTracks = structuredClone(trackStore.value?.tracks ?? []);
@@ -2371,8 +2362,7 @@ describe('drum bus prompt workflow', () => {
             chatStore.value?.messages.find((message) => message.pendingActionConfirmationId)
                 ?.pendingActionConfirmationId ?? ''
         );
-        const state = pendingActionConfirmationStore.value;
-        if (!confirmation || !state) {
+        if (!confirmation) {
             throw new Error('Expected MF-01 confirmation');
         }
         const replacement = confirmation.actions.map((action, index) =>
@@ -2380,11 +2370,7 @@ describe('drum bus prompt workflow', () => {
                 ? { ...action, payload: { ...action.payload, trackId: 'track-parallel' } }
                 : action
         );
-        pendingActionConfirmationStore.set({
-            confirmations: state.confirmations.map((candidate) =>
-                candidate.id === confirmation.id ? { ...candidate, actions: replacement } : candidate
-            ),
-        });
+        replacePendingActionConfirmationForTest({ ...confirmation, actions: replacement });
 
         const result = await confirmPendingChatActions({ confirmationId: confirmation.id });
 
@@ -2575,8 +2561,7 @@ describe('drum bus prompt workflow', () => {
                 ?.pendingActionConfirmationId ?? ''
         );
         const busAction = confirmation?.actions[0];
-        const state = pendingActionConfirmationStore.value;
-        if (!confirmation || busAction?.type !== 'createBus' || !busAction.payload.busId || !state) {
+        if (!confirmation || busAction?.type !== 'createBus' || !busAction.payload.busId) {
             throw new Error('Expected the proposed Drum Bus batch');
         }
         const revision = captureProjectRevision();
@@ -2586,11 +2571,7 @@ describe('drum bus prompt workflow', () => {
             }
             return { ...action, payload: { ...action.payload, trackId: 'track-parallel' } };
         });
-        pendingActionConfirmationStore.set({
-            confirmations: state.confirmations.map((candidate) =>
-                candidate.id === confirmation.id ? { ...candidate, actions: replacedActions } : candidate
-            ),
-        });
+        replacePendingActionConfirmationForTest({ ...confirmation, actions: replacedActions });
         expect(captureProjectRevision()).toBe(revision);
 
         const result = await confirmPendingChatActions({ confirmationId: confirmation.id });
