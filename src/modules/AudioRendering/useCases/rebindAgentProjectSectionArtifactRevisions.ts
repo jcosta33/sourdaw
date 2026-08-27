@@ -33,13 +33,19 @@ function matchesBinding(
 
 export function rebindAgentProjectSectionArtifactRevisions(
     input: RebindAgentProjectSectionArtifactRevisionsInput
-): boolean {
+): void {
     if (input.artifacts.length === 0) {
-        return true;
+        return;
     }
     const current = agentSectionRenderArtifactStore.value?.artifacts ?? [];
-    if (!input.artifacts.every((binding) => current.some((artifact) => matchesBinding(artifact, binding)))) {
-        return false;
+    const missingJobIds = input.artifacts
+        .filter((binding) => !current.some((artifact) => matchesBinding(artifact, binding)))
+        .map(({ job }) => job.jobId);
+    // A bound artifact that vanished before the rebind would silently leave the
+    // committed revision without its render evidence, so this cannot degrade to
+    // a no-op.
+    if (missingJobIds.length > 0) {
+        throw new Error(`Section render artifacts vanished before the revision rebind: ${missingJobIds.join(', ')}`);
     }
     agentSectionRenderArtifactStore.set({
         artifacts: current.map((artifact) =>
@@ -48,5 +54,4 @@ export function rebindAgentProjectSectionArtifactRevisions(
                 : artifact
         ),
     });
-    return true;
 }
