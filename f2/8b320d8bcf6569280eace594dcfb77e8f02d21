@@ -1,0 +1,41 @@
+crates/sourdaw-native/src/host/mod.rs
+  s_1b9333aca53d4d::t_8648f920d14dd7 3,8-43
+crates/sourdaw-native/src/commands/plugins.rs
+  s_1b9333aca53d4d::t_d2ccff067e7568 900-902,907,909-912,914
+  s_1b9333aca53d4d::t_09e23e03b37bed 903-906,908,913
+crates/sourdaw-native/src/addon/mod.rs
+  s_1b9333aca53d4d::t_1fe78a4fdd1a60 133-136
+  s_1b9333aca53d4d::t_96873232cdfbff 196
+crates/sourdaw-native/src/commands/plugin_gui.rs
+  s_1b9333aca53d4d::t_01b16d7361a4e6 349-358,360-369
+  s_1b9333aca53d4d::t_8aad76105eee64 758,763,769,777-782
+  s_1b9333aca53d4d::t_951e91cfd89da2 13,20-28
+  s_1b9333aca53d4d::t_626673b3deabe9 927,932,941-948
+  s_1b9333aca53d4d::t_0712ce499c9c1c 983-989,1000-1004
+  s_1b9333aca53d4d::t_a57734f1e325d5 598-618
+  s_1b9333aca53d4d::t_4b9392e1c036a1 307-316,321
+  s_1b9333aca53d4d::t_c73cedf57a9223 1016
+  s_1b9333aca53d4d::t_f20bf4cd2073a7 29,592
+crates/sourdaw-native/src/host/plugin_host_requests.rs
+  s_1b9333aca53d4d::t_f5161af27aeaef 1-3,8-11,16-17,19-37,41-54,56-61,63,71,73,85,88,104-125,138-155,157,159-164,168,171-173,175,177,179-189,203-211
+  s_1b9333aca53d4d::t_31ce11cd84404d 4-7,12-15,18,38-40,55,62,64-70,72,74-84,86-87,89-103,126-137,156,158,165-167,169-170,174,176,178,190-202
+crates/sourdaw-native/src/host/latency_watcher.rs
+  s_1b9333aca53d4d::t_d7c991b4689b50 17
+  s_1b9333aca53d4d::t_19aad8b56397e9 100-101
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "f28b320d8bcf6569280eace594dcfb77e8f02d21",
+  "prompts": {},
+  "sessions": {
+    "s_1b9333aca53d4d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "188b0d45-7765-49bd-8d6e-1eebbd450613",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
