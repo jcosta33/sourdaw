@@ -1,3 +1,4 @@
+import { logger } from '#/infra/logger/appLogger';
 import {
     getVersionedCommandBatchIdempotentReplay,
     parseVersionedCommandBatchEnvelope,
@@ -31,10 +32,17 @@ export function reconcilePreparedStemImportRecovery(input: { runId: string; batc
     };
     try {
         if (preparedStemImportResources.hydrate({ runId: input.runId, recovery, commandBatch })) {
-            return preparedStemImportResources.reconcile({
-                ...input,
-                getVerifiedReceipt: getVersionedCommandBatchIdempotentReplay,
-            });
+            return preparedStemImportResources
+                .reconcile({
+                    ...input,
+                    getVerifiedReceipt: getVersionedCommandBatchIdempotentReplay,
+                })
+                .catch((error: unknown) => {
+                    // Unreadable commit evidence is not absence: keep the resources
+                    // cleanup-pending so a later recovery pass can reconcile them.
+                    logger.error(new Error('Prepared stem import commit evidence could not be read', { cause: error }));
+                    return { status: 'retained' as const };
+                });
         }
     } catch {
         // The persisted owner stays cleanup-pending when its runtime cleanup

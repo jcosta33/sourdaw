@@ -316,7 +316,11 @@
                 "sha256:bfe1982d1cdc8225a5076e82d2dbb5e2d839c7092a0fc2536d014bc4230b8a10",
                 "sha256:57f5b3fc8207b24fad956e3a8a52cfd2d527420cb753257bbd5f698d0cfc3e1e:public/legal/PLUGIN-INTERFACE-NOTICES.txt"
             ],
-            "licenses": ["per-package declared terms, retained legal files, or assembled license records", "MIT:Steinberg-VST3-interface", "MIT:clap-sys"],
+            "licenses": [
+                "per-package declared terms, retained legal files, or assembled license records",
+                "MIT:Steinberg-VST3-interface",
+                "MIT:clap-sys"
+            ],
             "productSurfaces": ["project crates", "Wasm modules", "desktop application"],
             "evidence": ["Cargo.lock freezes the complete resolved Rust dependency graph."],
             "obligations": [

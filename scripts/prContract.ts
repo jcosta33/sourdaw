@@ -432,16 +432,63 @@ export function supersessionReplacement(body: string): number | undefined {
     return Number.isSafeInteger(replacement) && replacement > 0 ? replacement : undefined;
 }
 
-export function assertReviewCommentBody(body: string): void {
-    const trimmed = body.trim();
-    if (trimmed === '') {
-        fail('review comment is empty');
+export type ReviewCommentContent = {
+    defect: string;
+    consequence: string;
+    done: string;
+};
+
+export const REVIEW_COMMENT_MAX_BYTES = 600;
+
+const REVIEW_COMMENT_FIELDS = ['defect', 'consequence', 'done'] as const;
+
+// The full ECMAScript LineTerminator set: LF, CR, U+2028 LINE SEPARATOR, U+2029 PARAGRAPH
+// SEPARATOR. Written as escapes rather than the literal characters, which render as an
+// invisible trap in most editors — indistinguishable from a plain space.
+const LINE_TERMINATOR = /[\n\r\u2028\u2029]/;
+
+// A terminal mark followed by any number of closing quotes or brackets still ends the field: a
+// quoted sentence like `It says "do X."` must not gain a second, stray period after the quote.
+const TERMINAL_PUNCTUATION = /[.?!…][)\]}'"’”]*$/;
+
+/**
+ * Appends a period unless the field already ends in terminal punctuation (`.`, `?`, `!`, or `…`),
+ * optionally followed by closing quotes or brackets — a question stays a question, and a field that
+ * closes a quotation does not get a second period stacked after it.
+ */
+function normalizedReviewCommentField(value: string): string {
+    return TERMINAL_PUNCTUATION.test(value) ? value : `${value}.`;
+}
+
+/**
+ * A sentence count measures shape, not content: it passes three sentences of hedge and rejects one
+ * precise sentence that actually says something. Three separate fields require each part — the
+ * defect, its consequence, and what done looks like — to actually be present, and a byte ceiling
+ * replaces the old floor: nothing here rewards padding, and nothing demands a minimum length. Each
+ * field is typed as `string` because the boundary that turns unknown JSON into this shape (see
+ * `parseReviewCommentContent` in `publishReview.ts`) is the one place a "not a string" guard is
+ * genuinely reachable; repeating that check here would be dead code the type checker cannot tell
+ * from the real thing, which is exactly what let it rot into decoration once already. `context`
+ * lets a caller parsing a larger document (a numbered `review.json` comment) fold that document's
+ * own location into the failure, without this function knowing anything about documents.
+ */
+export function composeReviewCommentBody(content: ReviewCommentContent, context = 'review comment'): string {
+    for (const field of REVIEW_COMMENT_FIELDS) {
+        const value = content[field];
+        if (value.trim() === '') {
+            fail(`${context} ${field} is empty`);
+        }
+        if (value.trim() !== value) {
+            fail(`${context} ${field} has leading or trailing whitespace`);
+        }
+        if (LINE_TERMINATOR.test(value)) {
+            fail(`${context} ${field} must be one line`);
+        }
     }
-    if (trimmed !== body || trimmed.includes('\n')) {
-        fail('review comment must be one paragraph');
+    const body = REVIEW_COMMENT_FIELDS.map((field) => normalizedReviewCommentField(content[field])).join(' ');
+    const byteLength = Buffer.byteLength(body, 'utf8');
+    if (byteLength > REVIEW_COMMENT_MAX_BYTES) {
+        fail(`${context} is ${byteLength} bytes, exceeding the ${REVIEW_COMMENT_MAX_BYTES}-byte limit`);
     }
-    const sentences = trimmed.split(/(?<=\.)\s+/).filter((part) => part !== '');
-    if (sentences.length < 3) {
-        fail('review comment must state defect, consequence, and required outcome');
-    }
+    return body;
 }

@@ -30,6 +30,12 @@ import {
 import { shellPort as trackerIssueShellPort } from './reconcileTrackerIssue.ts';
 import { completeTrackerIssue, type ReconcileTrackerIssuePort } from './trackerIssueReconciliation.ts';
 
+export type HeadCheckRun = {
+    name: string;
+    status: string;
+    conclusion: string | null;
+};
+
 export type PullRequestSnapshot = {
     number: number;
     state: string;
@@ -57,7 +63,18 @@ export type StackedPullRequest = Pick<
     'number' | 'state' | 'headRefName' | 'headRefOid' | 'baseRefName'
 >;
 
-export type DeliveryPort = {
+/**
+ * The evidence a merge state is judged against, kept off `pullRequest` because reading it can
+ * refuse. A dependent's snapshot and an already-merged pull request's snapshot are both read after
+ * the squash has landed, and a rollup read that throws there would strand the dependents on a merged
+ * branch. Only the one caller that judges the head asks for check runs.
+ */
+export type CheckEvidencePort = {
+    gateRequiredCheckNames: () => ReadonlySet<string>;
+    headCheckRuns: (number: number, headRefOid: string) => HeadCheckRun[];
+};
+
+export type DeliveryPort = CheckEvidencePort & {
     fetch: () => void;
     pullRequest: (number: number) => PullRequestSnapshot;
     reviewState: (number: number, expectedHead: string) => ReviewState;
@@ -89,7 +106,20 @@ export type ShellRunner = {
     run: (command: string, args: string[]) => void;
 };
 
-function validatePullRequest(pullRequest: PullRequestSnapshot): void {
+const REQUIRED_CHECK_NAME = 'Gate';
+const SETTLED_CHECK_STATUS = 'COMPLETED';
+const SUPERSEDED_CONCLUSION = 'CANCELLED';
+const PASSING_CONCLUSION = 'SUCCESS';
+/**
+ * `SKIPPED` is a designed outcome: the workflow's path filters skip whole legs, and `Gate` is built
+ * to pass on a skipped dependency. Nothing in it is designed to conclude `NEUTRAL`, which reports a
+ * check that ran and reached no verdict — the same undecided state a cancellation with no success
+ * beside it is refused for. An irreversible merge does not step over it.
+ */
+const NON_BLOCKING_CONCLUSIONS = new Set(['SUCCESS', 'SKIPPED']);
+const CHECKS_PENDING_MERGE_STATE = 'UNSTABLE';
+
+function validatePullRequest(pullRequest: PullRequestSnapshot, checks: CheckEvidencePort): void {
     if (pullRequest.state !== 'OPEN') {
         fail(`PR #${pullRequest.number} is ${pullRequest.state.toLowerCase()}`);
     }
@@ -99,12 +129,247 @@ function validatePullRequest(pullRequest: PullRequestSnapshot): void {
     if (!TITLE_PATTERN.test(pullRequest.title)) {
         fail(`PR #${pullRequest.number} title is not conventional`);
     }
-    if (pullRequest.mergeStateStatus !== 'CLEAN') {
-        fail(`PR #${pullRequest.number} merge state is ${pullRequest.mergeStateStatus}`);
-    }
+    validateMergeState(pullRequest, checks);
     if (pullRequest.reviewDecision === 'CHANGES_REQUESTED') {
         fail(`PR #${pullRequest.number} has requested changes`);
     }
+}
+
+/**
+ * An approving review re-runs the health gates in the same concurrency group as the push run that
+ * is still in flight, so that earlier run is cancelled and its check runs — its `Gate` included —
+ * stay `CANCELLED` on the head forever. GitHub reports the head `UNSTABLE` for those corpses even
+ * though the review-triggered run the branch ruleset reads succeeded on the same commit. Tolerating
+ * that state means proving the head green here instead of trusting the aggregate: nothing failed,
+ * nothing is still running, the one required check succeeded, and every cancelled name also
+ * succeeded. Every other status still refuses, because it reports something other than checks.
+ */
+function validateMergeState(pullRequest: PullRequestSnapshot, checks: CheckEvidencePort): void {
+    if (pullRequest.mergeStateStatus === 'CLEAN') {
+        return;
+    }
+    if (pullRequest.mergeStateStatus !== CHECKS_PENDING_MERGE_STATE) {
+        fail(`PR #${pullRequest.number} merge state is ${pullRequest.mergeStateStatus}`);
+    }
+    validateSupersededChecks(pullRequest, checks);
+}
+
+function validateSupersededChecks(pullRequest: PullRequestSnapshot, checks: CheckEvidencePort): void {
+    const state = `PR #${pullRequest.number} merge state is ${pullRequest.mergeStateStatus}`;
+    const checkRuns = checks.headCheckRuns(pullRequest.number, pullRequest.headRefOid);
+    const failed = checkRuns.find(isFailedCheckRun);
+    if (failed !== undefined) {
+        fail(`${state} and check ${failed.name} concluded ${failed.conclusion ?? 'nothing'}`);
+    }
+    const unsettled = checkRuns.find((check) => check.status !== SETTLED_CHECK_STATUS);
+    if (unsettled !== undefined) {
+        fail(`${state} and check ${unsettled.name} is still ${unsettled.status}`);
+    }
+    if (!checkRuns.some(isSuccessfulRequiredCheck)) {
+        fail(`${state} and no ${REQUIRED_CHECK_NAME} check succeeded on ${pullRequest.headRefOid}`);
+    }
+    const undecided = undecidedCancelledCheckName(checkRuns, checks.gateRequiredCheckNames());
+    if (undecided !== undefined) {
+        fail(`${state} and check ${undecided} was cancelled and never succeeded on ${pullRequest.headRefOid}`);
+    }
+}
+
+/**
+ * A cancelled run is the only tolerated corpse. Anything else that settled without a passing
+ * conclusion — an unrecognized one included — is a real result the merge must not step over.
+ */
+function isFailedCheckRun(check: HeadCheckRun): boolean {
+    return (
+        check.status === SETTLED_CHECK_STATUS &&
+        check.conclusion !== SUPERSEDED_CONCLUSION &&
+        !NON_BLOCKING_CONCLUSIONS.has(check.conclusion ?? '')
+    );
+}
+
+/**
+ * Tolerating a cancellation rests on the review-triggered run having re-run that same job on the
+ * same commit, which is only observable as a success under the same check name. A name that was
+ * cancelled and never succeeded on the head therefore carries no verdict at all, and a skipped
+ * sibling does not supply one: the review-triggered run skips every job gated on `pull_request`,
+ * `Gate` passes on `skipped`, so a green `Gate` says nothing about whether that job ran.
+ * `Dependency review` has exactly this shape on an approval run — one cancellation, skips beside
+ * it, no success anywhere. This rule consequently refuses such a head rather than merging with no
+ * dependency-scan verdict, which is the honest outcome: an undecided scan is not a passing scan.
+ *
+ * Only a check whose verdict gates the merge is evidence. `Nightly failure report` is cancelled on
+ * the same superseded run and never succeeds on a pull request, but it reports a nightly schedule
+ * rather than deciding this head, so refusing on it would refuse every delivery forever. The gating
+ * set is whatever `Gate` needs, read from the workflow rather than restated here.
+ */
+function undecidedCancelledCheckName(checks: HeadCheckRun[], required: ReadonlySet<string>): string | undefined {
+    const passed = new Set(
+        checks.filter((check) => check.conclusion === PASSING_CONCLUSION).map((check) => check.name)
+    );
+    return checks.find(
+        (check) => check.conclusion === SUPERSEDED_CONCLUSION && required.has(check.name) && !passed.has(check.name)
+    )?.name;
+}
+
+function isSuccessfulRequiredCheck(check: HeadCheckRun): boolean {
+    return check.name === REQUIRED_CHECK_NAME && check.conclusion === PASSING_CONCLUSION;
+}
+
+const HEALTH_GATES_WORKFLOW_PATH = '.github/workflows/health-gates.yml';
+const GATE_JOB_ID = 'gate';
+const EXPRESSION_OPENER = '${{';
+const GATE_WORKFLOW_ENV = 'SOURDAW_TRUSTED_GATE_WORKFLOW';
+
+/** One job as the workflow declares it. Every value is unresolved, because resolving one is a rule. */
+type WorkflowJob = { name?: unknown; needs?: unknown; uses?: unknown };
+type WorkflowJobs = Record<string, WorkflowJob>;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function failUnreadableWorkflow(reason: string): never {
+    return fail(`cannot read ${HEALTH_GATES_WORKFLOW_PATH} to determine which checks gate the merge: ${reason}`);
+}
+
+/**
+ * The launcher parses the workflow with a real YAML parser and hands the result over as JSON; this
+ * side decides what that result means. Splitting it that way is what lets every shape a line-oriented
+ * reader used to trip over — a continued scalar, a quoted or spaced key, a tab before a comment, a
+ * block scalar, an anchor, an alias, a tag, a field at any indent — resolve to exactly the name
+ * GitHub reports, while every rule that can refuse an irreversible merge stays here, in the closure
+ * pinned to `origin/main`.
+ *
+ * The snapshot holds nothing but `scripts/`, so `JSON.parse` is the only parser reachable here.
+ */
+export function gateRequiredCheckNames(serialized: string): ReadonlySet<string> {
+    const jobs = workflowJobs(serialized);
+    const gate = jobs[GATE_JOB_ID];
+    if (gate === undefined) {
+        fail(
+            `${HEALTH_GATES_WORKFLOW_PATH} declares no ${GATE_JOB_ID} job, ` +
+                `so no check can be proven to gate the merge`
+        );
+    }
+    return new Set(gateNeeds(gate.needs).map((jobId) => requiredCheckName(jobId, jobs)));
+}
+
+function workflowJobs(serialized: string): WorkflowJobs {
+    let summary: unknown;
+    try {
+        summary = JSON.parse(serialized);
+    } catch (error) {
+        failUnreadableWorkflow(`${GATE_WORKFLOW_ENV} is not JSON: ${error instanceof Error ? error.message : ''}`);
+    }
+    if (!isRecord(summary)) {
+        failUnreadableWorkflow(`${GATE_WORKFLOW_ENV} is not a workflow summary`);
+    }
+    if (typeof summary.unreadable === 'string') {
+        failUnreadableWorkflow(summary.unreadable);
+    }
+    const jobs = summary.jobs;
+    if (!isRecord(jobs)) {
+        failUnreadableWorkflow(`${GATE_WORKFLOW_ENV} carries no jobs mapping`);
+    }
+    // Every job id here is workflow-controlled text, so a plain object literal would let one resolve
+    // against `Object.prototype`: `__proto__` moves the prototype rather than becoming an own key,
+    // and `toString` or `constructor` answers a lookup no job declares. A prototype-free map is the
+    // only one where "the workflow declares this job" and "this key reads back" are the same claim.
+    const declared: WorkflowJobs = Object.create(null) as WorkflowJobs;
+    for (const [jobId, job] of Object.entries(jobs)) {
+        if (!isRecord(job)) {
+            failUnreadableWorkflow(`the ${jobId} job is not a mapping`);
+        }
+        declared[jobId] = job;
+    }
+    return declared;
+}
+
+/**
+ * `needs` is a single job id or a list of them. A gate that needs nothing proves nothing, so it
+ * refuses rather than deriving an empty gating set that tolerates every cancellation on the head.
+ */
+function gateNeeds(declared: unknown): string[] {
+    const entries = typeof declared === 'string' ? [declared] : declared;
+    if (!Array.isArray(entries) || entries.length === 0) {
+        fail(
+            `the ${GATE_JOB_ID} job in ${HEALTH_GATES_WORKFLOW_PATH} needs no job, ` +
+                `so no check can be proven to gate the merge`
+        );
+    }
+    const needs = entries.filter((entry): entry is string => typeof entry === 'string' && entry !== '');
+    if (needs.length !== entries.length) {
+        fail(
+            `the ${GATE_JOB_ID} job in ${HEALTH_GATES_WORKFLOW_PATH} needs an entry that is not a job id, ` +
+                `so no check can be proven to gate the merge`
+        );
+    }
+    return needs;
+}
+
+/**
+ * The name GitHub labels a job's check with, or a refusal where this gate cannot produce it. A
+ * matrix name is a template GitHub substitutes per shard, and a reusable workflow reports one check
+ * per inner job as `<job name> / <inner job name>` — in both cases the declared name matches no
+ * check on the head, so it would silently match nothing and tolerate every real cancellation. Both
+ * refuse instead. The matrix refusal is recorded as issue #2924.
+ */
+function requiredCheckName(jobId: string, jobs: WorkflowJobs): string {
+    const job = jobs[jobId];
+    if (job === undefined) {
+        fail(
+            `the ${GATE_JOB_ID} job in ${HEALTH_GATES_WORKFLOW_PATH} needs ${jobId}, ` +
+                `which no job in that workflow defines`
+        );
+    }
+    if (job.uses !== undefined && job.uses !== null) {
+        fail(
+            `the ${jobId} job in ${HEALTH_GATES_WORKFLOW_PATH} calls a reusable workflow, ` +
+                `whose checks GitHub reports as one name per inner job rather than the one name this gate derives`
+        );
+    }
+    const name = declaredCheckName(jobId, job.name);
+    if (name.includes(EXPRESSION_OPENER)) {
+        fail(
+            `the ${jobId} job in ${HEALTH_GATES_WORKFLOW_PATH} names its check ${name}, ` +
+                `which GitHub substitutes per matrix job before reporting it`
+        );
+    }
+    return name;
+}
+
+/** A job that declares no name is labelled with its job id, which is what GitHub reports for it. */
+function declaredCheckName(jobId: string, name: unknown): string {
+    if (name === undefined || name === null || name === '') {
+        return jobId;
+    }
+    if (typeof name !== 'string') {
+        fail(
+            `the ${jobId} job in ${HEALTH_GATES_WORKFLOW_PATH} declares a name that is not text, ` +
+                `which cannot be the name GitHub reports`
+        );
+    }
+    return name;
+}
+
+/**
+ * The gating set comes from the launcher, which read the workflow as a git object at the pinned
+ * `origin/main` commit — the same commit this closure was snapshotted from. Nothing here reads a
+ * lane's copy, a working tree, or a local `HEAD`: a lane's copy is the very thing under review, and
+ * neither an uncommitted edit nor an unpulled commit is a pinned input, so either would silently
+ * reshape the gate for every delivery, in both directions.
+ *
+ * Absent, the gate cannot say which checks decide the merge and refuses rather than merging with no
+ * verdict — which is also what a `deliver` run outside the protected launcher looks like from here.
+ */
+export function readGateRequiredCheckNames(env: NodeJS.ProcessEnv = process.env): ReadonlySet<string> {
+    const serialized = env[GATE_WORKFLOW_ENV];
+    if (serialized === undefined || serialized === '') {
+        fail(
+            `deliver must run through the protected primary checkout launcher, which passes ` +
+                `${GATE_WORKFLOW_ENV} from ${HEALTH_GATES_WORKFLOW_PATH} at the pinned origin/main commit`
+        );
+    }
+    return gateRequiredCheckNames(serialized);
 }
 
 function trackerCompletionTarget(pullRequest: PullRequestSnapshot): number | undefined {
@@ -346,7 +611,7 @@ export function deliverPullRequest(number: number, port: DeliveryPort, tracker: 
         return;
     }
     const initialTrackerTarget = trackerCompletionTarget(initial);
-    validatePullRequest(initial);
+    validatePullRequest(initial, port);
     validateReview(number, port.reviewState(number, initial.headRefOid));
 
     const dependents = port.dependents(initial.headRefName).filter((candidate) => candidate.number !== number);
@@ -358,7 +623,7 @@ export function deliverPullRequest(number: number, port: DeliveryPort, tracker: 
     port.fetch();
     const current = port.pullRequest(number);
     const currentTrackerTarget = trackerCompletionTarget(current);
-    validatePullRequest(current);
+    validatePullRequest(current, port);
     validateStableTrackerTarget(number, initialTrackerTarget, currentTrackerTarget);
     validateStablePullRequest(initial, current);
     validateReview(number, port.reviewState(number, current.headRefOid));
@@ -440,6 +705,123 @@ function repositoryMergePolicy(repository: string, shell: ShellRunner): Reposito
     return { method: 'squash', deletesMergedBranches: settings.delete_branch_on_merge };
 }
 
+type RollupPage = {
+    totalCount: number;
+    pageInfo: { hasNextPage: boolean; endCursor: string | null };
+    nodes: unknown[];
+};
+
+type RawRollupContexts = {
+    totalCount?: unknown;
+    pageInfo?: { hasNextPage?: unknown; endCursor?: unknown } | null;
+    nodes?: unknown;
+};
+
+type RawRollupEntry = {
+    __typename?: unknown;
+    name?: unknown;
+    status?: unknown;
+    conclusion?: unknown;
+    context?: unknown;
+    state?: unknown;
+};
+
+const UNSETTLED_STATUS_CONTEXT_STATES = new Set(['PENDING', 'EXPECTED']);
+
+const ROLLUP_PAGE_SIZE = 100;
+
+const ROLLUP_QUERY = `query($owner:String!,$name:String!,$oid:GitObjectID!,$cursor:String){
+  repository(owner:$owner,name:$name){
+    object(oid:$oid){
+      ... on Commit{
+        statusCheckRollup{
+          contexts(first:${ROLLUP_PAGE_SIZE},after:$cursor){
+            totalCount
+            pageInfo{hasNextPage endCursor}
+            nodes{
+              __typename
+              ... on CheckRun{name status conclusion}
+              ... on StatusContext{context state}
+            }
+          }
+        }
+      }
+    }
+  }
+}`;
+
+/**
+ * `gh pr view --json statusCheckRollup` asks GitHub for the first hundred contexts and reports
+ * neither a total nor a cursor, so a head that outgrew one page arrives silently truncated. Every
+ * conclusion this gate draws from the rollup — a tolerated cancellation as much as a refusal — would
+ * then rest on evidence that may simply be absent, and each further review event adds a whole run's
+ * worth of contexts, so heads cross that line in the ordinary course of a long review. The rollup is
+ * read through GraphQL instead, paged until the nodes account for `totalCount`, and refused when
+ * they do not. A partial list is never merged over.
+ */
+function readHeadCheckRuns(pullRequestNumber: number, readPage: (cursor: string | null) => RollupPage): HeadCheckRun[] {
+    let page = readPage(null);
+    const nodes: unknown[] = [...page.nodes];
+    while (page.pageInfo.hasNextPage && page.pageInfo.endCursor !== null && nodes.length < page.totalCount) {
+        page = readPage(page.pageInfo.endCursor);
+        nodes.push(...page.nodes);
+    }
+    if (nodes.length !== page.totalCount) {
+        fail(`cannot read all ${page.totalCount} checks on PR #${pullRequestNumber}: got ${nodes.length}`);
+    }
+    return nodes.map((entry) => toHeadCheckRun(entry, pullRequestNumber));
+}
+
+function parseRollupPage(response: string, pullRequestNumber: number): RollupPage {
+    const contexts = parseJson<{
+        data?: { repository?: { object?: { statusCheckRollup?: { contexts?: RawRollupContexts } | null } | null } };
+    }>(response, `PR #${pullRequestNumber} checks`).data?.repository?.object?.statusCheckRollup?.contexts;
+    if (
+        contexts === undefined ||
+        typeof contexts.totalCount !== 'number' ||
+        typeof contexts.pageInfo?.hasNextPage !== 'boolean' ||
+        !Array.isArray(contexts.nodes)
+    ) {
+        fail(`cannot read the checks on PR #${pullRequestNumber}`);
+    }
+    return {
+        totalCount: contexts.totalCount,
+        pageInfo: {
+            hasNextPage: contexts.pageInfo.hasNextPage,
+            endCursor: typeof contexts.pageInfo.endCursor === 'string' ? contexts.pageInfo.endCursor : null,
+        },
+        nodes: contexts.nodes,
+    };
+}
+
+/**
+ * The rollup is a union. GitHub Actions reports a `CheckRun` carrying a status and a conclusion,
+ * while an external integration reports a `StatusContext` whose single state carries both. Reading
+ * only the `CheckRun` arm would drop a failing status context out of the evidence entirely, so an
+ * entry that matches neither arm refuses rather than being skipped.
+ */
+function toHeadCheckRun(value: unknown, pullRequestNumber: number): HeadCheckRun {
+    const entry = (value === null || typeof value !== 'object' ? {} : value) as RawRollupEntry;
+    if (entry.__typename === 'CheckRun' && typeof entry.name === 'string' && typeof entry.status === 'string') {
+        return {
+            name: entry.name,
+            status: entry.status,
+            conclusion: typeof entry.conclusion === 'string' && entry.conclusion !== '' ? entry.conclusion : null,
+        };
+    }
+    if (entry.__typename === 'StatusContext' && typeof entry.context === 'string' && typeof entry.state === 'string') {
+        return toStatusContextCheckRun(entry.context, entry.state);
+    }
+    return fail(`cannot read a check on PR #${pullRequestNumber}`);
+}
+
+function toStatusContextCheckRun(name: string, state: string): HeadCheckRun {
+    if (UNSETTLED_STATUS_CONTEXT_STATES.has(state)) {
+        return { name, status: state, conclusion: null };
+    }
+    return { name, status: SETTLED_CHECK_STATUS, conclusion: state };
+}
+
 function toDeliveryReceiptComment(value: unknown): DeliveryReceiptComment {
     if (value === null || typeof value !== 'object' || Array.isArray(value)) {
         fail('invalid delivery receipt comment');
@@ -495,6 +877,23 @@ export function shellPort(
         'additions',
         'deletions',
     ].join(',');
+    const readRollupPage = (number: number, headRefOid: string, cursor: string | null): RollupPage =>
+        parseRollupPage(
+            shell.capture('gh', [
+                'api',
+                'graphql',
+                '-f',
+                `query=${ROLLUP_QUERY}`,
+                '-f',
+                `owner=${owner}`,
+                '-f',
+                `name=${name}`,
+                '-f',
+                `oid=${headRefOid}`,
+                ...(cursor === null ? [] : ['-f', `cursor=${cursor}`]),
+            ]),
+            number
+        );
 
     return {
         fetch: () => {
@@ -519,6 +918,9 @@ export function shellPort(
                 shell.capture('gh', ['pr', 'view', String(number), '--repo', repository, '--json', pullRequestFields]),
                 `PR #${number}`
             ),
+        headCheckRuns: (number, headRefOid) =>
+            readHeadCheckRuns(number, (cursor) => readRollupPage(number, headRefOid, cursor)),
+        gateRequiredCheckNames: () => readGateRequiredCheckNames(),
         reviewState: (number, expectedHead) => {
             const query = `query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){reviews(last:100){nodes{state submittedAt author{login __typename ... on Bot{id}} commit{oid}} pageInfo{hasPreviousPage}} reviewThreads(first:100){nodes{isResolved} pageInfo{hasNextPage}}}}}`;
             const response = parseJson<{

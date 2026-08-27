@@ -13,7 +13,9 @@ const validComment = {
     path: 'scripts/deliverPullRequest.ts',
     line: 10,
     side: 'RIGHT' as const,
-    body: 'COMMENT still authorizes merge. A stale COMMENT could ship. Require reviewer APPROVED on this head.',
+    defect: 'COMMENT still authorizes merge',
+    consequence: 'A stale COMMENT could ship',
+    done: 'Require reviewer APPROVED on this head',
 };
 
 function fakePort(
@@ -28,6 +30,7 @@ function fakePort(
 ) {
     const calls: string[] = [];
     const logs: string[] = [];
+    const posted: { review?: Parameters<PublishReviewPort['postReview']>[0] } = {};
     let head = input.head ?? 'headsha';
     const port: PublishReviewPort = {
         primaryRoot: () => '/repo',
@@ -47,6 +50,7 @@ function fakePort(
         },
         postReview: (review) => {
             calls.push(`post:${review.commitId}:${review.event}:${review.body}`);
+            posted.review = review;
             return {
                 id: 99,
                 actorNodeId: input.actorNodeId ?? REVIEWER_BOT_NODE_ID,
@@ -55,7 +59,7 @@ function fakePort(
         },
         log: (message) => logs.push(message),
     };
-    return { port, calls, logs };
+    return { port, calls, logs, posted };
 }
 
 describe('review publish', () => {
@@ -69,13 +73,17 @@ describe('review publish', () => {
     });
 
     it('posts REQUEST_CHANGES body and comments when valid', () => {
-        const { port, calls } = fakePort({
+        const { port, calls, posted } = fakePort({
             json: { event: 'REQUEST_CHANGES', body: 'Please fix the merge gate.', comments: [validComment] },
         });
 
         publishReview(42, port);
 
         expect(calls[1]).toContain('REQUEST_CHANGES:Please fix the merge gate.');
+        // The recorded call string above never carries the comments array, so it cannot prove the
+        // parsed document's comments actually reached postReview — only the captured argument can.
+        // This must go red if `publishReview` ever forwards an empty or substituted comments array.
+        expect(posted.review?.comments).toEqual([validComment]);
     });
 
     it('rejects the renamed reviewer login when the posted review has the wrong actor ID', () => {
@@ -92,17 +100,161 @@ describe('review publish', () => {
         expect(calls.some((call) => call.startsWith('post:'))).toBe(false);
     });
 
+    // A bare `toThrow()` is satisfied by any failure, including the wrong one — a mutant that
+    // removes one guard but leaves a different, coincidentally-firing guard in place keeps the row
+    // green. Every row therefore asserts the specific message its own guard raises.
     it.each([
-        ['COMMENT', { event: 'COMMENT', comments: [] }],
-        ['missing event', { comments: [] }],
-        ['empty REQUEST_CHANGES comments', { event: 'REQUEST_CHANGES', body: 'n', comments: [] }],
-        ['blank REQUEST_CHANGES body', { event: 'REQUEST_CHANGES', body: '  ', comments: [validComment] }],
-        ['invalid json object', '{'],
-    ])('does not post %s', (_case, json) => {
+        ['COMMENT', { event: 'COMMENT', comments: [] }, /event must be APPROVE or REQUEST_CHANGES/],
+        ['missing event', { comments: [] }, /event must be APPROVE or REQUEST_CHANGES/],
+        [
+            'empty REQUEST_CHANGES comments',
+            { event: 'REQUEST_CHANGES', body: 'n', comments: [] },
+            /REQUEST_CHANGES requires comments/,
+        ],
+        [
+            'blank REQUEST_CHANGES body',
+            { event: 'REQUEST_CHANGES', body: '  ', comments: [validComment] },
+            /REQUEST_CHANGES requires a top-level body/,
+        ],
+        ['invalid json object', '{', /review\.json must be an object/],
+        [
+            'APPROVE carrying comments',
+            { event: 'APPROVE', body: 'ok', comments: [validComment] },
+            /APPROVE must carry no comments/,
+        ],
+        ['APPROVE with a blank body', { event: 'APPROVE', body: '  ', comments: [] }, /APPROVE requires a body/],
+        ['APPROVE with a missing body', { event: 'APPROVE', comments: [] }, /APPROVE requires a body/],
+        [
+            'a comment supplying legacy body instead of the field contract',
+            { event: 'REQUEST_CHANGES', body: 'n', comments: [{ path: 'a.ts', line: 1, side: 'RIGHT', body: 'text' }] },
+            /uses body; supply defect, consequence, and done instead/,
+        ],
+        [
+            'a comment with an empty defect',
+            {
+                event: 'REQUEST_CHANGES',
+                body: 'n',
+                comments: [{ path: 'a.ts', line: 1, side: 'RIGHT', defect: '', consequence: 'c', done: 'd' }],
+            },
+            /review\.json comments\[0\] defect is empty/,
+        ],
+        [
+            'a comment with a missing defect',
+            {
+                event: 'REQUEST_CHANGES',
+                body: 'n',
+                comments: [{ path: 'a.ts', line: 1, side: 'RIGHT', consequence: 'c', done: 'd' }],
+            },
+            /review\.json comments\[0\] defect is invalid/,
+        ],
+        [
+            'comments that are not an array',
+            { event: 'REQUEST_CHANGES', body: 'n', comments: 'nope' },
+            /review\.json comments must be an array/,
+        ],
+    ])('does not post %s', (_case, json, message) => {
         const { port, calls } = fakePort({ json });
 
-        expect(() => publishReview(42, port)).toThrow();
+        expect(() => publishReview(42, port)).toThrow(message);
         expect(calls.some((call) => call.startsWith('post:'))).toBe(false);
+    });
+
+    it('refuses an APPROVE document whose comments field is not an array', () => {
+        // Unlike the REQUEST_CHANGES row above — where a broken array guard still fails, just for
+        // the wrong reason (REQUEST_CHANGES requires comments) — an APPROVE document has nothing
+        // else to object: with the array guard gone, this posts cleanly with the malformed field
+        // silently dropped. This is the document that actually discriminates the guard.
+        const { port } = fakePort({
+            json: { event: 'APPROVE', body: 'Attacked the merge gate; it held.', comments: 'nope' },
+        });
+
+        expect(() => publishReview(42, port)).toThrow(/review\.json comments must be an array/);
+    });
+
+    // A single-element `comments` array cannot tell a real index from a hardcoded `comments[0]`
+    // literal, so every index-observing test here puts a VALID comment first and the invalid one
+    // second, asserting `comments[1]` — that fails if the message ever hardcodes the wrong index.
+    it.each([
+        ['defect', { path: 'a.ts', line: 1, side: 'RIGHT' as const, defect: 42, consequence: 'c', done: 'd' }],
+        ['consequence', { path: 'a.ts', line: 1, side: 'RIGHT' as const, defect: 'a', consequence: 42, done: 'd' }],
+        ['done', { path: 'a.ts', line: 1, side: 'RIGHT' as const, defect: 'a', consequence: 'c', done: 42 }],
+    ])('names the %s field and the comment index when it supplies a non-string value', (field, invalidComment) => {
+        const { port } = fakePort({
+            json: {
+                event: 'REQUEST_CHANGES',
+                body: 'n',
+                comments: [validComment, invalidComment],
+            },
+        });
+
+        expect(() => publishReview(42, port)).toThrow(new RegExp(`review\\.json comments\\[1\\] ${field} is invalid`));
+    });
+
+    it("fires the APPROVE-carries-comments refusal before parsing that comment's fields", () => {
+        const { port } = fakePort({
+            json: { event: 'APPROVE', body: 'ok', comments: [{ path: 'a.ts', line: 1, side: 'RIGHT' }] },
+        });
+
+        expect(() => publishReview(42, port)).toThrow(/APPROVE must carry no comments/);
+    });
+
+    it('names the comment index in a byte-ceiling failure raised while parsing a document', () => {
+        const longField = 'x'.repeat(300);
+        const { port } = fakePort({
+            json: {
+                event: 'REQUEST_CHANGES',
+                body: 'n',
+                comments: [
+                    validComment,
+                    {
+                        path: 'a.ts',
+                        line: 1,
+                        side: 'RIGHT',
+                        defect: longField,
+                        consequence: longField,
+                        done: longField,
+                    },
+                ],
+            },
+        });
+
+        expect(() => publishReview(42, port)).toThrow(
+            /review\.json comments\[1\] is \d+ bytes, exceeding the 600-byte limit/
+        );
+    });
+
+    it('names defect, consequence, and done when a comment supplies legacy body', () => {
+        const { port } = fakePort({
+            json: {
+                event: 'REQUEST_CHANGES',
+                body: 'n',
+                comments: [{ path: 'a.ts', line: 1, side: 'RIGHT', body: 'text' }],
+            },
+        });
+
+        expect(() => publishReview(42, port)).toThrow(/uses body; supply defect, consequence, and done instead/);
+    });
+
+    it('refuses an APPROVE document that carries comments', () => {
+        const { port } = fakePort({ json: { event: 'APPROVE', body: 'ok', comments: [validComment] } });
+
+        expect(() => publishReview(42, port)).toThrow(/APPROVE must carry no comments/);
+    });
+
+    it('refuses an APPROVE document with a blank body', () => {
+        const { port } = fakePort({ json: { event: 'APPROVE', body: '  ', comments: [] } });
+
+        expect(() => publishReview(42, port)).toThrow(/APPROVE requires a body/);
+    });
+
+    it('still posts an APPROVE document that has a body and no comments', () => {
+        const { port, calls } = fakePort({
+            json: { event: 'APPROVE', body: 'Attacked the merge gate; it held.', comments: [] },
+        });
+
+        publishReview(42, port);
+
+        expect(calls[1]).toBe('post:headsha:APPROVE:Attacked the merge gate; it held.');
     });
 
     it('does not post when review.json is missing', () => {
@@ -114,7 +266,9 @@ describe('review publish', () => {
 
     it('parses argv', () => {
         expect(parsePublishReviewArgs(['7'])).toEqual({ number: 7, help: false });
-        expect(parseReviewDocument({ event: 'APPROVE', comments: [] }).event).toBe('APPROVE');
+        expect(
+            parseReviewDocument({ event: 'APPROVE', body: 'Attacked the merge gate; it held.', comments: [] }).event
+        ).toBe('APPROVE');
     });
 });
 
@@ -182,5 +336,44 @@ describe('shellPort postReview state verification', () => {
             actorNodeId: REVIEWER_BOT_NODE_ID,
             login: 'renamed-reviewer[bot]',
         });
+    });
+
+    it('sends the composed body for each comment, not the raw defect/consequence/done fields', () => {
+        let sentInput: string | undefined;
+        const capture = (command: string, args: string[], options?: { input?: string }): string => {
+            if (command === 'git' && args[0] === 'rev-parse') {
+                return `${process.cwd()}/.git`;
+            }
+            if (command === 'gh' && args[0] === 'api') {
+                sentInput = options?.input;
+                return JSON.stringify({
+                    id: 44,
+                    state: 'CHANGES_REQUESTED',
+                    user: { node_id: REVIEWER_BOT_NODE_ID, login: 'renamed-reviewer[bot]' },
+                });
+            }
+            throw new Error(`unexpected command in test: ${command} ${args.join(' ')}`);
+        };
+        const port = shellPort(session, process.cwd(), capture);
+
+        port.postReview({
+            number: 42,
+            commitId: 'sha',
+            event: 'REQUEST_CHANGES',
+            body: 'no',
+            comments: [validComment],
+        });
+
+        const sent = JSON.parse(sentInput ?? '{}') as {
+            comments: { path: string; line: number; side: string; body: string }[];
+        };
+        expect(sent.comments).toEqual([
+            {
+                path: 'scripts/deliverPullRequest.ts',
+                line: 10,
+                side: 'RIGHT',
+                body: 'COMMENT still authorizes merge. A stale COMMENT could ship. Require reviewer APPROVED on this head.',
+            },
+        ]);
     });
 });

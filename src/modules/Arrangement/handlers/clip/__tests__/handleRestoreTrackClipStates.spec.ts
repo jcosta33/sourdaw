@@ -8,7 +8,7 @@ import {
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
-import { type Clip, type Track } from '../../../stores/trackStore';
+import { type Clip, type Device, type Track } from '../../../stores/trackStore';
 import { handleRestoreTrackClipStates } from '../handleRestoreTrackClipStates';
 
 /** The three per-clip MIDI maps the guard reads off the live store. */
@@ -1010,6 +1010,420 @@ describe('handleRestoreTrackClipStates', () => {
             expect(result).toEqual({ status: 'written' });
             expect(mocks.updateTrack).toHaveBeenCalledTimes(2);
             expect(mocks.updateTrack.mock.calls.map((call) => call[0])).toEqual(['t1', 't2']);
+        });
+
+        /**
+         * Falsifiability suite for the comparator tables: every comparator body that no
+         * case above diverges gets one here, edited in exactly the field it compares, so
+         * hollowing that body to an unconditional `true` fails exactly its own case.
+         *
+         * A comparator that is deliberately absent from this suite is absent for a stated
+         * reason, not an oversight:
+         *
+         * - `id` (clip) — the clip-order case above diverges it and nothing else.
+         * - `fileId`, `kneadState` (clip) — their named cases above diverge exactly them.
+         * - `isInlineEditing` (clip), `clipAutomationLanes` (snapshot entry) — deliberate
+         *   `notCompared` exclusions, each pinned by its own still-restores case.
+         * - `trackId` (snapshot entry) — has no falsifying case and cannot have one:
+         *   `entryMatchesLiveState` finds the track by `entry.trackId`, so by the time the
+         *   guard runs, `track.id === entry.trackId` is true by construction. The body is
+         *   a defensive restatement of the lookup, not an observable check.
+         * - `devices`, `alternatives` (track fields), `name`/`clips` (alternative),
+         *   `clips`/`trackFields`/`midiNotesByClipId`/`clipSatellites` (snapshot entry) —
+         *   each has a case above whose divergence is that key and only it.
+         */
+        describe('comparator falsifiability — each arm refuses the edit it compares', () => {
+            /**
+             * One row per clip comparator no case above diverges. The live clip is the
+             * captured clip plus exactly one edited field, so the refusal can come only
+             * from that field's comparator — which is what makes hollowing that one body
+             * fail exactly this row and nothing else.
+             */
+            const clipFieldDivergences = [
+                ['trackId', { trackId: 't-other' }],
+                ['name', { name: 'Renamed since capture' }],
+                ['startBeat', { startBeat: 1 }],
+                ['endBeat', { endBeat: 8 }],
+                ['type', { type: 'midi' }],
+                ['audioBufferId', { audioBufferId: 'buffer-live' }],
+                ['assetHash', { assetHash: 'hash-live' }],
+                ['audioOffsetBeats', { audioOffsetBeats: 1.5 }],
+                ['midiOffsetBeats', { midiOffsetBeats: 1.5 }],
+                ['fadeInBeats', { fadeInBeats: 0.25 }],
+                ['fadeOutBeats', { fadeOutBeats: 0.25 }],
+                ['gain', { gain: 0.25 }],
+                ['color', { color: '#0000ff' }],
+                ['locked', { locked: true }],
+                ['muted', { muted: true }],
+                ['stretchMode', { stretchMode: 'repitch' }],
+                ['stretchRatio', { stretchRatio: 1.25 }],
+                ['loopEnabled', { loopEnabled: true }],
+                ['loopLength', { loopLength: 2 }],
+                ['followAction', { followAction: 'stop' }],
+                ['generating', { generating: true }],
+                ['isGhost', { isGhost: true }],
+                ['parentClipId', { parentClipId: 'parent-clip' }],
+                ['isLinkedInstance', { isLinkedInstance: true }],
+                ['sourceKeyRoot', { sourceKeyRoot: 9 }],
+                ['sourceScaleName', { sourceScaleName: 'Phrygian' }],
+                ['overrides', { overrides: { gain: true } }],
+            ] as const satisfies readonly (readonly [string, Partial<Clip>])[];
+
+            it.each(clipFieldDivergences)('refuses when a clip %s was edited since capture', (field, liveEdit) => {
+                const [captured] = clipsFor('t1', ['c1']);
+                mocks.getTrackStoreState.mockReturnValue({
+                    tracks: [liveTrack('t1', [], { clips: [{ ...captured!, ...liveEdit }] })],
+                });
+
+                const result = handleRestoreTrackClipStates.execute({
+                    type: 'restoreTrackClipStates',
+                    payload: {
+                        expected: [snapshotFor('t1', ['c1'])],
+                        replacement: [snapshotFor('t1', [])],
+                    },
+                });
+
+                expect(result, `the ${field} comparator must refuse this restore`).toEqual({ status: 'conflict' });
+                expect(mocks.updateTrack).not.toHaveBeenCalled();
+            });
+
+            /**
+             * The device as captured, carrying every field `deviceMatches` reads so each
+             * row below can diverge exactly one of them.
+             */
+            const deviceAtCapture: Device = {
+                id: 'device-1',
+                name: 'Reverb',
+                type: 'external-plugin',
+                bypassed: false,
+                parameterValues: { mix: 0 },
+                externalPluginId: 'com.vendor.reverb',
+                externalInstanceId: 'com.vendor.reverb-instance-1',
+                deviceState: { version: 1, data: { preset: 'plate' } },
+            };
+
+            /**
+             * One row per device comparison no case above diverges. `deviceState` gets
+             * three rows because `deviceStateMatches` is three decisions — presence,
+             * version and payload — and a weakening may keep any two of them.
+             */
+            const deviceFieldDivergences = [
+                ['id', { id: 'device-replaced' }],
+                ['name', { name: 'Tape Reverb' }],
+                ['type', { type: 'builtin-synth' }],
+                ['bypassed', { bypassed: true }],
+                ['externalPluginId', { externalPluginId: 'com.vendor.other' }],
+                ['parameterValues', { parameterValues: { mix: 0.75 } }],
+                ['deviceState payload', { deviceState: { version: 1, data: { preset: 'spring' } } }],
+                ['deviceState version', { deviceState: { version: 2, data: { preset: 'plate' } } }],
+                ['deviceState presence', { deviceState: undefined }],
+            ] as const satisfies readonly (readonly [string, Partial<Device>])[];
+
+            it.each(deviceFieldDivergences)(
+                'refuses when a device %s diverges between live and capture',
+                (field, liveEdit) => {
+                    const track = liveTrack('t1', ['c1'], {
+                        devices: [{ ...deviceAtCapture, ...liveEdit }],
+                    });
+                    mocks.getTrackStoreState.mockReturnValue({ tracks: [track] });
+
+                    const result = handleRestoreTrackClipStates.execute({
+                        type: 'restoreTrackClipStates',
+                        payload: {
+                            expected: [
+                                snapshotFor('t1', ['c1'], {
+                                    trackFields: { ...trackFields(), devices: [deviceAtCapture] },
+                                }),
+                            ],
+                            replacement: [snapshotFor('t1', [])],
+                        },
+                    });
+
+                    expect(result, `the device ${field} comparison must refuse this restore`).toEqual({
+                        status: 'conflict',
+                    });
+                    expect(mocks.updateTrack).not.toHaveBeenCalled();
+                }
+            );
+
+            /** Two devices identical except their id, so positional pairing is the only
+             *  thing a reorder of them can trip. */
+            const chainDeviceA: Device = {
+                id: 'device-a',
+                name: 'Chorus',
+                type: 'builtin-effect',
+                bypassed: false,
+                parameterValues: {},
+            };
+
+            it('refuses when a device was added to the chain since capture', () => {
+                // The length half of `devicesMatch`. A guard that only checked each
+                // captured device still exists somewhere would authorise dropping the
+                // newly added one from the chain.
+                const track = liveTrack('t1', ['c1'], {
+                    devices: [chainDeviceA, { ...chainDeviceA, id: 'device-b' }],
+                });
+                mocks.getTrackStoreState.mockReturnValue({ tracks: [track] });
+
+                const result = handleRestoreTrackClipStates.execute({
+                    type: 'restoreTrackClipStates',
+                    payload: {
+                        expected: [
+                            snapshotFor('t1', ['c1'], {
+                                trackFields: { ...trackFields(), devices: [chainDeviceA] },
+                            }),
+                        ],
+                        replacement: [snapshotFor('t1', [])],
+                    },
+                });
+
+                expect(result).toEqual({ status: 'conflict' });
+                expect(mocks.updateTrack).not.toHaveBeenCalled();
+            });
+
+            it('refuses when a device was removed from the chain since capture', () => {
+                // The other half of the length check. A guard comparing only the live
+                // prefix against the snapshot would reinstate a device the musician
+                // deleted and report the restore as written.
+                const track = liveTrack('t1', ['c1'], { devices: [chainDeviceA] });
+                mocks.getTrackStoreState.mockReturnValue({ tracks: [track] });
+
+                const result = handleRestoreTrackClipStates.execute({
+                    type: 'restoreTrackClipStates',
+                    payload: {
+                        expected: [
+                            snapshotFor('t1', ['c1'], {
+                                trackFields: {
+                                    ...trackFields(),
+                                    devices: [chainDeviceA, { ...chainDeviceA, id: 'device-b' }],
+                                },
+                            }),
+                        ],
+                        replacement: [snapshotFor('t1', [])],
+                    },
+                });
+
+                expect(result).toEqual({ status: 'conflict' });
+                expect(mocks.updateTrack).not.toHaveBeenCalled();
+            });
+
+            it('refuses when the device chain was reordered since capture', () => {
+                // The positional half of `devicesMatch`. The two devices differ in
+                // nothing but their id, so a reorder is detectable only by pairing
+                // position against position: pairing by identity instead reports a
+                // match and writes the stale signal path.
+                const track = liveTrack('t1', ['c1'], {
+                    devices: [{ ...chainDeviceA, id: 'device-b' }, chainDeviceA],
+                });
+                mocks.getTrackStoreState.mockReturnValue({ tracks: [track] });
+
+                const result = handleRestoreTrackClipStates.execute({
+                    type: 'restoreTrackClipStates',
+                    payload: {
+                        expected: [
+                            snapshotFor('t1', ['c1'], {
+                                trackFields: {
+                                    ...trackFields(),
+                                    devices: [chainDeviceA, { ...chainDeviceA, id: 'device-b' }],
+                                },
+                            }),
+                        ],
+                        replacement: [snapshotFor('t1', [])],
+                    },
+                });
+
+                expect(result).toEqual({ status: 'conflict' });
+                expect(mocks.updateTrack).not.toHaveBeenCalled();
+            });
+
+            it('refuses when the track kind changed since capture', () => {
+                // The restore writes `kind` back with the rest of the track fields, so
+                // a track flattened to audio and switched back to midi since capture
+                // must conflict rather than be silently re-flattened.
+                const track = liveTrack('t1', ['c1'], { kind: 'midi' });
+                mocks.getTrackStoreState.mockReturnValue({ tracks: [track] });
+
+                const result = handleRestoreTrackClipStates.execute({
+                    type: 'restoreTrackClipStates',
+                    payload: {
+                        expected: [snapshotFor('t1', ['c1'])],
+                        replacement: [snapshotFor('t1', [])],
+                    },
+                });
+
+                expect(result).toEqual({ status: 'conflict' });
+                expect(mocks.updateTrack).not.toHaveBeenCalled();
+            });
+
+            it('refuses when the track was frozen since capture', () => {
+                // `frozen`, `frozenBufferId` and `freezeState` share one aggregate
+                // comparator, so one case diverging all three (a real freeze moves
+                // them together) is the falsifier for that whole entry.
+                const track = liveTrack('t1', ['c1'], {
+                    frozen: true,
+                    frozenBufferId: 'buffer-frozen',
+                    freezeState: { status: 'frozen', freezeId: 'freeze-1', frozenBufferId: 'buffer-frozen' },
+                });
+                mocks.getTrackStoreState.mockReturnValue({ tracks: [track] });
+
+                const result = handleRestoreTrackClipStates.execute({
+                    type: 'restoreTrackClipStates',
+                    payload: {
+                        expected: [snapshotFor('t1', ['c1'])],
+                        replacement: [snapshotFor('t1', [])],
+                    },
+                });
+
+                expect(result).toEqual({ status: 'conflict' });
+                expect(mocks.updateTrack).not.toHaveBeenCalled();
+            });
+
+            it('refuses when the active take lane switched since capture', () => {
+                // Both lanes exist on both sides, so only the active-lane pointer
+                // differs — the exact field `activeAlternativeId` compares and the
+                // restore writes back.
+                const lanes = () => [
+                    { id: 'alt-1', name: 'Alternative 1', clips: [] as Clip[] },
+                    { id: 'alt-2', name: 'Alternative 2', clips: [] as Clip[] },
+                ];
+                const track = liveTrack('t1', ['c1'], { alternatives: lanes(), activeAlternativeId: 'alt-2' });
+                mocks.getTrackStoreState.mockReturnValue({ tracks: [track] });
+
+                const result = handleRestoreTrackClipStates.execute({
+                    type: 'restoreTrackClipStates',
+                    payload: {
+                        expected: [
+                            snapshotFor('t1', ['c1'], {
+                                trackFields: { ...trackFields(), alternatives: lanes() },
+                            }),
+                        ],
+                        replacement: [snapshotFor('t1', [])],
+                    },
+                });
+
+                expect(result).toEqual({ status: 'conflict' });
+                expect(mocks.updateTrack).not.toHaveBeenCalled();
+            });
+
+            it('refuses when a take lane was replaced by another since capture', () => {
+                // Same position, same name, same (empty) clips: only the lane's
+                // identity differs, so the refusal can come only from
+                // `ALTERNATIVE_FIELD_COMPARATORS.id`. A lane deleted and another
+                // created keeps the count stable, which is why the length check
+                // upstairs cannot catch this.
+                const track = liveTrack('t1', ['c1'], {
+                    alternatives: [
+                        { id: 'alt-1', name: 'Alternative 1', clips: [] as Clip[] },
+                        { id: 'alt-new', name: 'Take', clips: [] as Clip[] },
+                    ],
+                });
+                mocks.getTrackStoreState.mockReturnValue({ tracks: [track] });
+
+                const result = handleRestoreTrackClipStates.execute({
+                    type: 'restoreTrackClipStates',
+                    payload: {
+                        expected: [
+                            snapshotFor('t1', ['c1'], {
+                                trackFields: {
+                                    ...trackFields(),
+                                    alternatives: [
+                                        { id: 'alt-1', name: 'Alternative 1', clips: [] as Clip[] },
+                                        { id: 'alt-old', name: 'Take', clips: [] as Clip[] },
+                                    ],
+                                },
+                            }),
+                        ],
+                        replacement: [snapshotFor('t1', [])],
+                    },
+                });
+
+                expect(result).toEqual({ status: 'conflict' });
+                expect(mocks.updateTrack).not.toHaveBeenCalled();
+            });
+
+            it('refuses when CC events on a clip the snapshot carries were edited since capture', () => {
+                // `midiCcByClipId` is its own guard key riding the shared lane
+                // comparison; hollowing it alone leaves only this case noticing.
+                const capturedCc = { id: 'cc-1', controller: 1, value: 10, beat: 0, channel: 0 };
+                const editedCc = { ...capturedCc, value: 64 };
+                mocks.getTrackStoreState.mockReturnValue({ tracks: [liveTrack('t1', ['c1'])] });
+                mocks.midiStore.value = {
+                    notesByClipId: {},
+                    ccByClipId: { c1: [editedCc] },
+                    pitchBendByClipId: {},
+                };
+
+                const result = handleRestoreTrackClipStates.execute({
+                    type: 'restoreTrackClipStates',
+                    payload: {
+                        expected: [snapshotFor('t1', ['c1'], { midiCcByClipId: { c1: [capturedCc] } })],
+                        replacement: [snapshotFor('t1', ['c1'])],
+                    },
+                });
+
+                expect(result).toEqual({ status: 'conflict' });
+                expect(mocks.updateTrack).not.toHaveBeenCalled();
+                expect(mocks.restoreMidiClipData).not.toHaveBeenCalled();
+            });
+
+            it('refuses when pitch bend on a clip the snapshot carries was edited since capture', () => {
+                // The third lane key, for the same reason as the CC case above.
+                const capturedBend = { id: 'pb-1', value: 0, beat: 0, channel: 0 };
+                const editedBend = { ...capturedBend, value: 4096 };
+                mocks.getTrackStoreState.mockReturnValue({ tracks: [liveTrack('t1', ['c1'])] });
+                mocks.midiStore.value = {
+                    notesByClipId: {},
+                    ccByClipId: {},
+                    pitchBendByClipId: { c1: [editedBend] },
+                };
+
+                const result = handleRestoreTrackClipStates.execute({
+                    type: 'restoreTrackClipStates',
+                    payload: {
+                        expected: [snapshotFor('t1', ['c1'], { midiPitchBendByClipId: { c1: [capturedBend] } })],
+                        replacement: [snapshotFor('t1', ['c1'])],
+                    },
+                });
+
+                expect(result).toEqual({ status: 'conflict' });
+                expect(mocks.updateTrack).not.toHaveBeenCalled();
+                expect(mocks.restoreMidiClipData).not.toHaveBeenCalled();
+            });
+
+            it('refuses when warp state the snapshot would overwrite was edited since capture', () => {
+                // The satellite guard's other half. The gain-envelope case above proves
+                // only that half; weakening the satellite comparison to the envelope it
+                // already covers would leave warp edits unguarded and only this case
+                // noticing.
+                const capturedWarp = {
+                    enabled: true,
+                    markers: [],
+                    stretchMode: 'complex' as const,
+                    originalTempo: 120,
+                };
+                mocks.getTrackStoreState.mockReturnValue({ tracks: [liveTrack('t1', ['c1'])] });
+                mocks.readClipSatelliteEntry.mockReturnValue({
+                    clipId: 'c1',
+                    gainEnvelope: null,
+                    warpState: { ...capturedWarp, enabled: false },
+                });
+
+                const result = handleRestoreTrackClipStates.execute({
+                    type: 'restoreTrackClipStates',
+                    payload: {
+                        expected: [
+                            snapshotFor('t1', ['c1'], {
+                                clipSatellites: [{ clipId: 'c1', gainEnvelope: null, warpState: capturedWarp }],
+                            }),
+                        ],
+                        replacement: [snapshotFor('t1', ['c1'])],
+                    },
+                });
+
+                expect(result).toEqual({ status: 'conflict' });
+                expect(mocks.updateTrack).not.toHaveBeenCalled();
+                expect(mocks.writeClipSatelliteEntry).not.toHaveBeenCalled();
+            });
         });
     });
 

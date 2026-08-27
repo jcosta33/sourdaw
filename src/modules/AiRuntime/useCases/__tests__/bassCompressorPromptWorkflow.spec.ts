@@ -727,12 +727,12 @@ describe('bass compressor prompt workflow', () => {
         expect(confirmation?.risk).toMatchObject({ level: 'broad-reversible' });
         expect(confirmation?.protectedUnchanged).toEqual([{ id: 'track-bass-frozen', name: 'Bass Frozen' }]);
         expect(confirmation?.affectedIds).toEqual([
-            'device-ai-track-bass-di-builtin-compressor',
             'track-bass-di',
             'device-bass-di-eq',
-            'device-ai-track-bass-amp-builtin-compressor',
+            'device-ai-track-bass-di-builtin-compressor',
             'track-bass-amp',
             'device-bass-amp-eq',
+            'device-ai-track-bass-amp-builtin-compressor',
         ]);
         const proposal = chatStore.value?.messages.find(
             (message) => message.pendingActionConfirmationId === confirmation?.id
@@ -782,10 +782,10 @@ describe('bass compressor prompt workflow', () => {
         );
         expect(receipt?.content).toContain('Outcome: committed');
         expect(receipt?.content).toContain(
-            'Affected IDs: device-ai-track-bass-di-builtin-compressor, track-bass-di, device-bass-di-eq'
+            'Affected IDs: track-bass-di, device-bass-di-eq, device-ai-track-bass-di-builtin-compressor'
         );
         expect(receipt?.content).toContain(
-            'Affected IDs: device-ai-track-bass-amp-builtin-compressor, track-bass-amp, device-bass-amp-eq'
+            'Affected IDs: track-bass-amp, device-bass-amp-eq, device-ai-track-bass-amp-builtin-compressor'
         );
         expect(receipt?.content).toContain('Protected unchanged: "Bass Frozen" (track-bass-frozen)');
         expect(undoStore.value?.past).toHaveLength(2);
@@ -1075,10 +1075,13 @@ describe('bass compressor prompt workflow', () => {
                     : track
             ),
         });
+        // Settle the foreign write into the document so confirmation observes the
+        // divergence deterministically instead of racing the rAF-deferred flush.
+        flushFixtureTrackStore();
 
         const result = await confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' });
 
-        expect(result.status).toBe('failed');
+        expect(result.status).toBe('invalidated');
         expect(getTrack('track-bass-di').devices.map((device) => device.id)).toEqual(BASS_DI_DEVICE_IDS);
         expect(getTrack('track-bass-amp').devices.map((device) => device.id)).toEqual([
             ...BASS_AMP_DEVICE_IDS,
@@ -1113,10 +1116,15 @@ describe('bass compressor prompt workflow', () => {
                 return track;
             }),
         });
+        // Settle the foreign write into the document so confirmation observes the
+        // divergence deterministically instead of racing the rAF-deferred flush.
+        flushFixtureTrackStore();
 
         const result = await confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' });
 
-        expect(result.status).toBe('failed');
+        // Both target chains changed under the proposal, so admission invalidates
+        // it as stale rather than rejecting it at execution.
+        expect(result.status).toBe('invalidated');
         expect(getTrack('track-bass-di').devices.map((device) => device.id)).toEqual([
             ...BASS_DI_DEVICE_IDS,
             'device-remote-di',
@@ -1155,7 +1163,23 @@ describe('bass compressor prompt workflow', () => {
 
         const result = await confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' });
 
-        expect(result).toEqual({ status: 'executed' });
+        expect(result).toMatchObject({
+            status: 'failed',
+            durableCommit: true,
+            effects: [
+                expect.objectContaining({
+                    kind: 'runtime-graph',
+                    operation: 'addDevice',
+                    remediation: 'retry',
+                    state: 'pending',
+                }),
+            ],
+            continuation: {
+                authority: 'authoritative-collaboration-host',
+                idempotency: 'project-checkpoint',
+                kind: 'reconcile-exact-batch',
+            },
+        });
         expectRuntimeDeviceChain('track-bass-di', BASS_DI_INSERTED_DEVICE_IDS);
         expect(getTrack('track-bass-amp').devices.map((device) => device.id)).toEqual([
             ...BASS_AMP_INSERTED_DEVICE_IDS,
@@ -1164,10 +1188,13 @@ describe('bass compressor prompt workflow', () => {
         expect(matchesRuntimeDeviceChainTopology(runtimeGraphTopology.createNode(getTrack('track-bass-amp')))).toBe(
             false
         );
+        expect(getPendingActionConfirmation(confirmation?.id ?? '')).toMatchObject({ status: 'failed' });
         const receipt = chatStore.value?.messages.find(
             (message) => message.pendingActionConfirmationId === confirmation?.id
         );
-        expect(receipt?.content).toContain('project change committed with a follow-up warning');
+        expect(receipt?.content).toContain('The project change is durably committed');
+        expect(receipt?.content).toContain('At least one external effect remains pending');
+        expect(receipt?.content).toContain('the project mutation will not replay');
         expect(receipt?.error).toContain('requires retry');
         expect(undoStore.value?.past).toHaveLength(2);
     });
@@ -1186,16 +1213,36 @@ describe('bass compressor prompt workflow', () => {
 
         const result = await confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' });
 
-        expect(result).toEqual({ status: 'executed' });
+        expect(result).toMatchObject({
+            status: 'failed',
+            durableCommit: true,
+            effects: [
+                expect.objectContaining({
+                    kind: 'runtime-graph',
+                    operation: 'addDevice',
+                    reason: 'runtime graph refused compressor',
+                    remediation: 'repair',
+                    state: 'pending',
+                }),
+            ],
+            continuation: {
+                authority: 'authoritative-collaboration-host',
+                idempotency: 'project-checkpoint',
+                kind: 'reconcile-exact-batch',
+            },
+        });
         expectRuntimeDeviceChain('track-bass-di', BASS_DI_INSERTED_DEVICE_IDS);
         expect(getTrack('track-bass-amp').devices.map((device) => device.id)).toEqual(BASS_AMP_INSERTED_DEVICE_IDS);
         expect(matchesRuntimeDeviceChainTopology(runtimeGraphTopology.createNode(getTrack('track-bass-amp')))).toBe(
             false
         );
+        expect(getPendingActionConfirmation(confirmation?.id ?? '')).toMatchObject({ status: 'failed' });
         const receipt = chatStore.value?.messages.find(
             (message) => message.pendingActionConfirmationId === confirmation?.id
         );
-        expect(receipt?.content).toContain('project change committed with a follow-up warning');
+        expect(receipt?.content).toContain('The project change is durably committed');
+        expect(receipt?.content).toContain('At least one external effect remains pending');
+        expect(receipt?.content).toContain('the project mutation will not replay');
         expect(receipt?.error).toContain('runtime graph refused compressor');
         expect(undoStore.value?.past).toHaveLength(2);
     });
@@ -1232,7 +1279,23 @@ describe('bass compressor prompt workflow', () => {
 
         const result = await confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' });
 
-        expect(result).toEqual({ status: 'executed' });
+        expect(result).toMatchObject({
+            status: 'failed',
+            durableCommit: true,
+            effects: [
+                expect.objectContaining({
+                    kind: 'runtime-graph',
+                    operation: 'addDevice',
+                    remediation: 'retry',
+                    state: 'pending',
+                }),
+            ],
+            continuation: {
+                authority: 'authoritative-collaboration-host',
+                idempotency: 'project-checkpoint',
+                kind: 'reconcile-exact-batch',
+            },
+        });
         expect(getTrack('track-bass-di').devices.map((device) => device.id)).toEqual([
             ...BASS_DI_INSERTED_DEVICE_IDS,
             'device-remote-di',
@@ -1247,6 +1310,7 @@ describe('bass compressor prompt workflow', () => {
         expect(matchesRuntimeDeviceChainTopology(runtimeGraphTopology.createNode(getTrack('track-bass-amp')))).toBe(
             false
         );
+        expect(getPendingActionConfirmation(confirmation?.id ?? '')).toMatchObject({ status: 'failed' });
         expect(undoStore.value?.past).toHaveLength(2);
     });
 
@@ -1274,17 +1338,37 @@ describe('bass compressor prompt workflow', () => {
 
         const result = await confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' });
 
-        expect(result).toEqual({ status: 'executed' });
+        expect(result).toMatchObject({
+            status: 'failed',
+            durableCommit: true,
+            effects: [
+                expect.objectContaining({
+                    kind: 'runtime-graph',
+                    operation: 'addDevice',
+                    reason: 'runtime graph removal failed; manual repair is required',
+                    remediation: 'repair',
+                    state: 'pending',
+                }),
+            ],
+            continuation: {
+                authority: 'authoritative-collaboration-host',
+                idempotency: 'project-checkpoint',
+                kind: 'reconcile-exact-batch',
+            },
+        });
         const receipt = chatStore.value?.messages.find(
             (message) => message.pendingActionConfirmationId === confirmation?.id
         );
-        expect(receipt?.content).toContain('project change committed with a follow-up warning');
+        expect(receipt?.content).toContain('The project change is durably committed');
+        expect(receipt?.content).toContain('At least one external effect remains pending');
+        expect(receipt?.content).toContain('the project mutation will not replay');
         expect(receipt?.error).toContain('runtime graph removal failed');
         expect(receipt?.error?.toLowerCase()).toContain('manual repair');
         expectRuntimeDeviceChain('track-bass-di', BASS_DI_INSERTED_DEVICE_IDS);
         expect(matchesRuntimeDeviceChainTopology(runtimeGraphTopology.createNode(getTrack('track-bass-amp')))).toBe(
             false
         );
+        expect(getPendingActionConfirmation(confirmation?.id ?? '')).toMatchObject({ status: 'failed' });
         expect(undoStore.value?.past).toHaveLength(2);
     });
 

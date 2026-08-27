@@ -234,7 +234,7 @@ describe('ChatPanel', () => {
                     timestamp: 1,
                     isCommandAction: true,
                     pendingActionConfirmationId: 'confirm-1',
-                    pendingActionConfirmationStatus: 'executed',
+                    pendingActionConfirmationStatus: 'failed',
                     pendingActionFollowUpStatus: 'retryable',
                 },
             ],

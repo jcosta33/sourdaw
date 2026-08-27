@@ -28,6 +28,7 @@ import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from 
 import {
     clearUndoHistory,
     commandTrackDefaultsPort,
+    configureCommandBatchIdempotency,
     executeAppAction,
     getExecutableAppActionToolSchemas,
     redo,
@@ -878,6 +879,17 @@ describe('backing-vocal plate workflow', () => {
             )
         );
         vi.stubGlobal('fetch', runtimeMocks.fetch);
+        // jsdom has no navigator.locks; the durable batch-receipt checkpoint the
+        // render retry proof depends on is written under that lock.
+        vi.stubGlobal('navigator', {
+            ...navigator,
+            locks: {
+                request: (_name: string, _options: LockOptions, task: () => unknown) => Promise.resolve(task()),
+            },
+        });
+        // The durable batch receipt the render retry proof binds to is only
+        // persisted when the idempotency checkpoint is configured.
+        configureCommandBatchIdempotency({ canExecute: () => true });
         await cloudSession.clear();
         await cloudSession.replace_runtime({
             provider: 'openai-compatible',
@@ -977,6 +989,7 @@ describe('backing-vocal plate workflow', () => {
         configureAutomergeStoragePort(null);
         await cloudSession.clear();
         removeCrdtDoc('root');
+        localStorage.removeItem('sourdaw:command-batch-idempotency:v1');
         vi.unstubAllGlobals();
     });
 
@@ -1319,8 +1332,25 @@ describe('backing-vocal plate workflow', () => {
             return Promise.resolve(createTestAudioBuffer());
         });
 
-        await expect(confirmPendingChatActions({ confirmationId: confirmation.id })).resolves.toEqual({
-            status: 'executed',
+        const result = await confirmPendingChatActions({ confirmationId: confirmation.id });
+
+        expect(result).toMatchObject({
+            status: 'failed',
+            durableCommit: true,
+            effects: [
+                expect.objectContaining({
+                    kind: 'external-effect',
+                    operation: 'renderProjectSections',
+                    reason: expect.stringContaining('chorus two renderer unavailable'),
+                    remediation: 'reconcile',
+                    state: 'pending',
+                }),
+            ],
+            continuation: {
+                authority: 'authoritative-collaboration-host',
+                idempotency: 'project-checkpoint',
+                kind: 'reconcile-exact-batch',
+            },
         });
 
         expect(runtimeMocks.renderOffline).toHaveBeenCalledTimes(3);
@@ -1330,14 +1360,21 @@ describe('backing-vocal plate workflow', () => {
                 sectionId: 'section-chorus-one',
             }),
         ]);
-        expect(getPendingActionConfirmation(confirmation.id)?.status).toBe('executed');
+        // getAdmissibleSectionRenderRetry gates both this retryable arming and the
+        // retry gate, so an armed "Retry renders" button in ChatPanel can actually
+        // fire from this state; the retry is exercised below.
+        expect(getPendingActionConfirmation(confirmation.id)).toMatchObject({
+            status: 'failed',
+            followUpStatus: 'retryable',
+            followUpProjectRevision: expect.any(String),
+        });
         const receipt = chatStore.value?.messages.find(
             (message) => message.pendingActionConfirmationId === confirmation.id
         );
-        expect(receipt?.content).toContain('The project change committed with a follow-up warning');
+        expect(receipt?.content).toContain('The project change is durably committed');
+        expect(receipt?.content).toContain('At least one external effect remains pending');
         expect(receipt?.content).toContain('chorus two renderer unavailable');
-        expect(receipt?.content).toContain('Do not replay the confirmed project actions');
-        expect(receipt?.content).toContain('Retry missing renders below');
+        expect(receipt?.content).toContain('the project mutation will not replay');
         const receiptLines = receipt?.content.split('\n') ?? [];
         const renderReceiptIndex = receiptLines.findIndex((line) => line.startsWith('- **renderProjectSections**:'));
         const renderAffectedIds = receiptLines
@@ -1360,13 +1397,15 @@ describe('backing-vocal plate workflow', () => {
         const committedTracks = structuredClone(trackStore.value?.tracks ?? []);
         const committedLanes = structuredClone(automationStore.value?.lanes ?? []);
 
+        // The armed retry re-renders only the missing job and leaves the
+        // committed project batch untouched.
         const failedRetry = await confirmPendingChatActions({ confirmationId: confirmation.id });
-        expect(failedRetry.status).toBe('failed');
-        if (failedRetry.status !== 'failed') {
-            throw new Error(`Expected failed render retry, received ${failedRetry.status}`);
-        }
-        expect(failedRetry.reason).toContain('chorus two renderer unavailable');
+        expect(failedRetry).toMatchObject({
+            status: 'failed',
+            reason: expect.stringContaining('chorus two renderer unavailable'),
+        });
         expect(runtimeMocks.renderOffline).toHaveBeenCalledTimes(4);
+        expect(runtimeMocks.renderOffline.mock.calls[3]?.[0]).toMatchObject({ startBeat: failedJob.startBeat });
         expect(trackStore.value?.tracks).toEqual(committedTracks);
         expect(automationStore.value?.lanes).toEqual(committedLanes);
         expect(undoStore.value?.past).toHaveLength(11);
@@ -1380,7 +1419,6 @@ describe('backing-vocal plate workflow', () => {
         await expect(confirmPendingChatActions({ confirmationId: confirmation.id })).resolves.toEqual({
             status: 'executed',
         });
-
         expect(runtimeMocks.renderOffline).toHaveBeenCalledTimes(5);
         expect(getAgentSectionRenderArtifacts().map((artifact) => artifact.jobId)).toEqual(
             renderAction.payload.jobs.map((job) => job.jobId)
@@ -1390,6 +1428,7 @@ describe('backing-vocal plate workflow', () => {
         expect(undoStore.value?.past).toHaveLength(11);
         expect(getPendingActionConfirmation(confirmation.id)).toMatchObject({
             status: 'executed',
+            followUpStatus: 'complete',
             error: null,
         });
         const completedReceipt = chatStore.value?.messages.find(
@@ -1398,22 +1437,6 @@ describe('backing-vocal plate workflow', () => {
         expect(completedReceipt?.content).toContain(
             'Missing section render artifacts completed without replaying project actions'
         );
-        const completedReceiptLines = completedReceipt?.content.split('\n') ?? [];
-        const completedRenderReceiptIndex = completedReceiptLines.findIndex((line) =>
-            line.startsWith('- **renderProjectSections**:')
-        );
-        const completedRenderAffectedIds = completedReceiptLines
-            .slice(completedRenderReceiptIndex + 1)
-            .find((line) => line.startsWith('  - Affected IDs:'));
-        expect(completedRenderAffectedIds).toBeDefined();
-        expect(completedRenderAffectedIds).toContain(failedJob.sectionId);
-        expect(completedRenderAffectedIds).toContain(failedJob.jobId);
-        const completedRenderExecution = getPendingActionConfirmation(confirmation.id)?.executedActions.find(
-            (execution) => execution.actionType === 'renderProjectSections'
-        );
-        expect(completedRenderExecution?.affectedIds).toContain(failedJob.sectionId);
-        expect(completedRenderExecution?.affectedIds).toContain(failedJob.jobId);
-        expect(completedReceipt?.content).not.toContain('Do not replay the confirmed project actions');
 
         await undo();
         expect(trackStore.value?.tracks).toEqual(originalTracks);
