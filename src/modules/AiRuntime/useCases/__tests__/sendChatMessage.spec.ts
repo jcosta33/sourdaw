@@ -9,9 +9,11 @@ import { type AgentRunProviderProposal } from '../../models/AgentRun';
 import { type ExecutableRuntimeAction } from '../../models/ExecutableRuntimeAction';
 import { type ProjectContext } from '../../models/ProjectContext';
 import { agentRunStore } from '../../stores/agentRunStore';
+import { llmStatusStore } from '../../stores/llmStatusStore';
 import { bridgeGroundedLlmToolCalls } from '../agentReference/bridgeGroundedLlmToolCalls';
 import { materializeBatchLocalActionIdentities } from '../agentReference/materializeBatchLocalActionIdentities';
 import { agentRunLifecycle } from '../agentRunLifecycle';
+import { agentRunWorkLease } from '../agentRunWorkLease';
 import { compileArbitraryCommandList } from '../compileArbitraryCommandList';
 import { materializeActionStateGuards } from '../materializeActionStateGuards';
 import { type planPromptActions } from '../planPromptActions';
@@ -479,6 +481,23 @@ function getMostRecentlyAdmittedRunId(): string {
     return runId;
 }
 
+function createSuccessfulWebLlmEngine(content: string) {
+    async function* streamCompletion() {
+        yield {
+            choices: [{ delta: { content }, finish_reason: 'stop' }],
+        };
+    }
+
+    return {
+        interruptGenerate: vi.fn(),
+        chat: {
+            completions: {
+                create: vi.fn(async () => streamCompletion()),
+            },
+        },
+    };
+}
+
 describe('sendChatMessage retained-provider selection', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -503,6 +522,7 @@ describe('sendChatMessage retained-provider selection', () => {
         mocks.getLlmEngine.mockReturnValue(null);
         mocks.proposePendingActionConfirmation.mockReturnValue({ id: 'confirmation-fixture' });
         mocks.resolveBackend.mockReturnValue('webllm');
+        llmStatusStore.set({ state: 'idle' });
     });
 
     afterEach(() => {
@@ -510,6 +530,7 @@ describe('sendChatMessage retained-provider selection', () => {
         commandBatchPreflightPort.setProvider(null);
         commandTrackDefaultsPort.setTrackColorProvider(null);
         agentRunLifecycle.clear();
+        llmStatusStore.set({ state: 'idle' });
     });
 
     it('fails closed when the explicitly selected hosted provider is not configured', async () => {
@@ -528,6 +549,67 @@ describe('sendChatMessage retained-provider selection', () => {
         await expect(sendChatMessage('summarize this', { mode: 'explain' })).rejects.toThrow(
             'AI Engine is not initialized or not supported on this device.'
         );
+    });
+
+    it('preserves a completed regular-chat response when provider lease settlement persistence fails', async () => {
+        const content = 'The mix is ready for a final balance pass.';
+        const storageFailure = new DOMException('The quota has been exceeded.', 'QuotaExceededError');
+        const loggerError = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+        const settleWorkLease = vi.spyOn(agentRunWorkLease, 'settle').mockImplementation(() => {
+            throw storageFailure;
+        });
+        mocks.getLlmEngine.mockReturnValue(createSuccessfulWebLlmEngine(content));
+
+        try {
+            await expect(sendChatMessage('How does the mix sound?', { mode: 'explain' })).resolves.toBeUndefined();
+
+            const run = agentRunLifecycle.get(getMostRecentlyAdmittedRunId());
+            expect(mocks.updateChatMessage).toHaveBeenLastCalledWith(
+                expect.any(String),
+                expect.objectContaining({ isStreaming: false, content, error: undefined })
+            );
+            expect(run?.errors).toEqual([]);
+            expect(llmStatusStore.value).toEqual({ state: 'ready', backend: 'webllm', modelId: 'fixture-model' });
+            expect(mocks.setActiveAborter).toHaveBeenLastCalledWith(null);
+            expect(mocks.setChatGenerating).toHaveBeenLastCalledWith(false);
+            expect(loggerError).toHaveBeenCalledOnce();
+        } finally {
+            settleWorkLease.mockRestore();
+            loggerError.mockRestore();
+        }
+    });
+
+    it('preserves a completed regular-chat response when provider usage persistence fails', async () => {
+        const content = 'The arrangement now has a clear final chorus.';
+        const storageFailure = new DOMException('The quota has been exceeded.', 'QuotaExceededError');
+        const loggerError = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+        const recordProviderUsage = vi.spyOn(agentRunLifecycle, 'recordProviderUsage').mockImplementation(() => {
+            throw storageFailure;
+        });
+        mocks.getLlmEngine.mockReturnValue(createSuccessfulWebLlmEngine(content));
+
+        try {
+            await expect(sendChatMessage('Summarize the arrangement.', { mode: 'explain' })).resolves.toBeUndefined();
+
+            const run = agentRunLifecycle.get(getMostRecentlyAdmittedRunId());
+            expect(mocks.updateChatMessage).toHaveBeenLastCalledWith(
+                expect.any(String),
+                expect.objectContaining({ isStreaming: false, content, error: undefined })
+            );
+            expect(run?.errors).toEqual([]);
+            expect(run?.workLeases).toEqual(
+                expect.arrayContaining([
+                    expect.objectContaining({ workId: 'provider-response', terminalState: 'completed' }),
+                ])
+            );
+            expect(llmStatusStore.value).toEqual({ state: 'ready', backend: 'webllm', modelId: 'fixture-model' });
+            expect(mocks.setActiveAborter).toHaveBeenLastCalledWith(null);
+            expect(mocks.setChatGenerating).toHaveBeenLastCalledWith(false);
+            expect(loggerError).toHaveBeenCalledOnce();
+        } finally {
+            recordProviderUsage.mockRestore();
+            loggerError.mockRestore();
+        }
     });
 
     it('preserves the provider failure message when agent-run storage fails after admission', async () => {

@@ -1,4 +1,5 @@
 import { isAppError } from '#/infra/errors/isAppError';
+import { logger } from '#/infra/logger/appLogger';
 import {
     executeVersionedCommandBatchEnvelope,
     generateGroupId,
@@ -157,6 +158,30 @@ function tryRecordTerminalFailure(input: Parameters<typeof agentRunLifecycle.rec
         agentRunLifecycle.recordError(input);
     } catch {
         // The user-visible failure remains authoritative when its recovery record cannot persist.
+    }
+}
+
+function completeProviderResponseBestEffort(input: {
+    lease: Parameters<typeof settleAgentRunWorkLeaseSafely>[0]['lease'];
+    result: ModelProviderResult;
+    receiptIdentity: string;
+}): void {
+    settleAgentRunWorkLeaseSafely({
+        lease: input.lease,
+        terminalState: 'completed',
+        settle: agentRunWorkLease.settle,
+        reportFailure: (error) =>
+            logger.error(new Error('Completed provider work lease settlement failed', { cause: error })),
+    });
+    try {
+        recordAgentProviderUsage(input.lease.runId, input.result, input.receiptIdentity, { terminal: true });
+    } catch (error) {
+        logger.error(new Error('Completed provider usage accounting failed', { cause: error }));
+    }
+    try {
+        agentRunLifecycle.transitionPhase({ runId: input.lease.runId, phase: 'completed' });
+    } catch (error) {
+        logger.error(new Error('Completed provider lifecycle persistence failed', { cause: error }));
     }
 }
 
@@ -1636,18 +1661,12 @@ export async function sendChatMessage(
             reasoning,
             error: incompleteError,
         });
-        agentRunWorkLease.settle({
-            runId,
-            workId: providerWorkId,
-            leaseId: providerLease.leaseId,
-            cancellationGeneration: providerLease.cancellationGeneration,
-            idempotencyKey: providerLease.idempotencyKey,
-            receiptIdentity: providerLease.receiptIdentity,
-            terminalState: 'completed',
+        completeProviderResponseBestEffort({
+            lease: providerLease,
+            result: providerResult,
+            receiptIdentity: providerReceiptIdentity,
         });
-        recordAgentProviderUsage(runId, providerResult, providerReceiptIdentity, { terminal: true });
         providerUsageRecorded = true;
-        agentRunLifecycle.transitionPhase({ runId, phase: 'completed' });
         llmStatusStore.set({ state: 'ready', backend, modelId: getBackendModelId(backend) });
     } catch (error) {
         const errorMessage = (() => {
