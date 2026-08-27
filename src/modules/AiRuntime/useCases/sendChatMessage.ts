@@ -15,13 +15,7 @@ import {
     REMOTE_TEXT_AGENT_DATA_CATEGORIES,
 } from '../models/AgentDataPolicy';
 import { type AgentExecutionMode, type AgentTrustCeiling } from '../models/AgentExecutionMode';
-import {
-    type AgentRunBudgets,
-    type AgentRunDecisionResume,
-    type AgentRunScope,
-    type AgentRunWorkLease,
-    type AgentRunWorkTerminalState,
-} from '../models/AgentRun';
+import { type AgentRunBudgets, type AgentRunDecisionResume, type AgentRunScope } from '../models/AgentRun';
 import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
 import { type ChatMessage } from '../models/Chat';
 import { CHAT_SYSTEM_PROMPT } from '../models/ChatSystemPrompt';
@@ -56,6 +50,10 @@ import { getAgentPlanProposalIdentity } from '../transformers/normalizeAgentPlan
 
 import { normalizeAgentFailure } from './agentErrorAndSaga';
 import { createStemImportConfirmationResourceLease } from './agentReference/createStemImportConfirmationResourceLease';
+import {
+    AGENT_RUN_PERSISTENCE_WARNING,
+    settleAgentRunWorkLeaseSafely,
+} from './agentRequestOrchestration/settleAgentRunWorkLeaseSafely';
 import { agentRunLifecycle } from './agentRunLifecycle';
 import { agentRunWorkLease } from './agentRunWorkLease';
 import { ApplicationOwnedToolLoopRequestError } from './applicationOwnedToolLoop';
@@ -129,11 +127,6 @@ type AgentApplyReceipt = Extract<
     { status: 'committed' | 'executed' }
 >['receipt'];
 
-const AGENT_RUN_PERSISTENCE_WARNING =
-    'Agent run recovery state could not be persisted after execution. The verified command receipt remains authoritative; do not retry automatically.';
-const AGENT_RUN_STALE_COMPLETION_WARNING =
-    'Agent work completed after its run lease was cancelled or replaced. The durable receipt was retained without reopening the terminal run.';
-
 function tryRecordCommittedAgentRunWork(input: {
     runId: string;
     receipt: NonNullable<AgentApplyReceipt>;
@@ -156,34 +149,6 @@ function tryRecordCommittedAgentRunWork(input: {
         return null;
     } catch {
         return AGENT_RUN_PERSISTENCE_WARNING;
-    }
-}
-
-type AgentRunWorkLeaseSettlement = {
-    accepted: boolean;
-    warning: string | null;
-};
-
-function trySettleAgentRunWorkLease(
-    lease: AgentRunWorkLease,
-    terminalState: AgentRunWorkTerminalState
-): AgentRunWorkLeaseSettlement {
-    try {
-        const settlement = agentRunWorkLease.settle({
-            runId: lease.runId,
-            workId: lease.workId,
-            leaseId: lease.leaseId,
-            cancellationGeneration: lease.cancellationGeneration,
-            idempotencyKey: lease.idempotencyKey,
-            receiptIdentity: lease.receiptIdentity,
-            terminalState,
-        });
-        return {
-            accepted: settlement.status === 'settled',
-            warning: settlement.status === 'settled' ? null : AGENT_RUN_STALE_COMPLETION_WARNING,
-        };
-    } catch {
-        return { accepted: true, warning: AGENT_RUN_PERSISTENCE_WARNING };
     }
 }
 
@@ -805,7 +770,11 @@ export async function sendChatMessage(
                             await agentRunCancellation.cancel({ runId, reason: preview.reason });
                         }
                     } catch (error) {
-                        trySettleAgentRunWorkLease(previewLeaseResult.lease, 'failed');
+                        settleAgentRunWorkLeaseSafely({
+                            lease: previewLeaseResult.lease,
+                            terminalState: 'failed',
+                            settle: agentRunWorkLease.settle,
+                        });
                         agentRunLifecycle.updateBatchStatus({
                             runId,
                             batchId: parsedCommandBatch.envelope.batchId,
@@ -846,10 +815,11 @@ export async function sendChatMessage(
                         agentRunLifecycle.transitionPhase({ runId, phase: 'completed' });
                         return undefined;
                     }
-                    const previewSettlement = trySettleAgentRunWorkLease(
-                        previewLeaseResult.lease,
-                        preview.status === 'cancelled' ? 'cancelled' : 'failed'
-                    );
+                    const previewSettlement = settleAgentRunWorkLeaseSafely({
+                        lease: previewLeaseResult.lease,
+                        terminalState: preview.status === 'cancelled' ? 'cancelled' : 'failed',
+                        settle: agentRunWorkLease.settle,
+                    });
                     if (!previewSettlement.accepted) {
                         const currentRun = agentRunLifecycle.get(runId);
                         if (currentRun?.phase === 'cancelled' || currentRun?.phase === 'partially-completed') {
@@ -984,7 +954,11 @@ export async function sendChatMessage(
                         });
                     }
                 } catch (error) {
-                    trySettleAgentRunWorkLease(commandLeaseResult.lease, 'failed');
+                    settleAgentRunWorkLeaseSafely({
+                        lease: commandLeaseResult.lease,
+                        terminalState: 'failed',
+                        settle: agentRunWorkLease.settle,
+                    });
                     throw error;
                 } finally {
                     releaseCommandCancellation();
@@ -999,10 +973,11 @@ export async function sendChatMessage(
                 } else if (execution.status === 'cancelled') {
                     commandLeaseTerminalState = 'cancelled';
                 }
-                const commandLeaseSettlement = trySettleAgentRunWorkLease(
-                    commandLeaseResult.lease,
-                    commandLeaseTerminalState
-                );
+                const commandLeaseSettlement = settleAgentRunWorkLeaseSafely({
+                    lease: commandLeaseResult.lease,
+                    terminalState: commandLeaseTerminalState,
+                    settle: agentRunWorkLease.settle,
+                });
                 const commandLeasePersistenceWarning = commandLeaseSettlement.warning;
 
                 if (execution.status === 'committed') {
@@ -1241,7 +1216,11 @@ export async function sendChatMessage(
             if (aborter.signal.aborted || configurationChanged || proposalInvalidated) {
                 await agentRunCancellation.cancel({ runId, reason });
             } else {
-                trySettleAgentRunWorkLease(providerLease, 'failed');
+                settleAgentRunWorkLeaseSafely({
+                    lease: providerLease,
+                    terminalState: 'failed',
+                    settle: agentRunWorkLease.settle,
+                });
                 agentRunLifecycle.recordError({
                     runId,
                     error: normalizeAgentFailure({
@@ -1699,7 +1678,11 @@ export async function sendChatMessage(
         }
         if (configurationChanged) {
             await agentRunCancellation.cancel({ runId, reason: errorMessage });
-            trySettleAgentRunWorkLease(providerLease, 'cancelled');
+            settleAgentRunWorkLeaseSafely({
+                lease: providerLease,
+                terminalState: 'cancelled',
+                settle: agentRunWorkLease.settle,
+            });
             const parsed = thinkParser.snapshot();
             updateChatMessage(assistantMsgId, {
                 isStreaming: false,

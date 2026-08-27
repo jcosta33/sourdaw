@@ -21,12 +21,7 @@ import {
 } from '#/modules/CrdtDocument/useCases';
 
 import { AiProposalInvalidatedError } from '../errors/AiProposalInvalidatedError';
-import {
-    type AgentRunErrorCategory,
-    type AgentRunErrorRemediation,
-    type AgentRunWorkLease,
-    type AgentRunWorkTerminalState,
-} from '../models/AgentRun';
+import { type AgentRunErrorCategory, type AgentRunErrorRemediation, type AgentRunWorkLease } from '../models/AgentRun';
 import { type ChatActionConfirmationStatus } from '../models/Chat';
 import { pushAiActionGroup, type AiActionGroup } from '../stores/aiActionHistoryStore';
 import { chatStore, setActiveAborter, setChatGenerating, updateChatMessage } from '../stores/chatStore';
@@ -46,6 +41,10 @@ import {
 } from '../stores/pendingActionConfirmationStore';
 
 import { normalizeAgentFailure } from './agentErrorAndSaga';
+import {
+    AGENT_RUN_PERSISTENCE_WARNING,
+    settleAgentRunWorkLeaseSafely,
+} from './agentRequestOrchestration/settleAgentRunWorkLeaseSafely';
 import { agentRunLifecycle } from './agentRunLifecycle';
 import { agentRunWorkLease } from './agentRunWorkLease';
 import { agentWorkBudget, type AgentWorkBudgetEstimate } from './agentWorkBudget';
@@ -100,10 +99,6 @@ type ConfirmPendingChatActionsResult =
 
 type ConfirmPendingChatActionsOutput = Promise<ConfirmPendingChatActionsResult>;
 
-const AGENT_RUN_PERSISTENCE_WARNING =
-    'Agent run recovery state could not be persisted after execution. The verified command receipt remains authoritative; do not retry automatically.';
-const AGENT_RUN_STALE_COMPLETION_WARNING =
-    'Agent work completed after its run lease was cancelled or replaced. The durable receipt was retained without reopening the terminal run.';
 const RENDER_RETRY_PROOF_MISMATCH_REASON =
     'The retained render retry proof no longer matches the committed project batch.';
 
@@ -230,40 +225,11 @@ function recordTrackedAgentRunReceipt(
     return { warning, effectsPending };
 }
 
-type TrackedAgentRunWorkLeaseSettlement = {
-    accepted: boolean;
-    warning: string | null;
-};
-
-function settleTrackedAgentRunWorkLease(
-    lease: AgentRunWorkLease,
-    terminalState: AgentRunWorkTerminalState
-): TrackedAgentRunWorkLeaseSettlement {
-    try {
-        const settlement = agentRunWorkLease.settle({
-            runId: lease.runId,
-            workId: lease.workId,
-            leaseId: lease.leaseId,
-            cancellationGeneration: lease.cancellationGeneration,
-            idempotencyKey: lease.idempotencyKey,
-            receiptIdentity: lease.receiptIdentity,
-            terminalState,
-        });
-        return {
-            accepted: settlement.status === 'settled',
-            warning: settlement.status === 'settled' ? null : AGENT_RUN_STALE_COMPLETION_WARNING,
-        };
-    } catch (error) {
-        logger.error(new Error('Agent run work lease settlement failed', { cause: error }));
-        return { accepted: true, warning: AGENT_RUN_PERSISTENCE_WARNING };
-    }
-}
-
 async function settleVerifiedBatchReplay(
     confirmation: PendingAppActionConfirmation,
     receipt: CommandVerifiedBatchReceipt,
     recoveredExternalEffects = false,
-    leaseSettlement: TrackedAgentRunWorkLeaseSettlement = { accepted: true, warning: null }
+    leaseSettlement: ReturnType<typeof settleAgentRunWorkLeaseSafely> = { accepted: true, warning: null }
 ): Promise<ConfirmPendingChatActionsResult> {
     if (receipt.outcome === 'partially-committed' && receipt.pendingEffects.length > 0) {
         const receiptPersistenceWarning = recordTrackedAgentRunReceipt(confirmation, receipt, {
@@ -1333,7 +1299,13 @@ export async function confirmPendingChatActions(
         }
         let canUpdateTrackedRun = true;
         if (trackedWorkLease) {
-            canUpdateTrackedRun = settleTrackedAgentRunWorkLease(trackedWorkLease, 'failed').accepted;
+            canUpdateTrackedRun = settleAgentRunWorkLeaseSafely({
+                lease: trackedWorkLease,
+                terminalState: 'failed',
+                settle: agentRunWorkLease.settle,
+                reportFailure: (error) =>
+                    logger.error(new Error('Agent run work lease settlement failed', { cause: error })),
+            }).accepted;
         }
         if (canUpdateTrackedRun) {
             recordTrackedAgentRunFailure(confirmation, {
@@ -1398,7 +1370,7 @@ export async function confirmPendingChatActions(
           })
         : null;
 
-    let trackedLeaseSettlement: TrackedAgentRunWorkLeaseSettlement = { accepted: true, warning: null };
+    let trackedLeaseSettlement: ReturnType<typeof settleAgentRunWorkLeaseSafely> = { accepted: true, warning: null };
     if (trackedWorkLease) {
         let terminalState: 'completed' | 'cancelled' | 'failed' = 'failed';
         if (
@@ -1413,7 +1385,13 @@ export async function confirmPendingChatActions(
         } else if (batchResult.status === 'cancelled') {
             terminalState = 'cancelled';
         }
-        trackedLeaseSettlement = settleTrackedAgentRunWorkLease(trackedWorkLease, terminalState);
+        trackedLeaseSettlement = settleAgentRunWorkLeaseSafely({
+            lease: trackedWorkLease,
+            terminalState,
+            settle: agentRunWorkLease.settle,
+            reportFailure: (error) =>
+                logger.error(new Error('Agent run work lease settlement failed', { cause: error })),
+        });
     }
 
     if (batchResult.status === 'idempotent-replay') {
