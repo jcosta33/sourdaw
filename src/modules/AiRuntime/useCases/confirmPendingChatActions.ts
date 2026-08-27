@@ -719,7 +719,7 @@ function hasExactApprovedCommandBatchIdentity(
     candidate: PendingAppActionConfirmation['approvalSnapshot']['commandBatch']
 ): boolean {
     return (
-        candidate !== null &&
+        candidate !== undefined &&
         candidate.serialized === expected.serialized &&
         getExactAgentActionHash({ operation: 'commandBatchAuthority', arguments: candidate.authority }) ===
             getExactAgentActionHash({ operation: 'commandBatchAuthority', arguments: expected.authority })
