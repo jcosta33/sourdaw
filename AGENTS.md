@@ -82,6 +82,13 @@ surviving is a successful review, not a wasted one, and a reviewer must never ma
 to justify its run. A hedged finding — one that says a thing might or could be a problem without
 naming what breaks — is discarded on arrival, and reviewers are told so when dispatched.
 
+The evidence a finding owes scales with what it claims. A finding is checked against the live head,
+not inferred from the diff alone — a hunk shows what changed, not what the code now does, and a
+finding reasoned only from it guesses at surrounding code never read. A finding that would block a
+merge carries the reproduction that produced it: the input, the state, or the mutation, and the
+result observed. A test-validity finding names the mutation that should have failed the check and
+did not.
+
 The orchestrator owns every finding. Validate each one against the live code before acting on it:
 discard what is wrong, out of scope, or personal style, and never forward it. Send the survivors to
 the implementing agent as a precise repair task. An implementing agent never judges a finding
