@@ -9,6 +9,8 @@ import { ensurePadInstance, padStore } from '../../../stores/padStore';
 import { ensureSliceInstance, sliceStore } from '../../../stores/sliceStore';
 import { initCrumbsEngine } from '../../../useCases/crumbsLifecycle/initCrumbsEngine';
 import { armCrumbsRecording } from '../../../useCases/recording/armCrumbsRecording';
+import { switchCrumbsMode } from '../../../useCases/setCrumbsMode';
+import { setCrumbsParamWithAudio } from '../../../useCases/setCrumbsParamWithAudio';
 import { CrumbsPanel } from '../CrumbsPanel';
 
 import type { SampleMeta } from '../../../models/CrumbsTypes';
@@ -34,9 +36,17 @@ vi.mock('../../../useCases/recording/armCrumbsRecording', () => ({
 vi.mock('../../../useCases/recording/stopCrumbsRecording', () => ({
     stopCrumbsRecording: vi.fn().mockResolvedValue(undefined),
 }));
+vi.mock('../../../useCases/setCrumbsMode', () => ({
+    switchCrumbsMode: vi.fn(),
+}));
+vi.mock('../../../useCases/setCrumbsParamWithAudio', () => ({
+    setCrumbsParamWithAudio: vi.fn(),
+}));
 
 const initEngineMock = vi.mocked(initCrumbsEngine);
 const armRecordingMock = vi.mocked(armCrumbsRecording);
+const switchModeMock = vi.mocked(switchCrumbsMode);
+const setParamMock = vi.mocked(setCrumbsParamWithAudio);
 
 const DEVICE = 'panel-test';
 
@@ -81,6 +91,8 @@ beforeEach(() => {
     initEngineMock.mockResolvedValue(undefined);
     armRecordingMock.mockReset();
     armRecordingMock.mockResolvedValue(true);
+    switchModeMock.mockReset();
+    setParamMock.mockReset();
     trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
 });
 
@@ -114,6 +126,18 @@ describe('CrumbsPanel', () => {
         expect(screen.getByText('Status')).toBeInTheDocument();
         expect(screen.getByText('Controls')).toBeInTheDocument();
         expect(screen.getByText('Waveform')).toBeInTheDocument();
+    });
+
+    it('forwards mode and parameter control interactions to their use cases', () => {
+        render(<CrumbsPanel deviceId={DEVICE} />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Drum', exact: true }));
+        expect(switchModeMock).toHaveBeenCalledExactlyOnceWith(DEVICE, 'drum');
+
+        const gain = screen.getByRole('slider', { name: 'Gain' });
+        expect(gain).toHaveAttribute('aria-valuenow', '0.8');
+        fireEvent.keyDown(gain, { key: 'ArrowUp' });
+        expect(setParamMock).toHaveBeenCalledExactlyOnceWith(DEVICE, 'masterGain', 0.81, false);
     });
 
     it('prompts to drop a sample when none is loaded', () => {
