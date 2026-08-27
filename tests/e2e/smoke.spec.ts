@@ -200,7 +200,7 @@ async function createPlayableMidiClip(page: Page): Promise<Locator> {
     if ((await paint.getAttribute('aria-pressed')) !== 'true') {
         await paint.click();
     }
-    await pianoRoll.click({ position: { x: 200, y: 130 } });
+    await pianoRoll.click({ position: { x: 40, y: 130 } });
     await expect(page.getByTestId('selected-clip-note-count')).toHaveText('1 note');
     return pianoRoll;
 }
@@ -221,8 +221,10 @@ async function startBlankProject(page: Page): Promise<void> {
 }
 
 async function openSavedProjectInFreshPage(page: Page, name: string) {
+    const browserContext = page.context();
     const appRootUrl = new URL('/', page.url()).toString();
-    const reopenedPage = await page.context().newPage();
+    await page.close();
+    const reopenedPage = await browserContext.newPage();
     const assertOffline = await blockExternalRequests(reopenedPage);
     await reopenedPage.goto(appRootUrl);
     await wait_for_workspace_ready(reopenedPage);
@@ -257,6 +259,7 @@ test.describe('Offline project smoke', () => {
         await page.keyboard.press(`${MODIFIER}+s`);
         await expect(dirtyIndicator(page)).toHaveCount(0);
         await startBlankProject(page);
+        await assertOffline();
 
         const reopened = await openSavedProjectInFreshPage(page, 'Smoke Persistence');
         try {
@@ -266,7 +269,6 @@ test.describe('Offline project smoke', () => {
         } finally {
             await reopened.page.close();
         }
-        await assertOffline();
     });
 
     test('advances the playhead during playback and restores it on stop', async ({ page }) => {
@@ -321,6 +323,7 @@ test.describe('Offline project smoke', () => {
         await page.keyboard.press(`${MODIFIER}+s`);
         await expect(dirtyIndicator(page)).toHaveCount(0);
         await startBlankProject(page);
+        await assertOffline();
 
         const reopened = await openSavedProjectInFreshPage(page, 'Smoke Undo Persistence');
         try {
@@ -331,6 +334,5 @@ test.describe('Offline project smoke', () => {
         } finally {
             await reopened.page.close();
         }
-        await assertOffline();
     });
 });

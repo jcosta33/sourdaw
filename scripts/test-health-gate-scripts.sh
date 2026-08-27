@@ -456,6 +456,11 @@ expect(
     awaitedOfflineAssertions.length === offlineAssertions.length,
     'offline smoke must not retain a synchronous endpoint snapshot'
 );
+expect(
+    (smokeSpec.match(/await startBlankProject\(page\);\n        await assertOffline\(\);\n\n        const reopened = await openSavedProjectInFreshPage/gu) ?? [])
+        .length === 2,
+    'each persistence smoke must finish original-page offline coverage before handing off to a fresh renderer'
+);
 expect(smokeSpec.includes('await page.addInitScript(() => {'), 'playback smoke must install AudioContext instrumentation before navigation');
 expect(smokeSpec.includes('const nativeResume = AudioContext.prototype.resume;'), 'playback smoke must wrap the native AudioContext resume method');
 expect(smokeSpec.includes('await nativeResume.call(this);'), 'playback smoke must await the native AudioContext resume method');
@@ -488,9 +493,11 @@ expect(smokeSpec.includes("toHaveText('1 note')"), 'playback smoke must assert t
 expect(
     smokeSpec.includes("await timeline.click({ button: 'right', position: { x: 30, y } });") &&
         smokeSpec.includes('await timeline.dblclick({ position: { x: 30, y } });') &&
+        smokeSpec.includes('await pianoRoll.click({ position: { x: 40, y: 130 } });') &&
         !smokeSpec.includes('position: { x: 300, y }') &&
+        !smokeSpec.includes('position: { x: 200, y: 130 }') &&
         smokeSpec.indexOf('await createPlayableMidiClip(page);') < smokeSpec.indexOf('await play.click();'),
-    'playback smoke must place and open its MIDI clip near beat zero before Play'
+    'playback smoke must place its clip and note near beat zero before Play'
 );
 expect(
     smokeSpec.indexOf('await scheduledOscillators.reset();') > smokeSpec.indexOf('await createPlayableMidiClip(page);') &&
@@ -525,7 +532,9 @@ const freshPageHelper = smokeSpec.slice(
 );
 expect(
     freshPageHelper.includes('async function openSavedProjectInFreshPage(page: Page, name: string)') &&
-        freshPageHelper.includes('const reopenedPage = await page.context().newPage();') &&
+        freshPageHelper.includes('const browserContext = page.context();') &&
+        freshPageHelper.includes('const reopenedPage = await browserContext.newPage();') &&
+        freshPageHelper.indexOf('await page.close();') < freshPageHelper.indexOf('const reopenedPage = await browserContext.newPage();') &&
         freshPageHelper.includes('await reopenedPage.goto(appRootUrl);') &&
         freshPageHelper.includes("await expect(projectName).toHaveText('Untitled Project', { timeout: 30_000 });") &&
         freshPageHelper.includes('await expect(projectName).not.toHaveText(name);') &&
