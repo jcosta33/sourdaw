@@ -1,7 +1,7 @@
 import { renderHook, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { useTempoEditorState } from '../useTempoEditorState';
+import { useTempoEditorState, type TempoEditorState } from '../useTempoEditorState';
 
 import type { TransportState } from '#/modules/Transport/stores';
 
@@ -672,6 +672,71 @@ describe('useTempoEditorState', () => {
             // The first tap ages out of the 4s window, leaving only one
             // recent tap — too few to derive a bpm from.
             expect(mockExecuteAppAction).not.toHaveBeenCalled();
+        });
+
+        // Every tempo-map edit resets what the user is timing against, so each
+        // edit path must clear the tap train: a post-edit tap averaged with
+        // pre-edit taps lands between two tempi neither gesture asked for.
+        type EditorHook = { current: TempoEditorState };
+        const mapEdits: Array<[string, (hook: EditorHook) => void]> = [
+            [
+                'adding a tempo change',
+                (hook) => {
+                    act(() => {
+                        hook.current.handleAddTempoChange();
+                    });
+                },
+            ],
+            [
+                'committing a tempo change edit',
+                (hook) => {
+                    // Separate acts, like the commit tests above: the commit reads
+                    // `editingChangeId` from the last committed render.
+                    act(() => {
+                        hook.current.startEditChange({ id: 'tc-1', beat: 4, tempo: 140, curve: 'instant' });
+                    });
+                    act(() => {
+                        hook.current.setEditingChangeTempo('200');
+                    });
+                    act(() => {
+                        hook.current.commitEditChange();
+                    });
+                },
+            ],
+            [
+                'removing a tempo change',
+                (hook) => {
+                    act(() => {
+                        hook.current.removeChange('tc-1');
+                    });
+                },
+            ],
+        ];
+
+        it.each(mapEdits)('clears the tap train when %s happens between taps', (_label, edit) => {
+            const { result } = renderHook(() => useTempoEditorState());
+
+            currentNow = 0;
+            act(() => {
+                result.current.handleTapTempo();
+            });
+            currentNow = 500;
+            act(() => {
+                result.current.handleTapTempo();
+            });
+            // The pair derives 120bpm; that write is the train's only effect.
+            expect(mockExecuteAppAction).toHaveBeenCalledTimes(1);
+
+            edit(result);
+
+            // A tap inside the 4s window after the edit: with the train cleared
+            // it is a first tap again and derives nothing. Pre-fix it averaged
+            // with the pre-edit taps and wrote a second bpm.
+            currentNow = 1000;
+            act(() => {
+                result.current.handleTapTempo();
+            });
+            expect(mockExecuteAppAction).toHaveBeenCalledTimes(1);
         });
     });
 

@@ -131,10 +131,9 @@ describe('ModulationLFO', () => {
         expect(sampleAtHalfCycle?.[1]).toBeCloseTo(16, 5);
     });
 
-    it('draws the position marker only while its computed x falls within the canvas', () => {
+    it('rides the position marker along the accumulated phase across frames', () => {
         const ctx = make2dContext();
         spyOnGetContext(ctx);
-        const nowSpy = vi.spyOn(performance, 'now').mockReturnValue(1000);
         const { callbacks } = captureAnimationFrames();
         const arcSpy = vi.spyOn(ctx, 'arc');
 
@@ -144,14 +143,48 @@ describe('ModulationLFO', () => {
             throw new Error('Expected the effect to schedule a draw frame');
         }
 
-        // elapsed = (500 - 1000) / 1000 = -0.5s -> phaseOffset = -0.5 -> markerX < 0 -> skipped.
-        draw(500);
-        expect(arcSpy).not.toHaveBeenCalled();
-
-        // elapsed = (1000 - 1000) / 1000 = 0s -> phaseOffset = 0 -> markerX = 0 -> drawn.
+        // First frame anchors the clock: no elapsed time yet, marker at x=0.
         draw(1000);
-        expect(arcSpy).toHaveBeenCalledWith(0, expect.any(Number), 2.5, 0, Math.PI * 2);
+        expect(arcSpy).toHaveBeenLastCalledWith(0, expect.any(Number), 2.5, 0, Math.PI * 2);
 
+        // 0.5s later at 1Hz the phase is 0.5 of the 2 visible cycles → x=5.
+        draw(1500);
+        expect(arcSpy).toHaveBeenLastCalledWith(5, expect.any(Number), 2.5, 0, Math.PI * 2);
+
+        // Another 1.5s completes both visible cycles: the phase wraps to x=0.
+        draw(3000);
+        expect(arcSpy).toHaveBeenLastCalledWith(0, expect.any(Number), 2.5, 0, Math.PI * 2);
+    });
+
+    it('carries the animation phase across parameter changes instead of snapping back to zero', () => {
+        const ctx = make2dContext();
+        spyOnGetContext(ctx);
+        const { callbacks } = captureAnimationFrames();
+        const nowSpy = vi.spyOn(performance, 'now').mockReturnValue(1000);
+        const arcSpy = vi.spyOn(ctx, 'arc');
+
+        const { rerender } = render(<ModulationLFO rate={1} depth={0.5} shape="sine" width={20} height={20} />);
+        const firstDraw = callbacks.at(0);
+        if (!firstDraw) {
+            throw new Error('Expected the effect to schedule a draw frame');
+        }
+        firstDraw(1000);
+        expect(arcSpy).toHaveBeenLastCalledWith(0, expect.any(Number), 2.5, 0, Math.PI * 2);
+
+        // Turn the rate knob: the effect re-runs, and a clock restarted at
+        // `performance.now()` on each re-run snapped the wave back to phase
+        // zero mid-turn. The restarted draw carries the phase forward instead.
+        nowSpy.mockReturnValue(1500);
+        rerender(<ModulationLFO rate={2} depth={0.5} shape="sine" width={20} height={20} />);
+        const restartedDraw = callbacks.at(-1);
+        if (!restartedDraw) {
+            throw new Error('Expected the restart to schedule a fresh draw frame');
+        }
+        restartedDraw(1500);
+
+        // 0.5s elapsed at the new 2Hz rate → phase 1.0 of 2 visible cycles →
+        // x=10, not the phase-zero x=0 of a restarted clock.
+        expect(arcSpy).toHaveBeenLastCalledWith(10, expect.any(Number), 2.5, 0, Math.PI * 2);
         nowSpy.mockRestore();
     });
 

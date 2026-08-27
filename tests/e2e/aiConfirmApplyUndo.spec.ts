@@ -1,6 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 
-import { launch_new_project, setupWorkspace } from './e2eUtils';
+import { launch_new_project, setupWebGpuApiPresentWorkspace } from './e2eUtils';
 
 function trackArmButtons(page: Page) {
     return page
@@ -20,19 +20,18 @@ async function openChatPanel(page: Page): Promise<void> {
 test.describe('AI prompt → Confirm → apply → undo/redo', () => {
     test.beforeEach(async ({ page }) => {
         test.setTimeout(120000);
-        await setupWorkspace(page);
+        await setupWebGpuApiPresentWorkspace(page);
         await launch_new_project(page);
         await openChatPanel(page);
     });
 
     test('confirming "create 3 audio tracks" adds the tracks, undo restores, redo re-applies', async ({ page }) => {
         const input = page.getByTestId('chat-composer-input');
-        // The fast path is a local deterministic parser; if no backend
-        // resolved at all the composer is disabled and this flow is
-        // unreachable — that is an environment failure, not a pass.
         await expect(input).toBeEnabled();
 
-        await page.getByRole('button', { name: 'Command Mode' }).click();
+        const executionMode = page.getByRole('combobox', { name: 'Agent execution mode' });
+        await executionMode.selectOption('apply');
+        await expect(executionMode).toHaveValue('apply');
         const baseline = await trackArmButtons(page).count();
 
         // Multi-action fast path forces a confirmation proposal.

@@ -184,10 +184,12 @@ const buildArgs = (overrides: Partial<HarnessArgs> = {}): HarnessArgs => ({
     ...overrides,
 });
 
-const renderRoll = (overrides: Partial<HarnessArgs> = {}): { canvas: HTMLElement; args: HarnessArgs } => {
+const renderRoll = (
+    overrides: Partial<HarnessArgs> = {}
+): { canvas: HTMLElement; args: HarnessArgs; unmount: () => void } => {
     const args = buildArgs(overrides);
-    render(<Harness args={args} />);
-    return { canvas: screen.getByLabelText('piano-roll-test-surface'), args };
+    const view = render(<Harness args={args} />);
+    return { canvas: screen.getByLabelText('piano-roll-test-surface'), args, unmount: view.unmount };
 };
 
 describe('usePianoRollInteractions', () => {
@@ -679,6 +681,44 @@ describe('usePianoRollInteractions', () => {
                 vi.advanceTimersByTime(1000);
             });
             expect(mocks.playAuditionNote).not.toHaveBeenCalled();
+        });
+
+        it('unmounting during the 200ms debounce cancels the pending preview', () => {
+            vi.useFakeTimers();
+            const { canvas, unmount } = renderRoll({ notePreviewEnabled: true });
+
+            fireEvent.mouseMove(canvas, { clientX: 100, clientY: yForPitch(60) });
+            unmount();
+
+            // The debounce must die with the editor: firing it after unmount
+            // auditions a note into an editor that no longer exists.
+            act(() => {
+                vi.advanceTimersByTime(1000);
+            });
+            expect(mocks.playAuditionNote).not.toHaveBeenCalled();
+        });
+
+        it('unmounting while the hover audition sounds stops it and cancels the auto-stop', () => {
+            vi.useFakeTimers();
+            const { canvas, unmount } = renderRoll({ notePreviewEnabled: true });
+
+            fireEvent.mouseMove(canvas, { clientX: 100, clientY: yForPitch(60) });
+            act(() => {
+                vi.advanceTimersByTime(200);
+            });
+            expect(mocks.playAuditionNote).toHaveBeenCalledTimes(1);
+
+            unmount();
+            // The clip view closed before the 500ms auto-stop: the unmount
+            // cleanup ends the note instead of leaving it sounding with no
+            // visible source.
+            expect(mocks.auditionStop).toHaveBeenCalledTimes(1);
+
+            act(() => {
+                vi.advanceTimersByTime(1000);
+            });
+            // The auto-stop timer was cancelled too: exactly one stop, ever.
+            expect(mocks.auditionStop).toHaveBeenCalledTimes(1);
         });
     });
 

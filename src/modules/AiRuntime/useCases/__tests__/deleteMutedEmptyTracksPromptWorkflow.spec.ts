@@ -1,12 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { captureCommandBatchPreflightState } from '#/app/captureCommandBatchPreflightState';
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import { trackStore, vcaGroupStore, type Track } from '#/modules/Arrangement/stores';
-import { getArrangementHandlers, setArrangementEventBus } from '#/modules/Arrangement/useCases';
-import { type initializeTrackStripFromSnapshot } from '#/modules/AudioEngine/useCases';
+import { getArrangementHandlers, runtimeGraphTopology, setArrangementEventBus } from '#/modules/Arrangement/useCases';
+import {
+    configureRuntimeGraphProjectRevisionValidator,
+    configureRuntimeGraphTopologyValidator,
+    type initializeTrackStripFromSnapshot,
+} from '#/modules/AudioEngine/useCases';
+import { configureCollaborationAssetOwner } from '#/modules/Collaboration/useCases';
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
+    commandBatchPreflightPort,
     redo,
     resetActionReplayAuthority,
     setActionHistoryMetadataPort,
@@ -30,12 +37,7 @@ import {
     getPendingActionConfirmation,
 } from '../../stores/pendingActionConfirmationStore';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
-import { sendChatMessage } from '../sendChatMessage';
-
-import {
-    configureAiWorkflowCommandPreflightFixture,
-    resetAiWorkflowCommandPreflightFixture,
-} from './aiWorkflowCommandPreflightFixture';
+import { sendChatMessage as sendChatMessageUseCase } from '../sendChatMessage';
 
 const PROMPT = 'Delete all muted empty tracks, but preserve buses and groups.';
 
@@ -45,6 +47,20 @@ const providerPlan = [
 ] as const;
 
 type ProviderCall = { name: string; arguments: Readonly<Record<string, unknown>> };
+
+const fixtureStorageOwners = vi.hoisted(() => new Map<string, { flushPendingUnscopedWrite(): void }>());
+
+vi.mock('#/infra/store/storage/createAutomergeStorage', async (importOriginal) => {
+    const original = await importOriginal<typeof import('#/infra/store/storage/createAutomergeStorage')>();
+    return {
+        ...original,
+        createAutomergeStorage: (...args: Parameters<typeof original.createAutomergeStorage>) => {
+            const storage = original.createAutomergeStorage(...args);
+            fixtureStorageOwners.set(`${args[0]}:${args[1]}`, storage);
+            return storage;
+        },
+    };
+});
 
 const runtimeMocks = vi.hoisted(() => {
     const backend: { value: 'cloud' | 'webllm' } = { value: 'webllm' };
@@ -116,6 +132,16 @@ const noActionHistoryMetadataPort = {
     markReverted: () => ({ status: 'unavailable' as const }),
     clear: () => undefined,
 };
+
+function sendChatMessage(prompt: string) {
+    const trackStorage = fixtureStorageOwners.get('root:tracks');
+    if (!trackStorage) {
+        throw new Error('Expected fixture-owned tracks storage adapter');
+    }
+    trackStorage.flushPendingUnscopedWrite();
+    fixtureStorageOwners.get('root:vcaGroups')?.flushPendingUnscopedWrite();
+    return sendChatMessageUseCase(prompt);
+}
 
 function createClip(trackId: string): Track['clips'][number] {
     return {
@@ -415,9 +441,16 @@ describe('delete muted empty tracks prompt workflow', () => {
         removeCrdtDoc('root');
         createCrdtDoc('root');
         registerCrdtStorageRuntime();
+        commandBatchPreflightPort.setProvider(captureCommandBatchPreflightState);
+        configureCollaborationAssetOwner({
+            captureOwnerId: () => 'project:delete-muted-empty-tracks-workflow',
+        });
+        configureRuntimeGraphProjectRevisionValidator(
+            (expectedProjectRevision) => captureProjectRevision() === expectedProjectRevision
+        );
+        configureRuntimeGraphTopologyValidator(runtimeGraphTopology.matchesCurrentProject);
         clearHandlerRegistry();
         registerHandlerMap(getArrangementHandlers());
-        configureAiWorkflowCommandPreflightFixture();
         clearUndoHistory();
         resetActionReplayAuthority();
         setActionHistoryMetadataPort(noActionHistoryMetadataPort);
@@ -440,7 +473,10 @@ describe('delete muted empty tracks prompt workflow', () => {
                     clips: [createClip(nonemptyId)],
                 }),
                 createTrack({ id: 'track-unmuted-empty', name: 'Unmuted Empty' }),
-                createTrack({ id: 'master', name: 'Master', kind: 'master', muted: true }),
+                {
+                    ...createTrack({ id: 'master', name: 'Master', kind: 'master', muted: true }),
+                    outputId: 'hw_out',
+                },
             ],
             selectedTrackId: null,
             ghostClips: [],
@@ -451,7 +487,9 @@ describe('delete muted empty tracks prompt workflow', () => {
 
     afterEach(async () => {
         setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
-        resetAiWorkflowCommandPreflightFixture();
+        commandBatchPreflightPort.setProvider(null);
+        configureRuntimeGraphProjectRevisionValidator(null);
+        configureRuntimeGraphTopologyValidator(null);
         clearUndoHistory();
         resetActionReplayAuthority();
         clearHandlerRegistry();
@@ -690,6 +728,7 @@ describe('delete muted empty tracks prompt workflow', () => {
 
         await sendChatMessage(PROMPT);
 
+        expect(runtimeMocks.fetch).toHaveBeenCalledTimes(2);
         expect(getHostedRequestBody()).toContain(PROMPT);
         expect(getHostedRequestBody()).toContain('track-muted-audio');
         expect(getConfirmation()?.actions).toEqual([
@@ -839,11 +878,14 @@ describe('delete muted empty tracks prompt workflow', () => {
         vcaGroupStore.set({
             groups: [{ id: 'vca-1', name: 'Band', gain: 1, muted: false, trackIds: ['track-muted-midi'] }],
         });
+        // Settle the foreign write into the document so confirmation observes the
+        // divergence deterministically instead of racing the rAF-deferred flush.
+        fixtureStorageOwners.get('root:vcaGroups')?.flushPendingUnscopedWrite();
         const beforeConfirm = structuredClone(trackStore.value?.tracks);
         const vcaBeforeConfirm = structuredClone(vcaGroupStore.value);
 
         await expect(confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' })).resolves.toMatchObject({
-            status: 'failed',
+            status: 'invalidated',
         });
 
         expect(trackStore.value?.tracks).toEqual(beforeConfirm);
@@ -880,8 +922,24 @@ describe('delete muted empty tracks prompt workflow', () => {
         await sendChatMessage(PROMPT);
         const confirmation = getConfirmation();
 
-        await expect(confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' })).resolves.toEqual({
-            status: 'executed',
+        await expect(confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' })).resolves.toMatchObject({
+            status: 'failed',
+            durableCommit: true,
+            reason: expect.stringContaining('persistent graph removal failure'),
+            effects: [
+                expect.objectContaining({
+                    kind: 'external-effect',
+                    operation: 'removeTrack',
+                    reason: 'persistent graph removal failure',
+                    remediation: 'reconcile',
+                    state: 'pending',
+                }),
+            ],
+            continuation: {
+                authority: 'authoritative-collaboration-host',
+                idempotency: 'project-checkpoint',
+                kind: 'reconcile-exact-batch',
+            },
         });
 
         expect(trackStore.value?.tracks.some((track) => track.id === 'track-muted-audio')).toBe(false);
@@ -891,10 +949,9 @@ describe('delete muted empty tracks prompt workflow', () => {
         const receipt = chatStore.value?.messages.find(
             (message) => message.pendingActionConfirmationId === confirmation?.id
         );
-        expect(receipt?.content).toContain('committed with a follow-up warning');
+        expect(receipt?.content).toContain('durably committed');
         expect(receipt?.content).toContain('manual repair required');
-        expect(receipt?.content).toContain('Do not retry these confirmed actions');
-        expect(receipt?.error).toContain('manual repair required');
+        expect(receipt?.content).toContain('the project mutation will not replay');
     });
 
     it('keeps grouped redo retryable when a collaborator adds alternative content to one restored target', async () => {

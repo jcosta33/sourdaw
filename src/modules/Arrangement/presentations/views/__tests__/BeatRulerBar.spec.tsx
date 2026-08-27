@@ -1,10 +1,11 @@
-import { render, fireEvent } from '@testing-library/react';
+import { render, fireEvent, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { playheadPositionRef } from '#/modules/Transport/stores';
 import { disableLooping, seekPlayhead, setLoopRegion } from '#/modules/Transport/useCases';
 import { animationScheduler } from '#/utils/DOM/AnimationScheduler';
 
+import { cancelActiveTimelineGesture } from '../../../useCases/timelineInteractions/cancelActiveTimelineGesture';
 import { BeatRulerBar } from '../BeatRulerBar';
 
 // Controllable store snapshots so individual tests can seed transport/view state.
@@ -175,6 +176,39 @@ describe('BeatRulerBar', () => {
         // buttons=1 but neither scrub nor loop drag is active → no-op.
         fireEvent.mouseMove(surface, { clientX: 150, buttons: 1 });
         expect(seekPlayhead).not.toHaveBeenCalled();
+    });
+
+    it('Escape cancels a shift+drag loop-region preview without committing it', () => {
+        const { container } = render(<BeatRulerBar />);
+        const surface = container.firstChild as HTMLElement;
+        surface.getBoundingClientRect = () => ({ left: 0, top: 0, width: 1000, height: 18 }) as DOMRect;
+        fireEvent.mouseDown(surface, { button: 0, clientX: 100, shiftKey: true });
+        fireEvent.mouseMove(surface, { clientX: 300, buttons: 1 });
+
+        // The loop drag is registered as an active timeline gesture; Escape
+        // (via the shared canceler) discards the preview.
+        expect(cancelActiveTimelineGesture()).toBe(true);
+
+        // A later mouse-up commits nothing, and the pre-existing loop state is
+        // untouched — the drag only ever previewed.
+        fireEvent.mouseUp(surface, { clientX: 300 });
+        expect(setLoopRegion).not.toHaveBeenCalled();
+        expect(snapshots.transport.isLooping).toBe(false);
+    });
+
+    it('window blur cancels a shift+drag loop-region preview without committing it', () => {
+        const { container } = render(<BeatRulerBar />);
+        const surface = container.firstChild as HTMLElement;
+        surface.getBoundingClientRect = () => ({ left: 0, top: 0, width: 1000, height: 18 }) as DOMRect;
+        fireEvent.mouseDown(surface, { button: 0, clientX: 100, shiftKey: true });
+        fireEvent.mouseMove(surface, { clientX: 300, buttons: 1 });
+
+        act(() => {
+            window.dispatchEvent(new Event('blur'));
+        });
+
+        fireEvent.mouseUp(surface, { clientX: 300 });
+        expect(setLoopRegion).not.toHaveBeenCalled();
     });
 
     it('registers and drives a rAF redraw loop while playing', () => {

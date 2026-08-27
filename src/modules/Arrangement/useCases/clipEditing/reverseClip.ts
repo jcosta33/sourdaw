@@ -49,6 +49,10 @@ export function reverseClip(clipId: string, reversedBufferId?: string): boolean 
             ...candidate,
             audioBufferId: newId,
             name: `${candidate.name} (reversed)`,
+            // The audio now plays back-to-front, so the fades trade places: the
+            // fade-in drawn at the head is a fade-out over the reversed tail.
+            fadeInBeats: candidate.fadeOutBeats,
+            fadeOutBeats: candidate.fadeInBeats,
         };
     });
     if (!didWrite) {

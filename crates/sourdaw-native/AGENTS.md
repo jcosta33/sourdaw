@@ -32,9 +32,9 @@ The native audio, DSP and plugin-hosting bodies, plus the Node addon that expose
 - No host seam may be called from the audio callback. Every one allocates, serializes, or reaches
   another thread.
 - Field order is drop order in `AppState` and `NativeSingletons`, and it is load bearing: the
-  engine's audio stream must be released before the CLAP runtimes it reads. Reordering either field
+  engine's audio stream must be released before the plugin runtimes it reads. Reordering either field
   list reorders teardown.
-- Never final-drop a hosted plugin on the audio thread — removed CLAP runtimes go to
+- Never final-drop a hosted plugin on the audio thread — removed plugin runtimes go to
   `retired_engine_plugins` (`state.rs`).
 - If non-RT control owns a plugin wrapper's mutex, the RT path bypasses it rather than waiting
   (`host/native_bridge.rs`).
@@ -52,9 +52,11 @@ The native audio, DSP and plugin-hosting bodies, plus the Node addon that expose
 
 ## Constraints
 
-- Plugin hosting is CLAP only. Every other format is recognised and refused by name, with the reason
-  ([ADR 0031](../../.agents/decisions/0031-native-plugin-format-strategy.md)); none is advertised or
-  loadable. Ableton Link is an unsupported capability surface; no native Link library is linked.
+- Plugin hosting covers CLAP and VST®3. A format the host does not implement is recognised and
+  refused by name, with the reason
+  ([ADR 0031](../../.agents/decisions/0031-native-plugin-format-strategy.md)); it is never advertised
+  and never loadable. VST is a registered trademark of Steinberg Media Technologies GmbH.
+  Ableton Link is an unsupported capability surface; no native Link library is linked.
   MTS-ESP host support is absent; add no registration or publication until its ownership and
   distribution contracts are settled.
 - Plugin scanning is policy-gated (`host/plugin_scan_policy.rs`): absolute paths only, symlinks

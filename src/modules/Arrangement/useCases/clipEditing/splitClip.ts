@@ -3,6 +3,7 @@ import { type ClipStateSnapshot } from '#/utils/handlerContract';
 
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { setTrackState } from '../../repositories/track/setTrackState';
+import { writeClipSatelliteEntry } from '../../stores/clipSatelliteState';
 import { type Clip } from '../../stores/trackStore';
 
 import { prepareClipSplit } from './prepareClipSplit';
@@ -70,6 +71,11 @@ export function splitClip(
             splitBeat: plan.adjustedMediaSplit,
             targetNoteIds: plan.targetNoteIds,
         });
+    }
+    if (plan.next.clipSatellites) {
+        for (const entry of plan.next.clipSatellites) {
+            writeClipSatelliteEntry(entry);
+        }
     }
     return plan.rightClipId;
 }

@@ -4,6 +4,7 @@ import { duplicateClipNotes } from '#/modules/MIDI/useCases';
 import { type Clip } from '../../models/Track';
 import { getNextClipId } from '../../repositories/clipIdCounter';
 import { getTrackState } from '../../repositories/track/getTrackState';
+import { getEnvelope, setEnvelope } from '../../stores/gainEnvelopeStore';
 import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClipWriteTarget';
 import { getWarpState, isDefaultWarpState, setWarpState } from '../../stores/warpStates';
 
@@ -12,6 +13,8 @@ import { addClip } from './addClip';
 type DuplicateClipCoreInput = {
     clipId: string;
     targetClipId?: string;
+    /** Track the copy is added to. Defaults to the source clip's own track. */
+    destinationTrackId?: string;
     computeStartBeat: (clip: Clip) => number;
 };
 
@@ -23,6 +26,7 @@ export function duplicateClipCore(
 ): boolean {
     const clipId = typeof input === 'string' ? input : input.clipId;
     const targetClipId = typeof input === 'string' ? undefined : input.targetClipId;
+    const destinationTrackId = typeof input === 'string' ? undefined : input.destinationTrackId;
     const computeStartBeat = typeof input === 'string' ? legacyComputeStartBeat : input.computeStartBeat;
     if (!computeStartBeat) {
         return false;
@@ -33,7 +37,7 @@ export function duplicateClipCore(
         return false;
     }
 
-    const destinationTarget = resolveEligibleClipWriteTarget({ trackId: sourceTarget.trackId });
+    const destinationTarget = resolveEligibleClipWriteTarget({ trackId: destinationTrackId ?? sourceTarget.trackId });
     if (destinationTarget.status !== 'eligible') {
         return false;
     }
@@ -63,7 +67,7 @@ export function duplicateClipCore(
     const startBeat = computeStartBeat(clip);
     const newClip = addClip({
         id: effectiveTargetClipId,
-        trackId: track.id,
+        trackId: destinationTrackId ?? track.id,
         startBeat,
         endBeat: startBeat + duration,
         name: `${clip.name} (copy)`,
@@ -108,6 +112,18 @@ export function duplicateClipCore(
     // `readClipSatelliteEntry`'s snapshots.
     if (!isDefaultWarpState(clonedWarp)) {
         setWarpState(newClip.id, clonedWarp);
+    }
+
+    // The gain envelope is keyed by clip id like the warp state: re-key a clone
+    // onto the copy, with fresh point objects so the two clips never alias.
+    // Undo drops it with the copy itself (`removeClip` → `removeClipSatelliteData`).
+    const sourceEnvelope = getEnvelope(clipId);
+    if (sourceEnvelope) {
+        setEnvelope(newClip.id, {
+            clipId: newClip.id,
+            enabled: sourceEnvelope.enabled,
+            points: sourceEnvelope.points.map((point) => ({ ...point })),
+        });
     }
 
     if (clip.type === 'midi') {

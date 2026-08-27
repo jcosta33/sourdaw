@@ -247,6 +247,13 @@ describe('ProofPanel', () => {
         expect(compareToggle).toHaveAttribute('aria-pressed', String(getProofState(DEVICE_ID).abBypass));
     });
 
+    it('keeps rail cards at their intrinsic height so the rail owns overflow', () => {
+        render(<ProofPanel deviceId={DEVICE_ID} />);
+
+        const missionCard = screen.getByText('Mission').closest('section');
+        expect(missionCard).toHaveClass('shrink-0');
+    });
+
     it.each<{ uiLevel: ProofState['uiLevel']; expectedNames: string[] }>([
         {
             uiLevel: 1,

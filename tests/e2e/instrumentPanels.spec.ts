@@ -1,7 +1,9 @@
 import { expect, test } from '@playwright/test';
+
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
+const EXPECTED_BROWSER_INSTRUMENT_CARDS = ['Fermenter', 'Toaster', 'Levain', 'Grand Boule'] as const;
 
 test.describe('Instrument Panels — Synths & Samplers', () => {
     test.beforeEach(async ({ page }) => {
@@ -12,13 +14,15 @@ test.describe('Instrument Panels — Synths & Samplers', () => {
         await page.getByRole('option', { name: 'Add MIDI Track' }).click();
     });
 
-    test('Browser panel lists released instruments only', async ({ page }) => {
+    test('Play Dough exposes the exact House Specials instrument-card census', async ({ page }) => {
         const browser = page.getByRole('complementary', { name: 'Browser panel' });
-        await expect(browser.getByText('Fermenter')).toBeVisible();
-        await expect(browser.getByText('Toaster')).toBeVisible();
-        await expect(browser.getByText('Levain')).toBeVisible();
-        await expect(browser.getByText('Crumbs')).toBeVisible();
-        await expect(browser.getByRole('button', { name: /^Grand Boule/i })).toHaveCount(0);
+        const playDoughCards = browser.getByText('Play Dough', { exact: true }).locator('..').locator('..');
+        await expect(playDoughCards.getByRole('button')).toHaveCount(EXPECTED_BROWSER_INSTRUMENT_CARDS.length);
+        for (const label of EXPECTED_BROWSER_INSTRUMENT_CARDS) {
+            const card = playDoughCards.getByRole('button', { name: new RegExp(`^${label}\\b`, 'i') });
+            await expect(card).toHaveCount(1);
+        }
+        await expect(playDoughCards.getByRole('button', { name: /^Crumbs\b/i })).toHaveCount(0);
     });
 
     test('Default MIDI track has synth device shown in inspector', async ({ page }) => {
