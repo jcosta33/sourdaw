@@ -2398,6 +2398,66 @@ describe('release inventory', () => {
         }
     });
 
+    it('rejects a full annotated tag object ID even when it peels to the measured commit', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-measurement-tag-'));
+        try {
+            const { jsonPath, revision } = writeGrandBouleMeasurementFixture(root);
+            execFileSync(
+                'git',
+                [
+                    '-c',
+                    'user.name=Fixture',
+                    '-c',
+                    'user.email=fixture@example.test',
+                    'tag',
+                    '--annotate',
+                    '--message',
+                    'measurement tag',
+                    'measurement-tag',
+                    revision,
+                ],
+                { cwd: root }
+            );
+            const tagRevision = execFileSync('git', ['rev-parse', 'refs/tags/measurement-tag'], {
+                cwd: root,
+                encoding: 'utf8',
+            }).trim();
+            const measuredSourcePath = 'crates/daw-dsp/benches/quantum.rs';
+            expect(tagRevision).toMatch(/^[0-9a-f]{40}$/u);
+            expect(execFileSync('git', ['cat-file', '-t', tagRevision], { cwd: root, encoding: 'utf8' }).trim()).toBe(
+                'tag'
+            );
+            expect(() =>
+                execFileSync('git', ['cat-file', '-e', `${tagRevision}^{commit}`], {
+                    cwd: root,
+                    stdio: 'ignore',
+                })
+            ).not.toThrow();
+            expect(() =>
+                execFileSync('git', ['show', `${tagRevision}:${measuredSourcePath}`], {
+                    cwd: root,
+                    stdio: 'ignore',
+                })
+            ).not.toThrow();
+
+            const data = JSON.parse(readFileSync(jsonPath, 'utf8')) as {
+                sourceRevision: string;
+                machine: { gitSha: string };
+            };
+            data.sourceRevision = tagRevision;
+            data.machine.gitSha = tagRevision;
+            writeFileSync(jsonPath, JSON.stringify(data));
+            const markdownPath = join(root, 'crates/daw-dsp/benches/quantum-cost-table.md');
+            writeFileSync(markdownPath, readFileSync(markdownPath, 'utf8').replaceAll(revision, tagRevision));
+
+            expect(() => assertGrandBouleMeasurementAdmission(root)).toThrow(
+                `Grand Boule measurement source revision ${tagRevision} cannot provide ${measuredSourcePath}`
+            );
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
     it('cleans shallow measurement fixture directories when setup fails', () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-measurement-setup-failure-'));
         let clone: string | undefined;

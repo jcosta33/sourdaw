@@ -1275,7 +1275,10 @@ const GRAND_BOULE_MEASUREMENT_SOURCE_PATHS = [
 const FULL_HEXADECIMAL_GIT_REVISION = /^[0-9a-f]{40}$/u;
 
 function assertGrandBouleRevisionIsCommit(root: string, revision: string): void {
-    execFileSync('git', ['cat-file', '-e', `${revision}^{commit}`], { cwd: root, stdio: 'ignore' });
+    const objectType = execFileSync('git', ['cat-file', '-t', revision], { cwd: root, encoding: 'utf8' }).trim();
+    if (objectType !== 'commit') {
+        throw new Error(`Grand Boule measurement source revision is a ${objectType} object`);
+    }
 }
 
 /**
