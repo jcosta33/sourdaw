@@ -11,6 +11,8 @@ const mocks = vi.hoisted(() => ({
     findSupportedPlugin: vi.fn(),
     getTrackStoreState: vi.fn(),
     reportLatency: vi.fn(),
+    reportBridgeRoundTripFrames: vi.fn(),
+    getAudioSampleRate: vi.fn(() => 44_100),
     activateExternalPlugin: vi.fn(),
 }));
 
@@ -20,7 +22,11 @@ vi.mock('#/modules/PluginHost/useCases', () => ({
     findPluginByName: mocks.findSupportedPlugin,
 }));
 
-vi.mock('#/modules/AudioEngine/useCases', () => ({ reportLatency: mocks.reportLatency }));
+vi.mock('#/modules/AudioEngine/useCases', () => ({
+    getAudioSampleRate: mocks.getAudioSampleRate,
+    reportBridgeRoundTripFrames: mocks.reportBridgeRoundTripFrames,
+    reportLatency: mocks.reportLatency,
+}));
 
 vi.mock('../../../useCases/addTrack', () => ({
     addTrack: mocks.addTrack,
@@ -206,12 +212,21 @@ describe('handleLoadExternalPlugin', () => {
         expect(mocks.getTrackStoreState).toHaveBeenCalledTimes(2);
         expect(mocks.activateExternalPlugin).toHaveBeenCalledOnce();
         expect(mocks.activateExternalPlugin).toHaveBeenCalledWith(
-            expect.objectContaining({ pluginId: 'plugin-1', instanceId: 'instance-1' })
+            expect.objectContaining({
+                pluginId: 'plugin-1',
+                instanceId: 'instance-1',
+                // The rate this engine renders at, read live rather than
+                // assumed: the plugin processes the audio this graph produces.
+                engineSampleRate: 44_100,
+            })
         );
         const activation = mocks.activateExternalPlugin.mock.calls[0]?.[0];
         expect(activation?.onLatencyMs).toEqual(expect.any(Function));
         activation?.onLatencyMs?.(9);
         expect(mocks.reportLatency).toHaveBeenCalledWith('device-1', 9);
+        expect(activation?.onBridgeRoundTripFrames).toEqual(expect.any(Function));
+        activation?.onBridgeRoundTripFrames?.(1408);
+        expect(mocks.reportBridgeRoundTripFrames).toHaveBeenCalledWith('device-1', 1408);
     });
 
     it('classifies a retained native attach failure for whole-graph repair', async () => {

@@ -1,5 +1,7 @@
 import {
+    getAudioSampleRate,
     initializeTrackStripFromSnapshot,
+    reportBridgeRoundTripFrames,
     reportLatency,
     setTrackGain,
     setTrackPan,
@@ -96,7 +98,11 @@ export function projectTrackToLiveStrip({
                 pluginId,
                 instanceId,
                 stateChunk: device.externalStateChunk,
+                // The live engine's own rate: the plugin is fed audio this
+                // engine renders, so it has to run on the same clock.
+                engineSampleRate: getAudioSampleRate(),
                 onLatencyMs: (latencyMs) => reportLatency(device.id, latencyMs),
+                onBridgeRoundTripFrames: (frames) => reportBridgeRoundTripFrames(device.id, frames),
             });
             onExternalPluginActivation?.(activation);
         }

@@ -20,6 +20,7 @@ use crate::scheduler::{
 use crate::timeline::{timeline_rt_diagnostics_channel, TimelineRtDiagnosticsSnapshot};
 use rtrb::{Consumer, Producer, RingBuffer};
 use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, OnceLock};
 use std::thread;
@@ -216,7 +217,7 @@ pub fn spawn_audio_thread(command_rx: Consumer<GraphCommand>) -> Result<AudioThr
         engine_event_tx,
         false,
     )
-    .map(|(handle, _sample_rate, _retired_adoption_tx)| handle)
+    .map(|(handle, _sample_rate, _bridge_round_trip_frames, _retired_adoption_tx)| handle)
 }
 
 /// Spawn the audio thread and report the sample rate the stream actually
@@ -238,6 +239,7 @@ pub(crate) fn spawn_audio_thread_with_diagnostics(
     (
         AudioThreadHandle,
         f32,
+        Arc<AtomicUsize>,
         Sender<Consumer<RetiredGraphObjects>>,
     ),
     String,
@@ -246,6 +248,8 @@ pub(crate) fn spawn_audio_thread_with_diagnostics(
     let (reclaimer_shutdown_tx, retired_adoption_tx) = spawn_retirement_reclaimer(retired_rx)?;
     let sample_rate_cell = Arc::new(OnceLock::new());
     let sample_rate_slot = Arc::clone(&sample_rate_cell);
+    let bridge_round_trip_frames = Arc::new(AtomicUsize::new(0));
+    let bridge_round_trip_slot = Arc::clone(&bridge_round_trip_frames);
 
     let handle = spawn_owned_audio_stream(move || {
         match build_audio_stream(
@@ -257,6 +261,7 @@ pub(crate) fn spawn_audio_thread_with_diagnostics(
             engine_event_tx,
             force_default_buffer,
             &sample_rate_slot,
+            Arc::clone(&bridge_round_trip_slot),
         ) {
             Ok(stream) => Ok(StreamWithReclaimerShutdown(
                 Some(stream),
@@ -275,7 +280,12 @@ pub(crate) fn spawn_audio_thread_with_diagnostics(
     let sample_rate = *sample_rate_cell
         .get()
         .ok_or_else(|| "Audio stream started without reporting its sample rate".to_string())?;
-    Ok((handle, sample_rate, retired_adoption_tx))
+    Ok((
+        handle,
+        sample_rate,
+        bridge_round_trip_frames,
+        retired_adoption_tx,
+    ))
 }
 
 /// Write the engine's internal stereo pair (`left`/`right`, always rendered
@@ -381,6 +391,7 @@ fn build_audio_stream(
     mut engine_event_tx: Producer<EngineEvent>,
     force_default_buffer: bool,
     sample_rate_out: &OnceLock<f32>,
+    bridge_round_trip_slot: Arc<AtomicUsize>,
 ) -> Result<PlatformStream, String> {
     let open = PlatformOutputBackend::open_default_output(DeviceOpenRequest {
         force_default_period: force_default_buffer,
@@ -431,7 +442,17 @@ fn build_audio_stream(
         // The device's frame count for this period is the budget:
         // a bridge may spend it plus one quantum of catch-up, so a
         // backlog never renders as one spike inside the deadline.
-        scheduler.process_audio_bridges(data.len() / channels);
+        let callback_frames = data.len() / channels;
+        // The device period is what decides how deep the bridge round trip
+        // settles, and the host has to compensate that depth. Only this
+        // thread sees the period, so it publishes the frames a control
+        // thread would otherwise have to guess — a relaxed store, which is
+        // the one wait-free, allocation-free thing this callback may do.
+        bridge_round_trip_slot.store(
+            crate::audio_bridge::settled_round_trip_frames(callback_frames),
+            Ordering::Relaxed,
+        );
+        scheduler.process_audio_bridges(callback_frames);
 
         // 3. Process the native effects chain (for standalone native rendering).
         // Scratch is fixed-size and captured by the callback, so no heap

@@ -21,7 +21,9 @@ use scheduler::{
     graph_progress_channel, BuiltinEffectType, GraphCommand, GraphProgressReader,
     GraphProgressSnapshot, PluginCore, RetiredGraphObjects, EFFECT_TABLE_CAPACITY,
 };
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::Sender;
+use std::sync::Arc;
 use timeline::{
     timeline_rt_diagnostics_channel, AutomationTarget, AutomationWrite, ChainEntry, ClipPlacement,
     ClipPlayback, DeviceParam, RouteTarget, SendTap, TimelineBus, TimelineClip,
@@ -103,6 +105,9 @@ pub struct EngineHandle {
     /// The rate the stream actually opened at. Every command that names a time
     /// in seconds is converted to frames against this and nothing else.
     sample_rate: f32,
+    /// What the render callback last published as the bridge's settled round
+    /// trip, in frames. Written by the audio thread, read here.
+    bridge_round_trip_frames: Arc<AtomicUsize>,
 }
 
 impl EngineHandle {
@@ -132,7 +137,7 @@ impl EngineHandle {
             timeline_rt_diagnostics_channel();
         let (graph_progress_tx, graph_progress_reader) = graph_progress_channel();
         let (engine_event_tx, engine_event_rx) = engine_event_channel();
-        let (thread_handle, sample_rate, retired_adoption_tx) =
+        let (thread_handle, sample_rate, bridge_round_trip_frames, retired_adoption_tx) =
             spawn_audio_thread_with_diagnostics(
                 rx,
                 diagnostics_tx,
@@ -153,12 +158,28 @@ impl EngineHandle {
             graph_progress: graph_progress_reader,
             engine_events: engine_event_rx,
             sample_rate,
+            bridge_round_trip_frames,
         })
     }
 
     /// The sample rate the running stream renders at.
     pub const fn sample_rate(&self) -> f32 {
         self.sample_rate
+    }
+
+    /// Frames of latency the worklet↔plugin audio bridge adds, as the render
+    /// callback last measured its own device period.
+    ///
+    /// The bridge's depth is decided by that period and nothing else, so this
+    /// is the only place the number is known; a host compensating a bridged
+    /// plugin adds it to the latency the plugin reports for itself. Zero until
+    /// the first callback runs, which is also the honest answer then — no
+    /// audio has crossed the bridge yet.
+    ///
+    /// Temporary, with the bridge: jcosta33/sourdaw#2230 replaces the relay
+    /// with the native graph, and this goes with it.
+    pub fn bridge_round_trip_frames(&self) -> usize {
+        self.bridge_round_trip_frames.load(Ordering::Relaxed)
     }
 
     /// Publish one validated batch with all-or-nothing visibility.
@@ -719,6 +740,15 @@ pub fn engine_handle_for_command_capture(
             graph_progress: graph_progress_reader,
             engine_events: engine_event_rx,
             sample_rate: 48_000.0,
+            // The fixture has no render callback to publish a period, so it
+            // stands in for a stream on the one the engine asks for. A zero
+            // here would be indistinguishable from "no engine at all", which
+            // is the distinction a caller reading this number has to make.
+            bridge_round_trip_frames: Arc::new(AtomicUsize::new(
+                audio_bridge::settled_round_trip_frames(
+                    audio_thread::PREFERRED_BUFFER_FRAMES as usize,
+                ),
+            )),
         },
         command_rx,
         retired_adoption_rx,

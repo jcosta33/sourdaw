@@ -1,4 +1,4 @@
-import { reportLatency } from '#/modules/AudioEngine/useCases';
+import { getAudioSampleRate, reportBridgeRoundTripFrames, reportLatency } from '#/modules/AudioEngine/useCases';
 import { activateExternalPlugin, findSupportedPlugin } from '#/modules/PluginHost/useCases';
 import { createHandler } from '#/utils/createHandler';
 
@@ -117,7 +117,11 @@ export const handleLoadExternalPlugin = createHandler<'loadExternalPlugin'>({
             const activation = await activateExternalPlugin({
                 pluginId: externalPluginId,
                 instanceId: externalInstanceId,
+                // The live engine's own rate: the plugin is fed audio this
+                // engine renders, so it has to run on the same clock.
+                engineSampleRate: getAudioSampleRate(),
                 onLatencyMs: (latencyMs) => reportLatency(committedDevice.id, latencyMs),
+                onBridgeRoundTripFrames: (frames) => reportBridgeRoundTripFrames(committedDevice.id, frames),
             });
             if (activation.status === 'failed') {
                 throw new Error(activation.reason);

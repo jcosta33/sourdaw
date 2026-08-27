@@ -39,6 +39,15 @@ pub struct PluginInstance {
     /// Latency in milliseconds, converted host-side at the activation sample rate.
     /// This is the value the frontend feeds into latency compensation.
     pub latency_ms: f64,
+    /// Frames the worklet↔plugin audio bridge adds on top of the plugin's own
+    /// latency, at the engine rate this instance was activated with. Zero when
+    /// no engine took the instance — nothing crosses a bridge that does not
+    /// exist. The frontend adds it to `latency_ms` when compensating this
+    /// device.
+    ///
+    /// Temporary, with the bridge: jcosta33/sourdaw#2230 replaces the relay
+    /// with the native graph, and this field goes with it.
+    pub bridge_round_trip_frames: u32,
     pub engine_plugin_id: Option<usize>,
 }
 
@@ -696,16 +705,72 @@ fn host_backend(format: &str) -> Result<HostBackend, String> {
     }
 }
 
-/// The rate the audio device is actually running at, which is the rate a plugin
-/// must be activated with. Falling back to 48 kHz when no device answers is a
-/// guess, but it is the one every host makes and it keeps a load from failing on
-/// a machine with no output device at all.
+/// The rate the output device runs at by default.
+///
+/// Not the activation rate, and no longer used as one: the audio a bridged
+/// plugin actually processes is rendered by the renderer's engine and relayed
+/// here, so the plugin has to run on *that* clock whatever the device prefers.
+/// This is kept only as the reference [`engine_rate_divergence_note`] compares
+/// against, so the two never diverge silently. Falling back to 48 kHz when no
+/// device answers keeps the comparison from failing on a machine with no output
+/// device at all.
 fn default_output_sample_rate() -> f64 {
     cpal::default_host()
         .default_output_device()
         .and_then(|device| device.default_output_config().ok())
         .map(|config| config.sample_rate() as f64)
         .unwrap_or(48000.0)
+}
+
+/// The rate to activate a plugin at, or the reason this load cannot proceed.
+///
+/// The renderer's engine rate and nothing else. A plugin activated at a rate
+/// other than the one its audio is rendered at mistunes every internal
+/// coefficient it derives from that rate, and every samples→ms conversion made
+/// against it — its reported latency included — is wrong by the ratio.
+///
+/// A rate that is not a positive, finite number is refused rather than
+/// substituted: the substitute is exactly the silent guess this seam exists to
+/// remove, and the caller can only fix what it is told.
+fn engine_activation_sample_rate(engine_sample_rate: f64) -> Result<f64, String> {
+    if !engine_sample_rate.is_finite() || engine_sample_rate <= 0.0 {
+        return Err(format!(
+            "Cannot activate a plugin at an engine sample rate of {engine_sample_rate}: the rate must be a positive number of hertz"
+        ));
+    }
+    Ok(engine_sample_rate)
+}
+
+/// What to say when the engine's rate is not the one the device prefers, or
+/// `None` when they agree.
+///
+/// The two used to be assumed identical, and the assumption was wrong on every
+/// machine whose default device is not 48 kHz. It is a legitimate state — the
+/// browser resamples at the device boundary — but not a silent one: a plugin
+/// heard at the wrong pitch or a latency figure off by 8.8% is otherwise a
+/// mystery with nothing in the log to start from.
+fn engine_rate_divergence_note(engine_sample_rate: f64, device_sample_rate: f64) -> Option<String> {
+    if engine_sample_rate == device_sample_rate {
+        return None;
+    }
+    Some(format!(
+        "[Plugin] activating at the engine sample rate {engine_sample_rate} Hz; the default output device reports {device_sample_rate} Hz"
+    ))
+}
+
+/// Frames of bridge round trip to report for a load, given the engine that took
+/// it.
+///
+/// Only the render callback knows the device period the bridge's depth settles
+/// from, so the number comes from there. A load with no engine behind it
+/// reports none: the instance is in no graph, so no audio crosses the bridge.
+///
+/// Temporary, with the bridge: jcosta33/sourdaw#2230 replaces the relay with
+/// the native graph, and this goes with it.
+fn bridge_round_trip_frames(engine: Option<&daw_engine::EngineHandle>) -> u32 {
+    engine.map_or(0, |engine| {
+        u32::try_from(engine.bridge_round_trip_frames()).unwrap_or(u32::MAX)
+    })
 }
 
 /// Construct and activate one plugin. The only format-specific step in a load.
@@ -732,8 +797,14 @@ fn create_hosted_runtime(
 pub async fn load_plugin(
     plugin_id: PluginId,
     instance_id: PluginInstanceId,
+    engine_sample_rate: f64,
     state: &AppState,
 ) -> Result<PluginInstance, String> {
+    // The rate is decided before anything is resolved, locked or constructed:
+    // it is the caller's own input, refusing it costs nothing, and a load that
+    // cannot state its rate must not reach a plugin's entry point at all.
+    let sample_rate = engine_activation_sample_rate(engine_sample_rate)?;
+
     // Resolution runs before the runtime gate is taken, not under it. It reads
     // the registry file and can wait on a bounded child-process rescan, and it
     // touches no runtime state at all — no `plugins`, no `engine_plugins`, no
@@ -785,8 +856,9 @@ pub async fn load_plugin(
     }
     let descriptor_id = entry.descriptor_id.clone();
 
-    // Query the real device sample rate so the plugin is activated at the correct rate.
-    let sample_rate = default_output_sample_rate();
+    if let Some(note) = engine_rate_divergence_note(sample_rate, default_output_sample_rate()) {
+        eprintln!("{note}");
+    }
 
     let wrapper = create_hosted_runtime(backend, &entry.path, &descriptor_id, sample_rate)?;
     let name = wrapper.get_name().to_string();
@@ -798,10 +870,11 @@ pub async fn load_plugin(
     // runtime below.
     //
     // The conversion to milliseconds happens HERE, against `sample_rate` —
-    // the exact rate this plugin was activated with. The webview's
-    // AudioContext is a different clock domain, so shipping raw frames for
-    // it to divide would mis-scale compensation whenever the two rates
-    // differ.
+    // the exact rate this plugin was activated with, which is the caller's
+    // own engine rate. Milliseconds rather than frames because the value is
+    // reported again over the latency-change event, from a path that has no
+    // caller to ask, and a compensation figure must not depend on which side
+    // divided.
     let latency_samples = wrapper.latency_samples();
     let latency_ms = wrapper.latency_ms();
 
@@ -821,8 +894,12 @@ pub async fn load_plugin(
     }
 
     // Send the plugin to the native audio thread for real-time processing
-    // and create an audio bridge for worklet ↔ Rust data transfer
-    let engine_plugin_id = {
+    // and create an audio bridge for worklet ↔ Rust data transfer.
+    //
+    // The bridge's round trip is read under this same lock, from the engine
+    // that is taking the instance: it is what the caller has to compensate on
+    // top of the plugin's own latency, and only the render callback knows it.
+    let (engine_plugin_id, bridge_frames) = {
         let mut engine_guard = state
             .engine
             .lock()
@@ -888,7 +965,7 @@ pub async fn load_plugin(
                     .remove(&instance_id.0);
                 return Err(error);
             }
-            Some(id)
+            (Some(id), bridge_round_trip_frames(Some(engine)))
         } else {
             eprintln!("[Plugin] Warning: native engine not running, plugin won't process audio");
             let mut plugins = state
@@ -901,7 +978,7 @@ pub async fn load_plugin(
                     plugin: Box::new(wrapper),
                 },
             );
-            None
+            (None, bridge_round_trip_frames(None))
         }
     };
 
@@ -922,6 +999,7 @@ pub async fn load_plugin(
         is_active: true,
         latency_samples,
         latency_ms,
+        bridge_round_trip_frames: bridge_frames,
         engine_plugin_id,
     };
 
@@ -1618,6 +1696,10 @@ mod tests {
     use crate::state::EnginePluginInstanceData;
     use daw_core::PluginInstanceId;
     use std::path::Path;
+
+    /// The rate a caller's engine renders at. Every load a test makes states
+    /// one, because every load the product makes does.
+    const TEST_ENGINE_SAMPLE_RATE: f64 = 48_000.0;
 
     fn plugin_parameter(id: u32, value: f64) -> PluginParameter {
         PluginParameter {
@@ -2364,6 +2446,7 @@ mod tests {
         let error = crate::block_on_test(load_plugin(
             PluginId("aaaa1111".to_string()),
             PluginInstanceId("poisoned-registry-instance".to_string()),
+            TEST_ENGINE_SAMPLE_RATE,
             &state,
         ))
         .expect_err("a fake plugin path cannot load");
@@ -2488,6 +2571,102 @@ mod tests {
             .contains_key("instance-room"));
     }
 
+    /// The activation rate is the caller's, not this machine's. A plugin is fed
+    /// audio the caller's engine rendered, so the device's own preference
+    /// decides nothing here — it used to decide everything, and a 44.1 kHz
+    /// default device ran every plugin off its own clock.
+    #[test]
+    fn the_activation_rate_is_the_supplied_engine_rate_and_never_the_devices_own() {
+        let device_rate = default_output_sample_rate();
+        let engine_rate = device_rate + 1_000.0;
+
+        assert_eq!(engine_activation_sample_rate(engine_rate), Ok(engine_rate));
+        assert_ne!(
+            engine_activation_sample_rate(engine_rate),
+            Ok(device_rate),
+            "the device's own rate must not survive as the activation rate"
+        );
+    }
+
+    /// A rate that is not a rate is refused, and the refusal says which one it
+    /// was given. Substituting a default here is the silent guess this seam
+    /// exists to remove.
+    #[test]
+    fn an_engine_rate_that_is_not_a_positive_number_is_refused_by_its_own_value() {
+        for rate in [0.0, -48_000.0, f64::NAN, f64::INFINITY] {
+            let refusal = engine_activation_sample_rate(rate)
+                .expect_err("a rate that is not a positive number must refuse");
+            assert!(
+                refusal.contains(&format!("{rate}")),
+                "the refusal must name the rate it was given, got: {refusal}"
+            );
+        }
+    }
+
+    /// The refusal is the load's, not just the predicate's: a load with no
+    /// usable rate stops before it resolves a registry entry or reaches a
+    /// plugin's entry point. The registry is deliberately left empty — with
+    /// the guard unwired this same load fails as "Plugin not found", so the
+    /// exact message pins the call site and its position.
+    #[test]
+    fn load_plugin_refuses_a_non_positive_engine_rate_before_resolving_anything() {
+        let state = AppState::default();
+
+        let error = crate::block_on_test(load_plugin(
+            PluginId("aaaa1111".to_string()),
+            PluginInstanceId("rateless-instance".to_string()),
+            0.0,
+            &state,
+        ))
+        .expect_err("a load with no usable engine rate must refuse");
+
+        assert_eq!(
+            error,
+            engine_activation_sample_rate(0.0).expect_err("0 Hz is not a rate"),
+            "the refusal must be the rate guard's own message, not a later failure"
+        );
+    }
+
+    /// A divergence between the two rates is a legitimate state — the browser
+    /// resamples at the device boundary — but never a silent one. Both numbers
+    /// are reported, because either one alone leaves the reader guessing which
+    /// side is wrong.
+    #[test]
+    fn an_engine_rate_that_differs_from_the_devices_is_reported_with_both_numbers() {
+        let note = engine_rate_divergence_note(48_000.0, 44_100.0)
+            .expect("a divergent pair must be reported");
+
+        assert!(note.contains("48000"), "the engine rate is missing: {note}");
+        assert!(note.contains("44100"), "the device rate is missing: {note}");
+    }
+
+    /// Nothing is said when there is nothing to say. A note on every load would
+    /// bury the one load that matters.
+    #[test]
+    fn an_engine_rate_matching_the_device_reports_no_divergence() {
+        assert_eq!(engine_rate_divergence_note(48_000.0, 48_000.0), None);
+    }
+
+    /// The bridge round trip a load reports is the engine's own measurement,
+    /// and a load with no engine reports none: there is no bridge to cross, so
+    /// compensating for one would push the track late by a latency it does not
+    /// have.
+    #[test]
+    fn the_reported_bridge_round_trip_comes_from_the_engine_and_is_none_without_one() {
+        let (engine, _command_rx, _retired_adoption_rx) =
+            daw_engine::engine_handle_for_command_capture(8);
+
+        assert_eq!(bridge_round_trip_frames(None), 0);
+        assert_eq!(
+            bridge_round_trip_frames(Some(&engine)),
+            u32::try_from(engine.bridge_round_trip_frames()).expect("a plausible frame count")
+        );
+        assert!(
+            bridge_round_trip_frames(Some(&engine)) > 0,
+            "a running engine's bridge has a depth to compensate"
+        );
+    }
+
     /// Wiring: the ceiling the predicate states is the one the load path
     /// itself enforces, before the plugin library is even constructed. A
     /// session at the ceiling loading a resolvable registry entry must get
@@ -2512,6 +2691,7 @@ mod tests {
         let error = crate::block_on_test(load_plugin(
             PluginId("aaaa1111".to_string()),
             PluginInstanceId("over-ceiling-instance".to_string()),
+            TEST_ENGINE_SAMPLE_RATE,
             &state,
         ))
         .expect_err("a load at the hosted session ceiling must refuse");
@@ -2553,6 +2733,7 @@ mod tests {
         let result = crate::block_on_test(load_plugin(
             PluginId("clap-without-descriptor-id".to_string()),
             PluginInstanceId("clap-instance".to_string()),
+            TEST_ENGINE_SAMPLE_RATE,
             &state,
         ));
 
@@ -2724,6 +2905,7 @@ mod tests {
         let result = crate::block_on_test(load_plugin(
             PluginId("vst3-fixture".to_string()),
             PluginInstanceId("vst3-instance".to_string()),
+            TEST_ENGINE_SAMPLE_RATE,
             &state,
         ));
 
@@ -2738,6 +2920,7 @@ mod tests {
         let duplicate = crate::block_on_test(load_plugin(
             PluginId("vst3-fixture".to_string()),
             PluginInstanceId("vst3-instance".to_string()),
+            TEST_ENGINE_SAMPLE_RATE,
             &state,
         ));
         assert_eq!(
@@ -2791,6 +2974,7 @@ mod tests {
             let result = crate::block_on_test(load_plugin(
                 PluginId(plugin_id.to_string()),
                 PluginInstanceId(format!("{plugin_id}-instance")),
+                TEST_ENGINE_SAMPLE_RATE,
                 &state,
             ));
 
@@ -2882,6 +3066,7 @@ mod tests {
         let result = crate::block_on_test(load_plugin(
             PluginId("unknown-format".to_string()),
             PluginInstanceId("unknown-instance".to_string()),
+            TEST_ENGINE_SAMPLE_RATE,
             &state,
         ));
 

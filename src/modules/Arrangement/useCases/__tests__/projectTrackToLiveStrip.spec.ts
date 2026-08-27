@@ -7,6 +7,9 @@ import { createTrack } from '../createTrack';
 import { projectTrackToLiveStrip } from '../projectTrackToLiveStrip';
 import { applySoloLogic } from '../toggleTrackState/applySoloLogic';
 
+/** The rate the live engine renders at, which is what a plugin must run at. */
+const ENGINE_SAMPLE_RATE = 44_100;
+
 const mocks = vi.hoisted(() => ({
     getRuntimeGraphRevision: vi.fn(() => 0),
     initializeTrackStripFromSnapshot: vi.fn<typeof initializeTrackStripFromSnapshot>(() => ({
@@ -25,6 +28,8 @@ const mocks = vi.hoisted(() => ({
     updateDeviceParam: vi.fn(),
     updateDeviceBypass: vi.fn(),
     activateExternalPlugin: vi.fn(),
+    getAudioSampleRate: vi.fn(() => ENGINE_SAMPLE_RATE),
+    reportBridgeRoundTripFrames: vi.fn(),
     warn: vi.fn(),
     setSend: vi.fn(),
     wireSidechainRoutes: vi.fn(),
@@ -52,6 +57,8 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     updateDeviceParam: mocks.updateDeviceParam,
     updateDeviceBypass: mocks.updateDeviceBypass,
     resolveToasterPadBinding: mocks.resolveToasterPadBinding,
+    getAudioSampleRate: mocks.getAudioSampleRate,
+    reportBridgeRoundTripFrames: mocks.reportBridgeRoundTripFrames,
     reportLatency: mocks.reportLatency,
     createRuntimeGraphTopologyFingerprint: vi.fn(),
 }));
@@ -163,17 +170,24 @@ describe('projectTrackToLiveStrip', () => {
                 pluginId: 'persisted-native-plugin',
                 instanceId: 'persisted-native-instance',
                 stateChunk: 'c2F2ZWQ=',
+                // The plugin is fed audio this engine renders, so it is
+                // activated on the engine's clock rather than the output
+                // device's.
+                engineSampleRate: ENGINE_SAMPLE_RATE,
             })
         );
 
-        // The injected latency sink writes under the engine DEVICE id, so the
+        // The injected latency sinks write under the engine DEVICE id, so the
         // rebuilt strip reports compensation against the same key the removal
         // path clears — not the plugin instance id.
         const activation = mocks.activateExternalPlugin.mock.calls.at(-1)?.[0] as {
             onLatencyMs?: (latencyMs: number) => void;
+            onBridgeRoundTripFrames?: (frames: number) => void;
         };
         activation.onLatencyMs?.(7.25);
         expect(mocks.reportLatency).toHaveBeenCalledWith('device-1', 7.25);
+        activation.onBridgeRoundTripFrames?.(1408);
+        expect(mocks.reportBridgeRoundTripFrames).toHaveBeenCalledWith('device-1', 1408);
 
         vi.clearAllMocks();
         mocks.activateExternalPlugin.mockReturnValue(Promise.resolve({ status: 'active' }));

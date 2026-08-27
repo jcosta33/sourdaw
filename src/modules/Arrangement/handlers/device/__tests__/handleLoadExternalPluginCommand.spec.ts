@@ -16,6 +16,8 @@ const mocks = vi.hoisted(() => ({
     activateExternalPlugin: vi.fn(),
     applyDeviceChainRuntimeDelta: vi.fn(() => ({ acceptance: 'accepted', application: 'applied' })),
     findSupportedPlugin: vi.fn(),
+    getAudioSampleRate: vi.fn(() => 44_100),
+    reportBridgeRoundTripFrames: vi.fn(),
     reportLatency: vi.fn(),
 }));
 
@@ -24,7 +26,11 @@ vi.mock('#/modules/PluginHost/useCases', () => ({
     findSupportedPlugin: mocks.findSupportedPlugin,
 }));
 
-vi.mock('#/modules/AudioEngine/useCases', () => ({ reportLatency: mocks.reportLatency }));
+vi.mock('#/modules/AudioEngine/useCases', () => ({
+    getAudioSampleRate: mocks.getAudioSampleRate,
+    reportBridgeRoundTripFrames: mocks.reportBridgeRoundTripFrames,
+    reportLatency: mocks.reportLatency,
+}));
 
 vi.mock('../../../useCases/device/applyDeviceChainRuntimeDelta', () => ({
     applyDeviceChainRuntimeDelta: mocks.applyDeviceChainRuntimeDelta,

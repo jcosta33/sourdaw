@@ -18,7 +18,7 @@ import type { PluginLatencyChange } from '../../../repositories/pluginBridge/typ
 // issues load/restore IPC only once per graph generation, and that the native
 // latency push reaches the right instance's sink (PH-4).
 const mocks = vi.hoisted(() => ({
-    loadPluginRepo: vi.fn<(pluginId: string, instanceId: string) => Promise<unknown>>(),
+    loadPluginRepo: vi.fn<(pluginId: string, instanceId: string, sampleRate: number) => Promise<unknown>>(),
     setPluginStateRepo: vi.fn<(instanceId: string, state: Uint8Array) => Promise<void>>(),
     unloadPluginRepo: vi.fn<(instanceId: string) => Promise<[string[], string[]]>>(),
     subscribe: vi.fn<(handler: (change: PluginLatencyChange) => void) => Promise<() => void>>(),
@@ -58,6 +58,12 @@ function emitLatencyChange(change: PluginLatencyChange): void {
     nativeLatencyHandler(change);
 }
 
+/**
+ * The rate the caller's live engine renders at. Every activation states one,
+ * because the host refuses a load that cannot.
+ */
+const ENGINE_SAMPLE_RATE = 48_000;
+
 // base64 'c2F2ZWQ=' decodes to the bytes of "saved".
 const SAVED_CHUNK = 'c2F2ZWQ=';
 const SAVED_BYTES = new Uint8Array([115, 97, 118, 101, 100]);
@@ -73,37 +79,62 @@ describe('activateExternalPlugin', () => {
     });
 
     it('loads and restores exactly once across repeated activations (repeated ensureTrackStrips)', async () => {
-        activateExternalPlugin({ pluginId: 'p', instanceId: 'inst-1', stateChunk: SAVED_CHUNK });
-        activateExternalPlugin({ pluginId: 'p', instanceId: 'inst-1', stateChunk: SAVED_CHUNK });
-        activateExternalPlugin({ pluginId: 'p', instanceId: 'inst-1', stateChunk: SAVED_CHUNK });
+        activateExternalPlugin({
+            engineSampleRate: ENGINE_SAMPLE_RATE,
+            pluginId: 'p',
+            instanceId: 'inst-1',
+            stateChunk: SAVED_CHUNK,
+        });
+        activateExternalPlugin({
+            engineSampleRate: ENGINE_SAMPLE_RATE,
+            pluginId: 'p',
+            instanceId: 'inst-1',
+            stateChunk: SAVED_CHUNK,
+        });
+        activateExternalPlugin({
+            engineSampleRate: ENGINE_SAMPLE_RATE,
+            pluginId: 'p',
+            instanceId: 'inst-1',
+            stateChunk: SAVED_CHUNK,
+        });
 
         await vi.waitFor(() => expect(mocks.setPluginStateRepo).toHaveBeenCalledTimes(1));
 
         expect(mocks.loadPluginRepo).toHaveBeenCalledTimes(1);
-        expect(mocks.loadPluginRepo).toHaveBeenCalledWith('p', 'inst-1');
+        expect(mocks.loadPluginRepo).toHaveBeenCalledWith('p', 'inst-1', ENGINE_SAMPLE_RATE);
         expect(mocks.setPluginStateRepo).toHaveBeenCalledTimes(1);
         expect(mocks.setPluginStateRepo).toHaveBeenCalledWith('inst-1', SAVED_BYTES);
         expect(externalPluginActivationStore.value?.byInstanceId['inst-1']).toEqual({ status: 'active' });
     });
 
     it('marks the instance live synchronously so a same-tick second call is skipped', async () => {
-        activateExternalPlugin({ pluginId: 'p', instanceId: 'inst-1' });
+        activateExternalPlugin({ engineSampleRate: ENGINE_SAMPLE_RATE, pluginId: 'p', instanceId: 'inst-1' });
 
         // The guard is set synchronously, so an immediate second call is skipped
         // before the first even reaches the (async) load IPC.
         expect(loadedExternalInstances.has('inst-1')).toBe(true);
-        activateExternalPlugin({ pluginId: 'p', instanceId: 'inst-1' });
+        activateExternalPlugin({ engineSampleRate: ENGINE_SAMPLE_RATE, pluginId: 'p', instanceId: 'inst-1' });
 
         await vi.waitFor(() => expect(mocks.loadPluginRepo).toHaveBeenCalledTimes(1));
         expect(mocks.loadPluginRepo).toHaveBeenCalledTimes(1);
     });
 
     it('re-activates after the graph is torn down (clearLoadedExternalPlugins)', async () => {
-        activateExternalPlugin({ pluginId: 'p', instanceId: 'inst-1', stateChunk: SAVED_CHUNK });
+        activateExternalPlugin({
+            engineSampleRate: ENGINE_SAMPLE_RATE,
+            pluginId: 'p',
+            instanceId: 'inst-1',
+            stateChunk: SAVED_CHUNK,
+        });
         await vi.waitFor(() => expect(mocks.setPluginStateRepo).toHaveBeenCalledTimes(1));
 
         clearLoadedExternalPlugins();
-        activateExternalPlugin({ pluginId: 'p', instanceId: 'inst-1', stateChunk: SAVED_CHUNK });
+        activateExternalPlugin({
+            engineSampleRate: ENGINE_SAMPLE_RATE,
+            pluginId: 'p',
+            instanceId: 'inst-1',
+            stateChunk: SAVED_CHUNK,
+        });
 
         await vi.waitFor(() => expect(mocks.loadPluginRepo).toHaveBeenCalledTimes(2));
     });
@@ -111,10 +142,10 @@ describe('activateExternalPlugin', () => {
     it('drops the guard and retries when instantiation fails', async () => {
         mocks.loadPluginRepo.mockRejectedValueOnce(new Error('boom'));
 
-        activateExternalPlugin({ pluginId: 'p', instanceId: 'inst-1' });
+        activateExternalPlugin({ engineSampleRate: ENGINE_SAMPLE_RATE, pluginId: 'p', instanceId: 'inst-1' });
         await vi.waitFor(() => expect(loadedExternalInstances.has('inst-1')).toBe(false));
 
-        activateExternalPlugin({ pluginId: 'p', instanceId: 'inst-1' });
+        activateExternalPlugin({ engineSampleRate: ENGINE_SAMPLE_RATE, pluginId: 'p', instanceId: 'inst-1' });
         await vi.waitFor(() => expect(mocks.loadPluginRepo).toHaveBeenCalledTimes(2));
         expect(loadedExternalInstances.has('inst-1')).toBe(true);
     });
@@ -130,7 +161,7 @@ describe('activateExternalPlugin', () => {
             engine_plugin_id: null,
         });
 
-        activateExternalPlugin({ pluginId: 'p', instanceId: 'inst-1' });
+        activateExternalPlugin({ engineSampleRate: ENGINE_SAMPLE_RATE, pluginId: 'p', instanceId: 'inst-1' });
 
         await vi.waitFor(() =>
             expect(externalPluginActivationStore.value?.byInstanceId['inst-1']).toEqual({
@@ -160,11 +191,15 @@ describe('activateExternalPlugin', () => {
             });
         mocks.unloadPluginRepo.mockResolvedValueOnce([['inst-1'], []]);
 
-        await expect(activateExternalPlugin({ pluginId: 'p', instanceId: 'inst-1' })).resolves.toMatchObject({
+        await expect(
+            activateExternalPlugin({ engineSampleRate: ENGINE_SAMPLE_RATE, pluginId: 'p', instanceId: 'inst-1' })
+        ).resolves.toMatchObject({
             status: 'failed',
             stage: 'attach',
         });
-        await expect(activateExternalPlugin({ pluginId: 'p', instanceId: 'inst-1' })).resolves.toMatchObject({
+        await expect(
+            activateExternalPlugin({ engineSampleRate: ENGINE_SAMPLE_RATE, pluginId: 'p', instanceId: 'inst-1' })
+        ).resolves.toMatchObject({
             status: 'failed',
             stage: 'attach',
         });
@@ -172,11 +207,13 @@ describe('activateExternalPlugin', () => {
 
         await resetExternalPluginRuntimeForGraphRebuild();
 
-        await expect(activateExternalPlugin({ pluginId: 'p', instanceId: 'inst-1' })).resolves.toEqual({
+        await expect(
+            activateExternalPlugin({ engineSampleRate: ENGINE_SAMPLE_RATE, pluginId: 'p', instanceId: 'inst-1' })
+        ).resolves.toEqual({
             status: 'active',
         });
-        expect(mocks.loadPluginRepo).toHaveBeenNthCalledWith(1, 'p', 'inst-1');
-        expect(mocks.loadPluginRepo).toHaveBeenNthCalledWith(2, 'p', 'inst-1');
+        expect(mocks.loadPluginRepo).toHaveBeenNthCalledWith(1, 'p', 'inst-1', ENGINE_SAMPLE_RATE);
+        expect(mocks.loadPluginRepo).toHaveBeenNthCalledWith(2, 'p', 'inst-1', ENGINE_SAMPLE_RATE);
         expect(mocks.unloadPluginRepo).toHaveBeenCalledWith();
     });
 
@@ -188,7 +225,7 @@ describe('activateExternalPlugin', () => {
             engine_plugin_id: 1000,
         });
 
-        activateExternalPlugin({ pluginId: 'p', instanceId: 'inst-1' });
+        activateExternalPlugin({ engineSampleRate: ENGINE_SAMPLE_RATE, pluginId: 'p', instanceId: 'inst-1' });
 
         await vi.waitFor(() =>
             expect(externalPluginActivationStore.value?.byInstanceId['inst-1']).toEqual({ status: 'active' })
@@ -199,7 +236,7 @@ describe('activateExternalPlugin', () => {
     it('publishes an error state when native activation fails', async () => {
         mocks.loadPluginRepo.mockRejectedValueOnce(new Error('unsupported plugin format'));
 
-        activateExternalPlugin({ pluginId: 'p', instanceId: 'inst-1' });
+        activateExternalPlugin({ engineSampleRate: ENGINE_SAMPLE_RATE, pluginId: 'p', instanceId: 'inst-1' });
 
         await vi.waitFor(() =>
             expect(externalPluginActivationStore.value?.byInstanceId['inst-1']).toEqual({
@@ -213,10 +250,20 @@ describe('activateExternalPlugin', () => {
         mocks.setPluginStateRepo.mockRejectedValueOnce(new Error('state chunk rejected'));
 
         await expect(
-            activateExternalPlugin({ pluginId: 'p', instanceId: 'inst-1', stateChunk: SAVED_CHUNK })
+            activateExternalPlugin({
+                engineSampleRate: ENGINE_SAMPLE_RATE,
+                pluginId: 'p',
+                instanceId: 'inst-1',
+                stateChunk: SAVED_CHUNK,
+            })
         ).resolves.toEqual({ status: 'failed', stage: 'restore', reason: 'Error: state chunk rejected' });
         await expect(
-            activateExternalPlugin({ pluginId: 'p', instanceId: 'inst-1', stateChunk: SAVED_CHUNK })
+            activateExternalPlugin({
+                engineSampleRate: ENGINE_SAMPLE_RATE,
+                pluginId: 'p',
+                instanceId: 'inst-1',
+                stateChunk: SAVED_CHUNK,
+            })
         ).resolves.toEqual({ status: 'active' });
 
         expect(mocks.loadPluginRepo).toHaveBeenCalledOnce();
@@ -233,10 +280,63 @@ describe('activateExternalPlugin', () => {
         });
         const onLatencyMs = vi.fn<(latencyMs: number) => void>();
 
-        activateExternalPlugin({ pluginId: 'p', instanceId: 'inst-1', onLatencyMs });
+        activateExternalPlugin({
+            engineSampleRate: ENGINE_SAMPLE_RATE,
+            pluginId: 'p',
+            instanceId: 'inst-1',
+            onLatencyMs,
+        });
 
         await vi.waitFor(() => expect(onLatencyMs).toHaveBeenCalledWith(5.333_333_333_333_333));
         expect(onLatencyMs).toHaveBeenCalledTimes(1);
+    });
+
+    it('carries the caller-supplied engine rate into the load call', async () => {
+        // The plugin processes audio this engine rendered, so it has to be
+        // activated on that clock. The host used to substitute the output
+        // device's own default, which is a different number on any machine
+        // whose device is not running at the engine rate.
+        activateExternalPlugin({ engineSampleRate: 44_100, pluginId: 'p', instanceId: 'inst-1' });
+
+        await vi.waitFor(() => expect(mocks.loadPluginRepo).toHaveBeenCalledTimes(1));
+        expect(mocks.loadPluginRepo).toHaveBeenCalledWith('p', 'inst-1', 44_100);
+    });
+
+    it('reports the bridge round trip the host measured for this instance', async () => {
+        // Separate from the plugin's own latency and reported alongside it:
+        // the two are compensated together, and only the host knows the second.
+        mocks.loadPluginRepo.mockResolvedValueOnce({
+            instance_id: 'inst-1',
+            latency_samples: 0,
+            latency_ms: 5,
+            bridge_round_trip_frames: 1408,
+        });
+        const onBridgeRoundTripFrames = vi.fn<(frames: number) => void>();
+
+        activateExternalPlugin({
+            engineSampleRate: ENGINE_SAMPLE_RATE,
+            pluginId: 'p',
+            instanceId: 'inst-1',
+            onBridgeRoundTripFrames,
+        });
+
+        await vi.waitFor(() => expect(onBridgeRoundTripFrames).toHaveBeenCalledWith(1408));
+        expect(onBridgeRoundTripFrames).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not report a bridge round trip when instantiation fails', async () => {
+        mocks.loadPluginRepo.mockRejectedValueOnce(new Error('boom'));
+        const onBridgeRoundTripFrames = vi.fn<(frames: number) => void>();
+
+        activateExternalPlugin({
+            engineSampleRate: ENGINE_SAMPLE_RATE,
+            pluginId: 'p',
+            instanceId: 'inst-1',
+            onBridgeRoundTripFrames,
+        });
+
+        await vi.waitFor(() => expect(loadedExternalInstances.has('inst-1')).toBe(false));
+        expect(onBridgeRoundTripFrames).not.toHaveBeenCalled();
     });
 
     it('routes a mid-session latency change from the native host to the sink', async () => {
@@ -247,7 +347,12 @@ describe('activateExternalPlugin', () => {
         });
         const onLatencyMs = vi.fn<(latencyMs: number) => void>();
 
-        activateExternalPlugin({ pluginId: 'p', instanceId: 'inst-1', onLatencyMs });
+        activateExternalPlugin({
+            engineSampleRate: ENGINE_SAMPLE_RATE,
+            pluginId: 'p',
+            instanceId: 'inst-1',
+            onLatencyMs,
+        });
         await vi.waitFor(() => expect(onLatencyMs).toHaveBeenCalledWith(0));
 
         // The plugin flips its latency mid-session (oversampling on): the host
@@ -271,8 +376,18 @@ describe('activateExternalPlugin', () => {
         const firstSink = vi.fn<(latencyMs: number) => void>();
         const secondSink = vi.fn<(latencyMs: number) => void>();
 
-        activateExternalPlugin({ pluginId: 'p', instanceId: 'inst-1', onLatencyMs: firstSink });
-        activateExternalPlugin({ pluginId: 'p', instanceId: 'inst-2', onLatencyMs: secondSink });
+        activateExternalPlugin({
+            engineSampleRate: ENGINE_SAMPLE_RATE,
+            pluginId: 'p',
+            instanceId: 'inst-1',
+            onLatencyMs: firstSink,
+        });
+        activateExternalPlugin({
+            engineSampleRate: ENGINE_SAMPLE_RATE,
+            pluginId: 'p',
+            instanceId: 'inst-2',
+            onLatencyMs: secondSink,
+        });
         await vi.waitFor(() => expect(secondSink).toHaveBeenCalledWith(0));
 
         emitLatencyChange({ instance_id: 'inst-2', latency_ms: 8 });
@@ -287,7 +402,12 @@ describe('activateExternalPlugin', () => {
         mocks.unloadPluginRepo.mockResolvedValue([['inst-1'], []]);
         const onLatencyMs = vi.fn<(latencyMs: number) => void>();
 
-        activateExternalPlugin({ pluginId: 'p', instanceId: 'inst-1', onLatencyMs });
+        activateExternalPlugin({
+            engineSampleRate: ENGINE_SAMPLE_RATE,
+            pluginId: 'p',
+            instanceId: 'inst-1',
+            onLatencyMs,
+        });
         await vi.waitFor(() => expect(onLatencyMs).toHaveBeenCalledWith(4));
 
         await unloadPlugin('inst-1');
@@ -301,9 +421,24 @@ describe('activateExternalPlugin', () => {
     it('subscribes to the native push exactly once across every activation in this file', async () => {
         mocks.loadPluginRepo.mockResolvedValue({ instance_id: 'ignored', latency_samples: 0, latency_ms: 0 });
 
-        activateExternalPlugin({ pluginId: 'p', instanceId: 'inst-1', onLatencyMs: vi.fn() });
-        activateExternalPlugin({ pluginId: 'p', instanceId: 'inst-2', onLatencyMs: vi.fn() });
-        activateExternalPlugin({ pluginId: 'p', instanceId: 'inst-3', onLatencyMs: vi.fn() });
+        activateExternalPlugin({
+            engineSampleRate: ENGINE_SAMPLE_RATE,
+            pluginId: 'p',
+            instanceId: 'inst-1',
+            onLatencyMs: vi.fn(),
+        });
+        activateExternalPlugin({
+            engineSampleRate: ENGINE_SAMPLE_RATE,
+            pluginId: 'p',
+            instanceId: 'inst-2',
+            onLatencyMs: vi.fn(),
+        });
+        activateExternalPlugin({
+            engineSampleRate: ENGINE_SAMPLE_RATE,
+            pluginId: 'p',
+            instanceId: 'inst-3',
+            onLatencyMs: vi.fn(),
+        });
         await vi.waitFor(() => expect(mocks.loadPluginRepo).toHaveBeenCalledTimes(3));
 
         // The native event is a broadcast: one listener per instance would hand
@@ -316,7 +451,12 @@ describe('activateExternalPlugin', () => {
         mocks.loadPluginRepo.mockRejectedValueOnce(new Error('boom'));
         const onLatencyMs = vi.fn<(latencyMs: number) => void>();
 
-        activateExternalPlugin({ pluginId: 'p', instanceId: 'inst-1', onLatencyMs });
+        activateExternalPlugin({
+            engineSampleRate: ENGINE_SAMPLE_RATE,
+            pluginId: 'p',
+            instanceId: 'inst-1',
+            onLatencyMs,
+        });
 
         await vi.waitFor(() => expect(loadedExternalInstances.has('inst-1')).toBe(false));
         expect(onLatencyMs).not.toHaveBeenCalled();

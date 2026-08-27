@@ -23,16 +23,38 @@ type ActivateExternalPluginInput = {
     instanceId: string;
     stateChunk?: string;
     /**
+     * The sample rate of the engine whose audio this instance will process.
+     *
+     * The plugin is activated at this rate and every samples→ms conversion the
+     * host makes for it is against this rate, because this is the clock the
+     * audio it is fed was rendered on. The host used to pick the output
+     * device's own default instead, which is a different number on any machine
+     * whose device is not running at the engine rate.
+     *
+     * Supplied by the caller rather than read here: this module keeps no
+     * AudioEngine edge, for the same reason `onLatencyMs` is injected.
+     */
+    engineSampleRate: number;
+    /**
      * Sink for this instance's latency in MILLISECONDS (PH-4): the value read at
      * activation, and every runtime change the native host pushes afterwards.
      * Callers wire it to their latency registry keyed by engine device id;
      * injected rather than imported so this module keeps no AudioEngine edge.
      *
      * Milliseconds, not samples: the host converts at the rate the plugin was
-     * activated with (the native device rate), which the webview's AudioContext
-     * does not share.
+     * activated with, and reports the same figure again over the runtime
+     * latency-change event, which carries no rate for a caller to divide by.
      */
     onLatencyMs?: (latencyMs: number) => void;
+    /**
+     * Sink for what the native audio bridge costs this instance, in frames of
+     * `engineSampleRate`. Reported once at activation, alongside the plugin's
+     * own latency, because the two are compensated together.
+     *
+     * Temporary, with the bridge: jcosta33/sourdaw#2230 replaces the worklet
+     * relay with the native graph, and this sink goes with it.
+     */
+    onBridgeRoundTripFrames?: (frames: number) => void;
 };
 
 function setActivationStatus(instanceId: string, status: 'loading' | 'active' | 'error', message?: string): void {
@@ -67,11 +89,22 @@ export function activateExternalPlugin({
     pluginId,
     instanceId,
     stateChunk,
+    engineSampleRate,
     onLatencyMs,
+    onBridgeRoundTripFrames,
 }: ActivateExternalPluginInput): Promise<ExternalPluginActivationResult> {
     const rebuildCompletion = pluginLifecycleScheduler.currentRebuildCompletion();
     if (rebuildCompletion) {
-        return rebuildCompletion.then(() => activateExternalPlugin({ pluginId, instanceId, stateChunk, onLatencyMs }));
+        return rebuildCompletion.then(() =>
+            activateExternalPlugin({
+                pluginId,
+                instanceId,
+                stateChunk,
+                engineSampleRate,
+                onLatencyMs,
+                onBridgeRoundTripFrames,
+            })
+        );
     }
     const activationEpoch = externalPluginActivationEpoch.current;
     const activeTask = externalPluginActivationTasks.get(instanceId);
@@ -130,7 +163,7 @@ export function activateExternalPlugin({
     const activationTask = (async (): Promise<ExternalPluginActivationResult> => {
         let attachmentFailure: ExternalPluginActivationResult | null = null;
         try {
-            const instance = await loadPlugin(pluginId, instanceId);
+            const instance = await loadPlugin(pluginId, instanceId, engineSampleRate);
             if (activationEpoch !== externalPluginActivationEpoch.current) {
                 return {
                     status: 'failed',
@@ -155,6 +188,10 @@ export function activateExternalPlugin({
             // browser stub), so no runtime guard is needed. Later changes arrive
             // through the plugin-latency-changed subscription instead.
             onLatencyMs?.(instance.latency_ms);
+            // What the bridge costs on top of that. Reported here and only
+            // here: the latency-change event carries the plugin's own figure,
+            // and the bridge's depth does not change with it.
+            onBridgeRoundTripFrames?.(instance.bridge_round_trip_frames);
         } catch (error) {
             // Instantiation failed: drop the guard so a later rebuild can retry,
             // and the sink with it — nothing is live to report for.
