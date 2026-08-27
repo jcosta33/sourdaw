@@ -256,6 +256,7 @@ const dependencyReviewWith = stepNamed(dependencyReview, 'Review dependency chan
 const browserAiWebGpu = workflow.jobs?.['browser-ai-webgpu'];
 const nightlyReport = workflow.jobs?.['nightly-report'];
 const resolveScopeRun = stepNamed(decide, 'Resolve scope')?.run ?? '';
+const decideCheckoutUses = stepNamed(decide, 'Checkout')?.uses ?? '';
 const trustedCheckout = stepNamed(secrets, 'Checkout trusted scanner');
 const targetCheckout = stepNamed(secrets, 'Checkout scan target');
 const positiveControl = stepNamed(secrets, 'Validate secret scanner positive control');
@@ -270,7 +271,9 @@ const e2eRunStep = stepNamed(e2e, 'Run shard');
 const unitFailureWarning = stepNamed(unit, 'Report shard failure');
 const e2eFailureWarning = stepNamed(e2e, 'Report shard failure');
 const unitRun = unitRunStep?.run ?? '';
-const nightlyReportRun = stepNamed(nightlyReport, 'Open or update the nightly failure issue')?.run ?? '';
+const nightlyReportCheckout = stepNamed(nightlyReport, 'Checkout');
+const nightlyReportStep = stepNamed(nightlyReport, 'Open or update the nightly failure issue');
+const nightlyReportRun = nightlyReportStep?.run ?? '';
 const gateRun = stepNamed(gate, 'Require every job to have succeeded or been skipped')?.run ?? '';
 const gateNeeds = gate?.needs ?? [];
 const expectedGateNeeds = [
@@ -595,6 +598,22 @@ expect(
     'Gate must keep rejecting failed dependencies while accepting successful or skipped dependencies'
 );
 expect(nightlyReport?.name === 'Nightly failure report', 'nightly report job must remain present');
+expect(
+    nightlyReportCheckout !== undefined,
+    'nightly reporter must run inside a real git repository, since a gh build can consult local git for repo resolution even when every invocation already passes --repo'
+);
+expect(
+    nightlyReportCheckout?.uses === decideCheckoutUses && decideCheckoutUses !== '',
+    'nightly reporter checkout must use the same pinned actions/checkout ref as the rest of the workflow'
+);
+expect(
+    nightlyReportCheckout?.with?.['persist-credentials'] === false,
+    'nightly reporter checkout must not persist a credential this job never pushes with'
+);
+expect(
+    nightlyReportCheckout?.with?.['sparse-checkout'] === '.github',
+    'nightly reporter checkout must stay sparse so it does not pull the ~971 MiB public/samples payload for a job that only needs to file an issue'
+);
 expect(
     nightlyReportRun.includes('gh issue list --repo "$GITHUB_REPOSITORY"') &&
         nightlyReportRun.includes('gh issue comment "$existing" --repo "$GITHUB_REPOSITORY"') &&

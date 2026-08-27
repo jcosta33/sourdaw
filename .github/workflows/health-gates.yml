@@ -940,6 +940,20 @@ jobs:
     # A scheduled run nobody reads is a scheduled run that does not exist. The
     # nightly is the only thing that observes what path filters and the approval
     # gate skip, so its failures have to arrive somewhere a person looks.
+    #
+    # This job used to run with no checkout at all, on the theory that every
+    # `gh issue` invocation already passes `--repo "$GITHUB_REPOSITORY"` and so
+    # never needs a local repository. The runner image ubuntu24/20260816.277
+    # disproved that: its `gh` build consulted git for repo resolution anyway,
+    # and every scheduled run from 2026-08-23 through 2026-08-26 died with
+    # `fatal: not a git repository` before it could file or update the failure
+    # issue — four red nightlies producing zero signal. The flag does not
+    # control that consultation, and neither does an env var read only in the
+    # flag's absence, so the only insulation that actually holds against a
+    # `gh` build that decides to look is running inside a real repository. The
+    # checkout below is sparse, restricted to `.github`, because the working
+    # tree otherwise carries the ~971 MiB `public/samples` payload that this
+    # job has no use for.
     if: ${{ failure() && github.event_name == 'schedule' }}
     needs:
       [static, lint, boundaries, unit, build, rust, native-macos, native-windows, e2e, browser-ai-webgpu, codeql, secrets]
@@ -949,6 +963,13 @@ jobs:
       contents: read
       issues: write
     steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: .github
+          sparse-checkout-cone-mode: false
+
       - name: Open or update the nightly failure issue
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
