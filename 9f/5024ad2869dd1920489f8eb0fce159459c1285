@@ -1,0 +1,55 @@
+crates/sourdaw-native/src/commands/plugins.rs
+  s_1b9333aca53d4d::t_6c506490800844 933-957
+crates/daw-plugin-host/src/clap_wrapper.rs
+  s_1b9333aca53d4d::t_837f5a55f4b222 1901-1914
+crates/sourdaw-native/src/commands/plugin_gui.rs
+  s_1b9333aca53d4d::t_07c2d5c0147a87 221-224,226
+  s_1b9333aca53d4d::t_5143206644da24 361-364,379-424
+  s_1b9333aca53d4d::t_11e3a7ba6b4f24 202
+  s_1b9333aca53d4d::t_43d1a62c298cac 322-323,325-338
+  s_1b9333aca53d4d::t_63fa4bd7b73de5 15
+  s_1b9333aca53d4d::t_15ff75c98fdd1c 181
+  s_1b9333aca53d4d::t_1c1628e38f7416 91-109
+  s_1b9333aca53d4d::t_993deddd3d1d22 220
+  s_1b9333aca53d4d::t_3ab9133b75b886 166-176,180
+  s_1b9333aca53d4d::t_28805520f82850 1016-1020,1022,1027-1036,1045,1050,1062-1063,1070-1079
+crates/daw-plugin-host/src/clap_host.rs
+  s_1b9333aca53d4d::t_b4e1f652366694 548-556
+  s_1b9333aca53d4d::t_e84e2858647603 676-683
+  s_1b9333aca53d4d::t_08d2159276bd95 622-646
+  s_1b9333aca53d4d::t_e5586d04c4ac11 141-143,145,147-155
+crates/sourdaw-native/src/host/plugin_host_requests.rs
+  s_1b9333aca53d4d::t_a844b6c02bcd98 154,162-163,167,171,173-181
+  s_1b9333aca53d4d::t_3cb7b7f6d4c1a3 124-126,131,137-138
+  s_1b9333aca53d4d::t_9001bfb8f76e90 246-265,267-281
+  s_1b9333aca53d4d::t_95da35ee06f10c 266
+  s_1b9333aca53d4d::t_27450caaf4f42c 46-54,56,66-69,71,75-92
+  s_1b9333aca53d4d::t_ac7a84eefa82e3 144
+  s_1b9333aca53d4d::t_74261414daab64 93
+crates/sourdaw-native/src/host/plugin_window.rs
+  s_1b9333aca53d4d::t_cb77c8345328a5 337-338,340,344-345
+  s_1b9333aca53d4d::t_2418717f63eb7a 320
+  s_1b9333aca53d4d::t_8718a8d2c15833 76
+  s_1b9333aca53d4d::t_cd43a02e6fb7e5 283,285-286,290-319
+  s_1b9333aca53d4d::t_923873818e6f9f 89-103
+  s_1b9333aca53d4d::t_817e119676c76f 14
+  s_1b9333aca53d4d::t_098c7fbeb036a6 356-359
+  s_1b9333aca53d4d::t_fc4f7ca0de5517 28,30-46
+  s_1b9333aca53d4d::t_7897dd6b9a3dc4 328-330
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "9f5024ad2869dd1920489f8eb0fce159459c1285",
+  "prompts": {},
+  "sessions": {
+    "s_1b9333aca53d4d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "188b0d45-7765-49bd-8d6e-1eebbd450613",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
