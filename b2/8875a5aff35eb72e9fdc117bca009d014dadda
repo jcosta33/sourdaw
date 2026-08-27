@@ -1,0 +1,19 @@
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/pluginStateDirtyLifecycle.spec.ts
+  s_1b9333aca53d4d::t_77820ba57758b6 23,27
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "b28875a5aff35eb72e9fdc117bca009d014dadda",
+  "prompts": {},
+  "sessions": {
+    "s_1b9333aca53d4d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "188b0d45-7765-49bd-8d6e-1eebbd450613",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
