@@ -110,6 +110,8 @@ vi.mock('#/modules/Automation/stores', () => ({
 }));
 
 vi.mock('#/modules/MIDI/stores', () => ({
+    chordTrackStore: { hydrate: vi.fn() },
+    grooveTemplateStore: { hydrate: vi.fn(), value: null },
     midiStore: {
         get value() {
             return mocks.midiStoreValue.value;
