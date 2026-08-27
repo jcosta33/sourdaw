@@ -55,6 +55,13 @@ function isColdStartTimeout(statement: ts.Statement): boolean {
     );
 }
 
+function requireColdStartTimeoutFirst(callbackBody: ts.Block): void {
+    const [firstStatement] = callbackBody.statements;
+    if (!firstStatement || !isColdStartTimeout(firstStatement)) {
+        throw new Error(`Playwright test ${admissionTestName} must begin with test.setTimeout(180_000)`);
+    }
+}
+
 describe('Browser AI WebGPU admission', () => {
     it('reserves the cold-start budget needed before the launch-screen readiness gate', () => {
         const sourceFile = ts.createSourceFile(
@@ -63,6 +70,6 @@ describe('Browser AI WebGPU admission', () => {
             ts.ScriptTarget.Latest
         );
 
-        expect(getAdmissionTestBody(sourceFile).statements.some(isColdStartTimeout)).toBe(true);
+        expect(() => requireColdStartTimeoutFirst(getAdmissionTestBody(sourceFile))).not.toThrow();
     });
 });
