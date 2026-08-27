@@ -13,6 +13,13 @@
 //! becomes a `plugin-state-dirty` event the project's dirty tracking listens
 //! for. Same shape as the latency watcher, and for the same reason — nothing
 //! polls, so an idle session does no work at all.
+//!
+//! It serves engine-owned instances only, which is where the wake is installed.
+//! An instance the native engine never took records a state change nothing
+//! reads, and its `request_resize` is refused outright rather than accepted and
+//! dropped. That mode processes no audio at all — it is what a session runs in
+//! when the engine failed to start — so an edit made in it has no take to be
+//! saved with.
 
 use crate::events::{EventSink, EventSinkExt};
 use crate::host::native_bridge::SharedHostedPlugin;
@@ -96,6 +103,31 @@ fn should_retry_follow_up(attempt: u8, control_still_allowed: bool) -> bool {
     control_still_allowed && attempt + 1 < MAX_FOLLOW_UP_ATTEMPTS
 }
 
+/// Carry one queued ask out, and say what belongs back on the queue.
+///
+/// The whole body of the watcher loop, with the two things it needs from a live
+/// instance passed in: `carry` runs the follow-up, `control_still_allowed` reads
+/// the lifecycle. Split that way so the retry can be driven to its end — a
+/// failure replayed and then succeeding, and a run of failures giving up — which
+/// a test cannot do against a real control lock it has no way to hold.
+fn serve_queued_request(
+    queued: QueuedRequest,
+    carry: impl FnOnce(&str, PluginHostRequest) -> Result<(), String>,
+    control_still_allowed: impl FnOnce() -> bool,
+) -> Option<QueuedRequest> {
+    let (instance_id, request, attempt) = queued;
+
+    if carry(&instance_id, request).is_ok() {
+        return None;
+    }
+
+    should_retry_follow_up(attempt, control_still_allowed()).then_some((
+        instance_id,
+        request,
+        attempt + 1,
+    ))
+}
+
 /// Decide what one state-change wake should emit.
 ///
 /// Split out from the thread body so the emit rule is testable without a live
@@ -143,6 +175,24 @@ fn apply_editor_resize(runtime: &SharedHostedPlugin, instance_id: &str) -> Resul
     applied.map(|_| ())
 }
 
+/// Take the plugin's state-change flag and emit it, reporting whether the
+/// follow-up reached the plugin at all — which is what decides a retry, and is a
+/// different question from whether there was a flag to take.
+fn report_state_change(
+    runtime: &SharedHostedPlugin,
+    instance_id: &str,
+    events: &dyn EventSink,
+) -> Result<(), String> {
+    let taken = runtime.with_control(CONTROL_TIMEOUT, |plugin| Ok(plugin.take_state_dirty()));
+    let reached_plugin = taken.as_ref().map(|_| ()).map_err(String::clone);
+
+    if let Some(payload) = state_dirty_payload(instance_id, taken) {
+        events.emit(PLUGIN_STATE_DIRTY_EVENT, payload);
+    }
+
+    reached_plugin
+}
+
 /// Start the watcher thread. Idempotent: a second call is ignored, so the sender
 /// installed by the first `start` stays the one the host callbacks reach.
 pub fn start(events: Arc<dyn EventSink>, engine_plugins: EnginePlugins) {
@@ -156,34 +206,29 @@ pub fn start(events: Arc<dyn EventSink>, engine_plugins: EnginePlugins) {
         .spawn(move || {
             // Blocks until a plugin asks. The static sender is never dropped, so
             // this loop lives for the process.
-            while let Ok((instance_id, request, attempt)) = receiver.recv() {
+            while let Ok(queued) = receiver.recv() {
                 let Some(runtime) =
-                    runtime_for_instance(&engine_plugins, &instance_id, "plugin host request")
+                    runtime_for_instance(&engine_plugins, &queued.0, "plugin host request")
                 else {
                     // Unloaded between the plugin's callback and this wake.
                     continue;
                 };
 
-                let followed_up = match request {
-                    PluginHostRequest::EditorResize => apply_editor_resize(&runtime, &instance_id),
-                    PluginHostRequest::StateDirty => {
-                        let taken = runtime
-                            .with_control(CONTROL_TIMEOUT, |plugin| Ok(plugin.take_state_dirty()));
-                        let reached_plugin = taken.as_ref().map(|_| ()).map_err(String::clone);
-                        if let Some(payload) = state_dirty_payload(&instance_id, taken) {
-                            events.emit(PLUGIN_STATE_DIRTY_EVENT, payload);
+                let again = serve_queued_request(
+                    queued,
+                    |instance_id, request| match request {
+                        PluginHostRequest::EditorResize => {
+                            apply_editor_resize(&runtime, instance_id)
                         }
-                        reached_plugin
-                    }
-                };
+                        PluginHostRequest::StateDirty => {
+                            report_state_change(&runtime, instance_id, &*events)
+                        }
+                    },
+                    || runtime.ensure_public_control_allowed().is_ok(),
+                );
 
-                if followed_up.is_err()
-                    && should_retry_follow_up(
-                        attempt,
-                        runtime.ensure_public_control_allowed().is_ok(),
-                    )
-                {
-                    queue_request((instance_id, request, attempt + 1));
+                if let Some(queued) = again {
+                    queue_request(queued);
                 }
             }
         });
@@ -275,6 +320,64 @@ mod tests {
             0,
             runtime.ensure_public_control_allowed().is_ok()
         ));
+    }
+
+    /// Drive the watcher's own loop over a local queue, with a follow-up that
+    /// fails `failures` times before it succeeds. Returns how many times the
+    /// follow-up actually ran — one per pass, so it counts the replays too.
+    fn drive_queue_until_settled(failures: usize) -> usize {
+        let mut queue = vec![("inst-1".to_string(), PluginHostRequest::StateDirty, 0u8)];
+        let mut carried = 0usize;
+
+        while let Some(queued) = queue.pop() {
+            let again = serve_queued_request(
+                queued,
+                |_, _| {
+                    carried += 1;
+                    if carried <= failures {
+                        return Err("Timed out waiting for plugin control access".to_string());
+                    }
+                    Ok(())
+                },
+                || true,
+            );
+
+            if let Some(queued) = again {
+                queue.push(queued);
+            }
+        }
+
+        carried
+    }
+
+    /// The signal behind a failed follow-up is still recorded, so the ask has to
+    /// run again — and actually reach the plugin when it does.
+    #[test]
+    fn a_replayed_ask_runs_again_and_settles_once_it_reaches_the_plugin() {
+        assert_eq!(
+            drive_queue_until_settled(1),
+            2,
+            "one failure must be followed by exactly one more run, which succeeds"
+        );
+    }
+
+    /// The replays are bounded, or an instance whose control path never frees up
+    /// would spin the watcher for the life of the process and starve every other
+    /// instance's asks behind it.
+    #[test]
+    fn a_follow_up_that_keeps_failing_stops_at_the_attempt_budget() {
+        assert_eq!(
+            drive_queue_until_settled(usize::MAX),
+            usize::from(MAX_FOLLOW_UP_ATTEMPTS),
+            "a never-succeeding ask runs exactly the budget and then stops"
+        );
+    }
+
+    /// A follow-up that reached the plugin is finished, whatever it found there:
+    /// re-queueing a success would replay it forever.
+    #[test]
+    fn a_follow_up_that_reached_the_plugin_is_not_queued_again() {
+        assert_eq!(drive_queue_until_settled(0), 1);
     }
 
     #[test]

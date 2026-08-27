@@ -145,12 +145,19 @@ impl HostCallbackState {
             return;
         }
 
-        // Clearing on the way in is what actually closes the race: a plugin
-        // thread that read availability just before the withdrawal can still
-        // store its size after the clear above, and only this clear stops that
-        // dead window's size being applied to the one opening now. Safe because
-        // no request is accepted until the flag below is set, and both calls are
-        // control path.
+        // Clearing on the way in narrows the race the withdrawal cannot close on
+        // its own: a plugin thread that read availability just before the
+        // withdrawal can still store its size after the clear above, and this
+        // clear discards it. Safe to clear here because no request is accepted
+        // until the flag below is set, and both calls are control path.
+        //
+        // It does not close the race. A plugin thread descheduled between its
+        // availability read and its store — across the whole destroy, create and
+        // open of the next editor — still lands a dead window's size on the new
+        // one. Closing that needs the slot to carry which editor the size was
+        // asked for; it is not closed because the interleaving requires
+        // preemption spanning an entire editor lifecycle, and its outcome is one
+        // wrong resize the plugin can ask again for.
         self.pending_editor_resize.store(0, Ordering::Release);
         self.editor_resize_available.store(true, Ordering::Release);
     }

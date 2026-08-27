@@ -300,14 +300,25 @@ mod tests {
         );
     }
 
-    /// `:` separates the two parts, and the escaping never emits one, so an
-    /// instance id full of colons cannot forge a different opening's label.
+    /// `:` separates the two parts and the escaping never emits one, which is
+    /// what lets the label be split back into the pair that built it. Asserted
+    /// through the split rather than by comparing two labels: ids and sequences
+    /// that differ produce labels that differ anyway, so a comparison passes
+    /// with the colon escaping deleted.
     #[test]
-    fn an_instance_id_cannot_forge_another_openings_label_through_the_separator() {
-        assert_ne!(
-            plugin_editor_window_label("a:1", 2),
-            plugin_editor_window_label("a", 12)
+    fn a_label_splits_at_its_one_separator_back_into_the_opening_that_built_it() {
+        let label = plugin_editor_window_label("a:1", 2);
+
+        let mut parts = label.split(':');
+        let escaped_id = parts.next().expect("label has an id part");
+        let sequence = parts.next().expect("label has a sequence part");
+
+        assert_eq!(parts.next(), None, "the separator appears exactly once");
+        assert_eq!(
+            escaped_id, "plugin-a-c1",
+            "the colon in the id is escaped, so it cannot read as the separator"
         );
+        assert_eq!(sequence, "2");
     }
 
     #[test]
