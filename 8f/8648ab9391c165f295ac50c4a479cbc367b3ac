@@ -1,0 +1,19 @@
+scripts/__tests__/browserAiWebGpuAdmission.spec.ts
+  s_a40848e8f8cca9::t_20a06ac177d383 21,54
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "8f8648ab9391c165f295ac50c4a479cbc367b3ac",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
