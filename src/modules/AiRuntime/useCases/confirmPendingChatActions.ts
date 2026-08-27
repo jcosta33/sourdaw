@@ -659,6 +659,58 @@ async function retryCommittedSectionRenders(
     return { status: 'executed' };
 }
 
+function hasDurablyCommittedRetryableSectionRender(confirmation: PendingAppActionConfirmation): boolean {
+    if (
+        (confirmation.status !== 'executed' && confirmation.status !== 'failed') ||
+        confirmation.followUpStatus !== 'retryable' ||
+        !confirmation.followUpProjectRevision
+    ) {
+        return false;
+    }
+
+    const approvedCommandBatch = confirmation.approvalSnapshot.commandBatch;
+    if (!approvedCommandBatch) {
+        return false;
+    }
+    const parsedBatch = parseVersionedCommandBatchEnvelope(
+        approvedCommandBatch.serialized,
+        approvedCommandBatch.authority
+    );
+    if (parsedBatch.status !== 'valid') {
+        return false;
+    }
+    const approvedCommandIds = new Set(parsedBatch.envelope.commands.map(({ commandId }) => commandId));
+    const committedCommandIds = new Set<string>();
+    for (const execution of confirmation.executedActions) {
+        if (
+            !execution.commandId ||
+            execution.commandSchemaVersion === undefined ||
+            execution.executionKind !== 'project' ||
+            (execution.outcome !== 'committed' && execution.outcome !== 'committed-with-warning') ||
+            !approvedCommandIds.has(execution.commandId)
+        ) {
+            return false;
+        }
+        committedCommandIds.add(execution.commandId);
+    }
+    if (committedCommandIds.size !== approvedCommandIds.size) {
+        return false;
+    }
+    const approvedRenderCommandIds = new Set(
+        parsedBatch.envelope.commands
+            .filter(({ operation }) => operation === 'renderProjectSections')
+            .map(({ commandId }) => commandId)
+    );
+    return confirmation.executedActions.some(
+        ({ actionType, commandId, executionKind, outcome }) =>
+            actionType === 'renderProjectSections' &&
+            executionKind === 'project' &&
+            outcome === 'committed-with-warning' &&
+            commandId !== undefined &&
+            approvedRenderCommandIds.has(commandId)
+    );
+}
+
 export async function confirmPendingChatActions(
     input: ConfirmPendingChatActionsInput
 ): ConfirmPendingChatActionsOutput {
@@ -666,7 +718,7 @@ export async function confirmPendingChatActions(
     if (!confirmation) {
         return { status: 'missing' };
     }
-    if (confirmation.status === 'executed' && confirmation.followUpStatus === 'retryable') {
+    if (hasDurablyCommittedRetryableSectionRender(confirmation)) {
         return retryCommittedSectionRenders(confirmation);
     }
     if (confirmation.status !== 'proposed') {

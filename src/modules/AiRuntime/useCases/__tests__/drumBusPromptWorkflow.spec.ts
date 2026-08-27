@@ -48,6 +48,9 @@ import {
     getPendingActionConfirmation,
     pendingActionConfirmationStore,
     proposePendingActionConfirmation,
+    replacePendingActionExecutions,
+    updatePendingActionConfirmationStatus,
+    updatePendingActionFollowUp,
 } from '../../stores/pendingActionConfirmationStore';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { sendChatMessage as sendChatMessageUseCase } from '../sendChatMessage';
@@ -1577,7 +1580,7 @@ describe('drum bus prompt workflow', () => {
         expect(undoStore.value?.past).toEqual([]);
     });
 
-    it('receipts a partial comparison render as committed with warning and keeps the group undoable', async () => {
+    it('retries only missing renders after a durable partial commit and keeps the project batch unchanged', async () => {
         setEx11Project();
         useEx11WebLlmFixture();
         await sendChatMessage(EX11_PROMPT);
@@ -1624,6 +1627,94 @@ describe('drum bus prompt workflow', () => {
         expect(receipt?.content).toContain('comparison renderer unavailable');
         expect(receipt?.content).toContain('the project mutation will not replay');
         expect(undoStore.value?.past).toHaveLength(9);
+
+        expect(getPendingActionConfirmation(confirmation.id)).toMatchObject({
+            status: 'failed',
+            followUpStatus: 'retryable',
+            followUpProjectRevision: expect.any(String),
+            executedActions: expect.arrayContaining([
+                expect.objectContaining({
+                    actionType: 'renderProjectSections',
+                    commandId: expect.any(String),
+                    commandSchemaVersion: expect.any(Number),
+                    executionKind: 'project',
+                    outcome: 'committed-with-warning',
+                }),
+            ]),
+        });
+        const committedConfirmation = getPendingActionConfirmation(confirmation.id);
+        if (!committedConfirmation) {
+            throw new Error('Expected committed render confirmation');
+        }
+        updatePendingActionFollowUp({ confirmationId: confirmation.id, status: 'failed' });
+        await expect(confirmPendingChatActions({ confirmationId: confirmation.id })).resolves.toEqual({
+            status: 'not_pending',
+            currentStatus: 'failed',
+        });
+        expect(runtimeMocks.renderOffline).toHaveBeenCalledTimes(3);
+        updatePendingActionFollowUp({ confirmationId: confirmation.id, status: 'retryable' });
+        updatePendingActionConfirmationStatus({ confirmationId: confirmation.id, status: 'invalidated' });
+        await expect(confirmPendingChatActions({ confirmationId: confirmation.id })).resolves.toEqual({
+            status: 'not_pending',
+            currentStatus: 'invalidated',
+        });
+        expect(runtimeMocks.renderOffline).toHaveBeenCalledTimes(3);
+        updatePendingActionConfirmationStatus({
+            confirmationId: confirmation.id,
+            status: 'failed',
+            error: committedConfirmation.error ?? undefined,
+        });
+        replacePendingActionExecutions({ confirmationId: confirmation.id, executions: [] });
+        await expect(confirmPendingChatActions({ confirmationId: confirmation.id })).resolves.toEqual({
+            status: 'not_pending',
+            currentStatus: 'failed',
+        });
+        expect(runtimeMocks.renderOffline).toHaveBeenCalledTimes(3);
+        replacePendingActionExecutions({
+            confirmationId: confirmation.id,
+            executions: committedConfirmation.executedActions,
+        });
+        const committedTracks = structuredClone(trackStore.value?.tracks ?? []);
+
+        await expect(confirmPendingChatActions({ confirmationId: confirmation.id })).resolves.toMatchObject({
+            status: 'failed',
+            reason: expect.stringContaining('comparison renderer unavailable'),
+        });
+
+        expect(runtimeMocks.renderOffline).toHaveBeenCalledTimes(4);
+        expect(trackStore.value?.tracks).toEqual(committedTracks);
+        expect(undoStore.value?.past).toHaveLength(9);
+        expect(getPendingActionConfirmation(confirmation.id)).toMatchObject({
+            status: 'executed',
+            followUpStatus: 'retryable',
+        });
+        runtimeMocks.renderOffline.mockResolvedValue(createTestAudioBuffer());
+
+        await expect(confirmPendingChatActions({ confirmationId: confirmation.id })).resolves.toEqual({
+            status: 'executed',
+        });
+
+        expect(runtimeMocks.renderOffline).toHaveBeenCalledTimes(5);
+        expect(getAgentSectionRenderArtifacts().map((artifact) => artifact.sectionId)).toEqual([
+            'section-verse-one',
+            'section-chorus-one',
+        ]);
+        expect(trackStore.value?.tracks).toEqual(committedTracks);
+        expect(undoStore.value?.past).toHaveLength(9);
+        expect(getPendingActionConfirmation(confirmation.id)).toMatchObject({
+            status: 'executed',
+            followUpStatus: 'complete',
+            error: null,
+        });
+        expect(
+            chatStore.value?.messages.find((message) => message.pendingActionConfirmationId === confirmation.id)
+        ).toMatchObject({
+            pendingActionConfirmationStatus: 'executed',
+            pendingActionFollowUpStatus: 'complete',
+            content: expect.stringContaining(
+                'Missing section render artifacts completed without replaying project actions'
+            ),
+        });
 
         await undo();
 
