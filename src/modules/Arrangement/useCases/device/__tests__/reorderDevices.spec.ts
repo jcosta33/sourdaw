@@ -33,6 +33,7 @@ describe('reorderDevicesInProject', () => {
 
         reorderDevicesInProject(current.id, devices);
 
+        expect(mocks.updateTrack).toHaveBeenCalledTimes(1);
         expect(mocks.updateTrack).toHaveBeenCalledWith(current.id, expect.any(Function));
         expect(written).toEqual({ ...repositoryCurrent, devices });
         expect(written?.devices).toEqual(devices);
