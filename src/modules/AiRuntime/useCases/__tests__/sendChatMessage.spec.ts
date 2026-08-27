@@ -11,7 +11,6 @@ import { type ProjectContext } from '../../models/ProjectContext';
 import { bridgeGroundedLlmToolCalls } from '../agentReference/bridgeGroundedLlmToolCalls';
 import { materializeBatchLocalActionIdentities } from '../agentReference/materializeBatchLocalActionIdentities';
 import { agentRunLifecycle } from '../agentRunLifecycle';
-import { agentRunWorkLease } from '../agentRunWorkLease';
 import { compileArbitraryCommandList } from '../compileArbitraryCommandList';
 import { materializeActionStateGuards } from '../materializeActionStateGuards';
 import { type planPromptActions } from '../planPromptActions';
@@ -522,25 +521,20 @@ describe('sendChatMessage retained-provider selection', () => {
         );
     });
 
-    it('preserves the provider failure message when provider lease settlement cannot persist', async () => {
+    it('preserves the provider failure message when agent-run storage fails after admission', async () => {
         const providerError = new Error('WebLLM provider failed');
-        const leaseSettlementError = new Error('lease persistence failed');
+        const storageFailure = new DOMException('The quota has been exceeded.', 'QuotaExceededError');
         const loggerError = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
-        const settle = vi.spyOn(agentRunWorkLease, 'settle').mockImplementation(() => {
-            throw leaseSettlementError;
-        });
-        vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
-            callback(0);
-            return 0;
-        });
-        mocks.getLlmEngine.mockReturnValue({
-            interruptGenerate: vi.fn(),
-            chat: {
-                completions: {
-                    create: vi.fn().mockRejectedValue(providerError),
-                },
-            },
-        });
+        const storageSetItem = vi.spyOn(Storage.prototype, 'setItem');
+        mocks.getLlmEngine.mockReturnValue({});
+        mocks.getActiveModelId
+            .mockImplementationOnce(() => 'fixture-model')
+            .mockImplementationOnce(() => {
+                storageSetItem.mockImplementation(() => {
+                    throw storageFailure;
+                });
+                throw providerError;
+            });
 
         try {
             await expect(sendChatMessage('summarize this', { mode: 'explain' })).resolves.toBeUndefined();
@@ -552,11 +546,13 @@ describe('sendChatMessage retained-provider selection', () => {
                     content: 'Sorry, I encountered an error while thinking about that.',
                 })
             );
+            expect(storageSetItem.mock.calls.length).toBeGreaterThanOrEqual(2);
             expect(loggerError).not.toHaveBeenCalled();
+            expect(mocks.setActiveAborter).toHaveBeenLastCalledWith(null);
+            expect(mocks.setChatGenerating).toHaveBeenLastCalledWith(false);
         } finally {
-            settle.mockRestore();
+            storageSetItem.mockRestore();
             loggerError.mockRestore();
-            vi.unstubAllGlobals();
         }
     });
 

@@ -509,6 +509,89 @@ describe('confirmPendingChatActions transaction admission', () => {
         expect(chatStore.value?.messages[0]?.content).toContain('prior verified receipt');
     });
 
+    it('keeps a batch execution failure authoritative when error-path lease settlement throws', async () => {
+        configureAiWorkflowCommandPreflightFixture('project-1');
+        configureCommandBatchIdempotency({ canExecute: () => true });
+        registerHandlerMap({
+            setTempo: {
+                execute: () => undefined,
+                describe: () => ({ label: 'Set tempo' }),
+                undoable: true,
+                validate: () => true,
+            },
+        });
+        const action = { type: 'setTempo', payload: { bpm: 132 } } satisfies SetTempoAction;
+        const projectRevision = captureProjectRevision();
+        const envelope = migrateLegacyAppActionToVersionedCommandEnvelope({
+            action,
+            expectedEffect: 'Tempo changes to 132 BPM.',
+            normalizedProjectRevision: projectRevision,
+            options: { groupId: 'group-error-path', groupLabel: 'Set tempo batch', source: 'prompt' },
+        });
+        const commandBatch = compileVersionedCommandBatchEnvelope({
+            runId: 'confirmation-error-path',
+            batchId: 'group-error-path',
+            projectId: 'project-1',
+            baseRevision: projectRevision,
+            intent: 'set tempo to 132',
+            commands: [serializeVersionedCommandEnvelope(envelope)],
+        });
+        agentRunLifecycle.create({
+            runId: 'confirmation-error-path',
+            request: 'set tempo to 132',
+            mode: 'macro',
+            createdRevision: projectRevision,
+        });
+        agentRunLifecycle.transitionPhase({ runId: 'confirmation-error-path', phase: 'planning' });
+        agentRunLifecycle.transitionPhase({ runId: 'confirmation-error-path', phase: 'waiting-for-approval' });
+        proposePendingActionConfirmation({
+            id: 'confirmation-error-path',
+            runId: 'confirmation-error-path',
+            prompt: 'set tempo to 132',
+            assistantMessageId: 'assistant-1',
+            actions: [action],
+            actionLabels: ['Set tempo to 132 BPM'],
+            commandBatch,
+            agentApproval: compileAgentRiskApproval({ commandBatch }),
+            executionMode: 'atomic',
+            groupId: 'group-error-path',
+            groupLabel: 'Set tempo batch',
+            projectRevision,
+        });
+        const batchExecutionError = new Error('Tempo engine unavailable');
+        const leaseSettlementError = new Error('lease persistence failed');
+        const commandUseCases = await import('#/modules/Command/useCases');
+        const execute = vi
+            .spyOn(commandUseCases, 'executeVersionedCommandBatchEnvelope')
+            .mockRejectedValue(batchExecutionError);
+        const loggerError = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+        const settle = vi.spyOn(agentRunWorkLease, 'settle').mockImplementation(() => {
+            throw leaseSettlementError;
+        });
+
+        try {
+            await expect(confirmPendingChatActions({ confirmationId: 'confirmation-error-path' })).resolves.toEqual({
+                status: 'failed',
+                reason: 'Tempo engine unavailable',
+            });
+            expect(loggerError).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    cause: leaseSettlementError,
+                    message: 'Agent run work lease settlement failed',
+                })
+            );
+            expect(chatStore.value?.messages[0]).toMatchObject({
+                error: 'Tempo engine unavailable',
+                pendingActionConfirmationStatus: 'failed',
+            });
+            expect(chatStore.value?.messages[0]?.content).toContain('Tempo engine unavailable');
+        } finally {
+            settle.mockRestore();
+            loggerError.mockRestore();
+            execute.mockRestore();
+        }
+    });
+
     it('releases commit-protected resources when the storage transaction proves noncommit', async () => {
         configureAiWorkflowCommandPreflightFixture('project-1');
         configureCommandBatchIdempotency({ canExecute: () => true });

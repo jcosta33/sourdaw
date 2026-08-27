@@ -152,6 +152,14 @@ function tryRecordCommittedAgentRunWork(input: {
     }
 }
 
+function tryRecordProviderFailure(input: Parameters<typeof agentRunLifecycle.recordError>[0]): void {
+    try {
+        agentRunLifecycle.recordError(input);
+    } catch {
+        // The provider failure remains the user-visible outcome when its recovery record cannot persist.
+    }
+}
+
 function getProviderBudgetCategory(backend: RunnableAiBackend): string {
     return backend === 'cloud' ? 'remoteTokens' : 'localAnalysis';
 }
@@ -1722,7 +1730,7 @@ export async function sendChatMessage(
                 llmStatusStore.set(previousLlmStatus ?? { state: 'idle' });
             }
         } else {
-            agentRunLifecycle.recordError({
+            tryRecordProviderFailure({
                 runId,
                 error: normalizeAgentFailure({
                     category: 'provider',
