@@ -26,13 +26,23 @@ type ProductionDeploymentScope = {
     readonly orgId: string;
 };
 
+/**
+ * A revision string proved to be a commit id — forty lowercase hex characters
+ * and nothing else. The brand exists so that only `readDeployedRevision` can
+ * produce one: the value comes out of an API answer nobody here controls, and
+ * it ends up in `GITHUB_OUTPUT`, whose line-oriented format makes any embedded
+ * newline a way to define further workflow outputs.
+ */
+export type ValidatedRevision = string & { readonly revisionShape: 'forty lowercase hex characters' };
+
 export type ProductionTrainDecision = {
     readonly deploy: boolean;
-    readonly deployedRevision: string | null;
+    readonly deployedRevision: ValidatedRevision | null;
 };
 
 const DEPLOYMENTS_ENDPOINT = 'https://api.vercel.com/v7/deployments';
 const TEAM_SCOPE_PREFIX = 'team_';
+const COMMIT_REVISION = /^[0-9a-f]{40}$/u;
 
 function asRecord(value: unknown): Record<string, unknown> | null {
     if (typeof value !== 'object' || value === null || Array.isArray(value)) {
@@ -66,13 +76,22 @@ export function buildProductionDeploymentUrl(scope: ProductionDeploymentScope): 
     return url.toString();
 }
 
-export function readDeployedRevision(payload: unknown): string | null {
+function isCommitRevision(value: string): value is ValidatedRevision {
+    return COMMIT_REVISION.test(value);
+}
+
+/**
+ * Anything the answer offers that is not a commit id is unreadable, which is
+ * the same branch as an absent one: the train deploys rather than trusting a
+ * comparison it could not make.
+ */
+export function readDeployedRevision(payload: unknown): ValidatedRevision | null {
     const deployments = asRecord(payload)?.deployments;
     if (!Array.isArray(deployments)) {
         return null;
     }
     const revision = asRecord(asRecord(deployments[0])?.meta)?.githubCommitSha;
-    if (typeof revision !== 'string' || revision === '') {
+    if (typeof revision !== 'string' || !isCommitRevision(revision)) {
         return null;
     }
     return revision;
@@ -101,6 +120,11 @@ export async function resolveProductionTrain(candidateRevision: string): Promise
 }
 
 export function reportDecision(decision: ProductionTrainDecision, candidateRevision: string): void {
+    // `GITHUB_OUTPUT` is line-oriented: a value carrying a newline defines
+    // further outputs, so what is written here has to be single-line by
+    // construction. Only a `ValidatedRevision` or the empty string can reach
+    // this call, which is why the shape is proved where the value is parsed
+    // rather than re-checked here.
     appendFileSync(
         requireEnvironment('GITHUB_OUTPUT'),
         `deploy=${String(decision.deploy)}\ndeployed-revision=${decision.deployedRevision ?? ''}\n`

@@ -21,8 +21,14 @@ import {
     resolveTrainDecision,
 } from '../resolveVercelProductionDeployment';
 
-const CANDIDATE = '1111111111111111111111111111111111111111';
-const DEPLOYED = '2222222222222222222222222222222222222222';
+// Hex with letters in it, so that the uppercase case below is a real case.
+const CANDIDATE = '1a'.repeat(20);
+const DEPLOYED = '2b'.repeat(20);
+// What a compromised or merely wrong answer can carry. `GITHUB_OUTPUT` is
+// line-oriented, so the newline is the whole attack: written unvalidated, the
+// second line would define `deploy` and send the train past its own decision.
+const INJECTION_PAYLOAD = `${DEPLOYED}\ndeploy=true\nsomething=else`;
+const NON_HEX_REVISIONS = ['not-a-revision', DEPLOYED.toUpperCase(), `${DEPLOYED}0`, DEPLOYED.slice(0, 39)];
 
 function deploymentPayload(revision: string): unknown {
     return { deployments: [{ uid: 'dpl_fixture', url: 'sourdaw.vercel.app', meta: { githubCommitSha: revision } }] };
@@ -67,6 +73,13 @@ describe('the deployed revision', () => {
         expect(readDeployedRevision(null)).toBeNull();
         expect(readDeployedRevision('deployments')).toBeNull();
     });
+
+    it('is unreadable when the answer carries something that is not a commit id', () => {
+        expect(readDeployedRevision(deploymentPayload(INJECTION_PAYLOAD))).toBeNull();
+        for (const revision of NON_HEX_REVISIONS) {
+            expect(readDeployedRevision(deploymentPayload(revision))).toBeNull();
+        }
+    });
 });
 
 describe('the train decision', () => {
@@ -89,6 +102,15 @@ describe('the train decision', () => {
             deploy: true,
             deployedRevision: null,
         });
+    });
+
+    it('treats an unusable served revision as unread rather than comparing it', () => {
+        for (const revision of [INJECTION_PAYLOAD, ...NON_HEX_REVISIONS]) {
+            expect(resolveTrainDecision(deploymentPayload(revision), CANDIDATE)).toEqual({
+                deploy: true,
+                deployedRevision: null,
+            });
+        }
     });
 });
 
@@ -141,12 +163,14 @@ describe('the reported decision', () => {
         vi.unstubAllEnvs();
     });
 
-    function outputOf(decision: Parameters<typeof reportDecision>[0]): string {
+    // Every case goes through the parser rather than a hand-built decision, so
+    // what is asserted is the whole path an answer takes to the file.
+    function outputOf(payload: unknown): string {
         const directory = mkdtempSync(join(tmpdir(), 'sourdaw-vercel-train-'));
         const outputPath = join(directory, 'github-output');
         try {
             vi.stubEnv('GITHUB_OUTPUT', outputPath);
-            reportDecision(decision, CANDIDATE);
+            reportDecision(resolveTrainDecision(payload, CANDIDATE), CANDIDATE);
             return readFileSync(outputPath, 'utf8');
         } finally {
             rmSync(directory, { recursive: true, force: true });
@@ -154,12 +178,18 @@ describe('the reported decision', () => {
     }
 
     it('publishes the decision the deploying steps read', () => {
-        expect(outputOf({ deploy: true, deployedRevision: DEPLOYED })).toBe(
-            `deploy=true\ndeployed-revision=${DEPLOYED}\n`
-        );
-        expect(outputOf({ deploy: false, deployedRevision: CANDIDATE })).toBe(
-            `deploy=false\ndeployed-revision=${CANDIDATE}\n`
-        );
-        expect(outputOf({ deploy: true, deployedRevision: null })).toBe('deploy=true\ndeployed-revision=\n');
+        expect(outputOf(deploymentPayload(DEPLOYED))).toBe(`deploy=true\ndeployed-revision=${DEPLOYED}\n`);
+        expect(outputOf(deploymentPayload(CANDIDATE))).toBe(`deploy=false\ndeployed-revision=${CANDIDATE}\n`);
+        expect(outputOf({ deployments: [] })).toBe('deploy=true\ndeployed-revision=\n');
+    });
+
+    it('writes nothing an answer could have chosen', () => {
+        // Two outputs, two lines, whatever the answer said. Written unvalidated
+        // this file would carry the payload's own `deploy=true` on a line of its
+        // own, and the step after it would read that instead of this decision.
+        expect(outputOf(deploymentPayload(INJECTION_PAYLOAD))).toBe('deploy=true\ndeployed-revision=\n');
+        for (const revision of NON_HEX_REVISIONS) {
+            expect(outputOf(deploymentPayload(revision))).toBe('deploy=true\ndeployed-revision=\n');
+        }
     });
 });
