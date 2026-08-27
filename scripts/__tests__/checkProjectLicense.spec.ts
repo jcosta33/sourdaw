@@ -17,6 +17,7 @@ import { gzipSync } from 'node:zlib';
 
 import { Header, Pax } from 'tar';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { parseDocument } from 'yaml';
 
 import {
     DISTRIBUTION_PROJECT_NOTICE,
@@ -216,6 +217,38 @@ describe('project license', () => {
             }
             rmSync(unavailableCargoPath, { recursive: true, force: true });
         }
+    });
+
+    it('parses pnpm-lock.yaml once per artifact build across repeated pnpm proof lookups', () => {
+        let parseCount = 0;
+        let pnpmLookupCount = 0;
+        const loadPnpmLockPackages = (root: string) => {
+            parseCount += 1;
+            const document = parseDocument(readFileSync(join(root, 'pnpm-lock.yaml'), 'utf8'));
+            if (document.errors.length > 0) {
+                throw new Error(document.errors[0]!.message);
+            }
+            const packages =
+                (document.toJS() as { packages?: Record<string, { resolution?: { integrity?: unknown } }> }).packages ??
+                {};
+            return new Proxy(packages, {
+                ownKeys: (target) => {
+                    pnpmLookupCount += 1;
+                    return Reflect.ownKeys(target);
+                },
+            });
+        };
+
+        const first = buildDependencyLicenseArtifacts(process.cwd(), { loadPnpmLockPackages });
+        const firstBuildLookupCount = pnpmLookupCount;
+        const second = buildDependencyLicenseArtifacts(process.cwd(), { loadPnpmLockPackages });
+        const secondBuildLookupCount = pnpmLookupCount - firstBuildLookupCount;
+
+        expect(first.report).toBe(readFileSync(join(process.cwd(), DEPENDENCY_LICENSE_REPORT_PATH), 'utf8'));
+        expect(second.report).toBe(first.report);
+        expect(firstBuildLookupCount).toBeGreaterThan(1);
+        expect(secondBuildLookupCount).toBeGreaterThan(1);
+        expect(parseCount).toBe(2);
     });
 
     it('binds the offline Cargo inventory to the shipped feature contract', () => {
