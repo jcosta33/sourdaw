@@ -1,0 +1,36 @@
+crates/daw-plugin-host/src/vst3_editor.rs
+  s_1b9333aca53d4d::t_1b3b2068ffd6a0 619-622,624,634
+  s_1b9333aca53d4d::t_fb3bf65cc16cbc 339-342
+  s_1b9333aca53d4d::t_d4ec7f87f1db35 647
+  s_1b9333aca53d4d::t_8a9526df4cb305 739-749
+  s_1b9333aca53d4d::t_306ca621cc5b5c 350-353
+  s_1b9333aca53d4d::t_d9b7efcd383993 464,471-474,482-493
+  s_1b9333aca53d4d::t_8d7da4ee0fff15 494
+crates/daw-plugin-host/src/vst3_run_loop.rs
+  s_1b9333aca53d4d::t_42f20c407ef04d 14-24
+  s_1b9333aca53d4d::t_c2d46cae1f21bf 292
+  s_1b9333aca53d4d::t_a55b878c8ec305 179-181,186,196,198,203
+  s_1b9333aca53d4d::t_09a07c6bfcbf27 270-273,288-291
+  s_1b9333aca53d4d::t_a03a77233e4503 744-798
+  s_1b9333aca53d4d::t_fee8be7abd0cd4 557-568,573-575
+  s_1b9333aca53d4d::t_1371b0f6adc3cf 74-83
+  s_1b9333aca53d4d::t_004fddc6a5a9aa 62,69,84-96
+  s_1b9333aca53d4d::t_217bfacb3a1014 143-145,149,158,160,165
+  s_1b9333aca53d4d::t_2ac449e25ee9ab 97-98
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "b022fd67e63f3ec0c5b7e2b1438b1270dab4fea0",
+  "prompts": {},
+  "sessions": {
+    "s_1b9333aca53d4d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "188b0d45-7765-49bd-8d6e-1eebbd450613",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
