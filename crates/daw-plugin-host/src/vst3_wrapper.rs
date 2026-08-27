@@ -1161,7 +1161,14 @@ impl Vst3Wrapper {
 
     /// Create the plugin's editor and attach it to the native window `parent`
     /// names, returning the size the host window has to be.
-    pub fn open_editor(&mut self, parent: *mut c_void) -> Result<EditorSize, String> {
+    ///
+    /// Crate-internal, and that is what makes it safe to call: the one caller is
+    /// [`AudioPlugin::open_gui`], and `parent` is the handle the desktop shell
+    /// produced for this platform's editor window and keeps alive until the
+    /// editor is closed. That is the whole of what [`Vst3Editor::open`] asks of
+    /// its caller, so this function discharges the contract rather than passing
+    /// it on to a trait that models the same handle as safe for every backend.
+    pub(crate) fn open_editor(&mut self, parent: *mut c_void) -> Result<EditorSize, String> {
         if self.editor.is_some() {
             return Err(format!(
                 "[VST3] '{}' already has an open editor",
@@ -1175,14 +1182,20 @@ impl Vst3Wrapper {
             )
         })?;
 
-        let editor = Vst3Editor::open(
-            controller,
-            parent,
-            self.instance.name(),
-            EditorSession::current(),
-            self.editor_window.clone(),
-            self.editor_scale,
-        )?;
+        // SAFETY: `parent` reaches here only from `AudioPlugin::open_gui`, whose
+        // argument is the live native window handle the shell created for this
+        // editor and destroys only after the editor is closed, and the control
+        // claim is what serialises this call against the rest of the instance.
+        let editor = unsafe {
+            Vst3Editor::open(
+                controller,
+                parent,
+                self.instance.name(),
+                EditorSession::current(),
+                self.editor_window.clone(),
+                self.editor_scale,
+            )
+        }?;
         let size = editor.size();
         self.editor = Some(editor);
         Ok(size)

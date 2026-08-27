@@ -3064,14 +3064,18 @@ fn a_wayland_session_refuses_before_the_plugin_is_asked_for_a_view() {
         .expect("the fake plugin has a controller")
         .clone();
 
-    let Err(refusal) = Vst3Editor::open(
-        &controller,
-        ptr::null_mut(),
-        "Fake Plugin",
-        EditorSession::WaylandWithoutXServer,
-        None,
-        DEFAULT_EDITOR_CONTENT_SCALE,
-    ) else {
+    // SAFETY: the null handle is never read — this call is refused for the
+    // session it names before the plugin is asked for a view at all.
+    let Err(refusal) = (unsafe {
+        Vst3Editor::open(
+            &controller,
+            ptr::null_mut(),
+            "Fake Plugin",
+            EditorSession::WaylandWithoutXServer,
+            None,
+            DEFAULT_EDITOR_CONTENT_SCALE,
+        )
+    }) else {
         panic!("a Wayland session must be refused");
     };
 

@@ -566,7 +566,18 @@ impl Vst3Editor {
     /// `scale_factor` is the display scale the host window was created at, which
     /// is what the view is told on the platforms whose `ViewRect` is physical
     /// pixels, and what every size crossing that boundary is converted by.
-    pub fn open(
+    ///
+    /// # Safety
+    /// `parent` is handed straight to the plugin, which parents its own child
+    /// window to it, so the caller owes three things. It is a live native window
+    /// handle of the kind this platform embeds — `NSView*` on macOS, `HWND` on
+    /// Windows, an X11 window id on Linux — and not a handle of some other kind
+    /// that happens to be a pointer. It stays alive for the whole life of the
+    /// returned editor, because the plugin keeps drawing into it until the
+    /// editor is dropped. And the call is made on the control path, where the
+    /// runtime owner's claim serialises it against every other call into this
+    /// plugin instance.
+    pub unsafe fn open(
         controller: &ComPtr<IEditController>,
         parent: *mut c_void,
         plugin_name: &str,
