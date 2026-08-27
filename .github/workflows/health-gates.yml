@@ -553,19 +553,30 @@ jobs:
   dependency-review:
     name: Dependency review
     needs: decide
-    # Only a pull request has two commits to diff, and this is seconds, so it
-    # sits in the fast lane rather than waiting for an approval.
-    if: github.event_name == 'pull_request'
+    # Whichever run ultimately reports has to be the one that scans: the push
+    # run's concurrency group is cancelled by an approving review, so a gate on
+    # `pull_request` alone can leave every entry on a head either cancelled or
+    # skipped, with no success anywhere. Running on both events, with explicit
+    # refs, means an approval that cancels the push run still produces a
+    # verdict. Skipped on schedule and dispatch runs, which carry no pull
+    # request to diff. A `commented` or `changes_requested` review carries one
+    # too, so this condition alone is true there; what keeps the scan off those
+    # runs is `decide` skipping and the implicit `success()` on `needs`.
+    # Relaxing `decide` would silently start scanning on comment-only reviews.
+    if: github.event.pull_request != null
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
+      # No checkout: the action compares the two refs through the API and reads
+      # a working-tree file only for an explicit `config-file`, so a checkout
+      # here would only park head-controlled content next to a persisted
+      # credential in a base-context run.
       - name: Review dependency changes
         uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
         with:
           fail-on-severity: high
+          base-ref: ${{ github.event.pull_request.base.sha }}
+          head-ref: ${{ github.event.pull_request.head.sha }}
 
   codeql:
     name: CodeQL

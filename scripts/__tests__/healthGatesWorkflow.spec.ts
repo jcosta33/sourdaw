@@ -40,6 +40,7 @@ const PULL_REQUEST_CONCURRENCY_CANCELLATION =
 const GATE_CONDITION =
     "${{ !cancelled() && (github.event_name != 'pull_request_review' || github.event.review.state == 'approved') }}";
 const DEPENDENCY_REVIEW_ACTION = 'actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294';
+const DEPENDENCY_REVIEW_CONDITION = 'github.event.pull_request != null';
 const TRUSTED_SCANNER_REF = '${{ github.event.pull_request.base.sha || github.sha }}';
 const SCAN_TARGET_REF = '${{ github.event.pull_request.head.sha || github.sha }}';
 const TOKEN_REFERENCE = /GITHUB_TOKEN|GH_TOKEN|github\.token|\$\{\{\s*secrets\./i;
@@ -186,8 +187,8 @@ function assertScopeContract(candidate: UnknownRecord): string {
 
 function assertJobGraph(candidate: UnknownRecord): void {
     const dependencyReview = jobAt(candidate, 'dependency-review');
-    if (dependencyReview.needs !== 'decide' || dependencyReview.if !== "github.event_name == 'pull_request'") {
-        throw new Error('dependency review must remain a pull-request fast-lane job');
+    if (dependencyReview.needs !== 'decide' || dependencyReview.if !== DEPENDENCY_REVIEW_CONDITION) {
+        throw new Error('dependency review must gate on the pull request payload rather than the triggering event');
     }
     if (stepNamed(dependencyReview, 'Review dependency changes').uses !== DEPENDENCY_REVIEW_ACTION) {
         throw new Error('dependency review action must remain pinned');
@@ -435,6 +436,14 @@ describe('health gates workflow contract', () => {
 
     it('keeps the current fast, heavy, and non-gating job list', () => {
         expect(() => assertJobGraph(workflow)).not.toThrow();
+        const eventGatedDependencyReview = asRecord(
+            structuredClone(workflow),
+            'event-gated dependency review workflow'
+        );
+        jobAt(eventGatedDependencyReview, 'dependency-review').if = "github.event_name == 'pull_request'";
+        expect(() => assertJobGraph(eventGatedDependencyReview)).toThrow(
+            'dependency review must gate on the pull request payload rather than the triggering event'
+        );
         const disconnected = asRecord(structuredClone(workflow), 'disconnected security workflow');
         jobAt(disconnected, 'secrets').needs = 'build';
         expect(() => assertJobGraph(disconnected)).toThrow('security scans must depend directly on decide');
