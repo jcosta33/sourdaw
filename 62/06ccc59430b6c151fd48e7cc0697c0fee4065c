@@ -1,0 +1,91 @@
+.github/workflows/health-gates.yml
+  s_1b9333aca53d4d::t_e9f06090d2b05b 20-25,77,86-89,120-145,155,161,166-182,185-189,268-271,301-302,374-412,682-835,998-1004,1015-1016
+AGENTS.md
+  s_1b9333aca53d4d::t_04a3dfe55900f2 78-91,95-99,399-405,409-412,418-419,424-427,457-479
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  s_1b9333aca53d4d::t_80449ea5d48261 84-115,353-420,608-638,768-769
+scripts/__tests__/deliverPullRequest.spec.ts
+  s_1b9333aca53d4d::t_3d5af3155f121d 6-7,11,13,16,29-69,257-319,337-338,410-426,859-865,867-1145,1149-1179,1228,1251-1677,1693-1949
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  s_1b9333aca53d4d::t_14960199b721fa 28,36,38-45,67-84,163-167,180-181,221-312,315,328,343-345,538,554-636,647-656
+scripts/__tests__/prContract.spec.ts
+  s_1b9333aca53d4d::t_a9c901c2be72e1 5,12,19,326-347,349-379,381-474
+scripts/__tests__/prepareReview.spec.ts
+  s_1b9333aca53d4d::t_dcbf0945626513 1,74-81,122-351
+scripts/__tests__/publishReview.spec.ts
+  s_1b9333aca53d4d::t_a360b2de09f785 16-18,33,53,62,76,83-86,103-105,107-155,158,162-259,269-271,340-378
+scripts/deliverPullRequest.ts
+  s_1b9333aca53d4d::t_f0b3b8e7099c45 33-38,66-77,109-122,132,138-374,614,626,708-824,880-896,921-923
+scripts/prContract.ts
+  s_1b9333aca53d4d::t_83b96c7a72f528 435-486,488-491,493
+scripts/prepareReview.ts
+  s_1b9333aca53d4d::t_d4e6276219b290 2,77-89,96-167,178-181,183-186
+scripts/publishReview.ts
+  s_1b9333aca53d4d::t_58ebb45ce3f4e8 19,41-43,88-92,102-104,181,208,215-247,252-254,267-271
+scripts/test-health-gate-scripts.sh
+  s_1b9333aca53d4d::t_878d7b8968ab56 199,239-249,282-283,315,317,321,325,329,332-429
+scripts/trustedGithubWriteBootstrap.ts
+  s_1b9333aca53d4d::t_b5e2c5f36e12b3 20,27,36-44,49,118-143,146-151,154-173,175,177-178,185-195,231-321,394-396
+src/modules/AiRuntime/presentations/views/__tests__/ChatPanel.spec.tsx
+  s_1b9333aca53d4d::t_7dc23ed2d5d6b4 237
+src/modules/AiRuntime/stores/__tests__/pendingActionConfirmationStoreTestSupport.ts
+  s_1b9333aca53d4d::t_8d04254459c254 1-18
+src/modules/AiRuntime/useCases/__tests__/backingVocalPlateWorkflow.spec.ts
+  s_1b9333aca53d4d::t_7a4b8f49903e62 31,882-892,992,1335-1353,1363-1370,1374-1375,1377,1400-1401,1403-1406,1408,1431
+src/modules/AiRuntime/useCases/__tests__/bassCompressorPromptWorkflow.spec.ts
+  s_1b9333aca53d4d::t_f37ee9c8f1d0d9 732,735,785,788,1078-1080,1084,1119-1121,1125-1127,1166-1182,1191,1195-1197,1216-1233,1239,1243-1245,1282-1298,1313,1341-1358,1362-1364,1371
+src/modules/AiRuntime/useCases/__tests__/confirmPendingChatActions.spec.ts
+  s_1b9333aca53d4d::t_5e2afc1d015840 11-15,74,79,129,180,1406-1563
+src/modules/AiRuntime/useCases/__tests__/deleteMutedEmptyTracksPromptWorkflow.spec.ts
+  s_1b9333aca53d4d::t_c57a8967b5deea 934,941
+src/modules/AiRuntime/useCases/__tests__/drumBusPromptWorkflow.spec.ts
+  s_1b9333aca53d4d::t_a12e41c1b08fa2 17,25-26,47-48,55,57,105-125,1079-1084,1098,1115,1150,1622,1633-1637,1677-2249,2257-2781,3341,3349,3540,3550
+src/modules/AiRuntime/useCases/__tests__/stemImportStartingMixWorkflow.spec.ts
+  s_1b9333aca53d4d::t_4eb1fc771828ac 1033-1052,1058,1062-1063,1065-1066
+src/modules/AiRuntime/useCases/confirmPendingChatActions.ts
+  s_1b9333aca53d4d::t_87e593022d4691 2-6,17-21,54,107-108,213,226,454-457,476-477,494-530,533-534,539,548-551,555,562-563,567,582-584,598-602,610-617,619-620,627-644,649,695-700,713,759-1056,1060,1064-1103,1228,1245-1248,1364-1382,1385,1452,1488,1492,1529-1535,1537-1546,1554,1572
+src/modules/AiRuntime/useCases/reconcilePreparedStemImportRecovery.ts
+  s_1b9333aca53d4d::t_ce763cfa28a35d 1,35-45
+src/modules/AiRuntime/useCases/recoverAgentRunPendingEffects.ts
+  s_1b9333aca53d4d::t_9f062666bb539f 37-51
+src/modules/Arrangement/handlers/clip/__tests__/handleRestoreTrackClipStates.spec.ts
+  s_1b9333aca53d4d::t_e7e5ef309e5f27 11,1014-1427
+src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts
+  s_1b9333aca53d4d::t_c85d0f585a7075 14,42-45,99-116,118-123,149-165,182-197,206-213,233-246,255-265,271-275,298-300,315,341-345,347-354,356-361,363-366,371,376-383,414-421,425-431,443,449,466-472,505-513,522-525,550-553,555,576-580,582-588,590-594,600-606,609,796-799,919-936,951,964,1102,1273-1275,1277-1278,1290-1350,1510-1512
+src/modules/AudioRendering/useCases/__tests__/rebindAgentProjectSectionArtifactRevisions.spec.ts
+  s_1b9333aca53d4d::t_8382c6cb884113 1-131
+src/modules/AudioRendering/useCases/index.ts
+  s_1b9333aca53d4d::t_bc59ffd2eac0d6 9
+src/modules/AudioRendering/useCases/rebindAgentProjectSectionArtifactRevisions.ts
+  s_1b9333aca53d4d::t_b818843c5d3f7f 1-57
+src/modules/Command/useCases/getVersionedCommandBatchIdempotentReplay.ts
+  s_1b9333aca53d4d::t_89ace2148d8340 24-33,40,42-54,57-64
+tests/e2e/smoke.spec.ts
+  s_1b9333aca53d4d::t_76ab7ef6715ce8 1-2,4-391
+release/open-source-inventory.json
+  s_99c5be14951ea5::t_8824494974c97f 319-323
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "6206ccc59430b6c151fd48e7cc0697c0fee4065c",
+  "prompts": {},
+  "sessions": {
+    "s_1b9333aca53d4d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "188b0d45-7765-49bd-8d6e-1eebbd450613",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_99c5be14951ea5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a3455805f113dfb99",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
