@@ -11,9 +11,9 @@ use daw_engine::audio_bridge::{create_audio_bridge, MAX_BLOCK_FRAMES};
 use daw_engine::plugin_slot::MidiNoteEvent;
 use daw_engine::scheduler::HOSTED_PLUGIN_RESERVE;
 use daw_plugin_host::scanner::{self, PluginFormat, ScanResult, ScannedPlugin};
-use daw_plugin_host::{AudioPlugin, ClapWrapper};
+use daw_plugin_host::{AudioPlugin, ClapWrapper, HostedPluginRuntime, HostedRuntime, Vst3Wrapper};
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering as AtomicOrdering;
 use std::sync::{Arc, LazyLock, Mutex};
@@ -104,13 +104,44 @@ pub(crate) const MAX_SCAN_CANDIDATES: usize = 256;
 const MAX_SCAN_DURATION: Duration = Duration::from_secs(30);
 static PLUGIN_SCAN_PERMIT: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(1);
 
+/// Drop every candidate whose path an earlier one already claimed.
+///
+/// Order preserving, which a `sort` + `dedup` is not: two authorized roots can
+/// nest, or resolve to the same folder, and the survivor has to be the copy the
+/// higher-priority root offered.
+fn retain_first_candidate_per_path(candidates: &mut Vec<scanner::ScanCandidate>) {
+    let mut claimed_paths = HashSet::new();
+    candidates.retain(|candidate| claimed_paths.insert(candidate.path.clone()));
+}
+
+/// Drop every plugin whose format-scoped identity an earlier one already
+/// claimed.
+///
+/// One plugin installed in two roots is one plugin. The scan meets the roots in
+/// priority order, so the first copy of an identity is the one the user
+/// installed most deliberately, and the shadowed copies never reach the registry
+/// or the browser. This is the VST3 specification's own rule for its folders —
+/// first found for a class id wins — read against the identity field every
+/// format now fills.
+///
+/// A plugin with no identity is never deduplicated: an absent id is not evidence
+/// that two files are the same plugin.
+fn retain_first_plugin_per_identity(plugins: &mut Vec<ScannedPlugin>) {
+    let mut claimed_identities = HashSet::new();
+    plugins.retain(|plugin| {
+        plugin.descriptor_id.is_empty()
+            || claimed_identities.insert((plugin.format.clone(), plugin.descriptor_id.clone()))
+    });
+}
+
 /// Build the lookup table `load_plugin` resolves against.
 ///
-/// Two keys per CLAP plugin, on purpose. The primary key is `ScannedPlugin::id`,
+/// Two keys per scanned plugin, on purpose. The primary key is `ScannedPlugin::id`,
 /// a hash of the file path — which is exactly why it is fragile: move the plugin
 /// or install a version under a new path and a saved project's recorded id
-/// resolves nothing. The secondary key is the CLAP descriptor's own id, which
-/// carries no path and therefore survives the move.
+/// resolves nothing. The secondary key is the plugin's own descriptor id — the
+/// CLAP descriptor id, or the VST3 class id — which carries no path and
+/// therefore survives the move.
 ///
 /// Additive by construction: every primary key is inserted first and a
 /// descriptor id may only fill a vacancy, never displace one. Nothing that
@@ -119,8 +150,8 @@ static PLUGIN_SCAN_PERMIT: tokio::sync::Semaphore = tokio::sync::Semaphore::cons
 /// saved project's recorded id at once — deliberately not done here, and it
 /// stays available once there is a migration story.
 ///
-/// An empty descriptor id is never a key: VST3 and AU carry no CLAP descriptor,
-/// and they would otherwise all collide on `""`.
+/// An empty descriptor id is never a key: a format with no identity of its own
+/// would otherwise have every plugin collide on `""`.
 fn index_scanned_plugins(plugins: &[ScannedPlugin]) -> HashMap<String, PluginRegistryEntry> {
     let mut registry = HashMap::new();
 
@@ -237,40 +268,38 @@ pub async fn scan_plugins(paths: Vec<String>, state: &AppState) -> Result<ScanRe
     hydrate_plugin_registry(state).await;
     let start = std::time::Instant::now();
     let scan_policy = PluginScanPolicy::platform_defaults();
-    let mut authorized_paths = Vec::new();
-    let mut errors = Vec::new();
+    let requested_paths: Vec<PathBuf> = paths.iter().map(PathBuf::from).collect();
 
-    for scan_path in &paths {
-        let path = PathBuf::from(scan_path);
-        if let Err(error) = scan_policy.authorize_scan_root(&path) {
-            errors.push(error);
-            continue;
-        }
-
-        if !path.is_dir() {
-            errors.push(format!("Not a directory: {}", scan_path));
-            continue;
-        }
-        authorized_paths.push(path);
-    }
-
-    let scan_roots = authorized_paths.clone();
     let deadline = start + MAX_SCAN_DURATION;
-    let (plugins, scan_errors, notices, scanned_paths, scan_complete) =
+    let (plugins, mut errors, notices, scanned_paths, scan_complete, authorized_paths) =
         tokio::task::spawn_blocking(move || {
             let _permit = permit;
+            // Authorization is filesystem work — an existence check, a symlink
+            // check per path component, and `canonicalize` — on paths a caller
+            // supplied, so it belongs on the blocking pool beside the walk it
+            // gates rather than on the async runtime's thread.
+            let (scan_roots, mut scan_errors) = authorize_scan_roots(&scan_policy, requested_paths);
+            let authorized_paths = scan_roots.clone();
             let mut candidates = Vec::new();
-            let mut scan_errors = Vec::new();
             let mut notices = Vec::new();
             let mut scan_complete = true;
             for path in scan_roots {
-                if !scanner::scan_directory_bounded(
+                let root_begins_at = candidates.len();
+                let root_completed = scanner::scan_directory_bounded(
                     &path,
                     &mut candidates,
                     &mut scan_errors,
                     &mut notices,
                     (MAX_SCAN_CANDIDATES, deadline),
-                ) {
+                );
+                // Sorted within the root and never across roots. Directory order
+                // is whatever the filesystem hands back, so a root has to be
+                // sorted to scan the same way twice; the roots themselves are
+                // ranked by priority, and a global sort would throw that ranking
+                // away and let an alphabetically earlier folder shadow the
+                // per-user one.
+                candidates[root_begins_at..].sort();
+                if !root_completed {
                     let message = if candidates.len() >= MAX_SCAN_CANDIDATES {
                         "Plugin scan candidate limit exceeded"
                     } else {
@@ -281,8 +310,7 @@ pub async fn scan_plugins(paths: Vec<String>, state: &AppState) -> Result<ScanRe
                     break;
                 }
             }
-            candidates.sort();
-            candidates.dedup();
+            retain_first_candidate_per_path(&mut candidates);
             let mut plugins = Vec::new();
             let mut scanned_paths = Vec::new();
             for candidate in candidates {
@@ -333,11 +361,18 @@ pub async fn scan_plugins(paths: Vec<String>, state: &AppState) -> Result<ScanRe
                     }
                 }
             }
-            (plugins, scan_errors, notices, scanned_paths, scan_complete)
+            retain_first_plugin_per_identity(&mut plugins);
+            (
+                plugins,
+                scan_errors,
+                notices,
+                scanned_paths,
+                scan_complete,
+                authorized_paths,
+            )
         })
         .await
         .map_err(|error| format!("Plugin scan task failed: {error}"))?;
-    errors.extend(scan_errors);
 
     // Populate the plugin registry so load_plugin can find them. The scanner
     // already read every CLAP descriptor; this used to re-`dlopen` each one to
@@ -366,6 +401,45 @@ pub async fn scan_plugins(paths: Vec<String>, state: &AppState) -> Result<ScanRe
 
 pub async fn get_default_plugin_paths() -> Result<Vec<String>, String> {
     Ok(PluginScanPolicy::platform_defaults().allowed_roots_as_strings())
+}
+
+/// The scan roots this policy allows, in the platform's own priority order,
+/// paired with the reasons the rest were refused.
+///
+/// The path kept is the canonical one the policy authorized, not the caller's
+/// spelling of it: the checks are made against the canonical path, so walking
+/// anything else walks a directory the policy never looked at.
+///
+/// The ranking is the point of the sort. Which copy of a plugin installed in two
+/// folders wins is decided by the order the roots are walked in, and that
+/// decision belongs to the platform's priority order — per-user, then
+/// machine-wide, then network — not to the order a caller happened to list them.
+/// The sort is stable, so roots the platform does not list keep the caller's
+/// order among themselves and come last.
+fn authorize_scan_roots(
+    policy: &PluginScanPolicy,
+    requested: Vec<PathBuf>,
+) -> (Vec<PathBuf>, Vec<String>) {
+    let mut authorized = Vec::new();
+    let mut errors = Vec::new();
+
+    for path in requested {
+        let canonical = match policy.authorize_scan_root(&path) {
+            Ok(canonical) => canonical,
+            Err(error) => {
+                errors.push(error);
+                continue;
+            }
+        };
+        if !canonical.is_dir() {
+            errors.push(format!("Not a directory: {}", path.display()));
+            continue;
+        }
+        authorized.push(canonical);
+    }
+
+    authorized.sort_by_key(|path| policy.root_rank(path).unwrap_or(usize::MAX));
+    (authorized, errors)
 }
 
 /// Whether the production scan policy would authorize `path` as a scan root.
@@ -484,9 +558,11 @@ fn resolve_registry_entry(
     };
 
     let last_known_path = PathBuf::from(&last_known.path);
+    // The rescan reads the path the policy resolved and authorized, which is the
+    // only path the checks above actually looked at.
     let rescanned = match scan_policy
         .authorize_scan_root(&last_known_path)
-        .and_then(|()| rescan(&last_known.format, &last_known_path))
+        .and_then(|authorized| rescan(&last_known.format, &authorized))
     {
         Ok(rescanned) => rescanned,
         Err(reason) => {
@@ -567,13 +643,26 @@ async fn resolve_plugin_registry_entry(
 
 /// The host backend a registry row's format resolves to.
 ///
-/// One variant, because one format is hostable. It exists as an enum rather
-/// than a bool so [`load_plugin`]'s factory switch stays exhaustive: adding a
-/// backend adds an arm the compiler demands be written, instead of a string
-/// somebody remembers to add to a `match`.
+/// An enum rather than a bool so [`create_hosted_runtime`]'s factory switch
+/// stays exhaustive: adding a backend adds an arm the compiler demands be
+/// written, instead of a string somebody remembers to add to a `match`.
+#[derive(Clone, Copy)]
 enum HostBackend {
     /// `ClapWrapper`.
     Clap,
+    /// `Vst3Wrapper`.
+    Vst3,
+}
+
+impl HostBackend {
+    /// How this format is named to a user, in the spelling its own vendors use.
+    /// Not the wire name: `vst3` is a protocol token and "VST3" is a word.
+    fn display_name(self) -> &'static str {
+        match self {
+            Self::Clap => "CLAP",
+            Self::Vst3 => "VST3",
+        }
+    }
 }
 
 /// Look a persisted format string up in the host-backend registry.
@@ -594,6 +683,7 @@ fn host_backend(format: &str) -> Result<HostBackend, String> {
 
     match recognised {
         PluginFormat::Clap => Ok(HostBackend::Clap),
+        PluginFormat::Vst3 => Ok(HostBackend::Vst3),
         unhosted => Err(match unhosted.scan_support() {
             scanner::FormatScanSupport::NoExtractor(refusal) => refusal.to_string(),
             // A format Sourdaw can scan but cannot yet host. None is in that
@@ -603,6 +693,39 @@ fn host_backend(format: &str) -> Result<HostBackend, String> {
                 format!("No host backend for plugin format {}", unhosted.wire_name())
             }
         }),
+    }
+}
+
+/// The rate the audio device is actually running at, which is the rate a plugin
+/// must be activated with. Falling back to 48 kHz when no device answers is a
+/// guess, but it is the one every host makes and it keeps a load from failing on
+/// a machine with no output device at all.
+fn default_output_sample_rate() -> f64 {
+    cpal::default_host()
+        .default_output_device()
+        .and_then(|device| device.default_output_config().ok())
+        .map(|config| config.sample_rate() as f64)
+        .unwrap_or(48000.0)
+}
+
+/// Construct and activate one plugin. The only format-specific step in a load.
+///
+/// Everything after it — the latency query, the notifier, the engine
+/// registration, the bridge, the instance record — is written against
+/// `HostedRuntime` and does not know which format it is holding.
+fn create_hosted_runtime(
+    backend: HostBackend,
+    path: &str,
+    descriptor_id: &str,
+    sample_rate: f64,
+) -> Result<HostedRuntime, String> {
+    match backend {
+        HostBackend::Clap => {
+            ClapWrapper::new(path, descriptor_id, sample_rate).map(HostedRuntime::from)
+        }
+        HostBackend::Vst3 => {
+            Vst3Wrapper::new(Path::new(path), descriptor_id, sample_rate).map(HostedRuntime::from)
+        }
     }
 }
 
@@ -644,169 +767,165 @@ pub async fn load_plugin(
         ensure_hosted_plugin_session_headroom(&engine_plugins)?;
     }
 
-    match host_backend(&entry.format)? {
-        HostBackend::Clap => {
-            // A CLAP id is the descriptor's own reverse-DNS identifier and the
-            // key the entry point resolves a plugin by. The display name is not
-            // one: substituting it produced a wrapper failure that named a
-            // plugin that was found and blamed something else, and two plugins
-            // sharing a display name would have resolved to each other. An empty
-            // id means the scan of this file yielded no usable descriptor, so
-            // say that, and say which file.
-            if entry.descriptor_id.is_empty() {
+    let backend = host_backend(&entry.format)?;
+
+    // A descriptor id is the key a plugin's own entry point resolves a class by:
+    // a reverse-DNS identifier for CLAP, a class CID for VST3. The display name
+    // is not one: substituting it produced a wrapper failure that named a plugin
+    // that was found and blamed something else, and two plugins sharing a display
+    // name would have resolved to each other. An empty id means the scan of this
+    // file yielded no usable descriptor, so say that, and say which file.
+    if entry.descriptor_id.is_empty() {
+        return Err(format!(
+            "{} plugin {} reports no descriptor id in the registry entry for {}. Rescan the plugin directory.",
+            backend.display_name(),
+            entry.path,
+            plugin_id.0
+        ));
+    }
+    let descriptor_id = entry.descriptor_id.clone();
+
+    // Query the real device sample rate so the plugin is activated at the correct rate.
+    let sample_rate = default_output_sample_rate();
+
+    let wrapper = create_hosted_runtime(backend, &entry.path, &descriptor_id, sample_rate)?;
+    let name = wrapper.get_name().to_string();
+    let params = wrapper.get_parameters();
+    let has_gui = wrapper.has_gui();
+    // Query the plugin's latency on the control thread while it is active (the
+    // wrapper just activated it) — both formats define the value only for an
+    // active plugin. Captured before the wrapper moves into the engine-owned
+    // runtime below.
+    //
+    // The conversion to milliseconds happens HERE, against `sample_rate` —
+    // the exact rate this plugin was activated with. The webview's
+    // AudioContext is a different clock domain, so shipping raw frames for
+    // it to divide would mis-scale compensation whenever the two rates
+    // differ.
+    let latency_samples = wrapper.latency_samples();
+    let latency_ms = wrapper.latency_ms();
+
+    // Wake the latency watcher when this instance flags a runtime latency
+    // change, so the plugin's own notification — CLAP's `latency.changed()`
+    // plus `request_restart()`, VST3's `restartComponent(kLatencyChanged)` —
+    // reaches the frontend as a `plugin-latency-changed` event. Installed
+    // before the wrapper is handed to the audio thread.
+    let notified_instance_id = instance_id.0.clone();
+    if !wrapper.set_latency_change_notifier(Box::new(move || {
+        crate::host::latency_watcher::notify_latency_change(&notified_instance_id);
+    })) {
+        eprintln!(
+            "[Plugin] latency notifier already installed for instance {}",
+            instance_id.0
+        );
+    }
+
+    // Send the plugin to the native audio thread for real-time processing
+    // and create an audio bridge for worklet ↔ Rust data transfer
+    let engine_plugin_id = {
+        let mut engine_guard = state
+            .engine
+            .lock()
+            .map_err(|e| format!("Failed to lock engine: {}", e))?;
+        if let Some(ref mut engine) = *engine_guard {
+            if !wrapper.is_activated() {
                 return Err(format!(
-                    "CLAP plugin {} reports no descriptor id in the registry entry for {}. Rescan the plugin directory.",
-                    entry.path, plugin_id.0
+                    "{} plugin '{}' failed to activate for engine-owned runtime",
+                    backend.display_name(),
+                    name
                 ));
             }
-            let descriptor_id = entry.descriptor_id.clone();
 
-            // Query the real device sample rate so the plugin is activated at the correct rate.
-            let sample_rate = cpal::default_host()
-                .default_output_device()
-                .and_then(|d| d.default_output_config().ok())
-                .map(|c| c.sample_rate() as f64)
-                .unwrap_or(48000.0);
+            // The scheduler's effect table is shared with the project's
+            // native devices and the crumbs capture slot, so a plugin
+            // can be refused by a table this path never populated.
+            // Refuse before anything is registered: past this point
+            // the id is reserved, the instance is in `engine_plugins`
+            // with its GUI and parameters, and the load reports
+            // success — while the audio thread's own refusal is a
+            // counter it cannot return to the user, leaving a plugin
+            // in the rack that passes dry audio forever.
+            engine.ensure_effect_table_headroom(1)?;
 
-            let wrapper = ClapWrapper::new(&entry.path, &descriptor_id, sample_rate)?;
-            let name = wrapper.get_name().to_string();
-            let params = wrapper.get_parameters();
-            let has_gui = wrapper.has_gui();
-            // Query CLAP_EXT_LATENCY on the control thread while the plugin is
-            // active (the wrapper just activated it). Captured before the wrapper
-            // moves into the engine-owned runtime below.
-            //
-            // The conversion to milliseconds happens HERE, against `sample_rate` —
-            // the exact rate this plugin was activated with. The webview's
-            // AudioContext is a different clock domain, so shipping raw frames for
-            // it to divide would mis-scale compensation whenever the two rates
-            // differ.
-            let latency_samples = wrapper.latency_samples();
-            let latency_ms = wrapper.latency_ms();
+            let id = engine.reserve_plugin_id();
+            let (bridge, bridge_handle) = create_audio_bridge(id);
+            let shared_plugin = Arc::new(SharedHostedPlugin::new(wrapper));
 
-            // Wake the latency watcher when this instance flags a runtime latency
-            // change, so `clap_host_latency.changed()` / `request_restart()` reach
-            // the frontend as a `plugin-latency-changed` event. Installed before
-            // the wrapper is handed to the audio thread.
-            let notified_instance_id = instance_id.0.clone();
-            if !wrapper.set_latency_change_notifier(Box::new(move || {
-                crate::host::latency_watcher::notify_latency_change(&notified_instance_id);
-            })) {
-                eprintln!(
-                    "[Plugin] latency notifier already installed for instance {}",
-                    instance_id.0
-                );
-            }
+            // The record insert re-decides the session ceiling
+            // inside its own critical section — see
+            // `insert_engine_plugin_record`. A refusal there leaves
+            // nothing behind: the id above is a burned monotonic
+            // counter, the rings drop with the return, and no engine
+            // command has been pushed yet.
+            insert_engine_plugin_record(
+                state,
+                &instance_id.0,
+                crate::state::EnginePluginInstanceData {
+                    engine_plugin_id: id,
+                    runtime: Arc::clone(&shared_plugin),
+                    name: name.clone(),
+                    parameters: params.clone(),
+                    has_gui,
+                    bridge: Some(bridge_handle),
+                    relay_scratch: crate::state::PluginRelayScratch::default(),
+                },
+            )?;
 
-            // Send the plugin to the native audio thread for real-time processing
-            // and create an audio bridge for worklet ↔ Rust data transfer
-            let engine_plugin_id = {
-                let mut engine_guard = state
-                    .engine
+            if let Err(error) = engine.add_plugin_with_bridge(
+                id,
+                Box::new(HostedPluginSlot::new(shared_plugin)),
+                bridge,
+            ) {
+                // The engine refused the registration (a full effect
+                // table, or the ring): unwind the record under a
+                // fresh acquisition, same order as every other
+                // engine-then-map path, so the map never carries an
+                // instance the engine never took.
+                state
+                    .engine_plugins
                     .lock()
-                    .map_err(|e| format!("Failed to lock engine: {}", e))?;
-                if let Some(ref mut engine) = *engine_guard {
-                    if !wrapper.is_activated() {
-                        return Err(format!(
-                            "CLAP plugin '{}' failed to activate for engine-owned runtime",
-                            name
-                        ));
-                    }
-
-                    // The scheduler's effect table is shared with the project's
-                    // native devices and the crumbs capture slot, so a plugin
-                    // can be refused by a table this path never populated.
-                    // Refuse before anything is registered: past this point
-                    // the id is reserved, the instance is in `engine_plugins`
-                    // with its GUI and parameters, and the load reports
-                    // success — while the audio thread's own refusal is a
-                    // counter it cannot return to the user, leaving a plugin
-                    // in the rack that passes dry audio forever.
-                    engine.ensure_effect_table_headroom(1)?;
-
-                    let id = engine.reserve_plugin_id();
-                    let (bridge, bridge_handle) = create_audio_bridge(id);
-                    let shared_plugin = Arc::new(SharedHostedPlugin::new(wrapper));
-
-                    // The record insert re-decides the session ceiling
-                    // inside its own critical section — see
-                    // `insert_engine_plugin_record`. A refusal there leaves
-                    // nothing behind: the id above is a burned monotonic
-                    // counter, the rings drop with the return, and no engine
-                    // command has been pushed yet.
-                    insert_engine_plugin_record(
-                        state,
-                        &instance_id.0,
-                        crate::state::EnginePluginInstanceData {
-                            engine_plugin_id: id,
-                            runtime: Arc::clone(&shared_plugin),
-                            name: name.clone(),
-                            parameters: params.clone(),
-                            has_gui,
-                            bridge: Some(bridge_handle),
-                            relay_scratch: crate::state::PluginRelayScratch::default(),
-                        },
-                    )?;
-
-                    if let Err(error) = engine.add_plugin_with_bridge(
-                        id,
-                        Box::new(HostedPluginSlot::new(shared_plugin)),
-                        bridge,
-                    ) {
-                        // The engine refused the registration (a full effect
-                        // table, or the ring): unwind the record under a
-                        // fresh acquisition, same order as every other
-                        // engine-then-map path, so the map never carries an
-                        // instance the engine never took.
-                        state
-                            .engine_plugins
-                            .lock()
-                            .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?
-                            .remove(&instance_id.0);
-                        return Err(error);
-                    }
-                    Some(id)
-                } else {
-                    eprintln!(
-                        "[Plugin] Warning: native engine not running, plugin won't process audio"
-                    );
-                    let mut plugins = state
-                        .plugins
-                        .lock()
-                        .map_err(|e| format!("Failed to lock plugins: {}", e))?;
-                    plugins.insert(
-                        instance_id.0.clone(),
-                        PluginInstanceData {
-                            plugin: Box::new(wrapper),
-                        },
-                    );
-                    None
-                }
-            };
-
-            if engine_plugin_id.is_some() {
-                // A load is the moment the process is about to want the memory a
-                // previous unload could not free yet. Sweep once the new
-                // instance is safely in the scheduler and the engine lock is
-                // released — the CLAP teardown a sweep may run belongs on this
-                // thread, but not inside another subsystem's critical section.
-                state.sweep_retired_engine_plugins();
+                    .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?
+                    .remove(&instance_id.0);
+                return Err(error);
             }
-
-            let instance = PluginInstance {
-                instance_id: instance_id.clone(),
-                plugin_id: plugin_id.clone(),
-                name,
-                parameters: params,
-                is_active: true,
-                latency_samples,
-                latency_ms,
-                engine_plugin_id,
-            };
-
-            Ok(instance)
+            Some(id)
+        } else {
+            eprintln!("[Plugin] Warning: native engine not running, plugin won't process audio");
+            let mut plugins = state
+                .plugins
+                .lock()
+                .map_err(|e| format!("Failed to lock plugins: {}", e))?;
+            plugins.insert(
+                instance_id.0.clone(),
+                PluginInstanceData {
+                    plugin: Box::new(wrapper),
+                },
+            );
+            None
         }
+    };
+
+    if engine_plugin_id.is_some() {
+        // A load is the moment the process is about to want the memory a
+        // previous unload could not free yet. Sweep once the new
+        // instance is safely in the scheduler and the engine lock is
+        // released — the plugin teardown a sweep may run belongs on this
+        // thread, but not inside another subsystem's critical section.
+        state.sweep_retired_engine_plugins();
     }
+
+    let instance = PluginInstance {
+        instance_id: instance_id.clone(),
+        plugin_id: plugin_id.clone(),
+        name,
+        parameters: params,
+        is_active: true,
+        latency_samples,
+        latency_ms,
+        engine_plugin_id,
+    };
+
+    Ok(instance)
 }
 
 fn ensure_plugin_instance_id_available(state: &AppState, instance_id: &str) -> Result<(), String> {
@@ -1202,7 +1321,7 @@ fn read_plugin_state_chunk(instance_id: &str, state: &AppState) -> Result<Vec<u8
             .map_err(|e| format!("Failed to lock plugins: {}", e))?;
 
         if let Some(instance) = plugins.get(instance_id) {
-            return Ok(instance.plugin.get_state());
+            return instance.plugin.get_state();
         }
     }
 
@@ -1530,7 +1649,7 @@ mod tests {
         );
         wrapper.set_engine_owned_command_fixture_parameters(vec![plugin_parameter(7, 0.25)]);
         let parameters = wrapper.get_parameters();
-        let runtime = Arc::new(SharedHostedPlugin::new(wrapper));
+        let runtime = Arc::new(SharedHostedPlugin::new(wrapper.into()));
         let mut engine_plugins = state
             .engine_plugins
             .lock()
@@ -1933,7 +2052,7 @@ mod tests {
                 instance_id.to_string(),
                 EnginePluginInstanceData {
                     engine_plugin_id: 18,
-                    runtime: Arc::new(SharedHostedPlugin::new(wrapper)),
+                    runtime: Arc::new(SharedHostedPlugin::new(wrapper.into())),
                     name: "Reloaded Fixture".to_string(),
                     parameters,
                     has_gui: true,
@@ -2321,7 +2440,8 @@ mod tests {
                         "Re-check Fixture",
                         Vec::new(),
                         false,
-                    ),
+                    )
+                    .into(),
                 )),
                 name: "Re-check Fixture".to_string(),
                 parameters: Vec::new(),
@@ -2488,6 +2608,78 @@ mod tests {
         assert!(registry.is_empty());
     }
 
+    /// A real temporary directory, resolved. The system temp directory reaches
+    /// these tests through `/var`, which is a symlink on macOS — and the scan
+    /// policy refuses any path with a symlink component, so an unresolved temp
+    /// root is refused before the ordering it is meant to exercise is reached.
+    fn created_temp_scan_root(test_name: &str) -> PathBuf {
+        let root = unique_temp_scan_root(test_name);
+        std::fs::create_dir_all(&root).expect("temp scan root should be created");
+        std::fs::canonicalize(&root).expect("a directory that was just created resolves")
+    }
+
+    /// The scan keeps the first copy of a plugin it meets, so the order the
+    /// roots are walked in is what decides which install of a twice-installed
+    /// plugin gets hosted. That decision belongs to the platform's priority
+    /// order — per-user before machine-wide before network — and a caller
+    /// listing its paths the other way round must not reverse it.
+    #[test]
+    fn scan_roots_are_walked_in_the_platforms_priority_order_not_the_callers() {
+        let per_user = created_temp_scan_root("priority-per-user");
+        let machine_wide = created_temp_scan_root("priority-machine-wide");
+        let policy =
+            PluginScanPolicy::with_allowed_roots(vec![per_user.clone(), machine_wide.clone()]);
+
+        let (ordered, errors) =
+            authorize_scan_roots(&policy, vec![machine_wide.clone(), per_user.clone()]);
+
+        let _ = std::fs::remove_dir_all(&per_user);
+        let _ = std::fs::remove_dir_all(&machine_wide);
+        assert!(errors.is_empty(), "{errors:?}");
+        assert_eq!(
+            ordered
+                .iter()
+                .map(|path| path
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .unwrap_or(""))
+                .collect::<Vec<_>>(),
+            vec![
+                per_user
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .expect("named"),
+                machine_wide
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .expect("named"),
+            ],
+            "the caller listed the machine-wide root first and it was walked first"
+        );
+    }
+
+    /// An unauthorized or missing root is refused by name rather than walked,
+    /// and the rest of the request still scans.
+    #[test]
+    fn an_unauthorized_root_is_refused_without_stopping_the_others() {
+        let allowed = created_temp_scan_root("mixed-authorized");
+        let policy = PluginScanPolicy::with_allowed_roots(vec![allowed.clone()]);
+
+        let (ordered, errors) = authorize_scan_roots(
+            &policy,
+            vec![PathBuf::from("/definitely/not/granted"), allowed.clone()],
+        );
+
+        let _ = std::fs::remove_dir_all(&allowed);
+        assert_eq!(ordered.len(), 1);
+        assert!(
+            errors
+                .iter()
+                .any(|error| error.contains("Unauthorized plugin scan path")),
+            "{errors:?}"
+        );
+    }
+
     #[test]
     fn get_default_plugin_paths_returns_authorized_native_scan_roots() {
         let paths = crate::block_on_test(get_default_plugin_paths())
@@ -2496,12 +2688,17 @@ mod tests {
 
         assert!(!paths.is_empty());
         for path in paths {
-            assert_eq!(scan_policy.authorize_scan_root(Path::new(&path)), Ok(()));
+            assert!(scan_policy.authorize_scan_root(Path::new(&path)).is_ok());
         }
     }
 
+    /// A VST3 descriptor id is the class CID, and the bundle's factory resolves
+    /// a class by it. An empty one means the scan of this file yielded nothing
+    /// usable, so the load refuses by name — before the bundle is opened, which
+    /// is what keeps a registry row pointing at a path that no longer exists
+    /// from executing anything.
     #[test]
-    fn load_plugin_rejects_vst3_without_loading_the_bundle() {
+    fn load_plugin_refuses_a_vst3_entry_with_no_descriptor_id() {
         let state = AppState::default();
         state
             .plugin_registry
@@ -2514,7 +2711,7 @@ mod tests {
                     stable_id: "vst3-fixture".to_string(),
                     descriptor_id: String::new(),
                     format: "vst3".to_string(),
-                    name: "Unsupported VST3".to_string(),
+                    name: "Nameless VST3".to_string(),
                     num_inputs: 0,
                     num_outputs: 0,
                     has_custom_ui: false,
@@ -2531,8 +2728,11 @@ mod tests {
         ));
 
         match result {
-            Err(error) => assert_eq!(error, scanner::VST3_REFUSAL),
-            Ok(instance) => panic!("unsupported VST3 unexpectedly loaded: {instance:?}"),
+            Err(error) => assert_eq!(
+                error,
+                "VST3 plugin /plugins/should-not-be-loaded.vst3 reports no descriptor id in the registry entry for vst3-fixture. Rescan the plugin directory."
+            ),
+            Ok(instance) => panic!("a VST3 row with no class id unexpectedly loaded: {instance:?}"),
         }
         insert_engine_owned_fixture(&state, "vst3-instance", vec![1, 2, 3]);
         let duplicate = crate::block_on_test(load_plugin(
@@ -2547,18 +2747,12 @@ mod tests {
     }
 
     /// Activation refuses in the same words the scan skipped the file in, and
-    /// each one names the format and the reason. A user who is told "VST3 is
+    /// each one names the format and the reason. A user who is told "VST2 is
     /// not supported" in one place and "unknown plugin format" in the other has
     /// been given two different stories about one file.
     #[test]
     fn every_refused_format_names_itself_and_its_reason_at_activation() {
         for (plugin_id, path, format, expected) in [
-            (
-                "vst3-refusal",
-                "/plugins/Vendor.vst3",
-                "vst3",
-                scanner::VST3_REFUSAL,
-            ),
             (
                 "vst2-refusal",
                 "/plugins/Vendor.vst",
@@ -2644,16 +2838,16 @@ mod tests {
         }
     }
 
-    /// The other half: exactly one format is hostable today. This fails the
-    /// moment a backend is registered, which is the point — registering one is
-    /// a packet, not an edit.
+    /// The other half: which formats are hostable, named. This fails the moment
+    /// a backend is registered, which is the point — registering one is a
+    /// packet, not an edit.
     #[test]
-    fn clap_is_the_only_format_with_a_host_backend() {
+    fn only_the_implemented_formats_have_a_host_backend() {
         for format in PluginFormat::ALL {
             let hostable = host_backend(format.wire_name()).is_ok();
             assert_eq!(
                 hostable,
-                format == PluginFormat::Clap,
+                matches!(format, PluginFormat::Clap | PluginFormat::Vst3),
                 "{} hostability disagrees with the registry",
                 format.wire_name()
             );
@@ -2946,6 +3140,83 @@ mod tests {
             parameter_metadata_reason: None,
             capability_metadata_reason: None,
         }
+    }
+
+    // ── Scan deduplication: one plugin, however many copies are installed ──
+
+    fn candidate(path: &str, format: PluginFormat) -> scanner::ScanCandidate {
+        scanner::ScanCandidate {
+            path: PathBuf::from(path),
+            format,
+        }
+    }
+
+    /// The rule the VST3 specification states for its own folders, applied to
+    /// the identity field every hosted format fills.
+    #[test]
+    fn a_plugin_found_in_two_roots_keeps_the_higher_priority_copy() {
+        let mut plugins = vec![
+            scanned("user-copy", "com.vendor.reverb", "vst3"),
+            scanned("system-copy", "com.vendor.reverb", "vst3"),
+        ];
+
+        retain_first_plugin_per_identity(&mut plugins);
+
+        assert_eq!(
+            plugins.iter().map(|plugin| &plugin.id).collect::<Vec<_>>(),
+            ["user-copy"],
+            "the copy the earlier root offered is the one the host keeps"
+        );
+    }
+
+    /// Two formats may legitimately reuse one vendor identifier, and a CLAP and
+    /// a VST3 build of the same plugin are two different plugins to load.
+    #[test]
+    fn one_identity_under_two_formats_is_two_plugins() {
+        let mut plugins = vec![
+            scanned("clap-build", "com.vendor.reverb", "clap"),
+            scanned("vst3-build", "com.vendor.reverb", "vst3"),
+        ];
+
+        retain_first_plugin_per_identity(&mut plugins);
+
+        assert_eq!(plugins.len(), 2);
+    }
+
+    /// An absent identity is not evidence that two files are the same plugin,
+    /// so a scan that could not read one must not collapse the rest onto it.
+    #[test]
+    fn plugins_with_no_identity_are_never_deduplicated() {
+        let mut plugins = vec![
+            scanned("first-unreadable", "", "vst3"),
+            scanned("second-unreadable", "", "vst3"),
+        ];
+
+        retain_first_plugin_per_identity(&mut plugins);
+
+        assert_eq!(plugins.len(), 2);
+    }
+
+    /// Two authorized roots can nest, so the same file can be walked twice. The
+    /// survivor is the first sighting, which is the higher-priority root's.
+    #[test]
+    fn a_path_walked_under_two_roots_is_scanned_once() {
+        let mut candidates = vec![
+            candidate("/user/Reverb.vst3", PluginFormat::Vst3),
+            candidate("/system/Delay.vst3", PluginFormat::Vst3),
+            candidate("/user/Reverb.vst3", PluginFormat::Vst3),
+        ];
+
+        retain_first_candidate_per_path(&mut candidates);
+
+        assert_eq!(
+            candidates,
+            vec![
+                candidate("/user/Reverb.vst3", PluginFormat::Vst3),
+                candidate("/system/Delay.vst3", PluginFormat::Vst3),
+            ],
+            "deduplication must not reorder the roots it was given"
+        );
     }
 
     /// A temp plugin folder, a registry file next to it, and a policy that

@@ -2,7 +2,7 @@ use crate::host::native_bridge::SharedHostedPlugin;
 use daw_engine::audio_bridge::{PluginAudioBridgeHandle, MAX_BLOCK_FRAMES};
 use daw_engine::EngineHandle;
 use daw_plugin_host::AudioPlugin;
-use daw_plugin_host::ClapWrapper;
+use daw_plugin_host::HostedRuntime;
 use daw_plugin_host::PluginParameter;
 use std::collections::HashMap;
 use std::ffi::c_void;
@@ -298,8 +298,9 @@ fn take_released_retired_runtimes<Runtime>(
 /// Reclaim every released runtime in a retirement vec, running its teardown
 /// outside the retirement critical section.
 ///
-/// Dropping a released runtime runs CLAP `deactivate`/`destroy` — third-party
-/// code of unbounded duration. Doing that while the retirement mutex is held
+/// Dropping a released runtime runs the plugin's own teardown — CLAP
+/// `deactivate`/`destroy`, VST3 `setActive(false)`/`terminate` — which is
+/// third-party code of unbounded duration. Doing that while the retirement mutex is held
 /// would park every concurrent `retain_retired_engine_plugin` (i.e. every
 /// unload) for the whole teardown, so the released entries are taken out under
 /// the lock, the guard is released, and only then are they dropped.
@@ -312,7 +313,7 @@ fn sweep_retired_runtimes<Runtime>(retired_runtimes: &Mutex<Vec<Arc<Runtime>>>) 
         take_released_retired_runtimes(&mut retired_runtimes)
     };
 
-    // Guard released. CLAP teardown runs here, on this non-RT thread, with the
+    // Guard released. Plugin teardown runs here, on this non-RT thread, with the
     // retirement mutex free.
     drop(released_runtimes);
 }
@@ -321,7 +322,7 @@ impl AppState {
     pub fn with_engine_plugin_control<ResultValue>(
         &self,
         instance_id: &str,
-        operation: impl FnOnce(&mut ClapWrapper) -> Result<ResultValue, String>,
+        operation: impl FnOnce(&mut HostedRuntime) -> Result<ResultValue, String>,
     ) -> Result<ResultValue, String> {
         let runtime = {
             let engine_plugins = self
@@ -383,8 +384,8 @@ mod tests {
             Vec::new()
         }
 
-        fn get_state(&self) -> Vec<u8> {
-            Vec::new()
+        fn get_state(&self) -> Result<Vec<u8>, String> {
+            Ok(Vec::new())
         }
 
         fn set_state(&mut self, _: &[u8]) -> Result<(), String> {
@@ -423,8 +424,8 @@ mod tests {
             Vec::new()
         }
 
-        fn get_state(&self) -> Vec<u8> {
-            Vec::new()
+        fn get_state(&self) -> Result<Vec<u8>, String> {
+            Ok(Vec::new())
         }
 
         fn set_state(&mut self, _: &[u8]) -> Result<(), String> {
@@ -654,7 +655,8 @@ mod tests {
                     "retirement fixture",
                     Vec::new(),
                     false,
-                ),
+                )
+                .into(),
             ));
             state.retain_retired_engine_plugin(Arc::clone(&runtime));
 

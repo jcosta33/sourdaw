@@ -62,9 +62,9 @@ export type ScanResult = {
      * What the scan wants the user to know about a run that did not go wrong —
      * today, the reason a recognised plugin format is not loaded.
      *
-     * Separate from `errors` because the VST3 roots are scanned by default on
-     * every platform: on the error channel, a user who owns one VST3 plugin
-     * would see every scan report as failed.
+     * Separate from `errors` because a refused format's folders are scanned
+     * like any other: on the error channel, a user who owns one plugin in a
+     * format Sourdaw does not host would see every scan report as failed.
      */
     notices: string[];
     scan_duration_ms: number;

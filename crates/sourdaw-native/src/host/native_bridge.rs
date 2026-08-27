@@ -10,14 +10,15 @@ use daw_dsp::crumbs::types::CrumbsCommand;
 /// [`daw_plugin_host::HostedPluginRuntime`] rather than holding a trait object:
 /// the audio path is the reason. A `dyn` runtime would put a vtable dispatch on
 /// every `process` call in the render callback, where a generic monomorphises to
-/// the same direct call the concrete type had. `ClapWrapper` is the default type
-/// argument, so every existing caller names the same types it always did.
+/// the same direct call the concrete type had. `HostedRuntime` is the default
+/// type argument — the one enum the application actually loads, whichever format
+/// the plugin is — so callers that hold a loaded plugin name no format at all.
 ///
 /// RT-safety: all scratch buffers are preallocated. No heap allocation occurs
 /// in any `NativePlugin` method.
 use daw_engine::plugin_slot::{MidiNoteEvent, NativePlugin, TransportState};
 use daw_plugin_host::{
-    ClapWrapper, HostParameterUpdate, HostTransport, HostedPluginRuntime, PluginParameter,
+    HostParameterUpdate, HostTransport, HostedPluginRuntime, HostedRuntime, PluginParameter,
     ProcessingGate,
 };
 use rtrb::Consumer;
@@ -332,19 +333,34 @@ impl PluginRuntimeLifecycle {
 /// Runtime owner for a hosted plugin shared by the RT processor and non-RT
 /// control path.
 ///
-/// Generic over the backend, defaulted to `ClapWrapper` — see the module note
+/// Generic over the backend, defaulted to `HostedRuntime` — see the module note
 /// for why this is a type parameter and not a trait object.
-pub struct SharedHostedPlugin<Runtime = ClapWrapper> {
+pub struct SharedHostedPlugin<Runtime = HostedRuntime> {
     name: String,
     wrapper: UnsafeCell<Runtime>,
     access_state: AtomicU8,
     lifecycle: PluginRuntimeLifecycle,
     non_rt_control_lock: Mutex<()>,
     activated: bool,
+    /// Whether the plugin takes note events, read from it once at load.
+    ///
+    /// Cached rather than asked per call: it is a property of the loaded
+    /// instance, it cannot change while the instance lives, and the engine asks
+    /// for it from the audio thread — where reaching into the wrapper would
+    /// contend with the control path for an answer that was already fixed.
+    accepts_midi: bool,
     /// Shared with the wrapper. Lets the control path ask for the plugin's
     /// processing state to be left without performing the transition itself.
     processing: Arc<ProcessingGate>,
     pending_parameters: PendingParameterQueue,
+    /// The same host-side writes again, for the plugin's editor.
+    ///
+    /// `pending_parameters` is consumed by the audio thread on its way into the
+    /// processor, and a format whose editor is a separate object learns nothing
+    /// from that. This second queue is what the control path hands the editor,
+    /// and it is a queue rather than a direct call because the write may arrive
+    /// while the audio thread holds the access seam.
+    editor_parameter_writes: PendingParameterQueue,
 }
 
 // SAFETY: access_state enforces exclusive mutable access to wrapper. The audio
@@ -356,6 +372,7 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
     pub fn new(wrapper: Runtime) -> Self {
         let name = wrapper.get_name().to_string();
         let activated = wrapper.is_activated();
+        let accepts_midi = wrapper.accepts_midi();
         let processing = wrapper.processing_gate();
         Self {
             name,
@@ -364,8 +381,10 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
             lifecycle: PluginRuntimeLifecycle::new(),
             non_rt_control_lock: Mutex::new(()),
             activated,
+            accepts_midi,
             processing,
             pending_parameters: PendingParameterQueue::new(),
+            editor_parameter_writes: PendingParameterQueue::new(),
         }
     }
 
@@ -378,6 +397,11 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
 
     pub fn name(&self) -> &str {
         &self.name
+    }
+
+    /// Whether this plugin takes note events, as the plugin itself declared.
+    pub fn accepts_midi(&self) -> bool {
+        self.accepts_midi
     }
 
     pub fn enqueue_parameter(&self, param_id: u32, value: f64) -> Result<(), String> {
@@ -400,7 +424,34 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
 
         self.pending_parameters
             .enqueue(param_id, value)
-            .map_err(|()| format!("Pending parameter queue full for plugin '{}'", self.name))
+            .map_err(|()| format!("Pending parameter queue full for plugin '{}'", self.name))?;
+
+        // The processor learns about this write from the audio thread. The
+        // editor is a different object in some formats and has to be told
+        // separately, or its knob keeps showing the value the user moved away
+        // from. Queued first so a write that arrives while the audio thread
+        // holds the seam is delivered by the next control visit rather than
+        // lost.
+        let _ = self.editor_parameter_writes.enqueue(param_id, value);
+        if let Some(_guard) = self.try_claim_control() {
+            // SAFETY: the guard holds the control side of the access seam, so
+            // the audio thread cannot be inside the wrapper.
+            self.show_editor_the_host_writes(unsafe { &mut *self.wrapper.get() });
+        }
+        Ok(())
+    }
+
+    /// Hand the plugin's editor every host-side write it has not seen.
+    ///
+    /// Control path only. The caller must already hold the control side of the
+    /// access seam, which is what makes this safe to call with a live `&mut`
+    /// borrow of the wrapper.
+    fn show_editor_the_host_writes(&self, plugin: &mut Runtime) {
+        let mut drained = [PendingParameterUpdate::default(); PENDING_PARAMETER_CAPACITY];
+        let count = self.editor_parameter_writes.drain(&mut drained);
+        for update in &drained[..count] {
+            plugin.apply_host_parameter_write_to_editor(update.param_id, update.value);
+        }
     }
 
     pub fn get_state_after_pending_parameters_drain(
@@ -418,7 +469,7 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
                 ));
             }
 
-            Ok(plugin.get_state())
+            plugin.get_state()
         })
     }
 
@@ -510,6 +561,11 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
         self.ensure_active_lifecycle()?;
 
         self.with_control_locked(timeout, |plugin| {
+            // The regular control-path visit, and so the place a write that
+            // could not be delivered when it was made finally reaches the
+            // editor.
+            self.show_editor_the_host_writes(plugin);
+
             if self.pending_parameters.has_pending() {
                 return Ok(None);
             }
@@ -724,7 +780,7 @@ impl Drop for PluginAccessGuard<'_> {
 }
 
 /// RT processing handle for a shared hosted plugin runtime.
-pub struct HostedPluginSlot<Runtime = ClapWrapper> {
+pub struct HostedPluginSlot<Runtime = HostedRuntime> {
     plugin: Arc<SharedHostedPlugin<Runtime>>,
     /// Preallocated output scratch for left channel (avoids per-block Vec alloc on RT thread).
     out_l_scratch: Box<[f32; MAX_BUFFER]>,
@@ -843,8 +899,14 @@ impl<Runtime: HostedPluginRuntime + 'static> NativePlugin for HostedPluginSlot<R
         self.plugin.name()
     }
 
+    /// The plugin's own answer, not the slot's assumption.
+    ///
+    /// This used to be a hardcoded `true`, which routed notes to every effect in
+    /// the rack. A VST3 plugin that declares no event input bus is entitled to
+    /// treat an event list as a host fault, so the answer has to come from the
+    /// plugin.
     fn accepts_midi(&self) -> bool {
-        true // CLAP instruments accept MIDI
+        self.plugin.accepts_midi()
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -859,6 +921,161 @@ impl<Runtime: HostedPluginRuntime + 'static> NativePlugin for HostedPluginSlot<R
 #[cfg(test)]
 mod tests {
     use super::*;
+    use daw_plugin_host::{AudioPlugin, ClapWrapper};
+
+    /// A backend that records only what the runtime owner asked of its editor.
+    ///
+    /// A real VST3 controller is a separate COM object and cannot be built
+    /// without a plugin binary, so what is faked here is the backend — the seam
+    /// the owner drives is the production one.
+    struct EditorRecordingPlugin {
+        name: String,
+        processing: Arc<ProcessingGate>,
+        editor_writes: Arc<Mutex<Vec<(u32, f64)>>>,
+    }
+
+    impl AudioPlugin for EditorRecordingPlugin {
+        fn process(
+            &mut self,
+            _inputs: &[&[f32]],
+            _outputs: &mut [&mut [f32]],
+            _num_samples: usize,
+        ) {
+        }
+
+        fn set_parameter(&mut self, _param_id: u32, _value: f64) {}
+
+        fn get_parameters(&self) -> Vec<PluginParameter> {
+            Vec::new()
+        }
+
+        fn get_state(&self) -> Result<Vec<u8>, String> {
+            Ok(Vec::new())
+        }
+
+        fn set_state(&mut self, _state: &[u8]) -> Result<(), String> {
+            Ok(())
+        }
+
+        fn get_name(&self) -> &str {
+            &self.name
+        }
+    }
+
+    impl HostedPluginRuntime for EditorRecordingPlugin {
+        fn is_activated(&self) -> bool {
+            true
+        }
+
+        fn processing_gate(&self) -> Arc<ProcessingGate> {
+            Arc::clone(&self.processing)
+        }
+
+        fn sync_processing_state(&mut self) {}
+
+        fn set_transport(&mut self, _transport: HostTransport) {}
+
+        fn process_with_parameter_updates(
+            &mut self,
+            _inputs: &[&[f32]],
+            _outputs: &mut [&mut [f32]],
+            _num_samples: usize,
+            _parameter_updates: &[HostParameterUpdate],
+        ) {
+        }
+
+        fn process_with_midi_and_parameters(
+            &mut self,
+            _inputs: &[&[f32]],
+            _outputs: &mut [&mut [f32]],
+            _num_samples: usize,
+            _midi_events: &[(u8, u8, i16, bool)],
+            _parameter_updates: &[HostParameterUpdate],
+        ) {
+        }
+
+        fn apply_host_parameter_write_to_editor(&mut self, param_id: u32, value: f64) {
+            self.editor_writes
+                .lock()
+                .expect("editor write log")
+                .push((param_id, value));
+        }
+
+        fn poll_latency_change(&mut self) -> Result<Option<u32>, String> {
+            Ok(None)
+        }
+
+        fn latency_ms(&self) -> f64 {
+            0.0
+        }
+
+        fn latency_samples(&self) -> u32 {
+            0
+        }
+    }
+
+    fn editor_recording_plugin() -> (
+        SharedHostedPlugin<EditorRecordingPlugin>,
+        Arc<Mutex<Vec<(u32, f64)>>>,
+    ) {
+        let editor_writes = Arc::new(Mutex::new(Vec::new()));
+        let shared = SharedHostedPlugin::new(EditorRecordingPlugin {
+            name: "fixture".to_string(),
+            processing: Arc::new(ProcessingGate::default()),
+            editor_writes: Arc::clone(&editor_writes),
+        });
+        (shared, editor_writes)
+    }
+
+    /// A host-side parameter write reaches the processor through the audio
+    /// thread's own queue, which a format whose editor is a separate object
+    /// never sees. A write that stops at that queue leaves the plugin's own knob
+    /// showing the value the user moved away from.
+    #[test]
+    fn a_host_parameter_write_is_shown_to_the_plugins_editor() {
+        let (shared, editor_writes) = editor_recording_plugin();
+
+        shared
+            .enqueue_parameter(7, 0.25)
+            .expect("the pending queue has room");
+
+        assert_eq!(
+            *editor_writes.lock().expect("editor write log"),
+            vec![(7, 0.25)]
+        );
+    }
+
+    /// The editor's copy is a queue, not a direct call, so a write that arrives
+    /// while the audio thread holds the access seam is delivered by the next
+    /// control visit rather than dropped.
+    #[test]
+    fn a_write_made_while_the_audio_thread_holds_the_seam_reaches_the_editor_later() {
+        let (shared, editor_writes) = editor_recording_plugin();
+
+        shared
+            .with_process(|_, _| {
+                // Inside the audio-thread claim: the control path cannot enter
+                // the wrapper, which is exactly the race the queue exists for.
+                shared
+                    .enqueue_parameter(3, 0.5)
+                    .expect("the pending queue has room");
+            })
+            .expect("an activated instance is processed");
+
+        assert!(
+            editor_writes.lock().expect("editor write log").is_empty(),
+            "the control path entered the wrapper while the audio thread held it"
+        );
+
+        shared
+            .poll_parameters(Duration::from_millis(50))
+            .expect("the control path visits the plugin");
+
+        assert_eq!(
+            *editor_writes.lock().expect("editor write log"),
+            vec![(3, 0.5)]
+        );
+    }
 
     #[test]
     fn pending_parameter_queue_coalesces_and_drains_latest_value() {
