@@ -1,0 +1,20 @@
+crates/sourdaw-native/src/commands/model_download.rs
+  s_a40848e8f8cca9::t_b2de3b2f02837b 94,109,158-165,183-205
+  s_a40848e8f8cca9::t_35cea3302cf8f4 206
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "b1a0e8acb4067bfa8e8e015c9b608b0fd6360f5c",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
