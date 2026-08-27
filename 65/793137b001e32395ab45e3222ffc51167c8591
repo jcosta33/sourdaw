@@ -1,0 +1,54 @@
+src/modules/AudioEngine/useCases/latencyCompensation/compensation/reportBridgeRoundTripFrames.ts
+  s_1b9333aca53d4d::t_1c288552a1dfa7 13-19
+src/modules/Arrangement/handlers/device/__tests__/handleLoadExternalPlugin.spec.ts
+  s_1b9333aca53d4d::t_e972beac6419fe 52,235-265
+  s_1b9333aca53d4d::t_22e64420f66ab8 15,26,50-51,266-267
+src/modules/AudioEngine/useCases/index.ts
+  s_1b9333aca53d4d::t_68c0332003c1a1 87
+crates/sourdaw-native/src/commands/plugins.rs
+  s_1b9333aca53d4d::t_658886a7ac4a95 35-38
+  s_1b9333aca53d4d::t_b303d74efbe396 2600-2608
+  s_1b9333aca53d4d::t_8e174b1bd8a501 49-53
+src/modules/Arrangement/useCases/__tests__/projectTrackToLiveStrip.spec.ts
+  s_1b9333aca53d4d::t_527cae6a9af506 108-134
+  s_1b9333aca53d4d::t_4e390662232f1d 31,60,98-100,135-136
+src/modules/Arrangement/useCases/projectTrackToLiveStrip.ts
+  s_1b9333aca53d4d::t_d8768076d66fbb 103-119
+  s_817f0d665b5715::t_a4e0b09b9f65e2 1,3,95-101
+src/modules/AudioEngine/useCases/latencyCompensation/compensation/getDeviceLatencyMs.ts
+  s_1b9333aca53d4d::t_fe408fe334b583 37-46
+  s_1b9333aca53d4d::t_0370e70cb4e35b 2
+src/modules/AudioEngine/useCases/engineAccess/getLiveEngineSampleRate.ts
+  s_1b9333aca53d4d::t_0e627dad37760d 1-17
+crates/daw-plugin-host/src/clap_wrapper.rs
+  s_1b9333aca53d4d::t_ad7464040e7f32 1091-1094
+  s_1b9333aca53d4d::t_e4184e8513eeed 220-223
+src/modules/Arrangement/handlers/device/__tests__/handleLoadExternalPluginCommand.spec.ts
+  s_1b9333aca53d4d::t_f7084e7a0f93cc 19,30,208-210,217-221
+src/modules/Arrangement/handlers/device/handleLoadExternalPlugin.ts
+  s_1b9333aca53d4d::t_30e2347a72d0a8 1,117-128,132
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "65793137b001e32395ab45e3222ffc51167c8591",
+  "prompts": {},
+  "sessions": {
+    "s_1b9333aca53d4d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "188b0d45-7765-49bd-8d6e-1eebbd450613",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_817f0d665b5715": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-af224ccd2411f5b33",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
