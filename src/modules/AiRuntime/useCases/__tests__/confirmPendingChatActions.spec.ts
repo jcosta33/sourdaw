@@ -8,6 +8,11 @@ import {
 } from '#/infra/store/storage/createAutomergeStorage';
 import { trackStore, type Track } from '#/modules/Arrangement/stores';
 import { getArrangementHandlers, setArrangementEventBus } from '#/modules/Arrangement/useCases';
+import {
+    clearAgentSectionRenderArtifacts,
+    getAgentSectionRenderArtifacts,
+    getAudioRenderingHandlers,
+} from '#/modules/AudioRendering/useCases';
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
@@ -66,10 +71,12 @@ import {
 
 type SetTempoAction = Extract<AppAction, { type: 'setTempo' }>;
 type AddDeviceAction = Extract<AppAction, { type: 'addDevice' }>;
+type RenderSectionsAction = Extract<AppAction, { type: 'renderProjectSections' }>;
 
 const runtimeMocks = vi.hoisted(() => ({
     applyRuntimeGraphDelta: vi.fn(),
     getRuntimeGraphRevision: vi.fn(() => 4),
+    renderOffline: vi.fn(),
 }));
 
 function createRuntimeTestTrack(): Track {
@@ -119,6 +126,7 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     applyRuntimeGraphDelta: runtimeMocks.applyRuntimeGraphDelta,
     getRuntimeGraphRevision: runtimeMocks.getRuntimeGraphRevision,
     releasePreviewAudioBuffer: stemResourceMocks.releasePreviewAudioBuffer,
+    renderOffline: runtimeMocks.renderOffline,
 }));
 vi.mock('#/modules/Collaboration/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Collaboration/useCases')>()),
@@ -169,6 +177,7 @@ describe('confirmPendingChatActions transaction admission', () => {
         clearAiHistory();
         agentRunLifecycle.clear();
         clearPendingActionConfirmations();
+        clearAgentSectionRenderArtifacts();
         resetCrdtProjectAuthority('AI confirmation admission');
         createCrdtDoc('independent');
         createCrdtDoc('owned');
@@ -1392,6 +1401,164 @@ describe('confirmPendingChatActions transaction admission', () => {
         expect(getCrdtDoc<Record<string, unknown>>('owned')).toMatchObject({ buffered: { touched: 1 } });
         expect(getCrdtDoc<Record<string, unknown>>('owned')).not.toHaveProperty('transport');
         expect(getPendingActionConfirmation('confirmation-foreign-flush')).toMatchObject({ status: 'invalidated' });
+    });
+
+    it('refuses to relabel fresh render artifacts onto a revision carrying a foreign write', async () => {
+        configureAiWorkflowCommandPreflightFixture('project-1');
+        configureCommandBatchIdempotency({ canExecute: () => true });
+        const ownedStorage = createAutomergeStorage<{ bpm: number }>('owned', 'transport');
+        registerHandlerMap({
+            setTempo: {
+                canReapplyAfterDivergence: (action) => action.payload.expectedBpm !== undefined,
+                execute: (action: SetTempoAction) => {
+                    ownedStorage.set({ bpm: action.payload.bpm });
+                },
+                describe: (action) => ({
+                    label: 'Set tempo',
+                    inverseAction: {
+                        type: 'setTempo',
+                        payload: { bpm: 120, expectedBpm: action.payload.bpm },
+                    },
+                }),
+                undoable: true,
+                validate: () => true,
+            },
+        });
+        registerHandlerMap(getAudioRenderingHandlers());
+        const verseJob = {
+            jobId: 'render-verse',
+            sectionId: 'section-verse',
+            sectionName: 'Verse',
+            startBeat: 0,
+            endBeat: 16,
+            sampleRate: 44_100,
+            tailSeconds: 0,
+        };
+        const chorusJob = {
+            ...verseJob,
+            jobId: 'render-chorus',
+            sectionId: 'section-chorus',
+            sectionName: 'Chorus',
+            startBeat: 16,
+            endBeat: 48,
+        };
+        const tempoAction = { type: 'setTempo', payload: { bpm: 132 } } satisfies SetTempoAction;
+        const renderAction = {
+            type: 'renderProjectSections',
+            payload: { sectionIds: [verseJob.sectionId, chorusJob.sectionId], jobs: [verseJob, chorusJob] },
+        } satisfies RenderSectionsAction;
+        let renderTimeRevision: string | null = null;
+        let lastRenderAttempted = false;
+        runtimeMocks.renderOffline.mockReset();
+        runtimeMocks.renderOffline.mockImplementation((options: { startBeat?: number }) => {
+            if (options.startBeat === chorusJob.startBeat) {
+                lastRenderAttempted = true;
+                return Promise.reject(new Error('comparison renderer unavailable'));
+            }
+            renderTimeRevision ??= captureProjectRevision();
+            return Promise.resolve({
+                sampleRate: verseJob.sampleRate,
+                length: 88_200,
+                numberOfChannels: 2,
+                duration: 2,
+            });
+        });
+        // The batch flight awaits the idempotency completion's lock; land the
+        // foreign write there, after the last render and before the caller
+        // captures the committed revision.
+        let foreignWriteInjected = false;
+        vi.stubGlobal('navigator', {
+            ...navigator,
+            locks: {
+                request: (_name: string, _options: LockOptions, task: () => unknown) => {
+                    if (lastRenderAttempted && !foreignWriteInjected) {
+                        foreignWriteInjected = true;
+                        mutateCrdtDoc<Record<string, unknown>>({
+                            id: 'independent',
+                            changeFn: (doc) => {
+                                doc.foreignTrackRename = true;
+                            },
+                        });
+                    }
+                    return Promise.resolve(task());
+                },
+            },
+        });
+        const projectRevision = captureProjectRevision();
+        const serializeCommand = (action: SetTempoAction | RenderSectionsAction, expectedEffect: string) =>
+            serializeVersionedCommandEnvelope(
+                migrateLegacyAppActionToVersionedCommandEnvelope({
+                    action,
+                    expectedEffect,
+                    normalizedProjectRevision: projectRevision,
+                    options: { groupId: 'group-render-rebind', groupLabel: 'Tempo and renders', source: 'prompt' },
+                })
+            );
+        const commandBatch = compileVersionedCommandBatchEnvelope({
+            runId: 'confirmation-render-rebind',
+            batchId: 'group-render-rebind',
+            projectId: 'project-1',
+            baseRevision: projectRevision,
+            intent: 'set tempo to 132 and render sections',
+            commands: [
+                serializeCommand(tempoAction, 'Tempo changes to 132 BPM.'),
+                serializeCommand(renderAction, 'Render Verse and Chorus for comparison.'),
+            ],
+        });
+        agentRunLifecycle.create({
+            runId: 'confirmation-render-rebind',
+            request: 'set tempo to 132 and render sections',
+            mode: 'macro',
+            createdRevision: projectRevision,
+        });
+        agentRunLifecycle.transitionPhase({ runId: 'confirmation-render-rebind', phase: 'planning' });
+        agentRunLifecycle.transitionPhase({ runId: 'confirmation-render-rebind', phase: 'waiting-for-approval' });
+        proposePendingActionConfirmation({
+            id: 'confirmation-render-rebind',
+            runId: 'confirmation-render-rebind',
+            prompt: 'set tempo to 132 and render sections',
+            assistantMessageId: 'assistant-1',
+            actions: [tempoAction, renderAction],
+            actionLabels: ['Set tempo to 132 BPM', 'Render Verse and Chorus'],
+            commandBatch,
+            agentApproval: compileAgentRiskApproval({ commandBatch }),
+            executionMode: 'atomic',
+            groupId: 'group-render-rebind',
+            groupLabel: 'Tempo and renders',
+            projectRevision,
+        });
+
+        await expect(
+            confirmPendingChatActions({ confirmationId: 'confirmation-render-rebind' })
+        ).resolves.toMatchObject({ status: 'failed', durableCommit: true });
+
+        expect(foreignWriteInjected).toBe(true);
+        const committedConfirmation = getPendingActionConfirmation('confirmation-render-rebind');
+        if (!committedConfirmation?.followUpProjectRevision || renderTimeRevision === null) {
+            throw new Error('Expected an armed render retry and a captured render-time revision');
+        }
+        expect(committedConfirmation).toMatchObject({ status: 'failed', followUpStatus: 'retryable' });
+        expect(committedConfirmation.followUpProjectRevision).not.toBe(renderTimeRevision);
+        const artifacts = getAgentSectionRenderArtifacts();
+        expect(artifacts).toHaveLength(1);
+        // The relabel was refused: the fresh artifact keeps its render-time
+        // revision instead of the polluted committed revision.
+        expect(artifacts[0]).toMatchObject({ jobId: verseJob.jobId, sourceRevision: renderTimeRevision });
+
+        // A further foreign change makes the pinned follow-up revision stale, so
+        // the armed retry must refuse without rendering against the edited project.
+        mutateCrdtDoc<Record<string, unknown>>({
+            id: 'independent',
+            changeFn: (doc) => {
+                doc.anotherForeignWrite = true;
+            },
+        });
+        const renderCallsBeforeRetry = runtimeMocks.renderOffline.mock.calls.length;
+        await expect(confirmPendingChatActions({ confirmationId: 'confirmation-render-rebind' })).resolves.toEqual({
+            status: 'failed',
+            reason: 'Project changed after the committed render receipt; the missing original artifacts cannot be recreated safely.',
+        });
+        expect(runtimeMocks.renderOffline).toHaveBeenCalledTimes(renderCallsBeforeRetry);
     });
 
     it('invalidates a confirmed batch when another app action commits while its first handler is paused', async () => {

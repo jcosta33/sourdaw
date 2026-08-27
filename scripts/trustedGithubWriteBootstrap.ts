@@ -17,12 +17,14 @@ import { fileURLToPath } from 'node:url';
 export type TrustedGithubWriteCommand = 'deliver' | 'issue:reconcile' | 'lane:publish';
 
 export const BOOTSTRAP_PATH = 'scripts/trustedGithubWriteBootstrap.ts';
+export const HEALTH_GATES_WORKFLOW_PATH = '.github/workflows/health-gates.yml';
 
 export const TRUSTED_PRIMARY_ROOT_ENV = 'SOURDAW_TRUSTED_PRIMARY_ROOT';
 export const TRUSTED_COMMON_DIR_ENV = 'SOURDAW_TRUSTED_COMMON_DIR';
 export const TRUSTED_GIT_PATH_ENV = 'SOURDAW_TRUSTED_GIT_PATH';
 export const TRUSTED_GH_PATH_ENV = 'SOURDAW_TRUSTED_GH_PATH';
 export const TRUSTED_ORIGIN_COMMIT_ENV = 'SOURDAW_TRUSTED_ORIGIN_COMMIT';
+export const TRUSTED_GATE_WORKFLOW_ENV = 'SOURDAW_TRUSTED_GATE_WORKFLOW';
 
 export type TrustedLauncherBinding = {
     primaryRoot: string;
@@ -31,10 +33,20 @@ export type TrustedLauncherBinding = {
     ghPath: string;
 };
 
+/**
+ * What the health-gates workflow says about one job, carried to the gate unresolved. A `name` is
+ * whatever the workflow declares — absent, null, a string, or something that is not a name at all —
+ * because deciding what a declaration means is the gate's rule to apply, not the launcher's.
+ */
+export type TrustedWorkflowJob = { name?: unknown; needs?: unknown; uses?: unknown };
+
+export type TrustedGateWorkflow = { jobs: Record<string, TrustedWorkflowJob> } | { unreadable: string };
+
 export type TrustedSourceSnapshot = {
     commit: string;
     sources: ReadonlyMap<string, string>;
     launcher?: TrustedLauncherBinding;
+    gateWorkflow?: TrustedGateWorkflow;
 };
 
 type TrustedSourcePort = {
@@ -103,30 +115,82 @@ export function assertTrustedSourceGraph(
         if (!pathSet.has(path)) {
             throw new Error(`trusted snapshot contains unexpected source ${path}`);
         }
-        for (const dependency of localModuleDependencies(path, source)) {
-            if (!pathSet.has(dependency)) {
-                throw new Error(`${path} imports unchecked local dependency ${dependency}`);
-            }
-        }
+        assertSnapshotResolvableImports(path, source, pathSet);
     }
 }
 
-function localModuleDependencies(path: string, source: string): string[] {
+/**
+ * A bare specifier is the one import shape the snapshot cannot satisfy. It holds nothing but
+ * `scripts/`, so Node resolves `node_modules` upward from a temporary directory, finds none, and the
+ * command dies mid-delivery with `ERR_MODULE_NOT_FOUND` instead of refusing anything. Only `node:`
+ * builtins and the pinned siblings are reachable there, and checking local specifiers alone left
+ * that failure invisible until it happened.
+ *
+ * The loader carries exactly one exemption, named below, and every other source carries none. The
+ * loader is the one file the launcher also runs from the protected primary checkout, where the
+ * repository's packages do resolve, and it is the one source the snapshot writes and never imports —
+ * which the second rule keeps true — so its `yaml` dependency never resolves from a snapshot at all.
+ * What holds that parser behind a dynamic call is not this check but the reason it is written that
+ * way: a static bare dependency would load for `lane:publish` and `issue:reconcile` too, which read
+ * no workflow and must not fail over a package they never use. The spec pins that shape separately.
+ */
+function assertSnapshotResolvableImports(path: string, source: string, pathSet: ReadonlySet<string>): void {
+    for (const dependency of localModuleDependencies(path, source)) {
+        if (!pathSet.has(dependency)) {
+            throw new Error(`${path} imports unchecked local dependency ${dependency}`);
+        }
+        if (dependency === BOOTSTRAP_PATH) {
+            throw new Error(`${path} imports ${BOOTSTRAP_PATH}, which the trusted snapshot never executes`);
+        }
+    }
+    for (const specifier of bareModuleSpecifiers(source)) {
+        if (path === BOOTSTRAP_PATH && specifier === LOADER_EXEMPT_SPECIFIER) {
+            continue;
+        }
+        throw new Error(`${path} imports ${specifier}, which does not resolve in the trusted snapshot`);
+    }
+}
+
+/** The whole of the loader's exemption: this one package, in this one file, and nothing else. */
+const LOADER_EXEMPT_SPECIFIER = 'yaml';
+
+/**
+ * Every shape that names a module: a `from` clause, a side-effect statement that binds nothing, and
+ * a dynamic call. Both rules below read the same three, because a list that saw only `from` accepted
+ * the other two — and the dynamic call is the shape this loader itself uses, so the bare-specifier
+ * rule passed vacuously on the very file it was written to hold.
+ *
+ * A specifier written inside a comment or a string literal matches too. That is why the prose here
+ * spells none of these shapes out: the rule reads its own file, and an example in a comment would be
+ * refused as an unresolvable dependency.
+ */
+const MODULE_SPECIFIER_PATTERNS = [
+    /\bfrom\s+['"]([^'"]+)['"]/g,
+    /\bimport\s+['"]([^'"]+)['"]/g,
+    /\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/g,
+];
+
+function moduleSpecifiers(source: string): string[] {
     const specifiers = new Set<string>();
-    const patterns = [
-        /\bfrom\s+['"](\.[^'"]+)['"]/g,
-        /\bimport\s+['"](\.[^'"]+)['"]/g,
-        /\bimport\s*\(\s*['"](\.[^'"]+)['"]\s*\)/g,
-    ];
-    for (const pattern of patterns) {
+    for (const pattern of MODULE_SPECIFIER_PATTERNS) {
         for (const match of source.matchAll(pattern)) {
-            const specifier = match[1];
-            if (specifier !== undefined) {
-                specifiers.add(posix.normalize(posix.join(posix.dirname(path), specifier)));
+            if (match[1] !== undefined) {
+                specifiers.add(match[1]);
             }
         }
     }
     return [...specifiers];
+}
+
+function bareModuleSpecifiers(source: string): string[] {
+    return moduleSpecifiers(source).filter((specifier) => !specifier.startsWith('.') && !specifier.startsWith('node:'));
+}
+
+function localModuleDependencies(path: string, source: string): string[] {
+    const dependencies = moduleSpecifiers(source)
+        .filter((specifier) => specifier.startsWith('.'))
+        .map((specifier) => posix.normalize(posix.join(posix.dirname(path), specifier)));
+    return [...new Set(dependencies)];
 }
 
 export async function runTrustedGithubWriteCommand(
@@ -164,7 +228,97 @@ async function runTrustedGithubWriteCommandAtCommit(
         sources.set(path, port.readOriginSource(commit, path));
     }
     assertTrustedSourceGraph(command, sources);
-    return port.executeSnapshot(command, args, { commit, sources });
+    const gateWorkflow = command === 'deliver' ? await readGateWorkflow(port, commit) : undefined;
+    return port.executeSnapshot(command, args, { commit, sources, gateWorkflow });
+}
+
+function errorDetail(error: unknown): string {
+    return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * The one dependency this loader takes beyond Node's builtins, and deliberately so: `yaml` is the
+ * parser the GitHub-adjacent tooling in this repository already uses, and the launcher runs from the
+ * protected primary checkout where it resolves.
+ *
+ * It is imported here rather than at the top of the file for two reasons. Only `deliver` needs a
+ * workflow, so `lane:publish` and `issue:reconcile` must not fail to start over a package neither
+ * one reads. And a failure to resolve it arrives as a rejected promise the caller turns into a
+ * refusal, where a static import would instead kill the process with `ERR_MODULE_NOT_FOUND` — the
+ * merge gate must refuse when it cannot parse the workflow, never crash past the question.
+ */
+async function parseYaml(source: string): Promise<unknown> {
+    const { parse } = await import('yaml');
+    return parse(source);
+}
+
+/**
+ * Only `deliver` reads a workflow, and it reads it at the same pinned commit its own code came from
+ * — never the working tree, never a local `HEAD`, either of which would let one unpulled or
+ * uncommitted edit reshape the merge gate.
+ *
+ * An unreadable workflow is carried across as a reason rather than thrown here, so the refusal is
+ * worded and owned by the gate. Nothing is resolved or filtered on the way: whatever the workflow
+ * declares for a job arrives as it was written.
+ */
+async function readGateWorkflow(port: TrustedSourcePort, commit: string): Promise<TrustedGateWorkflow> {
+    let source: string;
+    try {
+        source = port.readOriginSource(commit, HEALTH_GATES_WORKFLOW_PATH);
+    } catch (error) {
+        return { unreadable: `it cannot be read at ${commit}: ${errorDetail(error)}` };
+    }
+    return summarizeGateWorkflow(source);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * The parse the gate cannot perform for itself. A real YAML parser is the point: a line-oriented
+ * reader diverges from it on continuation, key spelling, comment separators, block scalars, anchors,
+ * aliases, tags and field indentation, and each divergence silently yields a check name GitHub never
+ * reports — which matches nothing, and tolerates the cancellation it was meant to catch.
+ */
+export async function summarizeGateWorkflow(source: string): Promise<TrustedGateWorkflow> {
+    let workflow: unknown;
+    try {
+        workflow = await parseYaml(source);
+    } catch (error) {
+        return { unreadable: `it is not valid YAML: ${errorDetail(error)}` };
+    }
+    const jobs = isRecord(workflow) ? workflow.jobs : undefined;
+    if (!isRecord(jobs)) {
+        return { unreadable: 'it declares no jobs mapping' };
+    }
+    // A job id is workflow-controlled text, and GitHub accepts `__proto__` as one. Assigning that
+    // key on an object literal moves the prototype instead of creating an own property, and
+    // `JSON.stringify` then drops the job from the summary entirely — so the gate never sees a job
+    // the workflow declares. A prototype-free map has no such key to hit.
+    const summary: Record<string, TrustedWorkflowJob> = Object.create(null) as Record<string, TrustedWorkflowJob>;
+    for (const [jobId, job] of Object.entries(jobs)) {
+        summary[jobId] = isRecord(job) ? { name: carriedName(job.name), needs: job.needs, uses: job.uses } : {};
+    }
+    return { jobs: summary };
+}
+
+/** What a name that is not text crosses as, chosen so no `JSON.stringify` can turn it back into text. */
+const NON_TEXT_NAME = { notText: true };
+
+/**
+ * The summary crosses to the gate as JSON, which carries less than YAML produces: `Infinity` and
+ * `NaN` — what `.inf` and `.nan` parse to — are written as `null`, and a timestamp is written as a
+ * quoted string. Either way the gate stops seeing a name that is not text: `null` reads as "declares
+ * no name" and answers with the job id, and a quoted timestamp reads as a name GitHub never reports.
+ * Both erase the refusal such a declaration is owed, so anything but a string crosses as a value
+ * that is not text on either side of the boundary. Deciding what that means stays the gate's rule.
+ */
+function carriedName(name: unknown): unknown {
+    if (name === undefined || name === null || typeof name === 'string') {
+        return name;
+    }
+    return NON_TEXT_NAME;
 }
 
 export async function executeTrustedSnapshot(
@@ -237,6 +391,9 @@ export function trustedSnapshotEnv(
     parent: NodeJS.ProcessEnv = process.env
 ): NodeJS.ProcessEnv {
     const env = trustedGitReadEnv(parent);
+    if (snapshot.gateWorkflow !== undefined) {
+        env[TRUSTED_GATE_WORKFLOW_ENV] = JSON.stringify(snapshot.gateWorkflow);
+    }
     const launcher = snapshot.launcher;
     if (launcher === undefined) {
         return env;

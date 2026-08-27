@@ -3,13 +3,17 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { parse } from 'yaml';
 
 import {
     deliverPullRequest as deliverPullRequestWithTracker,
+    gateRequiredCheckNames,
     parseCliArgs,
+    readGateRequiredCheckNames,
     shellPort,
     type DeliveryPort,
+    type HeadCheckRun,
     type PullRequestSnapshot,
     type ReviewState,
     type ShellRunner,
@@ -22,6 +26,47 @@ import {
     REQUIRED_BASE_BRANCH,
     REVIEWER_BOT_NODE_ID,
 } from '../githubAppIdentity.ts';
+import { summarizeGateWorkflow } from '../trustedGithubWriteBootstrap.ts';
+
+const WORKFLOW_PATH = '.github/workflows/health-gates.yml';
+
+/**
+ * The launcher's own parse, serialized exactly as it reaches the snapshot. Going through it rather
+ * than a fixture keeps these cases honest about the whole path a delivery actually takes.
+ */
+async function gatingNamesFor(workflowSource: string): Promise<ReadonlySet<string>> {
+    return gateRequiredCheckNames(JSON.stringify(await summarizeGateWorkflow(workflowSource)));
+}
+
+async function refusalFor(workflowSource: string): Promise<string> {
+    try {
+        await gatingNamesFor(workflowSource);
+    } catch (error) {
+        return String(error);
+    }
+    return 'no refusal';
+}
+
+/**
+ * What the `yaml` package says the check name is, derived here independently of the gate: a job's
+ * declared `name`, or its job id when it declares none. Every shape below is asserted against this
+ * rather than against a hand-copied expectation, so a divergence from the parser fails the test.
+ */
+function parserCheckName(workflowSource: string, jobId: string): string {
+    const workflow = parse(workflowSource) as { jobs?: Record<string, { name?: unknown } | null> };
+    const declared = workflow.jobs?.[jobId]?.name;
+    return typeof declared === 'string' && declared !== '' ? declared : jobId;
+}
+
+/** The job ids the gate declares, read with the `yaml` package rather than derived by the gate. */
+function parserGateNeeds(workflowSource: string): string[] {
+    const workflow = parse(workflowSource) as { jobs?: Record<string, { needs?: unknown } | null> };
+    const needs = workflow.jobs?.gate?.needs;
+    if (!Array.isArray(needs)) {
+        throw new TypeError(`${WORKFLOW_PATH} declares no gate needs list`);
+    }
+    return needs as string[];
+}
 
 function relationshipBody(relationship: string): string {
     return `### 🎯 What does this PR do?
@@ -209,6 +254,69 @@ function pullRequest(overrides: Partial<PullRequestSnapshot> = {}): PullRequestS
     };
 }
 
+function checkRun(overrides: Partial<HeadCheckRun> = {}): HeadCheckRun {
+    return { name: 'Gate', status: 'COMPLETED', conclusion: 'SUCCESS', ...overrides };
+}
+
+const LIVE_WORKFLOW_SOURCE = readFileSync(join(import.meta.dirname, '../..', WORKFLOW_PATH), 'utf8');
+
+/**
+ * Derived from the live workflow with the `yaml` package rather than copied out of it. A pinned list
+ * says what the names were on the day it was written: this repository gated on twelve jobs while the
+ * copy here still named eleven, and the missing one was invisible precisely because nothing compared
+ * the two. Deriving it means promoting a job into the gate updates these fixtures with the workflow.
+ */
+const gatingCheckNames: ReadonlySet<string> = new Set(
+    parserGateNeeds(LIVE_WORKFLOW_SOURCE).map((jobId) => parserCheckName(LIVE_WORKFLOW_SOURCE, jobId))
+);
+
+/**
+ * The shape an approving review leaves behind when its own run cancels the push run still in
+ * flight: every cancelled name succeeded again on the same commit, beside a job the workflow
+ * skipped outright and never cancelled.
+ */
+function supersededRunCheckRuns(): HeadCheckRun[] {
+    return [
+        checkRun({ name: 'Lint', conclusion: 'CANCELLED' }),
+        checkRun({ name: 'Gate', conclusion: 'CANCELLED' }),
+        checkRun({ name: 'Native audio backend (macOS)', conclusion: 'SKIPPED' }),
+        checkRun({ name: 'Lint' }),
+        checkRun(),
+    ];
+}
+
+type RollupPageFixture = {
+    nodes: unknown[];
+    totalCount?: number;
+    hasNextPage?: boolean;
+    endCursor?: string | null;
+};
+
+function rollupResponse(page: RollupPageFixture): string {
+    return JSON.stringify({
+        data: {
+            repository: {
+                object: {
+                    statusCheckRollup: {
+                        contexts: {
+                            totalCount: page.totalCount ?? page.nodes.length,
+                            pageInfo: {
+                                hasNextPage: page.hasNextPage ?? false,
+                                endCursor: page.endCursor ?? null,
+                            },
+                            nodes: page.nodes,
+                        },
+                    },
+                },
+            },
+        },
+    });
+}
+
+function rollupNodes(checkRuns: HeadCheckRun[]): unknown[] {
+    return checkRuns.map((check) => ({ __typename: 'CheckRun', ...check }));
+}
+
 function stacked(overrides: Partial<StackedPullRequest> = {}): StackedPullRequest {
     return {
         number: 43,
@@ -226,6 +334,8 @@ type FakeInput = {
     reviewStates?: ReviewState[];
     dependentSets?: StackedPullRequest[][];
     dirty?: boolean;
+    headCheckRuns?: HeadCheckRun[];
+    gateRequiredCheckNames?: ReadonlySet<string>;
     deletesMergedBranches?: boolean;
     failRetargetOnce?: number;
     receipts?: DeliveryReceiptComment[];
@@ -296,6 +406,23 @@ function fakePort(input: FakeInput = {}) {
                 throw new Error(`missing PR #${number} fixture`);
             }
             return current;
+        },
+        gateRequiredCheckNames: () => {
+            calls.push('gate-required-check-names');
+            return input.gateRequiredCheckNames ?? gatingCheckNames;
+        },
+        /**
+         * Unreadable unless the case under test supplies the head's own check runs, so a delivery
+         * that reads check evidence it has no business reading — a dependent's, or an already-merged
+         * pull request's — throws instead of quietly passing.
+         */
+        headCheckRuns: (number, headRefOid) => {
+            calls.push(`checks:${number}:${headRefOid}`);
+            const runs = number === 42 ? input.headCheckRuns : undefined;
+            if (runs === undefined) {
+                throw new Error(`PR #${number} check rollup is unreadable`);
+            }
+            return runs;
         },
         reviewState: (number, expectedHead) => {
             calls.push(`review:${number}:${expectedHead}`);
@@ -729,11 +856,325 @@ describe('pull-request delivery', () => {
         expect(calls).not.toContain('merge:42:head');
     });
 
-    it('rejects a blocked merge state', () => {
-        const { port, calls } = fakePort({ primary: [pullRequest({ mergeStateStatus: 'BLOCKED' })] });
+    it.each(['BLOCKED', 'BEHIND', 'DIRTY', 'DRAFT', 'UNKNOWN'])(
+        'rejects merge state %s and names it, because it reports something other than checks',
+        (mergeStateStatus) => {
+            const { port, calls } = fakePort({
+                primary: [pullRequest({ mergeStateStatus })],
+                headCheckRuns: [checkRun()],
+            });
 
-        expect(() => deliverPullRequest(42, port)).toThrow(/BLOCKED/);
+            let thrown: unknown;
+            try {
+                deliverPullRequest(42, port);
+            } catch (error) {
+                thrown = error;
+            }
+
+            expect(String(thrown)).toBe(`Error: PR #42 merge state is ${mergeStateStatus}`);
+            expect(calls).not.toContain('merge:42:head');
+        }
+    );
+
+    /**
+     * A CLEAN head is decided by GitHub's own aggregate, so the rollup is never read for it — the
+     * fake refuses to hand one back, and this delivery never asks.
+     */
+    it('merges a CLEAN head without reading its check rollup', () => {
+        const { port, calls } = fakePort({ primary: [pullRequest(), pullRequest()] });
+
+        deliverPullRequest(42, port);
+
+        expect(calls).toContain('merge:42:head');
+        expect(calls.filter((call) => call.startsWith('checks:'))).toEqual([]);
+    });
+
+    /**
+     * The cancelled run is a corpse of the push run the approval superseded. Its `Gate` is what
+     * makes GitHub call the head UNSTABLE; the run that actually decided the head passed.
+     */
+    it('merges an UNSTABLE head whose only non-success runs were cancelled and whose Gate succeeded', () => {
+        const unstable = { mergeStateStatus: 'UNSTABLE' };
+        const { port, calls } = fakePort({
+            primary: [pullRequest(unstable), pullRequest(unstable)],
+            headCheckRuns: supersededRunCheckRuns(),
+        });
+
+        deliverPullRequest(42, port);
+
+        expect(calls).toContain('merge:42:head');
+    });
+
+    /**
+     * `NEUTRAL` is a check that ran and reached no verdict. It is deliberately absent from the
+     * tolerated conclusions: an undecided result is not a passing one, which is the same reason a
+     * cancellation with no success beside it refuses.
+     */
+    it.each(['FAILURE', 'TIMED_OUT', 'ACTION_REQUIRED', 'STARTUP_FAILURE', 'NEUTRAL'])(
+        'refuses an UNSTABLE head carrying a check that concluded %s',
+        (conclusion) => {
+            const { port, calls } = fakePort({
+                primary: [pullRequest({ mergeStateStatus: 'UNSTABLE' })],
+                headCheckRuns: [...supersededRunCheckRuns(), checkRun({ name: 'Unit suite 1/4', conclusion })],
+            });
+
+            let thrown: unknown;
+            try {
+                deliverPullRequest(42, port);
+            } catch (error) {
+                thrown = error;
+            }
+
+            expect(String(thrown)).toBe(
+                `Error: PR #42 merge state is UNSTABLE and check Unit suite 1/4 concluded ${conclusion}`
+            );
+            expect(calls).not.toContain('merge:42:head');
+        }
+    );
+
+    it('refuses an UNSTABLE head whose checks have not all settled', () => {
+        const { port, calls } = fakePort({
+            primary: [pullRequest({ mergeStateStatus: 'UNSTABLE' })],
+            headCheckRuns: [
+                ...supersededRunCheckRuns(),
+                checkRun({ name: 'End-to-end 3/12', status: 'IN_PROGRESS', conclusion: null }),
+            ],
+        });
+
+        let thrown: unknown;
+        try {
+            deliverPullRequest(42, port);
+        } catch (error) {
+            thrown = error;
+        }
+
+        expect(String(thrown)).toBe(
+            'Error: PR #42 merge state is UNSTABLE and check End-to-end 3/12 is still IN_PROGRESS'
+        );
         expect(calls).not.toContain('merge:42:head');
+    });
+
+    /**
+     * `Gate` is the one check the branch ruleset requires. A head where every run of it was
+     * cancelled has never been decided, however tidy the rest of the rollup looks.
+     */
+    it('refuses an UNSTABLE head whose cancelled runs never left a successful Gate', () => {
+        const { port, calls } = fakePort({
+            primary: [pullRequest({ mergeStateStatus: 'UNSTABLE' })],
+            headCheckRuns: [
+                checkRun({ name: 'Lint', conclusion: 'CANCELLED' }),
+                checkRun({ name: 'Gate', conclusion: 'CANCELLED' }),
+                checkRun({ name: 'Lint' }),
+            ],
+        });
+
+        let thrown: unknown;
+        try {
+            deliverPullRequest(42, port);
+        } catch (error) {
+            thrown = error;
+        }
+
+        expect(String(thrown)).toBe('Error: PR #42 merge state is UNSTABLE and no Gate check succeeded on head');
+        expect(calls).not.toContain('merge:42:head');
+    });
+
+    /**
+     * The live shape of `Dependency review` on an approval run: the push run's attempt was
+     * cancelled, and the review-triggered run skipped the job because it is gated on
+     * `pull_request`. `Gate` passes on `skipped`, so a green `Gate` is not a dependency verdict, and
+     * the skips are not one either. `Gate` needs that job, so this is why `deliver` refuses PR
+     * #2795's head today.
+     */
+    it('refuses an UNSTABLE head whose cancelled gate dependency only ever skipped beside it', () => {
+        const { port, calls } = fakePort({
+            primary: [pullRequest({ mergeStateStatus: 'UNSTABLE' })],
+            headCheckRuns: [
+                ...supersededRunCheckRuns(),
+                checkRun({ name: 'Dependency review', conclusion: 'CANCELLED' }),
+                checkRun({ name: 'Dependency review', conclusion: 'SKIPPED' }),
+                checkRun({ name: 'Dependency review', conclusion: 'SKIPPED' }),
+            ],
+        });
+
+        let thrown: unknown;
+        try {
+            deliverPullRequest(42, port);
+        } catch (error) {
+            thrown = error;
+        }
+
+        expect(String(thrown)).toBe(
+            'Error: PR #42 merge state is UNSTABLE and check Dependency review was cancelled and never succeeded on head'
+        );
+        expect(calls).not.toContain('merge:42:head');
+    });
+
+    /**
+     * `Nightly failure report` is cancelled with the rest of the superseded run and never succeeds
+     * on a pull request, because it reports a failed scheduled run and nothing else. `Gate` does not
+     * need it, so its silence decides nothing — and refusing on it would refuse every delivery.
+     */
+    it('merges an UNSTABLE head whose only undecided cancellation is a check the gate does not need', () => {
+        const unstable = { mergeStateStatus: 'UNSTABLE' };
+        const { port, calls } = fakePort({
+            primary: [pullRequest(unstable), pullRequest(unstable)],
+            headCheckRuns: [
+                ...supersededRunCheckRuns(),
+                checkRun({ name: 'Nightly failure report', conclusion: 'CANCELLED' }),
+                checkRun({ name: 'Nightly failure report', conclusion: 'SKIPPED' }),
+            ],
+        });
+
+        deliverPullRequest(42, port);
+
+        expect(calls).toContain('merge:42:head');
+    });
+
+    /**
+     * A cancelled name is judged against the jobs `Gate` needs, not against the whole rollup, so a
+     * check that has left the gating set stops blocking and one that joins it starts.
+     */
+    it('refuses only the cancelled names the supplied gating set contains', () => {
+        const checkRuns = [
+            ...supersededRunCheckRuns(),
+            checkRun({ name: 'Secret scan', conclusion: 'CANCELLED' }),
+            checkRun({ name: 'Secret scan', conclusion: 'SKIPPED' }),
+        ];
+        const tolerated = fakePort({
+            primary: [pullRequest({ mergeStateStatus: 'UNSTABLE' }), pullRequest({ mergeStateStatus: 'UNSTABLE' })],
+            headCheckRuns: checkRuns,
+            gateRequiredCheckNames: new Set(['Gate', 'Lint']),
+        });
+
+        deliverPullRequest(42, tolerated.port);
+
+        expect(tolerated.calls).toContain('merge:42:head');
+
+        const refused = fakePort({
+            primary: [pullRequest({ mergeStateStatus: 'UNSTABLE' })],
+            headCheckRuns: checkRuns,
+            gateRequiredCheckNames: new Set(['Gate', 'Lint', 'Secret scan']),
+        });
+
+        let thrown: unknown;
+        try {
+            deliverPullRequest(42, refused.port);
+        } catch (error) {
+            thrown = error;
+        }
+
+        expect(String(thrown)).toBe(
+            'Error: PR #42 merge state is UNSTABLE and check Secret scan was cancelled and never succeeded on head'
+        );
+        expect(refused.calls).not.toContain('merge:42:head');
+    });
+
+    /**
+     * The merge a hard-locked field indent used to wave through. `lint` declares `name: Lint` at
+     * indent 6 — legal YAML, accepted by GitHub, reported as the check `Lint` — and a reader that
+     * only looked for job fields at indent 4 saw no name at all, derived `lint`, and matched nothing
+     * on a head where `Lint` was cancelled with no success beside it. Deriving the gating set
+     * through the real parser is what turns that silent merge into this refusal.
+     */
+    it('refuses a head whose cancelled check belongs to a gated job declaring its name at a deeper indent', async () => {
+        const workflowSource = [
+            'name: Health gates',
+            'jobs:',
+            '  lint:',
+            '      name: Lint',
+            '      runs-on: ubuntu-latest',
+            '  gate:',
+            '    name: Gate',
+            '    needs: lint',
+        ].join('\n');
+        const derived = await gatingNamesFor(workflowSource);
+
+        expect([...derived]).toEqual(['Lint']);
+        expect(parserCheckName(workflowSource, 'lint')).toBe('Lint');
+
+        const { port, calls } = fakePort({
+            primary: [pullRequest({ mergeStateStatus: 'UNSTABLE' })],
+            headCheckRuns: [
+                checkRun({ name: 'Lint', conclusion: 'CANCELLED' }),
+                checkRun({ name: 'Native audio backend (macOS)', conclusion: 'SKIPPED' }),
+                checkRun(),
+            ],
+            gateRequiredCheckNames: derived,
+        });
+
+        let thrown: unknown;
+        try {
+            deliverPullRequest(42, port);
+        } catch (error) {
+            thrown = error;
+        }
+
+        expect(String(thrown)).toBe(
+            'Error: PR #42 merge state is UNSTABLE and check Lint was cancelled and never succeeded on head'
+        );
+        expect(calls).not.toContain('merge:42:head');
+    });
+
+    /**
+     * The rule keys on a cancellation, not on the absence of a success: a job the workflow simply
+     * never ran on this head has nothing to supersede and nothing to prove.
+     */
+    it('merges an UNSTABLE head carrying a check that only ever skipped and never cancelled', () => {
+        const unstable = { mergeStateStatus: 'UNSTABLE' };
+        const { port, calls } = fakePort({
+            primary: [pullRequest(unstable), pullRequest(unstable)],
+            headCheckRuns: [
+                ...supersededRunCheckRuns(),
+                checkRun({ name: 'Windows device layer', conclusion: 'SKIPPED' }),
+                checkRun({ name: 'Windows device layer', conclusion: 'SKIPPED' }),
+            ],
+        });
+
+        deliverPullRequest(42, port);
+
+        expect(calls).toContain('merge:42:head');
+    });
+
+    it('refuses an UNSTABLE head with no checks at all', () => {
+        const { port, calls } = fakePort({
+            primary: [pullRequest({ mergeStateStatus: 'UNSTABLE' })],
+            headCheckRuns: [],
+        });
+
+        expect(() => deliverPullRequest(42, port)).toThrow(/no Gate check succeeded on head/);
+        expect(calls).not.toContain('merge:42:head');
+    });
+
+    it('refuses an UNSTABLE head carrying a conclusion it does not recognize', () => {
+        const { port, calls } = fakePort({
+            primary: [pullRequest({ mergeStateStatus: 'UNSTABLE' })],
+            headCheckRuns: [...supersededRunCheckRuns(), checkRun({ name: 'CodeQL', conclusion: 'STALE' })],
+        });
+
+        expect(() => deliverPullRequest(42, port)).toThrow(/check CodeQL concluded STALE/);
+        expect(calls).not.toContain('merge:42:head');
+    });
+
+    /**
+     * The rollup read can refuse, and a dependent's snapshot is read again immediately after the
+     * squash has landed. A transient failure there would leave the dependents pointing at a merged
+     * branch with the issue still open, so check evidence is fetched only where it is judged: for
+     * the head being delivered, before the merge, and nowhere else. This fake refuses to hand back a
+     * dependent's rollup at all, so a delivery that asks for one throws.
+     */
+    it('merges an UNSTABLE head and retargets dependents without reading a dependent rollup', () => {
+        const unstable = { mergeStateStatus: 'UNSTABLE' };
+        const { port, calls } = fakePort({
+            primary: [pullRequest(unstable), pullRequest(unstable)],
+            headCheckRuns: supersededRunCheckRuns(),
+        });
+
+        deliverPullRequest(42, port);
+
+        expect(calls).toContain('merge:42:head');
+        expect(calls).toContain('retarget:43:main');
+        expect(calls.filter((call) => call.startsWith('checks:'))).toEqual(['checks:42:head', 'checks:42:head']);
     });
 
     it('rejects an aggregate CHANGES_REQUESTED decision', () => {
@@ -784,6 +1225,7 @@ describe('pull-request delivery', () => {
 
         expect(calls.filter((call) => call === 'retarget:44:main')).toHaveLength(2);
         expect(calls).toContain('PR #42 was already merged; repaired 1 remaining dependent(s)');
+        expect(calls.filter((call) => call.startsWith('checks:'))).toEqual([]);
     });
 
     it.each([
@@ -806,6 +1248,433 @@ describe('pull-request delivery', () => {
     });
 });
 
+describe('gating check names', () => {
+    function workflow(...jobs: string[]): string {
+        return ['name: Health gates', 'on:', '  pull_request:', 'jobs:', ...jobs].join('\n');
+    }
+
+    const decide = ['  decide:', '    name: Decide scope', '    runs-on: ubuntu-latest'].join('\n');
+    /**
+     * Declares no job name, so GitHub labels its check with the job id — and carries a step whose
+     * own `name:` sits deeper, which is not the job's name however early it appears in the job.
+     */
+    const boundaries = [
+        '  boundaries:',
+        '    needs: decide',
+        '    runs-on: ubuntu-latest',
+        '    steps:',
+        '      - uses: actions/checkout@v4',
+        '        name: Checkout',
+    ].join('\n');
+    const dependencyReview = ['  dependency-review:', '    name: Dependency review', '    needs: decide'].join('\n');
+    const nightly = ['  nightly-report:', '    name: Nightly failure report', '    needs: [decide, boundaries]'].join(
+        '\n'
+    );
+    const gate = [
+        '  gate:',
+        '    name: Gate',
+        '    # Comment lines and block scalars must not be read as needs.',
+        '    needs:',
+        '      - decide',
+        '      - boundaries',
+        '      - dependency-review',
+        '    runs-on: ubuntu-latest',
+        '    steps:',
+        '      - name: Require every job to have succeeded or been skipped',
+        '        run: |',
+        '          set -euo pipefail',
+        '          printf ok',
+    ].join('\n');
+
+    /**
+     * The name GitHub labels a check with is the job's `name:`, and its job id only when the job
+     * declares none — which is how `boundaries` appears in the checks list.
+     */
+    it('maps every job the gate needs to the name GitHub labels its check with', async () => {
+        const names = await gatingNamesFor(workflow(decide, boundaries, dependencyReview, nightly, gate));
+
+        expect([...names].sort()).toEqual(['Decide scope', 'Dependency review', 'boundaries']);
+    });
+
+    /**
+     * A job that reports on a schedule is not merge evidence, however loudly it is cancelled on a
+     * superseded pull-request run.
+     */
+    it('leaves a job outside the gate needs out of the gating set', async () => {
+        const names = await gatingNamesFor(workflow(decide, boundaries, dependencyReview, nightly, gate));
+
+        expect(names.has('Nightly failure report')).toBe(false);
+    });
+
+    it('reads a gate that needs one job written inline', async () => {
+        const inlineGate = ['  gate:', '    name: Gate', '    needs: dependency-review'].join('\n');
+
+        expect([...(await gatingNamesFor(workflow(decide, dependencyReview, inlineGate)))]).toEqual([
+            'Dependency review',
+        ]);
+    });
+
+    function gateNeeding(jobId: string): string {
+        return ['  gate:', '    name: Gate', `    needs: ${jobId}`].join('\n');
+    }
+
+    /**
+     * A job id is workflow-controlled text, and GitHub accepts `__proto__` as one. The summary is
+     * built into a map on the launcher side and rebuilt into another on this side, and on an object
+     * literal that key moves the prototype instead of creating an own property — so the job is
+     * dropped by `JSON.stringify`, while the gate's own lookup still answers from the prototype and
+     * derives the id. The check GitHub reports is `Weird`, so a `Weird` cancelled with nothing
+     * beside it would merge with no verdict on a job the gate needs.
+     */
+    it('derives the declared name of a job whose id is __proto__', async () => {
+        const inherited = ['  __proto__:', '    name: Weird'].join('\n');
+
+        expect([...(await gatingNamesFor(workflow(inherited, gateNeeding('__proto__'))))]).toEqual(['Weird']);
+    });
+
+    /**
+     * These name members of `Object.prototype`, not jobs. A lookup that reaches the prototype answers
+     * with a function rather than `undefined`, so the gate skips the refusal it owes a `needs` entry
+     * the workflow never defines and labels a check after the function it found.
+     */
+    it.each(['toString', 'valueOf', 'constructor'])(
+        'refuses a gate needing %s, which names an inherited member and no job',
+        async (jobId) => {
+            expect(await refusalFor(workflow(decide, gateNeeding(jobId)))).toBe(
+                `Error: the gate job in ${WORKFLOW_PATH} needs ${jobId}, which no job in that workflow defines`
+            );
+        }
+    );
+
+    /**
+     * `.inf` and `.nan` are YAML floats, and JSON carries neither: `JSON.stringify` writes both as
+     * `null`, which the gate reads as "declares no name" and answers with the job id — the one thing
+     * a name that is not text must never resolve to. `42` refused already, so a fix that only reached
+     * the shapes JSON happens to survive would leave these two silently wrong.
+     */
+    it.each(['.inf', '.nan', '42'])('refuses a gated job whose name is the non-text scalar %s', async (scalar) => {
+        const source = workflow(['  lint:', `    name: ${scalar}`].join('\n'), gateNeeding('lint'));
+
+        expect(await refusalFor(source)).toBe(
+            `Error: the lint job in ${WORKFLOW_PATH} declares a name that is not text, ` +
+                'which cannot be the name GitHub reports'
+        );
+    });
+
+    /**
+     * Every shape here is legal YAML that GitHub accepts, and every one of them used to refuse — or,
+     * worse, resolve to something GitHub never reports — because a line-oriented reader cannot see
+     * what a parser sees. Three consecutive review rounds each closed one of these and left the next
+     * open, which is why the parse now belongs to the `yaml` package.
+     *
+     * Each case asserts the derived name against `parserCheckName`, which reads the same source with
+     * that package independently. Pinning the literal too would only restate the derivation.
+     */
+    it.each([
+        { label: 'a name field indented three spaces', job: ['  lint:', '   name: Lint'], expected: 'Lint' },
+        { label: 'a name field indented five spaces', job: ['  lint:', '     name: Lint'], expected: 'Lint' },
+        { label: 'a name field indented six spaces', job: ['  lint:', '      name: Lint'], expected: 'Lint' },
+        {
+            label: 'a name ending at a tab-separated comment',
+            job: ['  lint:', '    name: Lint\t# only lints'],
+            expected: 'Lint',
+        },
+        {
+            label: 'a name ending at a space-separated comment',
+            job: ['  lint:', '    name: Lint # the fast lane'],
+            expected: 'Lint',
+        },
+        {
+            label: 'a plain name continued onto the next line',
+            job: ['  lint:', '    name: Types and', '      contracts'],
+            expected: 'Types and contracts',
+        },
+        {
+            label: 'a double-quoted name continued onto the next line',
+            job: ['  lint:', '    name: "Types and', '      contracts"'],
+            expected: 'Types and contracts',
+        },
+        { label: 'a name key with space before its colon', job: ['  lint:', '    name : Lint'], expected: 'Lint' },
+        { label: 'a double-quoted name key', job: ['  lint:', '    "name": Lint'], expected: 'Lint' },
+        { label: 'a single-quoted name key', job: ['  lint:', "    'name': Lint"], expected: 'Lint' },
+        { label: 'an anchored name', job: ['  lint:', '    name: &fast Lint'], expected: 'Lint' },
+        { label: 'a tagged name', job: ['  lint:', '    name: !!str Lint'], expected: 'Lint' },
+        { label: 'a folded block name', job: ['  lint:', '    name: >-', '      Lint'], expected: 'Lint' },
+        { label: 'a literal block name', job: ['  lint:', '    name: |-', '      Lint'], expected: 'Lint' },
+        {
+            label: 'a double-quoted name carrying an escape',
+            job: ['  lint:', '    name: "Lint \\"fast\\""'],
+            expected: 'Lint "fast"',
+        },
+        {
+            label: 'a single-quoted name doubling its apostrophe',
+            job: ['  lint:', "    name: 'Lint''s pass'"],
+            expected: "Lint's pass",
+        },
+        { label: 'a name that is only a comment', job: ['  lint:', '    name: # the fast lane'], expected: 'lint' },
+        { label: 'a name declared empty', job: ['  lint:', '    name:'], expected: 'lint' },
+        { label: 'no name at all', job: ['  lint:', '    runs-on: ubuntu-latest'], expected: 'lint' },
+    ])('resolves $label to the name the yaml package produces', async ({ job, expected }) => {
+        const source = workflow(job.join('\n'), gateNeeding('lint'));
+
+        expect([...(await gatingNamesFor(source))]).toEqual([parserCheckName(source, 'lint')]);
+        expect([...(await gatingNamesFor(source))]).toEqual([expected]);
+    });
+
+    /**
+     * An alias resolves against an anchor declared elsewhere in the document, which no reader that
+     * looks at one line at a time can do. GitHub reports the anchored value.
+     */
+    it('resolves an aliased name to the name the yaml package produces', async () => {
+        const source = workflow(
+            ['  decide:', '    name: &fast Lint'].join('\n'),
+            ['  lint:', '    name: *fast'].join('\n'),
+            gateNeeding('lint')
+        );
+
+        expect([...(await gatingNamesFor(source))]).toEqual([parserCheckName(source, 'lint')]);
+        expect([...(await gatingNamesFor(source))]).toEqual(['Lint']);
+    });
+
+    /**
+     * A block sequence may sit at its key's own indent. This used to refuse with `needs no job`,
+     * which was simply false — the gate needed three.
+     */
+    it('reads a needs block sequence written at the key own indent', async () => {
+        const ownIndentGate = [
+            '  gate:',
+            '    name: Gate',
+            '    needs:',
+            '    - decide',
+            '    - dependency-review',
+        ].join('\n');
+
+        expect([...(await gatingNamesFor(workflow(decide, dependencyReview, ownIndentGate)))].sort()).toEqual([
+            'Decide scope',
+            'Dependency review',
+        ]);
+    });
+
+    /**
+     * A trailing comment on a job-id line used to refuse with the generic "cannot read the jobs in",
+     * which pointed nowhere near its cause. It is an ordinary comment and resolves.
+     */
+    it('reads a job whose id line carries a trailing comment', async () => {
+        const source = workflow(['  lint: # the fast lane', '    name: Lint'].join('\n'), gateNeeding('lint'));
+
+        expect([...(await gatingNamesFor(source))]).toEqual(['Lint']);
+    });
+
+    /**
+     * `jobs:` is not the last block in this workflow, and a top-level key that follows it is not a
+     * job however it is spelled.
+     */
+    it('reads only the jobs block when another top-level key follows it', async () => {
+        const source = [
+            workflow(decide, boundaries, dependencyReview, nightly, gate),
+            'permissions:',
+            '  contents: read',
+        ].join('\n');
+
+        expect([...(await gatingNamesFor(source))].sort()).toEqual(['Decide scope', 'Dependency review', 'boundaries']);
+    });
+
+    /**
+     * `unit` and `e2e` are one line away from joining the gate, and GitHub reports one check per
+     * shard with the expression substituted. The declared name matches none of them, so promoting
+     * such a job silently adds an entry that can never fire. Recorded as issue #2924.
+     */
+    it('refuses a matrix job promoted into the gate rather than gating on a name GitHub never reports', async () => {
+        const unit = [
+            '  unit:',
+            '    name: Unit suite ${{ matrix.shard }}/4',
+            '    strategy:',
+            '      matrix:',
+            '        shard: [1, 2, 3, 4]',
+        ].join('\n');
+
+        expect(await refusalFor(workflow(unit, gateNeeding('unit')))).toBe(
+            `Error: the unit job in ${WORKFLOW_PATH} names its check Unit suite \${{ matrix.shard }}/4, ` +
+                'which GitHub substitutes per matrix job before reporting it'
+        );
+    });
+
+    /**
+     * A reusable workflow reports one check per inner job, named `<job name> / <inner job name>`.
+     * The single name derived here matches none of them, so promoting such a job into the gate would
+     * add an entry that can never fire — the same failure as a matrix name, from a different cause.
+     */
+    it('refuses a gated job that calls a reusable workflow', async () => {
+        const release = ['  release:', '    name: Release', '    uses: ./.github/workflows/release.yml'].join('\n');
+
+        expect(await refusalFor(workflow(release, gateNeeding('release')))).toBe(
+            `Error: the release job in ${WORKFLOW_PATH} calls a reusable workflow, ` +
+                'whose checks GitHub reports as one name per inner job rather than the one name this gate derives'
+        );
+    });
+
+    it.each([
+        {
+            label: 'a jobs block that is a sequence rather than a mapping of job ids',
+            source: workflow('  - decide', '  - gate'),
+            message: `Error: cannot read ${WORKFLOW_PATH} to determine which checks gate the merge: it declares no jobs mapping`,
+        },
+        {
+            label: 'a workflow with no gate job',
+            source: workflow(decide, boundaries, dependencyReview, nightly),
+            message: `Error: ${WORKFLOW_PATH} declares no gate job, so no check can be proven to gate the merge`,
+        },
+        {
+            label: 'a gate job that needs nothing',
+            source: workflow(decide, ['  gate:', '    name: Gate', '    runs-on: ubuntu-latest'].join('\n')),
+            message: `Error: the gate job in ${WORKFLOW_PATH} needs no job, so no check can be proven to gate the merge`,
+        },
+        {
+            label: 'a gate job whose needs list is empty',
+            source: workflow(decide, ['  gate:', '    name: Gate', '    needs: []'].join('\n')),
+            message: `Error: the gate job in ${WORKFLOW_PATH} needs no job, so no check can be proven to gate the merge`,
+        },
+        {
+            label: 'a gate job whose needs entry is not a job id',
+            source: workflow(decide, ['  gate:', '    name: Gate', '    needs: [decide, 7]'].join('\n')),
+            message:
+                `Error: the gate job in ${WORKFLOW_PATH} needs an entry that is not a job id, ` +
+                'so no check can be proven to gate the merge',
+        },
+        {
+            label: 'a gate job needing a job the workflow does not define',
+            source: workflow(decide, ['  gate:', '    name: Gate', '    needs:', '      - typo'].join('\n')),
+            message: `Error: the gate job in ${WORKFLOW_PATH} needs typo, which no job in that workflow defines`,
+        },
+        {
+            label: 'a gated job whose name is not text',
+            source: workflow(['  lint:', '    name: [Lint, Fast]'].join('\n'), gateNeeding('lint')),
+            message:
+                `Error: the lint job in ${WORKFLOW_PATH} declares a name that is not text, ` +
+                'which cannot be the name GitHub reports',
+        },
+    ])('refuses $label', async ({ source, message }) => {
+        expect(await refusalFor(source)).toBe(message);
+    });
+
+    const UNLAUNCHED_GATE_REFUSAL =
+        'Error: deliver must run through the protected primary checkout launcher, which passes ' +
+        `SOURDAW_TRUSTED_GATE_WORKFLOW from ${WORKFLOW_PATH} at the pinned origin/main commit`;
+
+    /**
+     * The launcher parses the workflow at the pinned commit and hands the summary across; nothing in
+     * the snapshot can read a workflow for itself. A `deliver` that never came through the launcher
+     * therefore cannot say which checks decide the merge, and refuses rather than tolerating every
+     * cancellation on the head.
+     */
+    it.each([
+        { label: 'no gating workflow from the launcher', env: {} },
+        { label: 'an empty gating workflow', env: { SOURDAW_TRUSTED_GATE_WORKFLOW: '' } },
+    ])('refuses $label', ({ env }) => {
+        let thrown: unknown;
+        try {
+            readGateRequiredCheckNames(env);
+        } catch (error) {
+            thrown = error;
+        }
+
+        expect(String(thrown)).toBe(UNLAUNCHED_GATE_REFUSAL);
+    });
+
+    it('derives the gating set from the workflow summary the launcher passed', async () => {
+        const names = readGateRequiredCheckNames({
+            SOURDAW_TRUSTED_GATE_WORKFLOW: JSON.stringify(
+                await summarizeGateWorkflow(workflow(decide, boundaries, dependencyReview, nightly, gate))
+            ),
+        });
+
+        expect([...names].sort()).toEqual(['Decide scope', 'Dependency review', 'boundaries']);
+    });
+
+    /**
+     * The summary crosses a process boundary as JSON, so the gate reads it as untrusted text. A
+     * value it cannot read is not a gating set, and merging on one would be merging on nothing.
+     */
+    it.each([
+        {
+            label: 'a summary that is not JSON',
+            serialized: '{',
+            expected: `${WORKFLOW_PATH} to determine which checks gate the merge: SOURDAW_TRUSTED_GATE_WORKFLOW is not JSON:`,
+        },
+        {
+            label: 'a summary that is not an object',
+            serialized: '["gate"]',
+            expected: 'SOURDAW_TRUSTED_GATE_WORKFLOW is not a workflow summary',
+        },
+        {
+            label: 'a summary carrying no jobs mapping',
+            serialized: '{"jobs":"gate"}',
+            expected: 'SOURDAW_TRUSTED_GATE_WORKFLOW carries no jobs mapping',
+        },
+        {
+            label: 'a summary whose job is not a mapping',
+            serialized: '{"jobs":{"gate":"needed"}}',
+            expected: 'the gate job is not a mapping',
+        },
+    ])('refuses $label', ({ serialized, expected }) => {
+        let thrown: unknown;
+        try {
+            gateRequiredCheckNames(serialized);
+        } catch (error) {
+            thrown = error;
+        }
+
+        expect(String(thrown)).toContain(expected);
+    });
+
+    /**
+     * The launcher carries a workflow it could not parse across as a reason rather than throwing, so
+     * the refusal is worded and owned here. Both arms name what was wrong with the file.
+     */
+    it.each([
+        {
+            label: 'a workflow that is not valid YAML',
+            source: 'jobs:\n  gate:\n   - "unterminated',
+            reason: 'not valid YAML',
+        },
+        {
+            label: 'a workflow declaring no jobs mapping',
+            source: 'name: Health gates\non:\n  pull_request:\n',
+            reason: 'it declares no jobs mapping',
+        },
+    ])('refuses $label', async ({ source, reason }) => {
+        expect(await refusalFor(source)).toContain(
+            `cannot read ${WORKFLOW_PATH} to determine which checks gate the merge:`
+        );
+        expect(await refusalFor(source)).toContain(reason);
+    });
+
+    /**
+     * The set this repository's own workflow produces, compared against the `yaml` package reading
+     * the same file. A hand-copied expectation here would only restate whatever the gate derived;
+     * comparing with an independent parse is what makes a divergence fail.
+     */
+    it('derives the same gating set from the live workflow as the yaml package does', async () => {
+        const expected = parserGateNeeds(LIVE_WORKFLOW_SOURCE).map((jobId) =>
+            parserCheckName(LIVE_WORKFLOW_SOURCE, jobId)
+        );
+
+        expect([...(await gatingNamesFor(LIVE_WORKFLOW_SOURCE))].sort()).toEqual([...expected].sort());
+        expect(expected.length).toBeGreaterThan(0);
+    });
+
+    /**
+     * The rollup on PR #2795 carried exactly two names cancelled with no success beside them:
+     * `Dependency review`, which `Gate` needs, and `Nightly failure report`, which it does not.
+     */
+    it('gates on the dependency scan and not on the nightly report in this repository', async () => {
+        const names = await gatingNamesFor(LIVE_WORKFLOW_SOURCE);
+
+        expect(names.has('Dependency review')).toBe(true);
+        expect(names.has('Nightly failure report')).toBe(false);
+    });
+});
+
 describe('delivery CLI', () => {
     it('parses one pull-request number', () => {
         expect(parseCliArgs(['42'])).toEqual({ number: 42, help: false });
@@ -821,6 +1690,263 @@ describe('delivery CLI', () => {
 });
 
 describe('delivery shell boundary', () => {
+    afterEach(() => {
+        vi.unstubAllEnvs();
+    });
+
+    function rollupPort(pages: Array<RollupPageFixture | string>) {
+        const captures: Array<{ command: string; args: string[] }> = [];
+        const remaining = [...pages];
+        const port = shellPort('jcosta33/sourdaw', {
+            capture: (command, args) => {
+                captures.push({ command, args });
+                const joined = args.join(' ');
+                if (joined.includes('pr view')) {
+                    return JSON.stringify(pullRequest());
+                }
+                const page = remaining.shift();
+                if (page === undefined) {
+                    throw new Error(`unexpected capture: ${command} ${joined}`);
+                }
+                return typeof page === 'string' ? page : rollupResponse(page);
+            },
+            run: () => undefined,
+        });
+        return { captures, port };
+    }
+
+    function rollupCaptures(captures: Array<{ command: string; args: string[] }>): string[] {
+        return captures.map((entry) => entry.args.join(' ')).filter((joined) => joined.includes('statusCheckRollup'));
+    }
+
+    /**
+     * The rollup decides whether an UNSTABLE head merges, so both arms of the union have to reach
+     * the snapshot. A dropped StatusContext would take a failing external check with it.
+     */
+    it('asks GitHub for the head rollup and normalizes both arms of its union', () => {
+        const { captures, port } = rollupPort([
+            {
+                nodes: [
+                    { __typename: 'CheckRun', name: 'Gate', status: 'COMPLETED', conclusion: 'SUCCESS' },
+                    { __typename: 'CheckRun', name: 'Lint', status: 'COMPLETED', conclusion: 'CANCELLED' },
+                    { __typename: 'CheckRun', name: 'End-to-end 1/12', status: 'IN_PROGRESS', conclusion: '' },
+                    { __typename: 'StatusContext', context: 'coverage/external', state: 'FAILURE' },
+                    { __typename: 'StatusContext', context: 'deploy/preview', state: 'PENDING' },
+                ],
+            },
+        ]);
+
+        const checkRuns = port.headCheckRuns(42, 'head');
+
+        expect(rollupCaptures(captures)).toHaveLength(1);
+        expect(rollupCaptures(captures)[0]).toContain('oid=head');
+        expect(checkRuns).toEqual([
+            { name: 'Gate', status: 'COMPLETED', conclusion: 'SUCCESS' },
+            { name: 'Lint', status: 'COMPLETED', conclusion: 'CANCELLED' },
+            { name: 'End-to-end 1/12', status: 'IN_PROGRESS', conclusion: null },
+            { name: 'coverage/external', status: 'COMPLETED', conclusion: 'FAILURE' },
+            { name: 'deploy/preview', status: 'PENDING', conclusion: null },
+        ]);
+    });
+
+    /**
+     * A rollup read can refuse, and `pullRequest` is called for every dependent and for an
+     * already-merged head — both after the squash has landed. Keeping the read off the snapshot is
+     * what stops a transient GitHub failure from stranding dependents on a merged branch.
+     */
+    it('reads no rollup when asked for a pull-request snapshot', () => {
+        const { captures, port } = rollupPort([{ nodes: rollupNodes([checkRun()]) }]);
+
+        const snapshot = port.pullRequest(42);
+
+        expect(snapshot.headRefOid).toBe('head');
+        expect(rollupCaptures(captures)).toEqual([]);
+
+        port.headCheckRuns(42, 'head');
+
+        expect(rollupCaptures(captures)).toHaveLength(1);
+    });
+
+    /**
+     * The gating set comes from the launcher's environment, not from a file this port reads. Nothing
+     * in the snapshot can reach a workflow — no working tree, no checkout, no `git show` — so a port
+     * that ran a command to answer this would be reading something the launcher never pinned.
+     */
+    it('takes the gating set from the launcher environment without reading any file', async () => {
+        vi.stubEnv(
+            'SOURDAW_TRUSTED_GATE_WORKFLOW',
+            JSON.stringify(
+                await summarizeGateWorkflow(
+                    [
+                        'name: Health gates',
+                        'jobs:',
+                        '  dependency-review:',
+                        '    name: Dependency review',
+                        '  gate:',
+                        '    name: Gate',
+                        '    needs: dependency-review',
+                    ].join('\n')
+                )
+            )
+        );
+        const captures: Array<{ command: string; args: string[] }> = [];
+        const port = shellPort('jcosta33/sourdaw', {
+            capture: (command, args) => {
+                captures.push({ command, args });
+                return '';
+            },
+            run: () => undefined,
+        });
+
+        expect([...port.gateRequiredCheckNames()]).toEqual(['Dependency review']);
+        expect(captures).toEqual([]);
+    });
+
+    /**
+     * `contexts` is a paged connection, so the completeness signal has to be asked for and read.
+     * Without it a head whose rollup outgrew one page reads as a shorter, tidier rollup than it is.
+     */
+    it('asks for the completeness signal alongside the rollup nodes', () => {
+        const { captures, port } = rollupPort([{ nodes: rollupNodes([checkRun()]) }]);
+
+        port.headCheckRuns(42, 'head');
+
+        const query = rollupCaptures(captures)[0] ?? '';
+        expect(query).toContain('totalCount');
+        expect(query).toContain('hasNextPage');
+        expect(query).toContain('endCursor');
+    });
+
+    it('pages the rollup to completion and keeps every context in order', () => {
+        const { captures, port } = rollupPort([
+            {
+                nodes: rollupNodes([checkRun({ name: 'Lint', conclusion: 'CANCELLED' }), checkRun()]),
+                totalCount: 3,
+                hasNextPage: true,
+                endCursor: 'Y3Vyc29yOjI=',
+            },
+            { nodes: rollupNodes([checkRun({ name: 'Lint' })]), totalCount: 3 },
+        ]);
+
+        expect(port.headCheckRuns(42, 'head')).toEqual([
+            { name: 'Lint', status: 'COMPLETED', conclusion: 'CANCELLED' },
+            { name: 'Gate', status: 'COMPLETED', conclusion: 'SUCCESS' },
+            { name: 'Lint', status: 'COMPLETED', conclusion: 'SUCCESS' },
+        ]);
+        expect(rollupCaptures(captures)).toHaveLength(2);
+        expect(rollupCaptures(captures)[0]).not.toContain('cursor=');
+        expect(rollupCaptures(captures)[1]).toContain('cursor=Y3Vyc29yOjI=');
+    });
+
+    /**
+     * The truncation this gate must not reason over: a page that carries fewer nodes than the head
+     * actually has. Merging on it would treat absent checks as absent problems.
+     */
+    it.each([
+        { label: 'a page that silently stops short of totalCount', hasNextPage: false, endCursor: null },
+        { label: 'a page that claims more contexts but hands back no cursor', hasNextPage: true, endCursor: null },
+    ])('refuses $label', ({ hasNextPage, endCursor }) => {
+        const { port } = rollupPort([{ nodes: rollupNodes([checkRun()]), totalCount: 19, hasNextPage, endCursor }]);
+
+        let thrown: unknown;
+        try {
+            port.headCheckRuns(42, 'head');
+        } catch (error) {
+            thrown = error;
+        }
+
+        expect(String(thrown)).toBe('Error: cannot read all 19 checks on PR #42: got 1');
+    });
+
+    /**
+     * `hasNextPage` decides on its own whether another page exists. Without it the reader would page
+     * on a cursor GitHub left behind on a finished connection, and a rollup it should have refused as
+     * truncated would quietly complete itself from a page it was never told to ask for. Here the
+     * first page stops short of `totalCount` and still carries a cursor: reading `hasNextPage` means
+     * refusing, ignoring it means merging on a second page that was never offered.
+     */
+    it('refuses a short page that carries a stale cursor without claiming another page', () => {
+        const { captures, port } = rollupPort([
+            { nodes: rollupNodes([checkRun()]), totalCount: 2, hasNextPage: false, endCursor: 'Y3Vyc29yOjE=' },
+            { nodes: rollupNodes([checkRun({ name: 'Lint' })]), totalCount: 2 },
+        ]);
+
+        let thrown: unknown;
+        try {
+            port.headCheckRuns(42, 'head');
+        } catch (error) {
+            thrown = error;
+        }
+
+        expect(String(thrown)).toBe('Error: cannot read all 2 checks on PR #42: got 1');
+        expect(rollupCaptures(captures)).toHaveLength(1);
+    });
+
+    /**
+     * `nodes.length < totalCount` is what stops the paging once the head is fully accounted for.
+     * GitHub can report `hasNextPage` true beside a cursor on a connection whose `totalCount` the
+     * first page already satisfies; without this arm the reader fetches again, overshoots the total,
+     * and the completeness check then refuses a rollup that was complete on arrival.
+     */
+    it('stops paging once the nodes account for the total even while a further page is offered', () => {
+        const { captures, port } = rollupPort([
+            {
+                nodes: rollupNodes([checkRun(), checkRun({ name: 'Lint' })]),
+                totalCount: 2,
+                hasNextPage: true,
+                endCursor: 'Y3Vyc29yOjI=',
+            },
+            { nodes: rollupNodes([checkRun({ name: 'Secret scan' })]), totalCount: 2 },
+        ]);
+
+        expect(port.headCheckRuns(42, 'head')).toEqual([
+            { name: 'Gate', status: 'COMPLETED', conclusion: 'SUCCESS' },
+            { name: 'Lint', status: 'COMPLETED', conclusion: 'SUCCESS' },
+        ]);
+        expect(rollupCaptures(captures)).toHaveLength(1);
+    });
+
+    it('refuses to guess at an entry matching neither arm', () => {
+        const { port } = rollupPort([{ nodes: [{ __typename: 'CheckSuite', name: 'Gate' }] }]);
+
+        expect(() => port.headCheckRuns(42, 'head')).toThrow('cannot read a check on PR #42');
+    });
+
+    /**
+     * Each page field is proven on its own, against a response valid in the other two. A rollup
+     * malformed everywhere at once would pass whichever single guard is left standing, and say
+     * nothing about the two that were removed.
+     */
+    it.each([
+        { label: 'a head carrying no rollup at all', contexts: undefined },
+        {
+            label: 'a rollup that reports no total',
+            contexts: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [] },
+        },
+        {
+            label: 'a rollup whose page info carries no completeness signal',
+            contexts: { totalCount: 0, pageInfo: { endCursor: null }, nodes: [] },
+        },
+        {
+            label: 'a rollup whose nodes are not a list',
+            contexts: { totalCount: 0, pageInfo: { hasNextPage: false, endCursor: null } },
+        },
+    ])('refuses to guess at $label', ({ contexts }) => {
+        const rollup = contexts === undefined ? null : { contexts };
+        const { port } = rollupPort([
+            JSON.stringify({ data: { repository: { object: { statusCheckRollup: rollup } } } }),
+        ]);
+
+        let thrown: unknown;
+        try {
+            port.headCheckRuns(42, 'head');
+        } catch (error) {
+            thrown = error;
+        }
+
+        expect(String(thrown)).toBe('Error: cannot read the checks on PR #42');
+    });
+
     it('uses complete GitHub reads and exact-head writes', () => {
         const captures: Array<{ command: string; args: string[] }> = [];
         const runs: Array<{ command: string; args: string[] }> = [];
