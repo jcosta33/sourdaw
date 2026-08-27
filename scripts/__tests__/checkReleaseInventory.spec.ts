@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import {
     closeSync,
     constants,
+    existsSync,
     linkSync,
     mkdirSync,
     mkdtempSync,
@@ -575,7 +576,10 @@ function writeGrandBouleMeasurementFixture(root: string): { jsonPath: string; re
     return { jsonPath, revision };
 }
 
-function writeShallowGrandBouleMeasurementFixture(root: string): {
+function writeShallowGrandBouleMeasurementFixture(
+    root: string,
+    afterDirectoriesCreated?: (directories: { clone: string; remote: string }) => void
+): {
     clone: string;
     remote: string;
     revision: string;
@@ -604,14 +608,25 @@ function writeShallowGrandBouleMeasurementFixture(root: string): {
     });
 
     const remote = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-remote-'));
-    const clone = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-shallow-'));
-    rmSync(clone, { recursive: true, force: true });
-    execFileSync('git', ['init', '--bare', '--quiet', remote]);
-    execFileSync('git', ['remote', 'add', 'origin', remote], { cwd: root });
-    execFileSync('git', ['push', '--quiet', 'origin', 'HEAD:refs/heads/main'], { cwd: root });
-    execFileSync('git', ['symbolic-ref', 'HEAD', 'refs/heads/main'], { cwd: remote });
-    execFileSync('git', ['clone', '--depth', '1', `file://${remote}`, clone], { stdio: 'ignore' });
-    return { clone, remote, revision, jsonPath: join(clone, 'crates/daw-dsp/benches/quantum-cost-table.json') };
+    try {
+        const clone = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-shallow-'));
+        try {
+            afterDirectoriesCreated?.({ clone, remote });
+            rmSync(clone, { recursive: true, force: true });
+            execFileSync('git', ['init', '--bare', '--quiet', remote]);
+            execFileSync('git', ['remote', 'add', 'origin', remote], { cwd: root });
+            execFileSync('git', ['push', '--quiet', 'origin', 'HEAD:refs/heads/main'], { cwd: root });
+            execFileSync('git', ['symbolic-ref', 'HEAD', 'refs/heads/main'], { cwd: remote });
+            execFileSync('git', ['clone', '--depth', '1', `file://${remote}`, clone], { stdio: 'ignore' });
+            return { clone, remote, revision, jsonPath: join(clone, 'crates/daw-dsp/benches/quantum-cost-table.json') };
+        } catch (error) {
+            rmSync(clone, { recursive: true, force: true });
+            throw error;
+        }
+    } catch (error) {
+        rmSync(remote, { recursive: true, force: true });
+        throw error;
+    }
 }
 
 function inventory(): ReleaseInventory {
@@ -2345,6 +2360,29 @@ describe('release inventory', () => {
             if (remote !== undefined) {
                 rmSync(remote, { recursive: true, force: true });
             }
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('cleans shallow measurement fixture directories when setup fails', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-measurement-setup-failure-'));
+        let clone: string | undefined;
+        let remote: string | undefined;
+        try {
+            expect(() =>
+                writeShallowGrandBouleMeasurementFixture(root, (directories) => {
+                    clone = directories.clone;
+                    remote = directories.remote;
+                    throw new Error('forced shallow fixture setup failure');
+                })
+            ).toThrow('forced shallow fixture setup failure');
+
+            if (clone === undefined || remote === undefined) {
+                throw new Error('Expected shallow fixture directories before setup failure');
+            }
+            expect(existsSync(clone)).toBe(false);
+            expect(existsSync(remote)).toBe(false);
+        } finally {
             rmSync(root, { recursive: true, force: true });
         }
     });

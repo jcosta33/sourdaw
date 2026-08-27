@@ -1292,7 +1292,7 @@ function ensureGrandBouleRevisionFetched(root: string, revision: string): void {
     try {
         execFileSync(
             'git',
-            ['-c', 'credential.interactive=never', 'fetch', '--no-tags', '--depth', '1', 'origin', revision],
+            ['-c', 'credential.interactive=false', 'fetch', '--no-tags', '--depth', '1', 'origin', revision],
             {
                 cwd: root,
                 env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
