@@ -35,6 +35,63 @@ pub const RENDER_QUANTUM_FRAMES: usize = 128;
 pub(crate) const RING_CAPACITY: usize =
     crate::audio_thread::MAX_CALLBACK_FRAMES / RENDER_QUANTUM_FRAMES + 4;
 
+/// Blocks the round trip settles at for a device period of `callback_frames`.
+///
+/// Deep enough to cover the device period twice over, plus a quantum of slack
+/// either side. Nothing locks the app's IPC cadence to the audio callback, so
+/// the phase between them wanders across a full period; a target of one period
+/// would shed on every crossing, and each shed costs the app a quantum of
+/// return audio. Two periods absorbs the whole slip. Beyond that is plugin
+/// latency the user hears against the rest of the graph, so the target stays
+/// proportional to the period rather than growing to the ring's capacity.
+///
+/// The clamp keeps the target meaningful: a period that already needs most of
+/// the ring cannot also carry twice itself, and a target above what the ring
+/// holds would never be crossed, which is the ratchet [`should_shed`] exists to
+/// stop.
+///
+/// [`should_shed`]: PluginAudioBridge::should_shed
+pub const fn target_depth_blocks(callback_frames: usize) -> usize {
+    let blocks_per_period = callback_frames.div_ceil(RENDER_QUANTUM_FRAMES);
+    let target = blocks_per_period * 2 + 2;
+    if target > RING_CAPACITY {
+        RING_CAPACITY
+    } else {
+        target
+    }
+}
+
+/// Frames of latency the bridge itself adds, for a device period of
+/// `callback_frames`.
+///
+/// Measured, not modelled: driving the production cadence — the relay pushing
+/// one block and popping one block per render quantum, the callback draining
+/// once per device period — and reading the delay off labelled audio puts a
+/// block's return exactly [`target_depth_blocks`] relay calls after its push,
+/// at every device period the engine accepts. The relay's own hop is already
+/// inside that count, because [`PluginAudioBridge::depth`] counts the block the
+/// relay has just pushed; adding a hop on top of the depth counts it twice and
+/// compensates a bridged plugin one quantum early.
+///
+/// This is the deep end of a one-quantum band: a callback landing between the
+/// relay's push and its pop observes one block more, sheds one sooner, and
+/// settles a quantum shallower. Nothing locks that phase, so compensating the
+/// deep end can leave a bridged plugin up to a quantum late and never early —
+/// the side to be wrong on, since early breaks phase against every parallel
+/// path.
+///
+/// This is the number a host has to compensate for a bridged plugin, on top of
+/// the latency the plugin reports for itself. It is the *settled* figure: a
+/// bridge that has not yet been slipped deeper runs shorter than this, and the
+/// depth only ever grows back to the target, so compensating the target is the
+/// state a session spends its life in.
+///
+/// `the_settled_round_trip_is_what_the_relay_pattern_measures` holds this
+/// against that measurement rather than against this formula.
+pub const fn settled_round_trip_frames(callback_frames: usize) -> usize {
+    target_depth_blocks(callback_frames) * RENDER_QUANTUM_FRAMES
+}
+
 /// A stereo audio block. `frames` is authoritative; the arrays are capacity,
 /// not length, and samples past `frames` are undefined carry-over.
 pub struct AudioBlock {
@@ -165,10 +222,10 @@ impl PluginAudioBridge {
     /// pushing throughout the pass cannot hold the audio callback open.
     ///
     /// `target_depth_blocks` is how deep the round trip needs to run to cover
-    /// the device period. One block per pass is shed above it — processed as
-    /// usual, then withheld from the return ring — so the bridge's latency
-    /// settles at that depth instead of ratcheting up to the ring's capacity
-    /// over a session.
+    /// the device period — [`target_depth_blocks`] derives it. One block per
+    /// pass is shed above it — processed as usual, then withheld from the
+    /// return ring — so the bridge's latency settles at that depth instead of
+    /// ratcheting up to the ring's capacity over a session.
     #[inline]
     pub fn drain_process<F: FnMut(&mut [f32], &mut [f32], usize)>(
         &mut self,
@@ -390,10 +447,26 @@ mod tests {
     }
 
     #[test]
+    fn the_target_depth_covers_the_device_period_twice_over_plus_slack() {
+        // A 512-frame period is four render quanta; twice that plus a quantum
+        // of slack either side is ten blocks.
+        assert_eq!(target_depth_blocks(512), 10);
+        // A period shorter than one quantum still counts as a whole one.
+        assert_eq!(target_depth_blocks(64), 4);
+        // A period at the callback's own limit would ask for more than the ring
+        // holds, and a target the depth can never cross sheds nothing.
+        assert_eq!(
+            target_depth_blocks(crate::audio_thread::MAX_CALLBACK_FRAMES),
+            RING_CAPACITY
+        );
+    }
+
+    #[test]
     fn the_round_trip_settles_at_its_target_depth_instead_of_ratcheting_up() {
         let (mut bridge, mut handle) = create_audio_bridge(1000);
-        // A 512-frame device period: four quanta, plus two blocks of slack.
-        let target_depth = 4 + 2;
+        // A 512-frame device period, through the same derivation the scheduler
+        // uses: four quanta twice over, plus two blocks of slack.
+        let target_depth = target_depth_blocks(512);
         let budget = 512 + RENDER_QUANTUM_FRAMES;
 
         // The app pushes one block and pops one block per quantum. A pop that
@@ -419,6 +492,89 @@ mod tests {
             depth <= target_depth + 1,
             "round trip settled at {depth} blocks against a target of {target_depth}"
         );
+    }
+
+    /// Drive the production cadence and report how many relay calls separate a
+    /// block's push from its return, once the round trip has settled.
+    ///
+    /// The relay pushes one block and pops one block per render quantum, in
+    /// that order and in the same call; the audio callback drains once per
+    /// device period. The warm-up reproduces the phase slip that ratchets the
+    /// depth up to the shed target — the state the bridge spends a session in,
+    /// and the one a host has to compensate. The measurement phase then runs a
+    /// clean 1:1 cadence and reads the delay off the audio itself: each block
+    /// carries the relay call that pushed it.
+    fn measure_settled_round_trip_blocks(callback_frames: usize) -> Vec<usize> {
+        let (mut bridge, mut handle) = create_audio_bridge(1000);
+        let target = target_depth_blocks(callback_frames);
+        let budget = callback_frames + RENDER_QUANTUM_FRAMES;
+        let quanta_per_period = callback_frames.div_ceil(RENDER_QUANTUM_FRAMES);
+
+        let mut relay_call = 0usize;
+        let mut delays = Vec::new();
+
+        for callback in 0..240 {
+            for _ in 0..quanta_per_period {
+                let label = relay_call as f32;
+                assert!(handle.push_input(
+                    &[label; RENDER_QUANTUM_FRAMES],
+                    &[label; RENDER_QUANTUM_FRAMES]
+                ));
+
+                // Warm-up: every fourth callback the app pops nothing back,
+                // which is what leaves the round trip one block deeper for
+                // good. Past it the cadence is clean and the depth holds.
+                let warming_up = callback < 120;
+                if !warming_up || callback % 4 != 0 {
+                    if let Some(block) = handle.pop_output() {
+                        let pushed_at = block.left[0] as usize;
+                        if !warming_up {
+                            delays.push(relay_call - pushed_at);
+                        }
+                    }
+                }
+                relay_call += 1;
+            }
+            bridge.drain_process(budget, target, |_, _, _| {});
+        }
+
+        delays
+    }
+
+    #[test]
+    fn the_settled_round_trip_is_what_the_relay_pattern_measures() {
+        // Every device period the engine accepts, including the one whose
+        // target is clamped to the ring's capacity.
+        //
+        // The spread is a single value rather than a range, but that is exact
+        // for the phase this harness models: the callback drains after the
+        // relay's pop, so it observes the depth the pop just left behind. A
+        // callback landing between the push and the pop sees one block more
+        // and sheds one block sooner, settling the round trip a quantum
+        // shallower than this. So the figure is the deep end of a
+        // one-quantum band whose phase nothing locks — compensating it can
+        // leave a bridged plugin up to one quantum late, never early, which
+        // is the side to be wrong on.
+        for period in [
+            64usize,
+            128,
+            256,
+            512,
+            1024,
+            crate::audio_thread::MAX_CALLBACK_FRAMES,
+        ] {
+            let measured = measure_settled_round_trip_blocks(period);
+            let steady = &measured[measured.len() / 2..];
+            let low = *steady.iter().min().expect("measured delays");
+            let high = *steady.iter().max().expect("measured delays");
+            let expected = settled_round_trip_frames(period) / RENDER_QUANTUM_FRAMES;
+
+            assert_eq!(
+                (low, high),
+                (expected, expected),
+                "a {period}-frame device period settles at a different round trip than the host compensates"
+            );
+        }
     }
 
     #[test]

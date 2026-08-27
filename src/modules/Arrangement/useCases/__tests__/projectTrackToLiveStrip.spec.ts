@@ -7,6 +7,9 @@ import { createTrack } from '../createTrack';
 import { projectTrackToLiveStrip } from '../projectTrackToLiveStrip';
 import { applySoloLogic } from '../toggleTrackState/applySoloLogic';
 
+/** The rate the live engine renders at, which is what a plugin must run at. */
+const ENGINE_SAMPLE_RATE = 96_000;
+
 const mocks = vi.hoisted(() => ({
     getRuntimeGraphRevision: vi.fn(() => 0),
     initializeTrackStripFromSnapshot: vi.fn<typeof initializeTrackStripFromSnapshot>(() => ({
@@ -25,6 +28,8 @@ const mocks = vi.hoisted(() => ({
     updateDeviceParam: vi.fn(),
     updateDeviceBypass: vi.fn(),
     activateExternalPlugin: vi.fn(),
+    getLiveEngineSampleRate: vi.fn<() => number | undefined>(() => ENGINE_SAMPLE_RATE),
+    reportBridgeRoundTripFrames: vi.fn(),
     warn: vi.fn(),
     setSend: vi.fn(),
     wireSidechainRoutes: vi.fn(),
@@ -52,6 +57,8 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     updateDeviceParam: mocks.updateDeviceParam,
     updateDeviceBypass: mocks.updateDeviceBypass,
     resolveToasterPadBinding: mocks.resolveToasterPadBinding,
+    getLiveEngineSampleRate: mocks.getLiveEngineSampleRate,
+    reportBridgeRoundTripFrames: mocks.reportBridgeRoundTripFrames,
     reportLatency: mocks.reportLatency,
     createRuntimeGraphTopologyFingerprint: vi.fn(),
 }));
@@ -88,11 +95,44 @@ const initializationFailureResults = [
 describe('projectTrackToLiveStrip', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        // `clearAllMocks` clears calls, not implementations, so a test that
+        // takes the engine away has to hand it back here.
+        mocks.getLiveEngineSampleRate.mockReturnValue(ENGINE_SAMPLE_RATE);
         mocks.activateExternalPlugin.mockReturnValue(Promise.resolve({ status: 'active' }));
         mocks.soloMode = 'sip';
         mocks.resolveToasterPadBinding.mockReturnValue(undefined);
         trackStore.set({ tracks: [], selectedTrackId: null });
         applySoloLogic({ resetSavedGains: true, applyActions: false });
+    });
+
+    it('leaves an external plugin dormant, and says so, while the engine renders no audio', () => {
+        const track = createTrack({ id: 'audio-1', name: 'Audio', kind: 'audio' });
+        track.outputId = 'master';
+        track.devices = [
+            {
+                id: 'device-1',
+                name: 'Native effect',
+                type: 'external-plugin',
+                bypassed: false,
+                parameterValues: {},
+                externalPluginId: 'persisted-native-plugin',
+                externalInstanceId: 'persisted-native-instance',
+            },
+        ];
+        trackStore.set({
+            tracks: [track, createTrack({ id: 'master', name: 'Master', kind: 'master' })],
+            selectedTrackId: null,
+        });
+        mocks.getLiveEngineSampleRate.mockReturnValue(undefined);
+
+        projectTrackToLiveStrip({ trackId: track.id, activateDormantExternalPlugins: true });
+
+        // The engine is on its silent fallback shim. Activating against the
+        // rate that shim reports detunes the instance for as long as it lives
+        // and scales its reported latency by the same wrong number. Staying
+        // dormant is reversible: the next rebuild has a real rate.
+        expect(mocks.activateExternalPlugin).not.toHaveBeenCalled();
+        expect(mocks.warn).toHaveBeenCalledWith(expect.stringContaining('persisted-native-instance'));
     });
 
     it('projects the current owned track in device-chain order and wires sidechains last', () => {
@@ -163,17 +203,24 @@ describe('projectTrackToLiveStrip', () => {
                 pluginId: 'persisted-native-plugin',
                 instanceId: 'persisted-native-instance',
                 stateChunk: 'c2F2ZWQ=',
+                // The plugin is fed audio this engine renders, so it is
+                // activated on the engine's clock rather than the output
+                // device's.
+                engineSampleRate: ENGINE_SAMPLE_RATE,
             })
         );
 
-        // The injected latency sink writes under the engine DEVICE id, so the
+        // The injected latency sinks write under the engine DEVICE id, so the
         // rebuilt strip reports compensation against the same key the removal
         // path clears — not the plugin instance id.
         const activation = mocks.activateExternalPlugin.mock.calls.at(-1)?.[0] as {
             onLatencyMs?: (latencyMs: number) => void;
+            onBridgeRoundTripFrames?: (frames: number) => void;
         };
         activation.onLatencyMs?.(7.25);
         expect(mocks.reportLatency).toHaveBeenCalledWith('device-1', 7.25);
+        activation.onBridgeRoundTripFrames?.(1408);
+        expect(mocks.reportBridgeRoundTripFrames).toHaveBeenCalledWith('device-1', 1408);
 
         vi.clearAllMocks();
         mocks.activateExternalPlugin.mockReturnValue(Promise.resolve({ status: 'active' }));
