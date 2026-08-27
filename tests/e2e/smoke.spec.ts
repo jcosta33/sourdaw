@@ -5,6 +5,7 @@ import { launch_new_project, setupWorkspace, wait_for_workspace_ready } from './
 
 const MODIFIER = process.platform === 'darwin' ? 'Meta' : 'Control';
 const OFFLINE_IDLE_WINDOW_MS = 500;
+const MAX_SCHEDULED_OSCILLATOR_LEAD_SECONDS = 0.1;
 const MANUAL_SAVE_PREFERENCES = superjsonStringify({ autoSave: false });
 
 test.use({ serviceWorkers: 'block' });
@@ -115,6 +116,7 @@ async function observeAudioContextResumeState(page: Page): Promise<AudioContextT
 
 type ScheduledOscillatorTestControl = {
     count: () => Promise<number>;
+    lead: () => Promise<number>;
     reset: () => Promise<void>;
 };
 
@@ -125,17 +127,26 @@ async function observeScheduledOscillatorCount(page: Page): Promise<ScheduledOsc
             this: OscillatorNode,
             ...args: Parameters<OscillatorNode['start']>
         ): void {
+            nativeStart.apply(this, args);
+            const currentTime = this.context.currentTime;
+            const scheduledTime = args[0] ?? currentTime;
+            const lead = scheduledTime - currentTime;
             const count = Number(document.documentElement.dataset.scheduledOscillatorCount ?? '0');
             document.documentElement.dataset.scheduledOscillatorCount = String(count + 1);
-            nativeStart.apply(this, args);
+            document.documentElement.dataset.scheduledOscillatorTime = String(scheduledTime);
+            document.documentElement.dataset.scheduledOscillatorLead = String(lead);
         };
         document.addEventListener('sourdaw-test-reset-scheduled-oscillator-count', () => {
             document.documentElement.dataset.scheduledOscillatorCount = '0';
+            delete document.documentElement.dataset.scheduledOscillatorTime;
+            delete document.documentElement.dataset.scheduledOscillatorLead;
         });
     });
     return {
         count: async () =>
             Number(await page.evaluate(() => document.documentElement.dataset.scheduledOscillatorCount ?? '0')),
+        lead: async () =>
+            Number(await page.evaluate(() => document.documentElement.dataset.scheduledOscillatorLead ?? 'NaN')),
         reset: () =>
             page.evaluate(() => {
                 document.dispatchEvent(new Event('sourdaw-test-reset-scheduled-oscillator-count'));
@@ -291,6 +302,8 @@ test.describe('Offline project smoke', () => {
         await expect(play).toHaveAccessibleName('Pause');
         await expect.poll(audioContext.resumeState).toBe('running');
         await expect.poll(scheduledOscillators.count).toBeGreaterThan(0);
+        await expect.poll(scheduledOscillators.lead).toBeGreaterThanOrEqual(0);
+        await expect.poll(scheduledOscillators.lead).toBeLessThanOrEqual(MAX_SCHEDULED_OSCILLATOR_LEAD_SECONDS);
 
         await expect.poll(playheadPosition).not.toBe(initialPosition);
         const firstAdvancedPosition = await playheadPosition();

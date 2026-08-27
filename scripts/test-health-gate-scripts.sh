@@ -185,6 +185,10 @@ const workflow = parse(readFileSync(process.env.WORKFLOW_PATH, 'utf8'));
 const gitleaksHelper = readFileSync(`${process.env.REPO_ROOT}/scripts/run-gitleaks-history-scan.sh`, 'utf8');
 const gitleaksConfig = readFileSync(`${process.env.REPO_ROOT}/.gitleaks.toml`, 'utf8');
 const smokeSpec = readFileSync(`${process.env.REPO_ROOT}/tests/e2e/smoke.spec.ts`, 'utf8');
+const playheadScheduler = readFileSync(
+    `${process.env.REPO_ROOT}/src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts`,
+    'utf8'
+);
 const failures = [];
 
 function expect(condition, message) {
@@ -488,6 +492,31 @@ expect(
 );
 expect(smokeSpec.includes('const nativeStart = OscillatorNode.prototype.start;'), 'playback smoke must observe the production oscillator scheduling boundary');
 expect(smokeSpec.includes('document.documentElement.dataset.scheduledOscillatorCount'), 'playback smoke must expose scheduled oscillator count through a test-only dataset signal');
+const oscillatorStartWrapper = smokeSpec.slice(
+    smokeSpec.indexOf('OscillatorNode.prototype.start = function'),
+    smokeSpec.indexOf("document.addEventListener('sourdaw-test-reset-scheduled-oscillator-count'")
+);
+expect(
+    oscillatorStartWrapper.indexOf('nativeStart.apply(this, args);') >= 0 &&
+        oscillatorStartWrapper.indexOf('nativeStart.apply(this, args);') <
+            oscillatorStartWrapper.indexOf('const count = Number(document.documentElement.dataset.scheduledOscillatorCount') &&
+        oscillatorStartWrapper.includes('const scheduledTime = args[0] ?? currentTime;') &&
+        oscillatorStartWrapper.includes('const lead = scheduledTime - currentTime;') &&
+        oscillatorStartWrapper.includes('document.documentElement.dataset.scheduledOscillatorTime = String(scheduledTime);') &&
+        oscillatorStartWrapper.includes('document.documentElement.dataset.scheduledOscillatorLead = String(lead);'),
+    'playback smoke must record only successful native oscillator starts and their live scheduling lead'
+);
+const productionScheduleAheadSeconds = Number(
+    playheadScheduler.match(/const SCHEDULE_AHEAD_SECONDS = ([0-9.]+);/u)?.[1]
+);
+const smokeScheduleLeadBoundSeconds = Number(
+    smokeSpec.match(/const MAX_SCHEDULED_OSCILLATOR_LEAD_SECONDS = ([0-9.]+);/u)?.[1]
+);
+expect(
+    Number.isFinite(productionScheduleAheadSeconds) &&
+        smokeScheduleLeadBoundSeconds === productionScheduleAheadSeconds,
+    'playback smoke lead bound must equal the production transport scheduler lookahead'
+);
 expect(smokeSpec.includes('await createPlayableMidiClip(page);'), 'playback smoke must create deterministic playable MIDI material before transport starts');
 expect(smokeSpec.includes("toHaveText('1 note')"), 'playback smoke must assert that the playable clip contains one MIDI note');
 expect(
@@ -516,6 +545,11 @@ expect(
 expect(
     smokeSpec.indexOf('expect.poll(scheduledOscillators.count).toBeGreaterThan(0)') > smokeSpec.indexOf('await play.click();'),
     'playback smoke must observe transport scheduling only after clicking Play'
+);
+expect(
+    smokeSpec.includes('await expect.poll(scheduledOscillators.lead).toBeGreaterThanOrEqual(0);') &&
+        smokeSpec.includes('.toBeLessThanOrEqual(MAX_SCHEDULED_OSCILLATOR_LEAD_SECONDS);'),
+    'playback smoke must reject successful oscillator starts in the past or beyond the production lookahead'
 );
 expect(
     smokeSpec.indexOf('await audioContext.suspend();') < smokeSpec.indexOf('await play.click();') &&
