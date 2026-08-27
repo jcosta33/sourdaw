@@ -107,11 +107,71 @@ describe('review publish', () => {
             'a comment supplying legacy body instead of the field contract',
             { event: 'REQUEST_CHANGES', body: 'n', comments: [{ path: 'a.ts', line: 1, side: 'RIGHT', body: 'text' }] },
         ],
+        [
+            'a comment with an empty defect',
+            {
+                event: 'REQUEST_CHANGES',
+                body: 'n',
+                comments: [{ path: 'a.ts', line: 1, side: 'RIGHT', defect: '', consequence: 'c', done: 'd' }],
+            },
+        ],
+        [
+            'a comment with a missing defect',
+            {
+                event: 'REQUEST_CHANGES',
+                body: 'n',
+                comments: [{ path: 'a.ts', line: 1, side: 'RIGHT', consequence: 'c', done: 'd' }],
+            },
+        ],
     ])('does not post %s', (_case, json) => {
         const { port, calls } = fakePort({ json });
 
         expect(() => publishReview(42, port)).toThrow();
         expect(calls.some((call) => call.startsWith('post:'))).toBe(false);
+    });
+
+    it('names the field and index when a comment supplies a non-string value', () => {
+        const { port } = fakePort({
+            json: {
+                event: 'REQUEST_CHANGES',
+                body: 'n',
+                comments: [{ path: 'a.ts', line: 1, side: 'RIGHT', defect: 42, consequence: 'c', done: 'd' }],
+            },
+        });
+
+        expect(() => publishReview(42, port)).toThrow(/review\.json comments\[0\] defect is invalid/);
+    });
+
+    it("fires the APPROVE-carries-comments refusal before parsing that comment's fields", () => {
+        const { port } = fakePort({
+            json: { event: 'APPROVE', body: 'ok', comments: [{ path: 'a.ts', line: 1, side: 'RIGHT' }] },
+        });
+
+        expect(() => publishReview(42, port)).toThrow(/APPROVE must carry no comments/);
+    });
+
+    it('names the comment index in a byte-ceiling failure raised while parsing a document', () => {
+        const longField = 'x'.repeat(300);
+        const { port } = fakePort({
+            json: {
+                event: 'REQUEST_CHANGES',
+                body: 'n',
+                comments: [
+                    {
+                        path: 'a.ts',
+                        line: 1,
+                        side: 'RIGHT',
+                        defect: longField,
+                        consequence: longField,
+                        done: longField,
+                    },
+                ],
+            },
+        });
+
+        expect(() => publishReview(42, port)).toThrow(
+            /review\.json comments\[0\] is \d+ bytes, exceeding the 600-byte limit/
+        );
     });
 
     it('names defect, consequence, and done when a comment supplies legacy body', () => {
@@ -263,7 +323,7 @@ describe('shellPort postReview state verification', () => {
                 path: 'scripts/deliverPullRequest.ts',
                 line: 10,
                 side: 'RIGHT',
-                body: 'COMMENT still authorizes merge A stale COMMENT could ship Require reviewer APPROVED on this head',
+                body: 'COMMENT still authorizes merge. A stale COMMENT could ship. Require reviewer APPROVED on this head.',
             },
         ]);
     });

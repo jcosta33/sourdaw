@@ -442,29 +442,39 @@ export const REVIEW_COMMENT_MAX_BYTES = 600;
 
 const REVIEW_COMMENT_FIELDS = ['defect', 'consequence', 'done'] as const;
 
+const TERMINAL_PUNCTUATION = /[.?!]$/;
+
+/** Appends a period unless the field already ends in `.`, `?`, or `!` — a question stays a question. */
+function normalizedReviewCommentField(value: string): string {
+    return TERMINAL_PUNCTUATION.test(value) ? value : `${value}.`;
+}
+
 /**
  * A sentence count measures shape, not content: it passes three sentences of hedge and rejects one
  * precise sentence that actually says something. Three separate fields require each part — the
  * defect, its consequence, and what done looks like — to actually be present, and a byte ceiling
- * replaces the old floor: nothing here rewards padding, and nothing demands a minimum length.
+ * replaces the old floor: nothing here rewards padding, and nothing demands a minimum length. Each
+ * field is typed as `string` because the boundary that turns unknown JSON into this shape (see
+ * `parseReviewCommentContent` in `publishReview.ts`) is the one place a "not a string" guard is
+ * genuinely reachable; repeating that check here would be dead code the type checker cannot tell
+ * from the real thing, which is exactly what let it rot into decoration once already. `context`
+ * lets a caller parsing a larger document (a numbered `review.json` comment) fold that document's
+ * own location into the failure, without this function knowing anything about documents.
  */
-export function composeReviewCommentBody(content: ReviewCommentContent): string {
+export function composeReviewCommentBody(content: ReviewCommentContent, context = 'review comment'): string {
     for (const field of REVIEW_COMMENT_FIELDS) {
         const value = content[field];
-        if (typeof value !== 'string') {
-            fail(`review comment ${field} must be a string`);
-        }
         if (value.trim() === '') {
-            fail(`review comment ${field} is empty`);
+            fail(`${context} ${field} is empty`);
         }
         if (value.trim() !== value || value.includes('\n')) {
-            fail(`review comment ${field} must be one line`);
+            fail(`${context} ${field} must be one line`);
         }
     }
-    const body = `${content.defect} ${content.consequence} ${content.done}`;
+    const body = REVIEW_COMMENT_FIELDS.map((field) => normalizedReviewCommentField(content[field])).join(' ');
     const byteLength = Buffer.byteLength(body, 'utf8');
     if (byteLength > REVIEW_COMMENT_MAX_BYTES) {
-        fail(`review comment is ${byteLength} bytes, exceeding the ${REVIEW_COMMENT_MAX_BYTES}-byte limit`);
+        fail(`${context} is ${byteLength} bytes, exceeding the ${REVIEW_COMMENT_MAX_BYTES}-byte limit`);
     }
     return body;
 }

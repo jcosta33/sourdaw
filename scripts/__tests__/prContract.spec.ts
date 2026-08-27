@@ -336,15 +336,38 @@ describe('pull-request contract', () => {
     it('accepts a one-sentence-per-field comment the old sentence floor would have rejected', () => {
         // Each field is a single sentence with no internal period, so the retired sentence-splitting
         // rule would have counted one sentence overall and refused it. The field contract accepts it
-        // because every field is present, not because of how many sentences it reads as.
+        // because every field is present, not because of how many sentences it reads as. Each field
+        // also gains its own terminal period, since none supplied one.
         const content: ReviewCommentContent = {
             defect: 'The gate accepts a coerced review state',
             consequence: 'A silently coerced review could still report success',
             done: 'Compare the recorded state against the requested event',
         };
         expect(composeReviewCommentBody(content)).toBe(
-            'The gate accepts a coerced review state A silently coerced review could still report success Compare the recorded state against the requested event'
+            'The gate accepts a coerced review state. A silently coerced review could still report success. Compare the recorded state against the requested event.'
         );
+    });
+
+    it('appends a period to a field with no terminal punctuation', () => {
+        expect(composeReviewCommentBody({ defect: 'Bad thing', consequence: 'Breaks stuff', done: 'Fix it' })).toBe(
+            'Bad thing. Breaks stuff. Fix it.'
+        );
+    });
+
+    it('preserves a field already ending in terminal punctuation, including a question', () => {
+        expect(
+            composeReviewCommentBody({
+                defect: 'Is this intentional?',
+                consequence: 'Ship it!',
+                done: 'Confirm the intent.',
+            })
+        ).toBe('Is this intentional? Ship it! Confirm the intent.');
+    });
+
+    it('prefixes failure messages with a custom context', () => {
+        expect(() =>
+            composeReviewCommentBody({ defect: '', consequence: 'c', done: 'd' }, 'review.json comments[2]')
+        ).toThrow(/review\.json comments\[2\] defect is empty/);
     });
 
     it.each([
@@ -395,12 +418,29 @@ describe('pull-request contract', () => {
     });
 
     it('accepts a body exactly at the byte limit', () => {
-        const content: ReviewCommentContent = {
-            defect: 'a'.repeat(200),
-            consequence: 'b'.repeat(200),
-            done: 'c'.repeat(198),
-        };
-        const composed = composeReviewCommentBody(content);
+        // Each field already ends in a period, so normalization does not touch it, and the raw field
+        // lengths plus the two separating spaces are independently checked against the limit — not
+        // derived from whatever composeReviewCommentBody happens to return — so a composer that drops
+        // a separator, or measures only the fields, cannot pass this by accident.
+        const defect = `${'a'.repeat(199)}.`;
+        const consequence = `${'b'.repeat(199)}.`;
+        const done = `${'c'.repeat(197)}.`;
+        expect(defect.length + consequence.length + done.length + 2).toBe(REVIEW_COMMENT_MAX_BYTES);
+
+        const composed = composeReviewCommentBody({ defect, consequence, done });
+
+        expect(composed).toBe(`${defect} ${consequence} ${done}`);
         expect(Buffer.byteLength(composed, 'utf8')).toBe(REVIEW_COMMENT_MAX_BYTES);
+    });
+
+    it('rejects a body one byte over the limit', () => {
+        const defect = `${'a'.repeat(200)}.`;
+        const consequence = `${'b'.repeat(199)}.`;
+        const done = `${'c'.repeat(197)}.`;
+        expect(defect.length + consequence.length + done.length + 2).toBe(REVIEW_COMMENT_MAX_BYTES + 1);
+
+        expect(() => composeReviewCommentBody({ defect, consequence, done })).toThrow(
+            new RegExp(`exceeding the ${REVIEW_COMMENT_MAX_BYTES}-byte limit`)
+        );
     });
 });

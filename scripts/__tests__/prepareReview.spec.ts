@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -110,5 +110,74 @@ describe('review prepare', () => {
     it('parses a pull-request number', () => {
         expect(parsePrepareReviewArgs(['42'])).toEqual({ number: 42, help: false });
         expect(() => parsePrepareReviewArgs([])).toThrow(/usage/);
+    });
+
+    it('preserves a caller-written file across a re-install of the same bundle', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-bundle-'));
+        const destination = join(root, '42-head');
+        try {
+            mkdirSync(destination, { recursive: true });
+            writeFileSync(join(destination, 'manifest.json'), '{"pr":42}\n');
+            writeFileSync(join(destination, 'review.json'), '{"event":"APPROVE","body":"ok","comments":[]}\n');
+
+            installBundleAtomically(destination, { 'manifest.json': '{"pr":42,"headSha":"new"}\n' });
+
+            expect(readFileSync(join(destination, 'review.json'), 'utf8')).toBe(
+                '{"event":"APPROVE","body":"ok","comments":[]}\n'
+            );
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('replaces a generated file rather than pinning stale content from the previous install', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-bundle-'));
+        const destination = join(root, '42-head');
+        try {
+            mkdirSync(destination, { recursive: true });
+            writeFileSync(join(destination, 'manifest.json'), '{"pr":42,"headSha":"old"}\n');
+
+            installBundleAtomically(destination, { 'manifest.json': '{"pr":42,"headSha":"new"}\n' });
+
+            expect(readFileSync(join(destination, 'manifest.json'), 'utf8')).toBe('{"pr":42,"headSha":"new"}\n');
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('preserves a caller-written file nested in a subdirectory', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-bundle-'));
+        const destination = join(root, '42-head');
+        try {
+            mkdirSync(join(destination, 'notes'), { recursive: true });
+            writeFileSync(join(destination, 'manifest.json'), '{"pr":42}\n');
+            writeFileSync(join(destination, 'notes', 'caller-note.md'), 'keep me\n');
+
+            installBundleAtomically(destination, { 'manifest.json': '{"pr":42,"headSha":"new"}\n' });
+
+            expect(readFileSync(join(destination, 'notes', 'caller-note.md'), 'utf8')).toBe('keep me\n');
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('leaves the destination untouched, caller files included, when writing staging throws', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-bundle-'));
+        const destination = join(root, '42-head');
+        try {
+            mkdirSync(destination, { recursive: true });
+            writeFileSync(join(destination, 'manifest.json'), '{"pr":42}\n');
+            writeFileSync(join(destination, 'review.json'), 'caller content\n');
+
+            // 'a' is written as a file, then 'a/b' asks to create a directory at that same path —
+            // Node's recursive mkdir throws ENOTDIR, forcing the write loop to fail mid-staging.
+            expect(() => installBundleAtomically(destination, { a: 'x', 'a/b': 'y' })).toThrow();
+
+            expect(readFileSync(join(destination, 'manifest.json'), 'utf8')).toBe('{"pr":42}\n');
+            expect(readFileSync(join(destination, 'review.json'), 'utf8')).toBe('caller content\n');
+            expect(readdirSync(root)).toEqual(['42-head']);
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
     });
 });

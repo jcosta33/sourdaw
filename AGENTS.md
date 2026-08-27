@@ -85,10 +85,11 @@ naming what breaks — is discarded on arrival, and reviewers are told so when d
 The orchestrator owns every finding. Validate each one against the live code before acting on it:
 discard what is wrong, out of scope, or personal style, and never forward it. Send the survivors to
 the implementing agent as a precise repair task. An implementing agent never judges a finding
-against its own work, never accepts that work, and never merges it. A discarded finding is recorded
-with its one-line reason in the review bundle as `discarded.json`, beside `review.json`. Discarding
-is the orchestrator's own judgement about a blind reviewer's work, and an unrecorded discard is
-indistinguishable from never having read the finding.
+against its own work, never accepts that work, and never merges it. The orchestrator writes a
+discarded finding, with its one-line reason, into the review bundle as `discarded.json`, beside
+`review.json` — the same way the caller writes `review.json` itself; no script produces either file.
+Discarding is the orchestrator's own judgement about a blind reviewer's work, and an unrecorded
+discard is indistinguishable from never having read the finding.
 
 Order matters, because the pull request is public and a posted finding is expensive to retract.
 Blind stances report to the orchestrator, never straight to GitHub. Only findings that survive
@@ -388,16 +389,20 @@ say what changed, why, and how to test. Leave session diaries, unpublished round
 tables off the pull request.
 
 `review:prepare` prints a bundle path on the primary root: `manifest.json`, `diff.patch`, `pr.md`,
-and base-commit `contracts/`. The caller writes `review.json` for **this** head. A reviewer agent
-gets that bundle, not the author transcript. `review:publish` prints the review id and posts through
-the reviewer App only while GitHub's head still matches the bundle.
+and base-commit `contracts/`. The caller writes `review.json` for **this** head, and later
+`discarded.json` beside it. Re-preparing a bundle for that same head — for instance to refresh
+`pr.md` after `lane:publish` rewrites the pull-request body — does not discard what the caller
+already wrote there: the bundle path is keyed by head sha, so an existing bundle directory always
+describes the head the new one describes, and only the generated files are replaced. A reviewer
+agent gets that bundle, not the author transcript. `review:publish` prints the review id and posts
+through the reviewer App only while GitHub's head still matches the bundle.
 
 Review the diff as that teammate. Read every changed line. If a hunk is not enough to judge, read
 the surrounding code. When something is wrong, comment on that line: what is wrong, why it matters,
 what done looks like. Supply that as three fields — the defect, its consequence, and what done looks
-like — which the tooling composes into one comment; the contract caps length rather than demanding a
-minimum, so padding a comment to reach a length is not a virtue, and one precise sentence per field
-is the target. One problem per comment. Talk about the code, not the author.
+like. The tooling composes them into one comment. The contract caps length rather than demanding a
+minimum: padding a comment to reach a length is not a virtue, and one precise sentence per field is
+the target. One problem per comment. Talk about the code, not the author.
 
 Request changes when this head must not merge, and post every blocking comment with that review. The
 summary is a short pointer to those comments, not a report.
@@ -409,10 +414,10 @@ never empty: its body states what the reviewer attacked and what held.
 Keep an approval free of inline comments. Every inline comment opens a review thread, the ruleset
 refuses to merge while one is unresolved, and `review:resolve` clears a thread only by replying
 `Done` on it — so a note meant not to block is exactly what blocks, and clearing it asserts a repair
-that never happened. `review:publish` now refuses an APPROVE document that carries any comments,
-rather than leaving the trap to discipline. Put a non-blocking observation in the approval body,
-prefixed `Nit:` or `Optional:`, or file it. Inline comments belong to a `CHANGES_REQUESTED` review,
-where the thread is meant to stop the merge and a new head clears it.
+that never happened. `review:publish` refuses an APPROVE document that carries any comments: the
+contract does not depend on reviewer discipline to keep one out. Put a non-blocking observation in
+the approval body, prefixed `Nit:` or `Optional:`, or file it. Inline comments belong to a
+`CHANGES_REQUESTED` review, where the thread is meant to stop the merge and a new head clears it.
 
 When answering, push the fix first; `review:resolve` then posts a bare `Done` as the author bot and
 resolves the thread, pinned to that head. The reply body is fixed and no script writes free-form

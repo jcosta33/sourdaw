@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -89,6 +89,31 @@ export function prepareReview(number: number, port: PrepareReviewPort): string {
     return destination;
 }
 
+/**
+ * Copies every file under `source` whose relative path is not one of `generated` into `target`,
+ * preserving subdirectories. The bundle directory is keyed by head sha, so a directory already
+ * sitting at the destination describes the same head the new bundle describes — it is not stale.
+ * Whatever the caller wrote there (`review.json`, `discarded.json`, or anything that follows) is an
+ * input to delivery that no generated file can reconstruct, so carrying it across the swap is
+ * unconditionally correct here.
+ */
+function preserveCallerFiles(source: string, target: string, generated: ReadonlySet<string>, prefix = ''): void {
+    for (const entry of readdirSync(source, { withFileTypes: true })) {
+        const relative = prefix === '' ? entry.name : `${prefix}/${entry.name}`;
+        const from = join(source, entry.name);
+        if (entry.isDirectory()) {
+            preserveCallerFiles(from, target, generated, relative);
+            continue;
+        }
+        if (generated.has(relative)) {
+            continue;
+        }
+        const to = join(target, relative);
+        mkdirSync(join(to, '..'), { recursive: true });
+        writeFileSync(to, readFileSync(from));
+    }
+}
+
 export function installBundleAtomically(destination: string, files: Record<string, string>): void {
     const staging = `${destination}.staging-${process.pid}-${Date.now()}`;
     const previous = `${destination}.previous-${process.pid}-${Date.now()}`;
@@ -99,13 +124,25 @@ export function installBundleAtomically(destination: string, files: Record<strin
             mkdirSync(join(target, '..'), { recursive: true });
             writeFileSync(target, contents);
         }
+        let hadPrevious = false;
         try {
             renameSync(destination, previous);
+            hadPrevious = true;
         } catch {
             // Destination did not exist.
         }
+        if (hadPrevious) {
+            try {
+                preserveCallerFiles(previous, staging, new Set(Object.keys(files)));
+            } catch (error) {
+                renameSync(previous, destination);
+                throw error;
+            }
+        }
         renameSync(staging, destination);
-        rmSync(previous, { recursive: true, force: true });
+        if (hadPrevious) {
+            rmSync(previous, { recursive: true, force: true });
+        }
     } catch (error) {
         rmSync(staging, { recursive: true, force: true });
         throw error;
