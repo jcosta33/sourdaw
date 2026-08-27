@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -89,12 +90,7 @@ function stackedDeliveryPort(finalSettings: MergeSettings) {
                 return 'base';
             }
             if (joined.includes('pr view')) {
-                return JSON.stringify(rawPullRequest(args.includes('43') ? child : pullRequest()));
-            }
-            if (joined.includes('statusCheckRollup')) {
-                return rollupResponse({
-                    nodes: rollupNodes(joined.includes('oid=child-head') ? child.checkRuns : pullRequest().checkRuns),
-                });
+                return JSON.stringify(args.includes('43') ? child : pullRequest());
             }
             if (joined.includes('query=')) {
                 return JSON.stringify({
@@ -213,7 +209,6 @@ function pullRequest(overrides: Partial<PullRequestSnapshot> = {}): PullRequestS
         changedFiles: 3,
         additions: 40,
         deletions: 5,
-        checkRuns: [checkRun()],
         ...overrides,
     };
 }
@@ -253,10 +248,6 @@ function supersededRunCheckRuns(): HeadCheckRun[] {
         checkRun({ name: 'Lint' }),
         checkRun(),
     ];
-}
-
-function rawPullRequest(snapshot: PullRequestSnapshot): Record<string, unknown> {
-    return Object.fromEntries(Object.entries(snapshot).filter(([field]) => field !== 'checkRuns'));
 }
 
 type RollupPageFixture = {
@@ -308,6 +299,7 @@ type FakeInput = {
     reviewStates?: ReviewState[];
     dependentSets?: StackedPullRequest[][];
     dirty?: boolean;
+    headCheckRuns?: HeadCheckRun[];
     gateRequiredCheckNames?: ReadonlySet<string>;
     deletesMergedBranches?: boolean;
     failRetargetOnce?: number;
@@ -383,6 +375,19 @@ function fakePort(input: FakeInput = {}) {
         gateRequiredCheckNames: () => {
             calls.push('gate-required-check-names');
             return input.gateRequiredCheckNames ?? gatingCheckNames;
+        },
+        /**
+         * Unreadable unless the case under test supplies the head's own check runs, so a delivery
+         * that reads check evidence it has no business reading — a dependent's, or an already-merged
+         * pull request's — throws instead of quietly passing.
+         */
+        headCheckRuns: (number, headRefOid) => {
+            calls.push(`checks:${number}:${headRefOid}`);
+            const runs = number === 42 ? input.headCheckRuns : undefined;
+            if (runs === undefined) {
+                throw new Error(`PR #${number} check rollup is unreadable`);
+            }
+            return runs;
         },
         reviewState: (number, expectedHead) => {
             calls.push(`review:${number}:${expectedHead}`);
@@ -820,7 +825,8 @@ describe('pull-request delivery', () => {
         'rejects merge state %s and names it, because it reports something other than checks',
         (mergeStateStatus) => {
             const { port, calls } = fakePort({
-                primary: [pullRequest({ mergeStateStatus, checkRuns: [checkRun()] })],
+                primary: [pullRequest({ mergeStateStatus })],
+                headCheckRuns: [checkRun()],
             });
 
             let thrown: unknown;
@@ -835,12 +841,17 @@ describe('pull-request delivery', () => {
         }
     );
 
-    it('merges a CLEAN head', () => {
+    /**
+     * A CLEAN head is decided by GitHub's own aggregate, so the rollup is never read for it — the
+     * fake refuses to hand one back, and this delivery never asks.
+     */
+    it('merges a CLEAN head without reading its check rollup', () => {
         const { port, calls } = fakePort({ primary: [pullRequest(), pullRequest()] });
 
         deliverPullRequest(42, port);
 
         expect(calls).toContain('merge:42:head');
+        expect(calls.filter((call) => call.startsWith('checks:'))).toEqual([]);
     });
 
     /**
@@ -848,9 +859,10 @@ describe('pull-request delivery', () => {
      * makes GitHub call the head UNSTABLE; the run that actually decided the head passed.
      */
     it('merges an UNSTABLE head whose only non-success runs were cancelled and whose Gate succeeded', () => {
-        const superseded = { mergeStateStatus: 'UNSTABLE', checkRuns: supersededRunCheckRuns() };
+        const unstable = { mergeStateStatus: 'UNSTABLE' };
         const { port, calls } = fakePort({
-            primary: [pullRequest(superseded), pullRequest(superseded)],
+            primary: [pullRequest(unstable), pullRequest(unstable)],
+            headCheckRuns: supersededRunCheckRuns(),
         });
 
         deliverPullRequest(42, port);
@@ -858,16 +870,17 @@ describe('pull-request delivery', () => {
         expect(calls).toContain('merge:42:head');
     });
 
-    it.each(['FAILURE', 'TIMED_OUT', 'ACTION_REQUIRED', 'STARTUP_FAILURE'])(
+    /**
+     * `NEUTRAL` is a check that ran and reached no verdict. It is deliberately absent from the
+     * tolerated conclusions: an undecided result is not a passing one, which is the same reason a
+     * cancellation with no success beside it refuses.
+     */
+    it.each(['FAILURE', 'TIMED_OUT', 'ACTION_REQUIRED', 'STARTUP_FAILURE', 'NEUTRAL'])(
         'refuses an UNSTABLE head carrying a check that concluded %s',
         (conclusion) => {
             const { port, calls } = fakePort({
-                primary: [
-                    pullRequest({
-                        mergeStateStatus: 'UNSTABLE',
-                        checkRuns: [...supersededRunCheckRuns(), checkRun({ name: 'Unit suite 1/4', conclusion })],
-                    }),
-                ],
+                primary: [pullRequest({ mergeStateStatus: 'UNSTABLE' })],
+                headCheckRuns: [...supersededRunCheckRuns(), checkRun({ name: 'Unit suite 1/4', conclusion })],
             });
 
             let thrown: unknown;
@@ -886,14 +899,10 @@ describe('pull-request delivery', () => {
 
     it('refuses an UNSTABLE head whose checks have not all settled', () => {
         const { port, calls } = fakePort({
-            primary: [
-                pullRequest({
-                    mergeStateStatus: 'UNSTABLE',
-                    checkRuns: [
-                        ...supersededRunCheckRuns(),
-                        checkRun({ name: 'End-to-end 3/12', status: 'IN_PROGRESS', conclusion: null }),
-                    ],
-                }),
+            primary: [pullRequest({ mergeStateStatus: 'UNSTABLE' })],
+            headCheckRuns: [
+                ...supersededRunCheckRuns(),
+                checkRun({ name: 'End-to-end 3/12', status: 'IN_PROGRESS', conclusion: null }),
             ],
         });
 
@@ -916,15 +925,11 @@ describe('pull-request delivery', () => {
      */
     it('refuses an UNSTABLE head whose cancelled runs never left a successful Gate', () => {
         const { port, calls } = fakePort({
-            primary: [
-                pullRequest({
-                    mergeStateStatus: 'UNSTABLE',
-                    checkRuns: [
-                        checkRun({ name: 'Lint', conclusion: 'CANCELLED' }),
-                        checkRun({ name: 'Gate', conclusion: 'CANCELLED' }),
-                        checkRun({ name: 'Lint' }),
-                    ],
-                }),
+            primary: [pullRequest({ mergeStateStatus: 'UNSTABLE' })],
+            headCheckRuns: [
+                checkRun({ name: 'Lint', conclusion: 'CANCELLED' }),
+                checkRun({ name: 'Gate', conclusion: 'CANCELLED' }),
+                checkRun({ name: 'Lint' }),
             ],
         });
 
@@ -948,16 +953,12 @@ describe('pull-request delivery', () => {
      */
     it('refuses an UNSTABLE head whose cancelled gate dependency only ever skipped beside it', () => {
         const { port, calls } = fakePort({
-            primary: [
-                pullRequest({
-                    mergeStateStatus: 'UNSTABLE',
-                    checkRuns: [
-                        ...supersededRunCheckRuns(),
-                        checkRun({ name: 'Dependency review', conclusion: 'CANCELLED' }),
-                        checkRun({ name: 'Dependency review', conclusion: 'SKIPPED' }),
-                        checkRun({ name: 'Dependency review', conclusion: 'SKIPPED' }),
-                    ],
-                }),
+            primary: [pullRequest({ mergeStateStatus: 'UNSTABLE' })],
+            headCheckRuns: [
+                ...supersededRunCheckRuns(),
+                checkRun({ name: 'Dependency review', conclusion: 'CANCELLED' }),
+                checkRun({ name: 'Dependency review', conclusion: 'SKIPPED' }),
+                checkRun({ name: 'Dependency review', conclusion: 'SKIPPED' }),
             ],
         });
 
@@ -980,15 +981,15 @@ describe('pull-request delivery', () => {
      * need it, so its silence decides nothing — and refusing on it would refuse every delivery.
      */
     it('merges an UNSTABLE head whose only undecided cancellation is a check the gate does not need', () => {
-        const superseded = {
-            mergeStateStatus: 'UNSTABLE',
-            checkRuns: [
+        const unstable = { mergeStateStatus: 'UNSTABLE' };
+        const { port, calls } = fakePort({
+            primary: [pullRequest(unstable), pullRequest(unstable)],
+            headCheckRuns: [
                 ...supersededRunCheckRuns(),
                 checkRun({ name: 'Nightly failure report', conclusion: 'CANCELLED' }),
                 checkRun({ name: 'Nightly failure report', conclusion: 'SKIPPED' }),
             ],
-        };
-        const { port, calls } = fakePort({ primary: [pullRequest(superseded), pullRequest(superseded)] });
+        });
 
         deliverPullRequest(42, port);
 
@@ -1006,10 +1007,8 @@ describe('pull-request delivery', () => {
             checkRun({ name: 'Secret scan', conclusion: 'SKIPPED' }),
         ];
         const tolerated = fakePort({
-            primary: [
-                pullRequest({ mergeStateStatus: 'UNSTABLE', checkRuns }),
-                pullRequest({ mergeStateStatus: 'UNSTABLE', checkRuns }),
-            ],
+            primary: [pullRequest({ mergeStateStatus: 'UNSTABLE' }), pullRequest({ mergeStateStatus: 'UNSTABLE' })],
+            headCheckRuns: checkRuns,
             gateRequiredCheckNames: new Set(['Gate', 'Lint']),
         });
 
@@ -1018,7 +1017,8 @@ describe('pull-request delivery', () => {
         expect(tolerated.calls).toContain('merge:42:head');
 
         const refused = fakePort({
-            primary: [pullRequest({ mergeStateStatus: 'UNSTABLE', checkRuns })],
+            primary: [pullRequest({ mergeStateStatus: 'UNSTABLE' })],
+            headCheckRuns: checkRuns,
             gateRequiredCheckNames: new Set(['Gate', 'Lint', 'Secret scan']),
         });
 
@@ -1040,15 +1040,15 @@ describe('pull-request delivery', () => {
      * never ran on this head has nothing to supersede and nothing to prove.
      */
     it('merges an UNSTABLE head carrying a check that only ever skipped and never cancelled', () => {
-        const superseded = {
-            mergeStateStatus: 'UNSTABLE',
-            checkRuns: [
+        const unstable = { mergeStateStatus: 'UNSTABLE' };
+        const { port, calls } = fakePort({
+            primary: [pullRequest(unstable), pullRequest(unstable)],
+            headCheckRuns: [
                 ...supersededRunCheckRuns(),
                 checkRun({ name: 'Windows device layer', conclusion: 'SKIPPED' }),
                 checkRun({ name: 'Windows device layer', conclusion: 'SKIPPED' }),
             ],
-        };
-        const { port, calls } = fakePort({ primary: [pullRequest(superseded), pullRequest(superseded)] });
+        });
 
         deliverPullRequest(42, port);
 
@@ -1057,7 +1057,8 @@ describe('pull-request delivery', () => {
 
     it('refuses an UNSTABLE head with no checks at all', () => {
         const { port, calls } = fakePort({
-            primary: [pullRequest({ mergeStateStatus: 'UNSTABLE', checkRuns: [] })],
+            primary: [pullRequest({ mergeStateStatus: 'UNSTABLE' })],
+            headCheckRuns: [],
         });
 
         expect(() => deliverPullRequest(42, port)).toThrow(/no Gate check succeeded on head/);
@@ -1066,16 +1067,33 @@ describe('pull-request delivery', () => {
 
     it('refuses an UNSTABLE head carrying a conclusion it does not recognize', () => {
         const { port, calls } = fakePort({
-            primary: [
-                pullRequest({
-                    mergeStateStatus: 'UNSTABLE',
-                    checkRuns: [...supersededRunCheckRuns(), checkRun({ name: 'CodeQL', conclusion: 'STALE' })],
-                }),
-            ],
+            primary: [pullRequest({ mergeStateStatus: 'UNSTABLE' })],
+            headCheckRuns: [...supersededRunCheckRuns(), checkRun({ name: 'CodeQL', conclusion: 'STALE' })],
         });
 
         expect(() => deliverPullRequest(42, port)).toThrow(/check CodeQL concluded STALE/);
         expect(calls).not.toContain('merge:42:head');
+    });
+
+    /**
+     * The rollup read can refuse, and a dependent's snapshot is read again immediately after the
+     * squash has landed. A transient failure there would leave the dependents pointing at a merged
+     * branch with the issue still open, so check evidence is fetched only where it is judged: for
+     * the head being delivered, before the merge, and nowhere else. This fake refuses to hand back a
+     * dependent's rollup at all, so a delivery that asks for one throws.
+     */
+    it('merges an UNSTABLE head and retargets dependents without reading a dependent rollup', () => {
+        const unstable = { mergeStateStatus: 'UNSTABLE' };
+        const { port, calls } = fakePort({
+            primary: [pullRequest(unstable), pullRequest(unstable)],
+            headCheckRuns: supersededRunCheckRuns(),
+        });
+
+        deliverPullRequest(42, port);
+
+        expect(calls).toContain('merge:42:head');
+        expect(calls).toContain('retarget:43:main');
+        expect(calls.filter((call) => call.startsWith('checks:'))).toEqual(['checks:42:head', 'checks:42:head']);
     });
 
     it('rejects an aggregate CHANGES_REQUESTED decision', () => {
@@ -1126,6 +1144,7 @@ describe('pull-request delivery', () => {
 
         expect(calls.filter((call) => call === 'retarget:44:main')).toHaveLength(2);
         expect(calls).toContain('PR #42 was already merged; repaired 1 remaining dependent(s)');
+        expect(calls.filter((call) => call.startsWith('checks:'))).toEqual([]);
     });
 
     it.each([
@@ -1156,7 +1175,18 @@ describe('gating check names', () => {
     }
 
     const decide = ['  decide:', '    name: Decide scope', '    runs-on: ubuntu-latest'].join('\n');
-    const boundaries = ['  boundaries:', '    needs: decide', '    runs-on: ubuntu-latest'].join('\n');
+    /**
+     * Declares no job name, so GitHub labels its check with the job id — and carries a step whose
+     * own `name:` sits deeper, which is not the job's name however early it appears in the job.
+     */
+    const boundaries = [
+        '  boundaries:',
+        '    needs: decide',
+        '    runs-on: ubuntu-latest',
+        '    steps:',
+        '      - uses: actions/checkout@v4',
+        '        name: Checkout',
+    ].join('\n');
     const dependencyReview = ['  dependency-review:', '    name: Dependency review', '    needs: decide'].join('\n');
     const nightly = ['  nightly-report:', '    name: Nightly failure report', '    needs: [decide, boundaries]'].join(
         '\n'
@@ -1205,6 +1235,99 @@ describe('gating check names', () => {
         ]);
     });
 
+    function gateNeeding(jobId: string): string {
+        return ['  gate:', '    name: Gate', `    needs: ${jobId}`].join('\n');
+    }
+
+    /**
+     * A quoted name is one of the two spellings this reader accepts, and a single-quoted value
+     * spells an apostrophe by doubling it.
+     */
+    it('reads a quoted job name and its doubled single quote', () => {
+        const lint = ['  lint:', "    name: 'Lint''s pass'", '    runs-on: ubuntu-latest'].join('\n');
+
+        expect([...gateRequiredCheckNames(workflow(lint, gateNeeding('lint')))]).toEqual(["Lint's pass"]);
+    });
+
+    /**
+     * Every spelling here parses as valid YAML and none of them is a name this reader can resolve.
+     * Handing back the raw text instead would name a check GitHub never reports, and every
+     * cancellation under the real name would then be tolerated in silence.
+     */
+    it.each([
+        { label: 'a plain name ending in a comment', declared: '    name: Lint # the fast lane' },
+        { label: 'an anchored name', declared: '    name: &fast Lint' },
+        { label: 'an aliased name', declared: '    name: *fast' },
+        { label: 'a tagged name', declared: '    name: !!str Lint' },
+        { label: 'a folded block name', declared: '    name: >-' },
+        { label: 'a literal block name', declared: '    name: |' },
+        { label: 'a double-quoted name carrying an escape', declared: '    name: "Lint \\"fast\\""' },
+    ])('refuses $label', ({ declared }) => {
+        const lint = ['  lint:', declared, '    runs-on: ubuntu-latest'].join('\n');
+
+        let thrown: unknown;
+        try {
+            gateRequiredCheckNames(workflow(lint, gateNeeding('lint')));
+        } catch (error) {
+            thrown = error;
+        }
+
+        expect(String(thrown)).toBe(
+            `Error: cannot read ${declared.slice('    name: '.length)} in ${WORKFLOW_PATH} as a plain or quoted scalar`
+        );
+    });
+
+    /**
+     * `unit` and `e2e` are one line away from joining the gate, and GitHub reports one check per
+     * shard with the expression substituted. The declared name matches none of them, so promoting
+     * such a job silently adds an entry that can never fire.
+     */
+    it('refuses a matrix job promoted into the gate rather than gating on a name GitHub never reports', () => {
+        const unit = [
+            '  unit:',
+            '    name: Unit suite ${{ matrix.shard }}/4',
+            '    strategy:',
+            '      matrix:',
+            '        shard: [1, 2, 3, 4]',
+        ].join('\n');
+
+        let thrown: unknown;
+        try {
+            gateRequiredCheckNames(workflow(unit, gateNeeding('unit')));
+        } catch (error) {
+            thrown = error;
+        }
+
+        expect(String(thrown)).toBe(
+            `Error: the unit job in ${WORKFLOW_PATH} names its check Unit suite \${{ matrix.shard }}/4, ` +
+                'which GitHub substitutes per matrix job before reporting it'
+        );
+    });
+
+    /**
+     * A job that declares `name:` and leaves it empty is labelled with its job id, exactly as one
+     * that declares no name at all.
+     */
+    it('labels a job declaring an empty name with its job id', () => {
+        const lint = ['  lint:', '    name:', '    runs-on: ubuntu-latest'].join('\n');
+
+        expect([...gateRequiredCheckNames(workflow(lint, gateNeeding('lint')))]).toEqual(['lint']);
+    });
+
+    /**
+     * `jobs:` is not the last block in this workflow, and a top-level key that follows it is not a
+     * job however it is spelled.
+     */
+    it('reads only the jobs block when another top-level key follows it', () => {
+        const source = [
+            workflow(decide, boundaries, dependencyReview, nightly, gate),
+            'permissions:',
+            '  contents: read',
+        ].join('\n');
+
+        expect([...gateRequiredCheckNames(source)].sort()).toEqual(['Decide scope', 'Dependency review', 'boundaries']);
+    });
+
     it.each([
         {
             label: 'a workflow declaring no jobs',
@@ -1215,6 +1338,16 @@ describe('gating check names', () => {
             label: 'a jobs block that is not a mapping of job ids',
             source: workflow('  - decide', gate),
             message: `Error: cannot read the jobs in ${WORKFLOW_PATH} to determine which checks gate the merge`,
+        },
+        {
+            label: 'a job field standing outside any job',
+            source: workflow('    name: Orphan', gate),
+            message: `Error: cannot read the jobs in ${WORKFLOW_PATH} to determine which checks gate the merge`,
+        },
+        {
+            label: 'a needs list indented where this reader cannot place it',
+            source: workflow(decide, ['  gate:', '    name: Gate', '    needs:', '        - decide'].join('\n')),
+            message: `Error: the gate job in ${WORKFLOW_PATH} needs no job, so no check can be proven to gate the merge`,
         },
         {
             label: 'a workflow with no gate job',
@@ -1247,17 +1380,35 @@ describe('gating check names', () => {
         expect(String(thrown)).toBe(message);
     });
 
-    function workflowRoot(source?: string): string {
+    function workflowRepository(committed: string, workingTree?: string): string {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-health-gates-'));
-        if (source !== undefined) {
-            mkdirSync(join(root, '.github', 'workflows'), { recursive: true });
-            writeFileSync(join(root, WORKFLOW_PATH), source, 'utf8');
+        const git = (...args: string[]): void => {
+            execFileSync('git', ['-C', root, '-c', 'core.hooksPath=', ...args], { stdio: 'pipe' });
+        };
+        git('init', '--quiet', '--initial-branch=main');
+        git('config', 'user.email', 'lane@example.invalid');
+        git('config', 'user.name', 'Lane');
+        mkdirSync(join(root, '.github', 'workflows'), { recursive: true });
+        writeFileSync(join(root, WORKFLOW_PATH), committed, 'utf8');
+        git('add', WORKFLOW_PATH);
+        git('commit', '--quiet', '--no-verify', '-m', 'add the health gates workflow');
+        if (workingTree !== undefined) {
+            writeFileSync(join(root, WORKFLOW_PATH), workingTree, 'utf8');
         }
         return root;
     }
 
-    it('reads the workflow from the repository it is given', () => {
-        const root = workflowRoot(workflow(decide, boundaries, dependencyReview, nightly, gate));
+    /**
+     * The workflow decides which checks gate an irreversible merge, so it is read as the git object
+     * at the repository's `HEAD` rather than from its working tree. A working-tree file is not a
+     * pinned input: one stray uncommitted edit would reshape the gate for every delivery, silently,
+     * in either direction. Here the working tree gates on one job and the commit on three.
+     */
+    it('reads the committed workflow at HEAD and not the working tree beside it', () => {
+        const root = workflowRepository(
+            workflow(decide, boundaries, dependencyReview, nightly, gate),
+            workflow(decide, ['  gate:', '    name: Gate', '    needs: decide'].join('\n'))
+        );
         try {
             expect([...readGateRequiredCheckNames(root)].sort()).toEqual([
                 'Decide scope',
@@ -1274,7 +1425,7 @@ describe('gating check names', () => {
      * gate that cannot work that out must refuse rather than tolerate every cancellation on the head.
      */
     it('refuses a repository whose health-gates workflow it cannot read', () => {
-        const root = workflowRoot();
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-health-gates-'));
         let thrown: unknown;
         try {
             readGateRequiredCheckNames(root);
@@ -1287,7 +1438,6 @@ describe('gating check names', () => {
         expect(String(thrown)).toContain(
             `Error: cannot read ${WORKFLOW_PATH} to determine which checks gate the merge: `
         );
-        expect(String(thrown)).toContain('ENOENT');
     });
 
     /**
@@ -1325,7 +1475,7 @@ describe('delivery shell boundary', () => {
                 captures.push({ command, args });
                 const joined = args.join(' ');
                 if (joined.includes('pr view')) {
-                    return JSON.stringify(rawPullRequest(pullRequest()));
+                    return JSON.stringify(pullRequest());
                 }
                 const page = remaining.shift();
                 if (page === undefined) {
@@ -1359,18 +1509,70 @@ describe('delivery shell boundary', () => {
             },
         ]);
 
-        const snapshot = port.pullRequest(42);
+        const checkRuns = port.headCheckRuns(42, 'head');
 
         expect(rollupCaptures(captures)).toHaveLength(1);
         expect(rollupCaptures(captures)[0]).toContain('oid=head');
-        expect(snapshot.checkRuns).toEqual([
+        expect(checkRuns).toEqual([
             { name: 'Gate', status: 'COMPLETED', conclusion: 'SUCCESS' },
             { name: 'Lint', status: 'COMPLETED', conclusion: 'CANCELLED' },
             { name: 'End-to-end 1/12', status: 'IN_PROGRESS', conclusion: null },
             { name: 'coverage/external', status: 'COMPLETED', conclusion: 'FAILURE' },
             { name: 'deploy/preview', status: 'PENDING', conclusion: null },
         ]);
-        expect(snapshot).not.toHaveProperty('statusCheckRollup');
+    });
+
+    /**
+     * A rollup read can refuse, and `pullRequest` is called for every dependent and for an
+     * already-merged head — both after the squash has landed. Keeping the read off the snapshot is
+     * what stops a transient GitHub failure from stranding dependents on a merged branch.
+     */
+    it('reads no rollup when asked for a pull-request snapshot', () => {
+        const { captures, port } = rollupPort([{ nodes: rollupNodes([checkRun()]) }]);
+
+        const snapshot = port.pullRequest(42);
+
+        expect(snapshot.headRefOid).toBe('head');
+        expect(rollupCaptures(captures)).toEqual([]);
+
+        port.headCheckRuns(42, 'head');
+
+        expect(rollupCaptures(captures)).toHaveLength(1);
+    });
+
+    /**
+     * The gating workflow is read as a git object at the primary checkout this port was given, not
+     * from whatever directory the process happens to run in and not from its working tree.
+     */
+    it('reads the gating workflow as a git object at the injected repository root', () => {
+        const captures: Array<{ command: string; args: string[] }> = [];
+        const port = shellPort(
+            'jcosta33/sourdaw',
+            {
+                capture: (command, args) => {
+                    captures.push({ command, args });
+                    return [
+                        'name: Health gates',
+                        'jobs:',
+                        '  dependency-review:',
+                        '    name: Dependency review',
+                        '  gate:',
+                        '    name: Gate',
+                        '    needs: dependency-review',
+                    ].join('\n');
+                },
+                run: () => undefined,
+            },
+            { repositoryRoot: '/primary/checkout' }
+        );
+
+        expect([...port.gateRequiredCheckNames()]).toEqual(['Dependency review']);
+        expect(captures).toEqual([
+            {
+                command: 'git',
+                args: ['-C', '/primary/checkout', 'show', 'HEAD:.github/workflows/health-gates.yml'],
+            },
+        ]);
     });
 
     /**
@@ -1380,7 +1582,7 @@ describe('delivery shell boundary', () => {
     it('asks for the completeness signal alongside the rollup nodes', () => {
         const { captures, port } = rollupPort([{ nodes: rollupNodes([checkRun()]) }]);
 
-        port.pullRequest(42);
+        port.headCheckRuns(42, 'head');
 
         const query = rollupCaptures(captures)[0] ?? '';
         expect(query).toContain('totalCount');
@@ -1399,9 +1601,7 @@ describe('delivery shell boundary', () => {
             { nodes: rollupNodes([checkRun({ name: 'Lint' })]), totalCount: 3 },
         ]);
 
-        const snapshot = port.pullRequest(42);
-
-        expect(snapshot.checkRuns).toEqual([
+        expect(port.headCheckRuns(42, 'head')).toEqual([
             { name: 'Lint', status: 'COMPLETED', conclusion: 'CANCELLED' },
             { name: 'Gate', status: 'COMPLETED', conclusion: 'SUCCESS' },
             { name: 'Lint', status: 'COMPLETED', conclusion: 'SUCCESS' },
@@ -1423,7 +1623,7 @@ describe('delivery shell boundary', () => {
 
         let thrown: unknown;
         try {
-            port.pullRequest(42);
+            port.headCheckRuns(42, 'head');
         } catch (error) {
             thrown = error;
         }
@@ -1434,19 +1634,42 @@ describe('delivery shell boundary', () => {
     it('refuses to guess at an entry matching neither arm', () => {
         const { port } = rollupPort([{ nodes: [{ __typename: 'CheckSuite', name: 'Gate' }] }]);
 
-        expect(() => port.pullRequest(42)).toThrow('cannot read a check on PR #42');
+        expect(() => port.headCheckRuns(42, 'head')).toThrow('cannot read a check on PR #42');
     });
 
+    /**
+     * Each page field is proven on its own, against a response valid in the other two. A rollup
+     * malformed everywhere at once would pass whichever single guard is left standing, and say
+     * nothing about the two that were removed.
+     */
     it.each([
-        { label: 'a head carrying no rollup at all', object: { statusCheckRollup: null } },
+        { label: 'a head carrying no rollup at all', contexts: undefined },
+        {
+            label: 'a rollup that reports no total',
+            contexts: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [] },
+        },
+        {
+            label: 'a rollup whose page info carries no completeness signal',
+            contexts: { totalCount: 0, pageInfo: { endCursor: null }, nodes: [] },
+        },
         {
             label: 'a rollup whose nodes are not a list',
-            object: { statusCheckRollup: { contexts: { totalCount: 0 } } },
+            contexts: { totalCount: 0, pageInfo: { hasNextPage: false, endCursor: null } },
         },
-    ])('refuses to guess at $label', ({ object }) => {
-        const { port } = rollupPort([JSON.stringify({ data: { repository: { object } } })]);
+    ])('refuses to guess at $label', ({ contexts }) => {
+        const rollup = contexts === undefined ? null : { contexts };
+        const { port } = rollupPort([
+            JSON.stringify({ data: { repository: { object: { statusCheckRollup: rollup } } } }),
+        ]);
 
-        expect(() => port.pullRequest(42)).toThrow('cannot read the checks on PR #42');
+        let thrown: unknown;
+        try {
+            port.headCheckRuns(42, 'head');
+        } catch (error) {
+            thrown = error;
+        }
+
+        expect(String(thrown)).toBe('Error: cannot read the checks on PR #42');
     });
 
     it('uses complete GitHub reads and exact-head writes', () => {

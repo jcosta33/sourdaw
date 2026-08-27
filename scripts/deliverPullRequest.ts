@@ -1,8 +1,6 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 
 import {
     AUTHOR_BOT_NODE_ID,
@@ -53,7 +51,6 @@ export type PullRequestSnapshot = {
     changedFiles: number;
     additions: number;
     deletions: number;
-    checkRuns: HeadCheckRun[];
 };
 
 export type ReviewState = {
@@ -66,10 +63,20 @@ export type StackedPullRequest = Pick<
     'number' | 'state' | 'headRefName' | 'headRefOid' | 'baseRefName'
 >;
 
-export type DeliveryPort = {
+/**
+ * The evidence a merge state is judged against, kept off `pullRequest` because reading it can
+ * refuse. A dependent's snapshot and an already-merged pull request's snapshot are both read after
+ * the squash has landed, and a rollup read that throws there would strand the dependents on a merged
+ * branch. Only the one caller that judges the head asks for check runs.
+ */
+export type CheckEvidencePort = {
+    gateRequiredCheckNames: () => ReadonlySet<string>;
+    headCheckRuns: (number: number, headRefOid: string) => HeadCheckRun[];
+};
+
+export type DeliveryPort = CheckEvidencePort & {
     fetch: () => void;
     pullRequest: (number: number) => PullRequestSnapshot;
-    gateRequiredCheckNames: () => ReadonlySet<string>;
     reviewState: (number: number, expectedHead: string) => ReviewState;
     dependents: (baseBranch: string) => StackedPullRequest[];
     repositoryDeletesMergedBranches: () => boolean;
@@ -103,10 +110,16 @@ const REQUIRED_CHECK_NAME = 'Gate';
 const SETTLED_CHECK_STATUS = 'COMPLETED';
 const SUPERSEDED_CONCLUSION = 'CANCELLED';
 const PASSING_CONCLUSION = 'SUCCESS';
-const NON_BLOCKING_CONCLUSIONS = new Set(['SUCCESS', 'SKIPPED', 'NEUTRAL']);
+/**
+ * `SKIPPED` is a designed outcome: the workflow's path filters skip whole legs, and `Gate` is built
+ * to pass on a skipped dependency. Nothing in it is designed to conclude `NEUTRAL`, which reports a
+ * check that ran and reached no verdict — the same undecided state a cancellation with no success
+ * beside it is refused for. An irreversible merge does not step over it.
+ */
+const NON_BLOCKING_CONCLUSIONS = new Set(['SUCCESS', 'SKIPPED']);
 const CHECKS_PENDING_MERGE_STATE = 'UNSTABLE';
 
-function validatePullRequest(pullRequest: PullRequestSnapshot, gateRequiredCheckNames: RequiredCheckNames): void {
+function validatePullRequest(pullRequest: PullRequestSnapshot, checks: CheckEvidencePort): void {
     if (pullRequest.state !== 'OPEN') {
         fail(`PR #${pullRequest.number} is ${pullRequest.state.toLowerCase()}`);
     }
@@ -116,7 +129,7 @@ function validatePullRequest(pullRequest: PullRequestSnapshot, gateRequiredCheck
     if (!TITLE_PATTERN.test(pullRequest.title)) {
         fail(`PR #${pullRequest.number} title is not conventional`);
     }
-    validateMergeState(pullRequest, gateRequiredCheckNames);
+    validateMergeState(pullRequest, checks);
     if (pullRequest.reviewDecision === 'CHANGES_REQUESTED') {
         fail(`PR #${pullRequest.number} has requested changes`);
     }
@@ -131,30 +144,31 @@ function validatePullRequest(pullRequest: PullRequestSnapshot, gateRequiredCheck
  * nothing is still running, the one required check succeeded, and every cancelled name also
  * succeeded. Every other status still refuses, because it reports something other than checks.
  */
-function validateMergeState(pullRequest: PullRequestSnapshot, gateRequiredCheckNames: RequiredCheckNames): void {
+function validateMergeState(pullRequest: PullRequestSnapshot, checks: CheckEvidencePort): void {
     if (pullRequest.mergeStateStatus === 'CLEAN') {
         return;
     }
     if (pullRequest.mergeStateStatus !== CHECKS_PENDING_MERGE_STATE) {
         fail(`PR #${pullRequest.number} merge state is ${pullRequest.mergeStateStatus}`);
     }
-    validateSupersededChecks(pullRequest, gateRequiredCheckNames);
+    validateSupersededChecks(pullRequest, checks);
 }
 
-function validateSupersededChecks(pullRequest: PullRequestSnapshot, gateRequiredCheckNames: RequiredCheckNames): void {
+function validateSupersededChecks(pullRequest: PullRequestSnapshot, checks: CheckEvidencePort): void {
     const state = `PR #${pullRequest.number} merge state is ${pullRequest.mergeStateStatus}`;
-    const failed = pullRequest.checkRuns.find(isFailedCheckRun);
+    const checkRuns = checks.headCheckRuns(pullRequest.number, pullRequest.headRefOid);
+    const failed = checkRuns.find(isFailedCheckRun);
     if (failed !== undefined) {
         fail(`${state} and check ${failed.name} concluded ${failed.conclusion ?? 'nothing'}`);
     }
-    const unsettled = pullRequest.checkRuns.find((check) => check.status !== SETTLED_CHECK_STATUS);
+    const unsettled = checkRuns.find((check) => check.status !== SETTLED_CHECK_STATUS);
     if (unsettled !== undefined) {
         fail(`${state} and check ${unsettled.name} is still ${unsettled.status}`);
     }
-    if (!pullRequest.checkRuns.some(isSuccessfulRequiredCheck)) {
+    if (!checkRuns.some(isSuccessfulRequiredCheck)) {
         fail(`${state} and no ${REQUIRED_CHECK_NAME} check succeeded on ${pullRequest.headRefOid}`);
     }
-    const undecided = undecidedCancelledCheckName(pullRequest.checkRuns, gateRequiredCheckNames());
+    const undecided = undecidedCancelledCheckName(checkRuns, checks.gateRequiredCheckNames());
     if (undecided !== undefined) {
         fail(`${state} and check ${undecided} was cancelled and never succeeded on ${pullRequest.headRefOid}`);
     }
@@ -200,8 +214,6 @@ function isSuccessfulRequiredCheck(check: HeadCheckRun): boolean {
     return check.name === REQUIRED_CHECK_NAME && check.conclusion === PASSING_CONCLUSION;
 }
 
-export type RequiredCheckNames = () => ReadonlySet<string>;
-
 const HEALTH_GATES_WORKFLOW_PATH = '.github/workflows/health-gates.yml';
 const GATE_JOB_ID = 'gate';
 const JOB_INDENT = 2;
@@ -209,6 +221,7 @@ const JOB_FIELD_INDENT = 4;
 const JOB_SEQUENCE_INDENT = 6;
 const JOB_ID_PATTERN = /^([A-Za-z_][A-Za-z0-9_-]*):$/;
 const SEQUENCE_ITEM_PREFIX = '- ';
+const EXPRESSION_OPENER = '${{';
 
 type WorkflowLine = { indent: number; text: string };
 type WorkflowJobs = ReadonlyMap<string, readonly WorkflowLine[]>;
@@ -260,13 +273,42 @@ function parseWorkflowJobs(source: string): WorkflowJobs {
     return jobs;
 }
 
+/**
+ * A check name that does not match what GitHub reports is worse than no name at all: it silently
+ * matches nothing, and every cancellation under the real name is then tolerated. This reads the two
+ * spellings a workflow uses for a name — plain and quoted — and refuses every other one rather than
+ * handing back a string that only looks like a name. A block scalar, an anchor, an alias and a tag
+ * all begin with a character no plain scalar may start with; an unquoted value carrying ` #` ends at
+ * the comment; and an escape inside a double-quoted value is a spelling this reader cannot resolve.
+ */
+const UNREADABLE_SCALAR_PREFIXES = ['|', '>', '&', '*', '!'];
+const PLAIN_SCALAR_COMMENT = ' #';
+
+function failUnreadableScalar(text: string): never {
+    return fail(`cannot read ${text} in ${HEALTH_GATES_WORKFLOW_PATH} as a plain or quoted scalar`);
+}
+
 function scalarValue(text: string): string {
     const trimmed = text.trim();
     const quote = trimmed.slice(0, 1);
     if ((quote === "'" || quote === '"') && trimmed.length > 1 && trimmed.endsWith(quote)) {
-        return trimmed.slice(1, -1);
+        return quotedScalarValue(trimmed, quote);
+    }
+    if (UNREADABLE_SCALAR_PREFIXES.includes(quote) || trimmed.includes(PLAIN_SCALAR_COMMENT)) {
+        failUnreadableScalar(trimmed);
     }
     return trimmed;
+}
+
+function quotedScalarValue(trimmed: string, quote: string): string {
+    const inner = trimmed.slice(1, -1);
+    if (quote === "'") {
+        return inner.replaceAll("''", "'");
+    }
+    if (inner.includes('\\')) {
+        failUnreadableScalar(trimmed);
+    }
+    return inner;
 }
 
 function jobFieldValue(job: readonly WorkflowLine[], key: string): string | undefined {
@@ -305,6 +347,12 @@ function jobNeeds(job: readonly WorkflowLine[]): string[] {
     return inline.startsWith('[') && inline.endsWith(']') ? flowSequenceItems(inline) : [scalarValue(inline)];
 }
 
+/**
+ * The name a job declares is a template, and GitHub reports one check per matrix job with the
+ * expression substituted, so a matrix job's declared name matches no check GitHub ever reports and
+ * every cancellation under a real shard name would pass unseen. Promoting such a job into the gate
+ * refuses here rather than adding an entry that matches nothing.
+ */
 function requiredCheckName(jobId: string, jobs: WorkflowJobs): string {
     const job = jobs.get(jobId);
     if (job === undefined) {
@@ -314,7 +362,16 @@ function requiredCheckName(jobId: string, jobs: WorkflowJobs): string {
         );
     }
     const name = jobFieldValue(job, 'name');
-    return name === undefined || name === '' ? jobId : name;
+    if (name === undefined || name === '') {
+        return jobId;
+    }
+    if (name.includes(EXPRESSION_OPENER)) {
+        fail(
+            `the ${jobId} job in ${HEALTH_GATES_WORKFLOW_PATH} names its check ${name}, ` +
+                `which GitHub substitutes per matrix job before reporting it`
+        );
+    }
+    return name;
 }
 
 /**
@@ -343,10 +400,21 @@ export function gateRequiredCheckNames(workflowSource: string): ReadonlySet<stri
     return new Set(needs.map((jobId) => requiredCheckName(jobId, jobs)));
 }
 
-export function readGateRequiredCheckNames(repositoryRoot: string): ReadonlySet<string> {
+/**
+ * Read from the primary checkout, because a lane's copy of the workflow is the very thing under
+ * review and must not decide its own merge gate — and read as the git object at that checkout's
+ * `HEAD`, because a working-tree file is not a pinned input: one stray uncommitted edit there would
+ * silently reshape the gate for every delivery, in either direction. `HEAD:` is spelled out; the
+ * bare `:path` form reads the index rather than the commit, and misresolves a path that looks like a
+ * stage prefix.
+ */
+export function readGateRequiredCheckNames(
+    repositoryRoot: string,
+    shell: ShellRunner = { capture, run }
+): ReadonlySet<string> {
     let source: string;
     try {
-        source = readFileSync(join(repositoryRoot, HEALTH_GATES_WORKFLOW_PATH), 'utf8');
+        source = shell.capture('git', ['-C', repositoryRoot, 'show', `HEAD:${HEALTH_GATES_WORKFLOW_PATH}`]);
     } catch (error) {
         const detail = error instanceof Error ? error.message : String(error);
         fail(`cannot read ${HEALTH_GATES_WORKFLOW_PATH} to determine which checks gate the merge: ${detail}`);
@@ -593,7 +661,7 @@ export function deliverPullRequest(number: number, port: DeliveryPort, tracker: 
         return;
     }
     const initialTrackerTarget = trackerCompletionTarget(initial);
-    validatePullRequest(initial, port.gateRequiredCheckNames);
+    validatePullRequest(initial, port);
     validateReview(number, port.reviewState(number, initial.headRefOid));
 
     const dependents = port.dependents(initial.headRefName).filter((candidate) => candidate.number !== number);
@@ -605,7 +673,7 @@ export function deliverPullRequest(number: number, port: DeliveryPort, tracker: 
     port.fetch();
     const current = port.pullRequest(number);
     const currentTrackerTarget = trackerCompletionTarget(current);
-    validatePullRequest(current, port.gateRequiredCheckNames);
+    validatePullRequest(current, port);
     validateStableTrackerTarget(number, initialTrackerTarget, currentTrackerTarget);
     validateStablePullRequest(initial, current);
     validateReview(number, port.reviewState(number, current.headRefOid));
@@ -686,8 +754,6 @@ function repositoryMergePolicy(repository: string, shell: ShellRunner): Reposito
     }
     return { method: 'squash', deletesMergedBranches: settings.delete_branch_on_merge };
 }
-
-type RawPullRequestSnapshot = Omit<PullRequestSnapshot, 'checkRuns'>;
 
 type RollupPage = {
     totalCount: number;
@@ -897,17 +963,14 @@ export function shellPort(
             }
             shell.run('git', ['fetch', '--prune', 'origin']);
         },
-        pullRequest: (number) => {
-            const snapshot = parseJson<RawPullRequestSnapshot>(
+        pullRequest: (number) =>
+            parseJson<PullRequestSnapshot>(
                 shell.capture('gh', ['pr', 'view', String(number), '--repo', repository, '--json', pullRequestFields]),
                 `PR #${number}`
-            );
-            return {
-                ...snapshot,
-                checkRuns: readHeadCheckRuns(number, (cursor) => readRollupPage(number, snapshot.headRefOid, cursor)),
-            };
-        },
-        gateRequiredCheckNames: () => readGateRequiredCheckNames(options.repositoryRoot ?? process.cwd()),
+            ),
+        headCheckRuns: (number, headRefOid) =>
+            readHeadCheckRuns(number, (cursor) => readRollupPage(number, headRefOid, cursor)),
+        gateRequiredCheckNames: () => readGateRequiredCheckNames(options.repositoryRoot ?? process.cwd(), shell),
         reviewState: (number, expectedHead) => {
             const query = `query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){reviews(last:100){nodes{state submittedAt author{login __typename ... on Bot{id}} commit{oid}} pageInfo{hasPreviousPage}} reviewThreads(first:100){nodes{isResolved} pageInfo{hasNextPage}}}}}`;
             const response = parseJson<{

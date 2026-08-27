@@ -482,6 +482,7 @@ describe('package scripts and gitignore', () => {
             fetch: () => undefined,
             pullRequest: () => expect.fail('delivery domain should be injected in this coordinator test'),
             gateRequiredCheckNames: () => expect.fail('delivery domain should be injected in this coordinator test'),
+            headCheckRuns: () => expect.fail('delivery domain should be injected in this coordinator test'),
             reviewState: () => expect.fail('delivery domain should be injected in this coordinator test'),
             dependents: () => [],
             repositoryDeletesMergedBranches: () => false,

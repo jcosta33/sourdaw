@@ -432,7 +432,10 @@ is not that shape: the job carries no verdict, a skipped sibling is not one, and
 `skipped` so a green `Gate` does not supply one either. What gates the merge is read from the jobs
 `Gate` needs in `.github/workflows/health-gates.yml`, never restated in the script, so promoting a
 job into the gate binds this refusal to it and a job outside the gate — a nightly reporter, say —
-never blocks a delivery it was never evidence for. Any other merge state refuses, and so does a real
+never blocks a delivery it was never evidence for. The copy that governs is the one committed at
+the protected primary checkout's `HEAD`, never a lane's: a lane's copy is the very thing under
+review, and a working-tree file is not a pinned input, so one uncommitted edit there would silently
+reshape the gate for every delivery. Any other merge state refuses, and so does a real
 failure, an unfinished check, a head no `Gate` ever passed on, a check rollup that cannot be read
 complete, and a workflow that cannot be read for what it gates on. It merges into `main` and nothing
 else: `lane:publish` opens every pull request
