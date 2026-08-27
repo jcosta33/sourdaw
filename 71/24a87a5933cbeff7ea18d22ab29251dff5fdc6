@@ -1,0 +1,21 @@
+src/modules/Crumbs/presentations/components/__tests__/CrumbsControls.spec.tsx
+  s_a40848e8f8cca9::t_1df2b9e350044c 237,242
+  s_a40848e8f8cca9::t_659bda80a3f5bf 4-5,26-90,108,112,114
+  s_a40848e8f8cca9::t_48274690f7367d 235-236,238-239,241,243,245-247
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "7124a87a5933cbeff7ea18d22ab29251dff5fdc6",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
