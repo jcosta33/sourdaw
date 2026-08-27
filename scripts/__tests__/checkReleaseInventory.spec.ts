@@ -575,6 +575,45 @@ function writeGrandBouleMeasurementFixture(root: string): { jsonPath: string; re
     return { jsonPath, revision };
 }
 
+function writeShallowGrandBouleMeasurementFixture(root: string): {
+    clone: string;
+    remote: string;
+    revision: string;
+    jsonPath: string;
+} {
+    writeGrandBouleMeasurementFixture(root);
+    execFileSync(
+        'git',
+        ['add', 'crates/daw-dsp/benches/quantum-cost-table.json', 'crates/daw-dsp/benches/quantum-cost-table.md'],
+        {
+            cwd: root,
+        }
+    );
+    execFileSync(
+        'git',
+        ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.test', 'commit', '-qm', 'measurement'],
+        {
+            cwd: root,
+        }
+    );
+    const revision = execFileSync('git', ['rev-parse', 'HEAD~1'], { cwd: root, encoding: 'utf8' }).trim();
+    writeFileSync(join(root, 'fixture-tip.txt'), 'newer tip');
+    execFileSync('git', ['add', 'fixture-tip.txt'], { cwd: root });
+    execFileSync('git', ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.test', 'commit', '-qm', 'tip'], {
+        cwd: root,
+    });
+
+    const remote = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-remote-'));
+    const clone = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-shallow-'));
+    rmSync(clone, { recursive: true, force: true });
+    execFileSync('git', ['init', '--bare', '--quiet', remote]);
+    execFileSync('git', ['remote', 'add', 'origin', remote], { cwd: root });
+    execFileSync('git', ['push', '--quiet', 'origin', 'HEAD:refs/heads/main'], { cwd: root });
+    execFileSync('git', ['symbolic-ref', 'HEAD', 'refs/heads/main'], { cwd: remote });
+    execFileSync('git', ['clone', '--depth', '1', `file://${remote}`, clone], { stdio: 'ignore' });
+    return { clone, remote, revision, jsonPath: join(clone, 'crates/daw-dsp/benches/quantum-cost-table.json') };
+}
+
 function inventory(): ReleaseInventory {
     return {
         schemaVersion: 1,
@@ -2267,6 +2306,45 @@ describe('release inventory', () => {
                 'recorded digest does not match source revision'
             );
         } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('fetches an absent full measurement revision from a shallow origin clone', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-measurement-source-'));
+        let clone: string | undefined;
+        let remote: string | undefined;
+        try {
+            const fixture = writeShallowGrandBouleMeasurementFixture(root);
+            clone = fixture.clone;
+            remote = fixture.remote;
+            expect(() =>
+                execFileSync('git', ['cat-file', '-e', `${fixture.revision}^{commit}`], { cwd: clone, stdio: 'ignore' })
+            ).toThrow();
+
+            expect(() => assertGrandBouleMeasurementAdmission(clone!)).not.toThrow();
+            expect(() =>
+                execFileSync('git', ['cat-file', '-e', `${fixture.revision}^{commit}`], { cwd: clone, stdio: 'ignore' })
+            ).not.toThrow();
+
+            const data = JSON.parse(readFileSync(fixture.jsonPath, 'utf8')) as {
+                sourceRevision: string;
+                machine: { gitSha: string };
+            };
+            const abbreviatedRevision = fixture.revision.slice(0, 12);
+            data.sourceRevision = abbreviatedRevision;
+            data.machine.gitSha = abbreviatedRevision;
+            writeFileSync(fixture.jsonPath, JSON.stringify(data));
+            expect(() => assertGrandBouleMeasurementAdmission(clone!)).toThrow(
+                'Grand Boule measurement source revision must be a full hexadecimal commit ID'
+            );
+        } finally {
+            if (clone !== undefined) {
+                rmSync(clone, { recursive: true, force: true });
+            }
+            if (remote !== undefined) {
+                rmSync(remote, { recursive: true, force: true });
+            }
             rmSync(root, { recursive: true, force: true });
         }
     });

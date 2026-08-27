@@ -1272,6 +1272,7 @@ const GRAND_BOULE_MEASUREMENT_SOURCE_PATHS = [
     'crates/daw-dsp/benches/wasm/quantumCostProcessor.js',
     'public/wasm/daw-dsp/daw_dsp_bg.wasm',
 ] as const;
+const FULL_HEXADECIMAL_GIT_REVISION = /^[0-9a-f]{40}$/u;
 
 /**
  * A shallow checkout (`actions/checkout` defaults to `fetch-depth: 1`) keeps only the tip
@@ -1289,7 +1290,16 @@ function ensureGrandBouleRevisionFetched(root: string, revision: string): void {
         // Falls through to a targeted fetch; a missing object is expected under a shallow checkout.
     }
     try {
-        execFileSync('git', ['fetch', '--depth', '1', 'origin', revision], { cwd: root, stdio: 'ignore' });
+        execFileSync(
+            'git',
+            ['-c', 'credential.interactive=never', 'fetch', '--no-tags', '--depth', '1', 'origin', revision],
+            {
+                cwd: root,
+                env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+                stdio: 'ignore',
+                timeout: 10_000,
+            }
+        );
     } catch {
         // Best effort: no network, no `origin`, or the revision is genuinely gone. `git show`
         // below still runs and reports the precise, unchanged failure.
@@ -1313,7 +1323,10 @@ export function assertGrandBouleMeasurementAdmission(root: string): void {
         }>;
     };
     const revision = data.sourceRevision;
-    if (!revision || revision !== data.machine?.gitSha || data.machine?.workingTree !== 'clean') {
+    if (!revision || !FULL_HEXADECIMAL_GIT_REVISION.test(revision)) {
+        throw new Error('Grand Boule measurement source revision must be a full hexadecimal commit ID');
+    }
+    if (revision !== data.machine?.gitSha || data.machine?.workingTree !== 'clean') {
         throw new Error('Grand Boule measurement must name one clean implementation source revision');
     }
     const digestPaths = Object.keys(data.sourceDigests ?? {}).sort();

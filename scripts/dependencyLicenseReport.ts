@@ -904,34 +904,27 @@ function cargoChecksum(root: string, name: string, version: string, source: stri
     return undefined;
 }
 
-type PnpmLockPackages = Record<string, { resolution?: { integrity?: unknown } }>;
-
-/**
- * Callers resolve one identity per dependency, and a proof-bearing package graph can list
- * dozens of them. `pnpm-lock.yaml` is large, real (not JSON-flow) YAML, so re-parsing it per
- * dependency dominates wall time under load. The lockfile is immutable for the lifetime of one
- * resolved `root`, so caching the parsed package table by that path is safe.
- */
-const pnpmLockPackagesByPath = new Map<string, PnpmLockPackages>();
+export type PnpmLockPackages = Record<string, { resolution?: { integrity?: unknown } }>;
+type PnpmLockPackageReader = (root: string) => PnpmLockPackages;
 
 function pnpmLockPackages(root: string): PnpmLockPackages {
     const path = resolve(root, 'pnpm-lock.yaml');
-    const cached = pnpmLockPackagesByPath.get(path);
-    if (cached !== undefined) {
-        return cached;
-    }
     const document = parseDocument(readFileSync(path, 'utf8'));
     if (document.errors.length > 0) {
         throw new Error(`pnpm-lock.yaml: ${document.errors[0]!.message}`);
     }
-    const lock = document.toJS() as { packages?: PnpmLockPackages };
-    const packages = lock.packages ?? {};
-    pnpmLockPackagesByPath.set(path, packages);
-    return packages;
+    return (document.toJS() as { packages?: PnpmLockPackages }).packages ?? {};
 }
 
-function pnpmIntegrity(root: string, name: string, version: string): string | undefined {
-    const packages = pnpmLockPackages(root);
+function reusePnpmLockPackages(load: PnpmLockPackageReader): PnpmLockPackageReader {
+    let packages: PnpmLockPackages | undefined;
+    return (root) => {
+        packages ??= load(root);
+        return packages;
+    };
+}
+
+function pnpmIntegrity(packages: PnpmLockPackages, name: string, version: string): string | undefined {
     const key = Object.keys(packages).find(
         (candidate) => candidate === `${name}@${version}` || candidate.startsWith(`${name}@${version}(`)
     );
@@ -946,7 +939,8 @@ function npmRegistryArchiveSource(name: string, version: string): string {
 
 function expectedProofIdentities(
     root: string,
-    record: DependencyLicenseRecord
+    record: DependencyLicenseRecord,
+    loadPnpmLockPackages: PnpmLockPackageReader = pnpmLockPackages
 ): Array<{ source: string; revision: string }> {
     if (record.ecosystem === 'cargo') {
         const source = record.cargoSource;
@@ -981,7 +975,7 @@ function expectedProofIdentities(
         identities.push({ source: entry.resolved, revision: entry.integrity });
     }
     if (record.graphs?.includes('pnpm-lock.yaml') || identities.length === 0) {
-        const integrity = pnpmIntegrity(root, record.name, record.version);
+        const integrity = pnpmIntegrity(loadPnpmLockPackages(root), record.name, record.version);
         if (integrity === undefined) {
             throw new Error(`npm:${record.name}@${record.version}: pnpm-lock.yaml integrity is missing`);
         }
@@ -1247,10 +1241,11 @@ function validateAssembledProof(
 export function validateDependencyLicenseProof(
     root: string,
     record: DependencyLicenseRecord,
-    proof: DependencyLicenseProof
+    proof: DependencyLicenseProof,
+    loadPnpmLockPackages: PnpmLockPackageReader = pnpmLockPackages
 ): LegalFile[] {
     const packageId = `${record.ecosystem}:${record.name}@${record.version}`;
-    const expected = expectedProofIdentities(root, record);
+    const expected = expectedProofIdentities(root, record, loadPnpmLockPackages);
     if (expected.some((identity) => proof.source !== identity.source || proof.revision !== identity.revision)) {
         throw new Error(`${packageId}: proof source identity does not match the locked package`);
     }
@@ -1289,7 +1284,8 @@ export function readDependencyLicenseProofManifest(root: string): DependencyLice
 function applyDependencyLicenseProofs(
     root: string,
     records: DependencyLicenseRecord[],
-    proofs: Readonly<Record<string, DependencyLicenseProof>>
+    proofs: Readonly<Record<string, DependencyLicenseProof>>,
+    loadPnpmLockPackages: PnpmLockPackageReader
 ): DependencyLicenseRecord[] {
     const used = new Set<string>();
     const unresolved: string[] = [];
@@ -1310,7 +1306,7 @@ function applyDependencyLicenseProofs(
             unresolved.push(packageId);
             return record;
         }
-        const legalFiles = validateDependencyLicenseProof(root, record, proof);
+        const legalFiles = validateDependencyLicenseProof(root, record, proof, loadPnpmLockPackages);
         used.add(packageId);
         return { ...record, legalFiles };
     });
@@ -1443,6 +1439,10 @@ export type DependencyLicenseArtifacts = {
     serverNotices: string;
 };
 
+export type DependencyLicenseArtifactBuildOptions = {
+    loadPnpmLockPackages?: (root: string) => PnpmLockPackages;
+};
+
 export type GeneratedDependencyLicenseArtifacts = DependencyLicenseArtifacts & {
     proofManifest: string;
 };
@@ -1450,7 +1450,8 @@ export type GeneratedDependencyLicenseArtifacts = DependencyLicenseArtifacts & {
 function resolveDependencyLicenseRecords(
     root: string,
     cargoRecords: DependencyLicenseRecord[],
-    proofs: Readonly<Record<string, DependencyLicenseProof>>
+    proofs: Readonly<Record<string, DependencyLicenseProof>>,
+    loadPnpmLockPackages: PnpmLockPackageReader
 ): DependencyLicenseRecord[] {
     return applyDependencyLicenseProofs(
         root,
@@ -1459,7 +1460,8 @@ function resolveDependencyLicenseRecords(
             ...collectNpmLockDependencyLicenses(root),
             ...cargoRecords,
         ]),
-        proofs
+        proofs,
+        loadPnpmLockPackages
     );
 }
 
@@ -1537,9 +1539,18 @@ function assertResolvedCargoEvidence(
     }
 }
 
-export function buildDependencyLicenseArtifacts(root: string): DependencyLicenseArtifacts {
+export function buildDependencyLicenseArtifacts(
+    root: string,
+    options: DependencyLicenseArtifactBuildOptions = {}
+): DependencyLicenseArtifacts {
     const manifest = readDependencyLicenseProofManifest(root);
-    const records = resolveDependencyLicenseRecords(root, collectCargoDependencyLicenses(root), manifest.packages);
+    const loadPnpmLockPackages = reusePnpmLockPackages(options.loadPnpmLockPackages ?? pnpmLockPackages);
+    const records = resolveDependencyLicenseRecords(
+        root,
+        collectCargoDependencyLicenses(root),
+        manifest.packages,
+        loadPnpmLockPackages
+    );
     assertResolvedCargoEvidence(manifest.cargoRuntimeInventory, records);
     return renderDependencyLicenseArtifacts(root, records);
 }
@@ -1556,7 +1567,12 @@ export function buildDependencyLicenseArtifactsFromInstalledMetadata(
         throw new Error(`${DEPENDENCY_LICENSE_PROOFS_PATH}: unsupported proof manifest`);
     }
     const cargo = collectCargoDependencyLicensesFromInstalledMetadata(root);
-    const records = resolveDependencyLicenseRecords(root, cargo.records, sourceManifest.packages);
+    const records = resolveDependencyLicenseRecords(
+        root,
+        cargo.records,
+        sourceManifest.packages,
+        reusePnpmLockPackages(pnpmLockPackages)
+    );
     const manifest: DependencyLicenseProofManifest = {
         schemaVersion: 4,
         cargoRuntimeInventory: createCargoRuntimeInventory(
