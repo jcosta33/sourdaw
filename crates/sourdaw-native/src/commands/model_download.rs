@@ -91,7 +91,7 @@ fn read_verified_cached_model_bytes_after_read(
             model.filename
         )
     })?;
-    if !metadata.is_file() {
+    if !metadata.is_file() || metadata.len() != model.expected_size_bytes {
         return Err(format!(
             "Verified local model {} failed size validation.",
             model.filename
@@ -105,11 +105,23 @@ fn read_verified_cached_model_bytes_after_read(
             model.filename
         )
     })?;
+    if bytes.len() as u64 != model.expected_size_bytes {
+        return Err(format!(
+            "Verified local model {} changed while it was read.",
+            model.filename
+        ));
+    }
     after_read();
-    let _actual = Sha256::digest(&bytes)
+    let actual = Sha256::digest(&bytes)
         .iter()
         .map(|byte| format!("{byte:02x}"))
         .collect::<String>();
+    if actual != model.expected_sha256 {
+        return Err(format!(
+            "Verified local model {} failed hash validation.",
+            model.filename
+        ));
+    }
 
     Ok(bytes)
 }
