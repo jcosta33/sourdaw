@@ -558,6 +558,7 @@ async function retryCommittedSectionRenders(
         updatePendingActionConfirmationStatus({ confirmationId: confirmation.id, status: 'executed' });
         const refreshedConfirmation = refreshPendingActionExecutions(confirmation);
         updateChatMessage(confirmation.assistantMessageId, {
+            pendingActionConfirmationStatus: 'executed',
             pendingActionFollowUpStatus: 'complete',
             error: undefined,
             content: `Applied after confirmation:\n\n${formatExecutionReceipt(
@@ -671,6 +672,7 @@ type ValidApprovedCommandBatch = Extract<
     { status: 'valid' }
 >['envelope'];
 type ApprovedCommand = ValidApprovedCommandBatch['commands'][number];
+type ApprovedCommandBatch = NonNullable<PendingAppActionConfirmation['approvalSnapshot']['commandBatch']>;
 type ApprovedRenderAction = Extract<
     PendingAppActionConfirmation['approvalSnapshot']['actions'][number],
     { type: 'renderProjectSections' }
@@ -678,6 +680,7 @@ type ApprovedRenderAction = Extract<
 type ParsedApprovedRetryBatch = {
     commands: ValidApprovedCommandBatch['commands'];
     commandsById: ReadonlyMap<string, ApprovedCommand>;
+    envelope: ValidApprovedCommandBatch;
 };
 type WarnedRenderPayloadBinding = {
     approvedCommand: ApprovedCommand;
@@ -708,7 +711,19 @@ function parseApprovedRetryBatch(confirmation: PendingAppActionConfirmation): Pa
     const commandsById = new Map<string, ApprovedCommand>(
         parsedBatch.envelope.commands.map((command) => [command.commandId, command])
     );
-    return { commands: parsedBatch.envelope.commands, commandsById };
+    return { commands: parsedBatch.envelope.commands, commandsById, envelope: parsedBatch.envelope };
+}
+
+function hasExactApprovedCommandBatchIdentity(
+    expected: ApprovedCommandBatch,
+    candidate: PendingAppActionConfirmation['approvalSnapshot']['commandBatch']
+): boolean {
+    return (
+        candidate !== null &&
+        candidate.serialized === expected.serialized &&
+        getExactAgentActionHash({ operation: 'commandBatchAuthority', arguments: candidate.authority }) ===
+            getExactAgentActionHash({ operation: 'commandBatchAuthority', arguments: expected.authority })
+    );
 }
 
 function hasExactCommittedProjectReceiptBinding(
@@ -821,6 +836,21 @@ function hasExactDurableRenderRecoveryReceipt(
     );
 }
 
+function hasExactConfirmationDurableBatchBinding(
+    confirmation: PendingAppActionConfirmation,
+    approvedBatch: ParsedApprovedRetryBatch,
+    receipt: CommandVerifiedBatchReceipt | null
+): boolean {
+    return (
+        receipt !== null &&
+        approvedBatch.envelope.runId === confirmation.runId &&
+        receipt.runId === confirmation.runId &&
+        approvedBatch.envelope.batchId === confirmation.groupId &&
+        receipt.batchId === confirmation.groupId &&
+        approvedBatch.envelope.baseRevision === confirmation.projectRevision
+    );
+}
+
 function hasDurablyCommittedRetryableSectionRender(
     confirmation: PendingAppActionConfirmation,
     durableReceipt: CommandVerifiedBatchReceipt | null
@@ -833,25 +863,45 @@ function hasDurablyCommittedRetryableSectionRender(
         return false;
     }
     const renderBinding = getWarnedRenderPayloadBinding(confirmation, approvedBatch);
-    return renderBinding !== null && hasExactDurableRenderRecoveryReceipt(durableReceipt, renderBinding);
+    return (
+        renderBinding !== null &&
+        hasExactConfirmationDurableBatchBinding(confirmation, approvedBatch, durableReceipt) &&
+        hasExactDurableRenderRecoveryReceipt(durableReceipt, renderBinding)
+    );
 }
 
 export async function confirmPendingChatActions(
     input: ConfirmPendingChatActionsInput
 ): ConfirmPendingChatActionsOutput {
-    const confirmation = getPendingActionConfirmation(input.confirmationId);
+    let confirmation = getPendingActionConfirmation(input.confirmationId);
     if (!confirmation) {
         return { status: 'missing' };
     }
     const approvedCommandBatch = confirmation.approvalSnapshot.commandBatch;
-    const shouldInspectDurableReceipt =
-        confirmation.status === 'proposed' || isEligibleForCommittedSectionRenderRetry(confirmation);
+    const wasProposed = confirmation.status === 'proposed';
+    const wasRetryEligible = isEligibleForCommittedSectionRenderRetry(confirmation);
+    const shouldInspectDurableReceipt = wasProposed || wasRetryEligible;
     let priorVerifiedBatchReceipt: CommandVerifiedBatchReceipt | null = null;
     if (approvedCommandBatch && shouldInspectDurableReceipt) {
         priorVerifiedBatchReceipt = await getVersionedCommandBatchIdempotentReplay({
             authority: approvedCommandBatch.authority,
             serialized: approvedCommandBatch.serialized,
         });
+        const refreshedConfirmation = getPendingActionConfirmation(input.confirmationId);
+        if (!refreshedConfirmation) {
+            return { status: 'missing' };
+        }
+        if (
+            !hasExactApprovedCommandBatchIdentity(
+                approvedCommandBatch,
+                refreshedConfirmation.approvalSnapshot.commandBatch
+            ) ||
+            (wasRetryEligible && !isEligibleForCommittedSectionRenderRetry(refreshedConfirmation)) ||
+            (wasProposed && refreshedConfirmation.status !== 'proposed')
+        ) {
+            return { status: 'not_pending', currentStatus: refreshedConfirmation.status };
+        }
+        confirmation = refreshedConfirmation;
     }
     if (hasDurablyCommittedRetryableSectionRender(confirmation, priorVerifiedBatchReceipt)) {
         return retryCommittedSectionRenders(confirmation);
