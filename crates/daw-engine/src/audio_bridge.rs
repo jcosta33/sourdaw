@@ -73,6 +73,13 @@ pub const fn target_depth_blocks(callback_frames: usize) -> usize {
 /// relay has just pushed; adding a hop on top of the depth counts it twice and
 /// compensates a bridged plugin one quantum early.
 ///
+/// This is the deep end of a one-quantum band: a callback landing between the
+/// relay's push and its pop observes one block more, sheds one sooner, and
+/// settles a quantum shallower. Nothing locks that phase, so compensating the
+/// deep end can leave a bridged plugin up to a quantum late and never early —
+/// the side to be wrong on, since early breaks phase against every parallel
+/// path.
+///
 /// This is the number a host has to compensate for a bridged plugin, on top of
 /// the latency the plugin reports for itself. It is the *settled* figure: a
 /// bridge that has not yet been slipped deeper runs shorter than this, and the
@@ -537,9 +544,17 @@ mod tests {
     #[test]
     fn the_settled_round_trip_is_what_the_relay_pattern_measures() {
         // Every device period the engine accepts, including the one whose
-        // target is clamped to the ring's capacity. The delay is exact at each
-        // of them — the measured spread is a single value, not a range — so a
-        // formula off by even one quantum fails here.
+        // target is clamped to the ring's capacity.
+        //
+        // The spread is a single value rather than a range, but that is exact
+        // for the phase this harness models: the callback drains after the
+        // relay's pop, so it observes the depth the pop just left behind. A
+        // callback landing between the push and the pop sees one block more
+        // and sheds one block sooner, settling the round trip a quantum
+        // shallower than this. So the figure is the deep end of a
+        // one-quantum band whose phase nothing locks — compensating it can
+        // leave a bridged plugin up to one quantum late, never early, which
+        // is the side to be wrong on.
         for period in [
             64usize,
             128,

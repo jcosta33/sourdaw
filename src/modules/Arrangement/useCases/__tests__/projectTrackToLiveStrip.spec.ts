@@ -105,7 +105,7 @@ describe('projectTrackToLiveStrip', () => {
         applySoloLogic({ resetSavedGains: true, applyActions: false });
     });
 
-    it('leaves an external plugin dormant, and says so, when no engine can state a rate', () => {
+    it('leaves an external plugin dormant, and says so, while the engine renders no audio', () => {
         const track = createTrack({ id: 'audio-1', name: 'Audio', kind: 'audio' });
         track.outputId = 'master';
         track.devices = [
@@ -127,9 +127,10 @@ describe('projectTrackToLiveStrip', () => {
 
         projectTrackToLiveStrip({ trackId: track.id, activateDormantExternalPlugins: true });
 
-        // Activating against a substituted rate detunes the instance for as
-        // long as it lives and reports a latency scaled by the same wrong
-        // number. Staying dormant is reversible: the next rebuild has a rate.
+        // The engine is on its silent fallback shim. Activating against the
+        // rate that shim reports detunes the instance for as long as it lives
+        // and scales its reported latency by the same wrong number. Staying
+        // dormant is reversible: the next rebuild has a real rate.
         expect(mocks.activateExternalPlugin).not.toHaveBeenCalled();
         expect(mocks.warn).toHaveBeenCalledWith(expect.stringContaining('persisted-native-instance'));
     });

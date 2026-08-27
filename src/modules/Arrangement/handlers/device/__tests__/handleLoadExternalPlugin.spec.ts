@@ -232,7 +232,7 @@ describe('handleLoadExternalPlugin', () => {
         expect(mocks.reportBridgeRoundTripFrames).toHaveBeenCalledWith('device-1', 1408);
     });
 
-    it('refuses to activate at a guessed rate when no engine can state one', async () => {
+    it('refuses to activate at a guessed rate while the engine renders no audio', async () => {
         const before = { id: 'audio-1', kind: 'audio' as const, devices: [] };
         const device = {
             id: 'device-1',
@@ -258,10 +258,11 @@ describe('handleLoadExternalPlugin', () => {
             throw new Error('Expected a deferred external-plugin runtime effect');
         }
 
-        // Substituting a plausible rate would activate the plugin on a clock it
-        // is not fed, and the native rate guard would never see a value to
-        // refuse. The post-commit contract routes this to graph repair.
-        await expect(result.afterCommit()).rejects.toThrow('no live audio engine');
+        // The engine is on its silent fallback shim, whose context reports a
+        // confident 44100. Substituting that would activate the plugin on a
+        // clock it is not fed, and the native rate guard would never see a
+        // value to refuse. The post-commit contract routes this to repair.
+        await expect(result.afterCommit()).rejects.toThrow('not rendering audio');
         expect(mocks.activateExternalPlugin).not.toHaveBeenCalled();
     });
 
