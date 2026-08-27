@@ -4,7 +4,6 @@ import { collaborationStore } from '#/modules/Collaboration/stores';
 import {
     executeVersionedCommandBatchEnvelope,
     generateGroupId,
-    getVersionedCommandArgumentsDigest,
     getVersionedCommandBatchIdempotentReplay,
     parseVersionedCommandBatchEnvelope,
     parseVersionedCommandEnvelope,
@@ -44,6 +43,7 @@ import { agentRunWorkLease } from './agentRunWorkLease';
 import { agentWorkBudget, type AgentWorkBudgetEstimate } from './agentWorkBudget';
 import { agentRunCancellation } from './cancelAgentRun';
 import { compileAgentRiskApproval } from './compileAgentRiskApproval';
+import { getExactAgentActionHash } from './getExactAgentActionHash';
 import { getPlannedActionAffectedIds } from './getPlannedActionAffectedIds';
 import { getVerifiedBatchReplayDisposition } from './getVerifiedBatchReplayDisposition';
 import { issueAgentCommandApprovalBinding } from './issueAgentCommandApprovalBinding';
@@ -603,6 +603,12 @@ async function retryCommittedSectionRenders(
         const reason = `The missing section renders exceed the user budget for ${renderRetryBudget.reservation.reason}.`;
         updatePendingActionFollowUp({ confirmationId: confirmation.id, error: reason, status: 'retryable' });
         updatePendingActionConfirmationStatus({ confirmationId: confirmation.id, status: 'executed', error: reason });
+        updateChatMessage(confirmation.assistantMessageId, {
+            pendingActionConfirmationStatus: 'executed',
+            pendingActionFollowUpStatus: 'retryable',
+            error: reason,
+            content: `The project changes remain committed, but the missing section renders were not retried because they exceed the user budget: ${reason}`,
+        });
         return { status: 'failed', reason };
     }
 
@@ -665,9 +671,17 @@ type ValidApprovedCommandBatch = Extract<
     { status: 'valid' }
 >['envelope'];
 type ApprovedCommand = ValidApprovedCommandBatch['commands'][number];
+type ApprovedRenderAction = Extract<
+    PendingAppActionConfirmation['approvalSnapshot']['actions'][number],
+    { type: 'renderProjectSections' }
+>;
 type ParsedApprovedRetryBatch = {
     commands: ValidApprovedCommandBatch['commands'];
     commandsById: ReadonlyMap<string, ApprovedCommand>;
+};
+type WarnedRenderPayloadBinding = {
+    approvedCommand: ApprovedCommand;
+    renderAction: ApprovedRenderAction;
 };
 
 function isEligibleForCommittedSectionRenderRetry(confirmation: PendingAppActionConfirmation): boolean {
@@ -716,6 +730,9 @@ function hasExactCommittedProjectReceiptBinding(
         if (committedCommandIds.has(approvedCommand.commandId)) {
             return false;
         }
+        if (execution.actionType !== approvedCommand.operation) {
+            return false;
+        }
         if (execution.commandSchemaVersion !== approvedCommand.schemaVersion) {
             return false;
         }
@@ -730,10 +747,10 @@ function hasExactCommittedProjectReceiptBinding(
     return true;
 }
 
-function hasWarnedRenderPayloadBinding(
+function getWarnedRenderPayloadBinding(
     confirmation: PendingAppActionConfirmation,
     approvedBatch: ParsedApprovedRetryBatch
-): boolean {
+): WarnedRenderPayloadBinding | null {
     const approvedRenderCommands = approvedBatch.commands.filter(
         (command) => command.operation === 'renderProjectSections'
     );
@@ -741,12 +758,12 @@ function hasWarnedRenderPayloadBinding(
         (action) => action.type === 'renderProjectSections'
     );
     if (approvedRenderCommands.length !== 1 || renderActions.length !== 1) {
-        return false;
+        return null;
     }
     const approvedRenderCommand = approvedRenderCommands[0];
     const renderAction = renderActions[0];
     if (!approvedRenderCommand || !renderAction || !getSectionRenderReceiptScope(confirmation)) {
-        return false;
+        return null;
     }
     const warnedRenderExecutions = confirmation.executedActions.filter(
         (execution) =>
@@ -756,26 +773,67 @@ function hasWarnedRenderPayloadBinding(
             execution.outcome === 'committed-with-warning'
     );
     if (warnedRenderExecutions.length !== 1) {
-        return false;
+        return null;
     }
-    return (
-        getVersionedCommandArgumentsDigest({
+    if (
+        getExactAgentActionHash({
             operation: renderAction.type,
             arguments: renderAction.payload,
-        }) === approvedRenderCommand.argumentsDigest
+        }) !==
+        getExactAgentActionHash({
+            operation: approvedRenderCommand.operation,
+            arguments: approvedRenderCommand.arguments,
+        })
+    ) {
+        return null;
+    }
+    return { approvedCommand: approvedRenderCommand, renderAction };
+}
+
+function hasExactDurableRenderRecoveryReceipt(
+    receipt: CommandVerifiedBatchReceipt | null,
+    binding: WarnedRenderPayloadBinding
+): boolean {
+    if (
+        !receipt ||
+        receipt.outcome !== 'partially-committed' ||
+        receipt.atomicity !== 'durable-atomic-with-non-atomic-effects'
+    ) {
+        return false;
+    }
+    const renderCommandOutcomes = receipt.commandOutcomes.filter(
+        ({ commandId, operation }) =>
+            commandId === binding.approvedCommand.commandId && operation === binding.approvedCommand.operation
+    );
+    if (renderCommandOutcomes.length !== 1 || renderCommandOutcomes[0]?.outcome !== 'committed') {
+        return false;
+    }
+    if (receipt.pendingEffects.length !== 1) {
+        return false;
+    }
+    const pendingEffect = receipt.pendingEffects[0];
+    return (
+        pendingEffect?.commandId === binding.approvedCommand.commandId &&
+        pendingEffect.operation === binding.approvedCommand.operation &&
+        pendingEffect.kind === 'external-effect' &&
+        pendingEffect.remediation === 'reconcile' &&
+        pendingEffect.state === 'pending'
     );
 }
 
-function hasDurablyCommittedRetryableSectionRender(confirmation: PendingAppActionConfirmation): boolean {
+function hasDurablyCommittedRetryableSectionRender(
+    confirmation: PendingAppActionConfirmation,
+    durableReceipt: CommandVerifiedBatchReceipt | null
+): boolean {
     if (!isEligibleForCommittedSectionRenderRetry(confirmation)) {
         return false;
     }
     const approvedBatch = parseApprovedRetryBatch(confirmation);
-    return (
-        approvedBatch !== null &&
-        hasExactCommittedProjectReceiptBinding(confirmation, approvedBatch) &&
-        hasWarnedRenderPayloadBinding(confirmation, approvedBatch)
-    );
+    if (!approvedBatch || !hasExactCommittedProjectReceiptBinding(confirmation, approvedBatch)) {
+        return false;
+    }
+    const renderBinding = getWarnedRenderPayloadBinding(confirmation, approvedBatch);
+    return renderBinding !== null && hasExactDurableRenderRecoveryReceipt(durableReceipt, renderBinding);
 }
 
 export async function confirmPendingChatActions(
@@ -785,21 +843,23 @@ export async function confirmPendingChatActions(
     if (!confirmation) {
         return { status: 'missing' };
     }
-    if (hasDurablyCommittedRetryableSectionRender(confirmation)) {
+    const approvedCommandBatch = confirmation.approvalSnapshot.commandBatch;
+    const shouldInspectDurableReceipt =
+        confirmation.status === 'proposed' || isEligibleForCommittedSectionRenderRetry(confirmation);
+    let priorVerifiedBatchReceipt: CommandVerifiedBatchReceipt | null = null;
+    if (approvedCommandBatch && shouldInspectDurableReceipt) {
+        priorVerifiedBatchReceipt = await getVersionedCommandBatchIdempotentReplay({
+            authority: approvedCommandBatch.authority,
+            serialized: approvedCommandBatch.serialized,
+        });
+    }
+    if (hasDurablyCommittedRetryableSectionRender(confirmation, priorVerifiedBatchReceipt)) {
         return retryCommittedSectionRenders(confirmation);
     }
     if (confirmation.status !== 'proposed') {
         return { status: 'not_pending', currentStatus: confirmation.status };
     }
 
-    const approvedCommandBatch = confirmation.approvalSnapshot.commandBatch;
-    let priorVerifiedBatchReceipt: CommandVerifiedBatchReceipt | null = null;
-    if (approvedCommandBatch) {
-        priorVerifiedBatchReceipt = await getVersionedCommandBatchIdempotentReplay({
-            authority: approvedCommandBatch.authority,
-            serialized: approvedCommandBatch.serialized,
-        });
-    }
     const hasPriorVerifiedBatchReceipt = priorVerifiedBatchReceipt !== null;
     const recoveringPendingEffects =
         priorVerifiedBatchReceipt?.outcome === 'partially-committed' &&

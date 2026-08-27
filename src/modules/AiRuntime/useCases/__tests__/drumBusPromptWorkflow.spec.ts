@@ -21,6 +21,8 @@ import {
     clearUndoHistory,
     commandBatchPreflightPort,
     commandTrackDefaultsPort,
+    configureCommandBatchIdempotency,
+    getVersionedCommandBatchIdempotentReplay,
     redo,
     resetActionReplayAuthority,
     setActionHistoryMetadataPort,
@@ -50,6 +52,7 @@ import {
     proposePendingActionConfirmation,
     type PendingAppActionConfirmation,
 } from '../../stores/pendingActionConfirmationStore';
+import { agentRunLifecycle } from '../agentRunLifecycle';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { sendChatMessage as sendChatMessageUseCase } from '../sendChatMessage';
 
@@ -1044,6 +1047,12 @@ describe('drum bus prompt workflow', () => {
             createTurnTrackedHostedResponder(() => asCommandBatchProposal(providerPlan, ['track-parallel']))
         );
         vi.stubGlobal('fetch', runtimeMocks.fetch);
+        vi.stubGlobal('navigator', {
+            ...navigator,
+            locks: {
+                request: (_name: string, _options: LockOptions, task: () => unknown) => Promise.resolve(task()),
+            },
+        });
         await cloudSession.clear();
         await cloudSession.replace_runtime({
             provider: 'openai-compatible',
@@ -1057,6 +1066,7 @@ describe('drum bus prompt workflow', () => {
         createCrdtDoc('root');
         registerCrdtStorageRuntime();
         commandBatchPreflightPort.setProvider(captureCommandBatchPreflightState);
+        configureCommandBatchIdempotency({ canExecute: () => true });
         collaborationUseCases.configureCollaborationAssetOwner({
             captureOwnerId: () => 'project:drum-bus-workflow',
         });
@@ -1073,6 +1083,7 @@ describe('drum bus prompt workflow', () => {
         setActionHistoryMetadataPort(noActionHistoryMetadataPort);
         clearAiHistory();
         clearPendingActionConfirmations();
+        localStorage.removeItem('sourdaw:command-batch-idempotency:v1');
         clearAgentSectionRenderArtifacts();
         setArrangementEventBus({
             emit: (event, payload) => {
@@ -1107,6 +1118,7 @@ describe('drum bus prompt workflow', () => {
     afterEach(async () => {
         clearUndoHistory();
         resetActionReplayAuthority();
+        agentRunLifecycle.clear();
         clearHandlerRegistry();
         commandTrackDefaultsPort.setTrackColorProvider(null);
         clearAiHistory();
@@ -1652,14 +1664,54 @@ describe('drum bus prompt workflow', () => {
         const approvedBatch = committedConfirmation.approvalSnapshot.commandBatch;
         const firstExecution = committedConfirmation.executedActions[0];
         const secondExecution = committedConfirmation.executedActions[1];
+        const warnedRenderExecution = committedConfirmation.executedActions.find(
+            (execution) =>
+                execution.actionType === 'renderProjectSections' && execution.outcome === 'committed-with-warning'
+        );
+        const omittedCommittedExecutionIndex = committedConfirmation.executedActions.findIndex(
+            (execution) =>
+                execution.actionType !== 'renderProjectSections' &&
+                (execution.outcome === 'committed' || execution.outcome === 'committed-with-warning')
+        );
         if (
             !approvedBatch ||
             !firstExecution ||
             !secondExecution ||
-            firstExecution.commandSchemaVersion === undefined
+            firstExecution.commandSchemaVersion === undefined ||
+            !warnedRenderExecution?.commandId ||
+            omittedCommittedExecutionIndex === -1
         ) {
             throw new Error('Expected approved command and execution receipt evidence');
         }
+        const durableReceipt = await getVersionedCommandBatchIdempotentReplay({
+            authority: approvedBatch.authority,
+            serialized: approvedBatch.serialized,
+        });
+        expect(durableReceipt).toMatchObject({
+            atomicity: 'durable-atomic-with-non-atomic-effects',
+            outcome: 'partially-committed',
+        });
+        expect(
+            durableReceipt?.commandOutcomes.filter(
+                ({ commandId, operation }) =>
+                    commandId === warnedRenderExecution.commandId && operation === 'renderProjectSections'
+            )
+        ).toEqual([
+            expect.objectContaining({
+                commandId: warnedRenderExecution.commandId,
+                operation: 'renderProjectSections',
+                outcome: 'committed',
+            }),
+        ]);
+        expect(durableReceipt?.pendingEffects).toEqual([
+            expect.objectContaining({
+                commandId: warnedRenderExecution.commandId,
+                kind: 'external-effect',
+                operation: 'renderProjectSections',
+                remediation: 'reconcile',
+                state: 'pending',
+            }),
+        ]);
         const setStoredConfirmation = (candidate: PendingAppActionConfirmation): void => {
             replacePendingActionConfirmationForTest(candidate);
         };
@@ -1684,6 +1736,37 @@ describe('drum bus prompt workflow', () => {
                 index === 1 ? structuredClone(firstExecution) : execution
             ),
         });
+        const withMissingCommittedExecution = (): PendingAppActionConfirmation => ({
+            ...committedConfirmation,
+            executedActions: committedConfirmation.executedActions.filter(
+                (_execution, index) => index !== omittedCommittedExecutionIndex
+            ),
+        });
+        const withMismatchedExecutionOperation = (): PendingAppActionConfirmation => ({
+            ...committedConfirmation,
+            executedActions: committedConfirmation.executedActions.map((execution, index) =>
+                index === omittedCommittedExecutionIndex ? { ...execution, actionType: 'setTempo' } : execution
+            ),
+        });
+        const withUncheckpointedBatchIdentity = (): PendingAppActionConfirmation => {
+            const serializedBatch: unknown = JSON.parse(approvedBatch.serialized);
+            if (!isRecord(serializedBatch) || typeof serializedBatch.idempotencyKey !== 'string') {
+                throw new Error('Expected valid approved batch identity');
+            }
+            return {
+                ...committedConfirmation,
+                approvalSnapshot: {
+                    ...committedConfirmation.approvalSnapshot,
+                    commandBatch: {
+                        ...approvedBatch,
+                        serialized: JSON.stringify({
+                            ...serializedBatch,
+                            idempotencyKey: `${serializedBatch.idempotencyKey}:without-durable-receipt`,
+                        }),
+                    },
+                },
+            };
+        };
         const withAlteredRenderJobPayload = (): PendingAppActionConfirmation => ({
             ...committedConfirmation,
             approvalSnapshot: {
@@ -1712,10 +1795,10 @@ describe('drum bus prompt workflow', () => {
             ...committedConfirmation,
             status: 'invalidated',
         });
-        await expectRetryRefused('empty execution evidence must fail closed', {
-            ...committedConfirmation,
-            executedActions: [],
-        });
+        await expectRetryRefused(
+            'missing one non-render committed execution receipt must fail closed',
+            withMissingCommittedExecution()
+        );
         await expectRetryRefused('missing follow-up project revision must fail closed', {
             ...committedConfirmation,
             followUpProjectRevision: null,
@@ -1728,6 +1811,10 @@ describe('drum bus prompt workflow', () => {
             },
         });
         await expectRetryRefused('altered approved render job payload must fail closed', withAlteredRenderJobPayload());
+        await expectRetryRefused(
+            'valid-looking retry without a durable batch receipt must fail closed',
+            withUncheckpointedBatchIdentity()
+        );
         await expectRetryRefused('same-count duplicate execution IDs must fail closed', withDuplicateExecutionId());
         await expectRetryRefused(
             'same-count wrong execution schema version must fail closed',
@@ -1740,6 +1827,10 @@ describe('drum bus prompt workflow', () => {
         await expectRetryRefused(
             'same-count non-project receipt must fail closed',
             withFirstExecution({ executionKind: 'runtime' })
+        );
+        await expectRetryRefused(
+            'same-count execution operation mismatch must fail closed',
+            withMismatchedExecutionOperation()
         );
         await expectRetryRefused(
             'same-count non-committed receipt must fail closed',
@@ -1821,6 +1912,59 @@ describe('drum bus prompt workflow', () => {
         expect(trackStore.value?.tracks.some((track) => track.name === 'Drum Bus')).toBe(false);
         expect(trackStore.value?.tracks.some((track) => track.name === 'Parallel Compression')).toBe(false);
         expect(getAgentSectionRenderArtifacts()).toEqual([]);
+    });
+
+    it('keeps persistent chat retry state synchronized when render retry exceeds budget', async () => {
+        setEx11Project();
+        useEx11WebLlmFixture();
+        await sendChatMessage(EX11_PROMPT);
+        const confirmation = getPendingActionConfirmation(
+            chatStore.value?.messages.find((message) => message.pendingActionConfirmationId)
+                ?.pendingActionConfirmationId ?? ''
+        );
+        if (!confirmation) {
+            throw new Error('Expected EX-11 confirmation');
+        }
+        runtimeMocks.renderOffline.mockImplementation((options: { startBeat?: number }) => {
+            if (options.startBeat === 16) {
+                return Promise.reject(new Error('comparison renderer unavailable'));
+            }
+            return Promise.resolve(createTestAudioBuffer());
+        });
+        await expect(confirmPendingChatActions({ confirmationId: confirmation.id })).resolves.toMatchObject({
+            status: 'failed',
+            durableCommit: true,
+        });
+        agentRunLifecycle.clear();
+        agentRunLifecycle.create({
+            runId: confirmation.runId,
+            request: EX11_PROMPT,
+            mode: 'macro',
+            createdRevision: confirmation.projectRevision,
+            budgets: { limits: { maxRenderJobs: 0 }, consumed: {} },
+        });
+        const renderCallCount = runtimeMocks.renderOffline.mock.calls.length;
+
+        const deniedRetry = await confirmPendingChatActions({ confirmationId: confirmation.id });
+
+        expect(deniedRetry).toEqual({
+            status: 'failed',
+            reason: 'The missing section renders exceed the user budget for maxRenderJobs.',
+        });
+        expect(runtimeMocks.renderOffline).toHaveBeenCalledTimes(renderCallCount);
+        expect(getPendingActionConfirmation(confirmation.id)).toMatchObject({
+            status: 'executed',
+            followUpStatus: 'retryable',
+            error: 'The missing section renders exceed the user budget for maxRenderJobs.',
+        });
+        expect(
+            chatStore.value?.messages.find((message) => message.pendingActionConfirmationId === confirmation.id)
+        ).toMatchObject({
+            pendingActionConfirmationStatus: 'executed',
+            pendingActionFollowUpStatus: 'retryable',
+            error: 'The missing section renders exceed the user budget for maxRenderJobs.',
+            content: expect.stringMatching(/project changes remain committed.*renders were not retried.*budget/iu),
+        });
     });
 
     it('keeps grouped undo retryable when a collaborator changes the parallel fader', async () => {
