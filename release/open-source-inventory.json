@@ -131,7 +131,7 @@
                 "sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4:LICENSE",
                 "sha256:c148064afc3d904d474c5f20ee39052ff86085a02d148552ce59f4d0ebd7aeb9:NOTICE",
                 "sha256:03be9429f428e7f8f427a01a79317eef00dd6ab5dc2ffb130c4a6300f579fead:public/legal/DEPENDENCY-LICENSES.txt",
-                "sha256:b1ef475c9236ca73f377965c215526768ec4406bf9159fde77042f02420ba72b:release/dependency-license-proofs.json"
+                "sha256:d83968fb94a01899526eb60d3b2d619eabee665d8752f4e7f3ddecc50be9c3fe:release/dependency-license-proofs.json"
             ],
             "licenses": ["Apache-2.0", "per-package terms:public/legal/DEPENDENCY-LICENSES.txt"],
             "productSurfaces": [
@@ -476,7 +476,7 @@
                 "mixed-license-materials:Apache-TVM-root-and-full-referenced-license-notice-trees",
                 "accepted-residual:no-exact-base-checkpoint-mapping-or-hermetic-build-input-record"
             ],
-            "productSurfaces": ["browser-local language model", "desktop-local language model"],
+            "productSurfaces": ["browser-local WebLLM", "desktop renderer browser-local WebLLM over WebGPU"],
             "evidence": [
                 "The manifest pins each model revision and verifies the exact downloaded artifact bytes by SHA-256 before storage or inference.",
                 "The binary-mlc-llm-libs merge contains the admitted WASM bytes; its merged PR 165 attests exact MLC-LLM and Apache TVM source revisions, and TVM pins tvm-ffi 3c35034fd1026011736e19a4e0e1ed0f22058c42. MLC-LLM's notice, TVM's root LICENSE and NOTICE, and tvm-ffi's root and referenced legal files are shipped byte-for-byte.",
@@ -500,6 +500,7 @@
                 "Cargo.lock",
                 "crates/sourdaw-native/Cargo.toml",
                 "crates/sourdaw-native/src/commands/speech.rs",
+                "crates/sourdaw-native/src/commands/verified_cached_model.rs",
                 "src/infra/release/modelReleaseAdmission.ts",
                 "src/modules/AiRuntime/useCases/voiceDictation/loadCachedWhisperModel.ts"
             ],
@@ -516,7 +517,7 @@
             "licenses": ["MIT:model-artifact-repository", "Unlicense:whisper-rs-runtime"],
             "productSurfaces": ["desktop speech transcription"],
             "evidence": [
-                "The download pins one model revision and verifies its exact 147964211-byte SHA-256.",
+                "The cached-model contract pins one model revision and verifies its exact 147964211-byte SHA-256 before Whisper consumes the bytes.",
                 "The model repository declares MIT; installed whisper-rs and whisper-rs-sys metadata declare Unlicense."
             ],
             "obligations": ["Carry the MIT and Unlicense notices in distributed desktop material."]
@@ -1502,11 +1503,6 @@
             "surface": "levain-sample-bank",
             "file": "scripts/levainSource.ts",
             "value": "https://github.com/sgossner/VSCO-2-CE"
-        },
-        {
-            "surface": "whisper-model",
-            "file": "crates/sourdaw-native/src/commands/speech.rs",
-            "value": "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-base.en.bin"
         },
         {
             "surface": "cloud-ai-providers",

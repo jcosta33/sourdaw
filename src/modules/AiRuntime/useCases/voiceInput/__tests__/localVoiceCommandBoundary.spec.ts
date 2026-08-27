@@ -42,8 +42,9 @@ describe('local voice command boundary', () => {
                 '\n#[cfg(test)]\nmod tests'
             )[0] ?? '';
 
-        expect(speech).toContain('model_download::read_verified_cached_model');
-        expect(speech).not.toContain('model_download::ensure_model');
+        expect(speech).toContain('verified_cached_model::read_verified_cached_model');
+        expect(speech).not.toContain('model_download');
+        expect(speech).not.toContain('ensure_model');
         expect(speech).not.toContain('reqwest::');
         expect(speech).toContain('struct SensitiveCaptureBuffer');
         expect(speech).toContain('struct SensitiveF64Buffers');
