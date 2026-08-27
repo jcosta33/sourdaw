@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { agentRunLifecycle } from '../agentRunLifecycle';
+import { createAgentSagaStep } from '../createAgentSagaStep';
 
 describe('agentRunLifecycle', () => {
     beforeEach(() => {
@@ -47,5 +48,38 @@ describe('agentRunLifecycle', () => {
             })
         ).toThrow('Terminal agent run cannot record a plan');
         expect(agentRunLifecycle.get('run-cancelled')).toMatchObject({ phase: 'cancelled', plan: null });
+    });
+
+    it('keeps a committed run partially completed while external saga work remains unsettled', () => {
+        agentRunLifecycle.create({
+            runId: 'run-unsettled-saga',
+            request: 'Render the chorus.',
+            mode: 'macro',
+            createdRevision: 'revision-1',
+            createdAt: 100,
+        });
+        agentRunLifecycle.recordSagaStep({
+            runId: 'run-unsettled-saga',
+            step: createAgentSagaStep({
+                stepId: 'render:chorus',
+                order: 0,
+                owner: 'render',
+                workId: 'render-chorus',
+                receiptIdentity: 'receipt-chorus',
+                state: 'external-pending',
+                relatedArtifactIds: ['render-chorus'],
+                updatedAt: 110,
+                compensationAvailable: false,
+            }),
+        });
+
+        agentRunLifecycle.recordCommittedWork({
+            runId: 'run-unsettled-saga',
+            workId: 'batch-chorus',
+            receiptIdentity: 'receipt-chorus',
+            committedAt: 120,
+        });
+
+        expect(agentRunLifecycle.get('run-unsettled-saga')).toMatchObject({ phase: 'partially-completed' });
     });
 });

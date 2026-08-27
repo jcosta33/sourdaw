@@ -21,6 +21,8 @@ import {
     type AgentRunSagaStep,
     type AgentRunScope,
     type AgentRunState,
+    type AgentRunWorkOwnerKind,
+    type AgentRunWorkTerminalState,
 } from '../models/AgentRun';
 import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
 import { type AiBackendPreference } from '../models/LlmOrchestrationTypes';
@@ -28,6 +30,20 @@ import { persistAgentRunState, readAgentRunState, resetAgentRunState } from '../
 import { hasSamePreparedStemImportRecovery } from '../validators/hasSamePreparedStemImportRecovery';
 
 import { normalizeAgentFailure } from './agentErrorAndSaga';
+import {
+    type ClaimAgentRunWorkLeaseResult as ClaimWorkLeaseResult,
+    claimAgentRunWorkLease as claimWorkLease,
+} from './agentRequestOrchestration/claimAgentRunWorkLease';
+import { recoverInterruptedAgentRunState as recoverInterruptedRunState } from './agentRequestOrchestration/recoverInterruptedAgentRunState';
+import { reduceAgentRunTransition } from './agentRequestOrchestration/reduceAgentRunTransition';
+import {
+    type RetryAgentRunWorkLeaseResult as RetryWorkLeaseResult,
+    retryAgentRunWorkLease as retryWorkLease,
+} from './agentRequestOrchestration/retryAgentRunWorkLease';
+import {
+    type SettleAgentRunWorkLeaseResult as SettleWorkLeaseResult,
+    settleAgentRunWorkLease as settleWorkLease,
+} from './agentRequestOrchestration/settleAgentRunWorkLease';
 
 const DEFAULT_SCOPE: AgentRunScope = {
     targetIds: [],
@@ -65,19 +81,6 @@ function mergeAgentRunBudgets(current: AgentRunBudgets, next: AgentRunBudgets): 
 
 const TERMINAL_PHASES = new Set<AgentRunPhase>(['completed', 'failed', 'cancelled', 'partially-completed']);
 
-const ALLOWED_PHASE_TRANSITIONS: Record<AgentRunPhase, ReadonlySet<AgentRunPhase>> = {
-    created: new Set(['planning', 'failed', 'cancelled']),
-    planning: new Set(['waiting-for-approval', 'previewing', 'executing', 'completed', 'failed', 'cancelled']),
-    'waiting-for-approval': new Set(['executing', 'paused', 'failed', 'cancelled']),
-    previewing: new Set(['completed', 'paused', 'failed', 'cancelled']),
-    executing: new Set(['completed', 'paused', 'failed', 'cancelled', 'partially-completed']),
-    paused: new Set(['planning', 'waiting-for-approval', 'previewing', 'executing', 'failed', 'cancelled']),
-    completed: new Set(),
-    failed: new Set(['paused']),
-    cancelled: new Set(),
-    'partially-completed': new Set(),
-};
-
 type CreateAgentRunInput = {
     runId: string;
     request: string;
@@ -103,6 +106,24 @@ function updateAgentRun(runId: string, updatedAt: number, update: (run: AgentRun
     const index = state.runs.findIndex((run) => run.runId === runId);
     if (index < 0) {
         throw new Error(`Unknown agent run: ${runId}`);
+    }
+    const current = state.runs[index]!;
+    const next = { ...update(structuredClone(current)), updatedAt };
+    const runs = [...state.runs];
+    runs[index] = next;
+    persistAgentRunState({ ...state, runs });
+    return structuredClone(next);
+}
+
+function updateAgentRunIfPresent(
+    runId: string,
+    updatedAt: number,
+    update: (run: AgentRun) => AgentRun
+): AgentRun | null {
+    const state = readAgentRunState();
+    const index = state.runs.findIndex((run) => run.runId === runId);
+    if (index < 0) {
+        return null;
     }
     const current = state.runs[index]!;
     const next = { ...update(structuredClone(current)), updatedAt };
@@ -281,12 +302,7 @@ function transitionAgentRunPhase(input: {
     transitionedAt?: number;
 }): AgentRun {
     return updateAgentRun(input.runId, input.transitionedAt ?? Date.now(), (run) => {
-        if (run.phase === input.phase) {
-            return run;
-        }
-        if (!ALLOWED_PHASE_TRANSITIONS[run.phase].has(input.phase)) {
-            throw new Error(`Agent run cannot transition from ${run.phase} to ${input.phase}`);
-        }
+        const phase = reduceAgentRunTransition(run.phase, { type: 'phase-requested', phase: input.phase });
         const revisions = { ...run.revisions };
         if (input.revision !== undefined) {
             if (input.phase === 'planning') {
@@ -297,7 +313,7 @@ function transitionAgentRunPhase(input: {
                 revisions.committed = input.revision;
             }
         }
-        return { ...run, phase: input.phase, revisions };
+        return { ...run, phase, revisions };
     });
 }
 
@@ -320,7 +336,7 @@ function recordAgentRunPlan(input: {
         }
         return {
             ...run,
-            phase: 'planning',
+            phase: reduceAgentRunTransition(run.phase, { type: 'plan-recorded' }),
             revisions: { ...run.revisions, planned: input.revision },
             scope: structuredClone(input.scope),
             grants: structuredClone(input.grants),
@@ -604,10 +620,11 @@ function recordAgentRunError(input: {
     recordedAt?: number;
 }): AgentRun {
     return updateAgentRun(input.runId, input.recordedAt ?? input.error.occurredAt, (run) => {
-        let phase = run.phase;
-        if (input.terminal) {
-            phase = run.committedWork.length > 0 ? 'partially-completed' : 'failed';
-        }
+        const phase = reduceAgentRunTransition(run.phase, {
+            type: 'error-recorded',
+            terminal: input.terminal ?? false,
+            hasCommittedWork: run.committedWork.length > 0,
+        });
         return {
             ...run,
             phase,
@@ -645,7 +662,11 @@ function recordAgentRunSagaStep(input: { runId: string; step: AgentRunSagaStep; 
         );
         return {
             ...run,
-            phase: hasUnsettledExternalSagaStep && run.committedWork.length > 0 ? 'partially-completed' : run.phase,
+            phase: reduceAgentRunTransition(run.phase, {
+                type: 'saga-updated',
+                hasUnsettledExternalStep: hasUnsettledExternalSagaStep,
+                hasCommittedWork: run.committedWork.length > 0,
+            }),
             saga: { schemaVersion: 1, steps },
         };
     });
@@ -680,7 +701,10 @@ function recordAgentRunPendingEffectContinuation(input: {
     const next = {
         ...current,
         updatedAt: recordedAt,
-        phase: current.committedWork.length > 0 ? 'partially-completed' : current.phase,
+        phase: reduceAgentRunTransition(current.phase, {
+            type: 'pending-effect-recorded',
+            hasCommittedWork: current.committedWork.length > 0,
+        }),
         pendingEffectContinuations: [
             ...current.pendingEffectContinuations.filter((candidate) => candidate.batchId !== continuation.batchId),
             continuation,
@@ -852,7 +876,10 @@ function completeAgentRunPendingEffectContinuation(input: {
     const next = {
         ...run,
         updatedAt: completedAt,
-        phase: hasRecoveryObligation ? run.phase : 'completed',
+        phase: reduceAgentRunTransition(run.phase, {
+            type: 'pending-effect-completed',
+            hasRecoveryObligation,
+        }),
         batches,
         receipts: [...run.receipts.filter((receipt) => receipt.workId !== input.batchId), completedLedgerEntry],
         committedWork: [...run.committedWork.filter((work) => work.workId !== input.batchId), completedLedgerEntry],
@@ -929,18 +956,11 @@ function recordAgentRunCommittedWork(input: {
         const hasUnsettledExternalSagaStep = run.saga.steps.some(
             (step) => step.state === 'pending' || step.state === 'external-pending' || step.state === 'uncompensated'
         );
-        const phase = (() => {
-            if (hasUnsettledExternalSagaStep) {
-                return 'partially-completed' as const;
-            }
-            if (input.completesRun !== false) {
-                return 'completed' as const;
-            }
-            if (run.phase === 'cancelled' || run.phase === 'failed') {
-                return 'partially-completed' as const;
-            }
-            return run.phase;
-        })();
+        const phase = reduceAgentRunTransition(run.phase, {
+            type: 'work-committed',
+            completesRun: input.completesRun !== false,
+            hasUnsettledExternalSagaStep,
+        });
         return {
             ...run,
             phase,
@@ -1259,7 +1279,7 @@ function requireAgentRunManualResume(input: {
         }
         return {
             ...run,
-            phase: 'paused',
+            phase: reduceAgentRunTransition(run.phase, { type: 'manual-resume-required' }),
             manualResume: {
                 required: true,
                 reason: input.reason,
@@ -1335,7 +1355,10 @@ function cancelAgentRun(input: { runId: string; reason: string; requestedAt?: nu
         }
         return {
             ...run,
-            phase: run.committedWork.length > 0 ? 'partially-completed' : 'cancelled',
+            phase: reduceAgentRunTransition(run.phase, {
+                type: 'cancellation-requested',
+                hasCommittedWork: run.committedWork.length > 0,
+            }),
             cancellation: {
                 ...run.cancellation,
                 generation: run.cancellation.generation + 1,
@@ -1378,11 +1401,87 @@ function acknowledgeAgentRunCancellation(input: {
     });
 }
 
+function recoverInterruptedAgentRunState(input?: { recoveredAt?: number }): { recoveredRunIds: string[] } {
+    const recoveredAt = input?.recoveredAt ?? Date.now();
+    const current = readAgentRunState();
+    const recovery = recoverInterruptedRunState(current, recoveredAt);
+    if (recovery.recoveredRunIds.length > 0) {
+        persistAgentRunState(recovery.state);
+    }
+    return { recoveredRunIds: recovery.recoveredRunIds };
+}
+
+type ClaimAgentRunWorkLeaseResult = ClaimWorkLeaseResult | { status: 'missing-run' };
+
+function claimAgentRunWorkLease(input: {
+    runId: string;
+    workId: string;
+    ownerKind: AgentRunWorkOwnerKind;
+    cleanupOwner: string;
+    idempotencyKey: string;
+    receiptIdentity: string;
+    idempotent: boolean;
+    retriable: boolean;
+    operation?: 'read' | 'write';
+    claimedAt?: number;
+}): ClaimAgentRunWorkLeaseResult {
+    const claimedAt = input.claimedAt ?? Date.now();
+    let result: ClaimAgentRunWorkLeaseResult = { status: 'missing-run' };
+    const updated = updateAgentRunIfPresent(input.runId, claimedAt, (run) => {
+        const outcome = claimWorkLease({ ...input, run, claimedAt });
+        result = outcome.result;
+        return outcome.run;
+    });
+    return updated === null ? { status: 'missing-run' as const } : result;
+}
+
+type RetryAgentRunWorkLeaseResult = RetryWorkLeaseResult | { status: 'missing-run' };
+
+function retryAgentRunWorkLease(input: {
+    runId: string;
+    workId: string;
+    ownerKind: AgentRunWorkOwnerKind;
+    cleanupOwner: string;
+    claimedAt?: number;
+}): RetryAgentRunWorkLeaseResult {
+    const claimedAt = input.claimedAt ?? Date.now();
+    let result: RetryAgentRunWorkLeaseResult = { status: 'missing-run' };
+    const updated = updateAgentRunIfPresent(input.runId, claimedAt, (run) => {
+        const outcome = retryWorkLease({ ...input, run, claimedAt });
+        result = outcome.result;
+        return outcome.run;
+    });
+    return updated === null ? { status: 'missing-run' as const } : result;
+}
+
+type SettleAgentRunWorkLeaseResult = SettleWorkLeaseResult | { status: 'missing-run' };
+
+function settleAgentRunWorkLease(input: {
+    runId: string;
+    workId: string;
+    leaseId: string;
+    cancellationGeneration: number;
+    idempotencyKey: string;
+    receiptIdentity: string;
+    terminalState: AgentRunWorkTerminalState;
+    settledAt?: number;
+}): SettleAgentRunWorkLeaseResult {
+    const settledAt = input.settledAt ?? Date.now();
+    let result: SettleAgentRunWorkLeaseResult = { status: 'missing-run' };
+    const updated = updateAgentRunIfPresent(input.runId, settledAt, (run) => {
+        const outcome = settleWorkLease({ ...input, run, settledAt });
+        result = outcome.result;
+        return outcome.run;
+    });
+    return updated === null ? { status: 'missing-run' as const } : result;
+}
+
 export const agentRunLifecycle = {
     acknowledgeCancellation: acknowledgeAgentRunCancellation,
     cancel: cancelAgentRun,
     clear: clearAgentRuns,
     claimDecisionResume: claimAgentRunDecisionResume,
+    claimWorkLease: claimAgentRunWorkLease,
     create: createAgentRun,
     get: getAgentRun,
     getPendingEffectRecovery: getAgentRunPendingEffectRecovery,
@@ -1407,6 +1506,7 @@ export const agentRunLifecycle = {
     recordProviderUsage: recordAgentRunProviderUsage,
     recordPreparedStemImportRecovery: recordAgentRunPreparedStemImportRecovery,
     reconcileBudgetAttempt: reconcileAgentRunBudgetAttempt,
+    recoverInterruptedState: recoverInterruptedAgentRunState,
     reserveBudget: reserveAgentRunBudget,
     reserveBudgetBatch: reserveAgentRunBudgetBatch,
     selectDecisionAlternative: selectAgentRunDecisionAlternative,
@@ -1416,6 +1516,8 @@ export const agentRunLifecycle = {
     registerTemporaryAsset: registerAgentRunTemporaryAsset,
     requireManualResume: requireAgentRunManualResume,
     requirePreparedStemManualRepair: requireAgentRunPreparedStemManualRepair,
+    retryWorkLease: retryAgentRunWorkLease,
+    settleWorkLease: settleAgentRunWorkLease,
     transitionPhase: transitionAgentRunPhase,
     updateBatchStatus: updateAgentRunBatchStatus,
 } as const;
