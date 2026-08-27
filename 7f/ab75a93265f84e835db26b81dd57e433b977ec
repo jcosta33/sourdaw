@@ -1,0 +1,377 @@
+src/modules/Tuner/presentations/views/TunerPanel.tsx
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 86
+src/modules/Arrangement/models/PluginDescriptors/__tests__/descriptorEngineParamWeld.spec.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 228
+src/modules/AiRuntime/useCases/__tests__/compileArbitraryCommandList.spec.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 2295-2302,3249-3256
+src/modules/AiRuntime/useCases/__tests__/drumBusPromptWorkflow.spec.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 3-6,8,11,18,22,29,89,408-409,413,1058-1061,1113-1115,1145-1216,1598-1615,1623,1625,2592-2647,2832-2834,2838,3041-3043,3047
+src/modules/Arrangement/useCases/preset/__tests__/sidebarInstrumentPresets.spec.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 1-20
+src/modules/Arrangement/models/DeviceParameter.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 15,167
+src/modules/Arrangement/useCases/preset/sidebarInstrumentPresets.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 37
+src/modules/Arrangement/useCases/timelineInteractions/__tests__/cancelActiveTimelineGesture.spec.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 1-36
+tests/e2e/exportAudioEvidence.spec.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 14,17,91,94-96
+src/modules/Command/useCases/commandBatchPreflightPort.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 18-25
+src/modules/Arrangement/models/PluginDescriptors/__tests__/declaredDefaultConsensus.spec.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 680
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 100,4162,4179,4196
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 1-585
+.github/workflows/health-gates.yml
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 20-28,46,275-279,482-513,678-679,707-708,710-711,713-717,719-722,724-727,747
+src/modules/AiRuntime/useCases/__tests__/agentRiskApproval.spec.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 213
+src/modules/CommandInterface/useCases/keyboardShortcutActions/handleKeyboardShortcut/__tests__/handleKeydown.spec.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 7,103,333-380
+  s_1b9333aca53d4d::t_997aa95756208c 381-382
+src/modules/ProofChamber/presentations/views/__tests__/proofChamberAlgorithmGating.spec.tsx
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 317-321,327-329,332-334
+tests/e2e/e2eUtils.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 15,20-22,34,38,42-46,48-52,59-65
+  s_1b9333aca53d4d::t_4c0c58783cdcc6 66-67
+crates/proof-chamber/tests/plate_parameter_surface.rs
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 35-37,579-598
+src/modules/ContentBrowser/presentations/views/Sidebar/InstrumentsTab.tsx
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 64,121-124,293,302,320,441-450
+src/modules/Arrangement/useCases/clipEditing/splitClipWithUndo.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 7,46-50,62-63,81-82,108-112
+src/modules/Arrangement/stores/timelineGestureCancelerRef.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 1-13
+src/modules/Arrangement/handlers/isGeneratedMidiStateCurrent.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 8,29-46,80
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/offlineAutomationCoverage.spec.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 304-307
+tests/e2e/aiBackendPreference.spec.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 20,27-40,42
+src/modules/CommandInterface/useCases/keyboardShortcutActions/handleKeyboardShortcut/handleKeydown.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 6,225-230,238-244
+src/modules/Arrangement/useCases/clipEditing/prepareClipSplit.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 10-11,71-76,100,109
+src/modules/AiRuntime/useCases/__tests__/wholeProjectVibeMixPlan.spec.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 3-6,44,377-379
+  s_1b9333aca53d4d::t_2ee8bfc0c46623 380-381
+scripts/githubAppIdentity.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 725
+src/modules/Arrangement/useCases/clip/__tests__/duplicateClipCore.spec.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 14-15,50-54,222-283,302-303,426-490
+  s_1b9333aca53d4d::t_142b1341dd07ca 491
+src/modules/TimelineEditor/presentations/hooks/__tests__/useTempoEditorState.spec.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 4,676-739
+  s_1b9333aca53d4d::t_dc2061a640c6e0 740
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/KneadEditor.spec.tsx
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 141,156,159
+package.json
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 19
+src/modules/AiRuntime/useCases/__tests__/providerToolPlanningFixture.spec.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 1-95
+tests/e2e/llmBadgeDownload.spec.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 1,3,5-9,11,15-29,32-35
+  s_1b9333aca53d4d::t_445c7803e509f6 36
+src/modules/CrdtDocument/useCases/projection/__tests__/projectMixStateSlots.spec.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 4-8,11,16,190-206,211,215,222,266-283,289,296
+tests/e2e/instrumentPanels.spec.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 2,6,17,19-25
+src/app/captureCommandBatchPreflightState.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 16-20,131-166,433,436-444,446-463,465-476,504-507,510,512,522,526-532,534
+  s_1b9333aca53d4d::t_fad31bd573fd72 533
+src/modules/Arrangement/useCases/__tests__/soundPresetLibrary.spec.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 70,83-90
+src/modules/Arrangement/useCases/__tests__/getDeviceContractVersionForCommand.spec.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 17-31
+src/modules/AiRuntime/stores/pendingActionConfirmationStore.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 36
+crates/daw-dsp/tests/dsp_cost_reduction_goldens.rs
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 20-22,29,37-80,181,192,231,386-390
+tests/e2e/desktopRuntime.spec.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 77-79,167-169
+tests/e2e/spatialPannerArrangementTestId.spec.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 30,54-55
+tests/e2e/generativeOptionGridsTestId.spec.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 6-7,11,25
+src/modules/Arrangement/useCases/clipEditing/__tests__/splitClipWithUndo.spec.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 13-14,34-37,46,70-74,205-258
+  s_1b9333aca53d4d::t_c4dce57a36e0bd 259
+src/modules/AiRuntime/useCases/__tests__/midiOverlapPromptWorkflow.spec.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 4-6,47,455-457
+  s_1b9333aca53d4d::t_6c91c08390bd59 3,458-459
+crates/proof-chamber/tests/support/plate_fine_structure.rs
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 1-107
+release/dependency-license-proofs.json
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 60
+src/app/bootstrap.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 172-175,205
+src/modules/AiRuntime/useCases/__tests__/verseHallAutomationWorkflow.spec.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 3-6,42,372-374
+  s_1b9333aca53d4d::t_906d80618a426f 375-376
+src/modules/Arrangement/handlers/clip/handleRestoreClipSplitState.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 5,11-15,26-28,38-43,56-64
+src/modules/Arrangement/useCases/clip/duplicateClipCore.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 7,16-17,29,40,70,117-126
+  s_1b9333aca53d4d::t_d2faeeaecb6ca4 127-128
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/offlineAutomationExemptions.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 128-129,132-133,135
+src/modules/Arrangement/presentations/views/ClipContextMenu.tsx
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 88-91,94-97
+src/modules/Arrangement/presentations/views/__tests__/ClipContextMenu.spec.tsx
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 6,12,14,154-161,380-398
+  s_1b9333aca53d4d::t_40f0cb9dde2707 399
+release/open-source-inventory.json
+  s_1b9333aca53d4d::t_5e83275b766754 134
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 938,940-941,1271
+src/modules/Transport/useCases/scheduling/scheduleAudioClips.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 143-148,309-310,327-328,336-340,342,344,348,350,363,367-370
+tests/e2e/aiAndCollabFinal.spec.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 2,54-55,59-60,64-65,69
+tests/e2e/browserAiWebGpuAdmission.spec.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 1,3-7,23-30,38-40,42-51,54-56,58,67-68,74-147,159,166-173,180-186,188
+src/modules/Transport/useCases/scheduling/__tests__/scheduleAudioClips.spec.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 116,553-603
+  s_1b9333aca53d4d::t_b9f1c25b9a1c91 604
+src/modules/Arrangement/handlers/clip/__tests__/handleRestoreReversedClip.spec.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 1-124
+src/modules/Arrangement/useCases/clipEditing/splitClipSatellites.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 1-152
+src/modules/AiRuntime/useCases/compileAgentRiskApproval.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 90
+src/modules/Arrangement/stores/__tests__/clipSatelliteState.spec.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 3-4,6-12,90-165
+src/modules/Arrangement/presentations/views/TimelineSurface.tsx
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 49,433
+src/modules/Arrangement/useCases/clipEditing/reverseClip.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 52-55
+src/modules/Arrangement/handlers/clip/handleDuplicateClip.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 3,5,16,96-99
+src/modules/Arrangement/stores/clipSatelliteState.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 9,106-110,118,122-150
+  s_1b9333aca53d4d::t_233befa80681a4 151
+src/modules/CrdtDocument/useCases/projection/__tests__/projectProjection.spec.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 72-79
+src/modules/Arrangement/useCases/timelineInteractions/isClipDropCompatible.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 1-21
+tests/e2e/generatePanelTestId.spec.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 11,14-15,18,21-22,24-26,29,32-33,35,37-38,41,44-45,47-48,50-53,59
+src/modules/AiRuntime/useCases/__tests__/buildAgentContext.spec.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 77-82,167-212
+  s_1b9333aca53d4d::t_7225afa504a6e1 213
+src/modules/Arrangement/presentations/views/__tests__/TimelineSurface.spec.tsx
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 151,269,296,531-563,570
+src/modules/Tuner/presentations/views/__tests__/TunerPanel.spec.tsx
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 122,127,129,133,198-204
+  s_1b9333aca53d4d::t_f0c561f91c2a50 205-206
+src/modules/TimelineEditor/presentations/hooks/useTempoEditorState.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 195-203,281,297,306-310,426
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 16,41-53,84-157,180-232,340,348-350,354,358,386,600-621
+  s_1b9333aca53d4d::t_9edbbdc00e3882 622
+src/app/__tests__/captureCommandBatchPreflightState.spec.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 4-10,160-193,252-457,662-680
+crates/daw-dsp/tests/support/retained_signal.rs
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 1-127
+AGENTS.md
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 307-314,327-329
+src/modules/TimelineEditor/presentations/views/Inspector/layouts/LufsMeterLayout.tsx
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 1-90
+src/modules/Proof/presentations/views/__tests__/ProofPanel.spec.tsx
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 250-256
+src/modules/Arrangement/handlers/clip/handleReverseClip.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 43-44,55-57
+scripts/__tests__/githubAppIdentity.spec.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 967
+tests/e2e/browserAiHardware.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 1-85
+src/modules/TimelineEditor/presentations/hooks/usePianoRollInteractions.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 213-216,287-310,633-642
+src/modules/AiRuntime/useCases/agentReference/bridgeDrumRenderComparisonPlan.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 21,115
+src/modules/Arrangement/handlers/__tests__/compoundBusActionBatch.spec.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 128-134
+src/modules/Arrangement/useCases/clipEditing/__tests__/splitClipSatellites.spec.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 1-104
+src/modules/Arrangement/useCases/clipEditing/__tests__/reverseClip.spec.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 117-155
+src/modules/Arrangement/useCases/timelineInteractions/clipDropRejectionReason.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 1-12
+src/modules/Crust/useCases/crustParamBridge/__tests__/setCrustParamWithAudio.spec.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 19
+src/modules/AiRuntime/useCases/__tests__/syncopatedArpeggioPromptWorkflow.spec.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 4-6,42,397-399
+  s_1b9333aca53d4d::t_e9143ec8f2a5e4 3,400-401
+src/modules/AiRuntime/useCases/__tests__/protectedTargetCollaboratorDrift.spec.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 1-334
+src/modules/Arrangement/handlers/clip/__tests__/handleDuplicateClipToNextBar.spec.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 11,34-37,130,135
+src/modules/TimelineEditor/presentations/components/__tests__/ModulationLFO.spec.tsx
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 134,146,148-183,185-187
+src/modules/TimelineEditor/presentations/views/Inspector/ClipInspector.tsx
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 1,19-20,32-48,70-126,269-273,275-315
+tests/e2e/aiConfirmApplyUndo.spec.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 3,23,32-34
+tests/e2e/browserAiPanelsTestId.spec.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 41-46,49,55,76,89
+src/modules/Arrangement/handlers/clip/__tests__/handleReverseClip.spec.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 26-35,74-75,83-84,96-97
+src/modules/Arrangement/useCases/timelineInteractions/__tests__/isClipDropCompatible.spec.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 1-21
+tests/e2e/panelDeepCoverage.spec.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 2,67-68
+src/modules/WorkspaceShell/presentations/hooks/__tests__/usePromptExecution.spec.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 222
+src/modules/Arrangement/useCases/clipGainEnvelope/sampleGainEnvelopePoints.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 1-40
+src/modules/TimelineEditor/presentations/components/ModulationLFO.tsx
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 42-47,70-81
+src/modules/Arrangement/useCases/timelineInteractions/cancelActiveTimelineGesture.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 1-14
+eslint.config.mjs
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 2406-2424
+src/modules/AiRuntime/models/PresetActions/Presets/__tests__/Track.spec.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 158,165-177
+src/modules/AiRuntime/useCases/__tests__/providerToolPlanningFixture.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 1-380
+src/modules/AiRuntime/useCases/__tests__/mixPromptWorkflow.spec.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 3-6,42,178-180
+  s_1b9333aca53d4d::t_c07df98d8a908c 181-182
+playwright.config.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 34
+src/modules/AiRuntime/useCases/__tests__/bassCompressorParameterPromptWorkflow.spec.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 3-6,56,139-142
+  s_1b9333aca53d4d::t_e10e053731a3f6 143
+src/modules/Arrangement/handlers/__tests__/isGeneratedMidiStateCurrent.spec.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 13,23-25,133-177
+src/modules/Arrangement/presentations/hooks/useTimelineInteractions.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 10,23,43,50-51,112-124,167-249,269-275,363-374,387-391,402-403,412-415,419-424,427,481-483,613-615,619-624,626-668,674,678-683,687-736,878,892,899-943,945-951,953-966,969,971,973-974,978-986,993-1012,1016-1022,1029,1044-1058,1064-1073,1076-1104,1106-1107,1109-1120,1123-1125,1127-1154,1156,1158-1159,1162-1188,1214,1344
+scripts/test-health-gate-scripts.sh
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 242,272,447-448
+src/modules/Arrangement/useCases/clipEditing/splitClip.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 6,75-78
+  s_1b9333aca53d4d::t_dd9b781fdd5996 79
+src/modules/Command/useCases/versionedCommandArgumentKeys.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 153,1467,2681-2682
+src/modules/TimelineEditor/presentations/hooks/__tests__/usePianoRollInteractions.spec.tsx
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 187-189,191-192,685-722
+src/modules/Arrangement/presentations/views/BeatRulerBar.tsx
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 9,311-352
+  s_1b9333aca53d4d::t_9bf3c2006f88f0 353
+tests/e2e/deepCoverage.spec.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 2,182,188-189,191-196,218-219,228-229,232,238-239,242-249,254
+src/modules/Arrangement/useCases/timelineInteractions/__tests__/clipDropRejectionReason.spec.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 1-14
+src/modules/Arrangement/handlers/track/__tests__/trackStateUndo.integration.spec.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 667,688-689,691
+src/modules/AudioEngine/engine/faustMeterReadings.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 1-73
+src/modules/Arrangement/presentations/views/__tests__/BeatRulerBar.spec.tsx
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 1,8,181-212
+  s_1b9333aca53d4d::t_407a5bae0184de 213
+src/modules/AudioEngine/engine/__tests__/faustMeterReadings.spec.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 1-159
+src/modules/AiRuntime/useCases/__tests__/executePromptActionGroup.spec.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 374
+src/modules/AiRuntime/useCases/agentReference/bridgeSharedVocalFxBusesPlan.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 22,209-215
+src/modules/AiRuntime/useCases/validateAgentRiskApproval.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 30-34
+src/modules/Arrangement/useCases/timelineInteractions/registerTimelineGestureCanceler.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 1-13
+src/modules/Arrangement/handlers/clip/__tests__/handleSplitClip.integration.spec.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 34-35,37,116-117,128-129,276-432
+src/modules/Arrangement/useCases/clipGainEnvelope/__tests__/sampleGainEnvelopePoints.spec.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 1-40
+src/modules/AiRuntime/useCases/__tests__/deleteMutedEmptyTracksPromptWorkflow.spec.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 3,6-12,16,40,51-64,136-145,444-451,476-479,490-492,731,881-883,888,925-942,952,954
+src/modules/Arrangement/handlers/clip/__tests__/handleRestoreClipSplitState.spec.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 1-173
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/WaveformEditor.spec.tsx
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 26,185-188,574-575,589-590,693,847-848
+scripts/__tests__/resourceGuard.spec.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 757-759
+src/modules/Arrangement/presentations/hooks/__tests__/useTimelineInteractions.spec.tsx
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 61,120,197-199,288,914-915,950-952,1286
+src/modules/Arrangement/useCases/clipEditing/__tests__/splitClip.spec.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 29-30,57-58,292-393
+src/modules/Proof/presentations/views/ProofPanel.tsx
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 146
+src/modules/TimelineEditor/presentations/views/Inspector/layouts/__tests__/LufsMeterLayout.spec.tsx
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 1-89
+src/utils/handlerContract.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 447-454,704-713,1560-1563
+tests/e2e/aiFeatures.spec.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 3,39-40,43-45
+tests/e2e/proofStreamingTargetTestId.spec.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 44,53-63
+src/modules/AudioEngine/engine/wasmDeviceRegistry.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 24,1804,1812-1818
+src/modules/TimelineEditor/presentations/views/Inspector/DeviceInspector.tsx
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 18
+src/modules/AiRuntime/useCases/__tests__/confirmedCompoundBusActions.spec.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 3,16,20,53-65,69,82,102-112,153-160,468-471,494,504-506,534-540,562
+src/modules/Arrangement/handlers/clip/handleDuplicateClipToNextBar.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 3,5,16,96-98
+src/modules/AiRuntime/useCases/__tests__/articulationTransferPromptWorkflow.spec.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 3-6,34,477-479
+  s_1b9333aca53d4d::t_c617bd781dbb44 480-481
+src/modules/TimelineEditor/presentations/views/ClipView/WaveformEditor.tsx
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 37,532,542
+src/modules/Arrangement/handlers/clip/__tests__/handleDuplicateClip.spec.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 11,34-37,130,135
+src/modules/Arrangement/useCases/clipGainEnvelope/getGainAtBeat.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 3-4,11
+src/modules/Arrangement/useCases/index.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 114-117
+src/modules/Arrangement/handlers/clip/handleRestoreReversedClip.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 32-33
+src/modules/CrdtDocument/useCases/projection/projectSlotProjections.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 88
+tests/e2e/statusBarMetricsTestId.spec.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 19,27,31,37
+src/app/__tests__/bootstrap.spec.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 3-4,95,152,321,675-677
+src/modules/AudioEngine/useCases/engineAccess/getFaustMeterReading.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 1-11
+src/modules/ContentBrowser/presentations/views/Sidebar/__tests__/InstrumentsTab.spec.tsx
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 6,133-134,136-137,160,176,192,229,259,294,320,330-413,437,465
+src/modules/Arrangement/presentations/hooks/__tests__/useTimelineInteractions.selectionDrag.spec.tsx
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 1-1242
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/ClipInspector.spec.tsx
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 4-5,87,95,109,192-199,286-372
+src/modules/Arrangement/handlers/clip/__tests__/handleDuplicateClip.integration.spec.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 23-25,47,58-59,80-129,131,135
+  s_1b9333aca53d4d::t_c9dd897813f477 130,132-134
+src/modules/AiRuntime/useCases/agentReference/bridgeBackingVocalPlatePlan.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 23,165
+src/modules/AiRuntime/useCases/agentReference/resolveAgentReference.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 243
+src/modules/Arrangement/models/PluginDescriptors/KneadDescriptor.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 1-44
+tests/e2e/browserAiWebGpuAdmission.playwright.config.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 1,11,28-30,39
+src/modules/TimelineEditor/presentations/views/ClipView/KneadEditor.tsx
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 658
+src/modules/Arrangement/presentations/hooks/__tests__/useTimelineInteractions.gestureCancel.spec.tsx
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 1-466
+src/modules/AudioEngine/useCases/index.ts
+  s_1b9333aca53d4d::t_ba6c15b7cba00e 88
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "7fab75a93265f84e835db26b81dd57e433b977ec",
+  "prompts": {},
+  "sessions": {
+    "s_1b9333aca53d4d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "188b0d45-7765-49bd-8d6e-1eebbd450613",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
