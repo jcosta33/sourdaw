@@ -1169,7 +1169,7 @@ export async function sendChatMessage(
                     });
                 }
             } else if (result.rejectionReason) {
-                agentRunLifecycle.recordError({
+                tryRecordTerminalFailure({
                     runId,
                     error: normalizeAgentFailure({
                         category: /schema/i.test(result.rejectionReason) ? 'schema' : 'resolution',

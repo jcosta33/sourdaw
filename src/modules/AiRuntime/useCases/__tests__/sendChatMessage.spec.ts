@@ -630,6 +630,68 @@ describe('sendChatMessage retained-provider selection', () => {
         }
     });
 
+    it('preserves a planning rejection when agent-run storage fails after provider settlement', async () => {
+        const rejectionReason = 'The requested command cannot be resolved.';
+        const storageFailure = new DOMException('The quota has been exceeded.', 'QuotaExceededError');
+        const loggerError = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+        const writeStorageItem = Storage.prototype.setItem;
+        const storageSetItem = vi.spyOn(Storage.prototype, 'setItem');
+        let admittedRunId: string | null = null;
+        let armedSetItemCount: number | null = null;
+        mocks.planPromptActions.mockImplementation(async (input: PlanPromptActionsInput) => {
+            admittedRunId = input.streamIdentity?.runId ?? null;
+            armedSetItemCount = storageSetItem.mock.calls.length;
+            storageSetItem
+                .mockImplementationOnce((key, value) => {
+                    return writeStorageItem.call(localStorage, key, value);
+                })
+                .mockImplementation(() => {
+                    throw storageFailure;
+                });
+            return {
+                context: {},
+                result: {
+                    actions: [],
+                    rawText: 'fixture rejection',
+                    requiresConfirmation: false,
+                    rejectionReason,
+                },
+                projectRevision: 'revision-fixture',
+            };
+        });
+
+        try {
+            await expect(sendChatMessage('resolve this command', { mode: 'apply' })).resolves.toBeUndefined();
+            expect(mocks.appendChatMessage).toHaveBeenLastCalledWith(
+                expect.objectContaining({
+                    role: 'assistant',
+                    content: `Command not executed: ${rejectionReason}`,
+                    error: rejectionReason,
+                })
+            );
+            expect(armedSetItemCount).not.toBeNull();
+            expect(storageSetItem.mock.calls.length).toBeGreaterThan(armedSetItemCount ?? 0);
+            expect(agentRunLifecycle.get(admittedRunId ?? '')).toEqual(
+                expect.objectContaining({
+                    phase: 'failed',
+                    errors: expect.arrayContaining([
+                        expect.objectContaining({
+                            code: 'agent.resolution',
+                            category: 'resolution',
+                            cause: { kind: 'known-domain', source: 'provider-planning' },
+                        }),
+                    ]),
+                })
+            );
+            expect(loggerError).not.toHaveBeenCalled();
+            expect(mocks.setActiveAborter).toHaveBeenLastCalledWith(null);
+            expect(mocks.setChatGenerating).toHaveBeenLastCalledWith(false);
+        } finally {
+            storageSetItem.mockRestore();
+            loggerError.mockRestore();
+        }
+    });
+
     it('forwards same-run live prepared-stem readiness into application planning', async () => {
         configurePromptPlanning(createStemImportAction('buffer-ready'), 'ready');
 
