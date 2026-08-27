@@ -8,6 +8,7 @@ import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { useStore } from '#/infra/store/useStore';
+import { capabilityStore } from '#/modules/BrowserAi/stores';
 import { cn } from '#/utils/Styles/cn';
 
 import { AGENT_EXECUTION_MODES, type AgentExecutionMode } from '../../models/AgentExecutionMode';
@@ -262,12 +263,15 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
         enableReasoning: false,
     });
     const agentRunState = useStore(agentRunStore, { schemaVersion: 1, runs: [] });
+    const capabilityState = useStore(capabilityStore, { phase: 'idle' });
     const decisionRuns = agentRunState.schemaVersion === 1 ? agentRunControls.listDecisions() : [];
     const pendingEffectContinuations = selectAgentRunPendingEffectRecoveries(agentRunState);
     const preparedStemManualRepairs = selectPreparedStemImportManualRepairs(agentRunState);
     const [executionMode, setExecutionMode] = useState<AgentExecutionMode>(
         chatState?.chatMode === 'prompt' ? 'apply' : 'explain'
     );
+    const llmAvailable = isLlmAvailable();
+    const isCheckingLlmAvailability = capabilityState?.phase === 'idle' || capabilityState?.phase === 'detecting';
 
     // Auto scroll bottom when new message streams
     useEffect(() => {
@@ -483,9 +487,9 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
                     </Row>
                 }
             >
-                {!isLlmAvailable() ? (
+                {!llmAvailable ? (
                     <span className="ml-1 rounded-sm border border-destructive/20 bg-destructive/10 px-1.5 py-[2px] text-[9px] capitalize tracking-normal text-destructive">
-                        Local AI Not Available
+                        {isCheckingLlmAvailability ? 'Checking AI availability' : 'AI Not Available'}
                     </span>
                 ) : null}
             </DawHeaderBand>
@@ -515,7 +519,7 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
                 enableReasoning={chatState.enableReasoning}
                 isGenerating={chatState.isGenerating}
                 inputValue={inputValue}
-                isLlmAvailable={isLlmAvailable()}
+                isLlmAvailable={llmAvailable}
                 textareaRef={textareaRef}
                 onChange={setInputValue}
                 onKeyDown={handleKeyDown}

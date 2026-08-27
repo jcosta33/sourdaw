@@ -1,8 +1,34 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { capabilityStore, setCapabilityDetecting, setCapabilityError, setCapabilityReport } from '../capabilityStore';
+import {
+    capabilityStore,
+    isWebGpuAvailable,
+    setCapabilityDetecting,
+    setCapabilityError,
+    setCapabilityReport,
+} from '../capabilityStore';
 
 import type { CapabilityReport } from '../../models/CapabilityReport';
+
+function createCapabilityReport(webGpu: CapabilityReport['webGpu'] = { status: 'supported' }): CapabilityReport {
+    return {
+        capability: 'supported',
+        webGpu,
+        webGpuTier: 'webgpu-fast',
+        crossOriginIsolated: true,
+        workerAvailable: true,
+        opfsAvailable: true,
+        inference: {
+            status: 'measured',
+            modelId: 'kokoro-82m-q8',
+            executionProviders: ['webgpu', 'wasm'],
+            audioSeconds: 4,
+            elapsedSeconds: 2,
+            realtimeFactor: 2,
+        },
+        detectedAt: 0,
+    };
+}
 
 describe('capabilityStore', () => {
     afterEach(() => {
@@ -20,23 +46,7 @@ describe('capabilityStore', () => {
     });
 
     it('setCapabilityReport transitions to done phase with the report', () => {
-        const report = {
-            capability: 'supported',
-            webGpu: { status: 'supported' },
-            webGpuTier: 'webgpu-fast',
-            crossOriginIsolated: true,
-            workerAvailable: true,
-            opfsAvailable: true,
-            inference: {
-                status: 'measured',
-                modelId: 'kokoro-82m-q8',
-                executionProviders: ['webgpu', 'wasm'],
-                audioSeconds: 4,
-                elapsedSeconds: 2,
-                realtimeFactor: 2,
-            },
-            detectedAt: Date.now(),
-        } as CapabilityReport;
+        const report = createCapabilityReport();
 
         setCapabilityReport(report);
 
@@ -57,11 +67,27 @@ describe('capabilityStore', () => {
         }
     });
 
+    it('admits WebGPU only after a completed supported probe', () => {
+        expect(isWebGpuAvailable()).toBe(false);
+
+        setCapabilityDetecting();
+        expect(isWebGpuAvailable()).toBe(false);
+
+        setCapabilityError('WebGPU probe failed');
+        expect(isWebGpuAvailable()).toBe(false);
+
+        setCapabilityReport(createCapabilityReport({ status: 'unavailable', reason: 'adapter-unavailable' }));
+        expect(isWebGpuAvailable()).toBe(false);
+
+        setCapabilityReport(createCapabilityReport());
+        expect(isWebGpuAvailable()).toBe(true);
+    });
+
     it('transitions detect → done → error cycle correctly', () => {
         setCapabilityDetecting();
         expect(capabilityStore.value?.phase).toBe('detecting');
 
-        setCapabilityReport({} as CapabilityReport);
+        setCapabilityReport(createCapabilityReport());
         expect(capabilityStore.value?.phase).toBe('done');
 
         setCapabilityError('late failure');

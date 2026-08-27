@@ -16,6 +16,11 @@ export const capabilityStore = createStore<CapabilityState>({
     initialData: { phase: 'idle' },
 });
 
+export function isWebGpuAvailable(): boolean {
+    const capabilityState = capabilityStore.value;
+    return capabilityState?.phase === 'done' && capabilityState.report.webGpu.status === 'supported';
+}
+
 export function setCapabilityDetecting(): void {
     capabilityStore.set({ phase: 'detecting' });
 }
