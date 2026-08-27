@@ -6,6 +6,7 @@ import { serializeClipSatelliteEntries } from '../../stores/clipSatelliteState';
 import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClipWriteTarget';
 import { duplicateClipToNextBar } from '../../useCases/clip/duplicateClipToNextBar';
 import { prepareDuplicateClipTargetId } from '../../useCases/clip/prepareDuplicateClipTargetId';
+import { serializeClipScopedAutomationLanes } from '../../useCases/clip/serializeClipScopedAutomationLanes';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 
@@ -94,8 +95,12 @@ export const handleDuplicateClipToNextBar = createHandler<'duplicateClipToNextBa
             state.generatedMidiStateGuard.entityJson = JSON.stringify(duplicatedClip);
             state.generatedMidiStateGuard.midiByClipIdJson = serializeMidiStateForClips([duplicatedClip.id]);
             // Same contract as handleDuplicateClip: the duplicate itself clones
-            // the source's satellites, so the guard expects exactly those.
+            // the source's satellites and clip-scoped automation lanes, so the
+            // guard expects exactly those.
             state.generatedMidiStateGuard.clipSatellitesJson = serializeClipSatelliteEntries([duplicatedClip.id]);
+            state.generatedMidiStateGuard.clipAutomationLanesJson = serializeClipScopedAutomationLanes([
+                duplicatedClip.id,
+            ]);
         }
         return toHandlerExecutionResult(true);
     },

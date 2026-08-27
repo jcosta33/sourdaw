@@ -711,6 +711,15 @@ export type GeneratedMidiStateGuard = {
      * has actually edited them.
      */
     clipSatellitesJson?: string;
+    /**
+     * Canonical JSON of the clip-scoped automation lanes the generated clips
+     * carry, captured by producers whose generation writes them — a clip
+     * duplicate clones the source's lanes onto the copy. A separate field from
+     * `clipSatellitesJson` because the lanes live in Automation's store, not
+     * the Arrangement satellite pair; either field may be captured without the
+     * other, and an absent one keeps that leg on the absence check.
+     */
+    clipAutomationLanesJson?: string;
 };
 
 export type DrumPreviewRecipe = 'ghost-note-pocket' | 'half-time-space' | 'syncopated-hats';
