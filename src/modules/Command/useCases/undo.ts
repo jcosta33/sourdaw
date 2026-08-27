@@ -296,7 +296,7 @@ async function undoImpl(): Promise<UndoResult> {
         undoStore.set(initial);
     }
 
-    const initialPast = initial.past;
+    const initialPast: readonly UndoEntry[] = initial.past;
     const headId = initialPast[initialPast.length - 1]!.id;
     let past: readonly UndoEntry[] = initialPast;
 

@@ -664,29 +664,39 @@ describe('track-state guarded undo integration', () => {
             expect(track('track-1')).toMatchObject({ frozen: true, freezeState: { status: 'frozen' } });
         });
 
-        it('conflicts rather than overwriting a take re-frozen after the unfreeze and retains the retryable conflict', async () => {
+        const reFrozenState = {
+            frozen: true,
+            frozenBufferId: 'freeze-buffer-9',
+            freezeState: { status: 'frozen' as const, freezeId: 'freeze-9', frozenBufferId: 'freeze-buffer-9' },
+        };
+
+        it('conflicts rather than overwriting a take re-frozen after the unfreeze, and reverts nothing', async () => {
             await run({ type: 'disableTrack', payload: { trackId: 'track-1', disabled: true } });
             divergeTrack('track-1', frozenState);
             await run({ type: 'unfreezeTrack', payload: { trackId: 'track-1' } });
-            divergeTrack('track-1', {
-                frozen: true,
-                frozenBufferId: 'freeze-buffer-9',
-                freezeState: { status: 'frozen', freezeId: 'freeze-9', frozenBufferId: 'freeze-buffer-9' },
-            });
+            divergeTrack('track-1', reFrozenState);
 
             notifyUserMock.mockClear();
 
-            // 1. Undo the unfreeze — conflicts and warns user
             await undo();
 
+            // The take a collaborator re-froze after the unfreeze stands: the inverse
+            // writes nothing and the user is told which edit could not be undone.
             expect(notifyUserMock).toHaveBeenCalledWith(expect.stringContaining('Cannot undo'), 'warning');
             expect(track('track-1')).toMatchObject({
                 frozenBufferId: 'freeze-buffer-9',
                 freezeState: { freezeId: 'freeze-9' },
             });
 
-            // 2. A singleton conflict stays at the top of history for retry; it
-            // does not skip the failed inverse and reach the older edit underneath.
+            // The older `disableTrack` edit is not reverted in its place. Reaching past
+            // a blocked entry means replaying an inverse that may not be able to refuse
+            // a write against the diverged document, which would clobber the very change
+            // that caused the conflict. The history beneath stays blocked while the
+            // divergence stands; see #2881.
+            expect(track('track-1')?.disabled).toBe(true);
+
+            // Retrying while the divergence stands does not skip the failed inverse
+            // either: the conflicted entry stays at the top of history for retry.
             await undo();
             expect(track('track-1')?.disabled).toBe(true);
         });
@@ -699,11 +709,7 @@ describe('track-state guarded undo integration', () => {
                 frozenBufferId: track('track-1')!.frozenBufferId,
                 freezeState: track('track-1')!.freezeState,
             };
-            divergeTrack('track-1', {
-                frozen: true,
-                frozenBufferId: 'freeze-buffer-9',
-                freezeState: { status: 'frozen', freezeId: 'freeze-9', frozenBufferId: 'freeze-buffer-9' },
-            });
+            divergeTrack('track-1', reFrozenState);
 
             await undo();
             expect(track('track-1')).toMatchObject({ freezeState: { freezeId: 'freeze-9' } });
