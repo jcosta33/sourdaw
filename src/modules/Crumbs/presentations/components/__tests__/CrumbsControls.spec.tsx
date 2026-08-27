@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 
 import { type VoiceStackParams } from '../../../models/CrumbsTypes';
@@ -37,6 +37,15 @@ describe('CrumbsControls — mode switcher', () => {
         // Active chip gets the lavender accent class; inactive gets the muted default.
         expect(drumChip.className).toContain('accent-lavender');
         expect(quickChip.className).not.toContain('accent-lavender');
+    });
+
+    it('reports a Drum mode selection', () => {
+        const onModeChange = vi.fn();
+        render(<CrumbsControls {...defaultProps({ onModeChange })} />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Drum', exact: true }));
+
+        expect(onModeChange).toHaveBeenCalledExactlyOnceWith('drum');
     });
 });
 
@@ -153,5 +162,23 @@ describe('CrumbsControls — knob accessible names', () => {
         expect(screen.getByRole('slider', { name: 'Atk' })).toBeInTheDocument();
         expect(screen.getByRole('slider', { name: 'Cutoff' })).toBeInTheDocument();
         expect(screen.getByRole('slider', { name: 'Gain' })).toBeInTheDocument();
+    });
+});
+
+describe('CrumbsControls — knob interactions', () => {
+    it('reports an Atk ArrowUp edit with the committed value', () => {
+        const onParamChange = vi.fn();
+        render(
+            <CrumbsControls
+                {...defaultProps({
+                    envelope: { attack: 0.01, hold: 0, decay: 0.3, sustain: 1, release: 0.1 },
+                    onParamChange,
+                })}
+            />
+        );
+
+        fireEvent.keyDown(screen.getByRole('slider', { name: 'Atk' }), { key: 'ArrowUp' });
+
+        expect(onParamChange).toHaveBeenCalledExactlyOnceWith('attack', 0.011, false);
     });
 });

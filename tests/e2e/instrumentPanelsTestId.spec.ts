@@ -6,7 +6,6 @@ const PANEL_OPEN_TIMEOUT_MS = 30_000;
 
 const INSTRUMENTS = [
     { card: 'Fermenter', panel: 'Fermenter' },
-    { card: 'Crumbs', panel: 'Sampler' },
     { card: 'Levain', panel: 'Levain' },
 ] as const;
 
@@ -23,7 +22,7 @@ async function openInstrumentPanel(
     });
 }
 
-test.describe('Instrument device panels — Fermenter, Levain, Crumbs', () => {
+test.describe('Instrument device panels — Fermenter and Levain', () => {
     test.beforeEach(async ({ page }) => {
         test.setTimeout(120000);
         await setupWorkspace(page);
