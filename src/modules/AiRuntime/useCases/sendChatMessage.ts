@@ -152,11 +152,11 @@ function tryRecordCommittedAgentRunWork(input: {
     }
 }
 
-function tryRecordProviderFailure(input: Parameters<typeof agentRunLifecycle.recordError>[0]): void {
+function tryRecordTerminalFailure(input: Parameters<typeof agentRunLifecycle.recordError>[0]): void {
     try {
         agentRunLifecycle.recordError(input);
     } catch {
-        // The provider failure remains the user-visible outcome when its recovery record cannot persist.
+        // The user-visible failure remains authoritative when its recovery record cannot persist.
     }
 }
 
@@ -1121,7 +1121,7 @@ export async function sendChatMessage(
 
                 if (execution.status === 'ambiguous') {
                     if (commandLeaseSettlement.accepted) {
-                        agentRunLifecycle.recordError({
+                        tryRecordTerminalFailure({
                             runId,
                             error: normalizeAgentFailure({
                                 category: 'conflict',
@@ -1153,7 +1153,7 @@ export async function sendChatMessage(
                     content: `Failed to execute prompt command atomically: ${execution.reason}`,
                 });
                 if (commandLeaseSettlement.accepted) {
-                    agentRunLifecycle.recordError({
+                    tryRecordTerminalFailure({
                         runId,
                         error: normalizeAgentFailure({
                             category: 'project',
@@ -1229,7 +1229,7 @@ export async function sendChatMessage(
                     terminalState: 'failed',
                     settle: agentRunWorkLease.settle,
                 });
-                tryRecordProviderFailure({
+                tryRecordTerminalFailure({
                     runId,
                     error: normalizeAgentFailure({
                         category: 'internal',
@@ -1730,7 +1730,7 @@ export async function sendChatMessage(
                 llmStatusStore.set(previousLlmStatus ?? { state: 'idle' });
             }
         } else {
-            tryRecordProviderFailure({
+            tryRecordTerminalFailure({
                 runId,
                 error: normalizeAgentFailure({
                     category: 'provider',

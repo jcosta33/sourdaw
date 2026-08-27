@@ -8,6 +8,7 @@ import { commandBatchPreflightPort, commandTrackDefaultsPort } from '#/modules/C
 import { type AgentRunProviderProposal } from '../../models/AgentRun';
 import { type ExecutableRuntimeAction } from '../../models/ExecutableRuntimeAction';
 import { type ProjectContext } from '../../models/ProjectContext';
+import { agentRunStore } from '../../stores/agentRunStore';
 import { bridgeGroundedLlmToolCalls } from '../agentReference/bridgeGroundedLlmToolCalls';
 import { materializeBatchLocalActionIdentities } from '../agentReference/materializeBatchLocalActionIdentities';
 import { agentRunLifecycle } from '../agentRunLifecycle';
@@ -470,6 +471,14 @@ function getPlannedRun() {
     return run;
 }
 
+function getMostRecentlyAdmittedRunId(): string {
+    const runId = agentRunStore.value?.runs.at(-1)?.runId;
+    if (runId === undefined) {
+        throw new Error('Expected the run admission to complete before arming storage failure.');
+    }
+    return runId;
+}
+
 describe('sendChatMessage retained-provider selection', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -526,10 +535,14 @@ describe('sendChatMessage retained-provider selection', () => {
         const storageFailure = new DOMException('The quota has been exceeded.', 'QuotaExceededError');
         const loggerError = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
         const storageSetItem = vi.spyOn(Storage.prototype, 'setItem');
+        let admittedRunId: string | null = null;
+        let armedSetItemCount: number | null = null;
         mocks.getLlmEngine.mockReturnValue({});
         mocks.getActiveModelId
             .mockImplementationOnce(() => 'fixture-model')
             .mockImplementationOnce(() => {
+                admittedRunId = getMostRecentlyAdmittedRunId();
+                armedSetItemCount = storageSetItem.mock.calls.length;
                 storageSetItem.mockImplementation(() => {
                     throw storageFailure;
                 });
@@ -546,7 +559,20 @@ describe('sendChatMessage retained-provider selection', () => {
                     content: 'Sorry, I encountered an error while thinking about that.',
                 })
             );
-            expect(storageSetItem.mock.calls.length).toBeGreaterThanOrEqual(2);
+            expect(armedSetItemCount).not.toBeNull();
+            expect(storageSetItem.mock.calls.length).toBeGreaterThan(armedSetItemCount ?? 0);
+            expect(agentRunLifecycle.get(admittedRunId ?? '')).toEqual(
+                expect.objectContaining({
+                    phase: 'failed',
+                    errors: expect.arrayContaining([
+                        expect.objectContaining({
+                            code: 'agent.provider',
+                            category: 'provider',
+                            cause: { kind: 'unknown-internal', source: 'provider-planning' },
+                        }),
+                    ]),
+                })
+            );
             expect(loggerError).not.toHaveBeenCalled();
             expect(mocks.setActiveAborter).toHaveBeenLastCalledWith(null);
             expect(mocks.setChatGenerating).toHaveBeenLastCalledWith(false);
@@ -561,7 +587,11 @@ describe('sendChatMessage retained-provider selection', () => {
         const storageFailure = new DOMException('The quota has been exceeded.', 'QuotaExceededError');
         const loggerError = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
         const storageSetItem = vi.spyOn(Storage.prototype, 'setItem');
-        mocks.planPromptActions.mockImplementation(async () => {
+        let admittedRunId: string | null = null;
+        let armedSetItemCount: number | null = null;
+        mocks.planPromptActions.mockImplementation(async (input: PlanPromptActionsInput) => {
+            admittedRunId = input.streamIdentity?.runId ?? null;
+            armedSetItemCount = storageSetItem.mock.calls.length;
             storageSetItem.mockImplementation(() => {
                 throw storageFailure;
             });
@@ -577,7 +607,20 @@ describe('sendChatMessage retained-provider selection', () => {
                     error: 'Planning provider failed',
                 })
             );
-            expect(storageSetItem.mock.calls.length).toBeGreaterThanOrEqual(2);
+            expect(armedSetItemCount).not.toBeNull();
+            expect(storageSetItem.mock.calls.length).toBeGreaterThan(armedSetItemCount ?? 0);
+            expect(agentRunLifecycle.get(admittedRunId ?? '')).toEqual(
+                expect.objectContaining({
+                    phase: 'failed',
+                    errors: expect.arrayContaining([
+                        expect.objectContaining({
+                            code: 'agent.internal',
+                            category: 'internal',
+                            cause: { kind: 'unknown-internal', source: 'provider-planning' },
+                        }),
+                    ]),
+                })
+            );
             expect(loggerError).not.toHaveBeenCalled();
             expect(mocks.setActiveAborter).toHaveBeenLastCalledWith(null);
             expect(mocks.setChatGenerating).toHaveBeenLastCalledWith(false);
@@ -665,6 +708,56 @@ describe('sendChatMessage retained-provider selection', () => {
             scope: { targetIds: commandGraphFixture.fullTargetIds },
             plan: { scope: { targetIds: commandGraphFixture.fullTargetIds } },
         });
+    });
+
+    it('preserves a fast command failure when agent-run storage fails after the command lease is claimed', async () => {
+        const commandFailure = 'Command executor failed';
+        const storageFailure = new DOMException('The quota has been exceeded.', 'QuotaExceededError');
+        const loggerError = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+        const storageSetItem = vi.spyOn(Storage.prototype, 'setItem');
+        let admittedRunId: string | null = null;
+        let armedSetItemCount: number | null = null;
+        configureCommandGraphForwarding('immediate');
+        mocks.executePlannedActions.mockImplementation(async () => {
+            admittedRunId = getMostRecentlyAdmittedRunId();
+            armedSetItemCount = storageSetItem.mock.calls.length;
+            storageSetItem.mockImplementation(() => {
+                throw storageFailure;
+            });
+            return { status: 'failed', reason: commandFailure, actions: [] };
+        });
+
+        try {
+            await expect(sendChatMessage(commandGraphFixture.prompt, { mode: 'apply' })).resolves.toBeUndefined();
+            expect(mocks.updateChatMessage).toHaveBeenLastCalledWith(
+                expect.any(String),
+                expect.objectContaining({
+                    isStreaming: false,
+                    error: commandFailure,
+                    content: `Failed to execute prompt command atomically: ${commandFailure}`,
+                })
+            );
+            expect(armedSetItemCount).not.toBeNull();
+            expect(storageSetItem.mock.calls.length).toBeGreaterThan(armedSetItemCount ?? 0);
+            expect(agentRunLifecycle.get(admittedRunId ?? '')).toEqual(
+                expect.objectContaining({
+                    phase: 'failed',
+                    errors: expect.arrayContaining([
+                        expect.objectContaining({
+                            code: 'agent.project',
+                            category: 'project',
+                            cause: { kind: 'known-domain', source: 'command-execution' },
+                        }),
+                    ]),
+                })
+            );
+            expect(loggerError).not.toHaveBeenCalled();
+            expect(mocks.setActiveAborter).toHaveBeenLastCalledWith(null);
+            expect(mocks.setChatGenerating).toHaveBeenLastCalledWith(false);
+        } finally {
+            storageSetItem.mockRestore();
+            loggerError.mockRestore();
+        }
     });
 
     it('forwards a compiler-produced graph and provider-known scope into pending confirmation', async () => {
