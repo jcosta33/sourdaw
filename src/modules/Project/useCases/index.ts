@@ -5,6 +5,7 @@ export { saveProject } from './projectPersistence/saveProject/saveProject';
 export { markDirty } from './projectPersistence/saveProject/markDirty';
 export { initGrooveTemplateDirtyTracking } from './projectPersistence/saveProject/initGrooveTemplateDirtyTracking';
 export { initProjectDirtyTracking } from './projectPersistence/saveProject/initProjectDirtyTracking';
+export { initPluginStateDirtyTracking } from './projectPersistence/saveProject/initPluginStateDirtyTracking';
 export { loadProject } from './projectPersistence/loadProject';
 export { migrateLegacyProjectSnapshots } from './projectPersistence/migrateLegacyProjectSnapshots';
 export { setProjectIdentityTransitionDependencies } from './projectPersistence/projectIdentityTransitionDependencies';
