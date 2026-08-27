@@ -2075,7 +2075,9 @@ describe('drum bus prompt workflow', () => {
             pendingActionConfirmationStatus: 'failed',
             pendingActionFollowUpStatus: 'failed',
             error: retryProofMismatchReason,
-            content: expect.stringMatching(/retry proof no longer matches.*project actions were not replayed/iu),
+            content: expect.stringMatching(
+                /missing section renders were not retried.*retained proof no longer matches.*project actions were not replayed.*verify the project state/iu
+            ),
         });
         await expectRetryProofRejected(
             'same-count duplicate execution IDs must fail closed',

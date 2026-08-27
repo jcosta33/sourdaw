@@ -906,7 +906,7 @@ function failCommittedSectionRenderRetryProof(
         pendingActionConfirmationStatus: 'failed',
         pendingActionFollowUpStatus: 'failed',
         error: RENDER_RETRY_PROOF_MISMATCH_REASON,
-        content: `The project changes remain committed, but the retained render retry proof no longer matches the committed batch. Project actions were not replayed.`,
+        content: `The missing section renders were not retried because the retained proof no longer matches the approved batch and recorded commit evidence. Project actions were not replayed. Verify the project state before taking further action.`,
     });
     return { status: 'failed', reason: RENDER_RETRY_PROOF_MISMATCH_REASON };
 }
