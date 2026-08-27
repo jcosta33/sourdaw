@@ -125,4 +125,29 @@ describe('reduceAgentRunTransition', () => {
             expectTransition(current, { type: 'pending-effect-completed', hasRecoveryObligation: false }, 'completed');
         }
     });
+
+    it('preserves committed-work completion, partial, late-receipt, and unchanged phase mappings', () => {
+        for (const current of AGENT_RUN_PHASES) {
+            expectTransition(
+                current,
+                { type: 'work-committed', completesRun: true, hasUnsettledExternalSagaStep: false },
+                'completed'
+            );
+            expectTransition(
+                current,
+                { type: 'work-committed', completesRun: true, hasUnsettledExternalSagaStep: true },
+                'partially-completed'
+            );
+            expectTransition(
+                current,
+                { type: 'work-committed', completesRun: false, hasUnsettledExternalSagaStep: true },
+                'partially-completed'
+            );
+            expectTransition(
+                current,
+                { type: 'work-committed', completesRun: false, hasUnsettledExternalSagaStep: false },
+                current === 'cancelled' || current === 'failed' ? 'partially-completed' : current
+            );
+        }
+    });
 });

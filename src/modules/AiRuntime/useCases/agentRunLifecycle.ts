@@ -956,18 +956,11 @@ function recordAgentRunCommittedWork(input: {
         const hasUnsettledExternalSagaStep = run.saga.steps.some(
             (step) => step.state === 'pending' || step.state === 'external-pending' || step.state === 'uncompensated'
         );
-        const phase = (() => {
-            if (hasUnsettledExternalSagaStep) {
-                return 'partially-completed' as const;
-            }
-            if (input.completesRun !== false) {
-                return 'completed' as const;
-            }
-            if (run.phase === 'cancelled' || run.phase === 'failed') {
-                return 'partially-completed' as const;
-            }
-            return run.phase;
-        })();
+        const phase = reduceAgentRunTransition(run.phase, {
+            type: 'work-committed',
+            completesRun: input.completesRun !== false,
+            hasUnsettledExternalSagaStep,
+        });
         return {
             ...run,
             phase,

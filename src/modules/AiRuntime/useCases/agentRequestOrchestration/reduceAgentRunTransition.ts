@@ -23,6 +23,7 @@ export type AgentRunTransitionEvent =
     | { type: 'cancellation-requested'; hasCommittedWork: boolean }
     | { type: 'recovery-resolved'; requiresManualResume: boolean }
     | { type: 'work-retried' }
+    | { type: 'work-committed'; completesRun: boolean; hasUnsettledExternalSagaStep: boolean }
     | { type: 'saga-updated'; hasCommittedWork: boolean; hasUnsettledExternalStep: boolean }
     | { type: 'pending-effect-recorded'; hasCommittedWork: boolean }
     | { type: 'pending-effect-completed'; hasRecoveryObligation: boolean };
@@ -74,6 +75,14 @@ export function reduceAgentRunTransition(current: AgentRunPhase, event: AgentRun
                 throw new Error(`Agent run cannot retry work from ${current}`);
             }
             return 'executing';
+        case 'work-committed':
+            if (event.hasUnsettledExternalSagaStep) {
+                return 'partially-completed';
+            }
+            if (event.completesRun) {
+                return 'completed';
+            }
+            return current === 'cancelled' || current === 'failed' ? 'partially-completed' : current;
         case 'saga-updated':
             return event.hasUnsettledExternalStep && event.hasCommittedWork ? 'partially-completed' : current;
         case 'pending-effect-recorded':
