@@ -243,4 +243,20 @@ describe('handleReorderDevices Command path', () => {
         expect(mocks.applyDeviceChainRuntimeDelta).toHaveBeenCalledOnce();
         expect(undoStore.value?.past).toHaveLength(1);
     });
+
+    it('resolves a same-index direct reorder as a no-write', async () => {
+        const action = compileRackDrop();
+        action.payload.targetIndex = 0;
+        const writes: string[] = [];
+        configureStoragePort(() => {
+            writes.push('project-commit');
+        });
+
+        await expect(executeAppAction(action)).resolves.toBeUndefined();
+
+        expect(writes).toEqual([]);
+        expect(mocks.applyDeviceChainRuntimeDelta).not.toHaveBeenCalled();
+        expect(deviceIds()).toEqual(['device-1', 'device-2', 'device-3']);
+        expect(undoStore.value?.past).toHaveLength(0);
+    });
 });

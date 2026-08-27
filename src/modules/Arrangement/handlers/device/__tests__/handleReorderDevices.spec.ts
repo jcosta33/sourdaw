@@ -173,7 +173,8 @@ describe('handleReorderDevices', () => {
             throw new Error('Expected a written reorder result');
         }
 
-        expect(mocks.reorderDevicesInProject).toHaveBeenCalledWith('audio-1', afterTrack);
+        expect(mocks.reorderDevicesInProject).toHaveBeenCalledTimes(1);
+        expect(mocks.reorderDevicesInProject).toHaveBeenCalledWith('audio-1', afterTrack.devices);
 
         result.afterCommit();
 
@@ -213,5 +214,26 @@ describe('handleReorderDevices', () => {
         expect(handleReorderDevices.validate?.(reorderAction, batchContext)).toBe(false);
         expect(handleReorderDevices.execute(reorderAction, batchContext)).toEqual({ status: 'conflict' });
         expect(mocks.reorderDevicesInProject).not.toHaveBeenCalled();
+    });
+
+    it('returns no-write when the target index is already the source index', () => {
+        const currentTrack = createAudioTrack();
+        const reorderAction: ReorderDevicesAction = {
+            type: 'reorderDevices',
+            payload: {
+                trackId: 'audio-1',
+                deviceId: 'device-1',
+                targetIndex: 0,
+                expectedBefore: currentTopology,
+            },
+        };
+        const batchContext: HandlerValidationContext = { actionIndex: 0, actions: [reorderAction] };
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [currentTrack] });
+
+        expect(handleReorderDevices.validate?.(reorderAction, batchContext)).toBe(true);
+        expect(handleReorderDevices.execute(reorderAction, batchContext)).toEqual({ status: 'no-write' });
+        expect(mocks.reorderDevicesInProject).not.toHaveBeenCalled();
+        expect(mocks.applyDeviceChainRuntimeDelta).not.toHaveBeenCalled();
+        expect(currentTrack.devices.map((device) => device.id)).toEqual(['device-1', 'device-2']);
     });
 });
