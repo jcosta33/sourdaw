@@ -624,8 +624,10 @@ const expectedDeployWebNeeds = [
     'codeql',
     'secrets',
 ];
-const deployWebGuardRun = stepNamed(deployWeb, 'Require every validation leg to have succeeded')?.run ?? '';
+const deployWebGuardStep = stepNamed(deployWeb, 'Require a validated revision of main');
+const deployWebGuardRun = deployWebGuardStep?.run ?? '';
 const deployWebDeployRun = stepNamed(deployWeb, 'Deploy the prebuilt revision')?.run ?? '';
+const deployWebIsolationStep = stepNamed(deployWeb, 'Assert cross-origin isolation on the deployment');
 const vercelConfig = JSON.parse(readFileSync(`${process.env.REPO_ROOT}/vercel.json`, 'utf8'));
 
 expect(
@@ -637,9 +639,32 @@ expect(
     'the Vercel Git integration must not deploy any other branch'
 );
 expect(
-    deployWeb?.if === "github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'",
-    'the daily web deploy must run only on the version-controlled schedule and the manual dispatch'
+    deployWeb?.if ===
+        "github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')",
+    'the daily web deploy must run only on the version-controlled schedule and a dispatch of main, since a dispatch otherwise carries whichever ref fired it and the Production environment has no branch policy'
 );
+expect(
+    deployWebGuardStep?.env?.TRAIN_REF === '${{ github.ref }}',
+    'the daily web deploy must read the ref it is about to deploy, so the branch constraint does not rest on the job condition alone'
+);
+expect(
+    deployWeb?.concurrency?.group === 'deploy-web-production',
+    'the daily web deploy must serialise itself: nothing else keeps two runs off the production alias at once'
+);
+expect(
+    deployWeb?.concurrency?.['cancel-in-progress'] === false,
+    'the daily web deploy must queue behind a running deploy rather than cancel one mid-alias'
+);
+expect(
+    deployWebIsolationStep?.env?.DEPLOYMENT_URL === '${{ steps.deployment.outputs.url }}',
+    'the daily web deploy must assert isolation against the deployment it just created, not against a fixed alias'
+);
+for (const stepName of ['Pull the production environment', 'Build the validated revision', 'Deploy the prebuilt revision']) {
+    expect(
+        stepNamed(deployWeb, stepName)?.env?.VERCEL_TOKEN === '${{ secrets.VERCEL_TOKEN }}',
+        `${stepName} must authenticate the Vercel CLI from the environment`
+    );
+}
 expect(
     deployWeb?.environment === 'Production',
     'the daily web deploy must draw its credential from the Production environment'
@@ -672,13 +697,25 @@ const deployWebResults = (result, overrides = {}) =>
         Object.fromEntries(deployWebNeeds.map((need) => [need, { result: overrides[need] ?? result }]))
     );
 expect(
-    workflowShellStatus(deployWebGuardRun, { RESULTS: deployWebResults('success') }) === 0,
-    'the daily web deploy must proceed when every validation leg succeeded'
+    workflowShellStatus(deployWebGuardRun, {
+        RESULTS: deployWebResults('success'),
+        TRAIN_REF: 'refs/heads/main',
+    }) === 0,
+    'the daily web deploy must proceed when every validation leg succeeded on main'
 );
 for (const result of ['failure', 'cancelled', 'skipped']) {
     expect(
-        workflowShellStatus(deployWebGuardRun, { RESULTS: deployWebResults('success', { unit: result }) }) !== 0,
+        workflowShellStatus(deployWebGuardRun, {
+            RESULTS: deployWebResults('success', { unit: result }),
+            TRAIN_REF: 'refs/heads/main',
+        }) !== 0,
         `the daily web deploy must refuse to promote a revision whose unit leg was ${result}`
+    );
+}
+for (const ref of ['refs/heads/agent/2940/daily-train', 'refs/tags/v1.0.0', 'main']) {
+    expect(
+        workflowShellStatus(deployWebGuardRun, { RESULTS: deployWebResults('success'), TRAIN_REF: ref }) !== 0,
+        `the daily web deploy must refuse to promote ${ref}, which is not main`
     );
 }
 

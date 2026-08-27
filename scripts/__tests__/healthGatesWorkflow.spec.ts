@@ -85,7 +85,20 @@ const GATE_MEMBERS = [
 const CURRENT_NON_GATING_JOBS = ['unit', 'e2e'] as const;
 const DEPLOY_WEB_JOB = 'deploy-web';
 const DEPLOY_WEB_JOB_NAME = 'Daily web deploy';
-const DEPLOY_WEB_CONDITION = "github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'";
+// A dispatch runs on whichever ref the person firing it chose, and the
+// Production environment carries no branch policy, so the branch constraint has
+// to live here.
+const DEPLOY_WEB_CONDITION =
+    "github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')";
+const DEPLOY_WEB_CONCURRENCY_GROUP = 'deploy-web-production';
+const DEPLOY_WEB_GUARD_STEP = 'Require a validated revision of main';
+const DEPLOYMENT_URL_REFERENCE = '${{ steps.deployment.outputs.url }}';
+const VERCEL_TOKEN_REFERENCE = '${{ secrets.VERCEL_TOKEN }}';
+const VERCEL_CLI_STEPS = [
+    'Pull the production environment',
+    'Build the validated revision',
+    'Deploy the prebuilt revision',
+] as const;
 // Every leg a scheduled run performs. The train promotes a revision only once
 // each of them has reported success on that same revision.
 const DEPLOY_WEB_NEEDS = [
@@ -499,7 +512,14 @@ function assertDailyDeployTrain(candidate: UnknownRecord): string {
         throw new Error('the daily deploy train must retain its stable name');
     }
     if (job.if !== DEPLOY_WEB_CONDITION) {
-        throw new Error('the daily deploy train must run only on the schedule and the manual dispatch');
+        throw new Error('the daily deploy train must run only on the schedule and a dispatch of main');
+    }
+    const concurrency = job.concurrency === undefined ? {} : recordAt(job, 'concurrency');
+    if (concurrency.group !== DEPLOY_WEB_CONCURRENCY_GROUP) {
+        throw new Error('the daily deploy train must serialise itself against every other production deploy');
+    }
+    if (concurrency['cancel-in-progress'] !== false) {
+        throw new Error('the daily deploy train must queue behind a running deploy rather than cancel it');
     }
     const needs = arrayAt(job, 'needs').map(String);
     for (const leg of DEPLOY_WEB_NEEDS) {
@@ -540,7 +560,16 @@ function assertDailyDeployTrain(candidate: UnknownRecord): string {
     if (!deployment.includes('--meta githubCommitSha="$GITHUB_SHA"')) {
         throw new Error('the daily deploy train must record the deployed revision on the deployment');
     }
-    const isolation = stringAt(stepNamed(job, 'Assert cross-origin isolation on the deployment'), 'run');
+    for (const name of VERCEL_CLI_STEPS) {
+        if (recordAt(stepNamed(job, name), 'env').VERCEL_TOKEN !== VERCEL_TOKEN_REFERENCE) {
+            throw new Error(`${name} must authenticate from the environment rather than an echoed argument`);
+        }
+    }
+    const isolationStep = stepNamed(job, 'Assert cross-origin isolation on the deployment');
+    if (recordAt(isolationStep, 'env').DEPLOYMENT_URL !== DEPLOYMENT_URL_REFERENCE) {
+        throw new Error('the daily deploy train must read its headers back off the deployment it just created');
+    }
+    const isolation = stringAt(isolationStep, 'run');
     if (
         !isolation.includes('cross-origin-opener-policy: same-origin') ||
         !isolation.includes('cross-origin-embedder-policy: require-corp')
@@ -556,7 +585,11 @@ function assertDailyDeployTrain(candidate: UnknownRecord): string {
     if (arrayAt(jobAt(candidate, 'gate'), 'needs').includes(DEPLOY_WEB_JOB)) {
         throw new Error('the daily deploy train must stay outside the Gate summary');
     }
-    return stringAt(stepNamed(job, 'Require every validation leg to have succeeded'), 'run');
+    const guardStep = stepNamed(job, DEPLOY_WEB_GUARD_STEP);
+    if (recordAt(guardStep, 'env').TRAIN_REF !== '${{ github.ref }}') {
+        throw new Error('the daily deploy train must read the ref it is about to deploy');
+    }
+    return stringAt(guardStep, 'run');
 }
 
 function assertGateContract(candidate: UnknownRecord): string {
@@ -575,10 +608,14 @@ function assertGateContract(candidate: UnknownRecord): string {
     return script;
 }
 
-function runResultsGuard(script: string, results: string): number | null {
+function runResultsGuard(
+    script: string,
+    results: string,
+    extraEnvironment: Readonly<Record<string, string>> = {}
+): number | null {
     return spawnSync('bash', ['-c', script], {
         encoding: 'utf8',
-        env: { ...process.env, RESULTS: results },
+        env: { ...process.env, RESULTS: results, ...extraEnvironment },
         shell: false,
     }).status;
 }
@@ -940,11 +977,25 @@ describe('health gates workflow contract', () => {
         expect(() => assertCrossOriginIsolationHeaders(vercelConfig)).not.toThrow();
         const validationGuard = assertDailyDeployTrain(workflow);
 
-        expect(runResultsGuard(validationGuard, needsResults(workflow, DEPLOY_WEB_JOB, 'success'))).toBe(0);
+        const onMain = { TRAIN_REF: 'refs/heads/main' };
+        expect(runResultsGuard(validationGuard, needsResults(workflow, DEPLOY_WEB_JOB, 'success'), onMain)).toBe(0);
         const degraded: JobResult[] = ['failure', 'cancelled', 'skipped'];
         for (const result of degraded) {
             expect(
-                runResultsGuard(validationGuard, needsResults(workflow, DEPLOY_WEB_JOB, 'success', { e2e: result }))
+                runResultsGuard(
+                    validationGuard,
+                    needsResults(workflow, DEPLOY_WEB_JOB, 'success', { e2e: result }),
+                    onMain
+                )
+            ).not.toBe(0);
+        }
+        // The job condition already refuses a dispatch off main; this is the
+        // half that still holds when somebody edits that condition.
+        for (const ref of ['refs/heads/agent/2940/daily-train', 'refs/tags/v1.0.0', 'main']) {
+            expect(
+                runResultsGuard(validationGuard, needsResults(workflow, DEPLOY_WEB_JOB, 'success'), {
+                    TRAIN_REF: ref,
+                })
             ).not.toBe(0);
         }
 
@@ -969,7 +1020,51 @@ describe('health gates workflow contract', () => {
         const pullRequestTrain = asRecord(structuredClone(workflow), 'pull-request deploy train');
         jobAt(pullRequestTrain, DEPLOY_WEB_JOB).if = PULL_REQUEST_PAYLOAD_CONDITION;
         expect(() => assertDailyDeployTrain(pullRequestTrain)).toThrow(
-            'the daily deploy train must run only on the schedule and the manual dispatch'
+            'the daily deploy train must run only on the schedule and a dispatch of main'
+        );
+
+        // A dispatch carries whichever ref was chosen, and every validation leg
+        // would report honestly on it, so dropping this clause is what would
+        // let an unmerged branch reach production.
+        const anyBranchDispatch = asRecord(structuredClone(workflow), 'any-branch dispatch deploy train');
+        jobAt(anyBranchDispatch, DEPLOY_WEB_JOB).if =
+            "github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'";
+        expect(() => assertDailyDeployTrain(anyBranchDispatch)).toThrow(
+            'the daily deploy train must run only on the schedule and a dispatch of main'
+        );
+
+        const unguardedRef = asRecord(structuredClone(workflow), 'unguarded-ref deploy train');
+        delete recordAt(stepNamed(jobAt(unguardedRef, DEPLOY_WEB_JOB), DEPLOY_WEB_GUARD_STEP), 'env').TRAIN_REF;
+        expect(() => assertDailyDeployTrain(unguardedRef)).toThrow(
+            'the daily deploy train must read the ref it is about to deploy'
+        );
+
+        const racingTrain = asRecord(structuredClone(workflow), 'racing deploy train');
+        delete jobAt(racingTrain, DEPLOY_WEB_JOB).concurrency;
+        expect(() => assertDailyDeployTrain(racingTrain)).toThrow(
+            'the daily deploy train must serialise itself against every other production deploy'
+        );
+
+        const cancellingTrain = asRecord(structuredClone(workflow), 'cancelling deploy train');
+        recordAt(jobAt(cancellingTrain, DEPLOY_WEB_JOB), 'concurrency')['cancel-in-progress'] = true;
+        expect(() => assertDailyDeployTrain(cancellingTrain)).toThrow(
+            'the daily deploy train must queue behind a running deploy rather than cancel it'
+        );
+
+        const unauthenticatedBuild = asRecord(structuredClone(workflow), 'unauthenticated deploy train');
+        delete recordAt(stepNamed(jobAt(unauthenticatedBuild, DEPLOY_WEB_JOB), 'Build the validated revision'), 'env')
+            .VERCEL_TOKEN;
+        expect(() => assertDailyDeployTrain(unauthenticatedBuild)).toThrow(
+            'Build the validated revision must authenticate from the environment rather than an echoed argument'
+        );
+
+        const reboundIsolation = asRecord(structuredClone(workflow), 'rebound-isolation deploy train');
+        recordAt(
+            stepNamed(jobAt(reboundIsolation, DEPLOY_WEB_JOB), 'Assert cross-origin isolation on the deployment'),
+            'env'
+        ).DEPLOYMENT_URL = 'https://sourdaw.vercel.app';
+        expect(() => assertDailyDeployTrain(reboundIsolation)).toThrow(
+            'the daily deploy train must read its headers back off the deployment it just created'
         );
 
         const unvalidatedTrain = asRecord(structuredClone(workflow), 'unvalidated deploy train');

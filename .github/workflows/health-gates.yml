@@ -951,6 +951,16 @@ jobs:
     #
     # It is deliberately absent from `gate`: the summary reports what a pull
     # request proved, and no pull request ever runs this job.
+    #
+    # Only `main` reaches production, and the condition says so twice. A
+    # schedule always runs on the default branch, but a dispatch does not: it
+    # takes whichever ref the person firing it picked, `decide` forces every
+    # scope true for that ref, and the legs below would validate that branch tip
+    # honestly. Nothing else stops it — the Production environment carries no
+    # deployment branch policy — so anybody with push access could otherwise
+    # ship an unmerged branch. The first step refuses the same way, because a
+    # later edit to this condition must not be all that stands between a branch
+    # and production.
     needs:
       - static
       - lint
@@ -964,10 +974,20 @@ jobs:
       - browser-ai-webgpu
       - codeql
       - secrets
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
     # Scopes the deployment credential to the environment that already owns
     # production for this repository.
     environment: Production
+    # One train at a time. GitHub does not serialise jobs that share an
+    # environment, and the workflow's own group falls back to the run id for
+    # exactly the two events that reach here, so this is the only thing that
+    # keeps two runs off the production alias at once. Queue rather than
+    # cancel: pending runs start in the order they arrived, so the newer
+    # revision still lands last, while cancelling would either kill a deploy
+    # between upload and alias assignment or discard the newer run outright.
+    concurrency:
+      group: deploy-web-production
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
@@ -980,11 +1000,16 @@ jobs:
       # `build` produces between two runs of the same validated revision.
       VERCEL_CLI: vercel@59.9.1
     steps:
-      - name: Require every validation leg to have succeeded
+      - name: Require a validated revision of main
         env:
           RESULTS: ${{ toJSON(needs) }}
+          TRAIN_REF: ${{ github.ref }}
         run: |
           set -euo pipefail
+          if [ "$TRAIN_REF" != "refs/heads/main" ]; then
+            printf 'refusing to deploy %s; only main reaches production\n' "$TRAIN_REF"
+            exit 1
+          fi
           printf '%s\n' "$RESULTS"
           unproven=$(printf '%s' "$RESULTS" | jq -r '
             to_entries[]
@@ -1052,7 +1077,10 @@ jobs:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-        run: pnpm dlx "$VERCEL_CLI" pull --yes --environment=production --token="$VERCEL_TOKEN"
+        # The CLI authenticates from `VERCEL_TOKEN` in the environment and
+        # resolves the project from the two ids beside it; none of the three
+        # belongs on a command line these logs echo.
+        run: pnpm dlx "$VERCEL_CLI" pull --yes --environment=production
 
       - name: Build the validated revision
         if: env.DEPLOY_CREDENTIAL_PRESENT == 'true' && steps.production.outputs.deploy == 'true'
@@ -1060,7 +1088,7 @@ jobs:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-        run: pnpm dlx "$VERCEL_CLI" build --prod --token="$VERCEL_TOKEN"
+        run: pnpm dlx "$VERCEL_CLI" build --prod
 
       - name: Deploy the prebuilt revision
         id: deployment
@@ -1076,8 +1104,7 @@ jobs:
           # deployment in the dashboard to the commit that was validated.
           # `--archive=tgz` keeps a tree this size under the upload file limit.
           pnpm dlx "$VERCEL_CLI" deploy --prebuilt --prod --archive=tgz \
-            --meta githubCommitSha="$GITHUB_SHA" \
-            --token="$VERCEL_TOKEN" > "$RUNNER_TEMP/deployment-url.txt"
+            --meta githubCommitSha="$GITHUB_SHA" > "$RUNNER_TEMP/deployment-url.txt"
           deployment_url=$(tail -n 1 "$RUNNER_TEMP/deployment-url.txt")
           case "$deployment_url" in
             https://*) ;;
