@@ -316,7 +316,11 @@
                 "sha256:bfe1982d1cdc8225a5076e82d2dbb5e2d839c7092a0fc2536d014bc4230b8a10",
                 "sha256:57f5b3fc8207b24fad956e3a8a52cfd2d527420cb753257bbd5f698d0cfc3e1e:public/legal/PLUGIN-INTERFACE-NOTICES.txt"
             ],
-            "licenses": ["per-package declared terms, retained legal files, or assembled license records", "MIT:Steinberg-VST3-interface", "MIT:clap-sys"],
+            "licenses": [
+                "per-package declared terms, retained legal files, or assembled license records",
+                "MIT:Steinberg-VST3-interface",
+                "MIT:clap-sys"
+            ],
             "productSurfaces": ["project crates", "Wasm modules", "desktop application"],
             "evidence": ["Cargo.lock freezes the complete resolved Rust dependency graph."],
             "obligations": [
@@ -938,7 +942,7 @@
                 "tracked-set-sha256:580b5d96ccfcaffd876a408f6a9c6dcc31a7f8575956726c6abf601d6bb37c6e:grand-boule-discovery-catalog",
                 "tracked-set-sha256:a4b6f7d5b32d31ed0c0cf027344718219bd87dc3f6a345a2b9bebd90f1f45205:grand-boule-factory-admission",
                 "tracked-set-sha256:f7da3b228ba9f5f5a665bebb82d060ffd8a0cdec72b687e0196ef8a4231fa525:grand-boule-live-runtime",
-                "tracked-set-sha256:2c94d288d73a0dbadbefa8ede6e06f977ac5c10060e23f12745d21ef826a2682:grand-boule-project-state",
+                "tracked-set-sha256:529f7f99c6b6d4cfc57e82d43cc05b30239fe73feedc1084450e054c5a9a96e0:grand-boule-project-state",
                 "tracked-set-sha256:c24bb1c0672ac22d04c8d36c344bbf3c0efdc315ec8317af1d1674eaeb0cbd89:grand-boule-offline-composition",
                 "tracked-set-sha256:20a0794aece85e0db5570e4320126e0a3b8e5e45b42f5a31a10ad5a302ca60f9:grand-boule-release-proof"
             ],
