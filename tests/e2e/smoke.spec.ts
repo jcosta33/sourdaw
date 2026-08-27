@@ -135,7 +135,9 @@ async function observeScheduledOscillatorCount(page: Page): Promise<ScheduledOsc
         count: async () =>
             Number(await page.evaluate(() => document.documentElement.dataset.scheduledOscillatorCount ?? '0')),
         reset: () =>
-            page.evaluate(() => document.dispatchEvent(new Event('sourdaw-test-reset-scheduled-oscillator-count'))),
+            page.evaluate(() => {
+                document.dispatchEvent(new Event('sourdaw-test-reset-scheduled-oscillator-count'));
+            }),
     };
 }
 
