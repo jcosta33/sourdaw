@@ -1,0 +1,37 @@
+src/modules/BrowserAi/stores/__tests__/capabilityStore.spec.ts
+  s_a40848e8f8cca9::t_fce8d3d3602914 3-9,66-85
+  s_a40848e8f8cca9::t_806552a2a95871 86-87
+src/modules/AiRuntime/presentations/views/__tests__/ChatPanel.spec.tsx
+  s_a40848e8f8cca9::t_debefe1336e555 28-31,118,130,136-145,196-203,205-208
+  s_a40848e8f8cca9::t_c568df43734d9f 204
+  s_a40848e8f8cca9::t_15c0bdf130c79f 189
+  s_a40848e8f8cca9::t_2053a57955a630 209-210
+src/modules/BrowserAi/stores/index.ts
+  s_a40848e8f8cca9::t_9275995531c5aa 1
+src/modules/BrowserAi/stores/capabilityStore.ts
+  s_a40848e8f8cca9::t_9275995531c5aa 19-23
+src/modules/AiRuntime/useCases/llmOrchestration/backendResolution/__tests__/getBackendChain.spec.ts
+  s_a40848e8f8cca9::t_217035f9f26090 13,40-43,50,77,87-94
+  s_a40848e8f8cca9::t_dc8bb038a129dc 95-96
+src/modules/AiRuntime/useCases/llmOrchestration/backendResolution/getBackendChain.ts
+  s_a40848e8f8cca9::t_9275995531c5aa 2,35
+src/modules/AiRuntime/presentations/views/ChatPanel.tsx
+  s_a40848e8f8cca9::t_9275995531c5aa 11,266,274,494,496,526
+  s_a40848e8f8cca9::t_935acdba658405 273,275-278
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "53df498dbf77b5bd5df8a9e79ae5fa7fc610ccca",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
