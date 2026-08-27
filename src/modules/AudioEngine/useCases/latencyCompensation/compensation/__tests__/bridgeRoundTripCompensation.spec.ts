@@ -8,10 +8,20 @@ vi.mock('#/modules/Routing/stores', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Routing/stores')>()),
     sidechainStore: { value: null as { routes: unknown[] } | null },
 }));
+const mocks = vi.hoisted(() => ({
+    getLiveEngineSampleRate: vi.fn<() => number | undefined>(() => 96_000),
+}));
+
 // The engine rate the plugin was activated with — the same rate the reported
-// bridge frames are counted in, which is the whole point of AC-001.
+// bridge frames are counted in, which is the whole point of AC-001. It is
+// deliberately neither 48000 nor 44100: those are the rates the substituting
+// accessors in this path fall back to, so an assertion stated at one of them
+// would pass against code that never read the engine at all.
+vi.mock('../../../engineAccess/getLiveEngineSampleRate', () => ({
+    getLiveEngineSampleRate: mocks.getLiveEngineSampleRate,
+}));
 vi.mock('../../../engineAccess/getAudioContext', () => ({
-    getAudioContext: () => ({ sampleRate: 48000 }),
+    getAudioContext: () => ({ sampleRate: 96_000 }),
 }));
 
 import { trackStore } from '#/modules/Arrangement/stores';
@@ -27,13 +37,16 @@ import { reportLatency } from '../reportLatency';
 type MutableTrackStore = { value: { tracks: unknown[] } | null };
 const mockTrackStore = trackStore as unknown as MutableTrackStore;
 
+/** The rate the engine renders at throughout this suite. */
+const ENGINE_SAMPLE_RATE = 96_000;
+
 /**
  * What the native host reports for a bridge running on a 512-frame device
- * period: ten blocks of ring depth plus the relay's own block, at 128 frames
+ * period: the ten blocks of ring depth the round trip settles at, 128 frames
  * each (`crates/daw-engine/src/audio_bridge.rs`).
  */
-const BRIDGE_FRAMES = 11 * 128;
-const BRIDGE_MS = (BRIDGE_FRAMES / 48_000) * 1000;
+const BRIDGE_FRAMES = 10 * 128;
+const BRIDGE_MS = (BRIDGE_FRAMES / ENGINE_SAMPLE_RATE) * 1000;
 /** The plugin's own reported lookahead. */
 const PLUGIN_MS = 5;
 
@@ -64,6 +77,7 @@ describe('the audio bridge round trip is compensated alongside the plugin (AC-00
     beforeEach(() => {
         mockTrackStore.value = null;
         clearAllReportedLatency();
+        mocks.getLiveEngineSampleRate.mockReturnValue(ENGINE_SAMPLE_RATE);
     });
 
     it('adds the reported bridge round trip to the plugin latency for that device', () => {
@@ -86,16 +100,28 @@ describe('the audio bridge round trip is compensated alongside the plugin (AC-00
         expect(getTrackLatency('guitar').deviceLatencyMs).toBeCloseTo(PLUGIN_MS + BRIDGE_MS, 10);
         expect(getCompensationDelay('drums')).toBeCloseTo((PLUGIN_MS + BRIDGE_MS) / 1000, 10);
         // Without the bridge term this would be the plugin's 5 ms alone, and
-        // every other track would run ~29 ms early against the bridged one.
+        // every other track would run a whole round trip early against the
+        // bridged one.
         expect(getCompensationDelay('drums')).not.toBeCloseTo(PLUGIN_MS / 1000, 6);
     });
 
     it('converts the reported frames at the engine rate the plugin was activated with', () => {
-        reportBridgeRoundTripFrames('dev-native', 48_000);
+        reportBridgeRoundTripFrames('dev-native', ENGINE_SAMPLE_RATE);
 
         // One second of frames at the engine rate is one second of latency. A
-        // conversion against any other clock lands somewhere else.
+        // conversion against any other clock lands somewhere else — against a
+        // hardcoded 48 kHz, at twice this.
         expect(getDeviceLatencyMs('dev-native', 'external-plugin')).toBeCloseTo(1000, 10);
+    });
+
+    it('reports no bridge latency once the engine that measured it is gone', () => {
+        reportBridgeRoundTripFrames('dev-native', BRIDGE_FRAMES);
+        mocks.getLiveEngineSampleRate.mockReturnValue(undefined);
+
+        // The frames were counted at a rate that no longer exists, and no
+        // audio is crossing the bridge either. Substituting a plausible rate
+        // here would report a compensation nothing measured.
+        expect(getDeviceLatencyMs('dev-native', 'external-plugin')).toBe(0);
     });
 
     it('compensates the bridge for a plugin that has reported no latency of its own', () => {
