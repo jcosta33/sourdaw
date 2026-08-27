@@ -1023,7 +1023,7 @@ describe('stem import and starting mix workflow', () => {
         expect(trackStore.value?.tracks).toEqual([createTrack('track-guide', 'Guide Mix')]);
     });
 
-    it('reports persistent live-strip projection failure as durably committed with a reconcile-classified pending effect', async () => {
+    it('reports persistent live-strip projection failure as committed with a manual-repair warning', async () => {
         mocks.initializeTrackStripFromSnapshot.mockImplementation(() => {
             throw new Error('persistent strip projection failure');
         });
@@ -1032,9 +1032,8 @@ describe('stem import and starting mix workflow', () => {
 
         const result = await confirmPendingChatActions({ confirmationId: confirmation!.id });
 
-        // handleImportStemSet throws "Manual repair required." for this failure, but the batch
-        // classifier assigns remediation: 'reconcile' regardless, so the receipt's guidance and
-        // the thrown reason disagree about what the user must do next. Tracked in issue #2889.
+        // handleImportStemSet declares postCommitEffect remediation 'manual-repair' for this
+        // failure, and createCommittedEffectFailureResult derives the matching continuation.
         expect(result).toMatchObject({
             status: 'failed',
             durableCommit: true,
@@ -1042,14 +1041,14 @@ describe('stem import and starting mix workflow', () => {
                 expect.objectContaining({
                     kind: 'external-effect',
                     operation: 'importStemSet',
-                    remediation: 'reconcile',
+                    remediation: 'manual-repair',
                     state: 'pending',
                 }),
             ],
             continuation: {
                 authority: 'authoritative-collaboration-host',
                 idempotency: 'project-checkpoint',
-                kind: 'reconcile-exact-batch',
+                kind: 'manual-repair',
             },
         });
 
@@ -1063,6 +1062,7 @@ describe('stem import and starting mix workflow', () => {
         expect(receipt?.content).toContain('The project change is durably committed');
         expect(receipt?.content).toContain('At least one external effect remains pending');
         expect(receipt?.content.toLowerCase()).toContain('manual repair required');
+        expect(receipt?.content).toContain('Use the retained manual-repair guidance');
         expect(receipt?.content).toContain('the project mutation will not replay');
         expect(receipt?.error).toContain('persistent strip projection failure');
     });

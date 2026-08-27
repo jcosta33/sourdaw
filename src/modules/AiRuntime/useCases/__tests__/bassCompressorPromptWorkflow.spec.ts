@@ -727,12 +727,12 @@ describe('bass compressor prompt workflow', () => {
         expect(confirmation?.risk).toMatchObject({ level: 'broad-reversible' });
         expect(confirmation?.protectedUnchanged).toEqual([{ id: 'track-bass-frozen', name: 'Bass Frozen' }]);
         expect(confirmation?.affectedIds).toEqual([
-            'device-ai-track-bass-di-builtin-compressor',
             'track-bass-di',
             'device-bass-di-eq',
-            'device-ai-track-bass-amp-builtin-compressor',
+            'device-ai-track-bass-di-builtin-compressor',
             'track-bass-amp',
             'device-bass-amp-eq',
+            'device-ai-track-bass-amp-builtin-compressor',
         ]);
         const proposal = chatStore.value?.messages.find(
             (message) => message.pendingActionConfirmationId === confirmation?.id
@@ -782,10 +782,10 @@ describe('bass compressor prompt workflow', () => {
         );
         expect(receipt?.content).toContain('Outcome: committed');
         expect(receipt?.content).toContain(
-            'Affected IDs: device-ai-track-bass-di-builtin-compressor, track-bass-di, device-bass-di-eq'
+            'Affected IDs: track-bass-di, device-bass-di-eq, device-ai-track-bass-di-builtin-compressor'
         );
         expect(receipt?.content).toContain(
-            'Affected IDs: device-ai-track-bass-amp-builtin-compressor, track-bass-amp, device-bass-amp-eq'
+            'Affected IDs: track-bass-amp, device-bass-amp-eq, device-ai-track-bass-amp-builtin-compressor'
         );
         expect(receipt?.content).toContain('Protected unchanged: "Bass Frozen" (track-bass-frozen)');
         expect(undoStore.value?.past).toHaveLength(2);
@@ -1075,10 +1075,13 @@ describe('bass compressor prompt workflow', () => {
                     : track
             ),
         });
+        // Settle the foreign write into the document so confirmation observes the
+        // divergence deterministically instead of racing the rAF-deferred flush.
+        flushFixtureTrackStore();
 
         const result = await confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' });
 
-        expect(result.status).toBe('failed');
+        expect(result.status).toBe('invalidated');
         expect(getTrack('track-bass-di').devices.map((device) => device.id)).toEqual(BASS_DI_DEVICE_IDS);
         expect(getTrack('track-bass-amp').devices.map((device) => device.id)).toEqual([
             ...BASS_AMP_DEVICE_IDS,
@@ -1113,10 +1116,15 @@ describe('bass compressor prompt workflow', () => {
                 return track;
             }),
         });
+        // Settle the foreign write into the document so confirmation observes the
+        // divergence deterministically instead of racing the rAF-deferred flush.
+        flushFixtureTrackStore();
 
         const result = await confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' });
 
-        expect(result.status).toBe('failed');
+        // Both target chains changed under the proposal, so admission invalidates
+        // it as stale rather than rejecting it at execution.
+        expect(result.status).toBe('invalidated');
         expect(getTrack('track-bass-di').devices.map((device) => device.id)).toEqual([
             ...BASS_DI_DEVICE_IDS,
             'device-remote-di',

@@ -28,6 +28,7 @@ import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from 
 import {
     clearUndoHistory,
     commandTrackDefaultsPort,
+    configureCommandBatchIdempotency,
     executeAppAction,
     getExecutableAppActionToolSchemas,
     redo,
@@ -878,6 +879,17 @@ describe('backing-vocal plate workflow', () => {
             )
         );
         vi.stubGlobal('fetch', runtimeMocks.fetch);
+        // jsdom has no navigator.locks; the durable batch-receipt checkpoint the
+        // render retry proof depends on is written under that lock.
+        vi.stubGlobal('navigator', {
+            ...navigator,
+            locks: {
+                request: (_name: string, _options: LockOptions, task: () => unknown) => Promise.resolve(task()),
+            },
+        });
+        // The durable batch receipt the render retry proof binds to is only
+        // persisted when the idempotency checkpoint is configured.
+        configureCommandBatchIdempotency({ canExecute: () => true });
         await cloudSession.clear();
         await cloudSession.replace_runtime({
             provider: 'openai-compatible',
@@ -977,6 +989,7 @@ describe('backing-vocal plate workflow', () => {
         configureAutomergeStoragePort(null);
         await cloudSession.clear();
         removeCrdtDoc('root');
+        localStorage.removeItem('sourdaw:command-batch-idempotency:v1');
         vi.unstubAllGlobals();
     });
 
@@ -1347,12 +1360,13 @@ describe('backing-vocal plate workflow', () => {
                 sectionId: 'section-chorus-one',
             }),
         ]);
-        // status: 'failed' paired with followUpStatus: 'retryable' arms the "Retry renders"
-        // button in ChatPanel, but confirmPendingChatActions' retry gate requires
-        // status === 'executed'; the button cannot fire from this state. Tracked in issue #2887.
+        // getAdmissibleSectionRenderRetry gates both this retryable arming and the
+        // retry gate, so an armed "Retry renders" button in ChatPanel can actually
+        // fire from this state; the retry is exercised below.
         expect(getPendingActionConfirmation(confirmation.id)).toMatchObject({
             status: 'failed',
             followUpStatus: 'retryable',
+            followUpProjectRevision: expect.any(String),
         });
         const receipt = chatStore.value?.messages.find(
             (message) => message.pendingActionConfirmationId === confirmation.id
@@ -1379,6 +1393,50 @@ describe('backing-vocal plate workflow', () => {
         expect(partialRenderExecution?.affectedIds).not.toContain(failedJob.sectionId);
         expect(partialRenderExecution?.affectedIds).not.toContain(failedJob.jobId);
         expect(undoStore.value?.past).toHaveLength(11);
+
+        const committedTracks = structuredClone(trackStore.value?.tracks ?? []);
+        const committedLanes = structuredClone(automationStore.value?.lanes ?? []);
+
+        // The armed retry re-renders only the missing job and leaves the
+        // committed project batch untouched.
+        const failedRetry = await confirmPendingChatActions({ confirmationId: confirmation.id });
+        expect(failedRetry).toMatchObject({
+            status: 'failed',
+            reason: expect.stringContaining('chorus two renderer unavailable'),
+        });
+        expect(runtimeMocks.renderOffline).toHaveBeenCalledTimes(4);
+        expect(runtimeMocks.renderOffline.mock.calls[3]?.[0]).toMatchObject({ startBeat: failedJob.startBeat });
+        expect(trackStore.value?.tracks).toEqual(committedTracks);
+        expect(automationStore.value?.lanes).toEqual(committedLanes);
+        expect(undoStore.value?.past).toHaveLength(11);
+        expect(getPendingActionConfirmation(confirmation.id)).toMatchObject({
+            status: 'executed',
+            followUpStatus: 'retryable',
+        });
+
+        runtimeMocks.renderOffline.mockResolvedValue(createTestAudioBuffer());
+
+        await expect(confirmPendingChatActions({ confirmationId: confirmation.id })).resolves.toEqual({
+            status: 'executed',
+        });
+        expect(runtimeMocks.renderOffline).toHaveBeenCalledTimes(5);
+        expect(getAgentSectionRenderArtifacts().map((artifact) => artifact.jobId)).toEqual(
+            renderAction.payload.jobs.map((job) => job.jobId)
+        );
+        expect(trackStore.value?.tracks).toEqual(committedTracks);
+        expect(automationStore.value?.lanes).toEqual(committedLanes);
+        expect(undoStore.value?.past).toHaveLength(11);
+        expect(getPendingActionConfirmation(confirmation.id)).toMatchObject({
+            status: 'executed',
+            followUpStatus: 'complete',
+            error: null,
+        });
+        const completedReceipt = chatStore.value?.messages.find(
+            (message) => message.pendingActionConfirmationId === confirmation.id
+        );
+        expect(completedReceipt?.content).toContain(
+            'Missing section render artifacts completed without replaying project actions'
+        );
 
         await undo();
         expect(trackStore.value?.tracks).toEqual(originalTracks);
