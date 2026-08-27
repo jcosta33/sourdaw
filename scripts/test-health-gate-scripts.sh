@@ -462,10 +462,10 @@ expect(
     'playback smoke must capture and suspend its real AudioContext through a document-only test control'
 );
 expect(
-    smokeSpec.includes('const nativeCreateOscillator = AudioContext.prototype.createOscillator;') &&
-        smokeSpec.includes('AudioContext.prototype.createOscillator = function (this: AudioContext): OscillatorNode {') &&
-        smokeSpec.includes('return nativeCreateOscillator.call(this);'),
-    'playback smoke must capture the real AudioContext at oscillator creation and delegate faithfully'
+    smokeSpec.includes('const nativeCreateGain = AudioContext.prototype.createGain;') &&
+        smokeSpec.includes('AudioContext.prototype.createGain = function (this: AudioContext): GainNode {') &&
+        smokeSpec.includes('return nativeCreateGain.call(this);'),
+    'playback smoke must capture the real AudioContext at engine gain creation and delegate faithfully'
 );
 expect(
     smokeSpec.includes("document.addEventListener('sourdaw-test-read-audio-context-state'") &&
@@ -508,7 +508,7 @@ expect(
     smokeSpec.includes('async function openSavedProjectInFreshPage(page: Page, name: string)') &&
         smokeSpec.includes('const reopenedPage = await page.context().newPage();') &&
         smokeSpec.includes('await reopenedPage.goto(appRootUrl);') &&
-        smokeSpec.includes('await launch_new_project(reopenedPage);'),
+        smokeSpec.includes('await wait_for_workspace_ready(reopenedPage);'),
     'persistence smoke must reopen saved IndexedDB truth in a fresh renderer page within the existing browser context'
 );
 expect(

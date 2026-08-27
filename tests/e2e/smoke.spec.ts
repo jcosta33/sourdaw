@@ -1,6 +1,6 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 
-import { launch_new_project, setupWorkspace } from './e2eUtils';
+import { launch_new_project, setupWorkspace, wait_for_workspace_ready } from './e2eUtils';
 
 const MODIFIER = process.platform === 'darwin' ? 'Meta' : 'Control';
 const OFFLINE_IDLE_WINDOW_MS = 500;
@@ -56,11 +56,11 @@ type AudioContextTestControl = {
 async function observeAudioContextResumeState(page: Page): Promise<AudioContextTestControl> {
     await page.addInitScript(() => {
         const nativeResume = AudioContext.prototype.resume;
-        const nativeCreateOscillator = AudioContext.prototype.createOscillator;
+        const nativeCreateGain = AudioContext.prototype.createGain;
         let observedAudioContext: AudioContext | undefined;
-        AudioContext.prototype.createOscillator = function (this: AudioContext): OscillatorNode {
+        AudioContext.prototype.createGain = function (this: AudioContext): GainNode {
             observedAudioContext = this;
-            return nativeCreateOscillator.call(this);
+            return nativeCreateGain.call(this);
         };
         AudioContext.prototype.resume = async function (this: AudioContext): Promise<void> {
             observedAudioContext = this;
@@ -213,7 +213,7 @@ async function openSavedProjectInFreshPage(page: Page, name: string) {
     const reopenedPage = await page.context().newPage();
     const assertOffline = await blockExternalRequests(reopenedPage);
     await reopenedPage.goto(appRootUrl);
-    await launch_new_project(reopenedPage);
+    await wait_for_workspace_ready(reopenedPage);
     await reopenedPage.getByRole('button', { name: 'Project menu' }).click();
     await reopenedPage.getByRole('menuitem', { name }).click();
     return { assertOffline, page: reopenedPage };
