@@ -18,6 +18,7 @@ type BridgeDrumRenderComparisonPlanResult =
           actions: RuntimeAction[];
           identities: BatchLocalActionIdentity[];
           renderTailSeconds: number;
+          providerKnownTargetIds: string[];
       };
 
 function valuesEqual(left: unknown, right: unknown): boolean {
@@ -111,5 +112,6 @@ export function bridgeDrumRenderComparisonPlan({
             { actionType: 'addDevice', actionOrdinal: 0, deviceId: compressorDeviceId },
         ],
         renderTailSeconds: fixed.renderTailSeconds,
+        providerKnownTargetIds: scope.capability.closeDrums.map((track) => track.trackId),
     };
 }

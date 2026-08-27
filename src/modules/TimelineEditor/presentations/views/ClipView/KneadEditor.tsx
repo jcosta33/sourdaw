@@ -655,7 +655,7 @@ export const KneadEditor = ({ trackId, clipId }: { trackId: string; clipId: stri
                     </p>
                     <Button
                         onClick={() => {
-                            const action = compileAddDeviceAction(trackId, 'Knead');
+                            const action = compileAddDeviceAction(trackId, 'knead');
                             if (action) {
                                 void executeAppAction(action);
                             }

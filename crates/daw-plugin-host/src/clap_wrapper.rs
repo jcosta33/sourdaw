@@ -217,8 +217,10 @@ impl ClapWrapper {
     ///
     /// `plugin_path`: Path to the .clap file (shared library)
     /// `plugin_id`: The CLAP plugin ID to instantiate (from the descriptor)
-    /// `sample_rate`: The output device sample rate. Must match the running audio engine.
-    ///   Query via `cpal::default_host().default_output_device()?.default_output_config()?.sample_rate()`.
+    /// `sample_rate`: The rate the engine rendering this plugin's audio runs at,
+    ///   supplied by the caller. It is not the output device's rate: the two can
+    ///   differ, and the plugin only ever sees engine-rendered audio, so
+    ///   activating on the device's clock detunes everything the plugin does.
     pub fn new(plugin_path: &str, plugin_id: &str, sample_rate: f64) -> Result<Self, String> {
         unsafe {
             // 1. Load the shared library
@@ -1086,10 +1088,10 @@ impl ClapWrapper {
     /// The plugin's current reported latency in **milliseconds**.
     ///
     /// CLAP reports latency as a frame count in the clock the plugin was
-    /// ACTIVATED with (`self.sample_rate`, the CPAL device rate). This wrapper is
-    /// the only place that rate is known, so it is the only place the conversion
-    /// is sound — a consumer on another clock (e.g. a webview `AudioContext`
-    /// running at a different rate) would silently mis-scale the sample count.
+    /// ACTIVATED with (`self.sample_rate`, the engine rate the caller supplied).
+    /// Converting here keeps the frame count and the milliseconds derived from
+    /// one rate: a consumer that re-derived it against a rate of its own — a
+    /// device default, a hardcoded 48 kHz — would silently mis-scale it.
     pub fn latency_ms(&self) -> f64 {
         if !self.sample_rate.is_finite() || self.sample_rate <= 0.0 {
             return 0.0;
@@ -1312,21 +1314,26 @@ impl AudioPlugin for ClapWrapper {
         }
     }
 
-    fn get_state(&self) -> Vec<u8> {
+    /// The plugin's saved state, or its refusal to produce one.
+    ///
+    /// A plugin that implements no state extension has no state, and empty is
+    /// the true answer for it. A plugin whose `save` fails has state it would not
+    /// give, and answering empty there tells the project it saved when it did
+    /// not.
+    fn get_state(&self) -> Result<Vec<u8>, String> {
         #[cfg(feature = "engine-owned-command-fixture")]
         if let Some(fixture) = self.command_fixture.as_ref() {
-            return fixture.state.clone();
+            return Ok(fixture.state.clone());
         }
 
         if self.state_ext.is_null() || self.plugin.is_null() {
-            return vec![];
+            return Ok(vec![]);
         }
 
         unsafe {
             let state = &*self.state_ext;
-            let save_fn = match state.save {
-                Some(f) => f,
-                None => return vec![],
+            let Some(save_fn) = state.save else {
+                return Ok(vec![]);
             };
 
             let mut buffer: Vec<u8> = Vec::new();
@@ -1335,13 +1342,10 @@ impl AudioPlugin for ClapWrapper {
                 write: Some(ostream_write),
             };
 
-            let ok = save_fn(self.plugin, &ostream);
-            if ok {
-                buffer
-            } else {
-                eprintln!("[CLAP] state.save() failed for {}", self.name);
-                vec![]
+            if !save_fn(self.plugin, &ostream) {
+                return Err(format!("[CLAP] '{}' refused to save its state", self.name));
             }
+            Ok(buffer)
         }
     }
 

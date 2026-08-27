@@ -87,6 +87,7 @@ export function compileAgentRiskApproval(input: CompileAgentRiskApprovalInput) {
         ),
         sourceRevision: envelope.baseRevision,
         targetFingerprints: structuredClone(preflight.targetFingerprints),
+        advertisedTargetFingerprints: structuredClone(preflight.advertisedTargetFingerprints ?? {}),
         consequences,
         localActorId: getLocalActorId(),
         policy,

@@ -117,6 +117,14 @@ to base-checkpoint revisions, and the binary merge record lacks the exact emsdk 
 build configuration, and build log. Binary byte identity and the named MLC-LLM/TVM source revisions
 are proven; the exact Qwen source/license chain and complete build-input provenance are not.
 
+## Plugin interfaces
+
+Sourdaw hosts CLAP and VST®3 plugins by declaring each format's interfaces through the `clap-sys` and
+`vst3` crates. It bundles no plugin-format SDK and redistributes no plugin. Those crates ship their own
+authors' MIT and Apache-2.0 texts but no notice from the interface authors, so the notices those
+interfaces require are reproduced in
+[PLUGIN-INTERFACE-NOTICES.txt](./PLUGIN-INTERFACE-NOTICES.txt).
+
 ## Trademarks
 
 See [TRADEMARKS.md](./TRADEMARKS.md).

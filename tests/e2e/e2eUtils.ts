@@ -12,13 +12,14 @@ type LaunchFromTemplateInput = {
 };
 
 type SetupWorkspaceOptions = {
+    webGpuApiPresent?: boolean;
     localStorage?: Array<{ name: string; value: string }>;
 };
 
 /**
- * Common setup for E2E tests: bypasses the onboarding tour and alpha notice
- * via local storage, then navigates to the root URL and ensures basic DOM
- * loading is complete.
+ * Common setup for E2E tests: bypasses the onboarding tour, alpha notice, and
+ * delayed first-load shortcut hint via local storage, then navigates to the
+ * root URL and ensures basic DOM loading is complete.
  */
 export async function setupWorkspace(page: Page, options: SetupWorkspaceOptions = {}): Promise<void> {
     page.on('console', (msg) => console.log(`[Browser Console] ${msg.text()}`));
@@ -30,19 +31,38 @@ export async function setupWorkspace(page: Page, options: SetupWorkspaceOptions 
     const alphaDismissed = superjsonStringify(true);
 
     await page.addInitScript(
-        ({ alphaDismissed, localStorage }) => {
+        ({ alphaDismissed, localStorage, webGpuApiPresent }) => {
             window.localStorage.clear();
             window.localStorage.setItem('wd:onboarding-completed', '1');
             window.localStorage.setItem('sourdaw-alpha-notice-dismissed', alphaDismissed);
+            window.localStorage.setItem('wd:first-load-hint-shown', '1');
             for (const entry of localStorage) {
                 window.localStorage.setItem(entry.name, entry.value);
             }
+            if (webGpuApiPresent) {
+                if (!('gpu' in navigator)) {
+                    Object.defineProperty(navigator, 'gpu', { configurable: true, value: {} });
+                }
+            }
         },
-        { alphaDismissed, localStorage: options.localStorage ?? [] }
+        {
+            alphaDismissed,
+            webGpuApiPresent: options.webGpuApiPresent ?? false,
+            localStorage: options.localStorage ?? [],
+        }
     );
 
     await page.goto('/');
     await page.waitForLoadState('domcontentloaded');
+}
+
+/**
+ * Starts the app with the WebGPU API-present UI precondition. This creates only
+ * the `navigator.gpu` surface when Chromium does not expose it; it does not
+ * provide a WebGPU adapter or bypass production admission checks.
+ */
+export async function setupWebGpuApiPresentWorkspace(page: Page): Promise<void> {
+    await setupWorkspace(page, { webGpuApiPresent: true });
 }
 
 async function get_launch_overlay_state(page: Page): Promise<LaunchOverlayState> {

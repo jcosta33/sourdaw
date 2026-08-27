@@ -241,6 +241,7 @@ const e2e = workflow.jobs?.e2e;
 const gate = workflow.jobs?.gate;
 const dependencyReview = workflow.jobs?.['dependency-review'];
 const dependencyReviewWith = stepNamed(dependencyReview, 'Review dependency changes')?.with ?? {};
+const browserAiWebGpu = workflow.jobs?.['browser-ai-webgpu'];
 const nightlyReport = workflow.jobs?.['nightly-report'];
 const resolveScopeRun = stepNamed(decide, 'Resolve scope')?.run ?? '';
 const trustedCheckout = stepNamed(secrets, 'Checkout trusted scanner');
@@ -270,6 +271,7 @@ const expectedGateNeeds = [
     'rust',
     'native-macos',
     'native-windows',
+    'browser-ai-webgpu',
     'codeql',
     'secrets',
 ];
@@ -456,6 +458,8 @@ expect(
     'dependency review must pass the explicit pull request head SHA, which the action cannot infer on a pull_request_review run'
 );
 expect(gate?.name === 'Gate', 'required Gate job name must stay exact');
+expect(browserAiWebGpu !== undefined, 'browser-ai-webgpu job must remain connected to the workflow');
+expect(gateNeeds.includes('browser-ai-webgpu'), 'Gate must depend on browser-ai-webgpu');
 expect(
     gate?.if ===
         "${{ !cancelled() && (github.event_name != 'pull_request_review' || github.event.review.state == 'approved') }}",

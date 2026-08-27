@@ -6,6 +6,7 @@ import { defaultTransportState, seekPlayhead, setLoopRegion, disableLooping } fr
 import { animationScheduler } from '#/utils/DOM/AnimationScheduler';
 
 import { timelineViewStore, type TimelineViewState } from '../../stores/timelineViewStore';
+import { registerTimelineGestureCanceler } from '../../useCases/timelineInteractions/registerTimelineGestureCanceler';
 
 import { TimelineChromeSurface } from './TimelineChromeSurface';
 
@@ -306,6 +307,49 @@ export const BeatRulerBar = (): React.ReactElement => {
             }
         }
     };
+
+    // ── Gesture cancellation (Escape / window blur / visibility change) ──
+    // The loop drag only ever previews through loopPreviewRef and commits at
+    // mouse-up, so cancelling discards the preview — the store was never
+    // written, there is nothing to restore, and no history entry exists.
+    const cancelActiveGesture = (): boolean => {
+        const hadGesture = loopDragRef.current !== null || loopPreviewRef.current !== null || scrubDragRef.current;
+        if (!hadGesture) {
+            return false;
+        }
+        loopDragRef.current = null;
+        loopPreviewRef.current = null;
+        scrubDragRef.current = false;
+        if (canvasRef.current) {
+            drawRuler(canvasRef.current, playheadPositionRef.current);
+        }
+        return true;
+    };
+
+    const cancelGestureRef = useRef<() => boolean>(() => false);
+    useEffect(() => {
+        cancelGestureRef.current = cancelActiveGesture;
+    });
+
+    useEffect(() => {
+        const cancel = (): boolean => cancelGestureRef.current();
+        const unregister = registerTimelineGestureCanceler(cancel);
+        const handleBlur = (): void => {
+            cancel();
+        };
+        const handleVisibilityChange = (): void => {
+            if (document.visibilityState === 'hidden') {
+                cancel();
+            }
+        };
+        window.addEventListener('blur', handleBlur);
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+        return () => {
+            unregister();
+            window.removeEventListener('blur', handleBlur);
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
+        };
+    }, []);
 
     return (
         <TimelineChromeSurface

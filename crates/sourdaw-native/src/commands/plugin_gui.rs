@@ -1,16 +1,20 @@
 //! Plugin GUI window management.
 //!
-//! A CLAP editor is drawn by the plugin into a bare native window the host
+//! A plugin editor is drawn by the plugin into a bare native window the host
 //! creates and owns. Creating that window is the shell's job
-//! ([`PluginWindowHost`]); the CLAP lifecycle around it — open, publish, resize,
+//! ([`PluginWindowHost`]); the lifecycle around it — open, publish, resize,
 //! close, and the bookkeeping that decides whether an editor is open at all —
-//! is this module's.
+//! is this module's, and it reaches every format through `AudioPlugin`.
 
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
 use crate::commands::plugins::PluginUnloadResult;
-use crate::host::plugin_window::{plugin_editor_window_label, PluginWindowHost};
+use crate::host::plugin_window::{
+    plugin_editor_window_label, PluginEditorWindow, PluginWindowHost,
+};
 use crate::state::AppState;
+use daw_plugin_host::{AudioPlugin, EditorWindowResizer};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PluginGuiInfo {
@@ -48,6 +52,31 @@ pub async fn is_plugin_gui_supported(
     Err(format!("No plugin instance: {}", instance_id))
 }
 
+/// The host's answer to a plugin that resizes its own editor.
+///
+/// Format-neutral by construction: the plugin's backend calls this while it is
+/// mid-handshake with its view, and all it may know about the host is that a
+/// size can be delivered.
+fn editor_window_resizer(window: &Arc<dyn PluginEditorWindow>) -> EditorWindowResizer {
+    let window = Arc::clone(window);
+    Arc::new(move |width, height| window.set_size(width, height))
+}
+
+/// Give the plugin everything about the host window, then open its editor.
+///
+/// The order is the point: a view laying itself out against its new parent may
+/// resize itself, and may state its size in units it has to be told the scale
+/// for, both from inside the attach. A plugin told either of those after the
+/// open draws at a size the window never took.
+fn open_editor_with_host_window_stated_first<Plugin: ?Sized, Opened>(
+    plugin: &mut Plugin,
+    state_host_window: impl FnOnce(&mut Plugin),
+    open_editor: impl FnOnce(&mut Plugin) -> Opened,
+) -> Opened {
+    state_host_window(plugin);
+    open_editor(plugin)
+}
+
 /// Open the plugin GUI in a floating native window.
 ///
 /// MUST be async — creating windows from a synchronous command deadlocks on
@@ -58,7 +87,8 @@ pub async fn is_plugin_gui_supported(
 ///    owned by the DAW window (Windows owner / macOS child window / X11
 ///    transient-for) so it floats above the DAW and nothing else
 /// 2. Extract the native window handle (NSView/HWND/X11)
-/// 3. Pass the handle to `open_gui`, which runs the CLAP GUI lifecycle
+/// 3. Give the plugin the host's window resizer, then pass the handle to
+///    `open_gui`, which runs that format's editor lifecycle
 /// 4. Resize the window to match the plugin's preferred size
 pub async fn open_plugin_gui(
     instance_id: String,
@@ -110,8 +140,10 @@ pub async fn open_plugin_gui(
         return Err("Plugin GUI is already open".to_string());
     }
 
-    let plugin_window =
-        windows_host.create_editor_window(&window_label, &plugin_name, &instance_id)?;
+    // Shared rather than owned: the resizer installed below outlives this
+    // command, because a plugin editor resizes itself while it is open.
+    let plugin_window: Arc<dyn PluginEditorWindow> =
+        Arc::from(windows_host.create_editor_window(&window_label, &plugin_name, &instance_id)?);
 
     // 3. Extract the native window handle
     let handle_ptr = match plugin_window.native_handle_ptr() {
@@ -122,10 +154,20 @@ pub async fn open_plugin_gui(
         }
     };
 
-    // 4. Open the plugin GUI (CLAP lifecycle: create → scale → get_size → set_parent → show)
+    // 4. Give the plugin the host window — how to resize it, and what scale it
+    //    runs at — then open its GUI.
+    let resize_window = editor_window_resizer(&plugin_window);
+    let scale_factor = plugin_window.scale_factor();
     let gui_size_result = if let Some(runtime) = engine_runtime.as_ref() {
         runtime.with_control(std::time::Duration::from_secs(2), |plugin| {
-            plugin.open_gui(handle_ptr)
+            open_editor_with_host_window_stated_first(
+                plugin,
+                |plugin| {
+                    plugin.set_editor_window_resizer(resize_window);
+                    plugin.set_editor_content_scale(scale_factor);
+                },
+                |plugin| plugin.open_gui(handle_ptr),
+            )
         })
     } else {
         let mut plugins = state
@@ -136,7 +178,14 @@ pub async fn open_plugin_gui(
             .get_mut(&instance_id)
             .ok_or_else(|| format!("No plugin instance: {}", instance_id))?;
 
-        instance.open_gui(handle_ptr)
+        open_editor_with_host_window_stated_first(
+            instance,
+            |instance| {
+                instance.set_editor_window_resizer(resize_window);
+                instance.set_editor_content_scale(scale_factor);
+            },
+            |instance| instance.open_gui(handle_ptr),
+        )
     };
 
     let (width, height) = match gui_size_result {
@@ -515,7 +564,7 @@ mod tests {
     fn insert_engine_owned_fixture(state: &AppState, instance_id: &str, has_gui: bool) {
         let wrapper =
             ClapWrapper::new_engine_owned_command_fixture("Engine Owned Fixture", vec![], has_gui);
-        let runtime = Arc::new(SharedHostedPlugin::new(wrapper));
+        let runtime = Arc::new(SharedHostedPlugin::new(wrapper.into()));
         let mut engine_plugins = state
             .engine_plugins
             .lock()
@@ -903,6 +952,27 @@ mod tests {
 
         assert_eq!(result, Ok(()));
         assert_eq!(order.borrow().as_slice(), ["insert", "show"]);
+    }
+
+    /// A view lays itself out against its new parent from inside the attach, and
+    /// it may resize itself or state a size in scaled units while it does. Both
+    /// answers have to be installed before the open, or the editor draws at a
+    /// size the host window never took.
+    #[test]
+    fn open_editor_with_host_window_stated_first_states_the_window_before_the_open() {
+        let mut order: Vec<&'static str> = Vec::new();
+
+        let opened = open_editor_with_host_window_stated_first(
+            &mut order,
+            |order| order.push("window"),
+            |order| {
+                order.push("open");
+                (640, 480)
+            },
+        );
+
+        assert_eq!(opened, (640, 480));
+        assert_eq!(order.as_slice(), ["window", "open"]);
     }
 
     #[test]

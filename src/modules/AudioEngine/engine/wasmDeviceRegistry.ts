@@ -21,6 +21,7 @@ import { getAudioDeviceRuntimeSink } from './audioDeviceRuntimeSink';
 import { isBacteriaDevice, createBacteriaNode, type BacteriaNodeResult } from './BacteriaNode';
 import { isCrumbsDevice, createCrumbsNode, type CrumbsNodeResult } from './CrumbsNode';
 import { isCrustDevice, createCrustNode, type CrustNodeResult } from './CrustNode';
+import { attachFaustMeterBridge, detachFaustMeterBridge } from './faustMeterReadings';
 import { isFermenterDevice, createFermenterNode, type FermenterNodeResult } from './FermenterNode';
 import { isGlutenDevice, createGlutenNode, type GlutenNodeResult } from './GlutenNode';
 import { isGrandBouleDevice, createGrandBouleNode, type GrandBouleNodeResult } from './GrandBouleNode';
@@ -1800,6 +1801,7 @@ const faustDescriptor: WasmDeviceDescriptor = {
                         destroy: () => {
                             controls.destroy?.();
                             clearReportedLatency(deviceId);
+                            detachFaustMeterBridge(deviceId, result.nodes[0]);
                         },
                     },
                 });
@@ -1807,6 +1809,13 @@ const faustDescriptor: WasmDeviceDescriptor = {
                     clearReportedLatency(deviceId);
                     return;
                 }
+                // A Faust device's bargraphs (the LUFS Meter's momentary and
+                // short_term) are readings, not controls: they never become
+                // AudioParams, so the only way they reach this side is the
+                // vendor node's out-param dispatch. Wiring it after acceptance
+                // means a rejected load leaves no handler posting into the
+                // readings map under a device id that never went live.
+                attachFaustMeterBridge(deviceId, result.nodes[0]);
                 getAudioDeviceRuntimeSink().emitDeviceLoaded({ deviceId, deviceType });
                 return;
             })

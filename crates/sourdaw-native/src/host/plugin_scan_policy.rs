@@ -31,7 +31,27 @@ impl PluginScanPolicy {
             .collect()
     }
 
-    pub fn authorize_scan_root(&self, requested_path: &Path) -> Result<(), String> {
+    /// Where `path` sits in the platform's priority order, or `None` for a path
+    /// under no allowed root.
+    ///
+    /// The order of the allowed roots is priority — per-user, then machine-wide,
+    /// then network — and this is what carries that order to a caller that was
+    /// handed its paths in some other one. The lowest index wins, so a path
+    /// under two nested roots ranks with the more specific of them.
+    pub fn root_rank(&self, path: &Path) -> Option<usize> {
+        self.allowed_roots.iter().position(|allowed_root| {
+            let allowed_root = fs::canonicalize(allowed_root)
+                .unwrap_or_else(|_| normalize_path_lexically(allowed_root));
+            path == allowed_root || path.starts_with(&allowed_root)
+        })
+    }
+
+    /// Authorize a scan root, returning the resolved path that was authorized.
+    ///
+    /// The resolved path, not the caller's spelling: the checks below are made
+    /// against the canonical path, so walking anything else would walk a
+    /// directory this function never looked at.
+    pub fn authorize_scan_root(&self, requested_path: &Path) -> Result<PathBuf, String> {
         if requested_path.as_os_str().is_empty() {
             return Err("Plugin scan path cannot be empty".to_string());
         }
@@ -87,7 +107,7 @@ impl PluginScanPolicy {
         });
 
         if is_authorized {
-            return Ok(());
+            return Ok(requested_path);
         }
 
         Err(unauthorized_scan_path(&requested_path))
@@ -101,6 +121,14 @@ fn unauthorized_scan_path(path: &Path) -> String {
     )
 }
 
+/// The platform's plugin folders, **most specific first**.
+///
+/// The order is priority, not decoration. A plugin installed in two of these
+/// folders is one plugin with two copies, and the scan keeps the first one it
+/// meets, so a per-user install has to precede the machine-wide one and the
+/// machine-wide one has to precede the network share. Both format families
+/// order the same way, which is also the order the VST3 specification lays
+/// down for its own folders.
 fn default_plugin_scan_roots() -> Vec<PathBuf> {
     let mut paths = Vec::new();
 
@@ -115,10 +143,15 @@ fn default_plugin_scan_roots() -> Vec<PathBuf> {
         paths.push(PathBuf::from("/Library/Audio/Plug-Ins/VST3"));
         paths.push(PathBuf::from("/Library/Audio/Plug-Ins/CLAP"));
         paths.push(PathBuf::from("/Library/Audio/Plug-Ins/Components"));
+        paths.push(PathBuf::from("/Network/Library/Audio/Plug-Ins/VST3"));
     }
 
     #[cfg(target_os = "windows")]
     {
+        if let Some(local_app_data) = dirs::data_local_dir() {
+            paths.push(local_app_data.join(r"Programs\Common\VST3"));
+        }
+
         paths.push(PathBuf::from(r"C:\Program Files\Common Files\VST3"));
         paths.push(PathBuf::from(r"C:\Program Files\Common Files\CLAP"));
     }
@@ -130,8 +163,14 @@ fn default_plugin_scan_roots() -> Vec<PathBuf> {
             paths.push(home.join(".clap"));
         }
 
+        // `lib` and `lib64` are the same rung: which one a distribution uses for
+        // 64-bit objects is the distribution's choice, and a machine that has
+        // both keeps unrelated plugins in them.
         paths.push(PathBuf::from("/usr/lib/vst3"));
+        paths.push(PathBuf::from("/usr/lib64/vst3"));
         paths.push(PathBuf::from("/usr/lib/clap"));
+        paths.push(PathBuf::from("/usr/local/lib/vst3"));
+        paths.push(PathBuf::from("/usr/local/lib64/vst3"));
     }
 
     paths
@@ -202,7 +241,61 @@ mod tests {
 
         assert!(!policy.allowed_roots.is_empty());
         for allowed_root in &policy.allowed_roots {
-            assert_eq!(policy.authorize_scan_root(allowed_root), Ok(()));
+            assert!(policy.authorize_scan_root(allowed_root).is_ok());
+        }
+    }
+
+    /// Where a root sits in the default list. Panics rather than returning an
+    /// option: a root the ordering contract names but the defaults do not carry
+    /// is the failure, not a case to tolerate.
+    fn priority_of(roots: &[PathBuf], root: &Path) -> usize {
+        roots
+            .iter()
+            .position(|candidate| candidate == root)
+            .unwrap_or_else(|| panic!("{} should be a default scan root", root.display()))
+    }
+
+    /// The scan keeps the first copy of a plugin it meets, so this order is the
+    /// rule that decides which copy of a twice-installed plugin is hosted.
+    #[test]
+    fn per_user_scan_roots_outrank_the_machine_wide_ones() {
+        let roots = default_plugin_scan_roots();
+
+        #[cfg(target_os = "macos")]
+        {
+            let home = dirs::home_dir().expect("a macOS account should have a home directory");
+            let per_user = priority_of(&roots, &home.join("Library/Audio/Plug-Ins/VST3"));
+            let machine_wide = priority_of(&roots, Path::new("/Library/Audio/Plug-Ins/VST3"));
+            let network = priority_of(&roots, Path::new("/Network/Library/Audio/Plug-Ins/VST3"));
+
+            assert!(per_user < machine_wide);
+            assert!(machine_wide < network);
+        }
+
+        #[cfg(target_os = "windows")]
+        {
+            let local_app_data =
+                dirs::data_local_dir().expect("a Windows account should have local app data");
+            let per_user = priority_of(&roots, &local_app_data.join(r"Programs\Common\VST3"));
+            let machine_wide =
+                priority_of(&roots, Path::new(r"C:\Program Files\Common Files\VST3"));
+
+            assert!(per_user < machine_wide);
+        }
+
+        #[cfg(target_os = "linux")]
+        {
+            let home = dirs::home_dir().expect("a Linux account should have a home directory");
+            let per_user = priority_of(&roots, &home.join(".vst3"));
+            let distribution = priority_of(&roots, Path::new("/usr/lib/vst3"));
+            let distribution_64 = priority_of(&roots, Path::new("/usr/lib64/vst3"));
+            let site = priority_of(&roots, Path::new("/usr/local/lib/vst3"));
+            let site_64 = priority_of(&roots, Path::new("/usr/local/lib64/vst3"));
+
+            assert!(per_user < distribution);
+            assert!(per_user < distribution_64);
+            assert!(distribution < site);
+            assert!(distribution_64 < site_64);
         }
     }
 
@@ -215,7 +308,40 @@ mod tests {
             .expect("platform default plugin roots should exist");
         let child_root = allowed_root.join("Vendor").join("Plugin.clap");
 
-        assert_eq!(policy.authorize_scan_root(&child_root), Ok(()));
+        assert!(policy.authorize_scan_root(&child_root).is_ok());
+    }
+
+    /// The path the policy hands back is the one its checks were made against.
+    /// Returning the caller's spelling would let a scan walk a directory the
+    /// authorization never looked at.
+    #[test]
+    fn authorization_answers_with_the_path_it_resolved() {
+        let policy = PluginScanPolicy::with_allowed_roots(vec![PathBuf::from("/plugins/VST3")]);
+
+        let authorized = policy
+            .authorize_scan_root(Path::new("/plugins/VST3/Vendor/../Vendor"))
+            .expect("a descendant of an allowed root");
+
+        assert_eq!(authorized, PathBuf::from("/plugins/VST3/Vendor"));
+    }
+
+    /// The ranking is what decides which copy of a twice-installed plugin the
+    /// scan meets first, so it has to come from the platform order rather than
+    /// from the order a caller listed its paths in.
+    #[test]
+    fn a_root_ranks_by_the_platform_order_and_an_unlisted_one_does_not_rank() {
+        let policy = PluginScanPolicy::with_allowed_roots(vec![
+            PathBuf::from("/per-user/VST3"),
+            PathBuf::from("/machine-wide/VST3"),
+        ]);
+
+        assert_eq!(policy.root_rank(Path::new("/per-user/VST3")), Some(0));
+        assert_eq!(
+            policy.root_rank(Path::new("/machine-wide/VST3/Vendor")),
+            Some(1),
+            "a descendant ranks with the root that contains it"
+        );
+        assert_eq!(policy.root_rank(Path::new("/somewhere/else")), None);
     }
 
     #[test]

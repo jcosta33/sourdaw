@@ -42,6 +42,7 @@ describe('resetExternalPluginRuntimeForGraphRebuild', () => {
         const latencyReporter = vi.fn();
         await expect(
             activateExternalPlugin({
+                engineSampleRate: 48_000,
                 pluginId: 'compressor',
                 instanceId: 'plugin-instance-1',
                 onLatencyMs: latencyReporter,
@@ -61,7 +62,11 @@ describe('resetExternalPluginRuntimeForGraphRebuild', () => {
         expect(externalPluginActivationStore.value).toEqual(defaultExternalPluginActivationState);
 
         await expect(
-            activateExternalPlugin({ pluginId: 'compressor', instanceId: 'plugin-instance-1' })
+            activateExternalPlugin({
+                engineSampleRate: 48_000,
+                pluginId: 'compressor',
+                instanceId: 'plugin-instance-1',
+            })
         ).resolves.toEqual({ status: 'active' });
         expect(mocks.unloadPlugin).toHaveBeenCalledOnce();
         expect(mocks.loadPlugin).toHaveBeenCalledTimes(2);
@@ -84,12 +89,14 @@ describe('resetExternalPluginRuntimeForGraphRebuild', () => {
         mocks.unloadPlugin.mockReturnValueOnce(bulkUnload.promise);
 
         const firstActivation = activateExternalPlugin({
+            engineSampleRate: 48_000,
             pluginId: 'compressor',
             instanceId: 'plugin-instance-1',
         });
         await vi.waitFor(() => expect(mocks.loadPlugin).toHaveBeenCalledOnce());
         const reset = resetExternalPluginRuntimeForGraphRebuild();
         const lateActivation = activateExternalPlugin({
+            engineSampleRate: 48_000,
             pluginId: 'compressor',
             instanceId: 'late-instance',
         });
