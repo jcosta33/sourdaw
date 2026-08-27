@@ -26,6 +26,16 @@ vst3 = "0.3.0"
 libloading = "0.9"
 sha2 = "0.11"
 
+# A VST3 editor on X11 does not run unless the host answers `IRunLoop`, and the
+# whole of that contract is waiting on the plugin's own file descriptors —
+# `poll(2)` and nothing else. The standard library has no descriptor readiness
+# primitive, so the host run loop needs the libc declaration of it. Already in
+# this workspace's tree as a direct dependency of `sourdaw-native`, so it costs
+# no new package. Built on every unix so the run loop compiles and is tested
+# wherever this crate is, rather than only on the platform that advertises it.
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 # A `.vst3` bundle on macOS is a real CFBundle, and its `bundleEntry` entry
 # point takes the `CFBundleRef` itself — so `libloading`, which hands back no
 # such handle, cannot serve this platform and the bundle must be opened through
