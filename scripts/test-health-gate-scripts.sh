@@ -243,6 +243,8 @@ const smoke = workflow.jobs?.smoke;
 const prSecrets = workflow.jobs?.['pr-secrets'];
 const prSecretsTrustedCheckout = stepNamed(prSecrets, 'Checkout trusted scanner');
 const prSecretsScanRun = stepNamed(prSecrets, 'Scan pull request diff for secrets')?.run ?? '';
+const prMergeControl = stepNamed(prSecrets, 'Validate PR merge diff secret scanner');
+const prMergeControlRun = prMergeControl?.run ?? '';
 const TOKEN_PATTERN = /GITHUB_TOKEN|GH_TOKEN|github\.token|\$\{\{\s*secrets\./iu;
 const secrets = workflow.jobs?.secrets;
 const unit = workflow.jobs?.unit;
@@ -367,6 +369,49 @@ expect(
 expect(
     prSecretsScanRun.includes('--ignore-gitleaks-allow') && prSecretsScanRun.includes('--redact=100'),
     'diff secret scan must reject head-authored allow annotations and redact what it prints'
+);
+// The merge-diff control proves the scanner still detects, and still refuses
+// head-authored suppression, on the path the diff scan actually takes. Each
+// half is pinned separately so deleting one is a named failure rather than a
+// control that silently stops controlling.
+expect(
+    prMergeControl?.env?.GITLEAKS_EXPECTED_LEAK_EXIT_CODE === 79,
+    'merge-diff positive control must use a distinct expected leak exit code'
+);
+expect(
+    prMergeControlRun.includes('mktemp -d "$RUNNER_TEMP/gitleaks-pr-merge-control.XXXXXX"'),
+    'merge-diff positive control must use a temporary runner path'
+);
+expect(
+    prMergeControlRun.includes("synthetic_access_key=$(printf '%s%s%s' 'AKIA' 'QAZ2WSX3' 'EDC4RFV5')"),
+    'merge-diff positive control secret must be assembled at runtime'
+);
+expect(
+    prMergeControlRun.includes('mkdir -p "$positive_control_repo/public/wasm"') &&
+        prMergeControlRun.includes('aws_access_key_id = "%s" // gitleaks:allow') &&
+        prMergeControlRun.includes('> "$positive_control_repo/public/wasm/fixture.js"'),
+    'merge-diff positive control must place an annotated secret under a formerly excluded path'
+);
+expect(
+    prMergeControlRun.includes('cat > "$positive_control_repo/.gitleaks.toml"') &&
+        prMergeControlRun.includes('regexes = [\'\'\'.*\'\'\']') &&
+        prMergeControlRun.includes('git -C "$positive_control_repo" add public/wasm/fixture.js .gitleaks.toml'),
+    'merge-diff positive control must commit a target-root config that would suppress the synthetic secret if loaded'
+);
+expect(
+    prMergeControlRun.includes('--config "$GITHUB_WORKSPACE/trusted-scanner/.gitleaks.toml"') &&
+        prMergeControlRun.includes('--exit-code="$GITLEAKS_EXPECTED_LEAK_EXIT_CODE"') &&
+        prMergeControlRun.includes('--log-opts="$base_sha..$head_sha -m"'),
+    'merge-diff positive control must scan the merge diff with the trusted config and the distinct leak exit code'
+);
+expect(
+    prMergeControlRun.includes('positive_control_status') &&
+        prMergeControlRun.includes('-ne "$GITLEAKS_EXPECTED_LEAK_EXIT_CODE"'),
+    'merge-diff positive control must require the exact leak exit code'
+);
+expect(
+    prMergeControl?.['working-directory'] === '${{ github.workspace }}',
+    'merge-diff positive control must run outside the untrusted checkout'
 );
 expect(secrets?.if === "needs.decide.outputs.heavy == 'true'", 'secrets job must remain on the heavy path');
 expect(/^actions\/checkout@[0-9a-f]{40}$/u.test(trustedCheckout?.uses ?? ''), 'trusted scanner checkout action must be pinned to a full commit SHA');
