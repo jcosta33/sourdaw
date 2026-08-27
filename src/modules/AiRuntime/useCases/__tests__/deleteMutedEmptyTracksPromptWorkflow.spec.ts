@@ -931,14 +931,14 @@ describe('delete muted empty tracks prompt workflow', () => {
                     kind: 'external-effect',
                     operation: 'removeTrack',
                     reason: 'persistent graph removal failure',
-                    remediation: 'reconcile',
+                    remediation: 'manual-repair',
                     state: 'pending',
                 }),
             ],
             continuation: {
                 authority: 'authoritative-collaboration-host',
                 idempotency: 'project-checkpoint',
-                kind: 'reconcile-exact-batch',
+                kind: 'manual-repair',
             },
         });
 
