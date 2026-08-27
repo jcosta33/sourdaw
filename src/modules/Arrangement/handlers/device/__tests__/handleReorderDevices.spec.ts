@@ -173,7 +173,7 @@ describe('handleReorderDevices', () => {
             throw new Error('Expected a written reorder result');
         }
 
-        expect(mocks.reorderDevicesInProject).toHaveBeenCalledWith('audio-1', afterTrack);
+        expect(mocks.reorderDevicesInProject).toHaveBeenCalledWith('audio-1', afterTrack.devices);
 
         result.afterCommit();
 
