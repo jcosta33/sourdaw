@@ -1,0 +1,45 @@
+crates/daw-plugin-host/src/runtime.rs
+  s_1b9333aca53d4d::t_5cb9e2352ec59a 197-198
+  s_1b9333aca53d4d::t_ae5c356bb145a0 17
+  s_1b9333aca53d4d::t_090feecf792c52 95-106
+  s_1b9333aca53d4d::t_c65920ba7d3210 199-211
+crates/daw-plugin-host/src/clap_host.rs
+  s_1b9333aca53d4d::t_2164a6c612a7db 55-68
+  s_1b9333aca53d4d::t_268deaeec01a26 80-92
+  s_1b9333aca53d4d::t_2025163859aa4b 500-660,662
+  s_1b9333aca53d4d::t_fe92c9b340c81e 13,19-37,193,340,374
+  s_1b9333aca53d4d::t_d085bfe8042a6d 364-373
+  s_1b9333aca53d4d::t_70f5dcd38b3b48 129-192
+  s_1b9333aca53d4d::t_a694e4bb328adb 322-331,333,337-339
+  s_1b9333aca53d4d::t_cea9114eb61918 396,661,663-664
+crates/daw-plugin-host/src/lib.rs
+  s_1b9333aca53d4d::t_2cb56eac5b750f 27-28
+crates/daw-plugin-host/src/clap_wrapper.rs
+  s_1b9333aca53d4d::t_88ce0e0dcd3125 364
+  s_1b9333aca53d4d::t_d140ca20ca9e8b 1843-1914
+  s_1b9333aca53d4d::t_1715f0373cec8d 87-91
+  s_1b9333aca53d4d::t_17f1f1ad736d0f 25-26
+  s_1b9333aca53d4d::t_563904105d3a6d 1454-1465
+  s_1b9333aca53d4d::t_ddb74f21306654 1662
+  s_1b9333aca53d4d::t_7ce208b2043213 394
+  s_1b9333aca53d4d::t_7901a7a78f8a8b 623-657,660-664
+crates/daw-plugin-host/src/traits.rs
+  s_1b9333aca53d4d::t_56eb2b87786a6a 30-55
+  s_1b9333aca53d4d::t_6371c9088fd4a4 272-297
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "52d6138d3562ccfbe6fee71567da689b1680547e",
+  "prompts": {},
+  "sessions": {
+    "s_1b9333aca53d4d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "188b0d45-7765-49bd-8d6e-1eebbd450613",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
