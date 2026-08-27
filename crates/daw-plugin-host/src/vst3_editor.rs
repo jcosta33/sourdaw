@@ -336,8 +336,10 @@ impl EditorFrameState {
     /// interleave a window resize with somebody else's `onSize` and leave the
     /// window and the view at different sizes.
     ///
-    /// Teardown takes the same guard, which is what keeps a resize in flight
-    /// from calling `onSize` through a view the close is releasing.
+    /// Teardown takes the same guard, and a frame call takes it before it tests
+    /// whose view it holds, so the guard is the admission point: a close either
+    /// gets in first, and every later call finds the frame disowned, or it waits
+    /// for the handshake that got in ahead of it.
     fn begin_resize(&self) -> bool {
         !self.resizing.swap(true, Ordering::AcqRel)
     }
@@ -345,8 +347,10 @@ impl EditorFrameState {
     /// Take the resize guard for teardown, waiting out a handshake in flight.
     ///
     /// Reports whether it was taken: past the deadline the close proceeds
-    /// anyway, because a teardown that never returns is worse than a race the
-    /// deadline makes vanishingly unlikely.
+    /// anyway, because a teardown that never returns is worse than one that
+    /// overlaps a stuck handshake. It can proceed because the handshake retained
+    /// the view for its own duration, so what the deadline bounds is how long a
+    /// close waits, not whether the view survives the wait.
     fn acquire_resize_guard_for_teardown(&self) -> bool {
         let deadline = Instant::now() + RESIZE_GUARD_TEARDOWN_WAIT;
         loop {
@@ -457,22 +461,36 @@ impl IPlugFrameTrait for HostEditorFrame {
     /// window it changed for nothing, so the refusal puts the window and the
     /// recorded size back before it is reported.
     unsafe fn resizeView(&self, view: *mut IPlugView, new_size: *mut ViewRect) -> tresult {
-        if new_size.is_null() || !self.state.owns(view) {
+        if new_size.is_null() {
             return kInvalidArgument;
         }
         let Some(requested) = EditorSize::from_rect(&*new_size) else {
             return kInvalidArgument;
         };
-        let Some(view) = ComRef::from_raw(view) else {
-            return kInvalidArgument;
-        };
 
+        // The guard is taken before the frame is asked whose view this is. The
+        // other order is a check followed by an act: a teardown landing between
+        // the two would disown the frame and release the view while this call
+        // was already past the only test that would have caught it.
         if !self.state.begin_resize() {
             self.state
                 .refused_nested_resizes
                 .fetch_add(1, Ordering::AcqRel);
             return kResultFalse;
         }
+
+        if !self.state.owns(view) {
+            self.state.end_resize();
+            return kInvalidArgument;
+        }
+        // Retained, not borrowed, for as long as the handshake runs. A teardown
+        // that gives up waiting for the guard releases its own reference while
+        // `onSize` may still be running through this one, so the wait is a bound
+        // on how long a close takes rather than on whether the view is alive.
+        let Some(view) = ComRef::from_raw(view).map(|borrowed| borrowed.to_com_ptr()) else {
+            self.state.end_resize();
+            return kInvalidArgument;
+        };
 
         let previous = self.state.granted();
         let granted = self.state.to_logical(requested);
@@ -598,7 +616,12 @@ impl Vst3Editor {
         // Before `attached`, always: a view laying itself out against its new
         // parent may resize immediately, and with no frame that request has
         // nowhere to go.
+        // Every failure past the adoption disowns the frame, for the reason the
+        // drop does: a plugin that holds the frame past the failure would
+        // otherwise pass the ownership test against a view this function is
+        // about to release.
         if unsafe { view.setFrame(frame_pointer) } != kResultOk {
+            state.disown();
             return Err(format!(
                 "[VST3] '{plugin_name}' refused the host's plug frame"
             ));
@@ -608,6 +631,7 @@ impl Vst3Editor {
         // before releasing it: a view left holding a pointer to a host object
         // whose last reference is about to drop can call into freed memory.
         if let Err(error) = unsafe { attach(&view, &state, parent, view_type, plugin_name) } {
+            state.disown();
             // SAFETY: the view is live and, on every path here, not attached.
             unsafe { view.setFrame(ptr::null_mut()) };
             return Err(error);
@@ -620,6 +644,7 @@ impl Vst3Editor {
         let run_loop_service = match RunLoopService::start(Arc::clone(state.run_loop())) {
             Ok(service) => Some(service),
             Err(error) => {
+                state.disown();
                 // SAFETY: the view is attached and live; this is the detach the
                 // failure path owes before the frame and the view are released.
                 unsafe {
@@ -711,10 +736,17 @@ impl Drop for Vst3Editor {
     ///
     /// Before either of them the frame stops answering for the view and takes
     /// the resize guard. `setFrame(null)` is not on its own enough: a plugin may
-    /// hold the frame past it, and a `resizeView` already in flight on another
-    /// thread — the Linux service thread, or the shell's — would otherwise
-    /// compare against a pointer this drop is about to free and call `onSize`
-    /// through a released vtable.
+    /// hold the frame past it, and a `resizeView` arriving on another thread —
+    /// the Linux service thread, or the shell's — would otherwise run a whole
+    /// handshake against a view this drop is releasing.
+    ///
+    /// The guard is what those two halves close between them. A frame call takes
+    /// it before it asks whose view it holds, so a call that arrives after the
+    /// disown finds the frame disowned, and one that got in first holds the
+    /// guard this wait is blocked on. What the wait does not decide is the
+    /// view's life: an admitted call has retained the view for its own duration,
+    /// so giving up at the deadline costs this close its promptness rather than
+    /// that call its vtable.
     fn drop(&mut self) {
         // The service thread calls into handlers the editor registered, so it
         // stops before anything the editor owns is torn down.

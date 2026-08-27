@@ -11,10 +11,17 @@
 //! thread that drives it. They are split because the driving is the part a host
 //! with its own UI loop would replace: [`HostRunLoop::service_once`] is the
 //! whole of one pass, and a shell that owns an event thread can call it from
-//! there instead of letting the service thread run. Sourdaw's plugin-host crate has no UI thread of its own — the native
-//! editor window belongs to the desktop shell — so the service thread is what
-//! makes registered handlers fire today, and the split is what lets that change
-//! without touching the registry.
+//! there instead of letting the service thread run. Sourdaw's plugin-host crate
+//! has no UI thread of its own — the native editor window belongs to the
+//! desktop shell — so the service thread is what makes registered handlers fire
+//! today, and the split is what lets that change without touching the registry.
+//!
+//! That is a deviation from what `IRunLoop` is for. The interface exists so a
+//! plugin's descriptor and timer callbacks run on the host's UI event loop,
+//! which is the thread that owns the editor's X11 window; this host services
+//! them from a private thread instead, so a handler is called off that thread.
+//! It is the same deviation the editor module states for `IPlugView`, it is
+//! shared with the CLAP editor path, and it is tracked as #2902.
 //!
 //! Nothing here is reachable from the audio thread.
 
@@ -52,14 +59,41 @@ const MIN_TIMER_INTERVAL: Duration = Duration::from_millis(1);
 /// One editor file descriptor and the handler waiting on it.
 struct EventHandlerRegistration {
     handler: ComPtr<IEventHandler>,
+    identity: HandlerIdentity,
     descriptor: FileDescriptor,
 }
 
 /// One editor timer.
 struct TimerRegistration {
     handler: ComPtr<ITimerHandler>,
+    identity: HandlerIdentity,
     interval: Duration,
     due: Instant,
+}
+
+/// The address of a handler's `FUnknown`, which is where COM defines identity.
+///
+/// Recorded at registration and compared on unregistration, because a plugin is
+/// entitled to hand `unregister` a different interface pointer to the same
+/// object than `register` was given — multiple inheritance alone produces one —
+/// and comparing the interface pointers would leave the handler registered for
+/// ever, firing into an editor that has finished with it.
+///
+/// Kept as a number rather than a pointer so it compares without dereferencing
+/// anything and leaves the registry thread-safe.
+type HandlerIdentity = usize;
+
+/// Ask an interface pointer for the object behind it.
+///
+/// A `queryInterface` call into plugin code, so every caller takes it before
+/// locking the registry and stores the answer — the lock is never held across a
+/// call the plugin implements.
+///
+/// # Safety
+/// `pointer` is an argument of an `IRunLoop` call, so it is either null or a
+/// live interface of the named type.
+unsafe fn handler_identity<I: vst3::Interface>(pointer: *mut I) -> Option<HandlerIdentity> {
+    com_identity(pointer).map(|identity| identity as HandlerIdentity)
 }
 
 #[derive(Default)]
@@ -93,23 +127,6 @@ impl HostRunLoop {
         ComRef::from_raw(pointer).map(|borrowed| borrowed.to_com_ptr())
     }
 
-    /// Whether two COM pointers name the same object.
-    ///
-    /// Compared on `FUnknown`, where COM defines identity: a plugin is entitled
-    /// to hand `unregister` a different interface pointer to the same object
-    /// than `register` was given — multiple inheritance alone produces one — and
-    /// comparing the interface pointers would then leave the handler registered
-    /// for ever, firing into an editor that has finished with it.
-    fn same_object<I: vst3::Interface>(left: &ComPtr<I>, right: *mut I) -> bool {
-        // SAFETY: `left` is retained by this registration, and `right` is the
-        // pointer the plugin passed into the call being served.
-        let (left, right) = unsafe { (com_identity(left.as_ptr()), com_identity(right)) };
-        match (left, right) {
-            (Some(left), Some(right)) => std::ptr::eq(left.cast_const(), right.cast_const()),
-            _ => false,
-        }
-    }
-
     /// # Safety
     /// `handler` is the pointer the plugin passed to `registerEventHandler`.
     pub unsafe fn register_event_handler(
@@ -123,9 +140,13 @@ impl HostRunLoop {
         let Some(handler) = Self::retain(handler) else {
             return kInvalidArgument;
         };
+        let Some(identity) = handler_identity(handler.as_ptr()) else {
+            return kInvalidArgument;
+        };
         let mut registry = self.lock();
         registry.event_handlers.push(EventHandlerRegistration {
             handler,
+            identity,
             descriptor,
         });
         kResultOk
@@ -134,14 +155,14 @@ impl HostRunLoop {
     /// # Safety
     /// `handler` is the pointer the plugin passed to `unregisterEventHandler`.
     pub unsafe fn unregister_event_handler(&self, handler: *mut IEventHandler) -> tresult {
-        if handler.is_null() {
+        let Some(identity) = handler_identity(handler) else {
             return kInvalidArgument;
-        }
+        };
         let mut registry = self.lock();
         let before = registry.event_handlers.len();
         registry
             .event_handlers
-            .retain(|registration| !Self::same_object(&registration.handler, handler));
+            .retain(|registration| registration.identity != identity);
         removal_result(before, registry.event_handlers.len())
     }
 
@@ -155,10 +176,14 @@ impl HostRunLoop {
         let Some(handler) = Self::retain(handler) else {
             return kInvalidArgument;
         };
+        let Some(identity) = handler_identity(handler.as_ptr()) else {
+            return kInvalidArgument;
+        };
         let interval = Duration::from_millis(milliseconds).max(MIN_TIMER_INTERVAL);
         let mut registry = self.lock();
         registry.timers.push(TimerRegistration {
             handler,
+            identity,
             interval,
             due: Instant::now() + interval,
         });
@@ -168,14 +193,14 @@ impl HostRunLoop {
     /// # Safety
     /// `handler` is the pointer the plugin passed to `unregisterTimer`.
     pub unsafe fn unregister_timer(&self, handler: *mut ITimerHandler) -> tresult {
-        if handler.is_null() {
+        let Some(identity) = handler_identity(handler) else {
             return kInvalidArgument;
-        }
+        };
         let mut registry = self.lock();
         let before = registry.timers.len();
         registry
             .timers
-            .retain(|registration| !Self::same_object(&registration.handler, handler));
+            .retain(|registration| registration.identity != identity);
         removal_result(before, registry.timers.len())
     }
 
@@ -242,10 +267,10 @@ impl HostRunLoop {
     /// Wait up to `timeout` for any registered descriptor to become readable and
     /// hand each ready one to its handler. Returns how many handlers were called.
     ///
-    /// A pass always either blocks in `poll` or sleeps. A descriptor the kernel
-    /// refuses returns from `poll` instantly and for ever, so a pass that could
-    /// return without waiting would spin a core for as long as the editor is
-    /// open.
+    /// A pass that dispatched nothing always either blocks in `poll` or sleeps.
+    /// A descriptor the kernel refuses returns from `poll` instantly and for
+    /// ever, so a pass that could return without waiting and without work would
+    /// spin a core for as long as the editor is open.
     ///
     /// Handlers are taken out from under the lock for the same reason timers are,
     /// and the registry is read again after the wait: a descriptor unregistered
@@ -260,9 +285,13 @@ impl HostRunLoop {
         }
 
         let polled = poll_descriptors(&watched, timeout);
+        // Woken first, forgotten second. A descriptor that hung up is in both
+        // sets, and dropping its registration first would take the handler out
+        // of the registry the dispatch reads — swallowing the very last wake a
+        // dying connection is owed.
+        let dispatched = self.dispatch_ready(&polled.ready);
         self.drop_registrations_for(&polled.dead);
 
-        let dispatched = self.dispatch_ready(&polled.ready);
         if dispatched == 0 {
             sleep_remainder(timeout, started.elapsed());
         }
@@ -525,15 +554,25 @@ mod tests {
             let written = unsafe { libc::write(self.write, byte.as_ptr().cast(), 1) };
             assert_eq!(written, 1, "the test pipe must accept a byte");
         }
+
+        /// Close the writing end, which is what a plugin's connection dying
+        /// looks like from the descriptor the host watches: the read end polls
+        /// ready and hung up at once, for ever.
+        fn hang_up(&mut self) {
+            if self.write < 0 {
+                return;
+            }
+            // SAFETY: the descriptor is open and owned by this value.
+            unsafe { libc::close(self.write) };
+            self.write = -1;
+        }
     }
 
     impl Drop for Pipe {
         fn drop(&mut self) {
-            // SAFETY: both descriptors are open and owned by this value.
-            unsafe {
-                libc::close(self.read);
-                libc::close(self.write);
-            }
+            self.hang_up();
+            // SAFETY: the read descriptor is open and owned by this value.
+            unsafe { libc::close(self.read) };
         }
     }
 
@@ -700,6 +739,61 @@ mod tests {
                 vec![pipe.read]
             );
         }
+    }
+
+    /// A plugin whose connection ends is owed one last wake: it learns the end
+    /// from the read it makes inside its own handler, and a host that forgot the
+    /// registration before dispatching would leave it waiting for an event that
+    /// can never arrive. The registration goes immediately afterwards, because a
+    /// hung-up descriptor polls ready for ever.
+    #[test]
+    fn a_descriptor_that_hangs_up_is_woken_once_and_then_forgotten() {
+        let run_loop = HostRunLoop::new();
+        let mut pipe = Pipe::open();
+        let handler = ComWrapper::new(RecordingEventHandler::default());
+        let raw = handler
+            .as_com_ref::<IEventHandler>()
+            .expect("the fake handler implements IEventHandler")
+            .as_ptr();
+
+        // SAFETY: `raw` borrows a live handler this test owns.
+        assert_eq!(
+            unsafe { run_loop.register_event_handler(raw, pipe.read) },
+            kResultOk
+        );
+
+        pipe.hang_up();
+
+        assert_eq!(
+            run_loop.service_file_descriptors(Duration::from_millis(50)),
+            1,
+            "the handler must be told the descriptor it waits on has ended"
+        );
+        assert_eq!(
+            *handler.woken_for.lock().expect("descriptor log mutex"),
+            vec![pipe.read]
+        );
+
+        assert_eq!(
+            run_loop.service_file_descriptors(Duration::from_millis(0)),
+            0,
+            "a hung-up descriptor must stop being dispatched, not wake for ever"
+        );
+        assert_eq!(
+            handler
+                .woken_for
+                .lock()
+                .expect("descriptor log mutex")
+                .len(),
+            1,
+            "the last wake is one wake"
+        );
+        // SAFETY: `raw` borrows a live handler this test owns.
+        assert_eq!(
+            unsafe { run_loop.unregister_event_handler(raw) },
+            kResultFalse,
+            "the registry must no longer watch the ended descriptor"
+        );
     }
 
     /// A descriptor the kernel refuses is never readable and never will be, and
