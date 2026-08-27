@@ -20,11 +20,11 @@ vi.mock('#/infra/logger/appLogger', () => ({ logger: { warn: mocks.warn } }));
 describe('plugin state project dirty lifecycle', () => {
     let unsubscribe: (() => void) | undefined;
     let reportStateChanged: (() => void) | null = null;
-    let unlisten: ReturnType<typeof vi.fn>;
+    let unlisten: ReturnType<typeof vi.fn<() => void>>;
 
     beforeEach(() => {
         vi.clearAllMocks();
-        unlisten = vi.fn();
+        unlisten = vi.fn<() => void>();
         mocks.watchPluginStateDirty.mockImplementation((onChanged) => {
             reportStateChanged = onChanged;
             return Promise.resolve(unlisten);
