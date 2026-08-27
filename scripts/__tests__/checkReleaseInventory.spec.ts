@@ -608,22 +608,21 @@ function writeShallowGrandBouleMeasurementFixture(
     });
 
     const remote = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-remote-'));
+    let clone: string | undefined;
     try {
-        const clone = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-shallow-'));
-        try {
-            afterDirectoriesCreated?.({ clone, remote });
-            rmSync(clone, { recursive: true, force: true });
-            execFileSync('git', ['init', '--bare', '--quiet', remote]);
-            execFileSync('git', ['remote', 'add', 'origin', remote], { cwd: root });
-            execFileSync('git', ['push', '--quiet', 'origin', 'HEAD:refs/heads/main'], { cwd: root });
-            execFileSync('git', ['symbolic-ref', 'HEAD', 'refs/heads/main'], { cwd: remote });
-            execFileSync('git', ['clone', '--depth', '1', `file://${remote}`, clone], { stdio: 'ignore' });
-            return { clone, remote, revision, jsonPath: join(clone, 'crates/daw-dsp/benches/quantum-cost-table.json') };
-        } catch (error) {
-            rmSync(clone, { recursive: true, force: true });
-            throw error;
-        }
+        clone = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-shallow-'));
+        afterDirectoriesCreated?.({ clone, remote });
+        rmSync(clone, { recursive: true, force: true });
+        execFileSync('git', ['init', '--bare', '--quiet', remote]);
+        execFileSync('git', ['remote', 'add', 'origin', remote], { cwd: root });
+        execFileSync('git', ['push', '--quiet', 'origin', 'HEAD:refs/heads/main'], { cwd: root });
+        execFileSync('git', ['symbolic-ref', 'HEAD', 'refs/heads/main'], { cwd: remote });
+        execFileSync('git', ['clone', '--depth', '1', `file://${remote}`, clone], { stdio: 'ignore' });
+        return { clone, remote, revision, jsonPath: join(clone, 'crates/daw-dsp/benches/quantum-cost-table.json') };
     } catch (error) {
+        if (clone !== undefined) {
+            rmSync(clone, { recursive: true, force: true });
+        }
         rmSync(remote, { recursive: true, force: true });
         throw error;
     }
