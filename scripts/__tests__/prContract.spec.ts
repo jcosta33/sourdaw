@@ -2,19 +2,21 @@ import { describe, expect, it } from 'vitest';
 
 import {
     REQUIRED_BODY_HEADINGS,
+    REVIEW_COMMENT_MAX_BYTES,
     assertConventionalSubject,
     assertLaneSlug,
     assertPullRequestBody,
-    assertReviewCommentBody,
     canonicalIssueReferenceFromBody,
     composeDeliveryReceipt,
     composePublishBody,
+    composeReviewCommentBody,
     fail,
     issueRelationshipFromBody,
     laneBranchName,
     parseDeliveryReceipt,
     supersessionCommentBody,
     supersessionReplacement,
+    type ReviewCommentContent,
 } from '../prContract.ts';
 
 const WHAT_HEADING = '### 🎯 What does this PR do?';
@@ -321,14 +323,84 @@ describe('pull-request contract', () => {
         expect(supersessionReplacement(body)).toBeUndefined();
     });
 
-    it('requires one-paragraph review comments with defect, consequence, and outcome', () => {
-        assertReviewCommentBody(
-            'The merge path still accepts COMMENT. Delivery could merge without reviewer APPROVE. Require jcosta33-reviewer[bot] APPROVED on the current head.'
-        );
-        expect(() => assertReviewCommentBody('Looks wrong.')).toThrow(/defect/);
-        expect(() =>
-            assertReviewCommentBody('First paragraph.\n\nSecond paragraph continues the essay and must be refused.')
-        ).toThrow(/one paragraph/);
+    it('rethrows the given message from fail', () => {
         expect(() => fail('boom')).toThrow(/boom/);
+    });
+
+    it('composes the three fields into one space-joined body', () => {
+        expect(composeReviewCommentBody({ defect: 'Defect.', consequence: 'Consequence.', done: 'Done.' })).toBe(
+            'Defect. Consequence. Done.'
+        );
+    });
+
+    it('accepts a one-sentence-per-field comment the old sentence floor would have rejected', () => {
+        // Each field is a single sentence with no internal period, so the retired sentence-splitting
+        // rule would have counted one sentence overall and refused it. The field contract accepts it
+        // because every field is present, not because of how many sentences it reads as.
+        const content: ReviewCommentContent = {
+            defect: 'The gate accepts a coerced review state',
+            consequence: 'A silently coerced review could still report success',
+            done: 'Compare the recorded state against the requested event',
+        };
+        expect(composeReviewCommentBody(content)).toBe(
+            'The gate accepts a coerced review state A silently coerced review could still report success Compare the recorded state against the requested event'
+        );
+    });
+
+    it.each([
+        ['defect', { defect: '', consequence: 'c', done: 'd' }],
+        ['consequence', { defect: 'a', consequence: '', done: 'd' }],
+        ['done', { defect: 'a', consequence: 'b', done: '' }],
+    ])('fails when %s is blank', (field, content) => {
+        expect(() => composeReviewCommentBody(content)).toThrow(new RegExp(`review comment ${field} is empty`));
+    });
+
+    it.each([
+        ['defect', { defect: 'a\nb', consequence: 'c', done: 'd' }],
+        ['consequence', { defect: 'a', consequence: 'b\nc', done: 'd' }],
+        ['done', { defect: 'a', consequence: 'b', done: 'c\nd' }],
+    ])('fails when %s contains a newline', (field, content) => {
+        expect(() => composeReviewCommentBody(content)).toThrow(new RegExp(`review comment ${field} must be one line`));
+    });
+
+    it('fails when a field has leading or trailing whitespace', () => {
+        expect(() => composeReviewCommentBody({ defect: ' a', consequence: 'b', done: 'c' })).toThrow(
+            /review comment defect must be one line/
+        );
+        expect(() => composeReviewCommentBody({ defect: 'a', consequence: 'b', done: 'c ' })).toThrow(
+            /review comment done must be one line/
+        );
+    });
+
+    it('fails when the composed body exceeds the byte limit', () => {
+        const longField = 'x'.repeat(300);
+        expect(() => composeReviewCommentBody({ defect: longField, consequence: longField, done: longField })).toThrow(
+            new RegExp(`exceeding the ${REVIEW_COMMENT_MAX_BYTES}-byte limit`)
+        );
+    });
+
+    it('fails on a multi-byte UTF-8 body that is under the limit in characters but over it in bytes', () => {
+        // Each euro sign is one character but three UTF-8 bytes, so this body reads as well under the
+        // limit by character count while its true byte length exceeds it — proof the check counts bytes.
+        const content: ReviewCommentContent = {
+            defect: '€'.repeat(100),
+            consequence: '€'.repeat(100),
+            done: 'd',
+        };
+        const composed = `${content.defect} ${content.consequence} ${content.done}`;
+        expect(composed.length).toBeLessThan(REVIEW_COMMENT_MAX_BYTES);
+        expect(() => composeReviewCommentBody(content)).toThrow(
+            new RegExp(`exceeding the ${REVIEW_COMMENT_MAX_BYTES}-byte limit`)
+        );
+    });
+
+    it('accepts a body exactly at the byte limit', () => {
+        const content: ReviewCommentContent = {
+            defect: 'a'.repeat(200),
+            consequence: 'b'.repeat(200),
+            done: 'c'.repeat(198),
+        };
+        const composed = composeReviewCommentBody(content);
+        expect(Buffer.byteLength(composed, 'utf8')).toBe(REVIEW_COMMENT_MAX_BYTES);
     });
 });

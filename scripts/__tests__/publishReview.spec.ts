@@ -13,7 +13,9 @@ const validComment = {
     path: 'scripts/deliverPullRequest.ts',
     line: 10,
     side: 'RIGHT' as const,
-    body: 'COMMENT still authorizes merge. A stale COMMENT could ship. Require reviewer APPROVED on this head.',
+    defect: 'COMMENT still authorizes merge',
+    consequence: 'A stale COMMENT could ship',
+    done: 'Require reviewer APPROVED on this head',
 };
 
 function fakePort(
@@ -98,11 +100,52 @@ describe('review publish', () => {
         ['empty REQUEST_CHANGES comments', { event: 'REQUEST_CHANGES', body: 'n', comments: [] }],
         ['blank REQUEST_CHANGES body', { event: 'REQUEST_CHANGES', body: '  ', comments: [validComment] }],
         ['invalid json object', '{'],
+        ['APPROVE carrying comments', { event: 'APPROVE', body: 'ok', comments: [validComment] }],
+        ['APPROVE with a blank body', { event: 'APPROVE', body: '  ', comments: [] }],
+        ['APPROVE with a missing body', { event: 'APPROVE', comments: [] }],
+        [
+            'a comment supplying legacy body instead of the field contract',
+            { event: 'REQUEST_CHANGES', body: 'n', comments: [{ path: 'a.ts', line: 1, side: 'RIGHT', body: 'text' }] },
+        ],
     ])('does not post %s', (_case, json) => {
         const { port, calls } = fakePort({ json });
 
         expect(() => publishReview(42, port)).toThrow();
         expect(calls.some((call) => call.startsWith('post:'))).toBe(false);
+    });
+
+    it('names defect, consequence, and done when a comment supplies legacy body', () => {
+        const { port } = fakePort({
+            json: {
+                event: 'REQUEST_CHANGES',
+                body: 'n',
+                comments: [{ path: 'a.ts', line: 1, side: 'RIGHT', body: 'text' }],
+            },
+        });
+
+        expect(() => publishReview(42, port)).toThrow(/uses body; supply defect, consequence, and done instead/);
+    });
+
+    it('refuses an APPROVE document that carries comments', () => {
+        const { port } = fakePort({ json: { event: 'APPROVE', body: 'ok', comments: [validComment] } });
+
+        expect(() => publishReview(42, port)).toThrow(/APPROVE must carry no comments/);
+    });
+
+    it('refuses an APPROVE document with a blank body', () => {
+        const { port } = fakePort({ json: { event: 'APPROVE', body: '  ', comments: [] } });
+
+        expect(() => publishReview(42, port)).toThrow(/APPROVE requires a body/);
+    });
+
+    it('still posts an APPROVE document that has a body and no comments', () => {
+        const { port, calls } = fakePort({
+            json: { event: 'APPROVE', body: 'Attacked the merge gate; it held.', comments: [] },
+        });
+
+        publishReview(42, port);
+
+        expect(calls[1]).toBe('post:headsha:APPROVE:Attacked the merge gate; it held.');
     });
 
     it('does not post when review.json is missing', () => {
@@ -114,7 +157,9 @@ describe('review publish', () => {
 
     it('parses argv', () => {
         expect(parsePublishReviewArgs(['7'])).toEqual({ number: 7, help: false });
-        expect(parseReviewDocument({ event: 'APPROVE', comments: [] }).event).toBe('APPROVE');
+        expect(
+            parseReviewDocument({ event: 'APPROVE', body: 'Attacked the merge gate; it held.', comments: [] }).event
+        ).toBe('APPROVE');
     });
 });
 
@@ -182,5 +227,44 @@ describe('shellPort postReview state verification', () => {
             actorNodeId: REVIEWER_BOT_NODE_ID,
             login: 'renamed-reviewer[bot]',
         });
+    });
+
+    it('sends the composed body for each comment, not the raw defect/consequence/done fields', () => {
+        let sentInput: string | undefined;
+        const capture = (command: string, args: string[], options?: { input?: string }): string => {
+            if (command === 'git' && args[0] === 'rev-parse') {
+                return `${process.cwd()}/.git`;
+            }
+            if (command === 'gh' && args[0] === 'api') {
+                sentInput = options?.input;
+                return JSON.stringify({
+                    id: 44,
+                    state: 'CHANGES_REQUESTED',
+                    user: { node_id: REVIEWER_BOT_NODE_ID, login: 'renamed-reviewer[bot]' },
+                });
+            }
+            throw new Error(`unexpected command in test: ${command} ${args.join(' ')}`);
+        };
+        const port = shellPort(session, process.cwd(), capture);
+
+        port.postReview({
+            number: 42,
+            commitId: 'sha',
+            event: 'REQUEST_CHANGES',
+            body: 'no',
+            comments: [validComment],
+        });
+
+        const sent = JSON.parse(sentInput ?? '{}') as {
+            comments: { path: string; line: number; side: string; body: string }[];
+        };
+        expect(sent.comments).toEqual([
+            {
+                path: 'scripts/deliverPullRequest.ts',
+                line: 10,
+                side: 'RIGHT',
+                body: 'COMMENT still authorizes merge A stale COMMENT could ship Require reviewer APPROVED on this head',
+            },
+        ]);
     });
 });

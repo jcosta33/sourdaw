@@ -75,10 +75,20 @@ audio, security, data loss, irreversible change, or a disputed severe finding.
 Review test validity as its own stance. A passing check is not evidence. Ask what would have to
 break for this check to fail, and whether it observes the thing its name claims.
 
+Each reviewer's stance names a posture, not only a surface. A reviewer's job is to try to break the
+change and report the strongest thing it found — with a concrete failure scenario, the inputs or
+state that produce the wrong behaviour — or to report that nothing survived its attempts. Nothing
+surviving is a successful review, not a wasted one, and a reviewer must never manufacture a finding
+to justify its run. A hedged finding — one that says a thing might or could be a problem without
+naming what breaks — is discarded on arrival, and reviewers are told so when dispatched.
+
 The orchestrator owns every finding. Validate each one against the live code before acting on it:
 discard what is wrong, out of scope, or personal style, and never forward it. Send the survivors to
 the implementing agent as a precise repair task. An implementing agent never judges a finding
-against its own work, never accepts that work, and never merges it.
+against its own work, never accepts that work, and never merges it. A discarded finding is recorded
+with its one-line reason in the review bundle as `discarded.json`, beside `review.json`. Discarding
+is the orchestrator's own judgement about a blind reviewer's work, and an unrecorded discard is
+indistinguishable from never having read the finding.
 
 Order matters, because the pull request is public and a posted finding is expensive to retract.
 Blind stances report to the orchestrator, never straight to GitHub. Only findings that survive
@@ -384,21 +394,25 @@ the reviewer App only while GitHub's head still matches the bundle.
 
 Review the diff as that teammate. Read every changed line. If a hunk is not enough to judge, read
 the surrounding code. When something is wrong, comment on that line: what is wrong, why it matters,
-what done looks like. One problem per comment. Talk about the code, not the author.
+what done looks like. Supply that as three fields — the defect, its consequence, and what done looks
+like — which the tooling composes into one comment; the contract caps length rather than demanding a
+minimum, so padding a comment to reach a length is not a virtue, and one precise sentence per field
+is the target. One problem per comment. Talk about the code, not the author.
 
 Request changes when this head must not merge, and post every blocking comment with that review. The
 summary is a short pointer to those comments, not a report.
 
 Approve when the change improves the system, even if it is not perfect. Do not approve a change that
-makes it worse. Style-guide and code-craft violations block; personal style does not. Leave the
-approval empty or write one sentence about the code.
+makes it worse. Style-guide and code-craft violations block; personal style does not. An approval is
+never empty: its body states what the reviewer attacked and what held.
 
 Keep an approval free of inline comments. Every inline comment opens a review thread, the ruleset
 refuses to merge while one is unresolved, and `review:resolve` clears a thread only by replying
 `Done` on it — so a note meant not to block is exactly what blocks, and clearing it asserts a repair
-that never happened. Put a non-blocking observation in the approval body, prefixed `Nit:` or
-`Optional:`, or file it. Inline comments belong to a `CHANGES_REQUESTED` review, where the thread is
-meant to stop the merge and a new head clears it.
+that never happened. `review:publish` now refuses an APPROVE document that carries any comments,
+rather than leaving the trap to discipline. Put a non-blocking observation in the approval body,
+prefixed `Nit:` or `Optional:`, or file it. Inline comments belong to a `CHANGES_REQUESTED` review,
+where the thread is meant to stop the merge and a new head clears it.
 
 When answering, push the fix first; `review:resolve` then posts a bare `Done` as the author bot and
 resolves the thread, pinned to that head. The reply body is fixed and no script writes free-form

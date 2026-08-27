@@ -432,16 +432,39 @@ export function supersessionReplacement(body: string): number | undefined {
     return Number.isSafeInteger(replacement) && replacement > 0 ? replacement : undefined;
 }
 
-export function assertReviewCommentBody(body: string): void {
-    const trimmed = body.trim();
-    if (trimmed === '') {
-        fail('review comment is empty');
+export type ReviewCommentContent = {
+    defect: string;
+    consequence: string;
+    done: string;
+};
+
+export const REVIEW_COMMENT_MAX_BYTES = 600;
+
+const REVIEW_COMMENT_FIELDS = ['defect', 'consequence', 'done'] as const;
+
+/**
+ * A sentence count measures shape, not content: it passes three sentences of hedge and rejects one
+ * precise sentence that actually says something. Three separate fields require each part — the
+ * defect, its consequence, and what done looks like — to actually be present, and a byte ceiling
+ * replaces the old floor: nothing here rewards padding, and nothing demands a minimum length.
+ */
+export function composeReviewCommentBody(content: ReviewCommentContent): string {
+    for (const field of REVIEW_COMMENT_FIELDS) {
+        const value = content[field];
+        if (typeof value !== 'string') {
+            fail(`review comment ${field} must be a string`);
+        }
+        if (value.trim() === '') {
+            fail(`review comment ${field} is empty`);
+        }
+        if (value.trim() !== value || value.includes('\n')) {
+            fail(`review comment ${field} must be one line`);
+        }
     }
-    if (trimmed !== body || trimmed.includes('\n')) {
-        fail('review comment must be one paragraph');
+    const body = `${content.defect} ${content.consequence} ${content.done}`;
+    const byteLength = Buffer.byteLength(body, 'utf8');
+    if (byteLength > REVIEW_COMMENT_MAX_BYTES) {
+        fail(`review comment is ${byteLength} bytes, exceeding the ${REVIEW_COMMENT_MAX_BYTES}-byte limit`);
     }
-    const sentences = trimmed.split(/(?<=\.)\s+/).filter((part) => part !== '');
-    if (sentences.length < 3) {
-        fail('review comment must state defect, consequence, and required outcome');
-    }
+    return body;
 }
