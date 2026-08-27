@@ -178,18 +178,18 @@ describe('the reported decision', () => {
     }
 
     it('publishes the decision the deploying steps read', () => {
-        expect(outputOf(deploymentPayload(DEPLOYED))).toBe(`deploy=true\ndeployed-revision=${DEPLOYED}\n`);
-        expect(outputOf(deploymentPayload(CANDIDATE))).toBe(`deploy=false\ndeployed-revision=${CANDIDATE}\n`);
-        expect(outputOf({ deployments: [] })).toBe('deploy=true\ndeployed-revision=\n');
+        expect(outputOf(deploymentPayload(DEPLOYED))).toBe('deploy=true\n');
+        expect(outputOf(deploymentPayload(CANDIDATE))).toBe('deploy=false\n');
+        expect(outputOf({ deployments: [] })).toBe('deploy=true\n');
     });
 
     it('writes nothing an answer could have chosen', () => {
-        // Two outputs, two lines, whatever the answer said. Written unvalidated
-        // this file would carry the payload's own `deploy=true` on a line of its
-        // own, and the step after it would read that instead of this decision.
-        expect(outputOf(deploymentPayload(INJECTION_PAYLOAD))).toBe('deploy=true\ndeployed-revision=\n');
-        for (const revision of NON_HEX_REVISIONS) {
-            expect(outputOf(deploymentPayload(revision))).toBe('deploy=true\ndeployed-revision=\n');
+        // One output, one line, whatever the answer said. The served revision
+        // is never written at all, so no reachable path puts response text in a
+        // file whose format decides what the next steps do.
+        expect(outputOf(deploymentPayload(INJECTION_PAYLOAD))).toBe('deploy=true\n');
+        for (const revision of [...NON_HEX_REVISIONS, DEPLOYED, CANDIDATE]) {
+            expect(outputOf(deploymentPayload(revision))).not.toContain(revision);
         }
     });
 });

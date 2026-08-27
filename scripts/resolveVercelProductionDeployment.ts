@@ -120,15 +120,12 @@ export async function resolveProductionTrain(candidateRevision: string): Promise
 }
 
 export function reportDecision(decision: ProductionTrainDecision, candidateRevision: string): void {
-    // `GITHUB_OUTPUT` is line-oriented: a value carrying a newline defines
-    // further outputs, so what is written here has to be single-line by
-    // construction. Only a `ValidatedRevision` or the empty string can reach
-    // this call, which is why the shape is proved where the value is parsed
-    // rather than re-checked here.
-    appendFileSync(
-        requireEnvironment('GITHUB_OUTPUT'),
-        `deploy=${String(decision.deploy)}\ndeployed-revision=${decision.deployedRevision ?? ''}\n`
-    );
+    // `GITHUB_OUTPUT` receives only literals chosen by the decision boolean.
+    // Nothing derived from the answer reaches a workflow file: the file is
+    // line-oriented, so a value carrying a newline would define further
+    // outputs — including the `deploy` the next steps read. The served
+    // revision belongs in the log below, which no workflow step parses.
+    appendFileSync(requireEnvironment('GITHUB_OUTPUT'), decision.deploy ? 'deploy=true\n' : 'deploy=false\n');
     if (!decision.deploy) {
         console.log(`production already serves ${candidateRevision}; the train has nothing to deploy`);
         return;
