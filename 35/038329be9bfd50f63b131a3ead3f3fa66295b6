@@ -1,0 +1,40 @@
+crates/daw-engine/src/audio_bridge.rs
+  s_1b9333aca53d4d::t_a545b5a50d4616 76-82
+  s_817f0d665b5715::t_6017fc499c40c7 547-557
+src/modules/AudioEngine/useCases/engineAccess/__tests__/getLiveEngineSampleRate.spec.ts
+  s_1b9333aca53d4d::t_8923a554ab3a95 1-39
+src/modules/AudioEngine/useCases/engineAccess/getLiveEngineSampleRate.ts
+  s_1b9333aca53d4d::t_7048e83cf74852 3-4,6-7,9-15,17-22,25-28
+src/modules/Arrangement/handlers/device/__tests__/handleLoadExternalPlugin.spec.ts
+  s_1b9333aca53d4d::t_dcc9b03305d722 235,261-265
+src/modules/Arrangement/handlers/device/handleLoadExternalPlugin.ts
+  s_1b9333aca53d4d::t_5a7952189ac5ca 118-122,126
+src/modules/Arrangement/useCases/__tests__/projectTrackToLiveStrip.spec.ts
+  s_1b9333aca53d4d::t_e607d8ab7de108 108,130-133
+src/modules/Arrangement/useCases/projectTrackToLiveStrip.ts
+  s_1b9333aca53d4d::t_afd96f63ebe4a8 96-100,105
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "35038329be9bfd50f63b131a3ead3f3fa66295b6",
+  "prompts": {},
+  "sessions": {
+    "s_1b9333aca53d4d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "188b0d45-7765-49bd-8d6e-1eebbd450613",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_817f0d665b5715": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-af224ccd2411f5b33",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
