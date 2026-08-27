@@ -29,6 +29,7 @@ import { getPlatformCapabilities, DISABLED_REASONS } from '#/utils/platformCapab
 export const PluginScanSettings = (): ReactElement | null => {
     const state = useStore(pluginScanStore, defaultPluginScanState);
     const [newPath, setNewPath] = useState('');
+    const [addPathError, setAddPathError] = useState<string | null>(null);
 
     const { hasPluginScanning } = getPlatformCapabilities();
 
@@ -57,12 +58,21 @@ export const PluginScanSettings = (): ReactElement | null => {
         );
     }
 
-    const handleAddPath = () => {
+    // The add is policy-gated: only folders the native scan policy can
+    // authorize become settings entries, and a refusal says which folders are
+    // scannable instead of saving a path that would fail every scan.
+    const handleAddPath = async (): Promise<void> => {
         const trimmed = newPath.trim();
-        if (trimmed) {
-            addScanPath(trimmed);
-            setNewPath('');
+        if (!trimmed) {
+            return;
         }
+        const outcome = await addScanPath(trimmed);
+        if (!outcome.added) {
+            setAddPathError(outcome.reason);
+            return;
+        }
+        setAddPathError(null);
+        setNewPath('');
     };
 
     const handleScan = () => {
@@ -109,25 +119,35 @@ export const PluginScanSettings = (): ReactElement | null => {
                         value={newPath}
                         onChange={(event) => {
                             setNewPath(event.target.value);
+                            setAddPathError(null);
                         }}
                         className="flex-1"
                         monospace
                         onKeyDown={(event) => {
                             if (event.key === 'Enter') {
-                                handleAddPath();
+                                void handleAddPath();
                             }
                         }}
                     />
                     <Button
                         variant="outline"
                         size="xs"
-                        onClick={handleAddPath}
+                        onClick={() => {
+                            void handleAddPath();
+                        }}
                         disabled={!newPath.trim()}
                         aria-label="Add plugin path"
                     >
                         <Plus className="size-3" />
                     </Button>
                 </Row>
+
+                {addPathError !== null ? (
+                    <Row align="start" gap={1} className="text-[10px] text-destructive">
+                        <AlertCircle className="size-3 shrink-0 mt-px" aria-hidden="true" />
+                        <span>{addPathError}</span>
+                    </Row>
+                ) : null}
 
                 <Row gap={2}>
                     <Button

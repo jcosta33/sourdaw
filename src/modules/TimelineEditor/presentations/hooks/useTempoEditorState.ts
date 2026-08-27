@@ -192,6 +192,15 @@ export const useTempoEditorState = (): TempoEditorState => {
     const [editingTimeSig, setEditingTimeSig] = useState(false);
     const [numValue, setNumValue] = useState('');
     const [denValue, setDenValue] = useState('');
+    /**
+     * Tap tempo averages the intervals between recent taps, so the train has to
+     * describe one continuous intent. Editing the tempo map between taps changes
+     * what the user is timing against, and a post-edit tap averaged with
+     * pre-edit taps lands between two tempi neither gesture asked for — so every
+     * map-edit path in this hook clears the train. Plain tempo writes do not:
+     * tapping while a map governs writes the tapped tempo onto the governing
+     * event, and that write must not reset its own train.
+     */
     const tapTimesRef = useRef<number[]>([]);
     const [mapOpen, setMapOpen] = useState(false);
     const mapPanelRef = useRef<HTMLDivElement>(null);
@@ -269,6 +278,7 @@ export const useTempoEditorState = (): TempoEditorState => {
             return;
         }
         addTempoChange(beat, tempo, newCurve);
+        tapTimesRef.current = [];
         setNewBeat(String(beat + 4));
     };
 
@@ -284,12 +294,18 @@ export const useTempoEditorState = (): TempoEditorState => {
         const bpm = parseFloat(editingChangeTempo);
         if (!isNaN(bpm) && bpm >= 20 && bpm <= 999) {
             updateTempoChange(editingChangeId, bpm);
+            tapTimesRef.current = [];
         }
         setEditingChangeId(null);
     };
 
     const cancelEditChange = (): void => {
         setEditingChangeId(null);
+    };
+
+    const removeChange = (id: string): void => {
+        removeTempoChange(id);
+        tapTimesRef.current = [];
     };
 
     /**
@@ -407,7 +423,7 @@ export const useTempoEditorState = (): TempoEditorState => {
         startEditChange,
         commitEditChange,
         cancelEditChange,
-        removeChange: removeTempoChange,
+        removeChange,
         handleTapTempo,
         setTempoValue,
         resetTempoValue,

@@ -6,7 +6,7 @@ import {
 } from '#/utils/handlerContract';
 
 import { type ClipGainEnvelope, getEnvelope, removeEnvelope, setEnvelope } from './gainEnvelopeStore';
-import { removeWarpState, setWarpState, warpStates } from './warpStates';
+import { isDefaultWarpState, removeWarpState, setWarpState, warpStates } from './warpStates';
 
 import type { WarpMarker, WarpState } from '../models/WarpMarker';
 
@@ -103,6 +103,11 @@ function normalizeGainEnvelope(envelope: ClipSatelliteGainEnvelopeSnapshot, clip
  * The live satellites of one clip id; `null` where the clip carries none. Every
  * record is rebuilt field by field, so a snapshot never inherits an own key
  * whose value is `undefined` from whoever wrote the store.
+ *
+ * A warp entry whose value is `defaultWarpState` reads as no satellite, exactly
+ * as `hasNonDefaultWarpState` judges presence: `setStretchMode` and friends
+ * write the map unconditionally, so a semantic no-op must not become state an
+ * undo guard or a transition plan treats as worth keeping.
  */
 export function readClipSatelliteEntry(clipId: string): ClipSatelliteEntry {
     const gainEnvelope = getEnvelope(clipId);
@@ -110,8 +115,38 @@ export function readClipSatelliteEntry(clipId: string): ClipSatelliteEntry {
     return {
         clipId,
         gainEnvelope: gainEnvelope ? normalizeGainEnvelope(gainEnvelope, clipId) : null,
-        warpState: warpState ? normalizeWarpState(warpState) : null,
+        warpState: warpState && !isDefaultWarpState(warpState) ? normalizeWarpState(warpState) : null,
     };
+}
+
+/**
+ * Canonical JSON of the satellite entries of the given clips, in id order given.
+ * Both the capture side (a handler freezing what a generation produced) and the
+ * guard side (`isGeneratedMidiStateCurrent`) serialize through this one
+ * function, so the comparison can never drift on key order or normalization.
+ */
+export function serializeClipSatelliteEntries(clipIds: readonly string[]): string {
+    return JSON.stringify(clipIds.map((clipId) => readClipSatelliteEntry(clipId)));
+}
+
+function normalizeEntry(entry: ClipSatelliteEntrySnapshot): ClipSatelliteEntry {
+    return {
+        clipId: entry.clipId,
+        gainEnvelope: entry.gainEnvelope === null ? null : normalizeGainEnvelope(entry.gainEnvelope, entry.clipId),
+        warpState: entry.warpState === null ? null : normalizeWarpState(entry.warpState),
+    };
+}
+
+/**
+ * Whether the live stores hold exactly the given snapshot entries — the
+ * satellite leg of a restore action's `expected` precondition. Both sides are
+ * compared through the same normalization `writeClipSatelliteEntry` applies, so
+ * a snapshot written by an earlier head matches regardless of key order.
+ */
+export function clipSatelliteEntriesMatchSnapshot(entries: readonly ClipSatelliteEntrySnapshot[]): boolean {
+    return entries.every(
+        (entry) => JSON.stringify(readClipSatelliteEntry(entry.clipId)) === JSON.stringify(normalizeEntry(entry))
+    );
 }
 
 /**

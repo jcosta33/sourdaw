@@ -148,6 +148,7 @@ vi.mock('../../hooks/useTimelineInteractions', () => ({
         handleMouseDown: vi.fn<() => void>(),
         handleMouseMove: vi.fn<() => void>(),
         handleMouseUp: vi.fn<() => void>(),
+        handleMouseLeave: vi.fn<() => void>(),
         handleDoubleClick: vi.fn<() => void>(),
         handleContextMenu: vi.fn<() => void>(),
         handlePointerDown: vi.fn<() => void>(),
@@ -265,6 +266,7 @@ describe('TimelineSurface', () => {
             handleMouseDown: vi.fn(),
             handleMouseMove: vi.fn(),
             handleMouseUp: vi.fn(),
+            handleMouseLeave: vi.fn(),
             handleDoubleClick: vi.fn(),
             handleContextMenu: vi.fn(),
             handlePointerDown: vi.fn(),
@@ -291,6 +293,7 @@ describe('TimelineSurface', () => {
             handleMouseDown: vi.fn(),
             handleMouseMove: vi.fn(),
             handleMouseUp: vi.fn(),
+            handleMouseLeave: vi.fn(),
             handleDoubleClick: vi.fn(),
             handleContextMenu: vi.fn(),
             handlePointerDown: vi.fn(),
@@ -525,12 +528,46 @@ describe('TimelineSurface — drag leave & presence overlay', () => {
         vi.clearAllMocks();
     });
 
+    it('cancels the in-progress gesture on mouse leave instead of committing it', () => {
+        const handleMouseUp = vi.fn();
+        const handleMouseLeave = vi.fn();
+        vi.mocked(useTimelineInteractions).mockReturnValue({
+            handleMouseDown: vi.fn(),
+            handleMouseMove: vi.fn(),
+            handleMouseUp,
+            handleMouseLeave,
+            handleDoubleClick: vi.fn(),
+            handleContextMenu: vi.fn(),
+            handlePointerDown: vi.fn(),
+            handlePointerMove: vi.fn(),
+            handlePointerUp: vi.fn(),
+            handlePointerCancel: vi.fn(),
+            handleFileDrop: vi.fn(),
+            getCursor: vi.fn(() => 'default'),
+            setIsDragOver: vi.fn(),
+            isDragOver: false,
+            isImporting: false,
+            rubberBand: null,
+            contextMenu: null,
+            setContextMenu: vi.fn(),
+        });
+
+        renderWithTooltip(<TimelineSurface />);
+        fireEvent.mouseLeave(screen.getByLabelText('Timeline editor surface'));
+
+        // Pointer leaving the canvas mid-drag cancels (handleMouseLeave); it
+        // must not commit the gesture at the last position (handleMouseUp).
+        expect(handleMouseLeave).toHaveBeenCalledTimes(1);
+        expect(handleMouseUp).not.toHaveBeenCalled();
+    });
+
     it('clears the drag-over state on drag leave when leaving the container', () => {
         const setIsDragOver = vi.fn();
         vi.mocked(useTimelineInteractions).mockReturnValue({
             handleMouseDown: vi.fn(),
             handleMouseMove: vi.fn(),
             handleMouseUp: vi.fn(),
+            handleMouseLeave: vi.fn(),
             handleDoubleClick: vi.fn(),
             handleContextMenu: vi.fn(),
             handlePointerDown: vi.fn(),

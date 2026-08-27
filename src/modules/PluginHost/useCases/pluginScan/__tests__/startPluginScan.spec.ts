@@ -22,6 +22,8 @@ const mocks = vi.hoisted(() => {
         scanPlugins: vi.fn<typeof import('../../../repositories/pluginBridge/scanPlugins').scanPlugins>(),
         getDefaultPluginPaths:
             vi.fn<typeof import('../../../repositories/pluginBridge/getDefaultPluginPaths').getDefaultPluginPaths>(),
+        isScanPathAuthorized:
+            vi.fn<typeof import('../../../repositories/pluginBridge/isScanPathAuthorized').isScanPathAuthorized>(),
     };
 });
 
@@ -61,6 +63,10 @@ vi.mock('../../../repositories/pluginBridge/getDefaultPluginPaths', () => ({
     getDefaultPluginPaths: mocks.getDefaultPluginPaths,
 }));
 
+vi.mock('../../../repositories/pluginBridge/isScanPathAuthorized', () => ({
+    isScanPathAuthorized: mocks.isScanPathAuthorized,
+}));
+
 describe('startPluginScan', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -82,6 +88,7 @@ describe('startPluginScan', () => {
             mocks.pluginScanStoreSet(next_value);
         });
         mocks.getDefaultPluginPaths.mockResolvedValue(['/default/path']);
+        mocks.isScanPathAuthorized.mockResolvedValue(true);
     });
 
     it('sets isScanning and then updates with results', async () => {

@@ -62,6 +62,7 @@ describe('PluginScanSettings', () => {
             lastScanTime: null,
         });
         (getPlatformCapabilities as ReturnType<typeof vi.fn>).mockReturnValue({ hasPluginScanning: true });
+        (addScanPath as ReturnType<typeof vi.fn>).mockResolvedValue({ added: true });
     });
 
     it('should render without crashing', () => {
@@ -187,6 +188,40 @@ describe('PluginScanSettings', () => {
         fireEvent.change(input, { target: { value: '/new/path' } });
         fireEvent.keyDown(input, { key: 'Enter' });
         expect(addScanPath).toHaveBeenCalledWith('/new/path');
+    });
+
+    it('shows the policy refusal naming the scannable folders and keeps the typed path', async () => {
+        // Regression (#2378): the add used to persist any typed path, which
+        // the scan policy then rejected on every scan. The refusal is the
+        // honest replacement — it names the folders scans cover, and the
+        // typed path stays in the input for correction.
+        (addScanPath as ReturnType<typeof vi.fn>).mockResolvedValue({
+            added: false,
+            reason: '/nope cannot be scanned. Plugin scans cover only: /root/vst3, /root/clap',
+        });
+        render(<PluginScanSettings />);
+        const input = screen.getByPlaceholderText('/path/to/plugins...');
+        fireEvent.change(input, { target: { value: '/nope' } });
+        fireEvent.click(screen.getByLabelText('Add plugin path'));
+
+        expect(await screen.findByText(/Plugin scans cover only: \/root\/vst3/)).toBeInTheDocument();
+        expect(input).toHaveValue('/nope');
+    });
+
+    it('clears the add refusal once the path is edited', async () => {
+        (addScanPath as ReturnType<typeof vi.fn>).mockResolvedValue({
+            added: false,
+            reason: '/nope cannot be scanned. Plugin scans cover only: /root/vst3',
+        });
+        render(<PluginScanSettings />);
+        const input = screen.getByPlaceholderText('/path/to/plugins...');
+        fireEvent.change(input, { target: { value: '/nope' } });
+        fireEvent.click(screen.getByLabelText('Add plugin path'));
+        expect(await screen.findByText(/cannot be scanned/)).toBeInTheDocument();
+
+        fireEvent.change(input, { target: { value: '/root/vst3' } });
+
+        expect(screen.queryByText(/cannot be scanned/)).not.toBeInTheDocument();
     });
 
     // ── branch coverage: handler guards and success-badge short-circuits ──────
