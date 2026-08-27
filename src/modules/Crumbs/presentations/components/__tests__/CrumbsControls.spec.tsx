@@ -1,7 +1,8 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 
-import { type VoiceStackParams } from '../../../models/CrumbsTypes';
+import { type CrumbsPersistedParamId } from '../../../models/CrumbsParameterMap';
+import { type CrumbsMode, type VoiceStackParams } from '../../../models/CrumbsTypes';
 import { CrumbsControls } from '../CrumbsControls';
 
 type Props = React.ComponentProps<typeof CrumbsControls>;
@@ -22,6 +23,71 @@ function defaultProps(overrides: Partial<Props> = {}): Props {
     };
 }
 
+const MODE_INTERACTIONS = [
+    { label: 'Quick', mode: 'quick' },
+    { label: 'Drum', mode: 'drum' },
+    { label: 'Slice', mode: 'slice' },
+    { label: 'Warp', mode: 'warp' },
+    { label: 'Record', mode: 'record' },
+] as const satisfies ReadonlyArray<{ label: string; mode: CrumbsMode }>;
+
+type ParameterInteraction = {
+    label: string;
+    paramId: CrumbsPersistedParamId;
+    value: number;
+    nextValue: number;
+    overrides: Partial<Props>;
+};
+
+const PARAMETER_INTERACTIONS = [
+    {
+        label: 'Atk',
+        paramId: 'attack',
+        value: 0.01,
+        nextValue: 0.011,
+        overrides: { envelope: { attack: 0.01, hold: 0, decay: 0.3, sustain: 1, release: 0.1 } },
+    },
+    {
+        label: 'Hold',
+        paramId: 'hold',
+        value: 0.2,
+        nextValue: 0.201,
+        overrides: { envelope: { attack: 0.01, hold: 0.2, decay: 0.3, sustain: 1, release: 0.1 } },
+    },
+    {
+        label: 'Dec',
+        paramId: 'decay',
+        value: 0.3,
+        nextValue: 0.301,
+        overrides: { envelope: { attack: 0.01, hold: 0, decay: 0.3, sustain: 1, release: 0.1 } },
+    },
+    {
+        label: 'Sus',
+        paramId: 'sustain',
+        value: 0.5,
+        nextValue: 0.51,
+        overrides: { envelope: { attack: 0.01, hold: 0, decay: 0.3, sustain: 0.5, release: 0.1 } },
+    },
+    {
+        label: 'Rel',
+        paramId: 'release',
+        value: 0.2,
+        nextValue: 0.201,
+        overrides: { envelope: { attack: 0.01, hold: 0, decay: 0.3, sustain: 1, release: 0.2 } },
+    },
+    { label: 'Cutoff', paramId: 'filterCutoff', value: 8000, nextValue: 8010, overrides: { filterCutoff: 8000 } },
+    {
+        label: 'Reso',
+        paramId: 'filterResonance',
+        value: 5,
+        nextValue: 5.1,
+        overrides: { filterResonance: 5 },
+    },
+    { label: 'Gain', paramId: 'masterGain', value: 1, nextValue: 1.01, overrides: { masterGain: 1 } },
+    { label: 'Tune', paramId: 'tune', value: 1, nextValue: 1.1, overrides: { tune: 1 } },
+    { label: 'Pan', paramId: 'pan', value: 0.2, nextValue: 0.21, overrides: { pan: 0.2 } },
+] as const satisfies ReadonlyArray<ParameterInteraction>;
+
 describe('CrumbsControls — mode switcher', () => {
     it('renders all five mode chips with capitalized labels', () => {
         render(<CrumbsControls {...defaultProps()} />);
@@ -39,13 +105,13 @@ describe('CrumbsControls — mode switcher', () => {
         expect(quickChip.className).not.toContain('accent-lavender');
     });
 
-    it('reports a Drum mode selection', () => {
+    it.each(MODE_INTERACTIONS)('reports a $label mode selection', ({ label, mode }) => {
         const onModeChange = vi.fn();
         render(<CrumbsControls {...defaultProps({ onModeChange })} />);
 
-        fireEvent.click(screen.getByRole('button', { name: 'Drum', exact: true }));
+        fireEvent.click(screen.getByRole('button', { name: label, exact: true }));
 
-        expect(onModeChange).toHaveBeenCalledExactlyOnceWith('drum');
+        expect(onModeChange).toHaveBeenCalledExactlyOnceWith(mode);
     });
 });
 
@@ -166,19 +232,17 @@ describe('CrumbsControls — knob accessible names', () => {
 });
 
 describe('CrumbsControls — knob interactions', () => {
-    it('reports an Atk ArrowUp edit with the committed value', () => {
-        const onParamChange = vi.fn();
-        render(
-            <CrumbsControls
-                {...defaultProps({
-                    envelope: { attack: 0.01, hold: 0, decay: 0.3, sustain: 1, release: 0.1 },
-                    onParamChange,
-                })}
-            />
-        );
+    it.each(PARAMETER_INTERACTIONS)(
+        'reports the $label ArrowUp edit with the committed value',
+        ({ label, paramId, value, nextValue, overrides }) => {
+            const onParamChange = vi.fn();
+            render(<CrumbsControls {...defaultProps({ ...overrides, onParamChange })} />);
 
-        fireEvent.keyDown(screen.getByRole('slider', { name: 'Atk' }), { key: 'ArrowUp' });
+            const knob = screen.getByRole('slider', { name: label });
+            expect(knob).toHaveAttribute('aria-valuenow', String(value));
+            fireEvent.keyDown(knob, { key: 'ArrowUp' });
 
-        expect(onParamChange).toHaveBeenCalledExactlyOnceWith('attack', 0.011, false);
-    });
+            expect(onParamChange).toHaveBeenCalledExactlyOnceWith(paramId, nextValue, false);
+        }
+    );
 });
