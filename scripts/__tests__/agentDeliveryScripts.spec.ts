@@ -177,6 +177,55 @@ describe('package scripts and gitignore', () => {
         expect(executedUncheckedDependency).toBe(false);
     });
 
+    /**
+     * The snapshot is a temporary directory holding nothing but `scripts/`, so Node resolves a bare
+     * specifier upward from there, finds no `node_modules`, and kills the command with
+     * `ERR_MODULE_NOT_FOUND` partway through a delivery. Checking only local specifiers left that
+     * failure mode invisible until it happened, which is why it is refused before anything executes.
+     *
+     * The loader is exempt: the launcher runs it from the protected primary checkout, where the
+     * repository's packages do resolve, and it is the one source in the snapshot nothing imports.
+     */
+    it.each([
+        {
+            label: 'a bare package specifier no snapshot can resolve',
+            poisoned: "import { parse } from 'yaml';",
+            message: /scripts\/deliverPullRequest\.ts imports yaml, which does not resolve in the trusted snapshot/,
+        },
+        {
+            label: 'an import of the loader the snapshot never executes',
+            poisoned: "import { BOOTSTRAP_PATH } from './trustedGithubWriteBootstrap.ts';",
+            message:
+                /scripts\/deliverPullRequest\.ts imports scripts\/trustedGithubWriteBootstrap\.ts, which the trusted snapshot never executes/,
+        },
+    ])('refuses $label', async ({ poisoned, message }) => {
+        let executed = false;
+
+        await expect(
+            runTrustedGithubWriteCommand('deliver', ['42'], {
+                resolveOriginMain: () => 'trusted-sha',
+                readOriginSource: (_commit, candidate) =>
+                    candidate === 'scripts/deliverPullRequest.ts' ? poisoned : 'trusted',
+                executeSnapshot: async () => {
+                    executed = true;
+                    return 0;
+                },
+            })
+        ).rejects.toThrow(message);
+        expect(executed).toBe(false);
+    });
+
+    /**
+     * The exemption above is only sound while the loader itself needs it, and it does: `deliver`
+     * parses the gating workflow with the repository's YAML package, which no snapshot can reach.
+     */
+    it('imports the yaml parser only from the loader, and never statically', () => {
+        const loader = readFileSync(join(import.meta.dirname, '../trustedGithubWriteBootstrap.ts'), 'utf8');
+
+        expect(loader).not.toMatch(/^import .*from ['"]yaml['"]/m);
+        expect(loader).toMatch(/await import\('yaml'\)/);
+    });
+
     it('runs the package route only from the protected primary root and snapshots modified helpers', () => {
         expect(trustedDependencyPaths('lane:publish')).toEqual([
             'scripts/trustedGithubWriteBootstrap.ts',
