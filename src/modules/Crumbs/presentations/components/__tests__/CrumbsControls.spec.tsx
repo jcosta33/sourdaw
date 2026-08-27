@@ -109,7 +109,7 @@ describe('CrumbsControls — mode switcher', () => {
         const onModeChange = vi.fn();
         render(<CrumbsControls {...defaultProps({ onModeChange })} />);
 
-        fireEvent.click(screen.getByRole('button', { name: label, exact: true }));
+        fireEvent.click(screen.getByRole('button', { name: label }));
 
         expect(onModeChange).toHaveBeenCalledExactlyOnceWith(mode);
     });

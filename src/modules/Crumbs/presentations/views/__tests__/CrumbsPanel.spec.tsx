@@ -131,7 +131,7 @@ describe('CrumbsPanel', () => {
     it('forwards mode and parameter control interactions to their use cases', () => {
         render(<CrumbsPanel deviceId={DEVICE} />);
 
-        fireEvent.click(screen.getByRole('button', { name: 'Drum', exact: true }));
+        fireEvent.click(screen.getByRole('button', { name: 'Drum' }));
         expect(switchModeMock).toHaveBeenCalledExactlyOnceWith(DEVICE, 'drum');
 
         const gain = screen.getByRole('slider', { name: 'Gain' });
