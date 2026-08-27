@@ -18,6 +18,7 @@ function getAdmissionTestBody(sourceFile: ts.SourceFile): ts.Block {
         return (
             ts.isIdentifier(statement.expression.expression) &&
             statement.expression.expression.text === 'test' &&
+            name !== undefined &&
             ts.isStringLiteral(name) &&
             name.text === admissionTestName
         );
@@ -50,6 +51,7 @@ function isColdStartTimeout(statement: ts.Statement): boolean {
         ts.isIdentifier(expression.expression) &&
         expression.expression.text === 'test' &&
         expression.name.text === 'setTimeout' &&
+        timeout !== undefined &&
         ts.isNumericLiteral(timeout) &&
         Number(timeout.text) === 180_000
     );
