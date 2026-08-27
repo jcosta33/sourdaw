@@ -126,9 +126,13 @@ export function assertTrustedSourceGraph(
  * builtins and the pinned siblings are reachable there, and checking local specifiers alone left
  * that failure invisible until it happened.
  *
- * The loader is exempt because the launcher executes it from the protected primary checkout, where
- * the repository's packages do resolve. That exemption is only sound while no snapshot source
- * imports it, which is the second rule here.
+ * The rule covers this loader too, with no exemption. It is the one file here the launcher also runs
+ * from the protected primary checkout, where the repository's packages do resolve — but a static
+ * bare import would then load for `lane:publish` and `issue:reconcile` as well, which read no
+ * workflow and must not fail over a package they never use. Keeping the parser behind
+ * `await import` inside `deliver`'s own path is what satisfies both, and this check holds it there.
+ * The loader is also the one source the snapshot writes and never imports, which the second rule
+ * keeps true.
  */
 function assertSnapshotResolvableImports(path: string, source: string, pathSet: ReadonlySet<string>): void {
     for (const dependency of localModuleDependencies(path, source)) {
@@ -138,9 +142,6 @@ function assertSnapshotResolvableImports(path: string, source: string, pathSet: 
         if (dependency === BOOTSTRAP_PATH) {
             throw new Error(`${path} imports ${BOOTSTRAP_PATH}, which the trusted snapshot never executes`);
         }
-    }
-    if (path === BOOTSTRAP_PATH) {
-        return;
     }
     for (const specifier of bareModuleSpecifiers(source)) {
         throw new Error(`${path} imports ${specifier}, which does not resolve in the trusted snapshot`);
