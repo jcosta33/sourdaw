@@ -36,7 +36,12 @@ const SCOPE_OUTPUT_REFERENCES = {
     code: '${{ steps.scope.outputs.code }}',
 };
 const CODE_CONDITION = "needs.decide.outputs.code == 'true'";
-const SMOKE_CONDITION = "github.event_name == 'pull_request' && needs.decide.outputs.e2e == 'true'";
+// An approving review cancels the in-flight push run, so a job that gates on
+// the triggering event alone can never complete on the run that reports. Every
+// Gate member reading a pull request keys off the payload instead.
+const PULL_REQUEST_PAYLOAD_CONDITION = 'github.event.pull_request != null';
+const SMOKE_CONDITION = `${PULL_REQUEST_PAYLOAD_CONDITION} && needs.decide.outputs.e2e == 'true'`;
+const EVENT_GATED_SMOKE_CONDITION = "github.event_name == 'pull_request' && needs.decide.outputs.e2e == 'true'";
 const SMOKE_COMMAND = 'pnpm test:e2e tests/e2e/smoke.spec.ts --retries=0';
 const PULL_REQUEST_CONCURRENCY_GROUP =
     "health-gates-${{ (github.event_name == 'pull_request' || (github.event_name == 'pull_request_review' && github.event.review.state == 'approved')) && github.event.pull_request.number || github.run_id }}";
@@ -45,7 +50,6 @@ const PULL_REQUEST_CONCURRENCY_CANCELLATION =
 const GATE_CONDITION =
     "${{ !cancelled() && (github.event_name != 'pull_request_review' || github.event.review.state == 'approved') }}";
 const DEPENDENCY_REVIEW_ACTION = 'actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294';
-const DEPENDENCY_REVIEW_CONDITION = 'github.event.pull_request != null';
 const TRUSTED_SCANNER_REF = '${{ github.event.pull_request.base.sha || github.sha }}';
 const SCAN_TARGET_REF = '${{ github.event.pull_request.head.sha || github.sha }}';
 const TOKEN_REFERENCE = /GITHUB_TOKEN|GH_TOKEN|github\.token|\$\{\{\s*secrets\./i;
@@ -60,6 +64,24 @@ const BROWSER_AI_WEBGPU_PACKAGE_SCRIPT =
 const BROWSER_AI_WEBGPU_TEST_MATCH = 'browserAiWebGpuAdmission.spec.ts';
 const BROWSER_AI_WEBGPU_ORIGIN = 'http://localhost:5188';
 const BROWSER_AI_WEBGPU_SERVER_COMMAND = 'pnpm dev --host 127.0.0.1 --port 5188 --strictPort';
+// Exact rather than a subset: a job added to the Gate without a first observed
+// hosted run is the mistake this pin exists to catch.
+const GATE_MEMBERS = [
+    'decide',
+    'static',
+    'lint',
+    'boundaries',
+    'dependency-review',
+    'pr-secrets',
+    'smoke',
+    'build',
+    'rust',
+    'native-macos',
+    'native-windows',
+    'browser-ai-webgpu',
+    'codeql',
+    'secrets',
+] as const;
 const CURRENT_NON_GATING_JOBS = ['unit', 'e2e'] as const;
 const CURRENT_NON_GATING_JOB_WIRING = {
     unit: { needs: 'decide', if: "needs.decide.outputs.web == 'true'" },
@@ -236,7 +258,7 @@ function assertProseSkippingJobs(candidate: UnknownRecord): void {
 function assertOfflineSmokeJob(candidate: UnknownRecord): void {
     const smoke = jobAt(candidate, 'smoke');
     if (smoke.needs !== 'decide' || smoke.if !== SMOKE_CONDITION) {
-        throw new Error('the offline smoke job must run on every pull request that touches the browser surface');
+        throw new Error('the offline smoke job must run on every pull-request run that touches the browser surface');
     }
     if (stringAt(stepNamed(smoke, 'Run offline smoke set'), 'run') !== SMOKE_COMMAND) {
         throw new Error('the offline smoke job must run the smoke spec without retries');
@@ -245,8 +267,8 @@ function assertOfflineSmokeJob(candidate: UnknownRecord): void {
 
 function assertPullRequestSecretScan(candidate: UnknownRecord): void {
     const prSecrets = jobAt(candidate, 'pr-secrets');
-    if (prSecrets.needs !== 'decide' || prSecrets.if !== "github.event_name == 'pull_request'") {
-        throw new Error('the pull-request secret scan must run on every pull-request push');
+    if (prSecrets.needs !== 'decide' || prSecrets.if !== PULL_REQUEST_PAYLOAD_CONDITION) {
+        throw new Error('the pull-request secret scan must run on every run carrying a pull request');
     }
     if (TOKEN_REFERENCE.test(JSON.stringify(prSecrets))) {
         throw new Error('pull-request secret scan must not reference GitHub tokens or repository secrets');
@@ -270,7 +292,7 @@ function assertPullRequestSecretScan(candidate: UnknownRecord): void {
 
 function assertJobGraph(candidate: UnknownRecord): void {
     const dependencyReview = jobAt(candidate, 'dependency-review');
-    if (dependencyReview.needs !== 'decide' || dependencyReview.if !== DEPENDENCY_REVIEW_CONDITION) {
+    if (dependencyReview.needs !== 'decide' || dependencyReview.if !== PULL_REQUEST_PAYLOAD_CONDITION) {
         throw new Error('dependency review must gate on the pull request payload rather than the triggering event');
     }
     if (stepNamed(dependencyReview, 'Review dependency changes').uses !== DEPENDENCY_REVIEW_ACTION) {
@@ -283,19 +305,7 @@ function assertJobGraph(candidate: UnknownRecord): void {
         throw new Error('security scans must depend directly on decide');
     }
     const gateNeeds = arrayAt(jobAt(candidate, 'gate'), 'needs');
-    for (const job of [
-        'decide',
-        'static',
-        'lint',
-        'boundaries',
-        'dependency-review',
-        'build',
-        'rust',
-        'native-macos',
-        'native-windows',
-        'codeql',
-        'secrets',
-    ]) {
+    for (const job of GATE_MEMBERS) {
         if (!gateNeeds.includes(job)) {
             throw new Error(`gate must depend on ${job}`);
         }
@@ -309,6 +319,9 @@ function assertJobGraph(candidate: UnknownRecord): void {
         if (gateNeeds.includes(job)) {
             throw new Error(`${job} is currently non-gating`);
         }
+    }
+    if (gateNeeds.length !== GATE_MEMBERS.length) {
+        throw new Error('gate must depend on exactly the pinned member list');
     }
 }
 
@@ -574,10 +587,16 @@ describe('health gates workflow contract', () => {
             'the offline smoke job must run the smoke spec without retries'
         );
 
-        const heavySmoke = asRecord(structuredClone(workflow), 'heavy smoke workflow');
-        jobAt(heavySmoke, 'smoke').if = "needs.decide.outputs.heavy == 'true'";
-        expect(() => assertOfflineSmokeJob(heavySmoke)).toThrow(
-            'the offline smoke job must run on every pull request that touches the browser surface'
+        const eventGatedSmoke = asRecord(structuredClone(workflow), 'event-gated smoke workflow');
+        jobAt(eventGatedSmoke, 'smoke').if = EVENT_GATED_SMOKE_CONDITION;
+        expect(() => assertOfflineSmokeJob(eventGatedSmoke)).toThrow(
+            'the offline smoke job must run on every pull-request run that touches the browser surface'
+        );
+
+        const eventGatedDiffScan = asRecord(structuredClone(workflow), 'event-gated diff scan workflow');
+        jobAt(eventGatedDiffScan, 'pr-secrets').if = "github.event_name == 'pull_request'";
+        expect(() => assertPullRequestSecretScan(eventGatedDiffScan)).toThrow(
+            'the pull-request secret scan must run on every run carrying a pull request'
         );
 
         const historyScanningDiff = asRecord(structuredClone(workflow), 'history-scanning diff workflow');
@@ -605,6 +624,16 @@ describe('health gates workflow contract', () => {
         expect(() => assertJobGraph(eventGatedDependencyReview)).toThrow(
             'dependency review must gate on the pull request payload rather than the triggering event'
         );
+        const overGatedSummary = asRecord(structuredClone(workflow), 'over-gated summary workflow');
+        arrayAt(jobAt(overGatedSummary, 'gate'), 'needs').push('unit');
+        expect(() => assertJobGraph(overGatedSummary)).toThrow('unit is currently non-gating');
+        const widenedSummary = asRecord(structuredClone(workflow), 'widened summary workflow');
+        arrayAt(jobAt(widenedSummary, 'gate'), 'needs').push('e2e-report');
+        expect(() => assertJobGraph(widenedSummary)).toThrow('gate must depend on exactly the pinned member list');
+        const narrowedSummary = asRecord(structuredClone(workflow), 'narrowed summary workflow');
+        const narrowedNeeds = arrayAt(jobAt(narrowedSummary, 'gate'), 'needs');
+        narrowedNeeds.splice(narrowedNeeds.indexOf('smoke'), 1);
+        expect(() => assertJobGraph(narrowedSummary)).toThrow('gate must depend on smoke');
         const disconnected = asRecord(structuredClone(workflow), 'disconnected security workflow');
         jobAt(disconnected, 'secrets').needs = 'build';
         expect(() => assertJobGraph(disconnected)).toThrow('security scans must depend directly on decide');

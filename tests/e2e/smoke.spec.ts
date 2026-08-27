@@ -266,9 +266,11 @@ async function openSavedProjectInFreshPage(page: Page, name: string) {
     await page.close();
 
     const realm = await browserContext.newPage();
+    const assertRealmOffline = await blockExternalRequests(realm);
     try {
         await realm.goto(new URL(CRDT_MODULE_DOCUMENT, appRootUrl).toString());
         await clearCrdtDatabase(realm);
+        await assertRealmOffline();
     } finally {
         await realm.close();
     }

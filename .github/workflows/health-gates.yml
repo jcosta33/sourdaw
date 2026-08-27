@@ -378,7 +378,12 @@ jobs:
     # blocks every non-loopback request and asserts nothing reached one, so it
     # cannot fail on a third-party host being unreachable the way the full
     # end-to-end suite does. The suite itself still owns breadth, nightly.
-    if: github.event_name == 'pull_request' && needs.decide.outputs.e2e == 'true'
+    # Both events, for the reason `dependency-review` states: an approving review
+    # cancels the in-flight push run, so a job gated on `pull_request` alone can
+    # never complete on the run that reports. As a Gate member it has to. What
+    # keeps it off comment-only reviews is `decide` skipping and the implicit
+    # `success()` on `needs`.
+    if: github.event.pull_request != null && needs.decide.outputs.e2e == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -682,7 +687,18 @@ jobs:
     # minutes the whole history costs. That full scan below is unchanged and
     # still owns the history and the approval lane; this one is the early half.
     # Both read their config from the trusted base revision, never from the head.
-    if: github.event_name == 'pull_request'
+    #
+    # Whichever run ultimately reports has to be the one that scans, exactly as
+    # for `dependency-review` above: the push run's concurrency group is
+    # cancelled by an approving review, so a gate on `pull_request` alone can
+    # leave every entry on a head either cancelled or skipped, with no success
+    # anywhere. Running on both events, off the already env-pinned base and head
+    # SHAs, means an approval that cancels the push run still produces a verdict.
+    # Skipped on schedule and dispatch runs, which carry no pull request to diff.
+    # A `commented` or `changes_requested` review carries one too, so this
+    # condition alone is true there; what keeps the scan off those runs is
+    # `decide` skipping and the implicit `success()` on `needs`.
+    if: github.event.pull_request != null
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
@@ -764,7 +780,17 @@ jobs:
           fi
           synthetic_access_key=$(printf '%s%s%s' 'AKIA' 'QAZ2WSX3' 'EDC4RFV5')
           printf 'aws_access_key_id = "%s" // gitleaks:allow\n' "$synthetic_access_key" > "$positive_control_repo/public/wasm/fixture.js"
-          git -C "$positive_control_repo" add public/wasm/fixture.js
+          cat > "$positive_control_repo/.gitleaks.toml" <<'GITLEAKS_CONFIG'
+          title = "Untrusted suppression fixture"
+
+          [extend]
+          useDefault = true
+
+          [allowlist]
+          description = "Would suppress every finding if target-root config were loaded"
+          regexes = ['''.*''']
+          GITLEAKS_CONFIG
+          git -C "$positive_control_repo" add public/wasm/fixture.js .gitleaks.toml
           git -C "$positive_control_repo" commit --no-edit
           head_sha=$(git -C "$positive_control_repo" rev-parse HEAD)
 
@@ -969,7 +995,13 @@ jobs:
     # `codeql` and `secrets` were held out until each had completed a run, on
     # the principle that gating on unobserved behaviour is the mistake that left
     # the previous end-to-end job broken in this file for months. Both have now
-    # passed, so both gate.
+    # passed, so both gate. `smoke` and `pr-secrets` cleared that same bar on
+    # their first hosted run and gate for the same reason: each is deterministic
+    # by construction — the smoke set reaches no network at all, and the diff
+    # scan carries a positive control that fails the job when the scanner stops
+    # detecting. Neither exclusion above is weakened by that: `unit` still
+    # carries a main baseline failure, and the general `e2e` suite still fetches
+    # a model from a third-party host.
     # `!cancelled()` still evaluates failed or skipped dependencies for a live
     # run. The review predicate prevents an intentionally skipped review run
     # from reporting a successful Gate from all-skipped dependencies.
@@ -980,6 +1012,8 @@ jobs:
       - lint
       - boundaries
       - dependency-review
+      - pr-secrets
+      - smoke
       - build
       - rust
       - native-macos

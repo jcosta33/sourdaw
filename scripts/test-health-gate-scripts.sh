@@ -276,6 +276,8 @@ const expectedGateNeeds = [
     'lint',
     'boundaries',
     'dependency-review',
+    'pr-secrets',
+    'smoke',
     'build',
     'rust',
     'native-macos',
@@ -338,14 +340,17 @@ expect(
 );
 expect(staticJob?.if === undefined, 'static must stay unconditional so release inventory observes prose changes too');
 expect(
-    smoke?.if === "github.event_name == 'pull_request' && needs.decide.outputs.e2e == 'true'",
-    'the offline smoke set must run on every pull request that touches the browser surface'
+    smoke?.if === "github.event.pull_request != null && needs.decide.outputs.e2e == 'true'",
+    'the offline smoke set must run on every pull-request run that touches the browser surface, including the review run an approval leaves reporting'
 );
 expect(
     stepNamed(smoke, 'Run offline smoke set')?.run === 'pnpm test:e2e tests/e2e/smoke.spec.ts --retries=0',
     'the offline smoke set must run without retries, which would hide a flake instead of reporting it'
 );
-expect(prSecrets?.if === "github.event_name == 'pull_request'", 'the diff secret scan must run on every pull-request push');
+expect(
+    prSecrets?.if === 'github.event.pull_request != null',
+    'the diff secret scan must run on every run carrying a pull request, including the review run an approval leaves reporting'
+);
 expect(
     !TOKEN_PATTERN.test(JSON.stringify(prSecrets)),
     'diff secret scan must not reference GitHub tokens or repository secrets'
