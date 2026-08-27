@@ -22,7 +22,8 @@ const MAX_LATENCY_REQUERY_PASSES: u32 = 4;
 use crate::clap_host::{create_host_descriptor, HostCallbackState, LatencyChangeNotifier};
 use crate::params::PluginParameter;
 use crate::traits::{
-    AudioPlugin, HostParameterUpdate, HostTransport, HostedPluginRuntime, ProcessingGate,
+    AudioPlugin, EditorWindowResizer, HostParameterUpdate, HostTransport, HostedPluginRuntime,
+    PluginHostRequestNotifier, ProcessingGate,
 };
 use clap_sys::audio_buffer::clap_audio_buffer;
 use clap_sys::entry::clap_plugin_entry;
@@ -83,6 +84,11 @@ pub struct ClapWrapper {
     host_state: Box<HostCallbackState>,
     /// Whether the GUI is currently open.
     gui_open: bool,
+    /// How the host resizes the window this plugin's editor is drawn into.
+    /// Installed before the editor opens, because the request it answers arrives
+    /// from inside the plugin after the open has returned. Dropped on close: a
+    /// window that has gone away is not one to resize.
+    editor_resizer: Option<EditorWindowResizer>,
     /// Split ownership of the CLAP processing state. Shared with the runtime
     /// owner so an unload can request a stop without touching the wrapper.
     processing: Arc<ProcessingGate>,
@@ -355,6 +361,7 @@ impl ClapWrapper {
                 latency_ext,
                 host_state,
                 gui_open: false,
+                editor_resizer: None,
                 processing,
                 transport_scratch: Box::new(empty_transport_event()),
                 has_transport: false,
@@ -384,6 +391,7 @@ impl ClapWrapper {
             latency_ext: ptr::null(),
             host_state: Box::new(HostCallbackState::default()),
             gui_open: false,
+            editor_resizer: None,
             processing: Arc::new(ProcessingGate::fixture_already_processing()),
             transport_scratch: Box::new(empty_transport_event()),
             has_transport: false,
@@ -612,8 +620,48 @@ impl ClapWrapper {
         }
     }
 
+    /// Install how the host resizes the window this editor is drawn into.
+    ///
+    /// Both halves of the answer move together: the wrapper holds the resizer
+    /// the control path calls, and the host callback state holds the fact that
+    /// there is one, because the plugin's own callback has to decide whether to
+    /// accept a resize without reaching the wrapper.
+    pub fn set_editor_window_resizer(&mut self, resize: EditorWindowResizer) {
+        self.editor_resizer = Some(resize);
+        self.host_state.set_editor_resize_available(true);
+    }
+
+    /// Stop answering resize requests. Called wherever the editor's host window
+    /// stops existing.
+    fn release_editor_window_resizer(&mut self) {
+        self.editor_resizer = None;
+        self.host_state.set_editor_resize_available(false);
+    }
+
+    /// Apply a size the plugin asked for through `clap_host_gui.request_resize`,
+    /// reporting what was applied. Control path only — it reaches the shell's
+    /// window server.
+    pub fn apply_pending_editor_resize(&mut self) -> Option<(u32, u32)> {
+        let (width, height) = self.host_state.take_editor_resize()?;
+        let resize = self.editor_resizer.as_ref()?;
+        resize(width, height);
+        Some((width, height))
+    }
+
+    /// Install the wake fired for every plugin-initiated ask this host answers
+    /// off the calling thread. First install wins; a second call reports
+    /// `false`.
+    pub fn set_plugin_host_request_notifier(&self, notifier: PluginHostRequestNotifier) -> bool {
+        self.host_state.set_request_notifier(notifier)
+    }
+
     /// Close (hide + destroy) the plugin GUI.
     pub fn close_gui(&mut self) {
+        // Before the early returns below: whether the plugin had an editor to
+        // destroy or not, this instance no longer has a host window, and a
+        // resize accepted against one that is gone is a resize nothing applies.
+        self.release_editor_window_resizer();
+
         #[cfg(feature = "engine-owned-command-fixture")]
         if self.command_fixture.is_some() {
             self.gui_open = false;
@@ -1403,6 +1451,18 @@ impl AudioPlugin for ClapWrapper {
     fn close_gui(&mut self) {
         ClapWrapper::close_gui(self)
     }
+
+    fn set_editor_window_resizer(&mut self, resize: EditorWindowResizer) {
+        ClapWrapper::set_editor_window_resizer(self, resize)
+    }
+
+    fn apply_pending_editor_resize(&mut self) -> Option<(u32, u32)> {
+        ClapWrapper::apply_pending_editor_resize(self)
+    }
+
+    fn take_state_dirty(&mut self) -> bool {
+        self.host_state.take_state_dirty()
+    }
 }
 
 /// CLAP's implementation of the runtime seam. Same forwarding rule as the
@@ -1599,6 +1659,7 @@ mod tests {
             latency_ext,
             host_state: Box::new(HostCallbackState::default()),
             gui_open: false,
+            editor_resizer: None,
             processing,
             transport_scratch: Box::new(empty_transport_event()),
             has_transport: false,
@@ -1777,6 +1838,78 @@ mod tests {
             state_load_result("fixture", false),
             Err("[CLAP] state.load() failed for fixture".to_string())
         );
+    }
+
+    // ── Plugin-initiated host requests: editor resize + state dirty ─────
+
+    /// The size a plugin asks for has to arrive at the host window intact.
+    /// Asserting the dimensions rather than the call is the whole point: the
+    /// old callback answered `true` and dropped them, which a "the resizer ran"
+    /// assertion would have accepted.
+    #[test]
+    fn a_resize_request_reaches_the_host_window_carrying_its_dimensions() {
+        let mut wrapper = stub_wrapper(stub_plugin_ptr());
+        let applied: Arc<std::sync::Mutex<Vec<(u32, u32)>>> =
+            Arc::new(std::sync::Mutex::new(Vec::new()));
+        let sink = Arc::clone(&applied);
+        assert!(wrapper.set_plugin_host_request_notifier(Box::new(|_| {})));
+        wrapper.set_editor_window_resizer(Arc::new(move |width, height| {
+            sink.lock().expect("resize log").push((width, height));
+        }));
+
+        assert!(
+            wrapper.host_state.request_editor_resize(1024, 768),
+            "an open editor with a wake installed accepts the request"
+        );
+        assert_eq!(wrapper.apply_pending_editor_resize(), Some((1024, 768)));
+
+        assert_eq!(
+            applied.lock().expect("resize log").as_slice(),
+            [(1024, 768)],
+            "the window is resized to the size the plugin named"
+        );
+        assert_eq!(
+            wrapper.apply_pending_editor_resize(),
+            None,
+            "one request resizes the window once, not on every later control-path visit"
+        );
+    }
+
+    /// Closing the editor takes its window away, so a size accepted against it
+    /// must stop being answerable — otherwise the next editor opens at the
+    /// previous one's size.
+    #[test]
+    fn closing_the_editor_stops_the_backend_answering_resize_requests() {
+        let mut wrapper = stub_wrapper(stub_plugin_ptr());
+        assert!(wrapper.set_plugin_host_request_notifier(Box::new(|_| {})));
+        wrapper.set_editor_window_resizer(Arc::new(|_, _| {}));
+        assert!(wrapper.host_state.request_editor_resize(1024, 768));
+
+        wrapper.close_gui();
+
+        assert!(
+            !wrapper.host_state.request_editor_resize(640, 480),
+            "with no window to resize the request is refused rather than accepted and dropped"
+        );
+        assert_eq!(
+            wrapper.apply_pending_editor_resize(),
+            None,
+            "the size accepted before the close is discarded with the window"
+        );
+    }
+
+    /// An edit inside the plugin's own editor has to cross from the callback
+    /// thread to the control path, and be reported exactly once so the project
+    /// is marked dirty per edit rather than on every later wake.
+    #[test]
+    fn a_state_dirty_signal_crosses_to_the_control_path_and_is_consumed_once() {
+        let mut wrapper = stub_wrapper(stub_plugin_ptr());
+        assert!(!AudioPlugin::take_state_dirty(&mut wrapper));
+
+        wrapper.host_state.mark_state_dirty();
+
+        assert!(AudioPlugin::take_state_dirty(&mut wrapper));
+        assert!(!AudioPlugin::take_state_dirty(&mut wrapper));
     }
 
     // ── Processing-state thread affinity + transport forwarding ─────────

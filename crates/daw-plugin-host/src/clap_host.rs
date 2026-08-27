@@ -10,12 +10,31 @@ use clap_sys::host::clap_host;
 use clap_sys::version::CLAP_VERSION;
 use std::ffi::CStr;
 use std::os::raw::c_void;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::OnceLock;
 
 /// Re-exported so every existing `clap_host::LatencyChangeNotifier` path still
 /// resolves. The type itself is seam vocabulary — see [`crate::traits`].
 pub use crate::traits::LatencyChangeNotifier;
+pub use crate::traits::{PluginHostRequest, PluginHostRequestNotifier};
+
+/// One editor size held in a single atomic, so the plugin's own callback can
+/// state both dimensions without a lock and without tearing them apart.
+///
+/// Zero is the "nothing pending" value rather than a second flag beside it. It
+/// is unambiguous because a request naming a zero dimension is refused before it
+/// ever reaches this packing: a window with no area is not a size any plugin can
+/// be drawn at.
+const fn pack_editor_size(width: u32, height: u32) -> u64 {
+    ((width as u64) << 32) | height as u64
+}
+
+const fn unpack_editor_size(packed: u64) -> Option<(u32, u32)> {
+    if packed == 0 {
+        return None;
+    }
+    Some(((packed >> 32) as u32, packed as u32))
+}
 
 /// Per-instance host callback state, reachable from a plugin's host callbacks
 /// through `clap_host::host_data`. Each `ClapWrapper` owns one of these and pins
@@ -33,6 +52,20 @@ pub use crate::traits::LatencyChangeNotifier;
 pub struct HostCallbackState {
     latency_dirty: AtomicBool,
     latency_notifier: OnceLock<LatencyChangeNotifier>,
+    /// The editor size the plugin last asked for, packed by
+    /// [`pack_editor_size`]. Zero means nothing is pending.
+    pending_editor_resize: AtomicU64,
+    /// Whether an editor window that can be resized is currently installed.
+    /// Written by the control path as the editor opens and closes; read
+    /// lock-free by the plugin's own callback, which has to answer
+    /// `request_resize` truthfully without taking a lock.
+    editor_resize_available: AtomicBool,
+    /// Whether the plugin has reported a state change that has not been
+    /// consumed. Set from the plugin's own thread; cleared on the control path.
+    state_dirty: AtomicBool,
+    /// The wake shared by every plugin-initiated ask that the host may only
+    /// answer off the calling thread.
+    request_notifier: OnceLock<PluginHostRequestNotifier>,
 }
 
 impl std::fmt::Debug for HostCallbackState {
@@ -43,6 +76,19 @@ impl std::fmt::Debug for HostCallbackState {
             .field(
                 "has_latency_notifier",
                 &self.latency_notifier.get().is_some(),
+            )
+            .field(
+                "pending_editor_resize",
+                &unpack_editor_size(self.pending_editor_resize.load(Ordering::Relaxed)),
+            )
+            .field(
+                "editor_resize_available",
+                &self.editor_resize_available.load(Ordering::Relaxed),
+            )
+            .field("state_dirty", &self.state_dirty.load(Ordering::Relaxed))
+            .field(
+                "has_request_notifier",
+                &self.request_notifier.get().is_some(),
             )
             .finish()
     }
@@ -79,6 +125,71 @@ impl HostCallbackState {
     /// just read already reflects it, so scheduling another cycle would loop.
     pub fn clear_latency_dirty(&self) {
         self.latency_dirty.store(false, Ordering::Release);
+    }
+
+    /// Install the wake fired for every plugin-initiated ask. First install
+    /// wins; a second call changes nothing and reports `false`, so the wake
+    /// cannot be hijacked mid-life.
+    pub fn set_request_notifier(&self, notifier: PluginHostRequestNotifier) -> bool {
+        self.request_notifier.set(notifier).is_ok()
+    }
+
+    /// State whether there is a host window the plugin's editor can be resized
+    /// in. Control path only, either side of the editor's life.
+    pub fn set_editor_resize_available(&self, available: bool) {
+        self.editor_resize_available
+            .store(available, Ordering::Release);
+        if !available {
+            // A size asked for against the window that just went away must not
+            // be applied to whichever window opens next.
+            self.pending_editor_resize.store(0, Ordering::Release);
+        }
+    }
+
+    /// Record an editor size the plugin asked for, and report whether it will
+    /// actually be applied.
+    ///
+    /// Three ways it will not, and each is a `false` rather than a silent drop:
+    /// a dimension with no area is not a size; an editor with no host window has
+    /// nothing to resize; and with no wake installed nothing would ever carry
+    /// the request onto the control path. CLAP lets the host refuse, and a
+    /// refusal a plugin can see beats an acceptance it cannot verify.
+    pub fn request_editor_resize(&self, width: u32, height: u32) -> bool {
+        if width == 0 || height == 0 {
+            return false;
+        }
+        if !self.editor_resize_available.load(Ordering::Acquire) {
+            return false;
+        }
+        let Some(notify) = self.request_notifier.get() else {
+            return false;
+        };
+
+        // Published before the wake, so an observer this call wakes always sees
+        // the size it is being woken for.
+        self.pending_editor_resize
+            .store(pack_editor_size(width, height), Ordering::Release);
+        notify(PluginHostRequest::EditorResize);
+        true
+    }
+
+    /// Atomically read-and-clear the size the plugin asked for, or `None` when
+    /// nothing is pending.
+    pub fn take_editor_resize(&self) -> Option<(u32, u32)> {
+        unpack_editor_size(self.pending_editor_resize.swap(0, Ordering::AcqRel))
+    }
+
+    /// Record that the plugin's own state changed, then wake the observer.
+    pub fn mark_state_dirty(&self) {
+        self.state_dirty.store(true, Ordering::Release);
+        if let Some(notify) = self.request_notifier.get() {
+            notify(PluginHostRequest::StateDirty);
+        }
+    }
+
+    /// Atomically read-and-clear the state-dirty flag.
+    pub fn take_state_dirty(&self) -> bool {
+        self.state_dirty.swap(false, Ordering::AcqRel)
     }
 }
 
@@ -208,15 +319,25 @@ unsafe extern "C" fn host_gui_resize_hints_changed(_host: *const clap_host) {
     // Plugin's resize constraints changed — re-query can_resize/get_resize_hints
 }
 
+/// The plugin asks for a different editor size.
+///
+/// Recorded and woken rather than applied here: resizing reaches the shell's
+/// window server, and this callback arrives from inside the plugin — CLAP marks
+/// it `[main-thread]`, but a host that trusts that annotation is a host one
+/// misbehaving plugin can deadlock. The wake carries it to the control path, the
+/// same split `clap_host_latency.changed()` already uses.
+///
+/// The answer is the truth about what will happen, not a courtesy: `false` when
+/// nothing is going to apply this size.
 unsafe extern "C" fn host_gui_request_resize(
-    _host: *const clap_host,
+    host: *const clap_host,
     width: u32,
     height: u32,
 ) -> bool {
-    let _ = (width, height);
-    // Accepted without applying: routing this to the shell window's set_size
-    // callback is #2174.
-    true
+    match host_state(host) {
+        Some(state) => state.request_editor_resize(width, height),
+        None => false,
+    }
 }
 
 unsafe extern "C" fn host_gui_request_show(_host: *const clap_host) -> bool {
@@ -240,10 +361,17 @@ static HOST_STATE: clap_host_state = clap_host_state {
     mark_dirty: Some(host_state_mark_dirty),
 };
 
-unsafe extern "C" fn host_state_mark_dirty(_host: *const clap_host) {
-    // Plugin state changed — the project should be marked unsaved.
-    // Not yet wired, and deliberately not logged: this callback can arrive from
-    // a plugin's own thread, where stderr I/O is not acceptable.
+/// The plugin's own state changed — a knob moved in its editor, a preset loaded
+/// inside it — so the project holding it has unsaved changes.
+///
+/// Flag and wake, nothing else. Deliberately not logged: this callback can
+/// arrive from a plugin's own thread, where stderr I/O is not acceptable, and
+/// for the same reason nothing here reaches the renderer directly. The control
+/// path consumes the flag and publishes the change.
+unsafe extern "C" fn host_state_mark_dirty(host: *const clap_host) {
+    if let Some(state) = host_state(host) {
+        state.mark_state_dirty();
+    }
 }
 
 // ── clap_host_latency extension ────────────────────────────────────────
@@ -265,6 +393,7 @@ unsafe extern "C" fn host_latency_changed(host: *const clap_host) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{Arc, Mutex};
 
     /// Build a host descriptor whose `host_data` points at `state`, mimicking
     /// how `ClapWrapper::new` pins per-instance state before plugin creation.
@@ -365,6 +494,171 @@ mod tests {
         unsafe {
             host_latency_changed(&host as *const clap_host);
             host_request_restart(&host as *const clap_host);
+        }
+    }
+
+    /// Arm a state so a resize request can be accepted: an open editor window
+    /// and an installed wake, recording what the wake was told.
+    fn state_with_open_editor() -> (HostCallbackState, Arc<Mutex<Vec<PluginHostRequest>>>) {
+        let state = HostCallbackState::default();
+        let requests = Arc::new(Mutex::new(Vec::new()));
+        let recorded = Arc::clone(&requests);
+        assert!(state.set_request_notifier(Box::new(move |request| {
+            recorded.lock().expect("request log").push(request);
+        })));
+        state.set_editor_resize_available(true);
+        (state, requests)
+    }
+
+    /// The whole point of #2174: the dimensions the plugin asked for used to be
+    /// dropped on the floor and answered `true`. They must survive to the
+    /// control path intact.
+    #[test]
+    fn a_resize_request_carries_its_dimensions_to_the_control_path() {
+        let (state, requests) = state_with_open_editor();
+        let host = host_with_state(&state);
+
+        let accepted = unsafe { host_gui_request_resize(&host as *const clap_host, 1024, 768) };
+
+        assert!(accepted, "an applicable request is accepted");
+        assert_eq!(
+            requests.lock().expect("request log").as_slice(),
+            [PluginHostRequest::EditorResize],
+            "the control path is woken for exactly this ask"
+        );
+        assert_eq!(
+            state.take_editor_resize(),
+            Some((1024, 768)),
+            "the size the plugin asked for reaches the control path unchanged"
+        );
+        assert_eq!(
+            state.take_editor_resize(),
+            None,
+            "taking the size clears it, so one ask is applied once"
+        );
+    }
+
+    /// Width and height are packed into one atomic, so a swap cannot report one
+    /// dimension of this ask beside the other of the last one. Values that
+    /// differ in both halves, and that are not each other reversed, are what
+    /// distinguishes a correct packing from a transposed one.
+    #[test]
+    fn the_newest_requested_size_replaces_an_unread_older_one() {
+        let (state, _requests) = state_with_open_editor();
+        let host = host_with_state(&state);
+
+        unsafe {
+            host_gui_request_resize(&host as *const clap_host, 640, 480);
+            host_gui_request_resize(&host as *const clap_host, 1280, 720);
+        }
+
+        assert_eq!(state.take_editor_resize(), Some((1280, 720)));
+    }
+
+    /// A window with no area is not a size the plugin can be drawn at, and the
+    /// zero packing is what "nothing pending" means — so it must never be
+    /// recorded as a request.
+    #[test]
+    fn a_resize_request_with_no_area_is_refused_rather_than_recorded() {
+        let (state, requests) = state_with_open_editor();
+        let host = host_with_state(&state);
+
+        let zero_width = unsafe { host_gui_request_resize(&host as *const clap_host, 0, 480) };
+        let zero_height = unsafe { host_gui_request_resize(&host as *const clap_host, 640, 0) };
+
+        assert!(!zero_width);
+        assert!(!zero_height);
+        assert_eq!(state.take_editor_resize(), None);
+        assert!(requests.lock().expect("request log").is_empty());
+    }
+
+    /// `true` from `request_resize` tells the plugin the host took the size. A
+    /// plugin whose editor has no host window would be told a size was applied
+    /// that nothing could apply.
+    #[test]
+    fn a_resize_request_is_refused_while_no_editor_window_is_installed() {
+        let (state, _requests) = state_with_open_editor();
+        state.set_editor_resize_available(false);
+        let host = host_with_state(&state);
+
+        let accepted = unsafe { host_gui_request_resize(&host as *const clap_host, 1024, 768) };
+
+        assert!(!accepted);
+        assert_eq!(state.take_editor_resize(), None);
+    }
+
+    /// Closing the editor drops a size asked for against the window that is
+    /// going away: applying it to whichever window opens next would resize an
+    /// editor to a size its plugin never asked for.
+    #[test]
+    fn closing_the_editor_discards_a_size_that_was_never_applied() {
+        let (state, _requests) = state_with_open_editor();
+        let host = host_with_state(&state);
+        unsafe { host_gui_request_resize(&host as *const clap_host, 1024, 768) };
+
+        state.set_editor_resize_available(false);
+
+        assert_eq!(state.take_editor_resize(), None);
+    }
+
+    /// With no wake installed nothing carries the ask onto the control path, so
+    /// accepting it would be a claim the host cannot keep.
+    #[test]
+    fn a_resize_request_is_refused_when_no_wake_is_installed() {
+        let state = HostCallbackState::default();
+        state.set_editor_resize_available(true);
+        let host = host_with_state(&state);
+
+        assert!(!unsafe { host_gui_request_resize(&host as *const clap_host, 1024, 768) });
+        assert_eq!(state.take_editor_resize(), None);
+    }
+
+    #[test]
+    fn mark_dirty_records_the_signal_and_wakes_the_control_path() {
+        let (state, requests) = state_with_open_editor();
+        let host = host_with_state(&state);
+
+        assert!(!state.take_state_dirty(), "flag starts clear");
+        unsafe { host_state_mark_dirty(&host as *const clap_host) };
+
+        assert_eq!(
+            requests.lock().expect("request log").as_slice(),
+            [PluginHostRequest::StateDirty]
+        );
+        assert!(state.take_state_dirty(), "the edit is recorded");
+        assert!(
+            !state.take_state_dirty(),
+            "taking the flag clears it, so one edit marks the project dirty once"
+        );
+    }
+
+    /// The flag is the record and the wake is only a nudge, so a plugin loaded
+    /// before anything installed a wake must still record its edit rather than
+    /// panicking on the missing one.
+    #[test]
+    fn mark_dirty_records_the_signal_with_no_wake_installed() {
+        let state = HostCallbackState::default();
+        let host = host_with_state(&state);
+
+        unsafe { host_state_mark_dirty(&host as *const clap_host) };
+
+        assert!(state.take_state_dirty());
+    }
+
+    /// Legacy descriptors carry a null `host_data`. A resize cannot be applied
+    /// through one, so it must be refused rather than accepted blind.
+    #[test]
+    fn the_gui_and_state_callbacks_tolerate_a_null_host_state() {
+        let host = create_host_descriptor();
+        assert!(host.host_data.is_null());
+
+        unsafe {
+            assert!(!host_gui_request_resize(
+                &host as *const clap_host,
+                640,
+                480
+            ));
+            host_state_mark_dirty(&host as *const clap_host);
         }
     }
 

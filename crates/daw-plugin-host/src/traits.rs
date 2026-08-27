@@ -27,6 +27,32 @@ use std::sync::Arc;
 /// latency change, and each backend's host callbacks install one of these.
 pub type LatencyChangeNotifier = Box<dyn Fn() + Send + Sync>;
 
+/// Something a plugin asked its host for from inside its own callback.
+///
+/// The two arrivals share one shape, which is why they share one wake: the
+/// plugin calls a host callback on a thread that may do no real work, the
+/// backend records the fact lock-free, and the wake carries the follow-up onto
+/// the host's control path. What the follow-up is differs; where it may run does
+/// not.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PluginHostRequest {
+    /// The plugin wants the window its editor is drawn into resized. The size
+    /// is recorded on the backend and read back by
+    /// [`AudioPlugin::apply_pending_editor_resize`].
+    EditorResize,
+    /// The plugin's own state changed — a knob moved in its editor, a preset
+    /// loaded inside it — so the project holding it has unsaved changes.
+    StateDirty,
+}
+
+/// Host-supplied wake fired when a plugin raises a [`PluginHostRequest`].
+///
+/// Runs on whatever thread the plugin called the host callback from, so it must
+/// not block, allocate unboundedly, or re-enter the wrapper. Seam vocabulary
+/// rather than a CLAP one: every format has plugin-initiated asks that the host
+/// may only answer off the calling thread.
+pub type PluginHostRequestNotifier = Box<dyn Fn(PluginHostRequest) + Send + Sync>;
+
 /// Host-supplied resize of the native window one plugin's editor is drawn into.
 ///
 /// Every format lets a plugin ask its host for a different editor size —
@@ -242,6 +268,32 @@ pub trait AudioPlugin: Send + Sync {
     /// editor does. A backend that is never told one keeps
     /// [`DEFAULT_EDITOR_CONTENT_SCALE`].
     fn set_editor_content_scale(&mut self, _scale: f64) {}
+
+    /// Carry out an editor resize the plugin asked for, reporting the size that
+    /// was applied. **Control path only.**
+    ///
+    /// Two steps rather than one because the ask and the answer belong to
+    /// different threads: the plugin states the size from inside its own
+    /// callback, where the host may not touch a window server, and this reads it
+    /// back where it may. `None` means nothing was pending, or the editor has no
+    /// host window to resize.
+    ///
+    /// The default is empty because a format that answers its resize
+    /// synchronously — VST3 does, on the frame the plugin calls into — has
+    /// nothing left to apply here.
+    fn apply_pending_editor_resize(&mut self) -> Option<(u32, u32)> {
+        None
+    }
+
+    /// Read and clear the "plugin state changed" signal the plugin raised.
+    /// **Control path only.**
+    ///
+    /// Read-and-clear rather than read, so one edit is reported once: the
+    /// consumer turns it into a project-level dirty mark, and a flag left set
+    /// would re-mark on every later wake.
+    fn take_state_dirty(&mut self) -> bool {
+        false
+    }
 
     /// Whether the plugin accepts note events.
     ///
