@@ -1,9 +1,11 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import { stringify as superjsonStringify } from 'superjson';
 
 import { launch_new_project, setupWorkspace, wait_for_workspace_ready } from './e2eUtils';
 
 const MODIFIER = process.platform === 'darwin' ? 'Meta' : 'Control';
 const OFFLINE_IDLE_WINDOW_MS = 500;
+const MANUAL_SAVE_PREFERENCES = superjsonStringify({ autoSave: false });
 
 test.use({ serviceWorkers: 'block' });
 
@@ -143,7 +145,9 @@ async function observeScheduledOscillatorCount(page: Page): Promise<ScheduledOsc
 
 async function openNewProject(page: Page): Promise<() => Promise<void>> {
     const assertOffline = await blockExternalRequests(page);
-    await setupWorkspace(page);
+    await setupWorkspace(page, {
+        localStorage: [{ name: 'sourdaw-preferences', value: MANUAL_SAVE_PREFERENCES }],
+    });
     await launch_new_project(page);
     return assertOffline;
 }
@@ -184,10 +188,10 @@ async function createPlayableMidiClip(page: Page): Promise<Locator> {
     const timeline = page.getByLabel('Timeline editor surface');
     await expect(timeline).toBeVisible();
     const y = await midiLaneY(page);
-    await timeline.click({ button: 'right', position: { x: 300, y } });
+    await timeline.click({ button: 'right', position: { x: 30, y } });
     await page.getByRole('menuitem', { name: /Add Clip Here/i }).click();
     await expect(page.getByText(/New midi clip/i).first()).toBeVisible();
-    await timeline.dblclick({ position: { x: 300, y } });
+    await timeline.dblclick({ position: { x: 30, y } });
     const pianoRoll = page.getByLabel('Piano roll editor');
     await expect(pianoRoll).toBeVisible();
     await openBottomTab(page, 'Editor');
@@ -208,14 +212,27 @@ async function renameProject(page: Page, name: string): Promise<void> {
     await projectNameInput.press('Enter');
 }
 
+async function startBlankProject(page: Page): Promise<void> {
+    await page.getByRole('button', { name: 'Project menu', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'New Project', exact: true }).click();
+    await expect(page.getByTestId('project-name')).toHaveText('Untitled Project');
+    await expect(page.getByText('Add your first track')).toBeVisible();
+    await expect(page.getByRole('grid', { name: /Track list/i })).toHaveCount(0);
+}
+
 async function openSavedProjectInFreshPage(page: Page, name: string) {
     const appRootUrl = new URL('/', page.url()).toString();
     const reopenedPage = await page.context().newPage();
     const assertOffline = await blockExternalRequests(reopenedPage);
     await reopenedPage.goto(appRootUrl);
     await wait_for_workspace_ready(reopenedPage);
+    const projectName = reopenedPage.getByTestId('project-name');
+    await expect(projectName).toHaveText('Untitled Project', { timeout: 30_000 });
+    await expect(projectName).not.toHaveText(name);
     await reopenedPage.getByRole('button', { name: 'Project menu' }).click();
     await reopenedPage.getByRole('menuitem', { name }).click();
+    await expect(projectName).toHaveText(name, { timeout: 30_000 });
+    await wait_for_workspace_ready(reopenedPage);
     return { assertOffline, page: reopenedPage };
 }
 
@@ -239,10 +256,11 @@ test.describe('Offline project smoke', () => {
 
         await page.keyboard.press(`${MODIFIER}+s`);
         await expect(dirtyIndicator(page)).toHaveCount(0);
+        await startBlankProject(page);
 
         const reopened = await openSavedProjectInFreshPage(page, 'Smoke Persistence');
         try {
-            await expect(reopened.page.getByRole('button', { name: 'Smoke Persistence' })).toBeVisible();
+            await expect(reopened.page.getByTestId('project-name')).toHaveText('Smoke Persistence');
             await expect(trackList(reopened.page).getByText('MIDI', { exact: true })).toBeVisible();
             await reopened.assertOffline();
         } finally {
@@ -302,10 +320,11 @@ test.describe('Offline project smoke', () => {
 
         await page.keyboard.press(`${MODIFIER}+s`);
         await expect(dirtyIndicator(page)).toHaveCount(0);
+        await startBlankProject(page);
 
         const reopened = await openSavedProjectInFreshPage(page, 'Smoke Undo Persistence');
         try {
-            await expect(reopened.page.getByRole('button', { name: 'Smoke Undo Persistence' })).toBeVisible();
+            await expect(reopened.page.getByTestId('project-name')).toHaveText('Smoke Undo Persistence');
             await expect(trackList(reopened.page).getByText('MIDI', { exact: true })).toHaveCount(0);
             await expect(reopened.page.getByText('Add your first track')).toBeVisible();
             await reopened.assertOffline();

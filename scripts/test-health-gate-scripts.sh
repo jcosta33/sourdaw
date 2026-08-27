@@ -428,6 +428,14 @@ for (const scope of ['RUST', 'SERVER', 'E2E', 'WEB', 'METADATA', 'UNCLASSIFIED']
     );
 }
 expect(smokeSpec.includes("test.use({ serviceWorkers: 'block' });"), 'offline smoke must block service workers before routing requests');
+expect(
+    smokeSpec.includes("import { stringify as superjsonStringify } from 'superjson';") &&
+        smokeSpec.includes('const MANUAL_SAVE_PREFERENCES = superjsonStringify({ autoSave: false });') &&
+        smokeSpec.includes("localStorage: [{ name: 'sourdaw-preferences', value: MANUAL_SAVE_PREFERENCES }]") &&
+        smokeSpec.indexOf("localStorage: [{ name: 'sourdaw-preferences', value: MANUAL_SAVE_PREFERENCES }]") <
+            smokeSpec.indexOf('await launch_new_project(page);'),
+    'offline smoke must disable autosave through a valid superjson preferences value before first navigation'
+);
 expect(smokeSpec.includes("await page.routeWebSocket('**/*'"), 'offline smoke must route WebSockets before navigation');
 expect(smokeSpec.includes("await webSocket.close({ code: 1008, reason: 'External network blocked' });"), 'offline smoke must close every external WebSocket');
 expect(smokeSpec.includes('const OFFLINE_IDLE_WINDOW_MS = 500;'), 'offline smoke must use one named 500 ms quiescence window');
@@ -478,6 +486,13 @@ expect(smokeSpec.includes('document.documentElement.dataset.scheduledOscillatorC
 expect(smokeSpec.includes('await createPlayableMidiClip(page);'), 'playback smoke must create deterministic playable MIDI material before transport starts');
 expect(smokeSpec.includes("toHaveText('1 note')"), 'playback smoke must assert that the playable clip contains one MIDI note');
 expect(
+    smokeSpec.includes("await timeline.click({ button: 'right', position: { x: 30, y } });") &&
+        smokeSpec.includes('await timeline.dblclick({ position: { x: 30, y } });') &&
+        !smokeSpec.includes('position: { x: 300, y }') &&
+        smokeSpec.indexOf('await createPlayableMidiClip(page);') < smokeSpec.indexOf('await play.click();'),
+    'playback smoke must place and open its MIDI clip near beat zero before Play'
+);
+expect(
     smokeSpec.indexOf('await scheduledOscillators.reset();') > smokeSpec.indexOf('await createPlayableMidiClip(page);') &&
         smokeSpec.indexOf('await scheduledOscillators.reset();') < smokeSpec.indexOf('await play.click();') &&
         smokeSpec.indexOf('await expect.poll(scheduledOscillators.count).toBe(0);') < smokeSpec.indexOf('await play.click();'),
@@ -504,12 +519,37 @@ expect(
 expect(!smokeSpec.includes('Object.defineProperty(window'), 'playback smoke must not expose AudioContext observations on window');
 expect(!smokeSpec.includes('Reflect.get(window'), 'playback smoke must not read AudioContext observations from window');
 expect(!smokeSpec.includes('resumeStates'), 'playback smoke must not retain the AudioContext resume-state array seam');
+const freshPageHelper = smokeSpec.slice(
+    smokeSpec.indexOf('async function openSavedProjectInFreshPage'),
+    smokeSpec.indexOf("test.describe('Offline project smoke'")
+);
 expect(
-    smokeSpec.includes('async function openSavedProjectInFreshPage(page: Page, name: string)') &&
-        smokeSpec.includes('const reopenedPage = await page.context().newPage();') &&
-        smokeSpec.includes('await reopenedPage.goto(appRootUrl);') &&
-        smokeSpec.includes('await wait_for_workspace_ready(reopenedPage);'),
+    freshPageHelper.includes('async function openSavedProjectInFreshPage(page: Page, name: string)') &&
+        freshPageHelper.includes('const reopenedPage = await page.context().newPage();') &&
+        freshPageHelper.includes('await reopenedPage.goto(appRootUrl);') &&
+        freshPageHelper.includes("await expect(projectName).toHaveText('Untitled Project', { timeout: 30_000 });") &&
+        freshPageHelper.includes('await expect(projectName).not.toHaveText(name);') &&
+        freshPageHelper.includes('await expect(projectName).toHaveText(name, { timeout: 30_000 });') &&
+        freshPageHelper.lastIndexOf('await wait_for_workspace_ready(reopenedPage);') >
+            freshPageHelper.indexOf('await expect(projectName).toHaveText(name, { timeout: 30_000 });'),
     'persistence smoke must reopen saved IndexedDB truth in a fresh renderer page within the existing browser context'
+);
+expect(
+    (smokeSpec.match(/await startBlankProject\(page\);/gu) ?? []).length === 2 &&
+        (smokeSpec.match(/await expect\(dirtyIndicator\(page\)\)\.toHaveCount\(0\);\n        await startBlankProject\(page\);/gu) ?? [])
+            .length === 2,
+    'persistence smokes must prove manual save clean before switching to a distinct blank project'
+);
+expect(
+    smokeSpec.includes("await expect(page.getByTestId('project-name')).toHaveText('Untitled Project');") &&
+        smokeSpec.includes("await expect(page.getByText('Add your first track')).toBeVisible();") &&
+        smokeSpec.includes("await expect(page.getByRole('grid', { name: /Track list/i })).toHaveCount(0);"),
+    'blank-project transition must prove a distinct untitled empty project before fresh-renderer reload'
+);
+expect(
+    !smokeSpec.includes("reopened.page.getByRole('button', { name: 'Smoke") &&
+        (smokeSpec.match(/reopened\.page\.getByTestId\('project-name'\)/gu) ?? []).length === 2,
+    'persistence smoke project-name assertions must use the stable project-name test id'
 );
 expect(
     !smokeSpec.includes('storageState(') && !smokeSpec.includes('browser.newContext(') && !smokeSpec.includes('openSavedProjectInFreshContext'),
@@ -610,7 +650,10 @@ expect(
 );
 expect(e2e?.if === "needs.decide.outputs.heavy == 'true' && needs.decide.outputs.e2e == 'true'", 'full E2E must require the scheduled or dispatched heavy path');
 expect(e2e?.strategy?.matrix?.shard?.length === 12, 'full E2E must retain all twelve shards');
-expect(smokeRun === 'pnpm test:e2e tests/e2e/smoke.spec.ts', 'fast PR smoke must run only the deterministic smoke spec');
+expect(
+    smokeRun === 'pnpm test:e2e tests/e2e/smoke.spec.ts --retries=0',
+    'fast PR smoke must run only the deterministic smoke spec and fail on its first failure'
+);
 expect(e2eRunStep?.run === 'pnpm test:e2e --shard=${{ matrix.shard }}/12 --reporter=blob', 'scheduled/manual E2E must run the full twelve-shard suite rather than a duplicate smoke job');
 
 function startedPullRequestJobs(scopes) {
@@ -1061,7 +1104,10 @@ expect(
 );
 expect(smoke?.name === 'Offline browser smoke', 'offline smoke job must remain present');
 expect(smoke?.if === "github.event_name == 'pull_request' && needs.decide.outputs.e2e == 'true'", 'offline smoke must run only for applicable fast pull-request heads');
-expect(smokeRun === 'pnpm test:e2e tests/e2e/smoke.spec.ts', 'offline smoke must run only the deterministic smoke spec');
+expect(
+    smokeRun === 'pnpm test:e2e tests/e2e/smoke.spec.ts --retries=0',
+    'offline smoke must run only the deterministic smoke spec and fail on its first failure'
+);
 expect(
     unitFailureWarning?.if === shardFailureCondition,
     'unit shard failure warning must observe the failed Run shard outcome'

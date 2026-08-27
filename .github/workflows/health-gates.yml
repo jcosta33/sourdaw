@@ -431,7 +431,7 @@ jobs:
         run: pnpm exec playwright install --with-deps chromium
 
       - name: Run offline smoke set
-        run: pnpm test:e2e tests/e2e/smoke.spec.ts
+        run: pnpm test:e2e tests/e2e/smoke.spec.ts --retries=0
 
   build:
     name: Production build
