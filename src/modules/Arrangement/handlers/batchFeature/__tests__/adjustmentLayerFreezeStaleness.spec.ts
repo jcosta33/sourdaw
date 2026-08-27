@@ -81,8 +81,10 @@ const mutationCases = [
         staleTrackIds: ['track-a', 'track-b', 'track-c'],
     },
     {
+        // The destroy case: the layer carries authored regions, so the inverse has to
+        // put the whole layer back, regions included, not just an empty shell.
         label: 'remove layer',
-        layers: [createLayer()],
+        layers: [createLayer({ regions: [region] })],
         action: { type: 'removeAdjustmentLayer', payload: { layerId: 'layer-1' } },
         staleTrackIds: ['track-a'],
     },
@@ -297,6 +299,49 @@ describe('adjustmentLayerFreezeStaleness', () => {
                 parameters: [expect.objectContaining({ name: 'Gain', value: 6 })],
             })
         );
+    });
+
+    it('declines undo through the undo path when a newer edit changed the layers', async () => {
+        await executeAppAction({ type: 'setLayerMix', payload: { layerId: 'layer-1', mix: 0.5 } });
+
+        // A write that never went through this command — a collaborator's CRDT change
+        // landing between the edit and the undo. The fingerprint the inverse captured
+        // at commit time no longer describes the live layers.
+        const layerState = getLayerState();
+        adjustmentLayerStore.set({
+            layers: layerState.layers.map((layer) =>
+                layer.id === 'layer-1' ? { ...layer, name: 'Renamed elsewhere' } : layer
+            ),
+        });
+
+        await expect(undo()).rejects.toThrow('Adjustment-layer state changed after this action was committed');
+
+        // The guard declined: the newer edit stands and the entry stays undoable
+        // rather than being consumed by a no-op.
+        expect(getLayerState().layers[0]?.name).toBe('Renamed elsewhere');
+        expect(getLayerState().layers[0]?.mix).toBe(0.5);
+        expect(undoStore.value?.past).toHaveLength(1);
+    });
+
+    it('re-creates an undone layer with the same id on redo', async () => {
+        adjustmentLayerStore.set({ layers: [] });
+
+        await executeAppAction({ type: 'createAdjustmentLayer', payload: { name: 'Created', effectType: 'volume' } });
+        const created = getLayerState().layers[0];
+        if (!created) {
+            throw new Error('Expected the created layer');
+        }
+
+        await undo();
+        expect(getLayerState().layers).toEqual([]);
+
+        await redo();
+
+        // Redo replays the entry's own action object, whose payload kept the id the
+        // first execute minted. A fresh id here would orphan every reference other
+        // state still holds to this layer.
+        expect(getLayerState().layers).toEqual([created]);
+        expect(getLayerState().layers[0]?.id).toBe(created.id);
     });
 
     it('keeps a track stale when its freeze source changes after an adjustment edit', async () => {
