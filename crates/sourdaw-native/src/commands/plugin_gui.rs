@@ -10,11 +10,22 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 use crate::commands::plugins::PluginUnloadResult;
+use crate::events::{EventSink, EventSinkExt};
 use crate::host::plugin_window::{
     plugin_editor_window_label, PluginEditorWindow, PluginWindowHost,
 };
 use crate::state::AppState;
 use daw_plugin_host::{AudioPlugin, EditorWindowResizer};
+
+/// Wire event name. The TS listener mirrors this string verbatim — never rename.
+pub const PLUGIN_GUI_CLOSED_EVENT: &str = "plugin-gui-closed";
+
+/// Payload of `plugin-gui-closed`. snake_case on the wire, matching the other
+/// plugin DTOs.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct PluginGuiClosed {
+    pub instance_id: String,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PluginGuiInfo {
@@ -293,10 +304,21 @@ fn publish_plugin_gui_window_in_label_order(
 /// `engine_plugins`) and of `SharedHostedPlugin`'s control lock (a 2 s spin);
 /// running this inline risks a circular-wait deadlock with GUI-affine plugins
 /// and freezes the whole app event loop otherwise.
+///
+/// Emits `plugin-gui-closed` on the same condition that removes the label, and
+/// only then. The frontend shows an open editor as open, and the OS is free to
+/// close one behind its back — a title-bar click, the owner-destroy cascade —
+/// so the transition it never asked for has to reach it, or its control keeps
+/// offering to close a window that is already gone. Tying the event to the
+/// removal is what keeps it truthful under the repeats this function is
+/// idempotent against: a second report for the same window, or a report for a
+/// window a newer editor has already replaced, changes no state and so says
+/// nothing.
 pub fn reset_plugin_gui_state_after_os_close(
     instance_id: &str,
     window_label: &str,
     state: &AppState,
+    events: &dyn EventSink,
 ) {
     let closed_command_owned = match state.plugins.lock() {
         Ok(mut plugins) => match plugins.get_mut(instance_id) {
@@ -324,14 +346,27 @@ pub fn reset_plugin_gui_state_after_os_close(
         }
     }
 
-    if let Ok(mut windows) = state.plugin_windows.lock() {
-        let is_this_window = windows
-            .get(instance_id)
-            .map(|label| label == window_label)
-            .unwrap_or(false);
-        if is_this_window {
-            windows.remove(instance_id);
+    let removed_this_window = match state.plugin_windows.lock() {
+        Ok(mut windows) => {
+            let is_this_window = windows
+                .get(instance_id)
+                .map(|label| label == window_label)
+                .unwrap_or(false);
+            if is_this_window {
+                windows.remove(instance_id);
+            }
+            is_this_window
         }
+        Err(_) => false,
+    };
+
+    if removed_this_window {
+        events.emit(
+            PLUGIN_GUI_CLOSED_EVENT,
+            PluginGuiClosed {
+                instance_id: instance_id.to_string(),
+            },
+        );
     }
 }
 
@@ -554,12 +589,33 @@ pub async fn show_all_plugin_guis(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::events::NoopEventSink;
     use crate::host::native_bridge::SharedHostedPlugin;
     use crate::host::plugin_window::NoWindowHost;
     use crate::state::{AppState, EnginePluginInstanceData};
     use daw_plugin_host::ClapWrapper;
     use std::cell::Cell;
-    use std::sync::Arc;
+    use std::sync::{Arc, Mutex};
+
+    #[derive(Default)]
+    struct RecordingEventSink {
+        events: Mutex<Vec<(String, serde_json::Value)>>,
+    }
+
+    impl RecordingEventSink {
+        fn events(&self) -> Vec<(String, serde_json::Value)> {
+            self.events.lock().expect("event log").clone()
+        }
+    }
+
+    impl EventSink for RecordingEventSink {
+        fn emit_json(&self, event: &str, payload: serde_json::Value) {
+            self.events
+                .lock()
+                .expect("event log")
+                .push((event.to_string(), payload));
+        }
+    }
 
     fn insert_engine_owned_fixture(state: &AppState, instance_id: &str, has_gui: bool) {
         let wrapper =
@@ -699,15 +755,18 @@ mod tests {
                 "plugin-engine-owned-fixture".to_string(),
             );
 
+        let events = RecordingEventSink::default();
         reset_plugin_gui_state_after_os_close(
             "engine-owned-fixture",
             "plugin-engine-owned-fixture",
             &state,
+            &events,
         );
         reset_plugin_gui_state_after_os_close(
             "engine-owned-fixture",
             "plugin-engine-owned-fixture",
             &state,
+            &events,
         );
 
         assert!(state
@@ -715,6 +774,12 @@ mod tests {
             .lock()
             .expect("plugin_windows lock")
             .is_empty());
+        assert_eq!(
+            events.events().len(),
+            1,
+            "the second report changes no state, so it must not tell the frontend the editor \
+             closed a second time"
+        );
         assert!(
             runtime
                 .with_control(std::time::Duration::from_secs(2), |plugin| {
@@ -859,10 +924,12 @@ mod tests {
                 "plugin-engine-owned-fixture".to_string(),
             );
 
+        let events = RecordingEventSink::default();
         reset_plugin_gui_state_after_os_close(
             "engine-owned-fixture",
             "plugin-engine-owned-fixture",
             &state,
+            &events,
         );
 
         assert!(state
@@ -871,6 +938,14 @@ mod tests {
             .expect("plugin_windows lock")
             .get("engine-owned-fixture")
             .is_none());
+        assert_eq!(
+            events.events(),
+            [(
+                PLUGIN_GUI_CLOSED_EVENT.to_string(),
+                serde_json::json!({ "instance_id": "engine-owned-fixture" })
+            )],
+            "an editor the OS closed must reach the frontend, which still shows it as open"
+        );
 
         // The reopen path reaches open_gui with clean state and recreates the GUI.
         let reopened = runtime.with_control(std::time::Duration::from_secs(2), |plugin| {
@@ -905,7 +980,13 @@ mod tests {
                 "plugin-newer".to_string(),
             );
 
-        reset_plugin_gui_state_after_os_close("engine-owned-fixture", "plugin-older", &state);
+        let events = RecordingEventSink::default();
+        reset_plugin_gui_state_after_os_close(
+            "engine-owned-fixture",
+            "plugin-older",
+            &state,
+            &events,
+        );
 
         assert_eq!(
             state
@@ -915,6 +996,11 @@ mod tests {
                 .get("engine-owned-fixture")
                 .cloned(),
             Some("plugin-newer".to_string())
+        );
+        assert!(
+            events.events().is_empty(),
+            "the instance still has an open editor, so reporting it closed would blank a \
+             control that works"
         );
     }
 
@@ -927,7 +1013,7 @@ mod tests {
             .expect("plugin_windows lock")
             .insert("ghost".to_string(), "plugin-ghost".to_string());
 
-        reset_plugin_gui_state_after_os_close("ghost", "plugin-ghost", &state);
+        reset_plugin_gui_state_after_os_close("ghost", "plugin-ghost", &state, &NoopEventSink);
 
         assert!(state
             .plugin_windows

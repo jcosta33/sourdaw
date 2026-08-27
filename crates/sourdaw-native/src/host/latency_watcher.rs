@@ -14,7 +14,7 @@
 //! having to ask.
 
 use crate::events::{EventSink, EventSinkExt};
-use crate::host::native_bridge::SharedHostedPlugin;
+use crate::host::runtime_for_instance;
 use crate::state::EnginePluginInstanceData;
 use serde::Serialize;
 use std::collections::HashMap;
@@ -57,29 +57,6 @@ pub fn notify_latency_change(instance_id: &str) {
     }
 }
 
-fn runtime_for(
-    engine_plugins: &EnginePlugins,
-    instance_id: &str,
-) -> Option<Arc<SharedHostedPlugin>> {
-    let guard = match engine_plugins.lock() {
-        Ok(guard) => guard,
-        Err(error) => {
-            // Terminal for the push path, and invisible without this line: the
-            // thread keeps recv-looping so the watcher still looks alive, while
-            // every lookup misses forever and no latency change reaches the
-            // frontend again. Matches how the command layer reports this lock.
-            eprintln!(
-                "[Plugin] latency watcher failed to lock engine_plugins for instance {}: {}",
-                instance_id, error
-            );
-            return None;
-        }
-    };
-    guard
-        .get(instance_id)
-        .map(|instance| Arc::clone(&instance.runtime))
-}
-
 /// Decide what one wake should emit.
 ///
 /// Split out from the thread body so the emit rule is testable without a live
@@ -120,7 +97,8 @@ pub fn start(events: Arc<dyn EventSink>, engine_plugins: EnginePlugins) {
             // Blocks until a plugin flags. The static sender is never dropped, so
             // this loop lives for the process.
             while let Ok(instance_id) = receiver.recv() {
-                let Some(runtime) = runtime_for(&engine_plugins, &instance_id) else {
+                let Some(runtime) = runtime_for_instance(&engine_plugins, &instance_id, "latency")
+                else {
                     // Unloaded between the plugin's callback and this wake.
                     continue;
                 };

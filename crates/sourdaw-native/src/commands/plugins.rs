@@ -897,6 +897,21 @@ pub async fn load_plugin(
         );
     }
 
+    // Wake the request watcher when this instance asks its host for something it
+    // may only be given off its own callback thread — an editor resize, or the
+    // report that its state changed. Installed here for the same reason as the
+    // latency wake. The answer is discarded rather than reported, because a
+    // refusal is the ordinary case for a format that raises none of these asks:
+    // only CLAP routes an editor resize and a state change back through the
+    // host.
+    let requesting_instance_id = instance_id.0.clone();
+    let _ = wrapper.set_plugin_host_request_notifier(Box::new(move |request| {
+        crate::host::plugin_host_requests::notify_plugin_host_request(
+            &requesting_instance_id,
+            request,
+        );
+    }));
+
     // Send the plugin to the native audio thread for real-time processing
     // and create an audio bridge for worklet ↔ Rust data transfer.
     //
