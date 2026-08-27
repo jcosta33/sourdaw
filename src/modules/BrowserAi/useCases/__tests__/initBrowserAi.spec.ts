@@ -150,7 +150,7 @@ describe('initBrowserAi', () => {
         const logger = { ...create_logger_mock(), error: vi.fn() };
         injectDependencies(initBrowserAi, {
             logger,
-            detectCapabilitiesRepo: vi.fn<DetectCapabilitiesRepo>(({ forceRefresh }) =>
+            detectCapabilitiesRepo: vi.fn<DetectCapabilitiesRepo>(({ forceRefresh } = {}) =>
                 forceRefresh ? startupProbe.promise : Promise.reject(new Error('adapter unavailable'))
             ),
             checkVerifiedModel: vi.fn().mockResolvedValue(false),
