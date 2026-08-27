@@ -1,20 +1,39 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from '@playwright/test';
 
-import { launch_new_project, setupWorkspace } from './e2eUtils';
+import { launch_new_project, setupWebGpuApiPresentWorkspace, setupWorkspace } from './e2eUtils';
 
-// The LlmStatusBadge's model-onboarding affordances (#1954 WebLLM artifact
-// admission) have no E2E: the download button's per-model label and the
-// verification blurb are the first AI touch for browser users. The button
-// renders pre-download, reachable without WebGPU completing, so the panel
-// contract is assertable without downloading anything.
+// The LlmStatusBadge's model-onboarding affordances have no E2E: the download
+// button's per-model label and the verification blurb are the first AI touch
+// for browser users. This test establishes only the WebGPU API-present UI
+// precondition and asserts the pre-download onboarding interface; it does not
+// assert a usable adapter, runtime capability, provider admission, or download.
 test.describe('LlmStatusBadge — model download affordances', () => {
-    test.beforeEach(async ({ page }) => {
+    test('withholds download affordances when the WebGPU API is unavailable', async ({ page }) => {
         test.setTimeout(120000);
         await setupWorkspace(page);
         await launch_new_project(page);
+
+        const unavailable = page.getByText('AI unavailable', { exact: true });
+        await expect(unavailable).toBeVisible();
+        await expect(unavailable).toHaveAttribute('title', 'No configured AI backend is available');
+        await expect(page.getByRole('button', { name: 'Load AI', exact: true })).toHaveCount(0);
+        await expect(page.getByRole('button', { name: /Download & Load /i })).toHaveCount(0);
+
+        await page.getByTestId('toggle-preferences').click();
+        const dialog = page.getByRole('dialog');
+        await dialog.getByRole('button', { name: 'AI', exact: true }).click();
+        await expect(
+            dialog.getByText(
+                'Automatic uses WebLLM in this browser only. Select a hosted provider explicitly to send prompts remotely.'
+            )
+        ).toBeVisible();
     });
 
-    test('the panel offers model choice, a named download button, and the verification blurb', async ({ page }) => {
+    test('shows model onboarding and download affordances when the WebGPU API is present', async ({ page }) => {
+        test.setTimeout(120000);
+        await setupWebGpuApiPresentWorkspace(page);
+        await launch_new_project(page);
+
         await page.getByRole('button', { name: 'Load AI' }).first().click();
 
         // Model options are DawChooserCard buttons named "<display> <description>

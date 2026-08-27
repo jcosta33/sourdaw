@@ -6,11 +6,11 @@ Assembled records use hash-pinned metadata from the lock-resolved install plus c
 Generation fails when configured records are missing or inconsistent.
 
 Source graph digests:
-- Cargo.lock sha256:bad8592c5c5d9104f7b79f57bf23564bfdf7ead00659e93c202d0a2a7662b34e
+- Cargo.lock sha256:bfe1982d1cdc8225a5076e82d2dbb5e2d839c7092a0fc2536d014bc4230b8a10
 - pnpm-lock.yaml sha256:e1be22307c3110ef97fe8e5bb7e5c5738491b0006cfe5d33b14faf7690e49f7f
 - server/package-lock.json sha256:1d1727a218c4eedf1f04173caa9d89e5200b30c821cb860951bf6100dd6273db
 
-Package inventory: 353 npm, 318 Cargo
+Package inventory: 353 npm, 320 Cargo
 
 cargo:adler2@2.0.1 | 0BSD OR MIT OR Apache-2.0 | sha256:23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3,sha256:861399f8c21c042b110517e76dc6b63a2b334276c8cf17412fc3c8908ca8dc17,sha256:8ada45cd9f843acf64e4722ae262c622a2b3b3007c7310ef36ac1061a30f6adb | Cargo.lock
 cargo:alsa@0.11.0 | Apache-2.0/MIT | sha256:0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594,sha256:3cc33f8e76680b9cba2e2a5bc94de5a92420045863ab2fadbef290a55b4d8530 | Cargo.lock
@@ -34,6 +34,7 @@ cargo:cesu8@1.1.0 | Apache-2.0/MIT | sha256:5ca77347e58205d3b543c04a9c5bdd11d20a
 cargo:cfg-if@1.0.4 | MIT OR Apache-2.0 | sha256:378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397,sha256:a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2 | Cargo.lock
 cargo:chacha20@0.10.1 | MIT OR Apache-2.0 | sha256:a9040321c3712d8fd0b09cf52b17445de04a23a10165049ae187cd39e5c86be5,sha256:b8c6939380a400f53e11923d50fcc4dd2fa1ba8339fd9d04cda38a0251b6c9b0 | Cargo.lock
 cargo:clap-sys@0.5.0 | MIT/Apache-2.0 | sha256:23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3,sha256:cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30 | Cargo.lock
+cargo:com-scrape-types@0.1.1 | MIT OR Apache-2.0 | sha256:6a5338e2ef149f0c9fffa7a007a4796bb38cf78570355d9d35258405064e7a37 | Cargo.lock
 cargo:combine@4.6.7 | MIT | sha256:9bbc1b3dc4674a9ebb12c2a62f54fe3c08672539717f8d05828f684b6cc419a3 | Cargo.lock
 cargo:console_error_panic_hook@0.1.7 | Apache-2.0/MIT | sha256:353b508bbc50274d47a23729f568bab2618e3d0eaa10208616f5fd475255b896,sha256:77674336af8ded214dc3ae07da631c7dd35cc8205f39298474ba98a889e57272 | Cargo.lock
 cargo:const-oid@0.10.2 | Apache-2.0 OR MIT | sha256:73b9dc2e79c7308998dd30296e073aefaefb944a68fb89aa412c23c0edcabcaa,sha256:a9040321c3712d8fd0b09cf52b17445de04a23a10165049ae187cd39e5c86be5 | Cargo.lock
@@ -269,6 +270,7 @@ cargo:url@2.5.8 | MIT OR Apache-2.0 | sha256:a60eea817514531668d7e00765731449fe1
 cargo:utf8_iter@1.0.4 | Apache-2.0 OR MIT | sha256:3fa4ca83dcc9237839b1bdeb2e6d16bdfb5ec0c5ce42b24694d8bbf0dcbef72c,sha256:c30152c94a6d75e021adbc52b3a52470366a46edb917e17deae3259251af244c,sha256:cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30 | Cargo.lock
 cargo:uuid@1.24.1 | Apache-2.0 OR MIT | sha256:436bc5a105d8e57dcd8778730f3754f7bf39c14d2f530e4cde4bd2d17a83ec3d,sha256:a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2 | Cargo.lock
 cargo:visibility@0.1.1 | Zlib OR MIT OR Apache-2.0 | sha256:23f99ac423f5950bbd814d05e77e5e7be5183903133f3938be2a313cb8070205,sha256:50d26cd90660ea5dfca5db399824028bca4eda4ee5be5d50a1b0be573936cabe,sha256:b405b5dbae5d4473f5f932af2b5d47df6114036a0b1382d9f6c411a62b71a547,sha256:b72b2d40a984de67680d4b874dea846f5e389599bbe495b22f63e87c6f1d5f0c | Cargo.lock
+cargo:vst3@0.3.0 | MIT OR Apache-2.0 | sha256:0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594,sha256:23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3 | Cargo.lock
 cargo:want@0.3.1 | MIT | sha256:a65f5d0a945d267751344c95665945b90c030ea107faf5c85d518929886187da | Cargo.lock
 cargo:wasi@0.11.1+wasi-snapshot-preview1 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT | sha256:23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3,sha256:268872b9816f90fd8e85db5a28d33f8150ebb8dd016653fb39ef1f94f2686bc5,sha256:a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2 | Cargo.lock
 cargo:wasm-bindgen@0.2.127 | MIT OR Apache-2.0 | sha256:378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397,sha256:a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2 | Cargo.lock
@@ -2097,6 +2099,7 @@ Packages:
 - cargo:pin-project-lite@0.2.17
 - cargo:raw-window-handle@0.6.2
 - cargo:sync_wrapper@1.0.2
+- cargo:vst3@0.3.0
 
 
                                  Apache License
@@ -4554,6 +4557,7 @@ Packages:
 - cargo:thiserror@1.0.69
 - cargo:thiserror@2.0.20
 - cargo:unicode-ident@1.0.24
+- cargo:vst3@0.3.0
 - cargo:wasi@0.11.1+wasi-snapshot-preview1
 - cargo:wasm-streams@0.5.0
 - cargo:zmij@1.0.23
@@ -14012,6 +14016,68 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ===== end sha256:6a2e0ade09a7d5f816f11566fee2b151b32235a7fad52b41d49cce96f833c1a9 =====
+===== sha256:6a5338e2ef149f0c9fffa7a007a4796bb38cf78570355d9d35258405064e7a37 =====
+Evidence labels: assembled license record from lock-resolved package metadata and SPDX 3.28.0
+Packages:
+- cargo:com-scrape-types@0.1.1
+
+Sourdaw assembled dependency license record
+
+Package: cargo:com-scrape-types@0.1.1
+Locked source: https://crates.io/api/v1/crates/com-scrape-types/0.1.1/download
+Locked revision: sha256:5ce183b975b8fc736a20919c4002717255fbd867df575c792aeefa9a56a73ad0
+Declared license: MIT OR Apache-2.0
+Selected SPDX terms: MIT
+
+The resolved package omits a retained legal file. This record combines hash-pinned metadata from the lock-resolved install with canonical SPDX License List text. It does not authenticate an upstream copyright holder, package-specific notice, or package archive.
+
+===== installed package metadata Cargo.toml sha256:1bbd6887b07e3ff756d6aa358363adbb105e3d9e71cd3fb3819755290fb253fd =====
+# THIS FILE IS AUTOMATICALLY GENERATED BY CARGO
+#
+# When uploading crates to the registry Cargo will automatically
+# "normalize" Cargo.toml files for maximal compatibility
+# with all versions of Cargo and also rewrite `path` dependencies
+# to registry (e.g., crates.io) dependencies.
+#
+# If you are reading this file be aware that the original Cargo.toml
+# will likely look very different (and much more reasonable).
+# See Cargo.toml.orig for the original contents.
+
+[package]
+edition = "2021"
+name = "com-scrape-types"
+version = "0.1.1"
+authors = ["Micah Johnston <micahrjohnston@gmail.com>"]
+description = "Support code for bindings generated with com-scrape"
+readme = "README.md"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/coupler-rs/vst3-rs"
+
+===== end installed package metadata Cargo.toml =====
+===== canonical SPDX MIT sha256:b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5 =====
+Source: https://github.com/spdx/license-list-data/blob/v3.28.0/text/MIT.txt
+MIT License
+
+Copyright (c) <year> <copyright holders>
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+associated documentation files (the "Software"), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the
+following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial
+portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT
+LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO
+EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+===== end canonical SPDX MIT =====
+
+===== end sha256:6a5338e2ef149f0c9fffa7a007a4796bb38cf78570355d9d35258405064e7a37 =====
 ===== sha256:6ac8711fb340c62ce0a4ecd463342d3fa0e8e70de697c863a2e1c0c53006003c =====
 Evidence labels: LICENSE
 Packages:

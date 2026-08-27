@@ -2,6 +2,9 @@ use daw_plugin_host::scanner::{
     extract_clap_instance_metadata, extract_clap_metadata, ClapDescriptorMetadata, PluginFormat,
     ScannedDescriptor, ScannedInstance,
 };
+use daw_plugin_host::vst3_scanner::{
+    extract_vst3_instance_metadata, extract_vst3_metadata, Vst3DescriptorMetadata,
+};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -140,9 +143,13 @@ struct FormatScanBackend {
 
 /// The registered scan backend for a format, or `None` when Sourdaw has none.
 ///
-/// CLAP is the only entry. A format with no backend is never scanned — the walk
-/// refuses it by name before a candidate exists — so reaching here with one is a
-/// caller error, and both sides of the protocol refuse rather than guess.
+/// A format with no backend is never scanned — the walk refuses it by name
+/// before a candidate exists — so reaching here with one is a caller error, and
+/// both sides of the protocol refuse rather than guess.
+///
+/// This registry and [`PluginFormat::scan_support`] answer the same question
+/// from two places, and `the_two_scan_registries_agree` is what keeps them from
+/// disagreeing.
 fn scan_backend(format: PluginFormat) -> Option<FormatScanBackend> {
     match format {
         PluginFormat::Clap => Some(FormatScanBackend {
@@ -151,7 +158,13 @@ fn scan_backend(format: PluginFormat) -> Option<FormatScanBackend> {
             },
             instance: extract_clap_instance_metadata,
         }),
-        PluginFormat::Vst3 | PluginFormat::Vst2 | PluginFormat::AudioUnit => None,
+        PluginFormat::Vst3 => Some(FormatScanBackend {
+            descriptor: |path| {
+                extract_vst3_metadata(path).map(Vst3DescriptorMetadata::into_scanned_descriptor)
+            },
+            instance: extract_vst3_instance_metadata,
+        }),
+        PluginFormat::Vst2 | PluginFormat::AudioUnit => None,
     }
 }
 
@@ -395,6 +408,7 @@ fn terminate_process_tree(child: &mut Child) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use daw_plugin_host::scanner::FormatScanSupport;
 
     fn args(values: &[&str]) -> Vec<OsString> {
         values.iter().map(OsString::from).collect()
@@ -522,7 +536,7 @@ mod tests {
     /// some other format's extractor.
     #[test]
     fn a_worker_invocation_naming_a_format_with_no_backend_is_malformed() {
-        for format in ["vst3", "vst2", "au"] {
+        for format in ["vst2", "au"] {
             assert_eq!(
                 worker_role(&args(&[
                     "/app",
@@ -554,15 +568,36 @@ mod tests {
         assert_eq!(worker_role(&arguments), Some(WorkerRole::Malformed));
     }
 
-    /// The registry is the dispatch. CLAP is the only format with entries, and
-    /// this fails the moment a second one is registered without the rest of the
-    /// packet that makes it real.
+    /// The registry is the dispatch. This fails the moment a format is
+    /// registered without the rest of the packet that makes it real.
     #[test]
-    fn clap_is_the_only_format_with_a_registered_scan_backend() {
+    fn only_the_hosted_formats_have_a_registered_scan_backend() {
         assert!(scan_backend(PluginFormat::Clap).is_some());
-        assert!(scan_backend(PluginFormat::Vst3).is_none());
+        assert!(scan_backend(PluginFormat::Vst3).is_some());
         assert!(scan_backend(PluginFormat::Vst2).is_none());
         assert!(scan_backend(PluginFormat::AudioUnit).is_none());
+    }
+
+    /// Two registries answer "can this format be scanned?" — the walk asks
+    /// `scan_support` to decide whether a file is even a candidate, and this
+    /// file asks `scan_backend` to decide what to do with one. Nothing made them
+    /// agree.
+    ///
+    /// Disagreeing either way is a user-visible fault with no error attached to
+    /// it. A format the walk collects and this file has no backend for produces
+    /// a spawn refusal for every bundle the user owns. A format this file has a
+    /// backend for and the walk refuses is a working host the user is told is
+    /// not implemented, and the backend is never reached to contradict it.
+    #[test]
+    fn the_two_scan_registries_agree_about_every_format() {
+        for format in PluginFormat::ALL {
+            assert_eq!(
+                scan_backend(format).is_some(),
+                matches!(format.scan_support(), FormatScanSupport::Extractor),
+                "{} is scannable according to one registry and not the other",
+                format.wire_name()
+            );
+        }
     }
 
     /// A format with no backend is refused before a process is spawned, with a
@@ -570,13 +605,13 @@ mod tests {
     #[test]
     fn scanning_a_format_with_no_backend_refuses_without_spawning_a_worker() {
         let refusal = scan_descriptor_metadata(
-            PluginFormat::Vst3,
-            Path::new("/plugins/Vendor.vst3"),
+            PluginFormat::Vst2,
+            Path::new("/plugins/Vendor.vst"),
             Duration::from_millis(1),
         )
         .expect_err("a format with no scan backend must be refused");
 
-        assert_eq!(refusal, "No plugin scan backend for format vst3");
+        assert_eq!(refusal, "No plugin scan backend for format vst2");
     }
 
     #[test]

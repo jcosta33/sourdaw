@@ -1,6 +1,8 @@
 import { serializeMidiStateForClips } from '#/modules/MIDI/useCases';
 import { createHandler } from '#/utils/createHandler';
+import { type GeneratedMidiStateGuard } from '#/utils/handlerContract';
 
+import { serializeClipSatelliteEntries } from '../../stores/clipSatelliteState';
 import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClipWriteTarget';
 import { duplicateClip } from '../../useCases/clip/duplicateClip';
 import { prepareDuplicateClipTargetId } from '../../useCases/clip/prepareDuplicateClipTargetId';
@@ -11,7 +13,7 @@ type DuplicateClipAction = { payload: { clipId: string; targetClipId?: string } 
 
 type DuplicateClipState = {
     targetClipId: string;
-    generatedMidiStateGuard: { entityJson: string; midiByClipIdJson: string };
+    generatedMidiStateGuard: GeneratedMidiStateGuard;
 };
 
 const duplicateClipStates = new WeakMap<object, DuplicateClipState>();
@@ -91,6 +93,10 @@ export const handleDuplicateClip = createHandler<'duplicateClip'>({
         if (duplicatedClip) {
             state.generatedMidiStateGuard.entityJson = JSON.stringify(duplicatedClip);
             state.generatedMidiStateGuard.midiByClipIdJson = serializeMidiStateForClips([duplicatedClip.id]);
+            // The duplicate clones the source's gain envelope and warp state, so
+            // the guard must expect exactly those satellites — requiring absence
+            // would make the copy's own undo conflict on what the copy itself made.
+            state.generatedMidiStateGuard.clipSatellitesJson = serializeClipSatelliteEntries([duplicatedClip.id]);
         }
         return toHandlerExecutionResult(true);
     },

@@ -5,6 +5,7 @@ import { getAllSidechainRoutes } from '#/modules/Routing/useCases';
 import { type GeneratedMidiStateGuard } from '#/utils/handlerContract';
 
 import { collectTrackClipIds } from '../services/collectTrackClipIds';
+import { serializeClipSatelliteEntries } from '../stores/clipSatelliteState';
 import { getEnvelope } from '../stores/gainEnvelopeStore';
 import { takeLaneStore } from '../stores/takeLaneStore';
 import { hasNonDefaultWarpState } from '../stores/warpStates';
@@ -23,6 +24,24 @@ function hasClipSatelliteState(clipIds: readonly string[]): boolean {
         return true;
     }
     return getAutomationLanes().some((lane) => lane.clipId !== undefined && clipIdSet.has(lane.clipId));
+}
+
+/**
+ * A generation that itself writes satellites (a clip duplicate clones the
+ * source's envelope and warp state) captures what it produced in
+ * `clipSatellitesJson`; the guard then refuses only when the user moved those
+ * satellites since. Clip-scoped automation lanes stay on the absence check —
+ * they are owned by Automation's store, not the satellite pair.
+ */
+function clipSatelliteStateMatches(clipIds: readonly string[], guard: GeneratedMidiStateGuard): boolean {
+    if (guard.clipSatellitesJson === undefined) {
+        return !hasClipSatelliteState(clipIds);
+    }
+    const clipIdSet = new Set(clipIds);
+    if (getAutomationLanes().some((lane) => lane.clipId !== undefined && clipIdSet.has(lane.clipId))) {
+        return false;
+    }
+    return serializeClipSatelliteEntries(clipIds) === guard.clipSatellitesJson;
 }
 
 export function isGeneratedMidiStateCurrent({
@@ -58,7 +77,7 @@ export function isGeneratedMidiStateCurrent({
     if (JSON.stringify(entity) !== guard.entityJson) {
         return false;
     }
-    if (serializeMidiStateForClips(clipIds) !== guard.midiByClipIdJson || hasClipSatelliteState(clipIds)) {
+    if (serializeMidiStateForClips(clipIds) !== guard.midiByClipIdJson || !clipSatelliteStateMatches(clipIds, guard)) {
         return false;
     }
 

@@ -4,6 +4,7 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { updateClip } from '../../repositories/track/updateClip';
+import { readClipSatelliteEntry, writeClipSatelliteEntry } from '../../stores/clipSatelliteState';
 import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClipWriteTarget';
 import { removeClip } from '../clip/removeClip';
 
@@ -42,6 +43,11 @@ export function splitClipWithUndo(clipId: string, splitBeat: number): void {
     const sourceCcSnapshot = midiBefore?.ccByClipId[clipId] ?? null;
     const sourcePitchBendSnapshot = midiBefore?.pitchBendByClipId[clipId] ?? null;
 
+    // Same freeze for the source clip's satellites (gain envelope, warp state):
+    // splitClip repartitions them across both halves, so undo must put the
+    // source entry back and clear the right half's.
+    const sourceSatelliteBefore = readClipSatelliteEntry(clipId);
+
     const rightClipId = splitClip(clipId, splitBeat);
 
     if (!rightClipId) {
@@ -53,6 +59,8 @@ export function splitClipWithUndo(clipId: string, splitBeat: number): void {
     const rightNotesSnapshot = midiAfter?.notesByClipId[rightClipId] ?? null;
     const rightCcSnapshot = midiAfter?.ccByClipId[rightClipId] ?? null;
     const rightPitchBendSnapshot = midiAfter?.pitchBendByClipId[rightClipId] ?? null;
+    const leftSatelliteAfter = readClipSatelliteEntry(clipId);
+    const rightSatelliteAfter = readClipSatelliteEntry(rightClipId);
 
     pushUndoEntry(
         'Split clip',
@@ -70,6 +78,8 @@ export function splitClipWithUndo(clipId: string, splitBeat: number): void {
                 controlChangeSnapshot: sourceCcSnapshot ? structuredClone(sourceCcSnapshot) : null,
                 pitchBendSnapshot: sourcePitchBendSnapshot ? structuredClone(sourcePitchBendSnapshot) : null,
             });
+            writeClipSatelliteEntry(sourceSatelliteBefore);
+            writeClipSatelliteEntry({ clipId: rightClipId, gainEnvelope: null, warpState: null });
         },
         () => {
             // Redo reuses the original right clip id (deterministic id reuse, chosen
@@ -95,6 +105,11 @@ export function splitClipWithUndo(clipId: string, splitBeat: number): void {
                 controlChangeSnapshot: rightCcSnapshot ? structuredClone(rightCcSnapshot) : null,
                 pitchBendSnapshot: rightPitchBendSnapshot ? structuredClone(rightPitchBendSnapshot) : null,
             });
+            // The re-split's seam points carry deterministic ids, so its satellite
+            // writes already match these captures — reinstate them anyway, mirroring
+            // the MIDI snapshot pattern above.
+            writeClipSatelliteEntry(leftSatelliteAfter);
+            writeClipSatelliteEntry(rightSatelliteAfter);
             return newRightClipId;
         }
     );

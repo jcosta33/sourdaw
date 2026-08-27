@@ -126,12 +126,12 @@ describe('startPluginScan', () => {
     });
 
     it('keeps a scan that only refused formats out of the error channel', async () => {
-        // The ordinary outcome for anyone who owns a VST3 plugin: the VST3
-        // roots are scanned by default on every platform, so this runs on every
+        // The ordinary outcome for anyone who owns a plugin in a format Sourdaw
+        // refuses: its folders are scanned like any other, so this runs on every
         // scan. Routed into `errors` it would render the scan destructively and
         // withhold the success badge — which is gated on `errors.length === 0`
         // — permanently, for a scan in which nothing failed.
-        const refusal = 'VST3 plugins are recognised but not loaded yet.';
+        const refusal = 'VST2 plugins are not loaded and never will be.';
         mocks.scanPlugins.mockResolvedValue({
             plugins: [create_scanned_plugin({ id: 'p1', format: 'clap' })],
             errors: [],

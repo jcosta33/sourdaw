@@ -1,6 +1,8 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { dbToGain } from '#/utils/audioLevelLaw';
+
 import { ClipInspector } from '../ClipInspector';
 
 vi.mock('#/components/daw/DawCompactInput', () => ({
@@ -82,6 +84,7 @@ vi.mock('#/components/ui/slider', () => ({
     Slider: ({
         value,
         onValueChange,
+        onValueCommit,
         min,
         max,
         step,
@@ -89,6 +92,7 @@ vi.mock('#/components/ui/slider', () => ({
     }: {
         value: number[];
         onValueChange: (v: number[]) => void;
+        onValueCommit?: (v: number[]) => void;
         min?: number;
         max?: number;
         step?: number;
@@ -102,6 +106,7 @@ vi.mock('#/components/ui/slider', () => ({
             step={step}
             aria-label={ariaLabel}
             onChange={(event) => onValueChange([Number(event.target.value)])}
+            onBlur={(event) => onValueCommit?.([Number(event.target.value)])}
         />
     ),
 }));
@@ -183,6 +188,14 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
         setClipFollowAction: vi.fn(),
     };
 });
+
+const commandMocks = vi.hoisted(() => ({
+    executeAppAction: vi.fn(),
+}));
+
+vi.mock('#/modules/Command/useCases', () => ({
+    executeAppAction: commandMocks.executeAppAction,
+}));
 
 describe('ClipInspector', () => {
     const defaultProps = {
@@ -269,5 +282,92 @@ describe('ClipInspector', () => {
     it('should render MIDI AI section for MIDI clips', () => {
         render(<ClipInspector {...defaultProps} clip={{ ...defaultProps.clip, type: 'midi' }} />);
         expect(screen.getByTestId('midi-ai-section')).toBeInTheDocument();
+    });
+
+    it('reads the clip gain back in decibels', () => {
+        render(<ClipInspector {...defaultProps} clip={{ ...defaultProps.clip, gain: 1.4125 }} />);
+        expect(screen.getByText('3.0 dB')).toBeInTheDocument();
+    });
+
+    it('reads a silent clip gain as -∞ dB', () => {
+        render(<ClipInspector {...defaultProps} clip={{ ...defaultProps.clip, gain: 0 }} />);
+        expect(screen.getByText('-∞ dB')).toBeInTheDocument();
+    });
+
+    it('commits one undoable setClipGain action per slider gesture, anchored on the pre-gesture gain', () => {
+        render(<ClipInspector {...defaultProps} />);
+        const slider = screen.getByLabelText('Clip gain');
+
+        fireEvent.change(slider, { target: { value: '-12' } });
+        fireEvent.change(slider, { target: { value: '-6' } });
+        // Mid-gesture ticks never reach the command layer.
+        expect(commandMocks.executeAppAction).not.toHaveBeenCalled();
+        fireEvent.blur(slider, { target: { value: '-6' } });
+
+        expect(commandMocks.executeAppAction).toHaveBeenCalledTimes(1);
+        expect(commandMocks.executeAppAction).toHaveBeenCalledWith({
+            type: 'setClipGain',
+            payload: { clipId: 'clip-1', gain: dbToGain(-6), expectedGain: 1 },
+        });
+    });
+
+    it('dispatches nothing when the gesture ends where it started', () => {
+        render(<ClipInspector {...defaultProps} />);
+        const slider = screen.getByLabelText('Clip gain');
+
+        fireEvent.change(slider, { target: { value: '0' } });
+        fireEvent.blur(slider, { target: { value: '0' } });
+
+        expect(commandMocks.executeAppAction).not.toHaveBeenCalled();
+    });
+
+    it('treats the bottom of the slider travel as silence', () => {
+        render(<ClipInspector {...defaultProps} />);
+        const slider = screen.getByLabelText('Clip gain');
+
+        fireEvent.change(slider, { target: { value: '-60' } });
+        fireEvent.blur(slider, { target: { value: '-60' } });
+
+        expect(commandMocks.executeAppAction).toHaveBeenCalledWith({
+            type: 'setClipGain',
+            payload: { clipId: 'clip-1', gain: 0, expectedGain: 1 },
+        });
+    });
+
+    it('commits an exact dB entry through the same undoable action', () => {
+        render(<ClipInspector {...defaultProps} />);
+        const input = screen.getByLabelText('Clip gain value');
+
+        fireEvent.change(input, { target: { value: '-3' } });
+        fireEvent.keyDown(input, { key: 'Enter' });
+
+        expect(commandMocks.executeAppAction).toHaveBeenCalledTimes(1);
+        expect(commandMocks.executeAppAction).toHaveBeenCalledWith({
+            type: 'setClipGain',
+            payload: { clipId: 'clip-1', gain: dbToGain(-3), expectedGain: 1 },
+        });
+    });
+
+    it('accepts -inf as silence in the exact entry', () => {
+        render(<ClipInspector {...defaultProps} />);
+        const input = screen.getByLabelText('Clip gain value');
+
+        fireEvent.change(input, { target: { value: '-inf' } });
+        fireEvent.keyDown(input, { key: 'Enter' });
+
+        expect(commandMocks.executeAppAction).toHaveBeenCalledWith({
+            type: 'setClipGain',
+            payload: { clipId: 'clip-1', gain: 0, expectedGain: 1 },
+        });
+    });
+
+    it('reverts an unparseable entry without dispatching', () => {
+        render(<ClipInspector {...defaultProps} />);
+        const input = screen.getByLabelText('Clip gain value');
+
+        fireEvent.change(input, { target: { value: 'loud' } });
+        fireEvent.keyDown(input, { key: 'Enter' });
+
+        expect(commandMocks.executeAppAction).not.toHaveBeenCalled();
     });
 });

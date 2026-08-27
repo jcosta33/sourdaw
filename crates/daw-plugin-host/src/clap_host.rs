@@ -13,13 +13,9 @@ use std::os::raw::c_void;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::OnceLock;
 
-/// Host-supplied wake invoked whenever a plugin flags a latency change.
-///
-/// Runs on whatever thread the plugin called the host callback from, so it must
-/// not block, allocate unboundedly, or re-enter the wrapper. The host
-/// application installs it to wake its own control path; keeping it an opaque
-/// closure is what lets this crate stay free of any transport dependency.
-pub type LatencyChangeNotifier = Box<dyn Fn() + Send + Sync>;
+/// Re-exported so every existing `clap_host::LatencyChangeNotifier` path still
+/// resolves. The type itself is seam vocabulary — see [`crate::traits`].
+pub use crate::traits::LatencyChangeNotifier;
 
 /// Per-instance host callback state, reachable from a plugin's host callbacks
 /// through `clap_host::host_data`. Each `ClapWrapper` owns one of these and pins

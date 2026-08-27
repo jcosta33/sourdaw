@@ -1,5 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 
+import { captureAgentProjectInspectionState } from '../captureCommandBatchPreflightState';
+
 import type { setArrangementEventBus } from '#/modules/Arrangement/useCases';
 import type {
     configureRuntimeGraphProjectRevisionValidator,
@@ -90,6 +92,7 @@ const {
     setMidiLearnDependenciesMock,
     registerCrdtStorageRuntimeMock,
     captureProjectRevisionMock,
+    agentProjectInspectionSetProviderMock,
     setArrangementEventBusMock,
     configureRuntimeGraphProjectRevisionValidatorMock,
     configureRuntimeGraphTopologyValidatorMock,
@@ -146,6 +149,7 @@ const {
         setMidiLearnDependenciesMock: vi.fn<(dependencies: { clampTrackGain: unknown }) => void>(),
         registerCrdtStorageRuntimeMock: vi.fn<() => void>(),
         captureProjectRevisionMock: vi.fn<() => string>(() => 'revision-1'),
+        agentProjectInspectionSetProviderMock: vi.fn(),
         setArrangementEventBusMock: vi.fn<(eventBus: ArrangementEventBus) => void>(),
         setProjectIdentityTransitionDependenciesMock:
             vi.fn<(dependencies: ProjectIdentityTransitionDependencies) => void>(),
@@ -314,7 +318,7 @@ vi.mock('#/modules/CrdtDocument/stores', () => ({
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     DOC_PREFIX_ROOT: 'root',
-    agentProjectInspectionPort: { setProvider: noop },
+    agentProjectInspectionPort: { setProvider: agentProjectInspectionSetProviderMock },
     captureProjectRevision: captureProjectRevisionMock,
     createCommandPreviewWorkspace: noop,
     createCommandRecoveryWorkspace: noop,
@@ -668,6 +672,9 @@ describe('bootstrap', () => {
 
     it('wires project runtime validation and event buses in the composition root', () => {
         expect(registerCrdtStorageRuntimeMock).toHaveBeenCalledExactlyOnceWith();
+        expect(agentProjectInspectionSetProviderMock).toHaveBeenCalledExactlyOnceWith(
+            captureAgentProjectInspectionState
+        );
         expect(setArrangementEventBusMock).toHaveBeenCalledExactlyOnceWith(eventBusMock);
 
         expect(configureRuntimeGraphProjectRevisionValidatorMock).toHaveBeenCalledTimes(1);

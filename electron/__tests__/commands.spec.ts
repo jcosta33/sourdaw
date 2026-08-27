@@ -306,8 +306,8 @@ const addonSignatures = (): ReadonlyMap<string, AddonSignature> => {
  *
  * `SourdawBridge` takes a positional array, so this order *is* the contract
  * every renderer call site is written against. Under Tauri's named-argument
- * `invoke` a transposition was unrepresentable; here `load_plugin(plugin_id,
- * instance_id)` and `provider_gateway_request`'s five consecutive `String`
+ * `invoke` a transposition was unrepresentable; here `load_plugin`'s leading
+ * `plugin_id, instance_id` pair and `provider_gateway_request`'s consecutive `String`
  * parameters would be accepted swapped by napi-rs deserialization without a
  * word, and surface as a plugin that will not load or a request signed with the
  * wrong key.
@@ -351,7 +351,7 @@ const COMMAND_ARGUMENTS: ReadonlyMap<string, readonly string[]> = new Map([
     ['list_directory', ['path']],
     ['list_midi_inputs', []],
     ['load_cached_whisper_model', []],
-    ['load_plugin', ['plugin_id', 'instance_id']],
+    ['load_plugin', ['plugin_id', 'instance_id', 'sample_rate']],
     ['load_sample', ['instance_id', 'file_path']],
     ['map_graph_batch', ['prior', 'batch', 'sample_rate', 'session']],
     ['open_midi_input', ['port_index']],
@@ -392,7 +392,7 @@ describe('positional argument contract', () => {
         // Named explicitly because these are the two the parity risk is real
         // for: everything in them is a `String`, so nothing downstream rejects
         // a swap.
-        expect(COMMAND_ARGUMENTS.get('load_plugin')).toEqual(['plugin_id', 'instance_id']);
+        expect(COMMAND_ARGUMENTS.get('load_plugin')).toEqual(['plugin_id', 'instance_id', 'sample_rate']);
         expect(COMMAND_ARGUMENTS.get('provider_gateway_request')).toEqual([
             'request_id',
             'session_id',

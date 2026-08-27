@@ -19,6 +19,7 @@ type BridgeSharedVocalFxBusesPlanResult =
           status: 'accepted';
           actions: RuntimeAction[];
           identities: BatchLocalActionIdentity[];
+          providerKnownTargetIds: string[];
       };
 
 function valuesEqual(left: unknown, right: unknown): boolean {
@@ -205,5 +206,12 @@ export function bridgeSharedVocalFxBusesPlan({
             { actionType: 'createBus' as const, actionOrdinal: index, busId, initialGain: 1 },
             { actionType: 'addDevice' as const, actionOrdinal: index, deviceId },
         ]),
+        providerKnownTargetIds: [
+            ...new Set(
+                scope.capability.effectGroups.flatMap((group) =>
+                    group.sources.flatMap((source) => [source.deviceId, source.trackId])
+                )
+            ),
+        ],
     };
 }

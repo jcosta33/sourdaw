@@ -239,6 +239,7 @@ const secrets = workflow.jobs?.secrets;
 const unit = workflow.jobs?.unit;
 const e2e = workflow.jobs?.e2e;
 const gate = workflow.jobs?.gate;
+const browserAiWebGpu = workflow.jobs?.['browser-ai-webgpu'];
 const nightlyReport = workflow.jobs?.['nightly-report'];
 const resolveScopeRun = stepNamed(decide, 'Resolve scope')?.run ?? '';
 const trustedCheckout = stepNamed(secrets, 'Checkout trusted scanner');
@@ -268,6 +269,7 @@ const expectedGateNeeds = [
     'rust',
     'native-macos',
     'native-windows',
+    'browser-ai-webgpu',
     'codeql',
     'secrets',
 ];
@@ -442,6 +444,8 @@ expect(
 expectShardFailureWarning(unitFailureWarning, 'unit', 'Unit suite', '2');
 expectShardFailureWarning(e2eFailureWarning, 'e2e', 'End-to-end', '11');
 expect(gate?.name === 'Gate', 'required Gate job name must stay exact');
+expect(browserAiWebGpu !== undefined, 'browser-ai-webgpu job must remain connected to the workflow');
+expect(gateNeeds.includes('browser-ai-webgpu'), 'Gate must depend on browser-ai-webgpu');
 expect(
     gate?.if ===
         "${{ !cancelled() && (github.event_name != 'pull_request_review' || github.event.review.state == 'approved') }}",

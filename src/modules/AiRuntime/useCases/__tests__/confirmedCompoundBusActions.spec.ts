@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { captureCommandBatchPreflightState } from '#/app/captureCommandBatchPreflightState';
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import { trackStore, type Track } from '#/modules/Arrangement/stores';
 import {
@@ -12,9 +13,11 @@ import {
     configureRuntimeGraphProjectRevisionValidator,
     configureRuntimeGraphTopologyValidator,
 } from '#/modules/AudioEngine/useCases';
+import { configureCollaborationAssetOwner } from '#/modules/Collaboration/useCases';
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
+    commandBatchPreflightPort,
     compileVersionedCommandBatchEnvelope,
     migrateLegacyAppActionToVersionedCommandEnvelope,
     resetActionReplayAuthority,
@@ -47,13 +50,23 @@ import { compileArbitraryCommandList } from '../compileArbitraryCommandList';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { materializeActionStateGuards } from '../materializeActionStateGuards';
 
-import {
-    configureAiWorkflowCommandPreflightFixture,
-    resetAiWorkflowCommandPreflightFixture,
-} from './aiWorkflowCommandPreflightFixture';
+const fixtureStorageOwners = vi.hoisted(() => new Map<string, { flushPendingUnscopedWrite(): void }>());
+
+vi.mock('#/infra/store/storage/createAutomergeStorage', async (importOriginal) => {
+    const original = await importOriginal<typeof import('#/infra/store/storage/createAutomergeStorage')>();
+    return {
+        ...original,
+        createAutomergeStorage: (...args: Parameters<typeof original.createAutomergeStorage>) => {
+            const storage = original.createAutomergeStorage(...args);
+            fixtureStorageOwners.set(`${args[0]}:${args[1]}`, storage);
+            return storage;
+        },
+    };
+});
 
 const runtimeMocks = vi.hoisted(() => ({
     addDeviceToStrip: vi.fn(),
+    applyRuntimeGraphDelta: vi.fn(() => ({ acceptance: 'accepted' as const, application: 'applied' as const })),
     clearReportedLatency: vi.fn(),
     engineRemoveSend: vi.fn(),
     engineSetSend: vi.fn(),
@@ -66,6 +79,7 @@ const runtimeMocks = vi.hoisted(() => ({
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
     addDeviceToStrip: runtimeMocks.addDeviceToStrip,
+    applyRuntimeGraphDelta: runtimeMocks.applyRuntimeGraphDelta,
     clearReportedLatency: runtimeMocks.clearReportedLatency,
     removeDeviceFromStrip: runtimeMocks.removeDeviceFromStrip,
     removeTrackStrip: runtimeMocks.removeTrackStrip,
@@ -84,6 +98,17 @@ const noActionHistoryMetadataPort = {
     markReverted: () => ({ status: 'unavailable' as const }),
     clear: () => undefined,
 };
+
+function expectNoRuntimeMutations(): void {
+    expect(runtimeMocks.addDeviceToStrip).not.toHaveBeenCalled();
+    expect(runtimeMocks.applyRuntimeGraphDelta).not.toHaveBeenCalled();
+    expect(runtimeMocks.clearReportedLatency).not.toHaveBeenCalled();
+    expect(runtimeMocks.engineRemoveSend).not.toHaveBeenCalled();
+    expect(runtimeMocks.engineSetSend).not.toHaveBeenCalled();
+    expect(runtimeMocks.removeDeviceFromStrip).not.toHaveBeenCalled();
+    expect(runtimeMocks.removeTrackStrip).not.toHaveBeenCalled();
+    expect(runtimeMocks.updateDeviceParam).not.toHaveBeenCalled();
+}
 
 const BUS_ID = 'bus-ai-00000000-0000-4000-8000-000000000001';
 const BUS_ALTERNATIVE_ID = 'alternative-ai-00000000-0000-4000-8000-000000000001';
@@ -123,6 +148,14 @@ function createVocalsTrack(): Track {
         midiOutputTrackId: null,
         followChordTrack: false,
     };
+}
+
+function flushTrackFixtureProjectWrite(): void {
+    const storage = fixtureStorageOwners.get('root:tracks');
+    if (!storage) {
+        throw new Error('Expected fixture-owned tracks storage adapter');
+    }
+    storage.flushPendingUnscopedWrite();
 }
 
 function createCompoundActions(includeConflictingSend = false): ExecutableRuntimeAction[] {
@@ -426,13 +459,16 @@ function propose(actions: ExecutableRuntimeAction[], id: string): void {
 
 describe('confirmed compound bus actions', () => {
     beforeEach(() => {
-        configureAiWorkflowCommandPreflightFixture();
         vi.clearAllMocks();
         configureAutomergeStoragePort(null);
         resetCrdtProjectAuthority('confirmed compound bus test');
         removeCrdtDoc('root');
         createCrdtDoc('root');
         registerCrdtStorageRuntime();
+        commandBatchPreflightPort.setProvider(captureCommandBatchPreflightState);
+        configureCollaborationAssetOwner({
+            captureOwnerId: () => 'project:confirmed-compound-bus',
+        });
         configureRuntimeGraphProjectRevisionValidator(
             (expectedProjectRevision) => captureProjectRevision() === expectedProjectRevision
         );
@@ -455,6 +491,7 @@ describe('confirmed compound bus actions', () => {
         macroStore.set({ macros: [], recording: false, currentRecording: [] });
         const vocals = createVocalsTrack();
         trackStore.set({ tracks: [vocals], selectedTrackId: vocals.id, ghostClips: [] });
+        flushTrackFixtureProjectWrite();
         chatStore.set({
             messages: [{ id: 'assistant-1', role: 'assistant', content: 'Awaiting confirmation', timestamp: 1 }],
             isGenerating: false,
@@ -464,7 +501,9 @@ describe('confirmed compound bus actions', () => {
     });
 
     afterEach(() => {
-        resetAiWorkflowCommandPreflightFixture();
+        commandBatchPreflightPort.setProvider(null);
+        configureRuntimeGraphProjectRevisionValidator(null);
+        configureRuntimeGraphTopologyValidator(null);
         clearUndoHistory();
         resetActionReplayAuthority();
         clearHandlerRegistry();
@@ -492,6 +531,13 @@ describe('confirmed compound bus actions', () => {
         expect(trackStore.value?.tracks.find((track) => track.id === 'track-vocals')?.sends).toEqual([
             { busId: BUS_ID, level: 0.25, preFader: false },
         ]);
+        expect(runtimeMocks.applyRuntimeGraphDelta).toHaveBeenCalledWith(
+            expect.objectContaining({
+                command: 'replace-track-device-chain',
+                operation: 'add-device',
+                after: expect.objectContaining({ id: BUS_ID }),
+            })
+        );
         expect(runtimeMocks.engineSetSend).toHaveBeenCalledWith('track-vocals', BUS_ID, 0.25, false);
         const undoEntries = undoStore.value?.past ?? [];
         expect(undoEntries).toHaveLength(3);
@@ -513,8 +559,7 @@ describe('confirmed compound bus actions', () => {
         expect(result.status).toBe('failed');
         expect(trackStore.value?.tracks.some((track) => track.id === BUS_ID)).toBe(false);
         expect(trackStore.value?.tracks.find((track) => track.id === 'track-vocals')?.sends).toEqual([]);
-        expect(runtimeMocks.addDeviceToStrip).not.toHaveBeenCalled();
-        expect(runtimeMocks.engineSetSend).not.toHaveBeenCalled();
+        expectNoRuntimeMutations();
         expect(undoStore.value?.past).toEqual([]);
         expect(getPendingActionConfirmation('confirmation-conflict')?.status).toBe('failed');
     });

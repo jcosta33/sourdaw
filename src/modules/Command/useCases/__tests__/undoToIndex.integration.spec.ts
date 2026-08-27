@@ -120,8 +120,12 @@ describe('undoToIndex via the Undo History panel path', () => {
         // E4's inverse writes nothing, so the row the user asked to remove is still
         // applied and the sweep cannot advance. Reaching past E4 for E3 would revert
         // precisely the row they clicked to keep.
-        expect(mocks.undoStoreValue.value.past.map((entry) => entry.id)).toEqual(['E0', 'E1', 'E2', 'E3', 'E4']);
-        expect(mocks.undoStoreValue.value.future).toEqual([]);
+        const state = mocks.undoStoreValue.value;
+        if (!state) {
+            throw new Error('expected the undo stack to remain initialized');
+        }
+        expect(state.past.map((entry) => entry.id)).toEqual(['E0', 'E1', 'E2', 'E3', 'E4']);
+        expect(state.future).toEqual([]);
         expect(mocks.undoTreeMoveTo).not.toHaveBeenCalled();
         expect(mocks.notifyUser).toHaveBeenCalledTimes(1);
         expect(mocks.notifyUser).toHaveBeenCalledWith('Cannot undo "E4": project state has changed', 'warning');
@@ -135,8 +139,12 @@ describe('undoToIndex via the Undo History panel path', () => {
 
         // None of them may be reverted. The history below a blocked entry is only
         // reachable in the order the user recorded it.
-        expect(mocks.undoStoreValue.value.past.map((entry) => entry.id)).toEqual(['E0', 'E1', 'E2', 'E3', 'E4']);
-        expect(mocks.undoStoreValue.value.future).toEqual([]);
+        const state = mocks.undoStoreValue.value;
+        if (!state) {
+            throw new Error('expected the undo stack to remain initialized');
+        }
+        expect(state.past.map((entry) => entry.id)).toEqual(['E0', 'E1', 'E2', 'E3', 'E4']);
+        expect(state.future).toEqual([]);
         expect(mocks.notifyUser).toHaveBeenCalledTimes(1);
         expect(mocks.notifyUser).toHaveBeenCalledWith('Cannot undo "E4": project state has changed', 'warning');
     });

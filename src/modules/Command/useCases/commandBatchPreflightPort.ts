@@ -15,6 +15,14 @@ type CommandBatchPreflightCaptureInput = {
 };
 
 type CommandBatchPreflightState = {
+    /**
+     * Fingerprints taken from the live projection rather than the project
+     * document. Condition evaluation never reads them: a staged document and a
+     * live projection are different authorities, and comparing across the two
+     * attributes another writer's change to this batch. Absent from a provider
+     * that derives everything from the document.
+     */
+    advertisedTargetFingerprints?: Readonly<Record<string, string>>;
     audioGraphValid: boolean;
     availableAssetHashes: readonly string[];
     availableAudioBufferIds: readonly string[];

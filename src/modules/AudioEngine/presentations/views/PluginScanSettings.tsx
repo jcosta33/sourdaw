@@ -212,6 +212,16 @@ export const PluginScanSettings = (): ReactElement | null => {
                         <span>All plugins scanned successfully</span>
                     </DawMicroBadge>
                 ) : null}
+
+                {/*
+                 * Steinberg's trademark terms require this attribution wherever
+                 * the product names the format. This panel is where a user first
+                 * meets it, and it is always rendered so no scan state can hide
+                 * it.
+                 */}
+                <p className="text-[10px] text-muted-foreground">
+                    VST® is a registered trademark of Steinberg Media Technologies GmbH.
+                </p>
             </Stack>
         </section>
     );

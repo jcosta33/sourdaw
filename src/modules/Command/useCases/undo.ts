@@ -298,7 +298,7 @@ async function undoImpl(): Promise<UndoResult> {
 
     const initialPast = initial.past;
     const headId = initialPast[initialPast.length - 1]!.id;
-    let past = initialPast;
+    let past: readonly UndoEntry[] = initialPast;
 
     // Scan downwards until something is actually undone. Inert entries (action
     // entries without an `inverseAction`) are dropped along the way: undoing one
