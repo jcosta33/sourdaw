@@ -1618,6 +1618,16 @@
         },
         {
             "surface": "project-source",
+            "file": "scripts/test-health-gate-scripts.sh",
+            "value": "https://github.com/$GITHUB_REPOSITORY.git"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/resolveVercelProductionDeployment.ts",
+            "value": "https://api.vercel.com/v7/deployments"
+        },
+        {
+            "surface": "project-source",
             "file": "scripts/reconcileTrackerIssue.ts",
             "value": "https://api.github.com/repos/${slot}",
             "templateSha256": "b200795ec386588f72569a22bd8ff94aaf898396a8579b7c0c3862e985fba22d"
