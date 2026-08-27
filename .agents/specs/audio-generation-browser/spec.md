@@ -281,14 +281,13 @@ system is ~200 ms for a 3 MB payload.
 
 Verify with: `manual` — route a 3 MB rendered buffer to the native engine and confirm transit over the Channel API (or URI-scheme fetch), not `emit()`/`listen()`
 
-### AC-033 — Tauri/Windows bypasses browser storage for models
+### AC-033 — Desktop uses the browser model store
 
-When running in Tauri on Windows, the model store must bypass browser storage entirely: download
-via the Rust backend's `model_download.rs` and serve weights to the webview via
-`register_uri_scheme_protocol` or direct file reads, so browser quota limits never apply. (On
-macOS/Linux Tauri, browser AI features stay disabled and route to the native pipeline.)
+When running in Electron, browser AI models must use the same admitted browser artifact manager and
+renderer storage as the web build. The desktop shell must not introduce a native model downloader
+or inference route.
 
-Verify with: `manual` — on Tauri/Windows, download and load a model and confirm files land in the Rust-managed app data directory, not OPFS, with no browser-quota path exercised
+Verify with: `manual` — on desktop, download and load an admitted browser model and confirm the renderer uses the browser artifact cache with no native model-download command
 
 ### AC-034 — DiffSinger ONNX I/O honours the merged tensor and mel contracts
 

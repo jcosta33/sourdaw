@@ -2,18 +2,10 @@ use sha2::{Digest, Sha256};
 use std::io::Read;
 use std::path::{Component, Path, PathBuf};
 
-pub struct ModelDownload {
+pub struct VerifiedCachedModel {
     pub filename: &'static str,
-    pub url: &'static str,
     pub expected_sha256: &'static str,
     pub expected_size_bytes: u64,
-}
-
-/// Get the shared model cache directory.
-pub fn model_dir() -> Result<PathBuf, String> {
-    let dir = cached_model_dir()?;
-    std::fs::create_dir_all(&dir).map_err(|e| format!("Failed to create model directory: {e}"))?;
-    Ok(dir)
 }
 
 /// Locate the shared model cache without creating or mutating it.
@@ -28,7 +20,9 @@ pub fn cached_model_dir() -> Result<PathBuf, String> {
 /// returned here are the exact bytes a local inference caller must consume;
 /// returning a path after verification would re-open a mutable name and leave
 /// a hash-to-parser replacement race.
-pub async fn read_verified_cached_model(model: &'static ModelDownload) -> Result<Vec<u8>, String> {
+pub async fn read_verified_cached_model(
+    model: &'static VerifiedCachedModel,
+) -> Result<Vec<u8>, String> {
     validate_cached_model_spec(model)?;
     let path = cached_model_dir()?.join(model.filename);
     tokio::task::spawn_blocking(move || read_verified_cached_model_bytes(&path, model))
@@ -36,7 +30,10 @@ pub async fn read_verified_cached_model(model: &'static ModelDownload) -> Result
         .map_err(|error| format!("Verified model read task failed: {error}"))?
 }
 
-fn read_verified_cached_model_bytes(path: &Path, model: &ModelDownload) -> Result<Vec<u8>, String> {
+fn read_verified_cached_model_bytes(
+    path: &Path,
+    model: &VerifiedCachedModel,
+) -> Result<Vec<u8>, String> {
     read_verified_cached_model_bytes_after_read(path, model, || {})
 }
 
@@ -46,7 +43,7 @@ fn read_verified_cached_model_bytes(path: &Path, model: &ModelDownload) -> Resul
 /// already-owned buffer handed to Whisper.
 fn read_verified_cached_model_bytes_after_read(
     path: &Path,
-    model: &ModelDownload,
+    model: &VerifiedCachedModel,
     after_read: impl FnOnce(),
 ) -> Result<Vec<u8>, String> {
     let link_metadata = std::fs::symlink_metadata(path).map_err(|error| {
@@ -126,7 +123,7 @@ fn read_verified_cached_model_bytes_after_read(
     Ok(bytes)
 }
 
-fn validate_cached_model_spec(model: &ModelDownload) -> Result<(), String> {
+fn validate_cached_model_spec(model: &VerifiedCachedModel) -> Result<(), String> {
     validate_model_filename(model.filename)?;
     validate_sha256(model.expected_sha256)?;
     if model.expected_size_bytes == 0 {
@@ -161,17 +158,16 @@ mod tests {
     use super::*;
     use std::fs;
 
-    const SMALL_VERIFIED_MODEL: ModelDownload = ModelDownload {
+    const SMALL_VERIFIED_MODEL: VerifiedCachedModel = VerifiedCachedModel {
         filename: "small-verified-model.bin",
-        url: "https://invalid.example/small-verified-model.bin",
         expected_sha256: "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
         expected_size_bytes: 3,
     };
-    const WRONG_HASH_MODEL: ModelDownload = ModelDownload {
+    const WRONG_HASH_MODEL: VerifiedCachedModel = VerifiedCachedModel {
         expected_sha256: "0000000000000000000000000000000000000000000000000000000000000000",
         ..SMALL_VERIFIED_MODEL
     };
-    const WRONG_SIZE_MODEL: ModelDownload = ModelDownload {
+    const WRONG_SIZE_MODEL: VerifiedCachedModel = VerifiedCachedModel {
         expected_size_bytes: 4,
         ..SMALL_VERIFIED_MODEL
     };

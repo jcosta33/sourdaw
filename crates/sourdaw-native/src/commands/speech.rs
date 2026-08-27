@@ -11,7 +11,7 @@ use std::sync::{Arc, Condvar, Mutex};
 use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
 use zeroize::{Zeroize, Zeroizing};
 
-use super::{filesystem, model_download};
+use super::{filesystem, verified_cached_model};
 
 // ── Managed state ───────────────────────────────────────────────────────
 
@@ -443,23 +443,21 @@ pub async fn load_whisper_model(
     })
 }
 
-const WHISPER_MODEL_URL: &str =
-    "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-base.en.bin";
 const WHISPER_MODEL_FILE: &str = "ggml-base.en.bin";
 const WHISPER_MODEL_SHA256: &str =
     "a03779c86df3323075f5e796cb2ce5029f00ec8869eee3fdfb897afe36c6d002";
 const WHISPER_MODEL_SIZE_BYTES: u64 = 147_964_211;
-const WHISPER_MODEL: model_download::ModelDownload = model_download::ModelDownload {
-    filename: WHISPER_MODEL_FILE,
-    url: WHISPER_MODEL_URL,
-    expected_sha256: WHISPER_MODEL_SHA256,
-    expected_size_bytes: WHISPER_MODEL_SIZE_BYTES,
-};
+const WHISPER_MODEL: verified_cached_model::VerifiedCachedModel =
+    verified_cached_model::VerifiedCachedModel {
+        filename: WHISPER_MODEL_FILE,
+        expected_sha256: WHISPER_MODEL_SHA256,
+        expected_size_bytes: WHISPER_MODEL_SIZE_BYTES,
+    };
 
 /// Verify and load the bundled Whisper artifact from the local model cache.
 /// This boundary never creates cache directories, repairs files, or downloads.
 pub async fn load_cached_whisper_model(state: &DictationState) -> Result<AsrStatus, String> {
-    let model_bytes = model_download::read_verified_cached_model(&WHISPER_MODEL).await?;
+    let model_bytes = verified_cached_model::read_verified_cached_model(&WHISPER_MODEL).await?;
     let _exclusive = state.load_guard.lock().await;
     let loaded = LoadedModel {
         ctx: Arc::new(
@@ -876,15 +874,16 @@ mod tests {
     }
 
     #[test]
-    fn local_voice_loader_has_no_route_into_the_model_downloader_or_network_client() {
+    fn local_voice_loader_uses_only_the_verified_cached_model_reader() {
         const SPEECH_SOURCE: &str = include_str!("speech.rs");
         let production_source = SPEECH_SOURCE
             .rsplit_once("#[cfg(test)]")
             .map(|(source, _tests)| source)
             .expect("speech production source precedes its test module");
 
-        assert!(production_source.contains("model_download::read_verified_cached_model"));
-        assert!(!production_source.contains("model_download::ensure_model"));
+        assert!(production_source.contains("verified_cached_model::read_verified_cached_model"));
+        assert!(!production_source.contains("model_download"));
+        assert!(!production_source.contains("ensure_model"));
         assert!(!production_source.contains("reqwest::"));
     }
 

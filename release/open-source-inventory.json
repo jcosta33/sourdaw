@@ -131,7 +131,7 @@
                 "sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4:LICENSE",
                 "sha256:c148064afc3d904d474c5f20ee39052ff86085a02d148552ce59f4d0ebd7aeb9:NOTICE",
                 "sha256:03be9429f428e7f8f427a01a79317eef00dd6ab5dc2ffb130c4a6300f579fead:public/legal/DEPENDENCY-LICENSES.txt",
-                "sha256:9b7da0236309c6347f5e7f2d261f6911bdd0ba2e4475bc9eda8e1dd59d5e3efa:release/dependency-license-proofs.json"
+                "sha256:d83968fb94a01899526eb60d3b2d619eabee665d8752f4e7f3ddecc50be9c3fe:release/dependency-license-proofs.json"
             ],
             "licenses": ["Apache-2.0", "per-package terms:public/legal/DEPENDENCY-LICENSES.txt"],
             "productSurfaces": [
@@ -500,6 +500,7 @@
                 "Cargo.lock",
                 "crates/sourdaw-native/Cargo.toml",
                 "crates/sourdaw-native/src/commands/speech.rs",
+                "crates/sourdaw-native/src/commands/verified_cached_model.rs",
                 "src/infra/release/modelReleaseAdmission.ts",
                 "src/modules/AiRuntime/useCases/voiceDictation/loadCachedWhisperModel.ts"
             ],
@@ -516,7 +517,7 @@
             "licenses": ["MIT:model-artifact-repository", "Unlicense:whisper-rs-runtime"],
             "productSurfaces": ["desktop speech transcription"],
             "evidence": [
-                "The download pins one model revision and verifies its exact 147964211-byte SHA-256.",
+                "The cached-model contract pins one model revision and verifies its exact 147964211-byte SHA-256 before Whisper consumes the bytes.",
                 "The model repository declares MIT; installed whisper-rs and whisper-rs-sys metadata declare Unlicense."
             ],
             "obligations": ["Carry the MIT and Unlicense notices in distributed desktop material."]
@@ -1502,11 +1503,6 @@
             "surface": "levain-sample-bank",
             "file": "scripts/levainSource.ts",
             "value": "https://github.com/sgossner/VSCO-2-CE"
-        },
-        {
-            "surface": "whisper-model",
-            "file": "crates/sourdaw-native/src/commands/speech.rs",
-            "value": "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-base.en.bin"
         },
         {
             "surface": "cloud-ai-providers",
