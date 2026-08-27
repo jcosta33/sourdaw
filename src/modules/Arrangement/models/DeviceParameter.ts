@@ -12,6 +12,7 @@ import { FERMENTER_DESCRIPTOR } from './PluginDescriptors/FermenterDescriptor';
 import { GLUTEN_DESCRIPTOR } from './PluginDescriptors/GlutenDescriptor';
 import { GRAND_BOULE_DESCRIPTOR } from './PluginDescriptors/GrandBouleDescriptor';
 import { GRINDER_DESCRIPTOR } from './PluginDescriptors/GrinderDescriptor';
+import { KNEAD_DESCRIPTOR } from './PluginDescriptors/KneadDescriptor';
 import { LEVAIN_DESCRIPTOR } from './PluginDescriptors/LevainDescriptor';
 import { NATIVE_DSP_DESCRIPTORS } from './PluginDescriptors/NativeDspDescriptors';
 import { PROOF_DESCRIPTOR } from './PluginDescriptors/ProofDescriptor';
@@ -163,6 +164,7 @@ export const BUILTIN_PLUGINS: PluginDescriptor[] = [
     CRUST_DESCRIPTOR,
     CRUMBS_DESCRIPTOR,
     GRAND_BOULE_DESCRIPTOR,
+    KNEAD_DESCRIPTOR,
 ];
 
 // ── Utility functions ──────────────────────────────────────────────────────

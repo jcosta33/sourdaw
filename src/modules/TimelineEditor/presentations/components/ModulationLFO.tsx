@@ -39,6 +39,12 @@ export const ModulationLFO = ({
 }: ModulationLFOProps): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const animRef = useRef<number>(0);
+    // Phase carried across effect re-runs. The effect restarts on every
+    // rate/depth/shape change, and a clock restarted at each re-run snapped the
+    // waveform back to phase zero mid-knob-turn; advancing the accumulated
+    // phase at the current rate instead bends the curve through the change.
+    const phaseRef = useRef(0);
+    const lastFrameRef = useRef<number | null>(null);
 
     useEffect(() => {
         const canvas = canvasRef.current;
@@ -55,15 +61,24 @@ export const ModulationLFO = ({
         canvas.height = height * dpr;
         ctx.scale(dpr, dpr);
 
-        let startTime = performance.now();
-
         // Resolve theme tokens once, outside the animation loop
         const bg = resolveToken('--color-bg-tray', '#0a0a0a');
         const accentMint = resolveToken('--color-accent-mint', '#68d391');
         const textDisabled = resolveToken('--color-text-disabled', '#3a3a3a');
 
         const draw = (now: number): void => {
-            const elapsed = (now - startTime) / 1000; // seconds
+            const lastFrame = lastFrameRef.current;
+            if (lastFrame === null) {
+                // First frame anchors the clock; phase starts where the previous
+                // effect run left it, so a parameter change never snaps the wave.
+                lastFrameRef.current = now;
+            } else {
+                // rAF timestamps are monotonic in a live page; the clamp keeps a
+                // mocked or reset clock from rewinding the phase with it.
+                phaseRef.current += (Math.max(0, now - lastFrame) / 1000) * rate;
+                lastFrameRef.current = now;
+            }
+            const phaseOffset = phaseRef.current; // animated phase
             ctx.clearRect(0, 0, width, height);
 
             // Background
@@ -85,7 +100,6 @@ export const ModulationLFO = ({
 
             // Draw 2 full cycles of the waveform
             const cyclesVisible = 2;
-            const phaseOffset = elapsed * rate; // animated phase
 
             ctx.beginPath();
             for (let index = 0; index <= width; index++) {
@@ -139,7 +153,6 @@ export const ModulationLFO = ({
             animRef.current = requestAnimationFrame(draw);
         };
 
-        startTime = performance.now();
         animRef.current = requestAnimationFrame(draw);
 
         return () => {

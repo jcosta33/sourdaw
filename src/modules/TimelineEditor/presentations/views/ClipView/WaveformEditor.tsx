@@ -18,8 +18,6 @@ import { handleAiDenoiseClip } from '#/modules/AiGeneration/useCases';
 import { defaultTrackState, trackStore, getWarpState } from '#/modules/Arrangement/stores';
 import {
     replaceClipAudioBuffer,
-    normalizeClip,
-    reverseClip,
     enableWarp,
     disableWarp,
     setStretchMode,
@@ -36,6 +34,7 @@ import {
     getCachedAudioBuffer,
     getCachedAudioBufferWaveformPeaks,
 } from '#/modules/AudioEngine/useCases';
+import { executeAppAction } from '#/modules/Command/useCases';
 import { verifyAudioBufferReferences } from '#/modules/Project/useCases';
 import { isDesktopRuntime } from '#/utils/desktopRuntime';
 import { notifyUser } from '#/utils/Notification/notifyUser';
@@ -530,7 +529,7 @@ export const WaveformEditor = ({ clipId, audioBufferId }: WaveformEditorProps): 
                         type="button"
                         className={cn(menuBtnClass, 'hover:bg-accent')}
                         role="menuitem"
-                        onClick={waveAct(() => normalizeClip(clipId))}
+                        onClick={waveAct(() => void executeAppAction({ type: 'normalizeClip', payload: { clipId } }))}
                     >
                         Normalize
                     </Button>
@@ -540,7 +539,7 @@ export const WaveformEditor = ({ clipId, audioBufferId }: WaveformEditorProps): 
                         type="button"
                         className={cn(menuBtnClass, 'hover:bg-accent')}
                         role="menuitem"
-                        onClick={waveAct(() => reverseClip(clipId))}
+                        onClick={waveAct(() => void executeAppAction({ type: 'reverseClip', payload: { clipId } }))}
                     >
                         Reverse
                     </Button>

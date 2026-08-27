@@ -15,6 +15,7 @@ import { GenericDeviceLayout } from './GenericDeviceLayout';
 import './layouts/BuiltinSynthLayout';
 import './layouts/FaustInstrumentLayout';
 import './layouts/HammondB3Layout';
+import './layouts/LufsMeterLayout';
 import './layouts/effects';
 
 type DeviceInspectorProps = {

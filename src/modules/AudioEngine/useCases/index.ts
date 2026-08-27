@@ -85,6 +85,7 @@ export { getMasterPeakLevel } from './engineAccess/getMasterPeakLevel';
 export { setMasterGainValue } from './engineAccess/setMasterGainValue';
 export { getAudioSampleRate } from './engineAccess/getAudioSampleRate';
 export { getTrackAnalyser } from './engineAccess/getTrackAnalyser';
+export { getFaustMeterReading } from './engineAccess/getFaustMeterReading';
 export { getTrackStrip } from './engineAccess/getTrackStrip';
 export { getToasterDeviceControls } from './engineAccess/getToasterDeviceControls';
 export { ensureTrackStrip } from './engineAccess/ensureTrackStrip';

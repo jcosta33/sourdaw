@@ -131,7 +131,7 @@
                 "sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4:LICENSE",
                 "sha256:c148064afc3d904d474c5f20ee39052ff86085a02d148552ce59f4d0ebd7aeb9:NOTICE",
                 "sha256:8c2099aa01686376561e8ed2094de8f7d3e18a8a5dd6367bac5d49ca7c679c97:public/legal/DEPENDENCY-LICENSES.txt",
-                "sha256:9dfe11f44c85ce1c577cf1fa9125f23c1ca2c1493e69b87b10e1c03fdebf5109:release/dependency-license-proofs.json"
+                "sha256:4ce18233287ac1a927d7d2839fb3872cc42682191a09632770b7291e1a02a9cc:release/dependency-license-proofs.json"
             ],
             "licenses": ["Apache-2.0", "per-package terms:public/legal/DEPENDENCY-LICENSES.txt"],
             "productSurfaces": [
@@ -935,10 +935,10 @@
             "digests": [
                 "tracked-set-sha256:68402629c377617aa92f1373eb2eb18bbab07b95d8124a5581c9bd1ebce18920:grand-boule-native-rust",
                 "tracked-set-sha256:428b6c1285337ce7af016a553a558c7111f6009a64f9b85f9265cf179fa2c290:grand-boule-admission-decision",
-                "tracked-set-sha256:17e9646737f2d49baf0917ffcec42c1b43ed47f9990bd7180b2fe5a126693451:grand-boule-discovery-catalog",
+                "tracked-set-sha256:580b5d96ccfcaffd876a408f6a9c6dcc31a7f8575956726c6abf601d6bb37c6e:grand-boule-discovery-catalog",
                 "tracked-set-sha256:a4b6f7d5b32d31ed0c0cf027344718219bd87dc3f6a345a2b9bebd90f1f45205:grand-boule-factory-admission",
-                "tracked-set-sha256:b2b40500eaaea3294d2126ce420b953fb05494d4552a24f9e32a02766a9bf9e7:grand-boule-live-runtime",
-                "tracked-set-sha256:ad4ec8d5ad3f55ed3bc4f8bb523c6a189639df5af6e0ce3a375608deefb04d6e:grand-boule-project-state",
+                "tracked-set-sha256:f7da3b228ba9f5f5a665bebb82d060ffd8a0cdec72b687e0196ef8a4231fa525:grand-boule-live-runtime",
+                "tracked-set-sha256:2c94d288d73a0dbadbefa8ede6e06f977ac5c10060e23f12745d21ef826a2682:grand-boule-project-state",
                 "tracked-set-sha256:c24bb1c0672ac22d04c8d36c344bbf3c0efdc315ec8317af1d1674eaeb0cbd89:grand-boule-offline-composition",
                 "tracked-set-sha256:6c0b2b79b17ba53683373c0472506b58555007b6754cb76cbadaf67a37031118:grand-boule-release-proof"
             ],
@@ -1268,7 +1268,7 @@
     "snapshots": [
         {
             "path": "package.json",
-            "sha256": "7d77f05c1ea7dccb25fa09c7b602e18c190ede0b2969ade782e900d8e097787e"
+            "sha256": "bce692f158d47a31f82efec868c4685e72f15ffb5777d59860911e80780cc4f8"
         },
         {
             "path": "server/package.json",

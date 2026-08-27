@@ -41,9 +41,7 @@ test.describe('Proof streaming-loudness target — selection changes Target read
         // scope to the "Quick read" SideCard — its readout list is the only
         // place the label pairs with its value span.
         const quickRead = page.locator('section').filter({ hasText: 'Quick read' });
-        const targetReadout = quickRead
-            .getByText('Target', { exact: true })
-            .locator('xpath=following-sibling::span');
+        const targetReadout = quickRead.getByText('Target', { exact: true }).locator('xpath=following-sibling::span');
 
         // Default patch targets "Streaming"; its chip is the active one.
         await expect(targetReadout).toHaveText('Streaming');
@@ -52,6 +50,17 @@ test.describe('Proof streaming-loudness target — selection changes Target read
 
         // Pick a different target — "Club / DJ".
         const clubChip = page.getByRole('button', { name: 'Club / DJ', exact: true });
+        await clubChip.scrollIntoViewIfNeeded();
+        // The chip must own its visible center; a later rail section used to
+        // overlap this point and intercept every normal click.
+        const chipOwnsHitTarget = await clubChip.evaluate((chip) => {
+            const rect = chip.getBoundingClientRect();
+            const x = rect.x + rect.width / 2;
+            const y = rect.y + rect.height / 2;
+            const topHit = document.elementFromPoint(x, y);
+            return topHit !== null && chip.contains(topHit);
+        });
+        expect(chipOwnsHitTarget).toBe(true);
         await clubChip.click();
 
         // The selector state and the readout both reflect the new target.
