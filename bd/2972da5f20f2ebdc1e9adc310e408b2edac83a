@@ -1,0 +1,35 @@
+src/modules/AiRuntime/useCases/__tests__/sendChatMessage.spec.ts
+  s_a40848e8f8cca9::t_821bed1ac52c96 29,617-657,659-701,857-870,875-896,1098-1099
+  s_a40848e8f8cca9::t_35e4eb782ba1bf 658,1094-1095,1097
+  s_a40848e8f8cca9::t_c41e438e5fc82b 11-14,871-874
+  s_a40848e8f8cca9::t_9dc10c033bc701 1096
+  s_a40848e8f8cca9::t_6967433865b0dd 46,55,75-82,555
+  s_a40848e8f8cca9::t_2737511d2ad87a 897
+src/modules/AiRuntime/useCases/confirmPendingChatActions.ts
+  s_a40848e8f8cca9::t_8d8db16b489101 287
+  s_a40848e8f8cca9::t_b3e2cd06d128e8 285-286,288-299,339,343,345-353,356,359-360
+  s_a40848e8f8cca9::t_8a7c3ad0b56e14 46
+src/modules/AiRuntime/useCases/sendChatMessage.ts
+  s_a40848e8f8cca9::t_a1dc5c429a4c08 1753-1756
+src/modules/AiRuntime/useCases/__tests__/confirmPendingChatActions.spec.ts
+  s_a40848e8f8cca9::t_5b51e3838bafda 925-960,962-964,966-1032,1034-1036,1038-1049
+  s_a40848e8f8cca9::t_40eed8fbf728ea 301-366
+  s_a40848e8f8cca9::t_c1723d327a8ade 64
+  s_a40848e8f8cca9::t_2c674241536fff 961,965,1033,1037
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "bd2972da5f20f2ebdc1e9adc310e408b2edac83a",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
