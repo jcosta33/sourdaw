@@ -33,6 +33,23 @@ const HELPER_EXITED_UNSUCCESSFULLY_PREFIX: &str = "Plugin scan helper exited uns
 /// bound and was killed.
 const HELPER_TIMED_OUT: &str = "Plugin scan helper timed out";
 
+/// The leaf worker's exit code for a self-diagnosed refusal to write its
+/// response — a malformed payload, the response exceeding
+/// [`MAX_RESPONSE_BYTES`], or the response file itself failing to write.
+///
+/// Distinct from the generic non-zero exit ([`WorkerRole::Malformed`], no
+/// backend for the format) on purpose: those and a crashing plugin all share
+/// exit code 2 and are indistinguishable from here, which is fine because
+/// every one of them is either a genuine process failure or a caller error
+/// that never reaches a real plugin. A response-write refusal is neither — it
+/// can fire for every candidate in one scan on a systemic fault (a full disk,
+/// a read-only temp directory) that has nothing to do with any plugin being
+/// dangerous, and folding it into the same exit code as a crash would
+/// quarantine every binary the process ever touched. See
+/// [`process_failure_message`], which is what keeps it out of
+/// [`is_process_failure`].
+const RESPONSE_WRITE_REFUSAL_EXIT_CODE: i32 = 3;
+
 /// Whether an error from [`scan_descriptor_metadata`] or
 /// [`scan_instance_metadata`] is the process-level failure crash quarantine
 /// exists to catch: the helper child exited unsuccessfully, or ran past its
@@ -314,7 +331,11 @@ fn run_from_args(args: impl IntoIterator<Item = OsString>) -> Option<i32> {
             },
         ),
     };
-    Some(if result.is_ok() { 0 } else { 2 })
+    Some(if result.is_ok() {
+        0
+    } else {
+        RESPONSE_WRITE_REFUSAL_EXIT_CODE
+    })
 }
 fn write_response<T: Serialize>(path: &Path, response: &WorkerResponse<T>) -> Result<(), String> {
     let bytes = serde_json::to_vec(response)
@@ -357,6 +378,25 @@ pub fn scan_instance_metadata(
     )
 }
 
+/// The refusal `scan_worker` reports for a helper that exited unsuccessfully,
+/// shaped by which of two things that exit code means.
+///
+/// [`RESPONSE_WRITE_REFUSAL_EXIT_CODE`] gets a message that does not match
+/// [`HELPER_EXITED_UNSUCCESSFULLY_PREFIX`] — deliberately, so
+/// [`is_process_failure`] never classifies it as evidence worth quarantining
+/// a binary over. Every other non-zero exit — a crash, `WorkerRole::Malformed`,
+/// no backend for the format — keeps the existing message, which
+/// `is_process_failure` does recognize.
+fn process_failure_message(path: &Path, status: &ExitStatus) -> String {
+    if status.code() == Some(RESPONSE_WRITE_REFUSAL_EXIT_CODE) {
+        return format!(
+            "Plugin scan helper could not write its response for {}",
+            path.display()
+        );
+    }
+    format!("{HELPER_EXITED_UNSUCCESSFULLY_PREFIX}{}", path.display())
+}
+
 fn scan_worker<T: DeserializeOwned>(
     format: PluginFormat,
     path: &Path,
@@ -392,10 +432,7 @@ fn scan_worker<T: DeserializeOwned>(
         .stderr(Stdio::null());
     let status = run_bounded(&mut command, timeout.min(WORKER_TIMEOUT))?;
     if !status.success() {
-        return Err(format!(
-            "{HELPER_EXITED_UNSUCCESSFULLY_PREFIX}{}",
-            path.display()
-        ));
+        return Err(process_failure_message(path, &status));
     }
     let mut bytes = Vec::new();
     OpenOptions::new()
@@ -845,6 +882,53 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
             "Plugin scan helper exited unsuccessfully for /plugins/Broken.clap"
         ));
         assert!(is_process_failure("Plugin scan helper timed out"));
+    }
+
+    /// A real `ExitStatus` for a process that exited with `code`, obtained
+    /// cheaply through `sh` rather than the real worker binary or a compiled
+    /// hostile CLAP fixture — nothing here depends on what actually crashed.
+    #[cfg(unix)]
+    fn exit_status_for_code(code: i32) -> ExitStatus {
+        Command::new("sh")
+            .args(["-c", &format!("exit {code}")])
+            .status()
+            .expect("sh should run")
+    }
+
+    /// The hardening this exit code exists for (#2911): a systemic fault that
+    /// stops the worker from writing *any* response — a full disk, a
+    /// read-only temp directory — must not read as a crashing plugin, or a
+    /// single bad environment quarantines every candidate the process ever
+    /// touches on one scan.
+    #[cfg(unix)]
+    #[test]
+    fn a_response_write_refusal_is_not_a_process_failure() {
+        let path = Path::new("/plugins/Innocent.clap");
+        let status = exit_status_for_code(RESPONSE_WRITE_REFUSAL_EXIT_CODE);
+
+        let message = process_failure_message(path, &status);
+
+        assert!(
+            !is_process_failure(&message),
+            "a response-write refusal must never be classified as a process failure: {message}"
+        );
+    }
+
+    /// The other half: every other non-zero exit — a crash, `Malformed`, no
+    /// backend — must keep classifying as a process failure exactly as
+    /// before this exit code existed.
+    #[cfg(unix)]
+    #[test]
+    fn any_other_nonzero_exit_still_reads_as_a_process_failure() {
+        let path = Path::new("/plugins/Hostile.clap");
+        let status = exit_status_for_code(2);
+
+        let message = process_failure_message(path, &status);
+
+        assert!(
+            is_process_failure(&message),
+            "a crash's exit code must still quarantine the binary: {message}"
+        );
     }
 
     /// A data-level refusal says the read failed, not that the process itself
