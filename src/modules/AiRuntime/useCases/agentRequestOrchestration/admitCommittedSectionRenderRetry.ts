@@ -1,6 +1,8 @@
 import { parseVersionedCommandBatchEnvelope, type createVerifiedBatchReceipt } from '#/modules/Command/useCases';
 
+import { type AgentRunPendingEffect } from '../../models/AgentRun';
 import { type PendingAppActionConfirmation } from '../../stores/pendingActionConfirmationStore';
+import { hasExactAgentCommandBatchAuthority } from '../../validators/hasExactAgentCommandBatchAuthority';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { getExactAgentActionHash } from '../getExactAgentActionHash';
 
@@ -61,13 +63,6 @@ function isEligible(confirmation: PendingAppActionConfirmation): boolean {
     );
 }
 
-function hasExactCanonicalAuthority(expected: unknown, candidate: unknown): boolean {
-    return (
-        getExactAgentActionHash({ operation: 'commandBatchAuthority', arguments: candidate }) ===
-        getExactAgentActionHash({ operation: 'commandBatchAuthority', arguments: expected })
-    );
-}
-
 function hasExpectedCommandBatch(
     expected: ApprovedCommandBatch,
     candidate: PendingAppActionConfirmation['approvalSnapshot']['commandBatch']
@@ -75,7 +70,7 @@ function hasExpectedCommandBatch(
     return (
         candidate !== undefined &&
         candidate.serialized === expected.serialized &&
-        hasExactCanonicalAuthority(expected.authority, candidate.authority)
+        hasExactAgentCommandBatchAuthority(expected.authority, candidate.authority)
     );
 }
 
@@ -226,8 +221,8 @@ function getReceiptIdentity(receipt: CommandVerifiedBatchReceipt): string {
 }
 
 function hasExactContinuationEffects(
-    continuationEffects: readonly CommandVerifiedBatchReceipt['pendingEffects'][number][],
-    receiptEffects: readonly CommandVerifiedBatchReceipt['pendingEffects'][number][]
+    continuationEffects: readonly AgentRunPendingEffect[],
+    receiptEffects: readonly AgentRunPendingEffect[]
 ): boolean {
     return (
         continuationEffects.length === receiptEffects.length &&
@@ -272,7 +267,7 @@ function hasExactTrackedRunBinding(
         continuation?.receiptIdentity === receiptIdentity &&
         continuation.recovery === 'reconcile-batch' &&
         continuation.serializedBatch === approvedCommandBatch.serialized &&
-        hasExactCanonicalAuthority(approvedCommandBatch.authority, continuation.authority) &&
+        hasExactAgentCommandBatchAuthority(approvedCommandBatch.authority, continuation.authority) &&
         hasExactContinuationEffects(continuation.effects, receipt.pendingEffects)
     );
 }
@@ -321,7 +316,7 @@ function hasExactFinalizedContinuationBinding(
         !continuation ||
         continuation.recovery !== 'reconcile-batch' ||
         continuation.serializedBatch !== approvedCommandBatch.serialized ||
-        !hasExactCanonicalAuthority(approvedCommandBatch.authority, continuation.authority)
+        !hasExactAgentCommandBatchAuthority(approvedCommandBatch.authority, continuation.authority)
     ) {
         return false;
     }

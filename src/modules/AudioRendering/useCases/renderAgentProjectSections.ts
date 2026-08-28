@@ -128,6 +128,12 @@ export async function renderAgentProjectSections(input: RenderAgentProjectSectio
             if (captureProjectRevision() !== input.sourceRevision) {
                 throw new Error('Project changed during rendering; the artifact was not attached');
             }
+        } catch (error) {
+            failures.push(`${job.jobId}: ${failureReason(error)}`);
+            continue;
+        }
+        assertArtifactAttachmentAllowed(input);
+        try {
             const cancelActiveRender = () => cancelExport();
             input.signal?.addEventListener('abort', cancelActiveRender, { once: true });
             let buffer: AudioBuffer;

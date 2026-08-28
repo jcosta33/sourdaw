@@ -35,7 +35,8 @@ function projectRecovery(
 
 function isOwnedByRetryableSectionRenderFollowUp(
     runId: string,
-    continuation: AgentRunPendingEffectContinuation
+    continuation: AgentRunPendingEffectContinuation,
+    committedRevision: string | null
 ): boolean {
     return (
         continuation.recovery !== 'manual-repair' &&
@@ -43,9 +44,11 @@ function isOwnedByRetryableSectionRenderFollowUp(
         continuation.effects[0]?.kind === 'external-effect' &&
         continuation.effects[0].operation === 'renderProjectSections' &&
         hasRetryableSectionRenderFollowUp({
+            authority: continuation.authority,
             runId,
             batchId: continuation.batchId,
             commandId: continuation.effects[0].commandId,
+            committedRevision,
             serializedBatch: continuation.serializedBatch,
         })
     );
@@ -56,9 +59,10 @@ export function selectAgentRunPendingEffectRecoveries(
     state: AgentRunState | null | undefined
 ): AgentRunPendingEffectRecoveryProjection[] {
     const byIdentity = new Map<string, AgentRunPendingEffectRecoveryProjection>();
+    const runsById = new Map((state?.runs ?? []).map((run) => [run.runId, run]));
     for (const run of state?.runs ?? []) {
         for (const continuation of run.pendingEffectContinuations) {
-            if (isOwnedByRetryableSectionRenderFollowUp(run.runId, continuation)) {
+            if (isOwnedByRetryableSectionRenderFollowUp(run.runId, continuation, run.revisions.committed)) {
                 continue;
             }
             byIdentity.set(recoveryIdentity(run.runId, continuation.batchId), projectRecovery(run.runId, continuation));
@@ -68,7 +72,13 @@ export function selectAgentRunPendingEffectRecoveries(
         if (recovery.checkpoint !== 'durable') {
             continue;
         }
-        if (isOwnedByRetryableSectionRenderFollowUp(recovery.runId, recovery)) {
+        if (
+            isOwnedByRetryableSectionRenderFollowUp(
+                recovery.runId,
+                recovery,
+                runsById.get(recovery.runId)?.revisions.committed ?? null
+            )
+        ) {
             continue;
         }
         byIdentity.set(recoveryIdentity(recovery.runId, recovery.batchId), projectRecovery(recovery.runId, recovery));

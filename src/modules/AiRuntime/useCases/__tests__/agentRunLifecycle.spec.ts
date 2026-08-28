@@ -301,6 +301,13 @@ describe('agentRunLifecycle', () => {
 
     it('hides an executed retryable confirmation that owns the exact retained section-render continuation', () => {
         createRenderReviewRun();
+        agentRunLifecycle.recordCommittedWork({
+            runId: 'run-render-review',
+            workId: 'batch-render-review',
+            receiptIdentity: '1:run-render-review:batch-render-review:partially-committed',
+            committedRevision: 'heads-render-review',
+            completesRun: false,
+        });
         const continuation = agentRunLifecycle.get('run-render-review')?.pendingEffectContinuations[0];
         if (!continuation) {
             throw new Error('Expected retained render continuation');

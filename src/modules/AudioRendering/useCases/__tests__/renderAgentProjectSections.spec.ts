@@ -229,6 +229,48 @@ describe('renderAgentProjectSections', () => {
         expect(getAgentSectionRenderArtifacts()).toEqual([]);
     });
 
+    it('aborts before a second render when attachment authority is lost during the first render', async () => {
+        const jobs = [
+            createJob(),
+            createJob({
+                jobId: 'render-chorus-two',
+                sectionId: 'section-chorus-two',
+                sectionName: 'Chorus Two',
+                startBeat: 64,
+                endBeat: 96,
+            }),
+        ];
+        let finishFirstRender!: (buffer: ReturnType<typeof createAudioBuffer>) => void;
+        let attachmentAllowed = true;
+        const onRenderAttempt = vi.fn();
+        mocks.renderOffline.mockImplementationOnce(
+            () =>
+                new Promise((resolve) => {
+                    finishFirstRender = resolve;
+                })
+        );
+
+        const rendering = renderAgentProjectSections({
+            jobs,
+            sourceRevision: 'revision-a',
+            onRenderAttempt,
+            validateArtifactAttachment: () =>
+                attachmentAllowed
+                    ? null
+                    : 'Only the authoritative collaboration host can attach section render artifacts.',
+        });
+        await vi.waitFor(() => expect(mocks.renderOffline).toHaveBeenCalledOnce());
+        attachmentAllowed = false;
+        finishFirstRender(createAudioBuffer());
+
+        await expect(rendering).rejects.toEqual(
+            new Error('Only the authoritative collaboration host can attach section render artifacts.')
+        );
+        expect(mocks.renderOffline).toHaveBeenCalledOnce();
+        expect(onRenderAttempt).toHaveBeenCalledExactlyOnceWith(jobs[0]);
+        expect(getAgentSectionRenderArtifacts()).toEqual([]);
+    });
+
     it('keeps successful artifacts and retries only unfinished jobs after a transient failure', async () => {
         const jobs = [
             createJob(),

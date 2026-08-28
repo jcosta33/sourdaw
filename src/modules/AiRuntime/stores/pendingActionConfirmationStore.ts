@@ -1,8 +1,10 @@
 import { logger } from '#/infra/logger/appLogger';
 import { createStore } from '#/infra/store/createStore';
 
+import { type AgentRunCommandBatchAuthority } from '../models/AgentRun';
 import { type ChatActionConfirmationStatus, type ChatActionFollowUpStatus } from '../models/Chat';
 import { type ExecutableRuntimeAction } from '../models/ExecutableRuntimeAction';
+import { hasExactAgentCommandBatchAuthority } from '../validators/hasExactAgentCommandBatchAuthority';
 
 export type PendingActionExecution = {
     actionType: string;
@@ -387,11 +389,16 @@ export function getPendingActionConfirmation(confirmationId: string): PendingApp
 }
 
 export function hasRetryableSectionRenderFollowUp(input: {
+    authority: AgentRunCommandBatchAuthority;
     runId: string;
     batchId: string;
     commandId: string;
+    committedRevision: string | null;
     serializedBatch: string;
 }): boolean {
+    if (input.committedRevision === null) {
+        return false;
+    }
     return (
         pendingActionConfirmationStore.value?.confirmations.some(
             (confirmation) =>
@@ -399,8 +406,12 @@ export function hasRetryableSectionRenderFollowUp(input: {
                 confirmation.runId === input.runId &&
                 confirmation.groupId === input.batchId &&
                 confirmation.followUpStatus === 'retryable' &&
-                confirmation.followUpProjectRevision !== null &&
+                confirmation.followUpProjectRevision === input.committedRevision &&
                 confirmation.approvalSnapshot.commandBatch?.serialized === input.serializedBatch &&
+                hasExactAgentCommandBatchAuthority(
+                    input.authority,
+                    confirmation.approvalSnapshot.commandBatch.authority
+                ) &&
                 confirmation.approvalSnapshot.actions.filter((action) => action.type === 'renderProjectSections')
                     .length === 1 &&
                 confirmation.executedActions.filter(
