@@ -63,6 +63,12 @@ pub struct HostCallbackState {
     /// Whether the plugin has reported a state change that has not been
     /// consumed. Set from the plugin's own thread; cleared on the control path.
     state_dirty: AtomicBool,
+    /// Whether the plugin has reported that its parameter list changed and the
+    /// host has not re-enumerated since.
+    parameters_rescan: AtomicBool,
+    /// Whether the plugin has asked the host to call `params.flush()` and the
+    /// host has not done so since.
+    parameters_flush: AtomicBool,
     /// The wake shared by every plugin-initiated ask that the host may only
     /// answer off the calling thread.
     request_notifier: OnceLock<PluginHostRequestNotifier>,
@@ -86,6 +92,14 @@ impl std::fmt::Debug for HostCallbackState {
                 &self.editor_resize_available.load(Ordering::Relaxed),
             )
             .field("state_dirty", &self.state_dirty.load(Ordering::Relaxed))
+            .field(
+                "parameters_rescan",
+                &self.parameters_rescan.load(Ordering::Relaxed),
+            )
+            .field(
+                "parameters_flush",
+                &self.parameters_flush.load(Ordering::Relaxed),
+            )
             .field(
                 "has_request_notifier",
                 &self.request_notifier.get().is_some(),
@@ -207,6 +221,43 @@ impl HostCallbackState {
     pub fn take_state_dirty(&self) -> bool {
         self.state_dirty.swap(false, Ordering::AcqRel)
     }
+
+    /// Record that the plugin's parameter list changed, then wake the observer.
+    ///
+    /// The flags CLAP passes are not kept. Every one of them — values, text,
+    /// info, all — is answered by the same act here, a full re-enumeration on
+    /// the control thread, because this host holds no partial parameter model it
+    /// could refresh a slice of. Storing a discriminator nothing reads would be
+    /// a claim that the answer varies with it.
+    pub fn mark_parameters_rescan(&self) {
+        self.parameters_rescan.store(true, Ordering::Release);
+        if let Some(notify) = self.request_notifier.get() {
+            notify(PluginHostRequest::ParametersRescan);
+        }
+    }
+
+    /// Atomically read-and-clear the parameter-rescan flag.
+    pub fn take_parameters_rescan(&self) -> bool {
+        self.parameters_rescan.swap(false, Ordering::AcqRel)
+    }
+
+    /// Record that the plugin wants `params.flush()` called, then wake the
+    /// observer.
+    ///
+    /// CLAP marks `request_flush` `[thread-safe]`, so this may arrive from the
+    /// audio thread. Nothing here allocates or blocks on its own account: a
+    /// release store and a lock-free `OnceLock::get`.
+    pub fn request_parameters_flush(&self) {
+        self.parameters_flush.store(true, Ordering::Release);
+        if let Some(notify) = self.request_notifier.get() {
+            notify(PluginHostRequest::ParametersFlush);
+        }
+    }
+
+    /// Atomically read-and-clear the flush request.
+    pub fn take_parameters_flush(&self) -> bool {
+        self.parameters_flush.swap(false, Ordering::AcqRel)
+    }
 }
 
 /// Borrow the host callback state pinned into a `clap_host`'s `host_data`.
@@ -306,19 +357,45 @@ static HOST_PARAMS: clap_host_params = clap_host_params {
     request_flush: Some(host_params_request_flush),
 };
 
-unsafe extern "C" fn host_params_rescan(_host: *const clap_host, _flags: u32) {
-    // Plugin is telling us its parameter list changed.
-    // Not yet acted on: re-enumerating parameters belongs on the control thread.
-    // No logging here — this callback can arrive from a plugin's own thread.
+/// The plugin's parameter list changed.
+///
+/// Flag and wake, nothing else. Re-enumerating means calling `count`,
+/// `get_info` and `get_value` back into the plugin, all of which CLAP annotates
+/// `[main-thread]` — so the work belongs to the control path, and this callback
+/// only says that there is work. Deliberately unlogged: it can arrive from a
+/// plugin's own thread, where stderr I/O is not acceptable.
+unsafe extern "C" fn host_params_rescan(host: *const clap_host, _flags: u32) {
+    if let Some(state) = host_state(host) {
+        state.mark_parameters_rescan();
+    }
 }
 
-unsafe extern "C" fn host_params_clear(_host: *const clap_host, _param_id: u32, _flags: u32) {
-    // Plugin is telling us to clear automation for a parameter.
-}
+/// The plugin asks the host to clear the automation or modulation it holds for
+/// one parameter.
+///
+/// **Deliberately deferred, and the bound is this**: the only thing Sourdaw
+/// holds for a parameter is automation lane points in the project document, so
+/// honouring this call means deleting a user's recorded automation. That write
+/// has to go through the project's own action path to be undoable and to reach
+/// collaborators, and this host has no route to it — the backend cannot reach
+/// the renderer, and a destructive project edit a plugin initiated and the user
+/// cannot undo is worse than one that never happened.
+///
+/// Nothing is recorded either: a flag nobody drains is a leak, and answering the
+/// plugin with silence is the same outcome as answering it with a flag no
+/// control path reads. It is reinstated when the host has a project-side "clear
+/// automation for this parameter" command with undo behind it.
+unsafe extern "C" fn host_params_clear(_host: *const clap_host, _param_id: u32, _flags: u32) {}
 
-unsafe extern "C" fn host_params_request_flush(_host: *const clap_host) {
-    // Plugin wants us to call params.flush() outside of process().
-    // We'll handle this in the next audio callback via a flag.
+/// The plugin has parameter output waiting and is not being handed blocks.
+///
+/// Flag and wake. `flush()` is legal only while the plugin is not processing,
+/// and deciding that plus making the call is the control path's job; this
+/// callback is `[thread-safe]` and may be the audio thread.
+unsafe extern "C" fn host_params_request_flush(host: *const clap_host) {
+    if let Some(state) = host_state(host) {
+        state.request_parameters_flush();
+    }
 }
 
 // ── clap_host_gui extension ────────────────────────────────────────────
@@ -717,6 +794,134 @@ mod tests {
                 480
             ));
             host_state_mark_dirty(&host as *const clap_host);
+        }
+    }
+
+    /// The whole of AC-002's first half: the callback used to be a comment. The
+    /// control path can only re-enumerate if the callback records that it must.
+    #[test]
+    fn a_rescan_callback_records_the_ask_and_wakes_the_control_path() {
+        let (state, requests) = state_with_open_editor();
+        let host = host_with_state(&state);
+
+        assert!(!state.take_parameters_rescan(), "flag starts clear");
+        unsafe { host_params_rescan(&host as *const clap_host, 0) };
+
+        assert_eq!(
+            requests.lock().expect("request log").as_slice(),
+            [PluginHostRequest::ParametersRescan]
+        );
+        assert!(state.take_parameters_rescan());
+        assert!(
+            !state.take_parameters_rescan(),
+            "taking the flag clears it, so one ask re-enumerates once"
+        );
+    }
+
+    /// Every CLAP rescan flag is answered by the same full re-enumeration, so a
+    /// plugin that reports only values must arm the control path exactly as one
+    /// that reports everything.
+    #[test]
+    fn a_rescan_is_recorded_whatever_flags_it_carries() {
+        for flags in [0u32, 1, 1 << 3, u32::MAX] {
+            let state = HostCallbackState::default();
+            let host = host_with_state(&state);
+
+            unsafe { host_params_rescan(&host as *const clap_host, flags) };
+
+            assert!(state.take_parameters_rescan(), "flags {flags} were ignored");
+        }
+    }
+
+    #[test]
+    fn a_flush_request_records_the_ask_and_wakes_the_control_path() {
+        let (state, requests) = state_with_open_editor();
+        let host = host_with_state(&state);
+
+        assert!(!state.take_parameters_flush(), "flag starts clear");
+        unsafe { host_params_request_flush(&host as *const clap_host) };
+
+        assert_eq!(
+            requests.lock().expect("request log").as_slice(),
+            [PluginHostRequest::ParametersFlush]
+        );
+        assert!(state.take_parameters_flush());
+        assert!(!state.take_parameters_flush());
+    }
+
+    /// The two asks are separate flags: a rescan must not be consumed by the
+    /// flush follow-up, or a parameter list change would be answered by a flush
+    /// and never re-enumerated.
+    #[test]
+    fn the_rescan_and_flush_flags_do_not_consume_each_other() {
+        let state = HostCallbackState::default();
+        let host = host_with_state(&state);
+
+        unsafe {
+            host_params_rescan(&host as *const clap_host, 0);
+            host_params_request_flush(&host as *const clap_host);
+        }
+
+        assert!(state.take_parameters_flush());
+        assert!(
+            state.take_parameters_rescan(),
+            "the rescan survives the flush being answered"
+        );
+    }
+
+    /// The flag is the record and the wake is a nudge, so a plugin whose
+    /// instance never got one must still record its ask.
+    #[test]
+    fn the_params_callbacks_record_with_no_wake_installed() {
+        let state = HostCallbackState::default();
+        let host = host_with_state(&state);
+
+        unsafe {
+            host_params_rescan(&host as *const clap_host, 0);
+            host_params_request_flush(&host as *const clap_host);
+        }
+
+        assert!(state.take_parameters_rescan());
+        assert!(state.take_parameters_flush());
+    }
+
+    #[test]
+    fn the_params_callbacks_tolerate_a_null_host_state() {
+        let host = create_host_descriptor();
+        assert!(host.host_data.is_null());
+
+        unsafe {
+            host_params_rescan(&host as *const clap_host, 0);
+            host_params_request_flush(&host as *const clap_host);
+            host_params_clear(&host as *const clap_host, 3, 0);
+        }
+    }
+
+    /// `clear` is deliberately deferred, and "deferred" has to mean it records
+    /// nothing: a flag no control path drains is a leak that reads, to the next
+    /// author, like an implemented callback.
+    #[test]
+    fn clear_records_nothing_because_it_is_deferred_rather_than_queued() {
+        let (state, requests) = state_with_open_editor();
+        let host = host_with_state(&state);
+
+        unsafe { host_params_clear(&host as *const clap_host, 3, u32::MAX) };
+
+        assert!(requests.lock().expect("request log").is_empty());
+        assert!(!state.take_parameters_rescan());
+        assert!(!state.take_parameters_flush());
+        assert!(!state.take_state_dirty());
+    }
+
+    #[test]
+    fn get_extension_exposes_the_params_extension_with_every_callback_bound() {
+        unsafe {
+            let ptr = host_get_extension(std::ptr::null(), CLAP_EXT_PARAMS.as_ptr());
+            assert!(!ptr.is_null(), "host advertises clap.params");
+            let ext = &*(ptr as *const clap_host_params);
+            assert!(ext.rescan.is_some());
+            assert!(ext.clear.is_some());
+            assert!(ext.request_flush.is_some());
         }
     }
 

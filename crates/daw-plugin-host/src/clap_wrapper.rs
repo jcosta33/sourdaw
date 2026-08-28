@@ -34,6 +34,7 @@ const MAX_RUNTIME_AUDIO_CHANNELS: u32 = 256;
 const MAX_LATENCY_REQUERY_PASSES: u32 = 4;
 
 use crate::clap_host::{create_host_descriptor, HostCallbackState, LatencyChangeNotifier};
+use crate::parameter_events::{PluginParameterEvent, PluginParameterEventQueue};
 use crate::params::PluginParameter;
 use crate::traits::{
     AudioPlugin, EditorWindowResizer, HostParameterUpdate, HostTransport, HostedPluginRuntime,
@@ -42,9 +43,10 @@ use crate::traits::{
 use clap_sys::audio_buffer::clap_audio_buffer;
 use clap_sys::entry::clap_plugin_entry;
 use clap_sys::events::{
-    clap_event_header, clap_event_note, clap_event_param_value, clap_event_transport,
-    clap_input_events, clap_output_events, CLAP_CORE_EVENT_SPACE_ID, CLAP_EVENT_NOTE_OFF,
-    CLAP_EVENT_NOTE_ON, CLAP_EVENT_PARAM_VALUE, CLAP_EVENT_TRANSPORT,
+    clap_event_header, clap_event_note, clap_event_param_gesture, clap_event_param_value,
+    clap_event_transport, clap_input_events, clap_output_events, CLAP_CORE_EVENT_SPACE_ID,
+    CLAP_EVENT_NOTE_OFF, CLAP_EVENT_NOTE_ON, CLAP_EVENT_PARAM_GESTURE_BEGIN,
+    CLAP_EVENT_PARAM_GESTURE_END, CLAP_EVENT_PARAM_VALUE, CLAP_EVENT_TRANSPORT,
     CLAP_TRANSPORT_HAS_BEATS_TIMELINE, CLAP_TRANSPORT_HAS_SECONDS_TIMELINE,
     CLAP_TRANSPORT_HAS_TEMPO, CLAP_TRANSPORT_HAS_TIME_SIGNATURE, CLAP_TRANSPORT_IS_PLAYING,
 };
@@ -141,6 +143,12 @@ pub struct ClapWrapper {
     midi_scratch: Vec<clap_event_note>,
     /// Preallocated parameter event scratch list. Cleared + refilled each block, never reallocated.
     parameter_scratch: Vec<clap_event_param_value>,
+    /// Where the plugin's *own* parameter events land — the mirror of
+    /// `parameter_scratch`, which carries host writes the other way.
+    ///
+    /// Allocated once at load and shared with the drain, so the audio thread
+    /// only ever writes into memory that already exists.
+    parameter_events: Arc<PluginParameterEventQueue>,
     #[cfg(feature = "engine-owned-command-fixture")]
     command_fixture: Option<EngineOwnedCommandFixture>,
 }
@@ -290,17 +298,104 @@ unsafe extern "C" fn empty_events_get(
     ptr::null()
 }
 
-/// Output events (we absorb but ignore plugin-generated events for now).
-static EMPTY_OUTPUT_EVENTS: clap_output_events = clap_output_events {
-    ctx: ptr::null_mut(),
-    try_push: Some(output_events_try_push),
-};
+// ── Plugin → host output events ─────────────────────────────────────────
 
+/// Build the output list the plugin writes its own events into.
+///
+/// The list is a two-field struct built on the caller's stack, and its `ctx` is
+/// the queue's address — an `Arc` allocation made at load, whose address never
+/// moves. Nothing here allocates, which is what lets `process_audio_internal`
+/// build one per block on the audio thread.
+///
+/// # Safety
+/// The returned list borrows `queue`, and the plugin may only write through it
+/// during the `process`/`flush` call it is handed to. Both callers pass it by
+/// reference into one call and drop it there.
+fn capture_output_events(queue: &PluginParameterEventQueue) -> clap_output_events {
+    clap_output_events {
+        ctx: queue as *const PluginParameterEventQueue as *mut c_void,
+        try_push: Some(output_events_try_push),
+    }
+}
+
+/// Take one event the plugin produced. **Called on the audio thread inside
+/// `process()`, so every line of it is real-time critical.**
+///
+/// Why each step is safe there:
+///
+/// * the header read is a plain load through a pointer the plugin owns for the
+///   duration of the call;
+/// * the type and size checks are branches;
+/// * the push is [`PluginParameterEventQueue::push`], which is wait-free by
+///   construction — bounded atomics into memory allocated at load, and no
+///   allocation, lock, syscall or division;
+/// * nothing logs. `eprintln!` locks stderr and makes a write syscall, which is
+///   why an event this host does not model is dropped in silence rather than
+///   reported from here.
+///
+/// An event the host does not model is absorbed and answered `true`: this host
+/// has no note-output or MIDI-output path, and telling a plugin its note-end
+/// could not be pushed would have it retry an event nothing will ever take. An
+/// event the host *does* model and cannot store is answered `false`, which CLAP
+/// defines and which lets a plugin re-send on its next block.
 unsafe extern "C" fn output_events_try_push(
-    _list: *const clap_output_events,
-    _event: *const clap_event_header,
+    list: *const clap_output_events,
+    event: *const clap_event_header,
 ) -> bool {
-    true // Accept but discard
+    if list.is_null() || event.is_null() {
+        return false;
+    }
+    let queue = (*list).ctx as *const PluginParameterEventQueue;
+    if queue.is_null() {
+        return true;
+    }
+
+    let header = &*event;
+    if header.space_id != CLAP_CORE_EVENT_SPACE_ID {
+        return true;
+    }
+
+    let Some(captured) = read_output_event(header) else {
+        return true;
+    };
+
+    (*queue).push(captured)
+}
+
+/// Read one core-space header as an event this host models, or `None`.
+///
+/// Split from the callback so the decoding — which event types are taken, and
+/// the size check that makes each cast legal — is testable without a plugin, and
+/// so the callback body stays short enough to read as real-time code.
+///
+/// # Safety
+/// `header` must point at a live `clap_event_header` whose `size` describes the
+/// allocation it heads, which is exactly the CLAP output-list contract.
+unsafe fn read_output_event(header: &clap_event_header) -> Option<PluginParameterEvent> {
+    match header.type_ {
+        CLAP_EVENT_PARAM_VALUE => {
+            // A plugin that under-declares its own event's size is describing a
+            // shorter allocation than the cast reads. Refuse rather than read
+            // past it — the same failure the scanner refuses on parameter names.
+            if (header.size as usize) < mem::size_of::<clap_event_param_value>() {
+                return None;
+            }
+            let event = &*(header as *const clap_event_header as *const clap_event_param_value);
+            Some(PluginParameterEvent::value(event.param_id, event.value))
+        }
+        CLAP_EVENT_PARAM_GESTURE_BEGIN | CLAP_EVENT_PARAM_GESTURE_END => {
+            if (header.size as usize) < mem::size_of::<clap_event_param_gesture>() {
+                return None;
+            }
+            let event = &*(header as *const clap_event_header as *const clap_event_param_gesture);
+            Some(if header.type_ == CLAP_EVENT_PARAM_GESTURE_BEGIN {
+                PluginParameterEvent::gesture_begin(event.param_id)
+            } else {
+                PluginParameterEvent::gesture_end(event.param_id)
+            })
+        }
+        _ => None,
+    }
 }
 
 // ── Single-event input list for param flush ─────────────────────────────
@@ -596,6 +691,7 @@ impl ClapWrapper {
             editor_content_scale: crate::traits::DEFAULT_EDITOR_CONTENT_SCALE,
             midi_scratch: Vec::with_capacity(MAX_MIDI),
             parameter_scratch: Vec::with_capacity(MAX_PARAMETER_EVENTS),
+            parameter_events: Arc::new(PluginParameterEventQueue::default()),
             #[cfg(feature = "engine-owned-command-fixture")]
             command_fixture: None,
         })
@@ -627,6 +723,7 @@ impl ClapWrapper {
             editor_content_scale: crate::traits::DEFAULT_EDITOR_CONTENT_SCALE,
             midi_scratch: Vec::with_capacity(MAX_MIDI),
             parameter_scratch: Vec::with_capacity(MAX_PARAMETER_EVENTS),
+            parameter_events: Arc::new(PluginParameterEventQueue::default()),
             command_fixture: Some(EngineOwnedCommandFixture {
                 state,
                 has_gui,
@@ -980,6 +1077,46 @@ impl ClapWrapper {
         self.host_state.set_request_notifier(notifier)
     }
 
+    /// The queue this plugin's own parameter events land in. Clone it to drain
+    /// without holding the wrapper.
+    pub fn parameter_event_queue(&self) -> Arc<PluginParameterEventQueue> {
+        Arc::clone(&self.parameter_events)
+    }
+
+    /// Answer a `clap_host_params.request_flush` by calling `params.flush()`.
+    /// **Control path only.**
+    ///
+    /// CLAP splits `flush` by thread on the processing state: while the plugin
+    /// is being handed blocks it is `[audio-thread]`, and the plugin's output
+    /// comes back through `process()` anyway — so a request that arrives while
+    /// processing is answered by doing nothing here and letting the next block
+    /// carry it. Only the `!processing` case is this thread's to make.
+    ///
+    /// The flag is taken first and unconditionally: an ask answered by the audio
+    /// path is answered, and leaving the flag set would flush again the moment
+    /// the plugin stopped.
+    pub fn flush_parameters_off_audio_thread(&mut self) -> bool {
+        if !self.host_state.take_parameters_flush() {
+            return false;
+        }
+        if self.processing.is_processing() {
+            return false;
+        }
+        if self.params_ext.is_null() || self.plugin.is_null() {
+            return false;
+        }
+
+        unsafe {
+            let params = &*self.params_ext;
+            let Some(flush) = params.flush else {
+                return false;
+            };
+            let out_events = capture_output_events(&self.parameter_events);
+            flush(self.plugin, &EMPTY_INPUT_EVENTS, &out_events);
+        }
+        true
+    }
+
     /// Close (hide + destroy) the plugin GUI.
     pub fn close_gui(&mut self) {
         // Before the early returns below: whether the plugin had an editor to
@@ -1283,6 +1420,7 @@ impl ClapWrapper {
                 } else {
                     ptr::null()
                 };
+                let out_events = capture_output_events(&self.parameter_events);
                 let process_data = clap_process {
                     steady_time: -1,
                     frames_count: n_samp as u32,
@@ -1292,7 +1430,7 @@ impl ClapWrapper {
                     audio_inputs_count: 0,
                     audio_outputs_count: 0,
                     in_events,
-                    out_events: &EMPTY_OUTPUT_EVENTS,
+                    out_events: &out_events,
                 };
                 unsafe { process_fn(self.plugin, &process_data) };
             }
@@ -1332,6 +1470,7 @@ impl ClapWrapper {
                 ptr::null()
             };
 
+            let out_events = capture_output_events(&self.parameter_events);
             let process_data = clap_process {
                 steady_time: -1,
                 frames_count: n_samp as u32,
@@ -1341,7 +1480,7 @@ impl ClapWrapper {
                 audio_inputs_count: self.audio.input_buffers.len() as u32,
                 audio_outputs_count: self.audio.output_buffers.len() as u32,
                 in_events,
-                out_events: &EMPTY_OUTPUT_EVENTS,
+                out_events: &out_events,
             };
 
             let _status = process_fn(self.plugin, &process_data);
@@ -1696,7 +1835,11 @@ impl AudioPlugin for ClapWrapper {
             };
 
             if let Some(flush) = params.flush {
-                flush(self.plugin, &input_events, &EMPTY_OUTPUT_EVENTS);
+                // The plugin answers a host write on the same call, and a
+                // parameter whose value depends on the one just written comes
+                // back here — so this flush captures like every other.
+                let out_events = capture_output_events(&self.parameter_events);
+                flush(self.plugin, &input_events, &out_events);
             }
         }
     }
@@ -1872,6 +2015,18 @@ impl AudioPlugin for ClapWrapper {
         self.host_state.take_state_dirty()
     }
 
+    fn take_parameters_rescan(&mut self) -> bool {
+        self.host_state.take_parameters_rescan()
+    }
+
+    fn flush_parameters_off_audio_thread(&mut self) -> bool {
+        ClapWrapper::flush_parameters_off_audio_thread(self)
+    }
+
+    fn parameter_event_queue(&self) -> Option<Arc<PluginParameterEventQueue>> {
+        Some(ClapWrapper::parameter_event_queue(self))
+    }
+
     /// The plugin's own answer, from `clap.note-ports`, not the seam's default.
     ///
     /// A plugin that declares no note input — an EQ, an analyzer — has no
@@ -1966,6 +2121,7 @@ impl HostedPluginRuntime for ClapWrapper {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::parameter_events::PluginParameterEventKind;
 
     // ── Latency query + change notification (PH-4) ──────────────────────
 
@@ -2105,6 +2261,7 @@ mod tests {
             editor_content_scale: crate::traits::DEFAULT_EDITOR_CONTENT_SCALE,
             midi_scratch: Vec::with_capacity(MAX_MIDI),
             parameter_scratch: Vec::with_capacity(MAX_PARAMETER_EVENTS),
+            parameter_events: Arc::new(PluginParameterEventQueue::default()),
             #[cfg(feature = "engine-owned-command-fixture")]
             command_fixture: None,
         }
@@ -3807,6 +3964,379 @@ mod tests {
             AudioPlugin::get_parameters(&wrapper).is_empty(),
             "a parameter whose name cannot be read within its own bounds is skipped, like one whose get_info refused"
         );
+    }
+
+    // ── Plugin → host parameter events (#2984) ──────────────────────────
+    //
+    // Before this, the output list accepted every event and discarded it, so a
+    // user turning a knob in a plugin's own editor changed the plugin and told
+    // the host nothing. These pin what now reaches the host and what does not.
+
+    /// What the stub plugin should write into `out_events` on its next call.
+    /// Serialised by the lock below because the stub is a process-wide static.
+    static EMITTED_EVENTS: std::sync::Mutex<Vec<PluginParameterEvent>> =
+        std::sync::Mutex::new(Vec::new());
+    static EMIT_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    /// What `try_push` answered for each emitted event, in order.
+    static EMIT_ANSWERS: std::sync::Mutex<Vec<bool>> = std::sync::Mutex::new(Vec::new());
+
+    fn stage_emitted_events(events: Vec<PluginParameterEvent>) {
+        *EMITTED_EVENTS.lock().unwrap() = events;
+        EMIT_ANSWERS.lock().unwrap().clear();
+    }
+
+    fn emit_answers() -> Vec<bool> {
+        EMIT_ANSWERS.lock().unwrap().clone()
+    }
+
+    /// Write the staged events onto a real CLAP output list, exactly as a plugin
+    /// would: one correctly sized struct per event, headed by its own header.
+    unsafe fn emit_staged_events(out_events: *const clap_output_events) {
+        let Some(try_push) = (*out_events).try_push else {
+            return;
+        };
+        let staged = EMITTED_EVENTS.lock().unwrap().clone();
+        let mut answers = Vec::with_capacity(staged.len());
+        for event in staged {
+            let accepted = match event.kind {
+                PluginParameterEventKind::Value => {
+                    let value = param_value_event(event.param_id, event.value);
+                    try_push(out_events, &value.header)
+                }
+                PluginParameterEventKind::GestureBegin | PluginParameterEventKind::GestureEnd => {
+                    let gesture = gesture_event(
+                        event.param_id,
+                        matches!(event.kind, PluginParameterEventKind::GestureBegin),
+                    );
+                    try_push(out_events, &gesture.header)
+                }
+            };
+            answers.push(accepted);
+        }
+        *EMIT_ANSWERS.lock().unwrap() = answers;
+    }
+
+    fn param_value_event(param_id: u32, value: f64) -> clap_event_param_value {
+        clap_event_param_value {
+            header: clap_event_header {
+                size: mem::size_of::<clap_event_param_value>() as u32,
+                time: 0,
+                space_id: CLAP_CORE_EVENT_SPACE_ID,
+                type_: CLAP_EVENT_PARAM_VALUE,
+                flags: 0,
+            },
+            param_id,
+            cookie: ptr::null_mut(),
+            note_id: -1,
+            port_index: -1,
+            channel: -1,
+            key: -1,
+            value,
+        }
+    }
+
+    fn gesture_event(param_id: u32, begin: bool) -> clap_event_param_gesture {
+        clap_event_param_gesture {
+            header: clap_event_header {
+                size: mem::size_of::<clap_event_param_gesture>() as u32,
+                time: 0,
+                space_id: CLAP_CORE_EVENT_SPACE_ID,
+                type_: if begin {
+                    CLAP_EVENT_PARAM_GESTURE_BEGIN
+                } else {
+                    CLAP_EVENT_PARAM_GESTURE_END
+                },
+                flags: 0,
+            },
+            param_id,
+        }
+    }
+
+    unsafe extern "C" fn stub_process_emitting(
+        _plugin: *const clap_plugin,
+        process: *const clap_process,
+    ) -> i32 {
+        emit_staged_events((*process).out_events);
+        0
+    }
+
+    unsafe extern "C" fn stub_params_flush_emitting(
+        _plugin: *const clap_plugin,
+        _in_events: *const clap_input_events,
+        out_events: *const clap_output_events,
+    ) {
+        FLUSH_CALLS.fetch_add(1, Ordering::Relaxed);
+        emit_staged_events(out_events);
+    }
+
+    static FLUSH_CALLS: AtomicU32 = AtomicU32::new(0);
+
+    static EMITTING_PARAMS: clap_plugin_params = clap_plugin_params {
+        count: None,
+        get_info: None,
+        get_value: None,
+        value_to_text: None,
+        text_to_value: None,
+        flush: Some(stub_params_flush_emitting),
+    };
+
+    fn emitting_plugin_ptr() -> *const clap_plugin {
+        let mut plugin: clap_plugin = unsafe { mem::zeroed() };
+        plugin.get_extension = Some(stub_get_extension);
+        plugin.activate = Some(stub_activate);
+        plugin.deactivate = Some(stub_deactivate);
+        plugin.start_processing = Some(stub_start_processing);
+        plugin.stop_processing = Some(stub_stop_processing);
+        plugin.process = Some(stub_process_emitting);
+        Box::into_raw(Box::new(plugin)) as *const clap_plugin
+    }
+
+    fn captured_events(wrapper: &ClapWrapper) -> Vec<PluginParameterEvent> {
+        let mut events = Vec::new();
+        wrapper.parameter_event_queue().drain(&mut events);
+        events
+    }
+
+    /// AC-001. Reverting `out_events` to a list that answers `true` and discards
+    /// — which is what it was — leaves this queue empty.
+    #[test]
+    fn a_value_the_plugin_emits_during_process_reaches_the_host() {
+        let _guard = EMIT_TEST_LOCK.lock().unwrap();
+        stage_emitted_events(vec![PluginParameterEvent::value(12, 0.75)]);
+        let mut wrapper = stub_wrapper(emitting_plugin_ptr());
+
+        process_one_block(&mut wrapper);
+
+        assert_eq!(
+            captured_events(&wrapper),
+            vec![PluginParameterEvent::value(12, 0.75)]
+        );
+    }
+
+    /// AC-003. The bracket has to survive the crossing in order, or a recorder
+    /// cannot tell one held ride from a run of separate nudges.
+    #[test]
+    fn a_bracketed_ride_reaches_the_host_with_its_gesture_boundaries_in_order() {
+        let _guard = EMIT_TEST_LOCK.lock().unwrap();
+        stage_emitted_events(vec![
+            PluginParameterEvent::gesture_begin(4),
+            PluginParameterEvent::value(4, 0.2),
+            PluginParameterEvent::value(4, 0.6),
+            PluginParameterEvent::gesture_end(4),
+        ]);
+        let mut wrapper = stub_wrapper(emitting_plugin_ptr());
+
+        process_one_block(&mut wrapper);
+
+        assert_eq!(
+            captured_events(&wrapper),
+            vec![
+                PluginParameterEvent::gesture_begin(4),
+                PluginParameterEvent::value(4, 0.2),
+                PluginParameterEvent::value(4, 0.6),
+                PluginParameterEvent::gesture_end(4),
+            ]
+        );
+        assert_eq!(emit_answers(), vec![true; 4]);
+    }
+
+    /// A plugin with no audio ports still gets `process()` and still owes the
+    /// host its output events — a note effect's editor is not a second-class one.
+    #[test]
+    fn a_portless_plugins_events_reach_the_host_too() {
+        let _guard = EMIT_TEST_LOCK.lock().unwrap();
+        stage_emitted_events(vec![PluginParameterEvent::value(1, 0.3)]);
+        let mut wrapper = stub_wrapper_over(AudioBusLayout::portless(), emitting_plugin_ptr());
+
+        process_one_block(&mut wrapper);
+
+        assert_eq!(
+            captured_events(&wrapper),
+            vec![PluginParameterEvent::value(1, 0.3)]
+        );
+    }
+
+    /// The event types this host has no path for are absorbed as they always
+    /// were: answering `false` would have a plugin retry a note-end forever.
+    #[test]
+    fn an_event_the_host_does_not_model_is_absorbed_rather_than_captured() {
+        let queue = PluginParameterEventQueue::default();
+        let list = capture_output_events(&queue);
+        let note = clap_event_note {
+            header: clap_event_header {
+                size: mem::size_of::<clap_event_note>() as u32,
+                time: 0,
+                space_id: CLAP_CORE_EVENT_SPACE_ID,
+                type_: CLAP_EVENT_NOTE_ON,
+                flags: 0,
+            },
+            note_id: -1,
+            port_index: 0,
+            channel: 0,
+            key: 60,
+            velocity: 1.0,
+        };
+
+        let accepted = unsafe { output_events_try_push(&list, &note.header) };
+
+        assert!(accepted);
+        assert!(!queue.has_pending());
+    }
+
+    /// Event spaces other than the core one carry other vendors' event layouts.
+    /// Reading one as a `clap_event_param_value` reads a struct that is not
+    /// there and publishes whatever the bytes happened to be.
+    #[test]
+    fn an_event_from_a_foreign_event_space_is_not_read_as_a_parameter() {
+        let queue = PluginParameterEventQueue::default();
+        let list = capture_output_events(&queue);
+        let mut event = param_value_event(3, 0.9);
+        event.header.space_id = CLAP_CORE_EVENT_SPACE_ID + 1;
+
+        let accepted = unsafe { output_events_try_push(&list, &event.header) };
+
+        assert!(accepted, "a foreign space is absorbed, not refused");
+        assert!(!queue.has_pending());
+    }
+
+    /// A plugin that under-declares its event's size is describing a shorter
+    /// allocation than the cast reads. The same refusal the scanner already
+    /// makes for a parameter name that never terminates.
+    #[test]
+    fn an_undersized_parameter_event_is_refused_rather_than_read_past() {
+        let queue = PluginParameterEventQueue::default();
+        let list = capture_output_events(&queue);
+        let mut value = param_value_event(3, 0.9);
+        value.header.size = mem::size_of::<clap_event_header>() as u32;
+        let mut gesture = gesture_event(3, true);
+        gesture.header.size = 1;
+
+        unsafe {
+            assert!(output_events_try_push(&list, &value.header));
+            assert!(output_events_try_push(&list, &gesture.header));
+        }
+
+        assert!(!queue.has_pending());
+    }
+
+    /// CLAP defines `false` from `try_push`, and it is the truthful answer to a
+    /// queue with no room: the plugin may send the event again on its next
+    /// block, where an acceptance would have lost it for good.
+    #[test]
+    fn a_full_queue_refuses_the_plugins_push_rather_than_pretending_to_take_it() {
+        let queue = PluginParameterEventQueue::with_capacity(1);
+        let list = capture_output_events(&queue);
+        let first = param_value_event(1, 0.1);
+        let second = param_value_event(2, 0.2);
+
+        unsafe {
+            assert!(output_events_try_push(&list, &first.header));
+            assert!(!output_events_try_push(&list, &second.header));
+        }
+
+        assert_eq!(queue.take_dropped(), 1);
+    }
+
+    #[test]
+    fn a_null_event_or_list_is_refused_rather_than_dereferenced() {
+        let queue = PluginParameterEventQueue::default();
+        let list = capture_output_events(&queue);
+        let value = param_value_event(1, 0.1);
+
+        unsafe {
+            assert!(!output_events_try_push(&list, ptr::null()));
+            assert!(!output_events_try_push(ptr::null(), &value.header));
+        }
+    }
+
+    /// AC-002. `request_flush` exists precisely for the plugin that is not being
+    /// handed blocks — transport stopped, editor open — and until this the
+    /// callback was a comment.
+    #[test]
+    fn a_flush_the_plugin_requested_runs_off_the_audio_thread_and_captures() {
+        let _guard = EMIT_TEST_LOCK.lock().unwrap();
+        stage_emitted_events(vec![PluginParameterEvent::value(8, 0.44)]);
+        FLUSH_CALLS.store(0, Ordering::Relaxed);
+        let mut wrapper = stub_wrapper(emitting_plugin_ptr());
+        wrapper.params_ext = &raw const EMITTING_PARAMS;
+        wrapper.processing.request_stop();
+        wrapper.host_state.request_parameters_flush();
+
+        assert!(wrapper.flush_parameters_off_audio_thread());
+
+        assert_eq!(FLUSH_CALLS.load(Ordering::Relaxed), 1);
+        assert_eq!(
+            captured_events(&wrapper),
+            vec![PluginParameterEvent::value(8, 0.44)]
+        );
+    }
+
+    /// `flush` is `[audio-thread]` while the plugin is processing, and its output
+    /// comes back through `process()` there anyway. Calling it from here would
+    /// break the format's own threading rule for no gain.
+    #[test]
+    fn a_flush_request_that_arrives_while_processing_is_left_to_the_next_block() {
+        let _guard = EMIT_TEST_LOCK.lock().unwrap();
+        stage_emitted_events(vec![PluginParameterEvent::value(8, 0.44)]);
+        FLUSH_CALLS.store(0, Ordering::Relaxed);
+        let mut wrapper = stub_wrapper(emitting_plugin_ptr());
+        wrapper.params_ext = &raw const EMITTING_PARAMS;
+        wrapper.host_state.request_parameters_flush();
+        // The gate's audio-thread truth, reached the only way a block does.
+        process_one_block(&mut wrapper);
+        captured_events(&wrapper);
+        assert!(wrapper.processing.is_processing());
+
+        assert!(!wrapper.flush_parameters_off_audio_thread());
+
+        assert_eq!(FLUSH_CALLS.load(Ordering::Relaxed), 0);
+    }
+
+    /// The flag is taken whatever happens next, or a request answered by the
+    /// audio path would flush again the moment the plugin stopped.
+    #[test]
+    fn a_flush_request_is_spent_by_the_visit_that_read_it() {
+        let _guard = EMIT_TEST_LOCK.lock().unwrap();
+        stage_emitted_events(Vec::new());
+        FLUSH_CALLS.store(0, Ordering::Relaxed);
+        let mut wrapper = stub_wrapper(emitting_plugin_ptr());
+        wrapper.params_ext = &raw const EMITTING_PARAMS;
+        wrapper.processing.request_stop();
+        wrapper.host_state.request_parameters_flush();
+
+        assert!(wrapper.flush_parameters_off_audio_thread());
+        assert!(
+            !wrapper.flush_parameters_off_audio_thread(),
+            "a second visit with nothing pending must not call the plugin again"
+        );
+
+        assert_eq!(FLUSH_CALLS.load(Ordering::Relaxed), 1);
+    }
+
+    #[test]
+    fn a_visit_with_no_flush_request_pending_does_not_call_the_plugin() {
+        let _guard = EMIT_TEST_LOCK.lock().unwrap();
+        stage_emitted_events(Vec::new());
+        FLUSH_CALLS.store(0, Ordering::Relaxed);
+        let mut wrapper = stub_wrapper(emitting_plugin_ptr());
+        wrapper.params_ext = &raw const EMITTING_PARAMS;
+        wrapper.processing.request_stop();
+
+        assert!(!wrapper.flush_parameters_off_audio_thread());
+        assert_eq!(FLUSH_CALLS.load(Ordering::Relaxed), 0);
+    }
+
+    /// The rescan ask has to survive from the plugin's callback to the control
+    /// path through the seam the runtime owner actually calls.
+    #[test]
+    fn a_rescan_the_plugin_raised_is_read_back_through_the_seam() {
+        let mut wrapper = stub_wrapper(stub_plugin_ptr());
+
+        assert!(!AudioPlugin::take_parameters_rescan(&mut wrapper));
+        wrapper.host_state.mark_parameters_rescan();
+
+        assert!(AudioPlugin::take_parameters_rescan(&mut wrapper));
+        assert!(!AudioPlugin::take_parameters_rescan(&mut wrapper));
     }
 }
 
