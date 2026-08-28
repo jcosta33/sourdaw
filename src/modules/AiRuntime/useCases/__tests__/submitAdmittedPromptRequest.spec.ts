@@ -579,6 +579,48 @@ describe('submitAdmittedPromptRequest', () => {
         setItem.mockRestore();
     });
 
+    it('resumes pending temporary-asset cleanup after retrying cancellation persistence', async () => {
+        const result = await submitAdmittedPromptRequest({
+            prompt: 'Play',
+            source: 'prompt-bar',
+            actions: [action],
+            requiresConfirmation: true,
+        });
+        if (result.status !== 'awaiting-approval') {
+            throw new Error(`Expected an approval preview, received ${result.status}`);
+        }
+        const cleanup = vi.fn();
+        agentRunLifecycle.registerTemporaryAsset({
+            runId: RUN_ID,
+            assetId: 'preview-cleanup-retry',
+            kind: 'import',
+            cleanupOwner: 'preview-cleanup-owner',
+        });
+        agentRunCancellation.registerTemporaryAssetCleanup({
+            runId: RUN_ID,
+            assetId: 'preview-cleanup-retry',
+            cleanupOwner: 'preview-cleanup-owner',
+            cleanup,
+        });
+        const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementationOnce(() => {
+            throw new Error('Cancellation storage unavailable');
+        });
+
+        await expect(result.preview.cancel()).rejects.toThrow('Agent run state could not be persisted locally');
+        expect(agentRunLifecycle.get(RUN_ID)?.temporaryAssets).toEqual([
+            expect.objectContaining({ assetId: 'preview-cleanup-retry', status: 'cleanup-pending' }),
+        ]);
+
+        await result.preview.cancel();
+
+        expect(cleanup).toHaveBeenCalledOnce();
+        expect(agentRunLifecycle.get(RUN_ID)?.temporaryAssets).not.toContainEqual(
+            expect.objectContaining({ assetId: 'preview-cleanup-retry', status: 'cleanup-pending' })
+        );
+        expect(mocks.notifyAiChange).toHaveBeenCalledExactlyOnceWith(AGENT_RUN_CANCELLATION_PERSISTENCE_WARNING, []);
+        setItem.mockRestore();
+    });
+
     it('preserves compiler dependencies and batch-local bindings at the admitted compilation boundary', async () => {
         const actions = [
             { type: 'createBus', payload: { name: 'Drum Bus', busId: 'bus-ai-drum' } },

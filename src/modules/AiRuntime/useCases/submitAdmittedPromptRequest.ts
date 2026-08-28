@@ -116,6 +116,16 @@ export async function submitAdmittedPromptRequest(
                 if (!agentRunLifecycle.retryPersistence(runId)) {
                     throw new Error(`Agent run disappeared before cancellation persistence retry: ${runId}`);
                 }
+                // A failed first cancellation can leave registered temporary
+                // assets cleanup-pending after its terminal state reached the
+                // live store. Re-enter cancellation only for that established
+                // terminal run so it resumes cleanup without revoking again.
+                return agentRunCancellation.cancel({
+                    runId,
+                    reason: 'Prompt request cancelled by the user.',
+                });
+            })
+            .then(() => {
                 cancellationFailed = false;
             })
             .catch(reportCancellationPersistenceFailure);

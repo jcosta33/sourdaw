@@ -389,10 +389,14 @@ describe('prepared stem import resource cleanup', () => {
         expect(window.localStorage.getItem('sourdaw-agent-runs')).toBe(durableBefore);
         expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledExactlyOnceWith('decoded-buffer-1');
 
-        await expect(preparedStemImportResources.discard({ runId, stems: twoStems })).resolves.toBeUndefined();
+        await expect(preparedStemImportResources.discard({ runId, stems: [twoStems[0]!] })).resolves.toBeUndefined();
+        expect(window.localStorage.getItem('sourdaw-agent-runs')).not.toBe(durableBefore);
+        expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledExactlyOnceWith('decoded-buffer-1');
+        expect(mocks.releasePreviewAudioBuffer).not.toHaveBeenCalledWith('decoded-buffer-2');
+
+        await expect(preparedStemImportResources.discard({ runId, stems: [twoStems[1]!] })).resolves.toBeUndefined();
         await expect(preparedStemImportResources.discard({ runId, stems: twoStems })).resolves.toBeUndefined();
 
-        expect(window.localStorage.getItem('sourdaw-agent-runs')).not.toBe(durableBefore);
         expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledExactlyOnceWith('decoded-buffer-1');
         expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledExactlyOnceWith('decoded-buffer-2');
         setItem.mockRestore();
