@@ -25,8 +25,7 @@ import { type LucideIcon } from 'lucide-react';
 import { DawChooserCard } from '#/components/daw/DawChooserCard';
 import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
 import { Row, Stack } from '#/components/layout';
-import { compileAddDeviceAction } from '#/modules/Arrangement/useCases';
-import { executeAppAction } from '#/modules/Command/useCases';
+import { executeAddDeviceAction } from '#/modules/Arrangement/useCases';
 
 import { type PluginDescriptorView as PluginDescriptor } from '../../../models/PluginDescriptorViewTypes';
 
@@ -35,10 +34,7 @@ import { type PluginDescriptorView as PluginDescriptor } from '../../../models/P
 export type EffectPlugin = PluginDescriptor;
 
 function addDeviceThroughAction(trackId: string, deviceType: string): void {
-    const action = compileAddDeviceAction(trackId, deviceType);
-    if (action) {
-        void executeAppAction(action);
-    }
+    void executeAddDeviceAction(trackId, deviceType);
 }
 
 export type EffectGroup = {

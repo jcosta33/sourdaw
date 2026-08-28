@@ -11,6 +11,7 @@
 //! and a second format's backend has to speak them without depending on the
 //! CLAP backend module.
 
+use crate::parameter_events::PluginParameterEventQueue;
 use crate::params::PluginParameter;
 use std::ffi::c_void;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
@@ -29,11 +30,17 @@ pub type LatencyChangeNotifier = Box<dyn Fn() + Send + Sync>;
 
 /// Something a plugin asked its host for from inside its own callback.
 ///
-/// The two arrivals share one shape, which is why they share one wake: the
-/// plugin calls a host callback on a thread that may do no real work, the
-/// backend records the fact lock-free, and the wake carries the follow-up onto
-/// the host's control path. What the follow-up is differs; where it may run does
-/// not.
+/// These arrivals share one shape, which is why they share one wake: the plugin
+/// calls a host callback on a thread that may do no real work, the backend
+/// records the fact lock-free, and the wake carries the follow-up onto the
+/// host's control path. What the follow-up is differs; where it may run does not.
+///
+/// Every variant here is raised from a callback its format marks `[main-thread]`,
+/// and the wake behind them allocates. An ask a plugin may raise from the audio
+/// thread — `clap_host_params.request_flush`, which CLAP marks `[thread-safe]` —
+/// therefore has no variant here at all: it is recorded as a flag and read by the
+/// parameter drain, because a channel send on the render thread is a missed
+/// device period.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PluginHostRequest {
     /// The plugin wants the window its editor is drawn into resized. The size
@@ -43,6 +50,10 @@ pub enum PluginHostRequest {
     /// The plugin's own state changed — a knob moved in its editor, a preset
     /// loaded inside it — so the project holding it has unsaved changes.
     StateDirty,
+    /// The plugin's parameter list changed and the host's copy of it describes a
+    /// plugin that no longer exists. Re-enumerating means calling the plugin
+    /// back, which the callback's own thread may not do.
+    ParametersRescan,
 }
 
 /// Host-supplied wake fired when a plugin raises a [`PluginHostRequest`].
@@ -293,6 +304,44 @@ pub trait AudioPlugin: Send + Sync {
     /// would re-mark on every later wake.
     fn take_state_dirty(&mut self) -> bool {
         false
+    }
+
+    /// Read and clear the "my parameter list changed" signal the plugin raised.
+    /// **Control path only.**
+    ///
+    /// Read-and-clear for the same reason as `take_state_dirty`: one rescan is
+    /// answered once, and a flag left standing re-enumerates on every later wake.
+    /// The default is `false` because a format that never raises the ask has
+    /// nothing pending, which is an answer rather than a gap.
+    fn take_parameters_rescan(&mut self) -> bool {
+        false
+    }
+
+    /// Read and clear the plugin's request that the host call `flush()`, then
+    /// make that call if it is legal right now. **Control path only.**
+    ///
+    /// One method rather than a take and a call, because whether the call is
+    /// legal is a fact only the backend holds: every format forbids the flush
+    /// while the plugin is being handed blocks, and a caller outside the backend
+    /// would have to reach into the processing state to find out.
+    ///
+    /// Reports whether the flush actually ran. `false` covers both "nothing was
+    /// asked for" and "the plugin is processing, so its output comes back
+    /// through `process()` instead" — neither is a failure, and the caller's
+    /// next move is the same for both: drain whatever the queue holds.
+    fn flush_parameters_off_audio_thread(&mut self) -> bool {
+        false
+    }
+
+    /// The queue this plugin's own parameter events are captured into, or `None`
+    /// for a backend that captures none.
+    ///
+    /// Handed out rather than drained through this trait because the drain must
+    /// never wait on the plugin: a control path held by a long operation would
+    /// otherwise stall every event behind it, and the queue exists precisely so
+    /// the two are independent.
+    fn parameter_event_queue(&self) -> Option<Arc<PluginParameterEventQueue>> {
+        None
     }
 
     /// Whether the plugin accepts note events.

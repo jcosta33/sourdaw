@@ -19,6 +19,8 @@ import { restorePluginState } from './restorePluginState';
 import { pluginLifecycleScheduler } from './serializePluginLifecycle';
 import { toExternalPluginParameters } from './toExternalPluginParameters';
 import { watchExternalPluginLatency } from './watchExternalPluginLatency';
+import { watchExternalPluginParameterEvents } from './watchExternalPluginParameterEvents';
+import { watchExternalPluginParameterRescan } from './watchExternalPluginParameterRescan';
 
 type ActivateExternalPluginInput = {
     pluginId: string;
@@ -153,6 +155,14 @@ export function activateExternalPlugin({
     }
     loadedExternalInstances.add(instanceId);
     setActivationStatus(instanceId, 'loading');
+
+    // Start before the load, for the same reason the latency sink is registered
+    // before it: a plugin that opens its editor and is ridden during its own
+    // first activation must not edit into a subscription that is not up yet.
+    // Both are unconditional — every hosted plugin can be edited in its own
+    // editor, and both subscriptions are one listener for the whole session.
+    watchExternalPluginParameterEvents();
+    watchExternalPluginParameterRescan();
 
     if (onLatencyMs) {
         // Register before the load so a latency change the plugin flags during

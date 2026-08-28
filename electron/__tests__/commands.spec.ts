@@ -346,7 +346,6 @@ const COMMAND_ARGUMENTS: ReadonlyMap<string, readonly string[]> = new Map([
     ['get_plugin_parameters', ['instance_id']],
     ['get_plugin_state_bytes', ['instance_id']],
     ['get_waveform_peaks', ['instance_id', 'sample_id', 'level', 'channel']],
-    ['is_plugin_gui_supported', ['instance_id']],
     ['is_scan_path_authorized', ['path']],
     ['list_directory', ['path']],
     ['list_midi_inputs', []],

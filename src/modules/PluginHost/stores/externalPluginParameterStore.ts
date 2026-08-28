@@ -93,6 +93,35 @@ export function patchExternalPluginParameters(
     });
 }
 
+/**
+ * Record the setting a plugin reported for one of its own parameters.
+ *
+ * Only the value moves: a plugin-side edit says what the control is now set to
+ * and nothing about its name, range or automatability, so patching the rest from
+ * here would be describing a contract the plugin never re-declared — that is
+ * what `patchExternalPluginParameters` is for, after a rescan.
+ *
+ * An unknown instance or parameter is ignored rather than created. A value with
+ * no contract behind it has no range to be read against, and inventing one would
+ * put a control in the automation menu the plugin never offered.
+ */
+export function patchExternalPluginParameterValue(instanceId: string, parameterId: number, value: number): void {
+    externalPluginParameterStore.update((state) => {
+        const current = state ?? defaultExternalPluginParameterState;
+        const snapshot = current.byInstanceId[instanceId];
+        if (!snapshot) {
+            return current;
+        }
+        if (!snapshot.parameters.some((parameter) => parameter.id === parameterId)) {
+            return current;
+        }
+        const parameters = snapshot.parameters.map((parameter) =>
+            parameter.id === parameterId ? { ...parameter, value } : parameter
+        );
+        return { ...current, byInstanceId: { ...current.byInstanceId, [instanceId]: { ...snapshot, parameters } } };
+    });
+}
+
 export function dropExternalPluginParameterSnapshot(instanceId: string): void {
     externalPluginParameterStore.update((state) => {
         const current = state ?? defaultExternalPluginParameterState;

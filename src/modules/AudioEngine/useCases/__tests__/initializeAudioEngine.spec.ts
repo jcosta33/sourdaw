@@ -6,7 +6,6 @@ const { mocks } = vi.hoisted(() => {
     return {
         mocks: {
             initialize: vi.fn().mockResolvedValue(undefined),
-            registerPlugins: vi.fn(),
             registerFaustDsp: vi.fn(),
         },
     };
@@ -15,7 +14,6 @@ const { mocks } = vi.hoisted(() => {
 vi.mock('../../repositories/createWebAudioEngine', () => ({
     audioEngine: {
         initialize: mocks.initialize,
-        context: null as AudioContext | null,
     },
 }));
 
@@ -23,9 +21,7 @@ vi.mock('#/modules/PluginHost/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/PluginHost/useCases')>();
     return {
         ...actual,
-        registerBuiltinPlugins: mocks.registerPlugins,
         registerBuiltinFaustDSP: mocks.registerFaustDsp,
-        initWAMEnvironment: vi.fn(),
     };
 });
 
@@ -39,7 +35,6 @@ describe('initializeAudioEngine', () => {
         await initializeAudioEngine();
 
         expect(mocks.initialize).toHaveBeenCalledTimes(1);
-        expect(mocks.registerPlugins).toHaveBeenCalledTimes(1);
         expect(mocks.registerFaustDsp).toHaveBeenCalledTimes(1);
     });
 
@@ -48,7 +43,6 @@ describe('initializeAudioEngine', () => {
 
         await expect(initializeAudioEngine()).rejects.toThrow('Audio engine has been disposed');
 
-        expect(mocks.registerPlugins).not.toHaveBeenCalled();
         expect(mocks.registerFaustDsp).not.toHaveBeenCalled();
     });
 });

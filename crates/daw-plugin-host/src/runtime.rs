@@ -11,6 +11,7 @@
 //! Adding a format adds an arm. Nothing outside this file matches on one.
 
 use crate::clap_wrapper::ClapWrapper;
+use crate::parameter_events::PluginParameterEventQueue;
 use crate::params::PluginParameter;
 use crate::traits::{
     AudioPlugin, EditorWindowResizer, HostParameterUpdate, HostTransport, HostedPluginRuntime,
@@ -102,6 +103,21 @@ impl AudioPlugin for HostedRuntime {
 
     fn take_state_dirty(&mut self) -> bool {
         delegate!(self, backend => backend.take_state_dirty())
+    }
+
+    fn take_parameters_rescan(&mut self) -> bool {
+        delegate!(self, backend => backend.take_parameters_rescan())
+    }
+
+    fn flush_parameters_off_audio_thread(&mut self) -> bool {
+        delegate!(self, backend => backend.flush_parameters_off_audio_thread())
+    }
+
+    /// Reached through an explicit `AudioPlugin::` path: both backends carry an
+    /// inherent method of this name that answers the queue itself, and an
+    /// inherent item shadows a trait one.
+    fn parameter_event_queue(&self) -> Option<Arc<PluginParameterEventQueue>> {
+        delegate!(self, backend => AudioPlugin::parameter_event_queue(backend))
     }
 
     fn accepts_midi(&self) -> bool {

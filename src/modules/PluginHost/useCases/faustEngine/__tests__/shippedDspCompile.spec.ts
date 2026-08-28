@@ -38,8 +38,7 @@ import { faustEngineState } from '../faustEngineState';
  * exists in the DSP and is invisible in the product.
  *
  * `builtinDSP.ts`'s own `paramDescriptors` are compared as well, for address
- * resolution only. That table has NO runtime reader today — `getFaustModule`
- * and `getFaustModules` are called from specs and nothing else — so this is a
+ * resolution only. That table has NO runtime reader today, so this is a
  * consistency check on a description, not a contract the product depends on;
  * `builtinDSP.ts` earns its place by registering the DSP SOURCE, which
  * `compileFaustDSP` does read. Removing the dead descriptor arrays is filed

@@ -1,4 +1,4 @@
-import { registerBuiltinPlugins, initWAMEnvironment, registerBuiltinFaustDSP } from '#/modules/PluginHost/useCases';
+import { registerBuiltinFaustDSP } from '#/modules/PluginHost/useCases';
 
 import { audioEngine } from '../repositories/createWebAudioEngine';
 
@@ -10,10 +10,5 @@ import { audioEngine } from '../repositories/createWebAudioEngine';
  */
 export async function initializeAudioEngine(): Promise<void> {
     await audioEngine.initialize();
-    registerBuiltinPlugins();
     registerBuiltinFaustDSP();
-    const ctx = audioEngine.context;
-    if (ctx) {
-        void initWAMEnvironment(ctx);
-    }
 }

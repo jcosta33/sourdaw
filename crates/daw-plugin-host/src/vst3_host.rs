@@ -27,13 +27,14 @@
 //!
 //! Sourdaw's own audio thread reaches none of this.
 
+use crate::parameter_events::{PluginParameterEvent, PluginParameterEventQueue};
 use crate::traits::{HostParameterUpdate, LatencyChangeNotifier};
 use std::collections::BTreeMap;
 use std::ffi::{c_void, CStr, CString};
 use std::sync::atomic::{
     AtomicBool, AtomicI32, AtomicPtr, AtomicU32, AtomicU64, AtomicU8, Ordering,
 };
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 use vst3::com_scrape_types::Guid;
 use vst3::Steinberg::Linux::IRunLoop;
 use vst3::Steinberg::Vst::{
@@ -260,6 +261,13 @@ pub struct Vst3HostState {
     unhandled_restart_flags: AtomicI32,
     latency_notifier: OnceLock<LatencyChangeNotifier>,
     gestures: ParameterGestureQueue,
+    /// The plugin's own edits on their way *out* to the host's observers.
+    ///
+    /// Distinct from `gestures`, which carries the same edits the other way — to
+    /// the processor, coalesced per parameter, because the DSP is owed the value
+    /// the user landed on and nothing in between. This queue keeps every event in
+    /// order, because what it carries is the gesture's shape.
+    parameter_events: Arc<PluginParameterEventQueue>,
     deferred_messages: [DeferredMessage; MAX_DEFERRED_MESSAGES],
 }
 
@@ -272,6 +280,7 @@ impl Default for Vst3HostState {
             unhandled_restart_flags: AtomicI32::new(0),
             latency_notifier: OnceLock::new(),
             gestures: ParameterGestureQueue::new(),
+            parameter_events: Arc::new(PluginParameterEventQueue::default()),
             deferred_messages: std::array::from_fn(|_| DeferredMessage::new()),
         }
     }
@@ -305,9 +314,47 @@ impl Vst3HostState {
         self.unhandled_restart_flags.load(Ordering::Acquire)
     }
 
-    /// Record an editor gesture. Callable from any thread.
+    /// Record an edit the plugin's own editor made. Callable from any thread.
+    ///
+    /// Two records, because the edit is owed to two different readers: the
+    /// processor needs the value to render it, and the host's observers need the
+    /// event to reflect and record it. Neither substitutes for the other — the
+    /// processor's copy is coalesced and consumed by the audio thread, and the
+    /// observers' copy is ordered and consumed off it.
+    ///
+    /// The value is normalized, which is the only scale VST3 states it in and the
+    /// scale `get_parameters` reports, so the two agree without a conversion.
     pub fn record_parameter_edit(&self, param_id: ParamID, value: ParamValue) {
         self.gestures.record(param_id, value);
+        self.parameter_events
+            .push(PluginParameterEvent::value(param_id, value));
+    }
+
+    /// Queue a write the *host* made for the processor. Control path.
+    ///
+    /// Deliberately not [`record_parameter_edit`](Self::record_parameter_edit):
+    /// the observers' queue carries what the plugin said, and echoing the host's
+    /// own write into it would come back as a plugin-initiated edit — marking the
+    /// project dirty and re-publishing a value the host is the one that set.
+    pub fn queue_host_parameter_write(&self, param_id: ParamID, value: ParamValue) {
+        self.gestures.record(param_id, value);
+    }
+
+    /// Record that the plugin opened an edit on one parameter.
+    pub fn record_gesture_begin(&self, param_id: ParamID) {
+        self.parameter_events
+            .push(PluginParameterEvent::gesture_begin(param_id));
+    }
+
+    /// Record that the plugin closed the edit it opened.
+    pub fn record_gesture_end(&self, param_id: ParamID) {
+        self.parameter_events
+            .push(PluginParameterEvent::gesture_end(param_id));
+    }
+
+    /// The queue this plugin's own parameter events land in.
+    pub fn parameter_event_queue(&self) -> Arc<PluginParameterEventQueue> {
+        Arc::clone(&self.parameter_events)
     }
 
     /// Move waiting gestures into `out`. **Audio thread.** Allocation-free.
@@ -437,11 +484,13 @@ impl Class for Vst3ComponentHandler {
 }
 
 impl IComponentHandlerTrait for Vst3ComponentHandler {
-    /// The gesture boundary. Sourdaw has no automation-write target yet
-    /// (packet 4), so there is nothing to open here — and answering `kResultOk`
-    /// is the truth about what the host did with the call, not a claim that a
-    /// write is recording.
-    unsafe fn beginEdit(&self, _id: ParamID) -> tresult {
+    /// The plugin opens an edit: every `performEdit` until the matching
+    /// `endEdit` belongs to one continuous user gesture.
+    ///
+    /// Recorded in the same ordered queue as the values it brackets, because the
+    /// bracket only means anything relative to them.
+    unsafe fn beginEdit(&self, id: ParamID) -> tresult {
+        self.state.record_gesture_begin(id);
         kResultOk
     }
 
@@ -453,7 +502,8 @@ impl IComponentHandlerTrait for Vst3ComponentHandler {
         kResultOk
     }
 
-    unsafe fn endEdit(&self, _id: ParamID) -> tresult {
+    unsafe fn endEdit(&self, id: ParamID) -> tresult {
+        self.state.record_gesture_end(id);
         kResultOk
     }
 
@@ -864,6 +914,83 @@ mod tests {
         buffer[..count].to_vec()
     }
 
+    fn observed_events(state: &Vst3HostState) -> Vec<PluginParameterEvent> {
+        let mut events = Vec::new();
+        state.parameter_event_queue().drain(&mut events);
+        events
+    }
+
+    /// AC-003 for VST3: `beginEdit`/`endEdit` used to return `kResultOk` without
+    /// opening or closing anything, so a host observer could not tell one
+    /// continuous ride from a run of unrelated nudges.
+    #[test]
+    fn an_editor_ride_reaches_the_host_bracketed_by_its_own_gesture() {
+        let state = Vst3HostState::default();
+
+        state.record_gesture_begin(4);
+        state.record_parameter_edit(4, 0.1);
+        state.record_parameter_edit(4, 0.8);
+        state.record_gesture_end(4);
+
+        assert_eq!(
+            observed_events(&state),
+            vec![
+                PluginParameterEvent::gesture_begin(4),
+                PluginParameterEvent::value(4, 0.1),
+                PluginParameterEvent::value(4, 0.8),
+                PluginParameterEvent::gesture_end(4),
+            ]
+        );
+    }
+
+    /// The processor's queue coalesces by parameter, which is right for the DSP
+    /// and wrong for an observer: a ride reported as its last value alone is a
+    /// ride no recorder can reconstruct. The two queues must not be the same one.
+    #[test]
+    fn the_observers_stream_keeps_every_value_the_processors_queue_coalesces() {
+        let state = Vst3HostState::default();
+
+        state.record_parameter_edit(2, 0.1);
+        state.record_parameter_edit(2, 0.2);
+        state.record_parameter_edit(2, 0.3);
+
+        assert_eq!(
+            drained(&state),
+            vec![HostParameterUpdate {
+                param_id: 2,
+                value: 0.3
+            }],
+            "the processor is owed the value the user landed on"
+        );
+        assert_eq!(
+            observed_events(&state),
+            vec![
+                PluginParameterEvent::value(2, 0.1),
+                PluginParameterEvent::value(2, 0.2),
+                PluginParameterEvent::value(2, 0.3),
+            ]
+        );
+    }
+
+    /// A host write is not a plugin edit. Echoing one back would mark the project
+    /// dirty and re-publish a value the host itself set — an automation ride
+    /// would report every point it wrote as a user's own edit.
+    #[test]
+    fn a_host_write_reaches_the_processor_without_being_reported_as_a_plugin_edit() {
+        let state = Vst3HostState::default();
+
+        state.queue_host_parameter_write(6, 0.42);
+
+        assert_eq!(
+            drained(&state),
+            vec![HostParameterUpdate {
+                param_id: 6,
+                value: 0.42
+            }]
+        );
+        assert!(observed_events(&state).is_empty());
+    }
+
     /// The processor never hears from the controller. A gesture that does not
     /// reach the block's `inputParameterChanges` is a knob the user moved and
     /// the DSP never saw.
@@ -981,6 +1108,33 @@ mod tests {
 
         assert_eq!(refusal, kInvalidArgument);
         assert!(drained(&handler_state).is_empty());
+    }
+
+    /// AC-003 for VST3, through the entry point the plugin actually calls.
+    ///
+    /// The ride test above drives `record_gesture_*` directly, which the plugin
+    /// never touches — so reverting `beginEdit`/`endEdit` to the bare
+    /// `kResultOk` they used to be leaves it passing. This one goes through the
+    /// COM handler, and that mutation empties it.
+    #[test]
+    fn the_handlers_edit_brackets_reach_the_host_as_gesture_boundaries() {
+        let handler_state = std::sync::Arc::new(Vst3HostState::default());
+        let handler = Vst3ComponentHandler::new(std::sync::Arc::clone(&handler_state));
+
+        unsafe {
+            assert_eq!(handler.beginEdit(4), kResultOk);
+            assert_eq!(handler.performEdit(4, 0.6), kResultOk);
+            assert_eq!(handler.endEdit(4), kResultOk);
+        }
+
+        assert_eq!(
+            observed_events(&handler_state),
+            vec![
+                PluginParameterEvent::gesture_begin(4),
+                PluginParameterEvent::value(4, 0.6),
+                PluginParameterEvent::gesture_end(4),
+            ]
+        );
     }
 
     #[test]
