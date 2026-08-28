@@ -915,7 +915,7 @@ describe('executePromptActionGroup', () => {
         seedRun(fixture);
         const executionError = new Error('Executor crashed');
         mocks.executePlannedActions.mockRejectedValue(executionError);
-        vi.spyOn(agentRunWorkLease, 'settle').mockImplementationOnce(settle);
+        vi.spyOn(agentRunWorkLease, 'settleAndTerminalize').mockImplementationOnce(settle);
 
         await expect(
             executePromptActionGroup({
@@ -926,52 +926,15 @@ describe('executePromptActionGroup', () => {
             })
         ).rejects.toBe(executionError);
 
-        expect(mocks.notifyAiChange).toHaveBeenCalledWith(`Command not executed: Executor crashed. ${warning}`, []);
+        expect(mocks.notifyAiChange).toHaveBeenCalledExactlyOnceWith(
+            `Command not executed: Executor crashed. ${warning}`,
+            []
+        );
         expect(agentRunLifecycle.get(RUN_ID)).toMatchObject({
             phase: 'executing',
             batches: [{ batchId: BATCH_ID, status: 'executing', receiptIdentity: null }],
             workLeases: [{ workId: BATCH_ID, terminalState: null }],
         });
-        expect(mocks.releasePreparedStemImportResources).toHaveBeenCalledExactlyOnceWith({
-            runId: RUN_ID,
-            stems: stemAction.payload.stems,
-        });
-        expect(mocks.prepareDurablePromotionRecovery).toHaveBeenCalledOnce();
-        expect(mocks.transitionDurablePromotionRecoveryToCleanup).toHaveBeenCalledExactlyOnceWith(
-            `stem-promotion:${RUN_ID}:${BATCH_ID}`,
-            [{ leaseId: 'asset-lease-1', expectedHash: 'asset-hash-1' }]
-        );
-        expect(mocks.completeDurableCleanupRecovery).toHaveBeenCalledExactlyOnceWith(
-            `stem-promotion:${RUN_ID}:${BATCH_ID}`
-        );
-    });
-
-    it('preserves an executor error when clean settlement terminal lifecycle persistence fails', async () => {
-        const fixture = getBatchFixtures().stem;
-        seedRun(fixture);
-        const executionError = new Error('Executor crashed');
-        mocks.executePlannedActions.mockRejectedValue(executionError);
-        const updateBatchStatus = agentRunLifecycle.updateBatchStatus;
-        vi.spyOn(agentRunLifecycle, 'updateBatchStatus').mockImplementation((input) => {
-            if (input.status === 'failed') {
-                throw new Error('Terminal batch storage unavailable');
-            }
-            updateBatchStatus(input);
-        });
-
-        await expect(
-            executePromptActionGroup({
-                actions: fixture.actions,
-                prompt: 'Import stems',
-                projectRevision: 'revision-1',
-                ...admitted(fixture),
-            })
-        ).rejects.toBe(executionError);
-
-        expect(mocks.notifyAiChange).toHaveBeenCalledWith(
-            `Command not executed: Executor crashed. ${AGENT_RUN_FAILURE_PERSISTENCE_WARNING}`,
-            []
-        );
         expect(mocks.releasePreparedStemImportResources).toHaveBeenCalledExactlyOnceWith({
             runId: RUN_ID,
             stems: stemAction.payload.stems,
@@ -1005,7 +968,7 @@ describe('executePromptActionGroup', () => {
             const fixture = getBatchFixtures().stem;
             seedRun(fixture);
             mocks.executePlannedActions.mockResolvedValue(execution);
-            vi.spyOn(agentRunWorkLease, 'settle').mockImplementationOnce(() => {
+            vi.spyOn(agentRunWorkLease, 'settleAndTerminalize').mockImplementationOnce(() => {
                 throw new Error('Lease storage unavailable');
             });
 
@@ -1060,7 +1023,7 @@ describe('executePromptActionGroup', () => {
         const fixture = getBatchFixtures().stem;
         seedRun(fixture);
         mocks.executePlannedActions.mockResolvedValue(execution);
-        vi.spyOn(agentRunWorkLease, 'settle').mockImplementationOnce(settle);
+        vi.spyOn(agentRunWorkLease, 'settleAndTerminalize').mockImplementationOnce(settle);
 
         await expect(
             executePromptActionGroup({

@@ -8,6 +8,7 @@ const {
     claim: claimAgentRunWorkLease,
     retry: retryAgentRunWorkLease,
     settle: settleAgentRunWorkLease,
+    settleAndTerminalize: settleAndTerminalizeAgentRunWorkLease,
 } = agentRunWorkLease;
 
 describe('agent run work leases', () => {
@@ -102,6 +103,55 @@ describe('agent run work leases', () => {
                 idempotencyKey: 'render-key',
                 receiptIdentity: 'render-receipt',
             },
+        });
+    });
+
+    it('atomically settles a terminal lease with its batch and phase', () => {
+        const claimed = claimAgentRunWorkLease({
+            runId: 'run-lease',
+            workId: 'command-1',
+            ownerKind: 'command',
+            cleanupOwner: 'command-executor',
+            idempotencyKey: 'command-key',
+            receiptIdentity: 'command-receipt',
+            idempotent: true,
+            retriable: false,
+            claimedAt: 110,
+        });
+        if (claimed.status !== 'claimed') {
+            throw new Error('Expected command work to be claimed');
+        }
+        agentRunLifecycle.recordBatch({
+            runId: 'run-lease',
+            batch: {
+                batchId: 'command-1',
+                commandIds: ['command-1'],
+                status: 'executing',
+                receiptIdentity: null,
+            },
+            recordedAt: 111,
+        });
+        agentRunLifecycle.transitionPhase({ runId: 'run-lease', phase: 'executing', transitionedAt: 112 });
+
+        expect(
+            settleAndTerminalizeAgentRunWorkLease({
+                runId: 'run-lease',
+                workId: 'command-1',
+                leaseId: claimed.lease.leaseId,
+                cancellationGeneration: claimed.lease.cancellationGeneration,
+                idempotencyKey: claimed.lease.idempotencyKey,
+                receiptIdentity: claimed.lease.receiptIdentity,
+                terminalState: 'failed',
+                batchId: 'command-1',
+                batchStatus: 'failed',
+                phase: 'failed',
+                settledAt: 120,
+            })
+        ).toEqual({ status: 'settled' });
+        expect(getAgentRun('run-lease')).toMatchObject({
+            phase: 'failed',
+            batches: [{ batchId: 'command-1', status: 'failed' }],
+            workLeases: [{ workId: 'command-1', terminalState: 'failed' }],
         });
     });
 

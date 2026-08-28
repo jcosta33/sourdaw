@@ -1476,6 +1476,38 @@ function settleAgentRunWorkLease(input: {
     return updated === null ? { status: 'missing-run' as const } : result;
 }
 
+function settleAgentRunWorkLeaseAndTerminalize(input: {
+    runId: string;
+    workId: string;
+    leaseId: string;
+    cancellationGeneration: number;
+    idempotencyKey: string;
+    receiptIdentity: string;
+    terminalState: AgentRunWorkTerminalState;
+    batchId: string;
+    batchStatus: 'failed' | 'no-op';
+    phase: Extract<AgentRunPhase, 'completed' | 'failed' | 'partially-completed'>;
+    settledAt?: number;
+}): SettleAgentRunWorkLeaseResult {
+    const settledAt = input.settledAt ?? Date.now();
+    let result: SettleAgentRunWorkLeaseResult = { status: 'missing-run' };
+    const updated = updateAgentRunIfPresent(input.runId, settledAt, (run) => {
+        const outcome = settleWorkLease({ ...input, run, settledAt });
+        result = outcome.result;
+        if (outcome.result.status !== 'settled') {
+            return outcome.run;
+        }
+        return {
+            ...outcome.run,
+            batches: outcome.run.batches.map((batch) =>
+                batch.batchId === input.batchId ? { ...batch, status: input.batchStatus } : batch
+            ),
+            phase: reduceAgentRunTransition(outcome.run.phase, { type: 'phase-requested', phase: input.phase }),
+        };
+    });
+    return updated === null ? { status: 'missing-run' as const } : result;
+}
+
 export const agentRunLifecycle = {
     acknowledgeCancellation: acknowledgeAgentRunCancellation,
     cancel: cancelAgentRun,
@@ -1518,6 +1550,7 @@ export const agentRunLifecycle = {
     requirePreparedStemManualRepair: requireAgentRunPreparedStemManualRepair,
     retryWorkLease: retryAgentRunWorkLease,
     settleWorkLease: settleAgentRunWorkLease,
+    settleWorkLeaseAndTerminalize: settleAgentRunWorkLeaseAndTerminalize,
     transitionPhase: transitionAgentRunPhase,
     updateBatchStatus: updateAgentRunBatchStatus,
 } as const;

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { type AppAction } from '#/utils/handlerContract';
 
+import { preparedStemImportResources } from '../agentReference/registerPreparedStemImportResources';
 import {
     AGENT_RUN_CANCELLATION_PERSISTENCE_WARNING,
     AGENT_RUN_COMPLETION_PERSISTENCE_WARNING,
@@ -427,6 +428,107 @@ describe('submitAdmittedPromptRequest', () => {
             batches: [],
             workLeases: [{ workId: 'provider-planning', terminalState: 'completed' }],
         });
+    });
+
+    it('preserves a compiler failure when terminal phase persistence fails after provider settlement', async () => {
+        const compilerError = new Error('Prompt command compiler failed');
+        const stems = [{ audioBufferId: 'prepared-stem-compiler', assetLeaseId: 'asset-lease-compiler' }];
+        const stemAction = { type: 'importStemSet', payload: { stems } } as AppAction;
+        mocks.planPromptActions.mockResolvedValue({
+            context: { tracks: [] },
+            result: { actions: [stemAction], rawText: 'Import stems', requiresConfirmation: true },
+            projectRevision: 'revision-1',
+        });
+        mocks.compileAgentActionExecution.mockImplementation(() => {
+            throw compilerError;
+        });
+        const transitionPhase = agentRunLifecycle.transitionPhase;
+        vi.spyOn(agentRunLifecycle, 'transitionPhase').mockImplementation((input) => {
+            if (input.phase === 'failed') {
+                throw new Error('Phase storage unavailable');
+            }
+            return transitionPhase(input);
+        });
+        const discard = vi.spyOn(preparedStemImportResources, 'discard').mockResolvedValue();
+
+        await expect(submitAdmittedPromptRequest({ prompt: 'Play', source: 'prompt-bar' })).rejects.toBe(compilerError);
+
+        expect(mocks.notifyAiChange).toHaveBeenCalledExactlyOnceWith(
+            `Command not executed: Prompt command compiler failed. ${AGENT_RUN_FAILURE_PERSISTENCE_WARNING}`,
+            []
+        );
+        expect(discard).toHaveBeenCalledExactlyOnceWith({ runId: RUN_ID, stems });
+    });
+
+    it('releases plan-owned stem resources when provider completion cannot be settled', async () => {
+        const stems = [{ audioBufferId: 'prepared-stem-1', assetLeaseId: 'asset-lease-1' }];
+        const stemAction = { type: 'importStemSet', payload: { stems } } as AppAction;
+        mocks.planPromptActions.mockResolvedValue({
+            context: { tracks: [] },
+            result: { actions: [stemAction], rawText: 'Import stems', requiresConfirmation: true },
+            projectRevision: 'revision-1',
+        });
+        vi.spyOn(agentRunWorkLease, 'settle').mockReturnValueOnce({ status: 'stale' });
+        const discard = vi.spyOn(preparedStemImportResources, 'discard').mockResolvedValue();
+
+        await expect(submitAdmittedPromptRequest({ prompt: 'Import stems', source: 'prompt-bar' })).resolves.toEqual({
+            status: 'rejected',
+            runId: RUN_ID,
+        });
+
+        expect(discard).toHaveBeenCalledExactlyOnceWith({ runId: RUN_ID, stems });
+        expect(mocks.compileAgentActionExecution).not.toHaveBeenCalled();
+    });
+
+    it('deduplicates fulfilled preview cancellation', async () => {
+        const result = await submitAdmittedPromptRequest({
+            prompt: 'Play',
+            source: 'prompt-bar',
+            actions: [action],
+            requiresConfirmation: true,
+        });
+        if (result.status !== 'awaiting-approval') {
+            throw new Error(`Expected an approval preview, received ${result.status}`);
+        }
+        const cancel = vi.spyOn(agentRunCancellation, 'cancel').mockResolvedValue({
+            status: 'cancelled',
+            phase: 'cancelled',
+            cancelledWorkIds: [],
+            cleanupPendingAssetIds: [],
+            releasedAssetIds: [],
+        });
+
+        await result.preview.cancel();
+        await result.preview.cancel();
+
+        expect(cancel).toHaveBeenCalledOnce();
+    });
+
+    it('retries a failed preview cancellation', async () => {
+        const result = await submitAdmittedPromptRequest({
+            prompt: 'Play',
+            source: 'prompt-bar',
+            actions: [action],
+            requiresConfirmation: true,
+        });
+        if (result.status !== 'awaiting-approval') {
+            throw new Error(`Expected an approval preview, received ${result.status}`);
+        }
+        const cancel = vi
+            .spyOn(agentRunCancellation, 'cancel')
+            .mockRejectedValueOnce(new Error('Cancellation storage unavailable'))
+            .mockResolvedValueOnce({
+                status: 'cancelled',
+                phase: 'cancelled',
+                cancelledWorkIds: [],
+                cleanupPendingAssetIds: [],
+                releasedAssetIds: [],
+            });
+
+        await expect(result.preview.cancel()).rejects.toThrow('Cancellation storage unavailable');
+        await result.preview.cancel();
+
+        expect(cancel).toHaveBeenCalledTimes(2);
     });
 
     it('preserves compiler dependencies and batch-local bindings at the admitted compilation boundary', async () => {
