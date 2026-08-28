@@ -1,0 +1,31 @@
+crates/sourdaw-native/src/host/plugin_registry_store.rs
+  s_4f908a5afb6b58::t_cfee42ef4429ac 36
+  s_4f908a5afb6b58::t_a90e76f26ecfc3 391-394,396,401
+  s_4f908a5afb6b58::t_41314da3f6eeea 217-231,438
+  s_4f908a5afb6b58::t_26bffa4bbf4885 435-437
+  s_7bd6b98b85c98e::t_aabc3c060cd31a 410-413,433-434,442,563-585,589,592-595,1321-1396
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "ef991f1bbaad6c31145890798f54b9154e75ab74",
+  "prompts": {},
+  "sessions": {
+    "s_4f908a5afb6b58": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fcb92ba4-bf56-47a4-8b57-803f335a449e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_7bd6b98b85c98e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-ac38628405f57a24e",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
