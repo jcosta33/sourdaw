@@ -223,6 +223,16 @@ function getAgentRun(runId: string): AgentRun | null {
     return run ? structuredClone(run) : null;
 }
 
+function retryAgentRunPersistence(runId: string): AgentRun | null {
+    const state = readAgentRunState();
+    const run = state.runs.find((candidate) => candidate.runId === runId);
+    if (!run) {
+        return null;
+    }
+    persistAgentRunState(state);
+    return structuredClone(run);
+}
+
 function createAgentRun(input: CreateAgentRunInput): AgentRun {
     assertNonEmpty(input.runId, 'runId');
     assertNonEmpty(input.request, 'request');
@@ -1266,6 +1276,64 @@ function forgetAgentRunTemporaryAsset(input: { runId: string; assetId: string; c
     });
 }
 
+function transferAgentRunPreparedStemImportResources(input: {
+    runId: string;
+    assets: readonly { assetId: string; cleanupOwner: string }[];
+    recoveryBatchIds: readonly string[];
+}): AgentRun {
+    const assetKeys = new Set(input.assets.map((asset) => `${asset.assetId}\u0000${asset.cleanupOwner}`));
+    if (assetKeys.size !== input.assets.length) {
+        throw new Error(`Agent temporary assets contain duplicate cleanup identities: ${input.runId}`);
+    }
+    const recoveryBatchIds = new Set(input.recoveryBatchIds);
+    if (recoveryBatchIds.size !== input.recoveryBatchIds.length) {
+        throw new Error(`Agent prepared stem recoveries contain duplicate batch identities: ${input.runId}`);
+    }
+    const state = readAgentRunState();
+    const index = state.runs.findIndex((run) => run.runId === input.runId);
+    if (index < 0) {
+        throw new Error(`Unknown agent run: ${input.runId}`);
+    }
+    const run = state.runs[index]!;
+    const assetsStillPresent = input.assets.some((asset) =>
+        run.temporaryAssets.some(
+            (candidate) => candidate.assetId === asset.assetId && candidate.cleanupOwner === asset.cleanupOwner
+        )
+    );
+    const recoveriesStillPresent =
+        run.preparedStemImports.some((recovery) => recoveryBatchIds.has(recovery.batchId)) ||
+        getPreparedStemImportRecoveryLedger(state).some(
+            (recovery) => recovery.runId === input.runId && recoveryBatchIds.has(recovery.batchId)
+        );
+    if (!assetsStillPresent && !recoveriesStillPresent) {
+        // `trySet` keeps a rejected state live. Persisting that exact snapshot
+        // retries the transfer without detaching its still-registered cleanup owners.
+        persistAgentRunState(state);
+        return structuredClone(run);
+    }
+    for (const asset of input.assets) {
+        const current = run.temporaryAssets.find((candidate) => candidate.assetId === asset.assetId);
+        if (!current || current.cleanupOwner !== asset.cleanupOwner) {
+            throw new Error(`Unknown agent temporary asset: ${asset.assetId}`);
+        }
+    }
+    const next = {
+        ...run,
+        updatedAt: Date.now(),
+        temporaryAssets: run.temporaryAssets.filter(
+            (asset) => !assetKeys.has(`${asset.assetId}\u0000${asset.cleanupOwner}`)
+        ),
+        preparedStemImports: run.preparedStemImports.filter((recovery) => !recoveryBatchIds.has(recovery.batchId)),
+    } satisfies AgentRun;
+    const runs = [...state.runs];
+    runs[index] = next;
+    const preparedStemImportRecoveryLedger = getPreparedStemImportRecoveryLedger(state).filter(
+        (recovery) => recovery.runId !== input.runId || !recoveryBatchIds.has(recovery.batchId)
+    );
+    persistAgentRunState(withPreparedStemImportRecoveryLedger({ ...state, runs }, preparedStemImportRecoveryLedger));
+    return structuredClone(next);
+}
+
 function requireAgentRunManualResume(input: {
     runId: string;
     reason: string;
@@ -1454,7 +1522,38 @@ function retryAgentRunWorkLease(input: {
     return updated === null ? { status: 'missing-run' as const } : result;
 }
 
-type SettleAgentRunWorkLeaseResult = SettleWorkLeaseResult | { status: 'missing-run' };
+type SettleAgentRunWorkLeaseResult = SettleWorkLeaseResult | { status: 'missing-run' | 'missing-batch' };
+
+type AgentRunCommandTerminalOutcome = 'failed' | 'ambiguous' | 'no-op';
+
+const COMMAND_TERMINAL_OUTCOMES = {
+    failed: {
+        terminalState: 'failed',
+        batchStatus: 'failed',
+        phase: 'failed',
+    },
+    ambiguous: {
+        terminalState: 'failed',
+        batchStatus: 'failed',
+        phase: 'partially-completed',
+    },
+    'no-op': {
+        terminalState: 'completed',
+        batchStatus: 'no-op',
+        phase: 'completed',
+    },
+} as const satisfies Record<
+    AgentRunCommandTerminalOutcome,
+    {
+        terminalState: AgentRunWorkTerminalState;
+        batchStatus: 'failed' | 'no-op';
+        phase: Extract<AgentRunPhase, 'completed' | 'failed' | 'partially-completed'>;
+    }
+>;
+
+function getAgentRunCommandTerminalOutcome(outcome: AgentRunCommandTerminalOutcome) {
+    return COMMAND_TERMINAL_OUTCOMES[outcome];
+}
 
 function settleAgentRunWorkLease(input: {
     runId: string;
@@ -1476,6 +1575,43 @@ function settleAgentRunWorkLease(input: {
     return updated === null ? { status: 'missing-run' as const } : result;
 }
 
+function settleAgentRunWorkLeaseAndTerminalize(input: {
+    runId: string;
+    workId: string;
+    leaseId: string;
+    cancellationGeneration: number;
+    idempotencyKey: string;
+    receiptIdentity: string;
+    outcome: AgentRunCommandTerminalOutcome;
+    settledAt?: number;
+}): SettleAgentRunWorkLeaseResult {
+    const settledAt = input.settledAt ?? Date.now();
+    const current = readAgentRunState().runs.find((run) => run.runId === input.runId);
+    if (!current) {
+        return { status: 'missing-run' };
+    }
+    if (!current.batches.some((batch) => batch.batchId === input.workId)) {
+        return { status: 'missing-batch' };
+    }
+    const terminal = getAgentRunCommandTerminalOutcome(input.outcome);
+    let result: SettleAgentRunWorkLeaseResult = { status: 'missing-run' };
+    const updated = updateAgentRunIfPresent(input.runId, settledAt, (run) => {
+        const outcome = settleWorkLease({ ...input, terminalState: terminal.terminalState, run, settledAt });
+        result = outcome.result;
+        if (outcome.result.status !== 'settled') {
+            return outcome.run;
+        }
+        return {
+            ...outcome.run,
+            batches: outcome.run.batches.map((batch) =>
+                batch.batchId === input.workId ? { ...batch, status: terminal.batchStatus } : batch
+            ),
+            phase: reduceAgentRunTransition(outcome.run.phase, { type: 'phase-requested', phase: terminal.phase }),
+        };
+    });
+    return updated === null ? { status: 'missing-run' as const } : result;
+}
+
 export const agentRunLifecycle = {
     acknowledgeCancellation: acknowledgeAgentRunCancellation,
     cancel: cancelAgentRun,
@@ -1484,9 +1620,11 @@ export const agentRunLifecycle = {
     claimWorkLease: claimAgentRunWorkLease,
     create: createAgentRun,
     get: getAgentRun,
+    getCommandTerminalOutcome: getAgentRunCommandTerminalOutcome,
     getPendingEffectRecovery: getAgentRunPendingEffectRecovery,
     getPreparedStemImportRecovery: getAgentRunPreparedStemImportRecovery,
     forgetTemporaryAsset: forgetAgentRunTemporaryAsset,
+    transferPreparedStemImportResources: transferAgentRunPreparedStemImportResources,
     forgetPreparedStemImportRecovery: forgetAgentRunPreparedStemImportRecovery,
     recordArtifact: recordAgentRunArtifact,
     recordBatch: recordAgentRunBatch,
@@ -1517,7 +1655,9 @@ export const agentRunLifecycle = {
     requireManualResume: requireAgentRunManualResume,
     requirePreparedStemManualRepair: requireAgentRunPreparedStemManualRepair,
     retryWorkLease: retryAgentRunWorkLease,
+    retryPersistence: retryAgentRunPersistence,
     settleWorkLease: settleAgentRunWorkLease,
+    settleWorkLeaseAndTerminalize: settleAgentRunWorkLeaseAndTerminalize,
     transitionPhase: transitionAgentRunPhase,
     updateBatchStatus: updateAgentRunBatchStatus,
 } as const;

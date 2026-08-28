@@ -1,3 +1,4 @@
+import { logger } from '#/infra/logger/appLogger';
 import { parseVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
 import { settlePendingProjectWritesAndCaptureRevision } from '#/modules/CrdtDocument/useCases';
 import { type AppAction } from '#/utils/handlerContract';
@@ -5,6 +6,12 @@ import { type AppAction } from '#/utils/handlerContract';
 import { type AgentExecutionMode } from '../models/AgentExecutionMode';
 import { type ModelProviderResult } from '../models/ModelProviderProtocol';
 
+import { preparedStemImportResources } from './agentReference/registerPreparedStemImportResources';
+import {
+    AGENT_RUN_CANCELLATION_PERSISTENCE_WARNING,
+    AGENT_RUN_FAILURE_PERSISTENCE_WARNING,
+    settleAgentRunWorkLeaseSafely,
+} from './agentRequestOrchestration/settleAgentRunWorkLeaseSafely';
 import { agentRunLifecycle } from './agentRunLifecycle';
 import { agentRunWorkLease } from './agentRunWorkLease';
 import { agentRunCancellation } from './cancelAgentRun';
@@ -71,15 +78,80 @@ export async function submitAdmittedPromptRequest(
     });
     agentRunLifecycle.transitionPhase({ runId, phase: 'planning', revision: createdRevision });
 
-    const cancel = async (): Promise<void> => {
-        await agentRunCancellation.cancel({ runId, reason: 'Prompt request cancelled by the user.' });
+    let cancellationAttempt: Promise<void> | null = null;
+    let cancellationCleanupPending = false;
+    let cancellationPersistenceFailed = false;
+    let cancellationWarningReported = false;
+    const reportCancellationPersistenceFailure = (error: unknown): never => {
+        cancellationPersistenceFailed = true;
+        logger.error(new Error('Prompt request cancellation persistence failed', { cause: error }));
+        if (!cancellationWarningReported) {
+            cancellationWarningReported = true;
+            notifyAiChange(AGENT_RUN_CANCELLATION_PERSISTENCE_WARNING, []);
+        }
+        throw error;
     };
-    const onAbort = () => void cancel();
+    const startCancellation = (): Promise<void> => {
+        if (!cancellationAttempt) {
+            cancellationAttempt = agentRunCancellation
+                .cancel({ runId, reason: 'Prompt request cancelled by the user.' })
+                .then((result) => {
+                    cancellationPersistenceFailed = false;
+                    cancellationCleanupPending =
+                        result.status === 'cancelled' && result.cleanupPendingAssetIds.length > 0;
+                })
+                .catch(reportCancellationPersistenceFailure);
+        }
+        return cancellationAttempt;
+    };
+    const cancel = (): Promise<void> => {
+        if (!cancellationPersistenceFailed && !cancellationCleanupPending) {
+            return startCancellation();
+        }
+        const run = agentRunLifecycle.get(runId);
+        if (!run || (run.phase !== 'cancelled' && run.phase !== 'partially-completed')) {
+            cancellationAttempt = null;
+            cancellationCleanupPending = false;
+            cancellationPersistenceFailed = false;
+            return startCancellation();
+        }
+        cancellationAttempt = Promise.resolve()
+            .then(() => {
+                if (cancellationPersistenceFailed && !agentRunLifecycle.retryPersistence(runId)) {
+                    throw new Error(`Agent run disappeared before cancellation persistence retry: ${runId}`);
+                }
+                // A terminal cancellation can leave registered temporary
+                // assets cleanup-pending after its terminal state reached the
+                // live store. Re-enter cancellation only for that established
+                // terminal run so it resumes cleanup without revoking again.
+                return agentRunCancellation.cancel({
+                    runId,
+                    reason: 'Prompt request cancelled by the user.',
+                });
+            })
+            .then((result) => {
+                cancellationPersistenceFailed = false;
+                cancellationCleanupPending = result.status === 'cancelled' && result.cleanupPendingAssetIds.length > 0;
+            })
+            .catch(reportCancellationPersistenceFailure);
+        return cancellationAttempt;
+    };
+    const cancelAfterAbort = async (): Promise<void> => {
+        try {
+            await startCancellation();
+        } catch {
+            // The cancellation attempt reports its persistence warning once.
+        }
+    };
+    const onAbort = () => void cancelAfterAbort();
     input.signal?.addEventListener('abort', onAbort, { once: true });
     let providerLease: Extract<ReturnType<typeof agentRunWorkLease.claim>, { status: 'claimed' }>['lease'] | null =
         null;
-    let providerSettled = false;
+    let providerSettlement: ReturnType<typeof settleAgentRunWorkLeaseSafely> | null = null;
     let pendingProviderResult: ModelProviderResult | null = null;
+    let planOwnedActions: readonly AppAction[] = [];
+    let planResourcesTransferred = false;
+    let planResourcesReleased = false;
     const recordPendingProviderResult = (terminal: boolean): void => {
         if (!pendingProviderResult) {
             return;
@@ -87,23 +159,40 @@ export async function submitAdmittedPromptRequest(
         recordAgentProviderUsage(runId, pendingProviderResult, pendingProviderResult.correlationId, { terminal });
         pendingProviderResult = null;
     };
-    const settleProvider = (
-        terminalState: 'completed' | 'failed' | 'cancelled'
-    ): ReturnType<typeof agentRunWorkLease.settle> | null => {
-        if (!providerLease || providerSettled) {
+    const settleProvider = (terminalState: 'completed' | 'failed' | 'cancelled') => {
+        if (!providerLease) {
             return null;
         }
-        const settlement = agentRunWorkLease.settle({
-            runId,
-            workId: providerLease.workId,
-            leaseId: providerLease.leaseId,
-            cancellationGeneration: providerLease.cancellationGeneration,
-            idempotencyKey: providerLease.idempotencyKey,
-            receiptIdentity: providerLease.receiptIdentity,
+        if (providerSettlement) {
+            return providerSettlement;
+        }
+        providerSettlement = settleAgentRunWorkLeaseSafely({
+            lease: providerLease,
             terminalState,
+            evidence: 'none',
+            settle: agentRunWorkLease.settle,
+            reportFailure: (error) => {
+                logger.error(new Error('Prompt provider lease settlement failed', { cause: error }));
+            },
         });
-        providerSettled = true;
-        return settlement;
+        return providerSettlement;
+    };
+    const releasePlanOwnedStemResources = async (): Promise<void> => {
+        if (planResourcesTransferred || planResourcesReleased) {
+            return;
+        }
+        planResourcesReleased = true;
+        const stems = planOwnedActions.flatMap((action) =>
+            action.type === 'importStemSet' ? action.payload.stems : []
+        );
+        if (stems.length === 0) {
+            return;
+        }
+        try {
+            await preparedStemImportResources.discard({ runId, stems });
+        } catch (error) {
+            logger.error(new Error('Prompt planning stem resource cleanup failed', { cause: error }));
+        }
     };
 
     try {
@@ -131,8 +220,7 @@ export async function submitAdmittedPromptRequest(
         }
 
         if (input.signal?.aborted) {
-            await cancel();
-            settleProvider('cancelled');
+            await cancelAfterAbort();
             return { status: 'rejected', runId };
         }
 
@@ -174,28 +262,37 @@ export async function submitAdmittedPromptRequest(
                       projectRevision: createdRevision,
                   };
 
+        planOwnedActions = planned.result.actions;
         recordPendingProviderResult(true);
-        const providerSettlement = settleProvider('completed');
+        if (input.signal?.aborted) {
+            await cancelAfterAbort();
+            await releasePlanOwnedStemResources();
+            return { status: 'rejected', runId };
+        }
+        const completedProviderSettlement = settleProvider('completed');
         const currentRun = agentRunLifecycle.get(runId);
         if (
-            input.signal?.aborted ||
             currentRun?.phase === 'cancelled' ||
             currentRun?.phase === 'partially-completed' ||
-            (providerSettlement !== null && providerSettlement.status !== 'settled')
+            (completedProviderSettlement !== null &&
+                (!completedProviderSettlement.accepted || completedProviderSettlement.warning !== null))
         ) {
-            if (input.signal?.aborted && currentRun && currentRun.phase !== 'cancelled') {
-                await cancel();
+            if (completedProviderSettlement?.warning) {
+                notifyAiChange(`Prompt plan was not materialized: ${completedProviderSettlement.warning}`, []);
             }
+            await releasePlanOwnedStemResources();
             return { status: 'rejected', runId };
         }
 
         if (planned.result.rejectionReason) {
             transitionTerminalRun(runId, 'failed');
+            await releasePlanOwnedStemResources();
             notifyAiChange(`Command not executed: ${planned.result.rejectionReason}`, []);
             return { status: 'rejected', runId };
         }
         if (planned.result.actions.length === 0) {
             transitionTerminalRun(runId, 'completed');
+            await releasePlanOwnedStemResources();
             notifyAiChange('No actions matched. Try rephrasing, or use the AI Chat panel for open-ended help.', []);
             return { status: 'no-op', runId };
         }
@@ -257,7 +354,8 @@ export async function submitAdmittedPromptRequest(
 
         const execute = async (
             successVerb?: 'Confirmed',
-            signal: AbortSignal | undefined = input.signal
+            signal: AbortSignal | undefined = input.signal,
+            onResourceOwnershipAcquired?: () => void
         ): ReturnType<typeof executePromptActionGroup> =>
             executePromptActionGroup({
                 actions: planned.result.actions,
@@ -268,6 +366,7 @@ export async function submitAdmittedPromptRequest(
                 runId,
                 prepared: compiled,
                 ...(successVerb ? { successVerb } : {}),
+                ...(onResourceOwnershipAcquired ? { onResourceOwnershipAcquired } : {}),
             });
 
         if (compiled.requiresConfirmation) {
@@ -276,6 +375,7 @@ export async function submitAdmittedPromptRequest(
                 phase: 'waiting-for-approval',
                 revision: planned.projectRevision,
             });
+            planResourcesTransferred = true;
             return {
                 status: 'awaiting-approval',
                 runId,
@@ -289,17 +389,34 @@ export async function submitAdmittedPromptRequest(
             };
         }
 
-        const execution = await execute();
+        const execution = await execute(undefined, input.signal, () => {
+            planResourcesTransferred = true;
+        });
         return { status: execution.status, runId };
     } catch (error) {
         recordPendingProviderResult(true);
         if (input.signal?.aborted) {
-            await cancel();
-            settleProvider('cancelled');
+            await cancelAfterAbort();
+            await releasePlanOwnedStemResources();
             return { status: 'rejected', runId };
         }
-        settleProvider('failed');
-        transitionTerminalRun(runId, 'failed');
+        await releasePlanOwnedStemResources();
+        const failedProviderSettlement = settleProvider('failed');
+        let terminalWarning = failedProviderSettlement?.warning ?? null;
+        if (!providerLease || (failedProviderSettlement?.accepted && failedProviderSettlement.warning === null)) {
+            try {
+                transitionTerminalRun(runId, 'failed');
+            } catch (terminalError) {
+                logger.error(
+                    new Error('Prompt request failure terminalization could not be persisted', { cause: terminalError })
+                );
+                terminalWarning = AGENT_RUN_FAILURE_PERSISTENCE_WARNING;
+            }
+        }
+        if (terminalWarning) {
+            const message = error instanceof Error ? error.message : String(error);
+            notifyAiChange(`Command not executed: ${message}. ${terminalWarning}`, []);
+        }
         throw error;
     } finally {
         input.signal?.removeEventListener('abort', onAbort);
