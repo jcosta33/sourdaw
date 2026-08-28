@@ -436,7 +436,10 @@ function configurePromptPlanning(
     return authority;
 }
 
-function configureCommandGraphForwarding(branch: 'immediate' | 'confirmation' | 'plan') {
+function configureCommandGraphForwarding(
+    branch: 'immediate' | 'confirmation' | 'plan',
+    projectRevision = 'revision-fixture'
+) {
     const requiresConfirmation = branch === 'confirmation';
     const scope = {
         targetIds: [...commandGraphFixture.fullTargetIds],
@@ -501,10 +504,10 @@ function configureCommandGraphForwarding(branch: 'immediate' | 'confirmation' | 
                 providerKnownTargetIds: commandGraphFixture.providerKnownTargetIds,
                 providerProposal: commandGraphFixture.providerProposal,
             },
-            projectRevision: 'revision-fixture',
+            projectRevision,
         };
     });
-    return commandBatch;
+    return { commandBatch, projectRevision };
 }
 
 function createPendingResumeDecision(input: {
@@ -1769,7 +1772,7 @@ describe('sendChatMessage retained-provider selection', () => {
         const settleWorkLease = vi.spyOn(agentRunWorkLease, 'settle');
         const bindAbortController = vi.spyOn(agentRunCancellation, 'bindAbortController');
         const transitionPhase = vi.spyOn(agentRunLifecycle, 'transitionPhase');
-        const commandBatch = configureCommandGraphForwarding('plan');
+        const { commandBatch, projectRevision } = configureCommandGraphForwarding('plan', 'revision-planned-preview');
         mocks.executeVersionedCommandBatchEnvelope.mockResolvedValue({
             status: 'previewed',
             resource: previewResource,
@@ -1793,7 +1796,7 @@ describe('sendChatMessage retained-provider selection', () => {
             expect(transitionPhase).toHaveBeenCalledWith({
                 runId: run.runId,
                 phase: 'previewing',
-                revision: 'revision-fixture',
+                revision: projectRevision,
             });
             expect(settleWorkLease).toHaveBeenCalledWith({
                 runId: run.runId,
@@ -1834,6 +1837,26 @@ describe('sendChatMessage retained-provider selection', () => {
             transitionPhase.mockRestore();
             bindAbortController.mockRestore();
             settleWorkLease.mockRestore();
+        }
+    });
+
+    it('cancels a rejected preview when the project advanced beyond its planned revision', async () => {
+        const rejectionReason = 'Preview targets changed after planning.';
+        const cancelRun = vi.spyOn(agentRunCancellation, 'cancel');
+        configureCommandGraphForwarding('plan', 'revision-planned-stale');
+        mocks.executeVersionedCommandBatchEnvelope.mockResolvedValue({
+            status: 'rejected',
+            reason: rejectionReason,
+        });
+
+        try {
+            await expect(sendChatMessage(commandGraphFixture.prompt, { mode: 'preview' })).resolves.toBeUndefined();
+
+            const run = getPlannedRun();
+            expect(mocks.captureProjectRevision).toHaveReturnedWith('revision-fixture');
+            expect(cancelRun).toHaveBeenCalledWith({ runId: run.runId, reason: rejectionReason });
+        } finally {
+            cancelRun.mockRestore();
         }
     });
 
@@ -2454,7 +2477,7 @@ describe('sendChatMessage retained-provider selection', () => {
     );
 
     it('forwards a compiler-produced graph and provider-known scope through immediate application', async () => {
-        const commandBatch = configureCommandGraphForwarding('immediate');
+        const { commandBatch } = configureCommandGraphForwarding('immediate');
         const settleWorkLease = vi.spyOn(agentRunWorkLease, 'settle');
 
         try {
