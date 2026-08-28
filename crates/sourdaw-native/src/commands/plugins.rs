@@ -12,7 +12,10 @@ use cpal::traits::{DeviceTrait, HostTrait};
 use daw_engine::audio_bridge::{create_audio_bridge, MAX_BLOCK_FRAMES};
 use daw_engine::plugin_slot::MidiNoteEvent;
 use daw_engine::scheduler::HOSTED_PLUGIN_RESERVE;
-use daw_plugin_host::scanner::{self, PluginFormat, QuarantinedPlugin, ScanResult, ScannedPlugin};
+use daw_plugin_host::scanner::{
+    self, PluginFormat, QuarantinedPlugin, ScanResult, ScannedDescriptor, ScannedInstance,
+    ScannedPlugin,
+};
 use daw_plugin_host::{AudioPlugin, ClapWrapper, HostedPluginRuntime, HostedRuntime, Vst3Wrapper};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeSet, HashMap, HashSet};
@@ -280,6 +283,48 @@ fn quarantine_timestamp_ms() -> u64 {
         .unwrap_or(0)
 }
 
+/// Quarantine `path` if `error` is a scan helper process failure — a crash or
+/// a timeout, never a data-level refusal. Shared by the descriptor and
+/// instance passes: a hung or crashed instance helper poisons a scan exactly
+/// like a hung or crashed descriptor helper does, and both need the same
+/// escape hatch or a single bad candidate can exhaust the whole scan's
+/// deadline on every run.
+fn quarantine_if_process_failure(registry_store: &PluginRegistryStore, path: &Path, error: &str) {
+    if plugin_scan_worker::is_process_failure(error) {
+        registry_store.quarantine_failure(path, error.to_string(), quarantine_timestamp_ms());
+    }
+}
+
+/// Apply one instance-pass outcome to its descriptor row.
+///
+/// Success fills in parameters and capabilities. Failure always leaves the
+/// `parameter_metadata_reason` fallback — the candidate's descriptor has
+/// already been published into `plugins` for this scan regardless of how the
+/// instance pass went, so that row still needs a reason for its missing
+/// capability fields — and additionally quarantines `path` when the failure
+/// is a process failure (a crash or a timeout), the same escape hatch the
+/// descriptor pass already has: an instance helper that hangs or crashes is
+/// exactly as capable of poisoning every future scan of this candidate as a
+/// descriptor helper that does.
+fn apply_instance_scan_result(
+    descriptor: &mut ScannedDescriptor,
+    instance: Result<ScannedInstance, String>,
+    registry_store: &PluginRegistryStore,
+    path: &Path,
+) {
+    match instance {
+        Ok(instance) => {
+            descriptor.parameters = Some(instance.parameters);
+            descriptor.capabilities = Some(instance.capabilities);
+        }
+        Err(error) => {
+            quarantine_if_process_failure(registry_store, path, &error);
+            descriptor.parameter_metadata_reason =
+                Some(scanner::PARAMETER_METADATA_UNAVAILABLE_REASON.to_string());
+        }
+    }
+}
+
 /// `retry_quarantined` is the AC-002 escape hatch: `false` is every ordinary
 /// scan, which skips a quarantined candidate without spawning its helper and
 /// never clears the record. `true` — a user-initiated full rescan — clears
@@ -309,6 +354,36 @@ async fn scan_plugins_with_policy(
     retry_quarantined: bool,
     scan_policy: PluginScanPolicy,
     state: &AppState,
+) -> Result<ScanResult, String> {
+    scan_plugins_with_backend(
+        paths,
+        retry_quarantined,
+        scan_policy,
+        state,
+        plugin_scan_worker::scan_descriptor_metadata,
+        plugin_scan_worker::scan_instance_metadata,
+    )
+    .await
+}
+
+/// `scan_descriptor`/`scan_instance` are parameters so a test can inject a
+/// scan outcome — success, a crash, a timeout — without spawning a real
+/// worker process, the same way [`resolve_registry_entry`]'s rescan closure
+/// lets a targeted-rescan test inject one without a real subprocess.
+/// Production reaches this only through [`scan_plugins_with_policy`], which
+/// always supplies [`plugin_scan_worker::scan_descriptor_metadata`] and
+/// [`plugin_scan_worker::scan_instance_metadata`].
+async fn scan_plugins_with_backend(
+    paths: Vec<String>,
+    retry_quarantined: bool,
+    scan_policy: PluginScanPolicy,
+    state: &AppState,
+    scan_descriptor: impl Fn(PluginFormat, &Path, Duration) -> Result<Vec<ScannedDescriptor>, String>
+        + Send
+        + 'static,
+    scan_instance: impl Fn(PluginFormat, &Path, &str, Duration) -> Result<ScannedInstance, String>
+        + Send
+        + 'static,
 ) -> Result<ScanResult, String> {
     let permit = PLUGIN_SCAN_PERMIT
         .try_acquire()
@@ -391,11 +466,7 @@ async fn scan_plugins_with_policy(
                     continue;
                 }
 
-                match plugin_scan_worker::scan_descriptor_metadata(
-                    candidate.format,
-                    &candidate.path,
-                    remaining,
-                ) {
+                match scan_descriptor(candidate.format, &candidate.path, remaining) {
                     // One bundle may declare several plugins — CLAP's factory is
                     // count/index shaped — and each gets its own inspection and
                     // its own row. A file that declares one keeps producing
@@ -413,35 +484,24 @@ async fn scan_plugins_with_policy(
                             let instance = if instance_remaining.is_zero() {
                                 Err("deadline".to_string())
                             } else {
-                                plugin_scan_worker::scan_instance_metadata(
+                                scan_instance(
                                     candidate.format,
                                     &candidate.path,
                                     &descriptor.descriptor_id,
                                     instance_remaining,
                                 )
                             };
-                            match instance {
-                                Ok(instance) => {
-                                    descriptor.parameters = Some(instance.parameters);
-                                    descriptor.capabilities = Some(instance.capabilities);
-                                }
-                                Err(_) => {
-                                    descriptor.parameter_metadata_reason = Some(
-                                        scanner::PARAMETER_METADATA_UNAVAILABLE_REASON.to_string(),
-                                    );
-                                }
-                            }
+                            apply_instance_scan_result(
+                                descriptor,
+                                instance,
+                                &registry_store,
+                                &candidate.path,
+                            );
                         }
                         plugins.extend(scanner::scanned_bundle_plugins(&candidate.path, bundle));
                     }
                     Err(error) => {
-                        if plugin_scan_worker::is_process_failure(&error) {
-                            registry_store.quarantine_failure(
-                                &candidate.path,
-                                error.clone(),
-                                quarantine_timestamp_ms(),
-                            );
-                        }
+                        quarantine_if_process_failure(&registry_store, &candidate.path, &error);
                         scan_errors.push(format!("{}: {error}", candidate.path.display()))
                     }
                 }
@@ -3101,6 +3161,78 @@ mod tests {
         }
     }
 
+    fn fake_successful_descriptor_scan(
+        _format: PluginFormat,
+        _path: &Path,
+        _timeout: Duration,
+    ) -> Result<Vec<ScannedDescriptor>, String> {
+        Ok(vec![descriptor("com.vendor.recovered")])
+    }
+
+    fn fake_successful_instance_scan(
+        _format: PluginFormat,
+        _path: &Path,
+        _plugin_id: &str,
+        _timeout: Duration,
+    ) -> Result<ScannedInstance, String> {
+        Ok(scanner::ScannedInstance::default())
+    }
+
+    /// The regression the existing retry test cannot see: it only proves the
+    /// helper *ran*, not that a *successful* retry actually leaves the
+    /// candidate un-quarantined. A retry whose helper fixes nothing and one
+    /// whose helper genuinely succeeds both need the pre-retry record gone —
+    /// this covers the success case by injecting a scan outcome instead of
+    /// spawning a real worker process, the way
+    /// `an_activation_miss_rescans_the_last_known_path_once` injects a rescan
+    /// outcome.
+    #[test]
+    fn retrying_quarantined_clears_the_record_when_the_helper_succeeds() {
+        let root = created_temp_scan_root("quarantine-retry-success");
+        let plugin_path = root.join("Recovered.clap");
+        std::fs::write(&plugin_path, b"clap-bytes").expect("fixture plugin file should be written");
+        let policy = PluginScanPolicy::with_allowed_roots(vec![root.clone()]);
+
+        let state = AppState::default();
+        state.plugin_registry_store.quarantine_failure(
+            &plugin_path,
+            "Plugin scan helper timed out".to_string(),
+            1,
+        );
+
+        let result = crate::block_on_test(scan_plugins_with_backend(
+            vec![root.display().to_string()],
+            true,
+            policy,
+            &state,
+            fake_successful_descriptor_scan,
+            fake_successful_instance_scan,
+        ))
+        .expect("a retry scan whose helper succeeds should succeed");
+        let _ = std::fs::remove_dir_all(&root);
+
+        assert!(
+            !result.plugins.is_empty(),
+            "the injected success must actually publish a plugin: {:?}",
+            result.plugins
+        );
+        assert!(
+            state
+                .plugin_registry_store
+                .is_quarantined(&plugin_path)
+                .is_none(),
+            "a fixed plugin must not keep its quarantine badge after a successful retry"
+        );
+        assert!(
+            result
+                .quarantined
+                .iter()
+                .all(|entry| entry.path != plugin_path.display().to_string()),
+            "the scan response must not still name a candidate the retry just cleared: {:?}",
+            result.quarantined
+        );
+    }
+
     /// The other half of AC-002: the default incremental path must never
     /// clear a quarantine record on its own, whatever else the scan finds.
     #[test]
@@ -3147,6 +3279,60 @@ mod tests {
                 .any(|error| error.contains("StillHostile.clap")),
             "a default scan must never spawn a helper for a quarantined candidate: {:?}",
             result.errors
+        );
+    }
+
+    /// The instance pass gets the same quarantine escape hatch the descriptor
+    /// pass already has (#2911). Before this, an instance-pass process
+    /// failure was discarded into the `parameter_metadata_reason` fallback
+    /// and never reached `is_process_failure` at all — so a candidate whose
+    /// `create_plugin` call hangs would exhaust `MAX_SCAN_DURATION` on every
+    /// single scan, without ever quarantining, rather than being isolated
+    /// after its first failure.
+    #[test]
+    fn an_instance_pass_process_failure_quarantines_the_bundle() {
+        let store = PluginRegistryStore::in_memory_only();
+        let path = Path::new("/plugins/HangsOnActivate.clap");
+        let mut row = descriptor("com.vendor.hangs-on-activate");
+
+        apply_instance_scan_result(
+            &mut row,
+            Err("Plugin scan helper timed out".to_string()),
+            &store,
+            path,
+        );
+
+        assert_eq!(
+            row.parameter_metadata_reason.as_deref(),
+            Some(scanner::PARAMETER_METADATA_UNAVAILABLE_REASON),
+            "the fallback must still apply so the published row explains its missing fields"
+        );
+        assert!(
+            store.is_quarantined(path).is_some(),
+            "an instance helper timeout must quarantine the bundle, exactly like a descriptor \
+             helper timeout does"
+        );
+    }
+
+    /// The other half: a data-level instance-pass refusal — the descriptor
+    /// pass succeeded, the deadline ran out, or the response was malformed —
+    /// is never evidence the binary itself is dangerous, so it must not
+    /// quarantine.
+    #[test]
+    fn an_instance_pass_data_level_refusal_does_not_quarantine() {
+        let store = PluginRegistryStore::in_memory_only();
+        let path = Path::new("/plugins/RanOutOfTime.clap");
+        let mut row = descriptor("com.vendor.ran-out-of-time");
+
+        apply_instance_scan_result(&mut row, Err("deadline".to_string()), &store, path);
+
+        assert_eq!(
+            row.parameter_metadata_reason.as_deref(),
+            Some(scanner::PARAMETER_METADATA_UNAVAILABLE_REASON)
+        );
+        assert!(
+            store.is_quarantined(path).is_none(),
+            "a deadline miss is not a process failure and must not quarantine the bundle"
         );
     }
 
