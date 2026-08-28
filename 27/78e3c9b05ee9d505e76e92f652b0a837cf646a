@@ -1,0 +1,33 @@
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/admitCommittedSectionRenderRetry.spec.ts
+  s_a40848e8f8cca9::t_6a63f32461df9a 373-406
+src/modules/AiRuntime/useCases/__tests__/agentRunRecovery.spec.ts
+  s_a40848e8f8cca9::t_a5335b34c4dc6f 5,1207-1208,1210-1211,1218-1221,1238-1239,1256-1267,1271-1276,1278,1283-1284,1290-1339
+  s_4f908a5afb6b58::t_bd49cdec569878 1340-1341
+src/modules/AiRuntime/useCases/__tests__/agentRunLifecycle.spec.ts
+  s_a40848e8f8cca9::t_49e28ddc73d135 215-250,252
+  s_a40848e8f8cca9::t_ecbeb619ffbb4c 251,253-254
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "2778e3c9b05ee9d505e76e92f652b0a837cf646a",
+  "prompts": {},
+  "sessions": {
+    "s_4f908a5afb6b58": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fcb92ba4-bf56-47a4-8b57-803f335a449e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
