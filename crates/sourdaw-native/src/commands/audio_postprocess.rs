@@ -260,7 +260,7 @@ fn write_wav(
 /// Stream every sample into an already-open writer. Split from `write_wav`
 /// so `write_wav_atomically` can be exercised with an injected failure.
 fn write_all_samples(
-    writer: &mut WavWriter<std::io::BufWriter<std::fs::File>>,
+    writer: &mut WavWriter<std::io::BufWriter<&mut std::fs::File>>,
     data: &[Vec<f32>],
 ) -> Result<(), String> {
     let length = data[0].len();
@@ -279,42 +279,27 @@ fn write_all_samples(
 /// `WavWriter::create` truncates its target immediately, so writing straight
 /// to `path` would destroy any pre-existing render there and — on a mid-write
 /// or finalize failure such as disk full — leave a truncated, headerless WAV
-/// that a later existence check mistakes for the render. Instead the file is
-/// written to a unique sibling temp path (same directory, so the same allowed
-/// root and the same filesystem) and renamed onto `path` only after
-/// `finalize` succeeds; rename is atomic on the same filesystem, matching the
-/// model-download pattern. On any failure the temp file is removed
-/// best-effort and `path` is left exactly as it was.
+/// that a later existence check mistakes for the render. The temp file, the
+/// pre-rename fsync, the rename, and the failure cleanup are
+/// `filesystem::replace_file_atomically`'s to own; this wrapper supplies only
+/// the WAV-specific part: the hound writer over the temp file the helper
+/// hands it. `finalize` flushes the buffered writer, so every sample and the
+/// corrected header are inside the fsync the helper performs.
 fn write_wav_atomically(
     path: &Path,
     spec: WavSpec,
-    write_samples: impl FnOnce(&mut WavWriter<std::io::BufWriter<std::fs::File>>) -> Result<(), String>,
+    write_samples: impl FnOnce(
+        &mut WavWriter<std::io::BufWriter<&mut std::fs::File>>,
+    ) -> Result<(), String>,
 ) -> Result<(), String> {
-    let file_name = path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .ok_or_else(|| "WAV write error: output path has no file name".to_string())?;
-    let temp_path = path.with_file_name(format!("{file_name}.{}.tmp", uuid::Uuid::new_v4()));
-
-    let write_result = (|| {
-        let mut writer =
-            WavWriter::create(&temp_path, spec).map_err(|e| format!("WAV write error: {e}"))?;
+    filesystem::replace_file_atomically(path, |file| {
+        let mut writer = WavWriter::new(std::io::BufWriter::new(file), spec)
+            .map_err(|e| format!("WAV write error: {e}"))?;
         write_samples(&mut writer)?;
         writer
             .finalize()
             .map_err(|e| format!("Finalize error: {e}"))
-    })();
-
-    match write_result {
-        Ok(()) => std::fs::rename(&temp_path, path).map_err(|e| {
-            let _ = std::fs::remove_file(&temp_path);
-            format!("WAV write error: failed to move finished file into place: {e}")
-        }),
-        Err(error) => {
-            let _ = std::fs::remove_file(&temp_path);
-            Err(error)
-        }
-    }
+    })
 }
 
 // ── DSP ──────────────────────────────────────────────────────────────────
