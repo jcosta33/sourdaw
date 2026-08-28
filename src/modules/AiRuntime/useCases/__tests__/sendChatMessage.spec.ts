@@ -32,6 +32,8 @@ type CloudStreamOptions = Parameters<typeof streamCloudChatCompletion>[2];
 
 const PROVIDER_PERSISTENCE_WARNING =
     'Agent run provider response recovery state could not be persisted after execution. The retained response remains visible, but its lifecycle is not durably settled. Review it before retrying.';
+const WORK_PERSISTENCE_WARNING =
+    'Agent run work recovery state could not be persisted after execution. The retained work outcome remains visible, but its lifecycle is not durably settled. Review it before retrying.';
 const FAILURE_PERSISTENCE_WARNING =
     'Agent run failure recovery state could not be persisted. The work failed, and no successful artifact is claimed. Review the durable run state before retrying.';
 const COMPLETION_PERSISTENCE_WARNING =
@@ -1459,11 +1461,11 @@ describe('sendChatMessage retained-provider selection', () => {
                 expect.any(String),
                 expect.objectContaining({
                     isStreaming: false,
-                    content:
-                        'Previewed without changing the project:\n\n- Create Drum Bus\n- Set Drum Bus gain\n- Remove Kick',
+                    error: WORK_PERSISTENCE_WARNING,
+                    content: `Previewed without changing the project:\n\n- Create Drum Bus\n- Set Drum Bus gain\n- Remove Kick\n\n_${WORK_PERSISTENCE_WARNING}_`,
                 })
             );
-            expect(getPlannedRun()).toMatchObject({ phase: 'completed' });
+            expect(getPlannedRun()).toMatchObject({ phase: 'previewing' });
             expect(mocks.setActiveAborter).toHaveBeenLastCalledWith(null);
             expect(mocks.setChatGenerating).toHaveBeenLastCalledWith(false);
             expect(loggerError).toHaveBeenCalledOnce();
@@ -1793,6 +1795,64 @@ describe('sendChatMessage retained-provider selection', () => {
         }
     });
 
+    const directReceiptWarningResults = [
+        {
+            status: 'committed' as const,
+            warningField: 'commitWarning' as const,
+            warning: 'Project follow-up did not finish.',
+            visibleWarning: 'Post-commit project follow-up warning: Project follow-up did not finish.',
+        },
+        {
+            status: 'executed' as const,
+            warningField: 'executionWarning' as const,
+            warning: 'Runtime follow-up did not finish.',
+            visibleWarning: 'Runtime follow-up warning: Runtime follow-up did not finish.',
+        },
+        {
+            status: 'committed' as const,
+            warningField: 'reportingWarning' as const,
+            warning: 'History reporting did not finish.',
+            visibleWarning: 'AI history or notification reporting warning: History reporting did not finish.',
+        },
+    ] as const;
+
+    it.each(directReceiptWarningResults)(
+        'surfaces a direct $status $warningField without inviting automatic retry',
+        async ({ status, warningField, warning, visibleWarning }) => {
+            configureCommandGraphForwarding('immediate');
+            mocks.executePlannedActions.mockImplementation(async () => {
+                const runId = getMostRecentlyAdmittedRunId();
+                return {
+                    status,
+                    actions: [],
+                    receipt: {
+                        schemaVersion: 2,
+                        runId,
+                        batchId: 'batch-graph',
+                        outcome: status,
+                        pendingEffects: [],
+                        links: { render: [], analysis: [] },
+                    },
+                    [warningField]: warning,
+                };
+            });
+
+            await expect(sendChatMessage(commandGraphFixture.prompt, { mode: 'apply' })).resolves.toBeDefined();
+
+            expect(mocks.updateChatMessage).toHaveBeenLastCalledWith(
+                expect.any(String),
+                expect.objectContaining({
+                    error: visibleWarning,
+                    content: expect.stringContaining(visibleWarning),
+                })
+            );
+            expect(mocks.updateChatMessage).toHaveBeenLastCalledWith(
+                expect.any(String),
+                expect.objectContaining({ content: expect.stringContaining('Do not retry automatically') })
+            );
+        }
+    );
+
     const staleImmediateCommandResults = [
         { status: 'committed', outcome: 'committed', content: 'The project change committed.' },
         { status: 'executed', outcome: 'executed', content: 'The runtime command executed.' },
@@ -2061,6 +2121,61 @@ describe('sendChatMessage retained-provider selection', () => {
             expect.any(String),
             expect.objectContaining({ isStreaming: false, error: commandFailure })
         );
+    });
+
+    it('preserves an immediate execution rejection and exposes its unsettled lease for manual recovery', async () => {
+        const executionError = new Error('Command execution rejected');
+        const storageFailure = new DOMException('The quota has been exceeded.', 'QuotaExceededError');
+        const loggerError = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+        const settleLease = agentRunWorkLease.settle;
+        const settleWorkLease = vi.spyOn(agentRunWorkLease, 'settle').mockImplementation((input) => {
+            if (input.workId === 'batch-graph') {
+                throw storageFailure;
+            }
+            return settleLease(input);
+        });
+        configureCommandGraphForwarding('immediate');
+        mocks.executePlannedActions.mockRejectedValue(executionError);
+
+        try {
+            await expect(sendChatMessage(commandGraphFixture.prompt, { mode: 'apply' })).resolves.toBeUndefined();
+
+            const run = getPlannedRun();
+            expect(mocks.updateChatMessage).toHaveBeenLastCalledWith(
+                expect.any(String),
+                expect.objectContaining({
+                    error: `${executionError.message}\n\n${FAILURE_PERSISTENCE_WARNING}`,
+                    content: expect.stringContaining(FAILURE_PERSISTENCE_WARNING),
+                })
+            );
+            expect(run).toMatchObject({
+                phase: 'failed',
+                workLeases: [
+                    expect.objectContaining({ workId: 'provider-planning', terminalState: 'completed' }),
+                    expect.objectContaining({ workId: 'batch-graph', terminalState: null }),
+                ],
+            });
+            await expect(recoverInterruptedAgentRuns({ recoveredAt: 200 })).resolves.toEqual({
+                recoveredRunIds: [run.runId],
+            });
+            expect(agentRunLifecycle.get(run.runId)).toMatchObject({
+                phase: 'paused',
+                manualResume: { required: true, workIds: ['batch-graph'] },
+                workLeases: [
+                    expect.anything(),
+                    expect.objectContaining({ workId: 'batch-graph', terminalState: 'orphaned' }),
+                ],
+            });
+            expect(loggerError).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    cause: storageFailure,
+                    message: 'Failed command work lease settlement failed',
+                })
+            );
+        } finally {
+            settleWorkLease.mockRestore();
+            loggerError.mockRestore();
+        }
     });
 
     const directTerminalCommandResults = [

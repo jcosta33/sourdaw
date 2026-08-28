@@ -19,6 +19,8 @@ const FAILURE_PERSISTENCE_WARNING =
     'Agent run failure recovery state could not be persisted. The work failed, and no successful artifact is claimed. Review the durable run state before retrying.';
 const CANCELLATION_PERSISTENCE_WARNING =
     'Agent run cancellation recovery state could not be persisted. The work was cancelled, and no successful artifact is claimed. Review the durable run state before retrying.';
+const CANCELLATION_RECEIPT_PERSISTENCE_WARNING =
+    'Agent run cancellation recovery state could not be persisted. The verified cancellation receipt remains authoritative; review it before retrying.';
 
 const lease: AgentRunWorkLease = {
     leaseId: 'lease-1',
@@ -109,6 +111,19 @@ describe('settleAgentRunWorkLeaseSafely', () => {
                 },
             })
         ).toEqual({ accepted: true, warning: CANCELLATION_PERSISTENCE_WARNING });
+    });
+
+    it('preserves verified cancellation receipt evidence when settlement persistence fails', () => {
+        expect(
+            settleAgentRunWorkLeaseSafely({
+                lease,
+                terminalState: 'cancelled',
+                evidence: 'verified-command-receipt',
+                settle: () => {
+                    throw new Error('storage unavailable');
+                },
+            })
+        ).toEqual({ accepted: true, warning: CANCELLATION_RECEIPT_PERSISTENCE_WARNING });
     });
 
     it('keeps non-command persistence warnings specific to visible unsettled work', () => {

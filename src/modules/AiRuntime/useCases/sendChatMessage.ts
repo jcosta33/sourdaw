@@ -386,6 +386,7 @@ export async function sendChatMessage(
         const aborter = new AbortController();
         let prompt_assistant_message_id: string | null = null;
         let providerPlanningLeaseSettled = false;
+        let commandExecutionSettlementWarning: string | null = null;
         setActiveAborter(aborter);
         const releaseProviderCancellation = agentRunCancellation.bindAbortController({
             runId,
@@ -878,7 +879,11 @@ export async function sendChatMessage(
                         }
                         updateChatMessage(assistantMsgId, {
                             isStreaming: false,
-                            content: `Previewed without changing the project:\n\n${confirmationDescription.actionLabels.map((label) => `- ${label}`).join('\n')}`,
+                            error: settlement.warning ?? undefined,
+                            content: appendSettlementWarning(
+                                `Previewed without changing the project:\n\n${confirmationDescription.actionLabels.map((label) => `- ${label}`).join('\n')}`,
+                                settlement.warning
+                            ),
                         });
                         try {
                             agentRunLifecycle.updateBatchStatus({
@@ -891,12 +896,16 @@ export async function sendChatMessage(
                                 new Error('Preview batch persistence failed', { cause: batchPersistenceError })
                             );
                         }
-                        try {
-                            agentRunLifecycle.transitionPhase({ runId, phase: 'completed' });
-                        } catch (lifecyclePersistenceError) {
-                            logger.error(
-                                new Error('Preview lifecycle persistence failed', { cause: lifecyclePersistenceError })
-                            );
+                        if (settlement.warning === null) {
+                            try {
+                                agentRunLifecycle.transitionPhase({ runId, phase: 'completed' });
+                            } catch (lifecyclePersistenceError) {
+                                logger.error(
+                                    new Error('Preview lifecycle persistence failed', {
+                                        cause: lifecyclePersistenceError,
+                                    })
+                                );
+                            }
                         }
                         return undefined;
                     }
@@ -1040,12 +1049,19 @@ export async function sendChatMessage(
                         });
                     }
                 } catch (error) {
-                    settleAgentRunWorkLeaseSafely({
+                    const commandExecutionSettlement = settleAgentRunWorkLeaseSafely({
                         lease: commandLeaseResult.lease,
                         terminalState: 'failed',
                         evidence: 'none',
                         settle: agentRunWorkLease.settle,
+                        reportFailure: (settlementError) =>
+                            logger.error(
+                                new Error('Failed command work lease settlement failed', {
+                                    cause: settlementError,
+                                })
+                            ),
                     });
+                    commandExecutionSettlementWarning = commandExecutionSettlement.warning;
                     throw error;
                 } finally {
                     releaseCommandCancellation();
@@ -1320,7 +1336,7 @@ export async function sendChatMessage(
             const reason = error instanceof Error ? error.message : String(error);
             const configurationChanged = isAiRuntimeConfigurationChangedError(error);
             const proposalInvalidated = error instanceof AiProposalInvalidatedError;
-            let settlementWarning: string | null = null;
+            let settlementWarning: string | null = commandExecutionSettlementWarning;
             if (aborter.signal.aborted || configurationChanged || proposalInvalidated) {
                 await agentRunCancellation.cancel({ runId, reason });
             } else {

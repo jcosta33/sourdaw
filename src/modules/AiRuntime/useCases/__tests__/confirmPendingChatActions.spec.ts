@@ -83,8 +83,14 @@ type ConfirmedActionBatchResult = Awaited<ReturnType<typeof executeVersionedComm
 
 const FAILURE_PERSISTENCE_WARNING =
     'Agent run failure recovery state could not be persisted. The work failed, and no successful artifact is claimed. Review the durable run state before retrying.';
+const COMPLETION_PERSISTENCE_WARNING =
+    'Agent run completion recovery state could not be persisted. No completed artifact is claimed. Review the durable run state before retrying.';
 const STALE_FAILURE_WARNING =
     'Agent work failed after its run lease was cancelled or replaced. No successful artifact is claimed, and the terminal run was not reopened.';
+const STALE_RECEIPT_FAILURE_WARNING =
+    'Agent work failed after its run lease was cancelled or replaced. The verified failure receipt was retained without reopening the terminal run.';
+const STALE_RECEIPT_CANCELLATION_WARNING =
+    'Agent work was cancelled after its run lease was cancelled or replaced. The verified cancellation receipt was retained without reopening the terminal run.';
 
 const runtimeMocks = vi.hoisted(() => ({
     applyRuntimeGraphDelta: vi.fn(),
@@ -310,7 +316,12 @@ function createWarningBatchResult(input: {
     }
     const result = {
         status: input.status,
-        actions: [],
+        actions: [
+            {
+                action: { type: 'setTempo', payload: { bpm: 132 } } satisfies SetTempoAction,
+                label: 'Set tempo to 132 BPM',
+            },
+        ],
         warning: 'The command completed with a follow-up warning.',
     };
     return {
@@ -404,6 +415,31 @@ function createIdempotentReplayFailureResult(input: {
         actions: [],
         receipt: createVerifiedBatchReceipt({
             contentHash: 'idempotent-replay-failed-stale-settlement',
+            envelope: parsed.envelope,
+            observedBaseRevision: 'revision-fixture',
+            resultingRevision: 'revision-fixture',
+            result,
+        }),
+    };
+}
+
+function createIdempotentReplayCancelledResult(
+    commandBatch: ReturnType<typeof compileVersionedCommandBatchEnvelope>
+): ConfirmedActionBatchResult {
+    const parsed = parseVersionedCommandBatchEnvelope(commandBatch.serialized, commandBatch.authority);
+    if (parsed.status !== 'valid') {
+        throw new Error('Expected the cancelled replay command batch fixture to remain valid.');
+    }
+    const result: { status: 'cancelled'; reason: string; actions: [] } = {
+        status: 'cancelled',
+        reason: 'The prior runtime batch was cancelled.',
+        actions: [],
+    };
+    return {
+        status: 'idempotent-replay',
+        actions: [],
+        receipt: createVerifiedBatchReceipt({
+            contentHash: 'idempotent-replay-cancelled-settlement',
             envelope: parsed.envelope,
             observedBaseRevision: 'revision-fixture',
             resultingRevision: 'revision-fixture',
@@ -816,6 +852,16 @@ describe('confirmPendingChatActions transaction admission', () => {
                     terminalState: 'completed',
                 });
                 expect(execute).toHaveBeenCalledOnce();
+                expect(getPendingActionConfirmation(confirmationId)).toMatchObject({
+                    status: 'executed',
+                    error: 'The command completed with a follow-up warning.',
+                    executedActions: [expect.objectContaining({ outcome: status })],
+                });
+                expect(chatStore.value?.messages[0]).toMatchObject({
+                    pendingActionConfirmationStatus: 'executed',
+                    error: 'The command completed with a follow-up warning.',
+                    content: expect.stringContaining('The command completed with a follow-up warning.'),
+                });
             } finally {
                 settle.mockRestore();
                 execute.mockRestore();
@@ -979,6 +1025,9 @@ describe('confirmPendingChatActions transaction admission', () => {
                     status: 'failed',
                     reason,
                 });
+                expect(settle).toHaveBeenCalledWith(
+                    expect.objectContaining({ runId, workId: batchId, terminalState: 'failed' })
+                );
                 expect(settle).toHaveBeenCalledWith({
                     runId,
                     workId: batchId,
@@ -1029,6 +1078,7 @@ describe('confirmPendingChatActions transaction admission', () => {
                 commandBatch,
             })
         );
+        const cancel = vi.spyOn(agentRunCancellation, 'cancel');
         const settle = vi.spyOn(agentRunWorkLease, 'settle').mockReturnValue({ status: 'stale' });
 
         try {
@@ -1045,8 +1095,10 @@ describe('confirmPendingChatActions transaction admission', () => {
                 receiptIdentity: `command:${runId}:${batchId}`,
                 terminalState: 'cancelled',
             });
+            expect(cancel.mock.invocationCallOrder[0]).toBeLessThan(settle.mock.invocationCallOrder[0] ?? 0);
         } finally {
             settle.mockRestore();
+            cancel.mockRestore();
             execute.mockRestore();
             captureMutationAuthorization.mockRestore();
         }
@@ -1206,6 +1258,46 @@ describe('confirmPendingChatActions transaction admission', () => {
         expect(retain).not.toHaveBeenCalled();
     });
 
+    it('keeps a stale replayed cancellation terminal with cancellation-accurate warning text', async () => {
+        const runId = 'idempotent-replay-cancelled-stale-settlement';
+        const confirmationId = 'confirmation-idempotent-replay-cancelled-stale-settlement';
+        const batchId = 'group-idempotent-replay-cancelled-stale-settlement';
+        const commandBatch = configureLateSettlementConfirmation({ runId, confirmationId, batchId });
+        const commandUseCases = await import('#/modules/Command/useCases');
+        const crdtUseCases = await import('#/modules/CrdtDocument/useCases');
+        const captureMutationAuthorization = vi
+            .spyOn(crdtUseCases, 'captureProjectMutationAuthorization')
+            .mockReturnValue(() => true);
+        const execute = vi
+            .spyOn(commandUseCases, 'executeVersionedCommandBatchEnvelope')
+            .mockResolvedValue(createIdempotentReplayCancelledResult(commandBatch));
+        const settle = vi.spyOn(agentRunWorkLease, 'settle').mockImplementation(() => {
+            agentRunLifecycle.transitionPhase({ runId, phase: 'cancelled' });
+            return { status: 'stale' };
+        });
+
+        try {
+            await expect(confirmPendingChatActions({ confirmationId })).resolves.toEqual({ status: 'cancelled' });
+            expect(settle).toHaveBeenCalledWith(
+                expect.objectContaining({ runId, workId: batchId, terminalState: 'cancelled' })
+            );
+        } finally {
+            settle.mockRestore();
+            execute.mockRestore();
+            captureMutationAuthorization.mockRestore();
+        }
+
+        expect(agentRunLifecycle.get(runId)).toMatchObject({
+            phase: 'cancelled',
+            workLeases: [expect.objectContaining({ workId: batchId, terminalState: null })],
+        });
+        expect(chatStore.value?.messages[0]).toMatchObject({
+            pendingActionConfirmationStatus: 'cancelled',
+            error: STALE_RECEIPT_CANCELLATION_WARNING,
+            content: expect.stringContaining(STALE_RECEIPT_CANCELLATION_WARNING),
+        });
+    });
+
     const staleReplayFailureResults = [
         {
             status: 'failed',
@@ -1258,22 +1350,30 @@ describe('confirmPendingChatActions transaction admission', () => {
                     status: 'failed',
                     reason,
                 });
+                expect(settle).toHaveBeenCalledWith(
+                    expect.objectContaining({ runId, workId: batchId, terminalState: 'failed' })
+                );
             } finally {
                 settle.mockRestore();
                 execute.mockRestore();
                 captureMutationAuthorization.mockRestore();
             }
 
-            expect(agentRunLifecycle.get(runId)).toMatchObject({ phase: 'cancelled', errors: [] });
+            expect(agentRunLifecycle.get(runId)).toMatchObject({
+                phase: 'cancelled',
+                errors: [],
+                workLeases: [expect.objectContaining({ workId: batchId, terminalState: null })],
+            });
             expect(getPendingActionConfirmation(confirmationId)).toMatchObject({
                 status: 'failed',
-                error: `${reason} ${AGENT_RUN_STALE_COMPLETION_WARNING}`,
+                error: `${reason} ${STALE_RECEIPT_FAILURE_WARNING}`,
             });
             expect(chatStore.value?.messages[0]).toMatchObject({
                 pendingActionConfirmationStatus: 'failed',
-                error: `${reason} ${AGENT_RUN_STALE_COMPLETION_WARNING}`,
+                error: `${reason} ${STALE_RECEIPT_FAILURE_WARNING}`,
                 content: expect.stringContaining(content),
             });
+            expect(chatStore.value?.messages[0]?.content).toContain(STALE_RECEIPT_FAILURE_WARNING);
             if (disposition === 'retain') {
                 expect(retain).toHaveBeenCalledOnce();
                 expect(release).not.toHaveBeenCalled();
@@ -1281,6 +1381,63 @@ describe('confirmPendingChatActions transaction admission', () => {
                 expect(release).toHaveBeenCalledOnce();
                 expect(retain).not.toHaveBeenCalled();
             }
+        }
+    );
+
+    const freshReplayTerminalResults = [
+        { outcome: 'executed', terminalState: 'completed', resultStatus: 'executed', phase: 'completed' },
+        { outcome: 'no-op', terminalState: 'completed', resultStatus: 'executed', phase: 'completed' },
+        { outcome: 'failed', terminalState: 'failed', resultStatus: 'failed', phase: 'failed' },
+        { outcome: 'ambiguous', terminalState: 'failed', resultStatus: 'failed', phase: 'failed' },
+        { outcome: 'cancelled', terminalState: 'cancelled', resultStatus: 'cancelled', phase: 'cancelled' },
+    ] as const;
+
+    it.each(freshReplayTerminalResults)(
+        'settles a fresh replayed $outcome receipt as $terminalState',
+        async ({ outcome, terminalState, resultStatus, phase }) => {
+            const runId = `idempotent-replay-${outcome}-fresh-settlement`;
+            const confirmationId = `confirmation-idempotent-replay-${outcome}-fresh-settlement`;
+            const batchId = `group-idempotent-replay-${outcome}-fresh-settlement`;
+            const commandBatch = configureLateSettlementConfirmation({ runId, confirmationId, batchId });
+            const commandUseCases = await import('#/modules/Command/useCases');
+            const crdtUseCases = await import('#/modules/CrdtDocument/useCases');
+            const captureMutationAuthorization = vi
+                .spyOn(crdtUseCases, 'captureProjectMutationAuthorization')
+                .mockReturnValue(() => true);
+            let replayResult: ConfirmedActionBatchResult;
+            if (outcome === 'executed') {
+                replayResult = createIdempotentReplayBatchResult(commandBatch);
+            } else if (outcome === 'no-op') {
+                replayResult = createIdempotentReplayNoOpResult(commandBatch);
+            } else if (outcome === 'cancelled') {
+                replayResult = createIdempotentReplayCancelledResult(commandBatch);
+            } else {
+                replayResult = createIdempotentReplayFailureResult({
+                    status: outcome,
+                    reason: `The prior runtime batch is ${outcome}.`,
+                    commandBatch,
+                });
+            }
+            const execute = vi
+                .spyOn(commandUseCases, 'executeVersionedCommandBatchEnvelope')
+                .mockResolvedValue(replayResult);
+            const settle = vi.spyOn(agentRunWorkLease, 'settle');
+
+            try {
+                await expect(confirmPendingChatActions({ confirmationId })).resolves.toMatchObject({
+                    status: resultStatus,
+                });
+                expect(settle).toHaveBeenCalledWith(expect.objectContaining({ runId, workId: batchId, terminalState }));
+            } finally {
+                settle.mockRestore();
+                execute.mockRestore();
+                captureMutationAuthorization.mockRestore();
+            }
+
+            expect(agentRunLifecycle.get(runId)).toMatchObject({
+                phase,
+                workLeases: [expect.objectContaining({ workId: batchId, terminalState })],
+            });
         }
     );
 
@@ -1341,6 +1498,42 @@ describe('confirmPendingChatActions transaction admission', () => {
         });
         expect(release).toHaveBeenCalledOnce();
         expect(retain).not.toHaveBeenCalled();
+    });
+
+    it('preserves a confirmed no-op while surfacing lease settlement persistence failure', async () => {
+        const runId = 'late-no-op-persistence';
+        const confirmationId = 'confirmation-no-op-persistence';
+        const batchId = 'group-no-op-persistence';
+        configureLateSettlementConfirmation({ runId, confirmationId, batchId });
+        const commandUseCases = await import('#/modules/Command/useCases');
+        const crdtUseCases = await import('#/modules/CrdtDocument/useCases');
+        const captureMutationAuthorization = vi
+            .spyOn(crdtUseCases, 'captureProjectMutationAuthorization')
+            .mockReturnValue(() => true);
+        const execute = vi
+            .spyOn(commandUseCases, 'executeVersionedCommandBatchEnvelope')
+            .mockResolvedValue({ status: 'no-op', actions: [] });
+        const settle = vi.spyOn(agentRunWorkLease, 'settle').mockImplementation(() => {
+            throw new DOMException('The quota has been exceeded.', 'QuotaExceededError');
+        });
+
+        try {
+            await expect(confirmPendingChatActions({ confirmationId })).resolves.toEqual({ status: 'executed' });
+        } finally {
+            settle.mockRestore();
+            execute.mockRestore();
+            captureMutationAuthorization.mockRestore();
+        }
+
+        expect(getPendingActionConfirmation(confirmationId)).toMatchObject({
+            status: 'executed',
+            error: COMPLETION_PERSISTENCE_WARNING,
+        });
+        expect(chatStore.value?.messages[0]).toMatchObject({
+            pendingActionConfirmationStatus: 'executed',
+            error: COMPLETION_PERSISTENCE_WARNING,
+            content: `No project changes were needed after confirmation. ${COMPLETION_PERSISTENCE_WARNING}`,
+        });
     });
 
     it('keeps a batch execution failure authoritative when error-path lease settlement throws', async () => {

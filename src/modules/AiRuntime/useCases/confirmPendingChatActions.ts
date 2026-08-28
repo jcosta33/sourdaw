@@ -71,6 +71,7 @@ type ApprovalDivergence = Extract<
 >['divergence'];
 
 type CommandVerifiedBatchReceipt = ReturnType<typeof createVerifiedBatchReceipt>;
+type ConfirmedBatchResult = Awaited<ReturnType<typeof executeVersionedCommandBatchEnvelope>>;
 type PendingEffect = CommandVerifiedBatchReceipt['pendingEffects'][number];
 type CommittedEffectFailureResult = {
     status: 'failed';
@@ -102,6 +103,39 @@ type ConfirmPendingChatActionsOutput = Promise<ConfirmPendingChatActionsResult>;
 
 const RENDER_RETRY_PROOF_MISMATCH_REASON =
     'The retained render retry proof no longer matches the committed project batch.';
+
+const COMPLETED_BATCH_STATUSES = new Set([
+    'committed',
+    'committed-with-warning',
+    'executed',
+    'executed-with-warning',
+    'no-op',
+]);
+
+function getTrackedLeaseSettlementContract(batchResult: ConfirmedBatchResult): {
+    terminalState: 'completed' | 'cancelled' | 'failed';
+    evidence: 'none' | 'verified-command-receipt';
+} {
+    const outcome =
+        batchResult.status === 'idempotent-replay'
+            ? getVerifiedBatchReplayDisposition(batchResult.receipt).status
+            : batchResult.status;
+    let terminalState: 'completed' | 'cancelled' | 'failed' = 'failed';
+    if (outcome === 'cancelled') {
+        terminalState = 'cancelled';
+    } else if (COMPLETED_BATCH_STATUSES.has(outcome)) {
+        terminalState = 'completed';
+    }
+    const evidence =
+        batchResult.status === 'idempotent-replay' ||
+        batchResult.status === 'committed' ||
+        batchResult.status === 'committed-with-warning' ||
+        batchResult.status === 'executed' ||
+        batchResult.status === 'executed-with-warning'
+            ? 'verified-command-receipt'
+            : 'none';
+    return { terminalState, evidence };
+}
 
 async function settlePendingActionResourcesBestEffort(input: {
     confirmationId: string;
@@ -284,7 +318,7 @@ async function settleVerifiedBatchReplay(
     if (replay.status === 'no-op') {
         if (!leaseSettlement.accepted) {
             await settlePendingActionResourcesBestEffort({ confirmationId: confirmation.id, disposition: 'discard' });
-            const warning = AGENT_RUN_STALE_COMPLETION_WARNING;
+            const warning = leaseSettlement.warning ?? AGENT_RUN_STALE_COMPLETION_WARNING;
             updatePendingActionConfirmationStatus({
                 confirmationId: confirmation.id,
                 status: 'cancelled',
@@ -306,10 +340,20 @@ async function settleVerifiedBatchReplay(
             agentRunLifecycle.transitionPhase({ runId: confirmation.runId, phase: 'completed' });
         });
         await settlePendingActionResourcesBestEffort({ confirmationId: confirmation.id, disposition: 'discard' });
-        updatePendingActionConfirmationStatus({ confirmationId: confirmation.id, status: 'executed' });
+        updatePendingActionConfirmationStatus({
+            confirmationId: confirmation.id,
+            status: 'executed',
+            ...(leaseSettlement.warning ? { error: leaseSettlement.warning } : {}),
+        });
         updateChatMessage(confirmation.assistantMessageId, {
             pendingActionConfirmationStatus: 'executed',
-            content: 'The prior verified receipt records a no-op. No project or runtime effects were applied.',
+            error: leaseSettlement.warning ?? undefined,
+            content: [
+                'The prior verified receipt records a no-op. No project or runtime effects were applied.',
+                leaseSettlement.warning,
+            ]
+                .filter(Boolean)
+                .join(' '),
         });
         return { status: 'executed' };
     }
@@ -320,11 +364,20 @@ async function settleVerifiedBatchReplay(
                 reason: 'The verified command receipt records cancellation.',
             });
         });
-        updatePendingActionConfirmationStatus({ confirmationId: confirmation.id, status: 'cancelled' });
+        updatePendingActionConfirmationStatus({
+            confirmationId: confirmation.id,
+            status: 'cancelled',
+            ...(leaseSettlement.warning ? { error: leaseSettlement.warning } : {}),
+        });
         updateChatMessage(confirmation.assistantMessageId, {
             pendingActionConfirmationStatus: 'cancelled',
-            error: undefined,
-            content: 'The prior verified receipt records cancellation before commit. No project changes were applied.',
+            error: leaseSettlement.warning ?? undefined,
+            content: [
+                'The prior verified receipt records cancellation before commit. No project changes were applied.',
+                leaseSettlement.warning,
+            ]
+                .filter(Boolean)
+                .join(' '),
         });
         await settlePendingActionResourcesBestEffort({ confirmationId: confirmation.id, disposition: 'discard' });
         return { status: 'cancelled' };
@@ -1396,30 +1449,10 @@ export async function confirmPendingChatActions(
 
     let trackedLeaseSettlement: ReturnType<typeof settleAgentRunWorkLeaseSafely> = { accepted: true, warning: null };
     if (trackedWorkLease) {
-        let terminalState: 'completed' | 'cancelled' | 'failed' = 'failed';
-        if (
-            batchResult.status === 'committed' ||
-            batchResult.status === 'committed-with-warning' ||
-            batchResult.status === 'executed' ||
-            batchResult.status === 'executed-with-warning' ||
-            batchResult.status === 'idempotent-replay' ||
-            batchResult.status === 'no-op'
-        ) {
-            terminalState = 'completed';
-        } else if (batchResult.status === 'cancelled') {
-            terminalState = 'cancelled';
-        }
+        const settlementContract = getTrackedLeaseSettlementContract(batchResult);
         trackedLeaseSettlement = settleAgentRunWorkLeaseSafely({
             lease: trackedWorkLease,
-            terminalState,
-            evidence:
-                batchResult.status === 'committed' ||
-                batchResult.status === 'committed-with-warning' ||
-                batchResult.status === 'executed' ||
-                batchResult.status === 'executed-with-warning' ||
-                batchResult.status === 'idempotent-replay'
-                    ? 'verified-command-receipt'
-                    : 'none',
+            ...settlementContract,
             settle: agentRunWorkLease.settle,
             reportFailure: (error) =>
                 logger.error(new Error('Agent run work lease settlement failed', { cause: error })),
@@ -1534,7 +1567,7 @@ export async function confirmPendingChatActions(
             updatePendingActionConfirmationStatus({
                 confirmationId: confirmation.id,
                 status: effectsPending ? 'failed' : 'executed',
-                ...(effectsPending ? { error: warning } : {}),
+                ...(warning ? { error: warning } : {}),
             });
             const incompleteSectionRenders = getIncompleteSectionRenderJobs(confirmation, committedProjectRevision);
             // Arm the render retry only for the exact committed-batch shape the
@@ -1644,10 +1677,17 @@ export async function confirmPendingChatActions(
             agentRunLifecycle.transitionPhase({ runId: confirmation.runId, phase: 'completed' });
         });
         await settlePendingActionResourcesBestEffort({ confirmationId: confirmation.id, disposition: 'discard' });
-        updatePendingActionConfirmationStatus({ confirmationId: confirmation.id, status: 'executed' });
+        updatePendingActionConfirmationStatus({
+            confirmationId: confirmation.id,
+            status: 'executed',
+            ...(trackedLeaseSettlement.warning ? { error: trackedLeaseSettlement.warning } : {}),
+        });
         updateChatMessage(confirmation.assistantMessageId, {
             pendingActionConfirmationStatus: 'executed',
-            content: 'No project changes were needed after confirmation.',
+            error: trackedLeaseSettlement.warning ?? undefined,
+            content: ['No project changes were needed after confirmation.', trackedLeaseSettlement.warning]
+                .filter(Boolean)
+                .join(' '),
         });
         return { status: 'executed' };
     }

@@ -76,12 +76,28 @@ const FAILED_STALE_WARNINGS = {
         'Agent work failed after its run lease was cancelled or replaced. The visible partial work output was retained without reopening the terminal run.',
 } satisfies Record<AgentRunWorkSettlementEvidence, string>;
 
+const CANCELLED_PERSISTENCE_WARNINGS = {
+    none: AGENT_RUN_CANCELLATION_PERSISTENCE_WARNING,
+    'verified-command-receipt':
+        'Agent run cancellation recovery state could not be persisted. The verified cancellation receipt remains authoritative; review it before retrying.',
+    'visible-provider-output': AGENT_RUN_CANCELLATION_PERSISTENCE_WARNING,
+    'visible-work-output': AGENT_RUN_CANCELLATION_PERSISTENCE_WARNING,
+} satisfies Record<AgentRunWorkSettlementEvidence, string>;
+
+const CANCELLED_STALE_WARNINGS = {
+    none: AGENT_RUN_STALE_CANCELLATION_WARNING,
+    'verified-command-receipt':
+        'Agent work was cancelled after its run lease was cancelled or replaced. The verified cancellation receipt was retained without reopening the terminal run.',
+    'visible-provider-output': AGENT_RUN_STALE_CANCELLATION_WARNING,
+    'visible-work-output': AGENT_RUN_STALE_CANCELLATION_WARNING,
+} satisfies Record<AgentRunWorkSettlementEvidence, string>;
+
 function getPersistenceWarning(input: SettleAgentRunWorkLeaseSafelyInput): string {
     if (input.terminalState === 'completed') {
         return COMPLETED_PERSISTENCE_WARNINGS[input.evidence];
     }
     if (input.terminalState === 'cancelled') {
-        return AGENT_RUN_CANCELLATION_PERSISTENCE_WARNING;
+        return CANCELLED_PERSISTENCE_WARNINGS[input.evidence];
     }
     return FAILED_PERSISTENCE_WARNINGS[input.evidence];
 }
@@ -91,7 +107,7 @@ function getStaleWarning(input: SettleAgentRunWorkLeaseSafelyInput): string {
         return COMPLETED_STALE_WARNINGS[input.evidence];
     }
     if (input.terminalState === 'cancelled') {
-        return AGENT_RUN_STALE_CANCELLATION_WARNING;
+        return CANCELLED_STALE_WARNINGS[input.evidence];
     }
     return FAILED_STALE_WARNINGS[input.evidence];
 }
