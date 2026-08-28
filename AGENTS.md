@@ -113,10 +113,11 @@ The author answers each thread with a fixed head and `review:resolve`, and the r
 fresh round. Repairing a validated blocker first and approving the repaired head in one motion is
 forbidden, however much faster it is: it erases the review from the public record, and a pull
 request that merges with no visible finding is indistinguishable from one nobody attacked. Every
-pull request that drew a validated blocker therefore shows all three actors — the reviewer identity
-whose findings stand on the pull request, the author identity whose pushes and `Done` replies
-answer them, and the orchestrator who validates the findings, arbitrates disputes, and alone
-merges.
+pull request that drew a validated blocker therefore carries the exchange on its public record —
+the reviewer identity's findings standing against the head that earned them, and the author
+identity's answering pushes and `Done` replies — while the orchestrator's judgement is evidenced by
+the scripts only it runs and by `review.json` and `discarded.json` in the bundle, never by a
+persona on the pull request.
 
 ## Docs
 
