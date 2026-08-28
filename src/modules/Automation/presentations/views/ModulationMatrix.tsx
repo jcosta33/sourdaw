@@ -1,4 +1,11 @@
-import { type ChangeEvent, type ReactElement, useEffect, useRef, useState } from 'react';
+import {
+    type ChangeEvent,
+    type PointerEvent as ReactPointerEvent,
+    type ReactElement,
+    useEffect,
+    useRef,
+    useState,
+} from 'react';
 
 import { Plus, Trash2, X } from 'lucide-react';
 
@@ -414,22 +421,33 @@ type MappingRowProps = {
  * window-level mouseup contract: listeners are attached at begin, removed on
  * the first end, and the returned teardown runs the same end path so an
  * owning row can close the gesture on unmount. Idempotent.
+ *
+ * The window fires pointerup once PER POINTER, so only the pointer that began
+ * this gesture may end it — with two concurrent drags, one gesture's lift must
+ * not end the other. The returned teardown bypasses the filter (an owning
+ * row's unmount or a replacement begin ends the gesture unconditionally).
  */
-function startAmountDragEndWatch(modulatorId: string, target: MappingTarget): () => void {
+function startAmountDragEndWatch(modulatorId: string, target: MappingTarget, pointerId: number): () => void {
     let ended = false;
-    const endOnce = (): void => {
+    const handleUp = (event: PointerEvent): void => {
+        if (event.pointerId !== pointerId) {
+            return;
+        }
+        end();
+    };
+    const end = (): void => {
         if (ended) {
             return;
         }
         ended = true;
-        window.removeEventListener('pointerup', endOnce);
-        window.removeEventListener('pointercancel', endOnce);
+        window.removeEventListener('pointerup', handleUp);
+        window.removeEventListener('pointercancel', handleUp);
         endMappingAmountDrag(modulatorId, target);
     };
 
-    window.addEventListener('pointerup', endOnce);
-    window.addEventListener('pointercancel', endOnce);
-    return endOnce;
+    window.addEventListener('pointerup', handleUp);
+    window.addEventListener('pointercancel', handleUp);
+    return end;
 }
 
 const MappingRow = ({ modulator, mapping, destination }: MappingRowProps): ReactElement => {
@@ -463,9 +481,14 @@ const MappingRow = ({ modulator, mapping, destination }: MappingRowProps): React
         };
     }, []);
 
-    const handleAmountPointerDown = (): void => {
+    const handleAmountPointerDown = (event: ReactPointerEvent<HTMLInputElement>): void => {
+        // A second pointer pressing this same slider replaces the gesture: the
+        // old watch must be torn down first (running its end path, which
+        // commits the replaced gesture with its undo entry) or its stray
+        // pointerup would end the new gesture's session.
+        amountDragEndRef.current?.();
         beginMappingAmountDrag(modulator.id, target);
-        amountDragEndRef.current = startAmountDragEndWatch(modulator.id, target);
+        amountDragEndRef.current = startAmountDragEndWatch(modulator.id, target, event.pointerId);
     };
 
     const handleAmountChange = (event: ChangeEvent<HTMLInputElement>): void => {

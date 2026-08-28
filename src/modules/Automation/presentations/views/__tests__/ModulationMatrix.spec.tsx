@@ -279,4 +279,62 @@ describe('ModulationMatrix', () => {
         undo();
         expect(currentAmount()).toBe(0.2);
     });
+
+    it('should end only the lifting pointer’s gesture when two drags run concurrently', () => {
+        stubAnimationFrame();
+        mocks.modState = { modulators: [makeModulatorWithTwoMappings(0.2, 0.4)] };
+        mocks.trackState = { tracks: [makeTrack('track-1', 'Lead')] };
+        render(<ModulationMatrix />);
+
+        const sliderCutoff = screen.getByLabelText(/Amount for .* Cutoff$/);
+        const sliderResonance = screen.getByLabelText(/Amount for .* Resonance$/);
+
+        // Two pointers, one per mapping, both gestures live at once.
+        fireEvent.pointerDown(sliderCutoff, { pointerId: 1 });
+        fireEvent.change(sliderCutoff, { target: { value: '0.3' } });
+        fireEvent.pointerDown(sliderResonance, { pointerId: 2 });
+        fireEvent.change(sliderResonance, { target: { value: '-0.5' } });
+
+        // Pointer 1 lifts. The window pointerup reaches BOTH watches; only
+        // pointer 1's gesture may end — pointer 2's session stays live.
+        fireEvent.pointerUp(sliderCutoff, { pointerId: 1 });
+        expect(currentAmount('cutoff')).toBe(0.3);
+        expect(mocks.pushUndoEntry).toHaveBeenCalledTimes(1);
+
+        // Pointer 2's gesture still batches: its change paints, nothing commits.
+        fireEvent.change(sliderResonance, { target: { value: '-0.6' } });
+        expect(currentAmount('resonance')).toBe(0.4);
+
+        fireEvent.pointerUp(sliderResonance, { pointerId: 2 });
+        expect(currentAmount('resonance')).toBe(-0.6);
+        expect(mocks.pushUndoEntry).toHaveBeenCalledTimes(2);
+    });
+
+    it('should drop the replaced gesture’s watch when a second pointer begins the same mapping', () => {
+        stubAnimationFrame();
+        mocks.modState = { modulators: [makeModulatorWithMapping(0.2)] };
+        render(<ModulationMatrix />);
+
+        const slider = screen.getByLabelText(/Amount for /);
+
+        // Pointer 1 begins a gesture, then pointer 2 replaces it on the same
+        // slider: the replacement commits gesture 1 and detaches its watch.
+        fireEvent.pointerDown(slider, { pointerId: 1 });
+        fireEvent.change(slider, { target: { value: '0.3' } });
+        fireEvent.pointerDown(slider, { pointerId: 2 });
+        fireEvent.change(slider, { target: { value: '0.5' } });
+
+        // Pointer 1's stray lift must not end pointer 2's gesture: the only
+        // undo entry so far is gesture 1's, committed by the replacement.
+        fireEvent.pointerUp(slider, { pointerId: 1 });
+        expect(mocks.pushUndoEntry).toHaveBeenCalledTimes(1);
+
+        // Pointer 2's gesture owns the session until its own lift.
+        fireEvent.pointerUp(slider, { pointerId: 2 });
+        expect(currentAmount()).toBe(0.5);
+        expect(mocks.pushUndoEntry).toHaveBeenCalledTimes(2);
+        const [, undo] = mocks.pushUndoEntry.mock.calls[1]!;
+        undo();
+        expect(currentAmount()).toBe(0.3);
+    });
 });
