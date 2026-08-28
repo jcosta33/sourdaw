@@ -1781,7 +1781,25 @@ export const BacteriaPanel = ({ deviceId }: { deviceId: string }): ReactElement 
     const moduleMeta = getModuleMeta(state.activeModule);
 
     return (
-        <Row className="bacteria-faceplate h-full min-h-0 gap-2.5 p-2.5">
+        // The faceplate must clip its subtree (#2311). InstrumentBottomPanel's
+        // Close button is an earlier flex-column sibling above this element, and
+        // the content stack sizes to its content — unclipped it spills past the
+        // faceplate's top edge and, painting as the later sibling, covers the
+        // chrome and swallows pointer clicks on it. Every sibling instrument
+        // faceplate (Fermenter, ProofChamber, Crust, …) carries the same
+        // `overflow-hidden` containment, and `align="stretch"` pins the content
+        // stack to the faceplate box — Row's default `center` lets it overflow
+        // symmetrically — so the internal `min-h-0` + scroll regions own the
+        // fit. The clip is an inline style, not a Tailwind class, because jsdom
+        // compiles no Tailwind and the containment must stay an observable DOM
+        // property for the regression test (same reasoning as ErrorBoundary's
+        // FALLBACK_HEIGHT).
+        <Row
+            align="stretch"
+            gap={2.5}
+            className="bacteria-faceplate h-full min-h-0 p-2.5"
+            style={{ overflow: 'hidden' }}
+        >
             <PresetRail
                 deviceId={deviceId}
                 state={state}
