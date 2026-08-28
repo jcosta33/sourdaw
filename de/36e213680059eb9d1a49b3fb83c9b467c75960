@@ -1,0 +1,41 @@
+src/modules/Command/useCases/__tests__/commandBatchIdempotency.spec.ts
+  s_a40848e8f8cca9::t_468c02827e24fb 1605
+  s_a40848e8f8cca9::t_c77bdd78e1c895 1702-1709,1723-1726
+  s_a40848e8f8cca9::t_1aa9b84c46a93a 1710
+src/modules/Command/useCases/canExecuteCommandBatchEffects.ts
+  s_a40848e8f8cca9::t_aaa84ad64f5297 1-6
+src/modules/AiRuntime/useCases/agentRequestOrchestration/executeCommittedSectionRenderRetry.ts
+  s_a40848e8f8cca9::t_aaa84ad64f5297 3-7,131-143,321-323,346-349
+src/modules/Command/useCases/finalizeRecoveredCommandBatchEffects.ts
+  s_a40848e8f8cca9::t_aaa84ad64f5297 43-52,100
+  s_a40848e8f8cca9::t_468c02827e24fb 42,97-99,104
+src/modules/AudioRendering/useCases/renderAgentProjectSections.ts
+  s_a40848e8f8cca9::t_aaa84ad64f5297 18,48-54,150
+src/modules/Command/useCases/index.ts
+  s_a40848e8f8cca9::t_aaa84ad64f5297 13
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/executeCommittedSectionRenderRetry.spec.ts
+  s_a40848e8f8cca9::t_24f115d78aac10 15,39,208,265-286,288-309,312,614,693
+  s_a40848e8f8cca9::t_6669bb1132caa1 287
+  s_a40848e8f8cca9::t_f05b818e145ff4 310-311,445,582
+src/modules/AudioRendering/useCases/__tests__/renderAgentProjectSections.spec.ts
+  s_a40848e8f8cca9::t_f50df93b1eead0 151-177
+  s_a40848e8f8cca9::t_0b6e720ee93b7f 178-181
+src/modules/AudioRendering/useCases/retryAgentProjectSectionRenders.ts
+  s_a40848e8f8cca9::t_aaa84ad64f5297 9,16-20
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "de36e213680059eb9d1a49b3fb83c9b467c75960",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
