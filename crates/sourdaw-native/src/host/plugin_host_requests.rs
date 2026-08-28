@@ -3,10 +3,9 @@
 //! A plugin resizes its editor by calling `clap_host_gui.request_resize()`,
 //! reports that its own state changed by calling `clap_host_state.mark_dirty()`,
 //! and announces that its parameter contract moved by calling
-//! `clap_host_params.rescan()`. CLAP annotates every one of those
-//! `[main-thread]`, where the host may touch neither a window server nor the
-//! project and may not re-enter the plugin, so the backend records the ask and
-//! wakes this watcher.
+//! `clap_host_params.rescan()`. Inside any of those the host may touch neither a
+//! window server nor the project and may not re-enter the plugin, so the backend
+//! records the ask and wakes this watcher.
 //!
 //! The watcher is a dedicated non-RT thread that blocks in `recv()` until a
 //! plugin actually asks, then carries the follow-up out through the
@@ -17,11 +16,20 @@
 //! `plugin-parameters-rescanned`. Same shape as the latency watcher, and for the
 //! same reason — nothing polls, so an idle session does no work at all.
 //!
-//! `clap_host_params.request_flush()` is the one ask that does not come here.
-//! CLAP annotates it `[thread-safe]`, so a plugin may raise it from inside
-//! `process()`, and the wake below allocates. It is recorded as a flag and
-//! answered by the parameter-event drain instead — see
-//! [`crate::host::plugin_parameter_events`].
+//! ## What may be routed through this wake
+//!
+//! The wake allocates: it copies the instance id and takes a channel node. So an
+//! ask belongs here only if the thread a plugin may raise it on is one that may
+//! allocate — and CLAP does not supply that wholesale, it is a check each ask
+//! must be made against by its own annotation. `mark_dirty` and `params.rescan`
+//! are `[main-thread]` and pass it. `params.request_flush` is `[thread-safe]`,
+//! so a plugin may raise it from inside `process()`; it fails the check and does
+//! not come here at all, being recorded as a flag and answered by the
+//! parameter-event drain — see [`crate::host::plugin_parameter_events`].
+//!
+//! `gui.request_resize` is also `[thread-safe]`, and it does reach this wake
+//! through `request_editor_resize`. That predates the check and is not addressed
+//! here.
 //!
 //! It serves engine-owned instances only, which is where the wake is installed.
 //! An instance the native engine never took records a state change nothing
@@ -93,12 +101,11 @@ type EnginePlugins = Arc<Mutex<HashMap<String, EnginePluginInstanceData>>>;
 /// unbounded) and is a no-op before the watcher starts, so a plugin loaded in a
 /// headless or test build records its ask and nothing else happens.
 ///
-/// It does allocate — the id is copied and the send takes a node — and that is
-/// deliberate. CLAP annotates every callback that reaches here `[main-thread]`,
-/// so this is not the audio thread, and the flag is stored before the wake: a
-/// wake that could not be sent costs a follow-up, never the record behind it. An
-/// ask a plugin may raise from the audio thread never reaches this function; see
-/// the module header.
+/// It does allocate — the id is copied and the send takes a node. Every ask
+/// routed here must therefore be one whose own CLAP annotation says the raising
+/// thread may allocate; the module header states that check and which asks pass
+/// it. The flag is stored before the wake, so a wake that could not be sent
+/// costs a follow-up, never the record behind it.
 pub fn notify_plugin_host_request(instance_id: &str, request: PluginHostRequest) {
     queue_request((instance_id.to_string(), request, 0));
 }
