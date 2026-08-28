@@ -636,6 +636,41 @@ describe('sendChatMessage retained-provider selection', () => {
         }
     });
 
+    it('preserves a completed regular-chat response when completion lifecycle persistence fails', async () => {
+        const content = 'The arrangement is ready for a final automation pass.';
+        const lifecycleFailure = new Error('Completed lifecycle persistence failed');
+        const loggerError = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+        const transitionPhase = agentRunLifecycle.transitionPhase;
+        const transition = vi.spyOn(agentRunLifecycle, 'transitionPhase').mockImplementation((input) => {
+            if (input.phase === 'completed') {
+                throw lifecycleFailure;
+            }
+            return transitionPhase(input);
+        });
+        mocks.getLlmEngine.mockReturnValue(createSuccessfulWebLlmEngine(content));
+
+        try {
+            await expect(sendChatMessage('Summarize the arrangement.', { mode: 'explain' })).resolves.toBeUndefined();
+
+            expect(mocks.updateChatMessage).toHaveBeenLastCalledWith(
+                expect.any(String),
+                expect.objectContaining({ isStreaming: false, content, error: undefined })
+            );
+            expect(llmStatusStore.value).toEqual({ state: 'ready', backend: 'webllm', modelId: 'fixture-model' });
+            expect(mocks.setActiveAborter).toHaveBeenLastCalledWith(null);
+            expect(mocks.setChatGenerating).toHaveBeenLastCalledWith(false);
+            expect(loggerError).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    cause: lifecycleFailure,
+                    message: 'Completed provider lifecycle persistence failed',
+                })
+            );
+        } finally {
+            transition.mockRestore();
+            loggerError.mockRestore();
+        }
+    });
+
     it('preserves a planning rejection when provider work settlement persistence fails', async () => {
         const rejectionReason = 'The requested command cannot be resolved.';
         const storageFailure = new DOMException('The quota has been exceeded.', 'QuotaExceededError');
@@ -852,6 +887,69 @@ describe('sendChatMessage retained-provider selection', () => {
         );
     });
 
+    it('preserves a verified preview when preview lease settlement persistence fails', async () => {
+        const storageFailure = new DOMException('The quota has been exceeded.', 'QuotaExceededError');
+        const loggerError = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+        const previewResource = { release: vi.fn() };
+        const settleWorkLease = vi.spyOn(agentRunWorkLease, 'settle').mockImplementation(() => {
+            throw storageFailure;
+        });
+        configureCommandGraphForwarding('plan');
+        mocks.executeVersionedCommandBatchEnvelope.mockResolvedValue({
+            status: 'previewed',
+            resource: previewResource,
+        });
+
+        try {
+            await expect(sendChatMessage(commandGraphFixture.prompt, { mode: 'preview' })).resolves.toBeUndefined();
+
+            expect(previewResource.release).toHaveBeenCalledOnce();
+            expect(mocks.updateChatMessage).toHaveBeenLastCalledWith(
+                expect.any(String),
+                expect.objectContaining({
+                    isStreaming: false,
+                    content:
+                        'Previewed without changing the project:\n\n- Create Drum Bus\n- Set Drum Bus gain\n- Remove Kick',
+                })
+            );
+            expect(getPlannedRun()).toMatchObject({ phase: 'completed' });
+            expect(mocks.setActiveAborter).toHaveBeenLastCalledWith(null);
+            expect(mocks.setChatGenerating).toHaveBeenLastCalledWith(false);
+            expect(loggerError).toHaveBeenCalledOnce();
+        } finally {
+            settleWorkLease.mockRestore();
+            loggerError.mockRestore();
+        }
+    });
+
+    it('preserves the resumed-run callback error when provider settlement persistence fails', async () => {
+        const callbackError = new Error('Resume admission callback failed');
+        const storageFailure = new DOMException('The quota has been exceeded.', 'QuotaExceededError');
+        const loggerError = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+        const settleWorkLease = vi.spyOn(agentRunWorkLease, 'settle').mockImplementation(() => {
+            throw storageFailure;
+        });
+        let admittedRunId: string | null = null;
+
+        try {
+            await expect(
+                sendChatMessage('resume this plan', {
+                    mode: 'apply',
+                    onResumedRunAdmitted: (runId) => {
+                        admittedRunId = runId;
+                        throw callbackError;
+                    },
+                })
+            ).rejects.toThrow(callbackError);
+
+            expect(agentRunLifecycle.get(admittedRunId ?? '')).toMatchObject({ phase: 'failed' });
+            expect(loggerError).toHaveBeenCalledOnce();
+        } finally {
+            settleWorkLease.mockRestore();
+            loggerError.mockRestore();
+        }
+    });
+
     it('preserves a planning rejection when agent-run storage fails after provider settlement', async () => {
         const rejectionReason = 'The requested command cannot be resolved.';
         const storageFailure = new DOMException('The quota has been exceeded.', 'QuotaExceededError');
@@ -1051,6 +1149,36 @@ describe('sendChatMessage retained-provider selection', () => {
             storageSetItem.mockRestore();
             loggerError.mockRestore();
         }
+    });
+
+    it('settles the failed immediate command lease with its batch identity', async () => {
+        const commandFailure = 'Command executor failed';
+        configureCommandGraphForwarding('immediate');
+        mocks.executePlannedActions.mockResolvedValue({ status: 'failed', reason: commandFailure, actions: [] });
+
+        await expect(sendChatMessage(commandGraphFixture.prompt, { mode: 'apply' })).resolves.toBeUndefined();
+
+        const run = getPlannedRun();
+        expect(run).toEqual(
+            expect.objectContaining({
+                phase: 'failed',
+                workLeases: expect.arrayContaining([
+                    expect.objectContaining({
+                        runId: run.runId,
+                        workId: 'batch-graph',
+                        leaseId: `${run.runId}:batch-graph:0`,
+                        cancellationGeneration: 0,
+                        idempotencyKey: 'batch-graph-idempotency',
+                        receiptIdentity: `command:${run.runId}:batch-graph`,
+                        terminalState: 'failed',
+                    }),
+                ]),
+            })
+        );
+        expect(mocks.updateChatMessage).toHaveBeenLastCalledWith(
+            expect.any(String),
+            expect.objectContaining({ isStreaming: false, error: commandFailure })
+        );
     });
 
     it('forwards a compiler-produced graph and provider-known scope into pending confirmation', async () => {

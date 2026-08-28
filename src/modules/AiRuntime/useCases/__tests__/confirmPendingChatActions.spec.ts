@@ -518,6 +518,98 @@ describe('confirmPendingChatActions transaction admission', () => {
         expect(chatStore.value?.messages[0]?.content).toContain('prior verified receipt');
     });
 
+    it('retains a verified receipt without reopening a cancelled run after stale lease settlement', async () => {
+        configureAiWorkflowCommandPreflightFixture('project-1');
+        configureCommandBatchIdempotency({ canExecute: () => true });
+        const ownedStorage = createAutomergeStorage<{ bpm: number }>('owned', 'transport');
+        registerHandlerMap({
+            setTempo: {
+                canReapplyAfterDivergence: (action) => action.payload.expectedBpm !== undefined,
+                execute: (action: SetTempoAction) => ownedStorage.set({ bpm: action.payload.bpm }),
+                describe: (action) => ({
+                    label: 'Set tempo',
+                    inverseAction: {
+                        type: 'setTempo',
+                        payload: { bpm: 120, expectedBpm: action.payload.bpm },
+                    },
+                }),
+                undoable: true,
+                validate: () => true,
+            },
+        });
+        const action = { type: 'setTempo', payload: { bpm: 132 } } satisfies SetTempoAction;
+        const projectRevision = captureProjectRevision();
+        const envelope = migrateLegacyAppActionToVersionedCommandEnvelope({
+            action,
+            expectedEffect: 'Tempo changes to 132 BPM.',
+            normalizedProjectRevision: projectRevision,
+            options: { groupId: 'group-stale-settlement', groupLabel: 'Set tempo batch', source: 'prompt' },
+        });
+        const commandBatch = compileVersionedCommandBatchEnvelope({
+            runId: 'confirmation-stale-settlement',
+            batchId: 'group-stale-settlement',
+            projectId: 'project-1',
+            baseRevision: projectRevision,
+            intent: 'set tempo to 132',
+            commands: [serializeVersionedCommandEnvelope(envelope)],
+        });
+        agentRunLifecycle.create({
+            runId: 'confirmation-stale-settlement',
+            request: 'set tempo to 132',
+            mode: 'macro',
+            createdRevision: projectRevision,
+        });
+        agentRunLifecycle.transitionPhase({ runId: 'confirmation-stale-settlement', phase: 'planning' });
+        agentRunLifecycle.transitionPhase({
+            runId: 'confirmation-stale-settlement',
+            phase: 'waiting-for-approval',
+        });
+        proposePendingActionConfirmation({
+            id: 'confirmation-stale-settlement',
+            runId: 'confirmation-stale-settlement',
+            prompt: 'set tempo to 132',
+            assistantMessageId: 'assistant-1',
+            actions: [action],
+            actionLabels: ['Set tempo to 132 BPM'],
+            commandBatch,
+            agentApproval: compileAgentRiskApproval({ commandBatch }),
+            executionMode: 'atomic',
+            groupId: 'group-stale-settlement',
+            groupLabel: 'Set tempo batch',
+            projectRevision,
+        });
+        const settle = vi.spyOn(agentRunWorkLease, 'settle').mockImplementation(() => {
+            agentRunLifecycle.transitionPhase({ runId: 'confirmation-stale-settlement', phase: 'cancelled' });
+            return { status: 'stale' };
+        });
+
+        try {
+            await expect(
+                confirmPendingChatActions({ confirmationId: 'confirmation-stale-settlement' })
+            ).resolves.toEqual({
+                status: 'executed',
+            });
+        } finally {
+            settle.mockRestore();
+        }
+
+        expect(getCrdtDoc<Record<string, unknown>>('owned')).toMatchObject({ transport: { bpm: 132 } });
+        expect(agentRunLifecycle.get('confirmation-stale-settlement')).toMatchObject({
+            phase: 'partially-completed',
+            receipts: [
+                expect.objectContaining({
+                    workId: 'group-stale-settlement',
+                    receiptIdentity: expect.stringContaining('confirmation-stale-settlement:group-stale-settlement'),
+                }),
+            ],
+        });
+        expect(chatStore.value?.messages[0]).toMatchObject({
+            pendingActionConfirmationStatus: 'executed',
+            error: expect.stringContaining('cancelled or replaced'),
+            content: expect.stringContaining('durable receipt was retained without reopening the terminal run'),
+        });
+    });
+
     it('keeps a batch execution failure authoritative when error-path lease settlement throws', async () => {
         configureAiWorkflowCommandPreflightFixture('project-1');
         configureCommandBatchIdempotency({ canExecute: () => true });

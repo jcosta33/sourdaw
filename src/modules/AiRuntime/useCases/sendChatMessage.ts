@@ -349,18 +349,17 @@ export async function sendChatMessage(
     try {
         options?.onResumedRunAdmitted?.(runId);
     } catch (error) {
+        settleAgentRunWorkLeaseSafely({
+            lease: providerLease,
+            terminalState: 'failed',
+            settle: agentRunWorkLease.settle,
+            reportFailure: (settlementError) =>
+                logger.error(new Error('Resumed provider work lease settlement failed', { cause: settlementError })),
+        });
         try {
-            agentRunWorkLease.settle({
-                runId,
-                workId: providerWorkId,
-                leaseId: providerLease.leaseId,
-                cancellationGeneration: providerLease.cancellationGeneration,
-                idempotencyKey: providerLease.idempotencyKey,
-                receiptIdentity: providerLease.receiptIdentity,
-                terminalState: 'failed',
-            });
-        } finally {
             agentRunLifecycle.transitionPhase({ runId, phase: 'failed' });
+        } catch (lifecycleError) {
+            logger.error(new Error('Resumed agent run lifecycle persistence failed', { cause: lifecycleError }));
         }
         throw error;
     }
@@ -816,21 +815,21 @@ export async function sendChatMessage(
                     }
                     if (preview.status === 'previewed') {
                         preview.resource.release();
-                        const settlement = agentRunWorkLease.settle({
-                            runId,
-                            workId: previewWorkId,
-                            leaseId: previewLeaseResult.lease.leaseId,
-                            cancellationGeneration: previewLeaseResult.lease.cancellationGeneration,
-                            idempotencyKey: previewLeaseResult.lease.idempotencyKey,
-                            receiptIdentity: previewLeaseResult.lease.receiptIdentity,
+                        const settlement = settleAgentRunWorkLeaseSafely({
+                            lease: previewLeaseResult.lease,
                             terminalState: 'completed',
+                            settle: agentRunWorkLease.settle,
+                            reportFailure: (settlementError) =>
+                                logger.error(
+                                    new Error('Preview work lease settlement failed', { cause: settlementError })
+                                ),
                         });
-                        if (settlement.status !== 'settled') {
+                        if (!settlement.accepted) {
                             const currentRun = agentRunLifecycle.get(runId);
                             if (currentRun?.phase === 'cancelled' || currentRun?.phase === 'partially-completed') {
                                 return undefined;
                             }
-                            throw new Error(`Agent preview work could not be settled: ${settlement.status}`);
+                            throw new Error('Agent preview work could not be settled');
                         }
                         agentRunLifecycle.updateBatchStatus({
                             runId,
