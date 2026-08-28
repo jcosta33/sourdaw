@@ -2773,6 +2773,133 @@ describe('confirmPendingChatActions transaction admission', () => {
         expect(runtimeMocks.renderOffline).toHaveBeenCalledTimes(renderCallsBeforeRetry);
     });
 
+    it('retains a warned render artifact for manual review without replaying project commands', async () => {
+        configureAiWorkflowCommandPreflightFixture('project-1');
+        configureCommandBatchIdempotency({ canExecute: () => true });
+        const ownedStorage = createAutomergeStorage<{ bpm: number }>('owned', 'transport');
+        registerHandlerMap({
+            setTempo: {
+                canReapplyAfterDivergence: (action) => action.payload.expectedBpm !== undefined,
+                execute: (action: SetTempoAction) => {
+                    ownedStorage.set({ bpm: action.payload.bpm });
+                },
+                describe: (action) => ({
+                    label: 'Set tempo',
+                    inverseAction: {
+                        type: 'setTempo',
+                        payload: { bpm: 120, expectedBpm: action.payload.bpm },
+                    },
+                }),
+                undoable: true,
+                validate: () => true,
+            },
+        });
+        registerHandlerMap(getAudioRenderingHandlers());
+        const renderJob = {
+            jobId: 'render-warned-verse',
+            sectionId: 'section-warned-verse',
+            sectionName: 'Warned Verse',
+            startBeat: 0,
+            endBeat: 16,
+            sampleRate: 44_100,
+            tailSeconds: 0,
+        };
+        const tempoAction = { type: 'setTempo', payload: { bpm: 132 } } satisfies SetTempoAction;
+        const renderAction = {
+            type: 'renderProjectSections',
+            payload: { sectionIds: [renderJob.sectionId], jobs: [renderJob] },
+        } satisfies RenderSectionsAction;
+        runtimeMocks.renderOffline.mockReset();
+        runtimeMocks.renderOffline.mockImplementation(
+            (options: { onWarning?: (warning: string) => void; sampleRate?: number }) => {
+                options.onWarning?.('tail truncated');
+                return Promise.resolve({
+                    sampleRate: options.sampleRate ?? renderJob.sampleRate,
+                    length: 88_200,
+                    numberOfChannels: 2,
+                    duration: 2,
+                });
+            }
+        );
+        const projectRevision = captureProjectRevision();
+        const serializeCommand = (action: SetTempoAction | RenderSectionsAction, expectedEffect: string) =>
+            serializeVersionedCommandEnvelope(
+                migrateLegacyAppActionToVersionedCommandEnvelope({
+                    action,
+                    expectedEffect,
+                    normalizedProjectRevision: projectRevision,
+                    options: {
+                        groupId: 'group-warned-render',
+                        groupLabel: 'Tempo and warned render',
+                        source: 'prompt',
+                    },
+                })
+            );
+        const commandBatch = compileVersionedCommandBatchEnvelope({
+            runId: 'confirmation-warned-render',
+            batchId: 'group-warned-render',
+            projectId: 'project-1',
+            baseRevision: projectRevision,
+            intent: 'set tempo and render a comparison',
+            commands: [
+                serializeCommand(tempoAction, 'Tempo changes to 132 BPM.'),
+                serializeCommand(renderAction, 'Render the warned verse for comparison.'),
+            ],
+        });
+        agentRunLifecycle.create({
+            runId: 'confirmation-warned-render',
+            request: 'set tempo and render a comparison',
+            mode: 'macro',
+            createdRevision: projectRevision,
+        });
+        agentRunLifecycle.transitionPhase({ runId: 'confirmation-warned-render', phase: 'planning' });
+        agentRunLifecycle.transitionPhase({ runId: 'confirmation-warned-render', phase: 'waiting-for-approval' });
+        proposePendingActionConfirmation({
+            id: 'confirmation-warned-render',
+            runId: 'confirmation-warned-render',
+            prompt: 'set tempo and render a comparison',
+            assistantMessageId: 'assistant-1',
+            actions: [tempoAction, renderAction],
+            actionLabels: ['Set tempo to 132 BPM', 'Render Warned Verse'],
+            commandBatch,
+            agentApproval: compileAgentRiskApproval({ commandBatch }),
+            executionMode: 'atomic',
+            groupId: 'group-warned-render',
+            groupLabel: 'Tempo and warned render',
+            projectRevision,
+        });
+
+        await expect(
+            confirmPendingChatActions({ confirmationId: 'confirmation-warned-render' })
+        ).resolves.toMatchObject({ status: 'failed', durableCommit: true });
+
+        expect(runtimeMocks.renderOffline).toHaveBeenCalledOnce();
+        expect(getAgentSectionRenderArtifacts()).toContainEqual(
+            expect.objectContaining({ jobId: renderJob.jobId, warnings: ['tail truncated'] })
+        );
+        expect(getPendingActionConfirmation('confirmation-warned-render')).toMatchObject({
+            status: 'executed',
+            followUpStatus: 'failed',
+            error: 'Section render artifacts require manual review: render-warned-verse (tail truncated).',
+        });
+        expect(chatStore.value?.messages.find((message) => message.id === 'assistant-1')).toMatchObject({
+            pendingActionConfirmationStatus: 'executed',
+            pendingActionFollowUpStatus: 'failed',
+            error: 'Section render artifacts require manual review: render-warned-verse (tail truncated).',
+            content: expect.stringContaining('The project commands were not replayed'),
+        });
+        expect(
+            agentRunLifecycle
+                .get('confirmation-warned-render')
+                ?.pendingEffectContinuations.filter(({ batchId }) => batchId === 'group-warned-render')
+        ).toHaveLength(1);
+        await expect(confirmPendingChatActions({ confirmationId: 'confirmation-warned-render' })).resolves.toEqual({
+            status: 'not_pending',
+            currentStatus: 'executed',
+        });
+        expect(runtimeMocks.renderOffline).toHaveBeenCalledOnce();
+    });
+
     it('invalidates a confirmed batch when another app action commits while its first handler is paused', async () => {
         configureAiWorkflowCommandPreflightFixture('project-1');
         configureCommandBatchIdempotency({ canExecute: () => true });

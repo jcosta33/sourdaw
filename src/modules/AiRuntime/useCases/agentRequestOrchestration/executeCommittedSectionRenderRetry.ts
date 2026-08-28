@@ -13,6 +13,7 @@ import {
 } from '../../stores/pendingActionConfirmationStore';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 
+import { formatSectionRenderReviewSummary } from './formatSectionRenderReviewSummary';
 import { projectSectionRenderConfirmation } from './projectSectionRenderConfirmation';
 
 type CommandVerifiedBatchReceipt = ReturnType<typeof createVerifiedBatchReceipt>;
@@ -47,12 +48,6 @@ function refreshConfirmationProjection(confirmation: PendingAppActionConfirmatio
         confirmation: refreshed,
         projection: projectSectionRenderConfirmation({ confirmation: refreshed }),
     };
-}
-
-function getReviewSummary(projection: SectionRenderProjection): string {
-    return projection.reviewRequiredSectionRenders
-        .map(({ jobId, warnings }) => `${jobId} (${warnings.join('; ')})`)
-        .join(', ');
 }
 
 function finishAlreadyComplete(
@@ -140,7 +135,7 @@ function failIncompleteRetry(
     updatePendingActionFollowUp({ confirmationId: confirmation.id, error: reason, status: 'retryable' });
     updatePendingActionConfirmationStatus({ confirmationId: confirmation.id, status: 'executed', error: reason });
     const refreshed = refreshConfirmationProjection(confirmation);
-    const reviewSummary = getReviewSummary(refreshed.projection);
+    const reviewSummary = formatSectionRenderReviewSummary(refreshed.projection.reviewRequiredSectionRenders);
     updateChatMessage(confirmation.assistantMessageId, {
         pendingActionConfirmationStatus: 'executed',
         pendingActionFollowUpStatus: 'retryable',
@@ -155,7 +150,7 @@ function finishManualReview(
     persistenceWarning: string | null = null
 ): RetryResult {
     const refreshed = refreshConfirmationProjection(confirmation);
-    const reviewSummary = getReviewSummary(refreshed.projection);
+    const reviewSummary = formatSectionRenderReviewSummary(refreshed.projection.reviewRequiredSectionRenders);
     const reason = `Section render artifacts require manual review: ${reviewSummary}.`;
     const surfacedError = persistenceWarning ? `${reason}\n\n${persistenceWarning}` : reason;
     updatePendingActionFollowUp({ confirmationId: confirmation.id, error: surfacedError, status: 'failed' });

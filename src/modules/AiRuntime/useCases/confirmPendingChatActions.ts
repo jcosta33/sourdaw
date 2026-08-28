@@ -41,6 +41,7 @@ import {
 import { normalizeAgentFailure } from './agentErrorAndSaga';
 import { admitCommittedSectionRenderRetry } from './agentRequestOrchestration/admitCommittedSectionRenderRetry';
 import { executeCommittedSectionRenderRetry } from './agentRequestOrchestration/executeCommittedSectionRenderRetry';
+import { formatSectionRenderReviewSummary } from './agentRequestOrchestration/formatSectionRenderReviewSummary';
 import { projectSectionRenderConfirmation } from './agentRequestOrchestration/projectSectionRenderConfirmation';
 import {
     AGENT_RUN_PERSISTENCE_WARNING,
@@ -1064,29 +1065,49 @@ export async function confirmPendingChatActions(
                 status: effectsPending ? 'failed' : 'executed',
                 ...(warning ? { error: warning } : {}),
             });
-            const incompleteSectionRenders = projectSectionRenderConfirmation({
+            const sectionRenderProjection = projectSectionRenderConfirmation({
                 confirmation,
                 expectedSourceRevision: committedProjectRevision,
-            }).incompleteSectionRenders;
+            });
+            const { incompleteSectionRenders, reviewRequiredSectionRenders } = sectionRenderProjection;
             // Arm the render retry only for the exact committed-batch shape the
             // retry gate will later admit; anything else must stay fail-closed.
             // The binding predicates read executedActions, so they run against
             // the freshly recorded confirmation rather than the stale local one.
             const freshConfirmation = getPendingActionConfirmation(confirmation.id) ?? confirmation;
             let retryableSectionRenders = false;
-            if (incompleteSectionRenders && batchResult.status === 'committed-with-warning') {
-                retryableSectionRenders =
+            let manualReviewReason: string | null = null;
+            if (
+                batchResult.status === 'committed-with-warning' &&
+                (incompleteSectionRenders || reviewRequiredSectionRenders.length > 0)
+            ) {
+                const renderFollowUpAdmitted =
                     admitCommittedSectionRenderRetry({
                         confirmation: freshConfirmation,
                         durableReceipt: batchResult.receipt,
                         phase: 'arming',
                     }).status === 'admitted';
-                if (retryableSectionRenders) {
+                if (renderFollowUpAdmitted && incompleteSectionRenders) {
+                    retryableSectionRenders = true;
                     updatePendingActionFollowUp({
                         confirmationId: confirmation.id,
                         error: batchResult.warning,
                         projectRevision: committedProjectRevision,
                         status: 'retryable',
+                    });
+                } else if (renderFollowUpAdmitted && reviewRequiredSectionRenders.length > 0) {
+                    const reviewSummary = formatSectionRenderReviewSummary(reviewRequiredSectionRenders);
+                    manualReviewReason = `Section render artifacts require manual review: ${reviewSummary}.`;
+                    updatePendingActionFollowUp({
+                        confirmationId: confirmation.id,
+                        error: manualReviewReason,
+                        projectRevision: committedProjectRevision,
+                        status: 'failed',
+                    });
+                    updatePendingActionConfirmationStatus({
+                        confirmationId: confirmation.id,
+                        status: 'executed',
+                        error: manualReviewReason,
                     });
                 }
             }
@@ -1099,8 +1120,11 @@ export async function confirmPendingChatActions(
                 if (retryableSectionRenders) {
                     content = `Applied after confirmation:\n\n${executionReceipt}\n\nThe project change committed with a follow-up warning: ${batchResult.warning}. Do not replay the confirmed project actions. Retry missing renders below; only receipt-bound missing artifacts will run.`;
                 }
+                if (manualReviewReason) {
+                    content = `Applied after confirmation:\n\n${executionReceipt}\n\nThe project commands were not replayed. ${manualReviewReason}`;
+                }
             }
-            if (effectsPending) {
+            if (effectsPending && !manualReviewReason) {
                 const manualRepairRequired = batchResult.receipt.pendingEffects.some(
                     ({ remediation }) => remediation === 'manual-repair'
                 );
@@ -1112,10 +1136,18 @@ export async function confirmPendingChatActions(
             if (runPersistenceWarning) {
                 content = `${content}\n\n${runPersistenceWarning}`;
             }
+            let pendingActionFollowUpStatus: 'failed' | 'retryable' | undefined;
+            if (manualReviewReason) {
+                pendingActionFollowUpStatus = 'failed';
+            } else if (retryableSectionRenders) {
+                pendingActionFollowUpStatus = 'retryable';
+            }
             updateChatMessage(confirmation.assistantMessageId, {
-                pendingActionConfirmationStatus: effectsPending ? 'failed' : 'executed',
-                pendingActionFollowUpStatus: retryableSectionRenders ? 'retryable' : undefined,
-                error: warning,
+                pendingActionConfirmationStatus: effectsPending && !manualReviewReason ? 'failed' : 'executed',
+                pendingActionFollowUpStatus,
+                error: manualReviewReason
+                    ? [manualReviewReason, runPersistenceWarning].filter(Boolean).join(' ')
+                    : warning,
                 content,
             });
         } catch (error) {
