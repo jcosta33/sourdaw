@@ -112,7 +112,7 @@ function cloneGrants(grants: CompiledCommandBatchAuthority['grants']): AgentRunD
     };
 }
 
-export async function materializePromptCommandPlan(input: MaterializePromptCommandPlanInput) {
+export function materializePromptCommandPlan(input: MaterializePromptCommandPlanInput) {
     const admittedRun = agentRunLifecycle.get(input.runId);
     if (!admittedRun) {
         throw new Error('Agent run disappeared before plan materialization.');
@@ -170,38 +170,40 @@ export async function materializePromptCommandPlan(input: MaterializePromptComma
             readyAssetIds,
         });
         if (plannedRun.status === 'needs-user-decision') {
-            await createStemImportConfirmationResourceLease(input.result.actions)?.releaseBestEffort();
-            agentRunLifecycle.requireManualResume({
-                runId: input.runId,
-                reason: plannedRun.decision.reason,
-                workIds: [],
-            });
-            agentRunLifecycle.recordDecision({
-                runId: input.runId,
-                decision: {
-                    decisionId: crypto.randomUUID(),
-                    capabilitySchemaIdentity: getPlanningProviderSchemaContract().identity,
-                    proposalIdentity: getAgentPlanProposalIdentity({
-                        actions: input.result.actions,
-                        providerProposal: input.result.providerProposal ?? null,
+            const completion = (async () => {
+                await createStemImportConfirmationResourceLease(input.result.actions)?.releaseBestEffort();
+                agentRunLifecycle.requireManualResume({
+                    runId: input.runId,
+                    reason: plannedRun.decision.reason,
+                    workIds: [],
+                });
+                agentRunLifecycle.recordDecision({
+                    runId: input.runId,
+                    decision: {
+                        decisionId: crypto.randomUUID(),
+                        capabilitySchemaIdentity: getPlanningProviderSchemaContract().identity,
+                        proposalIdentity: getAgentPlanProposalIdentity({
+                            actions: input.result.actions,
+                            providerProposal: input.result.providerProposal ?? null,
+                            scope: planScope,
+                            grants: planGrants,
+                        }),
+                        budgets: admittedRun.budgets,
+                        revision: input.projectRevision,
                         scope: planScope,
                         grants: planGrants,
-                    }),
-                    budgets: admittedRun.budgets,
-                    revision: input.projectRevision,
-                    scope: planScope,
-                    grants: planGrants,
-                    alternatives: plannedRun.decision.alternatives,
-                    reason: plannedRun.decision.reason,
-                    selectedAlternativeId: null,
-                    resumeAttemptId: null,
-                },
-            });
-            updateChatMessage(input.assistantMessageId, {
-                isStreaming: false,
-                content: `Choose one before I continue:\n\n${plannedRun.decision.alternatives.map((alternative) => `- ${alternative.label}`).join('\n')}`,
-            });
-            return { status: 'terminal' as const };
+                        alternatives: plannedRun.decision.alternatives,
+                        reason: plannedRun.decision.reason,
+                        selectedAlternativeId: null,
+                        resumeAttemptId: null,
+                    },
+                });
+                updateChatMessage(input.assistantMessageId, {
+                    isStreaming: false,
+                    content: `Choose one before I continue:\n\n${plannedRun.decision.alternatives.map((alternative) => `- ${alternative.label}`).join('\n')}`,
+                });
+            })();
+            return { status: 'terminal' as const, completion };
         }
         if (plannedRun.status === 'rejected') {
             throw new Error(plannedRun.reason);
@@ -220,12 +222,14 @@ export async function materializePromptCommandPlan(input: MaterializePromptComma
             plan: plannedRun.plan,
         });
         agentRunLifecycle.transitionPhase({ runId: input.runId, phase: 'completed' });
-        await createStemImportConfirmationResourceLease(input.result.actions)?.releaseBestEffort();
-        updateChatMessage(input.assistantMessageId, {
-            isStreaming: false,
-            content: `Planned without changing the project:\n\n${input.actionLabels.map((label) => `- ${label}`).join('\n')}`,
-        });
-        return { status: 'terminal' as const };
+        const completion = (async () => {
+            await createStemImportConfirmationResourceLease(input.result.actions)?.releaseBestEffort();
+            updateChatMessage(input.assistantMessageId, {
+                isStreaming: false,
+                content: `Planned without changing the project:\n\n${input.actionLabels.map((label) => `- ${label}`).join('\n')}`,
+            });
+        })();
+        return { status: 'terminal' as const, completion };
     }
 
     const compiledActionExecution = compile(input.interactionMode);
@@ -261,38 +265,40 @@ export async function materializePromptCommandPlan(input: MaterializePromptComma
     });
     if (plannedRun.status === 'needs-user-decision') {
         input.onResumedPlanAccepted?.();
-        await createStemImportConfirmationResourceLease(input.result.actions)?.releaseBestEffort();
-        agentRunLifecycle.requireManualResume({
-            runId: input.runId,
-            reason: plannedRun.decision.reason,
-            workIds: [],
-        });
-        agentRunLifecycle.recordDecision({
-            runId: input.runId,
-            decision: {
-                decisionId: crypto.randomUUID(),
-                capabilitySchemaIdentity: getPlanningProviderSchemaContract().identity,
-                proposalIdentity: getAgentPlanProposalIdentity({
-                    actions: input.result.actions,
-                    providerProposal: input.result.providerProposal ?? null,
+        const completion = (async () => {
+            await createStemImportConfirmationResourceLease(input.result.actions)?.releaseBestEffort();
+            agentRunLifecycle.requireManualResume({
+                runId: input.runId,
+                reason: plannedRun.decision.reason,
+                workIds: [],
+            });
+            agentRunLifecycle.recordDecision({
+                runId: input.runId,
+                decision: {
+                    decisionId: crypto.randomUUID(),
+                    capabilitySchemaIdentity: getPlanningProviderSchemaContract().identity,
+                    proposalIdentity: getAgentPlanProposalIdentity({
+                        actions: input.result.actions,
+                        providerProposal: input.result.providerProposal ?? null,
+                        scope: planScope,
+                        grants: planGrants,
+                    }),
+                    budgets: admittedRun.budgets,
+                    revision: input.projectRevision,
                     scope: planScope,
                     grants: planGrants,
-                }),
-                budgets: admittedRun.budgets,
-                revision: input.projectRevision,
-                scope: planScope,
-                grants: planGrants,
-                alternatives: plannedRun.decision.alternatives,
-                reason: plannedRun.decision.reason,
-                selectedAlternativeId: null,
-                resumeAttemptId: null,
-            },
-        });
-        updateChatMessage(input.assistantMessageId, {
-            isStreaming: false,
-            content: `Choose one before I can prepare this run:\n\n${plannedRun.decision.alternatives.map((alternative) => `- ${alternative.label}`).join('\n')}`,
-        });
-        return { status: 'terminal' as const };
+                    alternatives: plannedRun.decision.alternatives,
+                    reason: plannedRun.decision.reason,
+                    selectedAlternativeId: null,
+                    resumeAttemptId: null,
+                },
+            });
+            updateChatMessage(input.assistantMessageId, {
+                isStreaming: false,
+                content: `Choose one before I can prepare this run:\n\n${plannedRun.decision.alternatives.map((alternative) => `- ${alternative.label}`).join('\n')}`,
+            });
+        })();
+        return { status: 'terminal' as const, completion };
     }
     if (plannedRun.status === 'rejected') {
         throw new Error(plannedRun.reason);

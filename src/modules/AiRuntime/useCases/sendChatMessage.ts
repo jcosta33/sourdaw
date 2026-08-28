@@ -343,7 +343,7 @@ export async function sendChatMessage(
                     wholeProjectVibeMixPlan: result.wholeProjectVibeMixPlan,
                     workflowCapabilityId: result.workflowCapabilityId,
                 });
-                const materializedPlan = await materializePromptCommandPlan({
+                const materializedPlan = materializePromptCommandPlan({
                     userText,
                     runId,
                     assistantMessageId: assistantMsgId,
@@ -358,6 +358,7 @@ export async function sendChatMessage(
                     protectedTargetIds: confirmationDescription.protectedUnchanged.map((item) => item.id),
                 });
                 if (materializedPlan.status === 'terminal') {
+                    await materializedPlan.completion;
                     return undefined;
                 }
                 const { commandGroup, compiledActionExecution, parsedCommandBatch } = materializedPlan;

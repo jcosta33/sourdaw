@@ -14,7 +14,9 @@ import {
 } from '../../repositories/cloudLlm/cloudInference/streamCloudChatCompletion';
 import { agentRunStore } from '../../stores/agentRunStore';
 import { llmStatusStore } from '../../stores/llmStatusStore';
+import { getAgentPlanProposalIdentity } from '../../transformers/normalizeAgentPlanProposal';
 import { bridgeGroundedLlmToolCalls } from '../agentReference/bridgeGroundedLlmToolCalls';
+import { preparedStemImportCleanup } from '../agentReference/discardPreparedStemImportResources';
 import { materializeBatchLocalActionIdentities } from '../agentReference/materializeBatchLocalActionIdentities';
 import { AGENT_RUN_PROVIDER_PERSISTENCE_WARNING } from '../agentRequestOrchestration/settleAgentRunWorkLeaseSafely';
 import { agentRunLifecycle } from '../agentRunLifecycle';
@@ -22,7 +24,9 @@ import { recoverInterruptedAgentRuns } from '../agentRunRecovery';
 import { agentRunWorkLease } from '../agentRunWorkLease';
 import { agentRunCancellation } from '../cancelAgentRun';
 import { compileArbitraryCommandList } from '../compileArbitraryCommandList';
+import { agentRunControls } from '../getAgentRunControlProjection';
 import { materializeActionStateGuards } from '../materializeActionStateGuards';
+import { getPlanningProviderSchemaContract } from '../planningProviderSchema';
 import { type planPromptActions } from '../planPromptActions';
 import { sendChatMessage } from '../sendChatMessage';
 
@@ -351,7 +355,7 @@ function createProviderProposal(assetIds: string[]): AgentRunProviderProposal {
     };
 }
 
-function configureCommandPlanning(action: ExecutableRuntimeAction): void {
+function configureCommandPlanning(action: ExecutableRuntimeAction) {
     const scope = {
         targetIds: [],
         targetRanges: [],
@@ -386,14 +390,15 @@ function configureCommandPlanning(action: ExecutableRuntimeAction): void {
             scope,
         },
     });
+    return { grants, scope };
 }
 
 function configurePromptPlanning(
     action: ExecutableRuntimeAction,
     readiness: PreparedStemReadiness,
     providerProposal?: AgentRunProviderProposal
-): void {
-    configureCommandPlanning(action);
+) {
+    const authority = configureCommandPlanning(action);
     mocks.planPromptActions.mockImplementation(async (input: PlanPromptActionsInput) => {
         const runId = input.streamIdentity?.runId;
         if (runId === undefined) {
@@ -428,6 +433,7 @@ function configurePromptPlanning(
             projectRevision: 'revision-fixture',
         };
     });
+    return authority;
 }
 
 function configureCommandGraphForwarding(branch: 'immediate' | 'confirmation' | 'plan') {
@@ -499,6 +505,44 @@ function configureCommandGraphForwarding(branch: 'immediate' | 'confirmation' | 
         };
     });
     return commandBatch;
+}
+
+function createPendingResumeDecision(input: {
+    runId: string;
+    proposalIdentity: string;
+    authority: ReturnType<typeof configureCommandPlanning>;
+}): void {
+    const budgets = { limits: {}, consumed: {} };
+    agentRunLifecycle.create({
+        runId: input.runId,
+        request: 'Add a reference track',
+        mode: 'apply',
+        createdRevision: 'revision-fixture',
+        scope: input.authority.scope,
+        grants: input.authority.grants,
+        budgets,
+    });
+    agentRunLifecycle.recordDecision({
+        runId: input.runId,
+        decision: {
+            decisionId: 'decision-reference-track',
+            capabilitySchemaIdentity: getPlanningProviderSchemaContract().identity,
+            proposalIdentity: input.proposalIdentity,
+            budgets,
+            revision: 'revision-fixture',
+            scope: input.authority.scope,
+            grants: input.authority.grants,
+            alternatives: [{ id: 'add-reference', label: 'Add the reference track', changesAuthority: false }],
+            reason: 'Choose whether to add the reference track.',
+            selectedAlternativeId: null,
+            resumeAttemptId: null,
+        },
+    });
+    agentRunLifecycle.requireManualResume({
+        runId: input.runId,
+        reason: 'Choose whether to add the reference track.',
+        workIds: [],
+    });
 }
 
 function getPlannedRun() {
@@ -1962,6 +2006,202 @@ describe('sendChatMessage retained-provider selection', () => {
             expect.objectContaining({ id: 'addTrack', source: 'action-catalog', status: 'available' })
         );
         expect(getPlannedRun().plan?.capabilities).not.toContainEqual(expect.objectContaining({ source: 'asset' }));
+        expect(mocks.proposePendingActionConfirmation).toHaveBeenCalledOnce();
+    });
+
+    it('hands a prepared confirmation to its consumer before the next microtask', async () => {
+        configureCommandGraphForwarding('confirmation');
+        const ordering: string[] = [];
+        const recordBatch = agentRunLifecycle.recordBatch;
+        const recordBatchSpy = vi.spyOn(agentRunLifecycle, 'recordBatch').mockImplementation((input) => {
+            const result = recordBatch(input);
+            queueMicrotask(() => ordering.push('microtask-after-batch'));
+            return result;
+        });
+        mocks.proposePendingActionConfirmation.mockImplementation((input) => {
+            ordering.push('confirmation-proposed');
+            expect(getPlannedRun().batches).toContainEqual(
+                expect.objectContaining({ batchId: 'batch-graph', status: 'waiting-for-approval' })
+            );
+            return { id: input.id };
+        });
+
+        try {
+            await sendChatMessage(commandGraphFixture.prompt, { mode: 'apply' });
+
+            expect(ordering.slice(0, 2)).toEqual(['confirmation-proposed', 'microtask-after-batch']);
+        } finally {
+            recordBatchSpy.mockRestore();
+        }
+    });
+
+    it.each(['plan', 'apply'] as const)(
+        'persists an exact paused decision and releases prepared stems in %s mode',
+        async (mode) => {
+            const action = createStemImportAction(`buffer-decision-${mode}`);
+            const providerProposal = {
+                ...createProviderProposal(['stem-kick']),
+                alternatives: [
+                    {
+                        id: 'import-as-takes',
+                        label: 'Import each stem as a take',
+                        changesAuthority: true,
+                    },
+                ],
+            };
+            const authority = configurePromptPlanning(action, 'ready', providerProposal);
+            const releasePreparedStems = vi
+                .spyOn(preparedStemImportCleanup, 'discardBestEffort')
+                .mockResolvedValue(undefined);
+
+            try {
+                await sendChatMessage('Import the prepared stems', { mode });
+
+                const run = getPlannedRun();
+                expect(run).toMatchObject({
+                    phase: 'paused',
+                    manualResume: {
+                        required: true,
+                        reason: 'The alternatives would change the authority or outcome of this run.',
+                        workIds: [],
+                        requiredAt: expect.any(Number),
+                    },
+                    decision: {
+                        decisionId: expect.any(String),
+                        capabilitySchemaIdentity: getPlanningProviderSchemaContract().identity,
+                        proposalIdentity: getAgentPlanProposalIdentity({
+                            actions: [action],
+                            providerProposal,
+                            scope: authority.scope,
+                            grants: authority.grants,
+                        }),
+                        revision: 'revision-fixture',
+                        scope: authority.scope,
+                        grants: authority.grants,
+                        alternatives: providerProposal.alternatives,
+                        reason: 'The alternatives would change the authority or outcome of this run.',
+                        selectedAlternativeId: null,
+                        resumeAttemptId: null,
+                    },
+                    batches: [],
+                });
+                expect(mocks.executeVersionedCommandBatchEnvelope).not.toHaveBeenCalled();
+                expect(mocks.executePlannedActions).not.toHaveBeenCalled();
+                expect(mocks.proposePendingActionConfirmation).not.toHaveBeenCalled();
+                expect(releasePreparedStems).toHaveBeenCalledWith(action.payload.stems, undefined);
+            } finally {
+                releasePreparedStems.mockRestore();
+            }
+        }
+    );
+
+    it('rejects a mismatched resumed proposal before selecting its source decision and releases the claim', async () => {
+        const action = createAddTrackAction();
+        const providerProposal = createProviderProposal([]);
+        const authority = configurePromptPlanning(action, 'missing', providerProposal);
+        const sourceRunId = 'run-resume-source';
+        createPendingResumeDecision({
+            runId: sourceRunId,
+            proposalIdentity: 'mismatched-provider-proposal',
+            authority,
+        });
+
+        await expect(
+            agentRunControls.resumeDecision({ runId: sourceRunId, alternativeId: 'add-reference' })
+        ).resolves.toEqual(expect.objectContaining({ status: 'rejected' }));
+
+        expect(agentRunLifecycle.get(sourceRunId)?.decision).toMatchObject({
+            selectedAlternativeId: null,
+            resumeAttemptId: null,
+        });
+        expect(agentRunControls.get(sourceRunId)?.allowedActions.resume).toBe(true);
+        expect(mocks.proposePendingActionConfirmation).not.toHaveBeenCalled();
+        expect(mocks.executePlannedActions).not.toHaveBeenCalled();
+
+        await expect(
+            agentRunControls.resumeDecision({ runId: sourceRunId, alternativeId: 'add-reference' })
+        ).resolves.toEqual(expect.objectContaining({ status: 'rejected' }));
+        expect(mocks.planPromptActions).toHaveBeenCalledTimes(2);
+    });
+
+    it('selects a resumed source decision only after replacement plan admission succeeds', async () => {
+        const action = createAddTrackAction();
+        const providerProposal = createProviderProposal(['unavailable-provider-asset']);
+        const authority = configurePromptPlanning(action, 'missing', providerProposal);
+        const sourceRunId = 'run-resume-plan-rejection';
+        createPendingResumeDecision({
+            runId: sourceRunId,
+            proposalIdentity: getAgentPlanProposalIdentity({
+                actions: [action],
+                providerProposal,
+                scope: authority.scope,
+                grants: authority.grants,
+            }),
+            authority,
+        });
+
+        await expect(
+            agentRunControls.resumeDecision({ runId: sourceRunId, alternativeId: 'add-reference' })
+        ).resolves.toEqual(expect.objectContaining({ status: 'rejected' }));
+
+        expect(agentRunLifecycle.get(sourceRunId)?.decision).toMatchObject({
+            selectedAlternativeId: null,
+            resumeAttemptId: null,
+        });
+        expect(agentRunControls.get(sourceRunId)?.allowedActions.resume).toBe(true);
+        expect(mocks.proposePendingActionConfirmation).not.toHaveBeenCalled();
+        expect(mocks.executePlannedActions).not.toHaveBeenCalled();
+    });
+
+    it('stops an invalid compiled batch before preview, confirmation, or execution', async () => {
+        configurePromptPlanning(createAddTrackAction(), 'missing');
+        mocks.parseVersionedCommandBatchEnvelope.mockReturnValue({
+            status: 'invalid',
+            reason: 'fixture command batch is invalid',
+        });
+
+        await sendChatMessage('Add a reference track', { mode: 'apply' });
+
+        expect(getPlannedRun()).toMatchObject({ phase: 'failed', plan: null, batches: [] });
+        expect(mocks.executeVersionedCommandBatchEnvelope).not.toHaveBeenCalled();
+        expect(mocks.proposePendingActionConfirmation).not.toHaveBeenCalled();
+        expect(mocks.executePlannedActions).not.toHaveBeenCalled();
+    });
+
+    it('admits application-assigned targets-absent ids without provider-known scope', async () => {
+        const action = createAddTrackAction();
+        const providerProposal = createProviderProposal([]);
+        const { grants } = configurePromptPlanning(action, 'missing', providerProposal);
+        const scope = {
+            targetIds: ['track-application-assigned'],
+            targetRanges: [],
+            protectedTargetIds: [],
+            protectedRanges: [],
+        };
+        mocks.compileAgentActionExecution.mockReturnValue({
+            commandEnvelopes: [],
+            commandBatch: { serialized: '{}', authority: { scope, grants } },
+            agentApproval: { policy: { risk: 'confirm', reasons: [] } },
+            requiresConfirmation: true,
+        });
+        mocks.parseVersionedCommandBatchEnvelope.mockReturnValue({
+            status: 'valid',
+            envelope: {
+                batchId: 'batch-application-assigned',
+                commands: [],
+                idempotencyKey: 'batch-application-assigned-idempotency',
+                preconditions: [{ kind: 'targets-absent', targetIds: ['track-application-assigned'] }],
+                scope,
+            },
+        });
+
+        await sendChatMessage('Add a reference track', { mode: 'apply' });
+
+        expect(getPlannedRun()).toMatchObject({
+            phase: 'waiting-for-approval',
+            plan: { scope },
+            batches: [{ batchId: 'batch-application-assigned', status: 'waiting-for-approval' }],
+        });
         expect(mocks.proposePendingActionConfirmation).toHaveBeenCalledOnce();
     });
 

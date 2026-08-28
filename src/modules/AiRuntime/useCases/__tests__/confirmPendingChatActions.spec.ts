@@ -713,6 +713,15 @@ describe('confirmPendingChatActions transaction admission', () => {
             createdRevision: projectRevision,
         });
         agentRunLifecycle.transitionPhase({ runId: 'confirmation-batch', phase: 'planning' });
+        agentRunLifecycle.recordBatch({
+            runId: 'confirmation-batch',
+            batch: {
+                batchId: 'group-batch',
+                commandIds: [envelope.commandId],
+                status: 'waiting-for-approval',
+                receiptIdentity: null,
+            },
+        });
         agentRunLifecycle.transitionPhase({ runId: 'confirmation-batch', phase: 'waiting-for-approval' });
         proposePendingActionConfirmation({
             id: 'confirmation-batch',
@@ -770,6 +779,13 @@ describe('confirmPendingChatActions transaction admission', () => {
         expect(observedSignal?.aborted).toBe(false);
         expect(agentRunLifecycle.get('confirmation-batch')).toMatchObject({
             phase: 'completed',
+            batches: [
+                expect.objectContaining({
+                    batchId: 'group-batch',
+                    commandIds: [envelope.commandId],
+                    status: 'committed',
+                }),
+            ],
             receipts: [
                 expect.objectContaining({
                     workId: 'group-batch',
