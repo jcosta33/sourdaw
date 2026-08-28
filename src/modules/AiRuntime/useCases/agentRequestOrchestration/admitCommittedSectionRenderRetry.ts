@@ -203,7 +203,8 @@ function hasExactBatchBinding(
         receipt.runId === confirmation.runId &&
         approvedBatch.envelope.batchId === confirmation.groupId &&
         receipt.batchId === confirmation.groupId &&
-        approvedBatch.envelope.baseRevision === confirmation.projectRevision
+        approvedBatch.envelope.baseRevision === confirmation.projectRevision &&
+        receipt.resulting?.normalizedRevision === confirmation.followUpProjectRevision
     );
 }
 

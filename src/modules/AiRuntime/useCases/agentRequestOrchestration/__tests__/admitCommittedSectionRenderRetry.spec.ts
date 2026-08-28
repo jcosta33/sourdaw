@@ -167,7 +167,7 @@ describe('admitCommittedSectionRenderRetry', () => {
 
     it('admits only the canonical warned render command with exact durable and tracked proof', () => {
         const fixture = createFixture();
-        bindTrackedRun(fixture);
+        mocks.getRun.mockReturnValue(undefined);
 
         expect(
             admitCommittedSectionRenderRetry({
@@ -177,6 +177,16 @@ describe('admitCommittedSectionRenderRetry', () => {
             })
         ).toEqual({ durableReceipt: fixture.receipt, status: 'admitted' });
 
+        expect(
+            admitCommittedSectionRenderRetry({
+                confirmation: fixture.confirmation,
+                durableReceipt: fixture.receipt,
+                expectedCommandBatch: fixture.commandBatch,
+                phase: 'proof',
+            })
+        ).toEqual({ status: 'proof-mismatch' });
+
+        bindTrackedRun(fixture);
         expect(
             admitCommittedSectionRenderRetry({
                 confirmation: fixture.confirmation,
@@ -274,6 +284,14 @@ describe('admitCommittedSectionRenderRetry', () => {
             (fixture: ReturnType<typeof createFixture>) => (fixture.receipt.pendingEffects[0]!.state = 'completed'),
         ],
         [
+            'top-level receipt outcome',
+            (fixture: ReturnType<typeof createFixture>) => {
+                fixture.receipt.outcome = 'committed';
+                bindTrackedRun(fixture);
+            },
+        ],
+        ['receipt atomicity', (fixture: ReturnType<typeof createFixture>) => (fixture.receipt.atomicity = 'atomic')],
+        [
             'durable receipt command binding',
             (fixture: ReturnType<typeof createFixture>) =>
                 (fixture.receipt.pendingEffects[0]!.commandId = 'wrong-command'),
@@ -281,6 +299,19 @@ describe('admitCommittedSectionRenderRetry', () => {
         [
             'durable batch identity',
             (fixture: ReturnType<typeof createFixture>) => (fixture.receipt.batchId = 'wrong-batch'),
+        ],
+        [
+            'resulting revision',
+            (fixture: ReturnType<typeof createFixture>) => {
+                if (!fixture.receipt.resulting) {
+                    throw new Error('Expected resulting revision');
+                }
+                fixture.receipt.resulting.normalizedRevision = 'wrong-revision';
+            },
+        ],
+        [
+            'missing resulting revision',
+            (fixture: ReturnType<typeof createFixture>) => (fixture.receipt.resulting = null),
         ],
     ])('rejects mismatched %s proof', (_name, mutate) => {
         const fixture = createFixture();
@@ -307,6 +338,85 @@ describe('admitCommittedSectionRenderRetry', () => {
                 durableReceipt: null,
                 expectedCommandBatch: fixture.commandBatch,
                 phase: 'proof',
+            })
+        ).toEqual({ status: 'proof-mismatch' });
+    });
+
+    it('rejects duplicate approved render actions', () => {
+        const fixture = createFixture();
+        const renderAction = fixture.confirmation.approvalSnapshot.actions[0];
+        if (!renderAction || renderAction.type !== 'renderProjectSections') {
+            throw new Error('Expected render action');
+        }
+        fixture.confirmation.approvalSnapshot.actions.push(structuredClone(renderAction));
+
+        expect(
+            admitCommittedSectionRenderRetry({
+                confirmation: fixture.confirmation,
+                durableReceipt: fixture.receipt,
+                phase: 'arming',
+            })
+        ).toEqual({ status: 'proof-mismatch' });
+    });
+
+    it('rejects a canonical batch containing two render commands', () => {
+        const fixture = createFixture();
+        const secondAction = {
+            type: 'renderProjectSections',
+            payload: {
+                sectionIds: ['section-chorus'],
+                jobs: [
+                    {
+                        jobId: 'render-chorus',
+                        sectionId: 'section-chorus',
+                        sectionName: 'Chorus',
+                        startBeat: 16,
+                        endBeat: 32,
+                        sampleRate: 44_100,
+                        tailSeconds: 0,
+                    },
+                ],
+            },
+        } satisfies AppAction;
+        const secondCommand = migrateLegacyAppActionToVersionedCommandEnvelope({
+            action: secondAction,
+            expectedEffect: 'Render Chorus.',
+            normalizedProjectRevision: PROJECT_REVISION,
+            options: { groupId: BATCH_ID, source: 'prompt' },
+        });
+        const firstSerializedCommand = fixture.confirmation.approvalSnapshot.commandEnvelopes?.[0];
+        if (!firstSerializedCommand) {
+            throw new Error('Expected first command');
+        }
+        const commandBatch = compileVersionedCommandBatchEnvelope({
+            runId: RUN_ID,
+            batchId: BATCH_ID,
+            projectId: 'project-render-retry',
+            baseRevision: PROJECT_REVISION,
+            intent: 'Render Verse and Chorus',
+            commands: [firstSerializedCommand, serializeVersionedCommandEnvelope(secondCommand)],
+        });
+        fixture.confirmation.approvalSnapshot.commandBatch = commandBatch;
+        fixture.confirmation.approvalSnapshot.commandEnvelopes = [
+            firstSerializedCommand,
+            serializeVersionedCommandEnvelope(secondCommand),
+        ];
+        fixture.confirmation.approvalSnapshot.actions.push(secondAction);
+        fixture.confirmation.executedActions.push({
+            actionType: 'renderProjectSections',
+            commandId: secondCommand.commandId,
+            commandSchemaVersion: secondCommand.schemaVersion,
+            label: 'Render Chorus',
+            executionKind: 'project',
+            affectedIds: ['section-chorus'],
+            outcome: 'committed',
+        });
+
+        expect(
+            admitCommittedSectionRenderRetry({
+                confirmation: fixture.confirmation,
+                durableReceipt: fixture.receipt,
+                phase: 'arming',
             })
         ).toEqual({ status: 'proof-mismatch' });
     });
