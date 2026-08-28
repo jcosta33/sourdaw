@@ -9,6 +9,10 @@ import {
 
 const PERSISTENCE_WARNING =
     'Agent run recovery state could not be persisted after execution. The verified command receipt remains authoritative; do not retry automatically.';
+const PROVIDER_PERSISTENCE_WARNING =
+    'Agent run provider response recovery state could not be persisted after execution. The retained response remains visible, but its lifecycle is not durably settled. Review it before retrying.';
+const WORK_PERSISTENCE_WARNING =
+    'Agent run work recovery state could not be persisted after execution. The retained work outcome remains visible, but its lifecycle is not durably settled. Review it before retrying.';
 const STALE_COMPLETION_WARNING =
     'Agent work completed after its run lease was cancelled or replaced. The durable receipt was retained without reopening the terminal run.';
 
@@ -81,14 +85,22 @@ describe('settleAgentRunWorkLeaseSafely', () => {
         expect(reportFailure).toHaveBeenCalledWith(error);
     });
 
+    it('keeps non-command persistence warnings specific to visible unsettled work', () => {
+        expect(AGENT_RUN_PROVIDER_PERSISTENCE_WARNING).toBe(PROVIDER_PERSISTENCE_WARNING);
+        expect(AGENT_RUN_WORK_PERSISTENCE_WARNING).toBe(WORK_PERSISTENCE_WARNING);
+        expect(AGENT_RUN_PROVIDER_PERSISTENCE_WARNING).not.toContain('command receipt');
+        expect(AGENT_RUN_PROVIDER_PERSISTENCE_WARNING).not.toContain('authoritative');
+        expect(AGENT_RUN_WORK_PERSISTENCE_WARNING).not.toContain('authoritative');
+    });
+
     it.each([
         {
             ownerKind: 'provider' as const,
-            warning: AGENT_RUN_PROVIDER_PERSISTENCE_WARNING,
+            warning: PROVIDER_PERSISTENCE_WARNING,
         },
         {
             ownerKind: 'render' as const,
-            warning: AGENT_RUN_WORK_PERSISTENCE_WARNING,
+            warning: WORK_PERSISTENCE_WARNING,
         },
     ])('reports the $ownerKind-specific persistence warning when settlement throws', ({ ownerKind, warning }) => {
         expect(

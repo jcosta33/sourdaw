@@ -3,9 +3,9 @@ import { type AgentRunWorkLease, type AgentRunWorkTerminalState } from '../../mo
 export const AGENT_RUN_PERSISTENCE_WARNING =
     'Agent run recovery state could not be persisted after execution. The verified command receipt remains authoritative; do not retry automatically.';
 export const AGENT_RUN_PROVIDER_PERSISTENCE_WARNING =
-    'Agent run provider response recovery state could not be persisted after execution. The provider response remains authoritative; do not retry automatically.';
+    'Agent run provider response recovery state could not be persisted after execution. The retained response remains visible, but its lifecycle is not durably settled. Review it before retrying.';
 export const AGENT_RUN_WORK_PERSISTENCE_WARNING =
-    'Agent run work recovery state could not be persisted after execution. The work outcome remains authoritative; do not retry automatically.';
+    'Agent run work recovery state could not be persisted after execution. The retained work outcome remains visible, but its lifecycle is not durably settled. Review it before retrying.';
 export const AGENT_RUN_STALE_COMPLETION_WARNING =
     'Agent work completed after its run lease was cancelled or replaced. The durable receipt was retained without reopening the terminal run.';
 

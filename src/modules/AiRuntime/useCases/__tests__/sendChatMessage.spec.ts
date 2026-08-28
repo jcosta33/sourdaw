@@ -32,6 +32,9 @@ type PlanPromptActionsInput = Parameters<typeof planPromptActions>[0];
 type PreparedStemReadiness = 'ready' | 'missing' | 'cleanup-pending';
 type CloudStreamOptions = Parameters<typeof streamCloudChatCompletion>[2];
 
+const PROVIDER_PERSISTENCE_WARNING =
+    'Agent run provider response recovery state could not be persisted after execution. The retained response remains visible, but its lifecycle is not durably settled. Review it before retrying.';
+
 let plannedRunId: string | null = null;
 
 const mocks = vi.hoisted(() => ({
@@ -598,6 +601,7 @@ describe('sendChatMessage retained-provider selection', () => {
             throw storageFailure;
         });
         mocks.getLlmEngine.mockReturnValue(createSuccessfulWebLlmEngine(content));
+        expect(AGENT_RUN_PROVIDER_PERSISTENCE_WARNING).toBe(PROVIDER_PERSISTENCE_WARNING);
 
         try {
             await expect(sendChatMessage('How does the mix sound?', { mode: 'explain' })).resolves.toBeUndefined();
@@ -607,8 +611,8 @@ describe('sendChatMessage retained-provider selection', () => {
                 expect.any(String),
                 expect.objectContaining({
                     isStreaming: false,
-                    content: `${content}\n\n_${AGENT_RUN_PROVIDER_PERSISTENCE_WARNING}_`,
-                    error: AGENT_RUN_PROVIDER_PERSISTENCE_WARNING,
+                    content: `${content}\n\n_${PROVIDER_PERSISTENCE_WARNING}_`,
+                    error: PROVIDER_PERSISTENCE_WARNING,
                 })
             );
             expect(run).toMatchObject({
@@ -980,8 +984,8 @@ describe('sendChatMessage retained-provider selection', () => {
                 expect.any(String),
                 expect.objectContaining({
                     isStreaming: false,
-                    error: `${providerError.message}\n\n${AGENT_RUN_PROVIDER_PERSISTENCE_WARNING}`,
-                    content: `${partialContent}\n\n_Response incomplete because the provider stream failed._\n\n_${AGENT_RUN_PROVIDER_PERSISTENCE_WARNING}_`,
+                    error: `${providerError.message}\n\n${PROVIDER_PERSISTENCE_WARNING}`,
+                    content: `${partialContent}\n\n_Response incomplete because the provider stream failed._\n\n_${PROVIDER_PERSISTENCE_WARNING}_`,
                 })
             );
             expect(llmStatusStore.value).toEqual({ state: 'error', message: providerError.message });
@@ -1177,8 +1181,8 @@ describe('sendChatMessage retained-provider selection', () => {
                 expect.any(String),
                 expect.objectContaining({
                     isStreaming: false,
-                    error: `WebLLM provider failed\n\n${AGENT_RUN_PROVIDER_PERSISTENCE_WARNING}`,
-                    content: `Sorry, I encountered an error while thinking about that.\n\n_${AGENT_RUN_PROVIDER_PERSISTENCE_WARNING}_`,
+                    error: `WebLLM provider failed\n\n${PROVIDER_PERSISTENCE_WARNING}`,
+                    content: `Sorry, I encountered an error while thinking about that.\n\n_${PROVIDER_PERSISTENCE_WARNING}_`,
                 })
             );
             expect(armedSetItemCount).not.toBeNull();
