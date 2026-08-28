@@ -285,8 +285,14 @@ describe('admitCommittedSectionRenderRetry', () => {
             },
         ],
         [
-            'missing durable pending effect',
-            (fixture: ReturnType<typeof createFixture>) => (fixture.receipt.pendingEffects = []),
+            'durable pending effect state',
+            (fixture: ReturnType<typeof createFixture>) => {
+                const pendingEffect = fixture.receipt.pendingEffects[0];
+                if (!pendingEffect) {
+                    throw new Error('Expected durable pending effect');
+                }
+                Reflect.set(pendingEffect, 'state', 'completed');
+            },
         ],
         [
             'top-level receipt outcome',
