@@ -54,6 +54,20 @@ const SCHEDULER_RELEASE_BUDGET: Duration = Duration::from_millis(500);
 /// Poll interval while waiting for that release.
 const SCHEDULER_RELEASE_POLL: Duration = Duration::from_millis(2);
 
+/// The deadline the shell gives this whole cascade before it stops waiting and
+/// exits the process anyway (`SHUTDOWN_DEADLINE_MS` in `electron/shutdown.ts`).
+///
+/// Mirrored here as a bound, not as a schedule: nothing in the cascade may
+/// approach it, because reaching it means the graceful path was abandoned and
+/// every plugin still waiting is killed mid-flight — the outcome this module
+/// exists to prevent.
+const SHELL_FORCE_EXIT_DEADLINE: Duration = Duration::from_millis(5_000);
+
+const _: () = assert!(
+    SCHEDULER_RELEASE_BUDGET.as_millis() * 4 <= SHELL_FORCE_EXIT_DEADLINE.as_millis(),
+    "the waiting budget must stay a small fraction of the shell's force-exit deadline"
+);
+
 /// What the exit cascade managed to do. Every field is diagnostic: nothing here
 /// can fail the exit.
 #[derive(Debug, Default, Clone, PartialEq, Eq, serde::Serialize)]
@@ -124,8 +138,10 @@ pub fn shutdown(
 /// write side would close it, but that gate is `async` and this cascade runs
 /// synchronously on the shell's JS thread — blocking there is what a load's own
 /// completion needs, so the acquisition could wedge the graceful exit into the
-/// shell's force-exit instead. The window is microseconds wide and its cost is
-/// one plugin missing its teardown, which is what the whole pass improves on.
+/// shell's force-exit instead. The window is as wide as whatever remains of an
+/// in-flight `load_plugin` — the tens to hundreds of milliseconds a plugin takes
+/// to instantiate and activate — not an instant, and its cost is that one plugin
+/// missing the teardown this pass exists to give it. #2977 tracks closing it.
 fn destroy_live_plugin_instances(app_state: &AppState, report: &mut ShutdownReport) {
     let instances = app_state.take_live_plugin_instances();
 
@@ -186,13 +202,14 @@ fn report_refused_scheduler_removal(removal: Result<(), String>, plugin_name: &s
 /// Hand every runtime to the retirement vec, and let go of the pass's own
 /// reference only after that.
 ///
-/// The vec is what keeps this thread the last owner. Dropping the pass's `Arc`
-/// while the scheduler — or the host-request or latency watcher — still holds
-/// one makes *that* thread the final owner, and it would then run
+/// Retention is what keeps the final drop on a swept command path — this
+/// cascade, or a later `load_plugin` / `unload_plugin` sweep, all of them
+/// control paths that may call into a plugin. Dropping the pass's `Arc` while
+/// the scheduler — or the host-request or latency watcher — still holds one
+/// makes *that* thread the final owner instead, and it would then run
 /// `gui.destroy`, `deactivate`, `destroy` and the entry's `deinit`, every one of
-/// them main-thread work in CLAP, with the same affinity for VST3's
-/// `terminate`. `unload_plugin` retains before it lets go for exactly this
-/// reason.
+/// them main-thread work in CLAP, with the same affinity for VST3's `terminate`.
+/// `unload_plugin` retains before it lets go for exactly this reason.
 fn retire_for_reclamation(
     app_state: &AppState,
     runtimes: Vec<Arc<SharedHostedPlugin>>,
@@ -224,6 +241,14 @@ fn reclaim_until_waiting_budget_is_spent(app_state: &AppState) {
     loop {
         app_state.sweep_retired_engine_plugins();
 
+        // The whole vec, not just this pass's own entries: waiting on those
+        // alone would stop watching the retirement an unload left behind
+        // moments before the quit, and giving that one its last sweep is half
+        // the point of waiting at all. The trade is that a retirement the
+        // scheduler will never release costs the full budget — including on a
+        // second `shutdown()`, which finds nothing new to do and waits anyway.
+        // That is an abnormal exit already, and the budget is a tenth of the
+        // shell's force-exit deadline, so it buys the ordinary case its sweep.
         if retirement_count(app_state) == 0 || remaining_budget.is_zero() {
             return;
         }
@@ -602,9 +627,12 @@ mod tests {
             report.unreclaimed_retirements, 1,
             "the report must say the reclamation point was not reached"
         );
+        // Bounded against the shell's own force-exit rather than against the
+        // budget: `elapsed < BUDGET * 4` reduces to `BUDGET < 4 * BUDGET` and
+        // holds for any budget at all, including one that blows the deadline.
         assert!(
-            elapsed < SCHEDULER_RELEASE_BUDGET * 4,
-            "the wait must stay within a small multiple of its own budget, took {elapsed:?}"
+            elapsed < SHELL_FORCE_EXIT_DEADLINE / 4,
+            "an abandoned instance must cost a fraction of the shell's force-exit deadline, took {elapsed:?}"
         );
     }
 
@@ -658,6 +686,11 @@ mod tests {
     /// the scheduler releases *during* the teardown pass — an unload moments
     /// before the quit — is past the cascade's own sweep, so the pass has to
     /// sweep as it waits or that plugin's `destroy` never runs.
+    ///
+    /// Sweeping *as* it waits, specifically: a pass that slept its whole budget
+    /// and swept once at the end would reclaim this runtime too, and quit a
+    /// half-second later than it had any reason to. The elapsed bound is what
+    /// separates the two.
     #[test]
     fn a_runtime_released_during_the_pass_is_still_reclaimed() {
         let state = Arc::new(AppState::default());
@@ -674,7 +707,9 @@ mod tests {
             drop(releasing_state);
         });
 
+        let started = Instant::now();
         let report = shutdown(&CollabState::default(), &state, Some(&NoWindowHost));
+        let elapsed = started.elapsed();
         release.join().expect("the releasing thread should finish");
 
         assert_eq!(
@@ -685,5 +720,9 @@ mod tests {
         assert_eq!(report.destroyed_instances, 1);
         assert!(report.abandoned_instances.is_empty());
         assert_eq!(report.unreclaimed_retirements, 0);
+        assert!(
+            elapsed < SCHEDULER_RELEASE_BUDGET / 2,
+            "the pass must return on the release at 50ms, not sleep out its budget first, took {elapsed:?}"
+        );
     }
 }
