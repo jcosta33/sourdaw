@@ -447,6 +447,18 @@ describe('admitCommittedSectionRenderRetry', () => {
             },
         ],
         [
+            'manual-repair continuation',
+            (fixture: ReturnType<typeof createFixture>) => {
+                bindTrackedRun(fixture);
+                mocks.getRun.mockReturnValue({
+                    ...mocks.getRun(),
+                    pendingEffectContinuations: [
+                        { ...mocks.getRun().pendingEffectContinuations[0], recovery: 'manual-repair' },
+                    ],
+                });
+            },
+        ],
+        [
             'wrong tracked receipt identity',
             (fixture: ReturnType<typeof createFixture>) => {
                 bindTrackedRun(fixture);
