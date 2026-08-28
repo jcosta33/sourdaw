@@ -829,21 +829,35 @@ describe('confirmPendingChatActions transaction admission', () => {
             status: 'failed',
             reason: 'The late command batch failed.',
             content: 'Failed to execute confirmed actions atomically:',
+            terminalState: 'failed',
         },
         {
             status: 'ambiguous',
             reason: 'The late command batch is ambiguous.',
             content: 'The confirmed command stopped after an uncertain partial commit:',
+            terminalState: 'failed',
         },
-    ] satisfies readonly { status: 'ambiguous' | 'failed'; reason: string; content: string }[];
+    ] satisfies readonly {
+        status: 'ambiguous' | 'failed';
+        reason: string;
+        content: string;
+        terminalState: 'failed';
+    }[];
 
     it.each(staleLateBatchResults)(
         'keeps a cancelled run terminal after a stale late $status result',
-        async ({ status, reason, content }) => {
+        async ({ status, reason, content, terminalState }) => {
             const runId = `late-${status}-settlement`;
             const confirmationId = `confirmation-${status}-settlement`;
             const batchId = `group-${status}-settlement`;
             const commandBatch = configureLateSettlementConfirmation({ runId, confirmationId, batchId });
+            const parsedCommandBatch = parseVersionedCommandBatchEnvelope(
+                commandBatch.serialized,
+                commandBatch.authority
+            );
+            if (parsedCommandBatch.status !== 'valid') {
+                throw new Error('Expected the stale late-result command batch fixture to remain valid.');
+            }
             const commandUseCases = await import('#/modules/Command/useCases');
             const crdtUseCases = await import('#/modules/CrdtDocument/useCases');
             const captureMutationAuthorization = vi
@@ -861,6 +875,15 @@ describe('confirmPendingChatActions transaction admission', () => {
                 await expect(confirmPendingChatActions({ confirmationId })).resolves.toEqual({
                     status: 'failed',
                     reason,
+                });
+                expect(settle).toHaveBeenCalledWith({
+                    runId,
+                    workId: batchId,
+                    leaseId: `${runId}:${batchId}:0`,
+                    cancellationGeneration: 0,
+                    idempotencyKey: parsedCommandBatch.envelope.idempotencyKey,
+                    receiptIdentity: `command:${runId}:${batchId}`,
+                    terminalState,
                 });
             } finally {
                 settle.mockRestore();
@@ -880,6 +903,59 @@ describe('confirmPendingChatActions transaction admission', () => {
             });
         }
     );
+
+    it('keeps a stale late cancelled result terminal with its cancelled command lease', async () => {
+        const runId = 'late-cancelled-settlement';
+        const confirmationId = 'confirmation-cancelled-settlement';
+        const batchId = 'group-cancelled-settlement';
+        const commandBatch = configureLateSettlementConfirmation({ runId, confirmationId, batchId });
+        const parsedCommandBatch = parseVersionedCommandBatchEnvelope(commandBatch.serialized, commandBatch.authority);
+        if (parsedCommandBatch.status !== 'valid') {
+            throw new Error('Expected the stale cancelled-result command batch fixture to remain valid.');
+        }
+        const commandUseCases = await import('#/modules/Command/useCases');
+        const crdtUseCases = await import('#/modules/CrdtDocument/useCases');
+        const captureMutationAuthorization = vi
+            .spyOn(crdtUseCases, 'captureProjectMutationAuthorization')
+            .mockReturnValue(() => true);
+        const execute = vi.spyOn(commandUseCases, 'executeVersionedCommandBatchEnvelope').mockResolvedValue({
+            status: 'cancelled',
+            reason: 'The late command batch was cancelled.',
+            actions: [],
+        });
+        const settle = vi.spyOn(agentRunWorkLease, 'settle').mockReturnValue({ status: 'stale' });
+
+        try {
+            await expect(confirmPendingChatActions({ confirmationId })).resolves.toEqual({
+                status: 'invalidated',
+                reason: 'The project changed after this proposal was created. Review and submit the command again.',
+            });
+            expect(settle).toHaveBeenCalledWith({
+                runId,
+                workId: batchId,
+                leaseId: `${runId}:${batchId}:0`,
+                cancellationGeneration: 0,
+                idempotencyKey: parsedCommandBatch.envelope.idempotencyKey,
+                receiptIdentity: `command:${runId}:${batchId}`,
+                terminalState: 'cancelled',
+            });
+        } finally {
+            settle.mockRestore();
+            execute.mockRestore();
+            captureMutationAuthorization.mockRestore();
+        }
+
+        expect(agentRunLifecycle.get(runId)).toMatchObject({ phase: 'cancelled', errors: [] });
+        expect(getPendingActionConfirmation(confirmationId)).toMatchObject({
+            status: 'invalidated',
+            error: 'The project changed after this proposal was created. Review and submit the command again.',
+        });
+        expect(chatStore.value?.messages[0]).toMatchObject({
+            pendingActionConfirmationStatus: 'invalidated',
+            error: 'The project changed after this proposal was created. Review and submit the command again.',
+            content: expect.stringContaining('This proposal was not executed because the project changed'),
+        });
+    });
 
     it('retains an idempotent replay receipt without reopening a stale cancelled run', async () => {
         const runId = 'idempotent-replay-stale-settlement';
