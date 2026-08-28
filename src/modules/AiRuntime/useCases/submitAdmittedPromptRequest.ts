@@ -79,10 +79,11 @@ export async function submitAdmittedPromptRequest(
     agentRunLifecycle.transitionPhase({ runId, phase: 'planning', revision: createdRevision });
 
     let cancellationAttempt: Promise<void> | null = null;
-    let cancellationFailed = false;
+    let cancellationCleanupPending = false;
+    let cancellationPersistenceFailed = false;
     let cancellationWarningReported = false;
     const reportCancellationPersistenceFailure = (error: unknown): never => {
-        cancellationFailed = true;
+        cancellationPersistenceFailed = true;
         logger.error(new Error('Prompt request cancellation persistence failed', { cause: error }));
         if (!cancellationWarningReported) {
             cancellationWarningReported = true;
@@ -94,29 +95,32 @@ export async function submitAdmittedPromptRequest(
         if (!cancellationAttempt) {
             cancellationAttempt = agentRunCancellation
                 .cancel({ runId, reason: 'Prompt request cancelled by the user.' })
-                .then(() => {
-                    cancellationFailed = false;
+                .then((result) => {
+                    cancellationPersistenceFailed = false;
+                    cancellationCleanupPending =
+                        result.status === 'cancelled' && result.cleanupPendingAssetIds.length > 0;
                 })
                 .catch(reportCancellationPersistenceFailure);
         }
         return cancellationAttempt;
     };
     const cancel = (): Promise<void> => {
-        if (!cancellationFailed) {
+        if (!cancellationPersistenceFailed && !cancellationCleanupPending) {
             return startCancellation();
         }
         const run = agentRunLifecycle.get(runId);
         if (!run || (run.phase !== 'cancelled' && run.phase !== 'partially-completed')) {
             cancellationAttempt = null;
-            cancellationFailed = false;
+            cancellationCleanupPending = false;
+            cancellationPersistenceFailed = false;
             return startCancellation();
         }
         cancellationAttempt = Promise.resolve()
             .then(() => {
-                if (!agentRunLifecycle.retryPersistence(runId)) {
+                if (cancellationPersistenceFailed && !agentRunLifecycle.retryPersistence(runId)) {
                     throw new Error(`Agent run disappeared before cancellation persistence retry: ${runId}`);
                 }
-                // A failed first cancellation can leave registered temporary
+                // A terminal cancellation can leave registered temporary
                 // assets cleanup-pending after its terminal state reached the
                 // live store. Re-enter cancellation only for that established
                 // terminal run so it resumes cleanup without revoking again.
@@ -125,8 +129,9 @@ export async function submitAdmittedPromptRequest(
                     reason: 'Prompt request cancelled by the user.',
                 });
             })
-            .then(() => {
-                cancellationFailed = false;
+            .then((result) => {
+                cancellationPersistenceFailed = false;
+                cancellationCleanupPending = result.status === 'cancelled' && result.cleanupPendingAssetIds.length > 0;
             })
             .catch(reportCancellationPersistenceFailure);
         return cancellationAttempt;

@@ -589,7 +589,9 @@ describe('submitAdmittedPromptRequest', () => {
         if (result.status !== 'awaiting-approval') {
             throw new Error(`Expected an approval preview, received ${result.status}`);
         }
-        const cleanup = vi.fn();
+        const cleanup = vi.fn(() => {
+            expect(window.localStorage.getItem('sourdaw-agent-runs')).toContain('cancelled');
+        });
         agentRunLifecycle.registerTemporaryAsset({
             runId: RUN_ID,
             assetId: 'preview-cleanup-retry',
@@ -619,6 +621,99 @@ describe('submitAdmittedPromptRequest', () => {
         );
         expect(mocks.notifyAiChange).toHaveBeenCalledExactlyOnceWith(AGENT_RUN_CANCELLATION_PERSISTENCE_WARNING, []);
         setItem.mockRestore();
+    });
+
+    it('retries a synchronous temporary-asset cleanup failure without claiming a persistence warning', async () => {
+        const result = await submitAdmittedPromptRequest({
+            prompt: 'Play',
+            source: 'prompt-bar',
+            actions: [action],
+            requiresConfirmation: true,
+        });
+        if (result.status !== 'awaiting-approval') {
+            throw new Error(`Expected an approval preview, received ${result.status}`);
+        }
+        const cleanup = vi
+            .fn()
+            .mockImplementationOnce(() => {
+                throw new Error('temporary cleanup failed once');
+            })
+            .mockImplementationOnce(() => undefined);
+        agentRunLifecycle.registerTemporaryAsset({
+            runId: RUN_ID,
+            assetId: 'preview-sync-cleanup-retry',
+            kind: 'import',
+            cleanupOwner: 'preview-sync-cleanup-owner',
+        });
+        agentRunCancellation.registerTemporaryAssetCleanup({
+            runId: RUN_ID,
+            assetId: 'preview-sync-cleanup-retry',
+            cleanupOwner: 'preview-sync-cleanup-owner',
+            cleanup,
+        });
+
+        await result.preview.cancel();
+        expect(agentRunLifecycle.get(RUN_ID)?.temporaryAssets).toEqual([
+            expect.objectContaining({ assetId: 'preview-sync-cleanup-retry', status: 'cleanup-pending' }),
+        ]);
+
+        await result.preview.cancel();
+
+        expect(cleanup).toHaveBeenCalledTimes(2);
+        expect(agentRunLifecycle.get(RUN_ID)?.temporaryAssets).not.toContainEqual(
+            expect.objectContaining({ assetId: 'preview-sync-cleanup-retry', status: 'cleanup-pending' })
+        );
+        expect(mocks.notifyAiChange).not.toHaveBeenCalled();
+    });
+
+    it('retries an asynchronous temporary-asset cleanup rejection after its fire-and-forget failure settles', async () => {
+        const result = await submitAdmittedPromptRequest({
+            prompt: 'Play',
+            source: 'prompt-bar',
+            actions: [action],
+            requiresConfirmation: true,
+        });
+        if (result.status !== 'awaiting-approval') {
+            throw new Error(`Expected an approval preview, received ${result.status}`);
+        }
+        let rejectCleanup: (reason?: unknown) => void = () => undefined;
+        const cleanup = vi
+            .fn()
+            .mockImplementationOnce(
+                () =>
+                    new Promise<void>((_resolve, reject) => {
+                        rejectCleanup = reject;
+                    })
+            )
+            .mockImplementationOnce(() => undefined);
+        agentRunLifecycle.registerTemporaryAsset({
+            runId: RUN_ID,
+            assetId: 'preview-async-cleanup-retry',
+            kind: 'import',
+            cleanupOwner: 'preview-async-cleanup-owner',
+        });
+        agentRunCancellation.registerTemporaryAssetCleanup({
+            runId: RUN_ID,
+            assetId: 'preview-async-cleanup-retry',
+            cleanupOwner: 'preview-async-cleanup-owner',
+            cleanup,
+        });
+
+        await result.preview.cancel();
+        rejectCleanup(new Error('temporary cleanup rejected once'));
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(agentRunLifecycle.get(RUN_ID)?.temporaryAssets).toEqual([
+            expect.objectContaining({ assetId: 'preview-async-cleanup-retry', status: 'cleanup-pending' }),
+        ]);
+
+        await result.preview.cancel();
+
+        expect(cleanup).toHaveBeenCalledTimes(2);
+        expect(agentRunLifecycle.get(RUN_ID)?.temporaryAssets).not.toContainEqual(
+            expect.objectContaining({ assetId: 'preview-async-cleanup-retry', status: 'cleanup-pending' })
+        );
+        expect(mocks.notifyAiChange).not.toHaveBeenCalled();
     });
 
     it('preserves compiler dependencies and batch-local bindings at the admitted compilation boundary', async () => {
