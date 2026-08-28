@@ -24,6 +24,7 @@ type ExecutePromptCommandPreviewInput = {
     projectRevision: string;
     commandBatch: Parameters<typeof executeVersionedCommandBatchEnvelope>[0];
     parsedCommandBatch: ParsedCommandBatch;
+    onExecutionSettlementWarning: (warning: string | null) => void;
 };
 
 function appendSettlementWarning(content: string, warning: string | null): string {
@@ -31,6 +32,11 @@ function appendSettlementWarning(content: string, warning: string | null): strin
 }
 
 export async function executePromptCommandPreview(input: ExecutePromptCommandPreviewInput): Promise<void> {
+    agentRunLifecycle.transitionPhase({
+        runId: input.runId,
+        phase: 'previewing',
+        revision: input.projectRevision,
+    });
     const previewWorkId = `preview:${input.parsedCommandBatch.envelope.batchId}`;
     const previewReceiptIdentity = `preview:${input.runId}:${input.parsedCommandBatch.envelope.batchId}`;
     const previewLeaseResult = agentRunWorkLease.claim({
@@ -46,11 +52,6 @@ export async function executePromptCommandPreview(input: ExecutePromptCommandPre
     if (previewLeaseResult.status !== 'claimed') {
         throw new Error(`Agent preview work could not be claimed: ${previewLeaseResult.status}`);
     }
-    agentRunLifecycle.transitionPhase({
-        runId: input.runId,
-        phase: 'previewing',
-        revision: input.projectRevision,
-    });
     const resourceLease = createStemImportConfirmationResourceLease(input.runId, input.actions);
     const releasePreviewCancellation = agentRunCancellation.bindAbortController({
         runId: input.runId,
@@ -70,12 +71,19 @@ export async function executePromptCommandPreview(input: ExecutePromptCommandPre
             await agentRunCancellation.cancel({ runId: input.runId, reason: preview.reason });
         }
     } catch (error) {
-        settleAgentRunWorkLeaseSafely({
+        const settlement = settleAgentRunWorkLeaseSafely({
             lease: previewLeaseResult.lease,
             terminalState: 'failed',
             evidence: 'none',
             settle: agentRunWorkLease.settle,
+            reportFailure: (settlementError) =>
+                logger.error(
+                    new Error('Failed preview work lease settlement failed', {
+                        cause: settlementError,
+                    })
+                ),
         });
+        input.onExecutionSettlementWarning(settlement.warning);
         agentRunLifecycle.updateBatchStatus({
             runId: input.runId,
             batchId: input.parsedCommandBatch.envelope.batchId,

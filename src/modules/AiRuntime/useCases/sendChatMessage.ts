@@ -367,6 +367,9 @@ export async function sendChatMessage(
                         projectRevision,
                         commandBatch,
                         parsedCommandBatch,
+                        onExecutionSettlementWarning: (warning) => {
+                            commandExecutionSettlementWarning = warning;
+                        },
                     });
                     return undefined;
                 }

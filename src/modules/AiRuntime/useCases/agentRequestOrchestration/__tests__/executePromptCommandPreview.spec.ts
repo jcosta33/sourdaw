@@ -21,6 +21,7 @@ const mocks = vi.hoisted(() => ({
     executeBatch: vi.fn(),
     getRun: vi.fn(),
     loggerError: vi.fn(),
+    onSettlementWarning: vi.fn(),
     settle: vi.fn(),
     settleSafely: vi.fn(),
     transitionPhase: vi.fn(),
@@ -118,6 +119,7 @@ function createInput(): Parameters<typeof executePromptCommandPreview>[0] {
         projectRevision: 'revision-preview',
         commandBatch,
         parsedCommandBatch,
+        onExecutionSettlementWarning: mocks.onSettlementWarning,
     };
 }
 
@@ -127,7 +129,7 @@ describe('executePromptCommandPreview', () => {
     const releasePreparedResources = vi.fn();
 
     beforeEach(() => {
-        vi.clearAllMocks();
+        vi.resetAllMocks();
         mocks.claim.mockReturnValue({ status: 'claimed', lease });
         mocks.bindAbortController.mockReturnValue(releaseCancellation);
         mocks.createResourceLease.mockReturnValue({ releaseBestEffort: releasePreparedResources });
@@ -135,6 +137,21 @@ describe('executePromptCommandPreview', () => {
         mocks.cancel.mockResolvedValue(undefined);
         mocks.captureProjectRevision.mockReturnValue('revision-preview');
         mocks.settleSafely.mockReturnValue({ accepted: true, warning: null });
+    });
+
+    it('does not claim or prepare preview work when the preview transition cannot persist', async () => {
+        const transitionError = new Error('preview transition failed');
+        mocks.transitionPhase.mockImplementation(() => {
+            throw transitionError;
+        });
+
+        await expect(executePromptCommandPreview(createInput())).rejects.toBe(transitionError);
+
+        expect(mocks.claim).not.toHaveBeenCalled();
+        expect(mocks.createResourceLease).not.toHaveBeenCalled();
+        expect(mocks.bindAbortController).not.toHaveBeenCalled();
+        expect(mocks.executeBatch).not.toHaveBeenCalled();
+        expect(mocks.settleSafely).not.toHaveBeenCalled();
     });
 
     it('rejects a non-claimed lease before transition, cancellation binding, or execution', async () => {
@@ -155,7 +172,11 @@ describe('executePromptCommandPreview', () => {
             idempotent: true,
             retriable: false,
         });
-        expect(mocks.transitionPhase).not.toHaveBeenCalled();
+        expect(mocks.transitionPhase).toHaveBeenCalledWith({
+            runId: 'run-preview',
+            phase: 'previewing',
+            revision: 'revision-preview',
+        });
         expect(mocks.createResourceLease).not.toHaveBeenCalled();
         expect(mocks.bindAbortController).not.toHaveBeenCalled();
         expect(mocks.executeBatch).not.toHaveBeenCalled();
@@ -163,14 +184,17 @@ describe('executePromptCommandPreview', () => {
 
     it('settles and marks a thrown execution failure before unregistering and awaiting resource cleanup', async () => {
         const executionError = new Error('preview executor failed');
+        const settlementError = new Error('preview settlement persistence failed');
+        const settlementWarning = 'Preview work recovery state could not be persisted.';
         const ordering: string[] = [];
         mocks.executeBatch.mockImplementation(async () => {
             ordering.push('execute');
             throw executionError;
         });
-        mocks.settleSafely.mockImplementation(() => {
+        mocks.settleSafely.mockImplementation((input) => {
             ordering.push('settle-failed');
-            return { accepted: true, warning: null };
+            input.reportFailure?.(settlementError);
+            return { accepted: false, warning: settlementWarning };
         });
         mocks.updateBatchStatus.mockImplementation(() => ordering.push('batch-failed'));
         releaseCancellation.mockImplementation(() => ordering.push('abort-unregistered'));
@@ -220,7 +244,15 @@ describe('executePromptCommandPreview', () => {
             terminalState: 'failed',
             evidence: 'none',
             settle: mocks.settle,
+            reportFailure: expect.any(Function),
         });
+        expect(mocks.onSettlementWarning).toHaveBeenCalledWith(settlementWarning);
+        expect(mocks.loggerError).toHaveBeenCalledWith(
+            expect.objectContaining({
+                message: 'Failed preview work lease settlement failed',
+                cause: settlementError,
+            })
+        );
         expect(mocks.updateBatchStatus).toHaveBeenCalledWith({
             runId: 'run-preview',
             batchId: 'batch-preview',
