@@ -1602,7 +1602,7 @@ describe('command batch idempotency', () => {
         expect(effectAttempts).toBe(2);
     });
 
-    it('finalizes a proven external effect without replaying its command handler', async () => {
+    it('finalizes a proven external effect and heals its completed checkpoint after revision advances without replay', async () => {
         clearHandlerRegistry();
         const gainStorage = createAutomergeStorage<{ value: number }>('root', 'trackGain');
         expect(gainStorage.hydrate?.()).toBe(true);
@@ -1699,6 +1699,15 @@ describe('command batch idempotency', () => {
             expectedProjectRevision,
             validateRecoveredEffects: () => 'Approved section render artifact is no longer retained.',
         });
+        commandBatchExecutionAuthorityPort.setProvider(() => false);
+        const unavailableAuthority = await finalizeRecoveredCommandBatchEffects({
+            authority: batch.authority,
+            serialized: batch.serialized,
+            pendingReceipt: first.receipt,
+            expectedProjectRevision,
+            validateRecoveredEffects: retainedEvidence,
+        });
+        commandBatchExecutionAuthorityPort.setProvider(() => true);
         const replay = await getVersionedCommandBatchIdempotentReplay({
             authority: batch.authority,
             serialized: batch.serialized,
@@ -1710,6 +1719,10 @@ describe('command batch idempotency', () => {
         expect(evictedEvidence).toEqual({
             status: 'failed',
             reason: 'Approved section render artifact is no longer retained.',
+        });
+        expect(unavailableAuthority).toEqual({
+            status: 'failed',
+            reason: 'Only the authoritative collaboration host can finalize recovery',
         });
         expect(replay).toMatchObject({ pendingEffects: [], outcome: 'committed' });
         expect(effectAttempts).toBe(1);

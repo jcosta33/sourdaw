@@ -1,6 +1,10 @@
 import { logger } from '#/infra/logger/appLogger';
 import { getSectionRenderFollowUpFailure, retryAgentProjectSectionRenders } from '#/modules/AudioRendering/useCases';
-import { finalizeRecoveredCommandBatchEffects, type createVerifiedBatchReceipt } from '#/modules/Command/useCases';
+import {
+    canExecuteCommandBatchEffects,
+    finalizeRecoveredCommandBatchEffects,
+    type createVerifiedBatchReceipt,
+} from '#/modules/Command/useCases';
 import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 
 import { chatStore, setChatGenerating, updateChatMessage } from '../../stores/chatStore';
@@ -120,6 +124,19 @@ function failStaleRevision(confirmation: PendingAppActionConfirmation): RetryRes
         pendingActionFollowUpStatus: 'failed',
         error: reason,
         content: `The project changes remain committed, but the missing section renders were not retried: ${reason}`,
+    });
+    return { status: 'failed', reason };
+}
+
+function failUnavailableExecutionAuthority(confirmation: PendingAppActionConfirmation): RetryResult {
+    const reason = 'Only the authoritative collaboration host can retry committed section renders.';
+    updatePendingActionFollowUp({ confirmationId: confirmation.id, error: reason, status: 'retryable' });
+    updatePendingActionConfirmationStatus({ confirmationId: confirmation.id, status: 'failed', error: reason });
+    updateChatMessage(confirmation.assistantMessageId, {
+        pendingActionConfirmationStatus: 'failed',
+        pendingActionFollowUpStatus: 'retryable',
+        error: reason,
+        content: `The project commands remain committed, but this collaboration peer cannot retry the missing section renders: ${reason}`,
     });
     return { status: 'failed', reason };
 }
@@ -301,6 +318,9 @@ export async function executeCommittedSectionRenderRetry(input: {
     if (!sourceRevision || captureProjectRevision() !== sourceRevision) {
         return failStaleRevision(confirmation);
     }
+    if (!canExecuteCommandBatchEffects()) {
+        return failUnavailableExecutionAuthority(confirmation);
+    }
     const budget = reserveRetryBudget(confirmation, followUp.jobs.length);
     if (budget) {
         const hardLimitFailure = failHardBudgetLimit(confirmation, budget);
@@ -323,6 +343,10 @@ export async function executeCommittedSectionRenderRetry(input: {
                 approvedJobs: initialProjection.approvedSectionRenderJobs,
                 jobs: followUp.jobs,
                 sourceRevision,
+                validateArtifactAttachment: () =>
+                    canExecuteCommandBatchEffects()
+                        ? null
+                        : 'Only the authoritative collaboration host can attach section render artifacts.',
             });
         } catch (error) {
             const followUpFailure = getSectionRenderFollowUpFailure(error);

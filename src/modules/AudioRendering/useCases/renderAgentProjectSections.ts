@@ -15,6 +15,7 @@ type RenderAgentProjectSectionsInput = {
     jobs: readonly RenderProjectSectionJobSnapshot[];
     sourceRevision: string;
     signal?: AbortSignal;
+    validateArtifactAttachment?: () => string | null;
 };
 
 function createCancellationError(): Error {
@@ -42,6 +43,13 @@ function jobMatchesArtifact(
 
 function failureReason(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
+}
+
+function assertArtifactAttachmentAllowed(input: RenderAgentProjectSectionsInput): void {
+    const reason = input.validateArtifactAttachment?.();
+    if (reason) {
+        throw new Error(reason);
+    }
 }
 
 function retainArtifactsForIncoming(
@@ -139,6 +147,7 @@ export async function renderAgentProjectSections(input: RenderAgentProjectSectio
             if (captureProjectRevision() !== input.sourceRevision) {
                 throw new Error('Project changed during rendering; the artifact was not attached');
             }
+            assertArtifactAttachmentAllowed(input);
             if (buffer.sampleRate !== job.sampleRate || buffer.length <= 0 || buffer.numberOfChannels <= 0) {
                 throw new Error('Offline renderer returned an invalid section artifact');
             }

@@ -6,11 +6,16 @@ type RetryAgentProjectSectionRendersInput = {
     approvedJobs: readonly RenderProjectSectionJobSnapshot[];
     jobs: readonly RenderProjectSectionJobSnapshot[];
     sourceRevision: string;
+    validateArtifactAttachment?: () => string | null;
 };
 
 export async function retryAgentProjectSectionRenders(input: RetryAgentProjectSectionRendersInput): Promise<void> {
     if (input.jobs.length === 0) {
         return;
     }
-    await renderAgentProjectSections({ jobs: input.approvedJobs, sourceRevision: input.sourceRevision });
+    await renderAgentProjectSections({
+        jobs: input.approvedJobs,
+        sourceRevision: input.sourceRevision,
+        validateArtifactAttachment: input.validateArtifactAttachment,
+    });
 }

@@ -148,6 +148,37 @@ describe('renderAgentProjectSections', () => {
         expect(getAgentSectionRenderArtifacts()).toEqual([]);
     });
 
+    it('refuses attachment when its injected authority validator changes during an awaited render', async () => {
+        let finishRender!: (buffer: ReturnType<typeof createAudioBuffer>) => void;
+        let attachmentAllowed = true;
+        mocks.renderOffline.mockImplementationOnce(
+            () =>
+                new Promise((resolve) => {
+                    finishRender = resolve;
+                })
+        );
+
+        const rendering = renderAgentProjectSections({
+            jobs: [createJob()],
+            sourceRevision: 'revision-a',
+            validateArtifactAttachment: () =>
+                attachmentAllowed
+                    ? null
+                    : 'Only the authoritative collaboration host can attach section render artifacts.',
+        });
+        await vi.waitFor(() => expect(mocks.renderOffline).toHaveBeenCalledOnce());
+        attachmentAllowed = false;
+        finishRender(createAudioBuffer());
+
+        await expect(rendering).rejects.toMatchObject({
+            message: expect.stringContaining(
+                'Only the authoritative collaboration host can attach section render artifacts.'
+            ),
+            pendingEffect: expect.objectContaining({ remediation: 'reconcile', state: 'pending' }),
+        });
+        expect(getAgentSectionRenderArtifacts()).toEqual([]);
+    });
+
     it('keeps successful artifacts and retries only unfinished jobs after a transient failure', async () => {
         const jobs = [
             createJob(),

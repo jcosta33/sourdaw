@@ -10,6 +10,7 @@ export { commandBatchPreflightPort } from './commandBatchPreflightPort';
 export { commandBatchPreviewPort } from './commandBatchPreviewPort';
 export { commandRuntimeRepairPort } from './commandRuntimeRepairPort';
 export { configureCommandBatchIdempotency } from './configureCommandBatchIdempotency';
+export { canExecuteCommandBatchEffects } from './canExecuteCommandBatchEffects';
 export { buildSemanticProjectDiff } from './buildSemanticProjectDiff';
 export { compilePartialCommandBatchAcceptance } from './compilePartialCommandBatchAcceptance';
 export { commandDeviceVersionsPort } from './commandDeviceVersionsPort';

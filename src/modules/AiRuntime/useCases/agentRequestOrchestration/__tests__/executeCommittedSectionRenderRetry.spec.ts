@@ -12,6 +12,7 @@ import { type AppAction } from '#/utils/handlerContract';
 import { executeCommittedSectionRenderRetry } from '../executeCommittedSectionRenderRetry';
 
 const mocks = vi.hoisted(() => ({
+    canExecuteCommandBatchEffects: vi.fn(),
     captureRevision: vi.fn(),
     chatState: { value: { isGenerating: false } },
     completeContinuation: vi.fn(),
@@ -35,6 +36,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
+    canExecuteCommandBatchEffects: mocks.canExecuteCommandBatchEffects,
     finalizeRecoveredCommandBatchEffects: mocks.finalizeCommandReceipt,
 }));
 
@@ -203,6 +205,7 @@ describe('executeCommittedSectionRenderRetry', () => {
         vi.clearAllMocks();
         mocks.chatState.value = { isGenerating: false };
         mocks.captureRevision.mockReturnValue('revision-source');
+        mocks.canExecuteCommandBatchEffects.mockReturnValue(true);
         mocks.completeContinuation.mockImplementation(() => undefined);
         mocks.finalizeCommandReceipt.mockImplementation(({ pendingReceipt }) =>
             Promise.resolve({ status: 'finalized', receipt: pendingReceipt })
@@ -257,6 +260,54 @@ describe('executeCommittedSectionRenderRetry', () => {
         });
         expect(mocks.reserveBudget).not.toHaveBeenCalled();
         expect(mocks.retryRenders).not.toHaveBeenCalled();
+    });
+
+    it('refuses a joiner before it reserves budget or starts a committed render retry', async () => {
+        const input = createInput();
+        mocks.project.mockReturnValue(projection(true));
+        mocks.canExecuteCommandBatchEffects.mockReturnValue(false);
+
+        await expect(executeCommittedSectionRenderRetry(input)).resolves.toEqual({
+            status: 'failed',
+            reason: 'Only the authoritative collaboration host can retry committed section renders.',
+        });
+
+        expect(mocks.reserveBudget).not.toHaveBeenCalled();
+        expect(mocks.retryRenders).not.toHaveBeenCalled();
+        expect(mocks.finalizeCommandReceipt).not.toHaveBeenCalled();
+    });
+
+    it('refuses artifact attachment and receipt finalization when authority is lost during the awaited retry', async () => {
+        const input = createInput();
+        let releaseRender!: () => void;
+        const renderStarted = new Promise<void>((resolve) => {
+            releaseRender = resolve;
+        });
+        mocks.project.mockReturnValue(projection(true));
+        mocks.retryRenders.mockImplementation(
+            async (retryInput: { validateArtifactAttachment?: () => string | null }) => {
+                await renderStarted;
+                const attachmentFailure = retryInput.validateArtifactAttachment?.();
+                if (attachmentFailure) {
+                    throw new Error(attachmentFailure);
+                }
+            }
+        );
+
+        const retry = executeCommittedSectionRenderRetry(input);
+        await vi.waitFor(() => expect(mocks.retryRenders).toHaveBeenCalledOnce());
+        mocks.canExecuteCommandBatchEffects.mockReturnValue(false);
+        releaseRender();
+
+        await expect(retry).resolves.toEqual({
+            status: 'failed',
+            reason: 'Only the authoritative collaboration host can attach section render artifacts.',
+        });
+        expect(mocks.finalizeCommandReceipt).not.toHaveBeenCalled();
+        expect(mocks.completeContinuation).not.toHaveBeenCalled();
+        expect(mocks.retryRenders).toHaveBeenCalledWith(
+            expect.objectContaining({ validateArtifactAttachment: expect.any(Function) })
+        );
     });
 
     it('keeps completion retryable when durable continuation persistence fails', async () => {
@@ -391,6 +442,7 @@ describe('executeCommittedSectionRenderRetry', () => {
             approvedJobs: [JOB],
             jobs: [JOB],
             sourceRevision: 'revision-source',
+            validateArtifactAttachment: expect.any(Function),
         });
         expect(mocks.reconcileBudget).toHaveBeenCalledWith({
             runId: 'run-retry',
@@ -527,6 +579,7 @@ describe('executeCommittedSectionRenderRetry', () => {
             approvedJobs: [JOB, SECOND_JOB],
             jobs: [SECOND_JOB],
             sourceRevision: 'revision-source',
+            validateArtifactAttachment: expect.any(Function),
         });
         expect(mocks.reconcileBudget).toHaveBeenCalledWith({
             runId: 'run-retry',
@@ -558,6 +611,7 @@ describe('executeCommittedSectionRenderRetry', () => {
             approvedJobs: [SECOND_JOB, JOB],
             jobs: [SECOND_JOB],
             sourceRevision: 'revision-source',
+            validateArtifactAttachment: expect.any(Function),
         });
         expect(mocks.completeContinuation).not.toHaveBeenCalled();
         expect(mocks.reconcileBudget).toHaveBeenCalledWith(expect.objectContaining({ consumed: 1 }));
@@ -636,6 +690,7 @@ describe('executeCommittedSectionRenderRetry', () => {
             approvedJobs: [SECOND_JOB, JOB],
             jobs: [SECOND_JOB],
             sourceRevision: 'revision-source',
+            validateArtifactAttachment: expect.any(Function),
         });
         expect(mocks.completeContinuation).not.toHaveBeenCalled();
         expect(mocks.updateFollowUp).toHaveBeenLastCalledWith({
