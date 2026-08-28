@@ -85,7 +85,9 @@ describe('WebLLM engineLifecycle injectables', () => {
     });
 
     it('should reject init when WebGPU is unavailable', async () => {
-        await expect(initWebLlmEngine()).rejects.toThrow(/WebGPU not available/);
+        await expect(initWebLlmEngine()).rejects.toThrow(
+            'WebGPU not available — WebLLM requires WebGPU. Hosted providers are available only in desktop builds.'
+        );
         expect(engineState.initAttemptId).toBeNull();
         expect(engineState.initController).toBeNull();
         expect(engineState.initPromise).toBeNull();

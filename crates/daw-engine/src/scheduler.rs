@@ -8,7 +8,10 @@ use crate::audio_thread::MAX_CALLBACK_FRAMES;
 #[cfg(test)]
 use crate::midi::diagnostics::active_midi_rt_diagnostics_channel;
 use crate::midi::diagnostics::{ActiveMidiRtDiagnostics, ActiveMidiRtDiagnosticsSnapshot};
-use crate::midi_fx::{Arpeggiator, MidiEventBuffer, MidiFx, ProbabilityEvaluator, VelocityScaler};
+use crate::midi_fx::{
+    Arpeggiator, MidiEventBuffer, MidiFx, MidiFxChain, MidiFxParam, ProbabilityEvaluator,
+    VelocityScaler,
+};
 use crate::plugin_slot::{MidiNoteEvent, NativePlugin, TransportState};
 use crate::timeline::{
     timeline_rt_diagnostics_channel, AutomationTarget, AutomationWrite, ChainEntry, ClipPlacement,
@@ -67,6 +70,19 @@ pub(crate) fn graph_progress_channel() -> (Input<GraphProgressSnapshot>, GraphPr
 pub enum MidiFxKind {
     Arpeggiator,
     VelocityScaler,
+}
+
+impl MidiFxKind {
+    /// Build the MIDI FX instance this kind names, on the control thread —
+    /// the constructor side of the [`GraphCommand::AddMidiFx`] contract: the
+    /// audio thread installs the carried instance into a reserved slot or
+    /// retires it, and never constructs or frees one (ADR 0020).
+    pub fn build(self) -> Box<dyn MidiFx> {
+        match self {
+            Self::Arpeggiator => Box::new(Arpeggiator::default()),
+            Self::VelocityScaler => Box::new(VelocityScaler::default()),
+        }
+    }
 }
 
 /// The pre-built built-in instance an `AddEffect`/`AddDetachedEffect` test
@@ -150,9 +166,24 @@ pub enum GraphCommand {
     SendMidiNote(usize, MidiNoteEvent),
 
     // MIDI FX
-    AddMidiFx(usize, MidiFxKind),
-    RemoveMidiFx(usize, usize), // effect_id, fx_index
-    SetMidiFxParam(usize, usize, String, f32),
+    /// Add a user MIDI FX, already built control-side
+    /// ([`MidiFxKind::build`]), to an effect's fixed-capacity chain.
+    ///
+    /// The command owns the instance from the push to the apply, on the same
+    /// contract as [`GraphCommand::AddPlugin`]: the audio thread installs it
+    /// into a reserved slot or retires it — an unknown effect id and a full
+    /// chain ([`crate::midi_fx::MIDI_FX_CHAIN_CAPACITY`]) both refuse the
+    /// whole command — and never constructs or frees one (ADR 0020).
+    AddMidiFx(usize, Box<dyn MidiFx>),
+    /// Take the instance at one chain slot out of its effect, handing it to
+    /// the retirement channel; the slot, not a chain position, is the address
+    /// `SetMidiFxParam` and this command share.
+    RemoveMidiFx(usize, usize), // effect_id, fx slot
+    /// Set one parameter of one chained MIDI FX, addressed without a name:
+    /// the name-to-address resolution happened control-side
+    /// ([`MidiFxParam::from_name`]), where an unmapped name is refused rather
+    /// than ignored on the audio thread after the fact.
+    SetMidiFxParam(usize, usize, MidiFxParam, f32),
 
     // Transport state (global, affects all plugins)
     //
@@ -366,13 +397,25 @@ impl GraphCommand {
     /// `RemovePluginWithBridge` frees nothing for an id the table does not
     /// hold, and the two `*Retired` variants free nothing when the strip they
     /// name does not hold the effect they name. The classification is exact
-    /// under one control-side precondition — a retirement is only ever sent
-    /// for a target the sender has already resolved against the project it
-    /// holds — and a violated precondition drifts in the dangerous direction:
-    /// the ledger drops to N-1 while the table stays at N, so it *grants*
-    /// headroom that does not exist and the next registration is admitted
-    /// control-side and then refused silently on the callback, which is the
-    /// failure this ledger exists to remove.
+    /// under two control-side preconditions, one per direction of drift.
+    ///
+    /// A retirement is only ever sent for a target the sender has already
+    /// resolved against the project it holds. A violated precondition drifts
+    /// in the dangerous direction: the ledger drops to N-1 while the table
+    /// stays at N, so it *grants* headroom that does not exist and the next
+    /// registration is admitted control-side and then refused silently on the
+    /// callback, which is the failure this ledger exists to remove.
+    ///
+    /// A registration, in the other direction, can be refused by the callback
+    /// itself: an id colliding with a slot the table already holds never takes
+    /// one, while the ledger counted it as it crossed the ring — N+1 against
+    /// the table's N. That drift is the safe one, over-refusing rather than
+    /// granting headroom, and practically unreachable while ids are allocated
+    /// monotonically without reuse; it is also reconciled rather than
+    /// permanent. [`crate::EngineHandle::midi_rt_diagnostics_snapshot`]
+    /// returns the refused slots by diffing the callback's cumulative
+    /// collision count, so the over-count exists only between the refusal and
+    /// the next observation.
     ///
     /// Exhaustiveness forces an author to write an arm, not to write the right
     /// one, so it is not what keeps this classification honest. That is
@@ -505,7 +548,12 @@ struct ActiveEffect {
     bypassed: bool,
     /// Fixed pre-FX gate. Inline ownership avoids callback-time registration/allocation.
     probability_evaluator: ProbabilityEvaluator,
-    midi_fx: Vec<Box<dyn MidiFx>>,
+    /// The user's MIDI FX chain. An inline fixed-capacity slot table, so
+    /// installing or taking an instance neither allocates nor frees on the
+    /// audio thread; the instances themselves are built on the control thread
+    /// and cross the ring already boxed (ADR 0020). See
+    /// [`crate::midi_fx::MIDI_FX_CHAIN_CAPACITY`] for the capacity contract.
+    midi_fx: MidiFxChain,
     /// Pending MIDI events for this block (drained each process_block call).
     pending_midi: MidiEventBuffer,
     placement: EffectPlacement,
@@ -1069,7 +1117,7 @@ impl ActiveEffect {
             instance,
             bypassed: false,
             probability_evaluator: ProbabilityEvaluator,
-            midi_fx: Vec::new(),
+            midi_fx: MidiFxChain::new(),
             pending_midi: MidiEventBuffer::new(),
             placement,
             pending_params: DeviceParamQueue::new(),
@@ -1439,32 +1487,37 @@ impl AudioScheduler {
                         None
                     }
                 }
-                GraphCommand::AddMidiFx(id, fx_kind) => {
-                    if let Some(effect) = self.effect_mut(id) {
-                        let fx: Box<dyn MidiFx> = match fx_kind {
-                            MidiFxKind::Arpeggiator => Box::new(Arpeggiator::default()),
-                            MidiFxKind::VelocityScaler => Box::new(VelocityScaler::default()),
-                        };
-                        effect.midi_fx.push(fx);
+                GraphCommand::AddMidiFx(id, fx) => {
+                    // The instance was built on the control thread; this arm
+                    // only moves it into a reserved slot or hands it back
+                    // (ADR 0020). An unknown id retires it the same way a
+                    // full chain does — dropping the box here would free it
+                    // inside the deadline.
+                    let Some(effect) = self.effect_mut(id) else {
+                        return Some(RetiredGraphObjects::midi_fx(fx));
+                    };
+                    match effect.midi_fx.try_install(fx) {
+                        Ok(_) => None,
+                        Err(refused) => {
+                            self.timeline.record_capacity_refusal();
+                            Some(RetiredGraphObjects::midi_fx(refused))
+                        }
                     }
-                    None
                 }
                 GraphCommand::RemoveMidiFx(id, index) => {
-                    if let Some(effect) = self.effect_mut(id) {
-                        if index < effect.midi_fx.len() {
-                            Some(RetiredGraphObjects::midi_fx(effect.midi_fx.remove(index)))
-                        } else {
-                            None
-                        }
-                    } else {
-                        None
-                    }
+                    // `take` hands the boxed instance to the retirement
+                    // channel without dropping it; an empty slot or an
+                    // unknown id frees nothing, like every removal arm.
+                    self.effect_mut(id)
+                        .and_then(|effect| effect.midi_fx.take(index))
+                        .map(RetiredGraphObjects::midi_fx)
                 }
-                GraphCommand::SetMidiFxParam(id, index, name, value) => {
-                    if let Some(effect) = self.effect_mut(id) {
-                        if let Some(fx) = effect.midi_fx.get_mut(index) {
-                            fx.set_param(&name, value);
-                        }
+                GraphCommand::SetMidiFxParam(id, index, param, value) => {
+                    if let Some(fx) = self
+                        .effect_mut(id)
+                        .and_then(|effect| effect.midi_fx.get_mut(index))
+                    {
+                        fx.set_param(param, value);
                     }
                     None
                 }
@@ -2291,7 +2344,7 @@ impl AudioScheduler {
             );
 
             // Apply the mutable user MIDI FX chain only after authored probability.
-            for fx in &mut effect.midi_fx {
+            for fx in effect.midi_fx.iter_mut() {
                 fx.process_midi_with_diagnostics(
                     &mut effect.pending_midi,
                     &self.transport,
@@ -2406,7 +2459,7 @@ impl DeviceChain for TrackDeviceChain<'_> {
             frames,
             self.midi_rt_diagnostics,
         );
-        for fx in &mut effect.midi_fx {
+        for fx in effect.midi_fx.iter_mut() {
             fx.process_midi_with_diagnostics(
                 &mut effect.pending_midi,
                 &self.transport,
@@ -2474,7 +2527,7 @@ impl Drop for AudioScheduler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::midi_fx::MIDI_EVENT_BUFFER_CAPACITY;
+    use crate::midi_fx::{MIDI_EVENT_BUFFER_CAPACITY, MIDI_FX_CHAIN_CAPACITY};
     use rtrb::RingBuffer;
     use std::any::Any;
     use std::sync::{
@@ -2614,6 +2667,44 @@ mod tests {
 
         fn name(&self) -> &str {
             "midi-recording-plugin"
+        }
+
+        fn as_any(&self) -> &dyn Any {
+            self
+        }
+
+        fn as_any_mut(&mut self) -> &mut dyn Any {
+            self
+        }
+    }
+
+    /// Records the velocities that reach a device, so a MIDI FX chain's
+    /// rewriting is observable without touching the effect's own state.
+    struct VelocityRecordingPlugin {
+        received_velocity_sum: Arc<AtomicUsize>,
+    }
+
+    impl NativePlugin for VelocityRecordingPlugin {
+        fn process_audio(&mut self, _left: &mut [f32], _right: &mut [f32], _num_samples: usize) {}
+
+        fn process_with_events(
+            &mut self,
+            _left: &mut [f32],
+            _right: &mut [f32],
+            _num_samples: usize,
+            midi_events: &[MidiNoteEvent],
+            _transport: &TransportState,
+        ) {
+            let velocity_sum = midi_events
+                .iter()
+                .map(|event| event.velocity as usize)
+                .sum::<usize>();
+            self.received_velocity_sum
+                .fetch_add(velocity_sum, Ordering::Relaxed);
+        }
+
+        fn name(&self) -> &str {
+            "velocity-recording-plugin"
         }
 
         fn as_any(&self) -> &dyn Any {
@@ -3342,7 +3433,10 @@ mod tests {
         }
         scheduler.update_graph();
         command_tx
-            .push(GraphCommand::AddMidiFx(43, MidiFxKind::VelocityScaler))
+            .push(GraphCommand::AddMidiFx(
+                43,
+                MidiFxKind::VelocityScaler.build(),
+            ))
             .unwrap();
         command_tx.push(GraphCommand::RemoveMidiFx(43, 0)).unwrap();
         for id in [41, 42] {
@@ -3468,28 +3562,81 @@ mod tests {
         );
     }
 
-    /// `SetParam` carries no owning payload onto the audio thread: consuming
-    /// it there would free it inside the deadline (ADR 0020). Reading the
-    /// parameter *out of a shared reference to the command* is what pins
-    /// that — moving out of a `&` compiles only while the payload is `Copy`,
-    /// so reverting the parameter to a `String` fails this test at compile
-    /// time rather than leaving a `Copy` bound on some other type still
-    /// satisfied.
+    /// `SetMidiFxParam` must reach the instance the chain actually holds at
+    /// the addressed slot and apply the value it carries: a velocity scaler
+    /// at scale 0 zeroes every note-on, so a recorded sum of 0 discriminates
+    /// the applied write from a dropped one (the untouched default keeps 100).
+    #[test]
+    fn set_midi_fx_param_applies_the_addressed_value_to_the_chained_instance() {
+        let (mut command_tx, mut scheduler, _retired_rx) = create_scheduler();
+        let received_velocity_sum = Arc::new(AtomicUsize::new(0));
+        command_tx
+            .push(GraphCommand::AddPlugin(
+                7,
+                Box::new(VelocityRecordingPlugin {
+                    received_velocity_sum: Arc::clone(&received_velocity_sum),
+                }),
+            ))
+            .unwrap();
+        command_tx
+            .push(GraphCommand::AddMidiFx(
+                7,
+                MidiFxKind::VelocityScaler.build(),
+            ))
+            .unwrap();
+        command_tx
+            .push(GraphCommand::SetMidiFxParam(
+                7,
+                0,
+                MidiFxParam::VelocityScale,
+                0.0,
+            ))
+            .unwrap();
+        command_tx
+            .push(GraphCommand::SendMidiNote(
+                7,
+                MidiNoteEvent {
+                    note: 60,
+                    velocity: 100,
+                    channel: 0,
+                    is_note_on: true,
+                    probability_cutoff: crate::midi_fx::PROBABILITY_CUTOFF_RANGE,
+                    project_probability_seed: 0,
+                    clip_id_hash: 0,
+                    event_id_hash: 0,
+                    absolute_occurrence_index: 0,
+                },
+            ))
+            .unwrap();
+        scheduler.update_graph();
+
+        let mut left = [0.0; 4];
+        let mut right = [0.0; 4];
+        scheduler.process_block(&mut left, &mut right, 4);
+
+        assert_eq!(received_velocity_sum.load(Ordering::Relaxed), 0);
+    }
+
+    /// `SetParam` and `SetMidiFxParam` carry no owning payload onto the audio
+    /// thread: consuming them there would free it inside the deadline (ADR
+    /// 0020). Reading the parameter *out of a shared reference to the
+    /// command* is what pins that — moving out of a `&` compiles only while
+    /// the payload is `Copy`, so reverting either parameter to a `String`
+    /// fails this test at compile time rather than leaving a `Copy` bound on
+    /// some other type still satisfied.
     ///
-    /// `AddEffect` and `AddDetachedEffect` used to share this pin as
-    /// `Copy` type addresses; they now carry the built-in instance itself,
-    /// pre-built control-side, and their contract — the drain installs it or
-    /// retires it, never constructs or frees it — is pinned at run time by
-    /// the allocation guards in [`mod apply_alloc_guards`], which fire on a
-    /// constructor call as reliably as on a `String` drop.
+    /// `AddEffect`, `AddDetachedEffect`, `AddPlugin`, `AddPluginWithBridge`
+    /// and `AddMidiFx` used to share this pin as `Copy` type addresses or
+    /// kind tags; they now carry the built instance itself, pre-built
+    /// control-side, and their contract — the drain installs it into a
+    /// reserved slot or retires it, never constructs or frees it — is pinned
+    /// at run time by the allocation guards in [`mod apply_alloc_guards`],
+    /// which fire on a constructor call as reliably as on a `String` drop.
     ///
-    /// This is a property of these commands, not of the whole vocabulary.
-    /// `SetMidiFxParam` still carries a `String` its arm consumes by value,
-    /// and `AddMidiFx` still boxes an arpeggiator and pushes it into a
-    /// `Vec::new()` on the callback. Both are dormant — no `EngineHandle`
-    /// method sends either and no native caller exists, so only in-crate
-    /// tests reach them — and they are tracked in #2548. Widening this test
-    /// to the vocabulary is that issue's work, not this test's claim.
+    /// This is a property of these commands, not of the whole vocabulary:
+    /// every remaining owning payload in the vocabulary is a pre-built
+    /// instance or graph object on that same install-or-retire contract,
+    /// pinned by the same guards.
     #[test]
     fn the_set_param_payload_is_a_copy_address() {
         fn copied_param(command: &GraphCommand) -> Option<DeviceParam> {
@@ -3499,10 +3646,46 @@ mod tests {
             }
         }
 
+        fn copied_midi_fx_param(command: &GraphCommand) -> Option<MidiFxParam> {
+            match command {
+                GraphCommand::SetMidiFxParam(_, _, param, _) => Some(*param),
+                _ => None,
+            }
+        }
+
         assert_eq!(
             copied_param(&GraphCommand::SetParam(1, DeviceParam::ShiftSemitones, 0.0)),
             Some(DeviceParam::ShiftSemitones)
         );
+        assert_eq!(
+            copied_midi_fx_param(&GraphCommand::SetMidiFxParam(
+                1,
+                0,
+                MidiFxParam::RateBeats,
+                0.0
+            )),
+            Some(MidiFxParam::RateBeats)
+        );
+    }
+
+    /// `from_name` is the inverse of `name`, so the named boundary and the
+    /// addressed command cannot drift into meaning different things. Every
+    /// address is pinned, not a sample, so a new parameter that forgets the
+    /// pair fails here rather than at the wire.
+    #[test]
+    fn midi_fx_param_from_name_is_the_inverse_of_name() {
+        for param in [
+            MidiFxParam::RateBeats,
+            MidiFxParam::ArpMode,
+            MidiFxParam::OctaveRange,
+            MidiFxParam::MinVelocity,
+            MidiFxParam::MaxVelocity,
+            MidiFxParam::VelocityScale,
+            MidiFxParam::VelocityOffset,
+        ] {
+            assert_eq!(MidiFxParam::from_name(param.name()), Some(param));
+        }
+        assert_eq!(MidiFxParam::from_name("not-a-midi-fx-param"), None);
     }
 
     /// `from_name` is the inverse of `name`, so the named boundary and the
@@ -3950,7 +4133,7 @@ mod tests {
             ))
             .unwrap();
         command_tx
-            .push(GraphCommand::AddMidiFx(7, MidiFxKind::Arpeggiator))
+            .push(GraphCommand::AddMidiFx(7, MidiFxKind::Arpeggiator.build()))
             .unwrap();
         // The arp is silent while the transport is stopped; without this the
         // zero-event assertion would hold even with the probability gate broken.
@@ -3994,8 +4177,14 @@ mod tests {
         );
 
         assert_eq!(std::mem::size_of::<ProbabilityEvaluator>(), 0);
+        // The chain is an inline slot table, not a heap-backed one: its whole
+        // capacity stands in the effect entry itself, so an empty chain holds
+        // no allocation for an install to grow into on the callback.
         assert_eq!(effect.midi_fx.len(), 0);
-        assert_eq!(effect.midi_fx.capacity(), 0);
+        assert_eq!(
+            std::mem::size_of::<MidiFxChain>(),
+            MIDI_FX_CHAIN_CAPACITY * std::mem::size_of::<Option<Box<dyn MidiFx>>>()
+        );
     }
 
     #[test]
@@ -4072,8 +4261,11 @@ mod tests {
     ///
     /// The guards cover the built-in add arms (issue #2547: the apply used to
     /// construct `KneadEngine` — some twenty zero-filled heap allocations —
-    /// on the callback) and, on the same law, the already-repaired
-    /// `AddPlugin`/`AddPluginWithBridge` arms.
+    /// on the callback), the already-repaired `AddPlugin`/`AddPluginWithBridge`
+    /// arms, and the MIDI FX arms on the same law (issue #2548: `AddMidiFx`
+    /// used to box the arpeggiator into a zero-capacity `Vec` on the callback
+    /// and grow it there, and `SetMidiFxParam` used to drop a `String` name
+    /// there).
     #[cfg(debug_assertions)]
     mod apply_alloc_guards {
         use assert_no_alloc::{assert_no_alloc, AllocDisabler};
@@ -4380,6 +4572,112 @@ mod tests {
                 .pop()
                 .expect("the refused plugin must be handed off");
             assert!(retired.effect.is_some());
+        }
+
+        /// The whole MIDI FX vocabulary applies without allocator contact:
+        /// the add moves the control-side-built instance into a reserved
+        /// slot, the param set carries a `Copy` address, and the removal
+        /// hands its instance to the retirement ring instead of dropping it.
+        #[test]
+        fn midi_fx_adds_param_sets_and_removals_apply_without_allocating() {
+            let (mut command_tx, mut scheduler, mut retired_rx) = create_scheduler();
+            command_tx
+                .push(GraphCommand::AddPlugin(
+                    7,
+                    Box::new(MidiRecordingPlugin {
+                        received_event_count: Arc::new(AtomicUsize::new(0)),
+                        received_channel_sum: Arc::new(AtomicUsize::new(0)),
+                    }),
+                ))
+                .unwrap();
+            // Built control-side: these boxes are the allocations the issue
+            // moved off the callback, so they stay outside the guard.
+            command_tx
+                .push(GraphCommand::AddMidiFx(
+                    7,
+                    MidiFxKind::VelocityScaler.build(),
+                ))
+                .unwrap();
+            command_tx
+                .push(GraphCommand::AddMidiFx(7, MidiFxKind::Arpeggiator.build()))
+                .unwrap();
+            command_tx
+                .push(GraphCommand::SetMidiFxParam(
+                    7,
+                    0,
+                    MidiFxParam::VelocityScale,
+                    0.5,
+                ))
+                .unwrap();
+            command_tx.push(GraphCommand::RemoveMidiFx(7, 1)).unwrap();
+
+            assert_no_alloc(|| {
+                scheduler.update_graph();
+            });
+
+            // The guarded drain did real work: one instance stayed installed
+            // at its slot, the other left over the retirement ring.
+            assert_eq!(scheduler.effects[0].midi_fx.len(), 1);
+            let retired = retired_rx
+                .pop()
+                .expect("the removed instance must be handed off");
+            assert!(retired.midi_fx.is_some());
+        }
+
+        /// Both ways an `AddMidiFx` can be refused arrive holding the carried
+        /// instance, so each must hand it off rather than drop it — the box's
+        /// free is exactly the deadline traffic the refusal exists to avoid.
+        #[test]
+        fn refused_midi_fx_adds_hand_the_carried_instance_off_without_allocating() {
+            // Unknown effect id: the arm owns the box, and refusing by
+            // dropping it would free it on the callback.
+            let (mut command_tx, mut scheduler, mut retired_rx) = create_scheduler();
+            command_tx
+                .push(GraphCommand::AddMidiFx(
+                    999,
+                    MidiFxKind::Arpeggiator.build(),
+                ))
+                .unwrap();
+            assert_no_alloc(|| {
+                scheduler.update_graph();
+            });
+            assert!(scheduler.effects.is_empty());
+            let retired = retired_rx
+                .pop()
+                .expect("the carried instance must be handed off");
+            assert!(retired.midi_fx.is_some());
+
+            // Full chain: every slot is filled outside the guard, so the one
+            // inside it can only be refused — counted, and retired.
+            command_tx
+                .push(GraphCommand::AddPlugin(
+                    7,
+                    Box::new(FakeNativePlugin { value: 0.0 }),
+                ))
+                .unwrap();
+            for _ in 0..MIDI_FX_CHAIN_CAPACITY {
+                command_tx
+                    .push(GraphCommand::AddMidiFx(
+                        7,
+                        MidiFxKind::VelocityScaler.build(),
+                    ))
+                    .unwrap();
+            }
+            scheduler.update_graph();
+            command_tx
+                .push(GraphCommand::AddMidiFx(7, MidiFxKind::Arpeggiator.build()))
+                .unwrap();
+
+            assert_no_alloc(|| {
+                scheduler.update_graph();
+            });
+
+            assert_eq!(scheduler.effects[0].midi_fx.len(), MIDI_FX_CHAIN_CAPACITY);
+            assert_eq!(scheduler.timeline().diagnostics().capacity_refusals, 1);
+            let retired = retired_rx
+                .pop()
+                .expect("the refused instance must be handed off");
+            assert!(retired.midi_fx.is_some());
         }
     }
 }

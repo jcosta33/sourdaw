@@ -22,7 +22,8 @@ const MAX_LATENCY_REQUERY_PASSES: u32 = 4;
 use crate::clap_host::{create_host_descriptor, HostCallbackState, LatencyChangeNotifier};
 use crate::params::PluginParameter;
 use crate::traits::{
-    AudioPlugin, HostParameterUpdate, HostTransport, HostedPluginRuntime, ProcessingGate,
+    AudioPlugin, EditorWindowResizer, HostParameterUpdate, HostTransport, HostedPluginRuntime,
+    PluginHostRequestNotifier, ProcessingGate,
 };
 use clap_sys::audio_buffer::clap_audio_buffer;
 use clap_sys::entry::clap_plugin_entry;
@@ -59,6 +60,11 @@ use std::sync::Arc;
 pub struct ClapWrapper {
     /// The dynamically loaded shared library — must outlive the plugin instance.
     _library: Option<Library>,
+    /// The bundle's `clap_entry`. Its `init` ran before this wrapper existed;
+    /// its `deinit` runs in `Drop`, after the plugin instance is destroyed and
+    /// — because a `Drop` body runs before any field drops — while `_library`
+    /// still has the DSO mapped. Null for fixture wrappers that loaded no bundle.
+    entry: *const clap_plugin_entry,
     /// Pointer to the clap_plugin struct.
     plugin: *const clap_plugin,
     /// Host descriptor — must outlive the plugin.
@@ -83,6 +89,11 @@ pub struct ClapWrapper {
     host_state: Box<HostCallbackState>,
     /// Whether the GUI is currently open.
     gui_open: bool,
+    /// How the host resizes the window this plugin's editor is drawn into.
+    /// Installed before the editor opens, because the request it answers arrives
+    /// from inside the plugin after the open has returned. Dropped on close: a
+    /// window that has gone away is not one to resize.
+    editor_resizer: Option<EditorWindowResizer>,
     /// Split ownership of the CLAP processing state. Shared with the runtime
     /// owner so an unload can request a stop without touching the wrapper.
     processing: Arc<ProcessingGate>,
@@ -239,7 +250,9 @@ impl ClapWrapper {
 
             let entry_ref = &*entry_ptr;
 
-            // 3. Call init
+            // 3. Call init. A false return leaves the entry not initialised, so
+            //    the spec's init/deinit pairing never starts — same rule as the
+            //    scan-time loader in `scanner.rs`.
             if let Some(init_fn) = entry_ref.init {
                 let path_c = CString::new(plugin_path).map_err(|_| "Invalid plugin path")?;
                 let ok = init_fn(path_c.as_ptr());
@@ -248,124 +261,180 @@ impl ClapWrapper {
                 }
             }
 
-            // 4. Get the plugin factory
-            let factory_id = CLAP_PLUGIN_FACTORY_ID.as_ptr() as *const i8;
-            let factory_ptr = if let Some(get_factory) = entry_ref.get_factory {
-                get_factory(factory_id)
-            } else {
-                return Err("clap_entry has no get_factory".to_string());
-            };
+            // 4-9. `load_initialized_entry` owns the back half of the entry's
+            // init/deinit pairing on every path out — including its own
+            // failures, which is why the `?` below cannot leak an init.
+            let mut wrapper = Self::load_initialized_entry(entry_ptr, plugin_id, sample_rate)?;
 
-            if factory_ptr.is_null() {
-                return Err("Plugin factory is null".to_string());
+            // The entry and plugin pointers the wrapper holds are only sound
+            // while this library stays loaded, so it is attached before the
+            // wrapper escapes this function.
+            wrapper._library = Some(library);
+            Ok(wrapper)
+        }
+    }
+
+    /// Load one plugin instance from an entry whose `init` has already run.
+    ///
+    /// The CLAP spec pairs `clap_entry.init`/`deinit` per entry, with `deinit`
+    /// after every plugin instance is destroyed and before the library is
+    /// unloaded. A bundle may register global resources in `init` and release
+    /// them only in `deinit`, so a load path that skips it leaks per
+    /// load/unload cycle and can fault when the library unloads code a
+    /// registration still points at. This function keeps that pairing whole on
+    /// every path: on failure it deinits before returning, and on success the
+    /// returned wrapper's `Drop` deinits after destroying the plugin. `new`
+    /// attaches the owning `Library` to the wrapper afterwards.
+    ///
+    /// # Safety
+    /// `entry_ptr` must point to a `clap_plugin_entry` whose `init` succeeded,
+    /// and whose library stays loaded for as long as the returned wrapper lives.
+    unsafe fn load_initialized_entry(
+        entry_ptr: *const clap_plugin_entry,
+        plugin_id: &str,
+        sample_rate: f64,
+    ) -> Result<Self, String> {
+        let loaded = Self::create_instance_from_entry(entry_ptr, plugin_id, sample_rate);
+        match loaded {
+            Ok(wrapper) => Ok(wrapper),
+            Err(error) => {
+                // No wrapper exists to carry the deinit, so it runs here —
+                // the capture-then-deinit shape the scan-time loader uses.
+                deinit_entry(entry_ptr);
+                Err(error)
             }
+        }
+    }
 
-            let factory = &*(factory_ptr as *const clap_plugin_factory);
+    /// Factory query through activation, producing a wrapper that does not yet
+    /// own the library the entry lives in (`new` attaches it) but records the
+    /// entry so its `Drop` can deinit.
+    ///
+    /// # Safety
+    /// `entry_ptr` must point to a live, initialised `clap_plugin_entry`.
+    unsafe fn create_instance_from_entry(
+        entry_ptr: *const clap_plugin_entry,
+        plugin_id: &str,
+        sample_rate: f64,
+    ) -> Result<Self, String> {
+        // 4. Get the plugin factory
+        let factory_id = CLAP_PLUGIN_FACTORY_ID.as_ptr() as *const i8;
+        let factory_ptr = if let Some(get_factory) = (*entry_ptr).get_factory {
+            get_factory(factory_id)
+        } else {
+            return Err("clap_entry has no get_factory".to_string());
+        };
 
-            // 5. Create host descriptor
-            // Pin per-instance host callback state into the descriptor BEFORE the
-            // plugin is created, so latency-change callbacks can reach this instance.
-            let host_state = Box::new(HostCallbackState::default());
-            let mut host = Box::new(create_host_descriptor());
-            host.host_data = (&*host_state as *const HostCallbackState) as *mut c_void;
-            let host_ptr: *const clap_host = &*host;
+        if factory_ptr.is_null() {
+            return Err("Plugin factory is null".to_string());
+        }
 
-            // 6. Create the plugin instance
-            let id_c = CString::new(plugin_id).map_err(|_| "Invalid plugin ID")?;
+        let factory = &*(factory_ptr as *const clap_plugin_factory);
 
-            let create_plugin = factory
-                .create_plugin
-                .ok_or("Factory has no create_plugin function")?;
+        // 5. Create host descriptor
+        // Pin per-instance host callback state into the descriptor BEFORE the
+        // plugin is created, so latency-change callbacks can reach this instance.
+        let host_state = Box::new(HostCallbackState::default());
+        let mut host = Box::new(create_host_descriptor());
+        host.host_data = (&*host_state as *const HostCallbackState) as *mut c_void;
+        let host_ptr: *const clap_host = &*host;
 
-            let plugin = create_plugin(factory, host_ptr, id_c.as_ptr());
-            if plugin.is_null() {
-                return Err(format!("Failed to create plugin instance: {}", plugin_id));
-            }
+        // 6. Create the plugin instance
+        let id_c = CString::new(plugin_id).map_err(|_| "Invalid plugin ID")?;
 
-            // 7. Init the plugin
-            let plugin_ref = &*plugin;
-            if let Some(init_fn) = plugin_ref.init {
-                let ok = init_fn(plugin);
-                if !ok {
-                    if let Some(destroy) = plugin_ref.destroy {
-                        destroy(plugin);
-                    }
-                    return Err("plugin.init() returned false".to_string());
+        let create_plugin = factory
+            .create_plugin
+            .ok_or("Factory has no create_plugin function")?;
+
+        let plugin = create_plugin(factory, host_ptr, id_c.as_ptr());
+        if plugin.is_null() {
+            return Err(format!("Failed to create plugin instance: {}", plugin_id));
+        }
+
+        // 7. Init the plugin
+        let plugin_ref = &*plugin;
+        if let Some(init_fn) = plugin_ref.init {
+            let ok = init_fn(plugin);
+            if !ok {
+                if let Some(destroy) = plugin_ref.destroy {
+                    destroy(plugin);
                 }
+                return Err("plugin.init() returned false".to_string());
             }
+        }
 
-            // Read the plugin name
-            let name = if !plugin_ref.desc.is_null() {
-                let desc = &*plugin_ref.desc;
-                if !desc.name.is_null() {
-                    CStr::from_ptr(desc.name).to_string_lossy().into_owned()
-                } else {
-                    plugin_id.to_string()
-                }
+        // Read the plugin name
+        let name = if !plugin_ref.desc.is_null() {
+            let desc = &*plugin_ref.desc;
+            if !desc.name.is_null() {
+                CStr::from_ptr(desc.name).to_string_lossy().into_owned()
             } else {
                 plugin_id.to_string()
-            };
-
-            // 8. Query extensions BEFORE activation
-            let params_ext =
-                Self::query_extension::<clap_plugin_params>(plugin_ref, CLAP_EXT_PARAMS);
-            let state_ext = Self::query_extension::<clap_plugin_state>(plugin_ref, CLAP_EXT_STATE);
-            let gui_ext = Self::query_extension::<clap_plugin_gui>(plugin_ref, CLAP_EXT_GUI);
-            let latency_ext =
-                Self::query_extension::<clap_plugin_latency>(plugin_ref, CLAP_EXT_LATENCY);
-
-            if !params_ext.is_null() {
-                eprintln!("[CLAP] Plugin '{}' supports CLAP_EXT_PARAMS", name);
             }
-            if !state_ext.is_null() {
-                eprintln!("[CLAP] Plugin '{}' supports CLAP_EXT_STATE", name);
-            }
-            if !gui_ext.is_null() {
-                eprintln!("[CLAP] Plugin '{}' supports CLAP_EXT_GUI", name);
-            }
+        } else {
+            plugin_id.to_string()
+        };
 
-            // 9. Activate the plugin. Activation is [main-thread]; entering the
-            //    processing state is [audio-thread], so it stops here and the
-            //    first block picks it up through the gate.
-            let activated = activate_plugin(plugin, sample_rate);
-            if !activated {
-                eprintln!(
-                    "[CLAP] Warning: plugin.activate() returned false for {}",
-                    name
-                );
-            }
+        // 8. Query extensions BEFORE activation
+        let params_ext = Self::query_extension::<clap_plugin_params>(plugin_ref, CLAP_EXT_PARAMS);
+        let state_ext = Self::query_extension::<clap_plugin_state>(plugin_ref, CLAP_EXT_STATE);
+        let gui_ext = Self::query_extension::<clap_plugin_gui>(plugin_ref, CLAP_EXT_GUI);
+        let latency_ext =
+            Self::query_extension::<clap_plugin_latency>(plugin_ref, CLAP_EXT_LATENCY);
 
-            let processing = Arc::new(ProcessingGate::default());
-            if activated {
-                processing.request_start();
-            }
-
-            eprintln!("[CLAP] Loaded plugin: {} (activated={})", name, activated);
-
-            Ok(Self {
-                _library: Some(library),
-                plugin,
-                host,
-                activated,
-                name,
-                sample_rate,
-                params_ext,
-                state_ext,
-                gui_ext,
-                latency_ext,
-                host_state,
-                gui_open: false,
-                processing,
-                transport_scratch: Box::new(empty_transport_event()),
-                has_transport: false,
-                input_scratch: Box::new([[0.0f32; MAX_BUFFER]; 2]),
-                output_scratch: Box::new([[0.0f32; MAX_BUFFER]; 2]),
-                midi_scratch: Vec::with_capacity(MAX_MIDI),
-                parameter_scratch: Vec::with_capacity(MAX_PARAMETER_EVENTS),
-                #[cfg(feature = "engine-owned-command-fixture")]
-                command_fixture: None,
-            })
+        if !params_ext.is_null() {
+            eprintln!("[CLAP] Plugin '{}' supports CLAP_EXT_PARAMS", name);
         }
+        if !state_ext.is_null() {
+            eprintln!("[CLAP] Plugin '{}' supports CLAP_EXT_STATE", name);
+        }
+        if !gui_ext.is_null() {
+            eprintln!("[CLAP] Plugin '{}' supports CLAP_EXT_GUI", name);
+        }
+
+        // 9. Activate the plugin. Activation is [main-thread]; entering the
+        //    processing state is [audio-thread], so it stops here and the
+        //    first block picks it up through the gate.
+        let activated = activate_plugin(plugin, sample_rate);
+        if !activated {
+            eprintln!(
+                "[CLAP] Warning: plugin.activate() returned false for {}",
+                name
+            );
+        }
+
+        let processing = Arc::new(ProcessingGate::default());
+        if activated {
+            processing.request_start();
+        }
+
+        eprintln!("[CLAP] Loaded plugin: {} (activated={})", name, activated);
+
+        Ok(Self {
+            _library: None,
+            entry: entry_ptr,
+            plugin,
+            host,
+            activated,
+            name,
+            sample_rate,
+            params_ext,
+            state_ext,
+            gui_ext,
+            latency_ext,
+            host_state,
+            gui_open: false,
+            editor_resizer: None,
+            processing,
+            transport_scratch: Box::new(empty_transport_event()),
+            has_transport: false,
+            input_scratch: Box::new([[0.0f32; MAX_BUFFER]; 2]),
+            output_scratch: Box::new([[0.0f32; MAX_BUFFER]; 2]),
+            midi_scratch: Vec::with_capacity(MAX_MIDI),
+            parameter_scratch: Vec::with_capacity(MAX_PARAMETER_EVENTS),
+            #[cfg(feature = "engine-owned-command-fixture")]
+            command_fixture: None,
+        })
     }
 
     #[cfg(feature = "engine-owned-command-fixture")]
@@ -373,6 +442,7 @@ impl ClapWrapper {
     pub fn new_engine_owned_command_fixture(name: &str, state: Vec<u8>, has_gui: bool) -> Self {
         Self {
             _library: None,
+            entry: ptr::null(),
             plugin: ptr::null(),
             host: Box::new(create_host_descriptor()),
             activated: true,
@@ -384,6 +454,7 @@ impl ClapWrapper {
             latency_ext: ptr::null(),
             host_state: Box::new(HostCallbackState::default()),
             gui_open: false,
+            editor_resizer: None,
             processing: Arc::new(ProcessingGate::fixture_already_processing()),
             transport_scratch: Box::new(empty_transport_event()),
             has_transport: false,
@@ -612,8 +683,48 @@ impl ClapWrapper {
         }
     }
 
+    /// Install how the host resizes the window this editor is drawn into.
+    ///
+    /// Both halves of the answer move together: the wrapper holds the resizer
+    /// the control path calls, and the host callback state holds the fact that
+    /// there is one, because the plugin's own callback has to decide whether to
+    /// accept a resize without reaching the wrapper.
+    pub fn set_editor_window_resizer(&mut self, resize: EditorWindowResizer) {
+        self.editor_resizer = Some(resize);
+        self.host_state.set_editor_resize_available(true);
+    }
+
+    /// Stop answering resize requests. Called wherever the editor's host window
+    /// stops existing.
+    fn release_editor_window_resizer(&mut self) {
+        self.editor_resizer = None;
+        self.host_state.set_editor_resize_available(false);
+    }
+
+    /// Apply a size the plugin asked for through `clap_host_gui.request_resize`,
+    /// reporting what was applied. Control path only — it reaches the shell's
+    /// window server.
+    pub fn apply_pending_editor_resize(&mut self) -> Option<(u32, u32)> {
+        let (width, height) = self.host_state.take_editor_resize()?;
+        let resize = self.editor_resizer.as_ref()?;
+        resize(width, height);
+        Some((width, height))
+    }
+
+    /// Install the wake fired for every plugin-initiated ask this host answers
+    /// off the calling thread. First install wins; a second call reports
+    /// `false`.
+    pub fn set_plugin_host_request_notifier(&self, notifier: PluginHostRequestNotifier) -> bool {
+        self.host_state.set_request_notifier(notifier)
+    }
+
     /// Close (hide + destroy) the plugin GUI.
     pub fn close_gui(&mut self) {
+        // Before the early returns below: whether the plugin had an editor to
+        // destroy or not, this instance no longer has a host window, and a
+        // resize accepted against one that is gone is a resize nothing applies.
+        self.release_editor_window_resizer();
+
         #[cfg(feature = "engine-owned-command-fixture")]
         if self.command_fixture.is_some() {
             self.gui_open = false;
@@ -982,6 +1093,19 @@ fn copy_inputs_to_outputs(inputs: &[&[f32]], outputs: &mut [&mut [f32]], num_sam
             let len = num_samples.min(inputs[ch].len()).min(out.len());
             out[..len].copy_from_slice(&inputs[ch][..len]);
         }
+    }
+}
+
+/// Run the entry's `deinit` — the half of the CLAP init/deinit pairing that
+/// releases whatever the bundle registered globally during `init`.
+///
+/// # Safety
+/// `entry_ptr` must point to a live, initialised `clap_plugin_entry` whose
+/// library is still loaded; after every plugin instance created through it has
+/// been destroyed, as the spec requires.
+unsafe fn deinit_entry(entry_ptr: *const clap_plugin_entry) {
+    if let Some(deinit) = (*entry_ptr).deinit {
+        deinit();
     }
 }
 
@@ -1403,6 +1527,18 @@ impl AudioPlugin for ClapWrapper {
     fn close_gui(&mut self) {
         ClapWrapper::close_gui(self)
     }
+
+    fn set_editor_window_resizer(&mut self, resize: EditorWindowResizer) {
+        ClapWrapper::set_editor_window_resizer(self, resize)
+    }
+
+    fn apply_pending_editor_resize(&mut self) -> Option<(u32, u32)> {
+        ClapWrapper::apply_pending_editor_resize(self)
+    }
+
+    fn take_state_dirty(&mut self) -> bool {
+        self.host_state.take_state_dirty()
+    }
 }
 
 /// CLAP's implementation of the runtime seam. Same forwarding rule as the
@@ -1588,6 +1724,7 @@ mod tests {
         processing.request_start();
         ClapWrapper {
             _library: None,
+            entry: ptr::null(),
             plugin,
             host: Box::new(create_host_descriptor()),
             activated: true,
@@ -1599,6 +1736,7 @@ mod tests {
             latency_ext,
             host_state: Box::new(HostCallbackState::default()),
             gui_open: false,
+            editor_resizer: None,
             processing,
             transport_scratch: Box::new(empty_transport_event()),
             has_transport: false,
@@ -1777,6 +1915,378 @@ mod tests {
             state_load_result("fixture", false),
             Err("[CLAP] state.load() failed for fixture".to_string())
         );
+    }
+
+    // ── Entry init/deinit pairing on unload ─────────────────────────────
+    //
+    // CLAP pairs `clap_entry.init`/`deinit` per entry: a bundle may register
+    // global resources in init and release them only in deinit. The wrapper
+    // loads one library per instance, so each instance's init owes exactly one
+    // deinit — from its own Drop, after its plugin is destroyed.
+
+    use clap_sys::version::CLAP_VERSION;
+
+    static ENTRY_LIFECYCLE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    /// Every entry- and plugin-level lifecycle call the fakes below record, in
+    /// order. A Mutex<Vec<_>> rather than counters because the claim under
+    /// test is ordering, not just occurrence.
+    static ENTRY_LIFECYCLE_CALLS: std::sync::Mutex<Vec<&'static str>> =
+        std::sync::Mutex::new(Vec::new());
+
+    fn clear_entry_lifecycle() {
+        ENTRY_LIFECYCLE_CALLS.lock().unwrap().clear();
+    }
+
+    fn entry_lifecycle() -> Vec<&'static str> {
+        ENTRY_LIFECYCLE_CALLS.lock().unwrap().clone()
+    }
+
+    fn record_lifecycle_call(call: &'static str) {
+        ENTRY_LIFECYCLE_CALLS.lock().unwrap().push(call);
+    }
+
+    unsafe extern "C" fn recording_entry_deinit() {
+        record_lifecycle_call("entry_deinit");
+    }
+
+    unsafe extern "C" fn recording_get_factory(_factory_id: *const i8) -> *const c_void {
+        &raw const RECORDING_FACTORY as *const c_void
+    }
+
+    unsafe extern "C" fn null_get_factory(_factory_id: *const i8) -> *const c_void {
+        ptr::null()
+    }
+
+    unsafe extern "C" fn failing_get_factory(_factory_id: *const i8) -> *const c_void {
+        &raw const FAILING_PLUGIN_FACTORY as *const c_void
+    }
+
+    unsafe extern "C" fn recording_plugin_init(_plugin: *const clap_plugin) -> bool {
+        record_lifecycle_call("plugin_init");
+        true
+    }
+
+    unsafe extern "C" fn failing_plugin_init(_plugin: *const clap_plugin) -> bool {
+        false
+    }
+
+    unsafe extern "C" fn recording_plugin_activate(
+        _plugin: *const clap_plugin,
+        _sample_rate: f64,
+        _min_frames: u32,
+        _max_frames: u32,
+    ) -> bool {
+        record_lifecycle_call("plugin_activate");
+        true
+    }
+
+    unsafe extern "C" fn recording_plugin_deactivate(_plugin: *const clap_plugin) {
+        record_lifecycle_call("plugin_deactivate");
+    }
+
+    unsafe extern "C" fn recording_plugin_destroy(plugin: *const clap_plugin) {
+        record_lifecycle_call("plugin_destroy");
+        // Reclaim the instance memory create_plugin leaked, exactly as a real
+        // plugin's destroy frees what create_plugin allocated.
+        drop(Box::from_raw(plugin as *mut clap_plugin));
+    }
+
+    /// A fresh recording plugin per create call — two instances of one entry
+    /// must never share one clap_plugin.
+    unsafe extern "C" fn recording_create_plugin(
+        _factory: *const clap_plugin_factory,
+        _host: *const clap_host,
+        _plugin_id: *const i8,
+    ) -> *const clap_plugin {
+        Box::into_raw(Box::new(clap_plugin {
+            desc: ptr::null(),
+            plugin_data: ptr::null_mut(),
+            init: Some(recording_plugin_init),
+            destroy: Some(recording_plugin_destroy),
+            activate: Some(recording_plugin_activate),
+            deactivate: Some(recording_plugin_deactivate),
+            start_processing: None,
+            stop_processing: None,
+            reset: None,
+            process: None,
+            get_extension: None,
+            on_main_thread: None,
+        }))
+    }
+
+    unsafe extern "C" fn failing_create_plugin(
+        _factory: *const clap_plugin_factory,
+        _host: *const clap_host,
+        _plugin_id: *const i8,
+    ) -> *const clap_plugin {
+        Box::into_raw(Box::new(clap_plugin {
+            desc: ptr::null(),
+            plugin_data: ptr::null_mut(),
+            init: Some(failing_plugin_init),
+            destroy: Some(recording_plugin_destroy),
+            activate: Some(recording_plugin_activate),
+            deactivate: Some(recording_plugin_deactivate),
+            start_processing: None,
+            stop_processing: None,
+            reset: None,
+            process: None,
+            get_extension: None,
+            on_main_thread: None,
+        }))
+    }
+
+    static RECORDING_FACTORY: clap_plugin_factory = clap_plugin_factory {
+        get_plugin_count: None,
+        get_plugin_descriptor: None,
+        create_plugin: Some(recording_create_plugin),
+    };
+
+    static FAILING_PLUGIN_FACTORY: clap_plugin_factory = clap_plugin_factory {
+        get_plugin_count: None,
+        get_plugin_descriptor: None,
+        create_plugin: Some(failing_create_plugin),
+    };
+
+    static RECORDING_ENTRY: clap_plugin_entry = clap_plugin_entry {
+        clap_version: CLAP_VERSION,
+        init: None,
+        deinit: Some(recording_entry_deinit),
+        get_factory: Some(recording_get_factory),
+    };
+
+    static NULL_FACTORY_ENTRY: clap_plugin_entry = clap_plugin_entry {
+        clap_version: CLAP_VERSION,
+        init: None,
+        deinit: Some(recording_entry_deinit),
+        get_factory: Some(null_get_factory),
+    };
+
+    static FAILING_PLUGIN_ENTRY: clap_plugin_entry = clap_plugin_entry {
+        clap_version: CLAP_VERSION,
+        init: None,
+        deinit: Some(recording_entry_deinit),
+        get_factory: Some(failing_get_factory),
+    };
+
+    const LIFECYCLE_PLUGIN_ID: &str = "org.sourdaw.test.entry-lifecycle";
+
+    #[test]
+    fn a_dropped_wrapper_deinits_the_entry_after_destroying_the_plugin() {
+        let _guard = ENTRY_LIFECYCLE_LOCK.lock().unwrap();
+        clear_entry_lifecycle();
+
+        let wrapper = unsafe {
+            ClapWrapper::load_initialized_entry(
+                &raw const RECORDING_ENTRY,
+                LIFECYCLE_PLUGIN_ID,
+                48_000.0,
+            )
+        }
+        .expect("the recording fake loads");
+
+        drop(wrapper);
+
+        assert_eq!(
+            entry_lifecycle(),
+            [
+                "plugin_init",
+                "plugin_activate",
+                "plugin_deactivate",
+                "plugin_destroy",
+                "entry_deinit",
+            ],
+            "deinit must run exactly once, after the instance's deactivate/destroy — \
+             the CLAP spec places it after every plugin instance is destroyed"
+        );
+    }
+
+    #[test]
+    fn a_load_that_fails_after_entry_init_still_deinits_the_entry() {
+        let _guard = ENTRY_LIFECYCLE_LOCK.lock().unwrap();
+        clear_entry_lifecycle();
+
+        let error = unsafe {
+            ClapWrapper::load_initialized_entry(
+                &raw const NULL_FACTORY_ENTRY,
+                LIFECYCLE_PLUGIN_ID,
+                48_000.0,
+            )
+        }
+        .err()
+        .expect("an entry whose factory query returns null must not load");
+
+        assert_eq!(error, "Plugin factory is null");
+        assert_eq!(
+            entry_lifecycle(),
+            ["entry_deinit"],
+            "every early return after a successful init must release the entry it initialised"
+        );
+    }
+
+    #[test]
+    fn a_plugin_init_failure_destroys_the_instance_and_still_deinits_the_entry() {
+        let _guard = ENTRY_LIFECYCLE_LOCK.lock().unwrap();
+        clear_entry_lifecycle();
+
+        let error = unsafe {
+            ClapWrapper::load_initialized_entry(
+                &raw const FAILING_PLUGIN_ENTRY,
+                LIFECYCLE_PLUGIN_ID,
+                48_000.0,
+            )
+        }
+        .err()
+        .expect("a plugin whose init returns false must not load");
+
+        assert_eq!(error, "plugin.init() returned false");
+        assert_eq!(
+            entry_lifecycle(),
+            ["plugin_destroy", "entry_deinit"],
+            "the deepest early return still destroys the half-built instance and deinits"
+        );
+    }
+
+    #[test]
+    fn each_instance_of_an_entry_deinits_once_from_its_own_drop() {
+        let _guard = ENTRY_LIFECYCLE_LOCK.lock().unwrap();
+        clear_entry_lifecycle();
+
+        let first = unsafe {
+            ClapWrapper::load_initialized_entry(
+                &raw const RECORDING_ENTRY,
+                LIFECYCLE_PLUGIN_ID,
+                48_000.0,
+            )
+        }
+        .expect("the recording fake loads");
+        let second = unsafe {
+            ClapWrapper::load_initialized_entry(
+                &raw const RECORDING_ENTRY,
+                LIFECYCLE_PLUGIN_ID,
+                48_000.0,
+            )
+        }
+        .expect("the recording fake loads");
+
+        drop(first);
+        assert_eq!(
+            entry_lifecycle(),
+            [
+                "plugin_init",
+                "plugin_activate",
+                "plugin_init",
+                "plugin_activate",
+                "plugin_deactivate",
+                "plugin_destroy",
+                "entry_deinit",
+            ],
+            "one instance down: one destroy/deinit pair, and only for the dropped one"
+        );
+
+        drop(second);
+        assert_eq!(
+            entry_lifecycle(),
+            [
+                "plugin_init",
+                "plugin_activate",
+                "plugin_init",
+                "plugin_activate",
+                "plugin_deactivate",
+                "plugin_destroy",
+                "entry_deinit",
+                "plugin_deactivate",
+                "plugin_destroy",
+                "entry_deinit",
+            ],
+            "the sibling instance stays paired to its own init until its own drop — \
+             the host loads one entry per instance, so no shared owner defers deinit"
+        );
+    }
+
+    // ── Plugin-initiated host requests: editor resize + state dirty ─────
+
+    /// The size a plugin asks for has to arrive at the host window intact.
+    /// Asserting the dimensions rather than the call is the whole point: the
+    /// old callback answered `true` and dropped them, which a "the resizer ran"
+    /// assertion would have accepted.
+    #[test]
+    fn a_resize_request_reaches_the_host_window_carrying_its_dimensions() {
+        let mut wrapper = stub_wrapper(stub_plugin_ptr());
+        let applied: Arc<std::sync::Mutex<Vec<(u32, u32)>>> =
+            Arc::new(std::sync::Mutex::new(Vec::new()));
+        let sink = Arc::clone(&applied);
+        assert!(wrapper.set_plugin_host_request_notifier(Box::new(|_| {})));
+        wrapper.set_editor_window_resizer(Arc::new(move |width, height| {
+            sink.lock().expect("resize log").push((width, height));
+        }));
+
+        assert!(
+            wrapper.host_state.request_editor_resize(1024, 768),
+            "an open editor with a wake installed accepts the request"
+        );
+        assert_eq!(wrapper.apply_pending_editor_resize(), Some((1024, 768)));
+
+        assert_eq!(
+            applied.lock().expect("resize log").as_slice(),
+            [(1024, 768)],
+            "the window is resized to the size the plugin named"
+        );
+        assert_eq!(
+            wrapper.apply_pending_editor_resize(),
+            None,
+            "one request resizes the window once, not on every later control-path visit"
+        );
+    }
+
+    /// Closing the editor takes its window away, so a size accepted against it
+    /// must stop being answerable — otherwise the next editor opens at the
+    /// previous one's size.
+    #[test]
+    fn closing_the_editor_stops_the_backend_answering_resize_requests() {
+        let mut wrapper = stub_wrapper(stub_plugin_ptr());
+        assert!(wrapper.set_plugin_host_request_notifier(Box::new(|_| {})));
+        wrapper.set_editor_window_resizer(Arc::new(|_, _| {}));
+        assert!(wrapper.host_state.request_editor_resize(1024, 768));
+
+        wrapper.close_gui();
+
+        assert!(
+            !wrapper.host_state.request_editor_resize(640, 480),
+            "with no window to resize the request is refused rather than accepted and dropped"
+        );
+        assert_eq!(
+            wrapper.apply_pending_editor_resize(),
+            None,
+            "the size accepted before the close is discarded with the window"
+        );
+    }
+
+    /// An instance the host never installed a wake on — one the native engine
+    /// did not take, whose asks nothing would ever carry to the control path —
+    /// must refuse the resize rather than accept it and drop it. A refused
+    /// plugin lays itself out at the size it has; an accepted one waits forever
+    /// for a window that never changes.
+    #[test]
+    fn an_editor_resize_is_refused_while_no_wake_carries_it_to_the_control_path() {
+        let mut wrapper = stub_wrapper(stub_plugin_ptr());
+        wrapper.set_editor_window_resizer(Arc::new(|_, _| {}));
+
+        assert!(!wrapper.host_state.request_editor_resize(1024, 768));
+        assert_eq!(wrapper.apply_pending_editor_resize(), None);
+    }
+
+    /// An edit inside the plugin's own editor has to cross from the callback
+    /// thread to the control path, and be reported exactly once so the project
+    /// is marked dirty per edit rather than on every later wake.
+    #[test]
+    fn a_state_dirty_signal_crosses_to_the_control_path_and_is_consumed_once() {
+        let mut wrapper = stub_wrapper(stub_plugin_ptr());
+        assert!(!AudioPlugin::take_state_dirty(&mut wrapper));
+
+        wrapper.host_state.mark_state_dirty();
+
+        assert!(AudioPlugin::take_state_dirty(&mut wrapper));
+        assert!(!AudioPlugin::take_state_dirty(&mut wrapper));
     }
 
     // ── Processing-state thread affinity + transport forwarding ─────────
@@ -2224,6 +2734,18 @@ impl Drop for ClapWrapper {
                 }
             }
             eprintln!("[CLAP] Unloaded plugin: {}", self.name);
+        }
+
+        // The CLAP spec pairs `clap_entry.init`/`deinit` per entry, and places
+        // `deinit` after every plugin instance is destroyed. A bundle may
+        // register global resources in `init` and release them only in
+        // `deinit`, so a dropped wrapper that skips this leaks them per
+        // load/unload cycle — and one whose library unloads while still
+        // registered faults when the registration is next touched. This Drop
+        // body runs before any field drops, so `_library` still has the DSO
+        // mapped and `deinit`'s code is callable. Null for fixture wrappers.
+        if !self.entry.is_null() {
+            unsafe { deinit_entry(self.entry) };
         }
     }
 }

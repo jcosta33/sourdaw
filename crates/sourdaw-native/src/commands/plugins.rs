@@ -930,6 +930,31 @@ pub async fn load_plugin(
 
             let id = engine.reserve_plugin_id();
             let (bridge, bridge_handle) = create_audio_bridge(id);
+
+            // Wake the request watcher when this instance asks its host for
+            // something it may only be given off its own callback thread — an
+            // editor resize, or the report that its state changed.
+            //
+            // Engine-owned only, because the watcher carries an ask out through
+            // `engine_plugins`: an instance the engine never took is not
+            // reachable from there, and installing the wake on one would have the
+            // plugin told its resize was accepted by a follow-up that could never
+            // run. No wake is the honest answer — `request_resize` then returns
+            // false, and a plugin that is refused can lay itself out to the size
+            // it has.
+            //
+            // The answer is discarded rather than reported, because a refusal is
+            // the ordinary case for a format that raises none of these asks: only
+            // CLAP routes an editor resize and a state change back through the
+            // host.
+            let requesting_instance_id = instance_id.0.clone();
+            let _ = wrapper.set_plugin_host_request_notifier(Box::new(move |request| {
+                crate::host::plugin_host_requests::notify_plugin_host_request(
+                    &requesting_instance_id,
+                    request,
+                );
+            }));
+
             let shared_plugin = Arc::new(SharedHostedPlugin::new(wrapper));
 
             // The record insert re-decides the session ceiling

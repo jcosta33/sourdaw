@@ -114,7 +114,7 @@ export const handleReorderDevices = createHandler<'reorderDevices'>({
         // inverse and redo retain exact topology proofs and may run at a later
         // project revision through the same guarded handler.
         delete action.payload.expectedProjectRevision;
-        reorderDevicesInProject(before.id, after);
+        reorderDevicesInProject(before.id, after.devices);
 
         if (!shouldCreateLiveTrackStrip(before)) {
             return { status: 'written' as const };

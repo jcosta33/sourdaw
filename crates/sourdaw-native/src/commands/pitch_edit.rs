@@ -5,6 +5,7 @@ use daw_dsp::knead::psola::{psola_process_offline_inplace, PsolaConfig};
 use daw_dsp::knead::yin::{yin_frame, YinConfig};
 use hound::{WavReader, WavSpec, WavWriter};
 use serde::{Deserialize, Serialize};
+use std::path::Path;
 use std::sync::Arc;
 
 use crate::events::{EventSink, EventSinkExt};
@@ -222,29 +223,165 @@ pub async fn commit_pitch_edit(request: PitchCommitRequest) -> Result<(), String
             &mut out_samples,
         );
 
-        // Write the output file
-        let mut writer = WavWriter::create(
-            &output_audio_path,
-            WavSpec {
-                channels: 1,
-                sample_rate: spec.sample_rate,
-                bits_per_sample: 32,
-                sample_format: hound::SampleFormat::Float,
-            },
-        )
-        .map_err(|e| format!("Failed to create output WAV: {}", e))?;
-
-        for sample in out_samples {
-            writer
-                .write_sample(sample)
-                .map_err(|e| format!("Failed to write sample: {}", e))?;
-        }
-        writer
-            .finalize()
-            .map_err(|e| format!("Failed to finalize output WAV: {}", e))?;
+        // Write the output file.
+        write_committed_wav(&output_audio_path, spec.sample_rate, |writer| {
+            write_mono_samples(writer, &out_samples)
+        })?;
 
         Ok(())
     })
     .await
     .map_err(|e| format!("Task failed: {}", e))?
+}
+
+/// The write step of `commit_pitch_edit`: the destination — which
+/// `resolve_writable_file_path` returns unchanged when it already exists — is
+/// replaced only by a complete, finalized WAV, same contract as every
+/// exported file (see `filesystem::replace_file_atomically`).
+///
+/// The sample-streaming closure is the seam that lets the atomicity contract
+/// be exercised with an injected failure, mirroring `write_wav`'s tests in
+/// `audio_postprocess`.
+fn write_committed_wav(
+    path: &Path,
+    sample_rate: u32,
+    write_samples: impl FnOnce(
+        &mut WavWriter<std::io::BufWriter<&mut std::fs::File>>,
+    ) -> Result<(), String>,
+) -> Result<(), String> {
+    let spec = WavSpec {
+        channels: 1,
+        sample_rate,
+        bits_per_sample: 32,
+        sample_format: hound::SampleFormat::Float,
+    };
+    filesystem::write_wav_atomically(path, spec, write_samples)
+}
+
+/// Stream the committed mono samples into an already-open writer. Split from
+/// `write_committed_wav` so the atomic replace can be exercised with an
+/// injected failure.
+fn write_mono_samples(
+    writer: &mut WavWriter<std::io::BufWriter<&mut std::fs::File>>,
+    samples: &[f32],
+) -> Result<(), String> {
+    for sample in samples {
+        writer
+            .write_sample(*sample)
+            .map_err(|e| format!("Failed to write sample: {}", e))?;
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use hound::SampleFormat;
+
+    /// A short-lived on-disk WAV under the system temp dir (an allowed native
+    /// file root), removed when dropped so parallel test runs never collide.
+    struct TempWav {
+        path: std::path::PathBuf,
+    }
+
+    impl TempWav {
+        fn new(label: &str) -> Self {
+            let path = std::env::temp_dir().join(format!(
+                "sourdaw-pitch-edit-{label}-{}.wav",
+                uuid::Uuid::new_v4()
+            ));
+            Self { path }
+        }
+    }
+
+    impl Drop for TempWav {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_file(&self.path);
+        }
+    }
+
+    /// List sibling temp files left behind for `output` — the atomic write
+    /// path must clean these up on failure. The output file name is
+    /// uuid-unique per test, so a prefix scan of its directory is precise.
+    fn leftover_temp_files(output: &Path) -> Vec<std::path::PathBuf> {
+        let file_name = output.file_name().unwrap().to_string_lossy().into_owned();
+        std::fs::read_dir(output.parent().unwrap())
+            .unwrap()
+            .filter_map(|entry| entry.ok())
+            .map(|entry| entry.path())
+            .filter(|path| {
+                let name = path.file_name().unwrap_or_default().to_string_lossy();
+                name.starts_with(&file_name) && name.ends_with(".tmp")
+            })
+            .collect()
+    }
+
+    fn seed_previous_render(path: &Path) {
+        let spec = WavSpec {
+            channels: 1,
+            sample_rate: 44_100,
+            bits_per_sample: 32,
+            sample_format: SampleFormat::Float,
+        };
+        let mut writer = WavWriter::create(path, spec).unwrap();
+        for i in 0..50 {
+            writer.write_sample(0.1f32 * (i % 3) as f32).unwrap();
+        }
+        writer.finalize().unwrap();
+    }
+
+    /// Regression (issue #2823, pitch-edit arm): `commit_pitch_edit` used to
+    /// hand the destination straight to `WavWriter::create`, which truncates
+    /// it immediately — a mid-write failure (disk full, I/O fault) destroyed
+    /// any previously valid render at the output path and left a truncated,
+    /// headerless WAV behind. A failure injected mid-write, after a real
+    /// sample has hit the writer, must leave the pre-existing output
+    /// byte-for-byte untouched and no temp file behind.
+    #[test]
+    fn a_mid_write_failure_leaves_a_pre_existing_output_untouched() {
+        let output = TempWav::new("atomic-write-failure");
+        seed_previous_render(&output.path);
+        let bytes_before = std::fs::read(&output.path).unwrap();
+
+        let error = write_committed_wav(&output.path, 44_100, |writer| {
+            writer
+                .write_sample(0.5f32)
+                .map_err(|e| format!("Failed to write sample: {e}"))?;
+            Err("injected write failure".to_string())
+        })
+        .unwrap_err();
+
+        assert_eq!(error, "injected write failure");
+        assert_eq!(
+            std::fs::read(&output.path).unwrap(),
+            bytes_before,
+            "a failed write must leave the pre-existing output byte-for-byte intact"
+        );
+        assert!(
+            leftover_temp_files(&output.path).is_empty(),
+            "the temp file must be removed after a failed write"
+        );
+    }
+
+    /// The commit's success path: the destination holds the complete new mono
+    /// WAV and no temp sibling remains.
+    #[test]
+    fn a_successful_commit_write_replaces_the_output_completely() {
+        let output = TempWav::new("atomic-write-success");
+        seed_previous_render(&output.path);
+
+        write_committed_wav(&output.path, 44_100, |writer| {
+            write_mono_samples(writer, &[0.25f32; 100])
+        })
+        .unwrap();
+
+        let mut reader = WavReader::open(&output.path).unwrap();
+        assert_eq!(reader.spec().channels, 1);
+        assert_eq!(reader.spec().sample_rate, 44_100);
+        assert_eq!(reader.duration(), 100);
+        assert!(
+            leftover_temp_files(&output.path).is_empty(),
+            "the temp file must be renamed away on success"
+        );
+    }
 }

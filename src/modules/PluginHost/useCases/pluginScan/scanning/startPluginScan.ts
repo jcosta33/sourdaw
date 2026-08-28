@@ -50,7 +50,21 @@ export async function startPluginScan(): Promise<void> {
             return;
         }
 
-        const result = await scanPlugins(allPaths);
+        const attempt = await scanPlugins(allPaths);
+        if (!attempt.ran) {
+            // No scan ran, so there is no result to apply: everything a scan
+            // restates — the plugin list, the paths it merged, the time it
+            // finished — stays as it is, and the reason reaches the error
+            // channel the scan UI already renders.
+            pluginScanStore.update((current) => ({
+                ...(current ?? getState()),
+                isScanning: false,
+                errors: [attempt.reason],
+                notices: [],
+            }));
+            return;
+        }
+        const { result } = attempt;
         const refusedPathNotice =
             refusedPaths.length > 0
                 ? [
@@ -70,10 +84,18 @@ export async function startPluginScan(): Promise<void> {
                 ...currentState,
                 scanPaths,
                 isScanning: false,
-                lastScanTime: Date.now(),
                 errors: result.errors,
                 notices: [...refusedPathNotice, ...result.notices],
-                scannedPlugins: result.plugins,
+                // The native contract calls a non-empty error list "a scan the
+                // user has a problem with". That scan's `plugins` is the
+                // partial output of a failed run — writing it would drop every
+                // plugin under a root that failed to read, which is the wipe
+                // this guards against — so a failed scan leaves the list alone
+                // and reports why. Only a clean enumeration restates the list,
+                // and a clean empty one is a valid result, not a wipe.
+                // `lastScanTime` dates the list the store holds, so it advances
+                // with that write and not with the attempt.
+                ...(result.errors.length > 0 ? {} : { scannedPlugins: result.plugins, lastScanTime: Date.now() }),
             };
         });
     } catch (error) {

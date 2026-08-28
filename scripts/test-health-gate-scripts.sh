@@ -164,7 +164,21 @@ esac
 SH
 chmod +x "$fake_bin/gh"
 
-WORKFLOW_PATH="$repo_root/.github/workflows/health-gates.yml" REPO_ROOT="$repo_root" TEST_TEMP_ROOT="$temp_root" FAKE_BIN="$fake_bin" node --input-type=module <<'NODE'
+# The freshness step's only external command. It lives in its own bin directory
+# because the Gitleaks controls above run real `git` through $fake_bin.
+git_tip_bin="$temp_root/bin-git-tip"
+mkdir -p "$git_tip_bin"
+cat > "$git_tip_bin/git" <<'SH'
+#!/bin/sh
+set -eu
+printf 'git %s\n' "$*" >> "${COMMAND_LOG:-/dev/null}"
+if [ -n "${FAKE_MAIN_TIP:-}" ]; then
+    printf '%s\trefs/heads/main\n' "$FAKE_MAIN_TIP"
+fi
+SH
+chmod +x "$git_tip_bin/git"
+
+WORKFLOW_PATH="$repo_root/.github/workflows/health-gates.yml" REPO_ROOT="$repo_root" TEST_TEMP_ROOT="$temp_root" FAKE_BIN="$fake_bin" GIT_TIP_BIN="$git_tip_bin" node --input-type=module <<'NODE'
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { parse } from 'yaml';
@@ -214,6 +228,14 @@ function runWorkflowShell(label, body, env) {
     return result;
 }
 
+function workflowShellStatus(body, env) {
+    return spawnSync('bash', ['-c', body], {
+        cwd: process.env.TEST_TEMP_ROOT,
+        encoding: 'utf8',
+        env: { ...process.env, ...env },
+    }).status;
+}
+
 function expectShardFailureWarning(step, slug, suite, shard) {
     const summaryPath = `${process.env.TEST_TEMP_ROOT}/${slug}-shard-summary.md`;
     writeFileSync(summaryPath, '');
@@ -256,6 +278,7 @@ const dependencyReviewWith = stepNamed(dependencyReview, 'Review dependency chan
 const browserAiWebGpu = workflow.jobs?.['browser-ai-webgpu'];
 const nightlyReport = workflow.jobs?.['nightly-report'];
 const resolveScopeRun = stepNamed(decide, 'Resolve scope')?.run ?? '';
+const decideCheckoutUses = stepNamed(decide, 'Checkout')?.uses ?? '';
 const trustedCheckout = stepNamed(secrets, 'Checkout trusted scanner');
 const targetCheckout = stepNamed(secrets, 'Checkout scan target');
 const positiveControl = stepNamed(secrets, 'Validate secret scanner positive control');
@@ -270,7 +293,9 @@ const e2eRunStep = stepNamed(e2e, 'Run shard');
 const unitFailureWarning = stepNamed(unit, 'Report shard failure');
 const e2eFailureWarning = stepNamed(e2e, 'Report shard failure');
 const unitRun = unitRunStep?.run ?? '';
-const nightlyReportRun = stepNamed(nightlyReport, 'Open or update the nightly failure issue')?.run ?? '';
+const nightlyReportCheckout = stepNamed(nightlyReport, 'Checkout');
+const nightlyReportStep = stepNamed(nightlyReport, 'Open or update the nightly failure issue');
+const nightlyReportRun = nightlyReportStep?.run ?? '';
 const gateRun = stepNamed(gate, 'Require every job to have succeeded or been skipped')?.run ?? '';
 const gateNeeds = gate?.needs ?? [];
 const expectedGateNeeds = [
@@ -594,7 +619,242 @@ expect(
         gateRun.includes("printf 'every job succeeded or was skipped\\n'"),
     'Gate must keep rejecting failed dependencies while accepting successful or skipped dependencies'
 );
+// The daily web train. It is the only route to production now that the Vercel
+// Git integration is off, so what it refuses to deploy from matters as much as
+// what it deploys.
+const deployWeb = workflow.jobs?.['deploy-web'];
+const deployWebNeeds = deployWeb?.needs ?? [];
+const expectedDeployWebNeeds = [
+    'static',
+    'lint',
+    'boundaries',
+    'unit',
+    'build',
+    'rust',
+    'native-macos',
+    'native-windows',
+    'e2e',
+    'browser-ai-webgpu',
+    'codeql',
+    'secrets',
+];
+const deployWebGuardStep = stepNamed(deployWeb, 'Require a validated revision of main');
+const deployWebGuardRun = deployWebGuardStep?.run ?? '';
+const deployWebFreshnessStep = stepNamed(deployWeb, 'Refuse a stale candidate revision');
+const deployWebFreshnessRun = deployWebFreshnessStep?.run ?? '';
+const deployWebDeployRun = stepNamed(deployWeb, 'Deploy the prebuilt revision')?.run ?? '';
+const deployWebIsolationStep = stepNamed(deployWeb, 'Assert cross-origin isolation on the deployment');
+const deployWebArmingReport = stepNamed(deployWeb, 'Report the missing deployment credential')?.run ?? '';
+const vercelConfig = JSON.parse(readFileSync(`${process.env.REPO_ROOT}/vercel.json`, 'utf8'));
+
+expect(
+    vercelConfig?.git?.deploymentEnabled?.main === false,
+    'the Vercel Git integration must not deploy main, which is what leaves the schedule as the only route to production'
+);
+expect(
+    vercelConfig?.git?.deploymentEnabled?.['**'] === false,
+    'the Vercel Git integration must not deploy any other branch'
+);
+expect(
+    deployWeb?.if ===
+        "github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')",
+    'the daily web deploy must run only on the version-controlled schedule and a dispatch of main, since a dispatch otherwise carries whichever ref fired it and the Production environment has no branch policy'
+);
+expect(
+    deployWebGuardStep?.env?.TRAIN_REF === '${{ github.ref }}',
+    'the daily web deploy must read the ref it is about to deploy, so the branch constraint does not rest on the job condition alone'
+);
+expect(
+    deployWeb?.concurrency?.group === 'deploy-web-production',
+    'the daily web deploy must serialise itself: nothing else keeps two runs off the production alias at once'
+);
+expect(
+    deployWeb?.concurrency?.['cancel-in-progress'] === false,
+    'the daily web deploy must queue behind a running deploy rather than cancel one mid-alias'
+);
+expect(
+    deployWebIsolationStep?.env?.DEPLOYMENT_URL === '${{ steps.deployment.outputs.url }}',
+    'the daily web deploy must assert isolation against the deployment it just created, not against a fixed alias'
+);
+for (const stepName of ['Pull the production environment', 'Build the validated revision', 'Deploy the prebuilt revision']) {
+    expect(
+        stepNamed(deployWeb, stepName)?.env?.VERCEL_TOKEN === '${{ secrets.VERCEL_TOKEN }}',
+        `${stepName} must authenticate the Vercel CLI from the environment`
+    );
+}
+expect(
+    deployWeb?.environment === 'Production',
+    'the daily web deploy must draw its credential from the Production environment'
+);
+expect(
+    deployWeb?.env?.DEPLOY_CREDENTIAL_PRESENT === "${{ secrets.VERCEL_TOKEN != '' }}",
+    'the daily web deploy must gate its deploying steps on credential presence rather than on the token value'
+);
+expect(
+    /^vercel@\d+\.\d+\.\d+$/u.test(deployWeb?.env?.VERCEL_CLI ?? ''),
+    'the daily web deploy must pin an exact Vercel CLI version'
+);
+expect(
+    Array.isArray(deployWebNeeds) &&
+        deployWebNeeds.length === expectedDeployWebNeeds.length &&
+        deployWebNeeds.every((need, index) => need === expectedDeployWebNeeds[index]),
+    `the daily web deploy must depend on exactly: ${expectedDeployWebNeeds.join(', ')}`
+);
+expect(
+    !gateNeeds.includes('deploy-web'),
+    'the daily web deploy must stay outside Gate, which reports what a pull request proved'
+);
+expect(
+    deployWebDeployRun.includes('deploy --prebuilt --prod') &&
+        deployWebDeployRun.includes('--meta githubCommitSha="$GITHUB_SHA"'),
+    'the daily web deploy must ship the prebuilt artifact and record the revision it was built from'
+);
+const deployWebResults = (result, overrides = {}) =>
+    JSON.stringify(
+        Object.fromEntries(deployWebNeeds.map((need) => [need, { result: overrides[need] ?? result }]))
+    );
+expect(
+    workflowShellStatus(deployWebGuardRun, {
+        RESULTS: deployWebResults('success'),
+        TRAIN_REF: 'refs/heads/main',
+    }) === 0,
+    'the daily web deploy must proceed when every validation leg succeeded on main'
+);
+for (const result of ['failure', 'cancelled', 'skipped']) {
+    expect(
+        workflowShellStatus(deployWebGuardRun, {
+            RESULTS: deployWebResults('success', { unit: result }),
+            TRAIN_REF: 'refs/heads/main',
+        }) !== 0,
+        `the daily web deploy must refuse to promote a revision whose unit leg was ${result}`
+    );
+}
+for (const ref of ['refs/heads/agent/2940/daily-train', 'refs/tags/v1.0.0', 'main']) {
+    expect(
+        workflowShellStatus(deployWebGuardRun, { RESULTS: deployWebResults('success'), TRAIN_REF: ref }) !== 0,
+        `the daily web deploy must refuse to promote ${ref}, which is not main`
+    );
+}
+
+// Entry to the deploy queue is ordered by when each run's validation legs
+// finished, and a re-run replays its original run's SHA, so the candidate can
+// be a revision main has already moved past. The tip comparison is what makes
+// the newest revision win.
+expect(
+    deployWebFreshnessStep?.id === 'freshness',
+    'the daily web deploy must publish its freshness decision under a stable step id'
+);
+expect(
+    deployWebFreshnessStep?.env?.CANDIDATE_REVISION === '${{ github.sha }}',
+    'the freshness check must read the revision this run is about to deploy'
+);
+expect(
+    deployWebFreshnessRun.includes('git ls-remote "https://github.com/$GITHUB_REPOSITORY.git" refs/heads/main') &&
+        deployWebFreshnessRun.includes('"$tip" != "$CANDIDATE_REVISION"'),
+    'the freshness check must compare the candidate against the current tip of main read from the remote'
+);
+const freshCondition = "env.DEPLOY_CREDENTIAL_PRESENT == 'true' && steps.freshness.outputs.fresh == 'true'";
+for (const stepName of [
+    'Checkout the validated revision',
+    'Enable Corepack',
+    'Set up Node',
+    'Resolve the current production revision',
+]) {
+    expect(
+        stepNamed(deployWeb, stepName)?.if === freshCondition,
+        `${stepName} must not run for a revision that is no longer the tip of main`
+    );
+}
+for (const stepName of [
+    'Install dependencies',
+    'Pull the production environment',
+    'Build the validated revision',
+    'Deploy the prebuilt revision',
+    'Assert cross-origin isolation on the deployment',
+]) {
+    expect(
+        stepNamed(deployWeb, stepName)?.if === `${freshCondition} && steps.production.outputs.deploy == 'true'`,
+        `${stepName} must run only for a fresh candidate production does not already serve`
+    );
+}
+for (const precondition of [
+    'VERCEL_TOKEN',
+    'VERCEL_ORG_ID',
+    'VERCEL_PROJECT_ID',
+    'deployment branch policy limited to `main`',
+]) {
+    expect(
+        deployWebArmingReport.includes(precondition),
+        `the gated-off report must name every arming precondition, including ${precondition}; the branch policy is what binds a dispatched copy of this workflow, which no in-file condition can`
+    );
+}
+
+function runFreshness(candidateRevision, remoteTip) {
+    const outputPath = `${process.env.TEST_TEMP_ROOT}/freshness-output`;
+    const summaryPath = `${process.env.TEST_TEMP_ROOT}/freshness-summary`;
+    writeFileSync(outputPath, '');
+    writeFileSync(summaryPath, '');
+    const result = spawnSync('bash', ['-c', deployWebFreshnessRun], {
+        cwd: process.env.TEST_TEMP_ROOT,
+        encoding: 'utf8',
+        env: {
+            ...process.env,
+            PATH: `${process.env.GIT_TIP_BIN}:${process.env.PATH}`,
+            GITHUB_REPOSITORY: 'jcosta33/sourdaw',
+            CANDIDATE_REVISION: candidateRevision,
+            FAKE_MAIN_TIP: remoteTip,
+            GITHUB_OUTPUT: outputPath,
+            GITHUB_STEP_SUMMARY: summaryPath,
+        },
+    });
+    return {
+        status: result.status,
+        stdout: result.stdout,
+        outputs: readFileSync(outputPath, 'utf8'),
+        summary: readFileSync(summaryPath, 'utf8'),
+    };
+}
+
+const candidateRevision = '1'.repeat(40);
+const newerTip = '2'.repeat(40);
+const freshRun = runFreshness(candidateRevision, candidateRevision);
+expect(
+    freshRun.status === 0 && freshRun.outputs.includes('fresh=true'),
+    'the daily web deploy must proceed when the candidate is the current tip of main'
+);
+const staleRun = runFreshness(candidateRevision, newerTip);
+expect(
+    staleRun.status === 0 && staleRun.outputs.includes('fresh=false') && !staleRun.outputs.includes('fresh=true'),
+    'a candidate main has moved past must be a green refusal, not a deploy and not a failure'
+);
+expect(
+    staleRun.stdout.includes(
+        `stale candidate ${candidateRevision}, main is now ${newerTip}, deploying nothing`
+    ) && staleRun.summary.includes(`stale candidate \`${candidateRevision}\``),
+    'a stale refusal must say so loudly in the annotation and the step summary'
+);
+expect(
+    runFreshness(candidateRevision, '').status !== 0,
+    'an unreadable tip of main must fail the job rather than resolve to a deploy'
+);
+
 expect(nightlyReport?.name === 'Nightly failure report', 'nightly report job must remain present');
+expect(
+    nightlyReportCheckout !== undefined,
+    'nightly reporter must run inside a real git repository, since a gh build can consult local git for repo resolution even when every invocation already passes --repo'
+);
+expect(
+    nightlyReportCheckout?.uses === decideCheckoutUses && decideCheckoutUses !== '',
+    'nightly reporter checkout must use the same pinned actions/checkout ref as the rest of the workflow'
+);
+expect(
+    nightlyReportCheckout?.with?.['persist-credentials'] === false,
+    'nightly reporter checkout must not persist a credential this job never pushes with'
+);
+expect(
+    nightlyReportCheckout?.with?.['sparse-checkout'] === '.github',
+    'nightly reporter checkout must stay sparse so it does not pull the ~971 MiB public/samples payload for a job that only needs to file an issue'
+);
 expect(
     nightlyReportRun.includes('gh issue list --repo "$GITHUB_REPOSITORY"') &&
         nightlyReportRun.includes('gh issue comment "$existing" --repo "$GITHUB_REPOSITORY"') &&

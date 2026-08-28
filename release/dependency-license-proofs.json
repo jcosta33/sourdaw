@@ -49,7 +49,7 @@
             },
             {
                 "path": "crates/sourdaw-native/Cargo.toml",
-                "sha256": "15623a5737a766d8d4423120ed43340400017007fcdd42e292cbc8964f44f392"
+                "sha256": "4fd533f37449bc6dc51aff27c2e5b657cf412e9cdf093ff910c6306d435e2086"
             },
             {
                 "path": "electron-builder.yml",
@@ -57,7 +57,7 @@
             },
             {
                 "path": "package.json",
-                "sha256": "bce692f158d47a31f82efec868c4685e72f15ffb5777d59860911e80780cc4f8"
+                "sha256": "a6651557fe8dc64a1babbf4016a46e4921b9984d7a1317139f646cfafd154f7e"
             },
             {
                 "path": "rust-toolchain.toml",

@@ -68,6 +68,26 @@ export type PluginLatencyChange = {
     latency_ms: number;
 };
 
+/**
+ * Payload of `plugin-gui-closed`, pushed when the OS ended a plugin editor
+ * window the app did not close itself — a title-bar click, or the cascade that
+ * follows the owner window being destroyed.
+ */
+export type PluginGuiClosed = {
+    instance_id: string;
+};
+
+/**
+ * Payload of `plugin-state-dirty`, pushed after a plugin reported that its own
+ * state changed — a knob moved in its editor, a preset loaded inside it.
+ *
+ * It names the instance and nothing else: the plugin reports that something
+ * changed, never what, so the project can only conclude it has unsaved work.
+ */
+export type PluginStateDirty = {
+    instance_id: string;
+};
+
 export type ScanResult = {
     plugins: ScannedPlugin[];
     /** What went wrong: an unreadable root, a failed candidate, a safety limit. */

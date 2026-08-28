@@ -131,6 +131,7 @@ import {
     getDurableProjectOwnerId,
     productionBriefActionBatchAdmission,
     initGrooveTemplateDirtyTracking,
+    initPluginStateDirtyTracking,
     initProjectDirtyTracking,
     migrateLegacyProjectSnapshots,
     setProjectIdentityTransitionDependencies,
@@ -473,6 +474,9 @@ initStalenessDetection();
 
 initProjectDirtyTracking();
 initGrooveTemplateDirtyTracking();
+// Edits made inside a hosted plugin's own editor never pass through this app,
+// so no store changes and neither subscription above sees them.
+initPluginStateDirtyTracking();
 
 // Drain pre-ADR-0013 project content out of localStorage into IndexedDB. A
 // mirror is removed only once its own rewrite has been observed to commit, or

@@ -1,7 +1,7 @@
 use super::diagnostics::{
     active_midi_rt_diagnostics_channel, ActiveMidiRtDiagnostics, ActiveMidiRtDiagnosticsSnapshot,
 };
-use crate::midi_fx::{Arpeggiator, MidiEventBuffer, MidiFx, PROBABILITY_CUTOFF_RANGE};
+use crate::midi_fx::{Arpeggiator, MidiEventBuffer, MidiFx, MidiFxParam, PROBABILITY_CUTOFF_RANGE};
 use crate::plugin_slot::{MidiNoteEvent, NativePlugin, TransportState};
 use crate::scheduler::{AudioScheduler, GraphCommand, MidiFxKind};
 use rtrb::{Consumer, RingBuffer};
@@ -28,7 +28,7 @@ impl MidiFx for LegacyMidiFx {
     ) {
     }
 
-    fn set_param(&mut self, _name: &str, _value: f32) {}
+    fn set_param(&mut self, _param: MidiFxParam, _value: f32) {}
 
     fn reset(&mut self) {}
 }
@@ -157,7 +157,7 @@ fn arpeggiator_exhaustion_publishes_through_scheduler_reader() {
         ))
         .expect("plugin command should fit");
     command_tx
-        .push(GraphCommand::AddMidiFx(7, MidiFxKind::Arpeggiator))
+        .push(GraphCommand::AddMidiFx(7, MidiFxKind::Arpeggiator.build()))
         .expect("MIDI FX command should fit");
     command_tx
         .push(GraphCommand::SetTransport(TransportState {

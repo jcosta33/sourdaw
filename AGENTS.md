@@ -246,9 +246,13 @@ hits all of them.
 Removal requires a clean lane holding the head of exactly one pull request whose work reached
 `main`. Merging is one way there. Being superseded is the other: `pr:supersede` closes the old pull
 request unmerged but leaves a receipt naming the replacement, and removal reads that receipt and
-requires the replacement to be merged. Any other closed pull request is an abandonment and keeps its
-lane, because removing it would discard work that never landed. Delete a leftover local branch after
-success.
+requires the replacement to be merged. Any other closed pull request is an abandonment, and removing
+it would discard work that never landed — so an abandonment leaves through `lane:strand`, a receipted
+exit rather than a weakened gate. `lane:strand` refuses a lane holding an open pull request or
+uncommitted work, records the reason, date, branch, and head in `.agents/lane-strands/` under the
+primary checkout (the head keeps the abandoned tip recoverable), then removes the worktree and
+force-deletes the branch; a receipt already naming the same lane with a different head is refused,
+never overwritten. Delete a leftover local branch after a `lane:remove`.
 
 ## Artifacts
 
@@ -301,6 +305,8 @@ tracker state. Identity for a script-covered write is the App that script mints,
 | Squash-merge                | `pnpm deliver <pr>`                                                                                              |
 | Close a superseded PR       | `pnpm pr:supersede <old> --head <old-sha> --replacement <merged>`                                                |
 | Remove a spent lane         | `pnpm lane:remove <path>`                                                                                        |
+| Strand an abandoned lane    | `pnpm lane:strand <path> --reason "<text>"`                                                                      |
+| Prune lane artifacts        | `pnpm lane:prune <path> \| --all \| --stale-days <days>`                                                         |
 
 Credentials sit at the primary root (parent of `git rev-parse --git-common-dir`), gitignored:
 `.env.sourdaw-author` for `lane:publish`, `review:resolve`, `deliver`, and `pr:supersede`;
@@ -406,10 +412,14 @@ through the reviewer App only while GitHub's head still matches the bundle.
 
 Review the diff as that teammate. Read every changed line. If a hunk is not enough to judge, read
 the surrounding code. When something is wrong, comment on that line: what is wrong, why it matters,
-what done looks like. Supply that as three fields — the defect, its consequence, and what done looks
-like. The tooling composes them into one comment. The contract caps length rather than demanding a
-minimum: padding a comment to reach a length is not a virtue, and one precise sentence per field is
-the target. One problem per comment. Talk about the code, not the author.
+what done looks like. Supply that as three fields keyed literally `defect`, `consequence`, and
+`done` — the retired single `body` key is refused, and the error names the replacement. Each field
+is a single line, non-empty, with no leading or trailing whitespace. The tooling joins the three
+with a space, appending a period to any field that does not already end in terminal punctuation, and
+the composed comment must fit within 600 bytes, measured in bytes rather than characters. The
+contract caps length rather than demanding a minimum: padding a comment to reach a length is not a
+virtue, and one precise sentence per field is the target. One problem per comment. Talk about the
+code, not the author.
 
 Request changes when this head must not merge, and post every blocking comment with that review. The
 summary is a short pointer to those comments, not a report.

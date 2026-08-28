@@ -97,7 +97,20 @@ pub struct EngineHandle {
     /// [`GraphCommand::effect_table_delta`], which is exhaustive over the
     /// vocabulary so a new registering command cannot be added without saying
     /// so.
+    ///
+    /// A prediction, reconciled against the callback's own refusal record:
+    /// the callback refuses a colliding id before the table takes the
+    /// instance, so that registration's slot comes back here when
+    /// [`Self::midi_rt_diagnostics_snapshot`] observes the collision the
+    /// callback counted. Until that observation the ledger over-counts and
+    /// admission refuses early — the safe side of a prediction, never
+    /// headroom the table does not have.
     effect_registrations: usize,
+    /// The cumulative `effect_id_collisions` count whose slots the ledger has
+    /// already returned. The callback's counter is cumulative and never
+    /// resets, so slots are returned by diffing against this baseline rather
+    /// than by consuming the raw snapshot.
+    reconciled_effect_id_collisions: u64,
     midi_rt_diagnostics: ActiveMidiRtDiagnosticsReader,
     timeline_rt_diagnostics: TimelineRtDiagnosticsReader,
     graph_progress: GraphProgressReader,
@@ -153,6 +166,10 @@ impl EngineHandle {
             _audio_thread: thread_handle,
             next_plugin_id: 1000, // Start high to avoid collision with effect IDs
             effect_registrations: 0,
+            // The zero baseline is exact: the diagnostics pair this handle
+            // reads is built in this same `spawn` call, and both its ends
+            // start from a zeroed snapshot.
+            reconciled_effect_id_collisions: 0,
             midi_rt_diagnostics: diagnostics_reader,
             timeline_rt_diagnostics: timeline_diagnostics_reader,
             graph_progress: graph_progress_reader,
@@ -295,9 +312,55 @@ impl EngineHandle {
         )
     }
 
-    /// Read the latest fixed numeric MIDI diagnostics outside the audio callback.
+    /// Read the latest fixed numeric MIDI diagnostics outside the audio
+    /// callback.
+    ///
+    /// Reading is also the effect-table ledger's reconciliation point: each
+    /// observation returns to [`Self::effect_registrations`] the slots whose
+    /// registrations the callback refused since the last one. See
+    /// [`Self::return_refused_effect_slots`] for why the diagnostics read is
+    /// the seam.
     pub fn midi_rt_diagnostics_snapshot(&mut self) -> ActiveMidiRtDiagnosticsSnapshot {
-        self.midi_rt_diagnostics.snapshot()
+        let snapshot = self.midi_rt_diagnostics.snapshot();
+        self.return_refused_effect_slots(snapshot.effect_id_collisions);
+        snapshot
+    }
+
+    /// Return to the ledger the slots whose registrations the callback
+    /// refused on id collision, by diffing the cumulative
+    /// `effect_id_collisions` counter against the part of it whose slots have
+    /// already been returned.
+    ///
+    /// Why the diagnostics read is the seam and not a message from the
+    /// callback: the command ring runs control → audio, so it cannot carry a
+    /// correction for control-side state, while the diagnostics triple buffer
+    /// already runs audio → control and the render callback publishes it
+    /// every block.
+    ///
+    /// Every collision the callback counts was a registration that crossed
+    /// [`Self::push`] and incremented the ledger first — only this handle
+    /// pushes — so the diff is exact and the ledger returns to the table
+    /// population the callback actually holds. The subtraction saturates
+    /// anyway: a count the ledger cannot answer can only come from a counter
+    /// that drifted, and clamping at zero merely over-grants headroom the
+    /// control side re-refuses on the next observation, where a wrap would
+    /// grant it out of nothing.
+    ///
+    /// The baseline of zero at construction misses no refusal: the channel
+    /// pair is built in the same spawn as the scheduler that publishes into
+    /// it, both ends start zeroed, and one handle owns one pair — a second
+    /// handle is a second engine with its own scheduler and its own
+    /// collisions.
+    fn return_refused_effect_slots(&mut self, effect_id_collisions: u64) {
+        let refused = effect_id_collisions.saturating_sub(self.reconciled_effect_id_collisions);
+        if refused == 0 {
+            return;
+        }
+        self.reconciled_effect_id_collisions =
+            self.reconciled_effect_id_collisions.saturating_add(refused);
+        self.effect_registrations = self
+            .effect_registrations
+            .saturating_sub(usize::try_from(refused).unwrap_or(usize::MAX));
     }
 
     /// Read the latest fixed numeric timeline diagnostics outside the audio
@@ -609,8 +672,9 @@ impl EngineHandle {
         })
     }
 
-    /// How many of the scheduler's effect-table slots this handle has
-    /// committed. See [`EngineHandle::effect_registrations`].
+    /// How many of the scheduler's effect-table slots this handle's ledger
+    /// counts — a prediction reconciled against the callback's refusals. See
+    /// [`EngineHandle::effect_registrations`].
     pub const fn registered_effect_count(&self) -> usize {
         self.effect_registrations
     }
@@ -739,6 +803,7 @@ pub fn engine_handle_for_command_capture(
             _audio_thread: audio_thread::detached_audio_thread_handle(),
             next_plugin_id: 1000,
             effect_registrations: 0,
+            reconciled_effect_id_collisions: 0,
             midi_rt_diagnostics: diagnostics_reader,
             timeline_rt_diagnostics: timeline_diagnostics_reader,
             graph_progress: graph_progress_reader,
@@ -759,13 +824,21 @@ mod tests {
         EFFECT_TABLE_CAPACITY,
     };
     use crate::audio_bridge::create_audio_bridge;
+    use crate::engine_events::engine_event_channel;
+    use crate::midi::diagnostics::{
+        active_midi_rt_diagnostics_channel, ActiveMidiRtDiagnosticsSnapshot,
+    };
     use crate::plugin_slot::NativePlugin;
-    use crate::scheduler::{AudioScheduler, BuiltinEffectType, GraphCommand, PluginCore};
+    use crate::scheduler::{
+        graph_progress_channel, AudioScheduler, BuiltinEffectType, GraphCommand, PluginCore,
+    };
+    use crate::timeline::timeline_rt_diagnostics_channel;
     use crate::timeline::{ChainEntry, DeviceKind, DeviceParam, TimelineTrack};
     use crate::EngineHandle;
     use rtrb::{Consumer, RingBuffer};
     use std::any::Any;
     use std::cell::RefCell;
+    use triple_buffer::Input;
 
     /// The pre-built instance a detached-effect batch carries, built here on
     /// the control side exactly as [`crate::EngineHandle::add_effect`] builds
@@ -1229,10 +1302,11 @@ mod tests {
     /// this comparison makes them write the right one.
     ///
     /// The stream carries one of everything the classification has to tell
-    /// apart: registrations, a placement that moves an effect without
-    /// registering one, chain removals that leave the effect registered, and
-    /// retirements that really free a slot because the strips they name really
-    /// hold the effects they name.
+    /// apart: registrations, placements that move an effect without
+    /// registering one, the whole detach-and-release vocabulary — a chain
+    /// removal and a strip removal on both the track and the bus side, each
+    /// leaving the effect registered — and retirements that really free a slot
+    /// because the strips they name really hold the effects they name.
     #[test]
     fn the_ledger_matches_the_scheduler_effect_table_it_counts() {
         let (mut engine, command_rx, _retired_adoption_rx) = engine_handle_for_command_capture(64);
@@ -1241,10 +1315,13 @@ mod tests {
 
         engine.add_track(1).expect("the track registers");
         engine.add_bus(50).expect("the bus registers");
+        // Two strips that exist to be removed with a device still on them.
+        engine.add_track(2).expect("the track registers");
+        engine.add_bus(51).expect("the bus registers");
 
-        // Five registrations: four built-in devices and one bridged plugin,
+        // Seven registrations: six built-in devices and one bridged plugin,
         // which take their slots from the same table.
-        for id in 7..=10 {
+        for id in 7..=12 {
             engine.add_effect(id, "knead").expect("device registers");
         }
         let (bridge, _bridge_handle) = create_audio_bridge(9_000);
@@ -1266,6 +1343,78 @@ mod tests {
                 )
                 .expect("the track splice registers");
         }
+        engine
+            .insert_bus_device(
+                50,
+                ChainEntry {
+                    effect_id: 10,
+                    kind: DeviceKind::Effect,
+                },
+                0,
+            )
+            .expect("the bus splice registers");
+        engine
+            .insert_track_device(
+                2,
+                ChainEntry {
+                    effect_id: 11,
+                    kind: DeviceKind::Effect,
+                },
+                0,
+            )
+            .expect("the track splice registers");
+        engine
+            .insert_bus_device(
+                51,
+                ChainEntry {
+                    effect_id: 12,
+                    kind: DeviceKind::Effect,
+                },
+                0,
+            )
+            .expect("the bus splice registers");
+
+        // The detach-and-release vocabulary, constructed directly: the graph
+        // layer never sends these plain forms — its remove-device retires in
+        // one command, because a removal followed by a retirement would run
+        // the device over the master mix for the blocks in between. Each
+        // leaves its effect registered — returned to the master chain, or
+        // detached off a strip that no longer exists — so each must move
+        // neither count.
+        engine
+            .remove_bus_device(50, 10)
+            .expect("the bus chain removal registers");
+        engine.remove_track(2).expect("the track removal registers");
+        engine.remove_bus(51).expect("the bus removal registers");
+
+        scheduler.update_graph();
+
+        assert!(
+            scheduler.timeline().track(2).is_none() && scheduler.timeline().bus(51).is_none(),
+            "the strip removals must have applied, or the counts below observe nothing"
+        );
+        assert!(
+            scheduler
+                .timeline()
+                .bus(50)
+                .expect("the bus applied")
+                .device_chain()
+                .is_empty(),
+            "the bus chain removal must have applied"
+        );
+        assert_eq!(
+            scheduler.effect_table_len(),
+            7,
+            "a bus chain removal and two strip removals must free no slot"
+        );
+        assert_eq!(
+            engine.registered_effect_count(),
+            7,
+            "the ledger must read all three removals as neutral"
+        );
+
+        // Effect 10 goes back onto the bus it was taken from, so the
+        // retirement below lands on a strip that really holds it.
         engine
             .insert_bus_device(
                 50,
@@ -1307,7 +1456,7 @@ mod tests {
         // could hold on a stream the callback ignored.
         assert_eq!(
             scheduler.effect_table_len(),
-            3,
+            5,
             "the retirements must free exactly the two slots they named"
         );
         assert!(
@@ -1331,5 +1480,193 @@ mod tests {
             scheduler.effect_table_len(),
             "the control-side ledger must equal the table it claims to count"
         );
+    }
+
+    /// A capture handle whose diagnostics input stays live beside it.
+    ///
+    /// [`engine_handle_for_command_capture`] drops the publishing end of the
+    /// handle's diagnostics channel, so nothing a test does can ever make
+    /// that handle observe anything. Here the input is handed back instead —
+    /// to give the scheduler through [`AudioScheduler::with_midi_rt_diagnostics`]
+    /// or to write directly — pairing the handle's reader with a publishing
+    /// side exactly as a live callback is paired.
+    fn handle_with_live_diagnostics_input(
+        capacity: usize,
+    ) -> (
+        EngineHandle,
+        Consumer<GraphCommand>,
+        Input<ActiveMidiRtDiagnosticsSnapshot>,
+    ) {
+        let (command_tx, command_rx) = RingBuffer::new(capacity);
+        let (diagnostics_tx, diagnostics_reader) = active_midi_rt_diagnostics_channel();
+        let (_timeline_diagnostics_tx, timeline_diagnostics_reader) =
+            timeline_rt_diagnostics_channel();
+        let (_graph_progress_tx, graph_progress_reader) = graph_progress_channel();
+        let (_engine_event_tx, engine_event_rx) = engine_event_channel();
+        let (retired_adoption_tx, _retired_adoption_rx) = std::sync::mpsc::channel();
+
+        (
+            EngineHandle {
+                command_tx,
+                retired_adoption_tx,
+                _audio_thread: crate::audio_thread::detached_audio_thread_handle(),
+                next_plugin_id: 1000,
+                effect_registrations: 0,
+                reconciled_effect_id_collisions: 0,
+                midi_rt_diagnostics: diagnostics_reader,
+                timeline_rt_diagnostics: timeline_diagnostics_reader,
+                graph_progress: graph_progress_reader,
+                engine_events: engine_event_rx,
+                sample_rate: 48_000.0,
+                bridge_round_trip_frames: crate::audio_thread::new_bridge_round_trip_slot(),
+            },
+            command_rx,
+            diagnostics_tx,
+        )
+    }
+
+    /// A collision the ledger counted must give its slot back. The callback
+    /// refuses a colliding id before the table takes the instance and returns
+    /// the carried instance through the retirement channel, so no retirement
+    /// the handle sends will ever name it: without a route back from the
+    /// callback the counted slot was permanent, the ledger over-counted
+    /// forever, and the shared-table ceiling ratcheted down one registration
+    /// per collision.
+    #[test]
+    fn a_refused_collision_returns_its_ledger_slot_on_the_next_observation() {
+        let (mut engine, command_rx, diagnostics_tx) = handle_with_live_diagnostics_input(16);
+        let (retired_tx, _retired_rx) = RingBuffer::new(16);
+        let mut scheduler = AudioScheduler::with_midi_rt_diagnostics(
+            command_rx,
+            retired_tx,
+            48_000.0,
+            diagnostics_tx,
+        );
+
+        engine.add_effect(7, "knead").expect("the device registers");
+        scheduler.update_graph();
+        assert_eq!(engine.registered_effect_count(), 1);
+
+        // A second producer names the same id. The ledger counts the
+        // registration — it is a prediction, and the callback has not yet
+        // answered — and the callback refuses it before the table moves.
+        engine
+            .add_plugin_with_id(7, Box::new(OverwritingPlugin))
+            .expect("the colliding registration crosses the ring");
+        assert_eq!(
+            engine.registered_effect_count(),
+            2,
+            "before the callback answers, the prediction stands"
+        );
+        scheduler.update_graph();
+        assert_eq!(
+            scheduler.effect_table_len(),
+            1,
+            "the colliding id took no table slot"
+        );
+
+        // The refusal record crosses as diagnostics — published the way the
+        // render callback publishes it after its drain — and the handle's
+        // regular diagnostics read is the observation that returns the slot.
+        scheduler.publish_midi_rt_diagnostics();
+        let snapshot = engine.midi_rt_diagnostics_snapshot();
+        assert_eq!(snapshot.effect_id_collisions, 1);
+        assert_eq!(
+            engine.registered_effect_count(),
+            scheduler.effect_table_len(),
+            "the refused registration's slot returns on observation"
+        );
+
+        // The returned slot is real headroom again, not just a lower number.
+        engine
+            .add_plugin_with_id(8, Box::new(OverwritingPlugin))
+            .expect("the freed slot admits a fresh registration");
+        scheduler.update_graph();
+        assert_eq!(scheduler.effect_table_len(), 2);
+    }
+
+    /// Repeated collisions, observed round by round, leave the ledger exactly
+    /// on the table population the callback holds — never below it — so a
+    /// session of collisions cannot ratchet the shared ceiling down. That
+    /// ratchet is the failure mode this ledger exists to prevent, running in
+    /// the other direction.
+    #[test]
+    fn repeated_collisions_leave_the_ledger_on_the_table_population_it_counts() {
+        let (mut engine, command_rx, diagnostics_tx) = handle_with_live_diagnostics_input(32);
+        let (retired_tx, _retired_rx) = RingBuffer::new(32);
+        let mut scheduler = AudioScheduler::with_midi_rt_diagnostics(
+            command_rx,
+            retired_tx,
+            48_000.0,
+            diagnostics_tx,
+        );
+
+        for id in 7..=8 {
+            engine
+                .add_effect(id, "knead")
+                .expect("the device registers");
+        }
+        scheduler.update_graph();
+        assert_eq!(engine.registered_effect_count(), 2);
+
+        for _ in 0..3 {
+            for id in 7..=8 {
+                engine
+                    .add_plugin_with_id(id, Box::new(OverwritingPlugin))
+                    .expect("each colliding registration crosses the ring");
+            }
+            scheduler.update_graph();
+            scheduler.publish_midi_rt_diagnostics();
+            engine.midi_rt_diagnostics_snapshot();
+            assert_eq!(
+                engine.registered_effect_count(),
+                scheduler.effect_table_len(),
+                "after each round, the ledger still equals the table it counts"
+            );
+        }
+
+        // The ceiling itself has not moved: the table holds two, and the
+        // headroom arithmetic reads exactly those two.
+        assert!(engine
+            .ensure_effect_table_headroom(EFFECT_TABLE_CAPACITY - 2)
+            .is_ok());
+        assert!(engine
+            .ensure_effect_table_headroom(EFFECT_TABLE_CAPACITY - 1)
+            .is_err());
+    }
+
+    /// The return saturates. Every collision the callback counts was a
+    /// registration the ledger counted first, so a count larger than the
+    /// ledger cannot come from a real callback — but a wrap on a drifted
+    /// counter would manufacture headroom out of nothing, the one failure
+    /// this ledger exists to prevent. The clamp holds the ledger at zero
+    /// instead, and a later observation of the same cumulative count returns
+    /// nothing further.
+    #[test]
+    fn a_collision_count_beyond_the_ledger_clamps_at_zero() {
+        let (mut engine, _command_rx, mut diagnostics_tx) = handle_with_live_diagnostics_input(16);
+
+        engine.add_effect(7, "knead").expect("the device registers");
+        assert_eq!(engine.registered_effect_count(), 1);
+
+        let mut published = ActiveMidiRtDiagnosticsSnapshot::default();
+        published.effect_id_collisions = u64::MAX;
+        diagnostics_tx.write(published);
+
+        engine.midi_rt_diagnostics_snapshot();
+        assert_eq!(
+            engine.registered_effect_count(),
+            0,
+            "a count the ledger cannot answer clamps at zero rather than wrapping"
+        );
+
+        // The emptied ledger is still a ledger: headroom reads zero held, not
+        // a wrapped holding, and re-observing the same cumulative count
+        // returns nothing further.
+        assert!(engine
+            .ensure_effect_table_headroom(EFFECT_TABLE_CAPACITY)
+            .is_ok());
+        engine.midi_rt_diagnostics_snapshot();
+        assert_eq!(engine.registered_effect_count(), 0);
     }
 }

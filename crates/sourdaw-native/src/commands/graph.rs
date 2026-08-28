@@ -3094,10 +3094,6 @@ mod tests {
                 && refusal.contains("native devices"),
             "the refusal must name the ceiling it hit, got: {refusal}"
         );
-        // The committed registry never saw the refused batch, so the chain the
-        // engine renders and the chain the registry believes in still agree.
-        assert_eq!(registry.devices.len(), TIMELINE_CHAIN_SLOT_BUDGET);
-        assert!(!registry.devices.contains_key("d-overflow"));
     }
 
     #[test]

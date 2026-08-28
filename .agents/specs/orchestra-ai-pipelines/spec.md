@@ -5,7 +5,7 @@ title: Orchestra AI-assisted generation and scoring
 status: draft
 owner: The Sourdaw team
 sources:
-  - self
+    - self
 ---
 
 # Orchestra AI-assisted generation and scoring
@@ -59,16 +59,16 @@ Verify with: `pnpm test:run -- orchestraInferenceOffThread`
 ## Open questions
 
 - [ ] (blocking) Which generation surfaces ship first (templates and morphing)
-  versus deferred (text-to-preset LLM, generative sample audio)? Scope must be
-  fixed before build.
-- [ ] (non-blocking) Native inference via the `ort`/ONNX path versus a browser
-  inference path — one runtime or per-backend?
+      versus deferred (text-to-preset LLM, generative sample audio)? Scope must be
+      fixed before build.
+- [ ] (non-blocking) Which workloads fit browser-local WebLLM versus an explicitly configured
+      hosted provider, and which specialized classifiers require a separately admitted browser worker?
 
 ## Affected areas
 
 - `src/modules/Levain/` (generation UI, classifier results surfacing)
-- the AI inference path (ONNX/`ort` native, browser inference) feeding validated
-  preset documents
+- the shared WebLLM and hosted-provider path, plus any separately admitted browser classifier,
+  feeding validated preset documents
 
 ## Dropped from sources
 

@@ -15,9 +15,10 @@ sources:
 Provide the shared browser-native AI inference foundation that the audio-generation features
 build on: dedicated Web Workers per runtime (ONNX Runtime Web and TensorFlow.js), a session
 manager that routes by model type, OPFS model storage, a resilient download manager, Chrome +
-WebGPU capability detection, a deterministic render cache, and dual-runtime routing that falls
-back to the Tauri-native pipeline. All of this lives in a new `BrowserAi` module and runs
-entirely client-side with no server or sidecar dependency.
+WebGPU capability detection, and a deterministic render cache. The same renderer-owned browser
+pipeline runs in the web build and Electron desktop; native code is not a browser-model inference
+or download fallback. All of this lives in a new `BrowserAi` module and runs entirely client-side
+with no server or sidecar dependency.
 
 ## Non-goals
 
@@ -85,12 +86,12 @@ model.
 
 Verify with: `pnpm test:run -- BrowserAi staleDetection`
 
-### AC-009 — Dual-runtime routing respects Tauri availability
+### AC-009 — Renderer inference is platform-independent
 
-Each render use case must check `isTauri()` and offer browser vs native rendering accordingly,
-serving cached results without re-rendering natively unless final quality is requested.
+Each render use case must use the browser inference pipeline in both the web build and Electron
+renderer, serving compatible cached results without routing browser-model work to native inference.
 
-Verify with: `pnpm test:run -- BrowserAi dualRuntimeRouting`
+Verify with: `manual` — load the same admitted browser model in web and Electron and confirm both use renderer WebGPU with no native inference command
 
 ### AC-010 — COEP/COOP headers enable SharedArrayBuffer
 
@@ -108,7 +109,7 @@ Verify with: `manual` — inspect every registered model's credits entry for aut
 
 ### AC-012 — Module boundaries hold
 
-The `BrowserAi` module must respect domain-driven boundaries and work without Tauri.
+The `BrowserAi` module must respect domain-driven boundaries and work without the Electron shell.
 
 Verify with: `pnpm deps:validate`
 
@@ -272,23 +273,21 @@ WebGPU execution provider, IO binding, FP16 inference, and graph capture for sta
 
 Verify with: `pnpm test:run -- BrowserAi onnxRuntimeVersion`
 
-### AC-032 — Native audio transfer uses the Channel API with binary serialization
+### AC-032 — Electron audio transfer stays separate from browser-model execution
 
-When running inside Tauri and routing rendered audio to the native engine, audio buffers must
-cross the IPC boundary via the Tauri v2 Channel API with binary serialization (or a
-`register_uri_scheme_protocol` fetchable resource) — never `emit()`/`listen()`, whose event
-system is ~200 ms for a 3 MB payload.
+When the Electron renderer routes completed audio to the native engine, audio buffers must cross
+the typed preload/IPC bridge as binary-compatible data. That transport must not move model storage,
+model downloads, or browser-model inference into the native process.
 
-Verify with: `manual` — route a 3 MB rendered buffer to the native engine and confirm transit over the Channel API (or URI-scheme fetch), not `emit()`/`listen()`
+Verify with: `manual` — route a 3 MB rendered buffer from the Electron renderer to the native engine and confirm only the completed audio crosses the typed desktop bridge
 
-### AC-033 — Tauri/Windows bypasses browser storage for models
+### AC-033 — Desktop uses the browser model store
 
-When running in Tauri on Windows, the model store must bypass browser storage entirely: download
-via the Rust backend's `model_download.rs` and serve weights to the webview via
-`register_uri_scheme_protocol` or direct file reads, so browser quota limits never apply. (On
-macOS/Linux Tauri, browser AI features stay disabled and route to the native pipeline.)
+When running in Electron, browser AI models must use the same admitted browser artifact manager and
+renderer storage as the web build. The desktop shell must not introduce a native model downloader
+or inference route.
 
-Verify with: `manual` — on Tauri/Windows, download and load a model and confirm files land in the Rust-managed app data directory, not OPFS, with no browser-quota path exercised
+Verify with: `manual` — on desktop, download and load an admitted browser model and confirm the renderer uses the browser artifact cache with no native model-download command
 
 ### AC-034 — DiffSinger ONNX I/O honours the merged tensor and mel contracts
 
@@ -347,9 +346,8 @@ Verify with: `pnpm test:run -- BrowserAi diffSingerVoicebankLoad`
   Chrome grants up to ~60% of available disk per origin — but cached weights can still be evicted
   under storage pressure. The app must call `navigator.storage.persist()` so downloaded models are
   not evicted between sessions; AC-004/AC-005 record cache-first reload but not this persist call.
-  (The Tauri IPC mechanics behind AC-032 — Channel API binary serialization,
-  `register_uri_scheme_protocol`, the ~200 ms-per-3 MB `emit()`/`listen()` slowness — are the same
-  two-tier conclusion already noted under "Dropped from sources".)
+  (AC-032 keeps completed-audio transport across Electron's typed desktop bridge separate from
+  browser-model storage and execution.)
 - [ ] (restored detail) Browser-inference-stack figures the capability tier and execution-provider
   defaults rest on: `shader-f16` FP16 needs Chrome 121+; WebGPU covers ~83% of desktop and runs
   GEMM 3–8× faster than WebGL but only ~10–20% of native CUDA (per-dispatch overhead — motivates
@@ -362,6 +360,7 @@ Verify with: `pnpm test:run -- BrowserAi diffSingerVoicebankLoad`
 - `src/modules/BrowserAi/` (new module: workers, stores, repositories, useCases, views, events)
 - `src/modules/BrowserAi/workers/onnxInferenceWorker.ts`, `tfjsInferenceWorker.ts`, `downloadWorker.ts`
 - reuses the worker-bridge and audio-engine patterns from `BrowserAi` and `AudioAnalysis`
+- `src/utils/desktopBridge.ts` and `electron/` only for completed-audio transfer in desktop builds
 - new npm deps: `@huggingface/transformers`, `@tensorflow/tfjs`, `@tensorflow/tfjs-backend-webgpu`
 
 ## Known risks
@@ -423,11 +422,11 @@ prescriptions; each is anchored at file:line.
   register (lines 770-790).** Two specific tradeoffs lost their home: *Voicebank variety is
   limited (LOW)* — the DiffSinger community has only ~16 voicebanks, mostly Chinese, with some
   English and Japanese; CC-BY-NC-SA is fine for the free app but variety is constrained,
-  mitigated by community growth and user-supplied third-party voicebanks. *Tauri WebView drift
-  on Windows (MEDIUM)* — WebView2 follows the user's installed Edge channel, so WebGPU support,
-  `maxStorageBufferBindingSize`, and Background Fetch availability can regress outside Sourdaw's
-  control; the actionable requirement (re-detect on every cold start, attach to render
-  provenance) is now AC-025. The full UX risk register is restored verbatim in `research.md`.
+  mitigated by community growth and user-supplied third-party voicebanks. *Electron Chromium drift
+  (MEDIUM)* — WebGPU support, `maxStorageBufferBindingSize`, and Background Fetch availability can
+  change when Sourdaw updates Electron; the actionable requirement (re-detect on every cold start,
+  attach to render provenance) is now AC-025. The full UX risk register is restored verbatim in
+  `research.md`.
 - **Reference-material implementation notes (original lines 663-702).** The checkpoint/resume
   design for long diffusion renders (intermediate mel snapshots to OPFS per diffusion step, with
   resume-from-last-checkpoint on tab kill — a future enhancement; for MVP lost renders are

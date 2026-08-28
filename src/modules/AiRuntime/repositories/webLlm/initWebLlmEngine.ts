@@ -78,7 +78,9 @@ export const initWebLlmEngine = inject({ logger, admitWebLlmModelArtifacts })(
             // target.
             if (typeof navigator === 'undefined' || !('gpu' in navigator)) {
                 return Promise.reject(
-                    new Error('WebGPU not available — WebLLM requires WebGPU. Use native or cloud backend instead.')
+                    new Error(
+                        'WebGPU not available — WebLLM requires WebGPU. Hosted providers are available only in desktop builds.'
+                    )
                 );
             }
 

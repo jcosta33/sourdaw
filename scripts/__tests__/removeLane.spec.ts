@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -8,12 +8,16 @@ import { describe, expect, it } from 'vitest';
 import { AUTHOR_BOT_NODE_ID } from '../githubAppIdentity.ts';
 import { supersessionCommentBody } from '../prContract.ts';
 import {
+    parseStrandArgs,
     parseWorktrees,
     removeLane,
     resolveLaneTarget,
     shellPort,
+    strandLane,
+    STRAND_RECEIPTS_DIR,
     type IssueComment,
     type LaneRemovalPort,
+    type LaneStrandPort,
     type PullRequest,
     type ReplacementPullRequest,
     type ShellRunner,
@@ -117,6 +121,30 @@ function fakePort(input: FakeInput = {}) {
         remove: (path) => calls.push(`remove:${path}`),
     };
     return { port, calls };
+}
+
+function fakeStrandPort(input: FakeInput = {}) {
+    const base = fakePort(input);
+    const receipts: Array<{ laneName: string; body: string }> = [];
+    // The receipt files as the strand flow sees them: written by `writeReceipt`, read back by
+    // `readReceipt`, exactly like the primary root's `.agents/lane-strands/` directory.
+    const receiptFiles = new Map<string, string>();
+    const port: LaneStrandPort = {
+        ...base.port,
+        readReceipt: (laneName) => receiptFiles.get(laneName),
+        writeReceipt: (laneName, body) => {
+            receipts.push({ laneName, body });
+            receiptFiles.set(laneName, body);
+            base.calls.push(`receipt:${laneName}`);
+        },
+        deleteBranch: (branch) => {
+            base.calls.push(`branch:-D:${branch}`);
+        },
+        log: (message) => {
+            base.calls.push(`log:${message}`);
+        },
+    };
+    return { port, calls: base.calls, receipts, receiptFiles };
 }
 
 describe('lane removal', () => {
@@ -410,6 +438,286 @@ describe('lane removal', () => {
         removeLane(target, port);
 
         expect(calls).toEqual(['fetch', `unlock:${target}`, `remove:${target}`]);
+    });
+});
+
+describe('lane stranding', () => {
+    it('parses a strand target and its reason', () => {
+        expect(parseStrandArgs(['--strand', target, '--reason', 'head was force-pushed after close'])).toEqual({
+            target,
+            reason: 'head was force-pushed after close',
+        });
+    });
+
+    it.each([
+        ['no reason at all', ['--strand', target]],
+        ['a reason flag without text', ['--strand', target, '--reason']],
+        ['an option where the target belongs', ['--strand', '--reason', 'why']],
+        ['a blank reason', ['--strand', target, '--reason', '   ']],
+    ])('refuses %s', (_case, args) => {
+        expect(() => parseStrandArgs(args)).toThrow(/usage: pnpm lane:strand|non-empty --reason/);
+    });
+
+    /**
+     * The stranded backlog this path exists for: a pull request GitHub reports closed with no
+     * supersession receipt, which the strict gate must keep refusing. Stranding takes it with a
+     * receipt naming the branch and head, so the force-deleted tip stays recoverable.
+     */
+    it('strands a lane the strict gate refuses, receipting before it destroys', () => {
+        const strandedInput = {
+            pullRequests: [supersededPullRequest()],
+            comments: [],
+        };
+        const strict = fakeStrandPort(strandedInput);
+        expect(() => removeLane(target, strict.port), 'the strict gate grew a hole').toThrow(
+            /closed without a supersession receipt/
+        );
+
+        const { port, calls, receipts } = fakeStrandPort(strandedInput);
+        let thrown: unknown;
+        try {
+            strandLane(target, 'branch was force-pushed after close; ownership unproven', port);
+        } catch (error) {
+            thrown = error;
+        }
+
+        expect(thrown).toBeUndefined();
+        expect(calls).toEqual([
+            'fetch',
+            `lock:${target}`,
+            'receipt:feature',
+            `unlock:${target}`,
+            `remove:${target}`,
+            'branch:-D:feat/work',
+            'log:stranded feature; receipt in .agents/lane-strands/feature.json',
+        ]);
+        const receipt = JSON.parse(receipts[0]?.body ?? '{}') as {
+            lane: string;
+            path: string;
+            branch: string;
+            head: string;
+            reason: string;
+            strandedAt: string;
+        };
+        expect(receipt).toMatchObject({
+            lane: 'feature',
+            path: target,
+            branch: 'feat/work',
+            head: 'head',
+            reason: 'branch was force-pushed after close; ownership unproven',
+        });
+        expect(Number.isNaN(Date.parse(receipt.strandedAt))).toBe(false);
+    });
+
+    it('strands a branchless lane without querying pull requests and without deleting a branch', () => {
+        const { port, calls, receipts } = fakeStrandPort({
+            lane: worktree({ branch: undefined, detached: true }),
+        });
+        port.pullRequests = () => {
+            throw new Error('a branchless lane has no pull requests to query');
+        };
+
+        strandLane(target, 'worktree left detached with no branch', port);
+
+        const receipt = JSON.parse(receipts[0]?.body ?? '{}') as { branch: string | null };
+        expect(receipt.branch).toBeNull();
+        expect(calls).toContain(`remove:${target}`);
+        expect(calls.some((call) => call.startsWith('branch:-D:'))).toBe(false);
+    });
+
+    /**
+     * Lane directory names are deterministic, so a second lane can reuse a name the receipts
+     * already record. Overwriting that receipt would erase the first abandonment's audit record
+     * and the head that keeps its branch recoverable, so a differing head must refuse.
+     */
+    it('refuses a reused lane name whose receipt records a different head, keeping the first record', () => {
+        const strandedInput = {
+            pullRequests: [supersededPullRequest()],
+            comments: [],
+        };
+        const first = fakeStrandPort(strandedInput);
+        strandLane(target, 'first abandonment', first.port);
+        const firstReceipt = first.receiptFiles.get('feature');
+        expect(firstReceipt).toBeDefined();
+
+        const second = fakeStrandPort({
+            ...strandedInput,
+            lane: worktree({ head: 'other-head' }),
+        });
+        second.receiptFiles.set('feature', firstReceipt ?? '');
+
+        expect(() => strandLane(target, 'second abandonment under a spent name', second.port)).toThrow(
+            'strand receipt for feature already records head head; refusing to overwrite it for head other-head'
+        );
+
+        expect(second.receiptFiles.get('feature'), "the first abandonment's record was overwritten").toBe(firstReceipt);
+        expect(second.calls.some((call) => call.startsWith('receipt:'))).toBe(false);
+        expect(second.calls.some((call) => call.startsWith('remove:'))).toBe(false);
+        expect(second.calls.some((call) => call.startsWith('branch:-D:'))).toBe(false);
+    });
+
+    it('refuses a reused lane name whose receipt is unreadable, rather than guess at it', () => {
+        const { port, receiptFiles } = fakeStrandPort({
+            pullRequests: [supersededPullRequest()],
+            comments: [],
+        });
+        receiptFiles.set('feature', 'corrupted receipt');
+
+        expect(() => strandLane(target, 'attempt', port)).toThrow(/records no readable head/);
+        expect(receiptFiles.get('feature')).toBe('corrupted receipt');
+    });
+
+    /**
+     * The receipt is written before the worktree is removed, so a removal that fails leaves the
+     * lane and its receipt behind. Retrying the same strand — same head — must succeed rather than
+     * trip the conflict rule, or the receipt would shield its own lane from ever leaving.
+     */
+    it('allows the idempotent retry of a stranding whose removal failed', () => {
+        const strand = fakeStrandPort({
+            pullRequests: [supersededPullRequest()],
+            comments: [],
+        });
+        let removalFails = true;
+        const originalRemove = strand.port.remove;
+        strand.port.remove = (path) => {
+            if (removalFails) {
+                throw new Error('worktree remove failed');
+            }
+            originalRemove(path);
+        };
+
+        expect(() => strandLane(target, 'retry after a failed removal', strand.port)).toThrow(/worktree remove failed/);
+        expect(strand.receiptFiles.get('feature')).toBeDefined();
+
+        removalFails = false;
+        let thrown: unknown;
+        try {
+            strandLane(target, 'retry after a failed removal', strand.port);
+        } catch (error) {
+            thrown = error;
+        }
+
+        expect(thrown, 'a same-head retry was refused by its own receipt').toBeUndefined();
+        expect(strand.calls.filter((call) => call.startsWith('receipt:'))).toHaveLength(2);
+        expect(strand.calls).toContain(`remove:${target}`);
+        expect(strand.calls).toContain('branch:-D:feat/work');
+    });
+
+    it.each([
+        ['dirty', { dirty: true }, /dirty/],
+        [
+            'holding an open pull request',
+            { pullRequests: [pullRequest({ state: 'OPEN', mergedAt: null })] },
+            /still active/,
+        ],
+        [
+            'holding an open draft pull request',
+            { pullRequests: [pullRequest({ state: 'OPEN', mergedAt: null, isDraft: true })] },
+            /still active/,
+        ],
+        ['carrying ignored data of record', { ignored: ['.env'] }, /ignored data/],
+        ['busy in another process', { active: true }, /active in another process/],
+    ])('refuses to strand a lane %s', (_case, input, message) => {
+        const { port, calls, receipts } = fakeStrandPort(input);
+
+        expect(() => strandLane(target, 'attempt', port)).toThrow(message);
+        expect(receipts, 'a refused strand still destroyed or receipted the lane').toEqual([]);
+        expect(calls.some((call) => call.startsWith('remove:'))).toBe(false);
+        expect(calls.some((call) => call.startsWith('branch:-D:'))).toBe(false);
+    });
+
+    it('refuses the primary checkout', () => {
+        const { port } = fakeStrandPort();
+
+        expect(() => strandLane(root, 'attempt', port)).toThrow(/primary/);
+    });
+
+    /**
+     * An author-locked lane holds a share of the shared author lock; a failed strand must not
+     * release it, exactly as a failed removal does not.
+     */
+    it('holds an author-locked lane to the strand conditions without dropping the lock on failure', () => {
+        const { port, calls } = fakeStrandPort({
+            lane: worktree({ locked: true, lockReason: 'active:sourdaw-author' }),
+            dirty: true,
+        });
+
+        expect(() => strandLane(target, 'attempt', port)).toThrow(/dirty/);
+        expect(calls).toEqual(['fetch']);
+    });
+
+    it('receipts and strands a real worktree the strict gate refuses', () => {
+        const repository = mkdtempSync(join(tmpdir(), 'sourdaw-lane-strand-'));
+        const lane = join(repository, '.agents/worktrees/feature');
+        const git = (args: string[], cwd = repository) => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
+        try {
+            git(['init', '-b', 'main']);
+            git(['config', 'user.name', 'Fixture']);
+            git(['config', 'user.email', 'fixture@example.com']);
+            writeFileSync(join(repository, '.gitignore'), 'node_modules/\n.env\n');
+            writeFileSync(join(repository, 'tracked.txt'), 'fixture\n');
+            git(['add', '.']);
+            git(['commit', '-m', 'fixture']);
+            mkdirSync(join(repository, '.agents/worktrees'), { recursive: true });
+            git(['worktree', 'add', lane, '-b', 'feat/work']);
+            git(['worktree', 'lock', '--reason', 'active:sourdaw-author', lane]);
+            const head = git(['rev-parse', 'HEAD'], lane);
+            const resolvedLane = realpathSync(lane);
+            const port: LaneStrandPort = {
+                fetch: () => undefined,
+                repository: () => 'jcosta33/sourdaw',
+                currentDirectory: () => repository,
+                worktrees: () => parseWorktrees(git(['worktree', 'list', '--porcelain', '-z'])),
+                active: () => false,
+                processAlive: () => true,
+                dirty: (path) => git(['status', '--porcelain=v1', '--untracked-files=all'], path) !== '',
+                ignored: () => [],
+                operation: () => undefined,
+                remoteHead: () => undefined,
+                pullRequests: () => [pullRequest({ headRefOid: head, state: 'CLOSED', mergedAt: null })],
+                comments: () => [],
+                replacement: (number) => ({ number, state: 'MERGED', mergedAt: '2026-08-20T00:00:00Z' }),
+                lock: (path) => {
+                    git(['worktree', 'lock', '--reason', 'test', path]);
+                },
+                unlock: (path) => {
+                    git(['worktree', 'unlock', path]);
+                },
+                remove: (path) => {
+                    git(['worktree', 'remove', path]);
+                },
+                readReceipt: () => undefined,
+                writeReceipt: (laneName, body) => {
+                    const directory = join(repository, STRAND_RECEIPTS_DIR);
+                    mkdirSync(directory, { recursive: true });
+                    writeFileSync(join(directory, `${laneName}.json`), body);
+                },
+                deleteBranch: (branch) => {
+                    git(['branch', '-D', branch]);
+                },
+                log: () => undefined,
+            };
+
+            expect(() => removeLane(resolvedLane, port), 'the strict gate must keep refusing this lane').toThrow(
+                /closed without a supersession receipt/
+            );
+
+            strandLane(resolvedLane, 'branch was force-pushed after close; ownership unproven', port);
+
+            expect(existsSync(lane)).toBe(false);
+            expect(git(['branch', '--list', 'feat/work'])).toBe('');
+            const receiptPath = join(repository, STRAND_RECEIPTS_DIR, 'feature.json');
+            expect(existsSync(receiptPath)).toBe(true);
+            const receipt = JSON.parse(readFileSync(receiptPath, 'utf8')) as { head: string; branch: string };
+            expect(receipt.head).toBe(head);
+            expect(receipt.branch).toBe('feat/work');
+            // The recorded head is the recovery path for the force-deleted branch.
+            expect(git(['rev-parse', `${receipt.head}^{commit}`])).toBe(head);
+            git(['branch', 'revived', receipt.head]);
+            expect(git(['rev-parse', 'refs/heads/revived'])).toBe(head);
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
     });
 });
 

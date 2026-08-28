@@ -335,7 +335,7 @@ Verify with: `pnpm cargo:test -- -p daw-engine midi_determinism`
 
 - `src/modules/MidiGeneration/` (frontend producer; consumes typed channels)
 - the Rust inference services (`ort`, tokenizers, spawn_blocking harness)
-- the model registry resource (`midi_model_registry.json`) and `model_download` path
+- a separately admitted model-artifact registry and storage path; no native downloader is present
 - `src/modules/Arrangement/` ghost-clip accept/dismiss use cases (consumer)
 
 ## Dropped from sources

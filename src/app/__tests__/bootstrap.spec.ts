@@ -395,6 +395,7 @@ vi.mock('#/modules/Project/useCases', () => ({
     productionBriefActionBatchAdmission: { capture: () => ({ allowsCurrent: () => true }) },
     getProjectHandlers: sentinelHandlers('Project'),
     initGrooveTemplateDirtyTracking: noop,
+    initPluginStateDirtyTracking: noop,
     initProjectDirtyTracking: noop,
     migrateLegacyProjectSnapshots: () =>
         Promise.resolve({

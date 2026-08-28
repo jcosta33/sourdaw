@@ -21,8 +21,15 @@ import {
     defaultPluginScanState,
     externalPluginActivationStore,
     defaultExternalPluginActivationState,
+    pluginGuiStore,
+    defaultPluginGuiState,
 } from '#/modules/PluginHost/stores';
-import { isSupportedPluginFormat, openPluginGui } from '#/modules/PluginHost/useCases';
+import {
+    closePluginGui,
+    isSupportedPluginFormat,
+    openPluginGui,
+    resolvePluginEditorCapability,
+} from '#/modules/PluginHost/useCases';
 import { showDevicePanelForType } from '#/modules/WorkspaceShell/useCases';
 import { getPlatformCapabilities, DISABLED_REASONS } from '#/utils/platformCapabilities';
 import { cn } from '#/utils/Styles/cn';
@@ -42,6 +49,8 @@ type PluginScanViewState = {
         name: string;
         format: string;
         descriptor_id?: string;
+        has_custom_ui?: boolean;
+        capability_metadata_reason?: string;
     }>;
 };
 
@@ -51,6 +60,7 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
 
     const pluginScanState = useStore<PluginScanViewState>(pluginScanStore, defaultPluginScanState);
     const activationState = useStore(externalPluginActivationStore, defaultExternalPluginActivationState);
+    const pluginGuiState = useStore(pluginGuiStore, defaultPluginGuiState);
 
     // Snapshot the platform catalog once per render instead of walking it three times
     // (effects / utility / analyzer) and re-querying capabilities twice.
@@ -93,6 +103,47 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                 return [];
             }
             return [[device.id, activation.message]];
+        })
+    );
+
+    // Every device that could have an editor: an external plugin that is
+    // actually loaded. Anything else has no instance for the host to address.
+    const externalDeviceEditors = track.devices.flatMap((device) =>
+        device.type === 'external-plugin' && device.externalInstanceId
+            ? [{ device, instanceId: device.externalInstanceId }]
+            : []
+    );
+    // Resolved against the scan registry at render rather than recorded on the
+    // device, so a plugin rescanned after an upgrade that added an editor is
+    // offered one without the project having to be rewritten. Only a plugin the
+    // scan positively reports as having no editor loses the control — an
+    // unqueried capability keeps it, and the open attempt answers for itself.
+    const editorCapableDeviceIds = new Set(
+        externalDeviceEditors
+            .filter(
+                ({ device }) =>
+                    resolvePluginEditorCapability(
+                        supportedExternalPlugins.find(
+                            (plugin) =>
+                                plugin.id === device.externalPluginId ||
+                                plugin.descriptor_id === device.externalPluginId
+                        )
+                    ) !== 'absent'
+            )
+            .map(({ device }) => device.id)
+    );
+    const openEditorDeviceIds = new Set(
+        externalDeviceEditors
+            .filter(({ instanceId }) => pluginGuiState.byInstanceId[instanceId]?.isOpen)
+            .map(({ device }) => device.id)
+    );
+    // The host's own refusal from the last editor attempt. Shown on the slot
+    // that failed, because a control that swallowed it reads as one that does
+    // nothing.
+    const editorFailureMessages = new Map<string, string>(
+        externalDeviceEditors.flatMap(({ device, instanceId }): Array<[string, string]> => {
+            const error = pluginGuiState.byInstanceId[instanceId]?.error;
+            return error ? [[device.id, error]] : [];
         })
     );
 
@@ -269,7 +320,9 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                         <ChoiceCard
                             key={device.id}
                             data-testid={`device-card-${device.id}`}
-                            title={degradedExternalDeviceMessages.get(device.id)}
+                            title={
+                                editorFailureMessages.get(device.id) ?? degradedExternalDeviceMessages.get(device.id)
+                            }
                             className={cn(
                                 'flex items-center justify-between cursor-grab active:cursor-grabbing',
                                 device.bypassed || unavailableExternalDeviceIds.has(device.id) ? 'opacity-50' : ''
@@ -371,23 +424,36 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                 ) : null}
                                 {device.type === 'external-plugin' &&
                                 device.externalInstanceId &&
-                                !unavailableExternalDeviceIds.has(device.id) ? (
+                                !unavailableExternalDeviceIds.has(device.id) &&
+                                editorCapableDeviceIds.has(device.id) ? (
                                     <Tooltip>
                                         <TooltipTrigger asChild>
                                             <Button
                                                 variant="ghost"
                                                 size="icon-xs"
                                                 className="h-6 w-6"
-                                                aria-label={`Open editor for ${device.name}`}
+                                                aria-label={`${openEditorDeviceIds.has(device.id) ? 'Close' : 'Open'} editor for ${device.name}`}
+                                                aria-pressed={openEditorDeviceIds.has(device.id)}
                                                 onClick={(event) => {
                                                     event.stopPropagation();
-                                                    void openPluginGui(device.externalInstanceId!);
+                                                    // One control, both directions: the
+                                                    // editor is a window the user opened,
+                                                    // and every DAW closes it from the
+                                                    // same place it was opened.
+                                                    void (openEditorDeviceIds.has(device.id)
+                                                        ? closePluginGui(device.externalInstanceId!)
+                                                        : openPluginGui(device.externalInstanceId!));
                                                 }}
                                             >
                                                 <LayoutGrid className="size-3 text-primary" />
                                             </Button>
                                         </TooltipTrigger>
-                                        <TooltipContent side="top">Open plugin editor</TooltipContent>
+                                        <TooltipContent side="top">
+                                            {editorFailureMessages.get(device.id) ??
+                                                (openEditorDeviceIds.has(device.id)
+                                                    ? 'Close plugin editor'
+                                                    : 'Open plugin editor')}
+                                        </TooltipContent>
                                     </Tooltip>
                                 ) : null}
                                 <Button

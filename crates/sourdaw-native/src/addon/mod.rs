@@ -130,6 +130,10 @@ impl SourdawNative {
         let singletons = Arc::new(NativeSingletons::new(Arc::clone(&events)));
 
         crate::host::latency_watcher::start(
+            Arc::clone(&events),
+            Arc::clone(&singletons.app_state.engine_plugins),
+        );
+        crate::host::plugin_host_requests::start(
             events,
             Arc::clone(&singletons.app_state.engine_plugins),
         );
@@ -189,6 +193,7 @@ impl SourdawNative {
             &instance_id,
             &label,
             &self.singletons.app_state,
+            &*self.singletons.events,
         );
     }
 
