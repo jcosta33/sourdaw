@@ -358,7 +358,7 @@ export async function sendChatMessage(
                 const { commandGroup, compiledActionExecution, parsedCommandBatch } = materializedPlan;
                 const { commandEnvelopes, commandBatch } = compiledActionExecution;
                 if (interactionMode === 'preview') {
-                    return await executePromptCommandPreview({
+                    await executePromptCommandPreview({
                         runId,
                         assistantMessageId: assistantMsgId,
                         actions: result.actions,
@@ -368,6 +368,7 @@ export async function sendChatMessage(
                         commandBatch,
                         parsedCommandBatch,
                     });
+                    return undefined;
                 }
 
                 if (compiledActionExecution.requiresConfirmation) {
