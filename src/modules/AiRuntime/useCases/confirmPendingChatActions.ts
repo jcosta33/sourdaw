@@ -1586,6 +1586,21 @@ export async function confirmPendingChatActions(
     }
 
     if (batchResult.status === 'no-op') {
+        if (!trackedLeaseSettlement.accepted) {
+            const warning = trackedLeaseSettlement.warning ?? AGENT_RUN_PERSISTENCE_WARNING;
+            await settlePendingActionResourcesBestEffort({ confirmationId: confirmation.id, disposition: 'discard' });
+            updatePendingActionConfirmationStatus({
+                confirmationId: confirmation.id,
+                status: 'cancelled',
+                error: warning,
+            });
+            updateChatMessage(confirmation.assistantMessageId, {
+                pendingActionConfirmationStatus: 'cancelled',
+                error: warning,
+                content: `No project changes were needed after confirmation, but the run was already cancelled or replaced. ${warning}`,
+            });
+            return { status: 'cancelled' };
+        }
         updateTrackedAgentRun(confirmation, () => {
             if (trackedWorkLease) {
                 agentRunLifecycle.updateBatchStatus({
@@ -1620,12 +1635,14 @@ export async function confirmPendingChatActions(
             });
             return createCommittedEffectFailureResult(priorVerifiedBatchReceipt, batchResult.reason);
         }
-        recordTrackedAgentRunFailure(confirmation, {
-            category: 'conflict',
-            retriable: false,
-            ...(trackedWorkLease ? { workId: trackedWorkLease.workId } : {}),
-            compensation: 'manual-repair',
-        });
+        if (trackedLeaseSettlement.accepted) {
+            recordTrackedAgentRunFailure(confirmation, {
+                category: 'conflict',
+                retriable: false,
+                ...(trackedWorkLease ? { workId: trackedWorkLease.workId } : {}),
+                compensation: 'manual-repair',
+            });
+        }
         await settlePendingActionResourcesBestEffort({ confirmationId: confirmation.id, disposition: 'retain' });
         await recoverPreparedStemImportResources({ runId: confirmation.runId });
         updatePendingActionConfirmationStatus({
@@ -1667,11 +1684,13 @@ export async function confirmPendingChatActions(
     } else if (batchResult.status === 'rejected') {
         failureCategory = 'authorization';
     }
-    recordTrackedAgentRunFailure(confirmation, {
-        category: failureCategory,
-        retriable: false,
-        ...(trackedWorkLease ? { workId: trackedWorkLease.workId } : {}),
-    });
+    if (trackedLeaseSettlement.accepted) {
+        recordTrackedAgentRunFailure(confirmation, {
+            category: failureCategory,
+            retriable: false,
+            ...(trackedWorkLease ? { workId: trackedWorkLease.workId } : {}),
+        });
+    }
     updateChatMessage(confirmation.assistantMessageId, {
         pendingActionConfirmationStatus: 'failed',
         error: batchResult.reason,

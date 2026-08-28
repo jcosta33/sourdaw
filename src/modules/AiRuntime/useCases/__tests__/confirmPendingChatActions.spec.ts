@@ -163,6 +163,65 @@ const stemAction = {
     },
 } satisfies AppAction;
 
+function configureLateSettlementConfirmation(input: { runId: string; confirmationId: string; batchId: string }): void {
+    configureAiWorkflowCommandPreflightFixture('project-1');
+    configureCommandBatchIdempotency({ canExecute: () => true });
+    const ownedStorage = createAutomergeStorage<{ bpm: number }>('owned', 'transport');
+    registerHandlerMap({
+        setTempo: {
+            canReapplyAfterDivergence: (action) => action.payload.expectedBpm !== undefined,
+            execute: (action: SetTempoAction) => ownedStorage.set({ bpm: action.payload.bpm }),
+            describe: (action) => ({
+                label: 'Set tempo',
+                inverseAction: {
+                    type: 'setTempo',
+                    payload: { bpm: 120, expectedBpm: action.payload.bpm },
+                },
+            }),
+            undoable: true,
+            validate: () => true,
+        },
+    });
+    const action = { type: 'setTempo', payload: { bpm: 132 } } satisfies SetTempoAction;
+    const projectRevision = captureProjectRevision();
+    const envelope = migrateLegacyAppActionToVersionedCommandEnvelope({
+        action,
+        expectedEffect: 'Tempo changes to 132 BPM.',
+        normalizedProjectRevision: projectRevision,
+        options: { groupId: input.batchId, groupLabel: 'Set tempo batch', source: 'prompt' },
+    });
+    const commandBatch = compileVersionedCommandBatchEnvelope({
+        runId: input.runId,
+        batchId: input.batchId,
+        projectId: 'project-1',
+        baseRevision: projectRevision,
+        intent: 'set tempo to 132',
+        commands: [serializeVersionedCommandEnvelope(envelope)],
+    });
+    agentRunLifecycle.create({
+        runId: input.runId,
+        request: 'set tempo to 132',
+        mode: 'macro',
+        createdRevision: projectRevision,
+    });
+    agentRunLifecycle.transitionPhase({ runId: input.runId, phase: 'planning' });
+    agentRunLifecycle.transitionPhase({ runId: input.runId, phase: 'waiting-for-approval' });
+    proposePendingActionConfirmation({
+        id: input.confirmationId,
+        runId: input.runId,
+        prompt: 'set tempo to 132',
+        assistantMessageId: 'assistant-1',
+        actions: [action],
+        actionLabels: ['Set tempo to 132 BPM'],
+        commandBatch,
+        agentApproval: compileAgentRiskApproval({ commandBatch }),
+        executionMode: 'atomic',
+        groupId: input.batchId,
+        groupLabel: 'Set tempo batch',
+        projectRevision,
+    });
+}
+
 describe('confirmPendingChatActions transaction admission', () => {
     beforeEach(() => {
         stemResourceMocks.releasePreviewAudioBuffer.mockClear();
@@ -607,6 +666,88 @@ describe('confirmPendingChatActions transaction admission', () => {
             pendingActionConfirmationStatus: 'executed',
             error: expect.stringContaining('cancelled or replaced'),
             content: expect.stringContaining('durable receipt was retained without reopening the terminal run'),
+        });
+    });
+
+    it.each([
+        {
+            status: 'failed' as const,
+            reason: 'The late command batch failed.',
+            content: 'Failed to execute confirmed actions atomically:',
+        },
+        {
+            status: 'ambiguous' as const,
+            reason: 'The late command batch is ambiguous.',
+            content: 'The confirmed command stopped after an uncertain partial commit:',
+        },
+    ])('keeps a cancelled run terminal after a stale late $status result', async ({ status, reason, content }) => {
+        const runId = `late-${status}-settlement`;
+        const confirmationId = `confirmation-${status}-settlement`;
+        const batchId = `group-${status}-settlement`;
+        configureLateSettlementConfirmation({ runId, confirmationId, batchId });
+        const commandUseCases = await import('#/modules/Command/useCases');
+        const crdtUseCases = await import('#/modules/CrdtDocument/useCases');
+        const captureMutationAuthorization = vi
+            .spyOn(crdtUseCases, 'captureProjectMutationAuthorization')
+            .mockReturnValue(() => true);
+        const execute = vi
+            .spyOn(commandUseCases, 'executeVersionedCommandBatchEnvelope')
+            .mockResolvedValue({ status, reason });
+        const settle = vi.spyOn(agentRunWorkLease, 'settle').mockImplementation(() => {
+            agentRunLifecycle.transitionPhase({ runId, phase: 'cancelled' });
+            return { status: 'stale' };
+        });
+
+        try {
+            await expect(confirmPendingChatActions({ confirmationId })).resolves.toEqual({ status: 'failed', reason });
+        } finally {
+            settle.mockRestore();
+            execute.mockRestore();
+            captureMutationAuthorization.mockRestore();
+        }
+
+        expect(agentRunLifecycle.get(runId)).toMatchObject({ phase: 'cancelled' });
+        expect(chatStore.value?.messages[0]).toMatchObject({
+            pendingActionConfirmationStatus: 'failed',
+            error: reason,
+            content: expect.stringContaining(content),
+        });
+    });
+
+    it('keeps a stale late no-op cancelled instead of claiming fresh completion', async () => {
+        const runId = 'late-no-op-settlement';
+        const confirmationId = 'confirmation-no-op-settlement';
+        configureLateSettlementConfirmation({ runId, confirmationId, batchId: 'group-no-op-settlement' });
+        const commandUseCases = await import('#/modules/Command/useCases');
+        const crdtUseCases = await import('#/modules/CrdtDocument/useCases');
+        const captureMutationAuthorization = vi
+            .spyOn(crdtUseCases, 'captureProjectMutationAuthorization')
+            .mockReturnValue(() => true);
+        const execute = vi
+            .spyOn(commandUseCases, 'executeVersionedCommandBatchEnvelope')
+            .mockResolvedValue({ status: 'no-op', actions: [] });
+        const settle = vi.spyOn(agentRunWorkLease, 'settle').mockImplementation(() => {
+            agentRunLifecycle.transitionPhase({ runId, phase: 'cancelled' });
+            return { status: 'stale' };
+        });
+
+        try {
+            await expect(confirmPendingChatActions({ confirmationId })).resolves.toEqual({ status: 'cancelled' });
+        } finally {
+            settle.mockRestore();
+            execute.mockRestore();
+            captureMutationAuthorization.mockRestore();
+        }
+
+        expect(agentRunLifecycle.get(runId)).toMatchObject({ phase: 'cancelled' });
+        expect(getPendingActionConfirmation(confirmationId)).toMatchObject({
+            status: 'cancelled',
+            error: expect.stringContaining('cancelled or replaced'),
+        });
+        expect(chatStore.value?.messages[0]).toMatchObject({
+            pendingActionConfirmationStatus: 'cancelled',
+            error: expect.stringContaining('cancelled or replaced'),
+            content: expect.stringContaining('No project changes were needed after confirmation'),
         });
     });
 
