@@ -780,11 +780,21 @@ export async function confirmPendingChatActions(
     // own writes (including its idempotency checkpoint) are owner-attributed,
     // so only a foreign writer moves this counter.
     const unownedMutationsBeforeBatch = captureUnownedProjectMutations();
+    let renderJobAttempts = 0;
     try {
         const executionOptions = {
             ...group,
             signal: aborter.signal,
             source: 'prompt' as const,
+            onDeferredEffectAttempt: (attempt: {
+                kind: 'work-attempt';
+                operation: AppAction['type'];
+                workId: string;
+            }) => {
+                if (attempt.operation === 'renderProjectSections') {
+                    renderJobAttempts += 1;
+                }
+            },
             onProjectCommitCheckpoint: ({ receipt }: { receipt: CommandVerifiedBatchReceipt }) => {
                 return prepareAgentRunPendingEffectContinuation({
                     runId: confirmation.runId,
@@ -927,21 +937,10 @@ export async function confirmPendingChatActions(
     }
     const budgetPersistenceWarning = commandBudget
         ? updateTrackedAgentRun(confirmation, () => {
-              const incompleteSectionRenders = projectSectionRenderConfirmation({
-                  confirmation,
-                  expectedSourceRevision: committedProjectRevision,
-              }).incompleteSectionRenders;
-              const actualRenderJobs = incompleteSectionRenders
-                  ? Math.max(
-                        0,
-                        (commandBatch.authority.budgets.maxRenderJobs ?? 0) -
-                            incompleteSectionRenders.missingJobIds.length
-                    )
-                  : undefined;
               agentWorkBudget.reconcileCommandWork({
                   runId: confirmation.runId,
                   ...commandBudget,
-                  ...(actualRenderJobs !== undefined ? { actualRenderJobs } : {}),
+                  actualRenderJobs: renderJobAttempts,
               });
           })
         : null;

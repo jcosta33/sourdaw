@@ -10,7 +10,7 @@ import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
 import { addClip, createTrack, setTrackStoreState } from '#/modules/Arrangement/useCases';
 import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
 import { doesProductionBriefAllowActionBatch, productionBriefActionBatchAdmission } from '#/modules/Project/useCases';
-import { type ActionHandler, type AppAction } from '#/utils/handlerContract';
+import { type ActionHandler, type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
 
 import { clearHandlerRegistry, registerHandlerMap } from '../../stores/handlerRegistry';
 import { executeAppActionBatch } from '../executeAppActionBatch';
@@ -224,17 +224,19 @@ describe('executeAppActionBatch', () => {
     it('passes the exact execution signal through the command boundary to project handlers', async () => {
         const action: SetEditingToolAction = { type: 'setEditingTool', payload: { tool: 'marquee' } };
         const controller = new AbortController();
-        const execute = vi.fn((_action: SetEditingToolAction, context?: { signal?: AbortSignal }) => {
+        const onDeferredEffectAttempt = vi.fn();
+        const execute = vi.fn((_action: SetEditingToolAction, context?: HandlerValidationContext) => {
             expect(context?.signal).toBe(controller.signal);
+            expect(context?.onDeferredEffectAttempt).toBe(onDeferredEffectAttempt);
             return { status: 'written' as const };
         });
         registerHandlerMap({
             setEditingTool: createHandler<SetEditingToolAction>({ execute }),
         });
 
-        await expect(executeAppActionBatch([action], { signal: controller.signal })).resolves.toMatchObject({
-            status: 'committed',
-        });
+        await expect(
+            executeAppActionBatch([action], { signal: controller.signal, onDeferredEffectAttempt })
+        ).resolves.toMatchObject({ status: 'committed' });
         expect(execute).toHaveBeenCalledOnce();
     });
 

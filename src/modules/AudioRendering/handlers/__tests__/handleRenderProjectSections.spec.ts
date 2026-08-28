@@ -57,10 +57,12 @@ describe('handleRenderProjectSections', () => {
     it('defers rendering until commit and reuses one post-commit revision for reconciliation', async () => {
         const action = createAction();
         const controller = new AbortController();
+        const onDeferredEffectAttempt = vi.fn();
         const result = await handleRenderProjectSections.execute(action, {
             actions: [action],
             actionIndex: 0,
             signal: controller.signal,
+            onDeferredEffectAttempt,
         });
 
         if (!result) {
@@ -78,15 +80,18 @@ describe('handleRenderProjectSections', () => {
         await result.afterAmbiguousCommit?.();
 
         expect(mocks.captureProjectRevision).toHaveBeenCalledOnce();
-        expect(mocks.renderAgentProjectSections).toHaveBeenNthCalledWith(1, {
+        expect(mocks.renderAgentProjectSections).toHaveBeenCalledExactlyOnceWith({
             jobs: action.payload.jobs,
             sourceRevision: 'revision-after-commit',
             signal: controller.signal,
+            onRenderAttempt: expect.any(Function),
         });
-        expect(mocks.renderAgentProjectSections).toHaveBeenNthCalledWith(2, {
-            jobs: action.payload.jobs,
-            sourceRevision: 'revision-after-commit',
-            signal: controller.signal,
+        const firstRenderInput = mocks.renderAgentProjectSections.mock.calls[0]?.[0];
+        firstRenderInput?.onRenderAttempt?.(action.payload.jobs[0]!);
+        expect(onDeferredEffectAttempt).toHaveBeenCalledExactlyOnceWith({
+            kind: 'work-attempt',
+            operation: 'renderProjectSections',
+            workId: 'render-chorus-one',
         });
         expect(handleRenderProjectSections.requiresAbortCompensation).toBe(false);
     });

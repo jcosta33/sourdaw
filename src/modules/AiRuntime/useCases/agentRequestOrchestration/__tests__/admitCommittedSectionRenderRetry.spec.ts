@@ -374,7 +374,9 @@ describe('admitCommittedSectionRenderRetry', () => {
         const fixture = createFixture();
         const finalizedReceipt = structuredClone(fixture.receipt);
         finalizedReceipt.outcome = 'committed';
+        finalizedReceipt.atomicity = 'atomic';
         finalizedReceipt.pendingEffects = [];
+        const renderCommandId = fixture.receipt.commandOutcomes[0]!.commandId;
         const receiptIdentity = `${String(finalizedReceipt.schemaVersion)}:${RUN_ID}:${BATCH_ID}:committed`;
         mocks.getRun.mockReturnValue({
             revisions: { committed: COMMITTED_REVISION },
@@ -385,6 +387,7 @@ describe('admitCommittedSectionRenderRetry', () => {
             saga: {
                 steps: [
                     {
+                        stepId: `effect:${BATCH_ID}:${renderCommandId}`,
                         owner: 'external-effect',
                         workId: BATCH_ID,
                         state: 'committed',
@@ -402,6 +405,28 @@ describe('admitCommittedSectionRenderRetry', () => {
                 phase: 'proof',
             })
         ).toEqual({ durableReceipt: finalizedReceipt, status: 'admitted' });
+
+        finalizedReceipt.atomicity = 'durable-atomic-with-non-atomic-effects';
+        expect(
+            admitCommittedSectionRenderRetry({
+                confirmation: fixture.confirmation,
+                durableReceipt: finalizedReceipt,
+                expectedCommandBatch: fixture.commandBatch,
+                phase: 'proof',
+            })
+        ).toEqual({ status: 'proof-mismatch' });
+
+        finalizedReceipt.atomicity = 'atomic';
+        const trackedRun = mocks.getRun();
+        trackedRun.saga.steps[0]!.stepId = `effect:${BATCH_ID}:unrelated-command`;
+        expect(
+            admitCommittedSectionRenderRetry({
+                confirmation: fixture.confirmation,
+                durableReceipt: finalizedReceipt,
+                expectedCommandBatch: fixture.commandBatch,
+                phase: 'proof',
+            })
+        ).toEqual({ status: 'proof-mismatch' });
     });
 
     it.each([

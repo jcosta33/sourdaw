@@ -267,7 +267,8 @@ async function executeRuntimeAction(
     source: ExecuteOptions['source'] | undefined,
     shouldExecute: ExecuteOptions['shouldExecute'] | undefined,
     authorizeFirstHandler: (() => string | null) | undefined,
-    signal: AbortSignal | undefined
+    signal: AbortSignal | undefined,
+    onDeferredEffectAttempt: ExecuteOptions['onDeferredEffectAttempt'] | undefined
 ): Promise<ExecuteAppActionBatchResult> {
     try {
         assertExecutionAuthorized(shouldExecute);
@@ -283,6 +284,7 @@ async function executeRuntimeAction(
             actions: [prepared.action],
             actionIndex: 0,
             signal,
+            onDeferredEffectAttempt,
         });
         if (result?.status === 'no-write') {
             return { status: 'no-op', actions: [] };
@@ -342,7 +344,8 @@ async function executePreparedBatch(
     attemptedActions: PreparedBatchAction[],
     shouldExecute: ExecuteOptions['shouldExecute'] | undefined,
     authorizeFirstHandler: (() => string | null) | undefined,
-    signal: AbortSignal | undefined
+    signal: AbortSignal | undefined,
+    onDeferredEffectAttempt: ExecuteOptions['onDeferredEffectAttempt'] | undefined
 ): Promise<PreparedBatchAction[]> {
     const executedActions: PreparedBatchAction[] = [];
     let approvalConsumed = false;
@@ -365,6 +368,7 @@ async function executePreparedBatch(
                 actions: preparedActions.map((candidate) => candidate.action),
                 actionIndex,
                 signal,
+                onDeferredEffectAttempt,
             })
         );
         if (result?.status === 'no-write' || result?.status === 'conflict') {
@@ -770,7 +774,8 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                     options?.source,
                     options?.shouldExecute,
                     options?.authorizeFirstHandler,
-                    options?.signal
+                    options?.signal,
+                    options?.onDeferredEffectAttempt
                 );
             }
 
@@ -818,7 +823,8 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                     attemptedActions,
                     options?.shouldExecute,
                     options?.authorizeFirstHandler,
-                    options?.signal
+                    options?.signal,
+                    options?.onDeferredEffectAttempt
                 )
             );
             storageTransaction.validateCommit(getProjectMutationAdmissionFailure);

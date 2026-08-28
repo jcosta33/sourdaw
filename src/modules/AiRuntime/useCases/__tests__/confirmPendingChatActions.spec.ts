@@ -3120,6 +3120,110 @@ describe('confirmPendingChatActions transaction admission', () => {
         expect(runtimeMocks.renderOffline).not.toHaveBeenCalled();
     });
 
+    it('charges every failed render start and blocks a retained retry from exceeding its budget', async () => {
+        configureAiWorkflowCommandPreflightFixture('project-1');
+        configureCommandBatchIdempotency({ canExecute: () => true });
+        const ownedStorage = createAutomergeStorage<{ bpm: number }>('owned', 'transport');
+        const executeTempo = vi.fn((action: SetTempoAction) => ownedStorage.set({ bpm: action.payload.bpm }));
+        registerHandlerMap({
+            setTempo: {
+                canReapplyAfterDivergence: (action) => action.payload.expectedBpm !== undefined,
+                execute: executeTempo,
+                describe: (action) => ({
+                    label: 'Set tempo',
+                    inverseAction: { type: 'setTempo', payload: { bpm: 120, expectedBpm: action.payload.bpm } },
+                }),
+                undoable: true,
+                validate: () => true,
+            },
+        });
+        registerHandlerMap(getAudioRenderingHandlers());
+        const jobs = ['verse', 'chorus'].map((name, index) => ({
+            jobId: `render-failed-${name}`,
+            sectionId: `section-failed-${name}`,
+            sectionName: name,
+            startBeat: index * 16,
+            endBeat: index * 16 + 16,
+            sampleRate: 44_100,
+            tailSeconds: 0,
+        }));
+        const tempoAction = { type: 'setTempo', payload: { bpm: 132 } } satisfies SetTempoAction;
+        const renderAction = {
+            type: 'renderProjectSections',
+            payload: { sectionIds: jobs.map((job) => job.sectionId), jobs },
+        } satisfies RenderSectionsAction;
+        runtimeMocks.renderOffline.mockReset();
+        runtimeMocks.renderOffline.mockRejectedValue(new Error('offline renderer unavailable'));
+        const projectRevision = captureProjectRevision();
+        const serializeCommand = (action: SetTempoAction | RenderSectionsAction, expectedEffect: string) =>
+            serializeVersionedCommandEnvelope(
+                migrateLegacyAppActionToVersionedCommandEnvelope({
+                    action,
+                    expectedEffect,
+                    normalizedProjectRevision: projectRevision,
+                    options: {
+                        groupId: 'group-failed-renders',
+                        groupLabel: 'Tempo and failed renders',
+                        source: 'prompt',
+                    },
+                })
+            );
+        const commandBatch = compileVersionedCommandBatchEnvelope({
+            runId: 'confirmation-failed-renders',
+            batchId: 'group-failed-renders',
+            projectId: 'project-1',
+            baseRevision: projectRevision,
+            intent: 'set tempo and render two sections',
+            commands: [
+                serializeCommand(tempoAction, 'Tempo changes to 132 BPM.'),
+                serializeCommand(renderAction, 'Render Verse and Chorus.'),
+            ],
+        });
+        agentRunLifecycle.create({
+            runId: 'confirmation-failed-renders',
+            request: 'set tempo and render two sections',
+            mode: 'macro',
+            createdRevision: projectRevision,
+            budgets: { limits: { maxCommands: 2, maxRenderJobs: 2 }, consumed: {} },
+        });
+        agentRunLifecycle.transitionPhase({ runId: 'confirmation-failed-renders', phase: 'planning' });
+        agentRunLifecycle.transitionPhase({ runId: 'confirmation-failed-renders', phase: 'waiting-for-approval' });
+        proposePendingActionConfirmation({
+            id: 'confirmation-failed-renders',
+            runId: 'confirmation-failed-renders',
+            prompt: 'set tempo and render two sections',
+            assistantMessageId: 'assistant-1',
+            actions: [tempoAction, renderAction],
+            actionLabels: ['Set tempo to 132 BPM', 'Render Verse and Chorus'],
+            commandBatch,
+            agentApproval: compileAgentRiskApproval({ commandBatch }),
+            executionMode: 'atomic',
+            groupId: 'group-failed-renders',
+            groupLabel: 'Tempo and failed renders',
+            projectRevision,
+        });
+
+        await expect(
+            confirmPendingChatActions({ confirmationId: 'confirmation-failed-renders' })
+        ).resolves.toMatchObject({ status: 'failed', durableCommit: true });
+
+        expect(runtimeMocks.renderOffline).toHaveBeenCalledTimes(2);
+        expect(agentRunLifecycle.get('confirmation-failed-renders')?.budgets.consumed).toMatchObject({
+            maxCommands: 2,
+            maxRenderJobs: 2,
+        });
+        expect(getPendingActionConfirmation('confirmation-failed-renders')).toMatchObject({
+            status: 'failed',
+            followUpStatus: 'retryable',
+        });
+
+        await expect(
+            confirmPendingChatActions({ confirmationId: 'confirmation-failed-renders' })
+        ).resolves.toMatchObject({ status: 'failed', reason: expect.stringContaining('maxRenderJobs') });
+        expect(runtimeMocks.renderOffline).toHaveBeenCalledTimes(2);
+        expect(executeTempo).toHaveBeenCalledOnce();
+    });
+
     it('invalidates a confirmed batch when another app action commits while its first handler is paused', async () => {
         configureAiWorkflowCommandPreflightFixture('project-1');
         configureCommandBatchIdempotency({ canExecute: () => true });

@@ -192,7 +192,12 @@ function hasExactFinalizedReceipt(
     receipt: CommandVerifiedBatchReceipt | null,
     binding: WarnedRenderPayloadBinding
 ): receipt is CommandVerifiedBatchReceipt {
-    if (!receipt || receipt.outcome !== 'committed' || receipt.pendingEffects.length > 0) {
+    if (
+        !receipt ||
+        receipt.outcome !== 'committed' ||
+        receipt.atomicity !== 'atomic' ||
+        receipt.pendingEffects.length > 0
+    ) {
         return false;
     }
     const renderOutcomes = receipt.commandOutcomes.filter(
@@ -307,6 +312,7 @@ function hasExactFinalizedContinuationBinding(
             matchingBatches[0]?.status === 'committed' &&
             matchingBatches[0].receiptIdentity === finalizedReceiptIdentity &&
             matchingSagaSteps.length === 1 &&
+            matchingSagaSteps[0]?.stepId === `effect:${confirmation.groupId}:${binding.approvedCommand.commandId}` &&
             matchingSagaSteps[0]?.state === 'committed' &&
             matchingSagaSteps[0].receiptIdentity === finalizedReceiptIdentity
         );
