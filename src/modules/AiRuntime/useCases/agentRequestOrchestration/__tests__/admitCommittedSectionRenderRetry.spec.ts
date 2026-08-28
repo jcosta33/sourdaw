@@ -340,6 +340,43 @@ describe('admitCommittedSectionRenderRetry', () => {
         ).toEqual({ status: 'proof-mismatch' });
     });
 
+    it('rejects an otherwise exact receipt carrying a second pending effect', () => {
+        const fixture = createFixture();
+        const renderPendingEffect = fixture.receipt.pendingEffects[0];
+        if (!renderPendingEffect) {
+            throw new Error('Expected render pending effect');
+        }
+        const receipt = {
+            ...fixture.receipt,
+            pendingEffects: [
+                renderPendingEffect,
+                {
+                    ...renderPendingEffect,
+                    commandId: 'unrelated-pending-effect',
+                    reason: 'An unrelated external effect remains pending.',
+                },
+            ],
+        } satisfies ReturnType<typeof createVerifiedBatchReceipt>;
+
+        expect(
+            admitCommittedSectionRenderRetry({
+                confirmation: fixture.confirmation,
+                durableReceipt: receipt,
+                phase: 'arming',
+            })
+        ).toEqual({ status: 'proof-mismatch' });
+
+        bindTrackedRun(fixture);
+        expect(
+            admitCommittedSectionRenderRetry({
+                confirmation: fixture.confirmation,
+                durableReceipt: receipt,
+                expectedCommandBatch: fixture.commandBatch,
+                phase: 'proof',
+            })
+        ).toEqual({ status: 'proof-mismatch' });
+    });
+
     it('rejects duplicate approved render actions', () => {
         const fixture = createFixture();
         const renderAction = fixture.confirmation.approvalSnapshot.actions[0];
