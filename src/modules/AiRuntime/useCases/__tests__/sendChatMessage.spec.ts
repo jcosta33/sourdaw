@@ -685,7 +685,27 @@ describe('sendChatMessage retained-provider selection', () => {
                 throw new Error('Expected the stale failed-provider run to remain inspectable.');
             }
             const providerReceiptIdentity = `provider:webllm:${run.runId}`;
-            expect(run).toMatchObject({ phase: 'cancelled', errors: [] });
+            expect(run).toMatchObject({
+                phase: 'cancelled',
+                errors: [],
+                providerUsage: [
+                    {
+                        provider: 'webllm',
+                        model: 'fixture-model',
+                        inputTokens: null,
+                        outputTokens: null,
+                        cachedInputTokens: null,
+                        provenance: 'unavailable',
+                        correlationId: providerReceiptIdentity,
+                        status: 'partial',
+                        retryable: true,
+                        partialOutputDisposition: 'preserve',
+                        routeId: 'webllm:webllm:fixture-model',
+                        executor: 'webllm',
+                        fallbackReason: null,
+                    },
+                ],
+            });
             expect(recordProviderUsageCall).toHaveBeenCalledWith(
                 run.runId,
                 {
