@@ -26,8 +26,8 @@ function projectRecovery(
         runId,
         batchId: continuation.batchId,
         effects: structuredClone(continuation.effects),
-        recovery: policy.recovery,
-        lastError: continuation.lastError ?? policy.reason,
+        recovery: continuation.recovery,
+        lastError: continuation.lastError ?? (continuation.recovery === 'manual-repair' ? policy.reason : null),
     };
 }
 

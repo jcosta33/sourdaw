@@ -2775,211 +2775,242 @@ describe('confirmPendingChatActions transaction admission', () => {
         expect(runtimeMocks.renderOffline).toHaveBeenCalledTimes(renderCallsBeforeRetry);
     });
 
-    it('retains a warned render artifact for manual review without replaying project commands', async () => {
-        configureAiWorkflowCommandPreflightFixture('project-1');
-        configureCommandBatchIdempotency({ canExecute: () => true });
-        const ownedStorage = createAutomergeStorage<{ bpm: number }>('owned', 'transport');
-        const executeTempo = vi.fn((action: SetTempoAction) => {
-            ownedStorage.set({ bpm: action.payload.bpm });
-        });
-        registerHandlerMap({
-            setTempo: {
-                canReapplyAfterDivergence: (action) => action.payload.expectedBpm !== undefined,
-                execute: executeTempo,
-                describe: (action) => ({
-                    label: 'Set tempo',
-                    inverseAction: {
-                        type: 'setTempo',
-                        payload: { bpm: 120, expectedBpm: action.payload.bpm },
-                    },
-                }),
-                undoable: true,
-                validate: () => true,
-            },
-        });
-        registerHandlerMap(getAudioRenderingHandlers());
-        const renderJob = {
-            jobId: 'render-warned-verse',
-            sectionId: 'section-warned-verse',
-            sectionName: 'Warned Verse',
-            startBeat: 0,
-            endBeat: 16,
-            sampleRate: 44_100,
-            tailSeconds: 0,
-        };
-        const tempoAction = { type: 'setTempo', payload: { bpm: 132 } } satisfies SetTempoAction;
-        const renderAction = {
-            type: 'renderProjectSections',
-            payload: { sectionIds: [renderJob.sectionId], jobs: [renderJob] },
-        } satisfies RenderSectionsAction;
-        runtimeMocks.renderOffline.mockReset();
-        runtimeMocks.renderOffline.mockImplementation(
-            (options: { onWarning?: (warning: string) => void; sampleRate?: number }) => {
-                options.onWarning?.('tail truncated');
-                options.onWarning?.('peak clipped');
-                return Promise.resolve({
-                    sampleRate: options.sampleRate ?? renderJob.sampleRate,
-                    length: 88_200,
-                    numberOfChannels: 2,
-                    duration: 2,
-                });
-            }
-        );
-        const projectRevision = captureProjectRevision();
-        const serializeCommand = (action: SetTempoAction | RenderSectionsAction, expectedEffect: string) =>
-            serializeVersionedCommandEnvelope(
-                migrateLegacyAppActionToVersionedCommandEnvelope({
-                    action,
-                    expectedEffect,
-                    normalizedProjectRevision: projectRevision,
-                    options: {
-                        groupId: 'group-warned-render',
-                        groupLabel: 'Tempo and warned render',
-                        source: 'prompt',
-                    },
-                })
+    it.each([false, true])(
+        'retains a warned render artifact without replaying project commands (manual persistence fails: %s)',
+        async (manualPersistenceFails) => {
+            configureAiWorkflowCommandPreflightFixture('project-1');
+            configureCommandBatchIdempotency({ canExecute: () => true });
+            const ownedStorage = createAutomergeStorage<{ bpm: number }>('owned', 'transport');
+            const executeTempo = vi.fn((action: SetTempoAction) => {
+                ownedStorage.set({ bpm: action.payload.bpm });
+            });
+            registerHandlerMap({
+                setTempo: {
+                    canReapplyAfterDivergence: (action) => action.payload.expectedBpm !== undefined,
+                    execute: executeTempo,
+                    describe: (action) => ({
+                        label: 'Set tempo',
+                        inverseAction: {
+                            type: 'setTempo',
+                            payload: { bpm: 120, expectedBpm: action.payload.bpm },
+                        },
+                    }),
+                    undoable: true,
+                    validate: () => true,
+                },
+            });
+            registerHandlerMap(getAudioRenderingHandlers());
+            const renderJob = {
+                jobId: 'render-warned-verse',
+                sectionId: 'section-warned-verse',
+                sectionName: 'Warned Verse',
+                startBeat: 0,
+                endBeat: 16,
+                sampleRate: 44_100,
+                tailSeconds: 0,
+            };
+            const tempoAction = { type: 'setTempo', payload: { bpm: 132 } } satisfies SetTempoAction;
+            const renderAction = {
+                type: 'renderProjectSections',
+                payload: { sectionIds: [renderJob.sectionId], jobs: [renderJob] },
+            } satisfies RenderSectionsAction;
+            runtimeMocks.renderOffline.mockReset();
+            runtimeMocks.renderOffline.mockImplementation(
+                (options: { onWarning?: (warning: string) => void; sampleRate?: number }) => {
+                    options.onWarning?.('tail truncated');
+                    options.onWarning?.('peak clipped');
+                    return Promise.resolve({
+                        sampleRate: options.sampleRate ?? renderJob.sampleRate,
+                        length: 88_200,
+                        numberOfChannels: 2,
+                        duration: 2,
+                    });
+                }
             );
-        const commandBatch = compileVersionedCommandBatchEnvelope({
-            runId: 'confirmation-warned-render',
-            batchId: 'group-warned-render',
-            projectId: 'project-1',
-            baseRevision: projectRevision,
-            intent: 'set tempo and render a comparison',
-            commands: [
-                serializeCommand(tempoAction, 'Tempo changes to 132 BPM.'),
-                serializeCommand(renderAction, 'Render the warned verse for comparison.'),
-            ],
-        });
-        agentRunLifecycle.create({
-            runId: 'confirmation-warned-render',
-            request: 'set tempo and render a comparison',
-            mode: 'macro',
-            createdRevision: projectRevision,
-        });
-        agentRunLifecycle.transitionPhase({ runId: 'confirmation-warned-render', phase: 'planning' });
-        agentRunLifecycle.transitionPhase({ runId: 'confirmation-warned-render', phase: 'waiting-for-approval' });
-        proposePendingActionConfirmation({
-            id: 'confirmation-warned-render',
-            runId: 'confirmation-warned-render',
-            prompt: 'set tempo and render a comparison',
-            assistantMessageId: 'assistant-1',
-            actions: [tempoAction, renderAction],
-            actionLabels: ['Set tempo to 132 BPM', 'Render Warned Verse'],
-            commandBatch,
-            agentApproval: compileAgentRiskApproval({ commandBatch }),
-            executionMode: 'atomic',
-            groupId: 'group-warned-render',
-            groupLabel: 'Tempo and warned render',
-            projectRevision,
-        });
-
-        await expect(
-            confirmPendingChatActions({ confirmationId: 'confirmation-warned-render' })
-        ).resolves.toMatchObject({ status: 'failed', durableCommit: true });
-
-        expect(runtimeMocks.renderOffline).toHaveBeenCalledOnce();
-        expect(executeTempo).toHaveBeenCalledOnce();
-        const verifiedReceipt = await getVersionedCommandBatchIdempotentReplay({
-            authority: commandBatch.authority,
-            serialized: commandBatch.serialized,
-        });
-        expect(verifiedReceipt?.pendingEffects).toEqual([
-            expect.objectContaining({
-                kind: 'external-effect',
-                remediation: 'manual-repair',
-                reason: expect.stringContaining('tail truncated; peak clipped'),
-            }),
-        ]);
-        expect(getAgentSectionRenderArtifacts()).toContainEqual(
-            expect.objectContaining({ jobId: renderJob.jobId, warnings: ['tail truncated', 'peak clipped'] })
-        );
-        expect(getPendingActionConfirmation('confirmation-warned-render')).toMatchObject({
-            status: 'executed',
-            followUpStatus: 'failed',
-            error: 'Section render artifacts require manual review: render-warned-verse (tail truncated; peak clipped).',
-        });
-        expect(chatStore.value?.messages.find((message) => message.id === 'assistant-1')).toMatchObject({
-            pendingActionConfirmationStatus: 'executed',
-            pendingActionFollowUpStatus: 'failed',
-            error: 'Section render artifacts require manual review: render-warned-verse (tail truncated; peak clipped).',
-            content: expect.stringContaining(
-                'The project commands were not replayed. Section render artifacts require manual review: render-warned-verse (tail truncated; peak clipped).'
-            ),
-        });
-        expect(
-            agentRunLifecycle
-                .get('confirmation-warned-render')
-                ?.pendingEffectContinuations.filter(({ batchId }) => batchId === 'group-warned-render')
-        ).toEqual([
-            expect.objectContaining({
-                batchId: 'group-warned-render',
-                recovery: 'manual-repair',
-                lastError:
-                    'Section render artifacts require manual review: render-warned-verse (tail truncated; peak clipped).',
-            }),
-        ]);
-        expect(
-            (readAgentRunState().pendingEffectRecoveryLedger ?? []).filter(
-                ({ runId, batchId }) => runId === 'confirmation-warned-render' && batchId === 'group-warned-render'
-            )
-        ).toEqual([
-            expect.objectContaining({
-                checkpoint: 'durable',
-                recovery: 'manual-repair',
-                lastError:
-                    'Section render artifacts require manual review: render-warned-verse (tail truncated; peak clipped).',
-            }),
-        ]);
-        expect(
-            selectAgentRunPendingEffectRecoveries(readAgentRunState()).find(
-                ({ runId, batchId }) => runId === 'confirmation-warned-render' && batchId === 'group-warned-render'
-            )
-        ).toMatchObject({ recovery: 'manual-repair' });
-        await expect(confirmPendingChatActions({ confirmationId: 'confirmation-warned-render' })).resolves.toEqual({
-            status: 'not_pending',
-            currentStatus: 'executed',
-        });
-        expect(runtimeMocks.renderOffline).toHaveBeenCalledOnce();
-        expect(executeTempo).toHaveBeenCalledOnce();
-        const manualContinuation = agentRunLifecycle
-            .get('confirmation-warned-render')
-            ?.pendingEffectContinuations.find(({ batchId }) => batchId === 'group-warned-render');
-        if (!manualContinuation) {
-            throw new Error('Expected retained render continuation');
-        }
-        agentRunLifecycle.recordPendingEffectContinuation({
-            runId: 'confirmation-warned-render',
-            continuation: {
-                ...manualContinuation,
-                effects: manualContinuation.effects.map((effect) =>
-                    effect.kind === 'external-effect' ? { ...effect, remediation: 'reconcile' } : effect
-                ),
-                recovery: 'reconcile-batch',
-            },
-        });
-        clearAgentSectionRenderArtifacts();
-        mutateCrdtDoc<Record<string, unknown>>({
-            id: 'independent',
-            changeFn: (doc) => {
-                doc.changedAfterManualReview = true;
-            },
-        });
-        await expect(
-            recoverAgentRunPendingEffects({
+            const projectRevision = captureProjectRevision();
+            const serializeCommand = (action: SetTempoAction | RenderSectionsAction, expectedEffect: string) =>
+                serializeVersionedCommandEnvelope(
+                    migrateLegacyAppActionToVersionedCommandEnvelope({
+                        action,
+                        expectedEffect,
+                        normalizedProjectRevision: projectRevision,
+                        options: {
+                            groupId: 'group-warned-render',
+                            groupLabel: 'Tempo and warned render',
+                            source: 'prompt',
+                        },
+                    })
+                );
+            const commandBatch = compileVersionedCommandBatchEnvelope({
                 runId: 'confirmation-warned-render',
                 batchId: 'group-warned-render',
-            })
-        ).resolves.toEqual({
-            status: 'failed',
-            reason: 'Generic pending-effect recovery cannot execute receipt-bound section renders. The original confirmation is required and may be unavailable after reload.',
-        });
-        expect(runtimeMocks.renderOffline).toHaveBeenCalledOnce();
-        expect(
-            agentRunLifecycle
+                projectId: 'project-1',
+                baseRevision: projectRevision,
+                intent: 'set tempo and render a comparison',
+                commands: [
+                    serializeCommand(tempoAction, 'Tempo changes to 132 BPM.'),
+                    serializeCommand(renderAction, 'Render the warned verse for comparison.'),
+                ],
+            });
+            agentRunLifecycle.create({
+                runId: 'confirmation-warned-render',
+                request: 'set tempo and render a comparison',
+                mode: 'macro',
+                createdRevision: projectRevision,
+            });
+            agentRunLifecycle.transitionPhase({ runId: 'confirmation-warned-render', phase: 'planning' });
+            agentRunLifecycle.transitionPhase({ runId: 'confirmation-warned-render', phase: 'waiting-for-approval' });
+            const manualRepairSpy = manualPersistenceFails
+                ? vi.spyOn(agentRunLifecycle, 'requirePendingEffectManualRepair').mockImplementation(() => {
+                      throw new Error('manual repair persistence unavailable');
+                  })
+                : null;
+            proposePendingActionConfirmation({
+                id: 'confirmation-warned-render',
+                runId: 'confirmation-warned-render',
+                prompt: 'set tempo and render a comparison',
+                assistantMessageId: 'assistant-1',
+                actions: [tempoAction, renderAction],
+                actionLabels: ['Set tempo to 132 BPM', 'Render Warned Verse'],
+                commandBatch,
+                agentApproval: compileAgentRiskApproval({ commandBatch }),
+                executionMode: 'atomic',
+                groupId: 'group-warned-render',
+                groupLabel: 'Tempo and warned render',
+                projectRevision,
+            });
+
+            await expect(
+                confirmPendingChatActions({ confirmationId: 'confirmation-warned-render' })
+            ).resolves.toMatchObject({ status: 'failed', durableCommit: true });
+
+            expect(runtimeMocks.renderOffline).toHaveBeenCalledOnce();
+            expect(executeTempo).toHaveBeenCalledOnce();
+            if (manualPersistenceFails) {
+                expect(getPendingActionConfirmation('confirmation-warned-render')).toMatchObject({
+                    status: 'failed',
+                    followUpStatus: 'failed',
+                    error: expect.stringContaining('manual-repair state could not be persisted'),
+                });
+                expect(chatStore.value?.messages.find((message) => message.id === 'assistant-1')).toMatchObject({
+                    pendingActionConfirmationStatus: 'failed',
+                    pendingActionFollowUpStatus: 'failed',
+                    content: expect.stringContaining('Do not reconcile or replay this committed batch'),
+                });
+                await expect(
+                    recoverAgentRunPendingEffects({
+                        runId: 'confirmation-warned-render',
+                        batchId: 'group-warned-render',
+                    })
+                ).resolves.toMatchObject({ status: 'failed' });
+                expect(runtimeMocks.renderOffline).toHaveBeenCalledOnce();
+                expect(executeTempo).toHaveBeenCalledOnce();
+                manualRepairSpy?.mockRestore();
+                return;
+            }
+            const verifiedReceipt = await getVersionedCommandBatchIdempotentReplay({
+                authority: commandBatch.authority,
+                serialized: commandBatch.serialized,
+            });
+            expect(verifiedReceipt?.pendingEffects).toEqual([
+                expect.objectContaining({
+                    kind: 'external-effect',
+                    remediation: 'manual-repair',
+                    reason: expect.stringContaining('tail truncated; peak clipped'),
+                }),
+            ]);
+            expect(getAgentSectionRenderArtifacts()).toContainEqual(
+                expect.objectContaining({ jobId: renderJob.jobId, warnings: ['tail truncated', 'peak clipped'] })
+            );
+            expect(getPendingActionConfirmation('confirmation-warned-render')).toMatchObject({
+                status: 'executed',
+                followUpStatus: 'failed',
+                error: 'Section render artifacts require manual review: render-warned-verse (tail truncated; peak clipped).',
+            });
+            expect(chatStore.value?.messages.find((message) => message.id === 'assistant-1')).toMatchObject({
+                pendingActionConfirmationStatus: 'executed',
+                pendingActionFollowUpStatus: 'failed',
+                error: 'Section render artifacts require manual review: render-warned-verse (tail truncated; peak clipped).',
+                content: expect.stringContaining(
+                    'The project commands were not replayed. Section render artifacts require manual review: render-warned-verse (tail truncated; peak clipped).'
+                ),
+            });
+            expect(
+                agentRunLifecycle
+                    .get('confirmation-warned-render')
+                    ?.pendingEffectContinuations.filter(({ batchId }) => batchId === 'group-warned-render')
+            ).toEqual([
+                expect.objectContaining({
+                    batchId: 'group-warned-render',
+                    recovery: 'manual-repair',
+                    lastError:
+                        'Section render artifacts require manual review: render-warned-verse (tail truncated; peak clipped).',
+                }),
+            ]);
+            expect(
+                (readAgentRunState().pendingEffectRecoveryLedger ?? []).filter(
+                    ({ runId, batchId }) => runId === 'confirmation-warned-render' && batchId === 'group-warned-render'
+                )
+            ).toEqual([
+                expect.objectContaining({
+                    checkpoint: 'durable',
+                    recovery: 'manual-repair',
+                    lastError:
+                        'Section render artifacts require manual review: render-warned-verse (tail truncated; peak clipped).',
+                }),
+            ]);
+            expect(
+                selectAgentRunPendingEffectRecoveries(readAgentRunState()).find(
+                    ({ runId, batchId }) => runId === 'confirmation-warned-render' && batchId === 'group-warned-render'
+                )
+            ).toMatchObject({ recovery: 'manual-repair' });
+            await expect(confirmPendingChatActions({ confirmationId: 'confirmation-warned-render' })).resolves.toEqual({
+                status: 'not_pending',
+                currentStatus: 'executed',
+            });
+            expect(runtimeMocks.renderOffline).toHaveBeenCalledOnce();
+            expect(executeTempo).toHaveBeenCalledOnce();
+            const manualContinuation = agentRunLifecycle
                 .get('confirmation-warned-render')
-                ?.pendingEffectContinuations.some(({ batchId }) => batchId === 'group-warned-render')
-        ).toBe(true);
-    });
+                ?.pendingEffectContinuations.find(({ batchId }) => batchId === 'group-warned-render');
+            if (!manualContinuation) {
+                throw new Error('Expected retained render continuation');
+            }
+            agentRunLifecycle.recordPendingEffectContinuation({
+                runId: 'confirmation-warned-render',
+                continuation: {
+                    ...manualContinuation,
+                    effects: manualContinuation.effects.map((effect) =>
+                        effect.kind === 'external-effect' ? { ...effect, remediation: 'reconcile' } : effect
+                    ),
+                    recovery: 'reconcile-batch',
+                },
+            });
+            clearAgentSectionRenderArtifacts();
+            mutateCrdtDoc<Record<string, unknown>>({
+                id: 'independent',
+                changeFn: (doc) => {
+                    doc.changedAfterManualReview = true;
+                },
+            });
+            await expect(
+                recoverAgentRunPendingEffects({
+                    runId: 'confirmation-warned-render',
+                    batchId: 'group-warned-render',
+                })
+            ).resolves.toEqual({
+                status: 'failed',
+                reason: 'Generic pending-effect recovery cannot execute receipt-bound section renders. The original confirmation is required and may be unavailable after reload.',
+            });
+            expect(runtimeMocks.renderOffline).toHaveBeenCalledOnce();
+            expect(
+                agentRunLifecycle
+                    .get('confirmation-warned-render')
+                    ?.pendingEffectContinuations.some(({ batchId }) => batchId === 'group-warned-render')
+            ).toBe(true);
+            manualRepairSpy?.mockRestore();
+        }
+    );
 
     it('invalidates a confirmed batch when another app action commits while its first handler is paused', async () => {
         configureAiWorkflowCommandPreflightFixture('project-1');

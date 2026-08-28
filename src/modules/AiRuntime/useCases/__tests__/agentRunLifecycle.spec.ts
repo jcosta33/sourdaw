@@ -162,9 +162,8 @@ describe('agentRunLifecycle', () => {
 
         expect(selectAgentRunPendingEffectRecoveries(readAgentRunState())).toEqual([
             expect.objectContaining({
-                recovery: 'manual-repair',
-                lastError:
-                    'Generic pending-effect recovery cannot execute receipt-bound section renders. The original confirmation is required and may be unavailable after reload.',
+                recovery: 'reconcile-batch',
+                lastError: null,
             }),
         ]);
 

@@ -1630,19 +1630,58 @@ describe('command batch idempotency', () => {
         if (first.status !== 'committed-with-warning') {
             throw new Error('Expected a durable pending-effect receipt');
         }
+        let leaseAvailable = false;
         commandBatchIdempotencyPort.setRepository({
             lookup: () => Promise.resolve({ status: 'missing' }),
             claim: () => Promise.resolve({ status: 'claimed' }),
             complete: () => Promise.resolve(),
-            tryAcquireRecoveryLease: () => Promise.resolve(true),
+            tryAcquireRecoveryLease: () => Promise.resolve(leaseAvailable),
             release: () => Promise.resolve(),
         });
+        const expectedProjectRevision = commandProjectRevisionPort.capture();
+
+        await expect(
+            finalizeRecoveredCommandBatchEffects({
+                authority: batch.authority,
+                serialized: batch.serialized,
+                pendingReceipt: first.receipt,
+                expectedProjectRevision,
+            })
+        ).resolves.toEqual({
+            status: 'failed',
+            reason: 'Command batch external-effect recovery is already in progress',
+        });
+        leaseAvailable = true;
+        await expect(
+            finalizeRecoveredCommandBatchEffects({
+                authority: batch.authority,
+                serialized: batch.serialized,
+                pendingReceipt: { ...first.receipt, warnings: [...first.receipt.warnings, 'tampered'] },
+                expectedProjectRevision,
+            })
+        ).resolves.toEqual({
+            status: 'failed',
+            reason: 'The pending project checkpoint changed before finalization',
+        });
+        projectRevisionOverride = revision(999);
+        await expect(
+            finalizeRecoveredCommandBatchEffects({
+                authority: batch.authority,
+                serialized: batch.serialized,
+                pendingReceipt: first.receipt,
+                expectedProjectRevision,
+            })
+        ).resolves.toEqual({
+            status: 'failed',
+            reason: 'The project changed before external-effect finalization',
+        });
+        projectRevisionOverride = null;
 
         const finalized = await finalizeRecoveredCommandBatchEffects({
             authority: batch.authority,
             serialized: batch.serialized,
             pendingReceipt: first.receipt,
-            expectedProjectRevision: commandProjectRevisionPort.capture(),
+            expectedProjectRevision,
         });
         const replay = await getVersionedCommandBatchIdempotentReplay({
             authority: batch.authority,
