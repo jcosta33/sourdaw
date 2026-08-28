@@ -193,6 +193,20 @@ function hasExactDurableReceipt(
     );
 }
 
+function hasExactFinalizedReceipt(
+    receipt: CommandVerifiedBatchReceipt | null,
+    binding: WarnedRenderPayloadBinding
+): receipt is CommandVerifiedBatchReceipt {
+    if (!receipt || receipt.outcome !== 'committed' || receipt.pendingEffects.length > 0) {
+        return false;
+    }
+    const renderOutcomes = receipt.commandOutcomes.filter(
+        ({ commandId, operation }) =>
+            commandId === binding.approvedCommand.commandId && operation === binding.approvedCommand.operation
+    );
+    return renderOutcomes.length === 1 && renderOutcomes[0]?.outcome === 'committed';
+}
+
 function hasExactBatchBinding(
     confirmation: PendingAppActionConfirmation,
     approvedBatch: ParsedApprovedRetryBatch,
@@ -241,6 +255,52 @@ function hasExactTrackedRunBinding(
     );
 }
 
+function hasExactFinalizedContinuationBinding(
+    confirmation: PendingAppActionConfirmation,
+    approvedBatch: ParsedApprovedRetryBatch,
+    binding: WarnedRenderPayloadBinding,
+    finalizedReceipt: CommandVerifiedBatchReceipt
+): boolean {
+    const approvedCommandBatch = confirmation.approvalSnapshot.commandBatch;
+    if (!approvedCommandBatch) {
+        return false;
+    }
+    const trackedRun = agentRunLifecycle.get(confirmation.runId);
+    if (!trackedRun || trackedRun.revisions.committed !== confirmation.followUpProjectRevision) {
+        return false;
+    }
+    const matchingContinuations = trackedRun.pendingEffectContinuations.filter(
+        ({ batchId }) => batchId === confirmation.groupId
+    );
+    const continuation = matchingContinuations[0];
+    if (
+        matchingContinuations.length !== 1 ||
+        !continuation ||
+        continuation.recovery !== 'reconcile-batch' ||
+        continuation.serializedBatch !== approvedCommandBatch.serialized ||
+        !hasExactCanonicalAuthority(approvedCommandBatch.authority, continuation.authority)
+    ) {
+        return false;
+    }
+    const matchingReceipts = trackedRun.receipts.filter(({ workId }) => workId === confirmation.groupId);
+    const pendingReceiptIdentity = `${finalizedReceipt.schemaVersion}:${finalizedReceipt.runId}:${finalizedReceipt.batchId}:partially-committed`;
+    const pendingEffects = continuation.effects.filter(
+        (effect) =>
+            effect.commandId === binding.approvedCommand.commandId &&
+            effect.operation === binding.approvedCommand.operation &&
+            effect.kind === 'external-effect' &&
+            effect.remediation === 'reconcile' &&
+            effect.state === 'pending'
+    );
+    return (
+        matchingReceipts.length === 1 &&
+        matchingReceipts[0]?.receiptIdentity === pendingReceiptIdentity &&
+        continuation.receiptIdentity === pendingReceiptIdentity &&
+        pendingEffects.length === 1 &&
+        approvedBatch.envelope.batchId === continuation.batchId
+    );
+}
+
 export function admitCommittedSectionRenderRetry(
     input: ArmingInput | EligibilityInput | ProofInput
 ): CommittedSectionRenderRetryAdmission {
@@ -263,18 +323,32 @@ export function admitCommittedSectionRenderRetry(
         return { status: 'proof-mismatch' };
     }
     const renderBinding = getWarnedRenderBinding(input.confirmation, approvedBatch);
-    if (!renderBinding || !hasExactDurableReceipt(input.durableReceipt, renderBinding)) {
+    if (!renderBinding) {
+        return { status: 'proof-mismatch' };
+    }
+    const hasPendingReceipt = hasExactDurableReceipt(input.durableReceipt, renderBinding);
+    const hasFinalizedReceipt = hasExactFinalizedReceipt(input.durableReceipt, renderBinding);
+    if (!hasPendingReceipt && !hasFinalizedReceipt) {
         return { status: 'proof-mismatch' };
     }
     if (input.phase === 'arming') {
-        return { durableReceipt: input.durableReceipt, status: 'admitted' };
+        return hasPendingReceipt
+            ? { durableReceipt: input.durableReceipt, status: 'admitted' }
+            : { status: 'proof-mismatch' };
     }
-    if (input.durableReceipt.pendingEffects[0]?.remediation === 'manual-repair') {
+    if (hasPendingReceipt && input.durableReceipt.pendingEffects[0]?.remediation === 'manual-repair') {
         return { status: 'proof-mismatch' };
     }
     if (
         !hasExactBatchBinding(input.confirmation, approvedBatch, input.durableReceipt) ||
-        !hasExactTrackedRunBinding(input.confirmation, input.durableReceipt)
+        (hasPendingReceipt
+            ? !hasExactTrackedRunBinding(input.confirmation, input.durableReceipt)
+            : !hasExactFinalizedContinuationBinding(
+                  input.confirmation,
+                  approvedBatch,
+                  renderBinding,
+                  input.durableReceipt
+              ))
     ) {
         return { status: 'proof-mismatch' };
     }

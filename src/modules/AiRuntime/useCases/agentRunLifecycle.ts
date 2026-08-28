@@ -861,15 +861,16 @@ function requireAgentRunPendingEffectManualRepair(input: {
     } satisfies AgentRun;
     const runs = [...state.runs];
     runs[runIndex] = next;
-    const pendingEffectRecoveryLedger = getPendingEffectRecoveryLedger(state).map((candidate) =>
-        isPendingEffectRecovery(candidate, input)
-            ? {
-                  ...candidate,
-                  effects: requireManualRepairEffects(candidate.effects),
-                  recovery: 'manual-repair',
-                  lastError: input.reason,
-              }
-            : candidate
+    const pendingEffectRecoveryLedger = getPendingEffectRecoveryLedger(state).map(
+        (candidate): AgentRunPendingEffectRecovery =>
+            isPendingEffectRecovery(candidate, input)
+                ? {
+                      ...candidate,
+                      effects: requireManualRepairEffects(candidate.effects),
+                      recovery: 'manual-repair',
+                      lastError: input.reason,
+                  }
+                : candidate
     );
     persistAgentRunState(withPendingEffectRecoveryLedger({ ...state, runs }, pendingEffectRecoveryLedger));
     return structuredClone(next);

@@ -162,8 +162,9 @@ describe('agentRunLifecycle', () => {
 
         expect(selectAgentRunPendingEffectRecoveries(readAgentRunState())).toEqual([
             expect.objectContaining({
-                recovery: 'reconcile-batch',
-                lastError: null,
+                recovery: 'manual-repair',
+                lastError:
+                    'Generic pending-effect recovery cannot execute receipt-bound section renders. The original confirmation is required and may be unavailable after reload.',
             }),
         ]);
 
@@ -207,6 +208,22 @@ describe('agentRunLifecycle', () => {
                 recovery: 'manual-repair',
                 lastError: 'The retained render has a truncated tail.',
             }),
+        ]);
+    });
+
+    it('keeps non-render pending effect recoveries in the generic projection', () => {
+        createRenderReviewRun();
+        const state = structuredClone(readAgentRunState());
+        const continuation = state.runs[0]?.pendingEffectContinuations[0];
+        const durableRecovery = state.pendingEffectRecoveryLedger?.[0];
+        if (!continuation || !durableRecovery) {
+            throw new Error('Expected durable pending effect recovery');
+        }
+        continuation.effects[0] = { ...continuation.effects[0]!, operation: 'setTrackGain' };
+        durableRecovery.effects[0] = { ...durableRecovery.effects[0]!, operation: 'setTrackGain' };
+
+        expect(selectAgentRunPendingEffectRecoveries(state)).toEqual([
+            expect.objectContaining({ recovery: 'reconcile-batch', lastError: null }),
         ]);
     });
 

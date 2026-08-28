@@ -386,6 +386,25 @@ export function getPendingActionConfirmation(confirmationId: string): PendingApp
     return confirmation ? clonePendingActionConfirmation(confirmation) : null;
 }
 
+export function hasRetryableSectionRenderFollowUp(input: {
+    runId: string;
+    batchId: string;
+    serializedBatch: string;
+}): boolean {
+    return (
+        pendingActionConfirmationStore.value?.confirmations.some(
+            (confirmation) =>
+                (confirmation.status === 'executed' || confirmation.status === 'failed') &&
+                confirmation.runId === input.runId &&
+                confirmation.groupId === input.batchId &&
+                confirmation.followUpStatus === 'retryable' &&
+                confirmation.followUpProjectRevision !== null &&
+                confirmation.approvalSnapshot.commandBatch?.serialized === input.serializedBatch &&
+                confirmation.approvalSnapshot.actions.some((action) => action.type === 'renderProjectSections')
+        ) ?? false
+    );
+}
+
 type RefreshPendingActionConfirmationApprovalInput = {
     agentApproval: PendingAgentRiskApproval;
     commandBatch: PendingCommandBatch;
