@@ -461,6 +461,49 @@ describe('executeCommittedSectionRenderRetry', () => {
         );
     });
 
+    it('surfaces budget persistence failure alongside terminal manual review', async () => {
+        const input = createInput();
+        const finalProjection = projectionForJobs([], [SECOND_JOB], [JOB]);
+        mocks.project.mockReturnValueOnce(projectionForJobs([SECOND_JOB], [], [JOB])).mockReturnValue(finalProjection);
+        mocks.reconcileBudget.mockImplementation(() => {
+            throw new Error('budget persistence unavailable');
+        });
+
+        await expect(executeCommittedSectionRenderRetry(input)).resolves.toEqual({
+            status: 'failed',
+            reason: 'Section render artifacts require manual review: render-verse (tail truncated).',
+        });
+        expect(mocks.setGenerating.mock.calls).toEqual([[true], [false]]);
+        expect(mocks.completeContinuation).not.toHaveBeenCalled();
+        expect(mocks.updateFollowUp).toHaveBeenLastCalledWith({
+            confirmationId: 'confirmation-retry',
+            error: expect.stringContaining('Section render artifacts require manual review'),
+            status: 'failed',
+        });
+        const followUpError = mocks.updateFollowUp.mock.calls.at(-1)?.[0]?.error;
+        expect(followUpError).toContain('budget reconciliation could not be persisted');
+        expect(mocks.updateConfirmation).toHaveBeenLastCalledWith(
+            expect.objectContaining({
+                status: 'executed',
+                error: expect.stringContaining('Section render artifacts require manual review'),
+            })
+        );
+        const confirmationError = mocks.updateConfirmation.mock.calls.at(-1)?.[0]?.error;
+        expect(confirmationError).toContain('budget reconciliation could not be persisted');
+        expect(mocks.updateChat).toHaveBeenLastCalledWith(
+            'assistant-retry',
+            expect.objectContaining({
+                pendingActionFollowUpStatus: 'failed',
+                error: expect.stringContaining('Section render artifacts require manual review'),
+                content: expect.stringContaining('Retained section render artifacts require manual review'),
+            })
+        );
+        const manualReviewChatError = mocks.updateChat.mock.calls.at(-1)?.[1]?.error;
+        expect(manualReviewChatError).toContain('budget reconciliation could not be persisted');
+        const manualReviewChatContent = mocks.updateChat.mock.calls.at(-1)?.[1]?.content;
+        expect(manualReviewChatContent).toContain('budget reconciliation could not be persisted');
+    });
+
     it('keeps a missing job retryable when another retained artifact requires review', async () => {
         const input = createInput();
         const incompleteProjection = projectionForJobs([SECOND_JOB], [], [JOB]);

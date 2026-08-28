@@ -150,17 +150,25 @@ function failIncompleteRetry(
     return { status: 'failed', reason };
 }
 
-function finishManualReview(confirmation: PendingAppActionConfirmation): RetryResult {
+function finishManualReview(
+    confirmation: PendingAppActionConfirmation,
+    persistenceWarning: string | null = null
+): RetryResult {
     const refreshed = refreshConfirmationProjection(confirmation);
     const reviewSummary = getReviewSummary(refreshed.projection);
     const reason = `Section render artifacts require manual review: ${reviewSummary}.`;
-    updatePendingActionFollowUp({ confirmationId: confirmation.id, error: reason, status: 'failed' });
-    updatePendingActionConfirmationStatus({ confirmationId: confirmation.id, status: 'executed', error: reason });
+    const surfacedError = persistenceWarning ? `${reason}\n\n${persistenceWarning}` : reason;
+    updatePendingActionFollowUp({ confirmationId: confirmation.id, error: surfacedError, status: 'failed' });
+    updatePendingActionConfirmationStatus({
+        confirmationId: confirmation.id,
+        status: 'executed',
+        error: surfacedError,
+    });
     updateChatMessage(confirmation.assistantMessageId, {
         pendingActionConfirmationStatus: 'executed',
         pendingActionFollowUpStatus: 'failed',
-        error: reason,
-        content: `Applied after confirmation:\n\n${refreshed.projection.receipt}\n\nThe project commands were not replayed. Retained section render artifacts require manual review: ${reviewSummary}.`,
+        error: surfacedError,
+        content: `Applied after confirmation:\n\n${refreshed.projection.receipt}\n\nThe project commands were not replayed. Retained section render artifacts require manual review: ${reviewSummary}.${persistenceWarning ? `\n\n_${persistenceWarning}_` : ''}`,
     });
     return { status: 'failed', reason };
 }
@@ -277,7 +285,7 @@ export async function executeCommittedSectionRenderRetry(input: {
         }
     }
     if (manualReviewProjection) {
-        return finishManualReview(confirmation);
+        return finishManualReview(confirmation, budgetPersistenceWarning);
     }
     if (renderFailureReason !== undefined) {
         return failIncompleteRetry(confirmation, renderFailureReason, budgetPersistenceWarning);
