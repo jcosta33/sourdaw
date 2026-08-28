@@ -25,6 +25,27 @@ pub const INSTANCE_WORKER_ARGUMENT: &str = "--sourdaw-plugin-instance-scan-worke
 const WORKER_TIMEOUT: Duration = Duration::from_secs(3);
 const MAX_RESPONSE_BYTES: u64 = 256 * 1024;
 
+/// The refusal `scan_worker` returns when the helper child exited with a
+/// non-zero status, minus the path it is formatted with. See
+/// [`is_process_failure`].
+const HELPER_EXITED_UNSUCCESSFULLY_PREFIX: &str = "Plugin scan helper exited unsuccessfully for ";
+/// The refusal `wait_bounded` returns when the helper child ran past its
+/// bound and was killed.
+const HELPER_TIMED_OUT: &str = "Plugin scan helper timed out";
+
+/// Whether an error from [`scan_descriptor_metadata`] or
+/// [`scan_instance_metadata`] is the process-level failure crash quarantine
+/// exists to catch: the helper child exited unsuccessfully, or ran past its
+/// bound and was killed.
+///
+/// Distinct from a data-level refusal — a malformed response, an oversized
+/// payload, an unregistered format — which says the *read* failed, not that
+/// the binary itself is dangerous to keep re-running. Only a process failure
+/// is evidence worth quarantining a binary over (#2911).
+pub fn is_process_failure(error: &str) -> bool {
+    error.starts_with(HELPER_EXITED_UNSUCCESSFULLY_PREFIX) || error == HELPER_TIMED_OUT
+}
+
 /// Env var a host sets to describe how a leaf worker process is launched.
 ///
 /// The default — re-executing this process — holds only where the executable
@@ -372,7 +393,7 @@ fn scan_worker<T: DeserializeOwned>(
     let status = run_bounded(&mut command, timeout.min(WORKER_TIMEOUT))?;
     if !status.success() {
         return Err(format!(
-            "Plugin scan helper exited unsuccessfully for {}",
+            "{HELPER_EXITED_UNSUCCESSFULLY_PREFIX}{}",
             path.display()
         ));
     }
@@ -415,7 +436,7 @@ fn wait_bounded(child: &mut Child, timeout: Duration) -> Result<ExitStatus, Stri
             }
             Ok(None) => {
                 terminate_process_tree(child);
-                return Err("Plugin scan helper timed out".to_string());
+                return Err(HELPER_TIMED_OUT.to_string());
             }
             Err(error) => {
                 terminate_process_tree(child);
@@ -815,5 +836,32 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
             .status()
             .unwrap()
             .success());
+    }
+
+    /// The only two shapes crash quarantine exists to catch.
+    #[test]
+    fn is_process_failure_recognizes_exit_and_timeout_errors() {
+        assert!(is_process_failure(
+            "Plugin scan helper exited unsuccessfully for /plugins/Broken.clap"
+        ));
+        assert!(is_process_failure("Plugin scan helper timed out"));
+    }
+
+    /// A data-level refusal says the read failed, not that the process itself
+    /// crashed or hung — never a reason to quarantine the binary.
+    #[test]
+    fn is_process_failure_rejects_data_level_refusals() {
+        assert!(!is_process_failure(
+            "No plugin scan backend for format vst2"
+        ));
+        assert!(!is_process_failure(
+            "Plugin scan helper response exceeded its byte limit"
+        ));
+        assert!(!is_process_failure(
+            "Plugin scan helper returned invalid metadata: EOF"
+        ));
+        assert!(!is_process_failure(
+            "Cannot start plugin scan helper: denied"
+        ));
     }
 }

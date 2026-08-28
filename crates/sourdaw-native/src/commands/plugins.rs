@@ -1,7 +1,9 @@
 //! Plugin scanning, loading, and parameter management.
 
 use crate::host::native_bridge::{HostedPluginSlot, SharedHostedPlugin};
-use crate::host::plugin_registry_store::{PersistedPluginEntry, PluginRegistryStore, RescanClaim};
+use crate::host::plugin_registry_store::{
+    PersistedPluginEntry, PersistedQuarantineEntry, PluginRegistryStore, RescanClaim,
+};
 use crate::host::plugin_scan_policy::PluginScanPolicy;
 use crate::host::plugin_scan_worker;
 use crate::host::plugin_window::PluginWindowHost;
@@ -10,7 +12,7 @@ use cpal::traits::{DeviceTrait, HostTrait};
 use daw_engine::audio_bridge::{create_audio_bridge, MAX_BLOCK_FRAMES};
 use daw_engine::plugin_slot::MidiNoteEvent;
 use daw_engine::scheduler::HOSTED_PLUGIN_RESERVE;
-use daw_plugin_host::scanner::{self, PluginFormat, ScanResult, ScannedPlugin};
+use daw_plugin_host::scanner::{self, PluginFormat, QuarantinedPlugin, ScanResult, ScannedPlugin};
 use daw_plugin_host::{AudioPlugin, ClapWrapper, HostedPluginRuntime, HostedRuntime, Vst3Wrapper};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeSet, HashMap, HashSet};
@@ -270,7 +272,44 @@ async fn persist_plugin_registry(state: &AppState) {
     }
 }
 
-pub async fn scan_plugins(paths: Vec<String>, state: &AppState) -> Result<ScanResult, String> {
+/// Milliseconds since the unix epoch, for a quarantine record's timestamp.
+fn quarantine_timestamp_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+/// `retry_quarantined` is the AC-002 escape hatch: `false` is every ordinary
+/// scan, which skips a quarantined candidate without spawning its helper and
+/// never clears the record. `true` — a user-initiated full rescan — clears
+/// every quarantine record it encounters before that candidate's helper runs,
+/// so a fresh crash re-quarantines from a clean slate and a clean run leaves
+/// nothing behind.
+pub async fn scan_plugins(
+    paths: Vec<String>,
+    retry_quarantined: bool,
+    state: &AppState,
+) -> Result<ScanResult, String> {
+    scan_plugins_with_policy(
+        paths,
+        retry_quarantined,
+        PluginScanPolicy::platform_defaults(),
+        state,
+    )
+    .await
+}
+
+/// `scan_policy` is a parameter so a test can scan a fixture directory without
+/// touching the platform's real plugin folders. Production reaches this only
+/// through [`scan_plugins`], which always supplies
+/// [`PluginScanPolicy::platform_defaults`].
+async fn scan_plugins_with_policy(
+    paths: Vec<String>,
+    retry_quarantined: bool,
+    scan_policy: PluginScanPolicy,
+    state: &AppState,
+) -> Result<ScanResult, String> {
     let permit = PLUGIN_SCAN_PERMIT
         .try_acquire()
         .map_err(|_| "Plugin scan already in progress".to_string())?;
@@ -280,8 +319,8 @@ pub async fn scan_plugins(paths: Vec<String>, state: &AppState) -> Result<ScanRe
     // *other* root written out of the file by the save that follows.
     hydrate_plugin_registry(state).await;
     let start = std::time::Instant::now();
-    let scan_policy = PluginScanPolicy::platform_defaults();
     let requested_paths: Vec<PathBuf> = paths.iter().map(PathBuf::from).collect();
+    let registry_store = Arc::clone(&state.plugin_registry_store);
 
     let deadline = start + MAX_SCAN_DURATION;
     let (plugins, mut errors, notices, scanned_paths, scan_complete, authorized_paths) =
@@ -324,6 +363,13 @@ pub async fn scan_plugins(paths: Vec<String>, state: &AppState) -> Result<ScanRe
                 }
             }
             retain_first_candidate_per_path(&mut candidates);
+            // Every path this walk actually found, regardless of whether its
+            // helper ran — the removal predicate below needs the full set to
+            // tell "gone from disk" from "skipped because quarantined".
+            let still_present_candidate_paths: HashSet<PathBuf> = candidates
+                .iter()
+                .map(|candidate| candidate.path.clone())
+                .collect();
             let mut plugins = Vec::new();
             let mut scanned_paths = Vec::new();
             for candidate in candidates {
@@ -334,6 +380,17 @@ pub async fn scan_plugins(paths: Vec<String>, state: &AppState) -> Result<ScanRe
                     break;
                 }
                 scanned_paths.push(candidate.path.clone());
+
+                if retry_quarantined {
+                    registry_store.clear_quarantine(&candidate.path);
+                } else if registry_store.is_quarantined(&candidate.path).is_some() {
+                    // Skipped, not retried: a binary whose helper already
+                    // crashed or timed out stays quarantined through every
+                    // ordinary scan (AC-002). It is still named in the scan
+                    // response below, via `quarantined_snapshot`.
+                    continue;
+                }
+
                 match plugin_scan_worker::scan_descriptor_metadata(
                     candidate.format,
                     &candidate.path,
@@ -378,11 +435,30 @@ pub async fn scan_plugins(paths: Vec<String>, state: &AppState) -> Result<ScanRe
                         plugins.extend(scanner::scanned_bundle_plugins(&candidate.path, bundle));
                     }
                     Err(error) => {
+                        if plugin_scan_worker::is_process_failure(&error) {
+                            registry_store.quarantine_failure(
+                                &candidate.path,
+                                error.clone(),
+                                quarantine_timestamp_ms(),
+                            );
+                        }
                         scan_errors.push(format!("{}: {error}", candidate.path.display()))
                     }
                 }
             }
             retain_first_plugin_per_identity(&mut plugins);
+            // Deliberately not `publish_scan_results_in_registry`'s predicate:
+            // that one drops every registry entry under a scanned root and
+            // rebuilds from what this scan found, which for a *skipped*
+            // quarantined candidate would clear its record on this very scan.
+            // A quarantine record is only dropped once this walk proves the
+            // file genuinely gone — its root fully scanned, and not among the
+            // candidates found there.
+            registry_store.apply_quarantine_removals(|path| {
+                !(scan_complete
+                    && authorized_paths.iter().any(|root| path.starts_with(root))
+                    && !still_present_candidate_paths.contains(path))
+            });
             (
                 plugins,
                 scan_errors,
@@ -412,11 +488,23 @@ pub async fn scan_plugins(paths: Vec<String>, state: &AppState) -> Result<ScanRe
         return Err("Plugin scan did not complete within safety limits".to_string());
     }
 
+    let quarantined: Vec<QuarantinedPlugin> = state
+        .plugin_registry_store
+        .quarantined_snapshot()
+        .into_iter()
+        .map(|entry: PersistedQuarantineEntry| QuarantinedPlugin {
+            path: entry.path,
+            reason: entry.reason,
+            quarantined_at_ms: entry.quarantined_at_ms,
+        })
+        .collect();
+
     Ok(ScanResult {
         plugins,
         errors,
         notices,
         scan_duration_ms: start.elapsed().as_millis() as u64,
+        quarantined,
     })
 }
 
@@ -2871,9 +2959,12 @@ mod tests {
         let scan_root = unique_temp_scan_root("raw-plugin-scan-path");
         std::fs::create_dir_all(&scan_root).expect("temp scan root should be created");
 
-        let result =
-            crate::block_on_test(scan_plugins(vec![scan_root.display().to_string()], &state))
-                .expect("scan command should return policy errors in-band");
+        let result = crate::block_on_test(scan_plugins(
+            vec![scan_root.display().to_string()],
+            false,
+            &state,
+        ))
+        .expect("scan command should return policy errors in-band");
         let _ = std::fs::remove_dir_all(&scan_root);
 
         assert!(result.plugins.is_empty());
@@ -2901,6 +2992,148 @@ mod tests {
         let root = unique_temp_scan_root(test_name);
         std::fs::create_dir_all(&root).expect("temp scan root should be created");
         std::fs::canonicalize(&root).expect("a directory that was just created resolves")
+    }
+
+    /// AC-001: a candidate already quarantined must not be handed to a scan
+    /// helper on an ordinary scan — proven here by the absence of any error
+    /// naming it, since a spawned helper reading this garbage file would
+    /// produce one — and the scan response must still name it, not drop it
+    /// silently.
+    #[test]
+    fn a_quarantined_candidate_is_skipped_and_still_named_in_the_response() {
+        let root = created_temp_scan_root("quarantine-skip");
+        let plugin_path = root.join("Hostile.clap");
+        std::fs::write(&plugin_path, b"not a real clap bundle")
+            .expect("fixture plugin file should be written");
+        let policy = PluginScanPolicy::with_allowed_roots(vec![root.clone()]);
+
+        let state = AppState::default();
+        state.plugin_registry_store.quarantine_failure(
+            &plugin_path,
+            "Plugin scan helper exited unsuccessfully for Hostile.clap".to_string(),
+            1_700_000_000_000,
+        );
+
+        let result = crate::block_on_test(scan_plugins_with_policy(
+            vec![root.display().to_string()],
+            false,
+            policy,
+            &state,
+        ))
+        .expect("a default scan over an authorized root should succeed");
+        let _ = std::fs::remove_dir_all(&root);
+
+        assert!(
+            result.plugins.is_empty(),
+            "a quarantined candidate must not be scanned: {:?}",
+            result.plugins
+        );
+        assert!(
+            !result
+                .errors
+                .iter()
+                .any(|error| error.contains("Hostile.clap")),
+            "a skipped candidate must not spawn a helper, which would have produced its own \
+             error for this unparseable fixture: {:?}",
+            result.errors
+        );
+        let quarantined = result
+            .quarantined
+            .iter()
+            .find(|entry| entry.path == plugin_path.display().to_string())
+            .expect("the scan response must name the quarantined binary, not drop it silently");
+        assert_eq!(
+            quarantined.reason,
+            "Plugin scan helper exited unsuccessfully for Hostile.clap"
+        );
+    }
+
+    /// AC-002: a retry clears the record before the helper runs, rather than
+    /// leaving the skip in place. Proven two ways: an error appears for the
+    /// path — a skipped candidate never reaches the helper, so never produces
+    /// one — and the seeded sentinel timestamp is gone, which only happens if
+    /// the old record was cleared before this run's own attempt (the fixture
+    /// is not a real CLAP bundle, so the helper fails again and the run's own
+    /// failure, dated to now rather than to the sentinel, replaces it).
+    #[test]
+    fn retrying_quarantined_clears_the_record_before_the_helper_runs() {
+        let root = created_temp_scan_root("quarantine-retry");
+        let plugin_path = root.join("Recovering.clap");
+        std::fs::write(&plugin_path, b"not a real clap bundle")
+            .expect("fixture plugin file should be written");
+        let policy = PluginScanPolicy::with_allowed_roots(vec![root.clone()]);
+
+        let state = AppState::default();
+        const SEEDED_SENTINEL_TIMESTAMP: u64 = 1;
+        state.plugin_registry_store.quarantine_failure(
+            &plugin_path,
+            "Plugin scan helper timed out".to_string(),
+            SEEDED_SENTINEL_TIMESTAMP,
+        );
+
+        let result = crate::block_on_test(scan_plugins_with_policy(
+            vec![root.display().to_string()],
+            true,
+            policy,
+            &state,
+        ))
+        .expect("a retry scan over an authorized root should succeed");
+        let _ = std::fs::remove_dir_all(&root);
+
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|error| error.contains("Recovering.clap")),
+            "a retried candidate must actually reach the helper, not stay skipped: {:?}",
+            result.errors
+        );
+        if let Some(entry) = result
+            .quarantined
+            .iter()
+            .find(|entry| entry.path == plugin_path.display().to_string())
+        {
+            assert_ne!(
+                entry.quarantined_at_ms, SEEDED_SENTINEL_TIMESTAMP,
+                "a record surviving the retry must be this run's own failure, not the \
+                 pre-retry record left untouched"
+            );
+        }
+    }
+
+    /// The other half of AC-002: the default incremental path must never
+    /// clear a quarantine record on its own, whatever else the scan finds.
+    #[test]
+    fn a_default_scan_never_clears_a_quarantine_record() {
+        let root = created_temp_scan_root("quarantine-default-no-retry");
+        let plugin_path = root.join("StillHostile.clap");
+        std::fs::write(&plugin_path, b"not a real clap bundle")
+            .expect("fixture plugin file should be written");
+        let policy = PluginScanPolicy::with_allowed_roots(vec![root.clone()]);
+
+        let state = AppState::default();
+        state.plugin_registry_store.quarantine_failure(
+            &plugin_path,
+            "Plugin scan helper timed out".to_string(),
+            1,
+        );
+
+        let _ = crate::block_on_test(scan_plugins_with_policy(
+            vec![root.display().to_string()],
+            false,
+            policy,
+            &state,
+        ))
+        .expect("a default scan over an authorized root should succeed");
+        let _ = std::fs::remove_dir_all(&root);
+
+        assert!(
+            state
+                .plugin_registry_store
+                .is_quarantined(&plugin_path)
+                .is_some(),
+            "a default scan must never silently clear a quarantine record"
+        );
     }
 
     /// The scan keeps the first copy of a plugin it meets, so the order the
