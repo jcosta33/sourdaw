@@ -2392,6 +2392,7 @@ describe('release inventory', () => {
             'crates/daw-dsp/src/lib.rs',
             'crates/daw-dsp/Cargo.toml',
             'rust-toolchain.toml',
+            'scripts/wasmToolchainPins.ts',
         ]);
         expect(GRAND_BOULE_MEASUREMENT_SOURCE_DIRECTORIES).toEqual([
             'crates/daw-dsp/src/grand_boule',

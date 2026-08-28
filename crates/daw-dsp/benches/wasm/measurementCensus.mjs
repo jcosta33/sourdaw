@@ -15,6 +15,7 @@ export const GRAND_BOULE_MEASUREMENT_SOURCE_FILES = [
     'crates/daw-dsp/src/lib.rs',
     'crates/daw-dsp/Cargo.toml',
     'rust-toolchain.toml',
+    'scripts/wasmToolchainPins.ts',
 ];
 
 export const GRAND_BOULE_MEASUREMENT_SOURCE_DIRECTORIES = [
