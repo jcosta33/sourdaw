@@ -128,7 +128,7 @@ describe('renderAgentProjectSections', () => {
                 onRenderAttempt,
             })
         ).rejects.toThrow('Project changed during rendering');
-        expect(onRenderAttempt).toHaveBeenCalledExactlyOnce();
+        expect(onRenderAttempt).toHaveBeenCalledTimes(1);
     });
 
     it('never mixes artifacts from different project revisions in one render batch', async () => {
