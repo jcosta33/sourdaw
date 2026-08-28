@@ -1,0 +1,21 @@
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/formatSectionRenderReviewSummary.spec.ts
+  s_a40848e8f8cca9::t_ad2e36915b313b 1-14
+src/modules/AiRuntime/useCases/__tests__/confirmPendingChatActions.spec.ts
+  s_a40848e8f8cca9::t_ad2e36915b313b 2818,2888,2892,2897,2902-2905,2915-2916,2927-2928
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "274365ac5f42f3ce428f239a4d149569ddf0f93b",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
