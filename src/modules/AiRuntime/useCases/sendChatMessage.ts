@@ -32,8 +32,8 @@ import { getAgentPlanProposalIdentity } from '../transformers/normalizeAgentPlan
 
 import { normalizeAgentFailure } from './agentErrorAndSaga';
 import { createStemImportConfirmationResourceLease } from './agentReference/createStemImportConfirmationResourceLease';
+import { executeImmediatePromptCommand } from './agentRequestOrchestration/executeImmediatePromptCommand';
 import {
-    AGENT_RUN_PERSISTENCE_WARNING,
     AGENT_RUN_STALE_COMPLETION_WARNING,
     settleAgentRunWorkLeaseSafely,
 } from './agentRequestOrchestration/settleAgentRunWorkLeaseSafely';
@@ -45,13 +45,11 @@ import { agentRunCancellation } from './cancelAgentRun';
 import { compileAgentActionExecution } from './compileAgentActionExecution';
 import { describeAgentRiskApproval } from './describeAgentRiskApproval';
 import { describePendingActionConfirmation } from './describePendingActionConfirmation';
-import { executePlannedActions } from './executePlannedActions';
 import { resolveBackend } from './llmOrchestration/backendResolution/helpers';
 import { planAgentRun } from './planAgentRun';
 import { getPlanningProviderSchemaContract } from './planningProviderSchema';
 import { planPromptActions } from './planPromptActions';
 import { recordAgentProviderUsage } from './recordAgentProviderUsage';
-import { recordAgentRunReceiptSaga } from './recordAgentRunReceiptSaga';
 import { resolveAgentExecutionMode } from './resolveAgentExecutionMode';
 
 function getBackendModelId(backend: RunnableAiBackend): string {
@@ -89,35 +87,7 @@ function assertResumedProposalIdentity(
     }
 }
 
-type AgentApplyReceipt = Extract<
-    Awaited<ReturnType<typeof executePlannedActions>>,
-    { status: 'committed' | 'executed' }
->['receipt'];
-
-function tryRecordCommittedAgentRunWork(input: {
-    runId: string;
-    receipt: NonNullable<AgentApplyReceipt>;
-    actions: Parameters<typeof recordAgentRunReceiptSaga>[0]['actions'];
-    commandBatch?: Parameters<typeof recordAgentRunReceiptSaga>[0]['commandBatch'];
-    revertGroupId?: string;
-    committedRevision?: string;
-    completesRun?: boolean;
-}): string | null {
-    try {
-        recordAgentRunReceiptSaga({
-            runId: input.runId,
-            receipt: input.receipt,
-            actions: input.actions,
-            ...(input.commandBatch ? { commandBatch: input.commandBatch } : {}),
-            ...(input.revertGroupId ? { revertGroupId: input.revertGroupId } : {}),
-            ...(input.committedRevision ? { committedRevision: input.committedRevision } : {}),
-            ...(input.completesRun !== undefined ? { completesRun: input.completesRun } : {}),
-        });
-        return null;
-    } catch {
-        return AGENT_RUN_PERSISTENCE_WARNING;
-    }
-}
+type AgentApplyReceipt = NonNullable<Awaited<ReturnType<typeof executeImmediatePromptCommand>>>;
 
 function tryRecordTerminalFailure(input: Parameters<typeof agentRunLifecycle.recordError>[0]): void {
     try {
@@ -129,10 +99,6 @@ function tryRecordTerminalFailure(input: Parameters<typeof agentRunLifecycle.rec
 
 function appendSettlementWarning(content: string, warning: string | null): string {
     return warning ? `${content}\n\n_${warning}_` : content;
-}
-
-function appendSettlementWarningToError(reason: string, warning: string | null): string {
-    return warning ? `${reason}\n\n${warning}` : reason;
 }
 
 function getProviderBudgetCategory(backend: RunnableAiBackend): string {
@@ -943,282 +909,21 @@ export async function sendChatMessage(
                     return undefined;
                 }
 
-                const executionInput = {
+                return await executeImmediatePromptCommand({
+                    runId,
                     prompt: userText,
                     actions: result.actions,
-                    group: commandGroup,
+                    assistantMessageId: assistantMsgId,
+                    abortController: aborter,
                     projectRevision,
                     executionMode: result.executionMode,
-                    signal: aborter.signal,
-                };
-                agentRunLifecycle.transitionPhase({ runId, phase: 'executing', revision: projectRevision });
-                const commandReceiptIdentity = `command:${runId}:${parsedCommandBatch.envelope.batchId}`;
-                const commandLeaseResult = agentRunWorkLease.claim({
-                    runId,
-                    workId: parsedCommandBatch.envelope.batchId,
-                    ownerKind: 'command',
-                    cleanupOwner: 'command-executor',
-                    idempotencyKey: parsedCommandBatch.envelope.idempotencyKey,
-                    receiptIdentity: commandReceiptIdentity,
-                    idempotent: true,
-                    retriable: false,
+                    group: commandGroup,
+                    commandBatch,
+                    parsedCommandBatch,
+                    onExecutionSettlementWarning: (warning) => {
+                        commandExecutionSettlementWarning = warning;
+                    },
                 });
-                if (commandLeaseResult.status !== 'claimed') {
-                    throw new Error(`Agent command work could not be claimed: ${commandLeaseResult.status}`);
-                }
-                const releaseCommandCancellation = agentRunCancellation.bindAbortController({
-                    runId,
-                    lease: commandLeaseResult.lease,
-                    controller: aborter,
-                    reason: 'User cancelled the run while command execution was active.',
-                });
-                let execution: Awaited<ReturnType<typeof executePlannedActions>>;
-                try {
-                    execution = await executePlannedActions({ ...executionInput, commandBatch });
-                    if (execution.status === 'invalidated' || execution.status === 'cancelled') {
-                        await agentRunCancellation.cancel({
-                            runId,
-                            reason:
-                                execution.status === 'invalidated'
-                                    ? execution.reason
-                                    : 'User cancelled before the command committed.',
-                        });
-                    }
-                } catch (error) {
-                    const commandExecutionSettlement = settleAgentRunWorkLeaseSafely({
-                        lease: commandLeaseResult.lease,
-                        terminalState: 'failed',
-                        evidence: 'none',
-                        settle: agentRunWorkLease.settle,
-                        reportFailure: (settlementError) =>
-                            logger.error(
-                                new Error('Failed command work lease settlement failed', {
-                                    cause: settlementError,
-                                })
-                            ),
-                    });
-                    commandExecutionSettlementWarning = commandExecutionSettlement.warning;
-                    throw error;
-                } finally {
-                    releaseCommandCancellation();
-                }
-                let commandLeaseTerminalState: 'completed' | 'cancelled' | 'failed' = 'failed';
-                if (
-                    execution.status === 'committed' ||
-                    execution.status === 'executed' ||
-                    execution.status === 'no-op'
-                ) {
-                    commandLeaseTerminalState = 'completed';
-                } else if (execution.status === 'cancelled') {
-                    commandLeaseTerminalState = 'cancelled';
-                }
-                const commandLeaseSettlement = settleAgentRunWorkLeaseSafely({
-                    lease: commandLeaseResult.lease,
-                    terminalState: commandLeaseTerminalState,
-                    evidence:
-                        (execution.status === 'committed' || execution.status === 'executed') && execution.receipt
-                            ? 'verified-command-receipt'
-                            : 'none',
-                    settle: agentRunWorkLease.settle,
-                });
-                const commandLeasePersistenceWarning = commandLeaseSettlement.warning;
-
-                if (execution.status === 'committed') {
-                    if (!execution.receipt) {
-                        throw new Error('Applied command did not return a verified receipt');
-                    }
-                    const receiptWarnings: string[] = [];
-                    if (execution.commitWarning) {
-                        receiptWarnings.push(`Post-commit project follow-up warning: ${execution.commitWarning}`);
-                    }
-                    if (execution.reportingWarning) {
-                        receiptWarnings.push(
-                            `AI history or notification reporting warning: ${execution.reportingWarning}`
-                        );
-                    }
-                    const runPersistenceWarning = tryRecordCommittedAgentRunWork({
-                        runId,
-                        receipt: execution.receipt,
-                        actions: result.actions,
-                        commandBatch,
-                        revertGroupId: commandGroup.groupId,
-                        committedRevision: captureProjectRevision(),
-                        completesRun: commandLeaseSettlement.accepted,
-                    });
-                    if (runPersistenceWarning) {
-                        receiptWarnings.push(runPersistenceWarning);
-                    }
-                    if (commandLeasePersistenceWarning && !runPersistenceWarning) {
-                        receiptWarnings.push(commandLeasePersistenceWarning);
-                    }
-                    const actionSummary = execution.actions
-                        .map((entry) => `- **${entry.actionType.replaceAll('_', ' ')}**: ${entry.label}`)
-                        .join('\n');
-                    const warningSummary = receiptWarnings.join(' ');
-                    const content = warningSummary
-                        ? `Applied:\n\n${actionSummary}\n\n${warningSummary} The project change committed. Do not retry automatically; inspect the current project state.`
-                        : `Executed:\n\n${actionSummary}`;
-                    updateChatMessage(assistantMsgId, {
-                        isStreaming: false,
-                        error: warningSummary || undefined,
-                        content,
-                    });
-                    return execution.receipt;
-                }
-
-                if (execution.status === 'executed') {
-                    if (!execution.receipt) {
-                        throw new Error('Executed command did not return a verified receipt');
-                    }
-                    const receiptWarnings: string[] = [];
-                    if (execution.executionWarning) {
-                        receiptWarnings.push(`Runtime follow-up warning: ${execution.executionWarning}`);
-                    }
-                    if (execution.reportingWarning) {
-                        receiptWarnings.push(
-                            `AI history or notification reporting warning: ${execution.reportingWarning}`
-                        );
-                    }
-                    const runPersistenceWarning = tryRecordCommittedAgentRunWork({
-                        runId,
-                        receipt: execution.receipt,
-                        actions: result.actions,
-                        commandBatch,
-                        completesRun: commandLeaseSettlement.accepted,
-                    });
-                    if (runPersistenceWarning) {
-                        receiptWarnings.push(runPersistenceWarning);
-                    }
-                    if (commandLeasePersistenceWarning && !runPersistenceWarning) {
-                        receiptWarnings.push(commandLeasePersistenceWarning);
-                    }
-                    const actionSummary = execution.actions
-                        .map((entry) => `- **${entry.actionType.replaceAll('_', ' ')}**: ${entry.label}`)
-                        .join('\n');
-                    const warningSummary = receiptWarnings.join(' ');
-                    let content = `Executed:\n\n${actionSummary}`;
-                    if (warningSummary) {
-                        content = `${content}\n\n${warningSummary} The runtime command executed. Do not retry automatically; inspect the current runtime state.`;
-                    }
-                    updateChatMessage(assistantMsgId, {
-                        isStreaming: false,
-                        error: warningSummary || undefined,
-                        content,
-                    });
-                    return execution.receipt;
-                }
-
-                if (execution.status === 'invalidated') {
-                    if (commandLeaseSettlement.accepted) {
-                        await agentRunCancellation.cancel({
-                            runId,
-                            reason: execution.reason,
-                        });
-                    }
-                    updateChatMessage(assistantMsgId, {
-                        isStreaming: false,
-                        error: appendSettlementWarningToError(execution.reason, commandLeasePersistenceWarning),
-                        content: appendSettlementWarning(
-                            'The project changed before this command could commit. Review it and submit the command again.',
-                            commandLeasePersistenceWarning
-                        ),
-                    });
-                    return undefined;
-                }
-
-                if (execution.status === 'cancelled') {
-                    if (commandLeaseSettlement.accepted) {
-                        await agentRunCancellation.cancel({
-                            runId,
-                            reason: 'User cancelled before the command committed.',
-                        });
-                    }
-                    updateChatMessage(assistantMsgId, {
-                        isStreaming: false,
-                        error: commandLeasePersistenceWarning ?? undefined,
-                        content: appendSettlementWarning(
-                            'Command cancelled before it committed. No project changes were applied.',
-                            commandLeasePersistenceWarning
-                        ),
-                    });
-                    return undefined;
-                }
-
-                if (execution.status === 'no-op') {
-                    if (commandLeaseSettlement.accepted) {
-                        agentRunLifecycle.updateBatchStatus({
-                            runId,
-                            batchId: parsedCommandBatch.envelope.batchId,
-                            status: 'no-op',
-                        });
-                        agentRunLifecycle.transitionPhase({ runId, phase: 'completed' });
-                    }
-                    updateChatMessage(assistantMsgId, {
-                        isStreaming: false,
-                        error: commandLeasePersistenceWarning ?? undefined,
-                        content: appendSettlementWarning(
-                            'No project changes were needed.',
-                            commandLeasePersistenceWarning
-                        ),
-                    });
-                    return undefined;
-                }
-
-                if (execution.status === 'ambiguous') {
-                    if (commandLeaseSettlement.accepted) {
-                        tryRecordTerminalFailure({
-                            runId,
-                            error: normalizeAgentFailure({
-                                category: 'conflict',
-                                source: 'command-execution',
-                                related: {
-                                    targetIds: [...parsedCommandBatch.envelope.scope.targetIds],
-                                    commandIds: parsedCommandBatch.envelope.commands.map(
-                                        (command) => command.commandId
-                                    ),
-                                    workIds: [parsedCommandBatch.envelope.batchId],
-                                },
-                                compensation: 'manual-repair',
-                                knownDomain: true,
-                            }),
-                            terminal: true,
-                        });
-                    }
-                    updateChatMessage(assistantMsgId, {
-                        isStreaming: false,
-                        error: appendSettlementWarningToError(execution.reason, commandLeasePersistenceWarning),
-                        content: appendSettlementWarning(
-                            `The command stopped after an uncertain partial commit: ${execution.reason}. Do not retry it; inspect the project first.`,
-                            commandLeasePersistenceWarning
-                        ),
-                    });
-                    return undefined;
-                }
-
-                updateChatMessage(assistantMsgId, {
-                    isStreaming: false,
-                    error: appendSettlementWarningToError(execution.reason, commandLeasePersistenceWarning),
-                    content: appendSettlementWarning(
-                        `Failed to execute prompt command atomically: ${execution.reason}`,
-                        commandLeasePersistenceWarning
-                    ),
-                });
-                if (commandLeaseSettlement.accepted) {
-                    tryRecordTerminalFailure({
-                        runId,
-                        error: normalizeAgentFailure({
-                            category: 'project',
-                            source: 'command-execution',
-                            related: {
-                                targetIds: [...parsedCommandBatch.envelope.scope.targetIds],
-                                commandIds: parsedCommandBatch.envelope.commands.map((command) => command.commandId),
-                                workIds: [parsedCommandBatch.envelope.batchId],
-                            },
-                            knownDomain: true,
-                        }),
-                        terminal: true,
-                    });
-                }
             } else if (result.rejectionReason) {
                 tryRecordTerminalFailure({
                     runId,
