@@ -19,6 +19,8 @@ type ProviderKnownScopeInput = {
     readonly protectedRanges: readonly Readonly<AgentRunScope['protectedRanges'][number]>[];
 };
 
+type CompiledCommandBatchAuthority = ReturnType<typeof compileAgentActionExecution>['commandBatch']['authority'];
+
 type MaterializePromptCommandPlanInput = {
     userText: string;
     runId: string;
@@ -94,7 +96,7 @@ function getApplicationReadyAssetIdsForPlan(runId: string, actions: readonly Exe
     return [SELECTED_STEM_ASSETS_READY_ID, ...new Set(selectedStems.map((stem) => stem.stemId))];
 }
 
-function cloneScope(scope: AgentRunScope): AgentRunScope {
+function cloneScope(scope: CompiledCommandBatchAuthority['scope']): AgentRunScope {
     return {
         targetIds: [...scope.targetIds],
         targetRanges: scope.targetRanges.map((range) => ({ ...range })),
@@ -103,7 +105,7 @@ function cloneScope(scope: AgentRunScope): AgentRunScope {
     };
 }
 
-function cloneGrants(grants: AgentRunDecisionResume['grants']): AgentRunDecisionResume['grants'] {
+function cloneGrants(grants: CompiledCommandBatchAuthority['grants']): AgentRunDecisionResume['grants'] {
     return {
         ...grants,
         allowedOperationPrefixes: [...grants.allowedOperationPrefixes],
