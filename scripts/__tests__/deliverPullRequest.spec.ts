@@ -339,6 +339,7 @@ type FakeInput = {
     headCheckRuns?: HeadCheckRun[] | Error;
     gateRequiredCheckNames?: ReadonlySet<string> | Error;
     deletesMergedBranches?: boolean;
+    failAddReceiptOnce?: boolean;
     failRetargetOnce?: number;
     primaryBaseRefNameOnReceiptRead?: string;
     primaryBodyOnReceiptRead?: string;
@@ -391,6 +392,7 @@ function fakePort(input: FakeInput = {}) {
         }
     }
     let lastDependents = dependentSets.at(-1) ?? [];
+    let failedAddReceipt = false;
     let failedRetarget = false;
     let primaryBaseRefName: string | undefined;
     let primaryBody: string | undefined;
@@ -492,6 +494,10 @@ function fakePort(input: FakeInput = {}) {
                 updatedAt: createdAt,
             };
             receipts.push(receipt);
+            if (input.failAddReceiptOnce && !failedAddReceipt) {
+                failedAddReceipt = true;
+                throw new Error('delivery receipt response was lost');
+            }
             return structuredClone(receipt);
         },
         log: (message) => calls.push(message),
@@ -579,39 +585,57 @@ describe('pull-request delivery', () => {
         expect(calls.some((call) => call.startsWith('complete:'))).toBe(false);
     });
 
-    it('retries same-head metadata drift with a new canonical receipt while retaining the stale receipt', () => {
-        const originalBody = relationshipBody('Closes #2372');
-        const currentBody = relationshipBody('Closes #2373');
+    it('accepts X to Y to X receipt lineage and recovers the newest successful X receipt after merge', () => {
+        const bodyX = relationshipBody('Closes #2372');
+        const bodyY = relationshipBody('Closes #2373');
+        const seededX: DeliveryReceiptComment = {
+            id: 'IC_seeded_x',
+            body: deliveryReceiptBody(42, 'head', bodyX, 2372),
+            authorNodeId: AUTHOR_BOT_NODE_ID,
+            authorLogin: 'renamed-author[bot]',
+            authorType: 'Bot',
+            createdAt: '2026-08-21T00:00:00.000Z',
+            updatedAt: '2026-08-21T00:00:00.000Z',
+        };
         const { port, calls, receipts, tracker } = fakePort({
             primary: [
-                pullRequest({ body: originalBody }),
-                pullRequest({ body: originalBody }),
-                pullRequest({ body: originalBody }),
-                pullRequest({ body: originalBody }),
+                pullRequest({ body: bodyY }),
+                pullRequest({ body: bodyY }),
+                pullRequest({ body: bodyY }),
+                pullRequest({ body: bodyY }),
                 pullRequest({ state: 'MERGED', body: relationshipBody('None.') }),
             ],
-            primaryBodyOnReceiptRead: currentBody,
+            primaryBodyOnReceiptRead: bodyX,
             dependentSets: [[], []],
+            receipts: [seededX],
         });
 
         expect(() => deliverPullRequest(42, port, tracker)).toThrow(/closing target changed during delivery/);
         expect(calls).not.toContain('merge:42:head');
-        expect(receipts.map((receipt) => receipt.body)).toEqual([deliveryReceiptBody(42, 'head', originalBody, 2372)]);
+        expect(receipts.map((receipt) => receipt.body)).toEqual([
+            deliveryReceiptBody(42, 'head', bodyX, 2372),
+            deliveryReceiptBody(42, 'head', bodyY, 2373),
+        ]);
 
         deliverPullRequest(42, port, tracker);
 
         expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(2);
         expect(calls.filter((call) => call === 'merge:42:head')).toHaveLength(1);
         expect(receipts.map((receipt) => receipt.body)).toEqual([
-            deliveryReceiptBody(42, 'head', originalBody, 2372),
-            deliveryReceiptBody(42, 'head', currentBody, 2373),
+            deliveryReceiptBody(42, 'head', bodyX, 2372),
+            deliveryReceiptBody(42, 'head', bodyY, 2373),
+            deliveryReceiptBody(42, 'head', bodyX, 2372),
         ]);
-        expect(Date.parse(receipts[0]?.createdAt ?? '')).toBeLessThan(Date.parse(receipts[1]?.createdAt ?? ''));
+        expect(receipts.map((receipt) => Date.parse(receipt.createdAt))).toEqual([
+            Date.parse('2026-08-21T00:00:00.000Z'),
+            Date.parse('2026-08-21T00:00:01.000Z'),
+            Date.parse('2026-08-21T00:00:02.000Z'),
+        ]);
 
         deliverPullRequest(42, port, tracker);
 
-        expect(calls.filter((call) => call === 'complete:2373')).toHaveLength(2);
-        expect(calls).not.toContain('complete:2372');
+        expect(calls.filter((call) => call === 'complete:2372')).toHaveLength(2);
+        expect(calls).not.toContain('complete:2373');
     });
 
     it('completes the receipt issue after a single-receipt merged body drift', () => {
@@ -655,7 +679,7 @@ describe('pull-request delivery', () => {
             receipts: [receipt('IC_first', staleBody, 2372), receipt('IC_second', currentBody, 2373)],
         });
 
-        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/ambiguous newest delivery receipts/);
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/ambiguous delivery receipt timestamps/);
         expect(calls.some((call) => call.startsWith('complete:'))).toBe(false);
     });
 
@@ -758,7 +782,7 @@ describe('pull-request delivery', () => {
         }
     });
 
-    it('rejects duplicate delivery receipts instead of choosing authority', () => {
+    it('rejects adjacent byte-identical receipt payloads instead of choosing authority', () => {
         const closes = relationshipBody('Closes #2372');
         const receipt = {
             id: 'IC_delivery_42',
@@ -771,11 +795,29 @@ describe('pull-request delivery', () => {
         };
         const { port, calls, tracker } = fakePort({
             primary: [pullRequest({ body: closes }), pullRequest({ body: closes })],
-            receipts: [receipt, { ...receipt, id: 'IC_delivery_42_duplicate' }],
+            receipts: [
+                receipt,
+                {
+                    ...receipt,
+                    id: 'IC_delivery_42_duplicate',
+                    createdAt: '2026-08-21T00:00:01Z',
+                    updatedAt: '2026-08-21T00:00:01Z',
+                },
+            ],
         });
 
         expect(() => deliverPullRequest(42, port, tracker)).toThrow(/duplicate delivery receipts/);
         expect(calls).not.toContain('merge:42:head');
+    });
+
+    it('recovers a lost add-comment response from the unique newest canonical receipt', () => {
+        const { port, calls, receipts } = fakePort({ failAddReceiptOnce: true, dependentSets: [[], []] });
+
+        deliverPullRequest(42, port);
+
+        expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(1);
+        expect(receipts).toHaveLength(1);
+        expect(calls).toContain('merge:42:head');
     });
 
     it('merges the expected head and retargets stable dependents', () => {
@@ -838,15 +880,15 @@ describe('pull-request delivery', () => {
         expect(calls).toContain('merge:42:head');
     });
 
-    it('rejects a base substituted while refreshing UNKNOWN structural mergeability', () => {
+    it('rejects release/x to main retargeting while refreshing UNKNOWN structural mergeability', () => {
         const { port, calls } = fakePort({
             primary: [
-                pullRequest({ mergeable: 'UNKNOWN' }),
-                pullRequest({ mergeable: 'MERGEABLE', baseRefName: 'release/1.0' }),
+                pullRequest({ mergeable: 'UNKNOWN', baseRefName: 'release/x' }),
+                pullRequest({ mergeable: 'MERGEABLE', baseRefName: 'main' }),
             ],
         });
 
-        expect(() => deliverPullRequest(42, port)).toThrow(/targets release\/1\.0, not main/);
+        expect(() => deliverPullRequest(42, port)).toThrow(/baseRefName changed during delivery/);
         expect(calls).not.toContain('merge:42:head');
     });
 

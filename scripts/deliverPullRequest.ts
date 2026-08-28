@@ -198,6 +198,7 @@ function resolveStructuralMergeability(
         refreshes += 1
     ) {
         pullRequest = port.pullRequest(initial.number);
+        validateStablePullRequest(initial, pullRequest);
     }
     validateStructuralMergeability(pullRequest);
     return pullRequest;
@@ -507,13 +508,27 @@ function deliveryReceiptsForHead(
     return candidates;
 }
 
-function deliveryReceiptCandidates(
+function orderedDeliveryReceiptLineage(
     comments: DeliveryReceiptComment[],
-    pullRequest: Pick<PullRequestSnapshot, 'number' | 'headRefOid'>,
-    expected: DeliveryReceiptPayload
+    pullRequest: Pick<PullRequestSnapshot, 'number' | 'headRefOid'>
 ): DeliveryReceiptComment[] {
-    const canonicalBody = composeDeliveryReceipt(expected);
-    return deliveryReceiptsForHead(comments, pullRequest).filter((comment) => comment.body === canonicalBody);
+    const ordered = deliveryReceiptsForHead(comments, pullRequest).sort(
+        (left, right) => Date.parse(left.createdAt) - Date.parse(right.createdAt)
+    );
+    for (let index = 1; index < ordered.length; index += 1) {
+        const previous = ordered[index - 1];
+        const current = ordered[index];
+        if (previous === undefined || current === undefined) {
+            fail(`PR #${pullRequest.number} has an invalid delivery receipt lineage`);
+        }
+        if (Date.parse(previous.createdAt) === Date.parse(current.createdAt)) {
+            fail(`PR #${pullRequest.number} has ambiguous delivery receipt timestamps`);
+        }
+        if (previous.body === current.body) {
+            fail(`PR #${pullRequest.number} has duplicate delivery receipts`);
+        }
+    }
+    return ordered;
 }
 
 function assertOwnedDeliveryReceipt(
@@ -561,25 +576,17 @@ function assertCanonicalDeliveryReceipt(
     return payload;
 }
 
-function newestDeliveryReceipt(comments: DeliveryReceiptComment[], pullRequestNumber: number): DeliveryReceiptComment {
-    const newestTimestamp = comments.reduce(
-        (latest, comment) => Math.max(latest, Date.parse(comment.createdAt)),
-        Number.NEGATIVE_INFINITY
-    );
-    const newest = comments.filter((comment) => Date.parse(comment.createdAt) === newestTimestamp);
-    const receipt = newest[0];
+function newestDeliveryReceipt(lineage: DeliveryReceiptComment[], pullRequestNumber: number): DeliveryReceiptComment {
+    const receipt = lineage.at(-1);
     if (receipt === undefined) {
         fail(`PR #${pullRequestNumber} has no delivery receipt for its current head`);
-    }
-    if (newest.length !== 1) {
-        fail(`PR #${pullRequestNumber} has ambiguous newest delivery receipts`);
     }
     return receipt;
 }
 
 function readDeliveryReceipt(pullRequest: PullRequestSnapshot, port: DeliveryPort): DeliveryReceiptPayload {
-    const receipts = deliveryReceiptsForHead(port.deliveryReceipts(pullRequest.number), pullRequest);
-    return assertDeliveryReceiptForHead(newestDeliveryReceipt(receipts, pullRequest.number), pullRequest);
+    const lineage = orderedDeliveryReceiptLineage(port.deliveryReceipts(pullRequest.number), pullRequest);
+    return assertDeliveryReceiptForHead(newestDeliveryReceipt(lineage, pullRequest.number), pullRequest);
 }
 
 function ensureDeliveryReceipt(
@@ -588,33 +595,31 @@ function ensureDeliveryReceipt(
     port: DeliveryPort
 ): DeliveryReceiptPayload {
     const expected = expectedDeliveryReceipt(pullRequest, closingIssue);
-    const existing = deliveryReceiptCandidates(port.deliveryReceipts(pullRequest.number), pullRequest, expected);
-    if (existing.length > 1) {
-        fail(`PR #${pullRequest.number} has duplicate delivery receipts`);
-    }
-    let receipt = existing[0];
-    if (receipt === undefined) {
-        const body = composeDeliveryReceipt(expected);
+    const expectedBody = composeDeliveryReceipt(expected);
+    const existing = orderedDeliveryReceiptLineage(port.deliveryReceipts(pullRequest.number), pullRequest);
+    let receipt = existing.at(-1);
+    if (receipt?.body !== expectedBody) {
         try {
-            receipt = port.addDeliveryReceipt(pullRequest.number, body);
+            receipt = port.addDeliveryReceipt(pullRequest.number, expectedBody);
         } catch (error) {
-            const recovered = deliveryReceiptCandidates(
-                port.deliveryReceipts(pullRequest.number),
-                pullRequest,
-                expected
+            const recovered = orderedDeliveryReceiptLineage(port.deliveryReceipts(pullRequest.number), pullRequest).at(
+                -1
             );
-            if (recovered.length !== 1 || recovered[0] === undefined) {
+            if (recovered?.body !== expectedBody) {
                 throw error;
             }
-            receipt = recovered[0];
+            receipt = recovered;
         }
     }
-    assertCanonicalDeliveryReceipt(receipt, pullRequest, expected);
-    const verified = deliveryReceiptCandidates(port.deliveryReceipts(pullRequest.number), pullRequest, expected);
-    if (verified.length !== 1 || verified[0]?.id !== receipt.id) {
+    if (receipt === undefined) {
         fail(`PR #${pullRequest.number} delivery receipt was not durably verified`);
     }
-    return assertCanonicalDeliveryReceipt(verified[0], pullRequest, expected);
+    assertCanonicalDeliveryReceipt(receipt, pullRequest, expected);
+    const verified = orderedDeliveryReceiptLineage(port.deliveryReceipts(pullRequest.number), pullRequest).at(-1);
+    if (verified === undefined || verified.id !== receipt.id || verified.body !== expectedBody) {
+        fail(`PR #${pullRequest.number} delivery receipt was not durably verified`);
+    }
+    return assertCanonicalDeliveryReceipt(verified, pullRequest, expected);
 }
 
 function validateDependent(current: PullRequestSnapshot, expected: StackedPullRequest): void {
