@@ -93,7 +93,10 @@ describe('startPluginScan', () => {
 
     it('sets isScanning and then updates with results', async () => {
         const mockPlugins = [makeScannedPlugin()];
-        mocks.scanPlugins.mockResolvedValue({ plugins: mockPlugins, errors: [], notices: [], scan_duration_ms: 5 });
+        mocks.scanPlugins.mockResolvedValue({
+            ran: true,
+            result: { plugins: mockPlugins, errors: [], notices: [], scan_duration_ms: 5 },
+        });
 
         await startPluginScan();
 
@@ -113,7 +116,10 @@ describe('startPluginScan', () => {
     it('merges existing paths with default paths', async () => {
         mocks.pluginScanStoreValue.value.scanPaths = ['/custom/path'];
         mocks.getDefaultPluginPaths.mockResolvedValue(['/default/path']);
-        mocks.scanPlugins.mockResolvedValue({ plugins: [], errors: [], notices: [], scan_duration_ms: 0 });
+        mocks.scanPlugins.mockResolvedValue({
+            ran: true,
+            result: { plugins: [], errors: [], notices: [], scan_duration_ms: 0 },
+        });
 
         await startPluginScan();
 
