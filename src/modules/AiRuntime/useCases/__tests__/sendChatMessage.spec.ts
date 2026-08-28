@@ -815,6 +815,43 @@ describe('sendChatMessage retained-provider selection', () => {
         }
     });
 
+    it('settles the provider-planning lease when planning rejects', async () => {
+        const planningError = new Error('Planning provider failed');
+        let admittedRunId: string | null = null;
+        mocks.planPromptActions.mockImplementation(async (input: PlanPromptActionsInput) => {
+            admittedRunId = input.streamIdentity?.runId ?? null;
+            throw planningError;
+        });
+
+        await expect(sendChatMessage('add a track', { mode: 'apply' })).resolves.toBeUndefined();
+
+        const runId = admittedRunId ?? '';
+        expect(runId).not.toBe('');
+        expect(mocks.appendChatMessage).toHaveBeenLastCalledWith(
+            expect.objectContaining({
+                role: 'assistant',
+                content: 'Failed to process prompt command.',
+                error: planningError.message,
+            })
+        );
+        expect(agentRunLifecycle.get(runId)).toEqual(
+            expect.objectContaining({
+                phase: 'failed',
+                workLeases: expect.arrayContaining([
+                    expect.objectContaining({
+                        runId,
+                        workId: 'provider-planning',
+                        leaseId: `${runId}:provider-planning:0`,
+                        cancellationGeneration: 0,
+                        idempotencyKey: `provider:webllm:${runId}`,
+                        receiptIdentity: `provider:webllm:${runId}`,
+                        terminalState: 'failed',
+                    }),
+                ]),
+            })
+        );
+    });
+
     it('preserves a planning rejection when agent-run storage fails after provider settlement', async () => {
         const rejectionReason = 'The requested command cannot be resolved.';
         const storageFailure = new DOMException('The quota has been exceeded.', 'QuotaExceededError');
