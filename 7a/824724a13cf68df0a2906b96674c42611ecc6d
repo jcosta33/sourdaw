@@ -1,0 +1,24 @@
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/admitCommittedSectionRenderRetry.spec.ts
+  s_a40848e8f8cca9::t_5af2c127f6e738 162-195,466-515,517,519-520,524
+  s_a40848e8f8cca9::t_1c78d5f7a47a1f 516,518,521-523
+src/modules/AiRuntime/useCases/agentRequestOrchestration/admitCommittedSectionRenderRetry.ts
+  s_a40848e8f8cca9::t_d5bbc4bd1fd86e 330-335,340-348
+src/modules/AudioRendering/useCases/__tests__/retryAgentProjectSectionRenders.spec.ts
+  s_a40848e8f8cca9::t_d5bbc4bd1fd86e 27-28,35-36,43-44
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "7a824724a13cf68df0a2906b96674c42611ecc6d",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
