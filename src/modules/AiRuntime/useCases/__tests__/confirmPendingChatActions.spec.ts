@@ -74,6 +74,8 @@ import {
 type SetTempoAction = Extract<AppAction, { type: 'setTempo' }>;
 type AddDeviceAction = Extract<AppAction, { type: 'addDevice' }>;
 type RenderSectionsAction = Extract<AppAction, { type: 'renderProjectSections' }>;
+type StaleLateBatchResult =
+    { status: 'ambiguous'; reason: string; actions: [] } | { status: 'failed'; reason: string; actions: [] };
 
 const runtimeMocks = vi.hoisted(() => ({
     applyRuntimeGraphDelta: vi.fn(),
@@ -675,54 +677,57 @@ describe('confirmPendingChatActions transaction admission', () => {
         });
     });
 
-    it.each([
+    const staleLateBatchResults = [
         {
-            status: 'failed' as const,
-            reason: 'The late command batch failed.',
+            batchResult: { status: 'failed', reason: 'The late command batch failed.', actions: [] },
             content: 'Failed to execute confirmed actions atomically:',
         },
         {
-            status: 'ambiguous' as const,
-            reason: 'The late command batch is ambiguous.',
+            batchResult: { status: 'ambiguous', reason: 'The late command batch is ambiguous.', actions: [] },
             content: 'The confirmed command stopped after an uncertain partial commit:',
         },
-    ])('keeps a cancelled run terminal after a stale late $status result', async ({ status, reason, content }) => {
-        const runId = `late-${status}-settlement`;
-        const confirmationId = `confirmation-${status}-settlement`;
-        const batchId = `group-${status}-settlement`;
-        configureLateSettlementConfirmation({ runId, confirmationId, batchId });
-        const commandUseCases = await import('#/modules/Command/useCases');
-        const crdtUseCases = await import('#/modules/CrdtDocument/useCases');
-        const captureMutationAuthorization = vi
-            .spyOn(crdtUseCases, 'captureProjectMutationAuthorization')
-            .mockReturnValue(() => true);
-        const batchResult =
-            status === 'ambiguous'
-                ? { status: 'ambiguous' as const, reason, actions: [] }
-                : { status: 'failed' as const, reason, actions: [] };
-        const execute = vi
-            .spyOn(commandUseCases, 'executeVersionedCommandBatchEnvelope')
-            .mockResolvedValue(batchResult);
-        const settle = vi.spyOn(agentRunWorkLease, 'settle').mockImplementation(() => {
-            agentRunLifecycle.transitionPhase({ runId, phase: 'cancelled' });
-            return { status: 'stale' };
-        });
+    ] satisfies readonly { batchResult: StaleLateBatchResult; content: string }[];
 
-        try {
-            await expect(confirmPendingChatActions({ confirmationId })).resolves.toEqual({ status: 'failed', reason });
-        } finally {
-            settle.mockRestore();
-            execute.mockRestore();
-            captureMutationAuthorization.mockRestore();
+    it.each(staleLateBatchResults)(
+        'keeps a cancelled run terminal after a stale late $batchResult.status result',
+        async ({ batchResult, content }) => {
+            const { status, reason } = batchResult;
+            const runId = `late-${status}-settlement`;
+            const confirmationId = `confirmation-${status}-settlement`;
+            const batchId = `group-${status}-settlement`;
+            configureLateSettlementConfirmation({ runId, confirmationId, batchId });
+            const commandUseCases = await import('#/modules/Command/useCases');
+            const crdtUseCases = await import('#/modules/CrdtDocument/useCases');
+            const captureMutationAuthorization = vi
+                .spyOn(crdtUseCases, 'captureProjectMutationAuthorization')
+                .mockReturnValue(() => true);
+            const execute = vi
+                .spyOn(commandUseCases, 'executeVersionedCommandBatchEnvelope')
+                .mockResolvedValue(batchResult);
+            const settle = vi.spyOn(agentRunWorkLease, 'settle').mockImplementation(() => {
+                agentRunLifecycle.transitionPhase({ runId, phase: 'cancelled' });
+                return { status: 'stale' };
+            });
+
+            try {
+                await expect(confirmPendingChatActions({ confirmationId })).resolves.toEqual({
+                    status: 'failed',
+                    reason,
+                });
+            } finally {
+                settle.mockRestore();
+                execute.mockRestore();
+                captureMutationAuthorization.mockRestore();
+            }
+
+            expect(agentRunLifecycle.get(runId)).toMatchObject({ phase: 'cancelled' });
+            expect(chatStore.value?.messages[0]).toMatchObject({
+                pendingActionConfirmationStatus: 'failed',
+                error: reason,
+                content: expect.stringContaining(content),
+            });
         }
-
-        expect(agentRunLifecycle.get(runId)).toMatchObject({ phase: 'cancelled' });
-        expect(chatStore.value?.messages[0]).toMatchObject({
-            pendingActionConfirmationStatus: 'failed',
-            error: reason,
-            content: expect.stringContaining(content),
-        });
-    });
+    );
 
     it('keeps a stale late no-op cancelled instead of claiming fresh completion', async () => {
         const runId = 'late-no-op-settlement';
