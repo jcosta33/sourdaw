@@ -242,23 +242,8 @@ fn read_wav(path: &Path) -> Result<(Vec<Vec<f32>>, u32, u16), String> {
     collect_wav_samples(open_wav(path)?)
 }
 
-fn write_wav(
-    path: &Path,
-    data: &[Vec<f32>],
-    sample_rate: u32,
-    channels: u16,
-) -> Result<(), String> {
-    let spec = WavSpec {
-        channels,
-        sample_rate,
-        bits_per_sample: 32,
-        sample_format: SampleFormat::Float,
-    };
-    write_wav_atomically(path, spec, |writer| write_all_samples(writer, data))
-}
-
 /// Stream every sample into an already-open writer. Split from `write_wav`
-/// so `write_wav_atomically` can be exercised with an injected failure.
+/// so the atomic replace can be exercised with an injected failure.
 fn write_all_samples(
     writer: &mut WavWriter<std::io::BufWriter<&mut std::fs::File>>,
     data: &[Vec<f32>],
@@ -280,26 +265,22 @@ fn write_all_samples(
 /// to `path` would destroy any pre-existing render there and — on a mid-write
 /// or finalize failure such as disk full — leave a truncated, headerless WAV
 /// that a later existence check mistakes for the render. The temp file, the
-/// pre-rename fsync, the rename, and the failure cleanup are
-/// `filesystem::replace_file_atomically`'s to own; this wrapper supplies only
-/// the WAV-specific part: the hound writer over the temp file the helper
-/// hands it. `finalize` flushes the buffered writer, so every sample and the
-/// corrected header are inside the fsync the helper performs.
-fn write_wav_atomically(
+/// pre-rename fsync, the rename, and the failure cleanup all belong to
+/// `filesystem::write_wav_atomically`; this wrapper supplies only the
+/// per-channel sample layout.
+fn write_wav(
     path: &Path,
-    spec: WavSpec,
-    write_samples: impl FnOnce(
-        &mut WavWriter<std::io::BufWriter<&mut std::fs::File>>,
-    ) -> Result<(), String>,
+    data: &[Vec<f32>],
+    sample_rate: u32,
+    channels: u16,
 ) -> Result<(), String> {
-    filesystem::replace_file_atomically(path, |file| {
-        let mut writer = WavWriter::new(std::io::BufWriter::new(file), spec)
-            .map_err(|e| format!("WAV write error: {e}"))?;
-        write_samples(&mut writer)?;
-        writer
-            .finalize()
-            .map_err(|e| format!("Finalize error: {e}"))
-    })
+    let spec = WavSpec {
+        channels,
+        sample_rate,
+        bits_per_sample: 32,
+        sample_format: SampleFormat::Float,
+    };
+    filesystem::write_wav_atomically(path, spec, |writer| write_all_samples(writer, data))
 }
 
 // ── DSP ──────────────────────────────────────────────────────────────────
@@ -624,7 +605,7 @@ mod tests {
         write_wav_file(&output.path, SampleFormat::Float, 50);
         let bytes_before = std::fs::read(&output.path).unwrap();
 
-        let error = write_wav_atomically(&output.path, float_spec(), |writer| {
+        let error = filesystem::write_wav_atomically(&output.path, float_spec(), |writer| {
             // Real samples reach the temp file before the injected failure,
             // mirroring an I/O fault partway through a render.
             writer
@@ -653,7 +634,7 @@ mod tests {
     fn a_mid_write_failure_creates_nothing_at_a_missing_output_path() {
         let output = TempWav::new("atomic-write-failure-missing");
 
-        let error = write_wav_atomically(&output.path, float_spec(), |writer| {
+        let error = filesystem::write_wav_atomically(&output.path, float_spec(), |writer| {
             writer
                 .write_sample(0.5f32)
                 .map_err(|e| format!("Write error: {e}"))?;

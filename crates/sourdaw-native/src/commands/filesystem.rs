@@ -1,3 +1,4 @@
+use hound::{WavSpec, WavWriter};
 use serde::{Deserialize, Serialize};
 use std::io::Write;
 use std::path::{Component, Path, PathBuf};
@@ -73,8 +74,11 @@ fn write_bytes_atomically(file_path: &Path, data: &[u8]) -> Result<(), String> {
 /// Writing straight to `path` truncates it before the replacement bytes are
 /// durable, so an I/O failure or process death mid-write leaves a previously
 /// complete project, mixdown, or stem empty or partial. Every exported-file
-/// write goes through this one helper so the guarantee holds the same way
-/// everywhere:
+/// write this crate routes — the byte and audio commands above, the
+/// post-processed WAV render, and the pitch-edit commit — goes through this
+/// helper so the guarantee holds the same way on each. The `.sdaw`
+/// collaboration bundle save lives in another crate (`daw-collab`) and is
+/// tracked as its own issue, not here:
 ///
 /// * `write` fills a newly created sibling of `path` — same directory, hence
 ///   the same filesystem and the same allowed root. `create_new` plus a UUID
@@ -152,6 +156,33 @@ fn sync_parent_directory_best_effort(path: &Path) {
 
 #[cfg(not(unix))]
 fn sync_parent_directory_best_effort(_path: &Path) {}
+
+/// Write a WAV so that `path` is replaced only by a complete, finalized file.
+///
+/// `WavWriter::create` truncates its target immediately, so writing straight
+/// to `path` would destroy any pre-existing render there and — on a mid-write
+/// or finalize failure such as disk full — leave a truncated, headerless WAV
+/// that a later existence check mistakes for the render. This wrapper supplies
+/// only the WAV-specific part of the replace: the hound writer over the temp
+/// file `replace_file_atomically` hands it. `finalize` flushes the buffered
+/// writer, so every sample and the corrected header are inside the fsync the
+/// helper performs.
+pub(crate) fn write_wav_atomically(
+    path: &Path,
+    spec: WavSpec,
+    write_samples: impl FnOnce(
+        &mut WavWriter<std::io::BufWriter<&mut std::fs::File>>,
+    ) -> Result<(), String>,
+) -> Result<(), String> {
+    replace_file_atomically(path, |file| {
+        let mut writer = WavWriter::new(std::io::BufWriter::new(file), spec)
+            .map_err(|e| format!("WAV write error: {e}"))?;
+        write_samples(&mut writer)?;
+        writer
+            .finalize()
+            .map_err(|e| format!("Finalize error: {e}"))
+    })
+}
 
 /// Read a file's bytes, returned verbatim rather than as a JSON number array.
 ///
