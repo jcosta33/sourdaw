@@ -13,6 +13,20 @@ const MAX_MIDI: usize = 64;
 /// Maximum parameter events processed per audio block. Extra pending values remain host-side.
 const MAX_PARAMETER_EVENTS: usize = 64;
 
+/// The most audio ports, per direction, the runtime will wire for one plugin.
+///
+/// The same bound and reason as the scanner's: `count` is a plugin-supplied
+/// `u32` and an untrusted allocation bound here, because each declared port
+/// costs a buffer table row. Real plugins declare a handful.
+const MAX_RUNTIME_AUDIO_PORTS: u32 = 64;
+
+/// The most audio channels, per direction, a runtime layout will allocate for.
+///
+/// Scratch is channels × MAX_BUFFER samples per direction, so the cap is a
+/// memory bound: a plugin declaring an absurd channel count on a legal number
+/// of ports is describing something no host can feed.
+const MAX_RUNTIME_AUDIO_CHANNELS: u32 = 256;
+
 /// How many deactivate/reactivate/re-query passes one `poll_latency_change` will
 /// make before giving up on settling. Each extra pass exists to catch a
 /// `request_restart()` that landed during the previous one; the cap keeps a
@@ -34,11 +48,20 @@ use clap_sys::events::{
     CLAP_TRANSPORT_HAS_BEATS_TIMELINE, CLAP_TRANSPORT_HAS_SECONDS_TIMELINE,
     CLAP_TRANSPORT_HAS_TEMPO, CLAP_TRANSPORT_HAS_TIME_SIGNATURE, CLAP_TRANSPORT_IS_PLAYING,
 };
+use clap_sys::ext::audio_ports::{
+    clap_audio_port_info, clap_plugin_audio_ports, CLAP_EXT_AUDIO_PORTS,
+};
+#[cfg(target_os = "macos")]
+use clap_sys::ext::gui::CLAP_WINDOW_API_COCOA;
+#[cfg(target_os = "windows")]
+use clap_sys::ext::gui::CLAP_WINDOW_API_WIN32;
 use clap_sys::ext::gui::{
-    clap_plugin_gui, clap_window, clap_window_handle, CLAP_EXT_GUI, CLAP_WINDOW_API_COCOA,
-    CLAP_WINDOW_API_WIN32, CLAP_WINDOW_API_X11,
+    clap_plugin_gui, clap_window, clap_window_handle, CLAP_EXT_GUI, CLAP_WINDOW_API_X11,
 };
 use clap_sys::ext::latency::{clap_plugin_latency, CLAP_EXT_LATENCY};
+use clap_sys::ext::note_ports::{
+    clap_note_port_info, clap_plugin_note_ports, CLAP_EXT_NOTE_PORTS, CLAP_NOTE_DIALECT_CLAP,
+};
 use clap_sys::ext::params::{
     clap_param_info, clap_plugin_params, CLAP_EXT_PARAMS, CLAP_PARAM_IS_AUTOMATABLE,
     CLAP_PARAM_IS_HIDDEN, CLAP_PARAM_IS_READONLY,
@@ -103,10 +126,17 @@ pub struct ClapWrapper {
     /// Whether the host has supplied a timeline yet. Until it has, the plugin
     /// gets a null transport, which CLAP defines as "no timeline available".
     has_transport: bool,
-    /// Preallocated input channel scratch (2 ch × MAX_BUFFER samples). No RT allocation.
-    input_scratch: Box<[[f32; MAX_BUFFER]; 2]>,
-    /// Preallocated output channel scratch (2 ch × MAX_BUFFER samples). No RT allocation.
-    output_scratch: Box<[[f32; MAX_BUFFER]; 2]>,
+    /// The plugin's declared audio port layout and the preallocated buffers
+    /// that honour it. Replaces a hardcoded stereo pair that ignored the
+    /// declaration entirely.
+    audio: AudioBusLayout,
+    /// Whether the plugin declared at least one note input port speaking the
+    /// dialect this host's note events are in. Read once at load; a plugin
+    /// that declares none never gains one while it lives.
+    accepts_note_events: bool,
+    /// The display scale the host stated for this plugin's editor, or the
+    /// default when none was stated before the editor opened.
+    editor_content_scale: f64,
     /// Preallocated MIDI event scratch list. Cleared + refilled each block, never reallocated.
     midi_scratch: Vec<clap_event_note>,
     /// Preallocated parameter event scratch list. Cleared + refilled each block, never reallocated.
@@ -129,6 +159,118 @@ struct EngineOwnedCommandFixture {
 // The host struct is pinned via Box and not mutated after creation.
 unsafe impl Send for ClapWrapper {}
 unsafe impl Sync for ClapWrapper {}
+
+// ── Declared audio bus layout ───────────────────────────────────────────
+
+/// The plugin's declared audio port layout and the preallocated buffers that
+/// honour it.
+///
+/// CLAP's process contract is explicit: "Audio buffers, they must have the
+/// same count as specified by `clap_plugin_audio_ports->count()`. The index
+/// maps to `clap_plugin_audio_ports->get()`" — one `clap_audio_buffer` per
+/// declared port, each carrying that port's own channel count. The port list
+/// is readable only while the plugin is deactivated, so it is read once at
+/// load and the tables are built there; the audio thread fills and reads
+/// scratch and performs no allocation and no pointer arithmetic of its own.
+///
+/// A plugin that does not implement `clap.audio-ports` "won't have audio
+/// ports" — the spec's own words — so it is handed zero buffers and its slot
+/// passes audio through, which is the truthful treatment of a note effect.
+struct AudioBusLayout {
+    /// One flat sample scratch per direction, sized to that direction's
+    /// declared channels × MAX_BUFFER and carved up per port by the buffer
+    /// tables below. Channels past the engine's stereo pair stay zeroed on the
+    /// way in: the input buffers are read-only to the plugin, so nothing
+    /// re-dirties them between blocks.
+    input_scratch: Box<[f32]>,
+    output_scratch: Box<[f32]>,
+    /// The per-channel pointer arrays each direction's buffer table points
+    /// into. Owned here because `clap_audio_buffer.data32` holds a raw address
+    /// only: the table stays valid exactly as long as this storage does.
+    input_channel_ptrs: Vec<*mut f32>,
+    output_channel_ptrs: Vec<*mut f32>,
+    /// The `clap_audio_buffer` table itself, one row per declared port with
+    /// that port's own channel count and a channel pointer array carved out
+    /// of the scratch above. Every pointer is computed once at load against
+    /// scratch whose address never moves for the wrapper's life.
+    input_buffers: Vec<clap_audio_buffer>,
+    output_buffers: Vec<clap_audio_buffer>,
+}
+
+impl AudioBusLayout {
+    /// The layout of a plugin that declares no audio ports.
+    fn portless() -> Self {
+        Self {
+            input_scratch: Box::new([]),
+            output_scratch: Box::new([]),
+            input_channel_ptrs: Vec::new(),
+            output_channel_ptrs: Vec::new(),
+            input_buffers: Vec::new(),
+            output_buffers: Vec::new(),
+        }
+    }
+
+    /// The layout for a declared port list: channel counts per port, inputs
+    /// then outputs, in declaration order.
+    ///
+    /// Free of any plugin call so the buffer arithmetic is testable against
+    /// plain numbers, and so the load path only owes the reading.
+    fn declared(input_ports: &[u32], output_ports: &[u32]) -> Result<Self, String> {
+        let build =
+            |ports: &[u32],
+             direction: &str|
+             -> Result<(Box<[f32]>, Vec<*mut f32>, Vec<clap_audio_buffer>), String> {
+                let total_channels: u32 =
+                    ports.iter().copied().try_fold(0u32, |sum, channels| {
+                        sum.checked_add(channels)
+                            .filter(|_| channels > 0)
+                            .ok_or_else(|| {
+                                format!("CLAP {direction} port declares an unusable channel count")
+                            })
+                    })?;
+                if total_channels > MAX_RUNTIME_AUDIO_CHANNELS {
+                    return Err(format!(
+                        "CLAP {direction} audio channel count exceeds runtime bounds"
+                    ));
+                }
+                let mut scratch =
+                    vec![0.0f32; total_channels as usize * MAX_BUFFER].into_boxed_slice();
+                let mut pointers = Vec::with_capacity(total_channels as usize);
+                for channel in 0..total_channels as usize {
+                    pointers.push(unsafe { scratch.as_mut_ptr().add(channel * MAX_BUFFER) });
+                }
+                let buffers = ports
+                    .iter()
+                    .scan(0usize, |offset, channels| {
+                        let port = clap_audio_buffer {
+                            // `clap_audio_buffer.data32` is `*mut *mut f32` for both
+                            // directions; the input buffers are read-only by
+                            // contract, and the cast states the struct's shape.
+                            data32: unsafe { pointers.as_ptr().add(*offset) } as *mut *mut f32,
+                            data64: ptr::null_mut(),
+                            channel_count: *channels,
+                            latency: 0,
+                            constant_mask: 0,
+                        };
+                        *offset += *channels as usize;
+                        Some(port)
+                    })
+                    .collect();
+                Ok((scratch, pointers, buffers))
+            };
+
+        let (input_scratch, input_channel_ptrs, input_buffers) = build(input_ports, "input")?;
+        let (output_scratch, output_channel_ptrs, output_buffers) = build(output_ports, "output")?;
+        Ok(Self {
+            input_scratch,
+            output_scratch,
+            input_channel_ptrs,
+            output_channel_ptrs,
+            input_buffers,
+            output_buffers,
+        })
+    }
+}
 
 /// Empty input events list (no MIDI/parameter events for now).
 static EMPTY_INPUT_EVENTS: clap_input_events = clap_input_events {
@@ -221,6 +363,22 @@ fn state_load_result(plugin_name: &str, loaded: bool) -> Result<(), String> {
     }
 
     Err(format!("[CLAP] state.load() failed for {}", plugin_name))
+}
+
+/// Read a display string out of a fixed-size CLAP char array, or `None` when it
+/// carries no terminator within its own bounds.
+///
+/// `CStr::from_ptr` on one of these arrays trusts the plugin to have placed a
+/// NUL somewhere; a name that fills the array reads past it. The scanner has
+/// always failed closed on exactly this; the runtime host owes it the same
+/// refusal rather than an unbounded read.
+fn bounded_parameter_name(value: &[std::os::raw::c_char]) -> Option<String> {
+    let length = value.iter().position(|character| *character == 0)?;
+    let bytes = value[..length]
+        .iter()
+        .map(|character| *character as u8)
+        .collect::<Vec<_>>();
+    Some(String::from_utf8_lossy(&bytes).into_owned())
 }
 
 impl ClapWrapper {
@@ -375,12 +533,17 @@ impl ClapWrapper {
             plugin_id.to_string()
         };
 
-        // 8. Query extensions BEFORE activation
+        // 8. Query extensions BEFORE activation. The audio-ports read is more
+        //    than a capability probe: CLAP allows the port list to be read only
+        //    while the plugin is deactivated, and the buffers handed to
+        //    `process()` must match it — so the layout is read now or never.
         let params_ext = Self::query_extension::<clap_plugin_params>(plugin_ref, CLAP_EXT_PARAMS);
         let state_ext = Self::query_extension::<clap_plugin_state>(plugin_ref, CLAP_EXT_STATE);
         let gui_ext = Self::query_extension::<clap_plugin_gui>(plugin_ref, CLAP_EXT_GUI);
         let latency_ext =
             Self::query_extension::<clap_plugin_latency>(plugin_ref, CLAP_EXT_LATENCY);
+        let audio = Self::read_audio_bus_layout(plugin_ref)?;
+        let accepts_note_events = Self::reads_note_input_ports(plugin_ref);
 
         if !params_ext.is_null() {
             eprintln!("[CLAP] Plugin '{}' supports CLAP_EXT_PARAMS", name);
@@ -428,8 +591,9 @@ impl ClapWrapper {
             processing,
             transport_scratch: Box::new(empty_transport_event()),
             has_transport: false,
-            input_scratch: Box::new([[0.0f32; MAX_BUFFER]; 2]),
-            output_scratch: Box::new([[0.0f32; MAX_BUFFER]; 2]),
+            audio,
+            accepts_note_events,
+            editor_content_scale: crate::traits::DEFAULT_EDITOR_CONTENT_SCALE,
             midi_scratch: Vec::with_capacity(MAX_MIDI),
             parameter_scratch: Vec::with_capacity(MAX_PARAMETER_EVENTS),
             #[cfg(feature = "engine-owned-command-fixture")]
@@ -458,8 +622,9 @@ impl ClapWrapper {
             processing: Arc::new(ProcessingGate::fixture_already_processing()),
             transport_scratch: Box::new(empty_transport_event()),
             has_transport: false,
-            input_scratch: Box::new([[0.0f32; MAX_BUFFER]; 2]),
-            output_scratch: Box::new([[0.0f32; MAX_BUFFER]; 2]),
+            audio: AudioBusLayout::portless(),
+            accepts_note_events: true,
+            editor_content_scale: crate::traits::DEFAULT_EDITOR_CONTENT_SCALE,
             midi_scratch: Vec::with_capacity(MAX_MIDI),
             parameter_scratch: Vec::with_capacity(MAX_PARAMETER_EVENTS),
             command_fixture: Some(EngineOwnedCommandFixture {
@@ -497,6 +662,84 @@ impl ClapWrapper {
         } else {
             ptr::null()
         }
+    }
+
+    /// Read the plugin's declared audio port layout.
+    ///
+    /// Must run before `activate`: CLAP states the port scan "has to be done
+    /// while the plugin is deactivated". A plugin without `clap.audio-ports`
+    /// has no audio ports — the spec's own rule — and loads as portless rather
+    /// than as the stereo pair a hardcode would invent. A plugin whose port
+    /// list cannot be read in full is refused: half a port list is a buffer
+    /// table this host cannot honestly build.
+    unsafe fn read_audio_bus_layout(plugin_ref: &clap_plugin) -> Result<AudioBusLayout, String> {
+        let extension =
+            Self::query_extension::<clap_plugin_audio_ports>(plugin_ref, CLAP_EXT_AUDIO_PORTS);
+        if extension.is_null() {
+            return Ok(AudioBusLayout::portless());
+        }
+        let audio_ports = &*extension;
+        let read_direction = |is_input: bool| -> Result<Vec<u32>, String> {
+            let direction = if is_input { "input" } else { "output" };
+            let count = audio_ports
+                .count
+                .ok_or_else(|| format!("CLAP {direction} audio-ports has no count callback"))?;
+            let count = count(plugin_ref as *const clap_plugin, is_input);
+            if count > MAX_RUNTIME_AUDIO_PORTS {
+                return Err(format!(
+                    "CLAP {direction} audio port count exceeds runtime bounds"
+                ));
+            }
+            let get = audio_ports
+                .get
+                .ok_or_else(|| format!("CLAP {direction} audio-ports has no info callback"))?;
+            let mut channels = Vec::with_capacity(count as usize);
+            for index in 0..count {
+                let mut info: clap_audio_port_info = mem::zeroed();
+                if !get(plugin_ref as *const clap_plugin, index, is_input, &mut info) {
+                    return Err(format!(
+                        "CLAP {direction} audio port {index} returned no port info"
+                    ));
+                }
+                channels.push(info.channel_count);
+            }
+            Ok(channels)
+        };
+        let inputs = read_direction(true)?;
+        let outputs = read_direction(false)?;
+        AudioBusLayout::declared(&inputs, &outputs)
+    }
+
+    /// Whether the plugin takes note events in the dialect this host sends.
+    ///
+    /// The host's note events are `clap_event_note` — the CLAP dialect — so
+    /// the truthful answer is whether any *input* note port lists that
+    /// dialect. A plugin with no `clap.note-ports` has no note input at all,
+    /// and a plugin whose ports speak only MIDI-family dialects cannot read
+    /// what this host would send it; both answer `false` rather than have
+    /// events routed at a port that will not understand them.
+    unsafe fn reads_note_input_ports(plugin_ref: &clap_plugin) -> bool {
+        let extension =
+            Self::query_extension::<clap_plugin_note_ports>(plugin_ref, CLAP_EXT_NOTE_PORTS);
+        if extension.is_null() {
+            return false;
+        }
+        let note_ports = &*extension;
+        let Some(count) = note_ports.count else {
+            return false;
+        };
+        let input_ports = count(plugin_ref as *const clap_plugin, true);
+        if input_ports > MAX_RUNTIME_AUDIO_PORTS {
+            return false;
+        }
+        let Some(get) = note_ports.get else {
+            return false;
+        };
+        (0..input_ports).any(|index| {
+            let mut info: clap_note_port_info = mem::zeroed();
+            get(plugin_ref as *const clap_plugin, index, true, &mut info)
+                && info.supported_dialects & CLAP_NOTE_DIALECT_CLAP != 0
+        })
     }
 
     /// Get the plugin descriptor info for scanning.
@@ -626,9 +869,12 @@ impl ClapWrapper {
                 return Err(format!("Plugin '{}' gui.create() failed", self.name));
             }
 
-            // 3. Set scale (use 1.0 — plugins handle Retina internally on macOS)
+            // 3. Set scale — the host's stated display scale, defaulting to
+            //    1.0 until one arrives. Called here because CLAP places it
+            //    between create and get_size; a plugin that prefers the OS's
+            //    own value ignores it, which the spec allows.
             if let Some(set_scale) = gui.set_scale {
-                set_scale(self.plugin, 1.0);
+                set_scale(self.plugin, self.editor_content_scale);
             }
 
             // 4. Get size
@@ -1006,19 +1252,47 @@ impl ClapWrapper {
         }
 
         let n_samp = num_samples.min(MAX_BUFFER);
-        let n_ch = inputs.len().min(2);
 
-        // Copy inputs into scratch — zero allocation on RT path.
-        for (ch, src) in inputs.iter().enumerate().take(n_ch) {
-            let len = src.len().min(n_samp);
-            self.input_scratch[ch][..len].copy_from_slice(&src[..len]);
-            self.input_scratch[ch][len..n_samp].fill(0.0);
+        // A plugin that declares no audio ports processes no audio: hand the
+        // block back untouched and still call process — a note effect owes the
+        // host its output events, and it still gets the timeline. This used to
+        // feed such a plugin a stereo pair and copy its untouched scratch out,
+        // silently muting the track.
+        if self.audio.input_buffers.is_empty() && self.audio.output_buffers.is_empty() {
+            if let Some(process_fn) = self.plugin_callback(|plugin_ref| plugin_ref.process) {
+                // A null transport tells the plugin the host has no timeline,
+                // which is only the truth while none has been supplied.
+                let transport = if self.has_transport {
+                    &*self.transport_scratch as *const clap_event_transport
+                } else {
+                    ptr::null()
+                };
+                let process_data = clap_process {
+                    steady_time: -1,
+                    frames_count: n_samp as u32,
+                    transport,
+                    audio_inputs: ptr::null(),
+                    audio_outputs: ptr::null_mut(),
+                    audio_inputs_count: 0,
+                    audio_outputs_count: 0,
+                    in_events,
+                    out_events: &EMPTY_OUTPUT_EVENTS,
+                };
+                unsafe { process_fn(self.plugin, &process_data) };
+            }
+            copy_inputs_to_outputs(inputs, outputs, num_samples);
+            return;
         }
-        for ch in n_ch..2 {
-            self.input_scratch[ch][..n_samp].fill(0.0);
-        }
-        self.output_scratch[0][..n_samp].fill(0.0);
-        self.output_scratch[1][..n_samp].fill(0.0);
+
+        // Copy the engine's channels into the declared input scratch. The
+        // engine's bus is stereo; a plugin declaring more channels gets the
+        // rest as the silence they were zeroed to at load, and one declaring
+        // fewer reads the leading channels. No allocation on the RT path.
+        fill_input_scratch(&mut self.audio, inputs, n_samp);
+        // Zero the whole output scratch: the plugin is not obliged to write
+        // every channel it was handed, and the previous block's audio must not
+        // leak into this one.
+        self.audio.output_scratch.fill(0.0);
 
         unsafe {
             let plugin_ref = &*self.plugin;
@@ -1027,31 +1301,10 @@ impl ClapWrapper {
                 None => return,
             };
 
-            // Stack-allocated pointer arrays — no heap allocation.
-            let in_ptrs: [*const f32; 2] = [
-                self.input_scratch[0].as_ptr(),
-                self.input_scratch[1].as_ptr(),
-            ];
-            let out_ptrs: [*mut f32; 2] = [
-                self.output_scratch[0].as_mut_ptr(),
-                self.output_scratch[1].as_mut_ptr(),
-            ];
-
-            let input_buffer = clap_audio_buffer {
-                data32: in_ptrs.as_ptr() as *mut *mut f32,
-                data64: ptr::null_mut(),
-                channel_count: n_ch as u32,
-                latency: 0,
-                constant_mask: 0,
-            };
-
-            let mut output_buffer = clap_audio_buffer {
-                data32: out_ptrs.as_ptr() as *mut *mut f32,
-                data64: ptr::null_mut(),
-                channel_count: n_ch as u32,
-                latency: 0,
-                constant_mask: 0,
-            };
+            // The buffer tables were built at load against this same scratch,
+            // so this only names them — no per-block pointer arithmetic.
+            let input_buffers = self.audio.input_buffers.as_ptr();
+            let output_buffers = self.audio.output_buffers.as_mut_ptr();
 
             // A null transport tells the plugin the host has no timeline, so it
             // is only sent while that is actually true. Once the host supplies
@@ -1067,26 +1320,77 @@ impl ClapWrapper {
                 steady_time: -1,
                 frames_count: n_samp as u32,
                 transport,
-                audio_inputs: &input_buffer,
-                audio_outputs: &mut output_buffer,
-                audio_inputs_count: 1,
-                audio_outputs_count: 1,
+                audio_inputs: input_buffers,
+                audio_outputs: output_buffers,
+                audio_inputs_count: self.audio.input_buffers.len() as u32,
+                audio_outputs_count: self.audio.output_buffers.len() as u32,
                 in_events,
                 out_events: &EMPTY_OUTPUT_EVENTS,
             };
 
             let _status = process_fn(self.plugin, &process_data);
 
-            for (ch_idx, out_ch) in outputs.iter_mut().enumerate().take(n_ch) {
-                let len = n_samp.min(out_ch.len());
-                out_ch[..len].copy_from_slice(&self.output_scratch[ch_idx][..len]);
+            read_output_scratch(&self.audio, outputs, n_samp);
+        }
+    }
+}
+
+/// Copy the engine's stereo channels into the flat declared-input scratch.
+///
+/// Channel *i* of the engine lands in declared channel *i*, in declaration
+/// order — the same leading channels a plugin declaring fewer than the engine
+/// offers has always effectively seen. Channels the engine does not supply keep
+/// their load-time zeros, which is sound because the plugin may not write input
+/// buffers.
+fn fill_input_scratch(audio: &mut AudioBusLayout, inputs: &[&[f32]], n_samp: usize) {
+    let channels = (inputs.len().min(2)).min(audio.input_channel_ptrs.len());
+    for channel in 0..channels {
+        let destination = &mut audio.input_scratch[channel * MAX_BUFFER..][..n_samp];
+        let source = &inputs[channel];
+        let len = source.len().min(n_samp);
+        destination[..len].copy_from_slice(&source[..len]);
+        destination[len..].fill(0.0);
+    }
+}
+
+/// Copy the declared output scratch back onto the engine's stereo bus.
+///
+/// Declared channel 0 is the engine's left and channel 1 its right. A plugin
+/// declaring a single output channel is mono, and a mono plugin on a stereo bus
+/// sounds from the middle — every DAW duplicates it to both channels, where a
+/// literal copy would leave the right channel silent. Channels past the second
+/// are the plugin's to compute and the stereo bus's to drop.
+fn read_output_scratch(audio: &AudioBusLayout, outputs: &mut [&mut [f32]], n_samp: usize) {
+    let declared = audio.output_channel_ptrs.len();
+    let copy_channel = |channel: usize, out: &mut [f32]| {
+        let len = n_samp.min(out.len());
+        out[..len].copy_from_slice(&audio.output_scratch[channel * MAX_BUFFER..][..len]);
+    };
+    match (declared, outputs.len()) {
+        (0, _) => {}
+        (1, _) => {
+            if let Some(left) = outputs.first_mut() {
+                copy_channel(0, left);
+            }
+            if let Some(right) = outputs.get_mut(1) {
+                copy_channel(0, right);
+            }
+        }
+        (_, 0) => {}
+        _ => {
+            for (channel, out) in outputs.iter_mut().enumerate() {
+                if channel >= declared {
+                    break;
+                }
+                copy_channel(channel, out);
             }
         }
     }
 }
 
 /// Pass the block through unchanged, for every case where the plugin must not
-/// be handed it: not activated, or not in the CLAP processing state.
+/// be handed it: not activated, or not in the CLAP processing state, or without
+/// declared audio ports.
 fn copy_inputs_to_outputs(inputs: &[&[f32]], outputs: &mut [&mut [f32]], num_samples: usize) {
     for (ch, out) in outputs.iter_mut().enumerate() {
         if ch < inputs.len() {
@@ -1414,10 +1718,14 @@ impl AudioPlugin for ClapWrapper {
                     get_value(self.plugin, info.id, &mut current_value);
                 }
 
-                // Extract the name from the fixed-size C char array
-                let name = CStr::from_ptr(info.name.as_ptr())
-                    .to_string_lossy()
-                    .into_owned();
+                // The name lives in a fixed-size array the plugin owns; a name
+                // that fills every byte without terminating reads past the
+                // array the moment it is treated as a C string. A parameter
+                // whose name cannot be read within its own bounds is skipped,
+                // exactly as one whose `get_info` refused to answer.
+                let Some(name) = bounded_parameter_name(&info.name) else {
+                    continue;
+                };
 
                 let is_automatable = info.flags & CLAP_PARAM_IS_AUTOMATABLE != 0;
                 let is_readonly = info.flags & CLAP_PARAM_IS_READONLY != 0;
@@ -1538,6 +1846,29 @@ impl AudioPlugin for ClapWrapper {
 
     fn take_state_dirty(&mut self) -> bool {
         self.host_state.take_state_dirty()
+    }
+
+    /// The plugin's own answer, from `clap.note-ports`, not the seam's default.
+    ///
+    /// A plugin that declares no note input — an EQ, an analyzer — has no
+    /// business being routed events, and the engine's slot decides routing by
+    /// exactly this answer. Read once at load; the note port list may only
+    /// change while the plugin is deactivated, and an instance never goes back
+    /// to deactivated once loaded.
+    fn accepts_midi(&self) -> bool {
+        self.accepts_note_events
+    }
+
+    /// The display scale the host's editor window runs at, for the next
+    /// `open_gui` to hand the plugin via `clap_plugin_gui.set_scale`.
+    ///
+    /// CLAP's GUI sequence places `set_scale` between `create` and `get_size`,
+    /// and the value is the host's to state: a plugin told 1.0 on a 2.0 screen
+    /// lays its editor out at half size.
+    fn set_editor_content_scale(&mut self, scale: f64) {
+        if scale.is_finite() && scale > 0.0 {
+            self.editor_content_scale = scale;
+        }
     }
 }
 
@@ -1715,6 +2046,11 @@ mod tests {
     }
 
     fn stub_wrapper(plugin: *const clap_plugin) -> ClapWrapper {
+        stub_wrapper_over(stub_audio_layout(), plugin)
+    }
+
+    /// The layout a stub wrapper processes with, overridable per test.
+    fn stub_wrapper_over(audio: AudioBusLayout, plugin: *const clap_plugin) -> ClapWrapper {
         let latency_ext = unsafe {
             ClapWrapper::query_extension::<clap_plugin_latency>(&*plugin, CLAP_EXT_LATENCY)
         };
@@ -1740,13 +2076,20 @@ mod tests {
             processing,
             transport_scratch: Box::new(empty_transport_event()),
             has_transport: false,
-            input_scratch: Box::new([[0.0f32; MAX_BUFFER]; 2]),
-            output_scratch: Box::new([[0.0f32; MAX_BUFFER]; 2]),
+            audio,
+            accepts_note_events: true,
+            editor_content_scale: crate::traits::DEFAULT_EDITOR_CONTENT_SCALE,
             midi_scratch: Vec::with_capacity(MAX_MIDI),
             parameter_scratch: Vec::with_capacity(MAX_PARAMETER_EVENTS),
             #[cfg(feature = "engine-owned-command-fixture")]
             command_fixture: None,
         }
+    }
+
+    /// The stubs used by the transport and processing-state tests declare no
+    /// audio-ports extension, which loads as portless.
+    fn stub_audio_layout() -> AudioBusLayout {
+        AudioBusLayout::portless()
     }
 
     #[test]
@@ -2702,6 +3045,653 @@ mod tests {
             captured_transport().song_pos_beats,
             CLAP_BEATTIME_FACTOR,
             "the playhead the host advanced is the one the plugin sees"
+        );
+    }
+
+    // ── Audio buffers follow the plugin's declared ports ──────────────────
+    //
+    // CLAP's process contract: the buffers "must have the same count as
+    // specified by clap_plugin_audio_ports->count(). The index maps to
+    // clap_plugin_audio_ports->get()." These tests are what fails if the host
+    // goes back to handing every plugin one hardcoded stereo pair.
+
+    /// What the stub plugin's process saw in the buffer tables of one block.
+    #[derive(Clone, Copy, Default)]
+    struct CapturedBuffers {
+        input_count: u32,
+        output_count: u32,
+        first_input_channels: u32,
+        first_output_channels: u32,
+        second_input_channels: u32,
+    }
+
+    static CAPTURED_BUFFERS: std::sync::Mutex<Option<CapturedBuffers>> =
+        std::sync::Mutex::new(None);
+    static BUFFER_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// Fills declared output channel `channel` with a constant so the engine's
+    /// copy-back can be observed, and records the buffer table shape.
+    unsafe extern "C" fn stub_process_buffer_capturing(
+        _plugin: *const clap_plugin,
+        process: *const clap_process,
+    ) -> i32 {
+        *CAPTURED_BUFFERS.lock().unwrap() = Some(CapturedBuffers {
+            input_count: (*process).audio_inputs_count,
+            output_count: (*process).audio_outputs_count,
+            first_input_channels: if (*process).audio_inputs_count > 0 {
+                (*(*process).audio_inputs).channel_count
+            } else {
+                0
+            },
+            first_output_channels: if (*process).audio_outputs_count > 0 {
+                (*(*process).audio_outputs).channel_count
+            } else {
+                0
+            },
+            second_input_channels: if (*process).audio_inputs_count > 1 {
+                (*(*process).audio_inputs.add(1)).channel_count
+            } else {
+                0
+            },
+        });
+        for buffer_index in 0..(*process).audio_outputs_count {
+            let buffer = &mut *(*process).audio_outputs.add(buffer_index as usize);
+            for channel in 0..buffer.channel_count {
+                // `data32` is an array of per-channel pointers; the samples
+                // live behind each entry, exactly as a plugin reads them.
+                let channel_data = *(buffer.data32.add(channel as usize));
+                let samples =
+                    std::slice::from_raw_parts_mut(channel_data, (*process).frames_count as usize);
+                samples.fill((channel + 1) as f32);
+            }
+        }
+        0
+    }
+
+    fn buffer_capturing_plugin_ptr() -> *const clap_plugin {
+        let mut plugin: clap_plugin = unsafe { mem::zeroed() };
+        plugin.get_extension = Some(stub_get_extension);
+        plugin.activate = Some(stub_activate);
+        plugin.deactivate = Some(stub_deactivate);
+        plugin.start_processing = Some(stub_start_processing);
+        plugin.stop_processing = Some(stub_stop_processing);
+        plugin.process = Some(stub_process_buffer_capturing);
+        Box::into_raw(Box::new(plugin)) as *const clap_plugin
+    }
+
+    fn captured_buffers() -> CapturedBuffers {
+        CAPTURED_BUFFERS
+            .lock()
+            .unwrap()
+            .expect("stub plugin should have processed at least one block")
+    }
+
+    fn process_stereo_block(wrapper: &mut ClapWrapper, left: f32, right: f32) -> (f32, f32) {
+        let input_left = [left; 8];
+        let input_right = [right; 8];
+        let mut out_left = [0.0f32; 8];
+        let mut out_right = [0.0f32; 8];
+        let inputs: [&[f32]; 2] = [&input_left, &input_right];
+        let mut outputs: [&mut [f32]; 2] = [&mut out_left, &mut out_right];
+        wrapper.process(&inputs, &mut outputs, 8);
+        (out_left[3], out_right[3])
+    }
+
+    #[test]
+    fn a_mono_plugin_receives_one_channel_and_sounds_from_the_middle() {
+        let _guard = BUFFER_TEST_LOCK.lock().unwrap();
+        let layout = AudioBusLayout::declared(&[1], &[1]).expect("mono layout builds");
+        let mut wrapper = stub_wrapper_over(layout, buffer_capturing_plugin_ptr());
+
+        let (left, right) = process_stereo_block(&mut wrapper, 0.25, 0.5);
+
+        let captured = captured_buffers();
+        assert_eq!(
+            (captured.input_count, captured.output_count),
+            (1, 1),
+            "one declared port per direction is one buffer per direction"
+        );
+        assert_eq!(captured.first_input_channels, 1);
+        assert_eq!(
+            captured.first_output_channels, 1,
+            "a mono port is handed one channel, not the engine's stereo pair"
+        );
+        assert_eq!(
+            (left, right),
+            (1.0, 1.0),
+            "a mono plugin on a stereo bus is duplicated to both channels, not silent on the right"
+        );
+    }
+
+    #[test]
+    fn each_declared_port_gets_its_own_buffer_and_channel_count() {
+        let _guard = BUFFER_TEST_LOCK.lock().unwrap();
+        // A stereo main input plus a mono sidechain in; a stereo pair out.
+        let layout = AudioBusLayout::declared(&[2, 1], &[2]).expect("layout builds");
+        let mut wrapper = stub_wrapper_over(layout, buffer_capturing_plugin_ptr());
+
+        process_stereo_block(&mut wrapper, 0.1, 0.2);
+
+        let captured = captured_buffers();
+        assert_eq!(captured.input_count, 2, "two declared input ports");
+        assert_eq!(
+            captured.first_input_channels, 2,
+            "the main input port keeps its two channels"
+        );
+        assert_eq!(
+            captured.second_input_channels, 1,
+            "the sidechain port is its own buffer with its own channel count"
+        );
+        assert_eq!(captured.output_count, 1);
+    }
+
+    #[test]
+    fn a_plugin_with_no_audio_ports_processes_no_audio_and_passes_the_block_through() {
+        let _guard = BUFFER_TEST_LOCK.lock().unwrap();
+        let mut wrapper =
+            stub_wrapper_over(AudioBusLayout::portless(), buffer_capturing_plugin_ptr());
+
+        let (left, right) = process_stereo_block(&mut wrapper, 0.25, 0.5);
+
+        let captured = captured_buffers();
+        assert_eq!(
+            (captured.input_count, captured.output_count),
+            (0, 0),
+            "a plugin without clap.audio-ports has no audio ports to be handed"
+        );
+        assert_eq!(
+            (left, right),
+            (0.25, 0.5),
+            "a note effect's slot passes audio through instead of muting the track"
+        );
+    }
+
+    #[test]
+    fn a_stereo_declaration_keeps_behaving_as_it_always_did() {
+        let _guard = BUFFER_TEST_LOCK.lock().unwrap();
+        let layout = AudioBusLayout::declared(&[2], &[2]).expect("stereo layout builds");
+        let mut wrapper = stub_wrapper_over(layout, buffer_capturing_plugin_ptr());
+
+        let (left, right) = process_stereo_block(&mut wrapper, 0.0, 0.0);
+
+        let captured = captured_buffers();
+        assert_eq!(
+            (captured.input_count, captured.output_count),
+            (1, 1),
+            "the common case — one stereo port per direction — is unchanged"
+        );
+        assert_eq!(captured.first_input_channels, 2);
+        assert_eq!(captured.first_output_channels, 2);
+        assert_eq!(
+            (left, right),
+            (1.0, 2.0),
+            "stereo output channels map onto the engine's left and right"
+        );
+    }
+
+    #[test]
+    fn a_layout_refuses_portless_and_absurd_channel_declarations() {
+        assert!(
+            AudioBusLayout::declared(&[0], &[2]).is_err(),
+            "a port declaring no channels cannot be fed"
+        );
+        assert!(
+            AudioBusLayout::declared(&[2], &[MAX_RUNTIME_AUDIO_CHANNELS + 1]).is_err(),
+            "a channel count past the runtime bound is a memory refusal, not an allocation"
+        );
+    }
+
+    /// The load-time half of the fix: the layout the wrapper processes with is
+    /// the one the plugin declared through `clap.audio-ports`, read before
+    /// activation where CLAP says the port list is readable. A hardcoded
+    /// stereo pair cannot produce this fixture's asymmetric answer.
+    #[test]
+    fn the_layout_comes_from_the_plugins_own_port_list() {
+        let _guard = BUFFER_TEST_LOCK.lock().unwrap();
+
+        let mut plugin: clap_plugin = unsafe { mem::zeroed() };
+        plugin.get_extension = Some(audio_ports_get_extension);
+
+        let layout = unsafe { ClapWrapper::read_audio_bus_layout(&plugin) }
+            .expect("a plugin describing its ports loads");
+
+        let input_channels: Vec<u32> = layout
+            .input_buffers
+            .iter()
+            .map(|buffer| buffer.channel_count)
+            .collect();
+        let output_channels: Vec<u32> = layout
+            .output_buffers
+            .iter()
+            .map(|buffer| buffer.channel_count)
+            .collect();
+        assert_eq!(
+            (input_channels.as_slice(), output_channels.as_slice()),
+            ([2, 1].as_slice(), [2].as_slice()),
+            "stereo main plus mono sidechain in, stereo out — exactly what the plugin declared"
+        );
+
+        // And a plugin that does not implement the extension is portless, which
+        // is the spec's rule, not a default.
+        let mut bare: clap_plugin = unsafe { mem::zeroed() };
+        bare.get_extension = Some(stub_get_extension);
+        let portless = unsafe { ClapWrapper::read_audio_bus_layout(&bare) }
+            .expect("a plugin without audio-ports loads");
+        assert!(portless.input_buffers.is_empty() && portless.output_buffers.is_empty());
+    }
+
+    /// The wiring half: a wrapper built by the real load path carries the
+    /// declared layout into its buffer tables. Reverting the load to a
+    /// hardcoded stereo pair fails here even though the reader itself is
+    /// correct.
+    #[test]
+    fn a_loaded_wrapper_processes_with_the_layout_the_plugin_declared() {
+        let _guard = BUFFER_TEST_LOCK.lock().unwrap();
+
+        unsafe extern "C" fn port_declaring_plugin_init(_plugin: *const clap_plugin) -> bool {
+            true
+        }
+
+        unsafe extern "C" fn port_declaring_plugin_destroy(plugin: *const clap_plugin) {
+            drop(Box::from_raw(plugin as *mut clap_plugin));
+        }
+
+        unsafe extern "C" fn port_declaring_create_plugin(
+            _factory: *const clap_plugin_factory,
+            _host: *const clap_host,
+            _plugin_id: *const i8,
+        ) -> *const clap_plugin {
+            Box::into_raw(Box::new(clap_plugin {
+                desc: ptr::null(),
+                plugin_data: ptr::null_mut(),
+                init: Some(port_declaring_plugin_init),
+                destroy: Some(port_declaring_plugin_destroy),
+                activate: Some(stub_activate),
+                deactivate: Some(stub_deactivate),
+                start_processing: None,
+                stop_processing: None,
+                reset: None,
+                process: None,
+                get_extension: Some(audio_ports_get_extension),
+                on_main_thread: None,
+            }))
+        }
+
+        static PORT_DECLARING_FACTORY: clap_plugin_factory = clap_plugin_factory {
+            get_plugin_count: None,
+            get_plugin_descriptor: None,
+            create_plugin: Some(port_declaring_create_plugin),
+        };
+
+        unsafe extern "C" fn port_declaring_get_factory(_factory_id: *const i8) -> *const c_void {
+            &raw const PORT_DECLARING_FACTORY as *const c_void
+        }
+
+        static PORT_DECLARING_ENTRY: clap_plugin_entry = clap_plugin_entry {
+            clap_version: CLAP_VERSION,
+            init: None,
+            deinit: None,
+            get_factory: Some(port_declaring_get_factory),
+        };
+
+        let wrapper = unsafe {
+            ClapWrapper::load_initialized_entry(
+                &raw const PORT_DECLARING_ENTRY,
+                "org.sourdaw.test.port-declaring",
+                48_000.0,
+            )
+        }
+        .expect("a plugin describing its ports loads");
+
+        let input_channels: Vec<u32> = wrapper
+            .audio
+            .input_buffers
+            .iter()
+            .map(|buffer| buffer.channel_count)
+            .collect();
+        let output_channels: Vec<u32> = wrapper
+            .audio
+            .output_buffers
+            .iter()
+            .map(|buffer| buffer.channel_count)
+            .collect();
+        assert_eq!(
+            (input_channels.as_slice(), output_channels.as_slice()),
+            ([2, 1].as_slice(), [2].as_slice()),
+            "the load path wires the declaration into the buffers process will hand the plugin"
+        );
+    }
+
+    /// A plugin's port description, answering the runtime's audio-ports query
+    /// with an asymmetric layout: a stereo main input plus a mono sidechain,
+    /// and a stereo output. Shared by the reader test and the load-wiring test
+    /// so both fail against the same hardcode.
+    unsafe extern "C" fn stub_audio_port_count(_plugin: *const clap_plugin, is_input: bool) -> u32 {
+        if is_input {
+            2
+        } else {
+            1
+        }
+    }
+
+    unsafe extern "C" fn stub_audio_port_get(
+        _plugin: *const clap_plugin,
+        index: u32,
+        is_input: bool,
+        info: *mut clap_audio_port_info,
+    ) -> bool {
+        if info.is_null() {
+            return false;
+        }
+        let channel_count = match (is_input, index) {
+            (true, 0) => 2,
+            (true, 1) => 1,
+            (false, 0) => 2,
+            _ => return false,
+        };
+        *info = clap_audio_port_info {
+            id: index,
+            name: [0; clap_sys::string_sizes::CLAP_NAME_SIZE],
+            flags: 0,
+            channel_count,
+            port_type: ptr::null(),
+            in_place_pair: clap_sys::id::CLAP_INVALID_ID,
+        };
+        true
+    }
+
+    static DECLARED_AUDIO_PORTS: clap_plugin_audio_ports = clap_plugin_audio_ports {
+        count: Some(stub_audio_port_count),
+        get: Some(stub_audio_port_get),
+    };
+
+    unsafe extern "C" fn audio_ports_get_extension(
+        _plugin: *const clap_plugin,
+        id: *const i8,
+    ) -> *const c_void {
+        if CStr::from_ptr(id) == CLAP_EXT_AUDIO_PORTS {
+            return &raw const DECLARED_AUDIO_PORTS as *const c_void;
+        }
+        ptr::null()
+    }
+
+    // ── Note ports decide whether events are routed ───────────────────────
+
+    static NOTE_PORTS_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    unsafe extern "C" fn stub_note_port_count(_plugin: *const clap_plugin, is_input: bool) -> u32 {
+        if is_input {
+            1
+        } else {
+            0
+        }
+    }
+
+    static NOTE_PORT_DIALECTS: AtomicU32 = AtomicU32::new(0);
+
+    unsafe extern "C" fn stub_note_port_get(
+        _plugin: *const clap_plugin,
+        _index: u32,
+        _is_input: bool,
+        info: *mut clap_note_port_info,
+    ) -> bool {
+        if info.is_null() {
+            return false;
+        }
+        *info = clap_note_port_info {
+            id: 0,
+            supported_dialects: NOTE_PORT_DIALECTS.load(Ordering::Relaxed),
+            preferred_dialect: 0,
+            name: [0; clap_sys::string_sizes::CLAP_NAME_SIZE],
+        };
+        true
+    }
+
+    static STUB_NOTE_PORTS: clap_plugin_note_ports = clap_plugin_note_ports {
+        count: Some(stub_note_port_count),
+        get: Some(stub_note_port_get),
+    };
+
+    unsafe extern "C" fn note_ports_get_extension(
+        _plugin: *const clap_plugin,
+        id: *const i8,
+    ) -> *const c_void {
+        if CStr::from_ptr(id) == CLAP_EXT_NOTE_PORTS {
+            return &raw const STUB_NOTE_PORTS as *const c_void;
+        }
+        ptr::null()
+    }
+
+    #[test]
+    fn a_plugin_declaring_a_clap_dialect_note_input_accepts_midi() {
+        let _guard = NOTE_PORTS_TEST_LOCK.lock().unwrap();
+        NOTE_PORT_DIALECTS.store(CLAP_NOTE_DIALECT_CLAP, Ordering::Relaxed);
+        let mut plugin: clap_plugin = unsafe { mem::zeroed() };
+        plugin.get_extension = Some(note_ports_get_extension);
+
+        assert!(
+            unsafe { ClapWrapper::reads_note_input_ports(&plugin) },
+            "an input port speaking the dialect this host's events are in takes those events"
+        );
+    }
+
+    #[test]
+    fn a_plugin_with_no_note_ports_extension_refuses_midi() {
+        let _guard = NOTE_PORTS_TEST_LOCK.lock().unwrap();
+        let mut plugin: clap_plugin = unsafe { mem::zeroed() };
+        plugin.get_extension = Some(stub_get_extension); // answers everything but note ports
+
+        assert!(
+            !unsafe { ClapWrapper::reads_note_input_ports(&plugin) },
+            "no clap.note-ports means no note input, per the spec's own rule"
+        );
+    }
+
+    #[test]
+    fn a_plugin_whose_ports_speak_only_midi_family_dialects_refuses_midi() {
+        let _guard = NOTE_PORTS_TEST_LOCK.lock().unwrap();
+        use clap_sys::ext::note_ports::CLAP_NOTE_DIALECT_MIDI;
+        NOTE_PORT_DIALECTS.store(CLAP_NOTE_DIALECT_MIDI, Ordering::Relaxed);
+        let mut plugin: clap_plugin = unsafe { mem::zeroed() };
+        plugin.get_extension = Some(note_ports_get_extension);
+
+        assert!(
+            !unsafe { ClapWrapper::reads_note_input_ports(&plugin) },
+            "this host sends clap_event_note; a port that does not list the CLAP dialect cannot read them"
+        );
+    }
+
+    /// The wrapper must forward its own answer, not the seam's default `true`
+    /// — that default routed notes at every effect in the rack.
+    #[test]
+    fn the_wrapper_answers_accepts_midi_from_its_own_note_port_query() {
+        let mut wrapper = stub_wrapper(stub_plugin_ptr());
+        assert!(AudioPlugin::accepts_midi(&wrapper));
+
+        wrapper.accepts_note_events = false;
+
+        assert!(!AudioPlugin::accepts_midi(&wrapper));
+    }
+
+    // ── The editor is told the host's display scale ───────────────────────
+
+    static GUI_SCALE_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    static SCALES_PASSED_TO_PLUGIN: std::sync::Mutex<Vec<f64>> = std::sync::Mutex::new(Vec::new());
+
+    unsafe extern "C" fn scale_recording_set_scale(
+        _plugin: *const clap_plugin,
+        scale: f64,
+    ) -> bool {
+        SCALES_PASSED_TO_PLUGIN.lock().unwrap().push(scale);
+        true
+    }
+
+    unsafe extern "C" fn always_supported(
+        _plugin: *const clap_plugin,
+        _api: *const i8,
+        _is_floating: bool,
+    ) -> bool {
+        true
+    }
+
+    unsafe extern "C" fn succeeding_create(
+        _plugin: *const clap_plugin,
+        _api: *const i8,
+        _is_floating: bool,
+    ) -> bool {
+        true
+    }
+
+    unsafe extern "C" fn stub_gui_get_size(
+        _plugin: *const clap_plugin,
+        width: *mut u32,
+        height: *mut u32,
+    ) -> bool {
+        *width = 640;
+        *height = 480;
+        true
+    }
+
+    unsafe extern "C" fn succeeding_set_parent(
+        _plugin: *const clap_plugin,
+        _window: *const clap_window,
+    ) -> bool {
+        true
+    }
+
+    unsafe extern "C" fn scale_recording_get_extension(
+        _plugin: *const clap_plugin,
+        id: *const i8,
+    ) -> *const c_void {
+        static SCALE_RECORDING_GUI: clap_plugin_gui = clap_plugin_gui {
+            is_api_supported: Some(always_supported),
+            get_preferred_api: None,
+            create: Some(succeeding_create),
+            destroy: None,
+            set_scale: Some(scale_recording_set_scale),
+            get_size: Some(stub_gui_get_size),
+            can_resize: None,
+            get_resize_hints: None,
+            adjust_size: None,
+            set_size: None,
+            set_parent: Some(succeeding_set_parent),
+            set_transient: None,
+            suggest_title: None,
+            show: None,
+            hide: None,
+        };
+        if CStr::from_ptr(id) == CLAP_EXT_GUI {
+            return &raw const SCALE_RECORDING_GUI as *const c_void;
+        }
+        ptr::null()
+    }
+
+    /// The host states its display scale before the editor opens; a plugin
+    /// told 1.0 on a 2.0 screen lays its editor out at half size. The old code
+    /// hardcoded 1.0 and dropped whatever the host had stated.
+    #[test]
+    fn opening_the_editor_hands_the_plugin_the_host_stated_scale() {
+        let _guard = GUI_SCALE_TEST_LOCK.lock().unwrap();
+        SCALES_PASSED_TO_PLUGIN.lock().unwrap().clear();
+        let mut plugin: clap_plugin = unsafe { mem::zeroed() };
+        plugin.get_extension = Some(scale_recording_get_extension);
+        let plugin_ptr = Box::into_raw(Box::new(plugin)) as *const clap_plugin;
+        let gui_ext =
+            unsafe { ClapWrapper::query_extension::<clap_plugin_gui>(&*plugin_ptr, CLAP_EXT_GUI) };
+        let mut wrapper = stub_wrapper(plugin_ptr);
+        wrapper.gui_ext = gui_ext;
+
+        wrapper.set_editor_content_scale(2.0);
+        wrapper
+            .open_gui(ptr::null_mut())
+            .expect("the recording gui opens");
+
+        assert_eq!(
+            SCALES_PASSED_TO_PLUGIN.lock().unwrap().as_slice(),
+            [2.0],
+            "set_scale receives the host's display scale, not a hardcoded 1.0"
+        );
+    }
+
+    #[test]
+    fn an_unusable_scale_is_ignored_rather_than_stored() {
+        let mut wrapper = stub_wrapper(stub_plugin_ptr());
+
+        wrapper.set_editor_content_scale(0.0);
+        wrapper.set_editor_content_scale(-1.0);
+        wrapper.set_editor_content_scale(f64::NAN);
+
+        assert_eq!(
+            wrapper.editor_content_scale,
+            crate::traits::DEFAULT_EDITOR_CONTENT_SCALE,
+            "a scale with no meaning cannot replace the one that has a default"
+        );
+    }
+
+    // ── Parameter names are read within their own bounds ──────────────────
+
+    #[test]
+    fn bounded_parameter_name_reads_a_terminated_name_and_refuses_an_unterminated_one() {
+        let mut terminated = [0 as std::os::raw::c_char; 64];
+        let name: Vec<std::os::raw::c_char> = b"Gain\0"
+            .iter()
+            .map(|byte| *byte as std::os::raw::c_char)
+            .collect();
+        terminated[..name.len()].copy_from_slice(&name);
+        assert_eq!(bounded_parameter_name(&terminated).as_deref(), Some("Gain"));
+
+        let unterminated = [b'x' as std::os::raw::c_char; 64];
+        assert_eq!(
+            bounded_parameter_name(&unterminated),
+            None,
+            "a name with no terminator inside its own array cannot be read as a C string"
+        );
+    }
+
+    #[test]
+    fn a_parameter_whose_name_fills_its_array_is_skipped_not_read_past_it() {
+        use clap_sys::string_sizes::{CLAP_NAME_SIZE, CLAP_PATH_SIZE};
+
+        unsafe extern "C" fn unterminated_parameter_count(_plugin: *const clap_plugin) -> u32 {
+            1
+        }
+
+        unsafe extern "C" fn unterminated_parameter_info(
+            _plugin: *const clap_plugin,
+            index: u32,
+            info: *mut clap_param_info,
+        ) -> bool {
+            if index != 0 || info.is_null() {
+                return false;
+            }
+            let mut parameter: clap_param_info = mem::zeroed();
+            // Every name byte set, no terminator: the exact array that made
+            // `CStr::from_ptr` read past `name` and into `module`.
+            parameter.name = [b'n' as std::os::raw::c_char; CLAP_NAME_SIZE];
+            parameter.module = [0; CLAP_PATH_SIZE];
+            parameter.id = 11;
+            parameter.min_value = 0.0;
+            parameter.max_value = 1.0;
+            parameter.default_value = 0.5;
+            *info = parameter;
+            true
+        }
+
+        static UNTERMINATED_PARAMETERS: clap_plugin_params = clap_plugin_params {
+            count: Some(unterminated_parameter_count),
+            get_info: Some(unterminated_parameter_info),
+            get_value: None,
+            value_to_text: None,
+            text_to_value: None,
+            flush: None,
+        };
+
+        let mut wrapper = stub_wrapper(stub_plugin_ptr());
+        wrapper.params_ext = &raw const UNTERMINATED_PARAMETERS;
+
+        assert!(
+            AudioPlugin::get_parameters(&wrapper).is_empty(),
+            "a parameter whose name cannot be read within its own bounds is skipped, like one whose get_info refused"
         );
     }
 }

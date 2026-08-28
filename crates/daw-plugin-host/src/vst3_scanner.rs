@@ -51,6 +51,10 @@ impl Vst3DescriptorMetadata {
     pub fn into_scanned_descriptor(self) -> ScannedDescriptor {
         ScannedDescriptor {
             format: PluginFormat::Vst3.wire_name().to_string(),
+            // VST3's bundle description carries no per-plugin display name the
+            // extractor reads today, so the file stem stays the name — which is
+            // also correct for a format whose bundles hold one audio class.
+            name: None,
             category: category_from_vst3_sub_categories(&self.sub_categories),
             vendor: self.vendor,
             descriptor_id: self.class_id,

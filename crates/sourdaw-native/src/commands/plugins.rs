@@ -339,35 +339,43 @@ pub async fn scan_plugins(paths: Vec<String>, state: &AppState) -> Result<ScanRe
                     &candidate.path,
                     remaining,
                 ) {
-                    Ok(mut metadata) => {
-                        // One inspection worker answers parameters and
-                        // capabilities together, so they succeed and fail
-                        // together. When it does not run, both stay `None` and
-                        // `scanned_plugin` records why — a capability field
-                        // this scan never asked for must never be published as
-                        // a measured zero.
-                        let instance_remaining = deadline.saturating_duration_since(Instant::now());
-                        let instance = if instance_remaining.is_zero() {
-                            Err("deadline".to_string())
-                        } else {
-                            plugin_scan_worker::scan_instance_metadata(
-                                candidate.format,
-                                &candidate.path,
-                                instance_remaining,
-                            )
-                        };
-                        match instance {
-                            Ok(instance) => {
-                                metadata.parameters = Some(instance.parameters);
-                                metadata.capabilities = Some(instance.capabilities);
-                            }
-                            Err(_) => {
-                                metadata.parameter_metadata_reason = Some(
-                                    scanner::PARAMETER_METADATA_UNAVAILABLE_REASON.to_string(),
-                                );
+                    // One bundle may declare several plugins — CLAP's factory is
+                    // count/index shaped — and each gets its own inspection and
+                    // its own row. A file that declares one keeps producing
+                    // exactly the row it always did.
+                    Ok(mut bundle) => {
+                        for descriptor in &mut bundle {
+                            // One inspection worker answers parameters and
+                            // capabilities together, so they succeed and fail
+                            // together. When it does not run, both stay `None`
+                            // and `scanned_plugin` records why — a capability
+                            // field this scan never asked for must never be
+                            // published as a measured zero.
+                            let instance_remaining =
+                                deadline.saturating_duration_since(Instant::now());
+                            let instance = if instance_remaining.is_zero() {
+                                Err("deadline".to_string())
+                            } else {
+                                plugin_scan_worker::scan_instance_metadata(
+                                    candidate.format,
+                                    &candidate.path,
+                                    &descriptor.descriptor_id,
+                                    instance_remaining,
+                                )
+                            };
+                            match instance {
+                                Ok(instance) => {
+                                    descriptor.parameters = Some(instance.parameters);
+                                    descriptor.capabilities = Some(instance.capabilities);
+                                }
+                                Err(_) => {
+                                    descriptor.parameter_metadata_reason = Some(
+                                        scanner::PARAMETER_METADATA_UNAVAILABLE_REASON.to_string(),
+                                    );
+                                }
                             }
                         }
-                        plugins.push(scanner::scanned_plugin(&candidate.path, metadata));
+                        plugins.extend(scanner::scanned_bundle_plugins(&candidate.path, bundle));
                     }
                     Err(error) => {
                         scan_errors.push(format!("{}: {error}", candidate.path.display()))
@@ -545,7 +553,7 @@ fn resolve_registry_entry(
     registry_store: &PluginRegistryStore,
     scan_policy: &PluginScanPolicy,
     plugin_id: &str,
-    rescan: impl FnOnce(&str, &Path) -> Result<PluginRegistryEntry, String>,
+    rescan: impl FnOnce(&str, &Path, &str) -> Result<PluginRegistryEntry, String>,
 ) -> Result<PluginRegistryEntry, String> {
     registry_store.hydrate_into(plugin_registry, scan_policy);
 
@@ -575,7 +583,7 @@ fn resolve_registry_entry(
     // only path the checks above actually looked at.
     let rescanned = match scan_policy
         .authorize_scan_root(&last_known_path)
-        .and_then(|authorized| rescan(&last_known.format, &authorized))
+        .and_then(|authorized| rescan(&last_known.format, &authorized, plugin_id))
     {
         Ok(rescanned) => rescanned,
         Err(reason) => {
@@ -618,15 +626,47 @@ fn resolve_registry_entry(
 ///
 /// Parameter metadata is not re-read. Activation does not need it, and it is a
 /// second child process for a user who is waiting.
-fn rescan_plugin_file(format: &str, path: &Path) -> Result<PluginRegistryEntry, String> {
+///
+/// The file may be a multi-plugin bundle, so the row the requested registry key
+/// names is the row returned: a key that names a bundle sibling by its
+/// descriptor id must not resolve to the bundle's first plugin.
+fn rescan_plugin_file(
+    format: &str,
+    path: &Path,
+    plugin_id: &str,
+) -> Result<PluginRegistryEntry, String> {
     // The format comes off the persisted row rather than from the extension:
     // the row is what the scan that wrote it claimed, and re-deriving it here
     // would let a rename decide which extractor loads the file.
     let format = PluginFormat::from_wire_name(format)
         .ok_or_else(|| format!("Unknown plugin format: {format}"))?;
-    let metadata =
+    let bundle =
         plugin_scan_worker::scan_descriptor_metadata(format, path, TARGETED_RESCAN_TIMEOUT)?;
-    Ok(registry_entry(&scanner::scanned_plugin(path, metadata)))
+    let scanned = scanner::scanned_bundle_plugins(path, bundle);
+    let requested = pick_rescanned_bundle_row(&scanned, plugin_id).ok_or_else(|| {
+        format!(
+            "Plugin file at {} declared no loadable plugins",
+            path.display()
+        )
+    })?;
+    Ok(registry_entry(requested))
+}
+
+/// The one row of a rescanned bundle a registry key resolves to.
+///
+/// The key is either a row's own registry id or its descriptor id — the same
+/// two keys [`index_scanned_plugins`] publishes — and a bundle sibling is
+/// addressed by its descriptor id. A key naming none of the rows falls back to
+/// the bundle's first plugin: that is the row the path's own registry id has
+/// always named, which is the miss this rescan exists to recover.
+fn pick_rescanned_bundle_row<'a>(
+    scanned: &'a [ScannedPlugin],
+    plugin_id: &str,
+) -> Option<&'a ScannedPlugin> {
+    scanned
+        .iter()
+        .find(|plugin| plugin.id == plugin_id || plugin.descriptor_id == plugin_id)
+        .or_else(|| scanned.first())
 }
 
 /// Resolve on the blocking pool: hydration reads the registry file and the
@@ -3522,7 +3562,9 @@ mod tests {
             &fixture.store(),
             &fixture.scan_policy(),
             "aaaa1111",
-            |_format, path| panic!("a hydrated registry must resolve without rescanning {path:?}"),
+            |_format, path, _plugin_id| {
+                panic!("a hydrated registry must resolve without rescanning {path:?}")
+            },
         )
         .expect("the persisted plugin must resolve in a new session");
 
@@ -3550,7 +3592,7 @@ mod tests {
             &store,
             &fixture.scan_policy(),
             "aaaa1111",
-            |format, path| {
+            |format, path, _plugin_id| {
                 rescans.set(rescans.get() + 1);
                 // The rescan is told which format to read the file as, from the
                 // row that recorded it. Deriving it from the extension here
@@ -3626,7 +3668,7 @@ mod tests {
         // Borrows the counter rather than owning it, so the same closure can be
         // handed to both calls: the point of the test is that only one of them
         // reaches it.
-        let rescan = |_format: &str, path: &Path| {
+        let rescan = |_format: &str, path: &Path, _plugin_id: &str| {
             rescans.set(rescans.get() + 1);
             Err::<PluginRegistryEntry, String>(format!("no such file: {}", path.display()))
         };
@@ -3675,7 +3717,7 @@ mod tests {
             &fixture.store(),
             &fixture.scan_policy(),
             "aaaa1111",
-            |_format, path| Err(format!("no such file: {}", path.display())),
+            |_format, path, _plugin_id| Err(format!("no such file: {}", path.display())),
         )
         .expect_err("a removed plugin must not resolve");
 
@@ -3803,5 +3845,53 @@ mod tests {
             !refused,
             "a path outside the platform roots must be refused"
         );
+    }
+
+    // ── Multi-plugin bundles ────────────────────────────────────────────────
+
+    /// A bundle rescanned at activation resolves the sibling the key names: a
+    /// saved project that recorded the second plugin's descriptor id must get
+    /// the second plugin back, not the bundle's first.
+    #[test]
+    fn a_rescanned_bundle_resolves_the_sibling_the_key_names() {
+        let bundle = scanner::scanned_bundle_plugins(
+            Path::new("/plugins/TwoPlugins.clap"),
+            vec![
+                descriptor("com.vendor.first"),
+                descriptor("com.vendor.second"),
+            ],
+        );
+
+        let picked = pick_rescanned_bundle_row(&bundle, "com.vendor.second")
+            .expect("a bundle sibling is addressed by its descriptor id");
+        assert_eq!(picked.descriptor_id, "com.vendor.second");
+
+        // A key naming nothing in the bundle falls back to the first row — the
+        // row the path's own registry id has always named.
+        let fallback = pick_rescanned_bundle_row(&bundle, "unknown-key")
+            .expect("a rescan that reads the file must still resolve something");
+        assert_eq!(
+            fallback.id,
+            scanner::stable_id(Path::new("/plugins/TwoPlugins.clap"))
+        );
+
+        assert!(
+            pick_rescanned_bundle_row(&[], "any").is_none(),
+            "an empty bundle is a refusal, not a guess"
+        );
+    }
+
+    fn descriptor(descriptor_id: &str) -> scanner::ScannedDescriptor {
+        scanner::ScannedDescriptor {
+            format: "clap".to_string(),
+            name: Some(format!("Plugin {descriptor_id}")),
+            vendor: "Vendor".to_string(),
+            descriptor_id: descriptor_id.to_string(),
+            version: "1.0.0".to_string(),
+            category: "effect".to_string(),
+            parameters: None,
+            parameter_metadata_reason: None,
+            capabilities: None,
+        }
     }
 }
