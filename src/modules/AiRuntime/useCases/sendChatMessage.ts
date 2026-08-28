@@ -1,4 +1,3 @@
-import { isAppError } from '#/infra/errors/isAppError';
 import { logger } from '#/infra/logger/appLogger';
 import {
     executeVersionedCommandBatchEnvelope,
@@ -7,76 +6,53 @@ import {
 } from '#/modules/Command/useCases';
 import { captureProjectRevision, settlePendingProjectWritesAndCaptureRevision } from '#/modules/CrdtDocument/useCases';
 
-import { AiProposalInvalidatedError } from '../../errors/AiProposalInvalidatedError';
-import { isAiRuntimeConfigurationChangedError } from '../../errors/AiRuntimeConfigurationChangedError';
-import { createAiRuntimeError } from '../../errors/AiRuntimeError';
-import {
-    assertRemoteAgentDataPolicy,
-    formatRemoteTransmissionDisclosure,
-    REMOTE_TEXT_AGENT_DATA_CATEGORIES,
-} from '../../models/AgentDataPolicy';
-import { type AgentExecutionMode, type AgentTrustCeiling } from '../../models/AgentExecutionMode';
-import { type AgentRunBudgets, type AgentRunDecisionResume, type AgentRunScope } from '../../models/AgentRun';
-import { type ApplicationToolReceipt } from '../../models/ApplicationOwnedTool';
-import { type ChatMessage } from '../../models/Chat';
-import { CHAT_SYSTEM_PROMPT } from '../../models/ChatSystemPrompt';
-import { type ExecutableRuntimeAction } from '../../models/ExecutableRuntimeAction';
-import { type RunnableAiBackend } from '../../models/LlmOrchestrationTypes';
-import { estimateCompiledProviderRequestTokenCeiling } from '../../models/ModelProviderBudgetEstimate';
-import {
-    type ModelProviderFinish,
-    type ModelProviderName,
-    type ModelProviderResult,
-    type ModelProviderSession,
-} from '../../models/ModelProviderProtocol';
-import {
-    type CloudChatCompletionOutcome,
-    streamCloudChatCompletion,
-} from '../../repositories/cloudLlm/cloudInference/streamCloudChatCompletion';
-import { getCloudProviderInfo } from '../../repositories/cloudLlm/getCloudProviderInfo';
-import { isCloudAvailable } from '../../repositories/cloudLlm/isCloudAvailable';
-import { getActiveModelId } from '../../repositories/webLlm/getActiveModelId';
-import { getLlmEngine } from '../../repositories/webLlm/getLlmEngine';
-import { aiBackendPreferenceStore } from '../../stores/aiBackendPreferenceStore';
+import { AiProposalInvalidatedError } from '../errors/AiProposalInvalidatedError';
+import { isAiRuntimeConfigurationChangedError } from '../errors/AiRuntimeConfigurationChangedError';
+import { createAiRuntimeError } from '../errors/AiRuntimeError';
+import { type AgentExecutionMode, type AgentTrustCeiling } from '../models/AgentExecutionMode';
+import { type AgentRunBudgets, type AgentRunDecisionResume, type AgentRunScope } from '../models/AgentRun';
+import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
+import { type ExecutableRuntimeAction } from '../models/ExecutableRuntimeAction';
+import { type RunnableAiBackend } from '../models/LlmOrchestrationTypes';
+import { type ModelProviderName } from '../models/ModelProviderProtocol';
+import { getCloudProviderInfo } from '../repositories/cloudLlm/getCloudProviderInfo';
+import { isCloudAvailable } from '../repositories/cloudLlm/isCloudAvailable';
+import { getActiveModelId } from '../repositories/webLlm/getActiveModelId';
+import { getLlmEngine } from '../repositories/webLlm/getLlmEngine';
+import { aiBackendPreferenceStore } from '../stores/aiBackendPreferenceStore';
 import {
     chatStore,
     appendChatMessage,
     updateChatMessage,
     setChatGenerating,
     setActiveAborter,
-} from '../../stores/chatStore';
-import { llmStatusStore } from '../../stores/llmStatusStore';
-import { proposePendingActionConfirmation } from '../../stores/pendingActionConfirmationStore';
-import { getAgentPlanProposalIdentity } from '../../transformers/normalizeAgentPlanProposal';
-import { normalizeAgentFailure } from '../agentErrorAndSaga';
-import { createStemImportConfirmationResourceLease } from '../agentReference/createStemImportConfirmationResourceLease';
-import { agentRunLifecycle } from '../agentRunLifecycle';
-import { agentRunWorkLease } from '../agentRunWorkLease';
-import { ApplicationOwnedToolLoopRequestError } from '../applicationOwnedToolLoop';
-import { buildAgentContext } from '../buildAgentContext';
-import { agentRunCancellation } from '../cancelAgentRun';
-import { compileAgentActionExecution } from '../compileAgentActionExecution';
-import { createModelProviderStreamWriter } from '../createModelProviderStreamWriter';
-import { createThinkBlockParser } from '../createThinkBlockParser';
-import { describeAgentRiskApproval } from '../describeAgentRiskApproval';
-import { describePendingActionConfirmation } from '../describePendingActionConfirmation';
-import { remoteTransmissionDisclosure } from '../discloseRemoteTransmission';
-import { executePlannedActions } from '../executePlannedActions';
-import { getProjectContext } from '../getProjectContext';
-import { resolveBackend } from '../llmOrchestration/backendResolution/helpers';
-import { createModelProviderProtocol } from '../modelProviderProtocol';
-import { planAgentRun } from '../planAgentRun';
-import { getPlanningProviderSchemaContract } from '../planningProviderSchema';
-import { planPromptActions } from '../planPromptActions';
-import { recordAgentProviderUsage } from '../recordAgentProviderUsage';
-import { recordAgentRunReceiptSaga } from '../recordAgentRunReceiptSaga';
-import { resolveAgentExecutionMode } from '../resolveAgentExecutionMode';
+} from '../stores/chatStore';
+import { proposePendingActionConfirmation } from '../stores/pendingActionConfirmationStore';
+import { getAgentPlanProposalIdentity } from '../transformers/normalizeAgentPlanProposal';
 
+import { normalizeAgentFailure } from './agentErrorAndSaga';
+import { createStemImportConfirmationResourceLease } from './agentReference/createStemImportConfirmationResourceLease';
 import {
     AGENT_RUN_PERSISTENCE_WARNING,
     AGENT_RUN_STALE_COMPLETION_WARNING,
     settleAgentRunWorkLeaseSafely,
-} from './settleAgentRunWorkLeaseSafely';
+} from './agentRequestOrchestration/settleAgentRunWorkLeaseSafely';
+import { streamExplainChatResponse } from './agentRequestOrchestration/streamExplainChatResponse';
+import { agentRunLifecycle } from './agentRunLifecycle';
+import { agentRunWorkLease } from './agentRunWorkLease';
+import { ApplicationOwnedToolLoopRequestError } from './applicationOwnedToolLoop';
+import { agentRunCancellation } from './cancelAgentRun';
+import { compileAgentActionExecution } from './compileAgentActionExecution';
+import { describeAgentRiskApproval } from './describeAgentRiskApproval';
+import { describePendingActionConfirmation } from './describePendingActionConfirmation';
+import { executePlannedActions } from './executePlannedActions';
+import { resolveBackend } from './llmOrchestration/backendResolution/helpers';
+import { planAgentRun } from './planAgentRun';
+import { getPlanningProviderSchemaContract } from './planningProviderSchema';
+import { planPromptActions } from './planPromptActions';
+import { recordAgentProviderUsage } from './recordAgentProviderUsage';
+import { recordAgentRunReceiptSaga } from './recordAgentRunReceiptSaga';
+import { resolveAgentExecutionMode } from './resolveAgentExecutionMode';
 
 function getBackendModelId(backend: RunnableAiBackend): string {
     if (backend === 'cloud') {
@@ -90,17 +66,6 @@ function getModelProviderName(backend: RunnableAiBackend): ModelProviderName {
         return backend;
     }
     return getCloudProviderInfo()?.provider ?? 'openai-compatible';
-}
-
-function getProviderDisplayName(backend: RunnableAiBackend): string {
-    if (backend === 'cloud') {
-        return 'Hosted AI';
-    }
-    return 'WebLLM';
-}
-
-function readProviderTokenCount(value: unknown): number | null {
-    return Number.isSafeInteger(value) && typeof value === 'number' && value >= 0 ? value : null;
 }
 
 type SendChatMessageOptions = {
@@ -168,35 +133,6 @@ function appendSettlementWarning(content: string, warning: string | null): strin
 
 function appendSettlementWarningToError(reason: string, warning: string | null): string {
     return warning ? `${reason}\n\n${warning}` : reason;
-}
-
-function completeProviderResponseBestEffort(input: {
-    lease: Parameters<typeof settleAgentRunWorkLeaseSafely>[0]['lease'];
-    result: ModelProviderResult;
-    receiptIdentity: string;
-}): ReturnType<typeof settleAgentRunWorkLeaseSafely> {
-    const settlement = settleAgentRunWorkLeaseSafely({
-        lease: input.lease,
-        terminalState: 'completed',
-        evidence: 'visible-provider-output',
-        settle: agentRunWorkLease.settle,
-        reportFailure: (error) =>
-            logger.error(new Error('Completed provider work lease settlement failed', { cause: error })),
-    });
-    try {
-        recordAgentProviderUsage(input.lease.runId, input.result, input.receiptIdentity, { terminal: true });
-    } catch (error) {
-        logger.error(new Error('Completed provider usage accounting failed', { cause: error }));
-    }
-    if (!settlement.accepted || settlement.warning !== null) {
-        return settlement;
-    }
-    try {
-        agentRunLifecycle.transitionPhase({ runId: input.lease.runId, phase: 'completed' });
-    } catch (error) {
-        logger.error(new Error('Completed provider lifecycle persistence failed', { cause: error }));
-    }
-    return settlement;
 }
 
 function getProviderBudgetCategory(backend: RunnableAiBackend): string {
@@ -300,7 +236,7 @@ function getApplicationReadyAssetIdsForPlan(runId: string, actions: readonly Exe
     return [SELECTED_STEM_ASSETS_READY_ID, ...new Set(selectedStems.map((stem) => stem.stemId))];
 }
 
-export async function orchestrateChatMessage(
+export async function sendChatMessage(
     userText: string,
     options?: SendChatMessageOptions
 ): Promise<AgentApplyReceipt | undefined> {
@@ -1423,508 +1359,12 @@ export async function orchestrateChatMessage(
         return undefined;
     }
 
-    // ── Regular Chat Mode ───────────────────────────────────────────────
-    const userMsgId = `msg-${crypto.randomUUID()}`;
-    appendChatMessage({
-        id: userMsgId,
-        role: 'user',
-        content: userText,
-        timestamp: Date.now(),
-    });
-
-    const assistantMsgId = `msg-${crypto.randomUUID()}`;
-    const initialAssistantMessage: ChatMessage = {
-        id: assistantMsgId,
-        role: 'assistant',
-        content: '',
-        timestamp: Date.now(),
-        isStreaming: true,
-    };
-    appendChatMessage(initialAssistantMessage);
-
-    const aborter = new AbortController();
-    setActiveAborter(aborter);
-    const releaseProviderCancellation = agentRunCancellation.bindAbortController({
+    return streamExplainChatResponse({
+        userText,
         runId,
-        lease: providerLease,
-        controller: aborter,
-        reason: 'User cancelled the run while the provider response was active.',
+        backend,
+        providerLease,
+        providerReceiptIdentity,
+        providerWorkId,
     });
-    const previousLlmStatus = llmStatusStore.value;
-    llmStatusStore.set({ state: 'generating' });
-    // Incremental think-block parser: feeding each streamed token keeps the
-    // boundary scan linear instead of re-scanning the whole buffer per token.
-    // It also retains the full accumulated text internally, so no separate
-    // buffer is needed.
-    const thinkParser = createThinkBlockParser();
-    let cloudOutcome: CloudChatCompletionOutcome | null = null;
-    let webLlmIncompleteReason: string | null = null;
-    let providerSession: ModelProviderSession | null = null;
-    let providerStreamWriter: ReturnType<typeof createModelProviderStreamWriter> | null = null;
-    let providerResult: ModelProviderResult | null = null;
-    let providerUsageRecorded = false;
-
-    try {
-        const workspaceContext = getProjectContext();
-        const agentRun = agentRunLifecycle.get(runId);
-        if (agentRun === null) {
-            throw createAiRuntimeError('The agent run could not be recovered before provider planning.');
-        }
-        const agentContext = buildAgentContext({
-            fixedPolicy: CHAT_SYSTEM_PROMPT,
-            prompt: userText,
-            context: workspaceContext,
-            projectRevision: captureProjectRevision(),
-            run: { grants: agentRun.grants, budgets: agentRun.budgets },
-            receipts: (agentRun.plan?.applicationToolReceipts ?? []).map((receipt) => ({
-                id: receipt.callId,
-                summary: receipt.summary,
-            })),
-            validationFailures: agentRun.errors.map((error) => ({ code: error.code })),
-            priorEvidence: agentRun.contextEvidence,
-        });
-        agentRunLifecycle.recordContextEvidence({ runId, evidence: agentContext.evidence });
-        if (!agentContext.authorityComplete) {
-            throw createAiRuntimeError('Relevant production authority exceeds the bounded context limit.');
-        }
-        const systemPrompt = agentContext.message;
-
-        // Keep only the last 24 messages (12 user+assistant pairs) to avoid
-        // blowing the context window on long conversations.
-        const conversationHistory = chatStore
-            .value!.messages.filter((message) => message.id !== assistantMsgId && !message.error)
-            .slice(-24)
-            .map((message) => ({
-                role: message.role,
-                content: message.content,
-            }));
-
-        const completionMessages: Array<{
-            role: 'system' | 'user' | 'assistant';
-            content: string;
-        }> = [{ role: 'system', content: systemPrompt }, ...conversationHistory];
-        const remoteDisclosure =
-            backend === 'cloud'
-                ? remoteTransmissionDisclosure.prepare({
-                      categories: REMOTE_TEXT_AGENT_DATA_CATEGORIES,
-                      correlationId: providerReceiptIdentity,
-                      requestId: providerReceiptIdentity,
-                  })
-                : undefined;
-        const providerProtocol = createModelProviderProtocol({
-            provider: getModelProviderName(backend),
-            model: getBackendModelId(backend),
-        });
-        const compiledProviderRequest = providerProtocol.compileRequest({
-            correlationId: providerReceiptIdentity,
-            runId,
-            requestId: providerReceiptIdentity,
-            cancellationGeneration: providerLease.cancellationGeneration,
-            operation: 'text',
-            modality: 'text',
-            messages: completionMessages,
-            stream: true,
-            limits: { maxOutputTokens: 2_048 },
-            controls: { cache: 'provider-default', reasoning: 'provider-default' },
-            budget: { maxInputTokens: 32_768, maxOutputTokens: 2_048, maxTotalTokens: 34_816 },
-            dataPolicy: backend === 'cloud' ? 'remote-allowed' : 'local-only',
-            ...(remoteDisclosure === undefined
-                ? {}
-                : {
-                      dataCategories: [...REMOTE_TEXT_AGENT_DATA_CATEGORIES],
-                      remoteDisclosure,
-                  }),
-        });
-        if (compiledProviderRequest.status !== 'ready') {
-            throw createAiRuntimeError(compiledProviderRequest.failure.safeMessage);
-        }
-        const providerRequest = compiledProviderRequest.request;
-        const providerEstimate = estimateCompiledProviderRequestTokenCeiling(providerRequest);
-        const budgetReservation = agentRunLifecycle.reserveBudget({
-            runId,
-            attemptId: providerRequest.correlationId,
-            category: getProviderBudgetCategory(backend),
-            estimate: providerEstimate.totalTokenCeiling,
-            provenance: 'versioned-estimate',
-            estimateMethod: providerEstimate.method,
-        });
-        if (budgetReservation.status === 'hard-limit-reached') {
-            agentRunLifecycle.recordError({
-                runId,
-                error: normalizeAgentFailure({
-                    category: 'budget',
-                    source: 'provider-planning',
-                    related: { workIds: [providerWorkId] },
-                    knownDomain: true,
-                }),
-                terminal: true,
-            });
-            throw createAiRuntimeError('The agent budget limit was reached before work started.');
-        }
-        if (backend === 'cloud') {
-            if (
-                remoteDisclosure === undefined ||
-                !remoteTransmissionDisclosure.publish({
-                    evidence: remoteDisclosure,
-                    runId,
-                    provider: getModelProviderName(backend),
-                })
-            ) {
-                throw createAiRuntimeError('Hosted AI privacy disclosure could not be published.');
-            }
-            const remoteCategories = REMOTE_TEXT_AGENT_DATA_CATEGORIES;
-            assertRemoteAgentDataPolicy(remoteCategories);
-            appendChatMessage({
-                id: `msg-${crypto.randomUUID()}`,
-                role: 'assistant',
-                content: formatRemoteTransmissionDisclosure(remoteCategories),
-                timestamp: Date.now(),
-            });
-        }
-        providerSession = providerProtocol.start(providerRequest);
-        const activeProviderStreamWriter = createModelProviderStreamWriter(providerRequest, providerSession);
-        providerStreamWriter = activeProviderStreamWriter;
-
-        if (backend === 'cloud') {
-            // Cloud: streaming completion via Claude API
-            cloudOutcome = await streamCloudChatCompletion(
-                providerRequest.messages,
-                (token) => {
-                    if (aborter.signal.aborted) {
-                        throw createAiRuntimeError('AbortedByUser');
-                    }
-                    activeProviderStreamWriter.push({ type: 'text', mode: 'delta', text: token });
-                    const parsed = thinkParser.push(token);
-                    updateChatMessage(assistantMsgId, { content: parsed.content, reasoning: parsed.reasoning });
-                },
-                {
-                    temperature: 0.7,
-                    maxTokens: providerRequest.limits.maxOutputTokens,
-                    signal: aborter.signal,
-                    onUsage: (event) => activeProviderStreamWriter.push(event),
-                    onUnknownEvent: (providerEventType) =>
-                        activeProviderStreamWriter.push({ type: 'unknown', providerEventType }),
-                }
-            );
-        } else {
-            // WebLLM: streaming completion via the in-browser engine.
-            // Yield to the render loop before starting inference — the first
-            // forward pass triggers WebGPU shader compilation which locks the
-            // GPU (shared with the compositor). Without this yield, the browser
-            // can't paint the "Thinking..." state before the GPU gets busy.
-            await new Promise<void>((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0)));
-            aborter.signal.throwIfAborted();
-
-            const engine = getLlmEngine()!;
-            function interruptWebLlm(): void {
-                engine.interruptGenerate();
-            }
-            aborter.signal.addEventListener('abort', interruptWebLlm, { once: true });
-
-            try {
-                const asyncChunkGenerator = (await engine.chat.completions.create({
-                    messages: providerRequest.messages,
-                    temperature: 0.7,
-                    max_tokens: providerRequest.limits.maxOutputTokens,
-                    stream: true,
-                })) as AsyncIterable<{
-                    choices?: Array<{ delta: { content?: string }; finish_reason?: string | null }>;
-                    type?: string;
-                    usage?: {
-                        prompt_tokens?: number;
-                        completion_tokens?: number;
-                        prompt_tokens_details?: { cached_tokens?: number };
-                        completion_tokens_details?: { reasoning_tokens?: number };
-                    };
-                }>;
-                let sawTerminalReason = false;
-                let sawFinalUsage = false;
-
-                for await (const chunk of asyncChunkGenerator) {
-                    if (aborter.signal.aborted) {
-                        break;
-                    }
-                    if (sawTerminalReason && !Array.isArray(chunk.choices)) {
-                        throw new Error('WebLLM stream returned an event after completion');
-                    }
-                    if (!Array.isArray(chunk.choices)) {
-                        activeProviderStreamWriter.push({
-                            type: 'unknown',
-                            providerEventType: `webllm:${chunk.type ?? 'unknown'}`,
-                        });
-                        continue;
-                    }
-                    const choice = chunk.choices[0];
-                    const deltaDesc = choice?.delta.content;
-                    if (sawTerminalReason) {
-                        if (chunk.choices.length === 0 && chunk.usage && !sawFinalUsage) {
-                            activeProviderStreamWriter.push({
-                                type: 'usage',
-                                mode: 'final',
-                                usage: {
-                                    inputTokens: readProviderTokenCount(chunk.usage.prompt_tokens),
-                                    outputTokens: readProviderTokenCount(chunk.usage.completion_tokens),
-                                    cachedInputTokens: readProviderTokenCount(
-                                        chunk.usage.prompt_tokens_details?.cached_tokens
-                                    ),
-                                    reasoningTokens: readProviderTokenCount(
-                                        chunk.usage.completion_tokens_details?.reasoning_tokens
-                                    ),
-                                },
-                                provenance: 'provider-reported',
-                            });
-                            sawFinalUsage = true;
-                            continue;
-                        }
-                        if (deltaDesc !== undefined) {
-                            throw new Error('WebLLM stream returned text after completion');
-                        }
-                        if (choice?.finish_reason !== undefined && choice.finish_reason !== null) {
-                            throw new Error('WebLLM stream returned duplicate completion');
-                        }
-                        throw new Error('WebLLM stream returned an event after completion');
-                    }
-                    if (chunk.choices.length === 0 && !chunk.usage) {
-                        activeProviderStreamWriter.push({
-                            type: 'unknown',
-                            providerEventType: `webllm:${chunk.type ?? 'unknown'}`,
-                        });
-                    }
-                    if (deltaDesc !== undefined) {
-                        activeProviderStreamWriter.push({ type: 'text', mode: 'delta', text: deltaDesc });
-                        const parsed = thinkParser.push(deltaDesc);
-                        updateChatMessage(assistantMsgId, { content: parsed.content, reasoning: parsed.reasoning });
-                    }
-                    if (choice?.finish_reason !== undefined && choice.finish_reason !== null) {
-                        sawTerminalReason = true;
-                        if (choice.finish_reason !== 'stop') {
-                            webLlmIncompleteReason = choice.finish_reason;
-                        }
-                    }
-                    if (chunk.usage) {
-                        activeProviderStreamWriter.push({
-                            type: 'usage',
-                            mode: 'final',
-                            usage: {
-                                inputTokens: readProviderTokenCount(chunk.usage.prompt_tokens),
-                                outputTokens: readProviderTokenCount(chunk.usage.completion_tokens),
-                                cachedInputTokens: readProviderTokenCount(
-                                    chunk.usage.prompt_tokens_details?.cached_tokens
-                                ),
-                                reasoningTokens: readProviderTokenCount(
-                                    chunk.usage.completion_tokens_details?.reasoning_tokens
-                                ),
-                            },
-                            provenance: 'provider-reported',
-                        });
-                        sawFinalUsage = true;
-                    }
-                }
-                if (!aborter.signal.aborted && !sawTerminalReason) {
-                    throw new Error('WebLLM chat stream ended unexpectedly');
-                }
-            } finally {
-                aborter.signal.removeEventListener('abort', interruptWebLlm);
-            }
-        }
-
-        if (aborter.signal.aborted) {
-            throw aborter.signal.reason;
-        }
-
-        let providerFinish: ModelProviderFinish = { reason: 'stop' };
-        if (cloudOutcome?.status === 'incomplete') {
-            providerFinish =
-                cloudOutcome.reason === 'length' || cloudOutcome.reason === 'token limit'
-                    ? { reason: 'length' }
-                    : {
-                          reason: 'error',
-                          failure: {
-                              code: 'incomplete-output',
-                              retryable: true,
-                              safeMessage: 'The hosted provider returned an incomplete response.',
-                          },
-                      };
-        } else if (webLlmIncompleteReason !== null) {
-            providerFinish =
-                webLlmIncompleteReason === 'length'
-                    ? { reason: 'length' }
-                    : {
-                          reason: 'error',
-                          failure: {
-                              code: 'incomplete-output',
-                              retryable: true,
-                              safeMessage: 'WebLLM returned an incomplete response.',
-                          },
-                      };
-        }
-        providerResult = activeProviderStreamWriter.finish(providerFinish);
-
-        // Strip <think>…</think> reasoning block before storing the final message.
-        const { reasoning, content: cleanContent } = thinkParser.snapshot();
-        const incompleteFailure =
-            providerResult.failure !== null &&
-            (providerResult.status === 'partial' || providerResult.status === 'failed')
-                ? providerResult.failure
-                : null;
-        const incompleteReason =
-            incompleteFailure?.code === 'output-limit' ? 'length' : (incompleteFailure?.code ?? null);
-        const incompleteNotice =
-            incompleteFailure === null ? '' : `\n\n_Response incomplete: ${incompleteFailure.safeMessage}_`;
-        const incompleteProviderLabel = getProviderDisplayName(backend);
-        const incompleteError =
-            incompleteReason === null
-                ? undefined
-                : `${incompleteProviderLabel} response incomplete (${incompleteReason})`;
-        updateChatMessage(assistantMsgId, {
-            isStreaming: false,
-            content: `${cleanContent}${incompleteNotice}`,
-            reasoning,
-            error: incompleteError,
-        });
-        const providerSettlement = completeProviderResponseBestEffort({
-            lease: providerLease,
-            result: providerResult,
-            receiptIdentity: providerReceiptIdentity,
-        });
-        providerUsageRecorded = true;
-        if (!providerSettlement.accepted || providerSettlement.warning !== null) {
-            const warning = providerSettlement.warning ?? AGENT_RUN_STALE_COMPLETION_WARNING;
-            updateChatMessage(assistantMsgId, {
-                isStreaming: false,
-                content: `${cleanContent}${incompleteNotice}\n\n_${warning}_`,
-                reasoning,
-                error: incompleteError === undefined ? warning : `${incompleteError}\n\n${warning}`,
-            });
-        }
-        llmStatusStore.set({ state: 'ready', backend, modelId: getBackendModelId(backend) });
-    } catch (error) {
-        const errorMessage = (() => {
-            if (isAppError(error)) {
-                return error.message;
-            }
-            if (error instanceof Error) {
-                return error.message;
-            }
-            return 'An unknown error occurred during generation.';
-        })();
-        const configurationChanged = isAiRuntimeConfigurationChangedError(error);
-        const wasAborted =
-            configurationChanged ||
-            aborter.signal.aborted ||
-            (error instanceof Error && error.name === 'AbortError') ||
-            errorMessage === 'AbortedByUser' ||
-            errorMessage.includes('AbortError');
-        if (providerSession && providerStreamWriter && !providerResult) {
-            providerResult = providerStreamWriter.finish(
-                wasAborted
-                    ? { reason: 'cancelled' }
-                    : {
-                          reason: 'error',
-                          failure: {
-                              code: 'provider-stream-failed',
-                              retryable: true,
-                              safeMessage: 'The model provider request failed.',
-                          },
-                      }
-            );
-        }
-        if (providerResult && !providerUsageRecorded) {
-            try {
-                recordAgentProviderUsage(runId, providerResult, providerReceiptIdentity, { terminal: true });
-                providerUsageRecorded = true;
-            } catch (usageError) {
-                logger.error(new Error('Provider failure usage accounting failed', { cause: usageError }));
-            }
-        }
-        if (configurationChanged) {
-            await agentRunCancellation.cancel({ runId, reason: errorMessage });
-            settleAgentRunWorkLeaseSafely({
-                lease: providerLease,
-                terminalState: 'cancelled',
-                evidence: 'none',
-                settle: agentRunWorkLease.settle,
-            });
-            const parsed = thinkParser.snapshot();
-            updateChatMessage(assistantMsgId, {
-                isStreaming: false,
-                content: parsed.content,
-                reasoning: parsed.reasoning,
-                error: 'Hosted AI configuration changed; this response was cancelled.',
-            });
-            llmStatusStore.set({ state: 'idle' });
-            return undefined;
-        }
-        const failedProviderOutput = thinkParser.snapshot();
-        const providerFailureSettlement = !wasAborted
-            ? settleAgentRunWorkLeaseSafely({
-                  lease: providerLease,
-                  terminalState: 'failed',
-                  evidence:
-                      failedProviderOutput.content.length > 0 || (failedProviderOutput.reasoning?.length ?? 0) > 0
-                          ? 'visible-provider-output'
-                          : 'none',
-                  settle: agentRunWorkLease.settle,
-                  reportFailure: (settlementError) =>
-                      logger.error(
-                          new Error('Failed provider work lease settlement failed', { cause: settlementError })
-                      ),
-              })
-            : null;
-        if (wasAborted) {
-            await agentRunCancellation.cancel({ runId, reason: errorMessage });
-            // Clean abort, leave generated partial content intact and strip parsing blocks
-            const parsed = failedProviderOutput;
-            updateChatMessage(assistantMsgId, {
-                isStreaming: false,
-                content: parsed.content,
-                reasoning: parsed.reasoning,
-            });
-            const currentPreference = aiBackendPreferenceStore.value ?? 'auto';
-            if (currentPreference !== 'auto' && currentPreference !== backend) {
-                llmStatusStore.set({ state: 'idle' });
-            } else if (
-                previousLlmStatus?.state === 'ready' &&
-                previousLlmStatus.backend === 'cloud' &&
-                !isCloudAvailable()
-            ) {
-                llmStatusStore.set({ state: 'idle' });
-            } else {
-                llmStatusStore.set(previousLlmStatus ?? { state: 'idle' });
-            }
-        } else {
-            if (providerFailureSettlement?.accepted) {
-                tryRecordTerminalFailure({
-                    runId,
-                    error: normalizeAgentFailure({
-                        category: 'provider',
-                        source: 'provider-planning',
-                        retry: 'read-only',
-                        knownDomain: false,
-                    }),
-                    terminal: true,
-                });
-            }
-            const parsed = failedProviderOutput;
-            const hasPartialContent = parsed.content.length > 0 || (parsed.reasoning?.length ?? 0) > 0;
-            const persistenceWarning = providerFailureSettlement?.warning ?? null;
-            const providerFailureContent = hasPartialContent
-                ? `${parsed.content}\n\n_Response incomplete because the provider stream failed._`
-                : 'Sorry, I encountered an error while thinking about that.';
-            updateChatMessage(assistantMsgId, {
-                isStreaming: false,
-                error: persistenceWarning ? `${errorMessage}\n\n${persistenceWarning}` : errorMessage,
-                content: persistenceWarning
-                    ? `${providerFailureContent}\n\n_${persistenceWarning}_`
-                    : providerFailureContent,
-                reasoning: parsed.reasoning,
-            });
-            llmStatusStore.set({ state: 'error', message: errorMessage });
-        }
-    } finally {
-        releaseProviderCancellation();
-        setActiveAborter(null);
-        setChatGenerating(false);
-    }
-    return undefined;
 }
