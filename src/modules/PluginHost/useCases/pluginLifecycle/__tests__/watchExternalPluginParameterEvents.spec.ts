@@ -156,6 +156,24 @@ describe('watchExternalPluginParameterEvents', () => {
         ]);
     });
 
+    /// The seam is a broadcast: automation recording and the project's dirty
+    /// tracking both listen, and a fan-out that stopped at the first registration
+    /// would silently mute whichever of them registered second.
+    it('hands the same edit to every observer that registered', async () => {
+        const watcher = await freshWatcher();
+        snapshot(watcher.store, 'inst-1');
+        const first: unknown[] = [];
+        const second: unknown[] = [];
+        watcher.observe((edit) => first.push(edit));
+        watcher.observe((edit) => second.push(edit));
+
+        watcher.push({ instance_id: 'inst-1', events: [{ param_id: 12, kind: 'value', value: 0.4 }] });
+
+        const edit = { instanceId: 'inst-1', parameterId: 12, kind: 'value', value: 0.4 };
+        expect(first).toEqual([edit]);
+        expect(second).toEqual([edit]);
+    });
+
     it('stops handing edits to an observer that unsubscribed', async () => {
         const watcher = await freshWatcher();
         snapshot(watcher.store, 'inst-1');
