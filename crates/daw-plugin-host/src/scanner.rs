@@ -1530,7 +1530,7 @@ unsafe fn extract_instance_metadata_from_factory(
 ///
 /// A null array pointer means the plugin declared no features, which is legal
 /// and reads as an empty list rather than as an error.
-unsafe fn owned_feature_list(features: *const *const i8) -> Vec<String> {
+pub(crate) unsafe fn owned_feature_list(features: *const *const i8) -> Vec<String> {
     if features.is_null() {
         return Vec::new();
     }

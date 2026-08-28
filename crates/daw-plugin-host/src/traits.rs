@@ -475,3 +475,11 @@ pub fn signal_pending_process_refusal() {
 pub fn take_pending_process_refusal_signal() -> bool {
     PROCESS_REFUSAL_PENDING.swap(false, Ordering::AcqRel)
 }
+
+/// Serialises every test that reads or clears the failure hint.
+///
+/// The hint is one process-wide flag shared by both backends, so two such tests
+/// running side by side in the same binary would each consume the other's
+/// signal.
+#[cfg(test)]
+pub(crate) static PROCESS_REFUSAL_HINT_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());

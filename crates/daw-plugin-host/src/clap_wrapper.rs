@@ -38,6 +38,7 @@ use crate::parameter_events::{
     PluginParameterEvent, PluginParameterEventKind, PluginParameterEventQueue,
 };
 use crate::params::PluginParameter;
+use crate::scanner::{category_from_clap_features, owned_feature_list};
 use crate::traits::{
     signal_pending_process_refusal, AudioPlugin, EditorWindowResizer, HostParameterUpdate,
     HostTransport, HostedPluginRuntime, PluginHostRequestNotifier, ProcessingGate,
@@ -153,6 +154,10 @@ pub struct ClapWrapper {
     /// that honour it. Replaces a hardcoded stereo pair that ignored the
     /// declaration entirely.
     audio: AudioBusLayout,
+    /// Whether the plugin's own descriptor calls it an instrument. Read once at
+    /// load, because the descriptor is fixed for the instance's life and the
+    /// audio thread may not walk the C strings it is written in.
+    is_instrument: bool,
     /// Whether the plugin declared at least one note input port speaking the
     /// dialect this host's note events are in. Read once at load; a plugin
     /// that declares none never gains one while it lives.
@@ -752,6 +757,7 @@ impl ClapWrapper {
             Self::query_extension::<clap_plugin_latency>(plugin_ref, CLAP_EXT_LATENCY);
         let tail_ext = Self::query_extension::<clap_plugin_tail>(plugin_ref, CLAP_EXT_TAIL);
         let audio = Self::read_audio_bus_layout(plugin_ref)?;
+        let is_instrument = descriptor_declares_instrument(plugin);
         let accepts_note_events = Self::reads_note_input_ports(plugin_ref);
 
         if !params_ext.is_null() {
@@ -805,6 +811,7 @@ impl ClapWrapper {
             process_refused: false,
             process_refusal_reported: false,
             audio,
+            is_instrument,
             accepts_note_events,
             editor_content_scale: crate::traits::DEFAULT_EDITOR_CONTENT_SCALE,
             midi_scratch: Vec::with_capacity(MAX_MIDI),
@@ -841,6 +848,7 @@ impl ClapWrapper {
             process_refused: false,
             process_refusal_reported: false,
             audio: AudioBusLayout::portless(),
+            is_instrument: false,
             accepts_note_events: true,
             editor_content_scale: crate::traits::DEFAULT_EDITOR_CONTENT_SCALE,
             midi_scratch: Vec::with_capacity(MAX_MIDI),
@@ -1653,9 +1661,16 @@ impl ClapWrapper {
                 // the output buffers are in an undefined state", so the output
                 // scratch is not audio and is never copied out. What reaches the
                 // bus instead is what ADR 0021 DG-003 decides for a failed slot:
-                // an effect passes its dry input, because muting a crashed EQ
-                // takes the track with it, and a generator has no dry input to
-                // pass and falls silent.
+                // only an effect with a valid dry input passes it, because
+                // muting a crashed EQ takes the track with it. An instrument
+                // falls silent even when it declares an input port — the
+                // Surge XT shape, where routed audio feeds the oscillators — and
+                // its slot is a synth voice, not a path that signal was ever
+                // meant to travel through.
+                //
+                // What the plugin calls itself decides that; the input bus only
+                // stands in when the descriptor says nothing, and a plugin with
+                // no input bus has no dry signal to pass whatever it claims.
                 //
                 // The failure invalidates the scratch, not the caller's
                 // `inputs` — `fill_input_scratch` copies out of them — so this
@@ -1664,7 +1679,7 @@ impl ClapWrapper {
                 // A hard switch, like the bypass paths above: DG-003's ramp into
                 // the failure signal is failure-policy machinery that arrives
                 // with the rest of that policy.
-                if self.audio.input_buffers.is_empty() {
+                if self.is_instrument || self.audio.input_buffers.is_empty() {
                     silence_outputs(outputs, n_samp);
                 } else {
                     copy_inputs_to_outputs(inputs, outputs, num_samples);
@@ -1725,6 +1740,25 @@ impl ClapWrapper {
 /// on because it processes continuously. Only the error invalidates the block.
 fn process_failed(status: clap_process_status) -> bool {
     status == CLAP_PROCESS_ERROR
+}
+
+/// Whether the plugin's descriptor calls it an instrument.
+///
+/// Read through the same feature mapping the scanner categorises with, so the
+/// browser and the audio path cannot disagree about what a plugin is. A plugin
+/// that declares no features, or none this host recognises, is not an
+/// instrument — the same default the scanner falls back to.
+///
+/// # Safety
+///
+/// `plugin` is either null or a live plugin whose descriptor outlives it, which
+/// CLAP requires of `clap_plugin.desc`.
+unsafe fn descriptor_declares_instrument(plugin: *const clap_plugin) -> bool {
+    if plugin.is_null() || (*plugin).desc.is_null() {
+        return false;
+    }
+    let features = owned_feature_list((*(*plugin).desc).features);
+    category_from_clap_features(&features) == "instrument"
 }
 
 /// Write silence over the engine's bus, for a block whose output the plugin
@@ -2572,6 +2606,10 @@ mod tests {
             process_refused: false,
             process_refusal_reported: false,
             audio,
+            // Derived from the stub's own descriptor, the way the loader
+            // derives it, so a stub declaring `instrument` is hosted exactly as
+            // a real plugin declaring it would be.
+            is_instrument: unsafe { descriptor_declares_instrument(plugin) },
             accepts_note_events: true,
             editor_content_scale: crate::traits::DEFAULT_EDITOR_CONTENT_SCALE,
             midi_scratch: Vec::with_capacity(MAX_MIDI),
@@ -4769,7 +4807,7 @@ mod tests {
     // "the plugin failed to process, and the output buffers are in an undefined
     // state". A host that discards the answer plays those buffers.
 
-    use crate::traits::take_pending_process_refusal_signal;
+    use crate::traits::{take_pending_process_refusal_signal, PROCESS_REFUSAL_HINT_TEST_LOCK};
     use clap_sys::process::{
         CLAP_PROCESS_CONTINUE, CLAP_PROCESS_CONTINUE_IF_NOT_QUIET, CLAP_PROCESS_SLEEP,
         CLAP_PROCESS_TAIL,
@@ -4783,6 +4821,9 @@ mod tests {
     /// previous block, which a host that neither writes nor silences leaves
     /// sounding.
     const STALE_SAMPLE: f32 = -0.5;
+    /// CLAP's primary category for a plugin that generates rather than
+    /// processes, as it appears in `clap_plugin_descriptor.features`.
+    const INSTRUMENT_FEATURE: &CStr = c"instrument";
 
     static STUB_PROCESS_STATUS: AtomicI32 = AtomicI32::new(CLAP_PROCESS_CONTINUE);
     static STATUS_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
@@ -4807,7 +4848,26 @@ mod tests {
     }
 
     fn status_plugin_ptr() -> *const clap_plugin {
+        status_plugin_ptr_with_features(&[])
+    }
+
+    /// The same failing stub, behind a descriptor declaring `features`.
+    ///
+    /// Leaked deliberately: CLAP requires `clap_plugin.desc` to outlive the
+    /// plugin, and the stub plugin itself is leaked for the same reason.
+    fn status_plugin_ptr_with_features(features: &[&'static CStr]) -> *const clap_plugin {
+        use clap_sys::plugin::clap_plugin_descriptor;
+
+        let mut feature_pointers: Vec<*const std::os::raw::c_char> =
+            features.iter().map(|feature| feature.as_ptr()).collect();
+        feature_pointers.push(ptr::null());
+        let feature_pointers: &'static [*const std::os::raw::c_char] = Vec::leak(feature_pointers);
+
+        let mut descriptor: clap_plugin_descriptor = unsafe { mem::zeroed() };
+        descriptor.features = feature_pointers.as_ptr();
+
         let mut plugin: clap_plugin = unsafe { mem::zeroed() };
+        plugin.desc = Box::leak(Box::new(descriptor));
         plugin.get_extension = Some(stub_get_extension);
         plugin.activate = Some(stub_activate);
         plugin.deactivate = Some(stub_deactivate);
@@ -4890,6 +4950,33 @@ mod tests {
         assert!(wrapper.process_refused);
     }
 
+    /// DG-003 groups instruments with the effects that have no valid dry input,
+    /// and an instrument is what the plugin says it is rather than what its port
+    /// list implies. A synth that takes routed audio into its oscillators — the
+    /// Surge XT shape — declares an input port and still has no dry signal its
+    /// failed slot could honestly pass, so passing that routed signal out of a
+    /// synth slot at unity is the wrong answer twice over.
+    #[test]
+    fn a_failed_instrument_that_declares_an_input_port_still_falls_silent() {
+        let _guard = STATUS_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        STUB_PROCESS_STATUS.store(CLAP_PROCESS_ERROR, Ordering::Relaxed);
+        let plugin = status_plugin_ptr_with_features(&[INSTRUMENT_FEATURE]);
+        let mut wrapper = stub_wrapper_over(stereo_layout(), plugin);
+
+        let (left, right) = process_block_over_stale_output(&mut wrapper, 0.25, 0.5);
+
+        assert_eq!(
+            (left, right),
+            (0.0, 0.0),
+            "a failed instrument is silent whatever it declared for input: not \
+             its undefined buffers, not the previous block, and not the signal \
+             that was routed into it"
+        );
+        assert!(wrapper.process_refused);
+    }
+
     #[test]
     fn every_other_status_is_a_success_whose_output_reaches_the_bus() {
         let _guard = STATUS_TEST_LOCK
@@ -4952,6 +5039,11 @@ mod tests {
     #[test]
     fn a_failed_block_latches_and_wakes_the_control_path_once() {
         let _guard = STATUS_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        // Both backends raise the one process-wide hint, so the VST3 test that
+        // reads it is held off while this one owns it.
+        let _hint_guard = PROCESS_REFUSAL_HINT_TEST_LOCK
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         STUB_PROCESS_STATUS.store(CLAP_PROCESS_ERROR, Ordering::Relaxed);
