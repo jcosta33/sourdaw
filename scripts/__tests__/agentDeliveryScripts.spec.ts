@@ -40,6 +40,96 @@ function runGit(repository: string, args: string[]): string {
     return execFileSync('git', args, { cwd: repository, env, encoding: 'utf8' }).trim();
 }
 
+function initializeDeliveryLockRepository(root: string): void {
+    runGit(root, ['init', '--quiet']);
+}
+
+function deliveryLockRef(number: number): string {
+    return `refs/sourdaw/delivery/pr-${number}`;
+}
+
+function writeDeliveryLockOwner(root: string, number: number, contents: string): string {
+    const oid = execFileSync('git', ['hash-object', '-w', '--stdin'], {
+        cwd: root,
+        encoding: 'utf8',
+        input: contents,
+    }).trim();
+    runGit(root, ['update-ref', deliveryLockRef(number), oid]);
+    return oid;
+}
+
+function readDeliveryLockOid(root: string, number: number): string {
+    return runGit(root, ['rev-parse', '--verify', deliveryLockRef(number)]);
+}
+
+function deliveryLockExists(root: string, number: number): boolean {
+    try {
+        readDeliveryLockOid(root, number);
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+async function contendForDeliveryLock(root: string): Promise<string[]> {
+    const moduleUrl = new URL('../deliverPullRequest.ts', import.meta.url).href;
+    const childSource = `
+import { createInterface } from 'node:readline';
+import { withPullRequestDeliveryLock } from ${JSON.stringify(moduleUrl)};
+
+const input = createInterface({ input: process.stdin, crlfDelay: Infinity });
+const commands = input[Symbol.asyncIterator]();
+console.log('ready');
+await commands.next();
+try {
+    await withPullRequestDeliveryLock(${JSON.stringify(root)}, 2495, async () => {
+        console.log('entered');
+        await commands.next();
+    });
+    console.log('released');
+} catch (error) {
+    console.log('refused:' + (error instanceof Error ? error.message : String(error)));
+} finally {
+    input.close();
+}
+`;
+    const startContender = () => {
+        const child = spawn(
+            process.execPath,
+            ['--no-warnings', '--experimental-strip-types', '--input-type=module', '--eval', childSource],
+            { stdio: ['pipe', 'pipe', 'pipe'] }
+        );
+        const lines = createInterface({ input: child.stdout, crlfDelay: Infinity })[Symbol.asyncIterator]();
+        return { child, lines, exited: once(child, 'exit') };
+    };
+    const contenders = [startContender(), startContender()];
+
+    try {
+        const ready = await Promise.all(contenders.map(({ lines }) => lines.next()));
+        expect(ready.map((line) => line.value)).toEqual(['ready', 'ready']);
+        for (const contender of contenders) {
+            contender.child.stdin.write('go\n');
+        }
+
+        const outcomes = await Promise.all(contenders.map(({ lines }) => lines.next()));
+        const values = outcomes.map((line) => line.value ?? '');
+        const winner = contenders[values.findIndex((value) => value === 'entered')];
+        expect(winner).toBeDefined();
+        winner?.child.stdin.write('release\n');
+        expect((await winner?.lines.next())?.value).toBe('released');
+        for (const contender of contenders) {
+            contender.child.stdin.end();
+        }
+        const exits = await Promise.all(contenders.map(({ exited }) => exited));
+        expect(exits.map(([code]) => code)).toEqual([0, 0]);
+        return values;
+    } finally {
+        for (const contender of contenders) {
+            contender.child.kill();
+        }
+    }
+}
+
 function runPackageRoute(repository: string, args: string[]): string {
     const pnpmCli = process.env.npm_execpath;
     if (!pnpmCli) {
@@ -754,7 +844,7 @@ describe('package scripts and gitignore', () => {
 
     it('refuses a live delivery owner before authentication or delivery starts', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-'));
-        mkdirSync(join(root, '.git'));
+        initializeDeliveryLockRepository(root);
         const entered: string[] = [];
         const dependencies: DeliveryCoordinatorDependencies = {
             primaryRoot: () => root,
@@ -785,10 +875,9 @@ describe('package scripts and gitignore', () => {
 
     it('leaves malformed primary-lock bytes untouched and starts no authentication or operation', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-'));
-        const lockPath = join(root, '.git', 'sourdaw-delivery-pr-2495.lock');
         const malformed = '{"pid":"not-a-number"}';
-        mkdirSync(join(root, '.git'));
-        writeFileSync(lockPath, malformed);
+        initializeDeliveryLockRepository(root);
+        const originalOid = writeDeliveryLockOwner(root, 2495, malformed);
         const entered: string[] = [];
         const dependencies: DeliveryCoordinatorDependencies = {
             primaryRoot: () => root,
@@ -810,22 +899,52 @@ describe('package scripts and gitignore', () => {
         try {
             await expect(coordinateDelivery(2495, dependencies)).rejects.toThrow(/ownership is malformed/);
             expect(entered).toEqual([]);
-            expect(readFileSync(lockPath, 'utf8')).toBe(malformed);
+            expect(readDeliveryLockOid(root, 2495)).toBe(originalOid);
+            expect(runGit(root, ['cat-file', 'blob', originalOid])).toBe(malformed);
         } finally {
             rmSync(root, { recursive: true, force: true });
         }
     });
 
+    it('fails closed without changing current or stale owner blobs that carry an extra key', async () => {
+        const deadProcess = spawnSync(process.execPath, ['-e', 'process.exit(0)']);
+        expect(deadProcess.status).toBe(0);
+        for (const pid of [process.pid, deadProcess.pid]) {
+            const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-'));
+            initializeDeliveryLockRepository(root);
+            const contents = JSON.stringify({
+                version: 1,
+                pid,
+                token: '00000000-0000-4000-8000-000000000001',
+                extra: true,
+            });
+            const originalOid = writeDeliveryLockOwner(root, 2495, contents);
+            let entered = false;
+
+            try {
+                await expect(
+                    withPullRequestDeliveryLock(root, 2495, async () => {
+                        entered = true;
+                    })
+                ).rejects.toThrow(/ownership is malformed/);
+                expect(entered).toBe(false);
+                expect(readDeliveryLockOid(root, 2495)).toBe(originalOid);
+                expect(runGit(root, ['cat-file', 'blob', originalOid])).toBe(contents);
+            } finally {
+                rmSync(root, { recursive: true, force: true });
+            }
+        }
+    });
+
     it('reclaims one well-formed lock whose owner process is conclusively dead', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-'));
-        const gitDirectory = join(root, '.git');
-        const lockPath = join(gitDirectory, 'sourdaw-delivery-pr-2495.lock');
-        mkdirSync(gitDirectory);
+        initializeDeliveryLockRepository(root);
         const deadProcess = spawnSync(process.execPath, ['-e', 'process.exit(0)']);
         expect(deadProcess.status).toBe(0);
         expect(deadProcess.pid).toBeTypeOf('number');
-        writeFileSync(
-            lockPath,
+        writeDeliveryLockOwner(
+            root,
+            2495,
             JSON.stringify({ version: 1, pid: deadProcess.pid, token: '00000000-0000-4000-8000-000000000001' })
         );
         let delivered = false;
@@ -835,92 +954,47 @@ describe('package scripts and gitignore', () => {
                 delivered = true;
             });
             expect(delivered).toBe(true);
-            expect(existsSync(lockPath)).toBe(false);
+            expect(deliveryLockExists(root, 2495)).toBe(false);
         } finally {
             rmSync(root, { recursive: true, force: true });
         }
     });
 
-    it('recovers a dead reclaimer marker before contending on a fresh atomic reclaim', async () => {
+    it('admits exactly one simultaneous contender for a dead owner', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-'));
-        const gitDirectory = join(root, '.git');
-        const lockPath = join(gitDirectory, 'sourdaw-delivery-pr-2495.lock');
-        const reclaimPath = `${lockPath}.reclaim`;
-        mkdirSync(gitDirectory);
-        const deadOwner = spawnSync(process.execPath, ['-e', 'process.exit(0)']);
-        const deadReclaimer = spawnSync(process.execPath, ['-e', 'process.exit(0)']);
-        expect(deadOwner.status).toBe(0);
-        expect(deadReclaimer.status).toBe(0);
-        writeFileSync(
-            lockPath,
-            JSON.stringify({ version: 1, pid: deadOwner.pid, token: '00000000-0000-4000-8000-000000000001' })
+        initializeDeliveryLockRepository(root);
+        const deadProcess = spawnSync(process.execPath, ['-e', 'process.exit(0)']);
+        expect(deadProcess.status).toBe(0);
+        writeDeliveryLockOwner(
+            root,
+            2495,
+            JSON.stringify({ version: 1, pid: deadProcess.pid, token: '00000000-0000-4000-8000-000000000001' })
         );
-        writeFileSync(
-            reclaimPath,
-            JSON.stringify({ version: 1, pid: deadReclaimer.pid, token: '00000000-0000-4000-8000-000000000002' })
-        );
-        let delivered = false;
 
         try {
-            await withPullRequestDeliveryLock(root, 2495, async () => {
-                delivered = true;
-            });
-            expect(delivered).toBe(true);
-            expect(existsSync(lockPath)).toBe(false);
-            expect(existsSync(reclaimPath)).toBe(false);
+            const values = await contendForDeliveryLock(root);
+            expect(values.filter((value) => value === 'entered')).toHaveLength(1);
+            expect(values.filter((value) => value.startsWith('refused:'))).toHaveLength(1);
+            expect(deliveryLockExists(root, 2495)).toBe(false);
         } finally {
             rmSync(root, { recursive: true, force: true });
         }
-    });
-
-    it('fails closed on live or malformed reclaimer markers', async () => {
-        for (const marker of [
-            {
-                contents: JSON.stringify({
-                    version: 1,
-                    pid: process.pid,
-                    token: '00000000-0000-4000-8000-000000000001',
-                }),
-                error: /reclamation is already in progress/,
-            },
-            { contents: 'not-json', error: /ownership is malformed/ },
-        ]) {
-            const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-'));
-            const lockPath = join(root, '.git', 'sourdaw-delivery-pr-2495.lock');
-            const reclaimPath = `${lockPath}.reclaim`;
-            mkdirSync(join(root, '.git'));
-            writeFileSync(reclaimPath, marker.contents);
-            let delivered = false;
-
-            try {
-                await expect(
-                    withPullRequestDeliveryLock(root, 2495, async () => {
-                        delivered = true;
-                    })
-                ).rejects.toThrow(marker.error);
-                expect(delivered).toBe(false);
-                expect(existsSync(reclaimPath)).toBe(true);
-            } finally {
-                rmSync(root, { recursive: true, force: true });
-            }
-        }
-    });
+    }, 10_000);
 
     it('releases the current delivery token after success and failure', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-'));
-        const lockPath = join(root, '.git', 'sourdaw-delivery-pr-2495.lock');
-        mkdirSync(join(root, '.git'));
+        initializeDeliveryLockRepository(root);
 
         try {
             await withPullRequestDeliveryLock(root, 2495, async () => undefined);
-            expect(existsSync(lockPath)).toBe(false);
+            expect(deliveryLockExists(root, 2495)).toBe(false);
 
             await expect(
                 withPullRequestDeliveryLock(root, 2495, async () => {
                     throw new Error('delivery failed');
                 })
             ).rejects.toThrow('delivery failed');
-            expect(existsSync(lockPath)).toBe(false);
+            expect(deliveryLockExists(root, 2495)).toBe(false);
         } finally {
             rmSync(root, { recursive: true, force: true });
         }
@@ -928,14 +1002,15 @@ describe('package scripts and gitignore', () => {
 
     it('does not release a delivery lock whose ownership token changed', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-'));
-        const lockPath = join(root, '.git', 'sourdaw-delivery-pr-2495.lock');
-        mkdirSync(join(root, '.git'));
+        initializeDeliveryLockRepository(root);
+        let replacementOid = '';
 
         try {
             await expect(
                 withPullRequestDeliveryLock(root, 2495, async () => {
-                    writeFileSync(
-                        lockPath,
+                    replacementOid = writeDeliveryLockOwner(
+                        root,
+                        2495,
                         JSON.stringify({
                             version: 1,
                             pid: process.pid,
@@ -944,7 +1019,7 @@ describe('package scripts and gitignore', () => {
                     );
                 })
             ).rejects.toThrow(/ownership changed before release/);
-            expect(existsSync(lockPath)).toBe(true);
+            expect(readDeliveryLockOid(root, 2495)).toBe(replacementOid);
         } finally {
             rmSync(root, { recursive: true, force: true });
         }
@@ -952,21 +1027,19 @@ describe('package scripts and gitignore', () => {
 
     it('keeps per-PR owners isolated without releasing the wrong delivery', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-'));
-        const firstLock = join(root, '.git', 'sourdaw-delivery-pr-2495.lock');
-        const secondLock = join(root, '.git', 'sourdaw-delivery-pr-2496.lock');
-        mkdirSync(join(root, '.git'));
+        initializeDeliveryLockRepository(root);
 
         try {
             await withPullRequestDeliveryLock(root, 2495, async () => {
                 await withPullRequestDeliveryLock(root, 2496, async () => undefined);
-                expect(existsSync(firstLock)).toBe(true);
-                expect(existsSync(secondLock)).toBe(false);
+                expect(deliveryLockExists(root, 2495)).toBe(true);
+                expect(deliveryLockExists(root, 2496)).toBe(false);
                 await expect(withPullRequestDeliveryLock(root, 2495, async () => undefined)).rejects.toThrow(
                     /already being delivered/
                 );
-                expect(existsSync(firstLock)).toBe(true);
+                expect(deliveryLockExists(root, 2495)).toBe(true);
             });
-            expect(existsSync(firstLock)).toBe(false);
+            expect(deliveryLockExists(root, 2495)).toBe(false);
         } finally {
             rmSync(root, { recursive: true, force: true });
         }
@@ -974,66 +1047,16 @@ describe('package scripts and gitignore', () => {
 
     it('admits exactly one fresh process while a same-PR contender is held at the lock boundary', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-'));
-        mkdirSync(join(root, '.git'));
-        const moduleUrl = new URL('../deliverPullRequest.ts', import.meta.url).href;
-        const childSource = `
-import { createInterface } from 'node:readline';
-import { withPullRequestDeliveryLock } from ${JSON.stringify(moduleUrl)};
-
-const input = createInterface({ input: process.stdin, crlfDelay: Infinity });
-const commands = input[Symbol.asyncIterator]();
-console.log('ready');
-await commands.next();
-try {
-    await withPullRequestDeliveryLock(${JSON.stringify(root)}, 2495, async () => {
-        console.log('entered');
-        await commands.next();
-    });
-    console.log('released');
-} catch (error) {
-    console.log('refused:' + (error instanceof Error ? error.message : String(error)));
-} finally {
-    input.close();
-}
-`;
-        const startContender = () => {
-            const child = spawn(
-                process.execPath,
-                ['--no-warnings', '--experimental-strip-types', '--input-type=module', '--eval', childSource],
-                { stdio: ['pipe', 'pipe', 'pipe'] }
-            );
-            const lines = createInterface({ input: child.stdout, crlfDelay: Infinity })[Symbol.asyncIterator]();
-            return { child, lines, exited: once(child, 'exit') };
-        };
-        const contenders = [startContender(), startContender()];
+        initializeDeliveryLockRepository(root);
 
         try {
-            const ready = await Promise.all(contenders.map(({ lines }) => lines.next()));
-            expect(ready.map((line) => line.value)).toEqual(['ready', 'ready']);
-            for (const contender of contenders) {
-                contender.child.stdin.write('go\n');
-            }
-
-            const outcomes = await Promise.all(contenders.map(({ lines }) => lines.next()));
-            const values = outcomes.map((line) => line.value ?? '');
+            const values = await contendForDeliveryLock(root);
             expect(values.filter((value) => value === 'entered')).toHaveLength(1);
             expect(
                 values.filter((value) => value.startsWith('refused:PR #2495 is already being delivered'))
             ).toHaveLength(1);
-
-            const winner = contenders[values.findIndex((value) => value === 'entered')];
-            expect(winner).toBeDefined();
-            winner?.child.stdin.write('release\n');
-            expect((await winner?.lines.next())?.value).toBe('released');
-            for (const contender of contenders) {
-                contender.child.stdin.end();
-            }
-            const exits = await Promise.all(contenders.map(({ exited }) => exited));
-            expect(exits.map(([code]) => code)).toEqual([0, 0]);
+            expect(deliveryLockExists(root, 2495)).toBe(false);
         } finally {
-            for (const contender of contenders) {
-                contender.child.kill();
-            }
             rmSync(root, { recursive: true, force: true });
         }
     }, 10_000);

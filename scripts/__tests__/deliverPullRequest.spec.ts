@@ -2195,6 +2195,76 @@ describe('delivery shell boundary', () => {
         ]);
     });
 
+    it.each([
+        { merger: 'foreign', actorNodeId: REVIEWER_BOT_NODE_ID },
+        { merger: 'unknown', actorNodeId: null },
+    ])('shellPort refuses $merger merged-by authority before any recovery effect', ({ actorNodeId }) => {
+        const effects: string[] = [];
+        const port = shellPort('jcosta33/sourdaw', {
+            capture: (_command, args) => {
+                const joined = args.join(' ');
+                if (joined.includes('pr view')) {
+                    return JSON.stringify(
+                        shellPullRequest(pullRequest({ state: 'MERGED', mergedByActorNodeId: actorNodeId }))
+                    );
+                }
+                effects.push(`capture:${joined}`);
+                throw new Error(`unexpected recovery read: ${joined}`);
+            },
+            run: (command, args) => {
+                if (command === 'git' && args[0] === 'fetch') {
+                    return;
+                }
+                effects.push(`run:${command}:${args.join(' ')}`);
+            },
+        });
+
+        expect(() =>
+            deliverPullRequest(42, port, {
+                complete: (issue) => effects.push(`complete:${issue}`),
+            })
+        ).toThrow(/not merged by the author App/);
+        expect(effects).toEqual([]);
+    });
+
+    it('uses REST response order, not created_at order, for shellPort merged recovery', () => {
+        const bodyX = relationshipBody('Closes #2372');
+        const bodyY = relationshipBody('Closes #2373');
+        const effects: string[] = [];
+        const comment = (id: string, receiptBody: string, createdAt: string) => ({
+            node_id: id,
+            body: receiptBody,
+            user: { node_id: AUTHOR_BOT_NODE_ID, login: 'renamed-author[bot]', type: 'Bot' },
+            created_at: createdAt,
+            updated_at: createdAt,
+        });
+        const port = shellPort('jcosta33/sourdaw', {
+            capture: (_command, args) => {
+                const joined = args.join(' ');
+                if (joined.includes('pr view')) {
+                    return JSON.stringify(shellPullRequest(pullRequest({ state: 'MERGED' })));
+                }
+                if (joined.includes('issues/42/comments?per_page=100')) {
+                    return JSON.stringify([
+                        [comment('IC_x', deliveryReceiptBody(42, 'head', bodyX, 2372), '2026-08-21T00:00:02Z')],
+                        [comment('IC_y', deliveryReceiptBody(42, 'head', bodyY, 2373), '2026-08-21T00:00:01Z')],
+                    ]);
+                }
+                if (joined.includes('pulls?state=open')) {
+                    return JSON.stringify([[]]);
+                }
+                throw new Error(`unexpected capture: ${joined}`);
+            },
+            run: () => undefined,
+        });
+
+        deliverPullRequest(42, port, {
+            complete: (issue) => effects.push(`complete:${issue}`),
+        });
+
+        expect(effects).toEqual(['complete:2373']);
+    });
+
     /**
      * The gating set comes from the launcher's environment, not from a file this port reads. Nothing
      * in the snapshot can reach a workflow — no working tree, no checkout, no `git show` — so a port

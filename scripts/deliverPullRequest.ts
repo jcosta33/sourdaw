@@ -1,8 +1,6 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
-import { linkSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
 
 import {
     AUTHOR_BOT_NODE_ID,
@@ -1258,42 +1256,20 @@ function deliveryLockErrorCode(error: unknown): string | undefined {
         : undefined;
 }
 
-function deliveryLockPath(primaryRoot: string, number: number): string {
+function deliveryLockRef(number: number): string {
     if (!Number.isSafeInteger(number) || number <= 0) {
         fail('delivery lock requires a positive pull-request number');
     }
-    return join(primaryRoot, '.git', `sourdaw-delivery-pr-${number}.lock`);
+    return `refs/sourdaw/delivery/pr-${number}`;
 }
 
-function recoverDeadDeliveryReclaim(path: string, number: number): void {
-    const reclaimPath = `${path}.reclaim`;
-    let contents: string;
-    try {
-        contents = readFileSync(reclaimPath, 'utf8');
-    } catch (error) {
-        if (deliveryLockErrorCode(error) === 'ENOENT') {
-            return;
-        }
-        fail(`PR #${number} delivery lock reclamation cannot be verified`);
-    }
-    const owner = parseDeliveryLockOwner(contents, number);
-    const ownerState = deliveryLockOwnerState(owner);
-    if (ownerState === 'live') {
-        fail(`PR #${number} delivery lock reclamation is already in progress by process ${owner.pid}`);
-    }
-    if (ownerState === 'uncertain') {
-        fail(`PR #${number} delivery lock reclamation cannot be verified`);
-    }
-
-    const confirmedOwner = readDeliveryLockOwner(reclaimPath, number);
-    if (
-        confirmedOwner.pid !== owner.pid ||
-        confirmedOwner.token !== owner.token ||
-        deliveryLockOwnerState(confirmedOwner) !== 'dead'
-    ) {
-        fail(`PR #${number} delivery lock reclamation changed before dead-owner recovery`);
-    }
-    unlinkSync(reclaimPath);
+function deliveryLockGit(primaryRoot: string, args: string[], input?: string) {
+    return spawnSync('git', args, {
+        cwd: primaryRoot,
+        encoding: 'utf8',
+        shell: false,
+        ...(input === undefined ? {} : { input }),
+    });
 }
 
 function parseDeliveryLockOwner(contents: string, number: number): DeliveryLockOwner {
@@ -1322,30 +1298,56 @@ function parseDeliveryLockOwner(contents: string, number: number): DeliveryLockO
     return { version: 1, pid: value.pid, token: value.token };
 }
 
-function createDeliveryLockRecord(path: string, contents: string, token: string): boolean {
-    const temporaryPath = `${path}.${token}.tmp`;
-    writeFileSync(temporaryPath, contents, { encoding: 'utf8', flag: 'wx', mode: 0o600 });
-    try {
-        linkSync(temporaryPath, path);
-        return true;
-    } catch (error) {
-        if (deliveryLockErrorCode(error) === 'EEXIST') {
-            return false;
-        }
-        throw error;
-    } finally {
-        rmSync(temporaryPath, { force: true });
+function deliveryLockObjectId(value: string, number: number): string {
+    const oid = value.trim();
+    if (!/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u.test(oid)) {
+        fail(`PR #${number} delivery lock object identity is malformed`);
     }
+    return oid;
 }
 
-function readDeliveryLockOwner(path: string, number: number): DeliveryLockOwner {
-    let contents: string;
-    try {
-        contents = readFileSync(path, 'utf8');
-    } catch {
+function writeDeliveryLockOwner(primaryRoot: string, owner: DeliveryLockOwner, number: number): string {
+    const result = deliveryLockGit(primaryRoot, ['hash-object', '-w', '--stdin'], JSON.stringify(owner));
+    if (result.error !== undefined) {
+        throw result.error;
+    }
+    if (result.status !== 0) {
+        fail(`PR #${number} delivery lock owner could not be stored`);
+    }
+    return deliveryLockObjectId(result.stdout, number);
+}
+
+function readDeliveryLockOid(primaryRoot: string, ref: string, number: number): string | undefined {
+    const result = deliveryLockGit(primaryRoot, ['show-ref', '--verify', '--hash', ref]);
+    if (result.error !== undefined) {
+        throw result.error;
+    }
+    if (result.status === 1) {
+        return undefined;
+    }
+    if (result.status !== 0) {
         fail(`PR #${number} delivery lock ownership cannot be verified`);
     }
-    return parseDeliveryLockOwner(contents, number);
+    return deliveryLockObjectId(result.stdout, number);
+}
+
+function readDeliveryLockOwner(primaryRoot: string, oid: string, number: number): DeliveryLockOwner {
+    const result = deliveryLockGit(primaryRoot, ['cat-file', 'blob', oid]);
+    if (result.error !== undefined) {
+        throw result.error;
+    }
+    if (result.status !== 0) {
+        fail(`PR #${number} delivery lock ownership cannot be verified`);
+    }
+    return parseDeliveryLockOwner(result.stdout, number);
+}
+
+function updateDeliveryLockRef(primaryRoot: string, args: string[]): boolean {
+    const result = deliveryLockGit(primaryRoot, ['update-ref', ...args]);
+    if (result.error !== undefined) {
+        throw result.error;
+    }
+    return result.status === 0;
 }
 
 function deliveryLockOwnerState(owner: DeliveryLockOwner): 'live' | 'dead' | 'uncertain' {
@@ -1357,16 +1359,19 @@ function deliveryLockOwnerState(owner: DeliveryLockOwner): 'live' | 'dead' | 'un
     }
 }
 
-function acquireDeliveryLock(primaryRoot: string, number: number): { path: string; owner: DeliveryLockOwner } {
-    const path = deliveryLockPath(primaryRoot, number);
+function acquireDeliveryLock(primaryRoot: string, number: number): { ref: string; oid: string } {
+    const ref = deliveryLockRef(number);
     const owner: DeliveryLockOwner = { version: 1, pid: process.pid, token: randomUUID() };
-    const contents = JSON.stringify(owner);
-    recoverDeadDeliveryReclaim(path, number);
-    if (createDeliveryLockRecord(path, contents, owner.token)) {
-        return { path, owner };
+    const oid = writeDeliveryLockOwner(primaryRoot, owner, number);
+    if (updateDeliveryLockRef(primaryRoot, [ref, oid, '0'.repeat(oid.length)])) {
+        return { ref, oid };
     }
 
-    const previousOwner = readDeliveryLockOwner(path, number);
+    const previousOid = readDeliveryLockOid(primaryRoot, ref, number);
+    if (previousOid === undefined) {
+        fail(`PR #${number} delivery lock could not be acquired`);
+    }
+    const previousOwner = readDeliveryLockOwner(primaryRoot, previousOid, number);
     const previousOwnerState = deliveryLockOwnerState(previousOwner);
     if (previousOwnerState === 'live') {
         fail(`PR #${number} is already being delivered by process ${previousOwner.pid}`);
@@ -1375,35 +1380,16 @@ function acquireDeliveryLock(primaryRoot: string, number: number): { path: strin
         fail(`PR #${number} delivery lock ownership cannot be verified`);
     }
 
-    const reclaimPath = `${path}.reclaim`;
-    if (!createDeliveryLockRecord(reclaimPath, contents, owner.token)) {
-        fail(`PR #${number} delivery lock reclamation is already in progress`);
+    if (!updateDeliveryLockRef(primaryRoot, [ref, oid, previousOid])) {
+        fail(`PR #${number} delivery lock changed while reclaiming its dead owner`);
     }
-    try {
-        const confirmedOwner = readDeliveryLockOwner(path, number);
-        if (
-            confirmedOwner.pid !== previousOwner.pid ||
-            confirmedOwner.token !== previousOwner.token ||
-            deliveryLockOwnerState(confirmedOwner) !== 'dead'
-        ) {
-            fail(`PR #${number} delivery lock changed while reclaiming its dead owner`);
-        }
-        unlinkSync(path);
-        if (!createDeliveryLockRecord(path, contents, owner.token)) {
-            fail(`PR #${number} delivery lock changed while reclaiming its dead owner`);
-        }
-        return { path, owner };
-    } finally {
-        releaseDeliveryLock(reclaimPath, number, owner);
-    }
+    return { ref, oid };
 }
 
-function releaseDeliveryLock(path: string, number: number, owner: DeliveryLockOwner): void {
-    const currentOwner = readDeliveryLockOwner(path, number);
-    if (currentOwner.token !== owner.token) {
+function releaseDeliveryLock(primaryRoot: string, ref: string, oid: string, number: number): void {
+    if (!updateDeliveryLockRef(primaryRoot, ['-d', ref, oid])) {
         fail(`PR #${number} delivery lock ownership changed before release`);
     }
-    unlinkSync(path);
 }
 
 export async function withPullRequestDeliveryLock<Value>(
@@ -1415,7 +1401,7 @@ export async function withPullRequestDeliveryLock<Value>(
     try {
         return await operation();
     } finally {
-        releaseDeliveryLock(lock.path, number, lock.owner);
+        releaseDeliveryLock(primaryRoot, lock.ref, lock.oid, number);
     }
 }
 
