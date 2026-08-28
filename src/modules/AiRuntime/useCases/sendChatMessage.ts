@@ -1,18 +1,13 @@
 import { logger } from '#/infra/logger/appLogger';
-import {
-    executeVersionedCommandBatchEnvelope,
-    generateGroupId,
-    parseVersionedCommandBatchEnvelope,
-} from '#/modules/Command/useCases';
+import { executeVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
 import { captureProjectRevision, settlePendingProjectWritesAndCaptureRevision } from '#/modules/CrdtDocument/useCases';
 
 import { AiProposalInvalidatedError } from '../errors/AiProposalInvalidatedError';
 import { isAiRuntimeConfigurationChangedError } from '../errors/AiRuntimeConfigurationChangedError';
 import { createAiRuntimeError } from '../errors/AiRuntimeError';
 import { type AgentExecutionMode, type AgentTrustCeiling } from '../models/AgentExecutionMode';
-import { type AgentRunBudgets, type AgentRunDecisionResume, type AgentRunScope } from '../models/AgentRun';
+import { type AgentRunBudgets, type AgentRunDecisionResume } from '../models/AgentRun';
 import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
-import { type ExecutableRuntimeAction } from '../models/ExecutableRuntimeAction';
 import { type RunnableAiBackend } from '../models/LlmOrchestrationTypes';
 import { type ModelProviderName } from '../models/ModelProviderProtocol';
 import { getCloudProviderInfo } from '../repositories/cloudLlm/getCloudProviderInfo';
@@ -28,11 +23,11 @@ import {
     setActiveAborter,
 } from '../stores/chatStore';
 import { proposePendingActionConfirmation } from '../stores/pendingActionConfirmationStore';
-import { getAgentPlanProposalIdentity } from '../transformers/normalizeAgentPlanProposal';
 
 import { normalizeAgentFailure } from './agentErrorAndSaga';
 import { createStemImportConfirmationResourceLease } from './agentReference/createStemImportConfirmationResourceLease';
 import { executeImmediatePromptCommand } from './agentRequestOrchestration/executeImmediatePromptCommand';
+import { materializePromptCommandPlan } from './agentRequestOrchestration/materializePromptCommandPlan';
 import {
     AGENT_RUN_STALE_COMPLETION_WARNING,
     settleAgentRunWorkLeaseSafely,
@@ -42,12 +37,9 @@ import { agentRunLifecycle } from './agentRunLifecycle';
 import { agentRunWorkLease } from './agentRunWorkLease';
 import { ApplicationOwnedToolLoopRequestError } from './applicationOwnedToolLoop';
 import { agentRunCancellation } from './cancelAgentRun';
-import { compileAgentActionExecution } from './compileAgentActionExecution';
 import { describeAgentRiskApproval } from './describeAgentRiskApproval';
 import { describePendingActionConfirmation } from './describePendingActionConfirmation';
 import { resolveBackend } from './llmOrchestration/backendResolution/helpers';
-import { planAgentRun } from './planAgentRun';
-import { getPlanningProviderSchemaContract } from './planningProviderSchema';
 import { planPromptActions } from './planPromptActions';
 import { recordAgentProviderUsage } from './recordAgentProviderUsage';
 import { resolveAgentExecutionMode } from './resolveAgentExecutionMode';
@@ -76,16 +68,6 @@ type SendChatMessageOptions = {
     onResumedRunAdmitted?: (runId: string) => void;
     onResumedPlanAccepted?: () => void;
 };
-
-function assertResumedProposalIdentity(
-    input: { proposalIdentity: string } | undefined,
-    value: Parameters<typeof getAgentPlanProposalIdentity>[0]
-): void {
-    const proposalIdentity = getAgentPlanProposalIdentity(value);
-    if (input && proposalIdentity !== input.proposalIdentity) {
-        throw new Error('The replacement provider plan no longer matches the selected decision interpretation.');
-    }
-}
 
 type AgentApplyReceipt = NonNullable<Awaited<ReturnType<typeof executeImmediatePromptCommand>>>;
 
@@ -140,66 +122,6 @@ function recordApplicationToolOnlyPlan(input: {
         },
         budgets: { limits: {}, consumed: {} },
     });
-}
-
-/**
- * The ids this batch mints for objects that do not exist yet. The compiled envelope records them as
- * the `targets-absent` precondition, so a provider proposal authored before compilation cannot name
- * them and the plan's scope comparison must not demand it.
- */
-function getApplicationAssignedTargetIds(
-    envelope: Extract<ReturnType<typeof parseVersionedCommandBatchEnvelope>, { status: 'valid' }>['envelope']
-): string[] {
-    return envelope.preconditions.flatMap((precondition) =>
-        precondition.kind === 'targets-absent' ? [...(precondition.targetIds ?? [])] : []
-    );
-}
-
-type ProviderKnownScopeInput = {
-    readonly targetRanges: readonly Readonly<AgentRunScope['targetRanges'][number]>[];
-    readonly protectedTargetIds: readonly string[];
-    readonly protectedRanges: readonly Readonly<AgentRunScope['protectedRanges'][number]>[];
-};
-
-function getProviderKnownScope(
-    scope: ProviderKnownScopeInput,
-    providerKnownTargetIds: readonly string[] | undefined
-): AgentRunScope | undefined {
-    if (providerKnownTargetIds === undefined) {
-        return undefined;
-    }
-    return {
-        targetIds: [...providerKnownTargetIds],
-        targetRanges: scope.targetRanges.map((range) => ({ ...range })),
-        protectedTargetIds: [...scope.protectedTargetIds],
-        protectedRanges: scope.protectedRanges.map((range) => ({ ...range })),
-    };
-}
-
-const SELECTED_STEM_ASSETS_READY_ID = 'selected-stem-assets';
-
-function getApplicationReadyAssetIdsForPlan(runId: string, actions: readonly ExecutableRuntimeAction[]): string[] {
-    const selectedStems = actions.flatMap((action) => (action.type === 'importStemSet' ? action.payload.stems : []));
-    const selectedStemAssetIds = selectedStems.map((stem) => stem.audioBufferId);
-    if (selectedStemAssetIds.length === 0) {
-        return [];
-    }
-
-    const livePreparedStemAssetIds = new Set(
-        agentRunLifecycle
-            .get(runId)
-            ?.temporaryAssets.flatMap((asset) =>
-                asset.kind === 'import' && asset.status === 'live' ? [asset.assetId] : []
-            ) ?? []
-    );
-    if (
-        livePreparedStemAssetIds.size !== selectedStemAssetIds.length ||
-        selectedStemAssetIds.some((assetId) => !livePreparedStemAssetIds.has(assetId))
-    ) {
-        return [];
-    }
-
-    return [SELECTED_STEM_ASSETS_READY_ID, ...new Set(selectedStems.map((stem) => stem.stemId))];
 }
 
 export async function sendChatMessage(
@@ -394,7 +316,6 @@ export async function sendChatMessage(
             }
 
             if (result.actions.length > 0) {
-                const readyAssetIds = getApplicationReadyAssetIdsForPlan(runId, result.actions);
                 // Manually inject messages for Fast-Path execution
                 const userMsgId = `msg-${crypto.randomUUID()}`;
                 appendChatMessage({
@@ -422,290 +343,25 @@ export async function sendChatMessage(
                     wholeProjectVibeMixPlan: result.wholeProjectVibeMixPlan,
                     workflowCapabilityId: result.workflowCapabilityId,
                 });
-                if (interactionMode === 'plan') {
-                    const admittedRun = agentRunLifecycle.get(runId);
-                    if (!admittedRun) {
-                        throw new Error('Agent run disappeared before plan materialization.');
-                    }
-                    const plannedCommandBatch = compileAgentActionExecution({
-                        actions: result.actions,
-                        actionCommandGraph: result.actionCommandGraph,
-                        actionLabels: confirmationDescription.actionLabels,
-                        context,
-                        group: generateGroupId(userText),
-                        intent: userText,
-                        projectRevision,
-                        requiresConfirmation: result.requiresConfirmation,
-                        runId,
-                        mode: 'apply',
-                        protectedTargetIds: confirmationDescription.protectedUnchanged.map((item) => item.id),
-                        trustCeiling: options?.trustCeiling,
-                    }).commandBatch;
-                    const plannedAuthority = plannedCommandBatch.authority;
-                    const parsedPlannedBatch = parseVersionedCommandBatchEnvelope(
-                        plannedCommandBatch.serialized,
-                        plannedAuthority
-                    );
-                    if (parsedPlannedBatch.status === 'invalid') {
-                        throw new Error(parsedPlannedBatch.reason);
-                    }
-                    const planScope = {
-                        targetIds: [...plannedAuthority.scope.targetIds],
-                        targetRanges: plannedAuthority.scope.targetRanges.map((range) => ({ ...range })),
-                        protectedTargetIds: [...plannedAuthority.scope.protectedTargetIds],
-                        protectedRanges: plannedAuthority.scope.protectedRanges.map((range) => ({ ...range })),
-                    };
-                    const planGrants = {
-                        ...plannedAuthority.grants,
-                        allowedOperationPrefixes: [...plannedAuthority.grants.allowedOperationPrefixes],
-                    };
-                    assertResumedProposalIdentity(options?.resume, {
-                        actions: result.actions,
-                        providerProposal: result.providerProposal ?? null,
-                        scope: planScope,
-                        grants: planGrants,
-                    });
-                    const plannedRun = planAgentRun({
-                        request: userText,
-                        revision: projectRevision,
-                        actions: result.actions,
-                        actionLabels: confirmationDescription.actionLabels,
-                        scope: planScope,
-                        grants: planGrants,
-                        budgets: admittedRun.budgets,
-                        requiresConfirmation: false,
-                        applicationToolReceipts: result.applicationToolReceipts,
-                        providerProposal: result.providerProposal,
-                        providerKnownScope: getProviderKnownScope(planScope, result.providerKnownTargetIds),
-                        requireProviderProposal: result.executionMode === 'atomic',
-                        applicationAssignedTargetIds: getApplicationAssignedTargetIds(parsedPlannedBatch.envelope),
-                        readyAssetIds,
-                    });
-                    if (plannedRun.status === 'needs-user-decision') {
-                        await createStemImportConfirmationResourceLease(result.actions)?.releaseBestEffort();
-                        agentRunLifecycle.requireManualResume({
-                            runId,
-                            reason: plannedRun.decision.reason,
-                            workIds: [],
-                        });
-                        agentRunLifecycle.recordDecision({
-                            runId,
-                            decision: {
-                                decisionId: crypto.randomUUID(),
-                                capabilitySchemaIdentity: getPlanningProviderSchemaContract().identity,
-                                proposalIdentity: getAgentPlanProposalIdentity({
-                                    actions: result.actions,
-                                    providerProposal: result.providerProposal ?? null,
-                                    scope: planScope,
-                                    grants: planGrants,
-                                }),
-                                budgets: admittedRun.budgets,
-                                revision: projectRevision,
-                                scope: planScope,
-                                grants: planGrants,
-                                alternatives: plannedRun.decision.alternatives,
-                                reason: plannedRun.decision.reason,
-                                selectedAlternativeId: null,
-                                resumeAttemptId: null,
-                            },
-                        });
-                        updateChatMessage(assistantMsgId, {
-                            isStreaming: false,
-                            content: `Choose one before I continue:\n\n${plannedRun.decision.alternatives.map((alternative) => `- ${alternative.label}`).join('\n')}`,
-                        });
-                        return undefined;
-                    }
-                    if (plannedRun.status === 'rejected') {
-                        throw new Error(plannedRun.reason);
-                    }
-                    options?.onResumedPlanAccepted?.();
-                    agentRunLifecycle.recordPlan({
-                        runId,
-                        summary: confirmationDescription.actionLabels.join('\n'),
-                        commandIds: [],
-                        serializedBatchIdentity: null,
-                        applicationToolReceipts: result.applicationToolReceipts ?? [],
-                        revision: projectRevision,
-                        scope: planScope,
-                        grants: planGrants,
-                        budgets: admittedRun.budgets,
-                        plan: plannedRun.plan,
-                    });
-                    agentRunLifecycle.transitionPhase({ runId, phase: 'completed' });
-                    await createStemImportConfirmationResourceLease(result.actions)?.releaseBestEffort();
-                    updateChatMessage(assistantMsgId, {
-                        isStreaming: false,
-                        content: `Planned without changing the project:\n\n${confirmationDescription.actionLabels.map((label) => `- ${label}`).join('\n')}`,
-                    });
-                    return undefined;
-                }
-                const commandGroup = generateGroupId(userText);
-                const compiledActionExecution = compileAgentActionExecution({
-                    actions: result.actions,
-                    actionCommandGraph: result.actionCommandGraph,
-                    actionLabels: confirmationDescription.actionLabels,
-                    context,
-                    group: commandGroup,
-                    intent: userText,
-                    projectRevision,
-                    requiresConfirmation: result.requiresConfirmation,
+                const materializedPlan = await materializePromptCommandPlan({
+                    userText,
                     runId,
-                    mode: interactionMode,
-                    protectedTargetIds: confirmationDescription.protectedUnchanged.map((item) => item.id),
+                    assistantMessageId: assistantMsgId,
+                    interactionMode,
                     trustCeiling: options?.trustCeiling,
-                });
-                const { commandEnvelopes, commandBatch } = compiledActionExecution;
-                const parsedCommandBatch = parseVersionedCommandBatchEnvelope(
-                    commandBatch.serialized,
-                    commandBatch.authority
-                );
-                if (parsedCommandBatch.status === 'invalid') {
-                    throw new Error(parsedCommandBatch.reason);
-                }
-                const admittedRun = agentRunLifecycle.get(runId);
-                if (!admittedRun) {
-                    throw new Error('Agent run disappeared before plan materialization.');
-                }
-                const commandIds = parsedCommandBatch.envelope.commands.map((command) => command.commandId);
-                assertResumedProposalIdentity(options?.resume, {
-                    actions: result.actions,
-                    providerProposal: result.providerProposal ?? null,
-                    scope: commandBatch.authority.scope,
-                    grants: commandBatch.authority.grants,
-                });
-                const plannedRun = planAgentRun({
-                    request: userText,
-                    revision: projectRevision,
-                    actions: result.actions,
+                    resume: options?.resume,
+                    onResumedPlanAccepted: options?.onResumedPlanAccepted,
+                    projectRevision,
+                    context,
+                    result,
                     actionLabels: confirmationDescription.actionLabels,
-                    scope: {
-                        targetIds: [...commandBatch.authority.scope.targetIds],
-                        targetRanges: commandBatch.authority.scope.targetRanges.map((range) => ({ ...range })),
-                        protectedTargetIds: [...commandBatch.authority.scope.protectedTargetIds],
-                        protectedRanges: commandBatch.authority.scope.protectedRanges.map((range) => ({ ...range })),
-                    },
-                    grants: {
-                        allowedOperationPrefixes: [...commandBatch.authority.grants.allowedOperationPrefixes],
-                        create: commandBatch.authority.grants.create,
-                        delete: commandBatch.authority.grants.delete,
-                        routing: commandBatch.authority.grants.routing,
-                        tempo: commandBatch.authority.grants.tempo,
-                        master: commandBatch.authority.grants.master,
-                        file: commandBatch.authority.grants.file,
-                        audioUpload: commandBatch.authority.grants.audioUpload,
-                        remoteGeneration: commandBatch.authority.grants.remoteGeneration,
-                        autoCommit: commandBatch.authority.grants.autoCommit,
-                    },
-                    budgets: admittedRun.budgets,
-                    requiresConfirmation: compiledActionExecution.requiresConfirmation,
-                    applicationToolReceipts: result.applicationToolReceipts,
-                    providerProposal: result.providerProposal,
-                    providerKnownScope: getProviderKnownScope(
-                        commandBatch.authority.scope,
-                        result.providerKnownTargetIds
-                    ),
-                    requireProviderProposal: result.executionMode === 'atomic',
-                    applicationAssignedTargetIds: getApplicationAssignedTargetIds(parsedCommandBatch.envelope),
-                    readyAssetIds,
+                    protectedTargetIds: confirmationDescription.protectedUnchanged.map((item) => item.id),
                 });
-                if (plannedRun.status === 'needs-user-decision') {
-                    options?.onResumedPlanAccepted?.();
-                    await createStemImportConfirmationResourceLease(result.actions)?.releaseBestEffort();
-                    agentRunLifecycle.requireManualResume({
-                        runId,
-                        reason: plannedRun.decision.reason,
-                        workIds: [],
-                    });
-                    agentRunLifecycle.recordDecision({
-                        runId,
-                        decision: {
-                            decisionId: crypto.randomUUID(),
-                            capabilitySchemaIdentity: getPlanningProviderSchemaContract().identity,
-                            proposalIdentity: getAgentPlanProposalIdentity({
-                                actions: result.actions,
-                                providerProposal: result.providerProposal ?? null,
-                                scope: commandBatch.authority.scope,
-                                grants: commandBatch.authority.grants,
-                            }),
-                            budgets: admittedRun.budgets,
-                            revision: projectRevision,
-                            scope: {
-                                targetIds: [...commandBatch.authority.scope.targetIds],
-                                targetRanges: commandBatch.authority.scope.targetRanges.map((range) => ({ ...range })),
-                                protectedTargetIds: [...commandBatch.authority.scope.protectedTargetIds],
-                                protectedRanges: commandBatch.authority.scope.protectedRanges.map((range) => ({
-                                    ...range,
-                                })),
-                            },
-                            grants: {
-                                allowedOperationPrefixes: [...commandBatch.authority.grants.allowedOperationPrefixes],
-                                create: commandBatch.authority.grants.create,
-                                delete: commandBatch.authority.grants.delete,
-                                routing: commandBatch.authority.grants.routing,
-                                tempo: commandBatch.authority.grants.tempo,
-                                master: commandBatch.authority.grants.master,
-                                file: commandBatch.authority.grants.file,
-                                audioUpload: commandBatch.authority.grants.audioUpload,
-                                remoteGeneration: commandBatch.authority.grants.remoteGeneration,
-                                autoCommit: commandBatch.authority.grants.autoCommit,
-                            },
-                            alternatives: plannedRun.decision.alternatives,
-                            reason: plannedRun.decision.reason,
-                            selectedAlternativeId: null,
-                            resumeAttemptId: null,
-                        },
-                    });
-                    updateChatMessage(assistantMsgId, {
-                        isStreaming: false,
-                        content: `Choose one before I can prepare this run:\n\n${plannedRun.decision.alternatives.map((alternative) => `- ${alternative.label}`).join('\n')}`,
-                    });
+                if (materializedPlan.status === 'terminal') {
                     return undefined;
                 }
-                if (plannedRun.status === 'rejected') {
-                    throw new Error(plannedRun.reason);
-                }
-                options?.onResumedPlanAccepted?.();
-                agentRunLifecycle.recordPlan({
-                    runId,
-                    summary: confirmationDescription.actionLabels.join('\n'),
-                    commandIds,
-                    serializedBatchIdentity: parsedCommandBatch.envelope.idempotencyKey,
-                    applicationToolReceipts: result.applicationToolReceipts ?? [],
-                    revision: projectRevision,
-                    scope: {
-                        targetIds: [...commandBatch.authority.scope.targetIds],
-                        targetRanges: commandBatch.authority.scope.targetRanges.map((range) => ({ ...range })),
-                        protectedTargetIds: [...commandBatch.authority.scope.protectedTargetIds],
-                        protectedRanges: commandBatch.authority.scope.protectedRanges.map((range) => ({ ...range })),
-                    },
-                    grants: {
-                        allowedOperationPrefixes: [...commandBatch.authority.grants.allowedOperationPrefixes],
-                        create: commandBatch.authority.grants.create,
-                        delete: commandBatch.authority.grants.delete,
-                        routing: commandBatch.authority.grants.routing,
-                        tempo: commandBatch.authority.grants.tempo,
-                        master: commandBatch.authority.grants.master,
-                        file: commandBatch.authority.grants.file,
-                        audioUpload: commandBatch.authority.grants.audioUpload,
-                        remoteGeneration: commandBatch.authority.grants.remoteGeneration,
-                        autoCommit: commandBatch.authority.grants.autoCommit,
-                    },
-                    budgets: admittedRun.budgets,
-                    plan: {
-                        ...plannedRun.plan,
-                        commandIds,
-                        serializedBatchIdentity: parsedCommandBatch.envelope.idempotencyKey,
-                    },
-                });
-                agentRunLifecycle.recordBatch({
-                    runId,
-                    batch: {
-                        batchId: parsedCommandBatch.envelope.batchId,
-                        commandIds,
-                        status: compiledActionExecution.requiresConfirmation ? 'waiting-for-approval' : 'planned',
-                        receiptIdentity: null,
-                    },
-                });
+                const { commandGroup, compiledActionExecution, parsedCommandBatch } = materializedPlan;
+                const { commandEnvelopes, commandBatch } = compiledActionExecution;
                 if (interactionMode === 'preview') {
                     const previewWorkId = `preview:${parsedCommandBatch.envelope.batchId}`;
                     const previewReceiptIdentity = `preview:${runId}:${parsedCommandBatch.envelope.batchId}`;
