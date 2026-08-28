@@ -1,0 +1,21 @@
+src/modules/AiRuntime/useCases/__tests__/sendChatMessage.spec.ts
+  s_a40848e8f8cca9::t_5226971fa573d3 301,2053,2057-2059,2062,2074
+  s_a40848e8f8cca9::t_edad1857d0a39d 1983-1989,1991,1995-1996,2052,2054-2056,2063-2069,2072-2073,2075-2089,2123-2126,2166-2183,2185-2187,2189-2195
+  s_a40848e8f8cca9::t_b2a72f9db9a6d4 2196-2197,2246,2250-2252,2258,2273
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "d6be1ecb2e027d9fff16a6d41528fd3c943aa687",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
