@@ -1,0 +1,50 @@
+src/modules/Transport/useCases/scheduling/applyAutomation/restoreAutomationBaseValue.ts
+  s_4f908a5afb6b58::t_52f9ad3a365f33 44-60,62,65-68
+  s_4f908a5afb6b58::t_0e818de207904f 92-96
+  s_4f908a5afb6b58::t_f8d1bd1e80c0a6 22-27
+src/modules/Arrangement/useCases/findExternalPluginAutomationParameter.ts
+  s_4f908a5afb6b58::t_82c0cbb7438bad 1-29
+src/modules/Arrangement/useCases/__tests__/clampExternalPluginAutomationValue.spec.ts
+  s_4f908a5afb6b58::t_721b6f41df6966 1-80
+src/modules/Arrangement/useCases/clampExternalPluginAutomationValue.ts
+  s_4f908a5afb6b58::t_65fd4e8cbf726e 1-41
+src/modules/Arrangement/useCases/index.ts
+  s_4f908a5afb6b58::t_19d3178f55878c 26
+src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/applyAutomationExternalPlugin.spec.ts
+  s_4f908a5afb6b58::t_b2c772689931e3 228
+  s_4f908a5afb6b58::t_37dcac03e9dbd3 187
+  s_4f908a5afb6b58::t_6a1158aa247442 216,219
+  s_4f908a5afb6b58::t_588891206bc6f2 172
+  s_4f908a5afb6b58::t_b6333ddf02165b 173-186,188-215,217-218,220-227,229-236
+  s_4f908a5afb6b58::t_d9d3dc908ff015 237
+src/modules/Arrangement/useCases/acceptsExternalPluginAutomationParameter.ts
+  s_4f908a5afb6b58::t_606d4dc35d5689 1
+  s_4f908a5afb6b58::t_6074d1d6bfa3c5 10-12,14-15
+src/modules/Arrangement/useCases/__tests__/acceptsExternalPluginAutomationParameter.spec.ts
+  s_4f908a5afb6b58::t_f340a6b99d7e95 37,43,49-54,60
+src/modules/Arrangement/useCases/getAutomationParameterRange.ts
+  s_4f908a5afb6b58::t_4ad713909c08a1 26
+src/modules/TimelineEditor/presentations/helpers/automationViewHelpers.ts
+  s_4f908a5afb6b58::t_62f0ecc711de8d 83
+src/modules/Transport/useCases/scheduling/applyAutomation/applyAutomation.ts
+  s_4f908a5afb6b58::t_94343320443ffe 338-345
+  s_4f908a5afb6b58::t_d24284b82bbb77 5
+  s_4f908a5afb6b58::t_58c8a01f2683f4 69,79-102
+  s_4f908a5afb6b58::t_78bdfff9d634ac 103-104
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "cd3f99a48fa6a5a4c0a2e0eb41141e272e6f3f48",
+  "prompts": {},
+  "sessions": {
+    "s_4f908a5afb6b58": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fcb92ba4-bf56-47a4-8b57-803f335a449e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
