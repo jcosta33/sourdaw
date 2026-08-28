@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
     captureRevision: vi.fn(),
     chatState: { value: { isGenerating: false } },
     completeContinuation: vi.fn(),
+    finalizeCommandReceipt: vi.fn(),
     getConfirmation: vi.fn(),
     getRun: vi.fn(),
     logError: vi.fn(),
@@ -28,6 +29,11 @@ const mocks = vi.hoisted(() => ({
     updateChat: vi.fn(),
     updateConfirmation: vi.fn(),
     updateFollowUp: vi.fn(),
+}));
+
+vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
+    finalizeRecoveredCommandBatchEffects: mocks.finalizeCommandReceipt,
 }));
 
 vi.mock('#/infra/logger/appLogger', () => ({ logger: { error: mocks.logError } }));
@@ -124,6 +130,7 @@ function createInput(): Parameters<typeof executeCommittedSectionRenderRetry>[0]
         result: { status: 'committed', actions: [] },
     });
     return {
+        commandBatch,
         durableReceipt,
         confirmation: {
             id: 'confirmation-retry',
@@ -143,6 +150,7 @@ function createInput(): Parameters<typeof executeCommittedSectionRenderRetry>[0]
             resolvedAt: 2,
             kind: 'app_actions',
             projectRevision: 'revision-source',
+            commandBatch,
             actions: [action],
             approvalSnapshot: { actions: [action], actionLabels: ['Render Verse'], protectedUnchanged: [] },
             executionMode: 'atomic',
@@ -192,6 +200,9 @@ describe('executeCommittedSectionRenderRetry', () => {
         mocks.chatState.value = { isGenerating: false };
         mocks.captureRevision.mockReturnValue('revision-source');
         mocks.completeContinuation.mockImplementation(() => undefined);
+        mocks.finalizeCommandReceipt.mockImplementation(({ pendingReceipt }) =>
+            Promise.resolve({ status: 'finalized', receipt: pendingReceipt })
+        );
         mocks.getRun.mockReturnValue({ budgetAttempts: [] });
         mocks.reconcileBudget.mockImplementation(() => undefined);
         mocks.requireManualRepair.mockReturnValue(null);
@@ -625,6 +636,15 @@ describe('executeCommittedSectionRenderRetry', () => {
         mocks.project.mockReturnValueOnce(projection(true)).mockReturnValue(finalProjection);
 
         await expect(executeCommittedSectionRenderRetry(input)).resolves.toEqual({ status: 'executed' });
+        expect(mocks.finalizeCommandReceipt).toHaveBeenCalledWith({
+            authority: input.commandBatch.authority,
+            serialized: input.commandBatch.serialized,
+            pendingReceipt: input.durableReceipt,
+            expectedProjectRevision: 'revision-source',
+        });
+        expect(mocks.finalizeCommandReceipt.mock.invocationCallOrder[0]).toBeLessThan(
+            mocks.completeContinuation.mock.invocationCallOrder[0] ?? 0
+        );
         expect(mocks.completeContinuation).toHaveBeenCalledWith({
             runId: 'run-retry',
             batchId: 'batch-retry',
@@ -645,6 +665,24 @@ describe('executeCommittedSectionRenderRetry', () => {
                 pendingActionFollowUpStatus: 'complete',
                 content: expect.stringContaining('success-projected-id'),
             })
+        );
+    });
+
+    it('keeps AgentRun pending when Command receipt finalization fails', async () => {
+        const input = createInput();
+        mocks.project.mockReturnValueOnce(projection(true)).mockReturnValue(projection(false));
+        mocks.finalizeCommandReceipt.mockResolvedValue({
+            status: 'failed',
+            reason: 'Command checkpoint finalization failed',
+        });
+
+        await expect(executeCommittedSectionRenderRetry(input)).resolves.toEqual({
+            status: 'failed',
+            reason: 'Command checkpoint finalization failed',
+        });
+        expect(mocks.completeContinuation).not.toHaveBeenCalled();
+        expect(mocks.updateFollowUp).toHaveBeenLastCalledWith(
+            expect.objectContaining({ status: 'retryable', error: 'Command checkpoint finalization failed' })
         );
     });
 });

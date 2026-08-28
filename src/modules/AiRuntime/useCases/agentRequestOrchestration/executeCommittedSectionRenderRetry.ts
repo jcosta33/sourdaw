@@ -1,6 +1,6 @@
 import { logger } from '#/infra/logger/appLogger';
 import { retryAgentProjectSectionRenders } from '#/modules/AudioRendering/useCases';
-import { type createVerifiedBatchReceipt } from '#/modules/Command/useCases';
+import { finalizeRecoveredCommandBatchEffects, type createVerifiedBatchReceipt } from '#/modules/Command/useCases';
 import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 
 import { chatStore, setChatGenerating, updateChatMessage } from '../../stores/chatStore';
@@ -40,6 +40,26 @@ function completeDurableContinuation(receipt: CommandVerifiedBatchReceipt): void
     });
 }
 
+async function finalizeCommandReceipt(
+    confirmation: PendingAppActionConfirmation,
+    receipt: CommandVerifiedBatchReceipt,
+    commandBatch: Pick<Parameters<typeof finalizeRecoveredCommandBatchEffects>[0], 'authority' | 'serialized'>
+): Promise<CommandVerifiedBatchReceipt> {
+    const expectedProjectRevision = confirmation.followUpProjectRevision;
+    if (!expectedProjectRevision) {
+        throw new Error('The committed render receipt authority is unavailable');
+    }
+    const result = await finalizeRecoveredCommandBatchEffects({
+        ...commandBatch,
+        pendingReceipt: receipt,
+        expectedProjectRevision,
+    });
+    if (result.status === 'failed') {
+        throw new Error(result.reason);
+    }
+    return result.receipt;
+}
+
 function refreshConfirmationProjection(confirmation: PendingAppActionConfirmation) {
     const current = getPendingActionConfirmation(confirmation.id) ?? confirmation;
     const projection = projectSectionRenderConfirmation({ confirmation: current });
@@ -51,12 +71,13 @@ function refreshConfirmationProjection(confirmation: PendingAppActionConfirmatio
     };
 }
 
-function finishAlreadyComplete(
+async function finishAlreadyComplete(
     confirmation: PendingAppActionConfirmation,
-    durableReceipt: CommandVerifiedBatchReceipt
-): RetryResult {
+    durableReceipt: CommandVerifiedBatchReceipt,
+    commandBatch: Pick<Parameters<typeof finalizeRecoveredCommandBatchEffects>[0], 'authority' | 'serialized'>
+): Promise<RetryResult> {
     try {
-        completeDurableContinuation(durableReceipt);
+        completeDurableContinuation(await finalizeCommandReceipt(confirmation, durableReceipt, commandBatch));
     } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);
         updatePendingActionFollowUp({ confirmationId: confirmation.id, error: reason, status: 'retryable' });
@@ -227,6 +248,7 @@ function finishSuccessfulRetry(
 export async function executeCommittedSectionRenderRetry(input: {
     confirmation: PendingAppActionConfirmation;
     durableReceipt: CommandVerifiedBatchReceipt;
+    commandBatch: Pick<Parameters<typeof finalizeRecoveredCommandBatchEffects>[0], 'authority' | 'serialized'>;
 }): Promise<RetryResult> {
     const { confirmation, durableReceipt } = input;
     if (chatStore.value?.isGenerating === true) {
@@ -238,7 +260,7 @@ export async function executeCommittedSectionRenderRetry(input: {
         if (initialProjection.reviewRequiredSectionRenders.length > 0) {
             return finishManualReview(confirmation, durableReceipt.batchId);
         }
-        return finishAlreadyComplete(confirmation, durableReceipt);
+        return finishAlreadyComplete(confirmation, durableReceipt, input.commandBatch);
     }
     const sourceRevision = confirmation.followUpProjectRevision;
     if (!sourceRevision || captureProjectRevision() !== sourceRevision) {
@@ -274,7 +296,9 @@ export async function executeCommittedSectionRenderRetry(input: {
         }
         if (renderFailureReason === undefined && !manualReviewProjection) {
             try {
-                completeDurableContinuation(durableReceipt);
+                completeDurableContinuation(
+                    await finalizeCommandReceipt(confirmation, durableReceipt, input.commandBatch)
+                );
             } catch (error) {
                 renderFailureReason = error instanceof Error ? error.message : String(error);
             }

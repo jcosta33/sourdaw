@@ -625,6 +625,7 @@ export async function confirmPendingChatActions(
             return executeCommittedSectionRenderRetry({
                 confirmation,
                 durableReceipt: retryAdmission.durableReceipt,
+                commandBatch: approvedCommandBatch,
             });
         }
         if (retryAdmission.status === 'proof-mismatch') {

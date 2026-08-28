@@ -211,6 +211,52 @@ describe('agentRunLifecycle', () => {
         ]);
     });
 
+    it('rejects mixed pending effects without changing durable recovery state', () => {
+        createRenderReviewRun();
+        const recovery = agentRunLifecycle.getPendingEffectRecovery({
+            runId: 'run-render-review',
+            batchId: 'batch-render-review',
+        });
+        if (!recovery) {
+            throw new Error('Expected render review recovery');
+        }
+        agentRunLifecycle.recordPendingEffectContinuation({
+            runId: 'run-render-review',
+            continuation: {
+                ...recovery,
+                effects: [
+                    {
+                        commandId: 'command-runtime-review',
+                        kind: 'runtime-graph',
+                        operation: 'setTrackGain',
+                        reason: 'runtime graph unavailable',
+                        remediation: 'repair',
+                        state: 'pending',
+                    },
+                    {
+                        commandId: 'command-render-review',
+                        kind: 'external-effect',
+                        operation: 'renderProjectSections',
+                        reason: 'tail truncated',
+                        remediation: 'reconcile',
+                        state: 'pending',
+                    },
+                ],
+            },
+        });
+        const before = readAgentRunState();
+
+        expect(() =>
+            agentRunLifecycle.requirePendingEffectManualRepair({
+                runId: 'run-render-review',
+                batchId: 'batch-render-review',
+                reason: 'Manual review required.',
+                requiredAt: 4,
+            })
+        ).toThrow('Pending effect continuation cannot be converted to manual repair');
+        expect(readAgentRunState()).toEqual(before);
+    });
+
     it.each([
         ['missing', undefined],
         ['prepared', 'prepared' as const],

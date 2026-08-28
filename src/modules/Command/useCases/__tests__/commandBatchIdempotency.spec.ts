@@ -24,6 +24,7 @@ import { createExecutionCommandEnvelope } from '../createExecutionCommandEnvelop
 import { createRecoveredVerifiedBatchReceipt } from '../createRecoveredVerifiedBatchReceipt';
 import { createVerifiedBatchReceipt } from '../createVerifiedBatchReceipt';
 import { createVersionedCommandReceipt } from '../createVersionedCommandReceipt';
+import { finalizeRecoveredCommandBatchEffects } from '../finalizeRecoveredCommandBatchEffects';
 import { getCommandBatchContentHash } from '../getCommandBatchContentHash';
 import { getProjectCommandBatchIdempotencyCheckpoint } from '../getProjectCommandBatchIdempotencyCheckpoint';
 import { getVersionedCommandBatchCommitDisposition } from '../getVersionedCommandBatchCommitDisposition';
@@ -1599,6 +1600,58 @@ describe('command batch idempotency', () => {
             pendingEffects: [expect.objectContaining({ commandId: '11111111-1111-4111-8111-111111111111' })],
         });
         expect(effectAttempts).toBe(2);
+    });
+
+    it('finalizes a proven external effect without replaying its command handler', async () => {
+        clearHandlerRegistry();
+        const gainStorage = createAutomergeStorage<{ value: number }>('root', 'trackGain');
+        expect(gainStorage.hydrate?.()).toBe(true);
+        let effectAttempts = 0;
+        registerHandlerMap({
+            setTrackGain: createHandler({
+                execute: () => {
+                    gainStorage.set({ value: 0.8 });
+                    return {
+                        status: 'written',
+                        afterCommit: () => {
+                            effectAttempts += 1;
+                            return Promise.reject(new Error('render unavailable'));
+                        },
+                    };
+                },
+            }),
+        });
+        const batch = compileBatch({ batchId: 'batch-proven-effect', runId: 'run-proven-effect' });
+        const first = await executeVersionedCommandBatchEnvelope({
+            authority: batch.authority,
+            confirmed: true,
+            serialized: batch.serialized,
+        });
+        if (first.status !== 'committed-with-warning') {
+            throw new Error('Expected a durable pending-effect receipt');
+        }
+        commandBatchIdempotencyPort.setRepository({
+            lookup: () => Promise.resolve({ status: 'missing' }),
+            claim: () => Promise.resolve({ status: 'claimed' }),
+            complete: () => Promise.resolve(),
+            tryAcquireRecoveryLease: () => Promise.resolve(true),
+            release: () => Promise.resolve(),
+        });
+
+        const finalized = await finalizeRecoveredCommandBatchEffects({
+            authority: batch.authority,
+            serialized: batch.serialized,
+            pendingReceipt: first.receipt,
+            expectedProjectRevision: commandProjectRevisionPort.capture(),
+        });
+        const replay = await getVersionedCommandBatchIdempotentReplay({
+            authority: batch.authority,
+            serialized: batch.serialized,
+        });
+
+        expect(finalized).toMatchObject({ status: 'finalized', receipt: { pendingEffects: [], outcome: 'committed' } });
+        expect(replay).toMatchObject({ pendingEffects: [], outcome: 'committed' });
+        expect(effectAttempts).toBe(1);
     });
 
     it('routes needs-reconcile runtime truth through a current-project rebuild instead of exact effect retry', async () => {
