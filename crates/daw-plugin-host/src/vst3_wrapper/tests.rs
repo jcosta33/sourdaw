@@ -1619,6 +1619,36 @@ fn recording_window(
     (resize, sizes)
 }
 
+/// What the engine's output buffer already holds when a block starts — the
+/// previous block, which a host that neither writes nor silences leaves
+/// sounding.
+const STALE_SAMPLE: f32 = -0.5;
+
+/// Render one block into an output bus that already holds the previous block,
+/// and answer both channels of what it carries afterwards.
+///
+/// Separate from [`render`], which zeroes its buffers and is shared by too many
+/// tests to change: a test asserting silence against a buffer it zeroed itself
+/// cannot tell a host that wrote silence from one that wrote nothing, and VST3
+/// zeroes only its own scratch — never the caller's outputs — so "wrote nothing"
+/// is the previous block playing again.
+fn render_over_stale_output(
+    wrapper: &mut Vst3Wrapper,
+    level: f32,
+    frames: usize,
+) -> (Vec<f32>, Vec<f32>) {
+    let left = vec![level; frames];
+    let right = vec![level; frames];
+    let mut out_left = vec![STALE_SAMPLE; frames];
+    let mut out_right = vec![STALE_SAMPLE; frames];
+    {
+        let inputs: [&[f32]; 2] = [&left, &right];
+        let mut out_slices: Vec<&mut [f32]> = vec![&mut out_left, &mut out_right];
+        wrapper.process(&inputs, &mut out_slices, frames);
+    }
+    (out_left, out_right)
+}
+
 /// Hand the plugin one block of a constant signal and read what came back.
 fn render(wrapper: &mut Vst3Wrapper, level: f32, frames: usize) -> Vec<f32> {
     let left = vec![level; frames];
@@ -2058,7 +2088,7 @@ fn a_refused_instrument_falls_silent_rather_than_passing_what_was_routed_into_it
     state.refuses_process.store(true, Ordering::Release);
     take_pending_process_refusal_signal();
 
-    let rendered = render(&mut wrapper, 0.5, 64);
+    let (left, right) = render_over_stale_output(&mut wrapper, 0.5, 64);
 
     assert_eq!(
         state.process_calls.load(Ordering::Acquire),
@@ -2066,8 +2096,10 @@ fn a_refused_instrument_falls_silent_rather_than_passing_what_was_routed_into_it
         "the block reached the processor, so its answer is what was read"
     );
     assert_eq!(
-        rendered[0], 0.0,
-        "a failed instrument has no dry signal to pass, so its slot is silent"
+        (left[0], right[0]),
+        (0.0, 0.0),
+        "a failed instrument has no dry signal to pass, so its slot is silent \
+         — neither the routed signal nor the previous block may reach the bus"
     );
     assert!(wrapper.process_refused);
     assert!(take_pending_process_refusal_signal());
@@ -2098,11 +2130,13 @@ fn a_refused_effect_declaring_no_input_bus_falls_silent_rather_than_passing_dry(
     state.refuses_process.store(true, Ordering::Release);
     take_pending_process_refusal_signal();
 
-    let rendered = render(&mut wrapper, 0.5, 64);
+    let (left, right) = render_over_stale_output(&mut wrapper, 0.5, 64);
 
     assert_eq!(
-        rendered[0], 0.0,
-        "a generator has no dry input to pass, so its refused slot is silent"
+        (left[0], right[0]),
+        (0.0, 0.0),
+        "a generator has no dry input to pass, so its refused slot is silent \
+         — neither the routed signal nor the previous block may reach the bus"
     );
     assert!(wrapper.process_refused);
     assert!(take_pending_process_refusal_signal());
