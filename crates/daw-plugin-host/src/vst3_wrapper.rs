@@ -1372,8 +1372,6 @@ impl Vst3Wrapper {
         Ok(self.latency_samples())
     }
 
-    /// Copy the block straight through, for every case where the plugin must not
-    /// be handed it.
     /// Write silence over the engine's bus, for a block whose output the plugin
     /// did not produce.
     fn silence_outputs(outputs: &mut [&mut [f32]], num_samples: usize) {
@@ -1383,6 +1381,8 @@ impl Vst3Wrapper {
         }
     }
 
+    /// Copy the block straight through, for every case where the plugin must not
+    /// be handed it.
     fn pass_through(inputs: &[&[f32]], outputs: &mut [&mut [f32]], num_samples: usize) {
         for (channel, out) in outputs.iter_mut().enumerate() {
             if channel >= inputs.len() {
@@ -1535,16 +1535,18 @@ impl Vst3Wrapper {
         if refused {
             // The output scratch holds nothing the plugin stands behind, so it
             // never reaches the bus. What does is what ADR 0021 DG-003 decides
-            // for a failed slot, in two legs: an effect passes its dry input,
-            // because muting a crashed EQ takes the track with it, and an
-            // instrument falls silent because it has no dry input to pass —
-            // a synth fed routed audio would otherwise emit that signal at
-            // unity out of a voice slot.
+            // for a failed slot: only an effect with a valid dry input passes
+            // it, because muting a crashed EQ takes the track with it.
             //
-            // The plugin's own sub-categories decide which leg, read from the
-            // factory at load. The CLAP backend splits the same way for the
-            // same reason.
-            if self.is_instrument {
+            // Two shapes have no valid dry input to pass. An instrument, which
+            // the factory's sub-categories name — a synth fed routed audio would
+            // otherwise emit that signal at unity out of a voice slot. And any
+            // plugin declaring no main input bus, a generator such as a
+            // test-tone, whose own bus declaration says it consumes no audio and
+            // so has none to hand back.
+            //
+            // The CLAP backend splits on the same two, for the same reasons.
+            if self.is_instrument || self.bus_layout.main_input_channels() == 0 {
                 Self::silence_outputs(outputs, num_samples);
             } else {
                 Self::pass_through(inputs, outputs, num_samples);

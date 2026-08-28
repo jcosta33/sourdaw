@@ -2073,6 +2073,41 @@ fn a_refused_instrument_falls_silent_rather_than_passing_what_was_routed_into_it
     assert!(take_pending_process_refusal_signal());
 }
 
+/// The no-dry-input shape the sub-categories miss: a generator classed as an
+/// effect — a test-tone declaring `Fx|Generator` — has no main input bus, so its
+/// own declaration says it consumes no audio. Passing dry on refusal would emit
+/// the routed node signal at unity out of a slot that takes none, and DG-003
+/// puts an effect without a valid dry input at zero alongside the instruments.
+#[test]
+fn a_refused_effect_declaring_no_input_bus_falls_silent_rather_than_passing_dry() {
+    let _guard = PROCESS_REFUSAL_HINT_TEST_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let state = FakeState::with_buses(Vec::new(), vec![FakeBus::main(SpeakerArr::kStereo)]);
+    let mut wrapper = load(&state, COMBINED_CID);
+
+    // One accepted block first, so the negotiated layout is observed rather than
+    // assumed: the host handed this plugin no input bus because the plugin
+    // declared none.
+    render(&mut wrapper, 0.5, 64);
+    assert!(
+        state.observed_inputs().is_empty(),
+        "the plugin declared no audio input bus, so it was handed none"
+    );
+
+    state.refuses_process.store(true, Ordering::Release);
+    take_pending_process_refusal_signal();
+
+    let rendered = render(&mut wrapper, 0.5, 64);
+
+    assert_eq!(
+        rendered[0], 0.0,
+        "a generator has no dry input to pass, so its refused slot is silent"
+    );
+    assert!(wrapper.process_refused);
+    assert!(take_pending_process_refusal_signal());
+}
+
 // ── State ───────────────────────────────────────────────────────────────
 
 /// Both chunks must survive a save and load. Keeping only the component's would
