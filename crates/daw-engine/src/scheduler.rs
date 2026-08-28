@@ -397,13 +397,25 @@ impl GraphCommand {
     /// `RemovePluginWithBridge` frees nothing for an id the table does not
     /// hold, and the two `*Retired` variants free nothing when the strip they
     /// name does not hold the effect they name. The classification is exact
-    /// under one control-side precondition — a retirement is only ever sent
-    /// for a target the sender has already resolved against the project it
-    /// holds — and a violated precondition drifts in the dangerous direction:
-    /// the ledger drops to N-1 while the table stays at N, so it *grants*
-    /// headroom that does not exist and the next registration is admitted
-    /// control-side and then refused silently on the callback, which is the
-    /// failure this ledger exists to remove.
+    /// under two control-side preconditions, one per direction of drift.
+    ///
+    /// A retirement is only ever sent for a target the sender has already
+    /// resolved against the project it holds. A violated precondition drifts
+    /// in the dangerous direction: the ledger drops to N-1 while the table
+    /// stays at N, so it *grants* headroom that does not exist and the next
+    /// registration is admitted control-side and then refused silently on the
+    /// callback, which is the failure this ledger exists to remove.
+    ///
+    /// A registration, in the other direction, can be refused by the callback
+    /// itself: an id colliding with a slot the table already holds never takes
+    /// one, while the ledger counted it as it crossed the ring — N+1 against
+    /// the table's N. That drift is the safe one, over-refusing rather than
+    /// granting headroom, and practically unreachable while ids are allocated
+    /// monotonically without reuse; it is also reconciled rather than
+    /// permanent. [`crate::EngineHandle::midi_rt_diagnostics_snapshot`]
+    /// returns the refused slots by diffing the callback's cumulative
+    /// collision count, so the over-count exists only between the refusal and
+    /// the next observation.
     ///
     /// Exhaustiveness forces an author to write an arm, not to write the right
     /// one, so it is not what keeps this classification honest. That is
