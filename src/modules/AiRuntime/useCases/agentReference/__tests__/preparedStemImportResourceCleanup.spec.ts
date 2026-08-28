@@ -325,6 +325,36 @@ describe('prepared stem import resource cleanup', () => {
         setItem.mockRestore();
     });
 
+    it('cleans every registered stem after a refused transfer instead of silently detaching ownership', async () => {
+        const runId = 'stem-transfer-discard-after-refusal';
+        const twoStems = [
+            ...stems,
+            {
+                ...stems[0],
+                audioBufferId: 'decoded-buffer-2',
+                assetHash: 'hash-staged-asset-2',
+                assetLeaseId: 'staged-asset-2',
+                clipId: 'clip-staged-asset-2',
+                stemId: 'stem-staged-asset-2',
+            },
+        ];
+        agentRunLifecycle.create({ runId, request: 'Import stems.', mode: 'plan', createdRevision: 'r1' });
+        preparedStemImportResources.register({ runId, stems: twoStems });
+        const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementationOnce(() => {
+            throw new Error('prepared stem transfer persistence failed');
+        });
+
+        expect(() => preparedStemImportResources.release({ runId, stems: twoStems })).toThrow(
+            'Agent run state could not be persisted locally'
+        );
+        await expect(preparedStemImportResources.discard({ runId, stems: twoStems })).resolves.toBeUndefined();
+        await expect(preparedStemImportResources.discard({ runId, stems: twoStems })).resolves.toBeUndefined();
+
+        expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledExactlyOnceWith('decoded-buffer-1');
+        expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledExactlyOnceWith('decoded-buffer-2');
+        setItem.mockRestore();
+    });
+
     it('keeps failed confirmation cleanup executable until the durable lease releases', async () => {
         mocks.completeDurableCleanupRecovery
             .mockResolvedValueOnce({ status: 'failed', reason: 'transaction-aborted' })

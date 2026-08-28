@@ -310,15 +310,24 @@ async function discardPreparedStemImportResourcesWithAuthority(
     for (const stem of input.stems) {
         const registrationKey = key(input.runId, stem.audioBufferId);
         const registration = registrations.get(registrationKey);
-        if (registration?.protected && authority === 'generic-release') {
-            continue;
-        }
         if (registration?.recovery) {
             settledBatchIds.add(registration.recovery.batchId);
         }
         const asset = agentRunLifecycle
             .get(input.runId)
             ?.temporaryAssets.find((candidate) => candidate.assetId === stem.audioBufferId);
+        if (!asset && registration) {
+            // A registration can outlive a refused atomic transfer because the
+            // live store advances before durable persistence. It still owns the
+            // physical stem, so release it before detaching that owner.
+            await preparedStemImportCleanup.discard([stem]);
+            registration.unregister();
+            registrations.delete(registrationKey);
+            continue;
+        }
+        if (registration?.protected && authority === 'generic-release') {
+            continue;
+        }
         if (registration?.protected) {
             await preparedStemImportCleanup.discard([stem]);
             registration.unregister();
@@ -333,8 +342,6 @@ async function discardPreparedStemImportResourcesWithAuthority(
             continue;
         }
         if (!asset) {
-            registration?.unregister();
-            registrations.delete(registrationKey);
             continue;
         }
         if (asset.status !== 'released') {
