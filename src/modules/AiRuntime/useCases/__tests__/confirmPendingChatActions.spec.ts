@@ -2815,6 +2815,7 @@ describe('confirmPendingChatActions transaction admission', () => {
         runtimeMocks.renderOffline.mockImplementation(
             (options: { onWarning?: (warning: string) => void; sampleRate?: number }) => {
                 options.onWarning?.('tail truncated');
+                options.onWarning?.('peak clipped');
                 return Promise.resolve({
                     sampleRate: options.sampleRate ?? renderJob.sampleRate,
                     length: 88_200,
@@ -2884,22 +2885,24 @@ describe('confirmPendingChatActions transaction admission', () => {
             expect.objectContaining({
                 kind: 'external-effect',
                 remediation: 'manual-repair',
-                reason: expect.stringContaining('tail truncated'),
+                reason: expect.stringContaining('tail truncated; peak clipped'),
             }),
         ]);
         expect(getAgentSectionRenderArtifacts()).toContainEqual(
-            expect.objectContaining({ jobId: renderJob.jobId, warnings: ['tail truncated'] })
+            expect.objectContaining({ jobId: renderJob.jobId, warnings: ['tail truncated', 'peak clipped'] })
         );
         expect(getPendingActionConfirmation('confirmation-warned-render')).toMatchObject({
             status: 'executed',
             followUpStatus: 'failed',
-            error: 'Section render artifacts require manual review: render-warned-verse (tail truncated).',
+            error: 'Section render artifacts require manual review: render-warned-verse (tail truncated; peak clipped).',
         });
         expect(chatStore.value?.messages.find((message) => message.id === 'assistant-1')).toMatchObject({
             pendingActionConfirmationStatus: 'executed',
             pendingActionFollowUpStatus: 'failed',
-            error: 'Section render artifacts require manual review: render-warned-verse (tail truncated).',
-            content: expect.stringContaining('The project commands were not replayed'),
+            error: 'Section render artifacts require manual review: render-warned-verse (tail truncated; peak clipped).',
+            content: expect.stringContaining(
+                'The project commands were not replayed. Section render artifacts require manual review: render-warned-verse (tail truncated; peak clipped).'
+            ),
         });
         expect(
             agentRunLifecycle
@@ -2909,7 +2912,8 @@ describe('confirmPendingChatActions transaction admission', () => {
             expect.objectContaining({
                 batchId: 'group-warned-render',
                 recovery: 'manual-repair',
-                lastError: 'Section render artifacts require manual review: render-warned-verse (tail truncated).',
+                lastError:
+                    'Section render artifacts require manual review: render-warned-verse (tail truncated; peak clipped).',
             }),
         ]);
         expect(
@@ -2920,7 +2924,8 @@ describe('confirmPendingChatActions transaction admission', () => {
             expect.objectContaining({
                 checkpoint: 'durable',
                 recovery: 'manual-repair',
-                lastError: 'Section render artifacts require manual review: render-warned-verse (tail truncated).',
+                lastError:
+                    'Section render artifacts require manual review: render-warned-verse (tail truncated; peak clipped).',
             }),
         ]);
         expect(
