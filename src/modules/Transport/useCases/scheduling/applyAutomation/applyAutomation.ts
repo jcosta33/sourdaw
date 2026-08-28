@@ -1,5 +1,6 @@
 import { getTrackEligibility, resolveEligibleDeviceWriteTarget, trackStore } from '#/modules/Arrangement/stores';
 import {
+    acceptsExternalPluginAutomationParameter,
     clampDeviceParameterValue,
     isDeviceParameterAutomatable,
     quantiseDeviceParameterValue,
@@ -51,11 +52,25 @@ const SLEW_EPSILON = 5e-5;
  * create drove the parameter at full range once it arrived from a preset, a
  * project file or a model action. The declared flag is now read here, where the
  * decision is actually made, rather than only where lanes are offered.
+ *
+ * An external plugin device is decided by its instance instead. Key presence
+ * cannot decide it: such a device is created with an empty `parameterValues`
+ * and gains a key only once something writes that parameter by hand, so this
+ * rule would refuse every plugin lane until its parameter had already been
+ * moved — and would then accept ids the plugin never declared, because no
+ * descriptor answers for `external-plugin`.
  */
 function deviceAcceptsAutomationParameter(
-    device: { type: string; parameterValues: Record<string, number> },
+    device: { type: string; parameterValues: Record<string, number>; externalInstanceId?: string },
     parameterId: string
 ): boolean {
+    if (device.externalInstanceId !== undefined) {
+        return acceptsExternalPluginAutomationParameter(
+            { type: device.type, externalInstanceId: device.externalInstanceId },
+            parameterId
+        );
+    }
+
     if (device.parameterValues[parameterId] === undefined) {
         return false;
     }

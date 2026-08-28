@@ -31,6 +31,7 @@ describe('resetExternalPluginRuntimeForGraphRebuild', () => {
         externalPluginActivationStore.set(defaultExternalPluginActivationState);
         mocks.loadPlugin.mockResolvedValue({
             instance_id: 'plugin-instance-1',
+            parameters: [],
             latency_samples: 0,
             latency_ms: 4,
             engine_plugin_id: 1000,
@@ -82,6 +83,7 @@ describe('resetExternalPluginRuntimeForGraphRebuild', () => {
         const bulkUnload = Promise.withResolvers<[string[], string[]]>();
         mocks.loadPlugin.mockReturnValueOnce(firstLoad.promise).mockResolvedValueOnce({
             instance_id: 'late-instance',
+            parameters: [],
             latency_samples: 0,
             latency_ms: 2,
             engine_plugin_id: 1001,
@@ -103,6 +105,7 @@ describe('resetExternalPluginRuntimeForGraphRebuild', () => {
 
         firstLoad.resolve({
             instance_id: 'plugin-instance-1',
+            parameters: [],
             latency_samples: 0,
             latency_ms: 4,
             engine_plugin_id: 1000,

@@ -1,5 +1,8 @@
 import { trackStore } from '#/modules/Arrangement/stores';
-import { getAutomationDeviceDescriptor } from '#/modules/Arrangement/useCases';
+import {
+    acceptsExternalPluginAutomationParameter,
+    getAutomationDeviceDescriptor,
+} from '#/modules/Arrangement/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
 import {
@@ -14,7 +17,7 @@ export const LANE_HEIGHT = 100;
 
 export const getAutomatableParams = (
     trackId: string,
-    devices: { id?: string; type: string; name: string }[],
+    devices: { id?: string; type: string; name: string; externalInstanceId?: string }[],
     lanes?: readonly { trackId?: string; clipId?: string; parameterId: string }[]
 ): { id: string; name: string; min: number; max: number }[] => {
     const params: { id: string; name: string; min: number; max: number }[] = [
@@ -34,7 +37,10 @@ export const getAutomatableParams = (
         if (!deviceId) {
             continue;
         }
-        const plugin = getAutomationDeviceDescriptor(device.type);
+        // Same fallback as the device id: a view model that carries neither
+        // still resolves against the stored device at that position.
+        const externalInstanceId = device.externalInstanceId ?? trackDevices[index]?.externalInstanceId;
+        const plugin = getAutomationDeviceDescriptor(device.type, externalInstanceId);
         if (!plugin) {
             continue;
         }
@@ -62,9 +68,23 @@ export const getAutomatableParams = (
     });
 };
 
-type AutomationTargetDevice = { id?: string; type: string; parameterValues?: Record<string, number> };
+type AutomationTargetDevice = {
+    id?: string;
+    type: string;
+    parameterValues?: Record<string, number>;
+    externalInstanceId?: string;
+};
 
 function acceptsAutomationParameter(device: AutomationTargetDevice, parameterId: string): boolean {
+    if (device.externalInstanceId !== undefined) {
+        // An external plugin instance answers for its own parameters, and its
+        // `parameterValues` are empty until one is written by hand — so the key
+        // check below would match a plugin lane against the wrong device.
+        return acceptsExternalPluginAutomationParameter(
+            { type: device.type, externalInstanceId: device.externalInstanceId },
+            parameterId
+        );
+    }
     if (device.parameterValues?.[parameterId] !== undefined) {
         return true;
     }

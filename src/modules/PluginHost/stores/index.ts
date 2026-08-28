@@ -7,3 +7,9 @@ export type { ExternalPluginActivationState, ExternalPluginActivationStatus } fr
 export { externalPluginActivationStore, defaultExternalPluginActivationState } from './externalPluginActivationStore';
 export type { PluginGuiState, PluginGuiStatus } from './pluginGuiStore';
 export { pluginGuiStore, defaultPluginGuiState } from './pluginGuiStore';
+export type {
+    ExternalPluginParameter,
+    ExternalPluginParameterSnapshot,
+    ExternalPluginParameterState,
+} from './externalPluginParameterStore';
+export { externalPluginParameterStore, defaultExternalPluginParameterState } from './externalPluginParameterStore';

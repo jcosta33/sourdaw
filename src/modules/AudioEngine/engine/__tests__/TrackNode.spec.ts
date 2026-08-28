@@ -797,7 +797,8 @@ describe('TrackNode', () => {
     });
 
     // External-plugin bridge: externalInstanceId fallback (?? deviceId) and the
-    // parseInt name->id translation that floors a non-numeric name to 0.
+    // name->id translation, which addresses a numeric id exactly and refuses
+    // every other spelling rather than flooring it to parameter 0.
     describe('external-plugin bridge param translation', () => {
         it('falls back to deviceId when no externalInstanceId is provided', async () => {
             const track = new TrackNode('t', deps);
@@ -819,9 +820,11 @@ describe('TrackNode', () => {
             expect(track.strip.deviceNodes.some((d) => d.deviceId === 'dev-fallback')).toBe(true);
         });
 
-        it('translates a non-numeric param name to engine id 0', async () => {
+        async function resolveExternalPluginDevice(deviceId: string): Promise<{
+            setParam: (name: string, value: number) => void;
+        }> {
             const track = new TrackNode('t', deps);
-            track.addDevice('dev-name', 'external-plugin', 'inst-name');
+            track.addDevice(deviceId, 'external-plugin', `inst-${deviceId}`);
 
             const bridgeNode = { disconnect: vi.fn(), connect: vi.fn(), port: { close: vi.fn() } };
             resolveBridge!({
@@ -832,10 +835,38 @@ describe('TrackNode', () => {
             });
             await Promise.all([...deps.pendingDevicePromises]);
 
-            // A non-numeric name floors to 0 via `parseInt(name, 10) || 0`.
-            const dn = track.strip.deviceNodes.find((d) => d.deviceId === 'dev-name');
-            dn!.controller!.setParam('not-a-number', 0.9);
-            expect(bridgeSetParam).toHaveBeenCalledWith(0, 0.9);
+            const dn = track.strip.deviceNodes.find((device) => device.deviceId === deviceId);
+            if (!dn?.controller) {
+                throw new Error(`expected a resolved bridge controller for ${deviceId}`);
+            }
+            return dn.controller;
+        }
+
+        it('addresses a numeric param name as exactly that native parameter id', async () => {
+            const controller = await resolveExternalPluginDevice('dev-numeric');
+
+            controller.setParam('7', 0.25);
+            expect(bridgeSetParam).toHaveBeenCalledWith(7, 0.25);
+
+            // Not an index into the parameter list: id 0 is only reached by the
+            // name '0'.
+            controller.setParam('0', 0.5);
+            expect(bridgeSetParam).toHaveBeenCalledWith(0, 0.5);
+            expect(bridgeSetParam).toHaveBeenCalledTimes(2);
+        });
+
+        it('refuses a param name that is not a parameter id instead of writing parameter 0', async () => {
+            const controller = await resolveExternalPluginDevice('dev-name');
+
+            // Every one of these answered `0` under `parseInt(name, 10) || 0`:
+            // the non-numeric ones through the `|| 0`, and the numeric-prefixed
+            // and fractional ones by silently addressing a parameter nobody
+            // named.
+            for (const refused of ['not-a-number', '', ' 3', '3abc', '3.7', '-1', '1e3', '0x2']) {
+                controller.setParam(refused, 0.9);
+            }
+
+            expect(bridgeSetParam).not.toHaveBeenCalled();
         });
     });
 

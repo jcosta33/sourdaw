@@ -22,6 +22,7 @@ export { getTrackById } from './getTrackById';
 export { getSynthParamsForTrack } from './getSynthParamsForTrack';
 export { getTrackStoreState } from './getTrackStoreState';
 export { getAutomationDeviceDescriptor } from './getAutomationDeviceDescriptor';
+export { acceptsExternalPluginAutomationParameter } from './acceptsExternalPluginAutomationParameter';
 export { getAutomationParameterRange } from './getAutomationParameterRange';
 export { getEligibleDeviceParameterValues } from './getEligibleDeviceParameterValues';
 export { hydrateTracksForProject } from './hydrateTracksForProject';
