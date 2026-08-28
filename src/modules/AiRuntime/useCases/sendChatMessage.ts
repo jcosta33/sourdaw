@@ -22,12 +22,12 @@ import {
     setChatGenerating,
     setActiveAborter,
 } from '../stores/chatStore';
-import { proposePendingActionConfirmation } from '../stores/pendingActionConfirmationStore';
 
 import { normalizeAgentFailure } from './agentErrorAndSaga';
 import { createStemImportConfirmationResourceLease } from './agentReference/createStemImportConfirmationResourceLease';
 import { executeImmediatePromptCommand } from './agentRequestOrchestration/executeImmediatePromptCommand';
 import { materializePromptCommandPlan } from './agentRequestOrchestration/materializePromptCommandPlan';
+import { persistPromptActionConfirmation } from './agentRequestOrchestration/persistPromptActionConfirmation';
 import {
     AGENT_RUN_STALE_COMPLETION_WARNING,
     settleAgentRunWorkLeaseSafely,
@@ -37,7 +37,6 @@ import { agentRunLifecycle } from './agentRunLifecycle';
 import { agentRunWorkLease } from './agentRunWorkLease';
 import { ApplicationOwnedToolLoopRequestError } from './applicationOwnedToolLoop';
 import { agentRunCancellation } from './cancelAgentRun';
-import { describeAgentRiskApproval } from './describeAgentRiskApproval';
 import { describePendingActionConfirmation } from './describePendingActionConfirmation';
 import { resolveBackend } from './llmOrchestration/backendResolution/helpers';
 import { planPromptActions } from './planPromptActions';
@@ -490,10 +489,7 @@ export async function sendChatMessage(
                 }
 
                 if (compiledActionExecution.requiresConfirmation) {
-                    const { agentApproval } = compiledActionExecution;
-                    const confirmationId = `prompt-confirmation-${crypto.randomUUID()}`;
-                    const confirmation = proposePendingActionConfirmation({
-                        id: confirmationId,
+                    persistPromptActionConfirmation({
                         runId,
                         prompt: userText,
                         assistantMessageId: assistantMsgId,
@@ -501,67 +497,14 @@ export async function sendChatMessage(
                         actionLabels: confirmationDescription.actionLabels,
                         commandEnvelopes,
                         commandBatch,
-                        agentApproval,
+                        agentApproval: compiledActionExecution.agentApproval,
                         affectedIds: confirmationDescription.affectedIds,
                         protectedUnchanged: confirmationDescription.protectedUnchanged,
-                        risk: {
-                            level: agentApproval.policy.risk,
-                            reason: agentApproval.policy.reasons.join(' ') || null,
-                        },
                         executionMode: result.executionMode,
-                        groupId: commandGroup.groupId,
-                        groupLabel: commandGroup.groupLabel,
+                        group: commandGroup,
                         projectRevision,
-                        resourceLease: createStemImportConfirmationResourceLease(
-                            result.actions,
-                            `stem-promotion:${confirmationId}`,
-                            runId
-                        ),
-                    });
-                    if (!confirmation) {
-                        const reason = 'Prepared action resources exceed the live confirmation limit.';
-                        agentRunLifecycle.updateBatchStatus({
-                            runId,
-                            batchId: parsedCommandBatch.envelope.batchId,
-                            status: 'failed',
-                        });
-                        agentRunLifecycle.recordError({
-                            runId,
-                            error: normalizeAgentFailure({
-                                category: 'budget',
-                                source: 'command-execution',
-                                related: {
-                                    targetIds: [...parsedCommandBatch.envelope.scope.targetIds],
-                                    commandIds: parsedCommandBatch.envelope.commands.map(
-                                        (command) => command.commandId
-                                    ),
-                                    workIds: [parsedCommandBatch.envelope.batchId],
-                                },
-                                retry: 'never',
-                                knownDomain: true,
-                            }),
-                            terminal: true,
-                        });
-                        updateChatMessage(assistantMsgId, {
-                            isStreaming: false,
-                            pendingActionConfirmationStatus: 'failed',
-                            error: reason,
-                            content:
-                                'This proposal was not retained because pending prepared resources reached their safe limit. Resolve or cancel an earlier proposal, then try again.',
-                        });
-                        return undefined;
-                    }
-
-                    updateChatMessage(assistantMsgId, {
-                        isStreaming: false,
-                        pendingActionConfirmationId: confirmationId,
-                        pendingActionConfirmationStatus: 'proposed',
-                        content: `${confirmationDescription.content}\n\n${describeAgentRiskApproval(agentApproval)}`,
-                    });
-                    agentRunLifecycle.transitionPhase({
-                        runId,
-                        phase: 'waiting-for-approval',
-                        revision: projectRevision,
+                        parsedCommandBatch,
+                        content: confirmationDescription.content,
                     });
                     return undefined;
                 }
