@@ -2153,6 +2153,95 @@ describe('sendChatMessage retained-provider selection', () => {
         expect(mocks.executePlannedActions).not.toHaveBeenCalled();
     });
 
+    it('selects a resumed source decision after the replacement plan is admitted', async () => {
+        const action = createAddTrackAction();
+        const providerProposal = createProviderProposal([]);
+        const authority = configurePromptPlanning(action, 'missing', providerProposal);
+        const sourceRunId = 'run-resume-plan-accepted';
+        createPendingResumeDecision({
+            runId: sourceRunId,
+            proposalIdentity: getAgentPlanProposalIdentity({
+                actions: [action],
+                providerProposal,
+                scope: authority.scope,
+                grants: authority.grants,
+            }),
+            authority,
+        });
+
+        const result = await agentRunControls.resumeDecision({
+            runId: sourceRunId,
+            alternativeId: 'add-reference',
+        });
+
+        expect(result).toEqual({
+            status: 'resumed',
+            sourceRunId,
+            runId: expect.any(String),
+            decisionId: 'decision-reference-track',
+            selectedAlternativeId: 'add-reference',
+        });
+        expect(agentRunLifecycle.get(sourceRunId)?.decision).toMatchObject({
+            selectedAlternativeId: 'add-reference',
+            resumeAttemptId: expect.stringMatching(/^decision-resume-/),
+        });
+        expect(result.status === 'resumed' ? agentRunLifecycle.get(result.runId) : null).toMatchObject({
+            phase: 'waiting-for-approval',
+            plan: expect.objectContaining({ revision: 'revision-fixture' }),
+        });
+    });
+
+    it('awaits accepted plan stem cleanup before publishing the final plan result', async () => {
+        const action = createStemImportAction('buffer-plan-cleanup');
+        configurePromptPlanning(action, 'ready', createProviderProposal(['stem-kick']));
+        let finishCleanup: () => void = () => undefined;
+        const cleanupCompletion = new Promise<void>((resolve) => {
+            finishCleanup = resolve;
+        });
+        const ordering: string[] = [];
+        const releasePreparedStems = vi
+            .spyOn(preparedStemImportCleanup, 'discardBestEffort')
+            .mockImplementation(async () => {
+                ordering.push('cleanup-started');
+                await cleanupCompletion;
+                ordering.push('cleanup-finished');
+            });
+        mocks.updateChatMessage.mockImplementation((_messageId, update) => {
+            if (update.content.startsWith('Planned without changing')) {
+                ordering.push('plan-published');
+            }
+        });
+
+        try {
+            let resolved = false;
+            const pendingPlan = sendChatMessage('Import the prepared stems', { mode: 'plan' }).then(() => {
+                resolved = true;
+            });
+            await vi.waitFor(() => expect(releasePreparedStems).toHaveBeenCalledOnce());
+
+            expect(resolved).toBe(false);
+            expect(ordering).toEqual(['cleanup-started']);
+            expect(mocks.updateChatMessage).not.toHaveBeenCalledWith(
+                expect.any(String),
+                expect.objectContaining({ content: expect.stringContaining('Planned without changing') })
+            );
+
+            finishCleanup();
+            await pendingPlan;
+
+            expect(ordering).toEqual(['cleanup-started', 'cleanup-finished', 'plan-published']);
+            expect(mocks.updateChatMessage).toHaveBeenCalledWith(
+                expect.any(String),
+                expect.objectContaining({
+                    isStreaming: false,
+                    content: 'Planned without changing the project:\n\n- Fixture action',
+                })
+            );
+        } finally {
+            releasePreparedStems.mockRestore();
+        }
+    });
+
     it('stops an invalid compiled batch before preview, confirmation, or execution', async () => {
         configurePromptPlanning(createAddTrackAction(), 'missing');
         mocks.parseVersionedCommandBatchEnvelope.mockReturnValue({
@@ -2166,6 +2255,13 @@ describe('sendChatMessage retained-provider selection', () => {
         expect(mocks.executeVersionedCommandBatchEnvelope).not.toHaveBeenCalled();
         expect(mocks.proposePendingActionConfirmation).not.toHaveBeenCalled();
         expect(mocks.executePlannedActions).not.toHaveBeenCalled();
+        expect(mocks.updateChatMessage).toHaveBeenCalledWith(
+            expect.any(String),
+            expect.objectContaining({
+                isStreaming: false,
+                error: 'fixture command batch is invalid',
+            })
+        );
     });
 
     it('admits application-assigned targets-absent ids without provider-known scope', async () => {
