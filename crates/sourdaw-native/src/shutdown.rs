@@ -613,8 +613,10 @@ mod tests {
     /// budget. A clock started when the pass began would let the first slow
     /// thing spend the whole allowance and abandon every instance behind it.
     ///
-    /// The contended retirement lock stands in for that slow thing: it delays
-    /// the pass past its entire budget without the pass sleeping once.
+    /// The contended engine lock stands in for that slow thing: the pass takes
+    /// it after the drain and no earlier step touches it, so the delay lands
+    /// inside the pass and outlasts its entire budget without the pass sleeping
+    /// once.
     #[test]
     fn time_the_pass_spends_not_waiting_does_not_spend_the_waiting_budget() {
         let state = Arc::new(AppState::default());
@@ -624,12 +626,12 @@ mod tests {
 
         let blocking_state = Arc::clone(&state);
         let blocker = thread::spawn(move || {
-            let retirements = blocking_state
-                .retired_engine_plugins
+            let engine = blocking_state
+                .engine
                 .lock()
-                .expect("retirement lock should be available");
+                .expect("engine lock should be available");
             thread::sleep(blocked_for);
-            drop(retirements);
+            drop(engine);
         });
         // Let the blocker take the lock before the cascade reaches for it.
         thread::sleep(Duration::from_millis(20));
