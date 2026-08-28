@@ -159,6 +159,40 @@ function bindTrackedRun(input: ReturnType<typeof createFixture>): void {
     });
 }
 
+function bindFinalizedCrashWindow(input: ReturnType<typeof createFixture>) {
+    const pendingReceiptIdentity = `${String(input.receipt.schemaVersion)}:${RUN_ID}:${BATCH_ID}:partially-committed`;
+    const renderCommandId = input.receipt.commandOutcomes[0]!.commandId;
+    const trackedRun = {
+        revisions: { committed: COMMITTED_REVISION },
+        receipts: [{ workId: BATCH_ID, receiptIdentity: pendingReceiptIdentity }],
+        committedWork: [{ workId: BATCH_ID, receiptIdentity: pendingReceiptIdentity }],
+        batches: [{ batchId: BATCH_ID, status: 'committed', receiptIdentity: pendingReceiptIdentity }],
+        pendingEffectContinuations: [
+            {
+                batchId: BATCH_ID,
+                receiptIdentity: pendingReceiptIdentity,
+                recovery: 'reconcile-batch',
+                serializedBatch: input.commandBatch.serialized,
+                authority: input.commandBatch.authority,
+                effects: structuredClone(input.receipt.pendingEffects),
+            },
+        ],
+        saga: {
+            steps: [
+                {
+                    stepId: `effect:${BATCH_ID}:${renderCommandId}`,
+                    owner: 'external-effect',
+                    workId: BATCH_ID,
+                    state: 'external-pending',
+                    receiptIdentity: pendingReceiptIdentity,
+                },
+            ],
+        },
+    };
+    mocks.getRun.mockReturnValue(trackedRun);
+    return trackedRun;
+}
+
 describe('admitCommittedSectionRenderRetry', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -419,6 +453,65 @@ describe('admitCommittedSectionRenderRetry', () => {
         finalizedReceipt.atomicity = 'atomic';
         const trackedRun = mocks.getRun();
         trackedRun.saga.steps[0]!.stepId = `effect:${BATCH_ID}:unrelated-command`;
+        expect(
+            admitCommittedSectionRenderRetry({
+                confirmation: fixture.confirmation,
+                durableReceipt: finalizedReceipt,
+                expectedCommandBatch: fixture.commandBatch,
+                phase: 'proof',
+            })
+        ).toEqual({ status: 'proof-mismatch' });
+    });
+
+    it('admits a finalized receipt only against the exact pre-finalization crash window', () => {
+        const fixture = createFixture();
+        const finalizedReceipt = structuredClone(fixture.receipt);
+        finalizedReceipt.outcome = 'committed';
+        finalizedReceipt.atomicity = 'atomic';
+        finalizedReceipt.pendingEffects = [];
+        bindFinalizedCrashWindow(fixture);
+
+        expect(
+            admitCommittedSectionRenderRetry({
+                confirmation: fixture.confirmation,
+                durableReceipt: finalizedReceipt,
+                expectedCommandBatch: fixture.commandBatch,
+                phase: 'proof',
+            })
+        ).toEqual({ durableReceipt: finalizedReceipt, status: 'admitted' });
+    });
+
+    it.each([
+        [
+            'wrong external step id',
+            (run: ReturnType<typeof bindFinalizedCrashWindow>) => (run.saga.steps[0]!.stepId = 'effect:wrong'),
+        ],
+        [
+            'wrong external step state',
+            (run: ReturnType<typeof bindFinalizedCrashWindow>) => (run.saga.steps[0]!.state = 'committed'),
+        ],
+        [
+            'duplicate external step',
+            (run: ReturnType<typeof bindFinalizedCrashWindow>) =>
+                run.saga.steps.push({ ...run.saga.steps[0]!, stepId: 'effect:duplicate' }),
+        ],
+        [
+            'wrong committed work identity',
+            (run: ReturnType<typeof bindFinalizedCrashWindow>) =>
+                (run.committedWork[0]!.receiptIdentity = 'wrong-receipt'),
+        ],
+        [
+            'wrong batch identity',
+            (run: ReturnType<typeof bindFinalizedCrashWindow>) => (run.batches[0]!.receiptIdentity = 'wrong-receipt'),
+        ],
+    ])('rejects a finalized crash window with %s', (_label, mutate) => {
+        const fixture = createFixture();
+        const finalizedReceipt = structuredClone(fixture.receipt);
+        finalizedReceipt.outcome = 'committed';
+        finalizedReceipt.atomicity = 'atomic';
+        finalizedReceipt.pendingEffects = [];
+        mutate(bindFinalizedCrashWindow(fixture));
+
         expect(
             admitCommittedSectionRenderRetry({
                 confirmation: fixture.confirmation,

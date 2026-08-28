@@ -24,20 +24,24 @@ describe('retryAgentProjectSectionRenders', () => {
     it('preserves retained approved jobs while retrying only the missing job set', async () => {
         const retainedJob = createJob('render-retained');
         const missingJob = createJob('render-missing');
+        const validateArtifactAttachment = vi.fn(() => null);
+        const onRenderAttempt = vi.fn();
         mocks.renderSections.mockResolvedValue(undefined);
 
         await retryAgentProjectSectionRenders({
             approvedJobs: [retainedJob, missingJob],
             jobs: [missingJob],
             sourceRevision: 'revision-render',
+            validateArtifactAttachment,
+            onRenderAttempt,
         });
 
         expect(mocks.renderSections).toHaveBeenCalledExactlyOnceWith({
             jobs: [missingJob],
             retentionProtectedJobIds: [retainedJob.jobId, missingJob.jobId],
             sourceRevision: 'revision-render',
-            validateArtifactAttachment: undefined,
-            onRenderAttempt: undefined,
+            validateArtifactAttachment,
+            onRenderAttempt,
         });
     });
 });

@@ -326,12 +326,26 @@ function hasExactFinalizedContinuationBinding(
     ) {
         return false;
     }
-    const matchingReceipts = trackedRun.receipts.filter(({ workId }) => workId === confirmation.groupId);
     const pendingReceiptIdentity = `${finalizedReceipt.schemaVersion}:${finalizedReceipt.runId}:${finalizedReceipt.batchId}:partially-committed`;
+    const matchingReceipts = trackedRun.receipts.filter(({ workId }) => workId === confirmation.groupId);
+    const matchingCommittedWork = trackedRun.committedWork.filter(({ workId }) => workId === confirmation.groupId);
+    const matchingBatches = trackedRun.batches.filter(({ batchId }) => batchId === confirmation.groupId);
+    const matchingSagaSteps = trackedRun.saga.steps.filter(
+        (step) => step.owner === 'external-effect' && step.workId === confirmation.groupId
+    );
     const pendingEffect = continuation.effects[0];
     return (
         matchingReceipts.length === 1 &&
         matchingReceipts[0]?.receiptIdentity === pendingReceiptIdentity &&
+        matchingCommittedWork.length === 1 &&
+        matchingCommittedWork[0]?.receiptIdentity === pendingReceiptIdentity &&
+        matchingBatches.length === 1 &&
+        matchingBatches[0]?.status === 'committed' &&
+        matchingBatches[0].receiptIdentity === pendingReceiptIdentity &&
+        matchingSagaSteps.length === 1 &&
+        matchingSagaSteps[0]?.stepId === `effect:${confirmation.groupId}:${binding.approvedCommand.commandId}` &&
+        matchingSagaSteps[0]?.state === 'external-pending' &&
+        matchingSagaSteps[0].receiptIdentity === pendingReceiptIdentity &&
         continuation.receiptIdentity === pendingReceiptIdentity &&
         continuation.effects.length === 1 &&
         pendingEffect?.commandId === binding.approvedCommand.commandId &&
