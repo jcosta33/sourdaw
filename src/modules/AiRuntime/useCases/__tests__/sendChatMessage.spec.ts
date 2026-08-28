@@ -14,7 +14,9 @@ import {
 } from '../../repositories/cloudLlm/cloudInference/streamCloudChatCompletion';
 import { agentRunStore } from '../../stores/agentRunStore';
 import { llmStatusStore } from '../../stores/llmStatusStore';
+import { getAgentPlanProposalIdentity } from '../../transformers/normalizeAgentPlanProposal';
 import { bridgeGroundedLlmToolCalls } from '../agentReference/bridgeGroundedLlmToolCalls';
+import { preparedStemImportCleanup } from '../agentReference/discardPreparedStemImportResources';
 import { materializeBatchLocalActionIdentities } from '../agentReference/materializeBatchLocalActionIdentities';
 import { AGENT_RUN_PROVIDER_PERSISTENCE_WARNING } from '../agentRequestOrchestration/settleAgentRunWorkLeaseSafely';
 import { agentRunLifecycle } from '../agentRunLifecycle';
@@ -22,7 +24,9 @@ import { recoverInterruptedAgentRuns } from '../agentRunRecovery';
 import { agentRunWorkLease } from '../agentRunWorkLease';
 import { agentRunCancellation } from '../cancelAgentRun';
 import { compileArbitraryCommandList } from '../compileArbitraryCommandList';
+import { agentRunControls } from '../getAgentRunControlProjection';
 import { materializeActionStateGuards } from '../materializeActionStateGuards';
+import { getPlanningProviderSchemaContract } from '../planningProviderSchema';
 import { type planPromptActions } from '../planPromptActions';
 import { sendChatMessage } from '../sendChatMessage';
 
@@ -294,7 +298,7 @@ function createCommandGraphForwardingFixture() {
 
 const commandGraphFixture = createCommandGraphForwardingFixture();
 
-function createStemImportAction(audioBufferId: string): ExecutableRuntimeAction {
+function createStemImportAction(audioBufferId: string): Extract<ExecutableRuntimeAction, { type: 'importStemSet' }> {
     return {
         type: 'importStemSet',
         payload: {
@@ -351,7 +355,7 @@ function createProviderProposal(assetIds: string[]): AgentRunProviderProposal {
     };
 }
 
-function configureCommandPlanning(action: ExecutableRuntimeAction): void {
+function configureCommandPlanning(action: ExecutableRuntimeAction) {
     const scope = {
         targetIds: [],
         targetRanges: [],
@@ -386,14 +390,15 @@ function configureCommandPlanning(action: ExecutableRuntimeAction): void {
             scope,
         },
     });
+    return { grants, scope };
 }
 
 function configurePromptPlanning(
     action: ExecutableRuntimeAction,
     readiness: PreparedStemReadiness,
     providerProposal?: AgentRunProviderProposal
-): void {
-    configureCommandPlanning(action);
+) {
+    const authority = configureCommandPlanning(action);
     mocks.planPromptActions.mockImplementation(async (input: PlanPromptActionsInput) => {
         const runId = input.streamIdentity?.runId;
         if (runId === undefined) {
@@ -428,6 +433,7 @@ function configurePromptPlanning(
             projectRevision: 'revision-fixture',
         };
     });
+    return authority;
 }
 
 function configureCommandGraphForwarding(branch: 'immediate' | 'confirmation' | 'plan') {
@@ -499,6 +505,45 @@ function configureCommandGraphForwarding(branch: 'immediate' | 'confirmation' | 
         };
     });
     return commandBatch;
+}
+
+function createPendingResumeDecision(input: {
+    runId: string;
+    proposalIdentity: string;
+    authority: ReturnType<typeof configureCommandPlanning>;
+    mode?: 'apply' | 'plan';
+}): void {
+    const budgets = { limits: {}, consumed: {} };
+    agentRunLifecycle.create({
+        runId: input.runId,
+        request: 'Add a reference track',
+        mode: input.mode ?? 'apply',
+        createdRevision: 'revision-fixture',
+        scope: input.authority.scope,
+        grants: input.authority.grants,
+        budgets,
+    });
+    agentRunLifecycle.recordDecision({
+        runId: input.runId,
+        decision: {
+            decisionId: 'decision-reference-track',
+            capabilitySchemaIdentity: getPlanningProviderSchemaContract().identity,
+            proposalIdentity: input.proposalIdentity,
+            budgets,
+            revision: 'revision-fixture',
+            scope: input.authority.scope,
+            grants: input.authority.grants,
+            alternatives: [{ id: 'add-reference', label: 'Add the reference track', changesAuthority: false }],
+            reason: 'Choose whether to add the reference track.',
+            selectedAlternativeId: null,
+            resumeAttemptId: null,
+        },
+    });
+    agentRunLifecycle.requireManualResume({
+        runId: input.runId,
+        reason: 'Choose whether to add the reference track.',
+        workIds: [],
+    });
 }
 
 function getPlannedRun() {
@@ -1935,22 +1980,20 @@ describe('sendChatMessage retained-provider selection', () => {
         expect(mocks.proposePendingActionConfirmation).not.toHaveBeenCalled();
     });
 
-    it('fails closed when the prepared-stem resources are absent', async () => {
-        configurePromptPlanning(createStemImportAction('buffer-missing'), 'missing');
+    it.each([
+        ['missing', 'apply'],
+        ['missing', 'plan'],
+        ['cleanup-pending', 'apply'],
+        ['cleanup-pending', 'plan'],
+    ] as const)('fails closed when prepared-stem resources are %s in %s mode', async (readiness, mode) => {
+        configurePromptPlanning(createStemImportAction(`buffer-${readiness}-${mode}`), readiness);
 
-        await sendChatMessage('Import the prepared stems', { mode: 'apply' });
-
-        expect(getPlannedRun()).toMatchObject({ phase: 'failed', plan: null });
-        expect(mocks.proposePendingActionConfirmation).not.toHaveBeenCalled();
-    });
-
-    it('fails closed when prepared-stem resources are pending cleanup', async () => {
-        configurePromptPlanning(createStemImportAction('buffer-releasing'), 'cleanup-pending');
-
-        await sendChatMessage('Import the prepared stems', { mode: 'apply' });
+        await sendChatMessage('Import the prepared stems', { mode });
 
         expect(getPlannedRun()).toMatchObject({ phase: 'failed', plan: null });
         expect(mocks.proposePendingActionConfirmation).not.toHaveBeenCalled();
+        expect(mocks.executeVersionedCommandBatchEnvelope).not.toHaveBeenCalled();
+        expect(mocks.executePlannedActions).not.toHaveBeenCalled();
     });
 
     it('keeps unrelated planning independent of prepared-stem readiness', async () => {
@@ -1964,6 +2007,365 @@ describe('sendChatMessage retained-provider selection', () => {
         expect(getPlannedRun().plan?.capabilities).not.toContainEqual(expect.objectContaining({ source: 'asset' }));
         expect(mocks.proposePendingActionConfirmation).toHaveBeenCalledOnce();
     });
+
+    it('hands a prepared confirmation to its consumer before the next microtask', async () => {
+        configureCommandGraphForwarding('confirmation');
+        const ordering: string[] = [];
+        const recordBatch = agentRunLifecycle.recordBatch;
+        const recordBatchSpy = vi.spyOn(agentRunLifecycle, 'recordBatch').mockImplementation((input) => {
+            const result = recordBatch(input);
+            queueMicrotask(() => ordering.push('microtask-after-batch'));
+            return result;
+        });
+        mocks.proposePendingActionConfirmation.mockImplementation((input) => {
+            ordering.push('confirmation-proposed');
+            expect(getPlannedRun().batches).toContainEqual(
+                expect.objectContaining({ batchId: 'batch-graph', status: 'waiting-for-approval' })
+            );
+            return { id: input.id };
+        });
+
+        try {
+            await sendChatMessage(commandGraphFixture.prompt, { mode: 'apply' });
+
+            expect(ordering.slice(0, 2)).toEqual(['confirmation-proposed', 'microtask-after-batch']);
+        } finally {
+            recordBatchSpy.mockRestore();
+        }
+    });
+
+    it.each(['plan', 'apply'] as const)(
+        'persists an exact paused decision and releases prepared stems in %s mode',
+        async (mode) => {
+            const action = createStemImportAction(`buffer-decision-${mode}`);
+            const providerProposal = {
+                ...createProviderProposal(['stem-kick']),
+                alternatives: [
+                    {
+                        id: 'import-as-takes',
+                        label: 'Import each stem as a take',
+                        changesAuthority: true,
+                    },
+                ],
+            };
+            const authority = configurePromptPlanning(action, 'ready', providerProposal);
+            let finishCleanup: () => void = () => undefined;
+            let markCleanupStarted: () => void = () => undefined;
+            const cleanupCompletion = new Promise<void>((resolve) => {
+                finishCleanup = resolve;
+            });
+            const cleanupStarted = new Promise<void>((resolve) => {
+                markCleanupStarted = resolve;
+            });
+            const releasePreparedStems = vi
+                .spyOn(preparedStemImportCleanup, 'discardBestEffort')
+                .mockImplementation(() => {
+                    markCleanupStarted();
+                    return cleanupCompletion;
+                });
+            const expectedMessage =
+                mode === 'plan'
+                    ? 'Choose one before I continue:\n\n- Import each stem as a take'
+                    : 'Choose one before I can prepare this run:\n\n- Import each stem as a take';
+
+            try {
+                let resolved = false;
+                const pendingDecision = sendChatMessage('Import the prepared stems', { mode }).then(() => {
+                    resolved = true;
+                });
+                await cleanupStarted;
+
+                expect(resolved).toBe(false);
+                expect(getPlannedRun()).toMatchObject({
+                    decision: null,
+                    manualResume: { required: false },
+                });
+                expect(mocks.updateChatMessage).not.toHaveBeenCalledWith(
+                    expect.any(String),
+                    expect.objectContaining({ content: expectedMessage })
+                );
+
+                finishCleanup();
+                await pendingDecision;
+
+                const run = getPlannedRun();
+                expect(run).toMatchObject({
+                    phase: 'paused',
+                    manualResume: {
+                        required: true,
+                        reason: 'The alternatives would change the authority or outcome of this run.',
+                        workIds: [],
+                        requiredAt: expect.any(Number),
+                    },
+                    decision: {
+                        decisionId: expect.any(String),
+                        capabilitySchemaIdentity: getPlanningProviderSchemaContract().identity,
+                        proposalIdentity: getAgentPlanProposalIdentity({
+                            actions: [action],
+                            providerProposal,
+                            scope: authority.scope,
+                            grants: authority.grants,
+                        }),
+                        revision: 'revision-fixture',
+                        scope: authority.scope,
+                        grants: authority.grants,
+                        alternatives: providerProposal.alternatives,
+                        reason: 'The alternatives would change the authority or outcome of this run.',
+                        selectedAlternativeId: null,
+                        resumeAttemptId: null,
+                    },
+                    batches: [],
+                });
+                expect(mocks.executeVersionedCommandBatchEnvelope).not.toHaveBeenCalled();
+                expect(mocks.executePlannedActions).not.toHaveBeenCalled();
+                expect(mocks.proposePendingActionConfirmation).not.toHaveBeenCalled();
+                expect(releasePreparedStems).toHaveBeenCalledWith(action.payload.stems, undefined);
+                expect(mocks.updateChatMessage).toHaveBeenCalledWith(
+                    expect.any(String),
+                    expect.objectContaining({ isStreaming: false, content: expectedMessage })
+                );
+            } finally {
+                releasePreparedStems.mockRestore();
+            }
+        }
+    );
+
+    it.each(['apply', 'plan'] as const)(
+        'rejects a mismatched resumed proposal before selecting its source decision and releases the claim in %s mode',
+        async (mode) => {
+            const action = createAddTrackAction();
+            const providerProposal = createProviderProposal([]);
+            const authority = configurePromptPlanning(action, 'missing', providerProposal);
+            const sourceRunId = `run-resume-source-${mode}`;
+            createPendingResumeDecision({
+                runId: sourceRunId,
+                proposalIdentity: 'mismatched-provider-proposal',
+                authority,
+                mode,
+            });
+
+            await expect(
+                agentRunControls.resumeDecision({ runId: sourceRunId, alternativeId: 'add-reference' })
+            ).resolves.toEqual(expect.objectContaining({ status: 'rejected' }));
+
+            expect(agentRunLifecycle.get(sourceRunId)?.decision).toMatchObject({
+                selectedAlternativeId: null,
+                resumeAttemptId: null,
+            });
+            expect(agentRunControls.get(sourceRunId)?.allowedActions.resume).toBe(true);
+            expect(mocks.proposePendingActionConfirmation).not.toHaveBeenCalled();
+            expect(mocks.executePlannedActions).not.toHaveBeenCalled();
+
+            await expect(
+                agentRunControls.resumeDecision({ runId: sourceRunId, alternativeId: 'add-reference' })
+            ).resolves.toEqual(expect.objectContaining({ status: 'rejected' }));
+            expect(mocks.planPromptActions).toHaveBeenCalledTimes(2);
+        }
+    );
+
+    it.each(['apply', 'plan'] as const)(
+        'selects a resumed source decision only after replacement plan admission succeeds in %s mode',
+        async (mode) => {
+            const action = createAddTrackAction();
+            const providerProposal = createProviderProposal(['unavailable-provider-asset']);
+            const authority = configurePromptPlanning(action, 'missing', providerProposal);
+            const sourceRunId = `run-resume-plan-rejection-${mode}`;
+            createPendingResumeDecision({
+                runId: sourceRunId,
+                proposalIdentity: getAgentPlanProposalIdentity({
+                    actions: [action],
+                    providerProposal,
+                    scope: authority.scope,
+                    grants: authority.grants,
+                }),
+                authority,
+                mode,
+            });
+
+            await expect(
+                agentRunControls.resumeDecision({ runId: sourceRunId, alternativeId: 'add-reference' })
+            ).resolves.toEqual(expect.objectContaining({ status: 'rejected' }));
+
+            expect(agentRunLifecycle.get(sourceRunId)?.decision).toMatchObject({
+                selectedAlternativeId: null,
+                resumeAttemptId: null,
+            });
+            expect(agentRunControls.get(sourceRunId)?.allowedActions.resume).toBe(true);
+            expect(mocks.proposePendingActionConfirmation).not.toHaveBeenCalled();
+            expect(mocks.executePlannedActions).not.toHaveBeenCalled();
+        }
+    );
+
+    it.each(['apply', 'plan'] as const)(
+        'selects a resumed source decision after the replacement plan is admitted in %s mode',
+        async (mode) => {
+            const action = createAddTrackAction();
+            const providerProposal = createProviderProposal([]);
+            const authority = configurePromptPlanning(action, 'missing', providerProposal);
+            const sourceRunId = `run-resume-plan-accepted-${mode}`;
+            createPendingResumeDecision({
+                runId: sourceRunId,
+                proposalIdentity: getAgentPlanProposalIdentity({
+                    actions: [action],
+                    providerProposal,
+                    scope: authority.scope,
+                    grants: authority.grants,
+                }),
+                authority,
+                mode,
+            });
+
+            const result = await agentRunControls.resumeDecision({
+                runId: sourceRunId,
+                alternativeId: 'add-reference',
+            });
+
+            expect(result).toEqual({
+                status: 'resumed',
+                sourceRunId,
+                runId: expect.any(String),
+                decisionId: 'decision-reference-track',
+                selectedAlternativeId: 'add-reference',
+            });
+            expect(agentRunLifecycle.get(sourceRunId)?.decision).toMatchObject({
+                selectedAlternativeId: 'add-reference',
+                resumeAttemptId: null,
+            });
+            expect(agentRunLifecycle.get(sourceRunId)?.manualResume.required).toBe(false);
+            expect(result.status === 'resumed' ? agentRunLifecycle.get(result.runId) : null).toMatchObject({
+                phase: mode === 'apply' ? 'waiting-for-approval' : 'completed',
+                plan: expect.objectContaining({ revision: 'revision-fixture' }),
+            });
+        }
+    );
+
+    it('awaits accepted plan stem cleanup before publishing the final plan result', async () => {
+        const action = createStemImportAction('buffer-plan-cleanup');
+        configurePromptPlanning(action, 'ready', createProviderProposal(['stem-kick']));
+        let finishCleanup: () => void = () => undefined;
+        let markCleanupStarted: () => void = () => undefined;
+        const cleanupCompletion = new Promise<void>((resolve) => {
+            finishCleanup = resolve;
+        });
+        const cleanupStarted = new Promise<void>((resolve) => {
+            markCleanupStarted = resolve;
+        });
+        const ordering: string[] = [];
+        const releasePreparedStems = vi
+            .spyOn(preparedStemImportCleanup, 'discardBestEffort')
+            .mockImplementation(async () => {
+                ordering.push('cleanup-started');
+                markCleanupStarted();
+                await cleanupCompletion;
+                ordering.push('cleanup-finished');
+            });
+        mocks.updateChatMessage.mockImplementation((_messageId, update) => {
+            if (update.content.startsWith('Planned without changing')) {
+                ordering.push('plan-published');
+            }
+        });
+
+        try {
+            let resolved = false;
+            const pendingPlan = sendChatMessage('Import the prepared stems', { mode: 'plan' }).then(() => {
+                resolved = true;
+            });
+            await cleanupStarted;
+
+            expect(resolved).toBe(false);
+            expect(ordering).toEqual(['cleanup-started']);
+            expect(mocks.updateChatMessage).not.toHaveBeenCalledWith(
+                expect.any(String),
+                expect.objectContaining({ content: expect.stringContaining('Planned without changing') })
+            );
+
+            finishCleanup();
+            await pendingPlan;
+
+            expect(ordering).toEqual(['cleanup-started', 'cleanup-finished', 'plan-published']);
+            expect(mocks.updateChatMessage).toHaveBeenCalledWith(
+                expect.any(String),
+                expect.objectContaining({
+                    isStreaming: false,
+                    content: 'Planned without changing the project:\n\n- Fixture action',
+                })
+            );
+        } finally {
+            releasePreparedStems.mockRestore();
+        }
+    });
+
+    it.each(['apply', 'plan'] as const)(
+        'stops an invalid compiled batch before preview, confirmation, or execution in %s mode',
+        async (mode) => {
+            configurePromptPlanning(createAddTrackAction(), 'missing');
+            mocks.parseVersionedCommandBatchEnvelope.mockReturnValue({
+                status: 'invalid',
+                reason: 'fixture command batch is invalid',
+            });
+
+            await sendChatMessage('Add a reference track', { mode });
+
+            expect(getPlannedRun()).toMatchObject({ phase: 'failed', plan: null, batches: [] });
+            expect(mocks.executeVersionedCommandBatchEnvelope).not.toHaveBeenCalled();
+            expect(mocks.proposePendingActionConfirmation).not.toHaveBeenCalled();
+            expect(mocks.executePlannedActions).not.toHaveBeenCalled();
+            expect(mocks.updateChatMessage).toHaveBeenCalledWith(
+                expect.any(String),
+                expect.objectContaining({
+                    isStreaming: false,
+                    error: 'fixture command batch is invalid',
+                })
+            );
+        }
+    );
+
+    it.each(['apply', 'plan'] as const)(
+        'admits application-assigned targets-absent ids without provider-known scope in %s mode',
+        async (mode) => {
+            const action = createAddTrackAction();
+            const providerProposal = createProviderProposal([]);
+            const { grants } = configurePromptPlanning(action, 'missing', providerProposal);
+            const scope = {
+                targetIds: ['track-application-assigned'],
+                targetRanges: [],
+                protectedTargetIds: [],
+                protectedRanges: [],
+            };
+            mocks.compileAgentActionExecution.mockReturnValue({
+                commandEnvelopes: [],
+                commandBatch: { serialized: '{}', authority: { scope, grants } },
+                agentApproval: { policy: { risk: 'confirm', reasons: [] } },
+                requiresConfirmation: true,
+            });
+            mocks.parseVersionedCommandBatchEnvelope.mockReturnValue({
+                status: 'valid',
+                envelope: {
+                    batchId: 'batch-application-assigned',
+                    commands: [],
+                    idempotencyKey: 'batch-application-assigned-idempotency',
+                    preconditions: [{ kind: 'targets-absent', targetIds: ['track-application-assigned'] }],
+                    scope,
+                },
+            });
+
+            await sendChatMessage('Add a reference track', { mode });
+
+            expect(getPlannedRun()).toMatchObject({
+                phase: mode === 'apply' ? 'waiting-for-approval' : 'completed',
+                plan: { scope },
+                batches:
+                    mode === 'apply' ? [{ batchId: 'batch-application-assigned', status: 'waiting-for-approval' }] : [],
+            });
+            if (mode === 'apply') {
+                expect(mocks.proposePendingActionConfirmation).toHaveBeenCalledOnce();
+            } else {
+                expect(mocks.proposePendingActionConfirmation).not.toHaveBeenCalled();
+            }
+            expect(mocks.executeVersionedCommandBatchEnvelope).not.toHaveBeenCalled();
+            expect(mocks.executePlannedActions).not.toHaveBeenCalled();
+        }
+    );
 
     it('forwards a compiler-produced graph and provider-known scope through immediate application', async () => {
         const commandBatch = configureCommandGraphForwarding('immediate');
