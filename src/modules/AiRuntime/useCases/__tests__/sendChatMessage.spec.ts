@@ -23,6 +23,7 @@ import {
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { recoverInterruptedAgentRuns } from '../agentRunRecovery';
 import { agentRunWorkLease } from '../agentRunWorkLease';
+import { agentRunCancellation } from '../cancelAgentRun';
 import { compileArbitraryCommandList } from '../compileArbitraryCommandList';
 import { materializeActionStateGuards } from '../materializeActionStateGuards';
 import { type planPromptActions } from '../planPromptActions';
@@ -1834,6 +1835,86 @@ describe('sendChatMessage retained-provider selection', () => {
                 settleWorkLease.mockRestore();
                 transitionPhase.mockRestore();
                 claimWorkLease.mockRestore();
+            }
+        }
+    );
+
+    const immediateFailureResults = [
+        {
+            status: 'invalidated' as const,
+            reason: 'The project revision changed before the command committed.',
+            phase: 'cancelled' as const,
+            terminalState: 'failed' as const,
+            persistedTerminalState: 'cancelled' as const,
+            errors: [],
+            content: 'The project changed before this command could commit. Review it and submit the command again.',
+        },
+        {
+            status: 'ambiguous' as const,
+            reason: 'The command may have partially committed before interruption',
+            phase: 'failed' as const,
+            terminalState: 'failed' as const,
+            persistedTerminalState: 'failed' as const,
+            errors: [expect.objectContaining({ category: 'conflict', retriable: false })],
+            content:
+                'The command stopped after an uncertain partial commit: The command may have partially committed before interruption. Do not retry it; inspect the project first.',
+        },
+    ] as const;
+
+    it.each(immediateFailureResults)(
+        'keeps an immediate $status command terminal with its exact terminal command lease',
+        async ({ status, reason, phase, terminalState, persistedTerminalState, errors, content }) => {
+            configureCommandGraphForwarding('immediate');
+            mocks.executePlannedActions.mockResolvedValue({ status, reason, actions: [] });
+            const settleWorkLease = vi.spyOn(agentRunWorkLease, 'settle');
+            const cancelRun = vi.spyOn(agentRunCancellation, 'cancel');
+
+            try {
+                await expect(sendChatMessage(commandGraphFixture.prompt, { mode: 'apply' })).resolves.toBeUndefined();
+
+                const run = getPlannedRun();
+                const commandReceiptIdentity = `command:${run.runId}:batch-graph`;
+                expect(settleWorkLease).toHaveBeenCalledWith({
+                    runId: run.runId,
+                    workId: 'batch-graph',
+                    leaseId: `${run.runId}:batch-graph:0`,
+                    cancellationGeneration: 0,
+                    idempotencyKey: 'batch-graph-idempotency',
+                    receiptIdentity: commandReceiptIdentity,
+                    terminalState,
+                });
+                expect(mocks.executePlannedActions).toHaveBeenCalledOnce();
+                expect(mocks.proposePendingActionConfirmation).not.toHaveBeenCalled();
+                if (status === 'invalidated') {
+                    expect(cancelRun).toHaveBeenCalledWith({ runId: run.runId, reason });
+                    const commandSettlementIndex = settleWorkLease.mock.calls.findIndex(
+                        ([input]) => input.workId === 'batch-graph'
+                    );
+                    expect(commandSettlementIndex).toBeGreaterThanOrEqual(0);
+                    expect(cancelRun.mock.invocationCallOrder[0]).toBeLessThan(
+                        settleWorkLease.mock.invocationCallOrder[commandSettlementIndex]
+                    );
+                } else {
+                    expect(cancelRun).not.toHaveBeenCalled();
+                }
+                expect(mocks.updateChatMessage).toHaveBeenLastCalledWith(
+                    expect.any(String),
+                    expect.objectContaining({ isStreaming: false, error: reason, content })
+                );
+                expect(run).toMatchObject({ phase, retriableWork: [] });
+                expect(run.errors).toEqual(errors.length === 0 ? [] : expect.arrayContaining(errors));
+                expect(run.workLeases).toEqual(
+                    expect.arrayContaining([
+                        expect.objectContaining({
+                            runId: run.runId,
+                            workId: 'batch-graph',
+                            terminalState: persistedTerminalState,
+                        }),
+                    ])
+                );
+            } finally {
+                cancelRun.mockRestore();
+                settleWorkLease.mockRestore();
             }
         }
     );

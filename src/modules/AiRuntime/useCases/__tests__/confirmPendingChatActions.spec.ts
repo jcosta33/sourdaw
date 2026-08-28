@@ -295,6 +295,31 @@ function createStaleLateBatchResult(input: {
     };
 }
 
+function createWarningBatchResult(input: {
+    status: 'committed-with-warning' | 'executed-with-warning';
+    commandBatch: ReturnType<typeof compileVersionedCommandBatchEnvelope>;
+}): ConfirmedActionBatchResult {
+    const parsed = parseVersionedCommandBatchEnvelope(input.commandBatch.serialized, input.commandBatch.authority);
+    if (parsed.status !== 'valid') {
+        throw new Error('Expected the warning-result command batch fixture to remain valid.');
+    }
+    const result = {
+        status: input.status,
+        actions: [],
+        warning: 'The command completed with a follow-up warning.',
+    } as const;
+    return {
+        ...result,
+        receipt: createVerifiedBatchReceipt({
+            contentHash: `warning-result-${input.status}`,
+            envelope: parsed.envelope,
+            observedBaseRevision: 'revision-fixture',
+            resultingRevision: 'revision-fixture',
+            result,
+        }),
+    };
+}
+
 function createIdempotentReplayBatchResult(
     commandBatch: ReturnType<typeof compileVersionedCommandBatchEnvelope>
 ): ConfirmedActionBatchResult {
@@ -748,6 +773,62 @@ describe('confirmPendingChatActions transaction admission', () => {
         expect(execute).toHaveBeenCalledTimes(1);
         expect(chatStore.value?.messages[0]?.content).toContain('prior verified receipt');
     });
+
+    it.each(['committed-with-warning', 'executed-with-warning'] as const)(
+        'settles a $status confirmation with its exact completed command lease',
+        async (status) => {
+            const runId = `confirmation-${status}-settlement`;
+            const confirmationId = `confirmation-${status}-settlement`;
+            const batchId = `group-${status}-settlement`;
+            const commandBatch = configureLateSettlementConfirmation({ runId, confirmationId, batchId });
+            const parsedCommandBatch = parseVersionedCommandBatchEnvelope(
+                commandBatch.serialized,
+                commandBatch.authority
+            );
+            if (parsedCommandBatch.status !== 'valid') {
+                throw new Error('Expected the warning-result command batch fixture to remain valid.');
+            }
+            const commandUseCases = await import('#/modules/Command/useCases');
+            const crdtUseCases = await import('#/modules/CrdtDocument/useCases');
+            const captureMutationAuthorization = vi
+                .spyOn(crdtUseCases, 'captureProjectMutationAuthorization')
+                .mockReturnValue(() => true);
+            const execute = vi
+                .spyOn(commandUseCases, 'executeVersionedCommandBatchEnvelope')
+                .mockResolvedValue(createWarningBatchResult({ status, commandBatch }));
+            const settle = vi.spyOn(agentRunWorkLease, 'settle');
+
+            try {
+                await expect(confirmPendingChatActions({ confirmationId })).resolves.toEqual({ status: 'executed' });
+
+                expect(settle).toHaveBeenCalledWith({
+                    runId,
+                    workId: batchId,
+                    leaseId: `${runId}:${batchId}:0`,
+                    cancellationGeneration: 0,
+                    idempotencyKey: parsedCommandBatch.envelope.idempotencyKey,
+                    receiptIdentity: `command:${runId}:${batchId}`,
+                    terminalState: 'completed',
+                });
+                expect(execute).toHaveBeenCalledOnce();
+            } finally {
+                settle.mockRestore();
+                execute.mockRestore();
+                captureMutationAuthorization.mockRestore();
+            }
+
+            expect(agentRunLifecycle.get(runId)).toMatchObject({
+                phase: 'completed',
+                workLeases: [
+                    expect.objectContaining({
+                        runId,
+                        workId: batchId,
+                        terminalState: 'completed',
+                    }),
+                ],
+            });
+        }
+    );
 
     it('retains a verified receipt without reopening a cancelled run after stale lease settlement', async () => {
         configureAiWorkflowCommandPreflightFixture('project-1');
