@@ -1747,17 +1747,39 @@ describe('sendChatMessage retained-provider selection', () => {
 
     it('forwards a compiler-produced graph and provider-known scope through immediate application', async () => {
         const commandBatch = configureCommandGraphForwarding('immediate');
+        const settleWorkLease = vi.spyOn(agentRunWorkLease, 'settle');
 
-        await sendChatMessage(commandGraphFixture.prompt, { mode: 'apply' });
+        try {
+            await sendChatMessage(commandGraphFixture.prompt, { mode: 'apply' });
 
-        expect(mocks.compileAgentActionExecution).toHaveBeenCalledWith(
-            expect.objectContaining({ actionCommandGraph: commandGraphFixture.actionCommandGraph })
-        );
-        expect(mocks.executePlannedActions).toHaveBeenCalledWith(expect.objectContaining({ commandBatch }));
-        expect(getPlannedRun()).toMatchObject({
-            scope: { targetIds: commandGraphFixture.fullTargetIds },
-            plan: { scope: { targetIds: commandGraphFixture.fullTargetIds } },
-        });
+            expect(mocks.compileAgentActionExecution).toHaveBeenCalledWith(
+                expect.objectContaining({ actionCommandGraph: commandGraphFixture.actionCommandGraph })
+            );
+            expect(mocks.executePlannedActions).toHaveBeenCalledWith(expect.objectContaining({ commandBatch }));
+            const run = getPlannedRun();
+            expect(settleWorkLease).toHaveBeenCalledWith({
+                runId: run.runId,
+                workId: 'provider-planning',
+                leaseId: `${run.runId}:provider-planning:0`,
+                cancellationGeneration: 0,
+                idempotencyKey: `provider:webllm:${run.runId}`,
+                receiptIdentity: `provider:webllm:${run.runId}`,
+                terminalState: 'completed',
+            });
+            expect(run).toMatchObject({
+                scope: { targetIds: commandGraphFixture.fullTargetIds },
+                plan: { scope: { targetIds: commandGraphFixture.fullTargetIds } },
+                workLeases: expect.arrayContaining([
+                    expect.objectContaining({
+                        runId: run.runId,
+                        workId: 'provider-planning',
+                        terminalState: 'completed',
+                    }),
+                ]),
+            });
+        } finally {
+            settleWorkLease.mockRestore();
+        }
     });
 
     const staleImmediateCommandResults = [
