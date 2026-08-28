@@ -32,7 +32,6 @@ vi.mock('#/modules/MIDI/useCases', () => ({
     initWebMidi: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock('#/modules/Knead/useCases', () => ({ syncKneadToEngine: vi.fn() }));
-vi.mock('#/modules/PluginHost/useCases', () => ({ registerProModulationEffects: vi.fn() }));
 vi.mock('#/modules/Project/stores', () => ({
     projectStore: {
         get value(): Record<string, unknown> | null {

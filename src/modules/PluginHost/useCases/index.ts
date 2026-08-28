@@ -40,15 +40,3 @@ export { getAgentDeviceFactoryManifest } from './getAgentDeviceFactoryManifest';
 export { startPluginScan } from './pluginScan/scanning/startPluginScan';
 export { addScanPath } from './pluginScan/scanning/addScanPath';
 export { removeScanPath } from './pluginScan/scanning/removeScanPath';
-
-export { registerProModulationEffects } from './proModulationEffects';
-
-export { registerBuiltinPlugins } from './wamPluginHost/builtinDescriptors';
-
-export { initWAMEnvironment } from './wamPluginHost/hostOperations/initWAMEnvironment';
-export { registerWAMPlugin } from './wamPluginHost/hostOperations/registerWAMPlugin';
-export { getRegisteredPlugins } from './wamPluginHost/hostOperations/getRegisteredPlugins';
-export { getPluginsByCategory } from './wamPluginHost/hostOperations/getPluginsByCategory';
-export { loadWAMPlugin } from './wamPluginHost/hostOperations/loadWAMPlugin';
-export { unloadWAMPlugin } from './wamPluginHost/hostOperations/unloadWAMPlugin';
-export { getActiveInstances } from './wamPluginHost/hostOperations/getActiveInstances';
