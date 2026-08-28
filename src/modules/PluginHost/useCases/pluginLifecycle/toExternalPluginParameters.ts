@@ -13,7 +13,10 @@ export function toExternalPluginParameters(parameters: readonly PluginParameter[
         defaultValue: parameter.default_value,
         minValue: parameter.min_value,
         maxValue: parameter.max_value,
-        unit: parameter.unit,
+        // The wire reports an absent unit as `null`; the read contract spells
+        // "no unit" as the empty string, which is what a unitless builtin
+        // parameter already carries and what a label renders as nothing.
+        unit: parameter.unit ?? '',
         isAutomatable: parameter.is_automatable,
     }));
 }

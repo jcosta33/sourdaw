@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { type PluginInstance } from '../../../repositories/pluginBridge/types';
 import {
     defaultExternalPluginActivationState,
     externalPluginActivationStore,
@@ -74,12 +75,16 @@ describe('resetExternalPluginRuntimeForGraphRebuild', () => {
     });
 
     it('fences activation admitted during rebuild until bulk unload has completed', async () => {
-        const firstLoad = Promise.withResolvers<{
-            instance_id: string;
-            latency_samples: number;
-            latency_ms: number;
-            engine_plugin_id: number;
-        }>();
+        // Derived from the production load result rather than restated, so a
+        // field the host starts returning — `parameters` was the last one —
+        // cannot leave this fixture describing a shape nothing produces.
+        const firstLoad =
+            Promise.withResolvers<
+                Pick<
+                    PluginInstance,
+                    'instance_id' | 'parameters' | 'latency_samples' | 'latency_ms' | 'engine_plugin_id'
+                >
+            >();
         const bulkUnload = Promise.withResolvers<[string[], string[]]>();
         mocks.loadPlugin.mockReturnValueOnce(firstLoad.promise).mockResolvedValueOnce({
             instance_id: 'late-instance',
