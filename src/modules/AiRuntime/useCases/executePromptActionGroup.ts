@@ -55,6 +55,10 @@ function appendSettlementWarning(message: string, warning: string | null): strin
     return `${message}${message.endsWith('.') ? ' ' : '. '}${warning}`;
 }
 
+function isCleanSettlement(settlement: ReturnType<typeof settleAgentRunWorkLeaseSafely>): boolean {
+    return settlement.accepted && settlement.warning === null;
+}
+
 function transitionRunIfLive(
     runId: string,
     phase: Extract<AgentRunPhase, 'completed' | 'failed' | 'partially-completed'>
@@ -254,7 +258,7 @@ export async function executePromptActionGroup(
     if (importedStemsHavePartialDurableBindings) {
         const reason = 'Prepared stem durable asset binding is incomplete.';
         const leaseSettlement = settleCommand('failed', 'none');
-        if (leaseSettlement.accepted) {
+        if (isCleanSettlement(leaseSettlement)) {
             agentRunLifecycle.updateBatchStatus({ runId: input.runId, batchId: envelope.batchId, status: 'failed' });
             transitionRunIfLive(input.runId, 'failed');
         }
@@ -329,7 +333,7 @@ export async function executePromptActionGroup(
     } catch (error) {
         const reason = getErrorMessage(error);
         const leaseSettlement = settleCommand('failed', 'none');
-        if (leaseSettlement.accepted) {
+        if (isCleanSettlement(leaseSettlement)) {
             agentRunLifecycle.updateBatchStatus({ runId: input.runId, batchId: envelope.batchId, status: 'failed' });
             transitionRunIfLive(input.runId, 'failed');
         }
@@ -344,7 +348,7 @@ export async function executePromptActionGroup(
         if (!execution.receipt) {
             const reason = 'Command execution completed without an exact verified receipt.';
             const leaseSettlement = settleCommand('failed', 'none');
-            if (leaseSettlement.accepted) {
+            if (isCleanSettlement(leaseSettlement)) {
                 agentRunLifecycle.updateBatchStatus({
                     runId: input.runId,
                     batchId: envelope.batchId,
@@ -365,7 +369,7 @@ export async function executePromptActionGroup(
         if (execution.receipt.runId !== input.runId || execution.receipt.batchId !== envelope.batchId) {
             const reason = 'Command execution returned a receipt for a different admitted batch.';
             const leaseSettlement = settleCommand('failed', 'none');
-            if (leaseSettlement.accepted) {
+            if (isCleanSettlement(leaseSettlement)) {
                 agentRunLifecycle.updateBatchStatus({
                     runId: input.runId,
                     batchId: envelope.batchId,
@@ -425,7 +429,7 @@ export async function executePromptActionGroup(
 
     if (execution.status === 'invalidated' || execution.status === 'failed') {
         const leaseSettlement = settleCommand('failed', 'none');
-        if (leaseSettlement.accepted) {
+        if (isCleanSettlement(leaseSettlement)) {
             agentRunLifecycle.updateBatchStatus({ runId: input.runId, batchId: envelope.batchId, status: 'failed' });
             transitionRunIfLive(input.runId, 'failed');
         }
@@ -439,7 +443,7 @@ export async function executePromptActionGroup(
 
     if (execution.status === 'ambiguous') {
         const leaseSettlement = settleCommand('failed', 'none');
-        if (leaseSettlement.accepted) {
+        if (isCleanSettlement(leaseSettlement)) {
             agentRunLifecycle.updateBatchStatus({ runId: input.runId, batchId: envelope.batchId, status: 'failed' });
             transitionRunIfLive(input.runId, 'partially-completed');
         }
@@ -455,11 +459,11 @@ export async function executePromptActionGroup(
     }
 
     const leaseSettlement = settleCommand('completed', 'none');
-    if (leaseSettlement.accepted) {
+    if (isCleanSettlement(leaseSettlement)) {
         agentRunLifecycle.updateBatchStatus({ runId: input.runId, batchId: envelope.batchId, status: 'no-op' });
         agentRunLifecycle.transitionPhase({
             runId: input.runId,
-            phase: leaseSettlement.warning ? 'partially-completed' : 'completed',
+            phase: 'completed',
         });
     }
     await releaseImportedStems();

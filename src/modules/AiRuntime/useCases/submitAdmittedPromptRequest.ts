@@ -80,7 +80,7 @@ export async function submitAdmittedPromptRequest(
     input.signal?.addEventListener('abort', onAbort, { once: true });
     let providerLease: Extract<ReturnType<typeof agentRunWorkLease.claim>, { status: 'claimed' }>['lease'] | null =
         null;
-    let providerSettled = false;
+    let providerSettlement: ReturnType<typeof settleAgentRunWorkLeaseSafely> | null = null;
     let pendingProviderResult: ModelProviderResult | null = null;
     const recordPendingProviderResult = (terminal: boolean): void => {
         if (!pendingProviderResult) {
@@ -90,10 +90,13 @@ export async function submitAdmittedPromptRequest(
         pendingProviderResult = null;
     };
     const settleProvider = (terminalState: 'completed' | 'failed' | 'cancelled') => {
-        if (!providerLease || providerSettled) {
+        if (!providerLease) {
             return null;
         }
-        const settlement = settleAgentRunWorkLeaseSafely({
+        if (providerSettlement) {
+            return providerSettlement;
+        }
+        providerSettlement = settleAgentRunWorkLeaseSafely({
             lease: providerLease,
             terminalState,
             evidence: 'none',
@@ -102,8 +105,7 @@ export async function submitAdmittedPromptRequest(
                 logger.error(new Error('Prompt provider lease settlement failed', { cause: error }));
             },
         });
-        providerSettled = true;
-        return settlement;
+        return providerSettlement;
     };
 
     try {
@@ -180,15 +182,16 @@ export async function submitAdmittedPromptRequest(
             settleProvider('cancelled');
             return { status: 'rejected', runId };
         }
-        const providerSettlement = settleProvider('completed');
+        const completedProviderSettlement = settleProvider('completed');
         const currentRun = agentRunLifecycle.get(runId);
         if (
             currentRun?.phase === 'cancelled' ||
             currentRun?.phase === 'partially-completed' ||
-            (providerSettlement !== null && (!providerSettlement.accepted || providerSettlement.warning !== null))
+            (completedProviderSettlement !== null &&
+                (!completedProviderSettlement.accepted || completedProviderSettlement.warning !== null))
         ) {
-            if (providerSettlement?.warning) {
-                notifyAiChange(`Prompt plan was not materialized: ${providerSettlement.warning}`, []);
+            if (completedProviderSettlement?.warning) {
+                notifyAiChange(`Prompt plan was not materialized: ${completedProviderSettlement.warning}`, []);
             }
             return { status: 'rejected', runId };
         }
@@ -302,13 +305,13 @@ export async function submitAdmittedPromptRequest(
             settleProvider('cancelled');
             return { status: 'rejected', runId };
         }
-        const providerSettlement = settleProvider('failed');
-        if (!providerLease || providerSettlement?.accepted) {
+        const failedProviderSettlement = settleProvider('failed');
+        if (!providerLease || (failedProviderSettlement?.accepted && failedProviderSettlement.warning === null)) {
             transitionTerminalRun(runId, 'failed');
         }
-        if (providerSettlement?.warning) {
+        if (failedProviderSettlement?.warning) {
             const message = error instanceof Error ? error.message : String(error);
-            notifyAiChange(`Command not executed: ${message}. ${providerSettlement.warning}`, []);
+            notifyAiChange(`Command not executed: ${message}. ${failedProviderSettlement.warning}`, []);
         }
         throw error;
     } finally {

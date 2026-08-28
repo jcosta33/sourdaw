@@ -350,20 +350,47 @@ describe('submitAdmittedPromptRequest', () => {
             warning: AGENT_RUN_FAILURE_PERSISTENCE_WARNING,
         },
     ])('preserves the provider failure when failed settlement is $label', async ({ settle, warning }) => {
-        mocks.planPromptActions.mockRejectedValue(new Error('Provider planning failed'));
+        const providerError = new Error('Provider planning failed');
+        mocks.planPromptActions.mockRejectedValue(providerError);
         vi.spyOn(agentRunWorkLease, 'settle').mockImplementationOnce(settle);
 
-        await expect(submitAdmittedPromptRequest({ prompt: 'Play', source: 'prompt-bar' })).rejects.toThrow(
-            'Provider planning failed'
-        );
+        await expect(submitAdmittedPromptRequest({ prompt: 'Play', source: 'prompt-bar' })).rejects.toBe(providerError);
 
         expect(mocks.compileAgentActionExecution).not.toHaveBeenCalled();
         expect(mocks.executePromptActionGroup).not.toHaveBeenCalled();
-        expect(agentRunLifecycle.get(RUN_ID)).toMatchObject({ plan: null, batches: [] });
+        expect(agentRunLifecycle.get(RUN_ID)).toMatchObject({
+            phase: 'planning',
+            plan: null,
+            batches: [],
+            workLeases: [{ workId: 'provider-planning', terminalState: null }],
+        });
         expect(mocks.notifyAiChange).toHaveBeenCalledExactlyOnceWith(
             `Command not executed: Provider planning failed. ${warning}`,
             []
         );
+    });
+
+    it('terminalizes a compiler failure after clean provider settlement without settling the provider twice', async () => {
+        const compilerError = new Error('Prompt command compiler failed');
+        mocks.planPromptActions.mockResolvedValue({
+            context: { tracks: [] },
+            result: { actions: [action], rawText: 'Play', requiresConfirmation: true },
+            projectRevision: 'revision-1',
+        });
+        mocks.compileAgentActionExecution.mockImplementation(() => {
+            throw compilerError;
+        });
+        const settle = vi.spyOn(agentRunWorkLease, 'settle');
+
+        await expect(submitAdmittedPromptRequest({ prompt: 'Play', source: 'prompt-bar' })).rejects.toBe(compilerError);
+
+        expect(settle).toHaveBeenCalledOnce();
+        expect(agentRunLifecycle.get(RUN_ID)).toMatchObject({
+            phase: 'failed',
+            plan: null,
+            batches: [],
+            workLeases: [{ workId: 'provider-planning', terminalState: 'completed' }],
+        });
     });
 
     it('preserves compiler dependencies and batch-local bindings at the admitted compilation boundary', async () => {

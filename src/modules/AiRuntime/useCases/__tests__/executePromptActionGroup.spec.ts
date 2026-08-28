@@ -912,7 +912,8 @@ describe('executePromptActionGroup', () => {
     ])('preserves a thrown command failure when failed settlement is $label', async ({ settle, warning }) => {
         const fixture = getBatchFixtures().stem;
         seedRun(fixture);
-        mocks.executePlannedActions.mockRejectedValue(new Error('Executor crashed'));
+        const executionError = new Error('Executor crashed');
+        mocks.executePlannedActions.mockRejectedValue(executionError);
         vi.spyOn(agentRunWorkLease, 'settle').mockImplementationOnce(settle);
 
         await expect(
@@ -922,10 +923,53 @@ describe('executePromptActionGroup', () => {
                 projectRevision: 'revision-1',
                 ...admitted(fixture),
             })
-        ).rejects.toThrow('Executor crashed');
+        ).rejects.toBe(executionError);
 
         expect(mocks.notifyAiChange).toHaveBeenCalledWith(`Command not executed: Executor crashed. ${warning}`, []);
+        expect(agentRunLifecycle.get(RUN_ID)).toMatchObject({
+            phase: 'executing',
+            batches: [{ batchId: BATCH_ID, status: 'executing', receiptIdentity: null }],
+            workLeases: [{ workId: BATCH_ID, terminalState: null }],
+        });
     });
+
+    it.each([
+        {
+            label: 'ambiguous execution',
+            execution: { status: 'ambiguous' as const, reason: 'Commit truth is unresolved' },
+            outcome: 'ambiguous' as const,
+        },
+        {
+            label: 'no-op execution',
+            execution: { status: 'no-op' as const },
+            outcome: 'no-op' as const,
+        },
+    ])(
+        'does not write a terminal lifecycle state after persistence fails for $label',
+        async ({ execution, outcome }) => {
+            const fixture = getBatchFixtures().stem;
+            seedRun(fixture);
+            mocks.executePlannedActions.mockResolvedValue(execution);
+            vi.spyOn(agentRunWorkLease, 'settle').mockImplementationOnce(() => {
+                throw new Error('Lease storage unavailable');
+            });
+
+            await expect(
+                executePromptActionGroup({
+                    actions: fixture.actions,
+                    prompt: 'Import stems',
+                    projectRevision: 'revision-1',
+                    ...admitted(fixture),
+                })
+            ).resolves.toEqual({ status: outcome });
+
+            expect(agentRunLifecycle.get(RUN_ID)).toMatchObject({
+                phase: 'executing',
+                batches: [{ batchId: BATCH_ID, status: 'executing', receiptIdentity: null }],
+                workLeases: [{ workId: BATCH_ID, terminalState: null }],
+            });
+        }
+    );
 
     it.each(['lease-settlement', 'receipt-persistence'] as const)(
         'keeps a verified committed receipt authoritative when %s throws',
