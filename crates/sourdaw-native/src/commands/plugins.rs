@@ -3112,13 +3112,14 @@ mod tests {
         let policy = PluginScanPolicy::with_allowed_roots(vec![root.clone()]);
 
         let state = AppState::default();
+        const SEEDED_SENTINEL_TIMESTAMP: u64 = 1;
         state.plugin_registry_store.quarantine_failure(
             &plugin_path,
             "Plugin scan helper timed out".to_string(),
-            1,
+            SEEDED_SENTINEL_TIMESTAMP,
         );
 
-        let _ = crate::block_on_test(scan_plugins_with_policy(
+        let result = crate::block_on_test(scan_plugins_with_policy(
             vec![root.display().to_string()],
             false,
             policy,
@@ -3127,12 +3128,25 @@ mod tests {
         .expect("a default scan over an authorized root should succeed");
         let _ = std::fs::remove_dir_all(&root);
 
+        // Not just "still quarantined": a record a helper attempt overwrote
+        // and re-quarantined would also read `is_some()`, so the timestamp has
+        // to be the untouched sentinel and the helper must never have been
+        // reached at all.
+        let quarantined = state
+            .plugin_registry_store
+            .is_quarantined(&plugin_path)
+            .expect("a default scan must never silently clear a quarantine record");
+        assert_eq!(
+            quarantined.quarantined_at_ms, SEEDED_SENTINEL_TIMESTAMP,
+            "the record must be the untouched original, not a fresh one from a re-attempt"
+        );
         assert!(
-            state
-                .plugin_registry_store
-                .is_quarantined(&plugin_path)
-                .is_some(),
-            "a default scan must never silently clear a quarantine record"
+            !result
+                .errors
+                .iter()
+                .any(|error| error.contains("StillHostile.clap")),
+            "a default scan must never spawn a helper for a quarantined candidate: {:?}",
+            result.errors
         );
     }
 
