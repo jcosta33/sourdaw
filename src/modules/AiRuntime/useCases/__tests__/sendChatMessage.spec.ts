@@ -16,8 +16,12 @@ import { agentRunStore } from '../../stores/agentRunStore';
 import { llmStatusStore } from '../../stores/llmStatusStore';
 import { bridgeGroundedLlmToolCalls } from '../agentReference/bridgeGroundedLlmToolCalls';
 import { materializeBatchLocalActionIdentities } from '../agentReference/materializeBatchLocalActionIdentities';
-import { AGENT_RUN_STALE_COMPLETION_WARNING } from '../agentRequestOrchestration/settleAgentRunWorkLeaseSafely';
+import {
+    AGENT_RUN_PERSISTENCE_WARNING,
+    AGENT_RUN_STALE_COMPLETION_WARNING,
+} from '../agentRequestOrchestration/settleAgentRunWorkLeaseSafely';
 import { agentRunLifecycle } from '../agentRunLifecycle';
+import { recoverInterruptedAgentRuns } from '../agentRunRecovery';
 import { agentRunWorkLease } from '../agentRunWorkLease';
 import { compileArbitraryCommandList } from '../compileArbitraryCommandList';
 import { materializeActionStateGuards } from '../materializeActionStateGuards';
@@ -586,11 +590,11 @@ describe('sendChatMessage retained-provider selection', () => {
         );
     });
 
-    it('preserves a completed regular-chat response when provider lease settlement persistence fails', async () => {
+    it('preserves provider content while marking an unsettled successful response for restart recovery', async () => {
         const content = 'The mix is ready for a final balance pass.';
         const storageFailure = new DOMException('The quota has been exceeded.', 'QuotaExceededError');
         const loggerError = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
-        const settleWorkLease = vi.spyOn(agentRunWorkLease, 'settle').mockImplementation(() => {
+        const settleWorkLease = vi.spyOn(agentRunWorkLease, 'settle').mockImplementationOnce(() => {
             throw storageFailure;
         });
         mocks.getLlmEngine.mockReturnValue(createSuccessfulWebLlmEngine(content));
@@ -601,9 +605,25 @@ describe('sendChatMessage retained-provider selection', () => {
             const run = agentRunLifecycle.get(getMostRecentlyAdmittedRunId());
             expect(mocks.updateChatMessage).toHaveBeenLastCalledWith(
                 expect.any(String),
-                expect.objectContaining({ isStreaming: false, content, error: undefined })
+                expect.objectContaining({
+                    isStreaming: false,
+                    content: `${content}\n\n_${AGENT_RUN_PERSISTENCE_WARNING}_`,
+                    error: AGENT_RUN_PERSISTENCE_WARNING,
+                })
             );
-            expect(run?.errors).toEqual([]);
+            expect(run).toMatchObject({
+                phase: 'planning',
+                errors: [],
+                workLeases: [expect.objectContaining({ workId: 'provider-response', terminalState: null })],
+            });
+            await expect(recoverInterruptedAgentRuns({ recoveredAt: 200 })).resolves.toEqual({
+                recoveredRunIds: [run?.runId],
+            });
+            expect(agentRunLifecycle.get(run?.runId ?? '')).toMatchObject({
+                phase: 'paused',
+                manualResume: { required: true, workIds: ['provider-response'] },
+                workLeases: [expect.objectContaining({ workId: 'provider-response', terminalState: 'orphaned' })],
+            });
             expect(llmStatusStore.value).toEqual({ state: 'ready', backend: 'webllm', modelId: 'fixture-model' });
             expect(mocks.setActiveAborter).toHaveBeenLastCalledWith(null);
             expect(mocks.setChatGenerating).toHaveBeenLastCalledWith(false);

@@ -179,7 +179,7 @@ function completeProviderResponseBestEffort(input: {
     } catch (error) {
         logger.error(new Error('Completed provider usage accounting failed', { cause: error }));
     }
-    if (!settlement.accepted) {
+    if (!settlement.accepted || settlement.warning !== null) {
         return settlement;
     }
     try {
@@ -1679,7 +1679,7 @@ export async function sendChatMessage(
             receiptIdentity: providerReceiptIdentity,
         });
         providerUsageRecorded = true;
-        if (!providerSettlement.accepted) {
+        if (!providerSettlement.accepted || providerSettlement.warning !== null) {
             const warning = providerSettlement.warning ?? AGENT_RUN_STALE_COMPLETION_WARNING;
             updateChatMessage(assistantMsgId, {
                 isStreaming: false,
