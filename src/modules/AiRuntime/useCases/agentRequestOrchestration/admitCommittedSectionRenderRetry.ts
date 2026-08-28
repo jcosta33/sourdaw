@@ -326,31 +326,28 @@ export function admitCommittedSectionRenderRetry(
     if (!renderBinding) {
         return { status: 'proof-mismatch' };
     }
-    const hasPendingReceipt = hasExactDurableReceipt(input.durableReceipt, renderBinding);
-    const hasFinalizedReceipt = hasExactFinalizedReceipt(input.durableReceipt, renderBinding);
+    const durableReceipt = input.phase === 'eligibility' ? null : input.durableReceipt;
+    if (!durableReceipt) {
+        return { status: 'proof-mismatch' };
+    }
+    const hasPendingReceipt = hasExactDurableReceipt(durableReceipt, renderBinding);
+    const hasFinalizedReceipt = hasExactFinalizedReceipt(durableReceipt, renderBinding);
     if (!hasPendingReceipt && !hasFinalizedReceipt) {
         return { status: 'proof-mismatch' };
     }
     if (input.phase === 'arming') {
-        return hasPendingReceipt
-            ? { durableReceipt: input.durableReceipt, status: 'admitted' }
-            : { status: 'proof-mismatch' };
+        return hasPendingReceipt ? { durableReceipt, status: 'admitted' } : { status: 'proof-mismatch' };
     }
-    if (hasPendingReceipt && input.durableReceipt.pendingEffects[0]?.remediation === 'manual-repair') {
+    if (hasPendingReceipt && durableReceipt.pendingEffects[0]?.remediation === 'manual-repair') {
         return { status: 'proof-mismatch' };
     }
     if (
-        !hasExactBatchBinding(input.confirmation, approvedBatch, input.durableReceipt) ||
+        !hasExactBatchBinding(input.confirmation, approvedBatch, durableReceipt) ||
         (hasPendingReceipt
-            ? !hasExactTrackedRunBinding(input.confirmation, input.durableReceipt)
-            : !hasExactFinalizedContinuationBinding(
-                  input.confirmation,
-                  approvedBatch,
-                  renderBinding,
-                  input.durableReceipt
-              ))
+            ? !hasExactTrackedRunBinding(input.confirmation, durableReceipt)
+            : !hasExactFinalizedContinuationBinding(input.confirmation, approvedBatch, renderBinding, durableReceipt))
     ) {
         return { status: 'proof-mismatch' };
     }
-    return { durableReceipt: input.durableReceipt, status: 'admitted' };
+    return { durableReceipt, status: 'admitted' };
 }
