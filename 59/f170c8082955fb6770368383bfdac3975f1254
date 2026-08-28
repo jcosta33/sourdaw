@@ -1,0 +1,27 @@
+src/modules/AiRuntime/useCases/__tests__/submitAdmittedPromptRequest.spec.ts
+  s_a40848e8f8cca9::t_a14db1141affa9 353-354,357,361-366,373-393
+  s_a40848e8f8cca9::t_57c04a683d764e 394-395
+src/modules/AiRuntime/useCases/submitAdmittedPromptRequest.ts
+  s_a40848e8f8cca9::t_54385f7e656bcf 83,93,96-99,108,185,190-191,193-194,308-309,312,314
+src/modules/AiRuntime/useCases/executePromptActionGroup.ts
+  s_a40848e8f8cca9::t_54385f7e656bcf 58-61,261,336,351,372,432,446,462,466
+src/modules/AiRuntime/useCases/__tests__/executePromptActionGroup.spec.ts
+  s_a40848e8f8cca9::t_a14db1141affa9 915-916,926,929-933,936-946,953,964-968
+  s_a40848e8f8cca9::t_0350f1aff81a2d 947-952,954-963,969-973
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "59f170c8082955fb6770368383bfdac3975f1254",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
