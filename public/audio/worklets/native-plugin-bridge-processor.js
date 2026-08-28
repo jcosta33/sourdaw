@@ -61,6 +61,12 @@ function passThrough(input, output) {
     }
 }
 
+function silence(output) {
+    for (let channel = 0; channel < output.length; channel++) {
+        output[channel].fill(0);
+    }
+}
+
 class NativePluginBridgeProcessor extends AudioWorkletProcessor {
     constructor() {
         super();
@@ -184,16 +190,20 @@ class NativePluginBridgeProcessor extends AudioWorkletProcessor {
             return true;
         }
 
-        // Write the PREVIOUS block's processed output. Before the first reply —
-        // and while blocks are being dropped — the dry signal is the honest
-        // fallback: silence here would be a click the plugin never asked for.
+        // Write the PREVIOUS block's processed output. Until the first reply
+        // arrives there is none, and this node emits silence rather than the dry
+        // input: passing dry makes the under-run audible as the unprocessed
+        // source at full level — a chain heard as a filter or a distortion
+        // briefly plays the raw signal, and a bridged instrument plays whatever
+        // was fed into it. The Rust relay answers an empty ring the same way, so
+        // the two ends of the bridge under-run identically.
         if (this.outputFrames >= frames) {
             output[0].set(this.outputLeft.subarray(0, frames));
             if (output[1]) {
                 output[1].set(this.outputRight.subarray(0, frames));
             }
         } else {
-            passThrough(input, output);
+            silence(output);
         }
 
         this.sendInput(input[0], input[1] ?? input[0], frames);

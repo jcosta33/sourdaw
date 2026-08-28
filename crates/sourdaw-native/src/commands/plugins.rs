@@ -1951,8 +1951,22 @@ pub async fn process_plugin_audio(
         }
         Ok(result)
     } else {
-        // No output yet (first block) — return the dry input
-        Ok(audio_bytes)
+        // Nothing came back this quantum: the ring is still priming on the first
+        // block, or the engine fell behind and has none ready.
+        //
+        // Silence, not the dry input. Passing dry makes an under-run audible as
+        // the unprocessed source — a chain the user is hearing as a filter or a
+        // distortion briefly plays the raw signal at full level, and a bridged
+        // instrument plays whatever the worklet happened to send it. That is
+        // both louder and less honest than a gap, and
+        // `.agents/decisions/0021-plugin-isolation-by-binary-with-per-plugin-override.md`
+        // records under-run output as zero independently of the failure policy
+        // it decides.
+        //
+        // No ramp: an f32 sample is four zero bytes, and a quantum this command
+        // never processed has no ramp state to carry — the ramped hand-over
+        // belongs to the failure path that knows a plugin stopped.
+        Ok(vec![0u8; audio_bytes.len()])
     }
 }
 
@@ -2163,6 +2177,53 @@ mod tests {
                 .load(AtomicOrdering::Relaxed),
             2,
             "every refused block must add to the count, not overwrite it"
+        );
+    }
+
+    /// One quantum of interleaved stereo at full scale, so a block that came
+    /// back unchanged is unmistakable from one the host zeroed.
+    fn loud_block(frames: usize) -> Vec<u8> {
+        let mut block = Vec::with_capacity(frames * 2 * 4);
+        for _ in 0..frames * 2 {
+            block.extend_from_slice(&1.0_f32.to_le_bytes());
+        }
+        block
+    }
+
+    /// Nothing is processed on the first block — and nothing is processed for as
+    /// long as the engine is behind. Handing the dry input back makes an
+    /// under-run audible as the unprocessed source at full level, which ADR 0021
+    /// records as wrong independently of the failure policy it decides.
+    #[test]
+    fn an_underrun_answers_silence_rather_than_the_dry_input() {
+        let state = AppState::default();
+        // The RT side stays alive and never processes, so `pop_output` has
+        // nothing for the whole test — exactly the under-run this covers.
+        let (_bridge, bridge_handle) = create_audio_bridge(17);
+        insert_engine_owned_fixture_with_bridge(
+            &state,
+            "instance-underrun",
+            Vec::new(),
+            Some(bridge_handle),
+        );
+
+        let block = loud_block(128);
+        let answer = crate::block_on_test(process_plugin_audio(
+            "instance-underrun".to_string(),
+            block.clone(),
+            &state,
+        ))
+        .expect("an under-run must not fail the round trip");
+
+        assert_eq!(
+            answer.len(),
+            block.len(),
+            "the quantum the caller asked for must come back whole"
+        );
+        assert_eq!(
+            answer,
+            vec![0u8; block.len()],
+            "an under-run must answer silence, not the signal the plugin never processed"
         );
     }
 

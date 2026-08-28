@@ -85,6 +85,11 @@ function stereoBlock(seed: number): Float32Array[] {
     return [ramp(QUANTUM, seed), ramp(QUANTUM, seed + 500)];
 }
 
+/** One render quantum of silence, in the shape `Array.from` reads a channel as. */
+function silentQuantum(): number[] {
+    return Array.from({ length: QUANTUM }, () => 0);
+}
+
 function emptyOutput(): Float32Array[] {
     return [new Float32Array(QUANTUM), new Float32Array(QUANTUM)];
 }
@@ -135,6 +140,42 @@ describe('native plugin bridge worklet', () => {
         expect(Array.from(output[0]!)).toEqual(Array.from(input[0]!));
         expect(Array.from(output[1]!)).toEqual(Array.from(input[1]!));
         expect(processor.port.posted).toHaveLength(0);
+    });
+
+    /**
+     * The relay is running and nothing has come back yet, so this quantum has no
+     * processed audio. Handing the dry input back makes the under-run audible as
+     * the unprocessed source at full level — a chain heard as a filter or a
+     * distortion briefly plays the raw signal. The Rust relay answers an empty
+     * ring with silence for the same reason (ADR 0021).
+     */
+    it('emits silence rather than the dry input until the first processed block arrives', () => {
+        const processor = new ProcessorClass();
+        processor.port.deliver({ type: 'init' });
+        const input = stereoBlock(1);
+        const output = emptyOutput();
+
+        processor.process([input], [output]);
+
+        expect(Array.from(output[0]!)).toEqual(silentQuantum());
+        expect(Array.from(output[1]!)).toEqual(silentQuantum());
+        expect(lastSentBuffer(processor.port).byteLength).toBe(QUANTUM * 8);
+    });
+
+    /**
+     * The output buffers a real host hands `process()` are recycled, so an
+     * under-run that writes nothing leaves whatever the previous quantum put
+     * there — a repeating fragment, which is louder and stranger than a gap.
+     */
+    it('clears an output buffer that arrives holding the previous quantum', () => {
+        const processor = new ProcessorClass();
+        processor.port.deliver({ type: 'init' });
+        const output = [ramp(QUANTUM, 7000), ramp(QUANTUM, 7500)];
+
+        processor.process([stereoBlock(1)], [output]);
+
+        expect(Array.from(output[0]!)).toEqual(silentQuantum());
+        expect(Array.from(output[1]!)).toEqual(silentQuantum());
     });
 
     it('sends the current block as interleaved little-endian pairs', () => {
