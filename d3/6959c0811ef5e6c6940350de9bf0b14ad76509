@@ -1,0 +1,66 @@
+crates/daw-plugin-host/src/parameter_events.rs
+  s_4f908a5afb6b58::t_1715adfec997b5 1-525
+  s_4f908a5afb6b58::t_24a6721928b030 526-528
+crates/daw-plugin-host/src/vst3_host.rs
+  s_4f908a5afb6b58::t_4571645f32d789 264-270
+  s_4f908a5afb6b58::t_6968f731cff6f9 487-493,505-506
+  s_4f908a5afb6b58::t_16e0227a6a8f3f 318-323,329-330,341-357
+  s_4f908a5afb6b58::t_7d585c2731f7f2 30
+  s_4f908a5afb6b58::t_8f1be1f35312a1 283
+  s_4f908a5afb6b58::t_a044b0606b8591 317,324-326,331-340
+  s_4f908a5afb6b58::t_c9fb3afeac6ba3 37
+  s_4f908a5afb6b58::t_ff085831866f37 917-993
+crates/daw-plugin-host/src/vst3_wrapper.rs
+  s_4f908a5afb6b58::t_4181db9214e7dc 13
+  s_4f908a5afb6b58::t_dccac42169c7a9 1143-1148
+  s_4f908a5afb6b58::t_7de178ef99a389 1702-1705
+  s_4f908a5afb6b58::t_d1d9e75116805e 1572
+crates/daw-plugin-host/src/runtime.rs
+  s_4f908a5afb6b58::t_b48a5eaa71e76c 116-118,120
+  s_4f908a5afb6b58::t_68b487123d41c7 14
+  s_4f908a5afb6b58::t_d5f7497c357509 108-115,119,121-122
+crates/daw-plugin-host/src/clap_wrapper.rs
+  s_4f908a5afb6b58::t_28d556c72e78aa 2018-2029
+  s_4f908a5afb6b58::t_3d3587508016db 2124
+  s_4f908a5afb6b58::t_06febdc9e0d7b4 3968-4340
+  s_4f908a5afb6b58::t_4bb9e19162352c 1080-1119
+  s_4f908a5afb6b58::t_3ce5f6e016331c 37
+  s_4f908a5afb6b58::t_4828cadb4b16cd 2264
+  s_4f908a5afb6b58::t_cf2ddddaa8a55a 46-49
+  s_4f908a5afb6b58::t_ddeb7ff7828ad5 301-319,321-340,342-343,345-398
+  s_4f908a5afb6b58::t_6bb5adc15f34be 146-151
+  s_4f908a5afb6b58::t_36b41d2a4255d6 1423,1433
+  s_4f908a5afb6b58::t_e1236e412dca9d 1838-1842
+  s_4f908a5afb6b58::t_d813cf5fde1165 694
+  s_4f908a5afb6b58::t_c0afd0423df7d9 1473,1483
+  s_4f908a5afb6b58::t_32abe99134b0ab 726
+crates/daw-plugin-host/src/lib.rs
+  s_4f908a5afb6b58::t_bfb7347b6d8ec4 3
+  s_4f908a5afb6b58::t_94c0b5bbf37d12 23-27
+crates/daw-plugin-host/src/traits.rs
+  s_4f908a5afb6b58::t_888c74c9104f0d 307-344
+  s_4f908a5afb6b58::t_f262f3181b5549 14
+  s_4f908a5afb6b58::t_5be9bf7bd63027 47-54
+crates/daw-plugin-host/src/clap_host.rs
+  s_4f908a5afb6b58::t_795a115dd56766 800-927
+  s_4f908a5afb6b58::t_57413a0a1367a3 224-260
+  s_4f908a5afb6b58::t_1e9cd75b32fc7f 95-102
+  s_4f908a5afb6b58::t_118821eea13937 360-370,373-388,390-398
+  s_4f908a5afb6b58::t_cc33bc383ee1d8 66-71
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "d36959c0811ef5e6c6940350de9bf0b14ad76509",
+  "prompts": {},
+  "sessions": {
+    "s_4f908a5afb6b58": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fcb92ba4-bf56-47a4-8b57-803f335a449e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
