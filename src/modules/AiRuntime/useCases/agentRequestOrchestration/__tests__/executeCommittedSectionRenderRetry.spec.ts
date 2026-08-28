@@ -234,6 +234,18 @@ describe('executeCommittedSectionRenderRetry', () => {
             error: 'persistence unavailable',
             status: 'retryable',
         });
+        expect(mocks.updateConfirmation).toHaveBeenCalledWith({
+            confirmationId: 'confirmation-retry',
+            status: 'failed',
+            error: 'persistence unavailable',
+        });
+        expect(mocks.updateChat).toHaveBeenCalledWith('assistant-retry', {
+            pendingActionConfirmationStatus: 'failed',
+            pendingActionFollowUpStatus: 'retryable',
+            error: 'persistence unavailable',
+            content:
+                'All expected section render artifacts are present, but durable retry completion could not be recorded: persistence unavailable. Project actions were not replayed.',
+        });
         expect(mocks.retryRenders).not.toHaveBeenCalled();
     });
 
