@@ -9,7 +9,6 @@ import {
 } from '#/modules/AudioEngine/useCases';
 import { syncKneadToEngine } from '#/modules/Knead/useCases';
 import { initWebMidi } from '#/modules/MIDI/useCases';
-import { registerProModulationEffects } from '#/modules/PluginHost/useCases';
 import { preferencesStore } from '#/modules/Preferences/stores';
 import { projectStore } from '#/modules/Project/stores';
 import { loadProject, saveProject } from '#/modules/Project/useCases';
@@ -44,7 +43,6 @@ export const useAppInitialization = (): void => {
                     setMasterGainValue(transport.masterGain / 100);
                 }
                 void initWebMidi();
-                registerProModulationEffects();
                 registerProSynthInstruments();
 
                 await loadProject();

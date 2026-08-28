@@ -1,9 +1,6 @@
 import { type ScannedPlugin } from '../../models/ScannedPlugin';
-import { pluginScanStore, defaultPluginScanState } from '../../stores/pluginScanStore';
 
-function getState() {
-    return pluginScanStore.value ?? defaultPluginScanState;
-}
+import { getState } from './scanning/helpers';
 
 export function findPluginByName(name: string): ScannedPlugin | undefined {
     const lower = name.toLowerCase();

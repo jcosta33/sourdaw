@@ -8,7 +8,6 @@ import {
     isFaustInstrumentModule,
     isFaustModule,
     registerBuiltinFaustDSP,
-    registerProModulationEffects,
 } from '#/modules/PluginHost/useCases';
 import { getSynthParamsFromDevices } from '#/modules/Synth/useCases';
 
@@ -71,8 +70,8 @@ vi.stubGlobal('AudioBuffer', MockAudioBuffer);
  *   offline row with no live counterpart, or a live device with no offline row,
  *   fails here. It does **not** prove the wasm module loads or renders audio.
  * - **Faust devices** cannot be compiled here (no Faust compiler under Node).
- *   The id must be registered in the Faust engine by `registerBuiltinFaustDSP` /
- *   `registerProModulationEffects` — the same registration `compileFaustDSP`
+ *   The id must be registered in the Faust engine by `registerBuiltinFaustDSP`
+ *   — the same registration `compileFaustDSP`
  *   requires and the same state the registry matcher reads. A catalog Faust id
  *   nobody registered fails. It does **not** prove the DSP compiles.
  * - **Anything claimed by no arm** is a registry miss, which is the refusal
@@ -167,12 +166,11 @@ async function coverageFailureFor(deviceType: string): Promise<unknown> {
 
 describe('offline device coverage', () => {
     beforeAll(() => {
-        // `initializeAudioEngine` registers these at startup, and the Faust
+        // `initializeAudioEngine` registers this at startup, and the Faust
         // matcher reads that runtime state. Priming it the way the app does
         // keeps the Faust half of the catalog a real check instead of an
         // exemption for a registry that simply had not been populated yet.
         registerBuiltinFaustDSP();
-        registerProModulationEffects();
     });
 
     it('has catalog entries to check, so an empty left side cannot pass vacuously', () => {

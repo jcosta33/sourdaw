@@ -60,10 +60,8 @@ export const EXPOSED_COMMANDS = [
     'feed_crumbs_record_input',
     'get_crumbs_position',
     'get_default_plugin_paths',
-    'get_plugin_parameters',
     'get_plugin_state_bytes',
     'get_waveform_peaks',
-    'is_plugin_gui_supported',
     'is_scan_path_authorized',
     'list_directory',
     'list_midi_inputs',
@@ -133,6 +131,13 @@ export const EXPOSED_COMMANDS = [
  * its transport method has no production caller yet, and exposing a command
  * requires one — the live cutover (jcosta33/sourdaw#2230) moves it together
  * with its caller.
+ *
+ * `get_plugin_parameters` and `is_plugin_gui_supported` moved here from the
+ * exposed list when their renderer repositories were retired (#2307): the
+ * inspector reads parameters through the plugin descriptor tables, and editor
+ * capability through `resolvePluginEditorCapability`, so no `src/` caller
+ * invoked either command. Exposing a command requires a production caller,
+ * so they rejoin the denied half until one exists.
  */
 export const DENIED_COMMANDS = [
     'apply_graph_commands',
@@ -148,7 +153,9 @@ export const DENIED_COMMANDS = [
     'enable_link',
     'get_asr_status',
     'get_link_status',
+    'get_plugin_parameters',
     'hide_all_plugin_guis',
+    'is_plugin_gui_supported',
     'link_start_playing',
     'link_stop_playing',
     'load_whisper_model',

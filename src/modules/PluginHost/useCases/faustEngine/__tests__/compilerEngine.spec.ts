@@ -4,15 +4,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { logger } from '#/infra/logger/appLogger';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
-import { compileAllFaustModules } from '../compileAllFaustModules';
 import { compileFaustDSP } from '../compileFaustDSP';
 import { getFaustCompiler } from '../compilerEngine';
 import { createFaustNode } from '../createFaustNode';
 import { faustEngineState } from '../faustEngineState';
-import { getFaustCompilerError } from '../getFaustCompilerError';
-import { getFaustModule } from '../getFaustModule';
-import { getFaustModules } from '../getFaustModules';
-import { isFaustCompilerReady } from '../isFaustCompilerReady';
 import { isFaustModule } from '../isFaustModule';
 import { registerFaustDSP } from '../registerFaustDSP';
 
@@ -42,26 +37,11 @@ describe('compilerEngine', () => {
         resetCompilerState();
     });
 
-    it('should export compileAllFaustModules', () => {
-        expect(typeof compileAllFaustModules).toBe('function');
-    });
     it('should export compileFaustDSP', () => {
         expect(typeof compileFaustDSP).toBe('function');
     });
     it('should export createFaustNode', () => {
         expect(typeof createFaustNode).toBe('function');
-    });
-    it('should export getFaustCompilerError', () => {
-        expect(typeof getFaustCompilerError).toBe('function');
-    });
-    it('should export getFaustModule', () => {
-        expect(typeof getFaustModule).toBe('function');
-    });
-    it('should export getFaustModules', () => {
-        expect(typeof getFaustModules).toBe('function');
-    });
-    it('should export isFaustCompilerReady', () => {
-        expect(typeof isFaustCompilerReady).toBe('function');
     });
     it('should export isFaustModule', () => {
         expect(typeof isFaustModule).toBe('function');
@@ -70,11 +50,10 @@ describe('compilerEngine', () => {
         expect(typeof registerFaustDSP).toBe('function');
     });
 
-    it('shares registered modules across the query owners', () => {
+    it('shares registered modules with the registry matcher', () => {
         const registered = registerFaustDSP('Compiler Engine Test', 'process = _;');
 
-        expect(getFaustModule(registered.id)).toBe(registered);
-        expect(getFaustModules()).toContain(registered);
+        expect(faustEngineState.modules.get(registered.id)).toBe(registered);
         expect(isFaustModule(registered.id)).toBe(true);
     });
 });
@@ -99,10 +78,10 @@ describe('getFaustCompiler failure recovery', () => {
         await getFaustCompiler();
 
         expect(instantiateFaustModuleFromFile).toHaveBeenCalledTimes(2);
-        expect(isFaustCompilerReady()).toBe(true);
+        expect(faustEngineState.compiler.ready).toBe(true);
         // The recovered attempt does not keep answering "why not" with the
         // failure it repaired.
-        expect(getFaustCompilerError()).toBeNull();
+        expect(faustEngineState.compiler.error).toBeNull();
     });
 
     it('still coalesces concurrent callers into one initialization attempt', async () => {
