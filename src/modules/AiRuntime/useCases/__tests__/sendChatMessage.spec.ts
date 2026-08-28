@@ -34,6 +34,8 @@ const PROVIDER_PERSISTENCE_WARNING =
     'Agent run provider response recovery state could not be persisted after execution. The retained response remains visible, but its lifecycle is not durably settled. Review it before retrying.';
 const WORK_PERSISTENCE_WARNING =
     'Agent run work recovery state could not be persisted after execution. The retained work outcome remains visible, but its lifecycle is not durably settled. Review it before retrying.';
+const COMMAND_PERSISTENCE_WARNING =
+    'Agent run recovery state could not be persisted after execution. The verified command receipt remains authoritative; do not retry automatically.';
 const FAILURE_PERSISTENCE_WARNING =
     'Agent run failure recovery state could not be persisted. The work failed, and no successful artifact is claimed. Review the durable run state before retrying.';
 const COMPLETION_PERSISTENCE_WARNING =
@@ -2106,8 +2108,8 @@ describe('sendChatMessage retained-provider selection', () => {
                     expect.any(String),
                     expect.objectContaining({
                         isStreaming: false,
-                        error: WORK_PERSISTENCE_WARNING,
-                        content: expect.stringContaining(WORK_PERSISTENCE_WARNING),
+                        error: COMMAND_PERSISTENCE_WARNING,
+                        content: expect.stringContaining(COMMAND_PERSISTENCE_WARNING),
                     })
                 );
                 expect(mocks.updateChatMessage).toHaveBeenLastCalledWith(
