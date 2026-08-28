@@ -700,40 +700,54 @@ impl CrumbsEngine {
         let mut quietest_idx: Option<usize> = None;
         let mut quietest_level = f32::INFINITY;
         let mut quietest_age = 0u32;
+        let mut fading_idx: Option<usize> = None;
+        let mut fading_remaining = f32::INFINITY;
 
         for (idx, voice) in self.voices.iter().enumerate() {
             if !voice.active {
                 continue;
             }
-            // Skip voices already fading out. This has to be here rather than in
-            // `steal_priority`: a fading voice still reports whatever tier its
-            // note and envelope put it in, and taking its slot back is exactly
-            // how a just-choked voice was getting handed straight to the note
-            // that choked it.
-            //
-            // Its slot returns from `process_block` within the 3 ms fade, so
-            // passing over it costs at most one block. If every voice is fading,
-            // the note is dropped rather than clicked, which is the right trade
-            // in a pool that is by then 128 voices deep.
-            if voice.is_stealing() {
-                continue;
-            }
-            // Skip slots this same `note_on` already gave to the stack, for the
-            // same reason: they are sounding, they are not fading, and taking
-            // one back would silence a note the caller asked for.
+            // Skip slots this same `note_on` already gave to the stack: they
+            // are sounding, and taking one back would silence a note the
+            // caller asked for.
             if claimed.contains(&idx) {
                 continue;
             }
 
             let priority = voice.steal_priority(target_note, target_choke);
 
-            // The bottom tier is decided across voices, not per voice: every
-            // ordinary sustaining note comes back `Oldest`, so the choice among
-            // them is made here. Take the quietest, which is what a sampler is
-            // expected to do once no retrigger, choke group or releasing note is
-            // available — the least audible cut in the pool. Age breaks a tie so
-            // a pool of identically-loud voices still gives up its longest-held
-            // one rather than the lowest slot index.
+            // Fading voices are on offer at the bottom tier. Displacement
+            // preserves the fade — `move_voice_to_steal_tail` swaps the struct
+            // whole and `begin_steal_fade` sets only the flag and the
+            // decrement, never `steal_fade` — and `render_steal_tails` renders
+            // the tail to silence sample by sample, so taking a fading victim
+            // continues its de-click in a tail slot instead of overwriting it.
+            // That is why the old blanket skip here was too broad: a dense
+            // choke-group roll fades the whole group at once, and a hit inside
+            // those 3 ms on a full pool found no candidate at all and dropped
+            // the note. The skip's click protection survives one tier up —
+            // `steal_priority` reports a fading voice as `Fading` below its
+            // own note and choke tiers, so a live candidate always wins.
+            //
+            // Like the Oldest tier this one is decided across voices: take the
+            // most-decayed fade, the closest to silence, whose tail retires
+            // soonest.
+            if priority == StealPriority::Fading {
+                let remaining = voice.steal_fade();
+                if fading_idx.is_none() || remaining < fading_remaining {
+                    fading_remaining = remaining;
+                    fading_idx = Some(idx);
+                }
+                continue;
+            }
+
+            // The bottom live tier is decided across voices, not per voice:
+            // every ordinary sustaining note comes back `Oldest`, so the
+            // choice among them is made here. Take the quietest, which is what
+            // a sampler is expected to do once no retrigger, choke group or
+            // releasing note is available — the least audible cut in the pool.
+            // Age breaks a tie so a pool of identically-loud voices still
+            // gives up its longest-held one rather than the lowest slot index.
             if priority == StealPriority::Oldest {
                 let level = voice.audible_level();
                 let age = voice.age();
@@ -756,7 +770,7 @@ impl CrumbsEngine {
             }
         }
 
-        best_idx.or(quietest_idx)
+        best_idx.or(quietest_idx).or(fading_idx)
     }
 
     // ── Parameter Setting ──────────────────────────────────────────────
@@ -1597,6 +1611,138 @@ mod steal_tier_tests {
             "a same-note retrigger stole slot {target} (note {}) instead of a voice already \
              sounding that pitch",
             engine.voices[target].note
+        );
+    }
+
+    /// A pool whose every voice is fading must still offer a steal target, and
+    /// the fade it gives up must continue in the tail rather than restart.
+    ///
+    /// A dense choke-group roll fades every member of the group at once, so a
+    /// hit inside those 3 ms arrives at a pool whose every voice is already
+    /// leaving. The scan used to pass over all of them and return `None`,
+    /// which `note_on` turns into a dropped note — silence where the musician
+    /// struck. Displacement is what makes the fading pool safe to steal from:
+    /// `move_voice_to_steal_tail` swaps the struct without resetting
+    /// `steal_fade`, so the victim carries its position into the tail and
+    /// `render_steal_tails` finishes the fade there. A restart is an audible
+    /// level bump on a voice already most of the way out.
+    ///
+    /// Fades are begun directly here — the same call the choke pass makes —
+    /// because the choke path itself is what
+    /// `a_note_on_left_with_only_fading_voices_steals_one_and_lands_whole`
+    /// exercises; this test pins the scan and the displacement mechanics.
+    #[test]
+    fn an_all_fading_pool_steals_a_fade_and_continues_it_in_the_tail() {
+        let mut engine = saturated_mixed_velocity_engine();
+        for voice in &mut engine.voices {
+            voice.begin_steal_fade();
+        }
+        // Half of the 144-sample fade: every voice sits at ~0.5, mid-fade and
+        // none close to retiring, so the pool stays saturated and the scan
+        // cannot dodge into a free slot.
+        let mut left = [0.0_f32; 72];
+        let mut right = [0.0_f32; 72];
+        engine.process_block(&mut left, &mut right);
+
+        // Below every pooled pitch and fresh to the pool, so the note cannot
+        // land through a free slot or a same-note steal.
+        let incoming = ROOT_NOTE - 24;
+        let victim = engine
+            .find_steal_target(incoming, 0, &[])
+            .expect("a saturated all-fading pool must offer a steal target");
+        let victim_note = engine.voices[victim].note;
+        let fade_at_steal = engine.voices[victim].steal_fade();
+        assert!(
+            (fade_at_steal - 0.5).abs() < 0.01,
+            "the victim's fade was at {fade_at_steal}, not mid-fade; the fixture \
+             drifted and the continuation assertions below lose their meaning"
+        );
+
+        engine.note_on(incoming, 100);
+
+        assert_eq!(
+            engine.active_voices_with_note(incoming),
+            1,
+            "the note was dropped: a pool of fading voices offered no steal target"
+        );
+        assert_eq!(
+            engine.fading_steal_tail_count(),
+            1,
+            "the displaced voice did not land in a fade slot, so its de-click \
+             was cut short instead of moved"
+        );
+        // The victim is finishing its fade in a tail from the exact position
+        // it was displaced at — the same bits, moved. 1.0 here would be a
+        // restart: a jump back up to full level on a voice that was at half.
+        let tail = engine
+            .steal_tails
+            .iter()
+            .position(|tail| tail.active && tail.note == victim_note)
+            .expect("the displaced voice is not in a fade slot");
+        assert_eq!(
+            engine.steal_tails[tail].steal_fade(),
+            fade_at_steal,
+            "the displaced voice's fade restarted at displacement instead of \
+             continuing from its position"
+        );
+
+        // The other half of the fade retires the tail. A restart would still
+        // have half of its 3 ms left to run at this point.
+        let mut left = [0.0_f32; 88];
+        let mut right = [0.0_f32; 88];
+        engine.process_block(&mut left, &mut right);
+        assert_eq!(
+            engine.fading_steal_tail_count(),
+            0,
+            "the carried fade outlived its remaining half — it restarted rather \
+             than continued, or the tail never advanced it"
+        );
+        assert_eq!(
+            engine.active_voices_with_note(incoming),
+            1,
+            "the incoming note did not survive the fade it displaced"
+        );
+    }
+
+    /// A fading voice never outranks a live one — not even on the top tiers.
+    ///
+    /// This is the de-click invariant the old blanket skip carried: a voice
+    /// the choke pass has just spent must not be handed straight back to the
+    /// note that choked it, or to its own retrigger, while any live candidate
+    /// exists. `steal_priority` reports a fading voice at the bottom tier
+    /// *below* its own note and choke matches, so the incoming note's own
+    /// fading instances lose to a live unrelated voice. Ranking the fade by
+    /// its natural tiers instead would send every choke-group hit back into
+    /// the group's dying fades and spend fresh material to spare them.
+    ///
+    /// A guard, not a regression proof: the pre-fix scan skipped fading voices
+    /// outright and also came back with the live voice.
+    #[test]
+    fn a_fading_voice_loses_to_a_live_candidate_even_on_its_own_note() {
+        let mut engine = saturated_mixed_velocity_engine();
+        const LIVE_SLOT: usize = 7;
+        for (index, voice) in engine.voices.iter_mut().enumerate() {
+            if index != LIVE_SLOT {
+                voice.begin_steal_fade();
+            }
+        }
+        // Carried only by fading voices, and not by the one live slot.
+        let retriggered = pooled_note(0);
+        assert_ne!(
+            pooled_note(LIVE_SLOT),
+            retriggered,
+            "the live slot carries the retriggered pitch, so this test cannot \
+             tell a live candidate from a fading one"
+        );
+
+        let target = engine
+            .find_steal_target(retriggered, 0, &[])
+            .expect("a pool holding a live voice must offer a steal target");
+
+        assert_eq!(
+            target, LIVE_SLOT,
+            "the scan took a fading voice for its own note although a live \
+             candidate was available — a fading voice outranked a live one"
         );
     }
 
