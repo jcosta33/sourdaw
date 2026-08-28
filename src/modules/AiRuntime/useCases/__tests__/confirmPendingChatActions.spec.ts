@@ -236,7 +236,7 @@ function configureLateSettlementConfirmation(input: {
 }
 
 function createStaleLateBatchResult(input: {
-    status: 'ambiguous' | 'failed';
+    status: 'ambiguous' | 'cancelled' | 'failed';
     reason: string;
     commandBatch: ReturnType<typeof compileVersionedCommandBatchEnvelope>;
 }): ConfirmedActionBatchResult {
@@ -254,6 +254,23 @@ function createStaleLateBatchResult(input: {
             ...result,
             receipt: createVerifiedBatchReceipt({
                 contentHash: 'late-settlement-ambiguous',
+                envelope: parsed.envelope,
+                observedBaseRevision: 'revision-fixture',
+                resultingRevision: 'revision-fixture',
+                result,
+            }),
+        };
+    }
+    if (input.status === 'cancelled') {
+        const result: { status: 'cancelled'; reason: string; actions: [] } = {
+            status: 'cancelled',
+            reason: input.reason,
+            actions: [],
+        };
+        return {
+            ...result,
+            receipt: createVerifiedBatchReceipt({
+                contentHash: 'late-settlement-cancelled',
                 envelope: parsed.envelope,
                 observedBaseRevision: 'revision-fixture',
                 resultingRevision: 'revision-fixture',
@@ -918,11 +935,13 @@ describe('confirmPendingChatActions transaction admission', () => {
         const captureMutationAuthorization = vi
             .spyOn(crdtUseCases, 'captureProjectMutationAuthorization')
             .mockReturnValue(() => true);
-        const execute = vi.spyOn(commandUseCases, 'executeVersionedCommandBatchEnvelope').mockResolvedValue({
-            status: 'cancelled',
-            reason: 'The late command batch was cancelled.',
-            actions: [],
-        });
+        const execute = vi.spyOn(commandUseCases, 'executeVersionedCommandBatchEnvelope').mockResolvedValue(
+            createStaleLateBatchResult({
+                status: 'cancelled',
+                reason: 'The late command batch was cancelled.',
+                commandBatch,
+            })
+        );
         const settle = vi.spyOn(agentRunWorkLease, 'settle').mockReturnValue({ status: 'stale' });
 
         try {
