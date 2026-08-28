@@ -1,0 +1,103 @@
+src/modules/TimelineEditor/presentations/views/Inspector/TrackAutomationSection.tsx
+  s_4f908a5afb6b58::t_0633274b107499 15
+  s_4f908a5afb6b58::t_d2c8a4572f87e4 42-44,48-60
+  s_4f908a5afb6b58::t_e9c0794770d4f1 14
+  s_4f908a5afb6b58::t_6f516f4959f479 131-134
+  s_4f908a5afb6b58::t_13e29e4866fb0f 61
+src/modules/PluginHost/AGENTS.md
+  s_4f908a5afb6b58::t_c50aaddf78ec6e 17
+  s_4f908a5afb6b58::t_67421988237206 12
+src/modules/PluginHost/stores/index.ts
+  s_4f908a5afb6b58::t_ae46cfe025bbec 10-15
+src/modules/TimelineEditor/presentations/helpers/automationViewHelpers.ts
+  s_4f908a5afb6b58::t_c36b2fc143ed15 40
+  s_4f908a5afb6b58::t_7c4d9a3f3cc1cd 76,79-84,87
+  s_4f908a5afb6b58::t_15e62c95fe9771 2
+  s_4f908a5afb6b58::t_fddd90900f20f9 71-73
+  s_4f908a5afb6b58::t_1986c2bd88505c 3-5,20,41-43,74-75,85-86
+src/modules/Arrangement/useCases/__tests__/getAutomationParameterRange.spec.ts
+  s_4f908a5afb6b58::t_c114d9b193f5ff 3-8
+  s_4f908a5afb6b58::t_430292a8470a7e 22
+  s_4f908a5afb6b58::t_0a6cbd4c299fd9 86-152
+  s_4f908a5afb6b58::t_7b95845b19e4e7 153-159
+src/modules/PluginHost/stores/externalPluginParameterStore.ts
+  s_4f908a5afb6b58::t_524e963bc62b9b 18-19
+  s_4f908a5afb6b58::t_69ae6685fdccfe 1-17,20-57
+  s_4f908a5afb6b58::t_043db268efea17 58-103
+src/modules/AudioEngine/engine/__tests__/TrackNode.spec.ts
+  s_4f908a5afb6b58::t_73832f04eebce7 800-801
+  s_4f908a5afb6b58::t_e835a2eb348c81 823-825,827,838-869
+src/modules/Transport/useCases/scheduling/applyAutomation/applyAutomation.ts
+  s_4f908a5afb6b58::t_42450a8c7a1abd 3
+  s_4f908a5afb6b58::t_01a90ecdd08a0c 55-61,64,67-73
+src/modules/PluginHost/useCases/pluginLifecycle/unloadPlugin.ts
+  s_4f908a5afb6b58::t_64527e238e5ce0 21
+  s_4f908a5afb6b58::t_ed21419ddb69a1 6
+  s_4f908a5afb6b58::t_b48164f2ae547b 19-20
+src/modules/AudioEngine/engine/TrackNode.ts
+  s_4f908a5afb6b58::t_fe083ccfde34bb 1048-1051,1053-1065
+  s_4f908a5afb6b58::t_73ecbe88e86c33 30-54
+src/modules/PluginHost/useCases/pluginLifecycle/clearLoadedExternalPlugins.ts
+  s_4f908a5afb6b58::t_a28590741362b4 5-8
+  s_4f908a5afb6b58::t_faf33b82d6a57c 34-35
+src/modules/Arrangement/useCases/__tests__/getAutomationDeviceDescriptor.spec.ts
+  s_4f908a5afb6b58::t_8dec46624d8f8f 36,38-39
+  s_4f908a5afb6b58::t_25ccc3d3d8777e 10
+  s_4f908a5afb6b58::t_40db9378b0a321 1-9,11-35,37,40-76,78-79
+  s_4f908a5afb6b58::t_edba18046d6080 77
+src/modules/PluginHost/useCases/pluginLifecycle/activateExternalPlugin.ts
+  s_4f908a5afb6b58::t_9493b104c97bd1 20
+  s_4f908a5afb6b58::t_5d4d8990910322 181,183
+  s_4f908a5afb6b58::t_32a4b4741f3abb 7
+  s_4f908a5afb6b58::t_60401389c34bf6 176-180,182,184
+src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/applyAutomationExternalPlugin.spec.ts
+  s_4f908a5afb6b58::t_c36ff34148191e 4,13-15,17-20,57,111,150-156,158,169,187
+  s_4f908a5afb6b58::t_d25d6aae9e6f86 1-3,5-12,16,21-56,58-110,112-115,120-149,157,159-168,170-186,188-189
+  s_4f908a5afb6b58::t_583e31573a7443 116-119
+src/modules/Arrangement/useCases/acceptsExternalPluginAutomationParameter.ts
+  s_4f908a5afb6b58::t_40155f890b06e7 1-21
+src/modules/Arrangement/useCases/__tests__/acceptsExternalPluginAutomationParameter.spec.ts
+  s_4f908a5afb6b58::t_08ff6941c6f95d 1-74
+src/modules/PluginHost/useCases/pluginLifecycle/__tests__/refreshExternalPluginParameters.spec.ts
+  s_4f908a5afb6b58::t_54d8d4c700cd32 39
+  s_4f908a5afb6b58::t_08e7b27830f7ee 8,12
+  s_4f908a5afb6b58::t_297d6734c01dab 85
+  s_4f908a5afb6b58::t_59fd12737bdb87 1-7,9-11,13-38,40-84,86-101,103,105-114
+  s_4f908a5afb6b58::t_7cd7af4a21246d 102,104
+src/modules/PluginHost/useCases/index.ts
+  s_4f908a5afb6b58::t_18bd7529c09880 22
+src/modules/Arrangement/useCases/index.ts
+  s_4f908a5afb6b58::t_dcc959a315916b 25
+src/modules/Arrangement/useCases/getAutomationDeviceDescriptor.ts
+  s_4f908a5afb6b58::t_37f78a12f173a1 1-2,4-15,17,26-85
+src/modules/PluginHost/useCases/pluginLifecycle/refreshExternalPluginParameters.ts
+  s_4f908a5afb6b58::t_4ecb0d479129bc 1-3,5-6,8-26,28-31
+  s_4f908a5afb6b58::t_9066b04fa22e75 27
+  s_4f908a5afb6b58::t_6f1df6c20c1827 4,7
+src/modules/Arrangement/useCases/getAutomationParameterRange.ts
+  s_4f908a5afb6b58::t_7c1c7806bda45a 19-22,26-28
+  s_4f908a5afb6b58::t_572804453f5d44 14-18,23-25,29-35,49,56
+  s_4f908a5afb6b58::t_1bee34b5776836 5
+src/modules/PluginHost/useCases/pluginLifecycle/__tests__/activateExternalPlugin.spec.ts
+  s_4f908a5afb6b58::t_3e5526c7e0ee31 76,159,183,190,226,282,315,351,382-387,413-418,439-444
+src/modules/PluginHost/useCases/pluginLifecycle/__tests__/resetExternalPluginRuntimeForGraphRebuild.spec.ts
+  s_4f908a5afb6b58::t_b51ffd1e3ae38c 34,86,108
+src/modules/PluginHost/useCases/pluginLifecycle/toExternalPluginParameters.ts
+  s_4f908a5afb6b58::t_1b148116d120e8 1-19
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "d840702953ca5d6714c36ce5a9a6a5ae6de88366",
+  "prompts": {},
+  "sessions": {
+    "s_4f908a5afb6b58": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fcb92ba4-bf56-47a4-8b57-803f335a449e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
