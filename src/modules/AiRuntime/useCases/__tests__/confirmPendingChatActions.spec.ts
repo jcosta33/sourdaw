@@ -1505,6 +1505,10 @@ describe('confirmPendingChatActions transaction admission', () => {
         const confirmationId = 'confirmation-no-op-persistence';
         const batchId = 'group-no-op-persistence';
         configureLateSettlementConfirmation({ runId, confirmationId, batchId });
+        agentRunLifecycle.recordBatch({
+            runId,
+            batch: { batchId, commandIds: [], status: 'waiting-for-approval', receiptIdentity: null },
+        });
         const commandUseCases = await import('#/modules/Command/useCases');
         const crdtUseCases = await import('#/modules/CrdtDocument/useCases');
         const captureMutationAuthorization = vi
@@ -1513,7 +1517,9 @@ describe('confirmPendingChatActions transaction admission', () => {
         const execute = vi
             .spyOn(commandUseCases, 'executeVersionedCommandBatchEnvelope')
             .mockResolvedValue({ status: 'no-op', actions: [] });
-        const settle = vi.spyOn(agentRunWorkLease, 'settle').mockImplementation(() => {
+        const settleLease = agentRunWorkLease.settle;
+        const settle = vi.spyOn(agentRunWorkLease, 'settle').mockImplementation((input) => {
+            settleLease(input);
             throw new DOMException('The quota has been exceeded.', 'QuotaExceededError');
         });
 
@@ -1533,6 +1539,11 @@ describe('confirmPendingChatActions transaction admission', () => {
             pendingActionConfirmationStatus: 'executed',
             error: COMPLETION_PERSISTENCE_WARNING,
             content: `No project changes were needed after confirmation. ${COMPLETION_PERSISTENCE_WARNING}`,
+        });
+        expect(agentRunLifecycle.get(runId)).toMatchObject({
+            phase: 'completed',
+            batches: [expect.objectContaining({ batchId, status: 'no-op' })],
+            workLeases: [expect.objectContaining({ workId: batchId, terminalState: 'completed' })],
         });
     });
 
