@@ -699,6 +699,90 @@ describe('sendChatMessage retained-provider selection', () => {
         }
     });
 
+    it('keeps a hosted provider stream failure terminal with its exact provider lease and usage identity', async () => {
+        const providerError = new Error('Hosted provider stream failed');
+        const partialContent = 'The hosted bridge summary started.';
+        const providerUsage = await import('../recordAgentProviderUsage');
+        const recordProviderUsage = vi.spyOn(providerUsage, 'recordAgentProviderUsage');
+        mocks.aiBackendPreference.value = 'cloud';
+        mocks.resolveBackend.mockReturnValue('cloud');
+        mocks.isCloudAvailable.mockReturnValue(true);
+        mocks.getCloudProviderInfo.mockReturnValue({
+            provider: 'openai',
+            model: 'gpt-4o-mini',
+            baseUrl: 'https://api.openai.com/v1',
+        });
+        mocks.streamCloudChatCompletion.mockImplementation(
+            async (
+                _messages: Parameters<typeof streamCloudChatCompletion>[0],
+                onToken: Parameters<typeof streamCloudChatCompletion>[1]
+            ): Promise<CloudChatCompletionOutcome> => {
+                onToken(partialContent);
+                throw providerError;
+            }
+        );
+
+        try {
+            await expect(sendChatMessage('Summarize the hosted bridge.', { mode: 'explain' })).resolves.toBeUndefined();
+
+            const run = agentRunLifecycle.get(getMostRecentlyAdmittedRunId());
+            if (run === null) {
+                throw new Error('Expected the hosted failed-provider run to remain inspectable.');
+            }
+            const providerReceiptIdentity = `provider:cloud:${run.runId}`;
+            expect(run).toMatchObject({
+                phase: 'failed',
+                errors: [expect.objectContaining({ category: 'provider' })],
+                workLeases: [
+                    expect.objectContaining({
+                        runId: run.runId,
+                        workId: 'provider-response',
+                        leaseId: `${run.runId}:provider-response:0`,
+                        cancellationGeneration: 0,
+                        idempotencyKey: providerReceiptIdentity,
+                        receiptIdentity: providerReceiptIdentity,
+                        terminalState: 'failed',
+                    }),
+                ],
+                providerUsage: [
+                    expect.objectContaining({
+                        provider: 'openai',
+                        model: 'gpt-4o-mini',
+                        correlationId: providerReceiptIdentity,
+                        status: 'partial',
+                        routeId: 'cloud:openai:gpt-4o-mini',
+                        executor: 'cloud',
+                    }),
+                ],
+            });
+            expect(recordProviderUsage).toHaveBeenCalledWith(
+                run.runId,
+                expect.objectContaining({
+                    provider: 'openai',
+                    model: 'gpt-4o-mini',
+                    correlationId: providerReceiptIdentity,
+                    status: 'partial',
+                    partialOutputDisposition: 'preserve',
+                }),
+                providerReceiptIdentity,
+                { terminal: true }
+            );
+            expect(mocks.updateChatMessage).toHaveBeenCalledWith(
+                expect.any(String),
+                expect.objectContaining({
+                    isStreaming: false,
+                    error: providerError.message,
+                    content: `${partialContent}\n\n_Response incomplete because the provider stream failed._`,
+                })
+            );
+            expect(llmStatusStore.value).toEqual({ state: 'error', message: providerError.message });
+            expect(mocks.setActiveAborter).toHaveBeenLastCalledWith(null);
+            expect(mocks.setChatGenerating).toHaveBeenLastCalledWith(false);
+        } finally {
+            recordProviderUsage.mockRestore();
+        }
+    });
+
     it('retains regular-chat content without reopening a cancelled run after stale provider settlement', async () => {
         const content = 'The chorus is ready to automate.';
         const providerUsage = await import('../recordAgentProviderUsage');
@@ -1225,6 +1309,49 @@ describe('sendChatMessage retained-provider selection', () => {
         }
     });
 
+    it('settles a successful preview with its exact completed work lease', async () => {
+        const previewResource = { release: vi.fn() };
+        const settleWorkLease = vi.spyOn(agentRunWorkLease, 'settle');
+        configureCommandGraphForwarding('plan');
+        mocks.executeVersionedCommandBatchEnvelope.mockResolvedValue({
+            status: 'previewed',
+            resource: previewResource,
+        });
+
+        try {
+            await expect(sendChatMessage(commandGraphFixture.prompt, { mode: 'preview' })).resolves.toBeUndefined();
+
+            const run = getPlannedRun();
+            const previewReceiptIdentity = `preview:${run.runId}:batch-graph`;
+            expect(settleWorkLease).toHaveBeenCalledWith({
+                runId: run.runId,
+                workId: 'preview:batch-graph',
+                leaseId: `${run.runId}:preview:batch-graph:0`,
+                cancellationGeneration: 0,
+                idempotencyKey: previewReceiptIdentity,
+                receiptIdentity: previewReceiptIdentity,
+                terminalState: 'completed',
+            });
+            expect(run).toMatchObject({
+                phase: 'completed',
+                workLeases: expect.arrayContaining([
+                    expect.objectContaining({
+                        runId: run.runId,
+                        workId: 'preview:batch-graph',
+                        leaseId: `${run.runId}:preview:batch-graph:0`,
+                        cancellationGeneration: 0,
+                        idempotencyKey: previewReceiptIdentity,
+                        receiptIdentity: previewReceiptIdentity,
+                        terminalState: 'completed',
+                    }),
+                ]),
+            });
+            expect(previewResource.release).toHaveBeenCalledOnce();
+        } finally {
+            settleWorkLease.mockRestore();
+        }
+    });
+
     it('preserves a verified preview when preview batch persistence fails', async () => {
         const batchFailure = new Error('Preview batch persistence failed');
         const loggerError = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
@@ -1629,6 +1756,74 @@ describe('sendChatMessage retained-provider selection', () => {
             expect.objectContaining({ isStreaming: false, error: commandFailure })
         );
     });
+
+    const directTerminalCommandResults = [
+        {
+            status: 'no-op',
+            terminalState: 'completed',
+            phase: 'completed',
+            content: 'No project changes were needed.',
+        },
+        {
+            status: 'cancelled',
+            terminalState: 'cancelled',
+            phase: 'cancelled',
+            content: 'Command cancelled before it committed. No project changes were applied.',
+        },
+    ] as const;
+
+    it.each(directTerminalCommandResults)(
+        'settles a direct $status command with its exact $terminalState lease',
+        async ({ status, terminalState, phase, content }) => {
+            configureCommandGraphForwarding('immediate');
+            const settleWorkLease = vi.spyOn(agentRunWorkLease, 'settle');
+            if (status === 'cancelled') {
+                mocks.executePlannedActions.mockResolvedValue({
+                    status: 'cancelled',
+                    reason: 'Command cancellation requested.',
+                    actions: [],
+                });
+            } else {
+                mocks.executePlannedActions.mockResolvedValue({ status: 'no-op', actions: [] });
+            }
+
+            try {
+                await expect(sendChatMessage(commandGraphFixture.prompt, { mode: 'apply' })).resolves.toBeUndefined();
+
+                const run = getPlannedRun();
+                const commandReceiptIdentity = `command:${run.runId}:batch-graph`;
+                expect(settleWorkLease).toHaveBeenCalledWith({
+                    runId: run.runId,
+                    workId: 'batch-graph',
+                    leaseId: `${run.runId}:batch-graph:0`,
+                    cancellationGeneration: 0,
+                    idempotencyKey: 'batch-graph-idempotency',
+                    receiptIdentity: commandReceiptIdentity,
+                    terminalState,
+                });
+                expect(run).toMatchObject({
+                    phase,
+                    workLeases: expect.arrayContaining([
+                        expect.objectContaining({
+                            runId: run.runId,
+                            workId: 'batch-graph',
+                            leaseId: `${run.runId}:batch-graph:0`,
+                            cancellationGeneration: 0,
+                            idempotencyKey: 'batch-graph-idempotency',
+                            receiptIdentity: commandReceiptIdentity,
+                            terminalState,
+                        }),
+                    ]),
+                });
+                expect(mocks.updateChatMessage).toHaveBeenLastCalledWith(
+                    expect.any(String),
+                    expect.objectContaining({ isStreaming: false, content })
+                );
+            } finally {
+                settleWorkLease.mockRestore();
+            }
+        }
+    );
 
     it('forwards a compiler-produced graph and provider-known scope into pending confirmation', async () => {
         configureCommandGraphForwarding('confirmation');

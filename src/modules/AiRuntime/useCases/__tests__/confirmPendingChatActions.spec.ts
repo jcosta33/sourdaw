@@ -68,6 +68,7 @@ import { agentRunWorkLease } from '../agentRunWorkLease';
 import { agentRunCancellation } from '../cancelAgentRun';
 import { compileAgentRiskApproval } from '../compileAgentRiskApproval';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
+import { issueAgentCommandApprovalBinding } from '../issueAgentCommandApprovalBinding';
 import { recoverAgentRunPendingEffects } from '../recoverAgentRunPendingEffects';
 
 import {
@@ -922,6 +923,60 @@ describe('confirmPendingChatActions transaction admission', () => {
         });
     });
 
+    it('records an idempotent committed replay with its owned revert-group receipt binding', async () => {
+        const runId = 'idempotent-replay-committed-revert-binding';
+        const confirmationId = 'confirmation-idempotent-replay-committed-revert-binding';
+        const batchId = 'group-idempotent-replay-committed-revert-binding';
+        const commandBatch = configureLateSettlementConfirmation({ runId, confirmationId, batchId });
+        const commandUseCases = await import('#/modules/Command/useCases');
+        const crdtUseCases = await import('#/modules/CrdtDocument/useCases');
+        const approval = compileAgentRiskApproval({ commandBatch });
+        const approvalBinding = issueAgentCommandApprovalBinding({ approval, commandBatch });
+        await expect(
+            commandUseCases.executeVersionedCommandBatchEnvelope({
+                authority: commandBatch.authority,
+                approvalBinding,
+                serialized: commandBatch.serialized,
+            })
+        ).resolves.toMatchObject({ status: 'committed' });
+        const captureMutationAuthorization = vi
+            .spyOn(crdtUseCases, 'captureProjectMutationAuthorization')
+            .mockReturnValue(() => true);
+        const claimWorkLease = vi.spyOn(agentRunWorkLease, 'claim');
+
+        try {
+            await expect(confirmPendingChatActions({ confirmationId })).resolves.toEqual({ status: 'executed' });
+        } finally {
+            claimWorkLease.mockRestore();
+            captureMutationAuthorization.mockRestore();
+        }
+
+        const receiptIdentity = `2:${runId}:${batchId}:committed`;
+        expect(agentRunLifecycle.get(runId)).toMatchObject({
+            phase: 'completed',
+            receipts: [
+                expect.objectContaining({
+                    workId: batchId,
+                    receiptIdentity,
+                    revertGroupId: batchId,
+                }),
+            ],
+            committedWork: [
+                expect.objectContaining({
+                    workId: batchId,
+                    receiptIdentity,
+                    revertGroupId: batchId,
+                }),
+            ],
+        });
+        expect(claimWorkLease).not.toHaveBeenCalled();
+        expect(getCrdtDoc<Record<string, unknown>>('owned')).toMatchObject({ transport: { bpm: 132 } });
+        expect(chatStore.value?.messages[0]).toMatchObject({
+            pendingActionConfirmationStatus: 'executed',
+            content: expect.stringContaining('project batch was already committed'),
+        });
+    });
+
     it('keeps a stale replayed no-op cancelled and discards its pending resources', async () => {
         const runId = 'idempotent-replay-no-op-stale-settlement';
         const confirmationId = 'confirmation-idempotent-replay-no-op-stale-settlement';
@@ -1375,18 +1430,49 @@ describe('confirmPendingChatActions transaction admission', () => {
             }),
         });
 
+        const retainPreparedResources =
+            outcome === 'ambiguous' ? vi.spyOn(preparedStemImportResources, 'retainForRecovery') : null;
+        const discardPreparedResources =
+            outcome === 'ambiguous' ? vi.spyOn(preparedStemImportResources, 'discard') : null;
+        const reconcilePreparedResources =
+            outcome === 'ambiguous' ? vi.spyOn(preparedStemImportResources, 'reconcile') : null;
+        const settleWorkLease =
+            outcome === 'ambiguous'
+                ? vi.spyOn(agentRunWorkLease, 'settle').mockImplementation((input) => {
+                      agentRunLifecycle.transitionPhase({ runId: input.runId, phase: 'cancelled' });
+                      return { status: 'stale' };
+                  })
+                : null;
         const confirmation = confirmPendingChatActions({ confirmationId: 'confirmation-confirmed-stems' });
         if (outcome === 'ambiguous') {
-            const result = await confirmation;
-            expect(result).toMatchObject({ status: 'failed' });
-            expect('reason' in result ? result.reason : '').toContain(
-                'Automerge storage transaction committed before a later document failed'
-            );
-            expect(agentRunLifecycle.get('run-confirmed-stems')?.temporaryAssets).toEqual([
-                expect.objectContaining({ assetId: 'buffer-confirmed-1', status: 'cleanup-pending' }),
-            ]);
-            expect(stemResourceMocks.releasePreviewAudioBuffer).not.toHaveBeenCalled();
-            expect(stemResourceMocks.releaseStagedAsset).not.toHaveBeenCalled();
+            try {
+                const result = await confirmation;
+                expect(result).toMatchObject({ status: 'failed' });
+                expect('reason' in result ? result.reason : '').toContain(
+                    'Automerge storage transaction committed before a later document failed'
+                );
+                expect(agentRunLifecycle.get('run-confirmed-stems')).toMatchObject({
+                    phase: 'cancelled',
+                    errors: [],
+                    temporaryAssets: [
+                        expect.objectContaining({ assetId: 'buffer-confirmed-1', status: 'cleanup-pending' }),
+                    ],
+                });
+                expect(retainPreparedResources).toHaveBeenCalledOnce();
+                expect(discardPreparedResources).not.toHaveBeenCalled();
+                expect(reconcilePreparedResources).toHaveBeenCalledWith({
+                    runId: 'run-confirmed-stems',
+                    batchId: 'group-confirmed-stems',
+                    getVerifiedReceipt: expect.any(Function),
+                });
+                expect(stemResourceMocks.releasePreviewAudioBuffer).not.toHaveBeenCalled();
+                expect(stemResourceMocks.releaseStagedAsset).not.toHaveBeenCalled();
+            } finally {
+                settleWorkLease?.mockRestore();
+                retainPreparedResources?.mockRestore();
+                discardPreparedResources?.mockRestore();
+                reconcilePreparedResources?.mockRestore();
+            }
             return;
         }
         await Promise.race([
