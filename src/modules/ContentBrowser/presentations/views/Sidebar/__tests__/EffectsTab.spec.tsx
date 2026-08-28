@@ -2,7 +2,6 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
-import { createAppActionCommittedError } from '#/modules/Command/useCases';
 
 import { type PreviewHandle } from '../../../hooks/usePreviewAudio';
 import { EffectsTab } from '../EffectsTab';
@@ -11,7 +10,7 @@ import type { PluginDescriptorView as PluginDescriptor } from '../../../../model
 import type { SidebarPanelActions } from '../SidebarTypes';
 
 const arrangementMocks = vi.hoisted(() => ({
-    compileAddDeviceAction: vi.fn(),
+    executeAddDeviceAction: vi.fn(),
     compileLoadPresetActions: vi.fn(),
     getFactoryPresets: vi.fn(),
 }));
@@ -23,7 +22,7 @@ const commandMocks = vi.hoisted(() => ({
 
 vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Arrangement/useCases')>()),
-    compileAddDeviceAction: arrangementMocks.compileAddDeviceAction,
+    executeAddDeviceAction: arrangementMocks.executeAddDeviceAction,
     compileLoadPresetActions: arrangementMocks.compileLoadPresetActions,
     getFactoryPresets: arrangementMocks.getFactoryPresets,
 }));
@@ -103,10 +102,7 @@ describe('EffectsTab', () => {
                 isFactory: true,
             },
         ]);
-        arrangementMocks.compileAddDeviceAction.mockImplementation((trackId: string, deviceType: string) => ({
-            type: 'addDevice',
-            payload: { trackId, deviceType, deviceId: 'device-77', expectedDeviceIds: [] },
-        }));
+        arrangementMocks.executeAddDeviceAction.mockResolvedValue({ status: 'applied', deviceId: 'device-77' });
         commandMocks.executeAppAction.mockResolvedValue(undefined);
     });
 
@@ -170,10 +166,7 @@ describe('EffectsTab', () => {
 
             fireEvent.click(screen.getByRole('button', { name: cardName }));
 
-            expect(commandMocks.executeAppAction).toHaveBeenCalledWith({
-                type: 'addDevice',
-                payload: { trackId: 'track-1', deviceType, deviceId: 'device-77', expectedDeviceIds: [] },
-            });
+            expect(arrangementMocks.executeAddDeviceAction).toHaveBeenCalledWith('track-1', deviceType);
             await waitFor(() => expect(panelActions[panelAction]).toHaveBeenCalledWith('device-77'));
         }
     );
@@ -191,11 +184,7 @@ describe('EffectsTab', () => {
 
         fireEvent.click(screen.getByRole('button', { name: /yeast/i }));
 
-        expect(arrangementMocks.compileAddDeviceAction).toHaveBeenCalledWith('track-1', 'yeast');
-        expect(commandMocks.executeAppAction).toHaveBeenCalledWith({
-            type: 'addDevice',
-            payload: { trackId: 'track-1', deviceType: 'yeast', deviceId: 'device-77', expectedDeviceIds: [] },
-        });
+        expect(arrangementMocks.executeAddDeviceAction).toHaveBeenCalledWith('track-1', 'yeast');
         // The committed device's own id, not `null`: rack state is per device
         // instance (#2422), so the panel must open bound to the device the
         // click just added.
@@ -203,12 +192,12 @@ describe('EffectsTab', () => {
     });
 
     it('opens Yeast when addDevice commits but post-commit processing fails', async () => {
-        commandMocks.executeAppAction.mockRejectedValue(
-            createAppActionCommittedError({
-                actionType: 'addDevice',
-                cause: new Error('runtime delta'),
-            })
-        );
+        // The dispatch door reports the committed-degraded split instead of
+        // rejecting: the device is in project truth, so the panel still opens.
+        arrangementMocks.executeAddDeviceAction.mockResolvedValue({
+            status: 'committed-degraded',
+            deviceId: 'device-77',
+        });
         const panelActions = createPanelActions();
 
         renderWithTooltip(
@@ -224,8 +213,8 @@ describe('EffectsTab', () => {
         await waitFor(() => expect(panelActions.showYeast).toHaveBeenCalledWith('device-77'));
     });
 
-    it('leaves the panel closed when the compiler rejects the add', () => {
-        arrangementMocks.compileAddDeviceAction.mockReturnValue(null);
+    it('leaves the panel closed when the add is not applied', async () => {
+        arrangementMocks.executeAddDeviceAction.mockResolvedValue({ status: 'not-applied', deviceId: null });
         const panelActions = createPanelActions();
 
         renderWithTooltip(
@@ -239,6 +228,6 @@ describe('EffectsTab', () => {
 
         fireEvent.click(screen.getByRole('button', { name: /crust/i }));
 
-        expect(panelActions.showCrust).toHaveBeenCalledWith(null);
+        await waitFor(() => expect(panelActions.showCrust).toHaveBeenCalledWith(null));
     });
 });

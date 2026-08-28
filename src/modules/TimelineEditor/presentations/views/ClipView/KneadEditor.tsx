@@ -8,7 +8,7 @@ import { Button } from '#/components/ui/button';
 import { Slider } from '#/components/ui/slider';
 import { logger } from '#/infra/logger/appLogger';
 import { useStore } from '#/infra/store/useStore';
-import { compileAddDeviceAction } from '#/modules/Arrangement/useCases';
+import { executeAddDeviceAction } from '#/modules/Arrangement/useCases';
 import { executeAppAction } from '#/modules/Command/useCases';
 import { kneadStore } from '#/modules/Knead/stores';
 import { analyzeClipPitch, updateClipKneadState } from '#/modules/Knead/useCases';
@@ -655,10 +655,7 @@ export const KneadEditor = ({ trackId, clipId }: { trackId: string; clipId: stri
                     </p>
                     <Button
                         onClick={() => {
-                            const action = compileAddDeviceAction(trackId, 'knead');
-                            if (action) {
-                                void executeAppAction(action);
-                            }
+                            void executeAddDeviceAction(trackId, 'knead');
                         }}
                         variant="default"
                         size="sm"
