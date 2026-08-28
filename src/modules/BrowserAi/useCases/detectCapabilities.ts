@@ -13,7 +13,7 @@ import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 
 import { detectCapabilities as detectCapabilitiesRepo } from '../repositories/capabilityDetector';
-import { setCapabilityDetecting, setCapabilityReport, setCapabilityError } from '../stores/capabilityStore';
+import { beginCapabilityDetection, settleCapabilityError, settleCapabilityReport } from '../stores/capabilityStore';
 
 type DetectCapabilitiesInput = { forceRefresh?: boolean; measureInference?: boolean };
 
@@ -23,14 +23,14 @@ export const detectCapabilities = inject({ logger, detectCapabilitiesRepo })(
             forceRefresh = false,
             measureInference = false,
         }: DetectCapabilitiesInput = {}): Promise<void> {
-            setCapabilityDetecting();
+            const attempt = beginCapabilityDetection();
             try {
                 const report = await detectCapabilitiesRepo({ forceRefresh, measureInference });
-                setCapabilityReport(report);
+                settleCapabilityReport(attempt, report);
                 logger.info(`[BrowserAi] Capability detection complete: ${report.capability} / ${report.webGpuTier}`);
             } catch (error) {
                 const message = error instanceof Error ? error.message : String(error);
-                setCapabilityError(message);
+                settleCapabilityError(attempt, message);
                 logger.error(new Error(`[BrowserAi] Capability detection failed: ${message}`));
             }
         }

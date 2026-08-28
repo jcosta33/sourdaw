@@ -41,6 +41,8 @@
         "lane:open": "node scripts/openLane.ts",
         "lane:publish": "node scripts/trustedGithubWriteBootstrap.ts lane:publish",
         "lane:remove": "node scripts/removeLane.ts",
+        "lane:strand": "node scripts/removeLane.ts --strand",
+        "lane:prune": "node scripts/pruneLane.ts",
         "review:prepare": "node scripts/prepareReview.ts",
         "review:publish": "node scripts/publishReview.ts",
         "review:resolve": "node scripts/resolveReviewThread.ts",
