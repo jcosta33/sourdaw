@@ -1792,12 +1792,19 @@ export async function sendChatMessage(
             }
             const parsed = thinkParser.snapshot();
             const hasPartialContent = parsed.content.length > 0 || (parsed.reasoning?.length ?? 0) > 0;
+            const persistenceWarning =
+                providerFailureSettlement?.warning === AGENT_RUN_PERSISTENCE_WARNING
+                    ? AGENT_RUN_PERSISTENCE_WARNING
+                    : null;
+            const providerFailureContent = hasPartialContent
+                ? `${parsed.content}\n\n_Response incomplete because the provider stream failed._`
+                : 'Sorry, I encountered an error while thinking about that.';
             updateChatMessage(assistantMsgId, {
                 isStreaming: false,
-                error: errorMessage,
-                content: hasPartialContent
-                    ? `${parsed.content}\n\n_Response incomplete because the provider stream failed._`
-                    : 'Sorry, I encountered an error while thinking about that.',
+                error: persistenceWarning ? `${errorMessage}\n\n${persistenceWarning}` : errorMessage,
+                content: persistenceWarning
+                    ? `${providerFailureContent}\n\n_${persistenceWarning}_`
+                    : providerFailureContent,
                 reasoning: parsed.reasoning,
             });
             llmStatusStore.set({ state: 'error', message: errorMessage });

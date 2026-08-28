@@ -980,8 +980,8 @@ describe('sendChatMessage retained-provider selection', () => {
                 expect.any(String),
                 expect.objectContaining({
                     isStreaming: false,
-                    error: providerError.message,
-                    content: `${partialContent}\n\n_Response incomplete because the provider stream failed._`,
+                    error: `${providerError.message}\n\n${AGENT_RUN_PERSISTENCE_WARNING}`,
+                    content: `${partialContent}\n\n_Response incomplete because the provider stream failed._\n\n_${AGENT_RUN_PERSISTENCE_WARNING}_`,
                 })
             );
             expect(llmStatusStore.value).toEqual({ state: 'error', message: providerError.message });
@@ -1177,8 +1177,8 @@ describe('sendChatMessage retained-provider selection', () => {
                 expect.any(String),
                 expect.objectContaining({
                     isStreaming: false,
-                    error: 'WebLLM provider failed',
-                    content: 'Sorry, I encountered an error while thinking about that.',
+                    error: `WebLLM provider failed\n\n${AGENT_RUN_PERSISTENCE_WARNING}`,
+                    content: `Sorry, I encountered an error while thinking about that.\n\n_${AGENT_RUN_PERSISTENCE_WARNING}_`,
                 })
             );
             expect(armedSetItemCount).not.toBeNull();
