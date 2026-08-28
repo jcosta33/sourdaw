@@ -18,6 +18,7 @@ import {
     captureProjectRevision,
     captureUnownedProjectMutations,
 } from '#/modules/CrdtDocument/useCases';
+import { type HandlerDeferredEffectAttempt } from '#/utils/handlerContract';
 
 import { AiProposalInvalidatedError } from '../errors/AiProposalInvalidatedError';
 import { type AgentRunErrorCategory, type AgentRunErrorRemediation, type AgentRunWorkLease } from '../models/AgentRun';
@@ -786,11 +787,7 @@ export async function confirmPendingChatActions(
             ...group,
             signal: aborter.signal,
             source: 'prompt' as const,
-            onDeferredEffectAttempt: (attempt: {
-                kind: 'work-attempt';
-                operation: AppAction['type'];
-                workId: string;
-            }) => {
+            onDeferredEffectAttempt: (attempt: HandlerDeferredEffectAttempt) => {
                 if (attempt.operation === 'renderProjectSections') {
                     renderJobAttempts += 1;
                 }
