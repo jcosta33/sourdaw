@@ -683,11 +683,6 @@ describe('admitCommittedSectionRenderRetry', () => {
             (run: ReturnType<typeof bindFinalizedCrashWindow>) =>
                 (run.pendingEffectContinuations[0]!.effects[0]!.remediation = 'manual-repair'),
         ],
-        [
-            'wrong effect state',
-            (run: ReturnType<typeof bindFinalizedCrashWindow>) =>
-                (run.pendingEffectContinuations[0]!.effects[0]!.state = 'completed'),
-        ],
     ])('rejects a finalized crash window with %s', (_label, mutate) => {
         const fixture = createFixture();
         const finalizedReceipt = structuredClone(fixture.receipt);

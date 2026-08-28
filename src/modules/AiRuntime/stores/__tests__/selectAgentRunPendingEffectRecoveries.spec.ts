@@ -88,7 +88,7 @@ function createRetainedRenderRecovery() {
 function createRetryableConfirmation(input: {
     authority: ReturnType<typeof createRetainedRenderRecovery>;
     followUpRevision: string;
-    outcome?: 'committed' | 'committed-with-warning' | 'failed';
+    outcome?: 'committed' | 'committed-with-warning' | 'executed';
 }): void {
     proposePendingActionConfirmation({
         id: 'confirmation-render-owner',
@@ -159,7 +159,7 @@ describe('selectAgentRunPendingEffectRecoveries', () => {
         ]);
     });
 
-    it.each(['committed', 'failed'] as const)(
+    it.each(['committed', 'executed'] as const)(
         'keeps generic recovery visible when the render outcome is %s',
         (outcome) => {
             const authority = createRetainedRenderRecovery();

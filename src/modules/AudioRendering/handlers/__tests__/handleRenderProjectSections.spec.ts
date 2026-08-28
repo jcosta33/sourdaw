@@ -56,6 +56,10 @@ describe('handleRenderProjectSections', () => {
 
     it('defers rendering until commit and reuses one post-commit revision for reconciliation', async () => {
         const action = createAction();
+        const firstJob = action.payload.jobs?.[0];
+        if (!firstJob) {
+            throw new Error('Expected one render job');
+        }
         const controller = new AbortController();
         const onDeferredEffectAttempt = vi.fn();
         const result = await handleRenderProjectSections.execute(action, {
@@ -87,7 +91,7 @@ describe('handleRenderProjectSections', () => {
             onRenderAttempt: expect.any(Function),
         });
         const firstRenderInput = mocks.renderAgentProjectSections.mock.calls[0]?.[0];
-        firstRenderInput?.onRenderAttempt?.(action.payload.jobs[0]!);
+        firstRenderInput?.onRenderAttempt?.(firstJob);
         expect(onDeferredEffectAttempt).toHaveBeenCalledExactlyOnceWith({
             kind: 'work-attempt',
             operation: 'renderProjectSections',
