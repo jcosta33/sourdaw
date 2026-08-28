@@ -239,6 +239,23 @@ describe('executePromptCommandPreview', () => {
         expect(releasePreparedResources).toHaveBeenCalledOnce();
     });
 
+    it('does not cancel a rejected preview when the project revision remains current', async () => {
+        mocks.executeBatch.mockResolvedValue({ status: 'rejected', reason: 'preview rejected' });
+
+        await expect(executePromptCommandPreview(createInput())).rejects.toThrow('preview rejected');
+
+        expect(mocks.captureProjectRevision).toHaveBeenCalledOnce();
+        expect(mocks.cancel).not.toHaveBeenCalled();
+        expect(mocks.settleSafely).toHaveBeenCalledWith(
+            expect.objectContaining({ lease, terminalState: 'failed', evidence: 'none' })
+        );
+        expect(mocks.updateBatchStatus).toHaveBeenCalledWith({
+            runId: 'run-preview',
+            batchId: 'batch-preview',
+            status: 'failed',
+        });
+    });
+
     it.each(['cancelled', 'partially-completed'] satisfies ReadonlyArray<'cancelled' | 'partially-completed'>)(
         'returns quietly when rejected settlement observes an already %s run',
         async (phase) => {
@@ -270,6 +287,50 @@ describe('executePromptCommandPreview', () => {
             'Agent preview work could not be settled after a non-preview outcome'
         );
 
+        expect(mocks.updateChatMessage).not.toHaveBeenCalled();
+        expect(mocks.updateBatchStatus).not.toHaveBeenCalled();
+        expect(mocks.transitionPhase).toHaveBeenCalledTimes(1);
+    });
+
+    it.each(['cancelled', 'partially-completed'] satisfies ReadonlyArray<'cancelled' | 'partially-completed'>)(
+        'returns quietly when previewed settlement observes an already %s run',
+        async (phase) => {
+            const releasePreviewResource = vi.fn();
+            mocks.executeBatch.mockResolvedValue({
+                status: 'previewed',
+                resource: { release: releasePreviewResource },
+            });
+            mocks.settleSafely.mockReturnValue({ accepted: false, warning: 'settlement failed' });
+            mocks.getRun.mockReturnValue({ phase });
+
+            await expect(executePromptCommandPreview(createInput())).resolves.toBeUndefined();
+
+            expect(releasePreviewResource).toHaveBeenCalledOnce();
+            expect(mocks.updateChatMessage).not.toHaveBeenCalled();
+            expect(mocks.updateBatchStatus).not.toHaveBeenCalled();
+            expect(mocks.transitionPhase).toHaveBeenCalledTimes(1);
+            expect(mocks.transitionPhase).toHaveBeenCalledWith({
+                runId: 'run-preview',
+                phase: 'previewing',
+                revision: 'revision-preview',
+            });
+        }
+    );
+
+    it('rejects an unaccepted previewed settlement while the run remains live', async () => {
+        const releasePreviewResource = vi.fn();
+        mocks.executeBatch.mockResolvedValue({
+            status: 'previewed',
+            resource: { release: releasePreviewResource },
+        });
+        mocks.settleSafely.mockReturnValue({ accepted: false, warning: 'settlement failed' });
+        mocks.getRun.mockReturnValue({ phase: 'previewing' });
+
+        await expect(executePromptCommandPreview(createInput())).rejects.toThrow(
+            'Agent preview work could not be settled'
+        );
+
+        expect(releasePreviewResource).toHaveBeenCalledOnce();
         expect(mocks.updateChatMessage).not.toHaveBeenCalled();
         expect(mocks.updateBatchStatus).not.toHaveBeenCalled();
         expect(mocks.transitionPhase).toHaveBeenCalledTimes(1);
