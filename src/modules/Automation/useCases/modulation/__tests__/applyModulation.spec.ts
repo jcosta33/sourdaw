@@ -86,4 +86,25 @@ describe('applyModulation', () => {
         applyModulation(1);
         expect(modulationRuntimeStore.value?.runtimeValues).toEqual({});
     });
+
+    it('should clear a disabled modulator’s stale runtime value so the halo stops showing it', () => {
+        applyModulation(1);
+        expect(modulationRuntimeStore.value?.runtimeValues.lfo1).toBeDefined();
+
+        const state = modulationStore.value!;
+        modulationStore.set({
+            ...state,
+            modulators: state.modulators.map((modulator) =>
+                modulator.id === 'lfo1' ? { ...modulator, enabled: false } : modulator
+            ),
+        });
+
+        applyModulation(2);
+
+        // The disabled modulator’s entry is gone — its halo must not display the
+        // last computed value as if modulation were still live.
+        expect(modulationRuntimeStore.value?.runtimeValues.lfo1).toBeUndefined();
+        // The enabled sibling keeps updating normally.
+        expect(modulationRuntimeStore.value?.runtimeValues.step1).toBeDefined();
+    });
 });

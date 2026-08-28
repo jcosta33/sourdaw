@@ -1,6 +1,7 @@
 import { render, screen, fireEvent } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+import { mappingAmountDragState } from '../../../useCases/modulation/mappingAmountDragState';
 import { ModulationMatrix } from '../ModulationMatrix';
 
 type StoreValue = {
@@ -19,11 +20,49 @@ type StoreValue = {
     }>;
 };
 
+type TrackRef = {
+    id: string;
+    name: string;
+    devices: Array<{ id: string; name: string; type: string }>;
+};
+
+function makeModulatorWithMapping(amount: number): StoreValue['modulators'][number] {
+    return {
+        id: 'mod-1',
+        name: 'LFO 1',
+        kind: 'lfo',
+        trackId: 'track-1',
+        enabled: true,
+        mappings: [{ targetTrackId: 'track-1', targetDeviceId: 'device-1', targetParamId: 'cutoff', amount }],
+    };
+}
+
+function makeTrack(id: string, name: string): TrackRef {
+    return { id, name, devices: [{ id: 'device-1', name: 'Filter', type: 'mock-plugin' }] };
+}
+
+function currentAmount(): number | undefined {
+    return mocks.modState.modulators[0]?.mappings[0]?.amount;
+}
+
+/** Captures rAF callbacks without running them, so a test decides when a frame ends. */
+function stubAnimationFrame() {
+    const requestAnimationFrameMock = vi.fn((): number => 101);
+    vi.stubGlobal('requestAnimationFrame', requestAnimationFrameMock);
+    vi.stubGlobal('cancelAnimationFrame', vi.fn());
+    return { requestAnimationFrameMock };
+}
+
 const mocks = vi.hoisted(() => {
     const modState: StoreValue = { modulators: [] };
     return {
         modState,
-        trackState: { tracks: [] },
+        trackState: { tracks: [] as TrackRef[] },
+        // Real `updateMapping` runs against the fake store below; this records
+        // every store write so a drag gesture can be proven to write once.
+        storeSet: vi.fn<(next: StoreValue) => void>(),
+        pushUndoEntry: vi.fn<(label: string, undoFn: () => void, redoFn: () => void) => void>(),
+        addModulator: vi.fn<(modulator: unknown) => string>(),
     };
 });
 
@@ -40,7 +79,16 @@ vi.mock('#/infra/store/useStore', () => ({
 }));
 
 vi.mock('../../../stores/modulationStore', () => ({
-    modulationStore: { __id: 'modulation' },
+    modulationStore: {
+        __id: 'modulation',
+        get value(): StoreValue {
+            return mocks.modState;
+        },
+        set(next: StoreValue) {
+            mocks.storeSet(next);
+            mocks.modState = next;
+        },
+    },
 }));
 
 vi.mock('#/modules/Arrangement/stores', () => ({
@@ -54,18 +102,26 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     }),
 }));
 
+vi.mock('#/modules/Command/useCases', () => ({
+    pushUndoEntry: mocks.pushUndoEntry,
+}));
+
 vi.mock('../../../useCases/modulation/addMapping', () => ({ addMapping: vi.fn() }));
-vi.mock('../../../useCases/modulation/addModulator', () => ({ addModulator: vi.fn() }));
+vi.mock('../../../useCases/modulation/addModulator', () => ({ addModulator: mocks.addModulator }));
 vi.mock('../../../useCases/modulation/removeMapping', () => ({ removeMapping: vi.fn() }));
 vi.mock('../../../useCases/modulation/removeModulator', () => ({ removeModulator: vi.fn() }));
-vi.mock('../../../useCases/modulation/updateMapping', () => ({ updateMapping: vi.fn() }));
 vi.mock('../../../useCases/modulation/updateModulator', () => ({ updateModulator: vi.fn() }));
 
 describe('ModulationMatrix', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mocks.modState.modulators = [];
-        mocks.trackState.tracks = [];
+        mocks.modState = { modulators: [] };
+        mocks.trackState = { tracks: [] };
+    });
+
+    afterEach(() => {
+        mappingAmountDragState.activeSession = null;
+        vi.unstubAllGlobals();
     });
 
     it('should render without crashing', () => {
@@ -116,5 +172,48 @@ describe('ModulationMatrix', () => {
         render(<ModulationMatrix />);
         const region = screen.getByRole('region', { name: /modulation matrix/i });
         expect(region).toBeInTheDocument();
+    });
+
+    it('should coalesce an amount drag into one store write and one undo entry per gesture', () => {
+        stubAnimationFrame();
+        mocks.modState = { modulators: [makeModulatorWithMapping(0.2)] };
+        render(<ModulationMatrix />);
+
+        const slider = screen.getByLabelText(/Amount for /);
+        fireEvent.pointerDown(slider);
+        for (const value of ['0.3', '0.4', '0.5', '0.6', '0.7']) {
+            fireEvent.change(slider, { target: { value } });
+        }
+        // Nothing is written mid-gesture: writes are coalesced per frame.
+        expect(mocks.storeSet).not.toHaveBeenCalled();
+
+        fireEvent.pointerUp(slider);
+
+        expect(mocks.storeSet).toHaveBeenCalledTimes(1);
+        expect(currentAmount()).toBe(0.7);
+        expect(mocks.pushUndoEntry).toHaveBeenCalledTimes(1);
+
+        const [, undo, redo] = mocks.pushUndoEntry.mock.calls[0]!;
+        undo();
+        expect(currentAmount()).toBe(0.2);
+        redo();
+        expect(currentAmount()).toBe(0.7);
+    });
+
+    it('should resync the default track selection when tracks arrive after the form opened', () => {
+        const view = render(<ModulationMatrix />);
+        fireEvent.click(screen.getByRole('button', { name: /new modulator/i }));
+
+        expect(screen.getByLabelText('Modulator track scope')).toHaveValue('');
+        expect(screen.getByRole('button', { name: 'Add' })).toBeDisabled();
+
+        mocks.trackState = { tracks: [makeTrack('track-1', 'Lead')] };
+        view.rerender(<ModulationMatrix />);
+
+        expect(screen.getByLabelText('Modulator track scope')).toHaveValue('track-1');
+        fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+
+        expect(mocks.addModulator).toHaveBeenCalledTimes(1);
+        expect(mocks.addModulator.mock.calls[0]![0]).toMatchObject({ trackId: 'track-1', kind: 'lfo' });
     });
 });

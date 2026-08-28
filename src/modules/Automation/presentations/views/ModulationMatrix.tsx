@@ -1,4 +1,4 @@
-import { type ChangeEvent, type ReactElement, useState } from 'react';
+import { type ChangeEvent, type ReactElement, useEffect, useState } from 'react';
 
 import { Plus, Trash2, X } from 'lucide-react';
 
@@ -18,9 +18,12 @@ import { type Modulator, type ModulatorKind, type ModulatorMapping } from '../..
 import { modulationStore, type ModulationStoreState } from '../../stores/modulationStore';
 import { addMapping } from '../../useCases/modulation/addMapping';
 import { addModulator } from '../../useCases/modulation/addModulator';
+import { beginMappingAmountDrag } from '../../useCases/modulation/beginMappingAmountDrag';
+import { endMappingAmountDrag } from '../../useCases/modulation/endMappingAmountDrag';
+import { isMappingAmountDragActive } from '../../useCases/modulation/isMappingAmountDragActive';
+import { paintMappingAmountDrag } from '../../useCases/modulation/paintMappingAmountDrag';
 import { removeMapping } from '../../useCases/modulation/removeMapping';
 import { removeModulator } from '../../useCases/modulation/removeModulator';
-import { updateMapping } from '../../useCases/modulation/updateMapping';
 import { updateModulator } from '../../useCases/modulation/updateModulator';
 
 type DeviceRef = {
@@ -164,6 +167,20 @@ type NewModulatorFormProps = {
 const NewModulatorForm = ({ tracks, onClose }: NewModulatorFormProps): ReactElement => {
     const defaultTrackId = tracks[0]?.id ?? '';
     const [form, setForm] = useState<FormState>({ ...DEFAULT_FORM, trackId: defaultTrackId });
+
+    // The form can open before tracks hydrate (fresh project load); a one-shot
+    // seed would pin trackId to '' forever and leave Add permanently disabled
+    // (`addModulator` refuses an empty trackId). Resync the default selection
+    // whenever the track list changes, the way the voicebank picker in
+    // ClipMidiAiSection resyncs against its registry.
+    useEffect(() => {
+        setForm((prev) => {
+            if (tracks.length === 0) {
+                return prev.trackId === '' ? prev : { ...prev, trackId: '' };
+            }
+            return tracks.some((track) => track.id === prev.trackId) ? prev : { ...prev, trackId: tracks[0]!.id };
+        });
+    }, [tracks]);
 
     const setField = <Key extends keyof FormState>(key: Key, value: FormState[Key]): void => {
         setForm((prev) => ({ ...prev, [key]: value }));
@@ -395,20 +412,28 @@ const MappingRow = ({ modulator, mapping, destination }: MappingRowProps): React
             ? `${destination.trackName} · ${destination.deviceName} · ${destination.paramName}`
             : `${mapping.targetTrackId} · ${mapping.targetDeviceId} · ${mapping.targetParamId} (unresolved)`;
 
+    // A drag gesture (pointer down → changes → pointer up) coalesces into one
+    // store write per animation frame and one undo entry for the whole
+    // gesture; a keyboard step is a complete gesture in a single change event
+    // and commits synchronously — same one write, same one undo entry.
+    const target = {
+        targetTrackId: mapping.targetTrackId,
+        targetDeviceId: mapping.targetDeviceId,
+        targetParamId: mapping.targetParamId,
+    };
+
     const handleAmountChange = (event: ChangeEvent<HTMLInputElement>): void => {
         const next = Number.parseFloat(event.target.value);
         if (!Number.isFinite(next)) {
             return;
         }
-        updateMapping(
-            modulator.id,
-            {
-                targetTrackId: mapping.targetTrackId,
-                targetDeviceId: mapping.targetDeviceId,
-                targetParamId: mapping.targetParamId,
-            },
-            { amount: Math.max(-1, Math.min(1, next)) }
-        );
+        if (isMappingAmountDragActive()) {
+            paintMappingAmountDrag(next);
+            return;
+        }
+        beginMappingAmountDrag(modulator.id, target);
+        paintMappingAmountDrag(next);
+        endMappingAmountDrag();
     };
 
     return (
@@ -424,6 +449,9 @@ const MappingRow = ({ modulator, mapping, destination }: MappingRowProps): React
                         step={0.01}
                         value={mapping.amount}
                         onChange={handleAmountChange}
+                        onPointerDown={() => beginMappingAmountDrag(modulator.id, target)}
+                        onPointerUp={endMappingAmountDrag}
+                        onPointerCancel={endMappingAmountDrag}
                         className="w-28 accent-[var(--color-accent-cyan)]"
                         aria-label={`Amount for ${sourceLabel} to ${destinationLabel}`}
                     />
