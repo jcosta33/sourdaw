@@ -1,0 +1,55 @@
+src/modules/PluginHost/useCases/pluginLifecycle/activateExternalPlugin.ts
+  s_4f908a5afb6b58::t_863fb1c547fca4 159-166
+  s_4f908a5afb6b58::t_8c23bb1925211b 22-23
+src/modules/PluginHost/useCases/pluginLifecycle/externalPluginParameterEditObservers.ts
+  s_4f908a5afb6b58::t_660281608b38c3 1-31
+src/modules/PluginHost/useCases/pluginLifecycle/__tests__/watchExternalPluginParameterEvents.spec.ts
+  s_4f908a5afb6b58::t_8ec2a173c6eb86 1-21,23-37,40-46,49-183
+  s_4f908a5afb6b58::t_11822ed3453d81 22,38-39,47-48
+src/modules/PluginHost/useCases/index.ts
+  s_4f908a5afb6b58::t_63d5cd9257baea 22
+  s_4f908a5afb6b58::t_fe23f62366801e 20-21
+src/modules/PluginHost/useCases/pluginLifecycle/watchExternalPluginParameterEvents.ts
+  s_4f908a5afb6b58::t_1a6347a48f67fe 1-6,11-13,16-38,41-43,54-67
+  s_4f908a5afb6b58::t_eecb6263b837b1 7-10,14-15,39-40,44-53
+src/modules/PluginHost/stores/externalPluginParameterStore.ts
+  s_4f908a5afb6b58::t_1fd5f62f7f1793 96-124
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/pluginStateDirtyLifecycle.spec.ts
+  s_4f908a5afb6b58::t_5547d3d1f463a6 6-12,15,19-22
+  s_4f908a5afb6b58::t_6485b626822e9d 47
+  s_4f908a5afb6b58::t_ad9adf83d83d17 78-110,117
+  s_4f908a5afb6b58::t_02eb6714b15841 34,36,41,46,48
+  s_4f908a5afb6b58::t_e6fa81354cf13d 49
+src/modules/PluginHost/useCases/pluginLifecycle/watchExternalPluginParameterRescan.ts
+  s_4f908a5afb6b58::t_2315b61a6de5e8 1-41
+src/modules/Project/useCases/projectPersistence/saveProject/initPluginStateDirtyTracking.ts
+  s_4f908a5afb6b58::t_da8c3453aff06f 2,15-20,33-42,44
+src/modules/PluginHost/repositories/pluginBridge/onPluginParameterEvents.ts
+  s_4f908a5afb6b58::t_65a5ebdfdd213a 1-57
+src/modules/PluginHost/repositories/pluginBridge/onPluginParametersRescanned.ts
+  s_4f908a5afb6b58::t_7e8045d88fc297 1-35
+src/modules/PluginHost/useCases/pluginLifecycle/__tests__/watchExternalPluginParameterRescan.spec.ts
+  s_4f908a5afb6b58::t_db2a81cde2e2d9 1-81
+src/modules/PluginHost/useCases/pluginLifecycle/observeExternalPluginParameterEdits.ts
+  s_4f908a5afb6b58::t_f1e0a22fca260a 1-29
+src/modules/PluginHost/repositories/pluginBridge/types.ts
+  s_4f908a5afb6b58::t_6d378b97649907 98-143
+src/modules/PluginHost/repositories/pluginBridge/__tests__/onPluginParameterEvents.spec.ts
+  s_4f908a5afb6b58::t_9c3bf4835770c3 1-159
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "a7400b6ab2607a7649b385405159962342abd60b",
+  "prompts": {},
+  "sessions": {
+    "s_4f908a5afb6b58": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fcb92ba4-bf56-47a4-8b57-803f335a449e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
