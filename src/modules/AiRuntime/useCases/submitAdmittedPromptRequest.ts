@@ -1,3 +1,4 @@
+import { logger } from '#/infra/logger/appLogger';
 import { parseVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
 import { settlePendingProjectWritesAndCaptureRevision } from '#/modules/CrdtDocument/useCases';
 import { type AppAction } from '#/utils/handlerContract';
@@ -5,6 +6,7 @@ import { type AppAction } from '#/utils/handlerContract';
 import { type AgentExecutionMode } from '../models/AgentExecutionMode';
 import { type ModelProviderResult } from '../models/ModelProviderProtocol';
 
+import { settleAgentRunWorkLeaseSafely } from './agentRequestOrchestration/settleAgentRunWorkLeaseSafely';
 import { agentRunLifecycle } from './agentRunLifecycle';
 import { agentRunWorkLease } from './agentRunWorkLease';
 import { agentRunCancellation } from './cancelAgentRun';
@@ -87,20 +89,18 @@ export async function submitAdmittedPromptRequest(
         recordAgentProviderUsage(runId, pendingProviderResult, pendingProviderResult.correlationId, { terminal });
         pendingProviderResult = null;
     };
-    const settleProvider = (
-        terminalState: 'completed' | 'failed' | 'cancelled'
-    ): ReturnType<typeof agentRunWorkLease.settle> | null => {
+    const settleProvider = (terminalState: 'completed' | 'failed' | 'cancelled') => {
         if (!providerLease || providerSettled) {
             return null;
         }
-        const settlement = agentRunWorkLease.settle({
-            runId,
-            workId: providerLease.workId,
-            leaseId: providerLease.leaseId,
-            cancellationGeneration: providerLease.cancellationGeneration,
-            idempotencyKey: providerLease.idempotencyKey,
-            receiptIdentity: providerLease.receiptIdentity,
+        const settlement = settleAgentRunWorkLeaseSafely({
+            lease: providerLease,
             terminalState,
+            evidence: 'none',
+            settle: agentRunWorkLease.settle,
+            reportFailure: (error) => {
+                logger.error(new Error('Prompt provider lease settlement failed', { cause: error }));
+            },
         });
         providerSettled = true;
         return settlement;
@@ -175,16 +175,20 @@ export async function submitAdmittedPromptRequest(
                   };
 
         recordPendingProviderResult(true);
+        if (input.signal?.aborted) {
+            await cancel();
+            settleProvider('cancelled');
+            return { status: 'rejected', runId };
+        }
         const providerSettlement = settleProvider('completed');
         const currentRun = agentRunLifecycle.get(runId);
         if (
-            input.signal?.aborted ||
             currentRun?.phase === 'cancelled' ||
             currentRun?.phase === 'partially-completed' ||
-            (providerSettlement !== null && providerSettlement.status !== 'settled')
+            (providerSettlement !== null && (!providerSettlement.accepted || providerSettlement.warning !== null))
         ) {
-            if (input.signal?.aborted && currentRun && currentRun.phase !== 'cancelled') {
-                await cancel();
+            if (providerSettlement?.warning) {
+                notifyAiChange(`Prompt plan was not materialized: ${providerSettlement.warning}`, []);
             }
             return { status: 'rejected', runId };
         }
@@ -298,8 +302,14 @@ export async function submitAdmittedPromptRequest(
             settleProvider('cancelled');
             return { status: 'rejected', runId };
         }
-        settleProvider('failed');
-        transitionTerminalRun(runId, 'failed');
+        const providerSettlement = settleProvider('failed');
+        if (!providerLease || providerSettlement?.accepted) {
+            transitionTerminalRun(runId, 'failed');
+        }
+        if (providerSettlement?.warning) {
+            const message = error instanceof Error ? error.message : String(error);
+            notifyAiChange(`Command not executed: ${message}. ${providerSettlement.warning}`, []);
+        }
         throw error;
     } finally {
         input.signal?.removeEventListener('abort', onAbort);

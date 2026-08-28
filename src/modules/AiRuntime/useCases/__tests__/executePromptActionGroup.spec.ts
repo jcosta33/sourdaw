@@ -13,6 +13,10 @@ import { getTransportHandlers } from '#/modules/Transport/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { readAgentRunState } from '../../stores/agentRunStore';
+import {
+    AGENT_RUN_FAILURE_PERSISTENCE_WARNING,
+    AGENT_RUN_STALE_FAILURE_WARNING,
+} from '../agentRequestOrchestration/settleAgentRunWorkLeaseSafely';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { agentRunWorkLease } from '../agentRunWorkLease';
 import { compilePendingActionCommandEnvelopes } from '../compilePendingActionCommandEnvelopes';
@@ -894,6 +898,33 @@ describe('executePromptActionGroup', () => {
             `stem-promotion:${RUN_ID}:${BATCH_ID}`
         );
         expect(mocks.discardPreparedStemImportResources).not.toHaveBeenCalled();
+    });
+
+    it.each([
+        { label: 'stale', settle: () => ({ status: 'stale' as const }), warning: AGENT_RUN_STALE_FAILURE_WARNING },
+        {
+            label: 'persistence fails',
+            settle: () => {
+                throw new Error('Lease storage unavailable');
+            },
+            warning: AGENT_RUN_FAILURE_PERSISTENCE_WARNING,
+        },
+    ])('preserves a thrown command failure when failed settlement is $label', async ({ settle, warning }) => {
+        const fixture = getBatchFixtures().stem;
+        seedRun(fixture);
+        mocks.executePlannedActions.mockRejectedValue(new Error('Executor crashed'));
+        vi.spyOn(agentRunWorkLease, 'settle').mockImplementationOnce(settle);
+
+        await expect(
+            executePromptActionGroup({
+                actions: fixture.actions,
+                prompt: 'Import stems',
+                projectRevision: 'revision-1',
+                ...admitted(fixture),
+            })
+        ).rejects.toThrow('Executor crashed');
+
+        expect(mocks.notifyAiChange).toHaveBeenCalledWith(`Command not executed: Executor crashed. ${warning}`, []);
     });
 
     it.each(['lease-settlement', 'receipt-persistence'] as const)(

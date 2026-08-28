@@ -2,6 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { type AppAction } from '#/utils/handlerContract';
 
+import {
+    AGENT_RUN_COMPLETION_PERSISTENCE_WARNING,
+    AGENT_RUN_FAILURE_PERSISTENCE_WARNING,
+    AGENT_RUN_STALE_FAILURE_WARNING,
+} from '../agentRequestOrchestration/settleAgentRunWorkLeaseSafely';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { agentRunWorkLease } from '../agentRunWorkLease';
 import { submitAdmittedPromptRequest } from '../submitAdmittedPromptRequest';
@@ -34,6 +39,8 @@ vi.mock('../notifyAiChange', () => ({ notifyAiChange: mocks.notifyAiChange }));
 vi.mock('../planPromptActions', () => ({ planPromptActions: mocks.planPromptActions }));
 
 const RUN_ID = 'agent-run-00000000-0000-0000-0000-000000000001';
+const STALE_PROVIDER_COMPLETION_WARNING =
+    'Agent work completed after its run lease was cancelled or replaced. No completed artifact is claimed, and the terminal run was not reopened.';
 const action = { type: 'togglePlayback' } as const;
 const authority = {
     projectId: 'revision-1',
@@ -292,6 +299,71 @@ describe('submitAdmittedPromptRequest', () => {
             cancellation: { generation: 1 },
             workLeases: [{ workId: 'provider-planning', terminalState: 'cancelled' }],
         });
+    });
+
+    it.each([
+        { label: 'stale', settle: () => ({ status: 'stale' as const }), warning: STALE_PROVIDER_COMPLETION_WARNING },
+        {
+            label: 'persistence fails',
+            settle: () => {
+                throw new Error('Provider lease storage unavailable');
+            },
+            warning: AGENT_RUN_COMPLETION_PERSISTENCE_WARNING,
+        },
+    ])(
+        'does not materialize a prompt plan when provider completion settlement is $label',
+        async ({ settle, warning }) => {
+            mocks.planPromptActions.mockResolvedValue({
+                context: { tracks: [] },
+                result: { actions: [action], rawText: 'Play', requiresConfirmation: true },
+                projectRevision: 'revision-1',
+            });
+            vi.spyOn(agentRunWorkLease, 'settle').mockImplementationOnce(settle);
+
+            await expect(submitAdmittedPromptRequest({ prompt: 'Play', source: 'prompt-bar' })).resolves.toEqual({
+                status: 'rejected',
+                runId: RUN_ID,
+            });
+
+            expect(mocks.compileAgentActionExecution).not.toHaveBeenCalled();
+            expect(mocks.executePromptActionGroup).not.toHaveBeenCalled();
+            expect(agentRunLifecycle.get(RUN_ID)).toMatchObject({
+                phase: 'planning',
+                plan: null,
+                batches: [],
+                workLeases: [{ workId: 'provider-planning', terminalState: null }],
+            });
+            expect(mocks.notifyAiChange).toHaveBeenCalledExactlyOnceWith(
+                `Prompt plan was not materialized: ${warning}`,
+                []
+            );
+        }
+    );
+
+    it.each([
+        { label: 'stale', settle: () => ({ status: 'stale' as const }), warning: AGENT_RUN_STALE_FAILURE_WARNING },
+        {
+            label: 'persistence fails',
+            settle: () => {
+                throw new Error('Provider lease storage unavailable');
+            },
+            warning: AGENT_RUN_FAILURE_PERSISTENCE_WARNING,
+        },
+    ])('preserves the provider failure when failed settlement is $label', async ({ settle, warning }) => {
+        mocks.planPromptActions.mockRejectedValue(new Error('Provider planning failed'));
+        vi.spyOn(agentRunWorkLease, 'settle').mockImplementationOnce(settle);
+
+        await expect(submitAdmittedPromptRequest({ prompt: 'Play', source: 'prompt-bar' })).rejects.toThrow(
+            'Provider planning failed'
+        );
+
+        expect(mocks.compileAgentActionExecution).not.toHaveBeenCalled();
+        expect(mocks.executePromptActionGroup).not.toHaveBeenCalled();
+        expect(agentRunLifecycle.get(RUN_ID)).toMatchObject({ plan: null, batches: [] });
+        expect(mocks.notifyAiChange).toHaveBeenCalledExactlyOnceWith(
+            `Command not executed: Provider planning failed. ${warning}`,
+            []
+        );
     });
 
     it('preserves compiler dependencies and batch-local bindings at the admitted compilation boundary', async () => {
