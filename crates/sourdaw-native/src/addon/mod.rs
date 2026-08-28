@@ -393,9 +393,10 @@ impl SourdawNative {
     // ── Plugin hosting ─────────────────────────────────────────────────
 
     #[napi]
-    pub async fn scan_plugins(&self, paths: Vec<String>) -> Result<Value> {
+    pub async fn scan_plugins(&self, paths: Vec<String>, retry_quarantined: bool) -> Result<Value> {
         json(reason(
-            commands::plugins::scan_plugins(paths, &self.singletons.app_state).await,
+            commands::plugins::scan_plugins(paths, retry_quarantined, &self.singletons.app_state)
+                .await,
         )?)
     }
 

@@ -66,7 +66,7 @@ export const SOURDAW_COMMAND_ARGUMENTS: ReadonlyMap<string, readonly string[]> =
     ['read_file_bytes', ['path']],
     ['register_timeline_sample', ['sample_id', 'sample_rate', 'channels', 'pcm']],
     ['render_graph_offline', ['batch', 'frames', 'sample_rate']],
-    ['scan_plugins', ['paths']],
+    ['scan_plugins', ['paths', 'retry_quarantined']],
     ['send_push_midi', ['bytes']],
     ['set_crumbs_mode', ['instance_id', 'mode']],
     ['set_crumbs_param', ['instance_id', 'param', 'value']],

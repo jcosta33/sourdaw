@@ -87,7 +87,23 @@ describe('the scan command', () => {
         expect(scan).toHaveBeenCalledWith({ paths: ['/CLAP'] });
     });
 
-    it('refuses a foreign sender and a malformed root list before forking anything', async () => {
+    it('forwards an explicit retry flag to the supervisor', async () => {
+        const scan = vi.fn(async () => []);
+
+        await scanHandler(supervisorSpy(scan))?.(APP_FRAME, [['/CLAP'], true]);
+
+        expect(scan).toHaveBeenCalledWith({ paths: ['/CLAP'], retryQuarantined: true });
+    });
+
+    it('omits the retry flag rather than forwarding it as false, matching the default call shape', async () => {
+        const scan = vi.fn(async () => []);
+
+        await scanHandler(supervisorSpy(scan))?.(APP_FRAME, [['/CLAP'], false]);
+
+        expect(scan).toHaveBeenCalledWith({ paths: ['/CLAP'] });
+    });
+
+    it('refuses a foreign sender, a malformed root list, and a non-boolean retry flag before forking anything', async () => {
         const scan = vi.fn(async () => []);
         const handler = scanHandler(supervisorSpy(scan));
 
@@ -97,6 +113,7 @@ describe('the scan command', () => {
         await expect(handler?.(APP_FRAME, [{ roots: [] }])).rejects.toThrow(/list of paths/u);
         await expect(handler?.(APP_FRAME, [['/a', 7]])).rejects.toThrow(/list of paths/u);
         await expect(handler?.(APP_FRAME, '/a')).rejects.toThrow(/positional array/u);
+        await expect(handler?.(APP_FRAME, [['/a'], 'yes'])).rejects.toThrow(/retry_quarantined/u);
         expect(scan).not.toHaveBeenCalled();
     });
 });

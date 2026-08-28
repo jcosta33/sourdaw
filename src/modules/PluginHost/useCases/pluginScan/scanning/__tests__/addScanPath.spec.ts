@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => {
             errors: [],
             notices: [],
             lastScanTime: null,
+            quarantined: [],
         },
     };
     return {
@@ -67,6 +68,7 @@ describe('addScanPath', () => {
             errors: [],
             notices: [],
             lastScanTime: null,
+            quarantined: [],
         };
         mocks.pluginScanStoreSet.mockImplementation((value) => {
             if (value !== null) {

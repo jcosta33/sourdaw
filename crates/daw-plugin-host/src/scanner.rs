@@ -317,6 +317,26 @@ pub struct ScanResult {
     /// that reports real failures.
     pub notices: Vec<String>,
     pub scan_duration_ms: u64,
+    /// Binaries the scan will not spawn a helper for again until an explicit
+    /// retry names them (see `retry_quarantined` on the scan command).
+    ///
+    /// A candidate lands here when its scan helper exited unsuccessfully or
+    /// ran past its bound — process-level evidence the binary itself is
+    /// unsafe to keep re-running, not a data-level refusal such as a
+    /// malformed response. The record persists in the registry document, so a
+    /// quarantined binary is named on every scan response, not just the one
+    /// that caught the crash (#2911).
+    pub quarantined: Vec<QuarantinedPlugin>,
+}
+
+/// A plugin binary quarantined after its scan helper crashed or timed out.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct QuarantinedPlugin {
+    pub path: String,
+    /// The process-level failure that triggered quarantine, verbatim from the
+    /// scan helper.
+    pub reason: String,
+    pub quarantined_at_ms: u64,
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────

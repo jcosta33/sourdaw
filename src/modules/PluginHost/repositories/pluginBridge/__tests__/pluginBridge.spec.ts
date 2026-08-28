@@ -77,6 +77,13 @@ describe('pluginBridge repository', () => {
             expect(desktopInvoke).toHaveBeenCalledWith('scan_plugins', { paths: ['/path'] });
             expect(attempt).toEqual({ ran: true, result: { plugins: [], errors: [], scan_duration_ms: 10 } });
         });
+
+        it('forwards an explicit retry request, unlike the default call', async () => {
+            vi.mocked(isDesktopRuntime).mockReturnValue(true);
+            vi.mocked(desktopInvoke).mockResolvedValue({ plugins: [], errors: [], scan_duration_ms: 10 });
+            await scanPlugins(['/path'], true);
+            expect(desktopInvoke).toHaveBeenCalledWith('scan_plugins', { paths: ['/path'], retryQuarantined: true });
+        });
     });
 
     describe('setPluginParameter', () => {

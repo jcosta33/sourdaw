@@ -44,6 +44,14 @@ export type ScanProcess = {
 
 export type ScanRequest = {
     readonly paths: readonly string[];
+    /**
+     * Clear every quarantine record a candidate under `paths` carries before
+     * its helper runs, so a binary whose helper previously crashed or timed
+     * out gets one more attempt. Omitted or `false` is the default
+     * incremental scan, which skips a quarantined candidate without ever
+     * clearing its record (#2911).
+     */
+    readonly retryQuarantined?: boolean;
 };
 
 export type ForkScanProcess = () => ScanProcess;
@@ -100,7 +108,7 @@ export const createScanSupervisor = ({
 }: CreateScanSupervisorInput): ScanSupervisor => {
     let worker: ScanProcess | undefined;
 
-    const scan = async ({ paths }: ScanRequest): Promise<unknown> => {
+    const scan = async ({ paths, retryQuarantined }: ScanRequest): Promise<unknown> => {
         if (worker !== undefined) {
             throw new Error('A plugin scan is already running');
         }
@@ -149,7 +157,12 @@ export const createScanSupervisor = ({
                 finish(() => reject(new Error('The plugin scan worker exited before it answered')));
             });
 
-            current.postMessage({ paths });
+            // Omitted rather than sent as `undefined`: `postMessage` structured-
+            // clones the payload, which preserves an `undefined`-valued key
+            // rather than dropping it the way `JSON.stringify` would, and the
+            // worker's parser refuses a present-but-wrong-typed field along
+            // with the rest of the message.
+            current.postMessage(retryQuarantined === undefined ? { paths } : { paths, retryQuarantined });
         });
     };
 

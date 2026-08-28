@@ -60,20 +60,33 @@ export const scanWorkerCommand = (execPath: string, scriptPath: string): ScanWor
     env: { ELECTRON_RUN_AS_NODE: '1' },
 });
 
-export type ScanWorkerRequest = { readonly paths: readonly string[] };
+export type ScanWorkerRequest = {
+    readonly paths: readonly string[];
+    readonly retryQuarantined?: boolean;
+};
 
 /** Parse a supervisor request. An unrecognised message is answered, never obeyed. */
 export const asScanWorkerRequest = (message: unknown): ScanWorkerRequest | undefined => {
     if (
-        typeof message === 'object' &&
-        message !== null &&
-        'paths' in message &&
-        Array.isArray(message.paths) &&
-        message.paths.every((entry) => typeof entry === 'string')
+        typeof message !== 'object' ||
+        message === null ||
+        !('paths' in message) ||
+        !Array.isArray(message.paths) ||
+        !message.paths.every((entry) => typeof entry === 'string')
     ) {
-        return { paths: message.paths };
+        return undefined;
     }
-    return undefined;
+    if ('retryQuarantined' in message) {
+        // A present-but-wrong-typed field is refused along with the rest of
+        // the message rather than silently dropped: a caller whose flag never
+        // arrives would have every quarantined binary scanned again with no
+        // sign that the retry request itself was lost.
+        if (typeof message.retryQuarantined !== 'boolean') {
+            return undefined;
+        }
+        return { paths: message.paths, retryQuarantined: message.retryQuarantined };
+    }
+    return { paths: message.paths };
 };
 
 /** Read one addon method, failing by name rather than as `undefined is not a function`. */
@@ -83,6 +96,30 @@ export const nativeCommand = (host: NativeHost, method: string): NativeCommand =
         throw new TypeError(`The native addon does not implement ${method}`);
     }
     return implementation;
+};
+
+export type ScanWorkerResponse =
+    { readonly ok: true; readonly result: unknown } | { readonly ok: false; readonly error: string };
+
+/**
+ * Handle one supervisor request end to end: parse it, run the scan through
+ * `scanPlugins`, and shape the response `scan.ts`'s `asWorkerMessage` expects.
+ *
+ * Exported and pure of `parentPort` so a test can drive it directly with a
+ * fake `scanPlugins` and assert exactly what it was called with — in
+ * particular, that a parsed `retryQuarantined` actually reaches the native
+ * call rather than being silently dropped between parsing and dispatch.
+ */
+export const handleScanRequest = async (message: unknown, scanPlugins: NativeCommand): Promise<ScanWorkerResponse> => {
+    const request = asScanWorkerRequest(message);
+    if (request === undefined) {
+        return { ok: false, error: 'The plugin scan request was malformed' };
+    }
+    try {
+        return { ok: true, result: await scanPlugins(request.paths, request.retryQuarantined ?? false) };
+    } catch (error) {
+        return { ok: false, error: error instanceof Error ? error.message : String(error) };
+    }
 };
 
 const main = (): void => {
@@ -116,21 +153,9 @@ const main = (): void => {
     const scanPlugins = nativeCommand(host, 'scanPlugins');
 
     process.parentPort.on('message', (event) => {
-        const request = asScanWorkerRequest(event.data);
-        if (request === undefined) {
-            process.parentPort.postMessage({ ok: false, error: 'The plugin scan request was malformed' });
-            return;
-        }
-        void (async () => {
-            try {
-                process.parentPort.postMessage({ ok: true, result: await scanPlugins(request.paths) });
-            } catch (error) {
-                process.parentPort.postMessage({
-                    ok: false,
-                    error: error instanceof Error ? error.message : String(error),
-                });
-            }
-        })();
+        void handleScanRequest(event.data, scanPlugins).then((response) => {
+            process.parentPort.postMessage(response);
+        });
     });
 };
 

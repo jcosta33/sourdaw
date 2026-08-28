@@ -15,9 +15,12 @@ import { type ScanResult } from './types';
  */
 export type PluginScanAttempt = { ran: true; result: ScanResult } | { ran: false; reason: string };
 
-export async function scanPlugins(paths: string[]): Promise<PluginScanAttempt> {
+export async function scanPlugins(paths: string[], retryQuarantined = false): Promise<PluginScanAttempt> {
     if (!isDesktopRuntime()) {
         return { ran: false, reason: 'Plugin scanning requires the desktop app' };
     }
-    return { ran: true, result: (await desktopInvoke('scan_plugins', { paths })) as ScanResult };
+    // Omitted rather than sent as `false`: keeps the ordinary scan call's
+    // argument record identical to before this flag existed.
+    const args = retryQuarantined ? { paths, retryQuarantined } : { paths };
+    return { ran: true, result: (await desktopInvoke('scan_plugins', args)) as ScanResult };
 }
