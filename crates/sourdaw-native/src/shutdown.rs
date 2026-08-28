@@ -29,7 +29,7 @@
 
 use std::sync::{Arc, Weak};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crate::commands::collab::{shutdown_discovery, CollabState};
 use crate::commands::plugin_gui::close_every_plugin_gui;
@@ -42,13 +42,14 @@ use crate::state::{locked_or_poisoned, AppState, EnginePluginInstanceData};
 ///
 /// The audio thread applies a queued removal within a callback period and the
 /// reclaimer thread drops the slot right after, so this is generous for the
-/// ordinary case. Only sleeping is charged to it: a plugin whose `destroy`
-/// persists a large preset takes as long as it takes, and charging that to a
-/// wall clock fixed at the pass's start would leave every instance after the
-/// first with nothing left to wait with. It is one budget for the whole pass
-/// rather than one per instance, so a stalled audio thread costs the exit the
-/// same whether one plugin is loaded or thirty — and the shell's own exit
-/// deadline survives it.
+/// ordinary case. Only sleeping is charged to it, and charged as *measured*
+/// rather than as requested: a plugin whose `destroy` persists a large preset
+/// takes as long as it takes, and charging that to a wall clock fixed at the
+/// pass's start would leave every instance after the first with nothing left to
+/// wait with — while charging a sleep what it asked for rather than what it took
+/// bounds nothing at all on a loaded machine. It is one budget for the whole
+/// pass rather than one per instance, so a stalled audio thread costs the exit
+/// the same whether one plugin is loaded or thirty.
 const SCHEDULER_RELEASE_BUDGET: Duration = Duration::from_millis(500);
 
 /// Poll interval while waiting for that release.
@@ -235,6 +236,11 @@ fn retire_for_reclamation(
 /// more after every wait, so a runtime the scheduler releases mid-pass — an
 /// unload seconds before the quit, say — still reaches the reclamation point
 /// instead of falling past it.
+///
+/// Waiting costs the budget plus at most one poll's overshoot, whatever the load
+/// on the machine, because every sleep is charged what it measured. Teardown
+/// inside a sweep is not waiting and is not charged, so it is bounded by the
+/// plugins themselves and by the shell's force-exit behind them.
 fn reclaim_until_waiting_budget_is_spent(app_state: &AppState) {
     let mut remaining_budget = SCHEDULER_RELEASE_BUDGET;
 
@@ -253,10 +259,24 @@ fn reclaim_until_waiting_budget_is_spent(app_state: &AppState) {
             return;
         }
 
-        let slept = SCHEDULER_RELEASE_POLL.min(remaining_budget);
-        thread::sleep(slept);
-        remaining_budget -= slept;
+        remaining_budget = remaining_budget.saturating_sub(sleep_one_poll(remaining_budget));
     }
+}
+
+/// Sleep one poll interval, and report how long that actually took.
+///
+/// The measurement is the point. `thread::sleep` guarantees a floor, never a
+/// ceiling, and on a loaded machine a 2 ms request comes back several times
+/// later; charging the budget the *requested* interval instead makes the loop
+/// run its full iteration count whatever each one really cost, so the wall
+/// clock the budget exists to bound grows without limit — seconds against a
+/// half-second budget, with the shell's force-exit as the only thing left
+/// stopping it.
+fn sleep_one_poll(remaining_budget: Duration) -> Duration {
+    let poll = SCHEDULER_RELEASE_POLL.min(remaining_budget);
+    let started = Instant::now();
+    thread::sleep(poll);
+    started.elapsed()
 }
 
 fn record_reclamation(
@@ -289,7 +309,6 @@ mod tests {
     use daw_plugin_host::ProcessingGate;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::{Arc, Mutex};
-    use std::time::Instant;
 
     /// Records what the stores held at `destroy_window` time.
     ///
