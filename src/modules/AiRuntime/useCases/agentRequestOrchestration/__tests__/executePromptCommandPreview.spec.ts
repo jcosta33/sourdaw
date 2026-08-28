@@ -139,11 +139,22 @@ describe('executePromptCommandPreview', () => {
 
     it('rejects a non-claimed lease before transition, cancellation binding, or execution', async () => {
         mocks.claim.mockReturnValue({ status: 'already-settled' });
+        const input = createInput();
 
-        await expect(executePromptCommandPreview(createInput())).rejects.toThrow(
+        await expect(executePromptCommandPreview(input)).rejects.toThrow(
             'Agent preview work could not be claimed: already-settled'
         );
 
+        expect(mocks.claim).toHaveBeenCalledWith({
+            runId: 'run-preview',
+            workId: 'preview:batch-preview',
+            ownerKind: 'command',
+            cleanupOwner: 'command-preview',
+            idempotencyKey: 'preview:run-preview:batch-preview',
+            receiptIdentity: 'preview:run-preview:batch-preview',
+            idempotent: true,
+            retriable: false,
+        });
         expect(mocks.transitionPhase).not.toHaveBeenCalled();
         expect(mocks.createResourceLease).not.toHaveBeenCalled();
         expect(mocks.bindAbortController).not.toHaveBeenCalled();
@@ -203,11 +214,24 @@ describe('executePromptCommandPreview', () => {
             'resource-release-started',
             'resource-release-finished',
         ]);
+        expect(mocks.executeBatch).toHaveBeenCalledWith(input.commandBatch);
+        expect(mocks.settleSafely).toHaveBeenCalledWith({
+            lease,
+            terminalState: 'failed',
+            evidence: 'none',
+            settle: mocks.settle,
+        });
+        expect(mocks.updateBatchStatus).toHaveBeenCalledWith({
+            runId: 'run-preview',
+            batchId: 'batch-preview',
+            status: 'failed',
+        });
         expect(mocks.createResourceLease).toHaveBeenCalledWith('run-preview', input.actions);
         expect(mocks.bindAbortController).toHaveBeenCalledWith(
             expect.objectContaining({
                 runId: 'run-preview',
                 lease,
+                controller: input.abortController,
                 reason: 'User cancelled the run while command preview was active.',
             })
         );
@@ -217,12 +241,27 @@ describe('executePromptCommandPreview', () => {
         'cancelled' | 'rejected' | 'conflicted' | 'failed'
     >)('cancels and settles a %s preview outcome before propagating its reason', async (status) => {
         const reason = `${status} preview reason`;
+        const ordering: string[] = [];
         mocks.executeBatch.mockResolvedValue({ status, reason });
         mocks.captureProjectRevision.mockReturnValue('revision-stale');
+        mocks.cancel.mockImplementation(async () => {
+            ordering.push('cancelled');
+        });
+        releaseCancellation.mockImplementation(() => ordering.push('abort-unregistered'));
+        releasePreparedResources.mockImplementation(async () => {
+            ordering.push('prepared-resource-released');
+        });
+        mocks.settleSafely.mockImplementation(() => {
+            ordering.push('settled');
+            return { accepted: true, warning: null };
+        });
+        const input = createInput();
 
-        await expect(executePromptCommandPreview(createInput())).rejects.toThrow(reason);
+        await expect(executePromptCommandPreview(input)).rejects.toThrow(reason);
 
+        expect(mocks.executeBatch).toHaveBeenCalledWith(input.commandBatch);
         expect(mocks.cancel).toHaveBeenCalledWith({ runId: 'run-preview', reason });
+        expect(ordering).toEqual(['cancelled', 'abort-unregistered', 'prepared-resource-released', 'settled']);
         expect(mocks.settleSafely).toHaveBeenCalledWith(
             expect.objectContaining({
                 lease,
@@ -241,9 +280,11 @@ describe('executePromptCommandPreview', () => {
 
     it('does not cancel a rejected preview when the project revision remains current', async () => {
         mocks.executeBatch.mockResolvedValue({ status: 'rejected', reason: 'preview rejected' });
+        const input = createInput();
 
-        await expect(executePromptCommandPreview(createInput())).rejects.toThrow('preview rejected');
+        await expect(executePromptCommandPreview(input)).rejects.toThrow('preview rejected');
 
+        expect(mocks.executeBatch).toHaveBeenCalledWith(input.commandBatch);
         expect(mocks.captureProjectRevision).toHaveBeenCalledOnce();
         expect(mocks.cancel).not.toHaveBeenCalled();
         expect(mocks.settleSafely).toHaveBeenCalledWith(
@@ -359,9 +400,11 @@ describe('executePromptCommandPreview', () => {
             mocks.updateChatMessage.mockImplementation(() => ordering.push('assistant-updated'));
             mocks.updateBatchStatus.mockImplementation(() => ordering.push('batch-previewed'));
             mocks.transitionPhase.mockImplementation((input) => ordering.push(`phase:${String(input.phase)}`));
+            const input = createInput();
 
-            await executePromptCommandPreview(createInput());
+            await executePromptCommandPreview(input);
 
+            expect(mocks.executeBatch).toHaveBeenCalledWith(input.commandBatch);
             expect(ordering).toEqual([
                 'phase:previewing',
                 'abort-unregistered',
