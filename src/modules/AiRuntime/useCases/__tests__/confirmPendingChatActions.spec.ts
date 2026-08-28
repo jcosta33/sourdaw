@@ -163,7 +163,12 @@ const stemAction = {
     },
 } satisfies AppAction;
 
-function configureLateSettlementConfirmation(input: { runId: string; confirmationId: string; batchId: string }): void {
+function configureLateSettlementConfirmation(input: {
+    runId: string;
+    confirmationId: string;
+    batchId: string;
+    resourceLease?: NonNullable<Parameters<typeof proposePendingActionConfirmation>[0]['resourceLease']>;
+}): void {
     configureAiWorkflowCommandPreflightFixture('project-1');
     configureCommandBatchIdempotency({ canExecute: () => true });
     const ownedStorage = createAutomergeStorage<{ bpm: number }>('owned', 'transport');
@@ -219,6 +224,7 @@ function configureLateSettlementConfirmation(input: { runId: string; confirmatio
         groupId: input.batchId,
         groupLabel: 'Set tempo batch',
         projectRevision,
+        ...(input.resourceLease ? { resourceLease: input.resourceLease } : {}),
     });
 }
 
@@ -721,7 +727,14 @@ describe('confirmPendingChatActions transaction admission', () => {
     it('keeps a stale late no-op cancelled instead of claiming fresh completion', async () => {
         const runId = 'late-no-op-settlement';
         const confirmationId = 'confirmation-no-op-settlement';
-        configureLateSettlementConfirmation({ runId, confirmationId, batchId: 'group-no-op-settlement' });
+        const release = vi.fn().mockResolvedValue(undefined);
+        const retain = vi.fn().mockResolvedValue(undefined);
+        configureLateSettlementConfirmation({
+            runId,
+            confirmationId,
+            batchId: 'group-no-op-settlement',
+            resourceLease: { bytes: 1, release, retain },
+        });
         const commandUseCases = await import('#/modules/Command/useCases');
         const crdtUseCases = await import('#/modules/CrdtDocument/useCases');
         const captureMutationAuthorization = vi
@@ -753,6 +766,8 @@ describe('confirmPendingChatActions transaction admission', () => {
             error: expect.stringContaining('cancelled or replaced'),
             content: expect.stringContaining('No project changes were needed after confirmation'),
         });
+        expect(release).toHaveBeenCalledOnce();
+        expect(retain).not.toHaveBeenCalled();
     });
 
     it('keeps a batch execution failure authoritative when error-path lease settlement throws', async () => {
