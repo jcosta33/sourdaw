@@ -1,4 +1,5 @@
 import { isAppError } from '#/infra/errors/isAppError';
+import { logger } from '#/infra/logger/appLogger';
 import {
     executeVersionedCommandBatchEnvelope,
     generateGroupId,
@@ -15,13 +16,7 @@ import {
     REMOTE_TEXT_AGENT_DATA_CATEGORIES,
 } from '../models/AgentDataPolicy';
 import { type AgentExecutionMode, type AgentTrustCeiling } from '../models/AgentExecutionMode';
-import {
-    type AgentRunBudgets,
-    type AgentRunDecisionResume,
-    type AgentRunScope,
-    type AgentRunWorkLease,
-    type AgentRunWorkTerminalState,
-} from '../models/AgentRun';
+import { type AgentRunBudgets, type AgentRunDecisionResume, type AgentRunScope } from '../models/AgentRun';
 import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
 import { type ChatMessage } from '../models/Chat';
 import { CHAT_SYSTEM_PROMPT } from '../models/ChatSystemPrompt';
@@ -56,6 +51,11 @@ import { getAgentPlanProposalIdentity } from '../transformers/normalizeAgentPlan
 
 import { normalizeAgentFailure } from './agentErrorAndSaga';
 import { createStemImportConfirmationResourceLease } from './agentReference/createStemImportConfirmationResourceLease';
+import {
+    AGENT_RUN_PERSISTENCE_WARNING,
+    AGENT_RUN_STALE_COMPLETION_WARNING,
+    settleAgentRunWorkLeaseSafely,
+} from './agentRequestOrchestration/settleAgentRunWorkLeaseSafely';
 import { agentRunLifecycle } from './agentRunLifecycle';
 import { agentRunWorkLease } from './agentRunWorkLease';
 import { ApplicationOwnedToolLoopRequestError } from './applicationOwnedToolLoop';
@@ -129,11 +129,6 @@ type AgentApplyReceipt = Extract<
     { status: 'committed' | 'executed' }
 >['receipt'];
 
-const AGENT_RUN_PERSISTENCE_WARNING =
-    'Agent run recovery state could not be persisted after execution. The verified command receipt remains authoritative; do not retry automatically.';
-const AGENT_RUN_STALE_COMPLETION_WARNING =
-    'Agent work completed after its run lease was cancelled or replaced. The durable receipt was retained without reopening the terminal run.';
-
 function tryRecordCommittedAgentRunWork(input: {
     runId: string;
     receipt: NonNullable<AgentApplyReceipt>;
@@ -159,32 +154,49 @@ function tryRecordCommittedAgentRunWork(input: {
     }
 }
 
-type AgentRunWorkLeaseSettlement = {
-    accepted: boolean;
-    warning: string | null;
-};
-
-function trySettleAgentRunWorkLease(
-    lease: AgentRunWorkLease,
-    terminalState: AgentRunWorkTerminalState
-): AgentRunWorkLeaseSettlement {
+function tryRecordTerminalFailure(input: Parameters<typeof agentRunLifecycle.recordError>[0]): void {
     try {
-        const settlement = agentRunWorkLease.settle({
-            runId: lease.runId,
-            workId: lease.workId,
-            leaseId: lease.leaseId,
-            cancellationGeneration: lease.cancellationGeneration,
-            idempotencyKey: lease.idempotencyKey,
-            receiptIdentity: lease.receiptIdentity,
-            terminalState,
-        });
-        return {
-            accepted: settlement.status === 'settled',
-            warning: settlement.status === 'settled' ? null : AGENT_RUN_STALE_COMPLETION_WARNING,
-        };
+        agentRunLifecycle.recordError(input);
     } catch {
-        return { accepted: true, warning: AGENT_RUN_PERSISTENCE_WARNING };
+        // The user-visible failure remains authoritative when its recovery record cannot persist.
     }
+}
+
+function appendSettlementWarning(content: string, warning: string | null): string {
+    return warning ? `${content}\n\n_${warning}_` : content;
+}
+
+function appendSettlementWarningToError(reason: string, warning: string | null): string {
+    return warning ? `${reason}\n\n${warning}` : reason;
+}
+
+function completeProviderResponseBestEffort(input: {
+    lease: Parameters<typeof settleAgentRunWorkLeaseSafely>[0]['lease'];
+    result: ModelProviderResult;
+    receiptIdentity: string;
+}): ReturnType<typeof settleAgentRunWorkLeaseSafely> {
+    const settlement = settleAgentRunWorkLeaseSafely({
+        lease: input.lease,
+        terminalState: 'completed',
+        evidence: 'visible-provider-output',
+        settle: agentRunWorkLease.settle,
+        reportFailure: (error) =>
+            logger.error(new Error('Completed provider work lease settlement failed', { cause: error })),
+    });
+    try {
+        recordAgentProviderUsage(input.lease.runId, input.result, input.receiptIdentity, { terminal: true });
+    } catch (error) {
+        logger.error(new Error('Completed provider usage accounting failed', { cause: error }));
+    }
+    if (!settlement.accepted || settlement.warning !== null) {
+        return settlement;
+    }
+    try {
+        agentRunLifecycle.transitionPhase({ runId: input.lease.runId, phase: 'completed' });
+    } catch (error) {
+        logger.error(new Error('Completed provider lifecycle persistence failed', { cause: error }));
+    }
+    return settlement;
 }
 
 function getProviderBudgetCategory(backend: RunnableAiBackend): string {
@@ -351,18 +363,18 @@ export async function sendChatMessage(
     try {
         options?.onResumedRunAdmitted?.(runId);
     } catch (error) {
+        settleAgentRunWorkLeaseSafely({
+            lease: providerLease,
+            terminalState: 'failed',
+            evidence: 'none',
+            settle: agentRunWorkLease.settle,
+            reportFailure: (settlementError) =>
+                logger.error(new Error('Resumed provider work lease settlement failed', { cause: settlementError })),
+        });
         try {
-            agentRunWorkLease.settle({
-                runId,
-                workId: providerWorkId,
-                leaseId: providerLease.leaseId,
-                cancellationGeneration: providerLease.cancellationGeneration,
-                idempotencyKey: providerLease.idempotencyKey,
-                receiptIdentity: providerLease.receiptIdentity,
-                terminalState: 'failed',
-            });
-        } finally {
             agentRunLifecycle.transitionPhase({ runId, phase: 'failed' });
+        } catch (lifecycleError) {
+            logger.error(new Error('Resumed agent run lifecycle persistence failed', { cause: lifecycleError }));
         }
         throw error;
     }
@@ -373,6 +385,8 @@ export async function sendChatMessage(
     if (interactionMode !== 'explain') {
         const aborter = new AbortController();
         let prompt_assistant_message_id: string | null = null;
+        let providerPlanningLeaseSettled = false;
+        let commandExecutionSettlementWarning: string | null = null;
         setActiveAborter(aborter);
         const releaseProviderCancellation = agentRunCancellation.bindAbortController({
             runId,
@@ -425,15 +439,38 @@ export async function sendChatMessage(
                     );
                 },
             });
-            agentRunWorkLease.settle({
-                runId,
-                workId: providerWorkId,
-                leaseId: providerLease.leaseId,
-                cancellationGeneration: providerLease.cancellationGeneration,
-                idempotencyKey: providerLease.idempotencyKey,
-                receiptIdentity: providerLease.receiptIdentity,
+            const providerPlanningSettlement = settleAgentRunWorkLeaseSafely({
+                lease: providerLease,
                 terminalState: 'completed',
+                evidence: 'none',
+                settle: agentRunWorkLease.settle,
+                reportFailure: (settlementError) =>
+                    logger.error(
+                        new Error('Completed provider planning work lease settlement failed', {
+                            cause: settlementError,
+                        })
+                    ),
             });
+            if (!providerPlanningSettlement.accepted || providerPlanningSettlement.warning !== null) {
+                const warning = providerPlanningSettlement.warning ?? AGENT_RUN_STALE_COMPLETION_WARNING;
+                appendChatMessage({
+                    id: `msg-${crypto.randomUUID()}`,
+                    role: 'user',
+                    content: userText,
+                    timestamp: Date.now(),
+                    isCommandAction: true,
+                });
+                appendChatMessage({
+                    id: `msg-${crypto.randomUUID()}`,
+                    role: 'assistant',
+                    content: `Command plan was not retained. ${warning}`,
+                    timestamp: Date.now(),
+                    error: warning,
+                    isCommandAction: true,
+                });
+                return undefined;
+            }
+            providerPlanningLeaseSettled = true;
 
             if (options?.resume && result.actions.length === 0) {
                 throw new Error('The replacement provider returned no plan for the selected decision interpretation.');
@@ -805,7 +842,12 @@ export async function sendChatMessage(
                             await agentRunCancellation.cancel({ runId, reason: preview.reason });
                         }
                     } catch (error) {
-                        trySettleAgentRunWorkLease(previewLeaseResult.lease, 'failed');
+                        settleAgentRunWorkLeaseSafely({
+                            lease: previewLeaseResult.lease,
+                            terminalState: 'failed',
+                            evidence: 'none',
+                            settle: agentRunWorkLease.settle,
+                        });
                         agentRunLifecycle.updateBatchStatus({
                             runId,
                             batchId: parsedCommandBatch.envelope.batchId,
@@ -818,38 +860,61 @@ export async function sendChatMessage(
                     }
                     if (preview.status === 'previewed') {
                         preview.resource.release();
-                        const settlement = agentRunWorkLease.settle({
-                            runId,
-                            workId: previewWorkId,
-                            leaseId: previewLeaseResult.lease.leaseId,
-                            cancellationGeneration: previewLeaseResult.lease.cancellationGeneration,
-                            idempotencyKey: previewLeaseResult.lease.idempotencyKey,
-                            receiptIdentity: previewLeaseResult.lease.receiptIdentity,
+                        const settlement = settleAgentRunWorkLeaseSafely({
+                            lease: previewLeaseResult.lease,
                             terminalState: 'completed',
+                            evidence: 'visible-work-output',
+                            settle: agentRunWorkLease.settle,
+                            reportFailure: (settlementError) =>
+                                logger.error(
+                                    new Error('Preview work lease settlement failed', { cause: settlementError })
+                                ),
                         });
-                        if (settlement.status !== 'settled') {
+                        if (!settlement.accepted) {
                             const currentRun = agentRunLifecycle.get(runId);
                             if (currentRun?.phase === 'cancelled' || currentRun?.phase === 'partially-completed') {
                                 return undefined;
                             }
-                            throw new Error(`Agent preview work could not be settled: ${settlement.status}`);
+                            throw new Error('Agent preview work could not be settled');
                         }
-                        agentRunLifecycle.updateBatchStatus({
-                            runId,
-                            batchId: parsedCommandBatch.envelope.batchId,
-                            status: 'previewed',
-                        });
                         updateChatMessage(assistantMsgId, {
                             isStreaming: false,
-                            content: `Previewed without changing the project:\n\n${confirmationDescription.actionLabels.map((label) => `- ${label}`).join('\n')}`,
+                            error: settlement.warning ?? undefined,
+                            content: appendSettlementWarning(
+                                `Previewed without changing the project:\n\n${confirmationDescription.actionLabels.map((label) => `- ${label}`).join('\n')}`,
+                                settlement.warning
+                            ),
                         });
-                        agentRunLifecycle.transitionPhase({ runId, phase: 'completed' });
+                        try {
+                            agentRunLifecycle.updateBatchStatus({
+                                runId,
+                                batchId: parsedCommandBatch.envelope.batchId,
+                                status: 'previewed',
+                            });
+                        } catch (batchPersistenceError) {
+                            logger.error(
+                                new Error('Preview batch persistence failed', { cause: batchPersistenceError })
+                            );
+                        }
+                        if (settlement.warning === null) {
+                            try {
+                                agentRunLifecycle.transitionPhase({ runId, phase: 'completed' });
+                            } catch (lifecyclePersistenceError) {
+                                logger.error(
+                                    new Error('Preview lifecycle persistence failed', {
+                                        cause: lifecyclePersistenceError,
+                                    })
+                                );
+                            }
+                        }
                         return undefined;
                     }
-                    const previewSettlement = trySettleAgentRunWorkLease(
-                        previewLeaseResult.lease,
-                        preview.status === 'cancelled' ? 'cancelled' : 'failed'
-                    );
+                    const previewSettlement = settleAgentRunWorkLeaseSafely({
+                        lease: previewLeaseResult.lease,
+                        terminalState: preview.status === 'cancelled' ? 'cancelled' : 'failed',
+                        evidence: 'none',
+                        settle: agentRunWorkLease.settle,
+                    });
                     if (!previewSettlement.accepted) {
                         const currentRun = agentRunLifecycle.get(runId);
                         if (currentRun?.phase === 'cancelled' || currentRun?.phase === 'partially-completed') {
@@ -984,7 +1049,19 @@ export async function sendChatMessage(
                         });
                     }
                 } catch (error) {
-                    trySettleAgentRunWorkLease(commandLeaseResult.lease, 'failed');
+                    const commandExecutionSettlement = settleAgentRunWorkLeaseSafely({
+                        lease: commandLeaseResult.lease,
+                        terminalState: 'failed',
+                        evidence: 'none',
+                        settle: agentRunWorkLease.settle,
+                        reportFailure: (settlementError) =>
+                            logger.error(
+                                new Error('Failed command work lease settlement failed', {
+                                    cause: settlementError,
+                                })
+                            ),
+                    });
+                    commandExecutionSettlementWarning = commandExecutionSettlement.warning;
                     throw error;
                 } finally {
                     releaseCommandCancellation();
@@ -999,10 +1076,15 @@ export async function sendChatMessage(
                 } else if (execution.status === 'cancelled') {
                     commandLeaseTerminalState = 'cancelled';
                 }
-                const commandLeaseSettlement = trySettleAgentRunWorkLease(
-                    commandLeaseResult.lease,
-                    commandLeaseTerminalState
-                );
+                const commandLeaseSettlement = settleAgentRunWorkLeaseSafely({
+                    lease: commandLeaseResult.lease,
+                    terminalState: commandLeaseTerminalState,
+                    evidence:
+                        (execution.status === 'committed' || execution.status === 'executed') && execution.receipt
+                            ? 'verified-command-receipt'
+                            : 'none',
+                    settle: agentRunWorkLease.settle,
+                });
                 const commandLeasePersistenceWarning = commandLeaseSettlement.warning;
 
                 if (execution.status === 'committed') {
@@ -1099,9 +1181,11 @@ export async function sendChatMessage(
                     }
                     updateChatMessage(assistantMsgId, {
                         isStreaming: false,
-                        error: execution.reason,
-                        content:
+                        error: appendSettlementWarningToError(execution.reason, commandLeasePersistenceWarning),
+                        content: appendSettlementWarning(
                             'The project changed before this command could commit. Review it and submit the command again.',
+                            commandLeasePersistenceWarning
+                        ),
                     });
                     return undefined;
                 }
@@ -1115,7 +1199,11 @@ export async function sendChatMessage(
                     }
                     updateChatMessage(assistantMsgId, {
                         isStreaming: false,
-                        content: 'Command cancelled before it committed. No project changes were applied.',
+                        error: commandLeasePersistenceWarning ?? undefined,
+                        content: appendSettlementWarning(
+                            'Command cancelled before it committed. No project changes were applied.',
+                            commandLeasePersistenceWarning
+                        ),
                     });
                     return undefined;
                 }
@@ -1131,14 +1219,18 @@ export async function sendChatMessage(
                     }
                     updateChatMessage(assistantMsgId, {
                         isStreaming: false,
-                        content: 'No project changes were needed.',
+                        error: commandLeasePersistenceWarning ?? undefined,
+                        content: appendSettlementWarning(
+                            'No project changes were needed.',
+                            commandLeasePersistenceWarning
+                        ),
                     });
                     return undefined;
                 }
 
                 if (execution.status === 'ambiguous') {
                     if (commandLeaseSettlement.accepted) {
-                        agentRunLifecycle.recordError({
+                        tryRecordTerminalFailure({
                             runId,
                             error: normalizeAgentFailure({
                                 category: 'conflict',
@@ -1158,19 +1250,25 @@ export async function sendChatMessage(
                     }
                     updateChatMessage(assistantMsgId, {
                         isStreaming: false,
-                        error: execution.reason,
-                        content: `The command stopped after an uncertain partial commit: ${execution.reason}. Do not retry it; inspect the project first.`,
+                        error: appendSettlementWarningToError(execution.reason, commandLeasePersistenceWarning),
+                        content: appendSettlementWarning(
+                            `The command stopped after an uncertain partial commit: ${execution.reason}. Do not retry it; inspect the project first.`,
+                            commandLeasePersistenceWarning
+                        ),
                     });
                     return undefined;
                 }
 
                 updateChatMessage(assistantMsgId, {
                     isStreaming: false,
-                    error: execution.reason,
-                    content: `Failed to execute prompt command atomically: ${execution.reason}`,
+                    error: appendSettlementWarningToError(execution.reason, commandLeasePersistenceWarning),
+                    content: appendSettlementWarning(
+                        `Failed to execute prompt command atomically: ${execution.reason}`,
+                        commandLeasePersistenceWarning
+                    ),
                 });
                 if (commandLeaseSettlement.accepted) {
-                    agentRunLifecycle.recordError({
+                    tryRecordTerminalFailure({
                         runId,
                         error: normalizeAgentFailure({
                             category: 'project',
@@ -1186,7 +1284,7 @@ export async function sendChatMessage(
                     });
                 }
             } else if (result.rejectionReason) {
-                agentRunLifecycle.recordError({
+                tryRecordTerminalFailure({
                     runId,
                     error: normalizeAgentFailure({
                         category: /schema/i.test(result.rejectionReason) ? 'schema' : 'resolution',
@@ -1238,19 +1336,46 @@ export async function sendChatMessage(
             const reason = error instanceof Error ? error.message : String(error);
             const configurationChanged = isAiRuntimeConfigurationChangedError(error);
             const proposalInvalidated = error instanceof AiProposalInvalidatedError;
+            let settlementWarning: string | null = commandExecutionSettlementWarning;
             if (aborter.signal.aborted || configurationChanged || proposalInvalidated) {
                 await agentRunCancellation.cancel({ runId, reason });
             } else {
-                trySettleAgentRunWorkLease(providerLease, 'failed');
-                agentRunLifecycle.recordError({
-                    runId,
-                    error: normalizeAgentFailure({
-                        category: 'internal',
-                        source: 'provider-planning',
-                        knownDomain: false,
-                    }),
-                    terminal: true,
-                });
+                if (providerPlanningLeaseSettled) {
+                    tryRecordTerminalFailure({
+                        runId,
+                        error: normalizeAgentFailure({
+                            category: 'internal',
+                            source: 'provider-planning',
+                            knownDomain: false,
+                        }),
+                        terminal: true,
+                    });
+                } else {
+                    const providerPlanningFailureSettlement = settleAgentRunWorkLeaseSafely({
+                        lease: providerLease,
+                        terminalState: 'failed',
+                        evidence: 'none',
+                        settle: agentRunWorkLease.settle,
+                        reportFailure: (settlementError) =>
+                            logger.error(
+                                new Error('Failed provider planning work lease settlement failed', {
+                                    cause: settlementError,
+                                })
+                            ),
+                    });
+                    settlementWarning = providerPlanningFailureSettlement.warning;
+                    if (providerPlanningFailureSettlement.accepted) {
+                        tryRecordTerminalFailure({
+                            runId,
+                            error: normalizeAgentFailure({
+                                category: 'internal',
+                                source: 'provider-planning',
+                                knownDomain: false,
+                            }),
+                            terminal: true,
+                        });
+                    }
+                }
             }
             let failureContent = 'Failed to process prompt command.';
             if (configurationChanged) {
@@ -1259,13 +1384,21 @@ export async function sendChatMessage(
                 failureContent =
                     'The project changed while this command was being planned. Review the current project and submit it again.';
             }
+            const failureError = settlementWarning ? `${reason}\n\n${settlementWarning}` : reason;
+            const failureContentWithWarning = settlementWarning
+                ? `${failureContent}\n\n_${settlementWarning}_`
+                : failureContent;
+            let promptAssistantFailureContent = 'Failed to execute prompt command.';
+            if (configurationChanged) {
+                promptAssistantFailureContent = 'Prompt cancelled because the AI configuration changed.';
+            } else if (settlementWarning) {
+                promptAssistantFailureContent = `Failed to execute prompt command.\n\n_${settlementWarning}_`;
+            }
             if (prompt_assistant_message_id) {
                 updateChatMessage(prompt_assistant_message_id, {
                     isStreaming: false,
-                    content: configurationChanged
-                        ? 'Prompt cancelled because the AI configuration changed.'
-                        : 'Failed to execute prompt command.',
-                    error: reason,
+                    content: promptAssistantFailureContent,
+                    error: failureError,
                 });
             } else {
                 appendChatMessage({
@@ -1277,8 +1410,8 @@ export async function sendChatMessage(
                 appendChatMessage({
                     id: `msg-${crypto.randomUUID()}`,
                     role: 'assistant',
-                    content: failureContent,
-                    error: reason,
+                    content: failureContentWithWarning,
+                    error: failureError,
                     timestamp: Date.now(),
                 });
             }
@@ -1649,18 +1782,21 @@ export async function sendChatMessage(
             reasoning,
             error: incompleteError,
         });
-        agentRunWorkLease.settle({
-            runId,
-            workId: providerWorkId,
-            leaseId: providerLease.leaseId,
-            cancellationGeneration: providerLease.cancellationGeneration,
-            idempotencyKey: providerLease.idempotencyKey,
-            receiptIdentity: providerLease.receiptIdentity,
-            terminalState: 'completed',
+        const providerSettlement = completeProviderResponseBestEffort({
+            lease: providerLease,
+            result: providerResult,
+            receiptIdentity: providerReceiptIdentity,
         });
-        recordAgentProviderUsage(runId, providerResult, providerReceiptIdentity, { terminal: true });
         providerUsageRecorded = true;
-        agentRunLifecycle.transitionPhase({ runId, phase: 'completed' });
+        if (!providerSettlement.accepted || providerSettlement.warning !== null) {
+            const warning = providerSettlement.warning ?? AGENT_RUN_STALE_COMPLETION_WARNING;
+            updateChatMessage(assistantMsgId, {
+                isStreaming: false,
+                content: `${cleanContent}${incompleteNotice}\n\n_${warning}_`,
+                reasoning,
+                error: incompleteError === undefined ? warning : `${incompleteError}\n\n${warning}`,
+            });
+        }
         llmStatusStore.set({ state: 'ready', backend, modelId: getBackendModelId(backend) });
     } catch (error) {
         const errorMessage = (() => {
@@ -1694,12 +1830,21 @@ export async function sendChatMessage(
             );
         }
         if (providerResult && !providerUsageRecorded) {
-            recordAgentProviderUsage(runId, providerResult, providerReceiptIdentity, { terminal: true });
-            providerUsageRecorded = true;
+            try {
+                recordAgentProviderUsage(runId, providerResult, providerReceiptIdentity, { terminal: true });
+                providerUsageRecorded = true;
+            } catch (usageError) {
+                logger.error(new Error('Provider failure usage accounting failed', { cause: usageError }));
+            }
         }
         if (configurationChanged) {
             await agentRunCancellation.cancel({ runId, reason: errorMessage });
-            trySettleAgentRunWorkLease(providerLease, 'cancelled');
+            settleAgentRunWorkLeaseSafely({
+                lease: providerLease,
+                terminalState: 'cancelled',
+                evidence: 'none',
+                settle: agentRunWorkLease.settle,
+            });
             const parsed = thinkParser.snapshot();
             updateChatMessage(assistantMsgId, {
                 isStreaming: false,
@@ -1710,21 +1855,26 @@ export async function sendChatMessage(
             llmStatusStore.set({ state: 'idle' });
             return undefined;
         }
-        if (!wasAborted) {
-            agentRunWorkLease.settle({
-                runId,
-                workId: providerWorkId,
-                leaseId: providerLease.leaseId,
-                cancellationGeneration: providerLease.cancellationGeneration,
-                idempotencyKey: providerLease.idempotencyKey,
-                receiptIdentity: providerLease.receiptIdentity,
-                terminalState: 'failed',
-            });
-        }
+        const failedProviderOutput = thinkParser.snapshot();
+        const providerFailureSettlement = !wasAborted
+            ? settleAgentRunWorkLeaseSafely({
+                  lease: providerLease,
+                  terminalState: 'failed',
+                  evidence:
+                      failedProviderOutput.content.length > 0 || (failedProviderOutput.reasoning?.length ?? 0) > 0
+                          ? 'visible-provider-output'
+                          : 'none',
+                  settle: agentRunWorkLease.settle,
+                  reportFailure: (settlementError) =>
+                      logger.error(
+                          new Error('Failed provider work lease settlement failed', { cause: settlementError })
+                      ),
+              })
+            : null;
         if (wasAborted) {
             await agentRunCancellation.cancel({ runId, reason: errorMessage });
             // Clean abort, leave generated partial content intact and strip parsing blocks
-            const parsed = thinkParser.snapshot();
+            const parsed = failedProviderOutput;
             updateChatMessage(assistantMsgId, {
                 isStreaming: false,
                 content: parsed.content,
@@ -1743,24 +1893,30 @@ export async function sendChatMessage(
                 llmStatusStore.set(previousLlmStatus ?? { state: 'idle' });
             }
         } else {
-            agentRunLifecycle.recordError({
-                runId,
-                error: normalizeAgentFailure({
-                    category: 'provider',
-                    source: 'provider-planning',
-                    retry: 'read-only',
-                    knownDomain: false,
-                }),
-                terminal: true,
-            });
-            const parsed = thinkParser.snapshot();
+            if (providerFailureSettlement?.accepted) {
+                tryRecordTerminalFailure({
+                    runId,
+                    error: normalizeAgentFailure({
+                        category: 'provider',
+                        source: 'provider-planning',
+                        retry: 'read-only',
+                        knownDomain: false,
+                    }),
+                    terminal: true,
+                });
+            }
+            const parsed = failedProviderOutput;
             const hasPartialContent = parsed.content.length > 0 || (parsed.reasoning?.length ?? 0) > 0;
+            const persistenceWarning = providerFailureSettlement?.warning ?? null;
+            const providerFailureContent = hasPartialContent
+                ? `${parsed.content}\n\n_Response incomplete because the provider stream failed._`
+                : 'Sorry, I encountered an error while thinking about that.';
             updateChatMessage(assistantMsgId, {
                 isStreaming: false,
-                error: errorMessage,
-                content: hasPartialContent
-                    ? `${parsed.content}\n\n_Response incomplete because the provider stream failed._`
-                    : 'Sorry, I encountered an error while thinking about that.',
+                error: persistenceWarning ? `${errorMessage}\n\n${persistenceWarning}` : errorMessage,
+                content: persistenceWarning
+                    ? `${providerFailureContent}\n\n_${persistenceWarning}_`
+                    : providerFailureContent,
                 reasoning: parsed.reasoning,
             });
             llmStatusStore.set({ state: 'error', message: errorMessage });
