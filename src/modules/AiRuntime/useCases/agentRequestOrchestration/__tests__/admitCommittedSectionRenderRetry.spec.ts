@@ -401,7 +401,6 @@ describe('admitCommittedSectionRenderRetry', () => {
             firstSerializedCommand,
             serializeVersionedCommandEnvelope(secondCommand),
         ];
-        fixture.confirmation.approvalSnapshot.actions.push(secondAction);
         fixture.confirmation.executedActions.push({
             actionType: 'renderProjectSections',
             commandId: secondCommand.commandId,
