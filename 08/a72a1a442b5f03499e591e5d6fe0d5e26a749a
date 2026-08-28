@@ -1,0 +1,64 @@
+src/modules/AudioRendering/useCases/retryAgentProjectSectionRenders.ts
+  s_a40848e8f8cca9::t_a80e1b06d16524 18-19
+src/modules/AiRuntime/useCases/__tests__/agentRunLifecycle.spec.ts
+  s_a40848e8f8cca9::t_8af1ba72afb356 436
+src/modules/AiRuntime/stores/pendingActionConfirmationStore.ts
+  s_a40848e8f8cca9::t_a80e1b06d16524 421-422
+src/modules/AudioRendering/useCases/scheduleAgentSectionRenderArtifactExpiry.ts
+  s_a40848e8f8cca9::t_a80e1b06d16524 1-24,28
+  s_a40848e8f8cca9::t_e4b295d38b182e 25-27
+  s_a40848e8f8cca9::t_614e6452e23776 29-31
+src/modules/AiRuntime/stores/__tests__/selectAgentRunPendingEffectRecoveries.spec.ts
+  s_a40848e8f8cca9::t_8af1ba72afb356 91,114,161-172
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/admitCommittedSectionRenderRetry.spec.ts
+  s_a40848e8f8cca9::t_8af1ba72afb356 203,217
+src/modules/AudioRendering/useCases/__tests__/renderAgentProjectSections.spec.ts
+  s_a40848e8f8cca9::t_f849b78143829f 274-308,426-461
+src/modules/AiRuntime/useCases/__tests__/recordAgentRunReceiptSaga.spec.ts
+  s_a40848e8f8cca9::t_8af1ba72afb356 216-251
+src/modules/AiRuntime/useCases/agentRunLifecycle.ts
+  s_a40848e8f8cca9::t_a80e1b06d16524 840-842
+src/modules/AudioRendering/useCases/rebindAgentProjectSectionArtifactRevisions.ts
+  s_a40848e8f8cca9::t_a80e1b06d16524 5-6,59
+src/modules/AiRuntime/useCases/agentRequestOrchestration/admitCommittedSectionRenderRetry.ts
+  s_a40848e8f8cca9::t_a80e1b06d16524 186
+src/modules/AudioRendering/useCases/removeAgentProjectSectionArtifacts.ts
+  s_a40848e8f8cca9::t_a80e1b06d16524 5-6,16
+src/modules/AudioRendering/useCases/renderAgentProjectSections.ts
+  s_a40848e8f8cca9::t_a80e1b06d16524 11,17,113,189
+src/modules/AiRuntime/useCases/confirmPendingChatActions.ts
+  s_a40848e8f8cca9::t_e1b9be1c7ff11d 1097-1103,1117-1134,1139
+  s_a40848e8f8cca9::t_aa390f7d7ef995 1135-1138
+  s_a40848e8f8cca9::t_1a0dec980b7072 1140-1142
+  s_49b728adc8827b::t_f6d31a4c2fbd87 1143-1144
+src/modules/AudioRendering/useCases/clearAgentSectionRenderArtifacts.ts
+  s_a40848e8f8cca9::t_a80e1b06d16524 3-4,7
+src/modules/AudioRendering/useCases/__tests__/retryAgentProjectSectionRenders.spec.ts
+  s_a40848e8f8cca9::t_8af1ba72afb356 36-37
+src/modules/AudioRendering/useCases/__tests__/scheduleAgentSectionRenderArtifactExpiry.spec.ts
+  s_a40848e8f8cca9::t_f849b78143829f 1-43
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "08a72a1a442b5f03499e591e5d6fe0d5e26a749a",
+  "prompts": {},
+  "sessions": {
+    "s_49b728adc8827b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0499a-7538-76b3-9e83-c12acf053a05",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
