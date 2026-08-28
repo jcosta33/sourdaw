@@ -343,6 +343,7 @@ const COMMAND_ARGUMENTS: ReadonlyMap<string, readonly string[]> = new Map([
     ['feed_crumbs_record_input', ['audio_bytes']],
     ['get_crumbs_position', ['instance_id']],
     ['get_default_plugin_paths', []],
+    ['get_plugin_parameters', ['instance_id']],
     ['get_plugin_state_bytes', ['instance_id']],
     ['get_waveform_peaks', ['instance_id', 'sample_id', 'level', 'channel']],
     ['is_scan_path_authorized', ['path']],

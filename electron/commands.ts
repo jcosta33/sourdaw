@@ -60,6 +60,7 @@ export const EXPOSED_COMMANDS = [
     'feed_crumbs_record_input',
     'get_crumbs_position',
     'get_default_plugin_paths',
+    'get_plugin_parameters',
     'get_plugin_state_bytes',
     'get_waveform_peaks',
     'is_scan_path_authorized',
@@ -132,12 +133,14 @@ export const EXPOSED_COMMANDS = [
  * requires one — the live cutover (jcosta33/sourdaw#2230) moves it together
  * with its caller.
  *
- * `get_plugin_parameters` and `is_plugin_gui_supported` moved here from the
- * exposed list when their renderer repositories were retired (#2307): the
- * inspector reads parameters through the plugin descriptor tables, and editor
+ * `is_plugin_gui_supported` moved here from the exposed list when its
+ * renderer repository was retired (#2307): the inspector reads editor
  * capability through `resolvePluginEditorCapability`, so no `src/` caller
- * invoked either command. Exposing a command requires a production caller,
- * so they rejoin the denied half until one exists.
+ * invokes the command. Exposing a command requires a production caller, so
+ * it stays denied until one exists. `get_plugin_parameters` was retired in
+ * the same change and restored: `refreshExternalPluginParameters` re-reads a
+ * loaded instance's parameters through it whenever the automation menu or
+ * panel opens, so its caller never went away.
  */
 export const DENIED_COMMANDS = [
     'apply_graph_commands',
@@ -153,7 +156,6 @@ export const DENIED_COMMANDS = [
     'enable_link',
     'get_asr_status',
     'get_link_status',
-    'get_plugin_parameters',
     'hide_all_plugin_guis',
     'is_plugin_gui_supported',
     'link_start_playing',
