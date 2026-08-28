@@ -53,6 +53,7 @@ import { normalizeAgentFailure } from './agentErrorAndSaga';
 import { createStemImportConfirmationResourceLease } from './agentReference/createStemImportConfirmationResourceLease';
 import {
     AGENT_RUN_PERSISTENCE_WARNING,
+    AGENT_RUN_PROVIDER_PERSISTENCE_WARNING,
     AGENT_RUN_STALE_COMPLETION_WARNING,
     settleAgentRunWorkLeaseSafely,
 } from './agentRequestOrchestration/settleAgentRunWorkLeaseSafely';
@@ -1793,8 +1794,8 @@ export async function sendChatMessage(
             const parsed = thinkParser.snapshot();
             const hasPartialContent = parsed.content.length > 0 || (parsed.reasoning?.length ?? 0) > 0;
             const persistenceWarning =
-                providerFailureSettlement?.warning === AGENT_RUN_PERSISTENCE_WARNING
-                    ? AGENT_RUN_PERSISTENCE_WARNING
+                providerFailureSettlement?.warning === AGENT_RUN_PROVIDER_PERSISTENCE_WARNING
+                    ? AGENT_RUN_PROVIDER_PERSISTENCE_WARNING
                     : null;
             const providerFailureContent = hasPartialContent
                 ? `${parsed.content}\n\n_Response incomplete because the provider stream failed._`

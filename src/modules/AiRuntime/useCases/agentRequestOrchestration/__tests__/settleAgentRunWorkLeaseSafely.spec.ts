@@ -1,7 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { type AgentRunWorkLease } from '../../../models/AgentRun';
-import { settleAgentRunWorkLeaseSafely } from '../settleAgentRunWorkLeaseSafely';
+import {
+    AGENT_RUN_PROVIDER_PERSISTENCE_WARNING,
+    AGENT_RUN_WORK_PERSISTENCE_WARNING,
+    settleAgentRunWorkLeaseSafely,
+} from '../settleAgentRunWorkLeaseSafely';
 
 const PERSISTENCE_WARNING =
     'Agent run recovery state could not be persisted after execution. The verified command receipt remains authoritative; do not retry automatically.';
@@ -75,5 +79,26 @@ describe('settleAgentRunWorkLeaseSafely', () => {
             })
         ).toEqual({ accepted: true, warning: PERSISTENCE_WARNING });
         expect(reportFailure).toHaveBeenCalledWith(error);
+    });
+
+    it.each([
+        {
+            ownerKind: 'provider' as const,
+            warning: AGENT_RUN_PROVIDER_PERSISTENCE_WARNING,
+        },
+        {
+            ownerKind: 'render' as const,
+            warning: AGENT_RUN_WORK_PERSISTENCE_WARNING,
+        },
+    ])('reports the $ownerKind-specific persistence warning when settlement throws', ({ ownerKind, warning }) => {
+        expect(
+            settleAgentRunWorkLeaseSafely({
+                lease: { ...lease, ownerKind },
+                terminalState: 'failed',
+                settle: () => {
+                    throw new Error('storage unavailable');
+                },
+            })
+        ).toEqual({ accepted: true, warning });
     });
 });
