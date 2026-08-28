@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 
 import { spawnSync } from 'node:child_process';
-import { existsSync, realpathSync } from 'node:fs';
-import { isAbsolute, join, relative, resolve } from 'node:path';
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { basename, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
@@ -77,12 +77,17 @@ function fail(message: string): never {
     throw new Error(message);
 }
 
-function inside(parent: string, candidate: string): boolean {
+export function inside(parent: string, candidate: string): boolean {
     const path = relative(parent, candidate);
     return path === '' || (!path.startsWith('..') && !isAbsolute(path));
 }
 
-function disposableIgnored(path: string): boolean {
+/**
+ * The one shared definition of ignored output that is safe to discard: regenerable build and test
+ * products, nothing else. Removal refuses a lane carrying ignored data that is not this, and
+ * pruning (`lane:prune`) deletes exactly what this admits — the same contract read from both ends.
+ */
+export function disposableIgnored(path: string): boolean {
     const normalized = path.replaceAll('\\', '/');
     return (
         normalized === '.DS_Store' ||
@@ -118,7 +123,7 @@ export function parseWorktrees(value: string): Worktree[] {
         });
 }
 
-function identifyLane(target: string, port: LaneRemovalPort): Worktree {
+function locateAgentWorktree(target: string, verb: string, port: LaneRemovalPort): Worktree {
     const worktrees = port.worktrees();
     const root = worktrees[0];
     if (root === undefined) {
@@ -129,33 +134,59 @@ function identifyLane(target: string, port: LaneRemovalPort): Worktree {
         fail(`${target} is not a registered worktree`);
     }
     if (target === root.path) {
-        fail('refusing to remove the primary worktree');
+        fail(`refusing to ${verb} the primary worktree`);
     }
     const agentRoot = join(root.path, '.agents', 'worktrees');
     if (target === agentRoot || !inside(agentRoot, target)) {
         fail(`${target} is not an agent worktree`);
     }
     if (inside(target, port.currentDirectory())) {
-        fail('refusing to remove the active worktree');
+        fail(`refusing to ${verb} the active worktree`);
     }
     if (port.active(target)) {
         fail('worktree is active in another process');
     }
+    return lane;
+}
+
+/**
+ * Lock admission shared by both exits. A dead `lane-remove:<pid>` lock is stale leftover and is
+ * cleared before retrying; the author lock marks the lane's owner and callers handle it themselves;
+ * anything else is a foreign tool's claim on the worktree.
+ */
+function admitLaneLock(target: string, lane: Worktree, port: LaneRemovalPort, retry: () => Worktree): Worktree {
+    if (!lane.locked) {
+        return lane;
+    }
+    const stalePid = removalLockPid(lane.lockReason);
+    if (stalePid !== undefined && !port.processAlive(stalePid)) {
+        port.unlock(target);
+        return retry();
+    }
+    if (lane.lockReason === AUTHOR_LOCK_REASON) {
+        return lane;
+    }
+    return fail('worktree is locked or shared');
+}
+
+function identifyLane(target: string, port: LaneRemovalPort): Worktree {
+    const lane = locateAgentWorktree(target, 'remove', port);
     if (lane.bare || lane.detached || lane.branch === undefined || lane.prunable) {
         fail('worktree ownership is unknown');
     }
-    if (lane.locked) {
-        const stalePid = removalLockPid(lane.lockReason);
-        if (stalePid !== undefined && !port.processAlive(stalePid)) {
-            port.unlock(target);
-            return identifyLane(target, port);
-        }
-        if (lane.lockReason === AUTHOR_LOCK_REASON) {
-            return lane;
-        }
-        fail('worktree is locked or shared');
+    return admitLaneLock(target, lane, port, () => identifyLane(target, port));
+}
+
+/**
+ * Stranding has no ownership to prove — an unproven head or a missing branch is exactly why a lane
+ * ends up stranded — so this admits what `identifyLane` refuses: detached and branchless lanes.
+ */
+function identifyStrandLane(target: string, port: LaneRemovalPort): Worktree {
+    const lane = locateAgentWorktree(target, 'strand', port);
+    if (lane.bare || lane.prunable) {
+        fail('worktree holds no directory to strand');
     }
-    return lane;
+    return admitLaneLock(target, lane, port, () => identifyStrandLane(target, port));
 }
 
 type OwnershipSnapshot = {
@@ -314,6 +345,181 @@ export function resolveLaneTarget(arg: string, primaryRoot: string): string {
     return realpathSync(isAbsolute(arg) ? arg : resolve(primaryRoot, arg));
 }
 
+export const STRAND_USAGE = 'usage: pnpm lane:strand <worktree-path> --reason "<why this lane is being abandoned>"';
+
+/**
+ * Where strand receipts live: under the primary root, not under the lane. A receipt written inside
+ * the worktree would be destroyed with it, and the whole point of the receipt is to outlive the
+ * lane it records. `.agents/lane-strands/` is gitignored operational state, like review bundles.
+ * Receipts are keyed by lane directory name, which is deterministic — the conflict rule in
+ * `refuseReceiptConflict` is what keeps a reused name from spending another lane's record.
+ */
+export const STRAND_RECEIPTS_DIR = '.agents/lane-strands';
+
+export type LaneStrandPort = LaneRemovalPort & {
+    readReceipt: (laneName: string) => string | undefined;
+    writeReceipt: (laneName: string, body: string) => void;
+    deleteBranch: (branch: string) => void;
+    log: (message: string) => void;
+};
+
+export type StrandArgs = { target: string; reason: string };
+
+export function parseStrandArgs(args: string[]): StrandArgs {
+    // `args` starts at `--strand`; a reason that is missing, empty, or blank is no reason.
+    const target = args[1];
+    if (args.length !== 4 || args[2] !== '--reason' || args[3] === undefined || target === undefined) {
+        fail(STRAND_USAGE);
+    }
+    if (target.startsWith('--')) {
+        fail(STRAND_USAGE);
+    }
+    const reason = args[3].trim();
+    if (reason === '') {
+        fail('stranding a lane requires a non-empty --reason recording why its work is being abandoned');
+    }
+    return { target, reason };
+}
+
+type StrandSnapshot = {
+    head: string;
+    branch: string | null;
+    ignored: string[];
+};
+
+/**
+ * The strand gate: everything that keeps the act safe, nothing that proves the work landed —
+ * proving that is `removeLane`'s job, and a lane whose proof cannot exist is why `lane:strand`
+ * was called. Clean, idle, no ignored data of record, no operation in flight, and no open pull
+ * request on the branch: an open pull request means the work is still live, and stranding it would
+ * strand a review. Merged and closed pull requests pass: closed-without-receipt is exactly the
+ * backlog this path exists to drain.
+ */
+function validateStrand(target: string, expected: Worktree, port: LaneRemovalPort): StrandSnapshot {
+    const current = port.worktrees().find((worktree) => worktree.path === target);
+    if (
+        current === undefined ||
+        current.head !== expected.head ||
+        current.branch !== expected.branch ||
+        current.bare ||
+        current.prunable ||
+        !current.locked
+    ) {
+        fail('worktree identity changed during stranding');
+    }
+    if (port.dirty(target)) {
+        fail('worktree is dirty');
+    }
+    if (port.active(target)) {
+        fail('worktree is active in another process');
+    }
+    const ignored = port.ignored(target);
+    const unsafeIgnored = ignored.filter((path) => !disposableIgnored(path));
+    if (unsafeIgnored.length > 0) {
+        fail(`worktree contains ignored data: ${unsafeIgnored.slice(0, 3).join(', ')}`);
+    }
+    const operation = port.operation(target);
+    if (operation !== undefined) {
+        fail(`worktree has an active ${operation}`);
+    }
+    if (expected.branch === undefined) {
+        return { head: current.head, branch: null, ignored: [...ignored].sort() };
+    }
+    const open = port
+        .pullRequests(expected.branch)
+        .find((pullRequest) => pullRequest.state !== 'MERGED' && pullRequest.state !== 'CLOSED');
+    if (open !== undefined) {
+        fail(`PR #${open.number} is still active`);
+    }
+    if (port.dirty(target) || port.active(target)) {
+        fail('worktree changed during stranding');
+    }
+    return { head: current.head, branch: expected.branch, ignored: [...ignored].sort() };
+}
+
+function recordedReceiptHead(existing: string): string | undefined {
+    try {
+        const parsed = JSON.parse(existing) as { head?: unknown };
+        return typeof parsed.head === 'string' ? parsed.head : undefined;
+    } catch {
+        return undefined;
+    }
+}
+
+/**
+ * Lane directory names are deterministic, so a new lane can reuse a name the receipts already
+ * record. Overwriting on a differing head would silently erase the earlier abandonment's audit
+ * record — including the head that makes its branch recoverable — so that is a hard refusal naming
+ * both heads: a human decides which record is real, because appending or timestamping would fork
+ * the trail instead of settling it. An identical head is the idempotent retry of a stranding whose
+ * removal failed, and an unreadable receipt cannot prove either case, so it refuses too.
+ */
+function refuseReceiptConflict(laneName: string, head: string, port: LaneStrandPort): void {
+    const existing = port.readReceipt(laneName);
+    if (existing === undefined) {
+        return;
+    }
+    const prior = recordedReceiptHead(existing);
+    if (prior === undefined) {
+        fail(`strand receipt for ${laneName} exists but records no readable head; refusing to overwrite it`);
+    }
+    if (prior !== head) {
+        fail(`strand receipt for ${laneName} already records head ${prior}; refusing to overwrite it for head ${head}`);
+    }
+}
+
+/**
+ * The receipted exit for lanes the strict gate can never prove: a branch whose head ownership is
+ * unproven (late push), a closed pull request without a supersession receipt, a lane with no
+ * branch at all. The strict gates stay untouched — this path is weaker by design, and the reason
+ * the caller must supply is the price: it is written, with the branch and head, into a receipt
+ * under the primary root before anything is destroyed (the `pr:supersede` ordering), so the
+ * abandonment is auditable and the branch tip stays recoverable from the recorded head after the
+ * force-delete.
+ */
+export function strandLane(target: string, reason: string, port: LaneStrandPort): void {
+    port.fetch();
+    const lane = identifyStrandLane(target, port);
+    const authorLocked = lane.locked && lane.lockReason === AUTHOR_LOCK_REASON;
+    if (!authorLocked) {
+        port.lock(target);
+    }
+    let releaseOnFailure = !authorLocked;
+    try {
+        const initial = validateStrand(target, lane, port);
+        const final = validateStrand(target, lane, port);
+        if (JSON.stringify(initial) !== JSON.stringify(final)) {
+            fail('worktree authority changed during stranding');
+        }
+        const laneName = basename(target);
+        refuseReceiptConflict(laneName, final.head, port);
+        const receipt = `${JSON.stringify(
+            {
+                lane: laneName,
+                path: target,
+                branch: final.branch,
+                head: final.head,
+                reason,
+                strandedAt: new Date().toISOString(),
+            },
+            null,
+            2
+        )}\n`;
+        port.writeReceipt(laneName, receipt);
+        port.unlock(target);
+        releaseOnFailure = false;
+        port.remove(target);
+        if (final.branch !== null) {
+            port.deleteBranch(final.branch);
+        }
+        port.log(`stranded ${laneName}; receipt in ${STRAND_RECEIPTS_DIR}/${laneName}.json`);
+    } finally {
+        if (releaseOnFailure) {
+            port.unlock(target);
+        }
+    }
+}
+
 function capture(command: string, args: string[]): string {
     const result = spawnSync(command, args, { cwd: process.cwd(), encoding: 'utf8', shell: false });
     if (result.error !== undefined) {
@@ -343,7 +549,7 @@ function parseJson<Value>(value: string, label: string): Value {
     }
 }
 
-export function shellPort(shell: ShellRunner = { capture, run }): LaneRemovalPort {
+export function shellPort(shell: ShellRunner = { capture, run }): LaneStrandPort {
     let cachedRepository: string | undefined;
     const repository = () => {
         cachedRepository ??= shell.capture('gh', ['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner']);
@@ -476,6 +682,19 @@ export function shellPort(shell: ShellRunner = { capture, run }): LaneRemovalPor
             shell.run('git', ['worktree', 'lock', '--reason', reason, path]),
         unlock: (path) => shell.run('git', ['worktree', 'unlock', path]),
         remove: (path) => shell.run('git', ['worktree', 'remove', path]),
+        readReceipt: (laneName) => {
+            const path = join(resolvePrimaryRoot(), STRAND_RECEIPTS_DIR, `${laneName}.json`);
+            return existsSync(path) ? readFileSync(path, 'utf8') : undefined;
+        },
+        writeReceipt: (laneName, body) => {
+            const directory = join(resolvePrimaryRoot(), STRAND_RECEIPTS_DIR);
+            mkdirSync(directory, { recursive: true });
+            writeFileSync(join(directory, `${laneName}.json`), body);
+        },
+        deleteBranch: (branch) => shell.run('git', ['branch', '-D', branch]),
+        log: (message) => {
+            console.log(message);
+        },
     };
 }
 
@@ -484,16 +703,37 @@ function main(): number {
         const args = process.argv.slice(2);
         if (args[0] === '--help' && args.length === 1) {
             console.log('Usage: node scripts/removeLane.ts <worktree-path>');
+            console.log('       pnpm lane:strand <worktree-path> --reason "<why this lane is being abandoned>"');
             console.log('');
             console.log('Removes a spent agent worktree. The lane must be clean, unlocked, idle, and');
             console.log('hold the head of exactly one pull request in this repository that either');
             console.log('merged, or was superseded by a pull request that merged.');
+            console.log('');
+            console.log('--strand is the receipted exit for lanes that gate can never prove (unproven');
+            console.log('head ownership, a closed pull request without a supersession receipt, no');
+            console.log('branch at all). It refuses a lane holding an open pull request or uncommitted');
+            console.log('work, records a receipt (reason, date, branch, head) under');
+            console.log('.agents/lane-strands/ in the primary checkout, then removes the worktree and');
+            console.log('force-deletes the branch; the recorded head keeps the tip recoverable. A');
+            console.log('receipt already naming the same lane with a different head is refused, never');
+            console.log('overwritten.');
+            return 0;
+        }
+        const cwd = process.cwd();
+        if (args[0] === '--strand') {
+            const parsed = parseStrandArgs(args);
+            assertTrustedExecutingBlob(
+                'scripts/removeLane.ts',
+                fileURLToPath(import.meta.url),
+                originMainBlob('scripts/removeLane.ts', cwd)
+            );
+            const primaryRoot = resolvePrimaryRoot();
+            strandLane(resolveLaneTarget(parsed.target, primaryRoot), parsed.reason, shellPort());
             return 0;
         }
         if (args.length !== 1 || args[0] === undefined || args[0].startsWith('--')) {
             fail('usage: node scripts/removeLane.ts <worktree-path>');
         }
-        const cwd = process.cwd();
         assertTrustedExecutingBlob(
             'scripts/removeLane.ts',
             fileURLToPath(import.meta.url),
