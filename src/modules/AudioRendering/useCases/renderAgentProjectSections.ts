@@ -4,6 +4,7 @@ import { type RenderProjectSectionJobSnapshot } from '#/utils/handlerContract';
 
 import { type AgentSectionRenderArtifact } from '../models/AgentSectionRenderArtifact';
 import { AGENT_SECTION_RENDER_RETENTION_POLICY } from '../models/AgentSectionRenderRetentionPolicy';
+import { SectionRenderFollowUpError, SectionRenderRetentionCapacityError } from '../models/SectionRenderFollowUpError';
 import { agentSectionRenderArtifactStore } from '../stores/agentSectionRenderArtifactStore';
 
 import { pruneExpiredAgentSectionRenderArtifacts } from './pruneExpiredAgentSectionRenderArtifacts';
@@ -15,21 +16,6 @@ type RenderAgentProjectSectionsInput = {
     sourceRevision: string;
     signal?: AbortSignal;
 };
-
-class SectionRenderFollowUpError extends Error {
-    readonly pendingEffect: {
-        kind: 'external-effect';
-        remediation: 'reconcile' | 'manual-repair';
-        reason: string;
-        state: 'pending';
-    };
-
-    constructor(reason: string, remediation: 'reconcile' | 'manual-repair') {
-        super(reason);
-        this.name = 'SectionRenderFollowUpError';
-        this.pendingEffect = { kind: 'external-effect', remediation, reason, state: 'pending' };
-    }
-}
 
 function createCancellationError(): Error {
     const error = new Error('Agent section rendering was cancelled');
@@ -64,7 +50,7 @@ function retainArtifactsForIncoming(
     protectedJobIds: ReadonlySet<string>
 ): AgentSectionRenderArtifact[] {
     if (incoming.byteSize > AGENT_SECTION_RENDER_RETENTION_POLICY.maxPcmBytes) {
-        throw new Error(
+        throw new SectionRenderRetentionCapacityError(
             `Section render artifact byte capacity exceeded: ${String(incoming.byteSize)}/${String(AGENT_SECTION_RENDER_RETENTION_POLICY.maxPcmBytes)}`
         );
     }
@@ -79,7 +65,7 @@ function retainArtifactsForIncoming(
     ) {
         const candidate = evictionCandidates.shift();
         if (!candidate) {
-            throw new Error(
+            throw new SectionRenderRetentionCapacityError(
                 `Section render artifact retention capacity cannot preserve the current job set: ${String(retained.length + 1)} artifacts, ${String(retainedBytes + incoming.byteSize)} bytes`
             );
         }
@@ -97,9 +83,12 @@ export async function renderAgentProjectSections(input: RenderAgentProjectSectio
         throw createCancellationError();
     }
     if (input.jobs.length > AGENT_SECTION_RENDER_RETENTION_POLICY.maxArtifacts) {
-        throw new Error(
-            `Section render artifact capacity exceeded: ${String(input.jobs.length)}/${String(AGENT_SECTION_RENDER_RETENTION_POLICY.maxArtifacts)}`
-        );
+        const reason = `Section render artifact capacity exceeded: ${String(input.jobs.length)}/${String(AGENT_SECTION_RENDER_RETENTION_POLICY.maxArtifacts)}`;
+        throw new SectionRenderFollowUpError({
+            failureKind: 'retention-capacity',
+            reason,
+            remediation: 'manual-repair',
+        });
     }
     pruneExpiredAgentSectionRenderArtifacts();
     const initialArtifacts = agentSectionRenderArtifactStore.value?.artifacts ?? [];
@@ -112,6 +101,7 @@ export async function renderAgentProjectSections(input: RenderAgentProjectSectio
     }
     const protectedJobIds = new Set(input.jobs.map((job) => job.jobId));
     const failures: string[] = [];
+    let retentionCapacityFailure = false;
     for (const job of input.jobs) {
         if (input.signal?.aborted) {
             throw createCancellationError();
@@ -185,6 +175,7 @@ export async function renderAgentProjectSections(input: RenderAgentProjectSectio
             if (input.signal?.aborted) {
                 throw createCancellationError();
             }
+            retentionCapacityFailure ||= error instanceof SectionRenderRetentionCapacityError;
             failures.push(`${job.jobId}: ${failureReason(error)}`);
         }
     }
@@ -195,6 +186,16 @@ export async function renderAgentProjectSections(input: RenderAgentProjectSectio
             const artifact = existingByJobId.get(job.jobId);
             return artifact !== undefined && jobMatchesArtifact(job, artifact, input.sourceRevision);
         });
-        throw new SectionRenderFollowUpError(reason, allRequestedArtifactsPresent ? 'manual-repair' : 'reconcile');
+        let failureKind: 'retention-capacity' | 'review-required' | 'render-incomplete' = 'render-incomplete';
+        if (retentionCapacityFailure) {
+            failureKind = 'retention-capacity';
+        } else if (allRequestedArtifactsPresent) {
+            failureKind = 'review-required';
+        }
+        throw new SectionRenderFollowUpError({
+            failureKind,
+            reason,
+            remediation: failureKind === 'render-incomplete' ? 'reconcile' : 'manual-repair',
+        });
     }
 }

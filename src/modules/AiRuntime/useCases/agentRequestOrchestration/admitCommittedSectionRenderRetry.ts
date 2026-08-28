@@ -326,7 +326,7 @@ export function admitCommittedSectionRenderRetry(
     if (!renderBinding) {
         return { status: 'proof-mismatch' };
     }
-    const durableReceipt = input.phase === 'eligibility' ? null : input.durableReceipt;
+    const durableReceipt = input.durableReceipt;
     if (!durableReceipt) {
         return { status: 'proof-mismatch' };
     }

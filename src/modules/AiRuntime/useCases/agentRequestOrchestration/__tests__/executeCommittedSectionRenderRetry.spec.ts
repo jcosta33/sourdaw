@@ -17,9 +17,11 @@ const mocks = vi.hoisted(() => ({
     completeContinuation: vi.fn(),
     finalizeCommandReceipt: vi.fn(),
     getConfirmation: vi.fn(),
+    getSectionRenderFollowUpFailure: vi.fn(),
     getRun: vi.fn(),
     logError: vi.fn(),
     project: vi.fn(),
+    recordContinuation: vi.fn(),
     reconcileBudget: vi.fn(),
     requireManualRepair: vi.fn(),
     replaceExecutions: vi.fn(),
@@ -39,6 +41,7 @@ vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
 vi.mock('#/infra/logger/appLogger', () => ({ logger: { error: mocks.logError } }));
 
 vi.mock('#/modules/AudioRendering/useCases', () => ({
+    getSectionRenderFollowUpFailure: mocks.getSectionRenderFollowUpFailure,
     retryAgentProjectSectionRenders: mocks.retryRenders,
 }));
 
@@ -61,6 +64,7 @@ vi.mock('../../agentRunLifecycle', () => ({
     agentRunLifecycle: {
         completePendingEffectContinuation: mocks.completeContinuation,
         get: mocks.getRun,
+        recordPendingEffectContinuation: mocks.recordContinuation,
         reconcileBudgetAttempt: mocks.reconcileBudget,
         reserveBudget: mocks.reserveBudget,
     },
@@ -167,6 +171,7 @@ function projectionForJobs(
     projectedAffectedId = 'projected-affected-id'
 ) {
     return {
+        approvedSectionRenderJobs: [...completedJobs, ...incompleteJobs, ...reviewRequiredJobs],
         completedSectionRenderJobIds: new Set(completedJobs.map(({ jobId }) => jobId)),
         performedSectionRenderJobIds: new Set([...completedJobs, ...reviewRequiredJobs].map(({ jobId }) => jobId)),
         executions: [
@@ -204,6 +209,8 @@ describe('executeCommittedSectionRenderRetry', () => {
             Promise.resolve({ status: 'finalized', receipt: pendingReceipt })
         );
         mocks.getRun.mockReturnValue({ budgetAttempts: [] });
+        mocks.getSectionRenderFollowUpFailure.mockReturnValue(null);
+        mocks.recordContinuation.mockImplementation(() => undefined);
         mocks.reconcileBudget.mockImplementation(() => undefined);
         mocks.requireManualRepair.mockReturnValue(null);
         mocks.reserveBudget.mockReturnValue({ status: 'reserved' });
@@ -381,7 +388,11 @@ describe('executeCommittedSectionRenderRetry', () => {
             status: 'failed',
             reason: 'Section render jobs remain incomplete: render-verse',
         });
-        expect(mocks.retryRenders).toHaveBeenCalledWith({ jobs: [JOB], sourceRevision: 'revision-source' });
+        expect(mocks.retryRenders).toHaveBeenCalledWith({
+            approvedJobs: [JOB],
+            jobs: [JOB],
+            sourceRevision: 'revision-source',
+        });
         expect(mocks.reconcileBudget).toHaveBeenCalledWith({
             runId: 'run-retry',
             attemptId: 'render-retry:confirmation-retry:1',
@@ -490,6 +501,7 @@ describe('executeCommittedSectionRenderRetry', () => {
             reason: 'Section render jobs remain incomplete: render-verse',
         });
         expect(mocks.retryRenders).toHaveBeenCalledWith({
+            approvedJobs: [JOB, SECOND_JOB],
             jobs: [SECOND_JOB],
             sourceRevision: 'revision-source',
         });
@@ -520,6 +532,7 @@ describe('executeCommittedSectionRenderRetry', () => {
             reason: 'Section render artifacts require manual review: render-verse (tail truncated).',
         });
         expect(mocks.retryRenders).toHaveBeenCalledWith({
+            approvedJobs: [SECOND_JOB, JOB],
             jobs: [SECOND_JOB],
             sourceRevision: 'revision-source',
         });
@@ -597,6 +610,7 @@ describe('executeCommittedSectionRenderRetry', () => {
             reason: 'renderer unavailable',
         });
         expect(mocks.retryRenders).toHaveBeenCalledWith({
+            approvedJobs: [SECOND_JOB, JOB],
             jobs: [SECOND_JOB],
             sourceRevision: 'revision-source',
         });

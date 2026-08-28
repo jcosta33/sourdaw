@@ -291,6 +291,35 @@ describe('renderAgentProjectSections', () => {
         expect(getAgentSectionRenderArtifacts()).toEqual([]);
     });
 
+    it('preserves approved artifacts when a missing artifact cannot coexist within retention capacity', async () => {
+        const frameCount = Math.floor(
+            (AGENT_SECTION_RENDER_RETENTION_POLICY.maxPcmBytes * 3) / (4 * 2 * Float32Array.BYTES_PER_ELEMENT)
+        );
+        const firstJob = createJob({ jobId: 'render-chorus-one' });
+        const missingJob = createJob({
+            jobId: 'render-chorus-two',
+            sectionId: 'section-chorus-two',
+            sectionName: 'Chorus Two',
+            startBeat: 64,
+            endBeat: 96,
+        });
+        mocks.renderOffline.mockResolvedValue(createAudioBuffer({ length: frameCount }));
+
+        await renderAgentProjectSections({ jobs: [firstJob], sourceRevision: 'revision-a' });
+
+        await expect(
+            renderAgentProjectSections({ jobs: [firstJob, missingJob], sourceRevision: 'revision-a' })
+        ).rejects.toMatchObject({
+            pendingEffect: {
+                kind: 'external-effect',
+                remediation: 'manual-repair',
+                state: 'pending',
+            },
+        });
+
+        expect(getAgentSectionRenderArtifacts().map((artifact) => artifact.jobId)).toEqual([firstJob.jobId]);
+    });
+
     it('rejects a reused job identity whose render provenance differs', async () => {
         const job = createJob();
 

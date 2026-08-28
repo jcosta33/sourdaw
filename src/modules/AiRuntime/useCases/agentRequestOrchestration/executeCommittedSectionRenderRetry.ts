@@ -1,5 +1,5 @@
 import { logger } from '#/infra/logger/appLogger';
-import { retryAgentProjectSectionRenders } from '#/modules/AudioRendering/useCases';
+import { getSectionRenderFollowUpFailure, retryAgentProjectSectionRenders } from '#/modules/AudioRendering/useCases';
 import { finalizeRecoveredCommandBatchEffects, type createVerifiedBatchReceipt } from '#/modules/Command/useCases';
 import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 
@@ -196,6 +196,33 @@ function finishManualReview(
     return { status: 'failed', reason };
 }
 
+function finishRetentionCapacityManualRepair(
+    confirmation: PendingAppActionConfirmation,
+    batchId: string,
+    reason: string,
+    persistenceWarning: string | null = null
+): RetryResult {
+    const manualRepairPersistenceWarning = requireSectionRenderManualRepair({
+        runId: confirmation.runId,
+        batchId,
+        reason,
+    });
+    const surfacedError = [reason, persistenceWarning, manualRepairPersistenceWarning].filter(Boolean).join('\n\n');
+    updatePendingActionFollowUp({ confirmationId: confirmation.id, error: surfacedError, status: 'failed' });
+    updatePendingActionConfirmationStatus({
+        confirmationId: confirmation.id,
+        status: manualRepairPersistenceWarning ? 'failed' : 'executed',
+        error: surfacedError,
+    });
+    updateChatMessage(confirmation.assistantMessageId, {
+        pendingActionConfirmationStatus: manualRepairPersistenceWarning ? 'failed' : 'executed',
+        pendingActionFollowUpStatus: 'failed',
+        error: surfacedError,
+        content: `Applied after confirmation:\n\nThe project commands were not replayed. The approved section render artifacts cannot coexist within session retention capacity and require manual repair: ${reason}.${persistenceWarning ? `\n\n_${persistenceWarning}_` : ''}${manualRepairPersistenceWarning ? `\n\n${manualRepairPersistenceWarning}` : ''}`,
+    });
+    return { status: 'failed', reason };
+}
+
 function reconcileRetryBudget(
     confirmation: PendingAppActionConfirmation,
     budget: RetryBudget | null,
@@ -266,6 +293,9 @@ export async function executeCommittedSectionRenderRetry(input: {
     if (!sourceRevision || captureProjectRevision() !== sourceRevision) {
         return failStaleRevision(confirmation);
     }
+    const durableContinuation = agentRunLifecycle
+        .get(confirmation.runId)
+        ?.pendingEffectContinuations?.find((candidate) => candidate.batchId === durableReceipt.batchId);
     const budget = reserveRetryBudget(confirmation, followUp.jobs.length);
     if (budget) {
         const hardLimitFailure = failHardBudgetLimit(confirmation, budget);
@@ -278,16 +308,27 @@ export async function executeCommittedSectionRenderRetry(input: {
     updateChatMessage(confirmation.assistantMessageId, { pendingActionFollowUpStatus: 'running' });
     setChatGenerating(true);
     let renderFailureReason: string | undefined;
+    let retentionCapacityFailureReason: string | null = null;
+    let retentionCapacityManualRepair: RetryResult | null = null;
     let manualReviewProjection: SectionRenderProjection | null = null;
     let budgetPersistenceWarning: string | null = null;
     try {
         try {
-            await retryAgentProjectSectionRenders({ jobs: followUp.jobs, sourceRevision });
+            await retryAgentProjectSectionRenders({
+                approvedJobs: initialProjection.approvedSectionRenderJobs,
+                jobs: followUp.jobs,
+                sourceRevision,
+            });
         } catch (error) {
-            renderFailureReason = error instanceof Error ? error.message : String(error);
+            const followUpFailure = getSectionRenderFollowUpFailure(error);
+            if (followUpFailure?.failureKind === 'retention-capacity') {
+                retentionCapacityFailureReason = error instanceof Error ? error.message : String(error);
+            } else {
+                renderFailureReason = error instanceof Error ? error.message : String(error);
+            }
         }
         const liveProjection = projectSectionRenderConfirmation({ confirmation });
-        if (liveProjection.incompleteSectionRenders) {
+        if (!retentionCapacityFailureReason && liveProjection.incompleteSectionRenders) {
             if (renderFailureReason === undefined) {
                 renderFailureReason = `Section render jobs remain incomplete: ${liveProjection.incompleteSectionRenders.missingJobIds.join(', ')}`;
             }
@@ -305,10 +346,26 @@ export async function executeCommittedSectionRenderRetry(input: {
         }
     } finally {
         try {
+            if (retentionCapacityFailureReason) {
+                if (durableContinuation) {
+                    agentRunLifecycle.recordPendingEffectContinuation({
+                        runId: confirmation.runId,
+                        continuation: durableContinuation,
+                    });
+                }
+                retentionCapacityManualRepair = finishRetentionCapacityManualRepair(
+                    confirmation,
+                    durableReceipt.batchId,
+                    retentionCapacityFailureReason
+                );
+            }
             budgetPersistenceWarning = reconcileRetryBudgetBestEffort(confirmation, budget, followUp.jobs);
         } finally {
             setChatGenerating(false);
         }
+    }
+    if (retentionCapacityManualRepair) {
+        return retentionCapacityManualRepair;
     }
     if (manualReviewProjection) {
         return finishManualReview(confirmation, durableReceipt.batchId, budgetPersistenceWarning);
