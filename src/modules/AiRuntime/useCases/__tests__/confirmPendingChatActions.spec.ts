@@ -1202,12 +1202,16 @@ describe('confirmPendingChatActions transaction admission', () => {
         const confirmationId = 'confirmation-no-op-settlement';
         const release = vi.fn().mockResolvedValue(undefined);
         const retain = vi.fn().mockResolvedValue(undefined);
-        configureLateSettlementConfirmation({
+        const commandBatch = configureLateSettlementConfirmation({
             runId,
             confirmationId,
             batchId: 'group-no-op-settlement',
             resourceLease: { bytes: 1, release, retain },
         });
+        const parsedCommandBatch = parseVersionedCommandBatchEnvelope(commandBatch.serialized, commandBatch.authority);
+        if (parsedCommandBatch.status !== 'valid') {
+            throw new Error('Expected the stale no-op command batch fixture to remain valid.');
+        }
         const commandUseCases = await import('#/modules/Command/useCases');
         const crdtUseCases = await import('#/modules/CrdtDocument/useCases');
         const captureMutationAuthorization = vi
@@ -1223,6 +1227,15 @@ describe('confirmPendingChatActions transaction admission', () => {
 
         try {
             await expect(confirmPendingChatActions({ confirmationId })).resolves.toEqual({ status: 'cancelled' });
+            expect(settle).toHaveBeenCalledWith({
+                runId,
+                workId: 'group-no-op-settlement',
+                leaseId: `${runId}:group-no-op-settlement:0`,
+                cancellationGeneration: 0,
+                idempotencyKey: parsedCommandBatch.envelope.idempotencyKey,
+                receiptIdentity: `command:${runId}:group-no-op-settlement`,
+                terminalState: 'completed',
+            });
         } finally {
             settle.mockRestore();
             execute.mockRestore();

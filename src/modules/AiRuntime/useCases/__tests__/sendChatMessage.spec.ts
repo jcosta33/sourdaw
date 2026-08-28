@@ -1058,10 +1058,38 @@ describe('sendChatMessage retained-provider selection', () => {
         try {
             await expect(sendChatMessage('Summarize the arrangement.', { mode: 'explain' })).resolves.toBeUndefined();
 
+            const run = agentRunLifecycle.get(getMostRecentlyAdmittedRunId());
+            if (run === null) {
+                throw new Error('Expected the completed provider lease to remain inspectable after lifecycle failure.');
+            }
+            const providerReceiptIdentity = `provider:webllm:${run.runId}`;
             expect(mocks.updateChatMessage).toHaveBeenLastCalledWith(
                 expect.any(String),
                 expect.objectContaining({ isStreaming: false, content, error: undefined })
             );
+            expect(run).toMatchObject({
+                phase: 'planning',
+                errors: [],
+                workLeases: [
+                    expect.objectContaining({
+                        runId: run.runId,
+                        workId: 'provider-response',
+                        leaseId: `${run.runId}:provider-response:0`,
+                        cancellationGeneration: 0,
+                        idempotencyKey: providerReceiptIdentity,
+                        receiptIdentity: providerReceiptIdentity,
+                        terminalState: 'completed',
+                    }),
+                ],
+            });
+            await expect(recoverInterruptedAgentRuns({ recoveredAt: 200 })).resolves.toEqual({
+                recoveredRunIds: [run.runId],
+            });
+            expect(agentRunLifecycle.get(run.runId)).toMatchObject({
+                phase: 'partially-completed',
+                manualResume: { required: false, workIds: [] },
+                workLeases: [expect.objectContaining({ workId: 'provider-response', terminalState: 'completed' })],
+            });
             expect(llmStatusStore.value).toEqual({ state: 'ready', backend: 'webllm', modelId: 'fixture-model' });
             expect(mocks.setActiveAborter).toHaveBeenLastCalledWith(null);
             expect(mocks.setChatGenerating).toHaveBeenLastCalledWith(false);
@@ -1678,6 +1706,15 @@ describe('sendChatMessage retained-provider selection', () => {
                 expect(run).toMatchObject({
                     phase: 'partially-completed',
                     receipts: [expect.objectContaining({ workId: 'batch-graph', receiptIdentity })],
+                });
+                expect(settleWorkLease).toHaveBeenCalledWith({
+                    runId: run.runId,
+                    workId: 'batch-graph',
+                    leaseId: `${run.runId}:batch-graph:0`,
+                    cancellationGeneration: 0,
+                    idempotencyKey: 'batch-graph-idempotency',
+                    receiptIdentity: `command:${run.runId}:batch-graph`,
+                    terminalState: 'completed',
                 });
                 expect(transitionPhase).not.toHaveBeenCalledWith(expect.objectContaining({ phase: 'completed' }));
                 expect(claimWorkLease.mock.calls.filter(([input]) => input.workId === 'batch-graph')).toHaveLength(1);
