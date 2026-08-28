@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
+import { readAgentRunState } from '../../stores/agentRunStore';
+import { selectAgentRunPendingEffectRecoveries } from '../../stores/selectAgentRunPendingEffectRecoveries';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { createAgentSagaStep } from '../createAgentSagaStep';
 
@@ -81,5 +83,97 @@ describe('agentRunLifecycle', () => {
         });
 
         expect(agentRunLifecycle.get('run-unsettled-saga')).toMatchObject({ phase: 'partially-completed' });
+    });
+
+    it('atomically converts both durable continuation copies to manual repair', () => {
+        agentRunLifecycle.create({
+            runId: 'run-render-review',
+            request: 'Retain the warned render for review.',
+            mode: 'macro',
+            createdRevision: 'heads-render-review',
+            createdAt: 1,
+        });
+        agentRunLifecycle.recordPendingEffectContinuation({
+            runId: 'run-render-review',
+            continuation: {
+                authority: {
+                    projectId: 'project-render-review',
+                    baseRevision: 'heads-render-review',
+                    scope: { targetIds: [], targetRanges: [], protectedTargetIds: [], protectedRanges: [] },
+                    grants: {
+                        allowedOperationPrefixes: ['renderProjectSections'],
+                        create: false,
+                        delete: false,
+                        routing: false,
+                        tempo: false,
+                        master: false,
+                        file: true,
+                        audioUpload: false,
+                        remoteGeneration: false,
+                        autoCommit: true,
+                    },
+                    budgets: {
+                        maxCommands: 1,
+                        maxCreatedTracks: 0,
+                        maxDeletedObjects: 0,
+                        maxAffectedTracks: 0,
+                        maxAffectedClips: 0,
+                        maxAutomationPoints: 0,
+                        maxImportedAssets: 0,
+                        maxRenderJobs: 1,
+                    },
+                },
+                batchId: 'batch-render-review',
+                effects: [
+                    {
+                        commandId: 'command-render-review',
+                        kind: 'external-effect',
+                        operation: 'renderProjectSections',
+                        reason: 'tail truncated',
+                        remediation: 'reconcile',
+                        state: 'pending',
+                    },
+                ],
+                lastError: null,
+                receiptIdentity: '1:run-render-review:batch-render-review:partially-committed',
+                recovery: 'reconcile-batch',
+                serializedBatch: '{"batch":"render-review"}',
+            },
+            recordedAt: 2,
+        });
+
+        agentRunLifecycle.requirePendingEffectManualRepair({
+            runId: 'run-render-review',
+            batchId: 'batch-render-review',
+            reason: 'The retained render has a truncated tail.',
+            requiredAt: 3,
+        });
+
+        expect(agentRunLifecycle.get('run-render-review')?.pendingEffectContinuations).toEqual([
+            expect.objectContaining({
+                batchId: 'batch-render-review',
+                recovery: 'manual-repair',
+                lastError: 'The retained render has a truncated tail.',
+                effects: [expect.objectContaining({ remediation: 'manual-repair' })],
+            }),
+        ]);
+        expect(readAgentRunState().pendingEffectRecoveryLedger).toEqual([
+            expect.objectContaining({
+                runId: 'run-render-review',
+                batchId: 'batch-render-review',
+                checkpoint: 'durable',
+                recovery: 'manual-repair',
+                lastError: 'The retained render has a truncated tail.',
+                effects: [expect.objectContaining({ remediation: 'manual-repair' })],
+            }),
+        ]);
+        expect(selectAgentRunPendingEffectRecoveries(readAgentRunState())).toEqual([
+            expect.objectContaining({
+                runId: 'run-render-review',
+                batchId: 'batch-render-review',
+                recovery: 'manual-repair',
+                lastError: 'The retained render has a truncated tail.',
+            }),
+        ]);
     });
 });

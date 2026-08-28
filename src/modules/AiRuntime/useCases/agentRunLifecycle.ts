@@ -12,6 +12,7 @@ import {
     type AgentRunError,
     type AgentRunGrants,
     type AgentRunPlan,
+    type AgentRunPendingEffect,
     type AgentRunPendingEffectContinuation,
     type AgentRunPendingEffectRecovery,
     type AgentRunPhase,
@@ -796,6 +797,66 @@ function failAgentRunPendingEffectContinuation(input: {
         ),
     };
     runs[index] = next;
+    persistAgentRunState(withPendingEffectRecoveryLedger({ ...state, runs }, pendingEffectRecoveryLedger));
+    return structuredClone(next);
+}
+
+function requireAgentRunPendingEffectManualRepair(input: {
+    runId: string;
+    batchId: string;
+    reason: string;
+    requiredAt?: number;
+}): AgentRun {
+    const requiredAt = input.requiredAt ?? Date.now();
+    const state = readAgentRunState();
+    const runIndex = state.runs.findIndex((run) => run.runId === input.runId);
+    if (runIndex < 0) {
+        throw new Error(`Unknown agent run: ${input.runId}`);
+    }
+    const run = state.runs[runIndex]!;
+    const continuation = run.pendingEffectContinuations.find((candidate) => candidate.batchId === input.batchId);
+    const recovery = getPendingEffectRecoveryLedger(state).find((candidate) =>
+        isPendingEffectRecovery(candidate, input)
+    );
+    if (!continuation || !recovery || recovery.checkpoint !== 'durable') {
+        throw new Error(`Unknown durable pending effect continuation: ${input.batchId}`);
+    }
+    if (
+        continuation.effects.some((effect) => effect.kind !== 'external-effect') ||
+        recovery.effects.some((effect) => effect.kind !== 'external-effect')
+    ) {
+        throw new Error(`Pending effect continuation cannot be converted to manual repair: ${input.batchId}`);
+    }
+    const requireManualRepairEffects = (effects: AgentRunPendingEffect[]): AgentRunPendingEffect[] =>
+        effects.map((effect) =>
+            effect.kind === 'external-effect' ? { ...effect, remediation: 'manual-repair' } : effect
+        );
+    const next = {
+        ...run,
+        updatedAt: requiredAt,
+        pendingEffectContinuations: run.pendingEffectContinuations.map((candidate) =>
+            candidate.batchId === input.batchId
+                ? {
+                      ...candidate,
+                      effects: requireManualRepairEffects(candidate.effects),
+                      recovery: 'manual-repair',
+                      lastError: input.reason,
+                  }
+                : candidate
+        ),
+    } satisfies AgentRun;
+    const runs = [...state.runs];
+    runs[runIndex] = next;
+    const pendingEffectRecoveryLedger = getPendingEffectRecoveryLedger(state).map((candidate) =>
+        isPendingEffectRecovery(candidate, input)
+            ? {
+                  ...candidate,
+                  effects: requireManualRepairEffects(candidate.effects),
+                  recovery: 'manual-repair',
+                  lastError: input.reason,
+              }
+            : candidate
+    );
     persistAgentRunState(withPendingEffectRecoveryLedger({ ...state, runs }, pendingEffectRecoveryLedger));
     return structuredClone(next);
 }
@@ -1635,6 +1696,7 @@ export const agentRunLifecycle = {
     preparePendingEffectContinuation: prepareAgentRunPendingEffectContinuation,
     discardPreparedPendingEffectContinuation: discardPreparedAgentRunPendingEffectContinuation,
     failPendingEffectContinuation: failAgentRunPendingEffectContinuation,
+    requirePendingEffectManualRepair: requireAgentRunPendingEffectManualRepair,
     completePendingEffectContinuation: completeAgentRunPendingEffectContinuation,
     recordSagaStep: recordAgentRunSagaStep,
     recordSagaCompensation: recordAgentRunSagaCompensation,

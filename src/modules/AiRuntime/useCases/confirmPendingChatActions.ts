@@ -43,6 +43,7 @@ import { admitCommittedSectionRenderRetry } from './agentRequestOrchestration/ad
 import { executeCommittedSectionRenderRetry } from './agentRequestOrchestration/executeCommittedSectionRenderRetry';
 import { formatSectionRenderReviewSummary } from './agentRequestOrchestration/formatSectionRenderReviewSummary';
 import { projectSectionRenderConfirmation } from './agentRequestOrchestration/projectSectionRenderConfirmation';
+import { requireSectionRenderManualRepair } from './agentRequestOrchestration/requireSectionRenderManualRepair';
 import {
     AGENT_RUN_PERSISTENCE_WARNING,
     AGENT_RUN_STALE_COMPLETION_WARNING,
@@ -1077,6 +1078,7 @@ export async function confirmPendingChatActions(
             const freshConfirmation = getPendingActionConfirmation(confirmation.id) ?? confirmation;
             let retryableSectionRenders = false;
             let manualReviewReason: string | null = null;
+            let manualReviewPersistenceWarning: string | null = null;
             if (
                 batchResult.status === 'committed-with-warning' &&
                 (incompleteSectionRenders || reviewRequiredSectionRenders.length > 0)
@@ -1098,16 +1100,24 @@ export async function confirmPendingChatActions(
                 } else if (renderFollowUpAdmitted && reviewRequiredSectionRenders.length > 0) {
                     const reviewSummary = formatSectionRenderReviewSummary(reviewRequiredSectionRenders);
                     manualReviewReason = `Section render artifacts require manual review: ${reviewSummary}.`;
+                    manualReviewPersistenceWarning = requireSectionRenderManualRepair({
+                        runId: confirmation.runId,
+                        batchId: batchResult.receipt.batchId,
+                        reason: manualReviewReason,
+                    });
+                    const surfacedManualReviewError = [manualReviewReason, manualReviewPersistenceWarning]
+                        .filter(Boolean)
+                        .join(' ');
                     updatePendingActionFollowUp({
                         confirmationId: confirmation.id,
-                        error: manualReviewReason,
+                        error: surfacedManualReviewError,
                         projectRevision: committedProjectRevision,
                         status: 'failed',
                     });
                     updatePendingActionConfirmationStatus({
                         confirmationId: confirmation.id,
-                        status: 'executed',
-                        error: manualReviewReason,
+                        status: manualReviewPersistenceWarning ? 'failed' : 'executed',
+                        error: surfacedManualReviewError,
                     });
                 }
             }
@@ -1121,7 +1131,7 @@ export async function confirmPendingChatActions(
                     content = `Applied after confirmation:\n\n${executionReceipt}\n\nThe project change committed with a follow-up warning: ${batchResult.warning}. Do not replay the confirmed project actions. Retry missing renders below; only receipt-bound missing artifacts will run.`;
                 }
                 if (manualReviewReason) {
-                    content = `Applied after confirmation:\n\n${executionReceipt}\n\nThe project commands were not replayed. ${manualReviewReason}`;
+                    content = `Applied after confirmation:\n\n${executionReceipt}\n\nThe project commands were not replayed. ${manualReviewReason}${manualReviewPersistenceWarning ? `\n\n${manualReviewPersistenceWarning}` : ''}`;
                 }
             }
             if (effectsPending && !manualReviewReason) {
@@ -1143,10 +1153,13 @@ export async function confirmPendingChatActions(
                 pendingActionFollowUpStatus = 'retryable';
             }
             updateChatMessage(confirmation.assistantMessageId, {
-                pendingActionConfirmationStatus: effectsPending && !manualReviewReason ? 'failed' : 'executed',
+                pendingActionConfirmationStatus:
+                    (effectsPending && !manualReviewReason) || manualReviewPersistenceWarning ? 'failed' : 'executed',
                 pendingActionFollowUpStatus,
                 error: manualReviewReason
-                    ? [manualReviewReason, runPersistenceWarning].filter(Boolean).join(' ')
+                    ? [manualReviewReason, manualReviewPersistenceWarning, runPersistenceWarning]
+                          .filter(Boolean)
+                          .join(' ')
                     : warning,
                 content,
             });

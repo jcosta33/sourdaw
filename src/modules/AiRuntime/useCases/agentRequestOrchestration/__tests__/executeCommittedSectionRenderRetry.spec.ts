@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => ({
     logError: vi.fn(),
     project: vi.fn(),
     reconcileBudget: vi.fn(),
+    requireManualRepair: vi.fn(),
     replaceExecutions: vi.fn(),
     reserveBudget: vi.fn(),
     retryRenders: vi.fn(),
@@ -61,6 +62,10 @@ vi.mock('../../agentRunLifecycle', () => ({
 
 vi.mock('../projectSectionRenderConfirmation', () => ({
     projectSectionRenderConfirmation: mocks.project,
+}));
+
+vi.mock('../requireSectionRenderManualRepair', () => ({
+    requireSectionRenderManualRepair: mocks.requireManualRepair,
 }));
 
 const JOB = {
@@ -189,6 +194,7 @@ describe('executeCommittedSectionRenderRetry', () => {
         mocks.completeContinuation.mockImplementation(() => undefined);
         mocks.getRun.mockReturnValue({ budgetAttempts: [] });
         mocks.reconcileBudget.mockImplementation(() => undefined);
+        mocks.requireManualRepair.mockReturnValue(null);
         mocks.reserveBudget.mockReturnValue({ status: 'reserved' });
         mocks.retryRenders.mockResolvedValue(undefined);
         mocks.setGenerating.mockImplementation((isGenerating: boolean) => {
@@ -278,7 +284,39 @@ describe('executeCommittedSectionRenderRetry', () => {
         expect(mocks.retryRenders).not.toHaveBeenCalled();
         expect(mocks.reserveBudget).not.toHaveBeenCalled();
         expect(mocks.completeContinuation).not.toHaveBeenCalled();
+        expect(mocks.requireManualRepair).toHaveBeenCalledWith({
+            runId: 'run-retry',
+            batchId: 'batch-retry',
+            reason: 'Section render artifacts require manual review: render-verse (tail truncated).',
+        });
         expect(mocks.updateFollowUp).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'failed' }));
+    });
+
+    it('fails closed when manual-repair persistence fails', async () => {
+        const input = createInput();
+        mocks.project.mockReturnValue(projectionForJobs([], [], [JOB]));
+        mocks.requireManualRepair.mockReturnValue(
+            'The retained render manual-repair state could not be persisted. Do not reconcile or replay this committed batch until durable run state is repaired.'
+        );
+
+        await expect(executeCommittedSectionRenderRetry(input)).resolves.toEqual({
+            status: 'failed',
+            reason: 'Section render artifacts require manual review: render-verse (tail truncated).',
+        });
+        expect(mocks.updateConfirmation).toHaveBeenLastCalledWith(
+            expect.objectContaining({ status: 'failed', error: expect.stringContaining('could not be persisted') })
+        );
+        expect(mocks.updateFollowUp).toHaveBeenLastCalledWith(
+            expect.objectContaining({ status: 'failed', error: expect.stringContaining('could not be persisted') })
+        );
+        expect(mocks.updateChat).toHaveBeenLastCalledWith(
+            'assistant-retry',
+            expect.objectContaining({
+                pendingActionConfirmationStatus: 'failed',
+                pendingActionFollowUpStatus: 'failed',
+                content: expect.stringContaining('Do not reconcile or replay this committed batch'),
+            })
+        );
     });
 
     it('preserves retryability when the render budget hard limit is reached', async () => {

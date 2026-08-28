@@ -15,6 +15,7 @@ import { agentRunLifecycle } from '../agentRunLifecycle';
 
 import { formatSectionRenderReviewSummary } from './formatSectionRenderReviewSummary';
 import { projectSectionRenderConfirmation } from './projectSectionRenderConfirmation';
+import { requireSectionRenderManualRepair } from './requireSectionRenderManualRepair';
 
 type CommandVerifiedBatchReceipt = ReturnType<typeof createVerifiedBatchReceipt>;
 type RetryResult = { status: 'busy' | 'executed' } | { status: 'failed'; reason: string };
@@ -147,23 +148,29 @@ function failIncompleteRetry(
 
 function finishManualReview(
     confirmation: PendingAppActionConfirmation,
+    batchId: string,
     persistenceWarning: string | null = null
 ): RetryResult {
     const refreshed = refreshConfirmationProjection(confirmation);
     const reviewSummary = formatSectionRenderReviewSummary(refreshed.projection.reviewRequiredSectionRenders);
     const reason = `Section render artifacts require manual review: ${reviewSummary}.`;
-    const surfacedError = persistenceWarning ? `${reason}\n\n${persistenceWarning}` : reason;
+    const manualRepairPersistenceWarning = requireSectionRenderManualRepair({
+        runId: confirmation.runId,
+        batchId,
+        reason,
+    });
+    const surfacedError = [reason, persistenceWarning, manualRepairPersistenceWarning].filter(Boolean).join('\n\n');
     updatePendingActionFollowUp({ confirmationId: confirmation.id, error: surfacedError, status: 'failed' });
     updatePendingActionConfirmationStatus({
         confirmationId: confirmation.id,
-        status: 'executed',
+        status: manualRepairPersistenceWarning ? 'failed' : 'executed',
         error: surfacedError,
     });
     updateChatMessage(confirmation.assistantMessageId, {
-        pendingActionConfirmationStatus: 'executed',
+        pendingActionConfirmationStatus: manualRepairPersistenceWarning ? 'failed' : 'executed',
         pendingActionFollowUpStatus: 'failed',
         error: surfacedError,
-        content: `Applied after confirmation:\n\n${refreshed.projection.receipt}\n\nThe project commands were not replayed. Retained section render artifacts require manual review: ${reviewSummary}.${persistenceWarning ? `\n\n_${persistenceWarning}_` : ''}`,
+        content: `Applied after confirmation:\n\n${refreshed.projection.receipt}\n\nThe project commands were not replayed. Retained section render artifacts require manual review: ${reviewSummary}.${persistenceWarning ? `\n\n_${persistenceWarning}_` : ''}${manualRepairPersistenceWarning ? `\n\n${manualRepairPersistenceWarning}` : ''}`,
     });
     return { status: 'failed', reason };
 }
@@ -229,7 +236,7 @@ export async function executeCommittedSectionRenderRetry(input: {
     const followUp = initialProjection.incompleteSectionRenders;
     if (!followUp) {
         if (initialProjection.reviewRequiredSectionRenders.length > 0) {
-            return finishManualReview(confirmation);
+            return finishManualReview(confirmation, durableReceipt.batchId);
         }
         return finishAlreadyComplete(confirmation, durableReceipt);
     }
@@ -280,7 +287,7 @@ export async function executeCommittedSectionRenderRetry(input: {
         }
     }
     if (manualReviewProjection) {
-        return finishManualReview(confirmation, budgetPersistenceWarning);
+        return finishManualReview(confirmation, durableReceipt.batchId, budgetPersistenceWarning);
     }
     if (renderFailureReason !== undefined) {
         return failIncompleteRetry(confirmation, renderFailureReason, budgetPersistenceWarning);

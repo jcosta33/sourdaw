@@ -51,6 +51,7 @@ import {
 } from '#/modules/CrdtDocument/useCases';
 import { type ActionHandler, type AppAction } from '#/utils/handlerContract';
 
+import { readAgentRunState } from '../../stores/agentRunStore';
 import { aiActionHistoryStore, clearAiHistory } from '../../stores/aiActionHistoryStore';
 import { chatStore, stopGenerating } from '../../stores/chatStore';
 import {
@@ -59,6 +60,7 @@ import {
     proposePendingActionConfirmation,
     settlePendingActionResourceLease,
 } from '../../stores/pendingActionConfirmationStore';
+import { selectAgentRunPendingEffectRecoveries } from '../../stores/selectAgentRunPendingEffectRecoveries';
 import { createStemImportConfirmationResourceLease } from '../agentReference/createStemImportConfirmationResourceLease';
 import { preparedStemImportResources } from '../agentReference/registerPreparedStemImportResources';
 import { AGENT_RUN_STALE_COMPLETION_WARNING } from '../agentRequestOrchestration/settleAgentRunWorkLeaseSafely';
@@ -2892,12 +2894,56 @@ describe('confirmPendingChatActions transaction admission', () => {
             agentRunLifecycle
                 .get('confirmation-warned-render')
                 ?.pendingEffectContinuations.filter(({ batchId }) => batchId === 'group-warned-render')
-        ).toHaveLength(1);
+        ).toEqual([
+            expect.objectContaining({
+                batchId: 'group-warned-render',
+                recovery: 'manual-repair',
+                lastError: 'Section render artifacts require manual review: render-warned-verse (tail truncated).',
+            }),
+        ]);
+        expect(
+            (readAgentRunState().pendingEffectRecoveryLedger ?? []).filter(
+                ({ runId, batchId }) => runId === 'confirmation-warned-render' && batchId === 'group-warned-render'
+            )
+        ).toEqual([
+            expect.objectContaining({
+                checkpoint: 'durable',
+                recovery: 'manual-repair',
+                lastError: 'Section render artifacts require manual review: render-warned-verse (tail truncated).',
+            }),
+        ]);
+        expect(
+            selectAgentRunPendingEffectRecoveries(readAgentRunState()).find(
+                ({ runId, batchId }) => runId === 'confirmation-warned-render' && batchId === 'group-warned-render'
+            )
+        ).toMatchObject({ recovery: 'manual-repair' });
         await expect(confirmPendingChatActions({ confirmationId: 'confirmation-warned-render' })).resolves.toEqual({
             status: 'not_pending',
             currentStatus: 'executed',
         });
         expect(runtimeMocks.renderOffline).toHaveBeenCalledOnce();
+        clearAgentSectionRenderArtifacts();
+        mutateCrdtDoc<Record<string, unknown>>({
+            id: 'independent',
+            changeFn: (doc) => {
+                doc.changedAfterManualReview = true;
+            },
+        });
+        await expect(
+            recoverAgentRunPendingEffects({
+                runId: 'confirmation-warned-render',
+                batchId: 'group-warned-render',
+            })
+        ).resolves.toEqual({
+            status: 'failed',
+            reason: 'At least one retained external effect requires manual repair and cannot be retried exactly.',
+        });
+        expect(runtimeMocks.renderOffline).toHaveBeenCalledOnce();
+        expect(
+            agentRunLifecycle
+                .get('confirmation-warned-render')
+                ?.pendingEffectContinuations.some(({ batchId }) => batchId === 'group-warned-render')
+        ).toBe(true);
     });
 
     it('invalidates a confirmed batch when another app action commits while its first handler is paused', async () => {
