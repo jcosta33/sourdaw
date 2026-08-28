@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 
+import { probeBrowserWebGpuHardware } from './browserAiHardware';
 import { launch_from_template, launch_new_project, setupWorkspace } from './e2eUtils';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
@@ -52,12 +53,31 @@ test.describe('AI Chat Panel — Composer', () => {
 });
 
 test.describe('AI availability', () => {
-    test('shows the unavailable state when this browser has no admitted LLM backend', async ({ page }) => {
+    // WebLLM is release-admitted, so the badge is decided by this browser's
+    // WebGPU admission alone. The expectation is read from Chromium's own
+    // adapter, outside Sourdaw's detection, so neither branch can be reached by
+    // a product regression agreeing with itself. The general matrix has no
+    // adapter and therefore proves only the refused branch; the admitted branch
+    // is proven by browserAiAdmittedPresentation.spec.ts on the hardware leg,
+    // and runs here as well on a developer machine with a GPU.
+    test('the badge follows this browser’s WebGPU admission', async ({ page }, testInfo) => {
         await setupWorkspace(page);
         await launch_new_project(page);
 
-        await expect(page.getByText('AI unavailable', { exact: true })).toBeVisible();
-        await expect(page.getByRole('button', { name: 'Load AI' })).toHaveCount(0);
+        const hardware = await probeBrowserWebGpuHardware(page);
+        await testInfo.attach('webgpu-hardware-probe', {
+            body: JSON.stringify(hardware),
+            contentType: 'application/json',
+        });
+
+        if (hardware.status === 'unavailable') {
+            await expect(page.getByText('AI unavailable', { exact: true })).toBeVisible();
+            await expect(page.getByRole('button', { name: 'Load AI' })).toHaveCount(0);
+            return;
+        }
+
+        await expect(page.getByRole('button', { name: 'Load AI' })).toBeVisible();
+        await expect(page.getByText('AI unavailable', { exact: true })).toHaveCount(0);
     });
 });
 

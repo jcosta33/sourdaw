@@ -11,7 +11,14 @@ export type PluginParameter = {
     default_value: number;
     min_value: number;
     max_value: number;
-    unit: string;
+    /**
+     * The host declares this `Option<String>`, and a format that reports no unit
+     * for a parameter sends `null`. Typed as the wire actually answers, so the
+     * absence is resolved once, at the boundary that owns the DTO
+     * (`toExternalPluginParameters`), instead of arriving as a `null` inside a
+     * field every downstream reader has been told is a string.
+     */
+    unit: string | null;
     is_automatable: boolean;
 };
 

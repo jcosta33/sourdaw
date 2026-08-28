@@ -1,6 +1,28 @@
 import { test, expect, type Page } from '@playwright/test';
 
-import { launch_new_project, setupWebGpuApiPresentWorkspace } from './e2eUtils';
+import { launch_new_project, setupWorkspace } from './e2eUtils';
+import { startLoopbackOpenAiProvider, type LoopbackOpenAiProvider } from './loopbackOpenAiProvider';
+
+const LOOPBACK_REPLY = 'Loopback provider reply for the confirm/apply/undo proof.';
+
+/**
+ * Points the running app at the loopback endpoint through its own product use
+ * cases, so admission is decided by `configureCloudProvider` and the backend
+ * chain rather than by anything the test fakes.
+ */
+async function admitLoopbackProvider(page: Page, provider: LoopbackOpenAiProvider): Promise<void> {
+    await page.evaluate(
+        async ({ baseUrl, model }) => {
+            const { configureCloudProvider } =
+                await import('/src/modules/AiRuntime/useCases/cloudApiManagement/configureCloudProvider.ts');
+            const { setAiBackendPreference } =
+                await import('/src/modules/AiRuntime/useCases/llmOrchestration/backendResolution/setAiBackendPreference.ts');
+            await configureCloudProvider({ provider: 'openai-compatible', model, baseUrl });
+            setAiBackendPreference('cloud');
+        },
+        { baseUrl: provider.baseUrl, model: provider.model }
+    );
+}
 
 function trackArmButtons(page: Page) {
     return page
@@ -17,12 +39,44 @@ async function openChatPanel(page: Page): Promise<void> {
 // The confirm half of the prompt flow: proposal buttons are covered
 // (mount + cancel) but no spec clicks Confirm and asserts the project actually
 // mutates, let alone that the applied batch is undoable and redoable.
-test.describe('AI prompt → Confirm → apply → undo/redo', () => {
+//
+// The composer needs an admitted AI backend. WebGPU cannot supply one on a
+// GPU-less runner, so these tests admit the other documented browser path: an
+// unauthenticated OpenAI-compatible endpoint on loopback, configured through
+// the product's own `configureCloudProvider`.
+test.describe('AI chat over an admitted loopback provider', () => {
+    let provider: LoopbackOpenAiProvider;
+
     test.beforeEach(async ({ page }) => {
         test.setTimeout(120000);
-        await setupWebGpuApiPresentWorkspace(page);
+        provider = await startLoopbackOpenAiProvider({ reply: LOOPBACK_REPLY });
+        await setupWorkspace(page);
         await launch_new_project(page);
+        await admitLoopbackProvider(page, provider);
         await openChatPanel(page);
+    });
+
+    test.afterEach(async () => {
+        await provider.close();
+    });
+
+    // Admission is only worth asserting if the configured endpoint is the one
+    // the app actually talks to: an explain-mode prompt bypasses the local
+    // fast paths and streams straight from the provider.
+    test('streams a chat answer from the configured loopback endpoint', async ({ page }) => {
+        const input = page.getByTestId('chat-composer-input');
+        await expect(input).toBeEnabled();
+
+        const executionMode = page.getByRole('combobox', { name: 'Agent execution mode' });
+        await expect(executionMode).toHaveValue('explain');
+
+        await input.fill('What does this project sound like?');
+        await input.press('Enter');
+
+        const conversation = page.getByRole('log', { name: 'Chat conversation' });
+        await expect(conversation).toContainText(LOOPBACK_REPLY, { timeout: 30_000 });
+        expect(provider.completionRequests.length).toBeGreaterThan(0);
+        expect(provider.completionRequests[0]).toContain(provider.model);
     });
 
     test('confirming "create 3 audio tracks" adds the tracks, undo restores, redo re-applies', async ({ page }) => {

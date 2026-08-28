@@ -9,12 +9,12 @@ Owns third-party native audio plugin lifecycle (VST3, CLAP, AU scanning, loading
 ## Public Contract Surface
 
 - **`useCases`**:
-    - **Plugin lifecycle & bridge**: `loadPlugin`, `unloadPlugin`, `openPluginGui`, `processAudioIPC`, `setPluginParameter`, `setPluginBypass`, `readPluginState`, `restorePluginState`, `activateExternalPlugin`, `clearLoadedExternalPlugins`.
+    - **Plugin lifecycle & bridge**: `loadPlugin`, `unloadPlugin`, `openPluginGui`, `processAudioIPC`, `setPluginParameter`, `setPluginBypass`, `readPluginState`, `restorePluginState`, `activateExternalPlugin`, `clearLoadedExternalPlugins`, `refreshExternalPluginParameters`.
     - **Scanning & discovery**: `findPluginByName`, `findSupportedPlugin`, `SUPPORTED_PLUGIN_FORMATS`, `isSupportedPluginFormat`, `getExternalPluginContractVersionForCommand`, `getAgentDeviceFactoryManifest`, `startPluginScan`, `addScanPath`, `removeScanPath`.
     - **Faust DSP**: `registerBuiltinFaustDSP`, `registerFaustDSP`, `compileFaustDSP`, `createFaustNode`, `isFaustModule`, `getFaustModuleLatencyMs`, `isFaustInstrumentModule`, `registerProModulationEffects`.
     - **Web Audio Modules**: `initWAMEnvironment`, `registerWAMPlugin`, `getRegisteredPlugins`, `getPluginsByCategory`, `loadWAMPlugin`, `unloadWAMPlugin`, `getActiveInstances`, `registerBuiltinPlugins`.
     - **Handler maps**: `getPluginHostHandlers`.
-- **`stores`**: `pluginScanStore` (`defaultPluginScanState`, type `PluginScanState`), `externalPluginActivationStore` (`defaultExternalPluginActivationState`, types `ExternalPluginActivationState`, `ExternalPluginActivationStatus`).
+- **`stores`**: `pluginScanStore` (`defaultPluginScanState`, type `PluginScanState`), `externalPluginActivationStore` (`defaultExternalPluginActivationState`, types `ExternalPluginActivationState`, `ExternalPluginActivationStatus`), `externalPluginParameterStore` (`defaultExternalPluginParameterState`, types `ExternalPluginParameter`, `ExternalPluginParameterSnapshot`, `ExternalPluginParameterState`) — read-only outside the module: its writers stay off the barrel.
 - **`events`**: None.
 - **`presentations/views`**: None.
 - **Handler maps**: `getPluginHostHandlers` (`handleScanPlugins`).

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { type PluginInstance } from '../../../repositories/pluginBridge/types';
 import {
     defaultExternalPluginActivationState,
     externalPluginActivationStore,
@@ -31,6 +32,7 @@ describe('resetExternalPluginRuntimeForGraphRebuild', () => {
         externalPluginActivationStore.set(defaultExternalPluginActivationState);
         mocks.loadPlugin.mockResolvedValue({
             instance_id: 'plugin-instance-1',
+            parameters: [],
             latency_samples: 0,
             latency_ms: 4,
             engine_plugin_id: 1000,
@@ -73,15 +75,20 @@ describe('resetExternalPluginRuntimeForGraphRebuild', () => {
     });
 
     it('fences activation admitted during rebuild until bulk unload has completed', async () => {
-        const firstLoad = Promise.withResolvers<{
-            instance_id: string;
-            latency_samples: number;
-            latency_ms: number;
-            engine_plugin_id: number;
-        }>();
+        // Derived from the production load result rather than restated, so a
+        // field the host starts returning — `parameters` was the last one —
+        // cannot leave this fixture describing a shape nothing produces.
+        const firstLoad =
+            Promise.withResolvers<
+                Pick<
+                    PluginInstance,
+                    'instance_id' | 'parameters' | 'latency_samples' | 'latency_ms' | 'engine_plugin_id'
+                >
+            >();
         const bulkUnload = Promise.withResolvers<[string[], string[]]>();
         mocks.loadPlugin.mockReturnValueOnce(firstLoad.promise).mockResolvedValueOnce({
             instance_id: 'late-instance',
+            parameters: [],
             latency_samples: 0,
             latency_ms: 2,
             engine_plugin_id: 1001,
@@ -103,6 +110,7 @@ describe('resetExternalPluginRuntimeForGraphRebuild', () => {
 
         firstLoad.resolve({
             instance_id: 'plugin-instance-1',
+            parameters: [],
             latency_samples: 0,
             latency_ms: 4,
             engine_plugin_id: 1000,
