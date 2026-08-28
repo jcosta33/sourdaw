@@ -18,6 +18,7 @@ import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from 
 import {
     clearUndoHistory,
     compileVersionedCommandBatchEnvelope,
+    createVerifiedBatchReceipt,
     commandBatchPreviewPort,
     commandRuntimeRepairPort,
     commandBatchPreflightPort,
@@ -26,11 +27,13 @@ import {
     getVersionedCommandBatchIdempotentReplay,
     executeAppAction,
     migrateLegacyAppActionToVersionedCommandEnvelope,
+    parseVersionedCommandBatchEnvelope,
     resetActionReplayAuthority,
     redo,
     serializeVersionedCommandEnvelope,
     undo,
     commandProjectRevisionPort,
+    type executeVersionedCommandBatchEnvelope,
 } from '#/modules/Command/useCases';
 import {
     captureProjectRevision,
@@ -74,8 +77,7 @@ import {
 type SetTempoAction = Extract<AppAction, { type: 'setTempo' }>;
 type AddDeviceAction = Extract<AppAction, { type: 'addDevice' }>;
 type RenderSectionsAction = Extract<AppAction, { type: 'renderProjectSections' }>;
-type StaleLateBatchResult =
-    { status: 'ambiguous'; reason: string; actions: [] } | { status: 'failed'; reason: string; actions: [] };
+type ConfirmedActionBatchResult = Awaited<ReturnType<typeof executeVersionedCommandBatchEnvelope>>;
 
 const runtimeMocks = vi.hoisted(() => ({
     applyRuntimeGraphDelta: vi.fn(),
@@ -170,7 +172,7 @@ function configureLateSettlementConfirmation(input: {
     confirmationId: string;
     batchId: string;
     resourceLease?: NonNullable<Parameters<typeof proposePendingActionConfirmation>[0]['resourceLease']>;
-}): void {
+}): ReturnType<typeof compileVersionedCommandBatchEnvelope> {
     configureAiWorkflowCommandPreflightFixture('project-1');
     configureCommandBatchIdempotency({ canExecute: () => true });
     const ownedStorage = createAutomergeStorage<{ bpm: number }>('owned', 'transport');
@@ -228,6 +230,50 @@ function configureLateSettlementConfirmation(input: {
         projectRevision,
         ...(input.resourceLease ? { resourceLease: input.resourceLease } : {}),
     });
+    return commandBatch;
+}
+
+function createStaleLateBatchResult(input: {
+    status: 'ambiguous' | 'failed';
+    reason: string;
+    commandBatch: ReturnType<typeof compileVersionedCommandBatchEnvelope>;
+}): ConfirmedActionBatchResult {
+    const parsed = parseVersionedCommandBatchEnvelope(input.commandBatch.serialized, input.commandBatch.authority);
+    if (parsed.status !== 'valid') {
+        throw new Error('Expected the late-settlement command batch fixture to remain valid.');
+    }
+    if (input.status === 'ambiguous') {
+        const result: { status: 'ambiguous'; reason: string; actions: [] } = {
+            status: 'ambiguous',
+            reason: input.reason,
+            actions: [],
+        };
+        return {
+            ...result,
+            receipt: createVerifiedBatchReceipt({
+                contentHash: 'late-settlement-ambiguous',
+                envelope: parsed.envelope,
+                observedBaseRevision: 'revision-fixture',
+                resultingRevision: 'revision-fixture',
+                result,
+            }),
+        };
+    }
+    const result: { status: 'failed'; reason: string; actions: [] } = {
+        status: 'failed',
+        reason: input.reason,
+        actions: [],
+    };
+    return {
+        ...result,
+        receipt: createVerifiedBatchReceipt({
+            contentHash: 'late-settlement-failed',
+            envelope: parsed.envelope,
+            observedBaseRevision: 'revision-fixture',
+            resultingRevision: 'revision-fixture',
+            result,
+        }),
+    };
 }
 
 describe('confirmPendingChatActions transaction admission', () => {
@@ -679,23 +725,24 @@ describe('confirmPendingChatActions transaction admission', () => {
 
     const staleLateBatchResults = [
         {
-            batchResult: { status: 'failed', reason: 'The late command batch failed.', actions: [] },
+            status: 'failed',
+            reason: 'The late command batch failed.',
             content: 'Failed to execute confirmed actions atomically:',
         },
         {
-            batchResult: { status: 'ambiguous', reason: 'The late command batch is ambiguous.', actions: [] },
+            status: 'ambiguous',
+            reason: 'The late command batch is ambiguous.',
             content: 'The confirmed command stopped after an uncertain partial commit:',
         },
-    ] satisfies readonly { batchResult: StaleLateBatchResult; content: string }[];
+    ] satisfies readonly { status: 'ambiguous' | 'failed'; reason: string; content: string }[];
 
     it.each(staleLateBatchResults)(
-        'keeps a cancelled run terminal after a stale late $batchResult.status result',
-        async ({ batchResult, content }) => {
-            const { status, reason } = batchResult;
+        'keeps a cancelled run terminal after a stale late $status result',
+        async ({ status, reason, content }) => {
             const runId = `late-${status}-settlement`;
             const confirmationId = `confirmation-${status}-settlement`;
             const batchId = `group-${status}-settlement`;
-            configureLateSettlementConfirmation({ runId, confirmationId, batchId });
+            const commandBatch = configureLateSettlementConfirmation({ runId, confirmationId, batchId });
             const commandUseCases = await import('#/modules/Command/useCases');
             const crdtUseCases = await import('#/modules/CrdtDocument/useCases');
             const captureMutationAuthorization = vi
@@ -703,7 +750,7 @@ describe('confirmPendingChatActions transaction admission', () => {
                 .mockReturnValue(() => true);
             const execute = vi
                 .spyOn(commandUseCases, 'executeVersionedCommandBatchEnvelope')
-                .mockResolvedValue(batchResult);
+                .mockResolvedValue(createStaleLateBatchResult({ status, reason, commandBatch }));
             const settle = vi.spyOn(agentRunWorkLease, 'settle').mockImplementation(() => {
                 agentRunLifecycle.transitionPhase({ runId, phase: 'cancelled' });
                 return { status: 'stale' };
