@@ -1,0 +1,47 @@
+crates/daw-plugin-host/src/lib.rs
+  s_4f908a5afb6b58::t_241caefd89f221 24-27
+crates/daw-plugin-host/src/clap_host.rs
+  s_4f908a5afb6b58::t_7e146601dc5f18 596-599
+  s_4f908a5afb6b58::t_c83e3de4fc9362 246,248-254,257
+  s_4f908a5afb6b58::t_9b6b84940464bf 857,886-887,896-897,917-919,934-936
+  s_4f908a5afb6b58::t_7a97e63c883ae8 16-17
+  s_4f908a5afb6b58::t_6e9181eb0e5ec1 850-852
+  s_4f908a5afb6b58::t_bc1a54750dcecc 843-847,849,853-854,862-868,874-885,895
+  s_4f908a5afb6b58::t_cd848c5b2c7770 888-889
+crates/daw-plugin-host/src/traits.rs
+  s_4f908a5afb6b58::t_d2acfaed65233f 33-43
+crates/sourdaw-native/src/host/plugin_host_requests.rs
+  s_4f908a5afb6b58::t_49f2b8cba14a51 97-101
+  s_4f908a5afb6b58::t_4fbdb612bf0bad 564-567,569-581,584-633,635-637,639-647,651-653,655-657,659-664
+  s_4f908a5afb6b58::t_c453d3b67c1f40 665-672
+  s_4f908a5afb6b58::t_3b7403d3e1dc94 5-9,15,17-24
+crates/sourdaw-native/src/host/plugin_parameter_events.rs
+  s_4f908a5afb6b58::t_7d4ebbdb60f800 71-80
+  s_4f908a5afb6b58::t_6985a213c338ec 660
+  s_4f908a5afb6b58::t_1db44bd06ce47c 349-387,402-403,408-440,442-463,465-484,486-487,490-512,514-531
+  s_4f908a5afb6b58::t_f54c7b4a32eb59 46,49-52
+  s_4f908a5afb6b58::t_d57423bced2a73 388-401,404-407
+  s_4f908a5afb6b58::t_29ee83147e8e0c 25-43
+  s_4f908a5afb6b58::t_ca9ac48b2a79b7 464
+  s_4f908a5afb6b58::t_3c974653bf8e21 513
+  s_4f908a5afb6b58::t_41ed510383b2ca 235-321,334
+  s_4f908a5afb6b58::t_5bce7d40b6bea8 485,488-489
+  s_4f908a5afb6b58::t_8d5c9108d242ed 441
+  s_4f908a5afb6b58::t_114bbeab7414b1 683
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "6766c2197d56285756147297339001d0dc48acbc",
+  "prompts": {},
+  "sessions": {
+    "s_4f908a5afb6b58": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fcb92ba4-bf56-47a4-8b57-803f335a449e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
