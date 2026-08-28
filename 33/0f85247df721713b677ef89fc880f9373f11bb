@@ -1,0 +1,49 @@
+src/modules/Command/useCases/finalizeRecoveredCommandBatchEffects.ts
+  s_a40848e8f8cca9::t_9d48a756a045c5 16,74-83
+  s_a40848e8f8cca9::t_f9bcc4e3834898 1-15,17-73,84-111
+  s_a40848e8f8cca9::t_fa1a1d45380472 112-114
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/executeCommittedSectionRenderRetry.spec.ts
+  s_a40848e8f8cca9::t_65d5a8795e2171 639,642-647,670-686
+  s_a40848e8f8cca9::t_6947391bc0c665 18,34-38,153,203-205
+  s_a40848e8f8cca9::t_8725511dab657f 133,640-641
+  s_a40848e8f8cca9::t_907b45366ec8b8 687
+src/modules/AiRuntime/useCases/__tests__/recoverAgentRunPendingEffects.spec.ts
+  s_a40848e8f8cca9::t_dfbebf85edc3d2 8,25,47,118-138,142
+  s_a40848e8f8cca9::t_5e699c67263cc7 7,24,58-61,63-64,67,79,95,101-106,108-116,139-141
+  s_a40848e8f8cca9::t_97a449c785fbef 62,117
+  s_a40848e8f8cca9::t_9583103156b479 107
+src/modules/Command/useCases/__tests__/commandBatchIdempotency.spec.ts
+  s_a40848e8f8cca9::t_b142dfa7f8e168 27,1605-1654
+  s_a40848e8f8cca9::t_dabb2436333d5a 1655-1656
+src/modules/AiRuntime/useCases/agentRequestOrchestration/executeCommittedSectionRenderRetry.ts
+  s_a40848e8f8cca9::t_8725511dab657f 45-46,49,53,76-77,80,251,263,299-301
+  s_a40848e8f8cca9::t_6947391bc0c665 50
+  s_a40848e8f8cca9::t_f9bcc4e3834898 3,43-44,47-48,51-52,54-62,74,78
+src/modules/AiRuntime/useCases/confirmPendingChatActions.ts
+  s_a40848e8f8cca9::t_8725511dab657f 628
+src/modules/Command/useCases/index.ts
+  s_a40848e8f8cca9::t_f9bcc4e3834898 56
+src/modules/AiRuntime/useCases/recoverAgentRunPendingEffects.ts
+  s_a40848e8f8cca9::t_5e699c67263cc7 82,94-99
+  s_a40848e8f8cca9::t_dfbebf85edc3d2 30-40,83,100
+  s_a40848e8f8cca9::t_d3cc369676e164 41-43,84-86,101-103
+src/modules/AiRuntime/useCases/__tests__/agentRunLifecycle.spec.ts
+  s_a40848e8f8cca9::t_0617f36bb053cc 214-215,223-225,227-259
+  s_a40848e8f8cca9::t_ed544a79bd350c 216-222,226
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "330f85247df721713b677ef89fc880f9373f11bb",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
