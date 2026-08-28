@@ -2748,29 +2748,26 @@ describe('confirmPendingChatActions transaction admission', () => {
 
         expect(foreignWriteInjected).toBe(true);
         const committedConfirmation = getPendingActionConfirmation('confirmation-render-rebind');
-        if (!committedConfirmation?.followUpProjectRevision || renderTimeRevision === null) {
-            throw new Error('Expected an armed render retry and a captured render-time revision');
+        if (renderTimeRevision === null) {
+            throw new Error('Expected a captured render-time revision');
         }
-        expect(committedConfirmation).toMatchObject({ status: 'failed', followUpStatus: 'retryable' });
-        expect(committedConfirmation.followUpProjectRevision).not.toBe(renderTimeRevision);
+        expect(committedConfirmation).toMatchObject({
+            status: 'executed',
+            followUpProjectRevision: null,
+            followUpStatus: 'failed',
+        });
         const artifacts = getAgentSectionRenderArtifacts();
         expect(artifacts).toHaveLength(1);
         // The relabel was refused: the fresh artifact keeps its render-time
         // revision instead of the polluted committed revision.
         expect(artifacts[0]).toMatchObject({ jobId: verseJob.jobId, sourceRevision: renderTimeRevision });
 
-        // A further foreign change makes the pinned follow-up revision stale, so
-        // the armed retry must refuse without rendering against the edited project.
-        mutateCrdtDoc<Record<string, unknown>>({
-            id: 'independent',
-            changeFn: (doc) => {
-                doc.anotherForeignWrite = true;
-            },
-        });
+        // The same foreign write that prevented the artifact rebind must also
+        // prevent the retry from being armed against the polluted revision.
         const renderCallsBeforeRetry = runtimeMocks.renderOffline.mock.calls.length;
         await expect(confirmPendingChatActions({ confirmationId: 'confirmation-render-rebind' })).resolves.toEqual({
-            status: 'failed',
-            reason: 'Project changed after the committed render receipt; the missing original artifacts cannot be recreated safely.',
+            status: 'not_pending',
+            currentStatus: 'executed',
         });
         expect(runtimeMocks.renderOffline).toHaveBeenCalledTimes(renderCallsBeforeRetry);
     });
@@ -3000,7 +2997,7 @@ describe('confirmPendingChatActions transaction admission', () => {
                 })
             ).resolves.toEqual({
                 status: 'failed',
-                reason: 'Generic pending-effect recovery cannot execute receipt-bound section renders. The original confirmation is required and may be unavailable after reload.',
+                reason: 'The durable project checkpoint does not match the retained pending-effect proof.',
             });
             expect(runtimeMocks.renderOffline).toHaveBeenCalledOnce();
             expect(

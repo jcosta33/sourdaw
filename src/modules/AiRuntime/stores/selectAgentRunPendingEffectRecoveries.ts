@@ -3,7 +3,7 @@ import {
     type AgentRunPendingEffectContinuation,
     type AgentRunState,
 } from '../models/AgentRun';
-import { getPendingEffectRecoveryPolicy } from '../models/getPendingEffectRecoveryPolicy';
+import { getPendingEffectRecoveryPolicy } from '../models/GetPendingEffectRecoveryPolicy';
 
 export type AgentRunPendingEffectRecoveryProjection = Pick<
     AgentRunPendingEffectContinuation,
@@ -26,8 +26,8 @@ function projectRecovery(
         runId,
         batchId: continuation.batchId,
         effects: structuredClone(continuation.effects),
-        recovery: continuation.recovery,
-        lastError: continuation.lastError ?? (continuation.recovery === 'manual-repair' ? policy.reason : null),
+        recovery: policy.recovery,
+        lastError: continuation.lastError ?? (policy.recovery === 'manual-repair' ? policy.reason : null),
     };
 }
 

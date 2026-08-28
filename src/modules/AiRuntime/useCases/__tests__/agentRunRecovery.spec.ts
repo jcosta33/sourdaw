@@ -7,6 +7,7 @@ import { recoverInterruptedAgentRuns } from '../agentRunRecovery';
 import { agentRunWorkLease } from '../agentRunWorkLease';
 import { createAgentSagaStep } from '../createAgentSagaStep';
 import { recoverAgentRunPendingEffects } from '../recoverAgentRunPendingEffects';
+import { recoverRetainedSectionRenderEffects } from '../recoverRetainedSectionRenderEffects';
 
 const commandRecoveryMocks = vi.hoisted(() => ({
     executeVersionedCommandBatchEnvelope: vi.fn(),
@@ -862,7 +863,7 @@ describe('agent run recovery', () => {
                     }),
                     expect.objectContaining({
                         workId: 'batch-manual-effect',
-                        state: 'external-pending',
+                        state: 'manual-repair',
                     }),
                 ]),
             },
@@ -1125,6 +1126,66 @@ describe('agent run recovery', () => {
             })
         ).not.toThrow();
         expect(window.localStorage.getItem('sourdaw-agent-runs')).toContain('current-build-run');
+    });
+
+    it.each([
+        ['committed', 'clears the stale continuation without executing a render'],
+        ['partially-committed', 'converts the still-pending render to durable manual repair'],
+    ] as const)('inspects retained section-render receipts during startup: %s', async (outcome, _expectation) => {
+        const runId = `run-startup-render-${outcome}`;
+        const batchId = `batch-startup-render-${outcome}`;
+        const pendingEffect = {
+            commandId: 'command-startup-render',
+            kind: 'external-effect' as const,
+            operation: 'renderProjectSections',
+            reason: 'Renderer stopped before completion.',
+            remediation: 'reconcile' as const,
+            state: 'pending' as const,
+        };
+        createAgentRun({
+            runId,
+            request: 'Render the retained section.',
+            mode: 'apply',
+            createdRevision: 'heads-startup-render',
+            createdAt: 1,
+        });
+        agentRunLifecycle.recordPendingEffectContinuation({
+            runId,
+            continuation: {
+                authority: createContinuationAuthority(),
+                batchId,
+                effects: [pendingEffect],
+                lastError: null,
+                receiptIdentity: `1:${runId}:${batchId}:partially-committed`,
+                recovery: 'reconcile-batch',
+                serializedBatch: `{"batch":"${batchId}"}`,
+            },
+            recordedAt: 2,
+        });
+        commandRecoveryMocks.getVersionedCommandBatchIdempotentReplay.mockResolvedValue(
+            createPendingEffectRecoveryReceipt({
+                batchId,
+                outcome,
+                pendingEffects: outcome === 'partially-committed' ? [pendingEffect] : [],
+                runId,
+            })
+        );
+
+        await expect(recoverInterruptedAgentRuns({ recoveredAt: 3 })).resolves.toEqual({ recoveredRunIds: [runId] });
+        await expect(recoverRetainedSectionRenderEffects()).resolves.toBeUndefined();
+
+        expect(commandRecoveryMocks.executeVersionedCommandBatchEnvelope).not.toHaveBeenCalled();
+        if (outcome === 'committed') {
+            expect(readAgentRunState().pendingEffectRecoveryLedger).toBeUndefined();
+            expect(getAgentRun(runId)?.pendingEffectContinuations).toEqual([]);
+            return;
+        }
+        expect(getAgentRun(runId)?.pendingEffectContinuations).toMatchObject([
+            {
+                recovery: 'manual-repair',
+                effects: [{ remediation: 'manual-repair', operation: 'renderProjectSections' }],
+            },
+        ]);
     });
 
     it('rejects unsupported persisted schema versions without overwriting their bytes', async () => {

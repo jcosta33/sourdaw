@@ -1693,6 +1693,128 @@ describe('command batch idempotency', () => {
         expect(effectAttempts).toBe(1);
     });
 
+    it.each([
+        'denied initial authority',
+        'unavailable checkpoint',
+        'malformed stored receipt',
+        'completed checkpoint with pending effects',
+        'revision capture failure',
+    ])('does not finalize recovery when there is %s', async (failure) => {
+        clearHandlerRegistry();
+        const gainStorage = createAutomergeStorage<{ value: number }>('root', 'trackGain');
+        expect(gainStorage.hydrate?.()).toBe(true);
+        const execute = vi.fn(() => ({
+            status: 'written' as const,
+            afterCommit: () => Promise.reject(new Error('render unavailable')),
+        }));
+        registerHandlerMap({ setTrackGain: createHandler({ execute }) });
+        const batch = compileBatch({ batchId: `batch-finalize-${failure}` });
+        const first = await executeVersionedCommandBatchEnvelope({
+            authority: batch.authority,
+            confirmed: true,
+            serialized: batch.serialized,
+        });
+        if (first.status !== 'committed-with-warning') {
+            throw new Error('Expected a durable pending-effect receipt');
+        }
+        const expectedProjectRevision = commandProjectRevisionPort.capture();
+
+        if (failure === 'denied initial authority') {
+            commandBatchExecutionAuthorityPort.setProvider(() => false);
+        } else if (failure === 'unavailable checkpoint') {
+            delete projectDocument.commandBatchIdempotency;
+        } else if (failure === 'malformed stored receipt') {
+            projectDocument.commandBatchIdempotency = { records: [{ malformed: true }] };
+        } else if (failure === 'completed checkpoint with pending effects') {
+            const parsed = parseVersionedCommandBatchEnvelope(batch.serialized, batch.authority);
+            if (parsed.status === 'invalid') {
+                throw new Error('Expected a valid command batch');
+            }
+            persistProjectCommandBatchIdempotencyCheckpoint({
+                projectId: parsed.envelope.projectId,
+                idempotencyKey: parsed.envelope.idempotencyKey,
+                contentHash: await getCommandBatchContentHash(parsed.envelope),
+                state: 'complete',
+                serializedReceipt: JSON.stringify(first.receipt),
+            });
+        } else {
+            commandProjectRevisionPort.setProvider(() => {
+                throw new Error('revision capture unavailable');
+            });
+        }
+        const mutationCountBeforeFinalization = mutationCount;
+
+        await expect(
+            finalizeRecoveredCommandBatchEffects({
+                authority: batch.authority,
+                serialized: batch.serialized,
+                pendingReceipt: first.receipt,
+                expectedProjectRevision,
+            })
+        ).resolves.toMatchObject({ status: 'failed' });
+
+        expect(mutationCount).toBe(mutationCountBeforeFinalization);
+        expect(execute).toHaveBeenCalledOnce();
+        const replay = await getVersionedCommandBatchIdempotentReplay({
+            authority: batch.authority,
+            serialized: batch.serialized,
+        });
+        expect(replay?.outcome).not.toBe('committed');
+    });
+
+    it.each(['project revision changes', 'execution authority is revoked'])(
+        'keeps the pending checkpoint when %s after recovery preflight',
+        async (interleaving) => {
+            clearHandlerRegistry();
+            const gainStorage = createAutomergeStorage<{ value: number }>('root', 'trackGain');
+            expect(gainStorage.hydrate?.()).toBe(true);
+            const execute = vi.fn(() => ({
+                status: 'written' as const,
+                afterCommit: () => Promise.reject(new Error('render unavailable')),
+            }));
+            registerHandlerMap({ setTrackGain: createHandler({ execute }) });
+            const batch = compileBatch({ batchId: `batch-finalize-race-${interleaving}` });
+            const first = await executeVersionedCommandBatchEnvelope({
+                authority: batch.authority,
+                confirmed: true,
+                serialized: batch.serialized,
+            });
+            if (first.status !== 'committed-with-warning') {
+                throw new Error('Expected a durable pending-effect receipt');
+            }
+            const expectedProjectRevision = commandProjectRevisionPort.capture();
+            const mutationCountBeforeFinalization = mutationCount;
+            if (interleaving === 'project revision changes') {
+                let captures = 0;
+                commandProjectRevisionPort.setProvider(() => {
+                    captures += 1;
+                    return captures === 1 ? expectedProjectRevision : revision(999);
+                });
+            } else {
+                let authorityChecks = 0;
+                commandBatchExecutionAuthorityPort.setProvider(() => {
+                    authorityChecks += 1;
+                    return authorityChecks < 3;
+                });
+            }
+
+            await expect(
+                finalizeRecoveredCommandBatchEffects({
+                    authority: batch.authority,
+                    serialized: batch.serialized,
+                    pendingReceipt: first.receipt,
+                    expectedProjectRevision,
+                })
+            ).resolves.toMatchObject({ status: 'failed' });
+
+            expect(mutationCount).toBe(mutationCountBeforeFinalization);
+            expect(execute).toHaveBeenCalledOnce();
+            await expect(
+                getVersionedCommandBatchIdempotentReplay({ authority: batch.authority, serialized: batch.serialized })
+            ).resolves.toMatchObject({ outcome: 'partially-committed', pendingEffects: expect.any(Array) });
+        }
+    );
+
     it('routes needs-reconcile runtime truth through a current-project rebuild instead of exact effect retry', async () => {
         clearHandlerRegistry();
         const gainStorage = createAutomergeStorage<{ value: number }>('root', 'trackGain');

@@ -22,6 +22,19 @@ function sameReceipt(left: VerifiedBatchReceipt, right: VerifiedBatchReceipt): b
     return JSON.stringify(left) === JSON.stringify(right);
 }
 
+function getFinalizationAdmissionFailure(expectedProjectRevision: string): string | null {
+    if (!commandBatchExecutionAuthorityPort.canExecute()) {
+        return 'Only the authoritative collaboration host can finalize recovery';
+    }
+    try {
+        return commandProjectRevisionPort.capture() === expectedProjectRevision
+            ? null
+            : 'The project changed before external-effect finalization';
+    } catch (error) {
+        return `The current project revision could not be verified: ${error instanceof Error ? error.message : String(error)}`;
+    }
+}
+
 export async function finalizeRecoveredCommandBatchEffects(input: {
     authority: CommandBatchAuthority;
     serialized: string;
@@ -93,11 +106,19 @@ export async function finalizeRecoveredCommandBatchEffects(input: {
             receiptWarnings: [PROJECT_RECEIPT_REVISION_WARNING],
         });
         const serializedReceipt = JSON.stringify(recoveredReceipt);
-        persistProjectCommandBatchIdempotencyCheckpoint({
-            ...lease,
-            state: 'complete',
-            serializedReceipt,
-        });
+        try {
+            persistProjectCommandBatchIdempotencyCheckpoint({
+                ...lease,
+                state: 'complete',
+                serializedReceipt,
+                validateCommit: () => getFinalizationAdmissionFailure(input.expectedProjectRevision),
+            });
+        } catch (error) {
+            return {
+                status: 'failed',
+                reason: error instanceof Error ? error.message : String(error),
+            };
+        }
         try {
             await commandBatchIdempotencyPort.complete({ ...lease, serializedReceipt });
         } catch {

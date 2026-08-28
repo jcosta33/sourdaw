@@ -85,6 +85,7 @@ const {
     prepareOfflineLevainMock,
     initBranchStateMock,
     recoverInterruptedAgentRunsMock,
+    recoverRetainedSectionRenderEffectsMock,
     flushDeferredStorageNoticeMock,
     getAutomationParameterRangeMock,
     setAutomationParameterRangeResolverMock,
@@ -139,6 +140,7 @@ const {
         prepareOfflineLevainMock: vi.fn(() => Promise.resolve()),
         initBranchStateMock: vi.fn(),
         recoverInterruptedAgentRunsMock: vi.fn(() => Promise.resolve({ recoveredRunIds: [] })),
+        recoverRetainedSectionRenderEffectsMock: vi.fn(() => Promise.resolve()),
         flushDeferredStorageNoticeMock: vi.fn(),
         getAutomationParameterRangeMock: vi.fn(),
         setAutomationParameterRangeResolverMock: vi.fn(),
@@ -177,6 +179,7 @@ vi.mock('#/modules/AiRuntime/useCases', () => ({
     completeMixAnalysis: noop,
     failMixAnalysis: noop,
     recoverInterruptedAgentRuns: recoverInterruptedAgentRunsMock,
+    recoverRetainedSectionRenderEffects: recoverRetainedSectionRenderEffectsMock,
     getProjectContext: noop,
     getAiOrganizationHandlers: sentinelHandlers('AiOrganization'),
     initializeVoiceInputAvailability: noop,
@@ -814,6 +817,7 @@ describe('bootstrap', () => {
 
     it('recovers interrupted AI runs as an explicit boot step', () => {
         expect(recoverInterruptedAgentRunsMock).toHaveBeenCalledExactlyOnceWith();
+        expect(recoverRetainedSectionRenderEffectsMock).toHaveBeenCalledExactlyOnceWith();
     });
 
     it('probes OPFS for RAVE model weights exactly once as a non-blocking boot step', () => {

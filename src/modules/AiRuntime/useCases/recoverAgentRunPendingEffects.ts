@@ -4,7 +4,8 @@ import {
     getVersionedCommandBatchIdempotentReplay,
 } from '#/modules/Command/useCases';
 
-import { getPendingEffectRecoveryPolicy } from '../models/getPendingEffectRecoveryPolicy';
+import { type AgentRunPendingEffect } from '../models/AgentRun';
+import { getPendingEffectRecoveryPolicy } from '../models/GetPendingEffectRecoveryPolicy';
 
 import { agentRunLifecycle } from './agentRunLifecycle';
 
@@ -35,9 +36,27 @@ function hasExactPendingReceiptBinding(
     if (continuation.receiptIdentity !== expectedPendingIdentity) {
         return false;
     }
+    return receipt.pendingEffects.length === 0 || hasExactPendingEffects(continuation.effects, receipt.pendingEffects);
+}
+
+function hasExactPendingEffects(
+    continuationEffects: readonly AgentRunPendingEffect[],
+    receiptEffects: readonly AgentRunPendingEffect[]
+): boolean {
     return (
-        receipt.pendingEffects.length === 0 ||
-        JSON.stringify(continuation.effects) === JSON.stringify(receipt.pendingEffects)
+        continuationEffects.length === receiptEffects.length &&
+        continuationEffects.every((effect, index) => {
+            const receiptEffect = receiptEffects[index];
+            return (
+                receiptEffect !== undefined &&
+                effect.commandId === receiptEffect.commandId &&
+                effect.kind === receiptEffect.kind &&
+                effect.operation === receiptEffect.operation &&
+                effect.reason === receiptEffect.reason &&
+                effect.remediation === receiptEffect.remediation &&
+                effect.state === receiptEffect.state
+            );
+        })
     );
 }
 

@@ -622,10 +622,14 @@ export async function confirmPendingChatActions(
             phase: 'proof',
         });
         if (retryAdmission.status === 'admitted') {
+            const admittedCommandBatch = confirmation.approvalSnapshot.commandBatch;
+            if (!admittedCommandBatch) {
+                return failCommittedSectionRenderRetryProof(confirmation);
+            }
             return executeCommittedSectionRenderRetry({
                 confirmation,
                 durableReceipt: retryAdmission.durableReceipt,
-                commandBatch: approvedCommandBatch,
+                commandBatch: admittedCommandBatch,
             });
         }
         if (retryAdmission.status === 'proof-mismatch') {
@@ -911,10 +915,10 @@ export async function confirmPendingChatActions(
     // batch's own idempotency checkpoint write falsifies it even on a clean
     // success. A refused relabel leaves the renders detectably incomplete under
     // the committed revision; the project changes themselves stay committed.
-    if (
+    const canRebindSectionRenderArtifacts =
         (batchResult.status === 'committed' || batchResult.status === 'committed-with-warning') &&
-        captureUnownedProjectMutations() === unownedMutationsBeforeBatch
-    ) {
+        captureUnownedProjectMutations() === unownedMutationsBeforeBatch;
+    if (canRebindSectionRenderArtifacts) {
         rebindFreshSectionRenderArtifactsToCommittedRevision(
             confirmation,
             sectionRenderArtifactsBeforeExecution,
@@ -1090,7 +1094,33 @@ export async function confirmPendingChatActions(
                         durableReceipt: batchResult.receipt,
                         phase: 'arming',
                     }).status === 'admitted';
-                if (renderFollowUpAdmitted && incompleteSectionRenders) {
+                if (!canRebindSectionRenderArtifacts) {
+                    manualReviewReason =
+                        'Project changed during the original render, so missing original artifacts cannot be retried safely.';
+                    manualReviewPersistenceWarning = requireSectionRenderManualRepair({
+                        runId: confirmation.runId,
+                        batchId: batchResult.receipt.batchId,
+                        reason: manualReviewReason,
+                    });
+                    const surfacedManualReviewError = [
+                        manualReviewReason,
+                        manualReviewPersistenceWarning,
+                        runPersistenceWarning,
+                    ]
+                        .filter(Boolean)
+                        .join(' ');
+                    updatePendingActionFollowUp({
+                        confirmationId: confirmation.id,
+                        error: surfacedManualReviewError,
+                        projectRevision: null,
+                        status: 'failed',
+                    });
+                    updatePendingActionConfirmationStatus({
+                        confirmationId: confirmation.id,
+                        status: manualReviewPersistenceWarning ? 'failed' : 'executed',
+                        error: surfacedManualReviewError,
+                    });
+                } else if (renderFollowUpAdmitted && incompleteSectionRenders) {
                     retryableSectionRenders = true;
                     updatePendingActionFollowUp({
                         confirmationId: confirmation.id,

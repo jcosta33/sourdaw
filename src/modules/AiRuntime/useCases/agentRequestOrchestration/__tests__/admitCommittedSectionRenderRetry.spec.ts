@@ -367,6 +367,40 @@ describe('admitCommittedSectionRenderRetry', () => {
         ).toEqual({ status: 'proof-mismatch' });
     });
 
+    it.each([
+        [
+            'malformed serialized batch',
+            (fixture: ReturnType<typeof createFixture>) => {
+                fixture.confirmation.approvalSnapshot.commandBatch!.serialized = '{not-json';
+            },
+        ],
+        [
+            'invalid authority',
+            (fixture: ReturnType<typeof createFixture>) => {
+                fixture.confirmation.approvalSnapshot.commandBatch!.authority.budgets.maxRenderJobs = -1;
+            },
+        ],
+    ])('rejects %s during arming and proof', (_name, mutate) => {
+        const fixture = createFixture();
+        mutate(fixture);
+
+        expect(
+            admitCommittedSectionRenderRetry({
+                confirmation: fixture.confirmation,
+                durableReceipt: fixture.receipt,
+                phase: 'arming',
+            })
+        ).toEqual({ status: 'proof-mismatch' });
+        expect(
+            admitCommittedSectionRenderRetry({
+                confirmation: fixture.confirmation,
+                durableReceipt: fixture.receipt,
+                expectedCommandBatch: fixture.commandBatch,
+                phase: 'proof',
+            })
+        ).toEqual({ status: 'proof-mismatch' });
+    });
+
     it('rejects an otherwise exact receipt carrying a second pending effect', () => {
         const fixture = createFixture();
         const renderPendingEffect = fixture.receipt.pendingEffects[0];

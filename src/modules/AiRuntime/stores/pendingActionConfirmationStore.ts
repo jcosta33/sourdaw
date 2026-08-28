@@ -532,7 +532,7 @@ export function updatePendingActionConfirmationStatus(
 type UpdatePendingActionFollowUpInput = {
     confirmationId: string;
     error?: string | null;
-    projectRevision?: string;
+    projectRevision?: string | null;
     status: ChatActionFollowUpStatus;
 };
 
@@ -550,7 +550,8 @@ export function updatePendingActionFollowUp(
     const updated: PendingAppActionConfirmation = {
         ...current,
         error: input.error === undefined ? current.error : input.error,
-        followUpProjectRevision: input.projectRevision ?? current.followUpProjectRevision,
+        followUpProjectRevision:
+            input.projectRevision === undefined ? current.followUpProjectRevision : input.projectRevision,
         followUpStatus: input.status,
     };
     pendingActionConfirmationStore.set({

@@ -700,7 +700,7 @@ function recordAgentRunPendingEffectContinuation(input: {
     const existingRecovery = getPendingEffectRecoveryLedger(state).find((recovery) =>
         isPendingEffectRecovery(recovery, { runId: input.runId, batchId: continuation.batchId })
     );
-    const pendingEffectRecoveryLedger = [
+    const pendingEffectRecoveryLedger: AgentRunPendingEffectRecovery[] = [
         ...getPendingEffectRecoveryLedger(state).filter(
             (recovery) => !isPendingEffectRecovery(recovery, { runId: input.runId, batchId: continuation.batchId })
         ),
