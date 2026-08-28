@@ -2968,7 +2968,7 @@ describe('confirmPendingChatActions transaction admission', () => {
             })
         ).resolves.toEqual({
             status: 'failed',
-            reason: 'At least one retained external effect requires manual repair and cannot be retried exactly.',
+            reason: 'Receipt-bound section renders can only be retried through their retained confirmation authority.',
         });
         expect(runtimeMocks.renderOffline).toHaveBeenCalledOnce();
         expect(

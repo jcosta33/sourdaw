@@ -775,7 +775,7 @@ describe('agent run recovery', () => {
             })
         ).resolves.toEqual({
             status: 'failed',
-            reason: 'At least one retained external effect requires manual repair and cannot be retried exactly.',
+            reason: 'Receipt-bound section renders can only be retried through their retained confirmation authority.',
         });
 
         expect(commandRecoveryMocks.getVersionedCommandBatchIdempotentReplay).toHaveBeenCalledTimes(3);
@@ -796,7 +796,7 @@ describe('agent run recovery', () => {
                     batchId: 'batch-manual-effect',
                     recovery: 'manual-repair',
                     lastError:
-                        'At least one retained external effect requires manual repair and cannot be retried exactly.',
+                        'Receipt-bound section renders can only be retried through their retained confirmation authority.',
                 },
             ],
             batches: expect.arrayContaining([
@@ -916,7 +916,7 @@ describe('agent run recovery', () => {
             })
         ).resolves.toEqual({
             status: 'failed',
-            reason: 'At least one retained external effect requires manual repair and cannot be retried exactly.',
+            reason: 'Receipt-bound section renders can only be retried through their retained confirmation authority.',
         });
         expect(commandRecoveryMocks.executeVersionedCommandBatchEnvelope).not.toHaveBeenCalled();
         expect(agentRunLifecycle.get('run-mixed-manual-effects')?.pendingEffectContinuations).toEqual([

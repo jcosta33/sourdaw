@@ -1,7 +1,10 @@
+import { logger } from '#/infra/logger/appLogger';
 import {
     executeVersionedCommandBatchEnvelope,
     getVersionedCommandBatchIdempotentReplay,
 } from '#/modules/Command/useCases';
+
+import { getPendingEffectRecoveryPolicy } from '../models/getPendingEffectRecoveryPolicy';
 
 import { agentRunLifecycle } from './agentRunLifecycle';
 
@@ -32,6 +35,16 @@ export async function recoverAgentRunPendingEffects(input: {
     const continuation = agentRunLifecycle.getPendingEffectRecovery(input);
     if (!continuation) {
         return { status: 'missing' };
+    }
+    const recoveryPolicy = getPendingEffectRecoveryPolicy(continuation.effects);
+    if (recoveryPolicy.recovery === 'manual-repair') {
+        const reason = recoveryPolicy.reason ?? 'The retained pending effect requires manual repair.';
+        try {
+            agentRunLifecycle.requirePendingEffectManualRepair({ ...input, reason });
+        } catch (error) {
+            logger.error(new Error('Pending-effect manual-repair state could not be persisted', { cause: error }));
+        }
+        return { status: 'failed', reason };
     }
 
     let priorReceipt: Awaited<ReturnType<typeof getVersionedCommandBatchIdempotentReplay>>;

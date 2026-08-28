@@ -146,6 +146,14 @@ describe('agentRunLifecycle', () => {
     it('atomically converts both durable continuation copies to manual repair', () => {
         createRenderReviewRun();
 
+        expect(selectAgentRunPendingEffectRecoveries(readAgentRunState())).toEqual([
+            expect.objectContaining({
+                recovery: 'manual-repair',
+                lastError:
+                    'Receipt-bound section renders can only be retried through their retained confirmation authority.',
+            }),
+        ]);
+
         agentRunLifecycle.requirePendingEffectManualRepair({
             runId: 'run-render-review',
             batchId: 'batch-render-review',
@@ -176,7 +184,8 @@ describe('agentRunLifecycle', () => {
                 runId: 'run-render-review',
                 batchId: 'batch-render-review',
                 recovery: 'manual-repair',
-                lastError: 'The retained render has a truncated tail.',
+                lastError:
+                    'Receipt-bound section renders can only be retried through their retained confirmation authority.',
             }),
         ]);
     });

@@ -3,6 +3,7 @@ import {
     type AgentRunPendingEffectContinuation,
     type AgentRunState,
 } from '../models/AgentRun';
+import { getPendingEffectRecoveryPolicy } from '../models/getPendingEffectRecoveryPolicy';
 
 export type AgentRunPendingEffectRecoveryProjection = Pick<
     AgentRunPendingEffectContinuation,
@@ -16,6 +17,20 @@ function recoveryIdentity(runId: string, batchId: string): string {
     return `${runId}\u0000${batchId}`;
 }
 
+function projectRecovery(
+    runId: string,
+    continuation: AgentRunPendingEffectContinuation
+): AgentRunPendingEffectRecoveryProjection {
+    const policy = getPendingEffectRecoveryPolicy(continuation.effects);
+    return {
+        runId,
+        batchId: continuation.batchId,
+        effects: structuredClone(continuation.effects),
+        recovery: policy.recovery,
+        lastError: policy.reason ?? continuation.lastError,
+    };
+}
+
 /** Public read projection for every user-actionable pending-effect recovery. */
 export function selectAgentRunPendingEffectRecoveries(
     state: AgentRunState | null | undefined
@@ -23,26 +38,14 @@ export function selectAgentRunPendingEffectRecoveries(
     const byIdentity = new Map<string, AgentRunPendingEffectRecoveryProjection>();
     for (const run of state?.runs ?? []) {
         for (const continuation of run.pendingEffectContinuations) {
-            byIdentity.set(recoveryIdentity(run.runId, continuation.batchId), {
-                runId: run.runId,
-                batchId: continuation.batchId,
-                effects: structuredClone(continuation.effects),
-                recovery: continuation.recovery,
-                lastError: continuation.lastError,
-            });
+            byIdentity.set(recoveryIdentity(run.runId, continuation.batchId), projectRecovery(run.runId, continuation));
         }
     }
     for (const recovery of state?.pendingEffectRecoveryLedger ?? []) {
         if (recovery.checkpoint !== 'durable') {
             continue;
         }
-        byIdentity.set(recoveryIdentity(recovery.runId, recovery.batchId), {
-            runId: recovery.runId,
-            batchId: recovery.batchId,
-            effects: structuredClone(recovery.effects),
-            recovery: recovery.recovery,
-            lastError: recovery.lastError,
-        });
+        byIdentity.set(recoveryIdentity(recovery.runId, recovery.batchId), projectRecovery(recovery.runId, recovery));
     }
     return [...byIdentity.values()];
 }
