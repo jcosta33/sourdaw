@@ -1746,7 +1746,7 @@ describe('sendChatMessage retained-provider selection', () => {
 
             const commandAssistantMessage = mocks.appendChatMessage.mock.calls
                 .map(([message]) => message)
-                .find((message) => message.isCommandAction === true);
+                .find((message) => message.role === 'assistant' && message.isCommandAction === true);
             expect(mocks.updateChatMessage).toHaveBeenCalledWith(commandAssistantMessage?.id, {
                 isStreaming: false,
                 content: `Failed to execute prompt command.\n\n_${WORK_PERSISTENCE_WARNING}_`,
@@ -1780,7 +1780,7 @@ describe('sendChatMessage retained-provider selection', () => {
             const run = getPlannedRun();
             const commandAssistantMessage = mocks.appendChatMessage.mock.calls
                 .map(([message]) => message)
-                .find((message) => message.isCommandAction === true);
+                .find((message) => message.role === 'assistant' && message.isCommandAction === true);
             const activeAbortController = mocks.setActiveAborter.mock.calls
                 .map(([controller]) => controller)
                 .find((controller) => controller instanceof AbortController);
