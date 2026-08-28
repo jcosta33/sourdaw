@@ -66,7 +66,7 @@ const DRIVE_PARAMETER_ID = 7;
 
 type MutableStore<TValue> = { value: TValue };
 
-function seedPluginLane(laneParameterId: string): void {
+function seedPluginLane(laneParameterId: string, parameterValues: Record<string, number> = {}): void {
     (trackStore as unknown as MutableStore<{ tracks: unknown[] }>).value = {
         tracks: [
             {
@@ -82,10 +82,10 @@ function seedPluginLane(laneParameterId: string): void {
                         name: 'Console',
                         type: 'external-plugin',
                         bypassed: false,
-                        // Empty, as `addExternalDevice` creates it: the lane must
-                        // resolve from the instance's declaration, not from a key
-                        // somebody happened to write.
-                        parameterValues: {},
+                        // Empty by default, as `addExternalDevice` creates it: the
+                        // lane must resolve from the instance's declaration, not
+                        // from a key somebody happened to write.
+                        parameterValues,
                         externalPluginId: 'plugin-a',
                         externalInstanceId: PLUGIN_INSTANCE_ID,
                     },
@@ -232,6 +232,27 @@ describe('applyAutomation on an external plugin device', () => {
         // state chunk captured at save is the setting, and the store snapshot's
         // `value` is a menu-open reading that would jump the parameter to a
         // stale mid-ride figure. Nothing is written.
+        expect(updateDeviceParam).not.toHaveBeenCalled();
+    });
+
+    it('declines the restore even when the device carries a written parameterValues key', () => {
+        // A hand write can persist a key on an external device, and no
+        // descriptor answers for `external-plugin`, so the builtin acceptance
+        // law would read that key as a manual base and step the plugin back to
+        // it — undoing the ride with a value the plugin itself never reported.
+        seedPluginLane(`${DEVICE_ID}:${DRIVE_PARAMETER_ID}`, { [String(DRIVE_PARAMETER_ID)]: 3 });
+        vi.mocked(getAutomationValueAtBeat).mockReturnValueOnce(0).mockReturnValue(18);
+
+        applyAutomation(0);
+        applyAutomation(1);
+        vi.mocked(updateDeviceParam).mockClear();
+
+        const track = (trackStore as unknown as MutableStore<{ tracks: { automationMode: string }[] }>).value
+            .tracks[0]!;
+        track.automationMode = 'off';
+
+        applyAutomation(2);
+
         expect(updateDeviceParam).not.toHaveBeenCalled();
     });
 
