@@ -1,8 +1,13 @@
 use serde::{Deserialize, Serialize};
 
+/// Ceiling shared with the offline-render sample pool: ten minutes at 48 kHz.
+/// An over-long clip is a command error; the PCM `Vec<f32>` is never allocated.
+pub const MAX_DENOISE_SAMPLES: usize = 48_000 * 600;
+
+const BYTES_PER_SAMPLE: usize = 4;
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DenoiseRequest {
-    pub samples: Vec<f32>,
     pub sample_rate: u32,
     pub channels: u32,
     pub strength: f64,
@@ -10,17 +15,63 @@ pub struct DenoiseRequest {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DenoiseResult {
-    pub samples: Vec<f32>,
+    pub samples: Vec<u8>,
     pub noise_floor_db: f64,
     pub processing_time_ms: u64,
 }
 
+struct DenoisePcm {
+    samples: Vec<f32>,
+    sample_rate: u32,
+    strength: f64,
+}
+
+struct DenoisePcmResult {
+    samples: Vec<f32>,
+    noise_floor_db: f64,
+    processing_time_ms: u64,
+}
+
+/// Sample count of a Float32 LE payload, or a command error.
+///
+/// Length is decided from the byte length alone, before any `Vec<f32>` is
+/// allocated, so an over-long clip is rejected rather than copied into PCM.
+pub fn denoise_pcm_sample_count(byte_len: usize) -> Result<usize, String> {
+    if byte_len % BYTES_PER_SAMPLE != 0 {
+        return Err(format!(
+            "Denoise PCM byte length {byte_len} is not a whole number of f32 samples"
+        ));
+    }
+    let count = byte_len / BYTES_PER_SAMPLE;
+    if count > MAX_DENOISE_SAMPLES {
+        return Err(format!(
+            "Denoise clip length {count} samples exceeds the {MAX_DENOISE_SAMPLES}-sample ceiling"
+        ));
+    }
+    Ok(count)
+}
+
+fn decode_denoise_pcm(bytes: &[u8]) -> Result<Vec<f32>, String> {
+    let count = denoise_pcm_sample_count(bytes.len())?;
+    let mut samples = Vec::with_capacity(count);
+    for chunk in bytes.chunks_exact(BYTES_PER_SAMPLE) {
+        samples.push(f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]));
+    }
+    Ok(samples)
+}
+
+fn encode_denoise_pcm(samples: &[f32]) -> Vec<u8> {
+    let mut bytes = Vec::with_capacity(samples.len() * BYTES_PER_SAMPLE);
+    for sample in samples {
+        bytes.extend_from_slice(&sample.to_le_bytes());
+    }
+    bytes
+}
+
 /// Denoise audio using a noise-floor-keyed downward expander.
 ///
-/// The DSP pass runs off the async worker via `spawn_blocking`. (The
-/// request's `Vec<f32>` is still JSON-deserialized on the async worker by
-/// the command dispatcher before this is entered; carrying the samples over
-/// `binary_ipc` is the existing TODO at `audioDenoising.ts`.)
+/// Samples arrive as Float32 little-endian bytes. The DSP pass runs off the
+/// async worker via `spawn_blocking`.
 ///
 /// This curve is mirrored by the browser fallback in
 /// `src/modules/AiGeneration/useCases/actions/handleAiDenoiseClip.ts`: the
@@ -28,10 +79,25 @@ pub struct DenoiseResult {
 /// them in lockstep.
 ///
 /// A model-backed replacement requires separate artifact admission.
-pub async fn denoise_audio(request: DenoiseRequest) -> Result<DenoiseResult, String> {
-    tokio::task::spawn_blocking(move || denoise_audio_blocking(request))
-        .await
-        .map_err(|e| format!("Denoise task failed: {e}"))?
+pub async fn denoise_audio(
+    request: DenoiseRequest,
+    samples: Vec<u8>,
+) -> Result<DenoiseResult, String> {
+    let pcm = decode_denoise_pcm(&samples)?;
+    tokio::task::spawn_blocking(move || {
+        let processed = denoise_audio_blocking(DenoisePcm {
+            samples: pcm,
+            sample_rate: request.sample_rate,
+            strength: request.strength,
+        })?;
+        Ok(DenoiseResult {
+            samples: encode_denoise_pcm(&processed.samples),
+            noise_floor_db: processed.noise_floor_db,
+            processing_time_ms: processed.processing_time_ms,
+        })
+    })
+    .await
+    .map_err(|e| format!("Denoise task failed: {e}"))?
 }
 
 /// Length of the analysis window at the head of the clip, in seconds.
@@ -49,7 +115,7 @@ const ENVELOPE_ATTACK_SECONDS: f32 = 0.002;
 /// the signal's level, not its waveform — see [`expander_gain`].
 const ENVELOPE_RELEASE_SECONDS: f32 = 0.1;
 
-fn denoise_audio_blocking(request: DenoiseRequest) -> Result<DenoiseResult, String> {
+fn denoise_audio_blocking(request: DenoisePcm) -> Result<DenoisePcmResult, String> {
     let start = std::time::Instant::now();
     let strength = request.strength.clamp(0.0, 1.0);
 
@@ -83,7 +149,7 @@ fn denoise_audio_blocking(request: DenoiseRequest) -> Result<DenoiseResult, Stri
         }
     }
 
-    Ok(DenoiseResult {
+    Ok(DenoisePcmResult {
         samples: output,
         noise_floor_db,
         processing_time_ms: start.elapsed().as_millis() as u64,
@@ -144,11 +210,10 @@ fn expander_gain(ratio: f32, strength: f32) -> f32 {
 mod tests {
     use super::*;
 
-    fn request(samples: Vec<f32>, sample_rate: u32, strength: f64) -> DenoiseRequest {
-        DenoiseRequest {
+    fn request(samples: Vec<f32>, sample_rate: u32, strength: f64) -> DenoisePcm {
+        DenoisePcm {
             samples,
             sample_rate,
-            channels: 1,
             strength,
         }
     }
@@ -357,11 +422,58 @@ mod tests {
     #[tokio::test]
     async fn async_command_matches_the_blocking_body() {
         let input = arbitrary_buffer();
-        let from_command = denoise_audio(request(input.clone(), 48_000, 0.6))
-            .await
-            .unwrap();
+        let from_command = denoise_audio(
+            DenoiseRequest {
+                sample_rate: 48_000,
+                channels: 1,
+                strength: 0.6,
+            },
+            encode_denoise_pcm(&input),
+        )
+        .await
+        .unwrap();
         let from_body = denoise_audio_blocking(request(input, 48_000, 0.6)).unwrap();
-        assert_eq!(from_command.samples, from_body.samples);
+        assert_eq!(from_command.samples, encode_denoise_pcm(&from_body.samples));
         assert_eq!(from_command.noise_floor_db, from_body.noise_floor_db);
+    }
+
+    #[test]
+    fn denoise_pcm_sample_count_rejects_over_long_clips_without_allocating_pcm() {
+        assert_eq!(
+            denoise_pcm_sample_count(MAX_DENOISE_SAMPLES * BYTES_PER_SAMPLE).unwrap(),
+            MAX_DENOISE_SAMPLES
+        );
+        let over = denoise_pcm_sample_count((MAX_DENOISE_SAMPLES + 1) * BYTES_PER_SAMPLE);
+        let error = over.expect_err("over-long clip must be a command error");
+        assert!(
+            error.contains("ceiling"),
+            "expected a ceiling error, got {error}"
+        );
+    }
+
+    #[test]
+    fn denoise_pcm_round_trip_is_little_endian() {
+        let bytes = [0_u8, 0, 0x80, 0x3f, 0, 0, 0x80, 0xbf];
+        let decoded = decode_denoise_pcm(&bytes).unwrap();
+        assert_eq!(decoded, vec![1.0, -1.0]);
+        assert_eq!(encode_denoise_pcm(&decoded), bytes);
+    }
+
+    #[tokio::test]
+    async fn unaligned_payload_is_a_command_error() {
+        let error = denoise_audio(
+            DenoiseRequest {
+                sample_rate: 48_000,
+                channels: 1,
+                strength: 0.0,
+            },
+            vec![0, 1, 2],
+        )
+        .await
+        .expect_err("unaligned bytes must be a command error");
+        assert!(
+            error.contains("whole number"),
+            "expected an alignment error, got {error}"
+        );
     }
 }

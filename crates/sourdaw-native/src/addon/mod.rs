@@ -55,6 +55,15 @@ fn reason<Value_>(result: std::result::Result<Value_, String>) -> Result<Value_>
     result.map_err(Error::from_reason)
 }
 
+/// Samples as Float32 LE bytes plus the expander's scalar metadata.
+/// Byte payloads stay `Buffer`; they must not round-trip as a JSON number array.
+#[napi(object)]
+pub struct DenoiseAudioResult {
+    pub samples: Buffer,
+    pub noise_floor_db: f64,
+    pub processing_time_ms: i64,
+}
+
 fn json<Payload: Serialize>(payload: Payload) -> Result<Value> {
     serde_json::to_value(payload)
         .map_err(|error| Error::from_reason(format!("Result did not serialize: {error}")))
@@ -289,10 +298,22 @@ impl SourdawNative {
     // ── AI audio processing ────────────────────────────────────────────
 
     #[napi]
-    pub async fn denoise_audio(&self, request: Value) -> Result<Value> {
+    pub async fn denoise_audio(
+        &self,
+        request: Value,
+        samples: Buffer,
+    ) -> Result<DenoiseAudioResult> {
         let request = serde_json::from_value(request)
             .map_err(|error| Error::from_reason(format!("Invalid denoise request: {error}")))?;
-        json(reason(commands::ai_audio::denoise_audio(request).await)?)
+        // Bound on the Buffer length before copying so an over-long clip never
+        // becomes an unbounded `Vec<u8>` on the way into the command body.
+        reason(commands::ai_audio::denoise_pcm_sample_count(samples.len()))?;
+        let result = reason(commands::ai_audio::denoise_audio(request, samples.to_vec()).await)?;
+        Ok(DenoiseAudioResult {
+            samples: Buffer::from(result.samples),
+            noise_floor_db: result.noise_floor_db,
+            processing_time_ms: result.processing_time_ms as i64,
+        })
     }
 
     #[napi]
