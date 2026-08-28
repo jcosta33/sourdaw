@@ -32,7 +32,8 @@ function getReceiptScope(confirmation: PendingAppActionConfirmation, expectedSou
                 artifact.endBeat === job.endBeat &&
                 artifact.sampleRate === job.sampleRate &&
                 artifact.tailSeconds === job.tailSeconds &&
-                artifact.sourceRevision === expectedSourceRevision
+                artifact.sourceRevision === expectedSourceRevision &&
+                artifact.warnings.length === 0
         );
         if (matchingArtifact) {
             completedJobIds.add(job.jobId);

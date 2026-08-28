@@ -173,6 +173,9 @@ describe('executeCommittedSectionRenderRetry', () => {
         mocks.reconcileBudget.mockImplementation(() => undefined);
         mocks.reserveBudget.mockReturnValue({ status: 'reserved' });
         mocks.retryRenders.mockResolvedValue(undefined);
+        mocks.setGenerating.mockImplementation((isGenerating: boolean) => {
+            mocks.chatState.value = { isGenerating };
+        });
         mocks.getConfirmation.mockImplementation((id: string) =>
             id === 'confirmation-retry' ? createInput().confirmation : undefined
         );
@@ -233,6 +236,27 @@ describe('executeCommittedSectionRenderRetry', () => {
         expect(mocks.retryRenders).not.toHaveBeenCalled();
         expect(mocks.setGenerating).not.toHaveBeenCalled();
         expect(mocks.reconcileBudget).not.toHaveBeenCalled();
+    });
+
+    it('holds the shared busy state throughout the awaited render', async () => {
+        const input = createInput();
+        let resolveRender!: () => void;
+        const renderPending = new Promise<void>((resolve) => {
+            resolveRender = resolve;
+        });
+        mocks.project.mockReturnValueOnce(projection(true)).mockReturnValue(projection(false));
+        mocks.retryRenders.mockReturnValue(renderPending);
+
+        const firstRetry = executeCommittedSectionRenderRetry(input);
+
+        expect(mocks.chatState.value).toEqual({ isGenerating: true });
+        await expect(executeCommittedSectionRenderRetry(createInput())).resolves.toEqual({ status: 'busy' });
+        expect(mocks.retryRenders).toHaveBeenCalledOnce();
+        expect(mocks.reserveBudget).toHaveBeenCalledOnce();
+
+        resolveRender();
+        await expect(firstRetry).resolves.toEqual({ status: 'executed' });
+        expect(mocks.chatState.value).toEqual({ isGenerating: false });
     });
 
     it('reconciles reserved budget and clears generation after an incomplete retry', async () => {

@@ -97,6 +97,7 @@ describe('projectSectionRenderConfirmation', () => {
         ['sampleRate', { ...EXACT_ARTIFACT, sampleRate: 48_000 }],
         ['tailSeconds', { ...EXACT_ARTIFACT, tailSeconds: 1 }],
         ['sourceRevision', { ...EXACT_ARTIFACT, sourceRevision: 'revision-other' }],
+        ['warnings', { ...EXACT_ARTIFACT, warnings: ['tail truncated'] }],
     ])('keeps the job incomplete when artifact %s differs', (_field, artifact) => {
         mocks.getArtifacts.mockReturnValue([artifact]);
 
@@ -105,5 +106,33 @@ describe('projectSectionRenderConfirmation', () => {
         expect(projected.incompleteSectionRenders).toEqual({ jobs: [JOB], missingJobIds: [JOB.jobId] });
         expect(projected.completedSectionRenderJobIds).toEqual(new Set());
         expect(projected.executions[0]?.affectedIds).toEqual(['unrelated-id']);
+    });
+
+    it('keeps a warned earlier artifact incomplete after another exact job completes', () => {
+        const confirmation = createConfirmation();
+        const renderAction = confirmation.approvalSnapshot.actions[0];
+        if (!renderAction || renderAction.type !== 'renderProjectSections' || !renderAction.payload.jobs) {
+            throw new Error('Expected render jobs');
+        }
+        const secondJob = {
+            ...JOB,
+            jobId: 'render-chorus',
+            sectionId: 'section-chorus',
+            sectionName: 'Chorus',
+            startBeat: 16,
+            endBeat: 32,
+        };
+        renderAction.payload.jobs.push(secondJob);
+        renderAction.payload.sectionIds.push(secondJob.sectionId);
+        mocks.getArtifacts.mockReturnValue([
+            { ...EXACT_ARTIFACT, warnings: ['tail truncated'] },
+            { ...EXACT_ARTIFACT, ...secondJob },
+        ]);
+
+        const projected = projectSectionRenderConfirmation({ confirmation });
+
+        expect(projected.incompleteSectionRenders).toEqual({ jobs: [JOB], missingJobIds: [JOB.jobId] });
+        expect(projected.completedSectionRenderJobIds).toEqual(new Set([secondJob.jobId]));
+        expect(projected.executions[0]?.affectedIds).not.toContain(JOB.jobId);
     });
 });
