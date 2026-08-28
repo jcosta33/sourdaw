@@ -1,6 +1,5 @@
 /**
  * Plugin scan state store.
- * Owned by the Plugin module — scan state is a Plugin concern, not an AudioEngine concern.
  */
 
 import { createStore } from '#/infra/store/createStore';

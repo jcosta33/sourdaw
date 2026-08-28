@@ -60,17 +60,22 @@ describe('pluginBridge repository', () => {
     });
 
     describe('scanPlugins', () => {
-        it('should return error in browser', async () => {
+        it('reports that no scan ran in the browser instead of an empty result', async () => {
+            // The browser answer must not look like an enumeration: an empty
+            // `plugins` array is a legitimate desktop result, and the store
+            // write decision turns on telling the two apart.
             vi.mocked(isDesktopRuntime).mockReturnValue(false);
-            const result = await scanPlugins(['/path']);
-            expect(result.errors).toContain('Plugin scanning requires the desktop app');
+            const attempt = await scanPlugins(['/path']);
+            expect(attempt).toEqual({ ran: false, reason: 'Plugin scanning requires the desktop app' });
+            expect(desktopInvoke).not.toHaveBeenCalled();
         });
 
         it('should invoke the desktop command', async () => {
             vi.mocked(isDesktopRuntime).mockReturnValue(true);
             vi.mocked(desktopInvoke).mockResolvedValue({ plugins: [], errors: [], scan_duration_ms: 10 });
-            await scanPlugins(['/path']);
+            const attempt = await scanPlugins(['/path']);
             expect(desktopInvoke).toHaveBeenCalledWith('scan_plugins', { paths: ['/path'] });
+            expect(attempt).toEqual({ ran: true, result: { plugins: [], errors: [], scan_duration_ms: 10 } });
         });
     });
 
