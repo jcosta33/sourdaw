@@ -1750,6 +1750,10 @@ export async function sendChatMessage(
                   lease: providerLease,
                   terminalState: 'failed',
                   settle: agentRunWorkLease.settle,
+                  reportFailure: (settlementError) =>
+                      logger.error(
+                          new Error('Failed provider work lease settlement failed', { cause: settlementError })
+                      ),
               })
             : null;
         if (wasAborted) {

@@ -61,6 +61,7 @@ import {
 } from '../../stores/pendingActionConfirmationStore';
 import { createStemImportConfirmationResourceLease } from '../agentReference/createStemImportConfirmationResourceLease';
 import { preparedStemImportResources } from '../agentReference/registerPreparedStemImportResources';
+import { AGENT_RUN_STALE_COMPLETION_WARNING } from '../agentRequestOrchestration/settleAgentRunWorkLeaseSafely';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { recoverInterruptedAgentRuns } from '../agentRunRecovery';
 import { agentRunWorkLease } from '../agentRunWorkLease';
@@ -289,6 +290,72 @@ function createIdempotentReplayBatchResult(
         actions: [],
         receipt: createVerifiedBatchReceipt({
             contentHash: 'idempotent-replay-stale-settlement',
+            envelope: parsed.envelope,
+            observedBaseRevision: 'revision-fixture',
+            resultingRevision: 'revision-fixture',
+            result,
+        }),
+    };
+}
+
+function createIdempotentReplayNoOpResult(
+    commandBatch: ReturnType<typeof compileVersionedCommandBatchEnvelope>
+): ConfirmedActionBatchResult {
+    const parsed = parseVersionedCommandBatchEnvelope(commandBatch.serialized, commandBatch.authority);
+    if (parsed.status !== 'valid') {
+        throw new Error('Expected the replay command batch fixture to remain valid.');
+    }
+    const result: { status: 'no-op'; actions: [] } = { status: 'no-op', actions: [] };
+    return {
+        status: 'idempotent-replay',
+        actions: [],
+        receipt: createVerifiedBatchReceipt({
+            contentHash: 'idempotent-replay-no-op-stale-settlement',
+            envelope: parsed.envelope,
+            observedBaseRevision: 'revision-fixture',
+            resultingRevision: 'revision-fixture',
+            result,
+        }),
+    };
+}
+
+function createIdempotentReplayFailureResult(input: {
+    status: 'ambiguous' | 'failed';
+    reason: string;
+    commandBatch: ReturnType<typeof compileVersionedCommandBatchEnvelope>;
+}): ConfirmedActionBatchResult {
+    const parsed = parseVersionedCommandBatchEnvelope(input.commandBatch.serialized, input.commandBatch.authority);
+    if (parsed.status !== 'valid') {
+        throw new Error('Expected the replay command batch fixture to remain valid.');
+    }
+    if (input.status === 'ambiguous') {
+        const result: { status: 'ambiguous'; reason: string; actions: [] } = {
+            status: 'ambiguous',
+            reason: input.reason,
+            actions: [],
+        };
+        return {
+            status: 'idempotent-replay',
+            actions: [],
+            receipt: createVerifiedBatchReceipt({
+                contentHash: 'idempotent-replay-ambiguous-stale-settlement',
+                envelope: parsed.envelope,
+                observedBaseRevision: 'revision-fixture',
+                resultingRevision: 'revision-fixture',
+                result,
+            }),
+        };
+    }
+    const result: { status: 'failed'; reason: string; actions: [] } = {
+        status: 'failed',
+        reason: input.reason,
+        actions: [],
+    };
+    return {
+        status: 'idempotent-replay',
+        actions: [],
+        receipt: createVerifiedBatchReceipt({
+            contentHash: 'idempotent-replay-failed-stale-settlement',
             envelope: parsed.envelope,
             observedBaseRevision: 'revision-fixture',
             resultingRevision: 'revision-fixture',
@@ -854,6 +921,131 @@ describe('confirmPendingChatActions transaction admission', () => {
             content: expect.stringContaining('durable receipt was retained without reopening the terminal run'),
         });
     });
+
+    it('keeps a stale replayed no-op cancelled and discards its pending resources', async () => {
+        const runId = 'idempotent-replay-no-op-stale-settlement';
+        const confirmationId = 'confirmation-idempotent-replay-no-op-stale-settlement';
+        const batchId = 'group-idempotent-replay-no-op-stale-settlement';
+        const release = vi.fn().mockResolvedValue(undefined);
+        const retain = vi.fn().mockResolvedValue(undefined);
+        const commandBatch = configureLateSettlementConfirmation({
+            runId,
+            confirmationId,
+            batchId,
+            resourceLease: { bytes: 1, release, retain },
+        });
+        const commandUseCases = await import('#/modules/Command/useCases');
+        const crdtUseCases = await import('#/modules/CrdtDocument/useCases');
+        const captureMutationAuthorization = vi
+            .spyOn(crdtUseCases, 'captureProjectMutationAuthorization')
+            .mockReturnValue(() => true);
+        const execute = vi
+            .spyOn(commandUseCases, 'executeVersionedCommandBatchEnvelope')
+            .mockResolvedValue(createIdempotentReplayNoOpResult(commandBatch));
+        const settle = vi.spyOn(agentRunWorkLease, 'settle').mockImplementation(() => {
+            agentRunLifecycle.transitionPhase({ runId, phase: 'cancelled' });
+            return { status: 'stale' };
+        });
+
+        try {
+            await expect(confirmPendingChatActions({ confirmationId })).resolves.toEqual({ status: 'cancelled' });
+        } finally {
+            settle.mockRestore();
+            execute.mockRestore();
+            captureMutationAuthorization.mockRestore();
+        }
+
+        expect(agentRunLifecycle.get(runId)).toMatchObject({ phase: 'cancelled', errors: [] });
+        expect(getPendingActionConfirmation(confirmationId)).toMatchObject({
+            status: 'cancelled',
+            error: AGENT_RUN_STALE_COMPLETION_WARNING,
+        });
+        expect(chatStore.value?.messages[0]).toMatchObject({
+            pendingActionConfirmationStatus: 'cancelled',
+            error: AGENT_RUN_STALE_COMPLETION_WARNING,
+            content: expect.stringContaining('prior verified receipt records a no-op'),
+        });
+        expect(release).toHaveBeenCalledOnce();
+        expect(retain).not.toHaveBeenCalled();
+    });
+
+    const staleReplayFailureResults = [
+        {
+            status: 'failed',
+            reason: 'The prior runtime batch failed.',
+            disposition: 'discard',
+            content: 'prior verified receipt records that this command batch did not apply successfully',
+        },
+        {
+            status: 'ambiguous',
+            reason: 'The prior runtime batch is ambiguous.',
+            disposition: 'retain',
+            content: 'prior verified receipt records an ambiguous outcome',
+        },
+    ] satisfies readonly {
+        status: 'ambiguous' | 'failed';
+        reason: string;
+        disposition: 'discard' | 'retain';
+        content: string;
+    }[];
+
+    it.each(staleReplayFailureResults)(
+        'keeps a stale replayed $status receipt cancelled without recording a new failure',
+        async ({ status, reason, disposition, content }) => {
+            const runId = `idempotent-replay-${status}-stale-settlement`;
+            const confirmationId = `confirmation-idempotent-replay-${status}-stale-settlement`;
+            const batchId = `group-idempotent-replay-${status}-stale-settlement`;
+            const release = vi.fn().mockResolvedValue(undefined);
+            const retain = vi.fn().mockResolvedValue(undefined);
+            const commandBatch = configureLateSettlementConfirmation({
+                runId,
+                confirmationId,
+                batchId,
+                resourceLease: { bytes: 1, release, retain },
+            });
+            const commandUseCases = await import('#/modules/Command/useCases');
+            const crdtUseCases = await import('#/modules/CrdtDocument/useCases');
+            const captureMutationAuthorization = vi
+                .spyOn(crdtUseCases, 'captureProjectMutationAuthorization')
+                .mockReturnValue(() => true);
+            const execute = vi
+                .spyOn(commandUseCases, 'executeVersionedCommandBatchEnvelope')
+                .mockResolvedValue(createIdempotentReplayFailureResult({ status, reason, commandBatch }));
+            const settle = vi.spyOn(agentRunWorkLease, 'settle').mockImplementation(() => {
+                agentRunLifecycle.transitionPhase({ runId, phase: 'cancelled' });
+                return { status: 'stale' };
+            });
+
+            try {
+                await expect(confirmPendingChatActions({ confirmationId })).resolves.toEqual({
+                    status: 'failed',
+                    reason,
+                });
+            } finally {
+                settle.mockRestore();
+                execute.mockRestore();
+                captureMutationAuthorization.mockRestore();
+            }
+
+            expect(agentRunLifecycle.get(runId)).toMatchObject({ phase: 'cancelled', errors: [] });
+            expect(getPendingActionConfirmation(confirmationId)).toMatchObject({
+                status: 'failed',
+                error: `${reason} ${AGENT_RUN_STALE_COMPLETION_WARNING}`,
+            });
+            expect(chatStore.value?.messages[0]).toMatchObject({
+                pendingActionConfirmationStatus: 'failed',
+                error: `${reason} ${AGENT_RUN_STALE_COMPLETION_WARNING}`,
+                content: expect.stringContaining(content),
+            });
+            if (disposition === 'retain') {
+                expect(retain).toHaveBeenCalledOnce();
+                expect(release).not.toHaveBeenCalled();
+            } else {
+                expect(release).toHaveBeenCalledOnce();
+                expect(retain).not.toHaveBeenCalled();
+            }
+        }
+    );
 
     it('keeps a stale late no-op cancelled instead of claiming fresh completion', async () => {
         const runId = 'late-no-op-settlement';

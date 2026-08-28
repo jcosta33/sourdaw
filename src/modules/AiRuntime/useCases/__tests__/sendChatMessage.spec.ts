@@ -8,6 +8,10 @@ import { commandBatchPreflightPort, commandTrackDefaultsPort } from '#/modules/C
 import { type AgentRunProviderProposal } from '../../models/AgentRun';
 import { type ExecutableRuntimeAction } from '../../models/ExecutableRuntimeAction';
 import { type ProjectContext } from '../../models/ProjectContext';
+import {
+    type CloudChatCompletionOutcome,
+    type streamCloudChatCompletion,
+} from '../../repositories/cloudLlm/cloudInference/streamCloudChatCompletion';
 import { agentRunStore } from '../../stores/agentRunStore';
 import { llmStatusStore } from '../../stores/llmStatusStore';
 import { bridgeGroundedLlmToolCalls } from '../agentReference/bridgeGroundedLlmToolCalls';
@@ -22,6 +26,7 @@ import { sendChatMessage } from '../sendChatMessage';
 
 type PlanPromptActionsInput = Parameters<typeof planPromptActions>[0];
 type PreparedStemReadiness = 'ready' | 'missing' | 'cleanup-pending';
+type CloudStreamOptions = Parameters<typeof streamCloudChatCompletion>[2];
 
 let plannedRunId: string | null = null;
 
@@ -38,6 +43,7 @@ const mocks = vi.hoisted(() => ({
     executeVersionedCommandBatchEnvelope: vi.fn(),
     generateGroupId: vi.fn(),
     getActiveModelId: vi.fn(),
+    getCloudProviderInfo: vi.fn(),
     getLlmEngine: vi.fn(),
     isCloudAvailable: vi.fn(),
     parseVersionedCommandBatchEnvelope: vi.fn(),
@@ -46,6 +52,7 @@ const mocks = vi.hoisted(() => ({
     resolveBackend: vi.fn(),
     setActiveAborter: vi.fn(),
     setChatGenerating: vi.fn(),
+    streamCloudChatCompletion: vi.fn(),
     updateChatMessage: vi.fn(),
 }));
 
@@ -63,6 +70,14 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
 
 vi.mock('../../repositories/cloudLlm/isCloudAvailable', () => ({
     isCloudAvailable: mocks.isCloudAvailable,
+}));
+
+vi.mock('../../repositories/cloudLlm/getCloudProviderInfo', () => ({
+    getCloudProviderInfo: mocks.getCloudProviderInfo,
+}));
+
+vi.mock('../../repositories/cloudLlm/cloudInference/streamCloudChatCompletion', () => ({
+    streamCloudChatCompletion: mocks.streamCloudChatCompletion,
 }));
 
 vi.mock('../../repositories/webLlm/getLlmEngine', () => ({
@@ -537,6 +552,7 @@ describe('sendChatMessage retained-provider selection', () => {
         });
         mocks.generateGroupId.mockReturnValue({ groupId: 'group-fixture', groupLabel: 'Fixture group' });
         mocks.getActiveModelId.mockReturnValue('fixture-model');
+        mocks.getCloudProviderInfo.mockReturnValue(null);
         mocks.isCloudAvailable.mockReturnValue(false);
         mocks.getLlmEngine.mockReturnValue(null);
         mocks.proposePendingActionConfirmation.mockReturnValue({ id: 'confirmation-fixture' });
@@ -595,6 +611,91 @@ describe('sendChatMessage retained-provider selection', () => {
         } finally {
             settleWorkLease.mockRestore();
             loggerError.mockRestore();
+        }
+    });
+
+    it('records hosted provider usage against the exact terminal provider receipt and budget attempt', async () => {
+        const content = 'The hosted mix summary is ready.';
+        const providerUsage = await import('../recordAgentProviderUsage');
+        const recordProviderUsage = vi.spyOn(providerUsage, 'recordAgentProviderUsage');
+        mocks.aiBackendPreference.value = 'cloud';
+        mocks.resolveBackend.mockReturnValue('cloud');
+        mocks.isCloudAvailable.mockReturnValue(true);
+        mocks.getCloudProviderInfo.mockReturnValue({
+            provider: 'openai',
+            model: 'gpt-4o-mini',
+            baseUrl: 'https://api.openai.com/v1',
+        });
+        mocks.streamCloudChatCompletion.mockImplementation(
+            async (
+                _messages: Parameters<typeof streamCloudChatCompletion>[0],
+                onToken: Parameters<typeof streamCloudChatCompletion>[1],
+                options?: CloudStreamOptions
+            ): Promise<CloudChatCompletionOutcome> => {
+                onToken(content);
+                options?.onUsage?.({
+                    type: 'usage',
+                    mode: 'final',
+                    usage: {
+                        inputTokens: 321,
+                        outputTokens: 34,
+                        cachedInputTokens: 21,
+                        reasoningTokens: 8,
+                    },
+                    provenance: 'provider-reported',
+                });
+                return { status: 'complete' };
+            }
+        );
+
+        try {
+            await expect(sendChatMessage('Summarize the hosted mix.', { mode: 'explain' })).resolves.toBeUndefined();
+
+            const run = agentRunLifecycle.get(getMostRecentlyAdmittedRunId());
+            if (run === null) {
+                throw new Error('Expected the hosted provider run to remain inspectable.');
+            }
+            const providerReceiptIdentity = `provider:cloud:${run.runId}`;
+            expect(recordProviderUsage).toHaveBeenCalledWith(
+                run.runId,
+                expect.objectContaining({
+                    provider: 'openai',
+                    model: 'gpt-4o-mini',
+                    correlationId: providerReceiptIdentity,
+                    status: 'complete',
+                    usage: {
+                        inputTokens: 321,
+                        outputTokens: 34,
+                        cachedInputTokens: 21,
+                        reasoningTokens: 8,
+                        provenance: 'provider-reported',
+                    },
+                }),
+                providerReceiptIdentity,
+                { terminal: true }
+            );
+            expect(run.providerUsage).toEqual(
+                expect.arrayContaining([
+                    expect.objectContaining({
+                        provider: 'openai',
+                        model: 'gpt-4o-mini',
+                        correlationId: providerReceiptIdentity,
+                        status: 'complete',
+                        routeId: 'cloud:openai:gpt-4o-mini',
+                        executor: 'cloud',
+                    }),
+                ])
+            );
+            expect(run.budgetAttempts).toEqual(
+                expect.arrayContaining([
+                    expect.objectContaining({
+                        attemptId: providerReceiptIdentity,
+                        category: 'remoteTokens',
+                    }),
+                ])
+            );
+        } finally {
+            recordProviderUsage.mockRestore();
         }
     });
 
@@ -750,6 +851,47 @@ describe('sendChatMessage retained-provider selection', () => {
         } finally {
             settleWorkLease.mockRestore();
             recordProviderUsageCall.mockRestore();
+        }
+    });
+
+    it('keeps a streamed provider failure authoritative when failed-lease settlement persistence throws', async () => {
+        const providerError = new Error('WebLLM provider failed during streaming');
+        const partialContent = 'The bridge starts with a muted guitar.';
+        const settlementFailure = new DOMException('The quota has been exceeded.', 'QuotaExceededError');
+        const loggerError = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+        const settleWorkLease = vi.spyOn(agentRunWorkLease, 'settle').mockImplementation(() => {
+            throw settlementFailure;
+        });
+        mocks.getLlmEngine.mockReturnValue(createFailingWebLlmEngine(partialContent, providerError));
+
+        try {
+            await expect(sendChatMessage('Summarize the arrangement.', { mode: 'explain' })).resolves.toBeUndefined();
+
+            const run = agentRunLifecycle.get(getMostRecentlyAdmittedRunId());
+            expect(run).toMatchObject({
+                phase: 'failed',
+                errors: [expect.objectContaining({ category: 'provider' })],
+            });
+            expect(mocks.updateChatMessage).toHaveBeenCalledWith(
+                expect.any(String),
+                expect.objectContaining({
+                    isStreaming: false,
+                    error: providerError.message,
+                    content: `${partialContent}\n\n_Response incomplete because the provider stream failed._`,
+                })
+            );
+            expect(llmStatusStore.value).toEqual({ state: 'error', message: providerError.message });
+            expect(mocks.setActiveAborter).toHaveBeenLastCalledWith(null);
+            expect(mocks.setChatGenerating).toHaveBeenLastCalledWith(false);
+            expect(loggerError).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    cause: settlementFailure,
+                    message: 'Failed provider work lease settlement failed',
+                })
+            );
+        } finally {
+            settleWorkLease.mockRestore();
+            loggerError.mockRestore();
         }
     });
 
@@ -949,7 +1091,12 @@ describe('sendChatMessage retained-provider selection', () => {
                     ]),
                 })
             );
-            expect(loggerError).not.toHaveBeenCalled();
+            expect(loggerError).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    cause: expect.objectContaining({ message: 'Agent run state could not be persisted locally' }),
+                    message: 'Failed provider work lease settlement failed',
+                })
+            );
             expect(mocks.setActiveAborter).toHaveBeenLastCalledWith(null);
             expect(mocks.setChatGenerating).toHaveBeenLastCalledWith(false);
         } finally {

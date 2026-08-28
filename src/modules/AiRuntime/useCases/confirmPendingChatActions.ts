@@ -43,6 +43,7 @@ import {
 import { normalizeAgentFailure } from './agentErrorAndSaga';
 import {
     AGENT_RUN_PERSISTENCE_WARNING,
+    AGENT_RUN_STALE_COMPLETION_WARNING,
     settleAgentRunWorkLeaseSafely,
 } from './agentRequestOrchestration/settleAgentRunWorkLeaseSafely';
 import { agentRunLifecycle } from './agentRunLifecycle';
@@ -281,6 +282,21 @@ async function settleVerifiedBatchReplay(
         return { status: 'executed' };
     }
     if (replay.status === 'no-op') {
+        if (!leaseSettlement.accepted) {
+            await settlePendingActionResourcesBestEffort({ confirmationId: confirmation.id, disposition: 'discard' });
+            const warning = AGENT_RUN_STALE_COMPLETION_WARNING;
+            updatePendingActionConfirmationStatus({
+                confirmationId: confirmation.id,
+                status: 'cancelled',
+                error: warning,
+            });
+            updateChatMessage(confirmation.assistantMessageId, {
+                pendingActionConfirmationStatus: 'cancelled',
+                error: warning,
+                content: `The prior verified receipt records a no-op. No project or runtime effects were applied, but the run was already cancelled or replaced. ${warning}`,
+            });
+            return { status: 'cancelled' };
+        }
         updateTrackedAgentRun(confirmation, () => {
             agentRunLifecycle.updateBatchStatus({
                 runId: confirmation.runId,
@@ -320,25 +336,28 @@ async function settleVerifiedBatchReplay(
     if (replay.status === 'ambiguous') {
         await recoverPreparedStemImportResources({ runId: confirmation.runId });
     }
+    const userVisibleFailure = [replay.reason, leaseSettlement.warning].filter(Boolean).join(' ');
     updatePendingActionConfirmationStatus({
         confirmationId: confirmation.id,
         status: 'failed',
-        error: replay.reason,
+        error: userVisibleFailure,
     });
-    recordTrackedAgentRunFailure(confirmation, {
-        category: replay.status === 'ambiguous' ? 'conflict' : 'project',
-        retriable: false,
-        workId: receipt.batchId,
-        receiptIdentity: getVerifiedReceiptIdentity(receipt),
-        ...(replay.status === 'ambiguous' ? { compensation: 'manual-repair' as const } : {}),
-    });
+    if (leaseSettlement.accepted) {
+        recordTrackedAgentRunFailure(confirmation, {
+            category: replay.status === 'ambiguous' ? 'conflict' : 'project',
+            retriable: false,
+            workId: receipt.batchId,
+            receiptIdentity: getVerifiedReceiptIdentity(receipt),
+            ...(replay.status === 'ambiguous' ? { compensation: 'manual-repair' as const } : {}),
+        });
+    }
     updateChatMessage(confirmation.assistantMessageId, {
         pendingActionConfirmationStatus: 'failed',
-        error: replay.reason,
+        error: userVisibleFailure,
         content:
             replay.status === 'ambiguous'
-                ? `The prior verified receipt records an ambiguous outcome: ${replay.reason}. Do not retry it; inspect the project first.`
-                : `The prior verified receipt records that this command batch did not apply successfully: ${replay.reason}`,
+                ? `The prior verified receipt records an ambiguous outcome: ${replay.reason}. Do not retry it; inspect the project first.${leaseSettlement.warning ? ` ${leaseSettlement.warning}` : ''}`
+                : `The prior verified receipt records that this command batch did not apply successfully: ${replay.reason}${leaseSettlement.warning ? ` ${leaseSettlement.warning}` : ''}`,
     });
     return { status: 'failed', reason: replay.reason };
 }
