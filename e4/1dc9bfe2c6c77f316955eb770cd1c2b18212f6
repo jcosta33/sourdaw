@@ -1,0 +1,44 @@
+src/modules/AiRuntime/useCases/recoverAgentRunPendingEffects.ts
+  s_a40848e8f8cca9::t_082dc04a7d416b 8
+  s_a40848e8f8cca9::t_df51da138ac646 1
+  s_a40848e8f8cca9::t_c682435d9452ed 7,39-47
+  s_4f908a5afb6b58::t_3fd6d3ed5b163f 48
+src/modules/AiRuntime/stores/selectAgentRunPendingEffectRecoveries.ts
+  s_a40848e8f8cca9::t_c682435d9452ed 6,20-33,41,48
+src/modules/AiRuntime/useCases/__tests__/agentRunRecovery.spec.ts
+  s_a40848e8f8cca9::t_4c502471042661 778,799,919
+src/modules/AiRuntime/useCases/__tests__/confirmPendingChatActions.spec.ts
+  s_a40848e8f8cca9::t_4c502471042661 2971
+src/modules/AiRuntime/useCases/__tests__/recoverAgentRunPendingEffects.spec.ts
+  s_a40848e8f8cca9::t_6bd710b6c253f0 1-87
+  s_a40848e8f8cca9::t_30ab035c555c31 88-90
+src/modules/AiRuntime/models/getPendingEffectRecoveryPolicy.ts
+  s_a40848e8f8cca9::t_c682435d9452ed 1-20
+src/modules/AiRuntime/useCases/__tests__/agentRunLifecycle.spec.ts
+  s_a40848e8f8cca9::t_6bd710b6c253f0 149-156
+  s_a40848e8f8cca9::t_7679694667657e 187-188
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "e41dc9bfe2c6c77f316955eb770cd1c2b18212f6",
+  "prompts": {},
+  "sessions": {
+    "s_4f908a5afb6b58": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fcb92ba4-bf56-47a4-8b57-803f335a449e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
