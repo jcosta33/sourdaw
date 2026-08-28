@@ -8,6 +8,7 @@ import { useStore } from '#/infra/store/useStore';
 import { voiceInputAvailabilityStore, voiceStatusStore } from '#/modules/AiRuntime/stores';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { togglePlayback } from '#/modules/Transport/useCases';
+import { selectorDeclaring } from '#/styles/testing/mainStylesheetRules';
 
 import { TransportBar } from '../TransportBar';
 
@@ -144,6 +145,15 @@ vi.mock('#/components/daw/DawInlineHint', () => ({
 let voiceStatus = { isListening: false, transcribing: false };
 let voiceInputAvailable = false;
 
+/*
+ * Taken from `main.css` rather than written out here: the modifier class the row
+ * renders is inert in jsdom, so only the shipped selector can say whether the
+ * window still hands that row to the drag region and insets it past the
+ * platform's own controls.
+ */
+const DRAG_REGION_SELECTOR = selectorDeclaring('app-region: drag');
+const TITLEBAR_INSET_SELECTOR = selectorDeclaring('margin-left: env(titlebar-area-x');
+
 describe('TransportBar', () => {
     beforeEach(() => {
         voiceStatus = { isListening: false, transcribing: false };
@@ -193,12 +203,12 @@ describe('TransportBar', () => {
         expect(screen.getByTestId('window-titlebar-region')).toHaveClass('desktop-titlebar-region');
     });
 
-    it('leaves the titlebar row unmodified when the shell runs neither desktop chrome', () => {
+    it('leaves the titlebar row draggable by nothing when the shell runs neither desktop chrome', () => {
         renderTransportBar();
 
         const region = screen.getByTestId('window-titlebar-region');
-        expect(region).not.toHaveClass('desktop-titlebar-region--frameless');
-        expect(region).not.toHaveClass('desktop-titlebar-region--overlay');
+        expect(region.matches(DRAG_REGION_SELECTOR)).toBe(false);
+        expect(region.matches(TITLEBAR_INSET_SELECTOR)).toBe(false);
     });
 
     it('marks the titlebar row as the frameless drag region and mounts the window controls', () => {
@@ -207,7 +217,9 @@ describe('TransportBar', () => {
 
         const region = screen.getByTestId('window-titlebar-region');
         expect(region).toHaveClass('desktop-titlebar-region--frameless');
-        expect(region).not.toHaveClass('desktop-titlebar-region--overlay');
+        expect(region.matches(DRAG_REGION_SELECTOR)).toBe(true);
+        // Linux draws its own controls inside the row, so nothing insets it.
+        expect(region.matches(TITLEBAR_INSET_SELECTOR)).toBe(false);
         expect(screen.getByTestId('window-controls')).toBeInTheDocument();
     });
 
@@ -216,8 +228,9 @@ describe('TransportBar', () => {
         renderTransportBar();
 
         const region = screen.getByTestId('window-titlebar-region');
-        expect(region).toHaveClass('desktop-titlebar-region--overlay');
-        expect(region).not.toHaveClass('desktop-titlebar-region--frameless');
+        expect(region.matches(TITLEBAR_INSET_SELECTOR)).toBe(true);
+        expect(region.matches(DRAG_REGION_SELECTOR)).toBe(true);
+        // The traffic lights are the platform's own; the app draws none.
         expect(screen.queryByTestId('window-controls')).not.toBeInTheDocument();
     });
 
