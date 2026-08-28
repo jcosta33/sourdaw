@@ -9,18 +9,13 @@ import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { MODEL_RELEASE_ADMISSION } from '#/infra/release/modelReleaseAdmission';
 import { useStore } from '#/infra/store/useStore';
+import { useStoreSelector } from '#/infra/store/useStoreSelector';
 import {
     aiBackendPreferenceStore,
     hostedLlmProviderStatusStore,
     type LlmEngineStatus,
 } from '#/modules/AiRuntime/stores';
-import {
-    isLlmAvailable,
-    resolveBackend,
-    unloadEngine,
-    WEBLLM_MODELS,
-    getActiveModelId,
-} from '#/modules/AiRuntime/useCases';
+import { resolveBackend, unloadEngine, WEBLLM_MODELS, getActiveModelId } from '#/modules/AiRuntime/useCases';
 import { capabilityStore } from '#/modules/BrowserAi/stores';
 
 type LlmStatusBadgeProps = {
@@ -85,7 +80,18 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
     // probe settles, and this badge must re-render when it does.
     const capabilityState = useStore(capabilityStore, { phase: 'idle' });
     const isDetectingBrowserAi = capabilityState?.phase === 'idle' || capabilityState?.phase === 'detecting';
-    const backend = status.state === 'ready' ? status.backend : resolveBackend();
+    // `resolveBackend()` reads BrowserAi's capability store, so it is selected
+    // from that store rather than called bare in the render body: a bare call
+    // exposes no dependency, so it is cached against the props it appears to
+    // depend on and keeps answering "none" after detection admits a device.
+    // Selecting also re-runs it on every render, which is what keeps the
+    // preference and hosted-provider stores honest.
+    const resolvedBackend = useStoreSelector(capabilityStore, () => resolveBackend());
+    // One resolution decides both whether AI is available and which backend the
+    // panel describes. Reading availability through a second predicate lets the
+    // two answers disagree — an available badge over a panel that still
+    // describes no backend.
+    const backend = status.state === 'ready' ? status.backend : resolvedBackend;
     let backendLabel: string;
     if (backend === 'cloud') {
         backendLabel = hostedProviderStatus ? getHostedProviderLabel(hostedProviderStatus.provider) : 'Cloud';
@@ -119,7 +125,7 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
         modelInfo = WEBLLM_MODELS.find((message) => message.id === selectedModelId) ?? WEBLLM_MODELS[1]!;
     }
 
-    if (!isLlmAvailable()) {
+    if (backend === 'none') {
         let unavailableLabel = 'AI unavailable';
         let unavailableTitle = 'No configured AI backend is available';
         if (backendPreference === 'cloud') {

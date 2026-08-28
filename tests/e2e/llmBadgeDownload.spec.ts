@@ -7,8 +7,11 @@ import { launch_new_project, setupWorkspace } from './e2eUtils';
 // offer is decided by WebGPU admission: model onboarding when a device is
 // admitted, nothing to click when it is not. The expectation is read from
 // Chromium's own adapter, outside Sourdaw's capability detection, so the badge
-// cannot satisfy this spec by agreeing with its own report. Per-model labels
-// have their own deterministic coverage in the LlmStatusBadge component spec.
+// cannot satisfy this spec by agreeing with its own report. The general matrix
+// has no adapter and therefore proves only the withheld branch; the onboarding
+// branch is proven by browserAiAdmittedPresentation.spec.ts on the hardware leg,
+// and runs here as well on a developer machine with a GPU. Per-model labels also
+// have deterministic coverage in the LlmStatusBadge component spec.
 test.describe('LlmStatusBadge — model download affordances', () => {
     test('offers model onboarding only when this browser admits a WebGPU device', async ({ page }, testInfo) => {
         test.setTimeout(120000);

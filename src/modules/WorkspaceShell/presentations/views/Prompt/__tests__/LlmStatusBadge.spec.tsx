@@ -1,16 +1,13 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { capabilityStore } from '#/modules/BrowserAi/stores';
+
 import { LlmStatusBadge } from '../LlmStatusBadge';
 
-vi.mock('#/modules/AiRuntime/useCases/llmOrchestration/backendResolution/isLlmAvailable', () => ({
-    isLlmAvailable: vi.fn(() => false),
-}));
-
-const { capabilityStore, isWebGpuAvailable } = await import('#/modules/BrowserAi/stores');
-const { isLlmAvailable } =
-    await import('#/modules/AiRuntime/useCases/llmOrchestration/backendResolution/isLlmAvailable');
-
+// Nothing here is stubbed: the badge resolves its backend through the real
+// admission chain, so the capability report is the only input that decides what
+// it renders.
 const verifiedWebGpuReport = {
     capability: 'supported' as const,
     webGpu: { status: 'supported' as const },
@@ -36,9 +33,6 @@ function renderBadge(): void {
 describe('LlmStatusBadge', () => {
     beforeEach(() => {
         capabilityStore.set({ phase: 'idle' });
-        // The badge's availability question is "does BrowserAi admit a WebGPU
-        // device", so the mock answers it from the same store the product reads.
-        (isLlmAvailable as ReturnType<typeof vi.fn>).mockImplementation(isWebGpuAvailable);
     });
 
     it('reports that availability is still being checked while detection is pending', () => {
@@ -70,6 +64,12 @@ describe('LlmStatusBadge', () => {
 
         expect(screen.queryByText('Checking AI availability')).not.toBeInTheDocument();
         expect(screen.getByRole('button', { name: 'Load AI' })).toBeInTheDocument();
+
+        // The panel must describe the backend the badge just admitted: an
+        // offer to load AI over a panel that still knows no backend is the
+        // stale half of a two-answer availability read.
+        fireEvent.click(screen.getByRole('button', { name: 'Load AI' }));
+        expect(screen.getByRole('button', { name: /^Standard/ })).toBeInTheDocument();
     });
 
     it('names the selected model on the download button and states what downloading does', () => {

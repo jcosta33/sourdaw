@@ -22,7 +22,10 @@ test.describe('Chat composer', () => {
     // The composer is enabled by an admitted backend, and browser-local
     // admission requires a WebGPU device. The expectation is read from
     // Chromium's own adapter rather than assumed of the runner, so the
-    // enabled and disabled contracts are both real assertions.
+    // enabled and disabled contracts are both real assertions. The general
+    // matrix has no adapter and therefore proves only the disabled branch; the
+    // enabled branch is proven by browserAiAdmittedPresentation.spec.ts on the
+    // hardware leg, and runs here as well on a developer machine with a GPU.
     test('follows local AI admission and closes on toggle', async ({ page }, testInfo) => {
         const input = page.getByRole('textbox', { name: 'Chat message input', exact: true });
         await expect(input).toBeVisible();
