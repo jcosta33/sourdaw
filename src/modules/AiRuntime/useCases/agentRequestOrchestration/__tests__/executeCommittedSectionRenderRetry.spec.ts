@@ -210,9 +210,27 @@ describe('executeCommittedSectionRenderRetry', () => {
         mocks.chatState.value = { isGenerating: false };
         mocks.project.mockReturnValue(projection(true));
         mocks.captureRevision.mockReturnValue('revision-changed');
+        const staleRevisionReason =
+            'Project changed after the committed render receipt; the missing original artifacts cannot be recreated safely.';
         await expect(executeCommittedSectionRenderRetry(input)).resolves.toEqual({
             status: 'failed',
-            reason: 'Project changed after the committed render receipt; the missing original artifacts cannot be recreated safely.',
+            reason: staleRevisionReason,
+        });
+        expect(mocks.updateFollowUp).toHaveBeenCalledWith({
+            confirmationId: 'confirmation-retry',
+            error: staleRevisionReason,
+            status: 'failed',
+        });
+        expect(mocks.updateConfirmation).toHaveBeenCalledWith({
+            confirmationId: 'confirmation-retry',
+            status: 'executed',
+            error: staleRevisionReason,
+        });
+        expect(mocks.updateChat).toHaveBeenCalledWith('assistant-retry', {
+            pendingActionConfirmationStatus: 'executed',
+            pendingActionFollowUpStatus: 'failed',
+            error: staleRevisionReason,
+            content: `The project changes remain committed, but the missing section renders were not retried: ${staleRevisionReason}`,
         });
         expect(mocks.reserveBudget).not.toHaveBeenCalled();
         expect(mocks.retryRenders).not.toHaveBeenCalled();
