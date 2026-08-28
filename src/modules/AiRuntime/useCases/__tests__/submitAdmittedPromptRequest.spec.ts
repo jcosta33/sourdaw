@@ -3,12 +3,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { type AppAction } from '#/utils/handlerContract';
 
 import {
+    AGENT_RUN_CANCELLATION_PERSISTENCE_WARNING,
     AGENT_RUN_COMPLETION_PERSISTENCE_WARNING,
     AGENT_RUN_FAILURE_PERSISTENCE_WARNING,
     AGENT_RUN_STALE_FAILURE_WARNING,
 } from '../agentRequestOrchestration/settleAgentRunWorkLeaseSafely';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { agentRunWorkLease } from '../agentRunWorkLease';
+import { agentRunCancellation } from '../cancelAgentRun';
 import { submitAdmittedPromptRequest } from '../submitAdmittedPromptRequest';
 
 const mocks = vi.hoisted(() => ({
@@ -299,6 +301,40 @@ describe('submitAdmittedPromptRequest', () => {
             cancellation: { generation: 1 },
             workLeases: [{ workId: 'provider-planning', terminalState: 'cancelled' }],
         });
+    });
+
+    it('reuses one failed cancellation attempt after provider planning aborts', async () => {
+        const controller = new AbortController();
+        const cancellationError = new Error('Cancellation storage unavailable');
+        const cancel = vi.spyOn(agentRunCancellation, 'cancel').mockRejectedValue(cancellationError);
+        const settle = vi.spyOn(agentRunWorkLease, 'settle');
+        mocks.planPromptActions.mockImplementation(async () => {
+            controller.abort();
+            return {
+                context: { tracks: [] },
+                result: { actions: [action], rawText: 'Play', requiresConfirmation: true },
+                projectRevision: 'revision-1',
+            };
+        });
+
+        await expect(
+            submitAdmittedPromptRequest({ prompt: 'Play', source: 'prompt-bar', signal: controller.signal })
+        ).resolves.toEqual({ status: 'rejected', runId: RUN_ID });
+
+        expect(cancel).toHaveBeenCalledExactlyOnceWith({
+            runId: RUN_ID,
+            reason: 'Prompt request cancelled by the user.',
+        });
+        expect(settle).not.toHaveBeenCalled();
+        expect(mocks.compileAgentActionExecution).not.toHaveBeenCalled();
+        expect(mocks.executePromptActionGroup).not.toHaveBeenCalled();
+        expect(agentRunLifecycle.get(RUN_ID)).toMatchObject({
+            phase: 'planning',
+            plan: null,
+            batches: [],
+            workLeases: [{ workId: 'provider-planning', terminalState: null }],
+        });
+        expect(mocks.notifyAiChange).toHaveBeenCalledExactlyOnceWith(AGENT_RUN_CANCELLATION_PERSISTENCE_WARNING, []);
     });
 
     it.each([

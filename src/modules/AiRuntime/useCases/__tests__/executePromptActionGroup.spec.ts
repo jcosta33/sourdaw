@@ -14,6 +14,7 @@ import { type AppAction } from '#/utils/handlerContract';
 
 import { readAgentRunState } from '../../stores/agentRunStore';
 import {
+    AGENT_RUN_COMPLETION_PERSISTENCE_WARNING,
     AGENT_RUN_FAILURE_PERSISTENCE_WARNING,
     AGENT_RUN_STALE_FAILURE_WARNING,
 } from '../agentRequestOrchestration/settleAgentRunWorkLeaseSafely';
@@ -931,6 +932,58 @@ describe('executePromptActionGroup', () => {
             batches: [{ batchId: BATCH_ID, status: 'executing', receiptIdentity: null }],
             workLeases: [{ workId: BATCH_ID, terminalState: null }],
         });
+        expect(mocks.releasePreparedStemImportResources).toHaveBeenCalledExactlyOnceWith({
+            runId: RUN_ID,
+            stems: stemAction.payload.stems,
+        });
+        expect(mocks.prepareDurablePromotionRecovery).toHaveBeenCalledOnce();
+        expect(mocks.transitionDurablePromotionRecoveryToCleanup).toHaveBeenCalledExactlyOnceWith(
+            `stem-promotion:${RUN_ID}:${BATCH_ID}`,
+            [{ leaseId: 'asset-lease-1', expectedHash: 'asset-hash-1' }]
+        );
+        expect(mocks.completeDurableCleanupRecovery).toHaveBeenCalledExactlyOnceWith(
+            `stem-promotion:${RUN_ID}:${BATCH_ID}`
+        );
+    });
+
+    it('preserves an executor error when clean settlement terminal lifecycle persistence fails', async () => {
+        const fixture = getBatchFixtures().stem;
+        seedRun(fixture);
+        const executionError = new Error('Executor crashed');
+        mocks.executePlannedActions.mockRejectedValue(executionError);
+        const updateBatchStatus = agentRunLifecycle.updateBatchStatus;
+        vi.spyOn(agentRunLifecycle, 'updateBatchStatus').mockImplementation((input) => {
+            if (input.status === 'failed') {
+                throw new Error('Terminal batch storage unavailable');
+            }
+            updateBatchStatus(input);
+        });
+
+        await expect(
+            executePromptActionGroup({
+                actions: fixture.actions,
+                prompt: 'Import stems',
+                projectRevision: 'revision-1',
+                ...admitted(fixture),
+            })
+        ).rejects.toBe(executionError);
+
+        expect(mocks.notifyAiChange).toHaveBeenCalledWith(
+            `Command not executed: Executor crashed. ${AGENT_RUN_FAILURE_PERSISTENCE_WARNING}`,
+            []
+        );
+        expect(mocks.releasePreparedStemImportResources).toHaveBeenCalledExactlyOnceWith({
+            runId: RUN_ID,
+            stems: stemAction.payload.stems,
+        });
+        expect(mocks.prepareDurablePromotionRecovery).toHaveBeenCalledOnce();
+        expect(mocks.transitionDurablePromotionRecoveryToCleanup).toHaveBeenCalledExactlyOnceWith(
+            `stem-promotion:${RUN_ID}:${BATCH_ID}`,
+            [{ leaseId: 'asset-lease-1', expectedHash: 'asset-hash-1' }]
+        );
+        expect(mocks.completeDurableCleanupRecovery).toHaveBeenCalledExactlyOnceWith(
+            `stem-promotion:${RUN_ID}:${BATCH_ID}`
+        );
     });
 
     it.each([
@@ -938,15 +991,17 @@ describe('executePromptActionGroup', () => {
             label: 'ambiguous execution',
             execution: { status: 'ambiguous' as const, reason: 'Commit truth is unresolved' },
             outcome: 'ambiguous' as const,
+            notification: `Command outcome is uncertain: Commit truth is unresolved. Inspect the project before retrying. ${AGENT_RUN_FAILURE_PERSISTENCE_WARNING}`,
         },
         {
             label: 'no-op execution',
             execution: { status: 'no-op' as const },
             outcome: 'no-op' as const,
+            notification: `No project changes were needed. ${AGENT_RUN_COMPLETION_PERSISTENCE_WARNING}`,
         },
     ])(
         'does not write a terminal lifecycle state after persistence fails for $label',
-        async ({ execution, outcome }) => {
+        async ({ execution, outcome, notification }) => {
             const fixture = getBatchFixtures().stem;
             seedRun(fixture);
             mocks.executePlannedActions.mockResolvedValue(execution);
@@ -968,8 +1023,64 @@ describe('executePromptActionGroup', () => {
                 batches: [{ batchId: BATCH_ID, status: 'executing', receiptIdentity: null }],
                 workLeases: [{ workId: BATCH_ID, terminalState: null }],
             });
+            expect(mocks.notifyAiChange).toHaveBeenCalledExactlyOnceWith(notification, []);
         }
     );
+
+    it.each([
+        {
+            label: 'invalidated stale settlement',
+            execution: { status: 'invalidated' as const, reason: 'Revision changed' },
+            settle: () => ({ status: 'stale' as const }),
+            warning: AGENT_RUN_STALE_FAILURE_WARNING,
+        },
+        {
+            label: 'failed stale settlement',
+            execution: { status: 'failed' as const, reason: 'Execution failed' },
+            settle: () => ({ status: 'stale' as const }),
+            warning: AGENT_RUN_STALE_FAILURE_WARNING,
+        },
+        {
+            label: 'invalidated persistence failure',
+            execution: { status: 'invalidated' as const, reason: 'Revision changed' },
+            settle: () => {
+                throw new Error('Lease storage unavailable');
+            },
+            warning: AGENT_RUN_FAILURE_PERSISTENCE_WARNING,
+        },
+        {
+            label: 'failed persistence failure',
+            execution: { status: 'failed' as const, reason: 'Execution failed' },
+            settle: () => {
+                throw new Error('Lease storage unavailable');
+            },
+            warning: AGENT_RUN_FAILURE_PERSISTENCE_WARNING,
+        },
+    ])('does not terminalize $label', async ({ execution, settle, warning }) => {
+        const fixture = getBatchFixtures().stem;
+        seedRun(fixture);
+        mocks.executePlannedActions.mockResolvedValue(execution);
+        vi.spyOn(agentRunWorkLease, 'settle').mockImplementationOnce(settle);
+
+        await expect(
+            executePromptActionGroup({
+                actions: fixture.actions,
+                prompt: 'Import stems',
+                projectRevision: 'revision-1',
+                ...admitted(fixture),
+            })
+        ).resolves.toEqual({ status: 'failed' });
+
+        expect(agentRunLifecycle.get(RUN_ID)).toMatchObject({
+            phase: 'executing',
+            batches: [{ batchId: BATCH_ID, status: 'executing', receiptIdentity: null }],
+            workLeases: [{ workId: BATCH_ID, terminalState: null }],
+        });
+        expect(mocks.notifyAiChange).toHaveBeenCalledExactlyOnceWith(
+            `Command not executed: ${execution.reason}. ${warning}`,
+            []
+        );
+    });
 
     it.each(['lease-settlement', 'receipt-persistence'] as const)(
         'keeps a verified committed receipt authoritative when %s throws',

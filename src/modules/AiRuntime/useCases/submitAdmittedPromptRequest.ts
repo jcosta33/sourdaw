@@ -6,7 +6,10 @@ import { type AppAction } from '#/utils/handlerContract';
 import { type AgentExecutionMode } from '../models/AgentExecutionMode';
 import { type ModelProviderResult } from '../models/ModelProviderProtocol';
 
-import { settleAgentRunWorkLeaseSafely } from './agentRequestOrchestration/settleAgentRunWorkLeaseSafely';
+import {
+    AGENT_RUN_CANCELLATION_PERSISTENCE_WARNING,
+    settleAgentRunWorkLeaseSafely,
+} from './agentRequestOrchestration/settleAgentRunWorkLeaseSafely';
 import { agentRunLifecycle } from './agentRunLifecycle';
 import { agentRunWorkLease } from './agentRunWorkLease';
 import { agentRunCancellation } from './cancelAgentRun';
@@ -73,10 +76,32 @@ export async function submitAdmittedPromptRequest(
     });
     agentRunLifecycle.transitionPhase({ runId, phase: 'planning', revision: createdRevision });
 
-    const cancel = async (): Promise<void> => {
-        await agentRunCancellation.cancel({ runId, reason: 'Prompt request cancelled by the user.' });
+    let cancellationAttempt: Promise<void> | null = null;
+    let cancellationWarningReported = false;
+    const cancel = (): Promise<void> => {
+        if (!cancellationAttempt) {
+            cancellationAttempt = agentRunCancellation
+                .cancel({ runId, reason: 'Prompt request cancelled by the user.' })
+                .then(() => undefined)
+                .catch((error) => {
+                    logger.error(new Error('Prompt request cancellation persistence failed', { cause: error }));
+                    if (!cancellationWarningReported) {
+                        cancellationWarningReported = true;
+                        notifyAiChange(AGENT_RUN_CANCELLATION_PERSISTENCE_WARNING, []);
+                    }
+                    throw error;
+                });
+        }
+        return cancellationAttempt;
     };
-    const onAbort = () => void cancel();
+    const cancelAfterAbort = async (): Promise<void> => {
+        try {
+            await cancel();
+        } catch {
+            // The cancellation attempt reports its persistence warning once.
+        }
+    };
+    const onAbort = () => void cancelAfterAbort();
     input.signal?.addEventListener('abort', onAbort, { once: true });
     let providerLease: Extract<ReturnType<typeof agentRunWorkLease.claim>, { status: 'claimed' }>['lease'] | null =
         null;
@@ -133,8 +158,7 @@ export async function submitAdmittedPromptRequest(
         }
 
         if (input.signal?.aborted) {
-            await cancel();
-            settleProvider('cancelled');
+            await cancelAfterAbort();
             return { status: 'rejected', runId };
         }
 
@@ -178,8 +202,7 @@ export async function submitAdmittedPromptRequest(
 
         recordPendingProviderResult(true);
         if (input.signal?.aborted) {
-            await cancel();
-            settleProvider('cancelled');
+            await cancelAfterAbort();
             return { status: 'rejected', runId };
         }
         const completedProviderSettlement = settleProvider('completed');
@@ -301,8 +324,7 @@ export async function submitAdmittedPromptRequest(
     } catch (error) {
         recordPendingProviderResult(true);
         if (input.signal?.aborted) {
-            await cancel();
-            settleProvider('cancelled');
+            await cancelAfterAbort();
             return { status: 'rejected', runId };
         }
         const failedProviderSettlement = settleProvider('failed');

@@ -11,7 +11,11 @@ import { type AgentRunPhase, type AgentRunWorkTerminalState } from '../models/Ag
 
 import { createStemImportConfirmationResourceLease } from './agentReference/createStemImportConfirmationResourceLease';
 import { preparedStemImportResources } from './agentReference/registerPreparedStemImportResources';
-import { settleAgentRunWorkLeaseSafely } from './agentRequestOrchestration/settleAgentRunWorkLeaseSafely';
+import {
+    AGENT_RUN_COMPLETION_PERSISTENCE_WARNING,
+    AGENT_RUN_FAILURE_PERSISTENCE_WARNING,
+    settleAgentRunWorkLeaseSafely,
+} from './agentRequestOrchestration/settleAgentRunWorkLeaseSafely';
 import { agentRunLifecycle } from './agentRunLifecycle';
 import { agentRunWorkLease } from './agentRunWorkLease';
 import { agentRunCancellation } from './cancelAgentRun';
@@ -57,6 +61,31 @@ function appendSettlementWarning(message: string, warning: string | null): strin
 
 function isCleanSettlement(settlement: ReturnType<typeof settleAgentRunWorkLeaseSafely>): boolean {
     return settlement.accepted && settlement.warning === null;
+}
+
+function persistTerminalCommandLifecycleSafely(input: {
+    settlement: ReturnType<typeof settleAgentRunWorkLeaseSafely>;
+    runId: string;
+    batchId: string;
+    batchStatus: 'failed' | 'no-op';
+    phase: Extract<AgentRunPhase, 'completed' | 'failed' | 'partially-completed'>;
+    warning: string;
+}): string | null {
+    if (!isCleanSettlement(input.settlement)) {
+        return null;
+    }
+    try {
+        agentRunLifecycle.updateBatchStatus({
+            runId: input.runId,
+            batchId: input.batchId,
+            status: input.batchStatus,
+        });
+        transitionRunIfLive(input.runId, input.phase);
+        return null;
+    } catch (error) {
+        logger.error(new Error('Prompt command terminal lifecycle persistence failed', { cause: error }));
+        return input.warning;
+    }
 }
 
 function transitionRunIfLive(
@@ -258,12 +287,19 @@ export async function executePromptActionGroup(
     if (importedStemsHavePartialDurableBindings) {
         const reason = 'Prepared stem durable asset binding is incomplete.';
         const leaseSettlement = settleCommand('failed', 'none');
-        if (isCleanSettlement(leaseSettlement)) {
-            agentRunLifecycle.updateBatchStatus({ runId: input.runId, batchId: envelope.batchId, status: 'failed' });
-            transitionRunIfLive(input.runId, 'failed');
-        }
+        const lifecycleWarning = persistTerminalCommandLifecycleSafely({
+            settlement: leaseSettlement,
+            runId: input.runId,
+            batchId: envelope.batchId,
+            batchStatus: 'failed',
+            phase: 'failed',
+            warning: AGENT_RUN_FAILURE_PERSISTENCE_WARNING,
+        });
         await discardImportedStems();
-        notifyAiChange(appendSettlementWarning(`Command not executed: ${reason}`, leaseSettlement.warning), []);
+        notifyAiChange(
+            appendSettlementWarning(`Command not executed: ${reason}`, leaseSettlement.warning ?? lifecycleWarning),
+            []
+        );
         return { status: 'failed' };
     }
     const importedStemsHaveDurableBindings =
@@ -333,12 +369,19 @@ export async function executePromptActionGroup(
     } catch (error) {
         const reason = getErrorMessage(error);
         const leaseSettlement = settleCommand('failed', 'none');
-        if (isCleanSettlement(leaseSettlement)) {
-            agentRunLifecycle.updateBatchStatus({ runId: input.runId, batchId: envelope.batchId, status: 'failed' });
-            transitionRunIfLive(input.runId, 'failed');
-        }
+        const lifecycleWarning = persistTerminalCommandLifecycleSafely({
+            settlement: leaseSettlement,
+            runId: input.runId,
+            batchId: envelope.batchId,
+            batchStatus: 'failed',
+            phase: 'failed',
+            warning: AGENT_RUN_FAILURE_PERSISTENCE_WARNING,
+        });
         await releaseImportedStemsAfterPrimaryFailure(error);
-        notifyAiChange(appendSettlementWarning(`Command not executed: ${reason}`, leaseSettlement.warning), []);
+        notifyAiChange(
+            appendSettlementWarning(`Command not executed: ${reason}`, leaseSettlement.warning ?? lifecycleWarning),
+            []
+        );
         throw error;
     } finally {
         input.signal?.removeEventListener('abort', onAbort);
@@ -348,19 +391,19 @@ export async function executePromptActionGroup(
         if (!execution.receipt) {
             const reason = 'Command execution completed without an exact verified receipt.';
             const leaseSettlement = settleCommand('failed', 'none');
-            if (isCleanSettlement(leaseSettlement)) {
-                agentRunLifecycle.updateBatchStatus({
-                    runId: input.runId,
-                    batchId: envelope.batchId,
-                    status: 'failed',
-                });
-                transitionRunIfLive(input.runId, 'partially-completed');
-            }
+            const lifecycleWarning = persistTerminalCommandLifecycleSafely({
+                settlement: leaseSettlement,
+                runId: input.runId,
+                batchId: envelope.batchId,
+                batchStatus: 'failed',
+                phase: 'partially-completed',
+                warning: AGENT_RUN_FAILURE_PERSISTENCE_WARNING,
+            });
             await retainImportedStemsForRecovery();
             notifyAiChange(
                 appendSettlementWarning(
                     `Command outcome is uncertain: ${reason} Inspect the project before retrying.`,
-                    leaseSettlement.warning
+                    leaseSettlement.warning ?? lifecycleWarning
                 ),
                 []
             );
@@ -369,19 +412,19 @@ export async function executePromptActionGroup(
         if (execution.receipt.runId !== input.runId || execution.receipt.batchId !== envelope.batchId) {
             const reason = 'Command execution returned a receipt for a different admitted batch.';
             const leaseSettlement = settleCommand('failed', 'none');
-            if (isCleanSettlement(leaseSettlement)) {
-                agentRunLifecycle.updateBatchStatus({
-                    runId: input.runId,
-                    batchId: envelope.batchId,
-                    status: 'failed',
-                });
-                transitionRunIfLive(input.runId, 'partially-completed');
-            }
+            const lifecycleWarning = persistTerminalCommandLifecycleSafely({
+                settlement: leaseSettlement,
+                runId: input.runId,
+                batchId: envelope.batchId,
+                batchStatus: 'failed',
+                phase: 'partially-completed',
+                warning: AGENT_RUN_FAILURE_PERSISTENCE_WARNING,
+            });
             await retainImportedStemsForRecovery();
             notifyAiChange(
                 appendSettlementWarning(
                     `Command outcome is uncertain: ${reason} Inspect the project before retrying.`,
-                    leaseSettlement.warning
+                    leaseSettlement.warning ?? lifecycleWarning
                 ),
                 []
             );
@@ -429,13 +472,20 @@ export async function executePromptActionGroup(
 
     if (execution.status === 'invalidated' || execution.status === 'failed') {
         const leaseSettlement = settleCommand('failed', 'none');
-        if (isCleanSettlement(leaseSettlement)) {
-            agentRunLifecycle.updateBatchStatus({ runId: input.runId, batchId: envelope.batchId, status: 'failed' });
-            transitionRunIfLive(input.runId, 'failed');
-        }
+        const lifecycleWarning = persistTerminalCommandLifecycleSafely({
+            settlement: leaseSettlement,
+            runId: input.runId,
+            batchId: envelope.batchId,
+            batchStatus: 'failed',
+            phase: 'failed',
+            warning: AGENT_RUN_FAILURE_PERSISTENCE_WARNING,
+        });
         await releaseImportedStems();
         notifyAiChange(
-            appendSettlementWarning(`Command not executed: ${execution.reason}`, leaseSettlement.warning),
+            appendSettlementWarning(
+                `Command not executed: ${execution.reason}`,
+                leaseSettlement.warning ?? lifecycleWarning
+            ),
             []
         );
         return { status: 'failed' };
@@ -443,15 +493,19 @@ export async function executePromptActionGroup(
 
     if (execution.status === 'ambiguous') {
         const leaseSettlement = settleCommand('failed', 'none');
-        if (isCleanSettlement(leaseSettlement)) {
-            agentRunLifecycle.updateBatchStatus({ runId: input.runId, batchId: envelope.batchId, status: 'failed' });
-            transitionRunIfLive(input.runId, 'partially-completed');
-        }
+        const lifecycleWarning = persistTerminalCommandLifecycleSafely({
+            settlement: leaseSettlement,
+            runId: input.runId,
+            batchId: envelope.batchId,
+            batchStatus: 'failed',
+            phase: 'partially-completed',
+            warning: AGENT_RUN_FAILURE_PERSISTENCE_WARNING,
+        });
         await retainImportedStemsForRecovery();
         notifyAiChange(
             appendSettlementWarning(
                 `Command outcome is uncertain: ${execution.reason}. Inspect the project before retrying.`,
-                leaseSettlement.warning
+                leaseSettlement.warning ?? lifecycleWarning
             ),
             []
         );
@@ -459,14 +513,18 @@ export async function executePromptActionGroup(
     }
 
     const leaseSettlement = settleCommand('completed', 'none');
-    if (isCleanSettlement(leaseSettlement)) {
-        agentRunLifecycle.updateBatchStatus({ runId: input.runId, batchId: envelope.batchId, status: 'no-op' });
-        agentRunLifecycle.transitionPhase({
-            runId: input.runId,
-            phase: 'completed',
-        });
-    }
+    const lifecycleWarning = persistTerminalCommandLifecycleSafely({
+        settlement: leaseSettlement,
+        runId: input.runId,
+        batchId: envelope.batchId,
+        batchStatus: 'no-op',
+        phase: 'completed',
+        warning: AGENT_RUN_COMPLETION_PERSISTENCE_WARNING,
+    });
     await releaseImportedStems();
-    notifyAiChange(appendSettlementWarning('No project changes were needed.', leaseSettlement.warning), []);
+    notifyAiChange(
+        appendSettlementWarning('No project changes were needed.', leaseSettlement.warning ?? lifecycleWarning),
+        []
+    );
     return { status: 'no-op' };
 }
