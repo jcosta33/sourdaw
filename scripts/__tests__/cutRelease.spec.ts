@@ -36,6 +36,7 @@ type Overrides = {
     manifestVersion?: string;
     changelog?: string;
     range?: MergedPullRequest[];
+    releasePullRequest?: number | undefined;
     tagObjectSha?: string;
     refSha?: string;
     refName?: string;
@@ -58,6 +59,7 @@ function fakePort(overrides: Overrides = {}): CutReleasePort & { calls: string[]
         manifestVersionAt: () => overrides.manifestVersion ?? '0.3.0',
         changelogAt: () => overrides.changelog ?? changelogFor('0.3.0', range),
         mergedPullRequests: () => overrides.range ?? range,
+        releasePullRequestAt: () => ('releasePullRequest' in overrides ? overrides.releasePullRequest : 99),
         createTag: (tag, target, message) => {
             calls.push(`createTag:${tag}:${target}:${message}`);
             return {
@@ -129,11 +131,22 @@ describe('cutting a release', () => {
 
     it('drops the release pull request its own merge added to the range', () => {
         const port = fakePort({
-            range: [...range, { number: 21, title: releaseCommitSubject('0.3.0') }],
+            range: [...range, { number: 99, title: releaseCommitSubject('0.3.0') }],
         });
         expect(cut(port)).toBe(`release-cut:v0.3.0:${commit}`);
-        expect(port.notes[0]).not.toContain(releaseCommitSubject('0.3.0'));
-        expect(port.notes[0]).not.toContain('(#21)');
+        expect(port.notes[0]).not.toContain('(#99)');
+    });
+
+    it('keeps an earlier release commit for the same version, which the proposal also kept', () => {
+        const earlier = { number: 21, title: releaseCommitSubject('0.3.0') };
+        const withEarlier = [...range, earlier];
+        const port = fakePort({
+            range: [...withEarlier, { number: 99, title: releaseCommitSubject('0.3.0') }],
+            changelog: changelogFor('0.3.0', withEarlier),
+        });
+        expect(cut(port)).toBe(`release-cut:v0.3.0:${commit}`);
+        expect(port.notes[0]).toContain(`- ${releaseCommitSubject('0.3.0')} (#21)`);
+        expect(port.notes[0]).not.toContain('(#99)');
     });
 
     it('cuts the first release of a repository that carries no release tag yet', () => {
@@ -208,5 +221,11 @@ describe('cut refusals', () => {
 
     it('refuses a range that produced no merged pull request', () => {
         expect(() => cut(fakePort({ range: [] }))).toThrow('at least one merged pull request');
+    });
+
+    it('refuses a revision whose squash names no pull request', () => {
+        const port = fakePort({ releasePullRequest: undefined });
+        expect(() => cut(port)).toThrow(`${commit} does not name the release pull request it squashed`);
+        expect(port.calls).toEqual([]);
     });
 });

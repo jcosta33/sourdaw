@@ -345,16 +345,17 @@ export function releaseCommitSubject(version: string): string {
 }
 
 /**
- * The release pull request's own squash commit sits at the end of the range being tagged, and the
- * proposal that wrote the changelog could not have contained it — it is the commit that proposal
- * became. Dropping it is what makes the notes the set the changelog recorded.
+ * Drops one pull request by identity. Cut uses it on the release pull request whose merge is the
+ * revision being tagged: the proposal that wrote the changelog could not have contained it, because
+ * it is the commit that proposal became.
+ *
+ * Identity is the whole point, and a title match is not identity. A recovery release re-proposes
+ * the same version, so a range can hold an earlier `chore(release)` merge carrying exactly the same
+ * subject — one propose kept as an ordinary entry. Matching on the subject would drop that one too
+ * and leave the notes permanently short of the changelog.
  */
-export function withoutTheReleaseCommit(
-    pullRequests: readonly MergedPullRequest[],
-    version: SemanticVersion
-): MergedPullRequest[] {
-    const subject = releaseCommitSubject(formatSemanticVersion(version));
-    return pullRequests.filter((pullRequest) => pullRequest.title !== subject);
+export function withoutPullRequest(pullRequests: readonly MergedPullRequest[], number: number): MergedPullRequest[] {
+    return pullRequests.filter((pullRequest) => pullRequest.number !== number);
 }
 
 const PACKAGE_VERSION_FIELD_PATTERN = /^(\s*"version": ")(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)("(?:,?)$)/m;

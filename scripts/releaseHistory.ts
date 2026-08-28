@@ -92,6 +92,15 @@ export function squashedSubjectsInRange(
     return nonEmptyLines(git(['log', '--first-parent', '--format=%s', range]));
 }
 
+/**
+ * The pull request one commit's own squash subject names. Cut asks this of the revision it is
+ * tagging, which is how the release pull request is identified by number rather than by a subject
+ * a second release of the same version would repeat.
+ */
+export function squashedPullRequestAt(commit: string, git: CommandReader): number | undefined {
+    return squashedPullRequestNumbers(nonEmptyLines(git(['log', '-1', '--format=%s', commit])))[0];
+}
+
 function pullRequestBatches(numbers: readonly number[]): number[][] {
     const batches: number[][] = [];
     for (let start = 0; start < numbers.length; start += PULL_REQUEST_BATCH_SIZE) {

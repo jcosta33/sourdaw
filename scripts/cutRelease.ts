@@ -25,6 +25,7 @@ import {
     mergedPullRequestsInRange,
     releaseTagNames,
     releaseTagNamesWithReleases,
+    squashedPullRequestAt,
     type CommandReader,
 } from './releaseHistory.ts';
 import {
@@ -37,7 +38,7 @@ import {
     parseSemanticVersion,
     releaseBody,
     releaseTagName,
-    withoutTheReleaseCommit,
+    withoutPullRequest,
     type MergedPullRequest,
     type SemanticVersion,
 } from './releaseVersion.ts';
@@ -53,6 +54,7 @@ export type CutReleasePort = {
     manifestVersionAt: (commit: string) => string;
     changelogAt: (commit: string) => string;
     mergedPullRequests: (previousTag: string | undefined, commit: string) => MergedPullRequest[];
+    releasePullRequestAt: (commit: string) => number | undefined;
     createTag: (tag: string, commit: string, message: string) => ReleaseTagReceipt;
     createRelease: (tag: string, commit: string, notes: string) => CreatedRelease;
     log: (message: string) => void;
@@ -156,7 +158,13 @@ export function cutRelease(version: string, commit: string, authorNodeId: string
     }
     const previousTag = port.latestReleaseTag();
     assertVersionAdvances(semantic, previousTag);
-    const notes = composeReleaseNotes(withoutTheReleaseCommit(port.mergedPullRequests(previousTag, commit), semantic));
+    const releasePullRequest = port.releasePullRequestAt(commit);
+    if (releasePullRequest === undefined) {
+        fail(`${commit} does not name the release pull request it squashed`);
+    }
+    const notes = composeReleaseNotes(
+        withoutPullRequest(port.mergedPullRequests(previousTag, commit), releasePullRequest)
+    );
     assertChangelogMatchesNotes(commit, semantic, notes, port);
     assertTagReceipt(port.createTag(tag, commit, releaseTagMessage(tag)), tag);
     assertReleaseReceipt(port.createRelease(tag, commit, releaseBody(notes, tag)), tag, commit);
@@ -273,6 +281,7 @@ export function shellPort(session: GhSession, primaryRoot: string): CutReleasePo
         manifestVersionAt: (commit) => manifestVersionAtRevision(commit, git),
         changelogAt: (commit) => fileAtRevision(commit, CHANGELOG_PATH, git),
         mergedPullRequests: (previousTag, commit) => mergedPullRequestsInRange(previousTag, commit, git, gh),
+        releasePullRequestAt: (commit) => squashedPullRequestAt(commit, git),
         createTag: (tag, commit, message) => createAnnotatedTag(tag, commit, message, gh),
         createRelease: (tag, commit, notes) => createGithubRelease(tag, commit, notes, gh),
         log: (message) => {

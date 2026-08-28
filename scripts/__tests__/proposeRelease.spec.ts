@@ -187,7 +187,21 @@ describe('proposing a release', () => {
         ]);
     });
 
-    it('refuses a base whose manifest disagrees with the latest release tag', () => {
+    it('accepts a base whose release pull request merged but was never tagged', () => {
+        const port = fakePort({
+            releaseTags: ['v0.2.0'],
+            versionAtBase: '0.3.0',
+            range: [
+                { number: 10, title: 'fix(arrangement): preserve reorder track state' },
+                { number: 40, title: releaseCommitSubject('0.3.0') },
+                { number: 50, title: 'feat(mixer): add a post-fader send' },
+            ],
+        });
+        expect(proposeRelease(port)?.version).toBe('0.3.0');
+        expect(occurrences(port.files[CHANGELOG_PATH] ?? '', `(#40)`)).toBe(1);
+    });
+
+    it('refuses a base whose manifest sits below the latest release tag', () => {
         expect(() => proposeRelease(fakePort({ releaseTags: ['v0.4.2'], versionAtBase: '0.3.0' }))).toThrow(
             'package.json on the release base is 0.3.0 but the latest release tag is v0.4.2'
         );

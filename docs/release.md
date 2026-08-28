@@ -20,9 +20,16 @@ emits `1.0.0`: declaring a stable product surface is an owner decision, so the f
 deliberate manual edit of `package.json` and the increments above resume from it under the standard
 mapping.
 
-The baseline is the latest `vX.Y.Z` tag, and `package.json` on `main` must agree with it. Until the
-first tag exists the baseline is whatever `package.json` on `main` says, so the first release is
-that version plus its increment.
+The baseline is the latest `vX.Y.Z` tag — the last version that actually exists — and the increment
+is what the range above it asks for. Until the first tag exists the baseline is whatever
+`package.json` on `main` says, so the first release is that version plus its increment.
+
+`package.json` on `main` may sit ahead of that tag: a release pull request merged and was never
+tagged, which is where a refused cut leaves the repository. Proposing again from that state is the
+recovery, so it is accepted and the whole tag range is recomputed — the new proposal supersedes the
+bump that was never released and often lands on the same version. A manifest _below_ the latest tag
+is the one disagreement nothing here produces; it means the version was moved by hand, and it is
+refused outright.
 
 Propose the release from a lane:
 
@@ -48,14 +55,22 @@ pnpm release:cut <X.Y.Z> --commit <merge-sha>
 ```
 
 It creates the annotated tag on that exact revision and one GitHub Release bound to it, through the
-same author App the delivery scripts mint. The release pull request's own merge sits at the end of
-the range being tagged and the proposal that wrote the changelog could not have contained it, so it
-is dropped from the notes — which is what makes the notes the set the changelog recorded. It refuses
-a tag or release that already exists, a commit
-`main` does not contain, a commit whose `package.json` is a different version, a version that does
-not advance the latest tag, and a committed changelog entry that disagrees with the notes the tag
-range produces — that last one means the range moved after the proposal, and re-proposing is the
-repair.
+same author App the delivery scripts mint.
+
+The release pull request's own merge sits at the end of the range being tagged, and the proposal
+that wrote the changelog could not have contained it, so it is dropped from the notes — which is
+what makes the notes the set the changelog recorded. It is identified by the pull-request number its
+squash subject names, not by that subject's text: a recovery re-proposes the same version, so an
+earlier `chore(release)` merge in the range can carry exactly the same subject. That earlier one is
+an ordinary entry on both sides — the proposal keeps it, and so do the notes.
+
+Cut refuses a tag or release that already exists, a commit `main` does not contain, a commit whose
+`package.json` is a different version, a revision whose squash names no pull request, a version that
+does not advance the latest tag, and a committed changelog entry that disagrees with the notes the
+tag range produces. That last one means the range moved after the proposal — something merged while
+the release pull request was in review. Open a fresh lane on `main` and run `pnpm release:propose`
+again: it accepts the merged-but-uncut manifest, rebuilds the entry over the whole range, and the
+release pull request it opens supersedes the one that was already merged. Cut that second merge.
 
 `CHANGELOG.md` records every entry in the range. GitHub caps a release body, so a range too long to
 publish whole is cut at an entry boundary and the body points at the committed changelog for the

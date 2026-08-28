@@ -17,6 +17,7 @@ import {
     parseReleaseTagName,
     parseSemanticVersion,
     releaseBody,
+    releaseCommitSubject,
     releaseTagName,
     squashedPullRequestNumbers,
     titleIncrement,
@@ -24,6 +25,7 @@ import {
     withPackageVersion,
     withPathAddressedDigest,
     withSnapshotDigest,
+    withoutPullRequest,
     type MergedPullRequest,
 } from '../releaseVersion.ts';
 
@@ -351,6 +353,18 @@ describe('manifest and inventory rewrites', () => {
         expect(() => withPathAddressedDigest(surfaces, 'release/absent.json', 'c'.repeat(64))).toThrow(
             'does not carry exactly one path-addressed digest for release/absent.json'
         );
+    });
+});
+
+describe('dropping one pull request', () => {
+    it('drops by number, keeping a different pull request that carries the same title', () => {
+        const entries = [
+            { number: 10, title: 'fix(arrangement): preserve reorder track state' },
+            { number: 21, title: releaseCommitSubject('0.3.0') },
+            { number: 99, title: releaseCommitSubject('0.3.0') },
+        ];
+        expect(withoutPullRequest(entries, 99)).toEqual([entries[0], entries[1]]);
+        expect(withoutPullRequest(entries, 7)).toEqual(entries);
     });
 });
 

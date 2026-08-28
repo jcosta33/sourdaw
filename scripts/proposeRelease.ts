@@ -83,9 +83,19 @@ export type ReleaseProposal = {
 const usage = 'usage: pnpm release:propose';
 
 /**
- * The version the next release starts from. A cut release leaves the tag and `main`'s manifest
- * agreeing, so a disagreement means one of the two was written by hand and the arithmetic below
- * would silently build on the wrong number.
+ * The version the next release starts from, which is always the latest release tag: the tag is the
+ * last version that actually exists, and the increment is what the range above it asks for.
+ *
+ * A manifest ahead of that tag is the merged-but-uncut state — a release pull request landed and
+ * was never tagged, which is exactly where a refused cut leaves the repository. Recovering from
+ * that is re-proposing, so it is accepted and the whole tag range is recomputed; the new proposal
+ * supersedes the bump that was never released, and may land on the same version.
+ *
+ * A manifest *behind* the tag is nothing this path produces. Someone moved it by hand, and building
+ * an increment on it would re-release a version that already exists. That stays a hard refusal, and
+ * it is the only remaining disagreement: the latest tag is the highest one, so a manifest ahead of
+ * it cannot be a released version, and a manifest level with a tag that is not the latest is behind
+ * the latest by the same comparison.
  */
 function baseVersion(port: ProposeReleasePort, previousTag: string | undefined): SemanticVersion {
     const manifestVersion = parseSemanticVersion(port.versionAtBase(), 'package.json version on the release base');
@@ -96,7 +106,7 @@ function baseVersion(port: ProposeReleasePort, previousTag: string | undefined):
     if (tagged === undefined) {
         fail(`latest release tag ${previousTag} is not a vX.Y.Z tag`);
     }
-    if (compareSemanticVersions(tagged, manifestVersion) !== 0) {
+    if (compareSemanticVersions(manifestVersion, tagged) < 0) {
         fail(
             `package.json on the release base is ${formatSemanticVersion(manifestVersion)} but the latest release tag is ${previousTag}`
         );

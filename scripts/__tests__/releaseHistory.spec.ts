@@ -7,6 +7,7 @@ import {
     mergedPullRequestsInRange,
     releaseTagNames,
     releaseTagNamesWithReleases,
+    squashedPullRequestAt,
     squashedSubjectsInRange,
     type CommandReader,
 } from '../releaseHistory.ts';
@@ -169,6 +170,22 @@ describe('merged pull requests in a range', () => {
                 mismatched
             )
         ).toThrow('pull request #200 query returned an invalid result');
+    });
+});
+
+describe('the pull request one commit names', () => {
+    it('reads the endpoint subject alone, not the range below it', () => {
+        const { calls } = readers();
+        const git: CommandReader = (args) => {
+            calls.push(`git ${args.join(' ')}`);
+            return 'chore(release): 0.3.0 (#400)\n';
+        };
+        expect(squashedPullRequestAt(head, git)).toBe(400);
+        expect(calls).toEqual([`git log -1 --format=%s ${head}`]);
+    });
+
+    it('answers with nothing when the subject carries no merge reference', () => {
+        expect(squashedPullRequestAt(head, () => 'chore(release): 0.3.0\n')).toBeUndefined();
     });
 });
 
