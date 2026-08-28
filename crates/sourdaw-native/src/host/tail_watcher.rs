@@ -20,7 +20,7 @@
 //! now, and every other one reports nothing.
 
 use crate::events::{EventSink, EventSinkExt};
-use crate::host::{all_engine_runtimes, native_bridge::SharedHostedPlugin};
+use crate::host::{all_engine_runtimes, retry_unreached_instance};
 use crate::state::EnginePluginInstanceData;
 use daw_plugin_host::{signal_pending_tail_change, HostedPluginRuntime};
 use serde::Serialize;
@@ -28,7 +28,9 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-/// Wire event name. The TS listener mirrors this string verbatim — never rename.
+/// Wire event name. Its payload type is mirrored by hand in the frontend as
+/// `PluginTailChange`; the listener that subscribes to this name arrives with
+/// the packet that consumes the tail.
 pub const PLUGIN_TAIL_CHANGED_EVENT: &str = "plugin-tail-changed";
 
 /// How long re-reading one plugin's tail may wait for the audio thread to
@@ -82,24 +84,6 @@ pub fn tail_change_payload(
     }
 }
 
-/// Raise the hint again for an instance the visit could not reach.
-///
-/// Only for one still accepting public control — the same rule the parameter
-/// flush follows, and for the same reason: an instance unloading or retired
-/// refuses every retry, and re-raising for it would turn one missed visit into a
-/// tick that never sleeps.
-fn retry_unreached_instance(runtime: &SharedHostedPlugin, instance_id: &str, error: &str) {
-    if runtime.ensure_public_control_allowed().is_err() {
-        return;
-    }
-
-    eprintln!(
-        "[Plugin] tail re-read could not reach instance {}, retrying: {}",
-        instance_id, error
-    );
-    signal_pending_tail_change();
-}
-
 /// Publish the tail every instance that flagged one reports now.
 ///
 /// Called from the parameter-event drain's tick, once it has taken the hint.
@@ -109,7 +93,13 @@ pub fn publish_pending_tail_changes(engine_plugins: &EnginePlugins, events: &dyn
             runtime.try_with_control(CONTROL_TIMEOUT, |plugin| Ok(plugin.take_tail_change()));
 
         if let Err(error) = &refreshed {
-            retry_unreached_instance(&runtime, &instance_id, error);
+            retry_unreached_instance(
+                &runtime,
+                &instance_id,
+                "tail re-read",
+                error,
+                signal_pending_tail_change,
+            );
         }
 
         if let Some(payload) = tail_change_payload(&instance_id, refreshed) {

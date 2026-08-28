@@ -31,7 +31,8 @@ pub use params::PluginParameter;
 pub use runtime::HostedRuntime;
 pub use scanner::{PluginFormat, ScanResult, ScannedDescriptor, ScannedPlugin};
 pub use traits::{
-    AudioPlugin, EditorWindowResizer, HostParameterUpdate, HostTransport, HostedPluginRuntime,
+    signal_pending_process_refusal, take_pending_process_refusal_signal, AudioPlugin,
+    EditorWindowResizer, HostParameterUpdate, HostTransport, HostedPluginRuntime,
     LatencyChangeNotifier, PluginHostRequest, PluginHostRequestNotifier, ProcessingGate,
     DEFAULT_EDITOR_CONTENT_SCALE,
 };

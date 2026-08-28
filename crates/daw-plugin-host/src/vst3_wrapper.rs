@@ -13,8 +13,9 @@
 use crate::parameter_events::PluginParameterEventQueue;
 use crate::params::PluginParameter;
 use crate::traits::{
-    AudioPlugin, EditorWindowResizer, HostParameterUpdate, HostTransport, HostedPluginRuntime,
-    LatencyChangeNotifier, ProcessingGate, DEFAULT_EDITOR_CONTENT_SCALE,
+    signal_pending_process_refusal, AudioPlugin, EditorWindowResizer, HostParameterUpdate,
+    HostTransport, HostedPluginRuntime, LatencyChangeNotifier, ProcessingGate,
+    DEFAULT_EDITOR_CONTENT_SCALE,
 };
 use crate::vst3_bus_layout::{
     activate_main_audio_bus, negotiate_bus_layout, silent_channel_flags, BusGeometry, BusLayout,
@@ -1247,6 +1248,18 @@ impl Vst3Wrapper {
         }
     }
 
+    /// Record a refused process call, and wake the control path the first time.
+    ///
+    /// Audio thread. One release store, and only on the first refusal: a plugin
+    /// refusing every block latches once and then costs one bool test.
+    fn latch_process_refusal(&mut self) {
+        if self.process_refused {
+            return;
+        }
+        self.process_refused = true;
+        signal_pending_process_refusal();
+    }
+
     /// Say out loud what the audio thread and the plugin's callbacks recorded.
     ///
     /// The audio thread cannot report anything itself — it may not allocate or
@@ -1500,7 +1513,7 @@ impl Vst3Wrapper {
             // refusal as eternal silence. Passing the block through is what the
             // other refusal paths in this method already do.
             Self::pass_through(inputs, outputs, num_samples);
-            self.process_refused = true;
+            self.latch_process_refusal();
             return;
         }
 
@@ -1860,6 +1873,10 @@ impl HostedPluginRuntime for Vst3Wrapper {
         // `getLatencySamples`, VST3 places no activation precondition on this
         // one, so it is not gated on `activated`.
         unsafe { processor.getTailSamples() }
+    }
+
+    fn report_plugin_observations(&mut self) {
+        Vst3Wrapper::report_plugin_observations(self)
     }
 }
 

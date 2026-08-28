@@ -39,8 +39,8 @@ use crate::parameter_events::{
 };
 use crate::params::PluginParameter;
 use crate::traits::{
-    AudioPlugin, EditorWindowResizer, HostParameterUpdate, HostTransport, HostedPluginRuntime,
-    PluginHostRequestNotifier, ProcessingGate,
+    signal_pending_process_refusal, AudioPlugin, EditorWindowResizer, HostParameterUpdate,
+    HostTransport, HostedPluginRuntime, PluginHostRequestNotifier, ProcessingGate,
 };
 use clap_sys::audio_buffer::clap_audio_buffer;
 use clap_sys::entry::clap_plugin_entry;
@@ -883,6 +883,24 @@ impl ClapWrapper {
         &self.host_state
     }
 
+    /// Latch a process failure on a fixture, exactly as the audio thread does:
+    /// the wrapper's own flag, and the process-wide hint that wakes the control
+    /// path. A fixture has no plugin to fail a real block, so this is the only
+    /// way a downstream host can drive the visit that reports one.
+    #[cfg(feature = "engine-owned-command-fixture")]
+    #[doc(hidden)]
+    pub fn latch_engine_owned_command_fixture_process_refusal(&mut self) {
+        self.latch_process_refusal();
+    }
+
+    /// Whether the recorded failure has already been said out loud. Read back to
+    /// prove the visit reported it, and reported it once.
+    #[cfg(feature = "engine-owned-command-fixture")]
+    #[doc(hidden)]
+    pub fn engine_owned_command_fixture_refusal_reported(&self) -> bool {
+        self.process_refusal_reported
+    }
+
     /// Query a plugin extension by ID. Returns null if not supported.
     unsafe fn query_extension<T>(plugin_ref: &clap_plugin, ext_id: &CStr) -> *const T {
         if let Some(get_ext) = plugin_ref.get_extension {
@@ -1574,7 +1592,7 @@ impl ClapWrapper {
                     // the block passes through its slot either way, and the
                     // failure costs only the output events this call was made
                     // for. Recording it is all the host can honestly do.
-                    self.process_refused = true;
+                    self.latch_process_refusal();
                 }
             }
             copy_inputs_to_outputs(inputs, outputs, num_samples);
@@ -1630,15 +1648,27 @@ impl ClapWrapper {
             self.advance_steady_time(n_samp);
 
             if process_failed(status) {
-                self.process_refused = true;
+                self.latch_process_refusal();
                 // CLAP defines the error as "the plugin failed to process, and
-                // the output buffers are in an undefined state", so whatever is
-                // in the output scratch is not audio and must not be copied out.
-                // Silence rather than the dry input the VST3 refusal passes: a
-                // VST3 refusal leaves the block untouched, while this plugin was
-                // handed output buffers and may have written anything into them,
-                // and the engine's own buffers still hold the previous block.
-                silence_outputs(outputs, n_samp);
+                // the output buffers are in an undefined state", so the output
+                // scratch is not audio and is never copied out. What reaches the
+                // bus instead is what ADR 0021 DG-003 decides for a failed slot:
+                // an effect passes its dry input, because muting a crashed EQ
+                // takes the track with it, and a generator has no dry input to
+                // pass and falls silent.
+                //
+                // The failure invalidates the scratch, not the caller's
+                // `inputs` — `fill_input_scratch` copies out of them — so this
+                // block's dry signal is still there to pass.
+                //
+                // A hard switch, like the bypass paths above: DG-003's ramp into
+                // the failure signal is failure-policy machinery that arrives
+                // with the rest of that policy.
+                if self.audio.input_buffers.is_empty() {
+                    silence_outputs(outputs, n_samp);
+                } else {
+                    copy_inputs_to_outputs(inputs, outputs, num_samples);
+                }
                 return;
             }
 
@@ -1656,6 +1686,19 @@ impl ClapWrapper {
         self.steady_time = self.steady_time.saturating_add(frames as i64);
     }
 
+    /// Record a process failure, and wake the control path the first time.
+    ///
+    /// Audio thread. The store happens on the first failing block only: a plugin
+    /// failing every block latches once and then costs one bool test, and the
+    /// control path is told once about news it can only report once.
+    fn latch_process_refusal(&mut self) {
+        if self.process_refused {
+            return;
+        }
+        self.process_refused = true;
+        signal_pending_process_refusal();
+    }
+
     /// Say out loud what the audio thread recorded.
     ///
     /// The audio thread cannot report anything itself — it may not allocate or
@@ -1668,7 +1711,7 @@ impl ClapWrapper {
         }
         self.process_refusal_reported = true;
         eprintln!(
-            "[CLAP] '{}' failed a process call; its output for those blocks is silence",
+            "[CLAP] '{}' failed a process call; the host did not use its output for those blocks",
             self.name
         );
     }
@@ -2376,6 +2419,10 @@ impl HostedPluginRuntime for ClapWrapper {
 
     fn take_tail_change(&mut self) -> Option<u32> {
         ClapWrapper::take_tail_change(self)
+    }
+
+    fn report_plugin_observations(&mut self) {
+        ClapWrapper::report_plugin_observations(self)
     }
 }
 
@@ -4722,6 +4769,7 @@ mod tests {
     // "the plugin failed to process, and the output buffers are in an undefined
     // state". A host that discards the answer plays those buffers.
 
+    use crate::traits::take_pending_process_refusal_signal;
     use clap_sys::process::{
         CLAP_PROCESS_CONTINUE, CLAP_PROCESS_CONTINUE_IF_NOT_QUIET, CLAP_PROCESS_SLEEP,
         CLAP_PROCESS_TAIL,
@@ -4794,8 +4842,12 @@ mod tests {
         AudioBusLayout::declared(&[2], &[2]).expect("stereo layout builds")
     }
 
+    /// ADR 0021 DG-003: a failed slot that has a dry input passes it, and
+    /// all-zero was rejected by name because a crashed EQ would mute the track.
+    /// The three sentinels tell the three wrong answers apart: the plugin's
+    /// undefined buffers, the previous block left standing, and silence.
     #[test]
-    fn a_failed_process_silences_the_block_rather_than_playing_undefined_output() {
+    fn a_failed_effect_passes_its_dry_input_rather_than_the_undefined_output() {
         let _guard = STATUS_TEST_LOCK
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -4806,14 +4858,36 @@ mod tests {
 
         assert_eq!(
             (left, right),
-            (0.0, 0.0),
-            "a plugin that failed wrote no audio: neither its buffers nor the \
-             previous block may reach the bus"
+            (0.25, 0.5),
+            "a failed effect keeps its slot open with the dry signal: neither \
+             its undefined buffers nor the previous block may reach the bus"
         );
         assert!(
             wrapper.process_refused,
             "the failure is recorded for the control path to report"
         );
+    }
+
+    /// The other half of DG-003: an instrument has no dry input to pass, and
+    /// passing the engine's buffer would put whatever fed the slot on the bus.
+    #[test]
+    fn a_failed_instrument_falls_silent_because_it_has_no_dry_input() {
+        let _guard = STATUS_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        STUB_PROCESS_STATUS.store(CLAP_PROCESS_ERROR, Ordering::Relaxed);
+        let layout = AudioBusLayout::declared(&[], &[2]).expect("an output-only layout builds");
+        let mut wrapper = stub_wrapper_over(layout, status_plugin_ptr());
+
+        let (left, right) = process_block_over_stale_output(&mut wrapper, 0.25, 0.5);
+
+        assert_eq!(
+            (left, right),
+            (0.0, 0.0),
+            "a generator with no input bus has no dry signal, so its failed \
+             slot is silent rather than passing what was fed to it"
+        );
+        assert!(wrapper.process_refused);
     }
 
     #[test]
@@ -4868,28 +4942,36 @@ mod tests {
         );
     }
 
-    /// The audio thread may not print, so the refusal reaches a human through
-    /// the next control-path visit — once, however many blocks failed.
+    /// The audio thread may not print, so it latches the failure and raises the
+    /// process-wide hint the control path wakes on. Raised on the first failing
+    /// block and not again: the store is news, and a plugin failing every block
+    /// has no further news to deliver at block rate.
+    ///
+    /// Reporting itself is driven by the recurring visit that reads this hint —
+    /// covered where that visit lives, in `sourdaw-native`.
     #[test]
-    fn a_process_failure_is_reported_once_by_the_control_path() {
+    fn a_failed_block_latches_and_wakes_the_control_path_once() {
         let _guard = STATUS_TEST_LOCK
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         STUB_PROCESS_STATUS.store(CLAP_PROCESS_ERROR, Ordering::Relaxed);
+        take_pending_process_refusal_signal();
         let mut wrapper = stub_wrapper_over(stereo_layout(), status_plugin_ptr());
 
         process_block_over_stale_output(&mut wrapper, 0.25, 0.5);
-        process_block_over_stale_output(&mut wrapper, 0.25, 0.5);
         assert!(
             !wrapper.process_refusal_reported,
-            "the audio thread records the failure and reports nothing"
+            "the audio thread records the failure and reports nothing itself"
+        );
+        assert!(
+            take_pending_process_refusal_signal(),
+            "the first failing block wakes the control path"
         );
 
-        assert_eq!(wrapper.poll_latency_change(), Ok(None));
-
+        process_block_over_stale_output(&mut wrapper, 0.25, 0.5);
         assert!(
-            wrapper.process_refusal_reported,
-            "a control-path visit is where the recorded failure is said out loud"
+            !take_pending_process_refusal_signal(),
+            "a plugin already latched must not store to the hint on every block"
         );
     }
 

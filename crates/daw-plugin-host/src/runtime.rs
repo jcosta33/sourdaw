@@ -197,6 +197,10 @@ impl HostedPluginRuntime for HostedRuntime {
     fn take_tail_change(&mut self) -> Option<u32> {
         delegate!(self, backend => backend.take_tail_change())
     }
+
+    fn report_plugin_observations(&mut self) {
+        delegate!(self, backend => backend.report_plugin_observations())
+    }
 }
 
 impl HostedRuntime {

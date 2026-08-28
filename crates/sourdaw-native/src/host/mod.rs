@@ -6,6 +6,7 @@ pub mod plugin_registry_store;
 pub mod plugin_scan_policy;
 pub mod plugin_scan_worker;
 pub mod plugin_window;
+pub mod process_refusal_reporter;
 pub mod tail_watcher;
 
 use crate::host::native_bridge::SharedHostedPlugin;
@@ -66,4 +67,31 @@ pub(crate) fn all_engine_runtimes(
         .iter()
         .map(|(instance_id, instance)| (instance_id.clone(), Arc::clone(&instance.runtime)))
         .collect()
+}
+
+/// Raise a hint again for an instance a visit could not get into.
+///
+/// Only for one still accepting public control. That is the difference between a
+/// control path busy right now — the audio thread is inside a block, and the next
+/// tick finds it free — and an instance unloading or retired, which would refuse
+/// every retry and turn the hint into a tick that never sleeps.
+///
+/// `context` names the visit, and `reraise` is that visit's own hint, because
+/// the retry rule is shared while the hint is not.
+pub(crate) fn retry_unreached_instance(
+    runtime: &SharedHostedPlugin,
+    instance_id: &str,
+    context: &str,
+    error: &str,
+    reraise: fn(),
+) {
+    if runtime.ensure_public_control_allowed().is_err() {
+        return;
+    }
+
+    eprintln!(
+        "[Plugin] {} could not reach instance {}, retrying: {}",
+        context, instance_id, error
+    );
+    reraise();
 }

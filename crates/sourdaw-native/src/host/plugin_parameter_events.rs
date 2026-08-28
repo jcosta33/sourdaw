@@ -44,26 +44,29 @@
 //! could not get into is skipped, and the hint goes back up for the next tick,
 //! so no plugin's knob feed is ever behind another plugin's `open_gui`.
 //!
-//! ## And the tail answer
+//! ## And the tail and process-failure answers
 //!
-//! `clap_host_tail.changed` is annotated `[audio-thread]`, which puts it in the
-//! same position as the flush: no channel, no allocation, nothing but a flag and
-//! a process-wide hint. This thread is already the one that wakes on those
-//! hints, so it reads that one too and hands it to
-//! [`crate::host::tail_watcher`], which owns what a tail change means and what
-//! it publishes. A second thread on a second timer would cost a wake per frame
-//! to answer an ask that arrives once in a session.
+//! `clap_host_tail.changed` is annotated `[audio-thread]`, and a plugin that
+//! fails a `process()` call fails it on that thread by definition. Both are
+//! therefore in the same position as the flush: no channel, no allocation,
+//! nothing but a flag and a process-wide hint. This thread is already the one
+//! that wakes on those hints, so it reads them too and hands each to the module
+//! that owns what it means — [`crate::host::tail_watcher`] and
+//! [`crate::host::process_refusal_reporter`]. A second thread on a second timer
+//! would cost a wake per frame to answer an ask that arrives once in a session.
 
 use crate::events::{EventSink, EventSinkExt};
 use crate::host::all_engine_runtimes;
 use crate::host::native_bridge::SharedHostedPlugin;
+use crate::host::process_refusal_reporter::report_pending_process_refusals;
 use crate::host::tail_watcher::publish_pending_tail_changes;
 use crate::state::EnginePluginInstanceData;
 use daw_plugin_host::{
     is_empty_batch, pair_gestures, signal_pending_parameter_flush,
     take_pending_parameter_events_signal, take_pending_parameter_flush_signal,
-    take_pending_tail_change_signal, AudioPlugin, PairedParameterEvents, PluginParameterEvent,
-    PluginParameterEventKind, PluginParameterEventQueue,
+    take_pending_process_refusal_signal, take_pending_tail_change_signal, AudioPlugin,
+    PairedParameterEvents, PluginParameterEvent, PluginParameterEventKind,
+    PluginParameterEventQueue,
 };
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
@@ -295,9 +298,10 @@ fn retry_unanswered_flush(runtime: &SharedHostedPlugin, instance_id: &str, error
 
 /// One pass of the drain thread, once its sleep is over.
 ///
-/// The hints are read independently: a plugin that emitted events took no lock
-/// to say so, a plugin asking for a flush needs one, and a plugin announcing a
-/// new processing tail is a third ask that implies neither of the others.
+/// Every hint is read independently, because no ask implies another: a plugin
+/// that emitted an edit took no lock to say so, one asking for a flush needs
+/// one, and one announcing a new tail or a failed block is saying something
+/// about neither.
 fn run_tick(
     engine_plugins: &EnginePlugins,
     open_gestures: &mut OpenGestures,
@@ -318,6 +322,10 @@ fn run_tick(
 
     if take_pending_tail_change_signal() {
         publish_pending_tail_changes(engine_plugins, events);
+    }
+
+    if take_pending_process_refusal_signal() {
+        report_pending_process_refusals(engine_plugins);
     }
 }
 
@@ -365,6 +373,7 @@ mod tests {
         take_pending_parameter_events_signal();
         take_pending_parameter_flush_signal();
         take_pending_tail_change_signal();
+        take_pending_process_refusal_signal();
         guard
     }
 
@@ -639,6 +648,63 @@ mod tests {
             sink.events(),
             Vec::new(),
             "a tick that found no tail hint must not have visited the instances behind it"
+        );
+    }
+
+    /// Read one instance's refusal-reported flag back through the seam the
+    /// production visit uses, so the assertion sees what that visit left behind.
+    fn refusal_reported(runtime: &SharedHostedPlugin) -> bool {
+        runtime
+            .with_control(Duration::from_secs(2), |plugin| match plugin {
+                daw_plugin_host::HostedRuntime::Clap(wrapper) => {
+                    Ok(wrapper.engine_owned_command_fixture_refusal_reported())
+                }
+                _ => Err("the fixture is a CLAP backend".to_string()),
+            })
+            .expect("a live fixture accepts control")
+    }
+
+    /// A plugin that fails a process call takes its slot out of service, and the
+    /// audio thread that saw it may not print. This tick is the only recurring
+    /// visit that reads the latch, so without this leg a plugin failing every
+    /// block would run a whole session with nothing in the log.
+    #[test]
+    fn a_tick_reports_the_process_failure_the_audio_thread_latched() {
+        let _guard = hint_guard();
+        let mut wrapper = fixture_wrapper();
+        wrapper.latch_engine_owned_command_fixture_process_refusal();
+        let (engine_plugins, _queue, runtime) = instance_map(wrapper);
+        let sink = RecordingEventSink::default();
+
+        assert!(
+            !refusal_reported(&runtime),
+            "the audio thread records the failure and reports nothing itself"
+        );
+
+        tick(&engine_plugins, &sink);
+
+        assert!(
+            refusal_reported(&runtime),
+            "the tick that found the hint must have said the failure out loud"
+        );
+    }
+
+    /// The report needs no latency change to reach a human, and a session where
+    /// no plugin ever flags one is the ordinary session.
+    #[test]
+    fn a_tick_with_no_failure_hint_raised_visits_nothing() {
+        let _guard = hint_guard();
+        let mut wrapper = fixture_wrapper();
+        wrapper.latch_engine_owned_command_fixture_process_refusal();
+        let (engine_plugins, _queue, runtime) = instance_map(wrapper);
+        let sink = RecordingEventSink::default();
+
+        take_pending_process_refusal_signal();
+        tick(&engine_plugins, &sink);
+
+        assert!(
+            !refusal_reported(&runtime),
+            "a tick that found no hint must not have taken the instances' control seams"
         );
     }
 
