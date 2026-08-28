@@ -1,0 +1,66 @@
+crates/daw-plugin-host/src/vst3_wrapper.rs
+  s_4f908a5afb6b58::t_0483ef53d39109 1251-1262
+  s_4f908a5afb6b58::t_15144f75ae4bc2 1516
+  s_4f908a5afb6b58::t_b8b0f4090419bc 1877-1880
+  s_4f908a5afb6b58::t_2d3e6b9a4aa89d 16-18
+crates/sourdaw-native/src/host/tail_watcher.rs
+  s_4f908a5afb6b58::t_ab4e48dd6026e8 23
+  s_4f908a5afb6b58::t_6fdedc19151586 31-33
+  s_4f908a5afb6b58::t_80e4a7f2277f3a 96-102
+crates/sourdaw-native/src/host/process_refusal_reporter.rs
+  s_4f908a5afb6b58::t_9aabf084c6d183 1-56
+crates/daw-plugin-host/src/lib.rs
+  s_4f908a5afb6b58::t_c19a5b0fdd2540 34-35
+crates/sourdaw-native/src/host/mod.rs
+  s_4f908a5afb6b58::t_c1970364a053c5 9
+  s_4f908a5afb6b58::t_9c435f9e1b7d65 71-97
+crates/sourdaw-native/src/host/plugin_parameter_events.rs
+  s_4f908a5afb6b58::t_f7520e33dc50f9 47,49-56
+  s_4f908a5afb6b58::t_e678c941dd14e0 61,67-69
+  s_4f908a5afb6b58::t_766d0b9da809eb 328
+  s_4f908a5afb6b58::t_46bc0ca34b9d66 301-304
+  s_4f908a5afb6b58::t_e98d75566e47dc 376
+  s_4f908a5afb6b58::t_b8b6c7add964c4 326-327,329
+  s_4f908a5afb6b58::t_9c911647c0318f 654-710
+crates/daw-plugin-host/src/runtime.rs
+  s_4f908a5afb6b58::t_3a195fbbde0970 200-203
+crates/daw-plugin-host/src/traits.rs
+  s_4f908a5afb6b58::t_3ab13f4b89a8f3 446-476
+crates/daw-plugin-host/src/clap_wrapper.rs
+  s_4f908a5afb6b58::t_5cbd96583e6d2c 1595
+  s_4f908a5afb6b58::t_407ae89f56a8ad 4772
+  s_4f908a5afb6b58::t_a64c86a2cc3e60 1689-1701,1714
+  s_4f908a5afb6b58::t_49c5369bce4c67 1653-1666
+  s_4f908a5afb6b58::t_8fd81ebdb93d5b 4845-4848,4850,4861-4863,4871-4890
+  s_4f908a5afb6b58::t_687db2ec7e3cde 42-43
+  s_4f908a5afb6b58::t_d2f1f116a755f2 1667-1671
+  s_4f908a5afb6b58::t_9459df7a3a6ebc 4945-4951,4953,4958,4964-4968,4971,4973-4974
+  s_4f908a5afb6b58::t_e01a9bf9b1a7d8 1651
+  s_4f908a5afb6b58::t_6756ba09083f11 2423-2426,4891
+  s_4f908a5afb6b58::t_0e0ff0800a8f99 886-903
+  s_a40848e8f8cca9::t_3fcb2bce04a55d 4892
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "7bf3328381d7279774e49beaf95e95a2aab11c80",
+  "prompts": {},
+  "sessions": {
+    "s_4f908a5afb6b58": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fcb92ba4-bf56-47a4-8b57-803f335a449e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
