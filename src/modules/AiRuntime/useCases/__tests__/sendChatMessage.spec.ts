@@ -298,7 +298,7 @@ function createCommandGraphForwardingFixture() {
 
 const commandGraphFixture = createCommandGraphForwardingFixture();
 
-function createStemImportAction(audioBufferId: string): ExecutableRuntimeAction {
+function createStemImportAction(audioBufferId: string): Extract<ExecutableRuntimeAction, { type: 'importStemSet' }> {
     return {
         type: 'importStemSet',
         payload: {
@@ -1980,22 +1980,20 @@ describe('sendChatMessage retained-provider selection', () => {
         expect(mocks.proposePendingActionConfirmation).not.toHaveBeenCalled();
     });
 
-    it('fails closed when the prepared-stem resources are absent', async () => {
-        configurePromptPlanning(createStemImportAction('buffer-missing'), 'missing');
+    it.each([
+        ['missing', 'apply'],
+        ['missing', 'plan'],
+        ['cleanup-pending', 'apply'],
+        ['cleanup-pending', 'plan'],
+    ] as const)('fails closed when prepared-stem resources are %s in %s mode', async (readiness, mode) => {
+        configurePromptPlanning(createStemImportAction(`buffer-${readiness}-${mode}`), readiness);
 
-        await sendChatMessage('Import the prepared stems', { mode: 'apply' });
-
-        expect(getPlannedRun()).toMatchObject({ phase: 'failed', plan: null });
-        expect(mocks.proposePendingActionConfirmation).not.toHaveBeenCalled();
-    });
-
-    it('fails closed when prepared-stem resources are pending cleanup', async () => {
-        configurePromptPlanning(createStemImportAction('buffer-releasing'), 'cleanup-pending');
-
-        await sendChatMessage('Import the prepared stems', { mode: 'apply' });
+        await sendChatMessage('Import the prepared stems', { mode });
 
         expect(getPlannedRun()).toMatchObject({ phase: 'failed', plan: null });
         expect(mocks.proposePendingActionConfirmation).not.toHaveBeenCalled();
+        expect(mocks.executeVersionedCommandBatchEnvelope).not.toHaveBeenCalled();
+        expect(mocks.executePlannedActions).not.toHaveBeenCalled();
     });
 
     it('keeps unrelated planning independent of prepared-stem readiness', async () => {
@@ -2051,12 +2049,44 @@ describe('sendChatMessage retained-provider selection', () => {
                 ],
             };
             const authority = configurePromptPlanning(action, 'ready', providerProposal);
+            let finishCleanup: () => void = () => undefined;
+            let markCleanupStarted: () => void = () => undefined;
+            const cleanupCompletion = new Promise<void>((resolve) => {
+                finishCleanup = resolve;
+            });
+            const cleanupStarted = new Promise<void>((resolve) => {
+                markCleanupStarted = resolve;
+            });
             const releasePreparedStems = vi
                 .spyOn(preparedStemImportCleanup, 'discardBestEffort')
-                .mockResolvedValue(undefined);
+                .mockImplementation(() => {
+                    markCleanupStarted();
+                    return cleanupCompletion;
+                });
+            const expectedMessage =
+                mode === 'plan'
+                    ? 'Choose one before I continue:\n\n- Import each stem as a take'
+                    : 'Choose one before I can prepare this run:\n\n- Import each stem as a take';
 
             try {
-                await sendChatMessage('Import the prepared stems', { mode });
+                let resolved = false;
+                const pendingDecision = sendChatMessage('Import the prepared stems', { mode }).then(() => {
+                    resolved = true;
+                });
+                await cleanupStarted;
+
+                expect(resolved).toBe(false);
+                expect(getPlannedRun()).toMatchObject({
+                    decision: null,
+                    manualResume: { required: false },
+                });
+                expect(mocks.updateChatMessage).not.toHaveBeenCalledWith(
+                    expect.any(String),
+                    expect.objectContaining({ content: expectedMessage })
+                );
+
+                finishCleanup();
+                await pendingDecision;
 
                 const run = getPlannedRun();
                 expect(run).toMatchObject({
@@ -2090,6 +2120,10 @@ describe('sendChatMessage retained-provider selection', () => {
                 expect(mocks.executePlannedActions).not.toHaveBeenCalled();
                 expect(mocks.proposePendingActionConfirmation).not.toHaveBeenCalled();
                 expect(releasePreparedStems).toHaveBeenCalledWith(action.payload.stems, undefined);
+                expect(mocks.updateChatMessage).toHaveBeenCalledWith(
+                    expect.any(String),
+                    expect.objectContaining({ isStreaming: false, content: expectedMessage })
+                );
             } finally {
                 releasePreparedStems.mockRestore();
             }
@@ -2129,34 +2163,38 @@ describe('sendChatMessage retained-provider selection', () => {
         }
     );
 
-    it('selects a resumed source decision only after replacement plan admission succeeds', async () => {
-        const action = createAddTrackAction();
-        const providerProposal = createProviderProposal(['unavailable-provider-asset']);
-        const authority = configurePromptPlanning(action, 'missing', providerProposal);
-        const sourceRunId = 'run-resume-plan-rejection';
-        createPendingResumeDecision({
-            runId: sourceRunId,
-            proposalIdentity: getAgentPlanProposalIdentity({
-                actions: [action],
-                providerProposal,
-                scope: authority.scope,
-                grants: authority.grants,
-            }),
-            authority,
-        });
+    it.each(['apply', 'plan'] as const)(
+        'selects a resumed source decision only after replacement plan admission succeeds in %s mode',
+        async (mode) => {
+            const action = createAddTrackAction();
+            const providerProposal = createProviderProposal(['unavailable-provider-asset']);
+            const authority = configurePromptPlanning(action, 'missing', providerProposal);
+            const sourceRunId = `run-resume-plan-rejection-${mode}`;
+            createPendingResumeDecision({
+                runId: sourceRunId,
+                proposalIdentity: getAgentPlanProposalIdentity({
+                    actions: [action],
+                    providerProposal,
+                    scope: authority.scope,
+                    grants: authority.grants,
+                }),
+                authority,
+                mode,
+            });
 
-        await expect(
-            agentRunControls.resumeDecision({ runId: sourceRunId, alternativeId: 'add-reference' })
-        ).resolves.toEqual(expect.objectContaining({ status: 'rejected' }));
+            await expect(
+                agentRunControls.resumeDecision({ runId: sourceRunId, alternativeId: 'add-reference' })
+            ).resolves.toEqual(expect.objectContaining({ status: 'rejected' }));
 
-        expect(agentRunLifecycle.get(sourceRunId)?.decision).toMatchObject({
-            selectedAlternativeId: null,
-            resumeAttemptId: null,
-        });
-        expect(agentRunControls.get(sourceRunId)?.allowedActions.resume).toBe(true);
-        expect(mocks.proposePendingActionConfirmation).not.toHaveBeenCalled();
-        expect(mocks.executePlannedActions).not.toHaveBeenCalled();
-    });
+            expect(agentRunLifecycle.get(sourceRunId)?.decision).toMatchObject({
+                selectedAlternativeId: null,
+                resumeAttemptId: null,
+            });
+            expect(agentRunControls.get(sourceRunId)?.allowedActions.resume).toBe(true);
+            expect(mocks.proposePendingActionConfirmation).not.toHaveBeenCalled();
+            expect(mocks.executePlannedActions).not.toHaveBeenCalled();
+        }
+    );
 
     it.each(['apply', 'plan'] as const)(
         'selects a resumed source decision after the replacement plan is admitted in %s mode',
@@ -2205,14 +2243,19 @@ describe('sendChatMessage retained-provider selection', () => {
         const action = createStemImportAction('buffer-plan-cleanup');
         configurePromptPlanning(action, 'ready', createProviderProposal(['stem-kick']));
         let finishCleanup: () => void = () => undefined;
+        let markCleanupStarted: () => void = () => undefined;
         const cleanupCompletion = new Promise<void>((resolve) => {
             finishCleanup = resolve;
+        });
+        const cleanupStarted = new Promise<void>((resolve) => {
+            markCleanupStarted = resolve;
         });
         const ordering: string[] = [];
         const releasePreparedStems = vi
             .spyOn(preparedStemImportCleanup, 'discardBestEffort')
             .mockImplementation(async () => {
                 ordering.push('cleanup-started');
+                markCleanupStarted();
                 await cleanupCompletion;
                 ordering.push('cleanup-finished');
             });
@@ -2227,7 +2270,7 @@ describe('sendChatMessage retained-provider selection', () => {
             const pendingPlan = sendChatMessage('Import the prepared stems', { mode: 'plan' }).then(() => {
                 resolved = true;
             });
-            await vi.waitFor(() => expect(releasePreparedStems).toHaveBeenCalledOnce());
+            await cleanupStarted;
 
             expect(resolved).toBe(false);
             expect(ordering).toEqual(['cleanup-started']);
