@@ -6,6 +6,7 @@ pub mod plugin_registry_store;
 pub mod plugin_scan_policy;
 pub mod plugin_scan_worker;
 pub mod plugin_window;
+pub mod tail_watcher;
 
 use crate::host::native_bridge::SharedHostedPlugin;
 use crate::state::EnginePluginInstanceData;
@@ -41,4 +42,28 @@ pub(crate) fn runtime_for_instance(
     guard
         .get(instance_id)
         .map(|instance| Arc::clone(&instance.runtime))
+}
+
+/// Every engine-owned runtime, for a push path whose wake names no instance.
+///
+/// A hint raised from the audio thread cannot carry an id — copying one would
+/// allocate — so the thread that answers it visits every instance and lets each
+/// backend say whether it was the one that spoke.
+///
+/// The handles are cloned out and the map lock released before the caller uses
+/// them: taking a plugin's control seam while still holding the instance map
+/// would block every plugin command in the process behind one busy instance.
+pub(crate) fn all_engine_runtimes(
+    engine_plugins: &Arc<Mutex<HashMap<String, EnginePluginInstanceData>>>,
+    context: &str,
+) -> Vec<(String, Arc<SharedHostedPlugin>)> {
+    let Ok(guard) = engine_plugins.lock() else {
+        eprintln!("[Plugin] {} failed to lock engine_plugins", context);
+        return Vec::new();
+    };
+
+    guard
+        .iter()
+        .map(|(instance_id, instance)| (instance_id.clone(), Arc::clone(&instance.runtime)))
+        .collect()
 }

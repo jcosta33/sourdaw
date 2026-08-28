@@ -38,6 +38,18 @@ export type PluginInstance = {
     /** Latency in milliseconds, converted host-side at the activation sample rate. */
     latency_ms: number;
     /**
+     * How long the plugin keeps sounding after its input stops — a reverb's
+     * decay, a delay's repeats — in frames of the activation sample rate.
+     *
+     * Frames rather than the milliseconds latency is reported in: both formats
+     * reserve the top of the range for a tail that never ends, and a converted
+     * sentinel is an ordinary duration nothing can tell apart from a real one.
+     *
+     * The reading at load, and nothing later: a plugin that lengthens its decay
+     * reports the new one over `plugin-tail-changed`.
+     */
+    tail_samples: number;
+    /**
      * Frames the native audio bridge adds on top of `latency_ms`, at the
      * activation sample rate. Zero when no engine took the instance — nothing
      * crosses a bridge that does not exist.
@@ -73,6 +85,17 @@ export type PluginLatencyChange = {
     instance_id: string;
     /** Already converted host-side; see `PluginInstance.latency_ms`. */
     latency_ms: number;
+};
+
+/**
+ * Payload of the `plugin-tail-changed` event: a native plugin reported a new
+ * processing tail mid-session (a CLAP plugin called `clap_host_tail.changed()`,
+ * and the host re-read the extension).
+ */
+export type PluginTailChange = {
+    instance_id: string;
+    /** Frames at the activation rate; see `PluginInstance.tail_samples`. */
+    tail_samples: number;
 };
 
 /**

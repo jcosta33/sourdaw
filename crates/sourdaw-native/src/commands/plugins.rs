@@ -45,6 +45,18 @@ pub struct PluginInstance {
     /// Latency in milliseconds, converted host-side at the activation sample rate.
     /// This is the value the frontend feeds into latency compensation.
     pub latency_ms: f64,
+    /// How long the plugin keeps sounding after its input stops — a reverb's
+    /// decay, a delay's repeats — in frames of that same activation rate.
+    ///
+    /// Frames rather than milliseconds, unlike the latency beside it: both
+    /// formats reserve the top of the range for a tail that never ends, and a
+    /// converted sentinel is an ordinary duration nothing downstream can tell
+    /// apart from a real one.
+    ///
+    /// Read at load like the latency, and revised the same way when the plugin
+    /// announces a new one — over `plugin-tail-changed` rather than in this
+    /// value, which is the reading at load and nothing later.
+    pub tail_samples: u32,
     /// Frames the worklet↔plugin audio bridge adds on top of the plugin's own
     /// latency, at the engine rate this instance was activated with. Zero when
     /// no engine took the instance — nothing crosses a bridge that does not
@@ -1096,6 +1108,9 @@ pub async fn load_plugin(
     // divided.
     let latency_samples = wrapper.latency_samples();
     let latency_ms = wrapper.latency_ms();
+    // Read on the same control-thread visit, and left in frames: see
+    // `PluginInstance::tail_samples` for why this one does not convert.
+    let tail_samples = wrapper.tail_samples();
 
     // Wake the latency watcher when this instance flags a runtime latency
     // change, so the plugin's own notification — CLAP's `latency.changed()`
@@ -1249,6 +1264,7 @@ pub async fn load_plugin(
         is_active: true,
         latency_samples,
         latency_ms,
+        tail_samples,
         bridge_round_trip_frames: bridge_frames,
         engine_plugin_id,
     };
