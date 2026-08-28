@@ -922,6 +922,82 @@ describe('sendChatMessage retained-provider selection', () => {
         }
     });
 
+    it('preserves a verified preview when preview batch persistence fails', async () => {
+        const batchFailure = new Error('Preview batch persistence failed');
+        const loggerError = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+        const previewResource = { release: vi.fn() };
+        const updateBatchStatus = vi.spyOn(agentRunLifecycle, 'updateBatchStatus').mockImplementation(() => {
+            throw batchFailure;
+        });
+        configureCommandGraphForwarding('plan');
+        mocks.executeVersionedCommandBatchEnvelope.mockResolvedValue({
+            status: 'previewed',
+            resource: previewResource,
+        });
+
+        try {
+            await expect(sendChatMessage(commandGraphFixture.prompt, { mode: 'preview' })).resolves.toBeUndefined();
+
+            expect(previewResource.release).toHaveBeenCalledOnce();
+            expect(mocks.updateChatMessage).toHaveBeenLastCalledWith(
+                expect.any(String),
+                expect.objectContaining({
+                    isStreaming: false,
+                    content:
+                        'Previewed without changing the project:\n\n- Create Drum Bus\n- Set Drum Bus gain\n- Remove Kick',
+                })
+            );
+            expect(mocks.setActiveAborter).toHaveBeenLastCalledWith(null);
+            expect(mocks.setChatGenerating).toHaveBeenLastCalledWith(false);
+            expect(loggerError).toHaveBeenCalledWith(
+                expect.objectContaining({ cause: batchFailure, message: 'Preview batch persistence failed' })
+            );
+        } finally {
+            updateBatchStatus.mockRestore();
+            loggerError.mockRestore();
+        }
+    });
+
+    it('preserves a verified preview when completion lifecycle persistence fails', async () => {
+        const lifecycleFailure = new Error('Preview completion lifecycle persistence failed');
+        const loggerError = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+        const previewResource = { release: vi.fn() };
+        const transitionPhase = agentRunLifecycle.transitionPhase;
+        const transition = vi.spyOn(agentRunLifecycle, 'transitionPhase').mockImplementation((input) => {
+            if (input.phase === 'completed') {
+                throw lifecycleFailure;
+            }
+            return transitionPhase(input);
+        });
+        configureCommandGraphForwarding('plan');
+        mocks.executeVersionedCommandBatchEnvelope.mockResolvedValue({
+            status: 'previewed',
+            resource: previewResource,
+        });
+
+        try {
+            await expect(sendChatMessage(commandGraphFixture.prompt, { mode: 'preview' })).resolves.toBeUndefined();
+
+            expect(previewResource.release).toHaveBeenCalledOnce();
+            expect(mocks.updateChatMessage).toHaveBeenLastCalledWith(
+                expect.any(String),
+                expect.objectContaining({
+                    isStreaming: false,
+                    content:
+                        'Previewed without changing the project:\n\n- Create Drum Bus\n- Set Drum Bus gain\n- Remove Kick',
+                })
+            );
+            expect(mocks.setActiveAborter).toHaveBeenLastCalledWith(null);
+            expect(mocks.setChatGenerating).toHaveBeenLastCalledWith(false);
+            expect(loggerError).toHaveBeenCalledWith(
+                expect.objectContaining({ cause: lifecycleFailure, message: 'Preview lifecycle persistence failed' })
+            );
+        } finally {
+            transition.mockRestore();
+            loggerError.mockRestore();
+        }
+    });
+
     it('preserves the resumed-run callback error when provider settlement persistence fails', async () => {
         const callbackError = new Error('Resume admission callback failed');
         const storageFailure = new DOMException('The quota has been exceeded.', 'QuotaExceededError');

@@ -831,16 +831,28 @@ export async function sendChatMessage(
                             }
                             throw new Error('Agent preview work could not be settled');
                         }
-                        agentRunLifecycle.updateBatchStatus({
-                            runId,
-                            batchId: parsedCommandBatch.envelope.batchId,
-                            status: 'previewed',
-                        });
                         updateChatMessage(assistantMsgId, {
                             isStreaming: false,
                             content: `Previewed without changing the project:\n\n${confirmationDescription.actionLabels.map((label) => `- ${label}`).join('\n')}`,
                         });
-                        agentRunLifecycle.transitionPhase({ runId, phase: 'completed' });
+                        try {
+                            agentRunLifecycle.updateBatchStatus({
+                                runId,
+                                batchId: parsedCommandBatch.envelope.batchId,
+                                status: 'previewed',
+                            });
+                        } catch (batchPersistenceError) {
+                            logger.error(
+                                new Error('Preview batch persistence failed', { cause: batchPersistenceError })
+                            );
+                        }
+                        try {
+                            agentRunLifecycle.transitionPhase({ runId, phase: 'completed' });
+                        } catch (lifecyclePersistenceError) {
+                            logger.error(
+                                new Error('Preview lifecycle persistence failed', { cause: lifecyclePersistenceError })
+                            );
+                        }
                         return undefined;
                     }
                     const previewSettlement = settleAgentRunWorkLeaseSafely({
