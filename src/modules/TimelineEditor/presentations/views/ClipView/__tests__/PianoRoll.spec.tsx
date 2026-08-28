@@ -10,6 +10,7 @@ import {
 } from '#/modules/MIDI/useCases';
 
 import { usePianoRollInteractions } from '../../../hooks/usePianoRollInteractions';
+import { usePianoRollRenderer } from '../../../hooks/usePianoRollRenderer';
 import { PianoRoll } from '../PianoRoll';
 
 const { toolbarPropsRef, notePropertyLanePropsRef, contextMenuPropsRef } = vi.hoisted(() => ({
@@ -286,6 +287,27 @@ describe('PianoRoll', () => {
         fireEvent.scroll(scrollContainer);
 
         expect(onScrollChange).toHaveBeenCalledWith(250);
+    });
+
+    // Issue #2302: the scroll container's onScroll used to mirror scrollLeft
+    // into a local useState nothing read, re-rendering the canvas editor on
+    // every scroll frame. The renderer hook is called once per render, so its
+    // call count is the render observation: scrolling must leave it unchanged.
+    it('does not re-render while the scroll container scrolls', () => {
+        render(<PianoRoll {...defaultProps} />);
+
+        const scrollContainer = screen.getByLabelText('Piano roll editor').closest('.overflow-auto');
+        if (!scrollContainer) {
+            throw new Error('Expected the piano roll scroll container');
+        }
+        const rendersBeforeScrolling = vi.mocked(usePianoRollRenderer).mock.calls.length;
+
+        for (const scrollLeft of [120, 240, 360]) {
+            Object.defineProperty(scrollContainer, 'scrollLeft', { value: scrollLeft, configurable: true });
+            fireEvent.scroll(scrollContainer);
+        }
+
+        expect(vi.mocked(usePianoRollRenderer).mock.calls.length).toBe(rendersBeforeScrolling);
     });
 
     it('shows the expression lane only after the toolbar toggles it on', () => {

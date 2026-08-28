@@ -126,7 +126,6 @@ export const PianoRoll = ({
     // since both scroll containers live in this component.
     const expressionScrollRef = useRef<HTMLDivElement>(null);
     const [zoom, setZoom] = useState(1);
-    const [_scrollX, setScrollX] = useState(0);
     const setSelectedNoteIds = onSelectedNoteIdsChange;
     const [gridSnap, setGridSnap] = useState(0.25);
 
@@ -314,7 +313,6 @@ export const PianoRoll = ({
         selectedNoteIds,
         setSelectedNoteIds,
         setZoom,
-        setScrollX,
         draw,
         drawPreviewRef,
         rubberBandRef,
@@ -371,7 +369,6 @@ export const PianoRoll = ({
                     ref={scrollRef}
                     onScroll={(event) => {
                         const sl = (event.target as HTMLElement).scrollLeft;
-                        setScrollX(sl);
                         onScrollChange?.(sl);
                         if (expressionScrollRef.current) {
                             expressionScrollRef.current.scrollLeft = sl;
