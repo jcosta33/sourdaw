@@ -219,26 +219,23 @@ export async function executePromptActionGroup(
                 logger.error(new Error('Prompt command lease settlement failed', { cause: error }));
             },
         });
-    const settleTerminalCommand = (
-        terminalState: AgentRunWorkTerminalState,
-        batchStatus: 'failed' | 'no-op',
-        phase: Extract<AgentRunPhase, 'completed' | 'failed' | 'partially-completed'>
-    ) =>
-        settleAgentRunWorkLeaseSafely({
+    const settleTerminalCommand = (outcome: Parameters<typeof agentRunWorkLease.getCommandTerminalOutcome>[0]) => {
+        const terminal = agentRunWorkLease.getCommandTerminalOutcome(outcome);
+        return settleAgentRunWorkLeaseSafely({
             lease: commandLease,
-            terminalState,
+            terminalState: terminal.terminalState,
             evidence: 'none',
             settle: (lease) =>
                 agentRunWorkLease.settleAndTerminalize({
                     ...lease,
                     batchId: envelope.batchId,
-                    batchStatus,
-                    phase,
+                    outcome,
                 }),
             reportFailure: (error) => {
                 logger.error(new Error('Prompt command terminal settlement failed', { cause: error }));
             },
         });
+    };
     const cancelCommand = (): Promise<unknown> =>
         agentRunCancellation.cancel({
             runId: input.runId,
@@ -273,7 +270,7 @@ export async function executePromptActionGroup(
     );
     if (importedStemsHavePartialDurableBindings) {
         const reason = 'Prepared stem durable asset binding is incomplete.';
-        const leaseSettlement = settleTerminalCommand('failed', 'failed', 'failed');
+        const leaseSettlement = settleTerminalCommand('failed');
         await discardImportedStems();
         notifyAiChange(appendSettlementWarning(`Command not executed: ${reason}`, leaseSettlement.warning), []);
         return { status: 'failed' };
@@ -344,7 +341,7 @@ export async function executePromptActionGroup(
         });
     } catch (error) {
         const reason = getErrorMessage(error);
-        const leaseSettlement = settleTerminalCommand('failed', 'failed', 'failed');
+        const leaseSettlement = settleTerminalCommand('failed');
         await releaseImportedStemsAfterPrimaryFailure(error);
         notifyAiChange(appendSettlementWarning(`Command not executed: ${reason}`, leaseSettlement.warning), []);
         throw error;
@@ -355,7 +352,7 @@ export async function executePromptActionGroup(
     if (execution.status === 'committed' || execution.status === 'executed') {
         if (!execution.receipt) {
             const reason = 'Command execution completed without an exact verified receipt.';
-            const leaseSettlement = settleTerminalCommand('failed', 'failed', 'partially-completed');
+            const leaseSettlement = settleTerminalCommand('ambiguous');
             await retainImportedStemsForRecovery();
             notifyAiChange(
                 appendSettlementWarning(
@@ -368,7 +365,7 @@ export async function executePromptActionGroup(
         }
         if (execution.receipt.runId !== input.runId || execution.receipt.batchId !== envelope.batchId) {
             const reason = 'Command execution returned a receipt for a different admitted batch.';
-            const leaseSettlement = settleTerminalCommand('failed', 'failed', 'partially-completed');
+            const leaseSettlement = settleTerminalCommand('ambiguous');
             await retainImportedStemsForRecovery();
             notifyAiChange(
                 appendSettlementWarning(
@@ -420,7 +417,7 @@ export async function executePromptActionGroup(
     }
 
     if (execution.status === 'invalidated' || execution.status === 'failed') {
-        const leaseSettlement = settleTerminalCommand('failed', 'failed', 'failed');
+        const leaseSettlement = settleTerminalCommand('failed');
         await releaseImportedStems();
         notifyAiChange(
             appendSettlementWarning(`Command not executed: ${execution.reason}`, leaseSettlement.warning),
@@ -430,7 +427,7 @@ export async function executePromptActionGroup(
     }
 
     if (execution.status === 'ambiguous') {
-        const leaseSettlement = settleTerminalCommand('failed', 'failed', 'partially-completed');
+        const leaseSettlement = settleTerminalCommand('ambiguous');
         await retainImportedStemsForRecovery();
         notifyAiChange(
             appendSettlementWarning(
@@ -442,7 +439,7 @@ export async function executePromptActionGroup(
         return { status: 'ambiguous' };
     }
 
-    const leaseSettlement = settleTerminalCommand('completed', 'no-op', 'completed');
+    const leaseSettlement = settleTerminalCommand('no-op');
     await releaseImportedStems();
     notifyAiChange(appendSettlementWarning('No project changes were needed.', leaseSettlement.warning), []);
     return { status: 'no-op' };

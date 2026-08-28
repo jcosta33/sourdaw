@@ -504,7 +504,7 @@ describe('submitAdmittedPromptRequest', () => {
         expect(cancel).toHaveBeenCalledOnce();
     });
 
-    it('retries a failed preview cancellation', async () => {
+    it('retries persistence of a live terminal preview cancellation without recancelling the run', async () => {
         const result = await submitAdmittedPromptRequest({
             prompt: 'Play',
             source: 'prompt-bar',
@@ -514,21 +514,20 @@ describe('submitAdmittedPromptRequest', () => {
         if (result.status !== 'awaiting-approval') {
             throw new Error(`Expected an approval preview, received ${result.status}`);
         }
-        const cancel = vi
-            .spyOn(agentRunCancellation, 'cancel')
-            .mockRejectedValueOnce(new Error('Cancellation storage unavailable'))
-            .mockResolvedValueOnce({
-                status: 'cancelled',
-                phase: 'cancelled',
-                cancelledWorkIds: [],
-                cleanupPendingAssetIds: [],
-                releasedAssetIds: [],
-            });
+        const durableBefore = window.localStorage.getItem('sourdaw-agent-runs');
+        const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementationOnce(() => {
+            throw new Error('Cancellation storage unavailable');
+        });
 
-        await expect(result.preview.cancel()).rejects.toThrow('Cancellation storage unavailable');
+        await expect(result.preview.cancel()).rejects.toThrow('Agent run state could not be persisted locally');
+        expect(agentRunLifecycle.get(RUN_ID)?.phase).toBe('cancelled');
+        expect(window.localStorage.getItem('sourdaw-agent-runs')).toBe(durableBefore);
         await result.preview.cancel();
 
-        expect(cancel).toHaveBeenCalledTimes(2);
+        expect(setItem).toHaveBeenCalledTimes(2);
+        expect(window.localStorage.getItem('sourdaw-agent-runs')).toContain('cancelled');
+        expect(mocks.notifyAiChange).toHaveBeenCalledExactlyOnceWith(AGENT_RUN_CANCELLATION_PERSISTENCE_WARNING, []);
+        setItem.mockRestore();
     });
 
     it('preserves compiler dependencies and batch-local bindings at the admitted compilation boundary', async () => {

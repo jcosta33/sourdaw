@@ -6,10 +6,12 @@ export type SettleAgentRunWorkLeaseResult = ReturnType<typeof agentRunLifecycle.
 export type SettleAndTerminalizeAgentRunWorkLeaseResult = ReturnType<
     typeof agentRunLifecycle.settleWorkLeaseAndTerminalize
 >;
+export type AgentRunCommandTerminalOutcome = Parameters<typeof agentRunLifecycle.getCommandTerminalOutcome>[0];
 
 export const agentRunWorkLease = {
     claim: agentRunLifecycle.claimWorkLease,
     retry: agentRunLifecycle.retryWorkLease,
     settle: agentRunLifecycle.settleWorkLease,
     settleAndTerminalize: agentRunLifecycle.settleWorkLeaseAndTerminalize,
+    getCommandTerminalOutcome: agentRunLifecycle.getCommandTerminalOutcome,
 } as const;

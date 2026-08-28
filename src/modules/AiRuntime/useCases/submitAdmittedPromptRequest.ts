@@ -81,29 +81,45 @@ export async function submitAdmittedPromptRequest(
     let cancellationAttempt: Promise<void> | null = null;
     let cancellationFailed = false;
     let cancellationWarningReported = false;
+    const reportCancellationPersistenceFailure = (error: unknown): never => {
+        cancellationFailed = true;
+        logger.error(new Error('Prompt request cancellation persistence failed', { cause: error }));
+        if (!cancellationWarningReported) {
+            cancellationWarningReported = true;
+            notifyAiChange(AGENT_RUN_CANCELLATION_PERSISTENCE_WARNING, []);
+        }
+        throw error;
+    };
     const startCancellation = (): Promise<void> => {
         if (!cancellationAttempt) {
             cancellationAttempt = agentRunCancellation
                 .cancel({ runId, reason: 'Prompt request cancelled by the user.' })
-                .then(() => undefined)
-                .catch((error) => {
-                    cancellationFailed = true;
-                    logger.error(new Error('Prompt request cancellation persistence failed', { cause: error }));
-                    if (!cancellationWarningReported) {
-                        cancellationWarningReported = true;
-                        notifyAiChange(AGENT_RUN_CANCELLATION_PERSISTENCE_WARNING, []);
-                    }
-                    throw error;
-                });
+                .then(() => {
+                    cancellationFailed = false;
+                })
+                .catch(reportCancellationPersistenceFailure);
         }
         return cancellationAttempt;
     };
     const cancel = (): Promise<void> => {
-        if (cancellationFailed) {
+        if (!cancellationFailed) {
+            return startCancellation();
+        }
+        const run = agentRunLifecycle.get(runId);
+        if (!run || (run.phase !== 'cancelled' && run.phase !== 'partially-completed')) {
             cancellationAttempt = null;
             cancellationFailed = false;
+            return startCancellation();
         }
-        return startCancellation();
+        cancellationAttempt = Promise.resolve()
+            .then(() => {
+                if (!agentRunLifecycle.retryPersistence(runId)) {
+                    throw new Error(`Agent run disappeared before cancellation persistence retry: ${runId}`);
+                }
+                cancellationFailed = false;
+            })
+            .catch(reportCancellationPersistenceFailure);
+        return cancellationAttempt;
     };
     const cancelAfterAbort = async (): Promise<void> => {
         try {

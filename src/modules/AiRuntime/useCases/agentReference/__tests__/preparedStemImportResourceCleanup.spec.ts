@@ -268,6 +268,47 @@ describe('prepared stem import resource cleanup', () => {
         expect(agentRunLifecycle.get('stem-committed')?.temporaryAssets).toEqual([]);
     });
 
+    it('retains every stem cleanup owner when a multi-stem transfer persistence mutation fails', async () => {
+        const twoStems = [
+            ...stems,
+            {
+                ...stems[0],
+                audioBufferId: 'decoded-buffer-2',
+                assetHash: 'hash-staged-asset-2',
+                assetLeaseId: 'staged-asset-2',
+                clipId: 'clip-staged-asset-2',
+                stemId: 'stem-staged-asset-2',
+            },
+        ];
+        agentRunLifecycle.create({
+            runId: 'stem-transfer-persistence-failure',
+            request: 'Import stems.',
+            mode: 'plan',
+            createdRevision: 'r1',
+        });
+        preparedStemImportResources.register({ runId: 'stem-transfer-persistence-failure', stems: twoStems });
+        const transferFailure = new Error('prepared stem transfer persistence failed');
+        const forget = vi.spyOn(agentRunLifecycle, 'forgetTemporaryAssets').mockImplementationOnce(() => {
+            throw transferFailure;
+        });
+
+        expect(() =>
+            preparedStemImportResources.release({ runId: 'stem-transfer-persistence-failure', stems: twoStems })
+        ).toThrow(transferFailure);
+        expect(agentRunLifecycle.get('stem-transfer-persistence-failure')?.temporaryAssets).toEqual([
+            expect.objectContaining({ assetId: 'decoded-buffer-1', status: 'live' }),
+            expect.objectContaining({ assetId: 'decoded-buffer-2', status: 'live' }),
+        ]);
+
+        await expect(
+            preparedStemImportResources.discard({ runId: 'stem-transfer-persistence-failure', stems: twoStems })
+        ).resolves.toBeUndefined();
+        expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledWith('decoded-buffer-1');
+        expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledWith('decoded-buffer-2');
+        expect(agentRunLifecycle.get('stem-transfer-persistence-failure')?.temporaryAssets).toEqual([]);
+        forget.mockRestore();
+    });
+
     it('keeps failed confirmation cleanup executable until the durable lease releases', async () => {
         mocks.completeDurableCleanupRecovery
             .mockResolvedValueOnce({ status: 'failed', reason: 'transaction-aborted' })

@@ -1,5 +1,6 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { readAgentRunState } from '../../stores/agentRunStore';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { agentRunWorkLease } from '../agentRunWorkLease';
 
@@ -141,10 +142,8 @@ describe('agent run work leases', () => {
                 cancellationGeneration: claimed.lease.cancellationGeneration,
                 idempotencyKey: claimed.lease.idempotencyKey,
                 receiptIdentity: claimed.lease.receiptIdentity,
-                terminalState: 'failed',
                 batchId: 'command-1',
-                batchStatus: 'failed',
-                phase: 'failed',
+                outcome: 'failed',
                 settledAt: 120,
             })
         ).toEqual({ status: 'settled' });
@@ -152,6 +151,157 @@ describe('agent run work leases', () => {
             phase: 'failed',
             batches: [{ batchId: 'command-1', status: 'failed' }],
             workLeases: [{ workId: 'command-1', terminalState: 'failed' }],
+        });
+    });
+
+    it.each([
+        ['failed', 'failed', 'failed', 'failed'],
+        ['ambiguous', 'failed', 'failed', 'partially-completed'],
+        ['no-op', 'completed', 'no-op', 'completed'],
+    ] as const)(
+        'derives the %s terminal lease, batch, and phase together',
+        (outcome, terminalState, batchStatus, phase) => {
+            const claimed = claimAgentRunWorkLease({
+                runId: 'run-lease',
+                workId: `command-${outcome}`,
+                ownerKind: 'command',
+                cleanupOwner: 'command-executor',
+                idempotencyKey: `command-${outcome}-key`,
+                receiptIdentity: `command-${outcome}-receipt`,
+                idempotent: true,
+                retriable: false,
+                claimedAt: 110,
+            });
+            if (claimed.status !== 'claimed') {
+                throw new Error('Expected command work to be claimed');
+            }
+            agentRunLifecycle.recordBatch({
+                runId: 'run-lease',
+                batch: {
+                    batchId: `command-${outcome}`,
+                    commandIds: [`command-${outcome}`],
+                    status: 'executing',
+                    receiptIdentity: null,
+                },
+                recordedAt: 111,
+            });
+            agentRunLifecycle.transitionPhase({ runId: 'run-lease', phase: 'executing', transitionedAt: 112 });
+
+            expect(
+                settleAndTerminalizeAgentRunWorkLease({
+                    ...claimed.lease,
+                    batchId: `command-${outcome}`,
+                    outcome,
+                    settledAt: 120,
+                })
+            ).toEqual({ status: 'settled' });
+            expect(getAgentRun('run-lease')).toMatchObject({
+                phase,
+                batches: [{ batchId: `command-${outcome}`, status: batchStatus }],
+                workLeases: [{ workId: `command-${outcome}`, terminalState }],
+            });
+        }
+    );
+
+    it('keeps every durable field pre-operation when the atomic command write is refused', () => {
+        const claimed = claimAgentRunWorkLease({
+            runId: 'run-lease',
+            workId: 'command-atomic',
+            ownerKind: 'command',
+            cleanupOwner: 'command-executor',
+            idempotencyKey: 'command-atomic-key',
+            receiptIdentity: 'command-atomic-receipt',
+            idempotent: true,
+            retriable: false,
+            claimedAt: 110,
+        });
+        if (claimed.status !== 'claimed') {
+            throw new Error('Expected command work to be claimed');
+        }
+        for (const batchId of ['command-atomic', 'unrelated-command']) {
+            agentRunLifecycle.recordBatch({
+                runId: 'run-lease',
+                batch: { batchId, commandIds: [batchId], status: 'executing', receiptIdentity: null },
+                recordedAt: 111,
+            });
+        }
+        agentRunLifecycle.transitionPhase({ runId: 'run-lease', phase: 'executing', transitionedAt: 112 });
+        const durableBefore = window.localStorage.getItem('sourdaw-agent-runs');
+        const persistenceFailure = new Error('storage refused command terminalization');
+        const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementationOnce(() => {
+            throw persistenceFailure;
+        });
+
+        expect(() =>
+            settleAndTerminalizeAgentRunWorkLease({
+                ...claimed.lease,
+                batchId: 'command-atomic',
+                outcome: 'failed',
+                settledAt: 120,
+            })
+        ).toThrow('Agent run state could not be persisted locally');
+
+        const live = readAgentRunState().runs.find((run) => run.runId === 'run-lease');
+        expect(live).toMatchObject({
+            phase: 'failed',
+            batches: [
+                { batchId: 'command-atomic', status: 'failed' },
+                { batchId: 'unrelated-command', status: 'executing' },
+            ],
+            workLeases: [{ workId: 'command-atomic', terminalState: 'failed' }],
+        });
+        expect(window.localStorage.getItem('sourdaw-agent-runs')).toBe(durableBefore);
+        setItem.mockRestore();
+    });
+
+    it('does not terminalize either batch or phase when the lease is stale or missing', () => {
+        const claimed = claimAgentRunWorkLease({
+            runId: 'run-lease',
+            workId: 'command-stale',
+            ownerKind: 'command',
+            cleanupOwner: 'command-executor',
+            idempotencyKey: 'command-stale-key',
+            receiptIdentity: 'command-stale-receipt',
+            idempotent: true,
+            retriable: false,
+            claimedAt: 110,
+        });
+        if (claimed.status !== 'claimed') {
+            throw new Error('Expected command work to be claimed');
+        }
+        for (const batchId of ['command-stale', 'unrelated-command']) {
+            agentRunLifecycle.recordBatch({
+                runId: 'run-lease',
+                batch: { batchId, commandIds: [batchId], status: 'executing', receiptIdentity: null },
+                recordedAt: 111,
+            });
+        }
+        agentRunLifecycle.transitionPhase({ runId: 'run-lease', phase: 'executing', transitionedAt: 112 });
+
+        expect(
+            settleAndTerminalizeAgentRunWorkLease({
+                ...claimed.lease,
+                cancellationGeneration: claimed.lease.cancellationGeneration + 1,
+                batchId: 'command-stale',
+                outcome: 'failed',
+                settledAt: 120,
+            })
+        ).toEqual({ status: 'stale' });
+        expect(
+            settleAndTerminalizeAgentRunWorkLease({
+                ...claimed.lease,
+                runId: 'missing-run',
+                batchId: 'command-stale',
+                outcome: 'failed',
+                settledAt: 120,
+            })
+        ).toEqual({ status: 'missing-run' });
+        expect(getAgentRun('run-lease')).toMatchObject({
+            phase: 'executing',
+            batches: [
+                { batchId: 'command-stale', status: 'executing' },
+                { batchId: 'unrelated-command', status: 'executing' },
+            ],
         });
     });
 
