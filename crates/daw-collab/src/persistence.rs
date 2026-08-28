@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::io::{Cursor, Read};
+use std::io::{Cursor, Read, Write};
 use std::path::Path;
 
 use crate::schema::DocId;
@@ -212,10 +212,109 @@ fn decode_sdaw_with_limits(
 }
 
 /// Save a document bundle to an .sdaw file on disk.
+///
+/// The replacement is atomic: the bundle is CRDT project history — user data
+/// with no reconstructible source — so a truncated or partial file is data
+/// loss, not a retryable error. See `replace_file_atomically` for how that is
+/// guaranteed.
 pub fn save_sdaw_bundle(bundle: &HashMap<DocId, Vec<u8>>, path: &Path) -> Result<(), String> {
     let encoded = encode_sdaw(bundle);
-    std::fs::write(path, &encoded).map_err(|e| format!("Failed to write .sdaw file: {}", e))
+    replace_file_atomically(path, |file| {
+        file.write_all(&encoded)
+            .map_err(|e| format!("Failed to write .sdaw file: {e}"))
+    })
 }
+
+/// Replace the .sdaw file at `path` with whatever `write` produces, atomically.
+///
+/// Twin of `replace_file_atomically` in
+/// `crates/sourdaw-native/src/commands/filesystem.rs` (issue #2823, PR #2960),
+/// duplicated rather than shared because the dependency direction is fixed the
+/// other way — `sourdaw-native` depends on `daw-collab`, so this crate cannot
+/// import the helper without a cycle, and the one crate both depend on
+/// (`daw-core`) is domain schema with no filesystem role. Keep the two in step
+/// when the contract changes.
+///
+/// Writing straight to `path` truncates it before the replacement bytes are
+/// durable, so a disk-full failure or a crash mid-write leaves the only copy of
+/// the bundle empty or partial (issue #2961):
+///
+/// * `write` fills a newly created sibling of `path` — same directory, hence
+///   the same filesystem. `create_new` plus a UUID name guarantees the temp
+///   file is this writer's alone; a shared name would let a concurrent writer
+///   truncate this one's half-written file and publish the interleaving of
+///   both.
+/// * The temp file is fsynced and closed, and only then renamed onto `path`:
+///   the bytes moved over the destination are already durable, and a rename
+///   within one filesystem never exposes a partially written file. std's
+///   rename replaces an existing destination on every platform this crate
+///   builds for (POSIX `rename(2)`; Windows `MOVEFILE_REPLACE_EXISTING`
+///   semantics), so no remove-then-rename window is ever opened. Closing
+///   before the rename matters on Windows, where renaming from a handle the
+///   writer still holds can fail with a sharing violation.
+/// * On Unix the parent directory is synced after the rename, best effort, so
+///   the rename itself — not just the file's data — survives a crash.
+/// * Any failure removes the temp file and leaves `path` exactly as it was.
+fn replace_file_atomically(
+    path: &Path,
+    write: impl FnOnce(&mut std::fs::File) -> Result<(), String>,
+) -> Result<(), String> {
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| "Atomic write error: path has no file name".to_string())?;
+    let temp_path = path.with_file_name(format!("{file_name}.{}.tmp", uuid::Uuid::new_v4()));
+
+    // The temp file is closed (by the end of this closure) before the rename
+    // below runs; the scoping exists to guarantee that order on Windows.
+    let write_result = (|| {
+        let mut temp_file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temp_path)
+            .map_err(|e| format!("Failed to create temporary .sdaw file: {e}"))?;
+        write(&mut temp_file)?;
+        temp_file
+            .sync_all()
+            .map_err(|e| format!("Failed to sync temporary .sdaw file: {e}"))
+    })();
+
+    match write_result {
+        Ok(()) => {
+            std::fs::rename(&temp_path, path).map_err(|e| {
+                let _ = std::fs::remove_file(&temp_path);
+                format!("Failed to move finished .sdaw file into place: {e}")
+            })?;
+            sync_parent_directory_best_effort(path);
+            Ok(())
+        }
+        Err(error) => {
+            let _ = std::fs::remove_file(&temp_path);
+            Err(error)
+        }
+    }
+}
+
+/// Sync the directory holding `path` after a successful replace, Unix only.
+///
+/// The file's bytes are already durable when this runs; syncing the directory
+/// makes the rename — the replacement of the old inode's name — durable too.
+/// Windows cannot open a directory through std for syncing and NTFS journals
+/// the rename, so there is nothing to do there. Best effort, because at this
+/// point the replacement is already complete and visible: a failure here only
+/// weakens crash-durability back to the level of every unsynced rename, never
+/// the file's contents.
+#[cfg(unix)]
+fn sync_parent_directory_best_effort(path: &Path) {
+    if let Some(parent) = path.parent() {
+        if let Ok(directory) = std::fs::File::open(parent) {
+            let _ = directory.sync_all();
+        }
+    }
+}
+
+#[cfg(not(unix))]
+fn sync_parent_directory_best_effort(_path: &Path) {}
 
 /// Load a document bundle from an .sdaw file on disk.
 pub fn load_sdaw_bundle(path: &Path) -> Result<HashMap<DocId, Vec<u8>>, String> {
@@ -257,6 +356,7 @@ fn read_sdaw_bytes_with_limits<R: Read>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
 
     const TEST_LIMITS: SdawDecodeLimits = SdawDecodeLimits {
         container_bytes: 64,
@@ -477,6 +577,189 @@ mod tests {
         assert_eq!(loaded["root"], vec![10, 20, 30]);
 
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    struct TempBundleDir {
+        root: PathBuf,
+    }
+
+    impl TempBundleDir {
+        fn create(test_name: &str) -> Self {
+            let root = std::env::temp_dir().join(format!(
+                "daw-collab-atomic-save-{test_name}-{}-{}",
+                std::process::id(),
+                uuid::Uuid::new_v4()
+            ));
+            std::fs::create_dir_all(&root).expect("test bundle directory should be created");
+            Self { root }
+        }
+
+        fn path(&self, name: &str) -> PathBuf {
+            self.root.join(name)
+        }
+    }
+
+    impl Drop for TempBundleDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.root);
+        }
+    }
+
+    fn temp_file_residue(directory: &Path) -> Vec<PathBuf> {
+        std::fs::read_dir(directory)
+            .expect("test bundle directory should be listable")
+            .filter_map(|entry| entry.ok())
+            .map(|entry| entry.path())
+            .filter(|path| path.extension().is_some_and(|extension| extension == "tmp"))
+            .collect()
+    }
+
+    /// Regression (issue #2961): `save_sdaw_bundle` used to call
+    /// `std::fs::write` on the destination directly, truncating the only copy
+    /// of the CRDT project history before the replacement bytes were durable —
+    /// a mid-write failure (disk full, I/O fault) destroyed unreconstructible
+    /// user data. A failure injected mid-write, after real bytes have reached
+    /// the temp file, must leave the destination byte-for-byte untouched and
+    /// no temp file behind.
+    #[test]
+    fn a_mid_write_failure_leaves_a_pre_existing_bundle_untouched() {
+        let dir = TempBundleDir::create("failure-existing");
+        let destination = dir.path("project.sdaw");
+        let previous = encoded_bundle(&[("root", &[1, 2, 3, 4])]);
+        std::fs::write(&destination, &previous).expect("pre-existing bundle should be written");
+
+        let error = replace_file_atomically(&destination, |file| {
+            // Real bytes reach the temp file before the injected failure,
+            // mirroring an I/O fault partway through a save.
+            file.write_all(b"partial bytes")
+                .map_err(|e| format!("Failed to write .sdaw file: {e}"))?;
+            Err("injected write failure".to_string())
+        })
+        .unwrap_err();
+
+        assert_eq!(error, "injected write failure");
+        assert_eq!(
+            std::fs::read(&destination).unwrap(),
+            previous,
+            "a failed save must leave the destination byte-for-byte intact"
+        );
+        assert!(
+            temp_file_residue(&dir.root).is_empty(),
+            "the temp file must be removed after a failed save"
+        );
+    }
+
+    /// The same failure against a not-yet-existing destination must create
+    /// nothing there: a truncated file would satisfy a later existence check
+    /// and masquerade as the bundle.
+    #[test]
+    fn a_mid_write_failure_creates_nothing_at_a_missing_destination() {
+        let dir = TempBundleDir::create("failure-missing");
+        let destination = dir.path("project.sdaw");
+
+        let error = replace_file_atomically(&destination, |file| {
+            file.write_all(b"partial")
+                .map_err(|e| format!("Failed to write .sdaw file: {e}"))?;
+            Err("injected write failure".to_string())
+        })
+        .unwrap_err();
+
+        assert_eq!(error, "injected write failure");
+        assert!(
+            !destination.exists(),
+            "a failed save must not leave a file at the destination"
+        );
+        assert!(
+            temp_file_residue(&dir.root).is_empty(),
+            "the temp file must be removed after a failed save"
+        );
+    }
+
+    #[test]
+    fn a_successful_save_replaces_an_existing_bundle_completely_and_leaves_no_temp_file() {
+        let dir = TempBundleDir::create("success-existing");
+        let destination = dir.path("project.sdaw");
+        let previous = HashMap::from([("root".to_string(), vec![10, 20, 30])]);
+        save_sdaw_bundle(&previous, &destination).expect("pre-existing bundle should be written");
+
+        let replacement = HashMap::from([
+            ("root".to_string(), vec![1, 2, 3, 4]),
+            ("track_kick".to_string(), vec![5, 6]),
+        ]);
+        save_sdaw_bundle(&replacement, &destination).expect("replacement save should succeed");
+
+        let loaded = load_sdaw_bundle(&destination).expect("replaced bundle should decode");
+        assert_eq!(
+            loaded, replacement,
+            "a successful save must replace the bundle in full"
+        );
+        assert!(
+            temp_file_residue(&dir.root).is_empty(),
+            "the temp file must be renamed away on success"
+        );
+    }
+
+    /// Rename-based replacement is also how a destination that does not exist
+    /// yet appears: it either exists complete or not at all, never truncated.
+    #[test]
+    fn a_successful_save_can_create_a_missing_bundle() {
+        let dir = TempBundleDir::create("success-missing");
+        let destination = dir.path("project.sdaw");
+        let fresh = HashMap::from([("root".to_string(), vec![10, 20, 30])]);
+
+        save_sdaw_bundle(&fresh, &destination).expect("first save should succeed");
+
+        let loaded = load_sdaw_bundle(&destination).expect("created bundle should decode");
+        assert_eq!(
+            loaded, fresh,
+            "a created bundle must hold every document in full"
+        );
+        assert!(
+            temp_file_residue(&dir.root).is_empty(),
+            "the temp file must be renamed away on success"
+        );
+    }
+
+    /// Through the public save itself, at the phase no closure can reach from
+    /// outside: when the directory cannot host the temp sibling, the save must
+    /// refuse rather than fall back to writing in place. The old
+    /// `std::fs::write` reopened the existing bundle through this read-only
+    /// directory — opening an existing file needs no directory write
+    /// permission — and overwrote it in place, which is exactly the defect
+    /// this issue fixes. Unix only, because the read-only directory is
+    /// arranged with Unix permission bits.
+    #[cfg(unix)]
+    #[test]
+    fn a_save_that_cannot_create_its_temp_file_leaves_the_existing_bundle_untouched() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = TempBundleDir::create("readonly-directory");
+        let destination = dir.path("project.sdaw");
+        let bundle = HashMap::from([("root".to_string(), vec![1, 2, 3, 4])]);
+        let previous = encode_sdaw(&bundle);
+        std::fs::write(&destination, &previous).expect("pre-existing bundle should be written");
+        std::fs::set_permissions(&dir.root, std::fs::Permissions::from_mode(0o555))
+            .expect("directory should become read-only");
+
+        let error = save_sdaw_bundle(&bundle, &destination).unwrap_err();
+
+        // Restore before asserting, so the directory cleans up even when an
+        // assertion below fails.
+        std::fs::set_permissions(&dir.root, std::fs::Permissions::from_mode(0o755))
+            .expect("directory should become writable again");
+        assert!(
+            error.contains("temporary .sdaw file"),
+            "the failure must come from the temp-file phase: {error}"
+        );
+        assert_eq!(
+            std::fs::read(&destination).unwrap(),
+            previous,
+            "a refused save must leave the destination byte-for-byte intact"
+        );
+        assert!(
+            temp_file_residue(&dir.root).is_empty(),
+            "a refused save must leave no temp file behind"
+        );
     }
 }
 
