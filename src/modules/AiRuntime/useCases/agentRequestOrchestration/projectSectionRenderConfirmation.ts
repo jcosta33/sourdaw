@@ -21,9 +21,11 @@ function getReceiptScope(confirmation: PendingAppActionConfirmation, expectedSou
     }
     const artifacts = getAgentSectionRenderArtifacts();
     const completedJobIds = new Set<string>();
+    const performedJobIds = new Set<string>();
+    const reviewRequiredArtifacts: Array<{ jobId: string; warnings: readonly string[] }> = [];
     const completedAffectedIds = new Set<string>();
     for (const job of renderAction.payload.jobs) {
-        const matchingArtifact = artifacts.some(
+        const matchingArtifact = artifacts.find(
             (artifact) =>
                 artifact.jobId === job.jobId &&
                 artifact.sectionId === job.sectionId &&
@@ -32,13 +34,17 @@ function getReceiptScope(confirmation: PendingAppActionConfirmation, expectedSou
                 artifact.endBeat === job.endBeat &&
                 artifact.sampleRate === job.sampleRate &&
                 artifact.tailSeconds === job.tailSeconds &&
-                artifact.sourceRevision === expectedSourceRevision &&
-                artifact.warnings.length === 0
+                artifact.sourceRevision === expectedSourceRevision
         );
         if (matchingArtifact) {
-            completedJobIds.add(job.jobId);
+            performedJobIds.add(job.jobId);
             completedAffectedIds.add(job.sectionId);
             completedAffectedIds.add(job.jobId);
+            if (matchingArtifact.warnings.length === 0) {
+                completedJobIds.add(job.jobId);
+            } else {
+                reviewRequiredArtifacts.push({ jobId: job.jobId, warnings: matchingArtifact.warnings });
+            }
         }
     }
     return {
@@ -47,6 +53,8 @@ function getReceiptScope(confirmation: PendingAppActionConfirmation, expectedSou
         plannedRenderAffectedIds: new Set(renderAction.payload.jobs.flatMap((job) => [job.sectionId, job.jobId])),
         completedAffectedIds,
         completedJobIds,
+        performedJobIds,
+        reviewRequiredArtifacts,
     };
 }
 
@@ -97,14 +105,16 @@ export function projectSectionRenderConfirmation(input: ProjectSectionRenderConf
         ...execution,
         affectedIds: projectAffectedIds(execution, scope),
     }));
-    const incompleteJobs = scope?.jobs.filter((job) => !scope.completedJobIds.has(job.jobId)) ?? [];
+    const incompleteJobs = scope?.jobs.filter((job) => !scope.performedJobIds.has(job.jobId)) ?? [];
     return {
         completedSectionRenderJobIds: scope?.completedJobIds ?? new Set<string>(),
+        performedSectionRenderJobIds: scope?.performedJobIds ?? new Set<string>(),
         executions,
         incompleteSectionRenders:
             incompleteJobs.length > 0
                 ? { jobs: incompleteJobs, missingJobIds: incompleteJobs.map((job) => job.jobId) }
                 : null,
+        reviewRequiredSectionRenders: scope?.reviewRequiredArtifacts ?? [],
         receipt: formatReceipt(executions, input.confirmation),
     };
 }

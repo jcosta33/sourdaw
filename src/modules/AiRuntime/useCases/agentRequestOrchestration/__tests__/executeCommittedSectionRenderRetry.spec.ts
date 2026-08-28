@@ -147,15 +147,33 @@ function createInput(): Parameters<typeof executeCommittedSectionRenderRetry>[0]
     };
 }
 
-function projectionForJobs(incompleteJobs: (typeof JOB)[], completedJobs: (typeof JOB)[] = []) {
+function projectionForJobs(
+    incompleteJobs: (typeof JOB)[],
+    completedJobs: (typeof JOB)[] = [],
+    reviewRequiredJobs: (typeof JOB)[] = [],
+    projectedAffectedId = 'projected-affected-id'
+) {
     return {
         completedSectionRenderJobIds: new Set(completedJobs.map(({ jobId }) => jobId)),
-        executions: [],
+        performedSectionRenderJobIds: new Set([...completedJobs, ...reviewRequiredJobs].map(({ jobId }) => jobId)),
+        executions: [
+            {
+                actionType: 'renderProjectSections',
+                label: 'Render sections',
+                executionKind: 'project',
+                affectedIds: [projectedAffectedId],
+                outcome: 'committed-with-warning',
+            },
+        ],
         incompleteSectionRenders:
             incompleteJobs.length > 0
                 ? { jobs: incompleteJobs, missingJobIds: incompleteJobs.map(({ jobId }) => jobId) }
                 : null,
-        receipt: '- **renderProjectSections**: Render Verse',
+        reviewRequiredSectionRenders: reviewRequiredJobs.map(({ jobId }) => ({
+            jobId,
+            warnings: ['tail truncated'],
+        })),
+        receipt: `- **renderProjectSections**: ${projectedAffectedId}`,
     };
 }
 
@@ -219,6 +237,20 @@ describe('executeCommittedSectionRenderRetry', () => {
         expect(mocks.retryRenders).not.toHaveBeenCalled();
     });
 
+    it('requires manual review without rerendering an already present warned artifact', async () => {
+        const input = createInput();
+        mocks.project.mockReturnValue(projectionForJobs([], [], [JOB]));
+
+        await expect(executeCommittedSectionRenderRetry(input)).resolves.toEqual({
+            status: 'failed',
+            reason: 'Section render artifacts require manual review: render-verse (tail truncated).',
+        });
+        expect(mocks.retryRenders).not.toHaveBeenCalled();
+        expect(mocks.reserveBudget).not.toHaveBeenCalled();
+        expect(mocks.completeContinuation).not.toHaveBeenCalled();
+        expect(mocks.updateFollowUp).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'failed' }));
+    });
+
     it('preserves retryability when the render budget hard limit is reached', async () => {
         const input = createInput();
         mocks.project.mockReturnValue(projection(true));
@@ -261,7 +293,8 @@ describe('executeCommittedSectionRenderRetry', () => {
 
     it('reconciles reserved budget and clears generation after an incomplete retry', async () => {
         const input = createInput();
-        mocks.project.mockReturnValue(projection(true));
+        const finalProjection = projectionForJobs([JOB], [], [], 'incomplete-projected-id');
+        mocks.project.mockReturnValue(finalProjection);
 
         await expect(executeCommittedSectionRenderRetry(input)).resolves.toEqual({
             status: 'failed',
@@ -276,11 +309,15 @@ describe('executeCommittedSectionRenderRetry', () => {
             provenance: 'versioned-estimate',
         });
         expect(mocks.setGenerating.mock.calls).toEqual([[true], [false]]);
+        expect(mocks.replaceExecutions).toHaveBeenCalledWith({
+            confirmationId: 'confirmation-retry',
+            executions: finalProjection.executions,
+        });
         expect(mocks.updateChat).toHaveBeenLastCalledWith(
             'assistant-retry',
             expect.objectContaining({
                 pendingActionFollowUpStatus: 'retryable',
-                content: expect.stringContaining('project actions remain committed'),
+                content: expect.stringContaining('incomplete-projected-id'),
             })
         );
     });
@@ -363,9 +400,8 @@ describe('executeCommittedSectionRenderRetry', () => {
 
     it('charges a completed attempted job when an earlier artifact is evicted', async () => {
         const input = createInput();
-        mocks.project
-            .mockReturnValueOnce(projectionForJobs([SECOND_JOB], [JOB]))
-            .mockReturnValue(projectionForJobs([JOB], [SECOND_JOB]));
+        const finalProjection = projectionForJobs([JOB], [SECOND_JOB], [], 'eviction-projected-id');
+        mocks.project.mockReturnValueOnce(projectionForJobs([SECOND_JOB], [JOB])).mockReturnValue(finalProjection);
 
         await expect(executeCommittedSectionRenderRetry(input)).resolves.toEqual({
             status: 'failed',
@@ -382,11 +418,68 @@ describe('executeCommittedSectionRenderRetry', () => {
             mode: 'final',
             provenance: 'versioned-estimate',
         });
+        expect(mocks.replaceExecutions).toHaveBeenCalledWith({
+            confirmationId: 'confirmation-retry',
+            executions: finalProjection.executions,
+        });
+        expect(mocks.updateChat).toHaveBeenLastCalledWith(
+            'assistant-retry',
+            expect.objectContaining({ content: expect.stringContaining('eviction-projected-id') })
+        );
+    });
+
+    it('retries only missing work and ends in manual review when a warned artifact remains', async () => {
+        const input = createInput();
+        const finalProjection = projectionForJobs([], [SECOND_JOB], [JOB], 'manual-review-projected-id');
+        mocks.project.mockReturnValueOnce(projectionForJobs([SECOND_JOB], [], [JOB])).mockReturnValue(finalProjection);
+
+        await expect(executeCommittedSectionRenderRetry(input)).resolves.toEqual({
+            status: 'failed',
+            reason: 'Section render artifacts require manual review: render-verse (tail truncated).',
+        });
+        expect(mocks.retryRenders).toHaveBeenCalledWith({
+            jobs: [SECOND_JOB],
+            sourceRevision: 'revision-source',
+        });
+        expect(mocks.completeContinuation).not.toHaveBeenCalled();
+        expect(mocks.reconcileBudget).toHaveBeenCalledWith(expect.objectContaining({ consumed: 1 }));
+        expect(mocks.updateFollowUp).toHaveBeenLastCalledWith({
+            confirmationId: 'confirmation-retry',
+            error: 'Section render artifacts require manual review: render-verse (tail truncated).',
+            status: 'failed',
+        });
+        expect(mocks.replaceExecutions).toHaveBeenCalledWith({
+            confirmationId: 'confirmation-retry',
+            executions: finalProjection.executions,
+        });
+        expect(mocks.updateChat).toHaveBeenLastCalledWith(
+            'assistant-retry',
+            expect.objectContaining({
+                pendingActionFollowUpStatus: 'failed',
+                content: expect.stringContaining('project commands were not replayed'),
+            })
+        );
+    });
+
+    it('maps a newly persisted warned artifact to manual review and charges the attempted job', async () => {
+        const input = createInput();
+        const warnedProjection = projectionForJobs([], [], [JOB]);
+        mocks.project.mockReturnValueOnce(projection(true)).mockReturnValue(warnedProjection);
+        mocks.retryRenders.mockRejectedValue(new Error('tail truncated'));
+
+        await expect(executeCommittedSectionRenderRetry(input)).resolves.toEqual({
+            status: 'failed',
+            reason: 'Section render artifacts require manual review: render-verse (tail truncated).',
+        });
+        expect(mocks.completeContinuation).not.toHaveBeenCalled();
+        expect(mocks.reconcileBudget).toHaveBeenCalledWith(expect.objectContaining({ consumed: 1 }));
+        expect(mocks.updateFollowUp).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'failed' }));
     });
 
     it('completes durable continuation before publishing successful retry state', async () => {
         const input = createInput();
-        mocks.project.mockReturnValueOnce(projection(true)).mockReturnValue(projection(false));
+        const finalProjection = projectionForJobs([], [JOB], [], 'success-projected-id');
+        mocks.project.mockReturnValueOnce(projection(true)).mockReturnValue(finalProjection);
 
         await expect(executeCommittedSectionRenderRetry(input)).resolves.toEqual({ status: 'executed' });
         expect(mocks.completeContinuation).toHaveBeenCalledWith({
@@ -398,12 +491,16 @@ describe('executeCommittedSectionRenderRetry', () => {
             mocks.updateConfirmation.mock.invocationCallOrder.at(-1) ?? 0
         );
         expect(mocks.setGenerating.mock.calls).toEqual([[true], [false]]);
+        expect(mocks.replaceExecutions).toHaveBeenCalledWith({
+            confirmationId: 'confirmation-retry',
+            executions: finalProjection.executions,
+        });
         expect(mocks.updateChat).toHaveBeenLastCalledWith(
             'assistant-retry',
             expect.objectContaining({
                 pendingActionConfirmationStatus: 'executed',
                 pendingActionFollowUpStatus: 'complete',
-                content: expect.stringContaining('without replaying project actions'),
+                content: expect.stringContaining('success-projected-id'),
             })
         );
     });

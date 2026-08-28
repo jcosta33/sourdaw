@@ -21,6 +21,7 @@ type RetryBudget = {
     attemptId: string;
     reservation: ReturnType<typeof agentRunLifecycle.reserveBudget>;
 };
+type SectionRenderProjection = ReturnType<typeof projectSectionRenderConfirmation>;
 
 const RENDER_RETRY_BUDGET_PERSISTENCE_WARNING =
     'Agent render retry budget reconciliation could not be persisted. The render outcome remains authoritative; review durable run budget state before retrying.';
@@ -142,6 +143,23 @@ function failIncompleteRetry(
     return { status: 'failed', reason };
 }
 
+function finishManualReview(confirmation: PendingAppActionConfirmation): RetryResult {
+    const refreshed = refreshConfirmationProjection(confirmation);
+    const reviewSummary = refreshed.projection.reviewRequiredSectionRenders
+        .map(({ jobId, warnings }) => `${jobId} (${warnings.join('; ')})`)
+        .join(', ');
+    const reason = `Section render artifacts require manual review: ${reviewSummary}.`;
+    updatePendingActionFollowUp({ confirmationId: confirmation.id, error: reason, status: 'failed' });
+    updatePendingActionConfirmationStatus({ confirmationId: confirmation.id, status: 'executed', error: reason });
+    updateChatMessage(confirmation.assistantMessageId, {
+        pendingActionConfirmationStatus: 'executed',
+        pendingActionFollowUpStatus: 'failed',
+        error: reason,
+        content: `Applied after confirmation:\n\n${refreshed.projection.receipt}\n\nThe project commands were not replayed. Retained section render artifacts require manual review: ${reviewSummary}.`,
+    });
+    return { status: 'failed', reason };
+}
+
 function reconcileRetryBudget(
     confirmation: PendingAppActionConfirmation,
     budget: RetryBudget | null,
@@ -150,8 +168,8 @@ function reconcileRetryBudget(
     if (budget?.reservation.status !== 'reserved') {
         return;
     }
-    const completedJobIds = projectSectionRenderConfirmation({ confirmation }).completedSectionRenderJobIds;
-    const completedJobsCount = attemptedJobs.filter(({ jobId }) => completedJobIds.has(jobId)).length;
+    const performedJobIds = projectSectionRenderConfirmation({ confirmation }).performedSectionRenderJobIds;
+    const completedJobsCount = attemptedJobs.filter(({ jobId }) => performedJobIds.has(jobId)).length;
     agentRunLifecycle.reconcileBudgetAttempt({
         runId: confirmation.runId,
         attemptId: budget.attemptId,
@@ -202,6 +220,9 @@ export async function executeCommittedSectionRenderRetry(input: {
     const initialProjection = projectSectionRenderConfirmation({ confirmation });
     const followUp = initialProjection.incompleteSectionRenders;
     if (!followUp) {
+        if (initialProjection.reviewRequiredSectionRenders.length > 0) {
+            return finishManualReview(confirmation);
+        }
         return finishAlreadyComplete(confirmation, durableReceipt);
     }
     const sourceRevision = confirmation.followUpProjectRevision;
@@ -220,22 +241,36 @@ export async function executeCommittedSectionRenderRetry(input: {
     updateChatMessage(confirmation.assistantMessageId, { pendingActionFollowUpStatus: 'running' });
     setChatGenerating(true);
     let renderFailureReason: string | undefined;
+    let manualReviewProjection: SectionRenderProjection | null = null;
     let budgetPersistenceWarning: string | null = null;
     try {
-        await retryAgentProjectSectionRenders({ jobs: followUp.jobs, sourceRevision });
-        const remaining = projectSectionRenderConfirmation({ confirmation }).incompleteSectionRenders;
-        if (remaining) {
-            throw new Error(`Section render jobs remain incomplete: ${remaining.missingJobIds.join(', ')}`);
+        try {
+            await retryAgentProjectSectionRenders({ jobs: followUp.jobs, sourceRevision });
+        } catch (error) {
+            renderFailureReason = error instanceof Error ? error.message : String(error);
         }
-        completeDurableContinuation(durableReceipt);
-    } catch (error) {
-        renderFailureReason = error instanceof Error ? error.message : String(error);
+        const liveProjection = projectSectionRenderConfirmation({ confirmation });
+        if (liveProjection.reviewRequiredSectionRenders.length > 0) {
+            manualReviewProjection = liveProjection;
+        } else if (renderFailureReason === undefined && liveProjection.incompleteSectionRenders) {
+            renderFailureReason = `Section render jobs remain incomplete: ${liveProjection.incompleteSectionRenders.missingJobIds.join(', ')}`;
+        }
+        if (renderFailureReason === undefined && !manualReviewProjection) {
+            try {
+                completeDurableContinuation(durableReceipt);
+            } catch (error) {
+                renderFailureReason = error instanceof Error ? error.message : String(error);
+            }
+        }
     } finally {
         try {
             budgetPersistenceWarning = reconcileRetryBudgetBestEffort(confirmation, budget, followUp.jobs);
         } finally {
             setChatGenerating(false);
         }
+    }
+    if (manualReviewProjection) {
+        return finishManualReview(confirmation);
     }
     if (renderFailureReason !== undefined) {
         return failIncompleteRetry(confirmation, renderFailureReason, budgetPersistenceWarning);

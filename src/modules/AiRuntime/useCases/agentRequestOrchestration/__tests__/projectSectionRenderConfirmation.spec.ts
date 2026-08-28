@@ -85,6 +85,8 @@ describe('projectSectionRenderConfirmation', () => {
 
         expect(projected.incompleteSectionRenders).toBeNull();
         expect(projected.completedSectionRenderJobIds).toEqual(new Set([JOB.jobId]));
+        expect(projected.performedSectionRenderJobIds).toEqual(new Set([JOB.jobId]));
+        expect(projected.reviewRequiredSectionRenders).toEqual([]);
         expect(projected.executions[0]?.affectedIds).toEqual(['unrelated-id', JOB.sectionId, JOB.jobId]);
     });
 
@@ -97,7 +99,6 @@ describe('projectSectionRenderConfirmation', () => {
         ['sampleRate', { ...EXACT_ARTIFACT, sampleRate: 48_000 }],
         ['tailSeconds', { ...EXACT_ARTIFACT, tailSeconds: 1 }],
         ['sourceRevision', { ...EXACT_ARTIFACT, sourceRevision: 'revision-other' }],
-        ['warnings', { ...EXACT_ARTIFACT, warnings: ['tail truncated'] }],
     ])('keeps the job incomplete when artifact %s differs', (_field, artifact) => {
         mocks.getArtifacts.mockReturnValue([artifact]);
 
@@ -106,6 +107,18 @@ describe('projectSectionRenderConfirmation', () => {
         expect(projected.incompleteSectionRenders).toEqual({ jobs: [JOB], missingJobIds: [JOB.jobId] });
         expect(projected.completedSectionRenderJobIds).toEqual(new Set());
         expect(projected.executions[0]?.affectedIds).toEqual(['unrelated-id']);
+    });
+
+    it('projects an exact warned artifact as present but review-required', () => {
+        mocks.getArtifacts.mockReturnValue([{ ...EXACT_ARTIFACT, warnings: ['tail truncated'] }]);
+
+        const projected = projectSectionRenderConfirmation({ confirmation: createConfirmation() });
+
+        expect(projected.incompleteSectionRenders).toBeNull();
+        expect(projected.completedSectionRenderJobIds).toEqual(new Set());
+        expect(projected.performedSectionRenderJobIds).toEqual(new Set([JOB.jobId]));
+        expect(projected.reviewRequiredSectionRenders).toEqual([{ jobId: JOB.jobId, warnings: ['tail truncated'] }]);
+        expect(projected.executions[0]?.affectedIds).toEqual(['unrelated-id', JOB.sectionId, JOB.jobId]);
     });
 
     it('keeps a warned earlier artifact incomplete after another exact job completes', () => {
@@ -131,8 +144,10 @@ describe('projectSectionRenderConfirmation', () => {
 
         const projected = projectSectionRenderConfirmation({ confirmation });
 
-        expect(projected.incompleteSectionRenders).toEqual({ jobs: [JOB], missingJobIds: [JOB.jobId] });
+        expect(projected.incompleteSectionRenders).toBeNull();
         expect(projected.completedSectionRenderJobIds).toEqual(new Set([secondJob.jobId]));
-        expect(projected.executions[0]?.affectedIds).not.toContain(JOB.jobId);
+        expect(projected.performedSectionRenderJobIds).toEqual(new Set([JOB.jobId, secondJob.jobId]));
+        expect(projected.reviewRequiredSectionRenders).toEqual([{ jobId: JOB.jobId, warnings: ['tail truncated'] }]);
+        expect(projected.executions[0]?.affectedIds).toContain(JOB.jobId);
     });
 });
