@@ -95,6 +95,52 @@ export type PluginStateDirty = {
     instance_id: string;
 };
 
+/**
+ * Payload of `plugin-parameters-rescanned`, pushed after a plugin announced that
+ * its parameter contract moved — a preset load that renames, rescales or
+ * re-declares controls.
+ *
+ * It names the instance and nothing else: the fresh list is read back through
+ * `get_plugin_parameters`, so the contract has exactly one wire shape.
+ */
+export type PluginParametersRescanned = {
+    instance_id: string;
+};
+
+/**
+ * What one plugin-originated parameter event is.
+ *
+ * `gesture_begin` and `gesture_end` bracket the edits a user makes while holding
+ * a control in the plugin's own editor, which is what lets a recorder tell a
+ * held ride from a run of separate nudges.
+ */
+export type PluginParameterEventKind = 'gesture_begin' | 'value' | 'gesture_end';
+
+/**
+ * One edit a plugin made to one of its own parameters.
+ *
+ * `value` is present only on a `value` event: a gesture boundary reports that
+ * the user took hold or let go and carries no setting.
+ */
+export type PluginParameterEvent = {
+    param_id: number;
+    kind: PluginParameterEventKind;
+    value?: number;
+};
+
+/**
+ * Payload of `plugin-parameter-events`: one instance's edits, in the order the
+ * plugin produced them.
+ *
+ * Batched because a continuous ride emits a value per audio block, and one
+ * message per edit would put thousands of round trips a second on the renderer
+ * for a single knob.
+ */
+export type PluginParameterEvents = {
+    instance_id: string;
+    events: PluginParameterEvent[];
+};
+
 export type ScanResult = {
     plugins: ScannedPlugin[];
     /** What went wrong: an unreadable root, a failed candidate, a safety limit. */

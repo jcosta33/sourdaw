@@ -17,6 +17,9 @@ export { unloadPlugin } from './pluginLifecycle/unloadPlugin';
 export { openPluginGui } from './pluginLifecycle/openPluginGui';
 export { closePluginGui } from './pluginLifecycle/closePluginGui';
 export { watchPluginStateDirty } from './pluginLifecycle/watchPluginStateDirty';
+// The edit shape stays private: a foreign module derives it from this callable,
+// which is the module contract, rather than from a type the use case owns.
+export { observeExternalPluginParameterEdits } from './pluginLifecycle/observeExternalPluginParameterEdits';
 export { processAudioIPC } from './pluginLifecycle/processAudioIPC';
 export { setPluginParameter } from './pluginLifecycle/setPluginParameter';
 export { refreshExternalPluginParameters } from './pluginLifecycle/refreshExternalPluginParameters';
