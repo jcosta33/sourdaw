@@ -1,0 +1,39 @@
+src/modules/AudioRendering/handlers/__tests__/handleRenderProjectSections.spec.ts
+  s_a40848e8f8cca9::t_13e82843de9df0 60,65,87,89-94
+  s_a40848e8f8cca9::t_a1c389a08e22d6 83
+src/modules/AiRuntime/useCases/__tests__/confirmPendingChatActions.spec.ts
+  s_a40848e8f8cca9::t_a147d56f1e9555 3208,3222
+  s_a40848e8f8cca9::t_026a624ffc5d3a 3123-3207,3209-3221,3223-3226
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/admitCommittedSectionRenderRetry.spec.ts
+  s_a40848e8f8cca9::t_13e82843de9df0 377,408-429
+  s_a40848e8f8cca9::t_a1c389a08e22d6 379,390
+src/modules/AiRuntime/useCases/agentRequestOrchestration/admitCommittedSectionRenderRetry.ts
+  s_a40848e8f8cca9::t_c31dcf38320bcd 195-200,315
+src/utils/handlerContract.ts
+  s_a40848e8f8cca9::t_9653c22e06698d 2332-2333,2338-2343,2400-2401
+src/modules/AudioRendering/handlers/handleRenderProjectSections.ts
+  s_a40848e8f8cca9::t_9653c22e06698d 71-80
+  s_a40848e8f8cca9::t_a1c389a08e22d6 67,70,81
+src/modules/AiRuntime/useCases/confirmPendingChatActions.ts
+  s_a40848e8f8cca9::t_9653c22e06698d 783,789-797,943
+src/modules/Command/useCases/__tests__/executeAppActionBatch.spec.ts
+  s_a40848e8f8cca9::t_13e82843de9df0 13,227-228,230,237-239
+src/modules/Command/useCases/executeAppActionBatch.ts
+  s_a40848e8f8cca9::t_9653c22e06698d 270-271,287,347-348,371,777-778,826-827
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "5a4ecf21476e26907bc2ebefdc115d835c1d7076",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
