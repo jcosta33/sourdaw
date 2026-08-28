@@ -763,6 +763,38 @@ describe('executeCommittedSectionRenderRetry', () => {
         );
     });
 
+    it('rejects finalization when its captured retained-artifact validator sees a post-render eviction', async () => {
+        const input = createInput();
+        const postRenderProjection = projectionForJobs([], [JOB]);
+        const evictedProjection = projectionForJobs([JOB]);
+        mocks.project
+            .mockReturnValueOnce(projection(true))
+            .mockReturnValueOnce(postRenderProjection)
+            .mockReturnValueOnce(evictedProjection);
+        mocks.finalizeCommandReceipt.mockImplementation(({ pendingReceipt, validateRecoveredEffects }) => {
+            const reason = validateRecoveredEffects();
+            return Promise.resolve(
+                reason
+                    ? { status: 'failed' as const, reason }
+                    : { status: 'finalized' as const, receipt: pendingReceipt }
+            );
+        });
+
+        await expect(executeCommittedSectionRenderRetry(input)).resolves.toEqual({
+            status: 'failed',
+            reason: 'Approved section render artifacts changed before durable retry completion: render-verse',
+        });
+
+        expect(mocks.finalizeCommandReceipt).toHaveBeenCalledOnce();
+        expect(mocks.completeContinuation).not.toHaveBeenCalled();
+        expect(mocks.updateFollowUp).toHaveBeenLastCalledWith(
+            expect.objectContaining({
+                status: 'retryable',
+                error: 'Approved section render artifacts changed before durable retry completion: render-verse',
+            })
+        );
+    });
+
     it('keeps AgentRun pending when Command receipt finalization fails', async () => {
         const input = createInput();
         mocks.project.mockReturnValueOnce(projection(true)).mockReturnValue(projection(false));

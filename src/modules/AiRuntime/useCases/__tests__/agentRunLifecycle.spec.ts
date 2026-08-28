@@ -259,6 +259,43 @@ describe('agentRunLifecycle', () => {
         retryableFollowUp.mockRestore();
     });
 
+    it('hides an executed retryable confirmation that owns the exact retained section-render continuation', () => {
+        createRenderReviewRun();
+        const continuation = agentRunLifecycle.get('run-render-review')?.pendingEffectContinuations[0];
+        if (!continuation) {
+            throw new Error('Expected retained render continuation');
+        }
+        pendingActionConfirmationStore.clearPendingActionConfirmations();
+        pendingActionConfirmationStore.proposePendingActionConfirmation({
+            id: 'confirmation-render-retry',
+            runId: 'run-render-review',
+            prompt: 'Retry the retained verse render.',
+            assistantMessageId: 'assistant-render-retry',
+            actions: [{ type: 'renderProjectSections', payload: { jobs: [] } }],
+            actionLabels: ['Render Verse'],
+            executionMode: 'atomic',
+            projectRevision: 'heads-render-review',
+            groupId: 'batch-render-review',
+            commandBatch: {
+                authority: continuation.authority,
+                serialized: continuation.serializedBatch,
+            },
+        });
+        pendingActionConfirmationStore.updatePendingActionConfirmationStatus({
+            confirmationId: 'confirmation-render-retry',
+            status: 'executed',
+        });
+        pendingActionConfirmationStore.updatePendingActionFollowUp({
+            confirmationId: 'confirmation-render-retry',
+            projectRevision: 'heads-render-review',
+            status: 'retryable',
+        });
+
+        expect(selectAgentRunPendingEffectRecoveries(readAgentRunState())).toEqual([]);
+
+        pendingActionConfirmationStore.clearPendingActionConfirmations();
+    });
+
     it('atomically converts mixed pending effects to durable manual repair without changing their kinds', () => {
         createRenderReviewRun();
         const recovery = agentRunLifecycle.getPendingEffectRecovery({

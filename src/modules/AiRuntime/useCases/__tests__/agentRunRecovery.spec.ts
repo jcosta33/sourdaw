@@ -1201,6 +1201,75 @@ describe('agent run recovery', () => {
         ]);
     });
 
+    it('dispatches only retained section-render entries from a mixed durable recovery ledger', async () => {
+        const runId = 'run-mixed-retained-startup';
+        const renderBatchId = 'batch-retained-render';
+        const genericBatchId = 'batch-unrelated-external';
+        const renderEffect = {
+            commandId: 'command-retained-render',
+            kind: 'external-effect' as const,
+            operation: 'renderProjectSections',
+            reason: 'Renderer stopped before completion.',
+            remediation: 'reconcile' as const,
+            state: 'pending' as const,
+        };
+        const genericEffect = {
+            commandId: 'command-unrelated-external',
+            kind: 'external-effect' as const,
+            operation: 'setTrackGain',
+            reason: 'Publication queue unavailable.',
+            remediation: 'reconcile' as const,
+            state: 'pending' as const,
+        };
+        createAgentRun({
+            runId,
+            request: 'Recover one retained render and one unrelated effect.',
+            mode: 'apply',
+            createdRevision: 'heads-mixed-retained-startup',
+            createdAt: 1,
+        });
+        for (const [batchId, effect] of [
+            [renderBatchId, renderEffect],
+            [genericBatchId, genericEffect],
+        ] as const) {
+            agentRunLifecycle.recordPendingEffectContinuation({
+                runId,
+                continuation: {
+                    authority: createContinuationAuthority(),
+                    batchId,
+                    effects: [effect],
+                    lastError: null,
+                    receiptIdentity: `1:${runId}:${batchId}:partially-committed`,
+                    recovery: 'reconcile-batch',
+                    serializedBatch: `{"batch":"${batchId}"}`,
+                },
+                recordedAt: 2,
+            });
+        }
+        commandRecoveryMocks.getVersionedCommandBatchIdempotentReplay.mockResolvedValue(
+            createPendingEffectRecoveryReceipt({
+                batchId: renderBatchId,
+                outcome: 'partially-committed',
+                pendingEffects: [renderEffect],
+                runId,
+            })
+        );
+
+        await expect(recoverRetainedSectionRenderEffects()).resolves.toBeUndefined();
+
+        expect(commandRecoveryMocks.getVersionedCommandBatchIdempotentReplay).toHaveBeenCalledExactlyOnceWith({
+            authority: createContinuationAuthority(),
+            serialized: `{"batch":"${renderBatchId}"}`,
+        });
+        expect(commandRecoveryMocks.executeVersionedCommandBatchEnvelope).not.toHaveBeenCalled();
+        expect(getAgentRun(runId)?.pendingEffectContinuations).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({ batchId: renderBatchId, recovery: 'manual-repair' }),
+                expect.objectContaining({ batchId: genericBatchId, recovery: 'reconcile-batch', lastError: null }),
+            ])
+        );
+    });
+
     it('rejects unsupported persisted schema versions without overwriting their bytes', async () => {
         const futureState = { schemaVersion: 2, runs: [{ runId: 'future-run', futureReceipt: 'receipt-v2' }] };
         const rawFutureState = stringify(futureState);
