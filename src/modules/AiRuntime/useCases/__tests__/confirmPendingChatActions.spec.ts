@@ -3009,6 +3009,117 @@ describe('confirmPendingChatActions transaction admission', () => {
         }
     );
 
+    it('keeps an incomplete retention-capacity render in manual recovery without arming replay', async () => {
+        configureAiWorkflowCommandPreflightFixture('project-1');
+        configureCommandBatchIdempotency({ canExecute: () => true });
+        runtimeMocks.renderOffline.mockReset();
+        const ownedStorage = createAutomergeStorage<{ bpm: number }>('owned', 'transport');
+        const executeTempo = vi.fn((action: SetTempoAction) => ownedStorage.set({ bpm: action.payload.bpm }));
+        registerHandlerMap({
+            setTempo: {
+                canReapplyAfterDivergence: (action) => action.payload.expectedBpm !== undefined,
+                execute: executeTempo,
+                describe: (action) => ({
+                    label: 'Set tempo',
+                    inverseAction: { type: 'setTempo', payload: { bpm: 120, expectedBpm: action.payload.bpm } },
+                }),
+                undoable: true,
+                validate: () => true,
+            },
+        });
+        registerHandlerMap(getAudioRenderingHandlers());
+        const jobs = Array.from({ length: 17 }, (_, index) => ({
+            jobId: `render-capacity-${String(index)}`,
+            sectionId: `section-capacity-${String(index)}`,
+            sectionName: `Capacity ${String(index)}`,
+            startBeat: index * 16,
+            endBeat: index * 16 + 16,
+            sampleRate: 44_100,
+            tailSeconds: 0,
+        }));
+        const tempoAction = { type: 'setTempo', payload: { bpm: 132 } } satisfies SetTempoAction;
+        const renderAction = {
+            type: 'renderProjectSections',
+            payload: { sectionIds: jobs.map((job) => job.sectionId), jobs },
+        } satisfies RenderSectionsAction;
+        const projectRevision = captureProjectRevision();
+        const serializeCommand = (action: SetTempoAction | RenderSectionsAction, expectedEffect: string) =>
+            serializeVersionedCommandEnvelope(
+                migrateLegacyAppActionToVersionedCommandEnvelope({
+                    action,
+                    expectedEffect,
+                    normalizedProjectRevision: projectRevision,
+                    options: {
+                        groupId: 'group-capacity-render',
+                        groupLabel: 'Tempo and capacity render',
+                        source: 'prompt',
+                    },
+                })
+            );
+        const commandBatch = compileVersionedCommandBatchEnvelope({
+            runId: 'confirmation-capacity-render',
+            batchId: 'group-capacity-render',
+            projectId: 'project-1',
+            baseRevision: projectRevision,
+            intent: 'set tempo and render too many sections',
+            commands: [
+                serializeCommand(tempoAction, 'Tempo changes to 132 BPM.'),
+                serializeCommand(renderAction, 'Render every requested section.'),
+            ],
+        });
+        agentRunLifecycle.create({
+            runId: 'confirmation-capacity-render',
+            request: 'set tempo and render too many sections',
+            mode: 'macro',
+            createdRevision: projectRevision,
+        });
+        agentRunLifecycle.transitionPhase({ runId: 'confirmation-capacity-render', phase: 'planning' });
+        agentRunLifecycle.transitionPhase({ runId: 'confirmation-capacity-render', phase: 'waiting-for-approval' });
+        proposePendingActionConfirmation({
+            id: 'confirmation-capacity-render',
+            runId: 'confirmation-capacity-render',
+            prompt: 'set tempo and render too many sections',
+            assistantMessageId: 'assistant-1',
+            actions: [tempoAction, renderAction],
+            actionLabels: ['Set tempo to 132 BPM', 'Render sections'],
+            commandBatch,
+            agentApproval: compileAgentRiskApproval({ commandBatch }),
+            executionMode: 'atomic',
+            groupId: 'group-capacity-render',
+            groupLabel: 'Tempo and capacity render',
+            projectRevision,
+        });
+
+        await expect(
+            confirmPendingChatActions({ confirmationId: 'confirmation-capacity-render' })
+        ).resolves.toMatchObject({ status: 'failed', durableCommit: true });
+
+        expect(executeTempo).toHaveBeenCalledOnce();
+        expect(runtimeMocks.renderOffline).not.toHaveBeenCalled();
+        expect(getPendingActionConfirmation('confirmation-capacity-render')).toMatchObject({
+            status: 'executed',
+            followUpProjectRevision: null,
+            followUpStatus: 'failed',
+            error: expect.stringContaining('artifact capacity exceeded'),
+        });
+        expect(chatStore.value?.messages.find((message) => message.id === 'assistant-1')).toMatchObject({
+            pendingActionFollowUpStatus: 'failed',
+            content: expect.stringContaining('The project commands were not replayed'),
+        });
+        expect(
+            selectAgentRunPendingEffectRecoveries(readAgentRunState()).find(
+                ({ runId, batchId }) => runId === 'confirmation-capacity-render' && batchId === 'group-capacity-render'
+            )
+        ).toMatchObject({ recovery: 'manual-repair' });
+
+        await expect(confirmPendingChatActions({ confirmationId: 'confirmation-capacity-render' })).resolves.toEqual({
+            status: 'not_pending',
+            currentStatus: 'executed',
+        });
+        expect(executeTempo).toHaveBeenCalledOnce();
+        expect(runtimeMocks.renderOffline).not.toHaveBeenCalled();
+    });
+
     it('invalidates a confirmed batch when another app action commits while its first handler is paused', async () => {
         configureAiWorkflowCommandPreflightFixture('project-1');
         configureCommandBatchIdempotency({ canExecute: () => true });

@@ -374,9 +374,6 @@ export function admitCommittedSectionRenderRetry(
     if (input.phase === 'arming') {
         return hasPendingReceipt ? { durableReceipt, status: 'admitted' } : { status: 'proof-mismatch' };
     }
-    if (hasPendingReceipt && durableReceipt.pendingEffects[0]?.remediation === 'manual-repair') {
-        return { status: 'proof-mismatch' };
-    }
     if (
         !hasExactBatchBinding(input.confirmation, approvedBatch, durableReceipt) ||
         (hasPendingReceipt
