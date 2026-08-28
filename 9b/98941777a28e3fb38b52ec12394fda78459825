@@ -1,0 +1,27 @@
+crates/sourdaw-native/src/host/native_bridge.rs
+  s_4f908a5afb6b58::t_0adc138a92f580 27
+  s_4f908a5afb6b58::t_a84892685be1e4 597-622
+  s_4f908a5afb6b58::t_33ffeca686edeb 661-662
+  s_4f908a5afb6b58::t_7504eac0934247 656-660,663-673
+crates/sourdaw-native/src/host/plugin_parameter_events.rs
+  s_4f908a5afb6b58::t_534d1de441215a 270
+  s_4f908a5afb6b58::t_418eb1103dfb0f 510-570
+  s_4f908a5afb6b58::t_a8da7bbf5753c3 76-80
+  s_4f908a5afb6b58::t_36533d27c35402 40-45
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "9b98941777a28e3fb38b52ec12394fda78459825",
+  "prompts": {},
+  "sessions": {
+    "s_4f908a5afb6b58": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fcb92ba4-bf56-47a4-8b57-803f335a449e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
