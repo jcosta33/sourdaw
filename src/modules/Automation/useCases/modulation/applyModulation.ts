@@ -19,6 +19,16 @@ export function applyModulation(playheadBeat: number): void {
 
     for (const mod of state.modulators) {
         if (!mod.enabled) {
+            // A disabled modulator contributes no modulation, so its runtime
+            // entry must be cleared the same way `removeModulator` clears one —
+            // otherwise the inspector halo keeps showing the last computed
+            // value as if it were live. Cleared here rather than in the enable
+            // toggle so every path that disables (local toggle, a peer's CRDT
+            // update, a hydrated project) is covered.
+            if (mod.id in runtimeValues) {
+                delete runtimeValues[mod.id];
+                changed = true;
+            }
             continue;
         }
 
