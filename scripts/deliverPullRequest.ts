@@ -46,6 +46,7 @@ export type PullRequestSnapshot = {
     headRefOid: string;
     baseRefName: string;
     baseRefOid: string;
+    mergeable: string;
     mergeStateStatus: string;
     reviewDecision: string;
     changedFiles: number;
@@ -118,8 +119,17 @@ const PASSING_CONCLUSION = 'SUCCESS';
  */
 const NON_BLOCKING_CONCLUSIONS = new Set(['SUCCESS', 'SKIPPED']);
 const CHECKS_PENDING_MERGE_STATE = 'UNSTABLE';
+const STRUCTURAL_MERGEABILITY_REFRESH_LIMIT = 1;
 
-function validatePullRequest(pullRequest: PullRequestSnapshot, checks: CheckEvidencePort): void {
+type CiAdmissionMode = 'advisory' | 'required';
+
+const ACTIVE_CI_ADMISSION_MODE: CiAdmissionMode = 'advisory';
+
+function validatePullRequest(
+    pullRequest: PullRequestSnapshot,
+    checks: CheckEvidencePort,
+    ciAdmissionMode: CiAdmissionMode
+): void {
     if (pullRequest.state !== 'OPEN') {
         fail(`PR #${pullRequest.number} is ${pullRequest.state.toLowerCase()}`);
     }
@@ -129,10 +139,17 @@ function validatePullRequest(pullRequest: PullRequestSnapshot, checks: CheckEvid
     if (!TITLE_PATTERN.test(pullRequest.title)) {
         fail(`PR #${pullRequest.number} title is not conventional`);
     }
-    validateMergeState(pullRequest, checks);
+    validateCiAdmission(pullRequest, checks, ciAdmissionMode);
     if (pullRequest.reviewDecision === 'CHANGES_REQUESTED') {
         fail(`PR #${pullRequest.number} has requested changes`);
     }
+}
+
+function validateCiAdmission(pullRequest: PullRequestSnapshot, checks: CheckEvidencePort, mode: CiAdmissionMode): void {
+    if (mode === 'advisory') {
+        return;
+    }
+    validateRequiredCiAdmission(pullRequest, checks);
 }
 
 /**
@@ -144,7 +161,7 @@ function validatePullRequest(pullRequest: PullRequestSnapshot, checks: CheckEvid
  * nothing is still running, the one required check succeeded, and every cancelled name also
  * succeeded. Every other status still refuses, because it reports something other than checks.
  */
-function validateMergeState(pullRequest: PullRequestSnapshot, checks: CheckEvidencePort): void {
+function validateRequiredCiAdmission(pullRequest: PullRequestSnapshot, checks: CheckEvidencePort): void {
     if (pullRequest.mergeStateStatus === 'CLEAN') {
         return;
     }
@@ -152,6 +169,38 @@ function validateMergeState(pullRequest: PullRequestSnapshot, checks: CheckEvide
         fail(`PR #${pullRequest.number} merge state is ${pullRequest.mergeStateStatus}`);
     }
     validateSupersededChecks(pullRequest, checks);
+}
+
+function validateStructuralMergeability(pullRequest: PullRequestSnapshot): void {
+    if (pullRequest.mergeable === 'MERGEABLE') {
+        return;
+    }
+    if (pullRequest.mergeable === 'CONFLICTING') {
+        fail(`PR #${pullRequest.number} has conflicting changes`);
+    }
+    if (pullRequest.mergeable === 'UNKNOWN') {
+        fail(
+            `PR #${pullRequest.number} structural mergeability remained UNKNOWN after ` +
+                `${STRUCTURAL_MERGEABILITY_REFRESH_LIMIT} refresh`
+        );
+    }
+    fail(`PR #${pullRequest.number} has invalid structural mergeability ${String(pullRequest.mergeable)}`);
+}
+
+function resolveStructuralMergeability(
+    initial: PullRequestSnapshot,
+    port: Pick<DeliveryPort, 'pullRequest'>
+): PullRequestSnapshot {
+    let pullRequest = initial;
+    for (
+        let refreshes = 0;
+        pullRequest.mergeable === 'UNKNOWN' && refreshes < STRUCTURAL_MERGEABILITY_REFRESH_LIMIT;
+        refreshes += 1
+    ) {
+        pullRequest = port.pullRequest(initial.number);
+    }
+    validateStructuralMergeability(pullRequest);
+    return pullRequest;
 }
 
 function validateSupersededChecks(pullRequest: PullRequestSnapshot, checks: CheckEvidencePort): void {
@@ -598,20 +647,27 @@ function completeIssueAfterMerge(
     }
 }
 
-export function deliverPullRequest(number: number, port: DeliveryPort, tracker: TrackerCompletionPort): void {
+function deliverPullRequestWithCiAdmission(
+    number: number,
+    port: DeliveryPort,
+    tracker: TrackerCompletionPort,
+    ciAdmissionMode: CiAdmissionMode
+): void {
     port.fetch();
-    const initial = port.pullRequest(number);
-    validateBaseBranch(initial);
-    if (initial.state === 'MERGED') {
-        const receipt = readDeliveryReceipt(initial, port);
-        const remaining = port.dependents(initial.headRefName).filter((candidate) => candidate.number !== number);
-        retargetDependents(remaining, initial.baseRefName, port);
+    const initialRead = port.pullRequest(number);
+    if (initialRead.state === 'MERGED') {
+        validateBaseBranch(initialRead);
+        const receipt = readDeliveryReceipt(initialRead, port);
+        const remaining = port.dependents(initialRead.headRefName).filter((candidate) => candidate.number !== number);
+        retargetDependents(remaining, initialRead.baseRefName, port);
         completeIssueAfterMerge(number, receipt.closingIssue, tracker);
         port.log(`PR #${number} was already merged; repaired ${remaining.length} remaining dependent(s)`);
         return;
     }
+    const initial = resolveStructuralMergeability(initialRead, port);
+    validateBaseBranch(initial);
     const initialTrackerTarget = trackerCompletionTarget(initial);
-    validatePullRequest(initial, port);
+    validatePullRequest(initial, port, ciAdmissionMode);
     validateReview(number, port.reviewState(number, initial.headRefOid));
 
     const dependents = port.dependents(initial.headRefName).filter((candidate) => candidate.number !== number);
@@ -621,9 +677,9 @@ export function deliverPullRequest(number: number, port: DeliveryPort, tracker: 
     port.log(`review size: ${initial.changedFiles} file(s), +${initial.additions}/-${initial.deletions}`);
 
     port.fetch();
-    const current = port.pullRequest(number);
+    const current = resolveStructuralMergeability(port.pullRequest(number), port);
     const currentTrackerTarget = trackerCompletionTarget(current);
-    validatePullRequest(current, port);
+    validatePullRequest(current, port, ciAdmissionMode);
     validateStableTrackerTarget(number, initialTrackerTarget, currentTrackerTarget);
     validateStablePullRequest(initial, current);
     validateReview(number, port.reviewState(number, current.headRefOid));
@@ -637,6 +693,19 @@ export function deliverPullRequest(number: number, port: DeliveryPort, tracker: 
     port.merge(number, current.headRefOid, currentDependents.length > 0);
     retargetDependents(currentDependents, current.baseRefName, port);
     completeIssueAfterMerge(number, receipt.closingIssue, tracker);
+}
+
+export function deliverPullRequest(number: number, port: DeliveryPort, tracker: TrackerCompletionPort): void {
+    deliverPullRequestWithCiAdmission(number, port, tracker, ACTIVE_CI_ADMISSION_MODE);
+}
+
+/** Retained as the snapshot-backed cutover path if CI becomes merge-authoritative again. */
+export function deliverPullRequestWithRequiredCi(
+    number: number,
+    port: DeliveryPort,
+    tracker: TrackerCompletionPort
+): void {
+    deliverPullRequestWithCiAdmission(number, port, tracker, 'required');
 }
 
 function capture(command: string, args: string[]): string {
@@ -871,6 +940,7 @@ export function shellPort(
         'headRefOid',
         'baseRefName',
         'baseRefOid',
+        'mergeable',
         'mergeStateStatus',
         'reviewDecision',
         'changedFiles',

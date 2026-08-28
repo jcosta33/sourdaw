@@ -8,6 +8,7 @@ import { parse } from 'yaml';
 
 import {
     deliverPullRequest as deliverPullRequestWithTracker,
+    deliverPullRequestWithRequiredCi as deliverPullRequestWithRequiredCiAndTracker,
     gateRequiredCheckNames,
     parseCliArgs,
     readGateRequiredCheckNames,
@@ -245,6 +246,7 @@ function pullRequest(overrides: Partial<PullRequestSnapshot> = {}): PullRequestS
         headRefOid: 'head',
         baseRefName: 'main',
         baseRefOid: 'base',
+        mergeable: 'MERGEABLE',
         mergeStateStatus: 'CLEAN',
         reviewDecision: '',
         changedFiles: 3,
@@ -334,7 +336,7 @@ type FakeInput = {
     reviewStates?: ReviewState[];
     dependentSets?: StackedPullRequest[][];
     dirty?: boolean;
-    headCheckRuns?: HeadCheckRun[];
+    headCheckRuns?: HeadCheckRun[] | Error;
     gateRequiredCheckNames?: ReadonlySet<string>;
     deletesMergedBranches?: boolean;
     failRetargetOnce?: number;
@@ -422,6 +424,9 @@ function fakePort(input: FakeInput = {}) {
             if (runs === undefined) {
                 throw new Error(`PR #${number} check rollup is unreadable`);
             }
+            if (runs instanceof Error) {
+                throw runs;
+            }
             return runs;
         },
         reviewState: (number, expectedHead) => {
@@ -487,6 +492,16 @@ function deliverPullRequest(
     }
 ): void {
     deliverPullRequestWithTracker(number, port, tracker);
+}
+
+function deliverPullRequestWithRequiredCi(
+    number: number,
+    port: DeliveryPort,
+    tracker: TrackerCompletionPort = {
+        complete: (issueNumber: number) => expect.fail(`unexpected issue completion: ${issueNumber}`),
+    }
+): void {
+    deliverPullRequestWithRequiredCiAndTracker(number, port, tracker);
 }
 
 describe('pull-request delivery', () => {
@@ -725,12 +740,69 @@ describe('pull-request delivery', () => {
     it('rejects mergeability drift after harmless base movement', () => {
         const { port, calls } = fakePort({
             primary: [
-                pullRequest({ mergeStateStatus: 'CLEAN', baseRefOid: 'base-before' }),
-                pullRequest({ mergeStateStatus: 'BLOCKED', baseRefOid: 'base-after' }),
+                pullRequest({ mergeable: 'MERGEABLE', baseRefOid: 'base-before' }),
+                pullRequest({ mergeable: 'CONFLICTING', baseRefOid: 'base-after' }),
             ],
         });
 
-        expect(() => deliverPullRequest(42, port)).toThrow(/BLOCKED/);
+        expect(() => deliverPullRequest(42, port)).toThrow(/conflicting changes/);
+        expect(calls).not.toContain('merge:42:head');
+    });
+
+    it('rejects structural conflicts regardless of advisory CI state', () => {
+        const { port, calls } = fakePort({
+            primary: [pullRequest({ mergeable: 'CONFLICTING', mergeStateStatus: 'CLEAN' })],
+        });
+
+        expect(() => deliverPullRequest(42, port)).toThrow(/conflicting changes/);
+        expect(calls).not.toContain('merge:42:head');
+    });
+
+    it('refreshes a transient UNKNOWN structural mergeability once and then delivers', () => {
+        const { port, calls } = fakePort({
+            primary: [
+                pullRequest({ mergeable: 'UNKNOWN' }),
+                pullRequest({ mergeable: 'MERGEABLE' }),
+                pullRequest({ mergeable: 'MERGEABLE' }),
+            ],
+        });
+
+        deliverPullRequest(42, port);
+
+        expect(calls).toContain('merge:42:head');
+    });
+
+    it('rejects a base substituted while refreshing UNKNOWN structural mergeability', () => {
+        const { port, calls } = fakePort({
+            primary: [
+                pullRequest({ mergeable: 'UNKNOWN' }),
+                pullRequest({ mergeable: 'MERGEABLE', baseRefName: 'release/1.0' }),
+            ],
+        });
+
+        expect(() => deliverPullRequest(42, port)).toThrow(/targets release\/1\.0, not main/);
+        expect(calls).not.toContain('merge:42:head');
+    });
+
+    it('rejects structural mergeability that remains UNKNOWN after one refresh', () => {
+        const { port, calls } = fakePort({
+            primary: [pullRequest({ mergeable: 'UNKNOWN' }), pullRequest({ mergeable: 'UNKNOWN' })],
+        });
+
+        expect(() => deliverPullRequest(42, port)).toThrow(/remained UNKNOWN after 1 refresh/);
+        expect(calls).not.toContain('merge:42:head');
+    });
+
+    it('rejects a persistent UNKNOWN structural mergeability at the second validation point', () => {
+        const { port, calls } = fakePort({
+            primary: [
+                pullRequest({ mergeable: 'MERGEABLE' }),
+                pullRequest({ mergeable: 'UNKNOWN' }),
+                pullRequest({ mergeable: 'UNKNOWN' }),
+            ],
+        });
+
+        expect(() => deliverPullRequest(42, port)).toThrow(/remained UNKNOWN after 1 refresh/);
         expect(calls).not.toContain('merge:42:head');
     });
 
@@ -834,6 +906,19 @@ describe('pull-request delivery', () => {
         expect(calls).not.toContain('merge:42:head');
     });
 
+    it('rejects a review thread opened between the first and second pre-merge checks', () => {
+        const { port, calls } = fakePort({
+            reviewStates: [
+                { latestReviewerStateOnHead: 'APPROVED', unresolvedThreads: 0 },
+                { latestReviewerStateOnHead: 'APPROVED', unresolvedThreads: 1 },
+            ],
+        });
+
+        expect(() => deliverPullRequest(42, port)).toThrow(/unresolved review thread/);
+        expect(calls.filter((call) => call.startsWith('review:'))).toHaveLength(2);
+        expect(calls).not.toContain('merge:42:head');
+    });
+
     it.each(['COMMENTED', 'CHANGES_REQUESTED'])('rejects reviewer state %s', (state) => {
         const { port, calls } = fakePort({ review: { latestReviewerStateOnHead: state, unresolvedThreads: 0 } });
 
@@ -856,6 +941,46 @@ describe('pull-request delivery', () => {
         expect(calls).not.toContain('merge:42:head');
     });
 
+    it.each([
+        { ciState: 'successful', mergeStateStatus: 'CLEAN', evidence: undefined },
+        {
+            ciState: 'failed',
+            mergeStateStatus: 'UNSTABLE',
+            evidence: [checkRun(), checkRun({ name: 'Unit suite', conclusion: 'FAILURE' })],
+        },
+        {
+            ciState: 'pending',
+            mergeStateStatus: 'UNSTABLE',
+            evidence: [checkRun(), checkRun({ name: 'Unit suite', status: 'IN_PROGRESS', conclusion: null })],
+        },
+        { ciState: 'absent', mergeStateStatus: 'UNSTABLE', evidence: [] },
+        {
+            ciState: 'cancelled',
+            mergeStateStatus: 'UNSTABLE',
+            evidence: [checkRun({ conclusion: 'CANCELLED' })],
+        },
+        {
+            ciState: 'malformed',
+            mergeStateStatus: 'UNSTABLE',
+            evidence: new Error('malformed CI evidence'),
+        },
+        {
+            ciState: 'unavailable',
+            mergeStateStatus: 'UNSTABLE',
+            evidence: new Error('CI evidence unavailable'),
+        },
+    ])('merges with $ciState CI evidence while CI admission is advisory', ({ mergeStateStatus, evidence }) => {
+        const { port, calls } = fakePort({
+            primary: [pullRequest({ mergeStateStatus }), pullRequest({ mergeStateStatus })],
+            headCheckRuns: evidence,
+        });
+
+        deliverPullRequest(42, port);
+
+        expect(calls).toContain('merge:42:head');
+        expect(calls.filter((call) => call.startsWith('checks:'))).toEqual([]);
+    });
+
     it.each(['BLOCKED', 'BEHIND', 'DIRTY', 'DRAFT', 'UNKNOWN'])(
         'rejects merge state %s and names it, because it reports something other than checks',
         (mergeStateStatus) => {
@@ -866,7 +991,7 @@ describe('pull-request delivery', () => {
 
             let thrown: unknown;
             try {
-                deliverPullRequest(42, port);
+                deliverPullRequestWithRequiredCi(42, port);
             } catch (error) {
                 thrown = error;
             }
@@ -883,7 +1008,7 @@ describe('pull-request delivery', () => {
     it('merges a CLEAN head without reading its check rollup', () => {
         const { port, calls } = fakePort({ primary: [pullRequest(), pullRequest()] });
 
-        deliverPullRequest(42, port);
+        deliverPullRequestWithRequiredCi(42, port);
 
         expect(calls).toContain('merge:42:head');
         expect(calls.filter((call) => call.startsWith('checks:'))).toEqual([]);
@@ -900,7 +1025,7 @@ describe('pull-request delivery', () => {
             headCheckRuns: supersededRunCheckRuns(),
         });
 
-        deliverPullRequest(42, port);
+        deliverPullRequestWithRequiredCi(42, port);
 
         expect(calls).toContain('merge:42:head');
     });
@@ -920,7 +1045,7 @@ describe('pull-request delivery', () => {
 
             let thrown: unknown;
             try {
-                deliverPullRequest(42, port);
+                deliverPullRequestWithRequiredCi(42, port);
             } catch (error) {
                 thrown = error;
             }
@@ -943,7 +1068,7 @@ describe('pull-request delivery', () => {
 
         let thrown: unknown;
         try {
-            deliverPullRequest(42, port);
+            deliverPullRequestWithRequiredCi(42, port);
         } catch (error) {
             thrown = error;
         }
@@ -970,7 +1095,7 @@ describe('pull-request delivery', () => {
 
         let thrown: unknown;
         try {
-            deliverPullRequest(42, port);
+            deliverPullRequestWithRequiredCi(42, port);
         } catch (error) {
             thrown = error;
         }
@@ -999,7 +1124,7 @@ describe('pull-request delivery', () => {
 
         let thrown: unknown;
         try {
-            deliverPullRequest(42, port);
+            deliverPullRequestWithRequiredCi(42, port);
         } catch (error) {
             thrown = error;
         }
@@ -1026,7 +1151,7 @@ describe('pull-request delivery', () => {
             ],
         });
 
-        deliverPullRequest(42, port);
+        deliverPullRequestWithRequiredCi(42, port);
 
         expect(calls).toContain('merge:42:head');
     });
@@ -1047,7 +1172,7 @@ describe('pull-request delivery', () => {
             gateRequiredCheckNames: new Set(['Gate', 'Lint']),
         });
 
-        deliverPullRequest(42, tolerated.port);
+        deliverPullRequestWithRequiredCi(42, tolerated.port);
 
         expect(tolerated.calls).toContain('merge:42:head');
 
@@ -1059,7 +1184,7 @@ describe('pull-request delivery', () => {
 
         let thrown: unknown;
         try {
-            deliverPullRequest(42, refused.port);
+            deliverPullRequestWithRequiredCi(42, refused.port);
         } catch (error) {
             thrown = error;
         }
@@ -1105,7 +1230,7 @@ describe('pull-request delivery', () => {
 
         let thrown: unknown;
         try {
-            deliverPullRequest(42, port);
+            deliverPullRequestWithRequiredCi(42, port);
         } catch (error) {
             thrown = error;
         }
@@ -1131,7 +1256,7 @@ describe('pull-request delivery', () => {
             ],
         });
 
-        deliverPullRequest(42, port);
+        deliverPullRequestWithRequiredCi(42, port);
 
         expect(calls).toContain('merge:42:head');
     });
@@ -1142,7 +1267,7 @@ describe('pull-request delivery', () => {
             headCheckRuns: [],
         });
 
-        expect(() => deliverPullRequest(42, port)).toThrow(/no Gate check succeeded on head/);
+        expect(() => deliverPullRequestWithRequiredCi(42, port)).toThrow(/no Gate check succeeded on head/);
         expect(calls).not.toContain('merge:42:head');
     });
 
@@ -1152,7 +1277,7 @@ describe('pull-request delivery', () => {
             headCheckRuns: [...supersededRunCheckRuns(), checkRun({ name: 'CodeQL', conclusion: 'STALE' })],
         });
 
-        expect(() => deliverPullRequest(42, port)).toThrow(/check CodeQL concluded STALE/);
+        expect(() => deliverPullRequestWithRequiredCi(42, port)).toThrow(/check CodeQL concluded STALE/);
         expect(calls).not.toContain('merge:42:head');
     });
 
@@ -1170,13 +1295,12 @@ describe('pull-request delivery', () => {
             headCheckRuns: supersededRunCheckRuns(),
         });
 
-        deliverPullRequest(42, port);
+        deliverPullRequestWithRequiredCi(42, port);
 
         expect(calls).toContain('merge:42:head');
         expect(calls).toContain('retarget:43:main');
         expect(calls.filter((call) => call.startsWith('checks:'))).toEqual(['checks:42:head', 'checks:42:head']);
     });
-
     it('rejects an aggregate CHANGES_REQUESTED decision', () => {
         const { port, calls } = fakePort({ primary: [pullRequest({ reviewDecision: 'CHANGES_REQUESTED' })] });
 
@@ -1761,6 +1885,7 @@ describe('delivery shell boundary', () => {
 
         expect(snapshot.headRefOid).toBe('head');
         expect(rollupCaptures(captures)).toEqual([]);
+        expect(captures.find((capture) => capture.args.includes('view'))?.args.join(' ')).toContain('mergeable');
 
         port.headCheckRuns(42, 'head');
 
