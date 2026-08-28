@@ -13,6 +13,7 @@ import { getTransportHandlers } from '#/modules/Transport/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { readAgentRunState } from '../../stores/agentRunStore';
+import * as stemImportConfirmation from '../agentReference/createStemImportConfirmationResourceLease';
 import {
     AGENT_RUN_COMPLETION_PERSISTENCE_WARNING,
     AGENT_RUN_FAILURE_PERSISTENCE_WARNING,
@@ -41,6 +42,7 @@ const mocks = vi.hoisted(() => ({
     retainPreparedStemImportResources: vi.fn(),
     releasePreparedStemImportResources: vi.fn(),
     discardPreparedStemImportResources: vi.fn(),
+    discardPreparedStemImportResourcesAfterVerifiedNoncommit: vi.fn(),
 }));
 
 vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
@@ -73,6 +75,7 @@ vi.mock('../agentReference/registerPreparedStemImportResources', () => ({
         retainForRecovery: mocks.retainPreparedStemImportResources,
         release: mocks.releasePreparedStemImportResources,
         discard: mocks.discardPreparedStemImportResources,
+        discardAfterVerifiedNoncommit: mocks.discardPreparedStemImportResourcesAfterVerifiedNoncommit,
     },
 }));
 
@@ -370,6 +373,41 @@ describe('executePromptActionGroup', () => {
     afterEach(() => {
         clearHandlerRegistry();
         batchFixtures = null;
+    });
+
+    it('takes cleanup ownership once and terminalizes when confirmation lease acquisition fails', async () => {
+        const fixture = getBatchFixtures().stem;
+        const acquisitionError = new Error('Confirmation resource lease acquisition failed');
+        const acquired = vi.fn();
+        const createLease = vi
+            .spyOn(stemImportConfirmation, 'createStemImportConfirmationResourceLease')
+            .mockImplementationOnce(() => {
+                throw acquisitionError;
+            });
+        seedRun(fixture);
+
+        await expect(
+            executePromptActionGroup({
+                actions: fixture.actions,
+                prompt: 'Import stems',
+                projectRevision: 'revision-1',
+                onResourceOwnershipAcquired: acquired,
+                ...admitted(fixture),
+            })
+        ).rejects.toBe(acquisitionError);
+
+        expect(acquired).toHaveBeenCalledOnce();
+        expect(mocks.discardPreparedStemImportResourcesAfterVerifiedNoncommit).toHaveBeenCalledExactlyOnceWith({
+            runId: RUN_ID,
+            stems: stemAction.payload.stems,
+        });
+        expect(mocks.executePlannedActions).not.toHaveBeenCalled();
+        expect(agentRunLifecycle.get(RUN_ID)).toMatchObject({
+            phase: 'failed',
+            batches: [{ batchId: BATCH_ID, status: 'failed' }],
+            workLeases: [{ workId: BATCH_ID, terminalState: 'failed' }],
+        });
+        createLease.mockRestore();
     });
 
     it('binds the exact application-issued approval to the admitted command batch', async () => {

@@ -407,6 +407,22 @@ describe('submitAdmittedPromptRequest', () => {
         );
     });
 
+    it('settles a clean provider planning rejection as failed while preserving the original error', async () => {
+        const providerError = new Error('Provider planning failed cleanly');
+        mocks.planPromptActions.mockRejectedValue(providerError);
+        const settle = vi.spyOn(agentRunWorkLease, 'settle');
+
+        await expect(submitAdmittedPromptRequest({ prompt: 'Play', source: 'prompt-bar' })).rejects.toBe(providerError);
+
+        expect(settle).toHaveBeenCalledExactlyOnceWith(
+            expect.objectContaining({ workId: 'provider-planning', terminalState: 'failed' })
+        );
+        expect(agentRunLifecycle.get(RUN_ID)).toMatchObject({
+            phase: 'failed',
+            workLeases: [{ workId: 'provider-planning', terminalState: 'failed' }],
+        });
+    });
+
     it('terminalizes a compiler failure after clean provider settlement without settling the provider twice', async () => {
         const compilerError = new Error('Prompt command compiler failed');
         mocks.planPromptActions.mockResolvedValue({

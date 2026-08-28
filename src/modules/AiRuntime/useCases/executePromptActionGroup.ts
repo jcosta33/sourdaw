@@ -229,7 +229,6 @@ export async function executePromptActionGroup(
             settle: (lease) =>
                 agentRunWorkLease.settleAndTerminalize({
                     ...lease,
-                    batchId: envelope.batchId,
                     outcome,
                 }),
             reportFailure: (error) => {
@@ -278,14 +277,33 @@ export async function executePromptActionGroup(
     }
     const importedStemsHaveDurableBindings =
         importedStems.length > 0 && importedStems.every((stem) => stem.assetLeaseId && stem.assetHash);
-    const importedStemResourceLease = importedStemsHaveDurableBindings
-        ? createStemImportConfirmationResourceLease(
-              input.actions,
-              `stem-promotion:${input.runId}:${envelope.batchId}`,
-              input.runId
-          )
-        : undefined;
-    input.onResourceOwnershipAcquired?.();
+    let importedStemResourceLease: ReturnType<typeof createStemImportConfirmationResourceLease>;
+    try {
+        // The action group owns cleanup from this point, including a failed
+        // durable confirmation-lease acquisition.
+        input.onResourceOwnershipAcquired?.();
+        importedStemResourceLease = importedStemsHaveDurableBindings
+            ? createStemImportConfirmationResourceLease(
+                  input.actions,
+                  `stem-promotion:${input.runId}:${envelope.batchId}`,
+                  input.runId
+              )
+            : undefined;
+    } catch (error) {
+        const reason = getErrorMessage(error);
+        const leaseSettlement = settleTerminalCommand('failed');
+        try {
+            await preparedStemImportResources.discardAfterVerifiedNoncommit({
+                runId: input.runId,
+                stems: importedStems,
+            });
+        } catch (cleanupError) {
+            notifyAiChange(appendSettlementWarning(`Command not executed: ${reason}`, leaseSettlement.warning), []);
+            throw new AggregateError([error, cleanupError], reason, { cause: cleanupError });
+        }
+        notifyAiChange(appendSettlementWarning(`Command not executed: ${reason}`, leaseSettlement.warning), []);
+        throw error;
+    }
     const releaseImportedStems = async (): Promise<void> => {
         if (importedStemResourceLease) {
             await importedStemResourceLease.release();

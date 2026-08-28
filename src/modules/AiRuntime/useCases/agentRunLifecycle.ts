@@ -1522,7 +1522,7 @@ function retryAgentRunWorkLease(input: {
     return updated === null ? { status: 'missing-run' as const } : result;
 }
 
-type SettleAgentRunWorkLeaseResult = SettleWorkLeaseResult | { status: 'missing-run' };
+type SettleAgentRunWorkLeaseResult = SettleWorkLeaseResult | { status: 'missing-run' | 'missing-batch' };
 
 type AgentRunCommandTerminalOutcome = 'failed' | 'ambiguous' | 'no-op';
 
@@ -1582,11 +1582,17 @@ function settleAgentRunWorkLeaseAndTerminalize(input: {
     cancellationGeneration: number;
     idempotencyKey: string;
     receiptIdentity: string;
-    batchId: string;
     outcome: AgentRunCommandTerminalOutcome;
     settledAt?: number;
 }): SettleAgentRunWorkLeaseResult {
     const settledAt = input.settledAt ?? Date.now();
+    const current = readAgentRunState().runs.find((run) => run.runId === input.runId);
+    if (!current) {
+        return { status: 'missing-run' };
+    }
+    if (!current.batches.some((batch) => batch.batchId === input.workId)) {
+        return { status: 'missing-batch' };
+    }
     const terminal = getAgentRunCommandTerminalOutcome(input.outcome);
     let result: SettleAgentRunWorkLeaseResult = { status: 'missing-run' };
     const updated = updateAgentRunIfPresent(input.runId, settledAt, (run) => {
@@ -1598,7 +1604,7 @@ function settleAgentRunWorkLeaseAndTerminalize(input: {
         return {
             ...outcome.run,
             batches: outcome.run.batches.map((batch) =>
-                batch.batchId === input.batchId ? { ...batch, status: terminal.batchStatus } : batch
+                batch.batchId === input.workId ? { ...batch, status: terminal.batchStatus } : batch
             ),
             phase: reduceAgentRunTransition(outcome.run.phase, { type: 'phase-requested', phase: terminal.phase }),
         };

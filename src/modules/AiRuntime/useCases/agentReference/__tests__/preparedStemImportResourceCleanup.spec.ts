@@ -355,6 +355,82 @@ describe('prepared stem import resource cleanup', () => {
         setItem.mockRestore();
     });
 
+    it('retries interrupted-transfer durability after physical cleanup without releasing a stem twice', async () => {
+        const runId = 'stem-transfer-discard-retry';
+        const twoStems = [
+            ...stems,
+            {
+                ...stems[0],
+                audioBufferId: 'decoded-buffer-2',
+                assetHash: 'hash-staged-asset-2',
+                assetLeaseId: 'staged-asset-2',
+                clipId: 'clip-staged-asset-2',
+                stemId: 'stem-staged-asset-2',
+            },
+        ];
+        agentRunLifecycle.create({ runId, request: 'Import stems.', mode: 'plan', createdRevision: 'r1' });
+        preparedStemImportResources.register({ runId, stems: twoStems });
+        const durableBefore = window.localStorage.getItem('sourdaw-agent-runs');
+        const setItem = vi
+            .spyOn(Storage.prototype, 'setItem')
+            .mockImplementationOnce(() => {
+                throw new Error('initial transfer persistence failed');
+            })
+            .mockImplementationOnce(() => {
+                throw new Error('cleanup retry persistence failed');
+            });
+
+        expect(() => preparedStemImportResources.release({ runId, stems: twoStems })).toThrow(
+            'Agent run state could not be persisted locally'
+        );
+        await expect(preparedStemImportResources.discard({ runId, stems: twoStems })).rejects.toThrow(
+            'Agent run state could not be persisted locally'
+        );
+        expect(window.localStorage.getItem('sourdaw-agent-runs')).toBe(durableBefore);
+        expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledExactlyOnceWith('decoded-buffer-1');
+
+        await expect(preparedStemImportResources.discard({ runId, stems: twoStems })).resolves.toBeUndefined();
+        await expect(preparedStemImportResources.discard({ runId, stems: twoStems })).resolves.toBeUndefined();
+
+        expect(window.localStorage.getItem('sourdaw-agent-runs')).not.toBe(durableBefore);
+        expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledExactlyOnceWith('decoded-buffer-1');
+        expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledExactlyOnceWith('decoded-buffer-2');
+        setItem.mockRestore();
+    });
+
+    it('retains a shared prepared-stem recovery until its final stem transfers', () => {
+        const runId = 'stem-partial-recovery-transfer';
+        const batchId = 'batch-partial-recovery-transfer';
+        const twoStems = [
+            ...stems,
+            {
+                ...stems[0],
+                audioBufferId: 'decoded-buffer-2',
+                assetHash: 'hash-staged-asset-2',
+                assetLeaseId: 'staged-asset-2',
+                clipId: 'clip-staged-asset-2',
+                stemId: 'stem-staged-asset-2',
+            },
+        ];
+        agentRunLifecycle.create({ runId, request: 'Import stems.', mode: 'plan', createdRevision: 'r1' });
+        preparedStemImportResources.register({ runId, stems: twoStems });
+        preparedStemImportResources.protect({
+            runId,
+            stems: twoStems,
+            recovery: { batchId, commandBatch: createRecoveryCommandBatch(runId, batchId) },
+        });
+
+        preparedStemImportResources.release({ runId, stems: [twoStems[0]!] });
+        expect(agentRunLifecycle.get(runId)?.preparedStemImports).toEqual([expect.objectContaining({ batchId })]);
+        expect(readAgentRunState().preparedStemImportRecoveryLedger).toEqual([
+            expect.objectContaining({ runId, batchId }),
+        ]);
+
+        preparedStemImportResources.release({ runId, stems: [twoStems[1]!] });
+        expect(agentRunLifecycle.get(runId)?.preparedStemImports).toEqual([]);
+        expect(readAgentRunState().preparedStemImportRecoveryLedger ?? []).toEqual([]);
+    });
+
     it('keeps failed confirmation cleanup executable until the durable lease releases', async () => {
         mocks.completeDurableCleanupRecovery
             .mockResolvedValueOnce({ status: 'failed', reason: 'transaction-aborted' })

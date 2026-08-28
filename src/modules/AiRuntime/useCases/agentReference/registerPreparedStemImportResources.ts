@@ -22,6 +22,7 @@ type PreparedStemImportRecoveryBinding = {
 };
 type PreparedStemImportRegistration = {
     unregister: () => void;
+    physicalCleanupCompleted: boolean;
     protected: boolean;
     stem: PreparedStemImportResource;
     recovery: PreparedStemImportRecoveryBinding | null;
@@ -44,6 +45,7 @@ function createRegistration(input: {
     const registrationKey = key(input.runId, input.stem.audioBufferId);
     const registration: PreparedStemImportRegistration = {
         unregister: () => undefined,
+        physicalCleanupCompleted: false,
         protected: input.protected,
         stem: input.stem,
         recovery: input.recovery,
@@ -316,16 +318,23 @@ async function discardPreparedStemImportResourcesWithAuthority(
         const asset = agentRunLifecycle
             .get(input.runId)
             ?.temporaryAssets.find((candidate) => candidate.assetId === stem.audioBufferId);
+        if (registration?.protected && authority === 'generic-release') {
+            continue;
+        }
         if (!asset && registration) {
             // A registration can outlive a refused atomic transfer because the
             // live store advances before durable persistence. It still owns the
-            // physical stem, so release it before detaching that owner.
-            await preparedStemImportCleanup.discard([stem]);
+            // physical stem, but must keep that ownership until the live
+            // post-transfer snapshot has been made durable.
+            if (!registration.physicalCleanupCompleted) {
+                await preparedStemImportCleanup.discard([stem]);
+                registration.physicalCleanupCompleted = true;
+            }
+            if (!agentRunLifecycle.retryPersistence(input.runId)) {
+                throw new Error(`Prepared stem transfer run disappeared before durability retry: ${input.runId}`);
+            }
             registration.unregister();
             registrations.delete(registrationKey);
-            continue;
-        }
-        if (registration?.protected && authority === 'generic-release') {
             continue;
         }
         if (registration?.protected) {
@@ -383,4 +392,5 @@ export const preparedStemImportResources = {
     reconcile: reconcilePreparedStemImportResources,
     release: releasePreparedStemImportResources,
     discard: discardRegisteredPreparedStemImportResources,
+    discardAfterVerifiedNoncommit: discardPreparedStemImportResourcesAfterVerifiedNoncommit,
 };
