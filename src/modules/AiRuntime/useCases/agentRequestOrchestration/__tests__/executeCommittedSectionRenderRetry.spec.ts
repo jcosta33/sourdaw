@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
     completeContinuation: vi.fn(),
     getConfirmation: vi.fn(),
     getRun: vi.fn(),
+    logError: vi.fn(),
     project: vi.fn(),
     reconcileBudget: vi.fn(),
     replaceExecutions: vi.fn(),
@@ -27,6 +28,8 @@ const mocks = vi.hoisted(() => ({
     updateConfirmation: vi.fn(),
     updateFollowUp: vi.fn(),
 }));
+
+vi.mock('#/infra/logger/appLogger', () => ({ logger: { error: mocks.logError } }));
 
 vi.mock('#/modules/AudioRendering/useCases', () => ({
     retryAgentProjectSectionRenders: mocks.retryRenders,
@@ -68,6 +71,14 @@ const JOB = {
     endBeat: 16,
     sampleRate: 44_100,
     tailSeconds: 0,
+};
+const SECOND_JOB = {
+    ...JOB,
+    jobId: 'render-chorus',
+    sectionId: 'section-chorus',
+    sectionName: 'Chorus',
+    startBeat: 16,
+    endBeat: 32,
 };
 
 function createInput(): Parameters<typeof executeCommittedSectionRenderRetry>[0] {
@@ -136,12 +147,16 @@ function createInput(): Parameters<typeof executeCommittedSectionRenderRetry>[0]
     };
 }
 
-function projection(incomplete: boolean) {
+function projectionForJobs(jobs: (typeof JOB)[]) {
     return {
         executions: [],
-        incompleteSectionRenders: incomplete ? { jobs: [JOB], missingJobIds: [JOB.jobId] } : null,
+        incompleteSectionRenders: jobs.length > 0 ? { jobs, missingJobIds: jobs.map(({ jobId }) => jobId) } : null,
         receipt: '- **renderProjectSections**: Render Verse',
     };
+}
+
+function projection(incomplete: boolean) {
+    return projectionForJobs(incomplete ? [JOB] : []);
 }
 
 describe('executeCommittedSectionRenderRetry', () => {
@@ -151,6 +166,7 @@ describe('executeCommittedSectionRenderRetry', () => {
         mocks.captureRevision.mockReturnValue('revision-source');
         mocks.completeContinuation.mockImplementation(() => undefined);
         mocks.getRun.mockReturnValue({ budgetAttempts: [] });
+        mocks.reconcileBudget.mockImplementation(() => undefined);
         mocks.reserveBudget.mockReturnValue({ status: 'reserved' });
         mocks.retryRenders.mockResolvedValue(undefined);
         mocks.getConfirmation.mockImplementation((id: string) =>
@@ -239,6 +255,82 @@ describe('executeCommittedSectionRenderRetry', () => {
                 content: expect.stringContaining('project actions remain committed'),
             })
         );
+    });
+
+    it('keeps render failure primary and clears generation when budget reconciliation throws', async () => {
+        const input = createInput();
+        mocks.project.mockReturnValue(projection(true));
+        mocks.retryRenders.mockRejectedValue(new Error('renderer unavailable'));
+        mocks.reconcileBudget.mockImplementation(() => {
+            throw new Error('budget persistence unavailable');
+        });
+
+        await expect(executeCommittedSectionRenderRetry(input)).resolves.toEqual({
+            status: 'failed',
+            reason: 'renderer unavailable',
+        });
+        expect(mocks.setGenerating.mock.calls).toEqual([[true], [false]]);
+        expect(mocks.updateFollowUp).toHaveBeenLastCalledWith({
+            confirmationId: 'confirmation-retry',
+            error: 'renderer unavailable',
+            status: 'retryable',
+        });
+        expect(mocks.updateChat).toHaveBeenLastCalledWith(
+            'assistant-retry',
+            expect.objectContaining({
+                error: 'renderer unavailable',
+                pendingActionFollowUpStatus: 'retryable',
+                content: expect.stringContaining('budget reconciliation could not be persisted'),
+            })
+        );
+        expect(mocks.logError).toHaveBeenCalledOnce();
+    });
+
+    it('publishes success after continuation completion when budget reconciliation throws', async () => {
+        const input = createInput();
+        mocks.project.mockReturnValueOnce(projection(true)).mockReturnValue(projection(false));
+        mocks.reconcileBudget.mockImplementation(() => {
+            throw new Error('budget persistence unavailable');
+        });
+
+        await expect(executeCommittedSectionRenderRetry(input)).resolves.toEqual({ status: 'executed' });
+        expect(mocks.setGenerating.mock.calls).toEqual([[true], [false]]);
+        expect(mocks.completeContinuation.mock.invocationCallOrder[0]).toBeLessThan(
+            mocks.updateConfirmation.mock.invocationCallOrder.at(-1) ?? 0
+        );
+        expect(mocks.updateFollowUp).toHaveBeenLastCalledWith({
+            confirmationId: 'confirmation-retry',
+            error: null,
+            status: 'complete',
+        });
+        expect(mocks.updateChat).toHaveBeenLastCalledWith(
+            'assistant-retry',
+            expect.objectContaining({
+                error: expect.stringContaining('budget reconciliation could not be persisted'),
+                pendingActionFollowUpStatus: 'complete',
+            })
+        );
+        expect(mocks.logError).toHaveBeenCalledOnce();
+    });
+
+    it('reconciles the exact completed count for a partial multi-job retry', async () => {
+        const input = createInput();
+        mocks.project
+            .mockReturnValueOnce(projectionForJobs([JOB, SECOND_JOB]))
+            .mockReturnValue(projectionForJobs([SECOND_JOB]));
+
+        await expect(executeCommittedSectionRenderRetry(input)).resolves.toEqual({
+            status: 'failed',
+            reason: 'Section render jobs remain incomplete: render-chorus',
+        });
+        expect(mocks.reserveBudget).toHaveBeenCalledWith(expect.objectContaining({ estimate: 2 }));
+        expect(mocks.reconcileBudget).toHaveBeenCalledWith({
+            runId: 'run-retry',
+            attemptId: 'render-retry:confirmation-retry:1',
+            consumed: 1,
+            mode: 'final',
+            provenance: 'versioned-estimate',
+        });
     });
 
     it('completes durable continuation before publishing successful retry state', async () => {

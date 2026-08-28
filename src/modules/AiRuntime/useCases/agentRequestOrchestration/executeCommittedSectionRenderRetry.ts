@@ -1,3 +1,4 @@
+import { logger } from '#/infra/logger/appLogger';
 import { retryAgentProjectSectionRenders } from '#/modules/AudioRendering/useCases';
 import { type createVerifiedBatchReceipt } from '#/modules/Command/useCases';
 import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
@@ -20,6 +21,9 @@ type RetryBudget = {
     attemptId: string;
     reservation: ReturnType<typeof agentRunLifecycle.reserveBudget>;
 };
+
+const RENDER_RETRY_BUDGET_PERSISTENCE_WARNING =
+    'Agent render retry budget reconciliation could not be persisted. The render outcome remains authoritative; review durable run budget state before retrying.';
 
 function getReceiptIdentity(receipt: CommandVerifiedBatchReceipt): string {
     return `${receipt.schemaVersion}:${receipt.runId}:${receipt.batchId}:${receipt.outcome}`;
@@ -121,7 +125,11 @@ function failHardBudgetLimit(confirmation: PendingAppActionConfirmation, budget:
     return { status: 'failed', reason };
 }
 
-function failIncompleteRetry(confirmation: PendingAppActionConfirmation, reason: string): RetryResult {
+function failIncompleteRetry(
+    confirmation: PendingAppActionConfirmation,
+    reason: string,
+    persistenceWarning: string | null
+): RetryResult {
     updatePendingActionFollowUp({ confirmationId: confirmation.id, error: reason, status: 'retryable' });
     updatePendingActionConfirmationStatus({ confirmationId: confirmation.id, status: 'executed', error: reason });
     const refreshed = refreshConfirmationProjection(confirmation);
@@ -129,7 +137,7 @@ function failIncompleteRetry(confirmation: PendingAppActionConfirmation, reason:
         pendingActionConfirmationStatus: 'executed',
         pendingActionFollowUpStatus: 'retryable',
         error: reason,
-        content: `Applied after confirmation:\n\n${refreshed.projection.receipt}\n\nThe project actions remain committed. Missing section renders are still incomplete: ${reason}. Retry missing renders without replaying the project actions.`,
+        content: `Applied after confirmation:\n\n${refreshed.projection.receipt}\n\nThe project actions remain committed. Missing section renders are still incomplete: ${reason}. Retry missing renders without replaying the project actions.${persistenceWarning ? `\n\n_${persistenceWarning}_` : ''}`,
     });
     return { status: 'failed', reason };
 }
@@ -153,15 +161,32 @@ function reconcileRetryBudget(
     });
 }
 
-function finishSuccessfulRetry(confirmation: PendingAppActionConfirmation): RetryResult {
+function reconcileRetryBudgetBestEffort(
+    confirmation: PendingAppActionConfirmation,
+    budget: RetryBudget | null,
+    plannedJobCount: number
+): string | null {
+    try {
+        reconcileRetryBudget(confirmation, budget, plannedJobCount);
+        return null;
+    } catch (error) {
+        logger.error(new Error(RENDER_RETRY_BUDGET_PERSISTENCE_WARNING, { cause: error }));
+        return RENDER_RETRY_BUDGET_PERSISTENCE_WARNING;
+    }
+}
+
+function finishSuccessfulRetry(
+    confirmation: PendingAppActionConfirmation,
+    persistenceWarning: string | null
+): RetryResult {
     updatePendingActionFollowUp({ confirmationId: confirmation.id, error: null, status: 'complete' });
     updatePendingActionConfirmationStatus({ confirmationId: confirmation.id, status: 'executed' });
     const refreshed = refreshConfirmationProjection(confirmation);
     updateChatMessage(confirmation.assistantMessageId, {
         pendingActionConfirmationStatus: 'executed',
         pendingActionFollowUpStatus: 'complete',
-        error: undefined,
-        content: `Applied after confirmation:\n\n${refreshed.projection.receipt}\n\nMissing section render artifacts completed without replaying project actions.`,
+        error: persistenceWarning ?? undefined,
+        content: `Applied after confirmation:\n\n${refreshed.projection.receipt}\n\nMissing section render artifacts completed without replaying project actions.${persistenceWarning ? `\n\n_${persistenceWarning}_` : ''}`,
     });
     return { status: 'executed' };
 }
@@ -194,6 +219,8 @@ export async function executeCommittedSectionRenderRetry(input: {
     updatePendingActionFollowUp({ confirmationId: confirmation.id, status: 'running' });
     updateChatMessage(confirmation.assistantMessageId, { pendingActionFollowUpStatus: 'running' });
     setChatGenerating(true);
+    let renderFailureReason: string | undefined;
+    let budgetPersistenceWarning: string | null = null;
     try {
         await retryAgentProjectSectionRenders({ jobs: followUp.jobs, sourceRevision });
         const remaining = projectSectionRenderConfirmation({ confirmation }).incompleteSectionRenders;
@@ -202,10 +229,16 @@ export async function executeCommittedSectionRenderRetry(input: {
         }
         completeDurableContinuation(durableReceipt);
     } catch (error) {
-        return failIncompleteRetry(confirmation, error instanceof Error ? error.message : String(error));
+        renderFailureReason = error instanceof Error ? error.message : String(error);
     } finally {
-        reconcileRetryBudget(confirmation, budget, followUp.jobs.length);
-        setChatGenerating(false);
+        try {
+            budgetPersistenceWarning = reconcileRetryBudgetBestEffort(confirmation, budget, followUp.jobs.length);
+        } finally {
+            setChatGenerating(false);
+        }
     }
-    return finishSuccessfulRetry(confirmation);
+    if (renderFailureReason !== undefined) {
+        return failIncompleteRetry(confirmation, renderFailureReason, budgetPersistenceWarning);
+    }
+    return finishSuccessfulRetry(confirmation, budgetPersistenceWarning);
 }
