@@ -151,7 +151,6 @@ const Harness = ({ args }: { args: HarnessArgs }): ReactElement => {
 const setSelectedNoteIds = vi.fn();
 const setStepBeat = vi.fn();
 const setZoom = vi.fn();
-const setScrollX = vi.fn();
 const draw = vi.fn();
 
 const buildArgs = (overrides: Partial<HarnessArgs> = {}): HarnessArgs => ({
@@ -174,7 +173,6 @@ const buildArgs = (overrides: Partial<HarnessArgs> = {}): HarnessArgs => ({
     selectedNoteIds: new Set<string>(),
     setSelectedNoteIds,
     setZoom,
-    setScrollX,
     draw,
     constrainToScale: false,
     notePreviewEnabled: false,
@@ -625,18 +623,17 @@ describe('usePianoRollInteractions', () => {
     });
 
     describe('wheel and hover', () => {
-        it('ctrl+wheel zooms with clamping and plain wheel scrolls horizontally', () => {
+        // Issue #2302 removed the local scrollX state this hook used to feed on
+        // plain deltaX wheel — nothing read it, and it re-rendered the editor
+        // every scroll frame. Plain and shift+wheel are native scrolling of the
+        // surrounding container, asserted in the describe above.
+        it('ctrl+wheel zooms with clamping', () => {
             const { canvas } = renderRoll();
 
             fireEvent.wheel(canvas, { ctrlKey: true, deltaY: -100 });
             const zoomUpdater = setZoom.mock.calls[0]?.[0];
             expect(zoomUpdater(1)).toBeCloseTo(1.2);
             expect(zoomUpdater(4)).toBe(4);
-
-            fireEvent.wheel(canvas, { deltaX: 50 });
-            const scrollUpdater = setScrollX.mock.calls[0]?.[0];
-            expect(scrollUpdater(0)).toBe(50);
-            expect(scrollUpdater(-100)).toBe(0);
         });
 
         it('reports grab over a note body, ew-resize over edges, crosshair elsewhere', () => {
