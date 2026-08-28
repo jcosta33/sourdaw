@@ -1,0 +1,32 @@
+src/modules/AiRuntime/useCases/confirmPendingChatActions.ts
+  s_a40848e8f8cca9::t_c7e83108a13877 1139-1144,1147
+  s_a40848e8f8cca9::t_90a285d5fbe289 1148-1150
+  s_a40848e8f8cca9::t_bb7ce58848484d 1068,1071-1072,1079-1084,1090-1091,1098-1111,1123-1125,1127,1146
+  s_a40848e8f8cca9::t_0a4de4b2e6f895 44
+src/modules/AiRuntime/useCases/agentRequestOrchestration/executeCommittedSectionRenderRetry.ts
+  s_a40848e8f8cca9::t_0a4de4b2e6f895 16,138
+  s_a40848e8f8cca9::t_c7e83108a13877 153
+src/modules/AiRuntime/useCases/__tests__/confirmPendingChatActions.spec.ts
+  s_a40848e8f8cca9::t_c8e283a7f7ed87 2776-2830,2836-2882,2884-2895,2900-2901
+  s_a40848e8f8cca9::t_e5585b94fe8869 2831-2835,2896-2899
+  s_a40848e8f8cca9::t_90a285d5fbe289 2883
+  s_a40848e8f8cca9::t_aaadf27fb2593b 2902
+src/modules/AiRuntime/useCases/agentRequestOrchestration/formatSectionRenderReviewSummary.ts
+  s_a40848e8f8cca9::t_0a4de4b2e6f895 1-5
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "8b0fac7935f330f2de3d96371b32ac61138a6d63",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
