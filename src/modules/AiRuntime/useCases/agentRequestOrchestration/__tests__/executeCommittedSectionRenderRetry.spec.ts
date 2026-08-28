@@ -443,6 +443,30 @@ describe('executeCommittedSectionRenderRetry', () => {
         expect(mocks.logError).toHaveBeenCalledOnce();
     });
 
+    it('keeps the command receipt pending and requires durable manual repair when retention capacity is exhausted', async () => {
+        const input = createInput();
+        const capacityError = new Error('Approved artifacts exceed retention capacity.');
+        mocks.project.mockReturnValue(projection(true));
+        mocks.retryRenders.mockRejectedValue(capacityError);
+        mocks.getSectionRenderFollowUpFailure.mockReturnValue({ failureKind: 'retention-capacity' });
+
+        await expect(executeCommittedSectionRenderRetry(input)).resolves.toEqual({
+            status: 'failed',
+            reason: 'Approved artifacts exceed retention capacity.',
+        });
+
+        expect(mocks.finalizeCommandReceipt).not.toHaveBeenCalled();
+        expect(mocks.completeContinuation).not.toHaveBeenCalled();
+        expect(mocks.requireManualRepair).toHaveBeenCalledWith({
+            runId: 'run-retry',
+            batchId: 'batch-retry',
+            reason: 'Approved artifacts exceed retention capacity.',
+        });
+        expect(mocks.updateFollowUp).toHaveBeenLastCalledWith(
+            expect.objectContaining({ status: 'failed', error: 'Approved artifacts exceed retention capacity.' })
+        );
+    });
+
     it('publishes success after continuation completion when budget reconciliation throws', async () => {
         const input = createInput();
         mocks.project.mockReturnValueOnce(projection(true)).mockReturnValue(projection(false));
@@ -649,12 +673,15 @@ describe('executeCommittedSectionRenderRetry', () => {
         mocks.project.mockReturnValueOnce(projection(true)).mockReturnValue(finalProjection);
 
         await expect(executeCommittedSectionRenderRetry(input)).resolves.toEqual({ status: 'executed' });
-        expect(mocks.finalizeCommandReceipt).toHaveBeenCalledWith({
-            authority: input.commandBatch.authority,
-            serialized: input.commandBatch.serialized,
-            pendingReceipt: input.durableReceipt,
-            expectedProjectRevision: 'revision-source',
-        });
+        expect(mocks.finalizeCommandReceipt).toHaveBeenCalledWith(
+            expect.objectContaining({
+                authority: input.commandBatch.authority,
+                serialized: input.commandBatch.serialized,
+                pendingReceipt: input.durableReceipt,
+                expectedProjectRevision: 'revision-source',
+                validateRecoveredEffects: expect.any(Function),
+            })
+        );
         expect(mocks.finalizeCommandReceipt.mock.invocationCallOrder[0]).toBeLessThan(
             mocks.completeContinuation.mock.invocationCallOrder[0] ?? 0
         );

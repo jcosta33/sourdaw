@@ -1684,12 +1684,33 @@ describe('command batch idempotency', () => {
             pendingReceipt: first.receipt,
             expectedProjectRevision,
         });
+        const retainedEvidence = vi.fn(() => null);
+        const alreadyFinalized = await finalizeRecoveredCommandBatchEffects({
+            authority: batch.authority,
+            serialized: batch.serialized,
+            pendingReceipt: first.receipt,
+            expectedProjectRevision,
+            validateRecoveredEffects: retainedEvidence,
+        });
+        const evictedEvidence = await finalizeRecoveredCommandBatchEffects({
+            authority: batch.authority,
+            serialized: batch.serialized,
+            pendingReceipt: first.receipt,
+            expectedProjectRevision,
+            validateRecoveredEffects: () => 'Approved section render artifact is no longer retained.',
+        });
         const replay = await getVersionedCommandBatchIdempotentReplay({
             authority: batch.authority,
             serialized: batch.serialized,
         });
 
         expect(finalized).toMatchObject({ status: 'finalized', receipt: { pendingEffects: [], outcome: 'committed' } });
+        expect(alreadyFinalized).toMatchObject({ status: 'already-finalized', receipt: { pendingEffects: [] } });
+        expect(retainedEvidence).toHaveBeenCalledExactlyOnceWith();
+        expect(evictedEvidence).toEqual({
+            status: 'failed',
+            reason: 'Approved section render artifact is no longer retained.',
+        });
         expect(replay).toMatchObject({ pendingEffects: [], outcome: 'committed' });
         expect(effectAttempts).toBe(1);
     });
@@ -1817,6 +1838,62 @@ describe('command batch idempotency', () => {
             ).resolves.toMatchObject({ outcome: 'partially-committed', pendingEffects: expect.any(Array) });
         }
     );
+
+    it('keeps the checkpoint pending when retained-effect proof is evicted while finalization waits for its lease', async () => {
+        clearHandlerRegistry();
+        const gainStorage = createAutomergeStorage<{ value: number }>('root', 'trackGain');
+        expect(gainStorage.hydrate?.()).toBe(true);
+        const execute = vi.fn(() => ({
+            status: 'written' as const,
+            afterCommit: () => Promise.reject(new Error('render unavailable')),
+            afterAmbiguousCommit: () => Promise.reject(new Error('render unavailable')),
+        }));
+        registerHandlerMap({ setTrackGain: createHandler({ execute }) });
+        const batch = compileBatch({ batchId: 'batch-finalize-retained-proof' });
+        const first = await executeVersionedCommandBatchEnvelope({
+            authority: batch.authority,
+            confirmed: true,
+            serialized: batch.serialized,
+        });
+        if (first.status !== 'committed-with-warning') {
+            throw new Error('Expected a durable pending-effect receipt');
+        }
+        const expectedProjectRevision = commandProjectRevisionPort.capture();
+        const mutationCountBeforeFinalization = mutationCount;
+        let releaseRecoveryLease!: (value: boolean) => void;
+        const recoveryLease = new Promise<boolean>((resolve) => {
+            releaseRecoveryLease = resolve;
+        });
+        commandBatchIdempotencyPort.setRepository({
+            lookup: () => Promise.resolve({ status: 'missing' }),
+            claim: () => Promise.resolve({ status: 'claimed' }),
+            complete: () => Promise.resolve(),
+            tryAcquireRecoveryLease: () => recoveryLease,
+            release: () => Promise.resolve(),
+        });
+        let approvedArtifactRetained = true;
+        const finalization = finalizeRecoveredCommandBatchEffects({
+            authority: batch.authority,
+            serialized: batch.serialized,
+            pendingReceipt: first.receipt,
+            expectedProjectRevision,
+            validateRecoveredEffects: () =>
+                approvedArtifactRetained ? null : 'Approved section render artifact is no longer retained.',
+        });
+
+        approvedArtifactRetained = false;
+        releaseRecoveryLease(true);
+
+        await expect(finalization).resolves.toEqual({
+            status: 'failed',
+            reason: 'Approved section render artifact is no longer retained.',
+        });
+        expect(mutationCount).toBe(mutationCountBeforeFinalization);
+        expect(execute).toHaveBeenCalledOnce();
+        await expect(
+            getVersionedCommandBatchIdempotentReplay({ authority: batch.authority, serialized: batch.serialized })
+        ).resolves.toMatchObject({ outcome: 'partially-committed', pendingEffects: expect.any(Array) });
+    });
 
     it('routes needs-reconcile runtime truth through a current-project rebuild instead of exact effect retry', async () => {
         clearHandlerRegistry();

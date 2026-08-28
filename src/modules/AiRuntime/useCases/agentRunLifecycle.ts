@@ -827,12 +827,6 @@ function requireAgentRunPendingEffectManualRepair(input: {
     if (!continuation || !recovery || recovery.checkpoint !== 'durable') {
         throw new Error(`Unknown durable pending effect continuation: ${input.batchId}`);
     }
-    if (
-        continuation.effects.some((effect) => effect.kind !== 'external-effect') ||
-        recovery.effects.some((effect) => effect.kind !== 'external-effect')
-    ) {
-        throw new Error(`Pending effect continuation cannot be converted to manual repair: ${input.batchId}`);
-    }
     const requireManualRepairEffects = (effects: AgentRunPendingEffect[]): AgentRunPendingEffect[] =>
         effects.map((effect) =>
             effect.kind === 'external-effect' ? { ...effect, remediation: 'manual-repair' } : effect
@@ -843,9 +837,7 @@ function requireAgentRunPendingEffectManualRepair(input: {
         saga: {
             ...run.saga,
             steps: run.saga.steps.map((step) =>
-                step.owner === 'external-effect' && step.workId === input.batchId
-                    ? { ...step, state: 'manual-repair', updatedAt: requiredAt }
-                    : step
+                step.workId === input.batchId ? { ...step, state: 'manual-repair', updatedAt: requiredAt } : step
             ),
         },
         pendingEffectContinuations: run.pendingEffectContinuations.map((candidate) =>

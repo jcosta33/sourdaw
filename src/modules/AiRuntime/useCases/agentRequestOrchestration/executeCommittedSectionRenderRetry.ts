@@ -40,6 +40,13 @@ function completeDurableContinuation(receipt: CommandVerifiedBatchReceipt): void
     });
 }
 
+function getApprovedRenderEvidenceFailure(confirmation: PendingAppActionConfirmation): string | null {
+    const incomplete = projectSectionRenderConfirmation({ confirmation }).incompleteSectionRenders;
+    return incomplete
+        ? `Approved section render artifacts changed before durable retry completion: ${incomplete.missingJobIds.join(', ')}`
+        : null;
+}
+
 async function finalizeCommandReceipt(
     confirmation: PendingAppActionConfirmation,
     receipt: CommandVerifiedBatchReceipt,
@@ -53,6 +60,7 @@ async function finalizeCommandReceipt(
         ...commandBatch,
         pendingReceipt: receipt,
         expectedProjectRevision,
+        validateRecoveredEffects: () => getApprovedRenderEvidenceFailure(confirmation),
     });
     if (result.status === 'failed') {
         throw new Error(result.reason);
@@ -293,9 +301,6 @@ export async function executeCommittedSectionRenderRetry(input: {
     if (!sourceRevision || captureProjectRevision() !== sourceRevision) {
         return failStaleRevision(confirmation);
     }
-    const durableContinuation = agentRunLifecycle
-        .get(confirmation.runId)
-        ?.pendingEffectContinuations?.find((candidate) => candidate.batchId === durableReceipt.batchId);
     const budget = reserveRetryBudget(confirmation, followUp.jobs.length);
     if (budget) {
         const hardLimitFailure = failHardBudgetLimit(confirmation, budget);
@@ -335,7 +340,7 @@ export async function executeCommittedSectionRenderRetry(input: {
         } else if (liveProjection.reviewRequiredSectionRenders.length > 0) {
             manualReviewProjection = liveProjection;
         }
-        if (renderFailureReason === undefined && !manualReviewProjection) {
+        if (renderFailureReason === undefined && !retentionCapacityFailureReason && !manualReviewProjection) {
             try {
                 completeDurableContinuation(
                     await finalizeCommandReceipt(confirmation, durableReceipt, input.commandBatch)
@@ -347,12 +352,6 @@ export async function executeCommittedSectionRenderRetry(input: {
     } finally {
         try {
             if (retentionCapacityFailureReason) {
-                if (durableContinuation) {
-                    agentRunLifecycle.recordPendingEffectContinuation({
-                        runId: confirmation.runId,
-                        continuation: durableContinuation,
-                    });
-                }
                 retentionCapacityManualRepair = finishRetentionCapacityManualRepair(
                     confirmation,
                     durableReceipt.batchId,

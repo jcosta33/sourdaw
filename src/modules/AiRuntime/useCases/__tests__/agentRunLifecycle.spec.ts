@@ -1,6 +1,7 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { agentRunStore, readAgentRunState } from '../../stores/agentRunStore';
+import * as pendingActionConfirmationStore from '../../stores/pendingActionConfirmationStore';
 import { selectAgentRunPendingEffectRecoveries } from '../../stores/selectAgentRunPendingEffectRecoveries';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { createAgentSagaStep } from '../createAgentSagaStep';
@@ -227,7 +228,38 @@ describe('agentRunLifecycle', () => {
         ]);
     });
 
-    it('rejects mixed pending effects without changing durable recovery state', () => {
+    it('does not hide a retryable confirmation for a runtime-graph effect that only shares the render operation name', () => {
+        createRenderReviewRun();
+        const state = structuredClone(readAgentRunState());
+        const continuation = state.runs[0]?.pendingEffectContinuations[0];
+        const durableRecovery = state.pendingEffectRecoveryLedger?.[0];
+        if (!continuation || !durableRecovery) {
+            throw new Error('Expected durable pending effect recovery');
+        }
+        continuation.effects[0] = {
+            ...continuation.effects[0]!,
+            kind: 'runtime-graph',
+            remediation: 'repair',
+        };
+        durableRecovery.effects[0] = {
+            ...durableRecovery.effects[0]!,
+            kind: 'runtime-graph',
+            remediation: 'repair',
+        };
+        const retryableFollowUp = vi
+            .spyOn(pendingActionConfirmationStore, 'hasRetryableSectionRenderFollowUp')
+            .mockReturnValue(true);
+
+        expect(selectAgentRunPendingEffectRecoveries(state)).toEqual([
+            expect.objectContaining({
+                effects: [expect.objectContaining({ kind: 'runtime-graph', operation: 'renderProjectSections' })],
+            }),
+        ]);
+
+        retryableFollowUp.mockRestore();
+    });
+
+    it('atomically converts mixed pending effects to durable manual repair without changing their kinds', () => {
         createRenderReviewRun();
         const recovery = agentRunLifecycle.getPendingEffectRecovery({
             runId: 'run-render-review',
@@ -260,17 +292,64 @@ describe('agentRunLifecycle', () => {
                 ],
             },
         });
-        const before = readAgentRunState();
+        agentRunLifecycle.recordSagaStep({
+            runId: 'run-render-review',
+            step: createAgentSagaStep({
+                stepId: 'runtime:render-review',
+                order: 1,
+                owner: 'render',
+                workId: 'batch-render-review',
+                receiptIdentity: '1:run-render-review:batch-render-review:partially-committed',
+                state: 'external-pending',
+                relatedArtifactIds: [],
+                updatedAt: 3,
+                compensationAvailable: false,
+            }),
+        });
 
-        expect(() =>
-            agentRunLifecycle.requirePendingEffectManualRepair({
-                runId: 'run-render-review',
-                batchId: 'batch-render-review',
-                reason: 'Manual review required.',
-                requiredAt: 4,
-            })
-        ).toThrow('Pending effect continuation cannot be converted to manual repair');
-        expect(readAgentRunState()).toEqual(before);
+        agentRunLifecycle.requirePendingEffectManualRepair({
+            runId: 'run-render-review',
+            batchId: 'batch-render-review',
+            reason: 'Manual review required.',
+            requiredAt: 4,
+        });
+
+        const state = readAgentRunState();
+        expect(agentRunLifecycle.get('run-render-review')?.pendingEffectContinuations).toEqual([
+            expect.objectContaining({
+                recovery: 'manual-repair',
+                lastError: 'Manual review required.',
+                effects: [
+                    expect.objectContaining({ kind: 'runtime-graph', remediation: 'repair' }),
+                    expect.objectContaining({ kind: 'external-effect', remediation: 'manual-repair' }),
+                ],
+            }),
+        ]);
+        expect(state.pendingEffectRecoveryLedger).toEqual([
+            expect.objectContaining({
+                recovery: 'manual-repair',
+                lastError: 'Manual review required.',
+                effects: [
+                    expect.objectContaining({ kind: 'runtime-graph', remediation: 'repair' }),
+                    expect.objectContaining({ kind: 'external-effect', remediation: 'manual-repair' }),
+                ],
+            }),
+        ]);
+        expect(agentRunLifecycle.get('run-render-review')?.saga.steps).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({ stepId: 'effect:render-review', state: 'manual-repair', updatedAt: 4 }),
+                expect.objectContaining({ stepId: 'runtime:render-review', state: 'manual-repair', updatedAt: 4 }),
+            ])
+        );
+        expect(selectAgentRunPendingEffectRecoveries(state)).toEqual([
+            expect.objectContaining({
+                recovery: 'manual-repair',
+                effects: [
+                    expect.objectContaining({ kind: 'runtime-graph', remediation: 'repair' }),
+                    expect.objectContaining({ kind: 'external-effect', remediation: 'manual-repair' }),
+                ],
+            }),
+        ]);
     });
 
     it.each([

@@ -22,14 +22,18 @@ function sameReceipt(left: VerifiedBatchReceipt, right: VerifiedBatchReceipt): b
     return JSON.stringify(left) === JSON.stringify(right);
 }
 
-function getFinalizationAdmissionFailure(expectedProjectRevision: string): string | null {
+function getFinalizationAdmissionFailure(input: {
+    expectedProjectRevision: string;
+    validateRecoveredEffects?: () => string | null;
+}): string | null {
     if (!commandBatchExecutionAuthorityPort.canExecute()) {
         return 'Only the authoritative collaboration host can finalize recovery';
     }
     try {
-        return commandProjectRevisionPort.capture() === expectedProjectRevision
-            ? null
-            : 'The project changed before external-effect finalization';
+        if (commandProjectRevisionPort.capture() !== input.expectedProjectRevision) {
+            return 'The project changed before external-effect finalization';
+        }
+        return input.validateRecoveredEffects?.() ?? null;
     } catch (error) {
         return `The current project revision could not be verified: ${error instanceof Error ? error.message : String(error)}`;
     }
@@ -40,6 +44,8 @@ export async function finalizeRecoveredCommandBatchEffects(input: {
     serialized: string;
     pendingReceipt: VerifiedBatchReceipt;
     expectedProjectRevision: string;
+    /** Caller-owned proof that its retained external effects still match the pending receipt. */
+    validateRecoveredEffects?: () => string | null;
 }): Promise<FinalizeResult> {
     if (!commandBatchIdempotencyPort.isConfigured() || !commandProjectRevisionPort.isConfigured()) {
         return { status: 'failed', reason: 'Durable command recovery authority is unavailable' };
@@ -77,6 +83,10 @@ export async function finalizeRecoveredCommandBatchEffects(input: {
             return { status: 'failed', reason: 'Stored project idempotency receipt is invalid' };
         }
         if (checkpoint.status === 'complete') {
+            const admissionFailure = getFinalizationAdmissionFailure(input);
+            if (admissionFailure) {
+                return { status: 'failed', reason: admissionFailure };
+            }
             return receipt.pendingEffects.length === 0
                 ? { status: 'already-finalized', receipt }
                 : { status: 'failed', reason: 'Completed project checkpoint still contains pending effects' };
@@ -111,7 +121,7 @@ export async function finalizeRecoveredCommandBatchEffects(input: {
                 ...lease,
                 state: 'complete',
                 serializedReceipt,
-                validateCommit: () => getFinalizationAdmissionFailure(input.expectedProjectRevision),
+                validateCommit: () => getFinalizationAdmissionFailure(input),
             });
         } catch (error) {
             return {

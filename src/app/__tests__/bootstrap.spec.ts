@@ -820,6 +820,43 @@ describe('bootstrap', () => {
         expect(recoverRetainedSectionRenderEffectsMock).toHaveBeenCalledExactlyOnceWith();
     });
 
+    it('waits for interrupted-run recovery and skips retained renders when that recovery rejects', async () => {
+        recoverInterruptedAgentRunsMock.mockClear();
+        recoverRetainedSectionRenderEffectsMock.mockClear();
+        loggerMock.error.mockClear();
+        let resolveInterruptedRecovery!: (value: { recoveredRunIds: string[] }) => void;
+        const interruptedRecovery = new Promise<{ recoveredRunIds: string[] }>((resolve) => {
+            resolveInterruptedRecovery = resolve;
+        });
+        recoverInterruptedAgentRunsMock.mockImplementationOnce(() => interruptedRecovery);
+
+        vi.resetModules();
+        await import('../bootstrap');
+
+        expect(recoverInterruptedAgentRunsMock).toHaveBeenCalledExactlyOnceWith();
+        expect(recoverRetainedSectionRenderEffectsMock).not.toHaveBeenCalled();
+
+        resolveInterruptedRecovery({ recoveredRunIds: [] });
+        await Promise.resolve();
+
+        expect(recoverRetainedSectionRenderEffectsMock).toHaveBeenCalledExactlyOnceWith();
+
+        recoverInterruptedAgentRunsMock.mockClear();
+        recoverRetainedSectionRenderEffectsMock.mockClear();
+        loggerMock.error.mockClear();
+        recoverInterruptedAgentRunsMock.mockImplementationOnce(() => Promise.reject(new Error('hydration failed')));
+
+        vi.resetModules();
+        await import('../bootstrap');
+        await Promise.resolve();
+
+        expect(recoverInterruptedAgentRunsMock).toHaveBeenCalledExactlyOnceWith();
+        expect(recoverRetainedSectionRenderEffectsMock).not.toHaveBeenCalled();
+        expect(loggerMock.error).toHaveBeenCalledExactlyOnceWith(
+            expect.objectContaining({ message: 'Interrupted AI runs could not be recovered during startup' })
+        );
+    });
+
     it('probes OPFS for RAVE model weights exactly once as a non-blocking boot step', () => {
         // Without this call raveStore.models stays empty forever, which would
         // withhold the RAVE palette entries permanently rather than gating them
