@@ -34,6 +34,16 @@ describe('updateModulator', () => {
         expect(modulationStore.value?.modulators[0]?.id).toBe('a');
     });
 
+    it('refuses an empty trackId patch like addModulator refuses an empty trackId', () => {
+        expect(() => updateModulator('a', { trackId: '' })).toThrowError('updateModulator: trackId must not be empty');
+        expect(modulationStore.value?.modulators[0]?.trackId).toBe('t1');
+    });
+
+    it('moves a modulator to another track through the patch', () => {
+        updateModulator('a', { trackId: 't2' });
+        expect(modulationStore.value?.modulators[0]?.trackId).toBe('t2');
+    });
+
     it('is a no-op when the id is unknown', () => {
         updateModulator('zzz', { name: 'X' });
         expect(modulationStore.value?.modulators[0]?.name).toBe('A');

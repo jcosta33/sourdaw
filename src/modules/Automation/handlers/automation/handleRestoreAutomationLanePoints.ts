@@ -2,6 +2,7 @@ import { createHandler } from '#/utils/createHandler';
 import { type AutomationPointSnapshot } from '#/utils/handlerContract';
 
 import { type AutomationPoint } from '../../models/Automation';
+import { is_exact_automation_point } from '../../stores/automationStore';
 import { restoreAutomationLanePoints } from '../../useCases/automation/restoreAutomationLanePoints';
 import { getAutomationStoreState } from '../../useCases/getAutomationStoreState';
 
@@ -32,19 +33,45 @@ function pointsMatch(current: readonly AutomationPoint[], expected: readonly Aut
     );
 }
 
+/**
+ * Every replacement point carries exactly the store's point shape, checked per
+ * point the way `restoreAutomationLanes` checks whole lanes. This action
+ * arrives from undo/redo of a possibly remote peer's document, so the payload
+ * is document data rather than in-memory state: a malformed point set must
+ * refuse the restore (conflict-style, like an `expectedPoints` divergence)
+ * rather than write garbage into the lane.
+ */
+function isRestorablePointSet(points: readonly AutomationPointSnapshot[]): points is AutomationPoint[] {
+    if (!Array.isArray(points)) {
+        return false;
+    }
+    for (let index = 0; index < points.length; index += 1) {
+        if (!Object.hasOwn(points, index) || !is_exact_automation_point(points[index])) {
+            return false;
+        }
+    }
+    return true;
+}
+
 export const handleRestoreAutomationLanePoints = createHandler<'restoreAutomationLanePoints'>({
     execute: (action) => {
         const lane = getAutomationStoreState()?.lanes.find((candidate) => candidate.id === action.payload.laneId);
+        if (!isRestorablePointSet(action.payload.points)) {
+            return { status: 'conflict' };
+        }
         if (action.payload.expectedPoints && (!lane || !pointsMatch(lane.points, action.payload.expectedPoints))) {
             return { status: 'conflict' };
         }
         if (!lane) {
             return { status: 'no-write' };
         }
-        restoreAutomationLanePoints(action.payload.laneId, action.payload.points as AutomationPoint[]);
+        restoreAutomationLanePoints(action.payload.laneId, action.payload.points);
         return { status: 'written' };
     },
     isNoop: (action) => {
+        if (!isRestorablePointSet(action.payload.points)) {
+            return false;
+        }
         const lane = getAutomationStoreState()?.lanes.find((candidate) => candidate.id === action.payload.laneId);
         if (action.payload.expectedPoints && (!lane || !pointsMatch(lane.points, action.payload.expectedPoints))) {
             return false;

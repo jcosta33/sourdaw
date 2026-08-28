@@ -185,7 +185,7 @@ function has_valid_automation_point_optionals(value: AutomationPoint): boolean {
     );
 }
 
-function is_exact_automation_point(value: unknown): value is AutomationPoint {
+export function is_exact_automation_point(value: unknown): value is AutomationPoint {
     return (
         is_valid_automation_point(value) &&
         has_valid_automation_point_optionals(value) &&
