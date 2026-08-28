@@ -139,7 +139,9 @@ const {
         configureAudioDeviceRuntimeSinkMock: vi.fn<(sink: RuntimeSinkUnderTest) => void>(),
         prepareOfflineLevainMock: vi.fn(() => Promise.resolve()),
         initBranchStateMock: vi.fn(),
-        recoverInterruptedAgentRunsMock: vi.fn(() => Promise.resolve({ recoveredRunIds: [] })),
+        recoverInterruptedAgentRunsMock: vi.fn<() => Promise<{ recoveredRunIds: string[] }>>(() =>
+            Promise.resolve({ recoveredRunIds: [] })
+        ),
         recoverRetainedSectionRenderEffectsMock: vi.fn(() => Promise.resolve()),
         flushDeferredStorageNoticeMock: vi.fn(),
         getAutomationParameterRangeMock: vi.fn(),
