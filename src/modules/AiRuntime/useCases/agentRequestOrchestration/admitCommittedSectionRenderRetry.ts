@@ -141,7 +141,7 @@ function getWarnedRenderBinding(
     }
     const approvedCommand = approvedRenderCommands[0];
     const renderAction = renderActions[0];
-    if (!approvedCommand || !renderAction.payload.jobs) {
+    if (!approvedCommand || !renderAction || !renderAction.payload.jobs) {
         return null;
     }
     const warnedExecutions = confirmation.executedActions.filter(
