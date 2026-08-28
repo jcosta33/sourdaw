@@ -370,6 +370,40 @@ describe('admitCommittedSectionRenderRetry', () => {
         ).toEqual({ status: 'proof-mismatch' });
     });
 
+    it('admits an exact live finalized continuation settlement without replay proof', () => {
+        const fixture = createFixture();
+        const finalizedReceipt = structuredClone(fixture.receipt);
+        finalizedReceipt.outcome = 'committed';
+        finalizedReceipt.pendingEffects = [];
+        const receiptIdentity = `${String(finalizedReceipt.schemaVersion)}:${RUN_ID}:${BATCH_ID}:committed`;
+        mocks.getRun.mockReturnValue({
+            revisions: { committed: COMMITTED_REVISION },
+            receipts: [{ workId: BATCH_ID, receiptIdentity }],
+            committedWork: [{ workId: BATCH_ID, receiptIdentity }],
+            batches: [{ batchId: BATCH_ID, status: 'committed', receiptIdentity }],
+            pendingEffectContinuations: [],
+            saga: {
+                steps: [
+                    {
+                        owner: 'external-effect',
+                        workId: BATCH_ID,
+                        state: 'committed',
+                        receiptIdentity,
+                    },
+                ],
+            },
+        });
+
+        expect(
+            admitCommittedSectionRenderRetry({
+                confirmation: fixture.confirmation,
+                durableReceipt: finalizedReceipt,
+                expectedCommandBatch: fixture.commandBatch,
+                phase: 'proof',
+            })
+        ).toEqual({ durableReceipt: finalizedReceipt, status: 'admitted' });
+    });
+
     it.each([
         [
             'malformed serialized batch',

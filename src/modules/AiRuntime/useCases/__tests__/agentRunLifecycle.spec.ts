@@ -212,6 +212,46 @@ describe('agentRunLifecycle', () => {
         ]);
     });
 
+    it('retries persistence from the exact live settled continuation after a local storage refusal', () => {
+        createRenderReviewRun();
+        const receiptIdentity = '1:run-render-review:batch-render-review:committed';
+        const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementationOnce(() => {
+            throw new DOMException('The quota has been exceeded.', 'QuotaExceededError');
+        });
+
+        expect(() =>
+            agentRunLifecycle.completePendingEffectContinuation({
+                runId: 'run-render-review',
+                batchId: 'batch-render-review',
+                receiptIdentity,
+                completedAt: 3,
+            })
+        ).toThrow('could not be persisted locally');
+
+        expect(agentRunLifecycle.get('run-render-review')).toMatchObject({
+            pendingEffectContinuations: [],
+            receipts: [{ workId: 'batch-render-review', receiptIdentity }],
+            committedWork: [{ workId: 'batch-render-review', receiptIdentity }],
+            batches: [{ batchId: 'batch-render-review', status: 'committed', receiptIdentity }],
+            saga: {
+                steps: [
+                    expect.objectContaining({ workId: 'batch-render-review', state: 'committed', receiptIdentity }),
+                ],
+            },
+        });
+
+        setItem.mockRestore();
+        expect(() =>
+            agentRunLifecycle.completePendingEffectContinuation({
+                runId: 'run-render-review',
+                batchId: 'batch-render-review',
+                receiptIdentity,
+                completedAt: 4,
+            })
+        ).not.toThrow();
+        expect(window.localStorage.getItem('sourdaw-agent-runs')).toContain(receiptIdentity);
+    });
+
     it('keeps non-render pending effect recoveries in the generic projection', () => {
         createRenderReviewRun();
         const state = structuredClone(readAgentRunState());
