@@ -19,7 +19,12 @@ import {
     UNRESOLVED_DEVICE_AUTOMATION_TARGET,
 } from '#/utils/automationDeviceTarget';
 
-type RestoreTargetDevice = { id: string; type: string; parameterValues: Record<string, number> };
+type RestoreTargetDevice = {
+    id: string;
+    type: string;
+    parameterValues: Record<string, number>;
+    externalInstanceId?: string;
+};
 
 type RestoreTargetTrack = {
     gain: number;
@@ -36,11 +41,31 @@ export type RestoreAutomationBaseValueInput = {
     landTime: number;
 };
 
-/** Same acceptance law as the apply path: a lane that may not drive it may not restore it either. */
+/**
+ * Whether a lane's target parameter has a base on this device to restore.
+ *
+ * For a builtin device this is the apply path's acceptance law: a lane that may
+ * not drive a parameter may not restore it either.
+ *
+ * A hosted external plugin declines deliberately, and the refusal is the
+ * contract rather than a gap. Such a plugin has no separate manual base to go
+ * back to: its `parameterValues` stay empty, its opaque state chunk *is* the
+ * value, and `captureExternalPluginStates` reads that chunk live at save — so
+ * the setting a ride left in the plugin is exactly the setting the project
+ * persists, and what is heard is what is stored. Established hosts behave the
+ * same way; deleting a Live envelope leaves the parameter where the envelope
+ * left it. The store snapshot's `value` is deliberately not used as a stand-in
+ * base: snapshots refresh on menu-open at arbitrary times, so restoring one
+ * would jump the parameter to whatever the plugin happened to report mid-ride.
+ */
 function deviceAcceptsAutomationParameter(
-    device: { type: string; parameterValues: Record<string, number> },
+    device: { type: string; parameterValues: Record<string, number>; externalInstanceId?: string },
     id: string
 ): boolean {
+    if (device.externalInstanceId !== undefined) {
+        return false;
+    }
+
     if (device.parameterValues[id] === undefined) {
         return false;
     }
@@ -63,6 +88,11 @@ function deviceAcceptsAutomationParameter(
  * `parameterValues` entry for everything else. Device eligibility is re-checked
  * exactly as the drive path checks it, so a restore never writes to a device
  * another track owns.
+ *
+ * One family is deliberately left where the ride put it: a parameter on a hosted
+ * external plugin, which owns its own value and has no separate manual base in
+ * project truth. See `deviceAcceptsAutomationParameter` below for why that is
+ * the contract and not an omission.
  *
  * gain/pan/send land as a-rate ramps, so those restores are smooth. Device and
  * MIDI-FX parameters reach their DSP by

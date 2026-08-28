@@ -1,4 +1,12 @@
-import { type ReactElement, type RefObject, type WheelEvent, useRef, useState, useLayoutEffect } from 'react';
+import {
+    type ReactElement,
+    type RefObject,
+    type WheelEvent,
+    useEffect,
+    useRef,
+    useState,
+    useLayoutEffect,
+} from 'react';
 
 import { ChevronRight, ChevronDown, Trash2 } from 'lucide-react';
 
@@ -19,6 +27,8 @@ import {
     toggleLaneCollapsed,
     removeAutomationLane,
 } from '#/modules/Automation/useCases';
+import { defaultExternalPluginParameterState, externalPluginParameterStore } from '#/modules/PluginHost/stores';
+import { refreshExternalPluginParameters } from '#/modules/PluginHost/useCases';
 import { defaultWorkspaceState, workspaceStore } from '#/modules/WorkspaceShell/stores';
 
 import { type AutomationLane } from '../../models/AutomationViewTypes';
@@ -134,9 +144,28 @@ export const AutomationBottomPanel = (): ReactElement => {
         autoScrollEnabled: true,
     });
     const ws = useStore<AutomationPanelWorkspaceState>(workspaceStore, defaultWorkspaceState);
+    // `getAutomatableParams` resolves an external plugin's targets out of this
+    // store, and a refresh fills it asynchronously. Subscribing is what redraws
+    // the add-lane list when a snapshot lands; without it the list stays at
+    // whatever was published before this render and only corrects itself on an
+    // unrelated one.
+    useStore(externalPluginParameterStore, defaultExternalPluginParameterState);
 
     const selectedTrackId = trackState.selectedTrackId;
     const selectedTrack = trackState.tracks.find((time) => time.id === selectedTrackId) ?? null;
+    const selectedTrackDevices = selectedTrack?.devices;
+
+    // Same currency rule the Inspector's menu applies: a plugin can rename or
+    // rescale its parameters from inside its own editor window, so the list this
+    // panel offers is re-read when the track it shows changes. A track with no
+    // external devices asks the host for nothing.
+    useEffect(() => {
+        for (const device of selectedTrackDevices ?? []) {
+            if (device.externalInstanceId !== undefined) {
+                void refreshExternalPluginParameters(device.externalInstanceId);
+            }
+        }
+    }, [selectedTrackDevices]);
     const pixelsPerBeat = viewState.pixelsPerBeat;
     const scrollX = viewState.scrollX;
     const trackListWidth = ws.trackListWidth;

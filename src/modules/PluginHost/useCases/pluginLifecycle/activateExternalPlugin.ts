@@ -4,6 +4,7 @@ import {
     defaultExternalPluginActivationState,
     externalPluginActivationStore,
 } from '../../stores/externalPluginActivationStore';
+import { writeExternalPluginParameterSnapshot } from '../../stores/externalPluginParameterStore';
 
 import { externalLatencyReporters } from './externalLatencyReporters';
 import {
@@ -16,6 +17,7 @@ import { loadedExternalInstances } from './loadedExternalInstances';
 import { loadPlugin } from './loadPlugin';
 import { restorePluginState } from './restorePluginState';
 import { pluginLifecycleScheduler } from './serializePluginLifecycle';
+import { toExternalPluginParameters } from './toExternalPluginParameters';
 import { watchExternalPluginLatency } from './watchExternalPluginLatency';
 
 type ActivateExternalPluginInput = {
@@ -171,6 +173,15 @@ export function activateExternalPlugin({
                     reason: 'External plugin activation was superseded by a runtime graph rebuild',
                 };
             }
+            // Publish what this instance reports about itself before anything
+            // else reads it. The metadata is in hand here, so the automation
+            // menu is populated without a second round trip; a plugin that
+            // re-declares its parameters later is picked up by
+            // `refreshExternalPluginParameters`.
+            writeExternalPluginParameterSnapshot(instanceId, {
+                engineAttached: instance.engine_plugin_id !== null,
+                parameters: toExternalPluginParameters(instance.parameters),
+            });
             if (instance.engine_plugin_id === null) {
                 // Loaded, but no native engine was running to attach it to, so
                 // it renders nothing. Recorded on the activation entry rather

@@ -19,6 +19,7 @@ export { closePluginGui } from './pluginLifecycle/closePluginGui';
 export { watchPluginStateDirty } from './pluginLifecycle/watchPluginStateDirty';
 export { processAudioIPC } from './pluginLifecycle/processAudioIPC';
 export { setPluginParameter } from './pluginLifecycle/setPluginParameter';
+export { refreshExternalPluginParameters } from './pluginLifecycle/refreshExternalPluginParameters';
 export { setPluginBypass } from './pluginLifecycle/setPluginBypass';
 export { readPluginState } from './pluginLifecycle/readPluginState';
 export { restorePluginState } from './pluginLifecycle/restorePluginState';

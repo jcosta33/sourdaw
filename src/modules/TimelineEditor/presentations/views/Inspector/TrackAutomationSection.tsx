@@ -11,6 +11,8 @@ import { useStore } from '#/infra/store/useStore';
 import { getAutomationDeviceDescriptor } from '#/modules/Arrangement/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { addAutomationLane, toggleAutomationVisibility, removeAutomationLane } from '#/modules/Automation/useCases';
+import { externalPluginParameterStore, defaultExternalPluginParameterState } from '#/modules/PluginHost/stores';
+import { refreshExternalPluginParameters } from '#/modules/PluginHost/useCases';
 import { createDeviceAutomationTargetId } from '#/utils/automationDeviceTarget';
 
 import { type Track } from '../../../models/TrackViewTypes';
@@ -37,8 +39,25 @@ export const TrackAutomationSection = ({ track }: TrackAutomationSectionProps): 
     const autoMenuRef = useRef<HTMLDivElement>(null);
 
     const autoState = useStore<TrackAutomationState>(automationStore, { lanes: [] });
+    // External plugin parameters resolve out of this store, and a refresh fills
+    // it asynchronously. Subscribing is what redraws the menu when one lands.
+    useStore(externalPluginParameterStore, defaultExternalPluginParameterState);
 
     const trackLanes = autoState.lanes.filter((lane) => lane.trackId === track.id && !lane.clipId);
+
+    // Opening the menu is the moment the metadata has to be current: a plugin
+    // can rename or rescale its parameters from inside its own editor window,
+    // and the snapshot taken at load would keep offering the old ones.
+    useEffect(() => {
+        if (!showAutoMenu) {
+            return;
+        }
+        for (const device of track.devices) {
+            if (device.externalInstanceId !== undefined) {
+                void refreshExternalPluginParameters(device.externalInstanceId);
+            }
+        }
+    }, [showAutoMenu, track.devices]);
 
     useEffect(() => {
         if (!showAutoMenu) {
@@ -109,7 +128,10 @@ export const TrackAutomationSection = ({ track }: TrackAutomationSectionProps): 
                                     <>
                                         <DawMenuSeparator />
                                         {track.devices.map((device) => {
-                                            const plugin = getAutomationDeviceDescriptor(device.type);
+                                            const plugin = getAutomationDeviceDescriptor(
+                                                device.type,
+                                                device.externalInstanceId
+                                            );
                                             if (!plugin) {
                                                 return null;
                                             }
