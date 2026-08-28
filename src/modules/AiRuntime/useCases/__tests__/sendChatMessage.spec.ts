@@ -867,11 +867,14 @@ describe('sendChatMessage retained-provider selection', () => {
         }
     });
 
-    it('retains a hosted completed response with a persistence warning when completion settlement refuses', async () => {
+    it('retains a hosted completed response with a persistence warning when completion settlement cannot persist', async () => {
         const content = 'The hosted completion remains visible.';
         const settlementFailure = new DOMException('The quota has been exceeded.', 'QuotaExceededError');
-        const settleWorkLease = vi.spyOn(agentRunWorkLease, 'settle').mockImplementation(() => {
-            throw settlementFailure;
+        let releaseCompletion: () => void = () => undefined;
+        let markCompletionReady: () => void = () => undefined;
+        let restoreSetItem: (() => void) | null = null;
+        const completionReady = new Promise<void>((resolve) => {
+            markCompletionReady = resolve;
         });
         mocks.aiBackendPreference.value = 'cloud';
         mocks.resolveBackend.mockReturnValue('cloud');
@@ -882,25 +885,48 @@ describe('sendChatMessage retained-provider selection', () => {
             baseUrl: 'https://api.openai.com/v1',
         });
         mocks.streamCloudChatCompletion.mockImplementation(
-            async (
+            (
                 _messages: Parameters<typeof streamCloudChatCompletion>[0],
                 onToken: Parameters<typeof streamCloudChatCompletion>[1]
             ) => {
                 onToken(content);
-                return { status: 'complete' };
+                markCompletionReady();
+                return new Promise<CloudChatCompletionOutcome>((resolve) => {
+                    releaseCompletion = () => resolve({ status: 'complete' });
+                });
             }
         );
 
         try {
-            await expect(
-                sendChatMessage('Summarize the hosted arrangement.', { mode: 'explain' })
-            ).resolves.toBeUndefined();
+            const pendingResponse = sendChatMessage('Summarize the hosted arrangement.', { mode: 'explain' });
+            await completionReady;
+            const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementationOnce(() => {
+                throw settlementFailure;
+            });
+            restoreSetItem = () => setItem.mockRestore();
+            releaseCompletion();
+            await expect(pendingResponse).resolves.toBeUndefined();
 
             const run = agentRunLifecycle.get(getMostRecentlyAdmittedRunId());
-            expect(run).toMatchObject({ phase: 'planning' });
-            expect(JSON.parse(localStorage.getItem('sourdaw-agent-runs') ?? '')).toMatchObject({
-                json: { runs: [expect.objectContaining({ runId: run?.runId, phase: 'planning' })] },
+            if (run === null) {
+                throw new Error('Expected the hosted run to remain inspectable after settlement persistence failed.');
+            }
+            const durableRun = JSON.parse(localStorage.getItem('sourdaw-agent-runs') ?? '').json.runs.find(
+                (candidate: { runId: string }) => candidate.runId === run.runId
+            );
+            expect(run).toMatchObject({
+                phase: 'planning',
+                workLeases: [expect.objectContaining({ workId: 'provider-response', terminalState: 'completed' })],
+                providerUsage: [expect.objectContaining({ status: 'complete' })],
             });
+            expect(durableRun).toMatchObject({
+                runId: run.runId,
+                phase: 'planning',
+                workLeases: [expect.objectContaining({ workId: 'provider-response', terminalState: 'completed' })],
+                providerUsage: [expect.objectContaining({ status: 'complete' })],
+            });
+            expect(durableRun.workLeases).toEqual(run.workLeases);
+            expect(durableRun.providerUsage).toEqual(run.providerUsage);
             expect(mocks.updateChatMessage).toHaveBeenLastCalledWith(
                 expect.any(String),
                 expect.objectContaining({
@@ -912,7 +938,7 @@ describe('sendChatMessage retained-provider selection', () => {
             expect(mocks.setActiveAborter).toHaveBeenLastCalledWith(null);
             expect(mocks.setChatGenerating).toHaveBeenLastCalledWith(false);
         } finally {
-            settleWorkLease.mockRestore();
+            restoreSetItem?.();
         }
     });
 
