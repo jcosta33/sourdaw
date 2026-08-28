@@ -34,41 +34,29 @@ describe('acceptsExternalPluginAutomationParameter', () => {
     it('accepts a parameter the instance declares automatable', () => {
         publishSnapshot('inst-1', true, [externalParameter({ id: 3 })]);
 
-        expect(
-            acceptsExternalPluginAutomationParameter({ type: 'external-plugin', externalInstanceId: 'inst-1' }, '3')
-        ).toBe(true);
+        expect(acceptsExternalPluginAutomationParameter('inst-1', '3')).toBe(true);
     });
 
     it('refuses a parameter the instance declares non-automatable', () => {
         publishSnapshot('inst-1', true, [externalParameter({ id: 3, isAutomatable: false })]);
 
-        expect(
-            acceptsExternalPluginAutomationParameter({ type: 'external-plugin', externalInstanceId: 'inst-1' }, '3')
-        ).toBe(false);
+        expect(acceptsExternalPluginAutomationParameter('inst-1', '3')).toBe(false);
     });
 
     it('refuses an id the instance never declared', () => {
         publishSnapshot('inst-1', true, [externalParameter({ id: 3 })]);
 
-        expect(
-            acceptsExternalPluginAutomationParameter({ type: 'external-plugin', externalInstanceId: 'inst-1' }, '4')
-        ).toBe(false);
-        expect(
-            acceptsExternalPluginAutomationParameter(
-                { type: 'external-plugin', externalInstanceId: 'inst-1' },
-                'cutoff'
-            )
-        ).toBe(false);
+        expect(acceptsExternalPluginAutomationParameter('inst-1', '4')).toBe(false);
+        expect(acceptsExternalPluginAutomationParameter('inst-1', 'cutoff')).toBe(false);
+    });
+
+    it('refuses an instance with no published snapshot at all', () => {
+        expect(acceptsExternalPluginAutomationParameter('inst-unknown', '3')).toBe(false);
     });
 
     it('refuses every parameter of an unattached instance', () => {
         publishSnapshot('inst-detached', false, [externalParameter({ id: 3 })]);
 
-        expect(
-            acceptsExternalPluginAutomationParameter(
-                { type: 'external-plugin', externalInstanceId: 'inst-detached' },
-                '3'
-            )
-        ).toBe(false);
+        expect(acceptsExternalPluginAutomationParameter('inst-detached', '3')).toBe(false);
     });
 });

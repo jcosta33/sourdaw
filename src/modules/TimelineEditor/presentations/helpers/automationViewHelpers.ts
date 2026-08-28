@@ -80,10 +80,7 @@ function acceptsAutomationParameter(device: AutomationTargetDevice, parameterId:
         // An external plugin instance answers for its own parameters, and its
         // `parameterValues` are empty until one is written by hand — so the key
         // check below would match a plugin lane against the wrong device.
-        return acceptsExternalPluginAutomationParameter(
-            { type: device.type, externalInstanceId: device.externalInstanceId },
-            parameterId
-        );
+        return acceptsExternalPluginAutomationParameter(device.externalInstanceId, parameterId);
     }
     if (device.parameterValues?.[parameterId] !== undefined) {
         return true;

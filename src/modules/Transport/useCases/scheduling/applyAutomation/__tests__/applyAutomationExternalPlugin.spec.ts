@@ -169,6 +169,72 @@ describe('applyAutomation on an external plugin device', () => {
         expect(updateDeviceParam).not.toHaveBeenCalled();
     });
 
+    it('clamps a curve value below the declared range to the minimum the instance published', () => {
+        seedPluginLane(`${DEVICE_ID}:${DRIVE_PARAMETER_ID}`);
+        // What a linked lane produces: `getAutomationValueAtBeat` applies
+        // `linkScale` *after* clamping to the lane's range, so the value handed
+        // to the apply path is not held by anything the lane declares.
+        vi.mocked(getAutomationValueAtBeat).mockReturnValue(-20_000);
+
+        applyAutomation(0);
+
+        expect(updateDeviceParam).toHaveBeenCalledTimes(1);
+        // The instance declared -12; delivering the raw -20000 would hand the
+        // plugin a setting it never said it accepts.
+        expect(vi.mocked(updateDeviceParam).mock.calls[0]![3]).toBe(-12);
+    });
+
+    it('clamps a curve value above the declared range to the maximum the instance published', () => {
+        seedPluginLane(`${DEVICE_ID}:${DRIVE_PARAMETER_ID}`);
+        vi.mocked(getAutomationValueAtBeat).mockReturnValue(20_000);
+
+        applyAutomation(0);
+
+        expect(updateDeviceParam).toHaveBeenCalledTimes(1);
+        expect(vi.mocked(updateDeviceParam).mock.calls[0]![3]).toBe(24);
+    });
+
+    it('carries the clamped value into the slew state so the filter cannot wind up outside the range', () => {
+        seedPluginLane(`${DEVICE_ID}:${DRIVE_PARAMETER_ID}`);
+        // Far below the range, then back inside it. The second tick glides from
+        // whatever the first tick stored.
+        vi.mocked(getAutomationValueAtBeat).mockReturnValueOnce(-20_000).mockReturnValue(0);
+
+        applyAutomation(0);
+        applyAutomation(1);
+
+        expect(updateDeviceParam).toHaveBeenCalledTimes(2);
+        // One α = 0.4 step from the clamped -12 toward 0. Had the filter kept
+        // the unclamped -20000, this step would land at -12000 and clamp back to
+        // -12 — the ride would sit pinned at the boundary for thousands of ticks
+        // instead of leaving it on the next one.
+        expect(vi.mocked(updateDeviceParam).mock.calls[1]![3]).toBeCloseTo(-7.2, 10);
+    });
+
+    it('leaves an external plugin parameter at the ride value on the driving edge: no base exists to restore', () => {
+        seedPluginLane(`${DEVICE_ID}:${DRIVE_PARAMETER_ID}`);
+        vi.mocked(getAutomationValueAtBeat).mockReturnValueOnce(0).mockReturnValue(18);
+
+        applyAutomation(0);
+        applyAutomation(1);
+        expect(updateDeviceParam).toHaveBeenCalled();
+
+        vi.mocked(updateDeviceParam).mockClear();
+        // Mutated in place: replacing the snapshot would be a project change,
+        // which drops runtime ownership before the gate edge is ever reached.
+        const track = (trackStore as unknown as MutableStore<{ tracks: { automationMode: string }[] }>).value
+            .tracks[0]!;
+        track.automationMode = 'off';
+
+        applyAutomation(2);
+
+        // A hosted plugin owns its own value: `parameterValues` stays empty, the
+        // state chunk captured at save is the setting, and the store snapshot's
+        // `value` is a menu-open reading that would jump the parameter to a
+        // stale mid-ride figure. Nothing is written.
+        expect(updateDeviceParam).not.toHaveBeenCalled();
+    });
+
     it('drives nothing for an instance that never attached to the native engine', () => {
         externalPluginParameterStore.update((state) => ({
             byInstanceId: {

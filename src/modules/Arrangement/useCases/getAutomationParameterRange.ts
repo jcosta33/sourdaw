@@ -23,10 +23,7 @@ type AutomationTargetDevice = { type: string; externalInstanceId?: string };
  */
 function acceptsAutomationParameter(device: AutomationTargetDevice, parameterId: string): boolean {
     if (device.externalInstanceId !== undefined) {
-        return acceptsExternalPluginAutomationParameter(
-            { type: device.type, externalInstanceId: device.externalInstanceId },
-            parameterId
-        );
+        return acceptsExternalPluginAutomationParameter(device.externalInstanceId, parameterId);
     }
 
     const descriptor = getAutomationDeviceDescriptor(device.type);
