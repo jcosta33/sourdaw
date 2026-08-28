@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => {
     } = { value: { state: 'idle' } };
     return {
         admission,
+        isWebGpuAvailable: vi.fn(),
         isCloudAvailable: vi.fn(),
         preference,
         runtimeStatus,
@@ -36,12 +37,17 @@ vi.mock('#/modules/AiRuntime/stores/llmStatusStore', () => ({
     llmStatusStore: mocks.runtimeStatus,
 }));
 
+vi.mock('#/modules/BrowserAi/stores', () => ({
+    isWebGpuAvailable: mocks.isWebGpuAvailable,
+}));
+
 describe('getBackendChain', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.admission.webLlm = true;
         mocks.preference.value = 'auto';
         mocks.runtimeStatus.value = { state: 'idle' };
+        mocks.isWebGpuAvailable.mockReturnValue(false);
         mocks.isCloudAvailable.mockReturnValue(true);
         Object.defineProperty(globalThis, 'navigator', { value: {}, configurable: true, writable: true });
     });
@@ -68,6 +74,7 @@ describe('getBackendChain', () => {
     });
 
     it('resolves the local WebLLM route when WebGPU is available', () => {
+        mocks.isWebGpuAvailable.mockReturnValue(true);
         Object.defineProperty(globalThis, 'navigator', {
             value: { gpu: {} },
             configurable: true,
@@ -75,6 +82,16 @@ describe('getBackendChain', () => {
         });
 
         expect(getBackendChain()).toEqual(['webllm']);
+    });
+
+    it('fails closed when the WebGPU API exists but the BrowserAi probe has not verified support', () => {
+        Object.defineProperty(globalThis, 'navigator', {
+            value: { gpu: {} },
+            configurable: true,
+            writable: true,
+        });
+
+        expect(getBackendChain()).toEqual([]);
     });
 
     it('uses a hosted provider only after explicit selection', () => {

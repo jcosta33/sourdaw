@@ -22,9 +22,10 @@ import { type CapabilityReport } from '../../models/CapabilityReport';
 import { DDSP_INSTRUMENT_CATALOG } from '../../models/DdspInstrumentCatalog';
 import { KOKORO_MODEL_ARTIFACT } from '../../models/KokoroArtifactManifest';
 import { type StorageStatus } from '../../models/StorageStatus';
-import { capabilityStore } from '../../stores/capabilityStore';
+import { capabilityStore, isWebGpuAvailable } from '../../stores/capabilityStore';
 import { modelRegistryStore } from '../../stores/modelRegistryStore';
 import { renderQueueStore } from '../../stores/renderQueueStore';
+import { detectCapabilities } from '../detectCapabilities';
 import { initBrowserAi } from '../initBrowserAi';
 
 type DetectCapabilitiesRepo = (input?: {
@@ -38,6 +39,20 @@ type CheckVerifiedModel = (input: {
     sizeBytes: number;
 }) => Promise<boolean>;
 type GetStorageStatus = () => Promise<StorageStatus>;
+
+function createDeferred<TResult>(): {
+    promise: Promise<TResult>;
+    resolve: (value: TResult) => void;
+    reject: (reason?: unknown) => void;
+} {
+    let resolveDeferred!: (value: TResult) => void;
+    let rejectDeferred!: (reason?: unknown) => void;
+    const promise = new Promise<TResult>((resolve, reject) => {
+        resolveDeferred = resolve;
+        rejectDeferred = reject;
+    });
+    return { promise, resolve: resolveDeferred, reject: rejectDeferred };
+}
 
 type LoggerMock = {
     info: (message: string) => void;
@@ -128,6 +143,29 @@ describe('initBrowserAi', () => {
         expect(detect_capabilities_repo).toHaveBeenCalledWith({ forceRefresh: true, measureInference: false });
         expect(capabilityStore.value).toEqual({ phase: 'done', report: fresh_capability_report });
         expect(subscribe_to_midi_store).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not let a late startup success overwrite a newer manual detection failure', async () => {
+        const startupProbe = createDeferred<CapabilityReport>();
+        const logger = { ...create_logger_mock(), error: vi.fn() };
+        injectDependencies(initBrowserAi, {
+            logger,
+            detectCapabilitiesRepo: vi.fn<DetectCapabilitiesRepo>(({ forceRefresh } = {}) =>
+                forceRefresh ? startupProbe.promise : Promise.reject(new Error('adapter unavailable'))
+            ),
+            checkVerifiedModel: vi.fn().mockResolvedValue(false),
+            checkDdspInstrumentReady: vi.fn().mockResolvedValue(false),
+            getStorageStatus: vi.fn().mockResolvedValue(empty_storage_status),
+            withDdspInstrumentLock: pass_through_ddsp_lock,
+        });
+
+        const initialization = initBrowserAi();
+        await detectCapabilities();
+        startupProbe.resolve(fresh_capability_report);
+        await initialization;
+
+        expect(capabilityStore.value).toEqual({ phase: 'error', message: 'adapter unavailable' });
+        expect(isWebGpuAvailable()).toBe(false);
     });
 
     it('should admit exactly four DDSP checkpoints as not-downloaded on a fresh profile', async () => {

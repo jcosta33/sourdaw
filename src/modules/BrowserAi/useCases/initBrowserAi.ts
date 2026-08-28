@@ -21,7 +21,7 @@ import { checkDdspInstrumentReady } from '../repositories/checkDdspInstrumentRea
 import { checkVerifiedModel } from '../repositories/checkVerifiedModel';
 import { getStorageStatus } from '../repositories/getStorageStatus';
 import { withDdspInstrumentLock } from '../repositories/withDdspInstrumentLock';
-import { setCapabilityReport, setCapabilityError } from '../stores/capabilityStore';
+import { beginCapabilityDetection, settleCapabilityError, settleCapabilityReport } from '../stores/capabilityStore';
 import { modelRegistryStore } from '../stores/modelRegistryStore';
 import { renderQueueStore, markPhraseStale } from '../stores/renderQueueStore';
 
@@ -68,13 +68,14 @@ export const initBrowserAi = inject({
             // throughput probe renders a full Kokoro phrase, which is not a cost
             // app startup may pay. The tier therefore reads `not-measured` until
             // the AI settings panel runs the measurement.
+            const capabilityProbeAttempt = beginCapabilityDetection();
             try {
                 const report = await detectCapabilitiesRepo({ forceRefresh: true, measureInference: false });
-                setCapabilityReport(report);
+                settleCapabilityReport(capabilityProbeAttempt, report);
                 logger.info(`[BrowserAi] Capability: ${report.capability} / ${report.webGpuTier}`);
             } catch (error) {
                 const message = error instanceof Error ? error.message : String(error);
-                setCapabilityError(message);
+                settleCapabilityError(capabilityProbeAttempt, message);
                 logger.warn(`[BrowserAi] Capability detection failed: ${message}`);
                 // Non-fatal — continue initialization
             }

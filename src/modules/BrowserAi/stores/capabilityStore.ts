@@ -12,18 +12,35 @@ export type CapabilityState =
     | { phase: 'done'; report: CapabilityReport }
     | { phase: 'error'; message: string };
 
+export type CapabilityProbeAttempt = { readonly id: number };
+
+let latestCapabilityProbeId = 0;
+
 export const capabilityStore = createStore<CapabilityState>({
     initialData: { phase: 'idle' },
 });
 
-export function setCapabilityDetecting(): void {
-    capabilityStore.set({ phase: 'detecting' });
+export function isWebGpuAvailable(): boolean {
+    const capabilityState = capabilityStore.value;
+    return capabilityState?.phase === 'done' && capabilityState.report.webGpu.status === 'supported';
 }
 
-export function setCapabilityReport(report: CapabilityReport): void {
+export function beginCapabilityDetection(): CapabilityProbeAttempt {
+    const attempt = { id: ++latestCapabilityProbeId };
+    capabilityStore.set({ phase: 'detecting' });
+    return attempt;
+}
+
+export function settleCapabilityReport(attempt: CapabilityProbeAttempt, report: CapabilityReport): void {
+    if (attempt.id !== latestCapabilityProbeId) {
+        return;
+    }
     capabilityStore.set({ phase: 'done', report });
 }
 
-export function setCapabilityError(message: string): void {
+export function settleCapabilityError(attempt: CapabilityProbeAttempt, message: string): void {
+    if (attempt.id !== latestCapabilityProbeId) {
+        return;
+    }
     capabilityStore.set({ phase: 'error', message });
 }
