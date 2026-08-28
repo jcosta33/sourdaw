@@ -1,0 +1,32 @@
+src/modules/AiRuntime/useCases/agentRequestOrchestration/projectSectionRenderConfirmation.ts
+  s_a40848e8f8cca9::t_ba47e2f1224e9b 108
+  s_a40848e8f8cca9::t_857048870c193a 24-25,28,37,40,43-47,56-57,111,117
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/executeCommittedSectionRenderRetry.spec.ts
+  s_a40848e8f8cca9::t_06cbb262794508 429,431-476
+  s_a40848e8f8cca9::t_17ae18c866dbff 176,320,425-428,503
+  s_a40848e8f8cca9::t_fbef8ff2381476 296-297,312-315,403,421-424,481-482,494-497
+  s_a40848e8f8cca9::t_4031770b68c41b 158,240-253,404
+  s_a40848e8f8cca9::t_d0466c95b82ad8 150-155,159-167,172-175
+  s_a40848e8f8cca9::t_ce89433f702205 430
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/projectSectionRenderConfirmation.spec.ts
+  s_a40848e8f8cca9::t_47b21f9c0097f1 88-89,112-123,147,149-151
+src/modules/AiRuntime/useCases/agentRequestOrchestration/executeCommittedSectionRenderRetry.ts
+  s_a40848e8f8cca9::t_29a3b9f78c171b 24,146-162,171-172,223-225,244,247-263,272-273
+  s_a40848e8f8cca9::t_d1fde20b1e78ed 274
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "52d87696e1b3f5afa16e299c0617f194bbb43472",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
