@@ -4359,6 +4359,46 @@ mod tests {
         }
     }
 
+    /// The suppressing list is handed to third-party code on the same terms as
+    /// the ordinary one, so it owes the same refusal. A plugin that pushes a null
+    /// header must be told no, not dereferenced.
+    #[test]
+    fn the_host_write_list_refuses_a_null_event_or_list_rather_than_dereferencing_it() {
+        let queue = PluginParameterEventQueue::default();
+        let mut capture = HostWriteCapture {
+            queue: &queue,
+            written_param_id: 1,
+        };
+        let list = capture_host_write_events(&mut capture);
+        let value = param_value_event(2, 0.1);
+
+        unsafe {
+            assert!(!host_write_try_push(&list, ptr::null()));
+            assert!(!host_write_try_push(ptr::null(), &value.header));
+        }
+
+        let mut taken = Vec::new();
+        queue.drain(&mut taken);
+        assert!(taken.is_empty());
+    }
+
+    /// A list with no capture behind it can only come from the host building one
+    /// wrong. Absorbed rather than refused, exactly as the ordinary list does with
+    /// a null queue: a refusal would have the plugin re-send an event no capture
+    /// exists to take.
+    #[test]
+    fn the_host_write_list_absorbs_an_event_when_it_carries_no_capture() {
+        let value = param_value_event(2, 0.1);
+        let list = clap_output_events {
+            ctx: ptr::null_mut(),
+            try_push: Some(host_write_try_push),
+        };
+
+        unsafe {
+            assert!(host_write_try_push(&list, &value.header));
+        }
+    }
+
     /// AC-002. `request_flush` exists precisely for the plugin that is not being
     /// handed blocks — transport stopped, editor open — and until this the
     /// callback was a comment.
