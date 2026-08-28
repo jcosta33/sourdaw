@@ -737,6 +737,211 @@ describe('sendChatMessage retained-provider selection', () => {
         }
     });
 
+    it('retains a hosted partial response when the active stream controller aborts its transport', async () => {
+        const partialContent = 'The hosted response began before cancellation.';
+        let transportSignal: AbortSignal | undefined;
+        const transportAbort = vi.fn();
+        let markTransportStarted: () => void = () => undefined;
+        const transportStarted = new Promise<void>((resolve) => {
+            markTransportStarted = resolve;
+        });
+        const settleWorkLease = vi.spyOn(agentRunWorkLease, 'settle');
+        mocks.aiBackendPreference.value = 'cloud';
+        mocks.resolveBackend.mockReturnValue('cloud');
+        mocks.isCloudAvailable.mockReturnValue(true);
+        mocks.getCloudProviderInfo.mockReturnValue({
+            provider: 'openai',
+            model: 'gpt-4o-mini',
+            baseUrl: 'https://api.openai.com/v1',
+        });
+        mocks.streamCloudChatCompletion.mockImplementation(
+            (
+                _messages: Parameters<typeof streamCloudChatCompletion>[0],
+                onToken: Parameters<typeof streamCloudChatCompletion>[1],
+                options?: CloudStreamOptions
+            ) => {
+                transportSignal = options?.signal;
+                onToken(partialContent);
+                markTransportStarted();
+                return new Promise<CloudChatCompletionOutcome>((_resolve, reject) => {
+                    transportSignal?.addEventListener(
+                        'abort',
+                        () => {
+                            transportAbort(transportSignal);
+                            reject(transportSignal?.reason);
+                        },
+                        { once: true }
+                    );
+                });
+            }
+        );
+
+        try {
+            const pendingResponse = sendChatMessage('Summarize the hosted bridge.', { mode: 'explain' });
+            await transportStarted;
+            const activeAborter = mocks.setActiveAborter.mock.calls.find(
+                ([value]) => value instanceof AbortController
+            )?.[0];
+            if (!(activeAborter instanceof AbortController)) {
+                throw new Error('Expected hosted streaming to expose its active abort controller.');
+            }
+
+            activeAborter.abort(new DOMException('Cancelled by the user.', 'AbortError'));
+            await expect(pendingResponse).resolves.toBeUndefined();
+
+            const run = agentRunLifecycle.get(getMostRecentlyAdmittedRunId());
+            expect(transportSignal).toBe(activeAborter.signal);
+            expect(transportAbort).toHaveBeenCalledWith(activeAborter.signal);
+            expect(run).toMatchObject({
+                phase: 'cancelled',
+                workLeases: [expect.objectContaining({ workId: 'provider-response', terminalState: 'cancelled' })],
+            });
+            expect(settleWorkLease).not.toHaveBeenCalledWith(expect.objectContaining({ terminalState: 'completed' }));
+            expect(mocks.updateChatMessage).toHaveBeenCalledWith(
+                expect.any(String),
+                expect.objectContaining({ isStreaming: false, content: partialContent })
+            );
+            expect(mocks.setActiveAborter).toHaveBeenLastCalledWith(null);
+            expect(mocks.setChatGenerating).toHaveBeenLastCalledWith(false);
+        } finally {
+            settleWorkLease.mockRestore();
+        }
+    });
+
+    it('retains a WebLLM partial response when the active stream controller interrupts generation', async () => {
+        const partialContent = 'The local response began before cancellation.';
+        let unblockStream: (() => void) | null = null;
+        let markStreamPaused: () => void = () => undefined;
+        const streamPaused = new Promise<void>((resolve) => {
+            markStreamPaused = resolve;
+        });
+        async function* streamCompletion() {
+            yield { choices: [{ delta: { content: partialContent } }] };
+            await new Promise<void>((resolve) => {
+                unblockStream = resolve;
+                markStreamPaused();
+            });
+            yield { choices: [{ delta: {}, finish_reason: 'stop' }] };
+        }
+        const engine = {
+            interruptGenerate: vi.fn(() => {
+                unblockStream?.();
+            }),
+            chat: {
+                completions: {
+                    create: vi.fn(async () => streamCompletion()),
+                },
+            },
+        };
+        const settleWorkLease = vi.spyOn(agentRunWorkLease, 'settle');
+        mocks.getLlmEngine.mockReturnValue(engine);
+
+        try {
+            const pendingResponse = sendChatMessage('Summarize the local bridge.', { mode: 'explain' });
+            await streamPaused;
+            const activeAborter = mocks.setActiveAborter.mock.calls.find(
+                ([value]) => value instanceof AbortController
+            )?.[0];
+            if (!(activeAborter instanceof AbortController)) {
+                throw new Error('Expected WebLLM streaming to expose its active abort controller.');
+            }
+
+            activeAborter.abort(new DOMException('Cancelled by the user.', 'AbortError'));
+            await expect(pendingResponse).resolves.toBeUndefined();
+
+            const run = agentRunLifecycle.get(getMostRecentlyAdmittedRunId());
+            expect(engine.interruptGenerate).toHaveBeenCalledOnce();
+            expect(run).toMatchObject({
+                phase: 'cancelled',
+                workLeases: [expect.objectContaining({ workId: 'provider-response', terminalState: 'cancelled' })],
+            });
+            expect(settleWorkLease).not.toHaveBeenCalledWith(expect.objectContaining({ terminalState: 'completed' }));
+            expect(mocks.updateChatMessage).toHaveBeenCalledWith(
+                expect.any(String),
+                expect.objectContaining({ isStreaming: false, content: partialContent })
+            );
+            expect(mocks.setActiveAborter).toHaveBeenLastCalledWith(null);
+            expect(mocks.setChatGenerating).toHaveBeenLastCalledWith(false);
+        } finally {
+            settleWorkLease.mockRestore();
+        }
+    });
+
+    it('retains a hosted completed response with a persistence warning when completion settlement cannot persist', async () => {
+        const content = 'The hosted completion remains visible.';
+        const settlementFailure = new DOMException('The quota has been exceeded.', 'QuotaExceededError');
+        let releaseCompletion: () => void = () => undefined;
+        let markCompletionReady: () => void = () => undefined;
+        let restoreSetItem: (() => void) | null = null;
+        const completionReady = new Promise<void>((resolve) => {
+            markCompletionReady = resolve;
+        });
+        mocks.aiBackendPreference.value = 'cloud';
+        mocks.resolveBackend.mockReturnValue('cloud');
+        mocks.isCloudAvailable.mockReturnValue(true);
+        mocks.getCloudProviderInfo.mockReturnValue({
+            provider: 'openai',
+            model: 'gpt-4o-mini',
+            baseUrl: 'https://api.openai.com/v1',
+        });
+        mocks.streamCloudChatCompletion.mockImplementation(
+            (
+                _messages: Parameters<typeof streamCloudChatCompletion>[0],
+                onToken: Parameters<typeof streamCloudChatCompletion>[1]
+            ) => {
+                onToken(content);
+                markCompletionReady();
+                return new Promise<CloudChatCompletionOutcome>((resolve) => {
+                    releaseCompletion = () => resolve({ status: 'complete' });
+                });
+            }
+        );
+
+        try {
+            const pendingResponse = sendChatMessage('Summarize the hosted arrangement.', { mode: 'explain' });
+            await completionReady;
+            const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementationOnce(() => {
+                throw settlementFailure;
+            });
+            restoreSetItem = () => setItem.mockRestore();
+            releaseCompletion();
+            await expect(pendingResponse).resolves.toBeUndefined();
+
+            const run = agentRunLifecycle.get(getMostRecentlyAdmittedRunId());
+            if (run === null) {
+                throw new Error('Expected the hosted run to remain inspectable after settlement persistence failed.');
+            }
+            const durableRun = JSON.parse(localStorage.getItem('sourdaw-agent-runs') ?? '').json.runs.find(
+                (candidate: { runId: string }) => candidate.runId === run.runId
+            );
+            expect(run).toMatchObject({
+                phase: 'planning',
+                workLeases: [expect.objectContaining({ workId: 'provider-response', terminalState: 'completed' })],
+                providerUsage: [expect.objectContaining({ status: 'complete' })],
+            });
+            expect(durableRun).toMatchObject({
+                runId: run.runId,
+                phase: 'planning',
+                workLeases: [expect.objectContaining({ workId: 'provider-response', terminalState: 'completed' })],
+                providerUsage: [expect.objectContaining({ status: 'complete' })],
+            });
+            expect(durableRun.workLeases).toEqual(run.workLeases);
+            expect(durableRun.providerUsage).toEqual(run.providerUsage);
+            expect(mocks.updateChatMessage).toHaveBeenLastCalledWith(
+                expect.any(String),
+                expect.objectContaining({
+                    isStreaming: false,
+                    content: `${content}\n\n_${PROVIDER_PERSISTENCE_WARNING}_`,
+                    error: PROVIDER_PERSISTENCE_WARNING,
+                })
+            );
+            expect(mocks.setActiveAborter).toHaveBeenLastCalledWith(null);
+            expect(mocks.setChatGenerating).toHaveBeenLastCalledWith(false);
+        } finally {
+            restoreSetItem?.();
+        }
+    });
+
     it('keeps a hosted provider stream failure terminal with its exact provider lease and usage identity', async () => {
         const providerError = new Error('Hosted provider stream failed');
         const partialContent = 'The hosted bridge summary started.';
