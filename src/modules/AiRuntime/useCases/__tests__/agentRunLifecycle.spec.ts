@@ -271,7 +271,7 @@ describe('agentRunLifecycle', () => {
             runId: 'run-render-review',
             prompt: 'Retry the retained verse render.',
             assistantMessageId: 'assistant-render-retry',
-            actions: [{ type: 'renderProjectSections', payload: { jobs: [] } }],
+            actions: [{ type: 'renderProjectSections', payload: { jobs: [], sectionIds: [] } }],
             actionLabels: ['Render Verse'],
             executionMode: 'atomic',
             projectRevision: 'heads-render-review',
