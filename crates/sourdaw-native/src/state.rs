@@ -8,7 +8,7 @@ use daw_plugin_host::PluginParameter;
 use std::collections::HashMap;
 use std::ffi::c_void;
 use std::sync::atomic::AtomicU64;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
 pub struct PluginInstanceData {
@@ -272,6 +272,25 @@ impl Default for AppState {
     }
 }
 
+/// Every live plugin instance taken out of the stores, for a caller that is
+/// about to tear them down.
+pub struct LivePluginInstances {
+    /// Instances the command layer owns outright. Dropping one is its whole
+    /// teardown, because nothing else holds it.
+    pub command_owned: Vec<PluginInstanceData>,
+    /// Engine-owned instances. Their runtimes are shared — the scheduler and
+    /// the watcher threads hold clones — so dropping one runs the plugin's
+    /// teardown only once every other clone is gone.
+    pub engine_owned: Vec<EnginePluginInstanceData>,
+}
+
+fn locked_or_poisoned<Value>(lock: &Mutex<Value>) -> MutexGuard<'_, Value> {
+    match lock.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    }
+}
+
 fn retain_runtime_once<Runtime>(retired_runtimes: &mut Vec<Arc<Runtime>>, runtime: Arc<Runtime>) {
     if retired_runtimes
         .iter()
@@ -366,6 +385,39 @@ impl AppState {
                 let mut retired_plugins = poisoned.into_inner();
                 retain_runtime_once(&mut retired_plugins, runtime);
             }
+        }
+    }
+
+    /// Take every live plugin instance out of the stores, leaving both empty,
+    /// and withdraw each engine-owned runtime's intent to process on the way
+    /// out.
+    ///
+    /// `begin_unload` runs while the instance is still wired into the
+    /// scheduler, because leaving the plugin's processing state is the audio
+    /// thread's job and it needs blocks in which to do it — the order
+    /// `unload_plugin` keeps, for the same reason.
+    ///
+    /// The instances come back undropped. Dropping one runs the plugin's own
+    /// teardown, third-party code of unbounded duration, and running that
+    /// inside a store's critical section parks every other plugin command for
+    /// its whole duration — the discipline `sweep_retired_runtimes` keeps for
+    /// the retirement vec.
+    pub fn take_live_plugin_instances(&self) -> LivePluginInstances {
+        let engine_owned = {
+            let mut engine_plugins = locked_or_poisoned(&self.engine_plugins);
+            for instance in engine_plugins.values() {
+                instance.runtime.begin_unload();
+            }
+            std::mem::take(&mut *engine_plugins).into_values().collect()
+        };
+
+        let command_owned = std::mem::take(&mut *locked_or_poisoned(&self.plugins))
+            .into_values()
+            .collect();
+
+        LivePluginInstances {
+            command_owned,
+            engine_owned,
         }
     }
 
