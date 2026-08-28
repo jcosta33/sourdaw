@@ -8,6 +8,7 @@
 //! not the path to it.
 
 use super::*;
+use crate::traits::{take_pending_process_refusal_signal, PROCESS_REFUSAL_HINT_TEST_LOCK};
 use crate::vst3_host::tuid_from_guid;
 use std::ffi::{CStr, CString};
 use std::sync::atomic::{AtomicBool, AtomicI32, AtomicPtr, AtomicU32, AtomicU64, Ordering};
@@ -93,6 +94,9 @@ struct FakeState {
     observed_inputs: Mutex<Vec<ObservedBus>>,
     observed_outputs: Mutex<Vec<ObservedBus>>,
 
+    /// A processor that refuses to render the block it was handed, answering a
+    /// failure tresult without writing an output buffer.
+    refuses_process: AtomicBool,
     /// A processor that refuses the state a project restores into it.
     refuses_set_state: AtomicBool,
     /// A processor that will not report its own state.
@@ -571,6 +575,12 @@ unsafe fn fake_process(state: &FakeState, data: *mut ProcessData) -> tresult {
         return kInvalidArgument;
     }
     state.process_calls.fetch_add(1, Ordering::AcqRel);
+    if state.refuses_process.load(Ordering::Acquire) {
+        // Before touching a buffer: a processor that answers a failure has told
+        // the host its output means nothing, and one that wrote first would let
+        // a host reading that output pass the test anyway.
+        return kResultFalse;
+    }
     let data = &mut *data;
 
     record_bus_shape(&state.observed_inputs, data.inputs, data.numInputs);
@@ -1962,6 +1972,44 @@ fn a_vst3_plugin_never_has_a_tail_change_pending() {
     let mut wrapper = load(&state, COMBINED_CID);
 
     assert_eq!(wrapper.take_tail_change(), None);
+}
+
+// ── Process refusal ─────────────────────────────────────────────────────
+
+/// A processor answering anything but `kResultOk` wrote no output the host may
+/// use, so the block passes through and the failure is latched. Latching alone
+/// is not enough: the flag lives on the wrapper and nothing reads it on its own,
+/// so the audio thread also raises the process-wide hint the recurring control
+/// visit wakes on. Without that hint the refusal is recorded where no one looks.
+#[test]
+fn a_refused_block_latches_and_wakes_the_control_path() {
+    let _guard = PROCESS_REFUSAL_HINT_TEST_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let state = FakeState::new();
+    let mut wrapper = load(&state, COMBINED_CID);
+    state.refuses_process.store(true, Ordering::Release);
+    take_pending_process_refusal_signal();
+
+    let rendered = render(&mut wrapper, 0.5, 64);
+
+    assert_eq!(
+        state.process_calls.load(Ordering::Acquire),
+        1,
+        "the block reached the processor, so its answer is what was read"
+    );
+    assert_eq!(
+        rendered[0], 0.5,
+        "a refused block passes dry rather than the scratch the plugin never wrote"
+    );
+    assert!(
+        wrapper.process_refused,
+        "the refusal is recorded for the control path to report"
+    );
+    assert!(
+        take_pending_process_refusal_signal(),
+        "the refusal wakes the control path, which is the only thread that may report it"
+    );
 }
 
 // ── State ───────────────────────────────────────────────────────────────
