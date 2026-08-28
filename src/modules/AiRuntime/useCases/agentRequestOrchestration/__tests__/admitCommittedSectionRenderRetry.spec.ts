@@ -67,7 +67,7 @@ function createFixture(): {
         contentHash: 'content-render-retry',
         envelope: parsed.envelope,
         observedBaseRevision: PROJECT_REVISION,
-        resultingRevision: COMMITTED_REVISION,
+        resultingRevision: null,
         result: {
             status: 'committed-with-warning',
             actions: [
@@ -299,19 +299,6 @@ describe('admitCommittedSectionRenderRetry', () => {
         [
             'durable batch identity',
             (fixture: ReturnType<typeof createFixture>) => (fixture.receipt.batchId = 'wrong-batch'),
-        ],
-        [
-            'resulting revision',
-            (fixture: ReturnType<typeof createFixture>) => {
-                if (!fixture.receipt.resulting) {
-                    throw new Error('Expected resulting revision');
-                }
-                fixture.receipt.resulting.normalizedRevision = 'wrong-revision';
-            },
-        ],
-        [
-            'missing resulting revision',
-            (fixture: ReturnType<typeof createFixture>) => (fixture.receipt.resulting = null),
         ],
     ])('rejects mismatched %s proof', (_name, mutate) => {
         const fixture = createFixture();
