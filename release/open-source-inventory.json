@@ -41,6 +41,7 @@
                 ".prettierignore",
                 ".prettierrc",
                 "AGENTS.md",
+                "CHANGELOG.md",
                 "CLAUDE.md",
                 "CONTRIBUTING.md",
                 "CODEX.md",
@@ -131,7 +132,7 @@
                 "sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4:LICENSE",
                 "sha256:c148064afc3d904d474c5f20ee39052ff86085a02d148552ce59f4d0ebd7aeb9:NOTICE",
                 "sha256:03be9429f428e7f8f427a01a79317eef00dd6ab5dc2ffb130c4a6300f579fead:public/legal/DEPENDENCY-LICENSES.txt",
-                "sha256:aac9ec58dcbb4b69c9b47dbbe1e32740d5a4767b0232ff3c15cdf9f13a665941:release/dependency-license-proofs.json"
+                "sha256:6837548576b9222491baae6b1485298569037b63123b23d2aaed76bdbfa4d07f:release/dependency-license-proofs.json"
             ],
             "licenses": ["Apache-2.0", "per-package terms:public/legal/DEPENDENCY-LICENSES.txt"],
             "productSurfaces": [
@@ -1273,7 +1274,7 @@
     "snapshots": [
         {
             "path": "package.json",
-            "sha256": "9dbe9f365c568611a78f97160861f2583ded1d489faf39992796db14f74031ba"
+            "sha256": "a6651557fe8dc64a1babbf4016a46e4921b9984d7a1317139f646cfafd154f7e"
         },
         {
             "path": "server/package.json",
