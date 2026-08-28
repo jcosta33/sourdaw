@@ -1,0 +1,46 @@
+src/modules/AiRuntime/models/GetPendingEffectRecoveryPolicy.ts
+  s_a40848e8f8cca9::t_85ae9a13a670e2 7
+src/modules/Command/useCases/__tests__/commandBatchIdempotency.spec.ts
+  s_a40848e8f8cca9::t_8a645893d73e53 1653,1679
+  s_a40848e8f8cca9::t_752a82a6991c72 1666,1735,1787-1795,1799,1803
+src/modules/Command/useCases/finalizeRecoveredCommandBatchEffects.ts
+  s_a40848e8f8cca9::t_011a2352fea18f 15-20,32,34-38,42-46,48-49,51-55,59-61,63-67,70-71,73-77,90-94,98,115-118,123-127,138-142,146-149,160-163,171,175-187,196,202-203,212
+  s_a40848e8f8cca9::t_752a82a6991c72 99,150
+  s_a40848e8f8cca9::t_a8b72a1720a39d 97,100-101,105,114,154,159,204-205,208-211,213-214
+src/modules/AiRuntime/useCases/agentRequestOrchestration/executeCommittedSectionRenderRetry.ts
+  s_a40848e8f8cca9::t_bdee63a630c16f 26,59,62-66,74,94-100,103,117-128,263-290,294,302,311,314,377,379,386,410-419,433,444-450
+  s_a40848e8f8cca9::t_2600f4e994c624 451
+src/modules/AudioRendering/useCases/renderAgentProjectSections.ts
+  s_a40848e8f8cca9::t_85ae9a13a670e2 19,135
+src/modules/AudioRendering/useCases/__tests__/renderAgentProjectSections.spec.ts
+  s_a40848e8f8cca9::t_e3f0c857f0aeb7 97-133
+src/modules/AiRuntime/useCases/recoverRetainedSectionRenderEffects.ts
+  s_a40848e8f8cca9::t_85ae9a13a670e2 11-13
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/executeCommittedSectionRenderRetry.spec.ts
+  s_a40848e8f8cca9::t_8a645893d73e53 469-485,487-494,866-903
+  s_a40848e8f8cca9::t_228d4423100cdc 486,853,865
+  s_a40848e8f8cca9::t_f522e92ab33168 581-585,605-609,643-647,759-764
+  s_a40848e8f8cca9::t_9dddf8cd60e019 445,619,657,737
+src/modules/AudioRendering/useCases/retryAgentProjectSectionRenders.ts
+  s_a40848e8f8cca9::t_85ae9a13a670e2 10,21
+src/modules/AiRuntime/useCases/__tests__/agentRunRecovery.spec.ts
+  s_a40848e8f8cca9::t_e3f0c857f0aeb7 1273-1313
+src/modules/AiRuntime/useCases/__tests__/recoverAgentRunPendingEffects.spec.ts
+  s_a40848e8f8cca9::t_8a645893d73e53 82-115
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "a04cb52429f51d11b2e1be883165db0f7c7fe27f",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
