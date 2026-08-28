@@ -30,11 +30,17 @@ pub type LatencyChangeNotifier = Box<dyn Fn() + Send + Sync>;
 
 /// Something a plugin asked its host for from inside its own callback.
 ///
-/// The two arrivals share one shape, which is why they share one wake: the
-/// plugin calls a host callback on a thread that may do no real work, the
-/// backend records the fact lock-free, and the wake carries the follow-up onto
-/// the host's control path. What the follow-up is differs; where it may run does
-/// not.
+/// These arrivals share one shape, which is why they share one wake: the plugin
+/// calls a host callback on a thread that may do no real work, the backend
+/// records the fact lock-free, and the wake carries the follow-up onto the
+/// host's control path. What the follow-up is differs; where it may run does not.
+///
+/// Every variant here is raised from a callback its format marks `[main-thread]`,
+/// and the wake behind them allocates. An ask a plugin may raise from the audio
+/// thread — `clap_host_params.request_flush`, which CLAP marks `[thread-safe]` —
+/// therefore has no variant here at all: it is recorded as a flag and read by the
+/// parameter drain, because a channel send on the render thread is a missed
+/// device period.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PluginHostRequest {
     /// The plugin wants the window its editor is drawn into resized. The size
@@ -48,10 +54,6 @@ pub enum PluginHostRequest {
     /// plugin that no longer exists. Re-enumerating means calling the plugin
     /// back, which the callback's own thread may not do.
     ParametersRescan,
-    /// The plugin has parameter output waiting and is not being handed blocks,
-    /// so it asked the host to call `flush()` and collect it. Only the control
-    /// path may make that call while the plugin is not processing.
-    ParametersFlush,
 }
 
 /// Host-supplied wake fired when a plugin raises a [`PluginHostRequest`].

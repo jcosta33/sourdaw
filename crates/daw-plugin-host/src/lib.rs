@@ -21,9 +21,10 @@ pub mod vst3_wrapper;
 
 pub use clap_wrapper::ClapWrapper;
 pub use parameter_events::{
-    is_empty_batch, pair_gestures, take_pending_parameter_events_signal, PairedParameterEvents,
-    PluginParameterEvent, PluginParameterEventKind, PluginParameterEventQueue,
-    PARAMETER_EVENT_CAPACITY,
+    is_empty_batch, pair_gestures, signal_pending_parameter_flush,
+    take_pending_parameter_events_signal, take_pending_parameter_flush_signal,
+    PairedParameterEvents, PluginParameterEvent, PluginParameterEventKind,
+    PluginParameterEventQueue, PARAMETER_EVENT_CAPACITY,
 };
 pub use params::PluginParameter;
 pub use runtime::HostedRuntime;

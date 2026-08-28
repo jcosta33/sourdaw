@@ -13,6 +13,8 @@ use std::os::raw::c_void;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::OnceLock;
 
+use crate::parameter_events::signal_pending_parameter_flush;
+
 /// Re-exported so every existing `clap_host::LatencyChangeNotifier` path still
 /// resolves. The type itself is seam vocabulary — see [`crate::traits`].
 pub use crate::traits::LatencyChangeNotifier;
@@ -241,17 +243,18 @@ impl HostCallbackState {
         self.parameters_rescan.swap(false, Ordering::AcqRel)
     }
 
-    /// Record that the plugin wants `params.flush()` called, then wake the
-    /// observer.
+    /// Record that the plugin wants `params.flush()` called.
     ///
-    /// CLAP marks `request_flush` `[thread-safe]`, so this may arrive from the
-    /// audio thread. Nothing here allocates or blocks on its own account: a
-    /// release store and a lock-free `OnceLock::get`.
+    /// Two release stores and nothing else — deliberately, and unlike every
+    /// other ask on this type. CLAP marks `request_flush` `[thread-safe]`, so a
+    /// plugin may call it from inside `process()`; the request-notifier channel
+    /// the other asks wake copies the instance id onto the heap and takes an
+    /// allocator lock, which on the render thread is a missed device period. So
+    /// this ask has no channel: the flag is the record, the process-wide hint is
+    /// the wake, and the drain thread answers both.
     pub fn request_parameters_flush(&self) {
         self.parameters_flush.store(true, Ordering::Release);
-        if let Some(notify) = self.request_notifier.get() {
-            notify(PluginHostRequest::ParametersFlush);
-        }
+        signal_pending_parameter_flush();
     }
 
     /// Atomically read-and-clear the flush request.
@@ -590,6 +593,10 @@ mod tests {
         }
     }
 
+    /// Serialises every test that raises the process-wide flush hint, so one
+    /// test's raise cannot stand in for another's deleted one.
+    static FLUSH_SIGNAL_TEST_LOCK: Mutex<()> = Mutex::new(());
+
     /// Arm a state so a resize request can be accepted: an open editor window
     /// and an installed wake, recording what the wake was told.
     fn state_with_open_editor() -> (HostCallbackState, Arc<Mutex<Vec<PluginHostRequest>>>) {
@@ -833,20 +840,51 @@ mod tests {
         }
     }
 
+    /// CLAP marks `request_flush` `[thread-safe]`, so a plugin may raise it from
+    /// inside `process()`. The request-notifier channel every other ask wakes
+    /// copies the instance id onto the heap and takes an allocator lock, which
+    /// on the render thread is a missed device period — so this ask must record
+    /// its flag and raise the wait-free hint, and touch the channel not at all.
     #[test]
-    fn a_flush_request_records_the_ask_and_wakes_the_control_path() {
+    fn a_flush_request_records_the_ask_without_waking_the_allocating_channel() {
+        // The flush hint is process-wide, and every other test here that raises
+        // one would otherwise mask a deleted raise in this one.
+        let _guard = FLUSH_SIGNAL_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let (state, requests) = state_with_open_editor();
         let host = host_with_state(&state);
+        crate::parameter_events::take_pending_parameter_flush_signal();
 
         assert!(!state.take_parameters_flush(), "flag starts clear");
         unsafe { host_params_request_flush(&host as *const clap_host) };
 
-        assert_eq!(
-            requests.lock().expect("request log").as_slice(),
-            [PluginHostRequest::ParametersFlush]
+        assert!(
+            requests.lock().expect("request log").is_empty(),
+            "a flush request must not send on the channel, which allocates"
+        );
+        assert!(
+            crate::parameter_events::take_pending_parameter_flush_signal(),
+            "the drain thread's wake is the process-wide hint, and nothing else raises it here"
         );
         assert!(state.take_parameters_flush());
         assert!(!state.take_parameters_flush());
+    }
+
+    /// The other asks keep their channel: their callbacks are `[main-thread]` in
+    /// CLAP, where an allocation is ordinary, and the follow-up needs to name
+    /// the instance that made it.
+    #[test]
+    fn the_main_thread_asks_still_wake_the_channel() {
+        let (state, requests) = state_with_open_editor();
+        let host = host_with_state(&state);
+
+        unsafe { host_params_rescan(&host as *const clap_host, 0) };
+
+        assert_eq!(
+            requests.lock().expect("request log").as_slice(),
+            [PluginHostRequest::ParametersRescan]
+        );
     }
 
     /// The two asks are separate flags: a rescan must not be consumed by the
@@ -854,6 +892,9 @@ mod tests {
     /// and never re-enumerated.
     #[test]
     fn the_rescan_and_flush_flags_do_not_consume_each_other() {
+        let _guard = FLUSH_SIGNAL_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let state = HostCallbackState::default();
         let host = host_with_state(&state);
 
@@ -873,6 +914,9 @@ mod tests {
     /// instance never got one must still record its ask.
     #[test]
     fn the_params_callbacks_record_with_no_wake_installed() {
+        let _guard = FLUSH_SIGNAL_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let state = HostCallbackState::default();
         let host = host_with_state(&state);
 
@@ -887,6 +931,9 @@ mod tests {
 
     #[test]
     fn the_params_callbacks_tolerate_a_null_host_state() {
+        let _guard = FLUSH_SIGNAL_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let host = create_host_descriptor();
         assert!(host.host_data.is_null());
 

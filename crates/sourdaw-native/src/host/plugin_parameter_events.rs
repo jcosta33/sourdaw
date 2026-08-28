@@ -22,17 +22,34 @@
 //!
 //! ## What it does not take
 //!
-//! It never takes the `SharedHostedPlugin` control seam. That seam can wait on
-//! the audio thread, and the audio thread bypasses a plugin whose lock is held —
-//! so a drain that took it would trade a knob's UI latency for a dropout. The
-//! queue is reached through an `Arc` cloned off the runtime once at load, and
-//! draining it is wait-free on both sides.
+//! The drain never takes the `SharedHostedPlugin` control seam. That seam can
+//! wait on the audio thread, and the audio thread bypasses a plugin whose lock
+//! is held — so a drain that took it would trade a knob's UI latency for a
+//! dropout. The queue is reached through an `Arc` cloned off the runtime once at
+//! load, and draining it is wait-free on both sides.
+//!
+//! ## Why the flush answer lives here too
+//!
+//! `clap_host_params.request_flush` is annotated `[thread-safe]`, so a plugin
+//! may raise it from inside `process()`. That rules out the host-request
+//! watcher, whose wake copies an instance id and sends on a channel — an
+//! allocation the render thread may not make. So the backend records the ask as
+//! a flag and raises a second process-wide hint, and this thread answers it.
+//!
+//! Answering *does* take the control seam, because `params.flush()` is a call
+//! into the plugin. That is the one thing this thread does under a lock, it runs
+//! only on a tick that found the flush hint raised, and it is bounded by a
+//! timeout far shorter than a command's, so a busy instance cannot hold the knob
+//! drain behind it.
 
 use crate::events::{EventSink, EventSinkExt};
+use crate::host::native_bridge::SharedHostedPlugin;
 use crate::state::EnginePluginInstanceData;
 use daw_plugin_host::{
-    is_empty_batch, pair_gestures, take_pending_parameter_events_signal, PairedParameterEvents,
-    PluginParameterEvent, PluginParameterEventKind, PluginParameterEventQueue,
+    is_empty_batch, pair_gestures, signal_pending_parameter_flush,
+    take_pending_parameter_events_signal, take_pending_parameter_flush_signal, AudioPlugin,
+    PairedParameterEvents, PluginParameterEvent, PluginParameterEventKind,
+    PluginParameterEventQueue,
 };
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
@@ -50,6 +67,16 @@ pub const PLUGIN_PARAMETER_EVENTS_EVENT: &str = "plugin-parameter-events";
 /// coarser than a frame is visibly laggy, and finer buys nothing a 60 Hz
 /// renderer can show.
 const DRAIN_INTERVAL: Duration = Duration::from_millis(16);
+
+/// How long answering one flush may wait for the audio thread to release an
+/// instance.
+///
+/// A fraction of the two seconds a plugin command allows, because this thread
+/// also carries the knob drain: a flush that parked here for seconds would
+/// freeze every other plugin's editor feedback behind one busy instance. A visit
+/// that could not get in raises the hint again rather than waiting, so the next
+/// tick tries and the ask is not lost.
+const FLUSH_CONTROL_TIMEOUT: Duration = Duration::from_millis(50);
 
 /// One plugin-originated parameter event, as the renderer reads it.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -205,6 +232,93 @@ fn drain_once(
     }
 }
 
+/// Every engine-owned instance's id and runtime.
+///
+/// Cloned out under the map lock for the same reason the queues are: taking a
+/// plugin's control seam while still holding the instance map would block every
+/// plugin command in the process behind one busy instance.
+fn runtimes_to_flush(engine_plugins: &EnginePlugins) -> Vec<(String, Arc<SharedHostedPlugin>)> {
+    let Ok(guard) = engine_plugins.lock() else {
+        eprintln!("[Plugin] parameter flush failed to lock engine_plugins");
+        return Vec::new();
+    };
+
+    guard
+        .iter()
+        .map(|(instance_id, instance)| (instance_id.clone(), Arc::clone(&instance.runtime)))
+        .collect()
+}
+
+/// Answer the flush requests plugins raised, off the audio thread.
+///
+/// The hint names no instance — it cannot, because it is raised from the audio
+/// thread where copying an id would allocate — so this visits every engine-owned
+/// instance and lets each backend answer for itself: it takes that instance's
+/// own recorded flag and does nothing when there is none.
+///
+/// Reports whether the ask was answered anywhere. Answered, not necessarily
+/// carried out: a visit that finds the plugin mid-block consumes the flag and
+/// leaves the output to `process()`, which is CLAP's own rule for `flush` while
+/// processing.
+fn flush_pending_parameters(engine_plugins: &EnginePlugins) -> bool {
+    let mut answered = false;
+
+    for (instance_id, runtime) in runtimes_to_flush(engine_plugins) {
+        let reached = runtime.with_control(FLUSH_CONTROL_TIMEOUT, |plugin| {
+            Ok(plugin.flush_parameters_off_audio_thread())
+        });
+
+        match reached {
+            Ok(_) => answered = true,
+            Err(error) => retry_unanswered_flush(&runtime, &instance_id, &error),
+        }
+    }
+
+    answered
+}
+
+/// Raise the hint again for an instance the flush could not reach.
+///
+/// Only for one still accepting public control. That is the difference between a
+/// control path busy right now — the audio thread is inside a block, and the next
+/// tick finds it free — and an instance unloading or retired, which would refuse
+/// every retry and turn the hint into a tick-forever spin.
+fn retry_unanswered_flush(runtime: &SharedHostedPlugin, instance_id: &str, error: &str) {
+    if runtime.ensure_public_control_allowed().is_err() {
+        return;
+    }
+
+    eprintln!(
+        "[Plugin] parameter flush could not reach instance {}, retrying: {}",
+        instance_id, error
+    );
+    signal_pending_parameter_flush();
+}
+
+/// One pass of the drain thread, once its sleep is over.
+///
+/// The two hints are read independently: a plugin that emitted events took no
+/// lock to say so, while a plugin asking for a flush needs one, and neither ask
+/// implies the other.
+fn run_tick(
+    engine_plugins: &EnginePlugins,
+    open_gestures: &mut OpenGestures,
+    events: &dyn EventSink,
+) {
+    if take_pending_parameter_events_signal() {
+        drain_once(engine_plugins, open_gestures, events);
+    }
+
+    if take_pending_parameter_flush_signal() && flush_pending_parameters(engine_plugins) {
+        // A flush exists to make the plugin hand its parameter changes over, and
+        // they land in the same queues this thread drains. Publishing them on
+        // this pass rather than the next halves the delay on the one path that
+        // asked the host for help.
+        take_pending_parameter_events_signal();
+        drain_once(engine_plugins, open_gestures, events);
+    }
+}
+
 /// Start the drain thread. Idempotent: a second call is ignored.
 pub fn start(events: Arc<dyn EventSink>, engine_plugins: EnginePlugins) {
     if DRAIN_STARTED.swap(true, Ordering::SeqCst) {
@@ -217,10 +331,7 @@ pub fn start(events: Arc<dyn EventSink>, engine_plugins: EnginePlugins) {
             let mut open_gestures = OpenGestures::new();
             loop {
                 std::thread::sleep(DRAIN_INTERVAL);
-                if !take_pending_parameter_events_signal() {
-                    continue;
-                }
-                drain_once(&engine_plugins, &mut open_gestures, &*events);
+                run_tick(&engine_plugins, &mut open_gestures, &*events);
             }
         });
 
@@ -235,6 +346,189 @@ pub fn start(events: Arc<dyn EventSink>, engine_plugins: EnginePlugins) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use daw_plugin_host::ClapWrapper;
+
+    /// Both hints are process-wide, so any test that pushes an event or arms a
+    /// flush raises one for every test running beside it. Every test below that
+    /// pushes, arms, or drives a tick takes this first.
+    static HINT_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    /// Serialise against the other hint users and start from a clean slate, so a
+    /// hint left raised by whichever test ran before cannot stand in for the one
+    /// this test is about.
+    fn hint_guard() -> std::sync::MutexGuard<'static, ()> {
+        let guard = HINT_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        take_pending_parameter_events_signal();
+        take_pending_parameter_flush_signal();
+        guard
+    }
+
+    #[derive(Default)]
+    struct RecordingEventSink {
+        events: Mutex<Vec<(String, serde_json::Value)>>,
+    }
+
+    impl RecordingEventSink {
+        fn events(&self) -> Vec<(String, serde_json::Value)> {
+            self.events.lock().expect("event log").clone()
+        }
+    }
+
+    impl EventSink for RecordingEventSink {
+        fn emit_json(&self, event: &str, payload: serde_json::Value) {
+            self.events
+                .lock()
+                .expect("event log")
+                .push((event.to_string(), payload));
+        }
+    }
+
+    fn fixture_wrapper() -> ClapWrapper {
+        ClapWrapper::new_engine_owned_command_fixture("Drain Fixture", Vec::new(), false)
+    }
+
+    /// Raise `clap_host_params.request_flush` on a fixture exactly as a plugin
+    /// does from inside its own callback — flag recorded, process-wide hint set,
+    /// no channel touched.
+    fn asking_for_a_flush(wrapper: ClapWrapper) -> ClapWrapper {
+        wrapper
+            .engine_owned_command_fixture_host_state()
+            .request_parameters_flush();
+        wrapper
+    }
+
+    /// One engine-owned instance in a real map, with its own parameter queue
+    /// reachable the way the drain reaches it. Returns the map, the queue, and
+    /// the runtime, so a test can push edits or take the instance out of service.
+    fn instance_map(
+        wrapper: ClapWrapper,
+    ) -> (
+        EnginePlugins,
+        Arc<PluginParameterEventQueue>,
+        Arc<SharedHostedPlugin>,
+    ) {
+        let queue = wrapper.parameter_event_queue();
+        let runtime = Arc::new(SharedHostedPlugin::new(wrapper.into()));
+        let mut map = HashMap::new();
+        map.insert(
+            "inst-1".to_string(),
+            EnginePluginInstanceData {
+                engine_plugin_id: 11,
+                runtime: Arc::clone(&runtime),
+                name: "Drain Fixture".to_string(),
+                parameters: Vec::new(),
+                has_gui: false,
+                bridge: None,
+                relay_scratch: crate::state::PluginRelayScratch::default(),
+                parameter_events: Some(Arc::clone(&queue)),
+            },
+        );
+
+        (Arc::new(Mutex::new(map)), queue, runtime)
+    }
+
+    fn tick(engine_plugins: &EnginePlugins, sink: &RecordingEventSink) {
+        run_tick(engine_plugins, &mut OpenGestures::new(), sink);
+    }
+
+    /// The whole point of the thread: an edit the plugin made on its own reaches
+    /// the renderer without anyone asking for it.
+    #[test]
+    fn a_tick_publishes_the_edit_the_plugin_pushed() {
+        let _guard = hint_guard();
+        let (engine_plugins, queue, _runtime) = instance_map(fixture_wrapper());
+        let sink = RecordingEventSink::default();
+
+        assert!(queue.push(PluginParameterEvent::value(3, 0.25)));
+        tick(&engine_plugins, &sink);
+
+        assert_eq!(
+            sink.events(),
+            vec![(
+                PLUGIN_PARAMETER_EVENTS_EVENT.to_string(),
+                serde_json::json!({
+                    "instance_id": "inst-1",
+                    "events": [{ "param_id": 3, "kind": "value", "value": 0.25 }],
+                }),
+            )]
+        );
+    }
+
+    /// The hint is what keeps an idle session free: without the gate every tick
+    /// would take the instance map sixty times a second for nothing.
+    #[test]
+    fn a_tick_with_no_hint_raised_takes_nothing_and_publishes_nothing() {
+        let _guard = hint_guard();
+        let (engine_plugins, queue, _runtime) = instance_map(fixture_wrapper());
+        let sink = RecordingEventSink::default();
+
+        assert!(queue.push(PluginParameterEvent::value(3, 0.25)));
+        take_pending_parameter_events_signal();
+        tick(&engine_plugins, &sink);
+
+        assert_eq!(
+            sink.events(),
+            Vec::new(),
+            "a tick that found no hint must not have drained the queue behind it"
+        );
+    }
+
+    /// `request_flush` is the ask a plugin may raise from the audio thread, and
+    /// nothing else answers it: the request watcher never hears about it, so a
+    /// tick that skipped the flush leg would leave the plugin's changes inside it
+    /// for good.
+    #[test]
+    fn a_tick_answers_the_flush_a_plugin_asked_for_and_publishes_what_it_handed_over() {
+        let _guard = hint_guard();
+        let (engine_plugins, queue, _runtime) = instance_map(asking_for_a_flush(fixture_wrapper()));
+        let sink = RecordingEventSink::default();
+
+        // What the plugin handed over. Staged directly because the fixture has no
+        // `params` extension of its own to emit through.
+        assert!(queue.push(PluginParameterEvent::value(5, 0.75)));
+        take_pending_parameter_events_signal();
+
+        tick(&engine_plugins, &sink);
+
+        assert_eq!(
+            sink.events(),
+            vec![(
+                PLUGIN_PARAMETER_EVENTS_EVENT.to_string(),
+                serde_json::json!({
+                    "instance_id": "inst-1",
+                    "events": [{ "param_id": 5, "kind": "value", "value": 0.75 }],
+                }),
+            )]
+        );
+    }
+
+    /// An instance mid-unload refuses public control, and the flush leg has to
+    /// survive that: the plugin is going away, and the tick serves every other
+    /// instance and the knob drain behind it.
+    #[test]
+    fn a_flush_for_an_unloading_instance_is_dropped_rather_than_fatal() {
+        let _guard = hint_guard();
+        let (engine_plugins, queue, runtime) = instance_map(asking_for_a_flush(fixture_wrapper()));
+        let sink = RecordingEventSink::default();
+
+        assert!(queue.push(PluginParameterEvent::value(5, 0.75)));
+        take_pending_parameter_events_signal();
+        runtime.begin_unload();
+
+        tick(&engine_plugins, &sink);
+
+        assert_eq!(
+            sink.events(),
+            Vec::new(),
+            "an instance that refuses public control cannot have been flushed"
+        );
+        assert!(
+            !take_pending_parameter_flush_signal(),
+            "an instance that is never coming back must not have the hint raised for it again"
+        );
+    }
 
     fn paired(events: Vec<PluginParameterEvent>, dropped: u32) -> PairedParameterEvents {
         PairedParameterEvents { events, dropped }
@@ -363,6 +657,7 @@ mod tests {
     /// it, leaving the renderer's lane held in write mode for good.
     #[test]
     fn a_gesture_that_spans_two_drains_closes_on_the_second() {
+        let _guard = hint_guard();
         let queue = PluginParameterEventQueue::default();
         let mut open = HashSet::new();
 
@@ -385,6 +680,7 @@ mod tests {
     /// forever. The drain closes what it cannot account for.
     #[test]
     fn a_lossy_drain_closes_the_gesture_it_can_no_longer_vouch_for() {
+        let _guard = hint_guard();
         let queue = PluginParameterEventQueue::with_capacity(1);
         let mut open = HashSet::new();
 

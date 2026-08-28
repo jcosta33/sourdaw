@@ -2,22 +2,26 @@
 //!
 //! A plugin resizes its editor by calling `clap_host_gui.request_resize()`,
 //! reports that its own state changed by calling `clap_host_state.mark_dirty()`,
-//! and announces that its parameter contract moved or that it has parameter
-//! changes to hand over by calling `clap_host_params.rescan()` /
-//! `request_flush()`. Every one of those runs on the plugin's thread, where the
-//! host may touch neither a window server nor the project and may not
-//! re-enter the plugin, so the backend records the ask and wakes this watcher.
+//! and announces that its parameter contract moved by calling
+//! `clap_host_params.rescan()`. CLAP annotates every one of those
+//! `[main-thread]`, where the host may touch neither a window server nor the
+//! project and may not re-enter the plugin, so the backend records the ask and
+//! wakes this watcher.
 //!
 //! The watcher is a dedicated non-RT thread that blocks in `recv()` until a
 //! plugin actually asks, then carries the follow-up out through the
 //! `SharedHostedPlugin` control seam: a recorded editor size is replayed at the
 //! host window seam the editor was opened with, a recorded state change becomes
-//! a `plugin-state-dirty` event the project's dirty tracking listens for, a
+//! a `plugin-state-dirty` event the project's dirty tracking listens for, and a
 //! rescan re-enumerates the parameter contract and becomes
-//! `plugin-parameters-rescanned`, and a flush request hands the plugin a chance
-//! to emit its parameter changes while it is not being given blocks. Same shape
-//! as the latency watcher, and for the same reason — nothing polls, so an idle
-//! session does no work at all.
+//! `plugin-parameters-rescanned`. Same shape as the latency watcher, and for the
+//! same reason — nothing polls, so an idle session does no work at all.
+//!
+//! `clap_host_params.request_flush()` is the one ask that does not come here.
+//! CLAP annotates it `[thread-safe]`, so a plugin may raise it from inside
+//! `process()`, and the wake below allocates. It is recorded as a flag and
+//! answered by the parameter-event drain instead — see
+//! [`crate::host::plugin_parameter_events`].
 //!
 //! It serves engine-owned instances only, which is where the wake is installed.
 //! An instance the native engine never took records a state change nothing
@@ -90,9 +94,11 @@ type EnginePlugins = Arc<Mutex<HashMap<String, EnginePluginInstanceData>>>;
 /// headless or test build records its ask and nothing else happens.
 ///
 /// It does allocate — the id is copied and the send takes a node — and that is
-/// deliberate. CLAP annotates both callbacks that reach here `[main-thread]`, so
-/// this is not the audio thread, and the flag is stored before the wake: a wake
-/// that could not be sent costs a follow-up, never the record behind it.
+/// deliberate. CLAP annotates every callback that reaches here `[main-thread]`,
+/// so this is not the audio thread, and the flag is stored before the wake: a
+/// wake that could not be sent costs a follow-up, never the record behind it. An
+/// ask a plugin may raise from the audio thread never reaches this function; see
+/// the module header.
 pub fn notify_plugin_host_request(instance_id: &str, request: PluginHostRequest) {
     queue_request((instance_id.to_string(), request, 0));
 }
@@ -278,35 +284,6 @@ fn cache_parameters(
     }
 }
 
-/// Run the flush the plugin asked for, off the audio thread.
-///
-/// `clap_host_params.request_flush()` exists for the plugin that is not being
-/// handed blocks — transport stopped, editor open — and whose parameter changes
-/// would otherwise never leave it. Nothing is emitted here: a flush produces
-/// output events, and those reach the frontend through the parameter-event
-/// drain like any other edit.
-///
-/// The backend refuses the call while the plugin is processing, because CLAP
-/// annotates `flush` `[audio-thread]` there and its output comes back through
-/// `process()` anyway. That refusal is not a failure to retry: the ask was
-/// answered by the block that was already running.
-fn flush_parameters(runtime: &SharedHostedPlugin, instance_id: &str) -> Result<(), String> {
-    let flushed = runtime
-        .with_control(CONTROL_TIMEOUT, |plugin| {
-            Ok(plugin.flush_parameters_off_audio_thread())
-        })
-        .map(|_| ());
-
-    if let Err(error) = &flushed {
-        eprintln!(
-            "[Plugin] parameter flush failed for instance {}: {}",
-            instance_id, error
-        );
-    }
-
-    flushed
-}
-
 /// Take the plugin's state-change flag and emit it, reporting whether the
 /// follow-up reached the plugin at all — which is what decides a retry, and is a
 /// different question from whether there was a flag to take.
@@ -357,9 +334,6 @@ pub fn start(events: Arc<dyn EventSink>, engine_plugins: EnginePlugins) {
                         }
                         PluginHostRequest::ParametersRescan => {
                             rescan_parameters(&runtime, instance_id, &engine_plugins, &*events)
-                        }
-                        PluginHostRequest::ParametersFlush => {
-                            flush_parameters(&runtime, instance_id)
                         }
                     },
                     || runtime.ensure_public_control_allowed().is_ok(),
@@ -587,6 +561,107 @@ mod tests {
         );
     }
 
+    #[derive(Default)]
+    struct RecordingEventSink {
+        events: Mutex<Vec<(String, serde_json::Value)>>,
+    }
+
+    impl RecordingEventSink {
+        fn events(&self) -> Vec<(String, serde_json::Value)> {
+            self.events.lock().expect("event log").clone()
+        }
+    }
+
+    impl EventSink for RecordingEventSink {
+        fn emit_json(&self, event: &str, payload: serde_json::Value) {
+            self.events
+                .lock()
+                .expect("event log")
+                .push((event.to_string(), payload));
+        }
+    }
+
+    /// One engine-owned instance in a real map, holding a fixture that reports
+    /// `parameters` and has already raised `clap_host_params.rescan()` if
+    /// `asked_for_a_rescan`.
+    fn rescan_fixture(
+        parameters: Vec<daw_plugin_host::PluginParameter>,
+        asked_for_a_rescan: bool,
+    ) -> (EnginePlugins, Arc<SharedHostedPlugin>) {
+        let mut wrapper =
+            ClapWrapper::new_engine_owned_command_fixture("Rescan Fixture", vec![], false);
+        wrapper.set_engine_owned_command_fixture_parameters(parameters);
+        if asked_for_a_rescan {
+            wrapper
+                .engine_owned_command_fixture_host_state()
+                .mark_parameters_rescan();
+        }
+
+        let runtime = Arc::new(SharedHostedPlugin::new(wrapper.into()));
+        let mut map = HashMap::new();
+        map.insert(
+            "inst-1".to_string(),
+            EnginePluginInstanceData {
+                engine_plugin_id: 11,
+                runtime: Arc::clone(&runtime),
+                name: "Rescan Fixture".to_string(),
+                parameters: vec![fixture_parameter(1)],
+                has_gui: false,
+                bridge: None,
+                relay_scratch: crate::state::PluginRelayScratch::default(),
+                parameter_events: None,
+            },
+        );
+
+        (Arc::new(Mutex::new(map)), runtime)
+    }
+
+    fn cached_ids(engine_plugins: &EnginePlugins, instance_id: &str) -> Vec<u32> {
+        engine_plugins
+            .lock()
+            .expect("engine_plugins lock")
+            .get(instance_id)
+            .expect("the instance is in the map")
+            .parameters
+            .iter()
+            .map(|parameter| parameter.id)
+            .collect()
+    }
+
+    /// The cached list is what the automation menu and lane range resolution
+    /// read, so a rescan that published its event without replacing the cache
+    /// would leave every caller on the contract the plugin just abandoned.
+    #[test]
+    fn a_rescan_replaces_the_cached_contract_and_tells_the_frontend_to_re_read_it() {
+        let (engine_plugins, runtime) = rescan_fixture(vec![fixture_parameter(3)], true);
+        let sink = RecordingEventSink::default();
+
+        assert!(rescan_parameters(&runtime, "inst-1", &engine_plugins, &sink).is_ok());
+
+        assert_eq!(cached_ids(&engine_plugins, "inst-1"), vec![3]);
+        assert_eq!(
+            sink.events(),
+            vec![(
+                PLUGIN_PARAMETERS_RESCANNED_EVENT.to_string(),
+                serde_json::json!({ "instance_id": "inst-1" }),
+            )]
+        );
+    }
+
+    /// A wake whose flag another visit already consumed must leave both alone: a
+    /// re-read nobody asked for would replace the cache on every duplicate wake
+    /// and have the frontend re-fetch for no change.
+    #[test]
+    fn a_rescan_wake_with_no_flag_behind_it_leaves_the_cache_and_the_frontend_alone() {
+        let (engine_plugins, runtime) = rescan_fixture(vec![fixture_parameter(3)], false);
+        let sink = RecordingEventSink::default();
+
+        assert!(rescan_parameters(&runtime, "inst-1", &engine_plugins, &sink).is_ok());
+
+        assert_eq!(cached_ids(&engine_plugins, "inst-1"), vec![1]);
+        assert_eq!(sink.events(), Vec::new());
+    }
+
     #[test]
     fn the_rescan_payload_serialises_with_the_snake_case_wire_name_the_frontend_reads() {
         let json = serde_json::to_string(&PluginParametersRescanned {
@@ -595,34 +670,6 @@ mod tests {
         .expect("payload serialises");
 
         assert_eq!(json, r#"{"instance_id":"inst-7"}"#);
-    }
-
-    /// An instance mid-unload refuses public control, and a flush request that
-    /// arrives against one has to survive that: the plugin is going away, and
-    /// the watcher thread serves every other instance.
-    #[test]
-    fn a_flush_for_an_unloading_instance_is_dropped_rather_than_fatal() {
-        let wrapper =
-            ClapWrapper::new_engine_owned_command_fixture("Request Fixture", vec![], true);
-        let runtime = SharedHostedPlugin::new(wrapper.into());
-        runtime.begin_unload();
-
-        assert!(
-            flush_parameters(&runtime, "inst-1").is_err(),
-            "an instance that refuses public control cannot have been flushed"
-        );
-    }
-
-    /// A flush that reached the plugin is finished whether or not a request was
-    /// waiting there, so it is never queued again — the backend takes the flag
-    /// itself, and replaying a visit that found none would loop forever.
-    #[test]
-    fn a_flush_that_reached_a_live_plugin_is_finished() {
-        let wrapper =
-            ClapWrapper::new_engine_owned_command_fixture("Request Fixture", vec![], true);
-        let runtime = SharedHostedPlugin::new(wrapper.into());
-
-        assert!(flush_parameters(&runtime, "inst-1").is_ok());
     }
 
     #[test]
