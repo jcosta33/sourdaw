@@ -1,0 +1,42 @@
+src/modules/AiRuntime/useCases/__tests__/agentRunRecovery.spec.ts
+  s_a40848e8f8cca9::t_84336c532848d3 552,778-781,793,802-815,830,844,858,874-875
+src/app/__tests__/bootstrap.spec.ts
+  s_a40848e8f8cca9::t_48ff1ec7536d8a 823-859
+src/modules/AiRuntime/stores/selectAgentRunPendingEffectRecoveries.ts
+  s_a40848e8f8cca9::t_41744a9e6bd28c 42-44
+src/modules/AiRuntime/useCases/__tests__/agentRunLifecycle.spec.ts
+  s_a40848e8f8cca9::t_5602297fe9461a 300
+  s_a40848e8f8cca9::t_a05640fe062405 1,4,231-261,344-352
+  s_a40848e8f8cca9::t_eb846dc5178666 262,295-299,301-308,310-343
+src/modules/AiRuntime/useCases/agentRunLifecycle.ts
+  s_a40848e8f8cca9::t_41744a9e6bd28c 840
+src/modules/Command/useCases/finalizeRecoveredCommandBatchEffects.ts
+  s_a40848e8f8cca9::t_3dbee76e5e6c7e 86-89
+  s_a40848e8f8cca9::t_41744a9e6bd28c 25-28,33-36,47-48,124
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/executeCommittedSectionRenderRetry.spec.ts
+  s_a40848e8f8cca9::t_eb846dc5178666 446-469,676-684
+src/modules/Command/useCases/__tests__/commandBatchIdempotency.spec.ts
+  s_a40848e8f8cca9::t_66b567be183353 1842-1861,1863-1890,1892-1897
+  s_a40848e8f8cca9::t_d13552a40ef872 1891
+  s_a40848e8f8cca9::t_c05c0370952a8a 1695-1701,1710-1713
+  s_a40848e8f8cca9::t_3dbee76e5e6c7e 1687-1694,1708-1709
+  s_a40848e8f8cca9::t_0e53528b9834e8 1862
+src/modules/AiRuntime/useCases/agentRequestOrchestration/executeCommittedSectionRenderRetry.ts
+  s_a40848e8f8cca9::t_41744a9e6bd28c 43-49,63,343
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "5bafe7a192cd57faff11e2437d4f5d496c96eca0",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
