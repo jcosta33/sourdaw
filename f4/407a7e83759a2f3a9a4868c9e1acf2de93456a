@@ -1,0 +1,14 @@
+crates/sourdaw-native/src/host/plugin_scan_worker.rs
+  h_1228e573df1f42 36-52,334-338,381-399,435,887-933
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "f4407a7e83759a2f3a9a4868c9e1acf2de93456a",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
