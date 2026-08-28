@@ -486,13 +486,11 @@ function expectedDeliveryReceipt(
     };
 }
 
-function deliveryReceiptCandidates(
+function deliveryReceiptsForHead(
     comments: DeliveryReceiptComment[],
-    pullRequest: Pick<PullRequestSnapshot, 'number' | 'headRefOid'>,
-    expected: DeliveryReceiptPayload
+    pullRequest: Pick<PullRequestSnapshot, 'number' | 'headRefOid'>
 ): DeliveryReceiptComment[] {
     const candidates: DeliveryReceiptComment[] = [];
-    const canonicalBody = composeDeliveryReceipt(expected);
     for (const comment of comments) {
         if (!isAuthorBotNodeId(comment.authorNodeId)) {
             continue;
@@ -502,11 +500,20 @@ function deliveryReceiptCandidates(
             continue;
         }
         assertOwnedDeliveryReceipt(comment, payload, pullRequest.number);
-        if (payload.head === pullRequest.headRefOid && comment.body === canonicalBody) {
+        if (payload.head === pullRequest.headRefOid) {
             candidates.push(comment);
         }
     }
     return candidates;
+}
+
+function deliveryReceiptCandidates(
+    comments: DeliveryReceiptComment[],
+    pullRequest: Pick<PullRequestSnapshot, 'number' | 'headRefOid'>,
+    expected: DeliveryReceiptPayload
+): DeliveryReceiptComment[] {
+    const canonicalBody = composeDeliveryReceipt(expected);
+    return deliveryReceiptsForHead(comments, pullRequest).filter((comment) => comment.body === canonicalBody);
 }
 
 function assertOwnedDeliveryReceipt(
@@ -519,6 +526,7 @@ function assertOwnedDeliveryReceipt(
         !isAuthorBotNodeId(comment.authorNodeId) ||
         comment.authorType !== 'Bot' ||
         comment.createdAt === '' ||
+        !Number.isFinite(Date.parse(comment.createdAt)) ||
         comment.createdAt !== comment.updatedAt ||
         payload.pullRequest !== pullRequestNumber
     ) {
@@ -526,30 +534,52 @@ function assertOwnedDeliveryReceipt(
     }
 }
 
-function assertCanonicalDeliveryReceipt(
+function assertDeliveryReceiptForHead(
     comment: DeliveryReceiptComment,
-    pullRequest: Pick<PullRequestSnapshot, 'number' | 'headRefOid'>,
-    expected: DeliveryReceiptPayload
+    pullRequest: Pick<PullRequestSnapshot, 'number' | 'headRefOid'>
 ): DeliveryReceiptPayload {
     const payload = parseDeliveryReceipt(comment.body);
     if (payload === undefined) {
         fail(`PR #${pullRequest.number} has an invalid delivery receipt`);
     }
     assertOwnedDeliveryReceipt(comment, payload, pullRequest.number);
-    if (payload.head !== pullRequest.headRefOid || comment.body !== composeDeliveryReceipt(expected)) {
+    if (payload.head !== pullRequest.headRefOid) {
         fail(`PR #${pullRequest.number} has an invalid delivery receipt`);
     }
     return payload;
 }
 
-function readDeliveryReceipt(pullRequest: PullRequestSnapshot, port: DeliveryPort): DeliveryReceiptPayload {
-    const expected = expectedDeliveryReceipt(pullRequest, trackerCompletionTarget(pullRequest));
-    const candidates = deliveryReceiptCandidates(port.deliveryReceipts(pullRequest.number), pullRequest, expected);
-    const receipt = candidates[0];
-    if (candidates.length !== 1 || receipt === undefined) {
-        fail(`PR #${pullRequest.number} must have exactly one canonical delivery receipt`);
+function assertCanonicalDeliveryReceipt(
+    comment: DeliveryReceiptComment,
+    pullRequest: Pick<PullRequestSnapshot, 'number' | 'headRefOid'>,
+    expected: DeliveryReceiptPayload
+): DeliveryReceiptPayload {
+    const payload = assertDeliveryReceiptForHead(comment, pullRequest);
+    if (comment.body !== composeDeliveryReceipt(expected)) {
+        fail(`PR #${pullRequest.number} has an invalid delivery receipt`);
     }
-    return assertCanonicalDeliveryReceipt(receipt, pullRequest, expected);
+    return payload;
+}
+
+function newestDeliveryReceipt(comments: DeliveryReceiptComment[], pullRequestNumber: number): DeliveryReceiptComment {
+    const newestTimestamp = comments.reduce(
+        (latest, comment) => Math.max(latest, Date.parse(comment.createdAt)),
+        Number.NEGATIVE_INFINITY
+    );
+    const newest = comments.filter((comment) => Date.parse(comment.createdAt) === newestTimestamp);
+    const receipt = newest[0];
+    if (receipt === undefined) {
+        fail(`PR #${pullRequestNumber} has no delivery receipt for its current head`);
+    }
+    if (newest.length !== 1) {
+        fail(`PR #${pullRequestNumber} has ambiguous newest delivery receipts`);
+    }
+    return receipt;
+}
+
+function readDeliveryReceipt(pullRequest: PullRequestSnapshot, port: DeliveryPort): DeliveryReceiptPayload {
+    const receipts = deliveryReceiptsForHead(port.deliveryReceipts(pullRequest.number), pullRequest);
+    return assertDeliveryReceiptForHead(newestDeliveryReceipt(receipts, pullRequest.number), pullRequest);
 }
 
 function ensureDeliveryReceipt(

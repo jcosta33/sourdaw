@@ -410,7 +410,7 @@ function fakePort(input: FakeInput = {}) {
                 return {
                     ...next,
                     ...(primaryBaseRefName === undefined ? {} : { baseRefName: primaryBaseRefName }),
-                    ...(primaryBody === undefined ? {} : { body: primaryBody }),
+                    ...(primaryBody === undefined || next.state === 'MERGED' ? {} : { body: primaryBody }),
                 };
             }
             const current = pullRequests.get(number);
@@ -481,14 +481,15 @@ function fakePort(input: FakeInput = {}) {
         },
         addDeliveryReceipt: (number, receiptBody) => {
             calls.push(`add-receipt:${number}`);
+            const createdAt = new Date(Date.UTC(2026, 7, 21, 0, 0, receipts.length)).toISOString();
             const receipt = {
                 id: `IC_delivery_${number}_${receipts.length + 1}`,
                 body: receiptBody,
                 authorNodeId: AUTHOR_BOT_NODE_ID,
                 authorLogin: 'renamed-author[bot]',
                 authorType: 'Bot',
-                createdAt: '2026-08-21T00:00:00Z',
-                updatedAt: '2026-08-21T00:00:00Z',
+                createdAt,
+                updatedAt: createdAt,
             };
             receipts.push(receipt);
             return structuredClone(receipt);
@@ -587,8 +588,10 @@ describe('pull-request delivery', () => {
                 pullRequest({ body: originalBody }),
                 pullRequest({ body: originalBody }),
                 pullRequest({ body: originalBody }),
+                pullRequest({ state: 'MERGED', body: relationshipBody('None.') }),
             ],
             primaryBodyOnReceiptRead: currentBody,
+            dependentSets: [[], []],
         });
 
         expect(() => deliverPullRequest(42, port, tracker)).toThrow(/closing target changed during delivery/);
@@ -603,13 +606,18 @@ describe('pull-request delivery', () => {
             deliveryReceiptBody(42, 'head', originalBody, 2372),
             deliveryReceiptBody(42, 'head', currentBody, 2373),
         ]);
-        expect(calls).toContain('complete:2373');
+        expect(Date.parse(receipts[0]?.createdAt ?? '')).toBeLessThan(Date.parse(receipts[1]?.createdAt ?? ''));
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls.filter((call) => call === 'complete:2373')).toHaveLength(2);
+        expect(calls).not.toContain('complete:2372');
     });
 
-    it('converges issue completion on an already-merged retry from its author-bot receipt', () => {
+    it('completes the receipt issue after a single-receipt merged body drift', () => {
         const closes = relationshipBody('Closes #2372');
         const { port, calls, tracker } = fakePort({
-            primary: [pullRequest({ state: 'MERGED', body: closes })],
+            primary: [pullRequest({ state: 'MERGED', body: relationshipBody('None.') })],
             receipts: [
                 {
                     id: 'IC_delivery_42',
@@ -630,7 +638,7 @@ describe('pull-request delivery', () => {
         expect(calls.indexOf('complete:2372')).toBeGreaterThan(calls.indexOf('retarget:43:main'));
     });
 
-    it('recovers an already-merged delivery from exactly one current canonical receipt', () => {
+    it('refuses merged recovery when the newest same-head receipt ordering is ambiguous', () => {
         const staleBody = relationshipBody('Closes #2372');
         const currentBody = relationshipBody('Closes #2373');
         const receipt = (id: string, body: string, closingIssue: number): DeliveryReceiptComment => ({
@@ -643,25 +651,22 @@ describe('pull-request delivery', () => {
             updatedAt: '2026-08-21T00:00:00Z',
         });
         const { port, calls, tracker } = fakePort({
-            primary: [pullRequest({ state: 'MERGED', body: currentBody })],
-            receipts: [receipt('IC_stale', staleBody, 2372), receipt('IC_current', currentBody, 2373)],
+            primary: [pullRequest({ state: 'MERGED', body: relationshipBody('None.') })],
+            receipts: [receipt('IC_first', staleBody, 2372), receipt('IC_second', currentBody, 2373)],
         });
 
-        deliverPullRequest(42, port, tracker);
-
-        expect(calls).toContain('complete:2373');
-        expect(calls).not.toContain('complete:2372');
-        expect(calls).not.toContain('add-receipt:42');
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/ambiguous newest delivery receipts/);
+        expect(calls.some((call) => call.startsWith('complete:'))).toBe(false);
     });
 
-    it('writes the immutable delivery receipt before merge and uses it on an already-merged retry', () => {
+    it('writes the immutable delivery receipt before merge and uses it after mutable-body drift', () => {
         const closes = relationshipBody('Closes #2372');
         const child = stacked();
         const { port, calls, tracker } = fakePort({
             primary: [
                 pullRequest({ body: closes }),
                 pullRequest({ body: closes }),
-                pullRequest({ state: 'MERGED', body: closes }),
+                pullRequest({ state: 'MERGED', body: relationshipBody('None.') }),
             ],
             dependentSets: [[child], [child], []],
         });
