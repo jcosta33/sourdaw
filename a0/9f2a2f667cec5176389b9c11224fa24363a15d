@@ -1,0 +1,20 @@
+src/modules/AiRuntime/useCases/__tests__/confirmPendingChatActions.spec.ts
+  s_a40848e8f8cca9::t_015396c4fb243c 3015,3111,3115-3118
+  s_a40848e8f8cca9::t_a612c66e766a85 3012-3014,3016-3110,3112-3114,3119-3122
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "a09f2a2f667cec5176389b9c11224fa24363a15d",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
