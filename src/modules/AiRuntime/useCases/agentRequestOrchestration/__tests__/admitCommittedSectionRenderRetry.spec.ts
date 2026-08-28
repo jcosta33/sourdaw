@@ -276,12 +276,17 @@ describe('admitCommittedSectionRenderRetry', () => {
         ],
         [
             'render payload',
-            (fixture: ReturnType<typeof createFixture>) =>
-                (fixture.confirmation.approvalSnapshot.actions[0]!.payload.sectionIds = ['section-chorus']),
+            (fixture: ReturnType<typeof createFixture>) => {
+                const renderAction = fixture.confirmation.approvalSnapshot.actions[0];
+                if (!renderAction || renderAction.type !== 'renderProjectSections') {
+                    throw new Error('Expected render action');
+                }
+                renderAction.payload.sectionIds = ['section-chorus'];
+            },
         ],
         [
-            'durable receipt outcome',
-            (fixture: ReturnType<typeof createFixture>) => (fixture.receipt.pendingEffects[0]!.state = 'completed'),
+            'missing durable pending effect',
+            (fixture: ReturnType<typeof createFixture>) => (fixture.receipt.pendingEffects = []),
         ],
         [
             'top-level receipt outcome',
