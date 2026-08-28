@@ -1129,12 +1129,68 @@ describe('sendChatMessage retained-provider selection', () => {
             expect(mocks.appendChatMessage).toHaveBeenLastCalledWith(
                 expect.objectContaining({
                     role: 'assistant',
-                    content: `Command not executed: ${rejectionReason}`,
-                    error: rejectionReason,
+                    content: `Command plan was not retained. ${PROVIDER_PERSISTENCE_WARNING}`,
+                    error: PROVIDER_PERSISTENCE_WARNING,
                 })
             );
             expect(settleWorkLease).toHaveBeenCalledWith(
                 expect.objectContaining({ workId: 'provider-planning', terminalState: 'completed' })
+            );
+            expect(loggerError).toHaveBeenCalledOnce();
+            expect(mocks.setActiveAborter).toHaveBeenLastCalledWith(null);
+            expect(mocks.setChatGenerating).toHaveBeenLastCalledWith(false);
+        } finally {
+            settleWorkLease.mockRestore();
+            loggerError.mockRestore();
+        }
+    });
+
+    it('does not materialize a confirmation when provider planning settlement persistence fails', async () => {
+        const storageFailure = new DOMException('The quota has been exceeded.', 'QuotaExceededError');
+        const loggerError = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+        const settleWorkLease = vi.spyOn(agentRunWorkLease, 'settle').mockImplementationOnce(() => {
+            throw storageFailure;
+        });
+        configureCommandGraphForwarding('confirmation');
+
+        try {
+            await expect(sendChatMessage(commandGraphFixture.prompt, { mode: 'apply' })).resolves.toBeUndefined();
+
+            const run = getPlannedRun();
+            expect(mocks.proposePendingActionConfirmation).not.toHaveBeenCalled();
+            expect(mocks.compileAgentActionExecution).not.toHaveBeenCalled();
+            expect(mocks.executePlannedActions).not.toHaveBeenCalled();
+            expect(mocks.appendChatMessage).toHaveBeenLastCalledWith(
+                expect.objectContaining({
+                    role: 'assistant',
+                    content: expect.stringContaining(PROVIDER_PERSISTENCE_WARNING),
+                    error: PROVIDER_PERSISTENCE_WARNING,
+                })
+            );
+            expect(run).toMatchObject({
+                phase: 'planning',
+                errors: [],
+                plan: null,
+                workLeases: [
+                    expect.objectContaining({
+                        workId: 'provider-planning',
+                        terminalState: null,
+                    }),
+                ],
+            });
+            await expect(recoverInterruptedAgentRuns({ recoveredAt: 200 })).resolves.toEqual({
+                recoveredRunIds: [run.runId],
+            });
+            expect(agentRunLifecycle.get(run.runId)).toMatchObject({
+                phase: 'paused',
+                manualResume: { required: true, workIds: ['provider-planning'] },
+                workLeases: [expect.objectContaining({ workId: 'provider-planning', terminalState: 'orphaned' })],
+            });
+            expect(loggerError).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    cause: storageFailure,
+                    message: 'Completed provider planning work lease settlement failed',
+                })
             );
             expect(mocks.setActiveAborter).toHaveBeenLastCalledWith(null);
             expect(mocks.setChatGenerating).toHaveBeenLastCalledWith(false);
@@ -1262,8 +1318,8 @@ describe('sendChatMessage retained-provider selection', () => {
             expect(mocks.appendChatMessage).toHaveBeenLastCalledWith(
                 expect.objectContaining({
                     role: 'assistant',
-                    content: 'Failed to process prompt command.',
-                    error: 'Planning provider failed',
+                    content: `Failed to process prompt command.\n\n_${PROVIDER_PERSISTENCE_WARNING}_`,
+                    error: `Planning provider failed\n\n${PROVIDER_PERSISTENCE_WARNING}`,
                 })
             );
             expect(armedSetItemCount).not.toBeNull();
@@ -1278,14 +1334,54 @@ describe('sendChatMessage retained-provider selection', () => {
                             cause: { kind: 'unknown-internal', source: 'provider-planning' },
                         }),
                     ]),
+                    workLeases: [expect.objectContaining({ workId: 'provider-planning', terminalState: 'failed' })],
                 })
             );
-            expect(loggerError).not.toHaveBeenCalled();
+            expect(loggerError).toHaveBeenCalledOnce();
             expect(mocks.setActiveAborter).toHaveBeenLastCalledWith(null);
             expect(mocks.setChatGenerating).toHaveBeenLastCalledWith(false);
         } finally {
             storageSetItem.mockRestore();
             loggerError.mockRestore();
+        }
+    });
+
+    it('keeps a stale planning failure cancelled without recording a new terminal error', async () => {
+        const planningError = new Error('Planning provider failed');
+        let admittedRunId: string | null = null;
+        mocks.planPromptActions.mockImplementation(async (input: PlanPromptActionsInput) => {
+            admittedRunId = input.streamIdentity?.runId ?? null;
+            throw planningError;
+        });
+        const settleWorkLease = vi.spyOn(agentRunWorkLease, 'settle').mockImplementation((input) => {
+            agentRunLifecycle.transitionPhase({ runId: input.runId, phase: 'cancelled' });
+            return { status: 'stale' };
+        });
+
+        try {
+            await expect(sendChatMessage('add a track', { mode: 'apply' })).resolves.toBeUndefined();
+
+            expect(mocks.proposePendingActionConfirmation).not.toHaveBeenCalled();
+            expect(mocks.executePlannedActions).not.toHaveBeenCalled();
+            expect(mocks.appendChatMessage).toHaveBeenLastCalledWith(
+                expect.objectContaining({
+                    role: 'assistant',
+                    content: `Failed to process prompt command.\n\n_${AGENT_RUN_STALE_COMPLETION_WARNING}_`,
+                    error: `Planning provider failed\n\n${AGENT_RUN_STALE_COMPLETION_WARNING}`,
+                })
+            );
+            expect(agentRunLifecycle.get(admittedRunId ?? '')).toMatchObject({
+                phase: 'cancelled',
+                errors: [],
+                workLeases: [expect.objectContaining({ workId: 'provider-planning', terminalState: null })],
+            });
+            expect(settleWorkLease).toHaveBeenCalledWith(
+                expect.objectContaining({ workId: 'provider-planning', terminalState: 'failed' })
+            );
+            expect(mocks.setActiveAborter).toHaveBeenLastCalledWith(null);
+            expect(mocks.setChatGenerating).toHaveBeenLastCalledWith(false);
+        } finally {
+            settleWorkLease.mockRestore();
         }
     });
 
@@ -1330,8 +1426,12 @@ describe('sendChatMessage retained-provider selection', () => {
         const storageFailure = new DOMException('The quota has been exceeded.', 'QuotaExceededError');
         const loggerError = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
         const previewResource = { release: vi.fn() };
-        const settleWorkLease = vi.spyOn(agentRunWorkLease, 'settle').mockImplementation(() => {
-            throw storageFailure;
+        const settleLease = agentRunWorkLease.settle;
+        const settleWorkLease = vi.spyOn(agentRunWorkLease, 'settle').mockImplementation((input) => {
+            if (input.workId.startsWith('preview:')) {
+                throw storageFailure;
+            }
+            return settleLease(input);
         });
         configureCommandGraphForwarding('plan');
         mocks.executeVersionedCommandBatchEnvelope.mockResolvedValue({

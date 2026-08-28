@@ -376,6 +376,7 @@ export async function sendChatMessage(
     if (interactionMode !== 'explain') {
         const aborter = new AbortController();
         let prompt_assistant_message_id: string | null = null;
+        let providerPlanningLeaseSettled = false;
         setActiveAborter(aborter);
         const releaseProviderCancellation = agentRunCancellation.bindAbortController({
             runId,
@@ -428,11 +429,37 @@ export async function sendChatMessage(
                     );
                 },
             });
-            settleAgentRunWorkLeaseSafely({
+            const providerPlanningSettlement = settleAgentRunWorkLeaseSafely({
                 lease: providerLease,
                 terminalState: 'completed',
                 settle: agentRunWorkLease.settle,
+                reportFailure: (settlementError) =>
+                    logger.error(
+                        new Error('Completed provider planning work lease settlement failed', {
+                            cause: settlementError,
+                        })
+                    ),
             });
+            if (!providerPlanningSettlement.accepted || providerPlanningSettlement.warning !== null) {
+                const warning = providerPlanningSettlement.warning ?? AGENT_RUN_STALE_COMPLETION_WARNING;
+                appendChatMessage({
+                    id: `msg-${crypto.randomUUID()}`,
+                    role: 'user',
+                    content: userText,
+                    timestamp: Date.now(),
+                    isCommandAction: true,
+                });
+                appendChatMessage({
+                    id: `msg-${crypto.randomUUID()}`,
+                    role: 'assistant',
+                    content: `Command plan was not retained. ${warning}`,
+                    timestamp: Date.now(),
+                    error: warning,
+                    isCommandAction: true,
+                });
+                return undefined;
+            }
+            providerPlanningLeaseSettled = true;
 
             if (options?.resume && result.actions.length === 0) {
                 throw new Error('The replacement provider returned no plan for the selected decision interpretation.');
@@ -1259,23 +1286,45 @@ export async function sendChatMessage(
             const reason = error instanceof Error ? error.message : String(error);
             const configurationChanged = isAiRuntimeConfigurationChangedError(error);
             const proposalInvalidated = error instanceof AiProposalInvalidatedError;
+            let settlementWarning: string | null = null;
             if (aborter.signal.aborted || configurationChanged || proposalInvalidated) {
                 await agentRunCancellation.cancel({ runId, reason });
             } else {
-                settleAgentRunWorkLeaseSafely({
-                    lease: providerLease,
-                    terminalState: 'failed',
-                    settle: agentRunWorkLease.settle,
-                });
-                tryRecordTerminalFailure({
-                    runId,
-                    error: normalizeAgentFailure({
-                        category: 'internal',
-                        source: 'provider-planning',
-                        knownDomain: false,
-                    }),
-                    terminal: true,
-                });
+                if (providerPlanningLeaseSettled) {
+                    tryRecordTerminalFailure({
+                        runId,
+                        error: normalizeAgentFailure({
+                            category: 'internal',
+                            source: 'provider-planning',
+                            knownDomain: false,
+                        }),
+                        terminal: true,
+                    });
+                } else {
+                    const providerPlanningFailureSettlement = settleAgentRunWorkLeaseSafely({
+                        lease: providerLease,
+                        terminalState: 'failed',
+                        settle: agentRunWorkLease.settle,
+                        reportFailure: (settlementError) =>
+                            logger.error(
+                                new Error('Failed provider planning work lease settlement failed', {
+                                    cause: settlementError,
+                                })
+                            ),
+                    });
+                    settlementWarning = providerPlanningFailureSettlement.warning;
+                    if (providerPlanningFailureSettlement.accepted) {
+                        tryRecordTerminalFailure({
+                            runId,
+                            error: normalizeAgentFailure({
+                                category: 'internal',
+                                source: 'provider-planning',
+                                knownDomain: false,
+                            }),
+                            terminal: true,
+                        });
+                    }
+                }
             }
             let failureContent = 'Failed to process prompt command.';
             if (configurationChanged) {
@@ -1284,13 +1333,21 @@ export async function sendChatMessage(
                 failureContent =
                     'The project changed while this command was being planned. Review the current project and submit it again.';
             }
+            const failureError = settlementWarning ? `${reason}\n\n${settlementWarning}` : reason;
+            const failureContentWithWarning = settlementWarning
+                ? `${failureContent}\n\n_${settlementWarning}_`
+                : failureContent;
+            let promptAssistantFailureContent = 'Failed to execute prompt command.';
+            if (configurationChanged) {
+                promptAssistantFailureContent = 'Prompt cancelled because the AI configuration changed.';
+            } else if (settlementWarning) {
+                promptAssistantFailureContent = `Failed to execute prompt command.\n\n_${settlementWarning}_`;
+            }
             if (prompt_assistant_message_id) {
                 updateChatMessage(prompt_assistant_message_id, {
                     isStreaming: false,
-                    content: configurationChanged
-                        ? 'Prompt cancelled because the AI configuration changed.'
-                        : 'Failed to execute prompt command.',
-                    error: reason,
+                    content: promptAssistantFailureContent,
+                    error: failureError,
                 });
             } else {
                 appendChatMessage({
@@ -1302,8 +1359,8 @@ export async function sendChatMessage(
                 appendChatMessage({
                     id: `msg-${crypto.randomUUID()}`,
                     role: 'assistant',
-                    content: failureContent,
-                    error: reason,
+                    content: failureContentWithWarning,
+                    error: failureError,
                     timestamp: Date.now(),
                 });
             }
