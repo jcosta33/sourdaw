@@ -22,6 +22,11 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
+import {
+    GRAND_BOULE_MEASUREMENT_SOURCE_DIRECTORIES,
+    GRAND_BOULE_MEASUREMENT_SOURCE_FILES,
+    grandBouleMeasurementSourcePaths,
+} from '../../crates/daw-dsp/benches/wasm/measurementCensus.mjs';
 import { renderGeneratedRegion } from '../../crates/daw-dsp/benches/wasm/renderTable.mjs';
 import {
     adaptedMitSourceReleaseInventoryContract,
@@ -44,6 +49,7 @@ import {
     assertProjectLicenseDistributionReleaseInventory,
     assertGrandBouleRustSourceAdmission,
     assertGrandBouleRustWasmBoundary,
+    assertWholeEngineQuantumCapability,
     audioWorkletReleaseInventoryContract,
     checkReleaseInventory,
     DDSP_ADMISSION_DECISION_PATH,
@@ -55,6 +61,7 @@ import {
     distributedWasmArtifactCensus,
     GRAND_BOULE_PROVIDER_POLICY_SYMLINK_PATHS,
     GRAND_BOULE_RELEASE_REGISTRY,
+    GRAND_BOULE_RUST_SOURCE_ADMISSION,
     grandBouleReleaseInventoryContract,
     loadRepositorySnapshot,
     OWNER_VISUAL_ASSET_PATHS,
@@ -487,13 +494,14 @@ function findDigestByLabel(digests: readonly string[], label: string): string {
 }
 
 function writeGrandBouleMeasurementFixture(root: string): { jsonPath: string; revision: string } {
-    const sourcePaths = [
-        'crates/daw-dsp/benches/quantum.rs',
-        'crates/daw-dsp/benches/wasm/deviceRecipes.js',
-        'crates/daw-dsp/benches/wasm/quantumCostProcessor.js',
-        'public/wasm/daw-dsp/daw_dsp_bg.wasm',
-    ];
-    for (const path of sourcePaths) {
+    for (const path of [
+        ...GRAND_BOULE_MEASUREMENT_SOURCE_FILES,
+        'crates/daw-dsp/src/grand_boule/engine.rs',
+        'crates/daw-dsp/src/primitives/denormal.rs',
+        'crates/daw-dsp/src/primitives/time_stretch/stretch.rs',
+        // Outside the census: a crumbs change must not invalidate the piano's record (ADR 0038).
+        'crates/daw-dsp/src/crumbs/voice.rs',
+    ]) {
         mkdirSync(dirname(join(root, path)), { recursive: true });
         writeFileSync(join(root, path), `measured source ${path}`);
     }
@@ -508,7 +516,7 @@ function writeGrandBouleMeasurementFixture(root: string): { jsonPath: string; re
     );
     const revision = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
     const sourceDigests = Object.fromEntries(
-        sourcePaths.map((path) => [
+        grandBouleMeasurementSourcePaths(root).map((path) => [
             path,
             createHash('sha256')
                 .update(readFileSync(join(root, path)))
@@ -2318,6 +2326,115 @@ describe('release inventory', () => {
             writeFileSync(jsonPath, JSON.stringify(changed));
             expect(() => assertGrandBouleMeasurementAdmission(root)).toThrow(
                 'recorded digest does not match source revision'
+            );
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('scopes the measurement census to the compile-time closure', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-census-scope-'));
+        try {
+            writeGrandBouleMeasurementFixture(root);
+            expect(() => assertGrandBouleMeasurementAdmission(root)).not.toThrow();
+
+            const crumbsPath = join(root, 'crates/daw-dsp/src/crumbs/voice.rs');
+            writeFileSync(crumbsPath, `${readFileSync(crumbsPath, 'utf8')}\ncrumbs-only mutation`);
+            expect(() => assertGrandBouleMeasurementAdmission(root)).not.toThrow();
+
+            const grandBoulePath = join(root, 'crates/daw-dsp/src/grand_boule/engine.rs');
+            const grandBouleSource = readFileSync(grandBoulePath, 'utf8');
+            writeFileSync(grandBoulePath, `${grandBouleSource}\nclosure mutation`);
+            expect(() => assertGrandBouleMeasurementAdmission(root)).toThrow(
+                'source digest drifted for crates/daw-dsp/src/grand_boule/engine.rs'
+            );
+            writeFileSync(grandBoulePath, grandBouleSource);
+
+            const primitivesPath = join(root, 'crates/daw-dsp/src/primitives/time_stretch/stretch.rs');
+            writeFileSync(primitivesPath, `${readFileSync(primitivesPath, 'utf8')}\nclosure mutation`);
+            expect(() => assertGrandBouleMeasurementAdmission(root)).toThrow(
+                'source digest drifted for crates/daw-dsp/src/primitives/time_stretch/stretch.rs'
+            );
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('rejects a retained table whose digest census disagrees with the closure census', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-census-mismatch-'));
+        try {
+            const { jsonPath } = writeGrandBouleMeasurementFixture(root);
+            const original = readFileSync(jsonPath, 'utf8');
+
+            const incomplete = JSON.parse(original) as { sourceDigests: Record<string, string> };
+            delete incomplete.sourceDigests['rust-toolchain.toml'];
+            writeFileSync(jsonPath, JSON.stringify(incomplete));
+            expect(() => assertGrandBouleMeasurementAdmission(root)).toThrow(
+                'source-digest census disagrees with the compile-time closure census (#3005)'
+            );
+
+            const decoy = JSON.parse(original) as { sourceDigests: Record<string, string> };
+            decoy.sourceDigests['public/wasm/daw-dsp/daw_dsp_bg.wasm'] = '0'.repeat(64);
+            writeFileSync(jsonPath, JSON.stringify(decoy));
+            expect(() => assertGrandBouleMeasurementAdmission(root)).toThrow(
+                'source-digest census disagrees with the compile-time closure census (#3005)'
+            );
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('derives the live census from the registry-admitted grand_boule sources and the primitives tree', () => {
+        expect(GRAND_BOULE_MEASUREMENT_SOURCE_FILES).toEqual([
+            'crates/daw-dsp/benches/quantum.rs',
+            'crates/daw-dsp/benches/wasm/deviceRecipes.js',
+            'crates/daw-dsp/benches/wasm/quantumCostProcessor.js',
+            'crates/daw-dsp/src/lib.rs',
+            'crates/daw-dsp/Cargo.toml',
+            'rust-toolchain.toml',
+        ]);
+        expect(GRAND_BOULE_MEASUREMENT_SOURCE_DIRECTORIES).toEqual([
+            'crates/daw-dsp/src/grand_boule',
+            'crates/daw-dsp/src/primitives',
+        ]);
+
+        const census = grandBouleMeasurementSourcePaths(repositoryRoot);
+        const grandBoulePrefix = 'crates/daw-dsp/src/grand_boule/';
+        const grandBouleFiles = census
+            .filter((path) => path.startsWith(grandBoulePrefix))
+            .map((path) => path.slice(grandBoulePrefix.length));
+        expect(grandBouleFiles).toEqual([...Object.keys(GRAND_BOULE_RUST_SOURCE_ADMISSION)].sort());
+        expect(census).toContain('crates/daw-dsp/src/primitives/time_stretch/mod.rs');
+        expect(census).not.toContain('public/wasm/daw-dsp/daw_dsp_bg.wasm');
+        expect(census.some((path) => path.startsWith('crates/daw-dsp/src/crumbs/'))).toBe(false);
+    });
+
+    it('gates the whole-engine reference project budget apart from the Grand Boule admission', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-whole-engine-budget-'));
+        try {
+            const { jsonPath } = writeGrandBouleMeasurementFixture(root);
+            expect(() => assertWholeEngineQuantumCapability(root)).not.toThrow();
+
+            const original = readFileSync(jsonPath, 'utf8');
+            const overBudget = JSON.parse(original) as {
+                budgetMs: number;
+                referenceProject: { audioWorstQuantumUpperMs: number };
+            };
+            overBudget.referenceProject.audioWorstQuantumUpperMs = overBudget.budgetMs;
+            writeFileSync(jsonPath, JSON.stringify(overBudget));
+            const markdownPath = join(root, 'crates/daw-dsp/benches/quantum-cost-table.md');
+            writeFileSync(markdownPath, renderGeneratedRegion(overBudget));
+            expect(() => assertWholeEngineQuantumCapability(root)).toThrow(
+                'Whole-engine measured reference project exceeds its render budget'
+            );
+            // The descope (ADR 0038): the same over-budget table no longer fails the Grand Boule admission.
+            expect(() => assertGrandBouleMeasurementAdmission(root)).not.toThrow();
+
+            const missing = JSON.parse(original) as { referenceProject?: unknown };
+            delete missing.referenceProject;
+            writeFileSync(jsonPath, JSON.stringify(missing));
+            expect(() => assertWholeEngineQuantumCapability(root)).toThrow(
+                'Whole-engine measured reference project exceeds its render budget'
             );
         } finally {
             rmSync(root, { recursive: true, force: true });
