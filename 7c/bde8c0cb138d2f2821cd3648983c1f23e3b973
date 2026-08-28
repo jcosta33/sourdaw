@@ -1,0 +1,21 @@
+src/modules/AiRuntime/useCases/__tests__/recoverAgentRunPendingEffects.spec.ts
+  s_a40848e8f8cca9::t_6a7636970e1b48 144-146,159-173,175-197
+  s_a40848e8f8cca9::t_bd439dc222775a 174
+  s_a40848e8f8cca9::t_a4e20169fc7a56 198-200
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "7cbde8c0cb138d2f2821cd3648983c1f23e3b973",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
