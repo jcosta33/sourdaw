@@ -1882,7 +1882,7 @@ pub async fn set_plugin_bypass(
 /// this command can pool away.
 pub async fn process_plugin_audio(
     instance_id: String,
-    audio_bytes: Vec<u8>,
+    mut audio_bytes: Vec<u8>,
     state: &AppState,
 ) -> Result<Vec<u8>, String> {
     let mut engine_plugins = state
@@ -1966,7 +1966,12 @@ pub async fn process_plugin_audio(
         // No ramp: an f32 sample is four zero bytes, and a quantum this command
         // never processed has no ramp state to carry — the ramped hand-over
         // belongs to the failure path that knows a plugin stopped.
-        Ok(vec![0u8; audio_bytes.len()])
+        //
+        // Zeroed in place rather than allocated: the input block is owned here
+        // and already the right length, and this path runs once per quantum per
+        // bridged plugin.
+        audio_bytes.fill(0);
+        Ok(audio_bytes)
     }
 }
 

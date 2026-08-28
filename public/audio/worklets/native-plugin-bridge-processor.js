@@ -25,10 +25,8 @@
  * view object, not a kilobyte.
  *
  * A block that cannot be sent — every pooled buffer still in flight — is counted
- * in the shared dropout tally rather than disappearing. The output is not
- * zero-filled for this: the previously processed block plays again, which is far
- * less audible than punching a hole, and the count is what makes the event
- * visible.
+ * in the shared dropout tally rather than disappearing, so the event is visible
+ * even though the audio for it is not recoverable.
  *
  * Latency: one audio block (128 samples ≈ 2.67 ms at 48 kHz). The worklet reads
  * the previous block's output while sending the current input.
@@ -190,18 +188,23 @@ class NativePluginBridgeProcessor extends AudioWorkletProcessor {
             return true;
         }
 
-        // Write the PREVIOUS block's processed output. Until the first reply
-        // arrives there is none, and this node emits silence rather than the dry
-        // input: passing dry makes the under-run audible as the unprocessed
-        // source at full level — a chain heard as a filter or a distortion
-        // briefly plays the raw signal, and a bridged instrument plays whatever
-        // was fed into it. The Rust relay answers an empty ring the same way, so
-        // the two ends of the bridge under-run identically.
+        // Write the PREVIOUS block's processed output, and consume it: a decoded
+        // block belongs to one quantum, and leaving it in place would replay it
+        // for every quantum the relay falls behind for.
+        //
+        // A quantum with none — before the first reply, or while the relay is
+        // behind — emits silence rather than the dry input. Passing dry makes
+        // the under-run audible as the unprocessed source at full level: a chain
+        // heard as a filter or a distortion briefly plays the raw signal, and a
+        // bridged instrument plays whatever was fed into it. The Rust relay
+        // answers an empty ring the same way, so the two ends of the bridge
+        // under-run identically.
         if (this.outputFrames >= frames) {
             output[0].set(this.outputLeft.subarray(0, frames));
             if (output[1]) {
                 output[1].set(this.outputRight.subarray(0, frames));
             }
+            this.outputFrames = 0;
         } else {
             silence(output);
         }

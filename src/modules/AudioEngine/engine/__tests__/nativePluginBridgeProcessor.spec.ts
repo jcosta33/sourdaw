@@ -90,6 +90,15 @@ function silentQuantum(): number[] {
     return Array.from({ length: QUANTUM }, () => 0);
 }
 
+/**
+ * An output buffer still holding the previous quantum, which is what a real host
+ * hands `process()`. A node that writes nothing leaves this sounding, and a
+ * zeroed buffer cannot tell that apart from silence written on purpose.
+ */
+function recycledOutput(): Float32Array[] {
+    return [ramp(QUANTUM, 7000), ramp(QUANTUM, 7500)];
+}
+
 function emptyOutput(): Float32Array[] {
     return [new Float32Array(QUANTUM), new Float32Array(QUANTUM)];
 }
@@ -148,34 +157,21 @@ describe('native plugin bridge worklet', () => {
      * the unprocessed source at full level — a chain heard as a filter or a
      * distortion briefly plays the raw signal. The Rust relay answers an empty
      * ring with silence for the same reason (ADR 0021).
+     *
+     * The output buffer is pre-filled, because a real host recycles the one it
+     * hands `process()`: a node that writes nothing leaves the previous quantum
+     * sounding, and an already-zeroed buffer would read as silence either way.
      */
     it('emits silence rather than the dry input until the first processed block arrives', () => {
         const processor = new ProcessorClass();
         processor.port.deliver({ type: 'init' });
-        const input = stereoBlock(1);
-        const output = emptyOutput();
-
-        processor.process([input], [output]);
-
-        expect(Array.from(output[0]!)).toEqual(silentQuantum());
-        expect(Array.from(output[1]!)).toEqual(silentQuantum());
-        expect(lastSentBuffer(processor.port).byteLength).toBe(QUANTUM * 8);
-    });
-
-    /**
-     * The output buffers a real host hands `process()` are recycled, so an
-     * under-run that writes nothing leaves whatever the previous quantum put
-     * there — a repeating fragment, which is louder and stranger than a gap.
-     */
-    it('clears an output buffer that arrives holding the previous quantum', () => {
-        const processor = new ProcessorClass();
-        processor.port.deliver({ type: 'init' });
-        const output = [ramp(QUANTUM, 7000), ramp(QUANTUM, 7500)];
+        const output = recycledOutput();
 
         processor.process([stereoBlock(1)], [output]);
 
         expect(Array.from(output[0]!)).toEqual(silentQuantum());
         expect(Array.from(output[1]!)).toEqual(silentQuantum());
+        expect(lastSentBuffer(processor.port).byteLength).toBe(QUANTUM * 8);
     });
 
     it('sends the current block as interleaved little-endian pairs', () => {
@@ -241,7 +237,13 @@ describe('native plugin bridge worklet', () => {
         expect(Atomics.load(counters, BRIDGE_DROPPED_BLOCKS_INDEX)).toBe(40 - TRANSFER_POOL_SIZE);
     });
 
-    it('keeps emitting the last processed block while blocks are being dropped', () => {
+    /**
+     * A decoded block belongs to the one quantum it is written to. Keeping it
+     * for the next under-run replays a 2.7 ms fragment for as long as the relay
+     * stays behind — a buzz at the render rate — and, worse, it hides the
+     * under-run behind audio that sounds plausible.
+     */
+    it('under-runs into silence after a processed block rather than replaying it', () => {
         const dropoutSab = new SharedArrayBuffer(4 * Int32Array.BYTES_PER_ELEMENT);
         const processor = new ProcessorClass();
         processor.port.deliver({ type: 'init', dropoutSab });
@@ -251,14 +253,17 @@ describe('native plugin bridge worklet', () => {
         processor.process([stereoBlock(1)], [emptyOutput()]);
         processor.port.deliver({ type: 'processed', audio: encodeInterleaved(wetLeft, wetRight) });
 
-        // Drain the pool without ever recycling, then render one more block.
-        for (let block = 0; block < 20; block++) {
-            processor.process([stereoBlock(block)], [emptyOutput()]);
-        }
-        const output = emptyOutput();
-        processor.process([stereoBlock(99)], [output]);
+        const played = emptyOutput();
+        processor.process([stereoBlock(2)], [played]);
+        expect(Array.from(played[0]!)).toEqual(Array.from(wetLeft));
+        expect(Array.from(played[1]!)).toEqual(Array.from(wetRight));
 
-        expect(Array.from(output[0]!)).toEqual(Array.from(wetLeft));
+        // Nothing came back for this one, and the block above has been played.
+        const starved = recycledOutput();
+        processor.process([stereoBlock(3)], [starved]);
+
+        expect(Array.from(starved[0]!)).toEqual(silentQuantum());
+        expect(Array.from(starved[1]!)).toEqual(silentQuantum());
     });
 
     it('transfers the payload rather than copying it across the port', () => {
