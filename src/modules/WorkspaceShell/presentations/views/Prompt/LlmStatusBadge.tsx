@@ -21,6 +21,7 @@ import {
     WEBLLM_MODELS,
     getActiveModelId,
 } from '#/modules/AiRuntime/useCases';
+import { capabilityStore } from '#/modules/BrowserAi/stores';
 
 type LlmStatusBadgeProps = {
     status: LlmEngineStatus;
@@ -80,6 +81,10 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
     const [selectedModelId, setSelectedModelId] = useState(getActiveModelId);
     const backendPreference = useStore(aiBackendPreferenceStore, 'auto');
     const hostedProviderStatus = useStore(hostedLlmProviderStatusStore, null);
+    // Browser-local availability is only known once BrowserAi's adapter/device
+    // probe settles, and this badge must re-render when it does.
+    const capabilityState = useStore(capabilityStore, { phase: 'idle' });
+    const isDetectingBrowserAi = capabilityState?.phase === 'idle' || capabilityState?.phase === 'detecting';
     const backend = status.state === 'ready' ? status.backend : resolveBackend();
     let backendLabel: string;
     if (backend === 'cloud') {
@@ -120,6 +125,9 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
         if (backendPreference === 'cloud') {
             unavailableLabel = 'Configure hosted AI';
             unavailableTitle = 'Configure a hosted AI provider in Preferences';
+        } else if (isDetectingBrowserAi) {
+            unavailableLabel = 'Checking AI availability';
+            unavailableTitle = 'Detecting this browser’s AI capability';
         } else if (backendPreference === 'webllm') {
             unavailableLabel = MODEL_RELEASE_ADMISSION.webLlm ? 'WebGPU unavailable' : 'Local AI unavailable';
             unavailableTitle = MODEL_RELEASE_ADMISSION.webLlm
