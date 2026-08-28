@@ -1,0 +1,90 @@
+src/modules/PluginHost/repositories/pluginBridge/types.ts
+  s_4f908a5afb6b58::t_1304368bfd7c29 105-106
+  s_4f908a5afb6b58::t_f29725f79dd59f 5
+src/modules/PluginHost/stores/pluginScanStore.ts
+  s_4f908a5afb6b58::t_9f02f3019aabc5 163-178,187-188,198-200
+  s_4f908a5afb6b58::t_2ef4456a180019 8,27-36,46
+  s_4f908a5afb6b58::t_70ec1b885b2cf2 162,209
+electron/__tests__/appIpc.spec.ts
+  s_4f908a5afb6b58::t_dc3fdf13f378ea 90-106,116
+src/modules/PluginHost/useCases/pluginScan/scanning/__tests__/addScanPath.spec.ts
+  s_4f908a5afb6b58::t_3b14b2548a99dd 15
+  s_4f908a5afb6b58::t_a1b1b67d1e5beb 71
+src/modules/PluginHost/repositories/pluginBridge/scanPlugins.ts
+  s_4f908a5afb6b58::t_1f1189f97b5e7d 22-25
+  s_4f908a5afb6b58::t_220181a5e50bc8 18
+src/utils/sourdawCommandArguments.ts
+  s_4f908a5afb6b58::t_db3e4088398bdd 69
+electron/scan.ts
+  s_4f908a5afb6b58::t_6ee834d0e15b28 47-54
+  s_4f908a5afb6b58::t_0bd8d252244ea3 111
+  s_4f908a5afb6b58::t_9fa75d3ab89ca9 160-165
+src/modules/AudioEngine/presentations/views/__tests__/PluginScanSettings.spec.tsx
+  s_4f908a5afb6b58::t_7b5330fa79277a 298-344
+  s_27ff672ca3a96a::t_a1c7f73df9b9fa 15,29,65,123,137,153,167,181,264,278,292
+src/modules/AudioEngine/presentations/views/PluginScanSettings.tsx
+  s_4f908a5afb6b58::t_d93228f9f157b8 83-86
+  s_4f908a5afb6b58::t_b5339bf3a6cc74 214-253
+  s_4f908a5afb6b58::t_538da8b20efdc4 14
+src/modules/PluginHost/useCases/pluginScan/scanning/__tests__/startPluginScan.spec.ts
+  s_4f908a5afb6b58::t_04a77c69b3a59a 400,408
+  s_4f908a5afb6b58::t_3ae577352817e4 34
+  s_4f908a5afb6b58::t_83b82f9b4b896d 258,278,298,351,399,401-407,409-444
+  s_4f908a5afb6b58::t_907e9211b7810f 57
+  s_9007dbd87ba27f::t_6cba4a5f404f59 115,147,173,230
+src/modules/PluginHost/stores/__tests__/pluginScanStore.spec.ts
+  s_4f908a5afb6b58::t_02fb6f88938d30 51,56,104,241-285,289-290
+  s_4f908a5afb6b58::t_f9d1e46c3696c2 38,50
+  s_4f908a5afb6b58::t_b7e2329879dffa 3
+  s_4f908a5afb6b58::t_09f098ab2d922a 52-55,120,145,286-288,291
+src/modules/PluginHost/repositories/pluginBridge/__tests__/pluginBridge.spec.ts
+  s_4f908a5afb6b58::t_e3b1e6aabe8ec5 80-86
+src/modules/PluginHost/useCases/pluginScan/scanning/startPluginScan.ts
+  s_4f908a5afb6b58::t_4e049b07e860fc 64-68
+  s_4f908a5afb6b58::t_78f21c8e6311b4 69
+  s_4f908a5afb6b58::t_9f9f4bf75499ff 108
+  s_4f908a5afb6b58::t_989b29d3ec5ac9 8-19
+  s_4f908a5afb6b58::t_3d312fce5650af 105-107
+electron/scanWorker.ts
+  s_4f908a5afb6b58::t_1fad9c32d8ef0b 71-75,77-85,87,89
+  s_4f908a5afb6b58::t_d59552c4dc2a2c 63-66,86
+  s_4f908a5afb6b58::t_5ff83efa2570bb 139-142
+electron/appIpc.ts
+  s_4f908a5afb6b58::t_b359ece8886d17 60,64-69
+src/modules/PluginHost/models/ScannedPlugin.ts
+  s_4f908a5afb6b58::t_ce59a08ab74bae 81-96
+electron/__tests__/commands.spec.ts
+  s_4f908a5afb6b58::t_c044ddceae091e 367
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "b44c086d22c9513551d40121d79d6acfd842fb6e",
+  "prompts": {},
+  "sessions": {
+    "s_27ff672ca3a96a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04895-4d6f-7d12-b765-af4a5b1028eb",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_4f908a5afb6b58": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fcb92ba4-bf56-47a4-8b57-803f335a449e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9007dbd87ba27f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04895-19d9-77b1-99fd-bf616559031d",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
