@@ -200,6 +200,31 @@ function bindFinalizedCrashWindow(input: ReturnType<typeof createFixture>) {
     return trackedRun;
 }
 
+function bindFinalizedSettled(input: ReturnType<typeof createFixture>) {
+    const receiptIdentity = `${String(input.receipt.schemaVersion)}:${RUN_ID}:${BATCH_ID}:committed`;
+    const renderCommandId = input.receipt.commandOutcomes[0]!.commandId;
+    const trackedRun = {
+        revisions: { committed: COMMITTED_REVISION },
+        receipts: [{ workId: BATCH_ID, receiptIdentity }],
+        committedWork: [{ workId: BATCH_ID, receiptIdentity }],
+        batches: [{ batchId: BATCH_ID, commandIds: [renderCommandId], status: 'committed', receiptIdentity }],
+        pendingEffectContinuations: [],
+        saga: {
+            steps: [
+                {
+                    stepId: `effect:${BATCH_ID}:${renderCommandId}`,
+                    owner: 'external-effect',
+                    workId: BATCH_ID,
+                    state: 'committed',
+                    receiptIdentity,
+                },
+            ],
+        },
+    };
+    mocks.getRun.mockReturnValue(trackedRun);
+    return trackedRun;
+}
+
 describe('admitCommittedSectionRenderRetry', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -417,26 +442,7 @@ describe('admitCommittedSectionRenderRetry', () => {
         finalizedReceipt.outcome = 'committed';
         finalizedReceipt.atomicity = 'atomic';
         finalizedReceipt.pendingEffects = [];
-        const renderCommandId = fixture.receipt.commandOutcomes[0]!.commandId;
-        const receiptIdentity = `${String(finalizedReceipt.schemaVersion)}:${RUN_ID}:${BATCH_ID}:committed`;
-        mocks.getRun.mockReturnValue({
-            revisions: { committed: COMMITTED_REVISION },
-            receipts: [{ workId: BATCH_ID, receiptIdentity }],
-            committedWork: [{ workId: BATCH_ID, receiptIdentity }],
-            batches: [{ batchId: BATCH_ID, commandIds: [renderCommandId], status: 'committed', receiptIdentity }],
-            pendingEffectContinuations: [],
-            saga: {
-                steps: [
-                    {
-                        stepId: `effect:${BATCH_ID}:${renderCommandId}`,
-                        owner: 'external-effect',
-                        workId: BATCH_ID,
-                        state: 'committed',
-                        receiptIdentity,
-                    },
-                ],
-            },
-        });
+        bindFinalizedSettled(fixture);
 
         expect(
             admitCommittedSectionRenderRetry({
@@ -456,30 +462,69 @@ describe('admitCommittedSectionRenderRetry', () => {
                 phase: 'proof',
             })
         ).toEqual({ status: 'proof-mismatch' });
+    });
 
+    it.each([
+        [
+            'wrong receipt identity',
+            (run: ReturnType<typeof bindFinalizedSettled>) => (run.receipts[0]!.receiptIdentity = 'wrong'),
+        ],
+        ['missing receipt', (run: ReturnType<typeof bindFinalizedSettled>) => (run.receipts = [])],
+        [
+            'duplicate receipt',
+            (run: ReturnType<typeof bindFinalizedSettled>) => run.receipts.push({ ...run.receipts[0]! }),
+        ],
+        [
+            'wrong committed work identity',
+            (run: ReturnType<typeof bindFinalizedSettled>) => (run.committedWork[0]!.receiptIdentity = 'wrong'),
+        ],
+        ['missing committed work', (run: ReturnType<typeof bindFinalizedSettled>) => (run.committedWork = [])],
+        [
+            'duplicate committed work',
+            (run: ReturnType<typeof bindFinalizedSettled>) => run.committedWork.push({ ...run.committedWork[0]! }),
+        ],
+        ['wrong batch status', (run: ReturnType<typeof bindFinalizedSettled>) => (run.batches[0]!.status = 'failed')],
+        [
+            'wrong batch receipt',
+            (run: ReturnType<typeof bindFinalizedSettled>) => (run.batches[0]!.receiptIdentity = 'wrong'),
+        ],
+        [
+            'wrong batch command',
+            (run: ReturnType<typeof bindFinalizedSettled>) => (run.batches[0]!.commandIds = ['wrong']),
+        ],
+        ['missing batch command', (run: ReturnType<typeof bindFinalizedSettled>) => (run.batches[0]!.commandIds = [])],
+        [
+            'duplicate batch command',
+            (run: ReturnType<typeof bindFinalizedSettled>) =>
+                run.batches[0]!.commandIds.push(run.batches[0]!.commandIds[0]!),
+        ],
+        ['missing batch', (run: ReturnType<typeof bindFinalizedSettled>) => (run.batches = [])],
+        ['duplicate batch', (run: ReturnType<typeof bindFinalizedSettled>) => run.batches.push({ ...run.batches[0]! })],
+        [
+            'wrong external step id',
+            (run: ReturnType<typeof bindFinalizedSettled>) => (run.saga.steps[0]!.stepId = 'wrong'),
+        ],
+        [
+            'wrong external step state',
+            (run: ReturnType<typeof bindFinalizedSettled>) => (run.saga.steps[0]!.state = 'failed'),
+        ],
+        [
+            'wrong external step receipt',
+            (run: ReturnType<typeof bindFinalizedSettled>) => (run.saga.steps[0]!.receiptIdentity = 'wrong'),
+        ],
+        ['missing external step', (run: ReturnType<typeof bindFinalizedSettled>) => (run.saga.steps = [])],
+        [
+            'duplicate external step',
+            (run: ReturnType<typeof bindFinalizedSettled>) => run.saga.steps.push({ ...run.saga.steps[0]! }),
+        ],
+    ])('rejects settled finalized truth with %s', (_label, mutate) => {
+        const fixture = createFixture();
+        const finalizedReceipt = structuredClone(fixture.receipt);
+        finalizedReceipt.outcome = 'committed';
         finalizedReceipt.atomicity = 'atomic';
-        const trackedRun = mocks.getRun();
-        trackedRun.batches[0]!.status = 'failed';
-        expect(
-            admitCommittedSectionRenderRetry({
-                confirmation: fixture.confirmation,
-                durableReceipt: finalizedReceipt,
-                expectedCommandBatch: fixture.commandBatch,
-                phase: 'proof',
-            })
-        ).toEqual({ status: 'proof-mismatch' });
-        trackedRun.batches[0]!.status = 'committed';
-        trackedRun.batches[0]!.receiptIdentity = 'wrong-finalized-receipt';
-        expect(
-            admitCommittedSectionRenderRetry({
-                confirmation: fixture.confirmation,
-                durableReceipt: finalizedReceipt,
-                expectedCommandBatch: fixture.commandBatch,
-                phase: 'proof',
-            })
-        ).toEqual({ status: 'proof-mismatch' });
-        trackedRun.batches[0]!.receiptIdentity = receiptIdentity;
-        trackedRun.saga.steps[0]!.stepId = `effect:${BATCH_ID}:unrelated-command`;
+        finalizedReceipt.pendingEffects = [];
+        mutate(bindFinalizedSettled(fixture));
+
         expect(
             admitCommittedSectionRenderRetry({
                 confirmation: fixture.confirmation,
@@ -510,6 +555,28 @@ describe('admitCommittedSectionRenderRetry', () => {
 
     it.each([
         [
+            'wrong receipt identity',
+            (run: ReturnType<typeof bindFinalizedCrashWindow>) => (run.receipts[0]!.receiptIdentity = 'wrong'),
+        ],
+        ['missing receipt', (run: ReturnType<typeof bindFinalizedCrashWindow>) => (run.receipts = [])],
+        [
+            'duplicate receipt',
+            (run: ReturnType<typeof bindFinalizedCrashWindow>) => run.receipts.push({ ...run.receipts[0]! }),
+        ],
+        [
+            'wrong committed work identity',
+            (run: ReturnType<typeof bindFinalizedCrashWindow>) => (run.committedWork[0]!.receiptIdentity = 'wrong'),
+        ],
+        ['missing committed work', (run: ReturnType<typeof bindFinalizedCrashWindow>) => (run.committedWork = [])],
+        [
+            'duplicate committed work',
+            (run: ReturnType<typeof bindFinalizedCrashWindow>) => run.committedWork.push({ ...run.committedWork[0]! }),
+        ],
+        [
+            'wrong batch status',
+            (run: ReturnType<typeof bindFinalizedCrashWindow>) => (run.batches[0]!.status = 'failed'),
+        ],
+        [
             'wrong external step id',
             (run: ReturnType<typeof bindFinalizedCrashWindow>) => (run.saga.steps[0]!.stepId = 'effect:wrong'),
         ],
@@ -539,6 +606,87 @@ describe('admitCommittedSectionRenderRetry', () => {
             'duplicate batch command',
             (run: ReturnType<typeof bindFinalizedCrashWindow>) =>
                 run.batches[0]!.commandIds.push(run.batches[0]!.commandIds[0]!),
+        ],
+        ['missing batch', (run: ReturnType<typeof bindFinalizedCrashWindow>) => (run.batches = [])],
+        [
+            'duplicate batch',
+            (run: ReturnType<typeof bindFinalizedCrashWindow>) => run.batches.push({ ...run.batches[0]! }),
+        ],
+        [
+            'wrong external step receipt',
+            (run: ReturnType<typeof bindFinalizedCrashWindow>) => (run.saga.steps[0]!.receiptIdentity = 'wrong'),
+        ],
+        ['missing external step', (run: ReturnType<typeof bindFinalizedCrashWindow>) => (run.saga.steps = [])],
+        [
+            'wrong continuation receipt',
+            (run: ReturnType<typeof bindFinalizedCrashWindow>) =>
+                (run.pendingEffectContinuations[0]!.receiptIdentity = 'wrong'),
+        ],
+        [
+            'wrong continuation recovery',
+            (run: ReturnType<typeof bindFinalizedCrashWindow>) =>
+                (run.pendingEffectContinuations[0]!.recovery = 'manual-repair'),
+        ],
+        [
+            'wrong continuation batch',
+            (run: ReturnType<typeof bindFinalizedCrashWindow>) =>
+                (run.pendingEffectContinuations[0]!.batchId = 'wrong'),
+        ],
+        [
+            'wrong continuation serialization',
+            (run: ReturnType<typeof bindFinalizedCrashWindow>) =>
+                (run.pendingEffectContinuations[0]!.serializedBatch = 'wrong'),
+        ],
+        [
+            'wrong continuation authority',
+            (run: ReturnType<typeof bindFinalizedCrashWindow>) =>
+                (run.pendingEffectContinuations[0]!.authority = {
+                    ...run.pendingEffectContinuations[0]!.authority,
+                    projectId: 'wrong',
+                }),
+        ],
+        [
+            'missing continuation',
+            (run: ReturnType<typeof bindFinalizedCrashWindow>) => (run.pendingEffectContinuations = []),
+        ],
+        [
+            'duplicate continuation',
+            (run: ReturnType<typeof bindFinalizedCrashWindow>) =>
+                run.pendingEffectContinuations.push({ ...run.pendingEffectContinuations[0]! }),
+        ],
+        [
+            'missing continuation effect',
+            (run: ReturnType<typeof bindFinalizedCrashWindow>) => (run.pendingEffectContinuations[0]!.effects = []),
+        ],
+        [
+            'duplicate continuation effect',
+            (run: ReturnType<typeof bindFinalizedCrashWindow>) =>
+                run.pendingEffectContinuations[0]!.effects.push({ ...run.pendingEffectContinuations[0]!.effects[0]! }),
+        ],
+        [
+            'wrong effect command',
+            (run: ReturnType<typeof bindFinalizedCrashWindow>) =>
+                (run.pendingEffectContinuations[0]!.effects[0]!.commandId = 'wrong'),
+        ],
+        [
+            'wrong effect operation',
+            (run: ReturnType<typeof bindFinalizedCrashWindow>) =>
+                (run.pendingEffectContinuations[0]!.effects[0]!.operation = 'setTempo'),
+        ],
+        [
+            'wrong effect kind',
+            (run: ReturnType<typeof bindFinalizedCrashWindow>) =>
+                (run.pendingEffectContinuations[0]!.effects[0]!.kind = 'runtime-graph'),
+        ],
+        [
+            'wrong effect remediation',
+            (run: ReturnType<typeof bindFinalizedCrashWindow>) =>
+                (run.pendingEffectContinuations[0]!.effects[0]!.remediation = 'manual-repair'),
+        ],
+        [
+            'wrong effect state',
+            (run: ReturnType<typeof bindFinalizedCrashWindow>) =>
+                (run.pendingEffectContinuations[0]!.effects[0]!.state = 'completed'),
         ],
     ])('rejects a finalized crash window with %s', (_label, mutate) => {
         const fixture = createFixture();
