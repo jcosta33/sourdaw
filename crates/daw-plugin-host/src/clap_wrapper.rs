@@ -51,12 +51,12 @@ use clap_sys::events::{
 use clap_sys::ext::audio_ports::{
     clap_audio_port_info, clap_plugin_audio_ports, CLAP_EXT_AUDIO_PORTS,
 };
-#[cfg(target_os = "macos")]
-use clap_sys::ext::gui::CLAP_WINDOW_API_COCOA;
 #[cfg(target_os = "windows")]
 use clap_sys::ext::gui::CLAP_WINDOW_API_WIN32;
+#[cfg(target_os = "linux")]
+use clap_sys::ext::gui::CLAP_WINDOW_API_X11;
 use clap_sys::ext::gui::{
-    clap_plugin_gui, clap_window, clap_window_handle, CLAP_EXT_GUI, CLAP_WINDOW_API_X11,
+    clap_plugin_gui, clap_window, clap_window_handle, CLAP_EXT_GUI, CLAP_WINDOW_API_COCOA,
 };
 use clap_sys::ext::latency::{clap_plugin_latency, CLAP_EXT_LATENCY};
 use clap_sys::ext::note_ports::{
@@ -813,6 +813,18 @@ impl ClapWrapper {
         }
     }
 
+    /// Whether `clap_plugin_gui.set_scale` applies to a window API.
+    ///
+    /// gui.h's own rule: set_scale is "an absolute GUI scaling factor" for APIs
+    /// in physical pixels, and should not be used for one "rel[ying] upon
+    /// logical pixels" — which is exactly what it says about cocoa. Telling a
+    /// cocoa editor a 2.0 host scale double-sizes it, because the OS already
+    /// applied that scale in logical size; JUCE wrappers honor the call, so the
+    /// host is the one who must not make it.
+    fn scale_applies_to(api: &CStr) -> bool {
+        api != CLAP_WINDOW_API_COCOA
+    }
+
     /// Open the plugin GUI, parenting it into the given native window handle.
     ///
     /// `handle_ptr` is the platform-specific handle:
@@ -872,9 +884,13 @@ impl ClapWrapper {
             // 3. Set scale — the host's stated display scale, defaulting to
             //    1.0 until one arrives. Called here because CLAP places it
             //    between create and get_size; a plugin that prefers the OS's
-            //    own value ignores it, which the spec allows.
-            if let Some(set_scale) = gui.set_scale {
-                set_scale(self.plugin, self.editor_content_scale);
+            //    own value ignores it, which the spec allows. Skipped for
+            //    cocoa, whose logical-pixel sizes already carry the OS scale —
+            //    see [`Self::scale_applies_to`].
+            if Self::scale_applies_to(api) {
+                if let Some(set_scale) = gui.set_scale {
+                    set_scale(self.plugin, self.editor_content_scale);
+                }
             }
 
             // 4. Get size
@@ -1335,15 +1351,23 @@ impl ClapWrapper {
     }
 }
 
-/// Copy the engine's stereo channels into the flat declared-input scratch.
+/// Copy the engine's stereo channels into the declared input scratch.
 ///
-/// Channel *i* of the engine lands in declared channel *i*, in declaration
-/// order — the same leading channels a plugin declaring fewer than the engine
-/// offers has always effectively seen. Channels the engine does not supply keep
-/// their load-time zeros, which is sound because the plugin may not write input
-/// buffers.
+/// Only the first declared port is connected to the engine's bus — the DAW
+/// convention for sidechain and auxiliary input ports is that an unconnected
+/// port gets silence, and this host has nothing to feed one with. Engine
+/// channel *i* therefore lands in the first port's channel *i*; every channel
+/// past the first port's count belongs to a later port and keeps its load-time
+/// zeros, which is sound because the plugin may not write input buffers. A
+/// former bug wired the engine's right channel into a `[1, 1]` bundle's second
+/// port — the sidechain detector of a compressor tracking the very signal it
+/// was meant to duck against.
 fn fill_input_scratch(audio: &mut AudioBusLayout, inputs: &[&[f32]], n_samp: usize) {
-    let channels = (inputs.len().min(2)).min(audio.input_channel_ptrs.len());
+    let connected_channels = audio
+        .input_buffers
+        .first()
+        .map_or(0, |main_port| main_port.channel_count as usize);
+    let channels = (inputs.len().min(2)).min(connected_channels);
     for channel in 0..channels {
         let destination = &mut audio.input_scratch[channel * MAX_BUFFER..][..n_samp];
         let source = &inputs[channel];
@@ -3526,11 +3550,19 @@ mod tests {
         true
     }
 
+    /// The window API string the last editor open negotiated, so a test can
+    /// state which API's set_scale rules were in play.
+    static NEGOTIATED_GUI_API: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
+
     unsafe extern "C" fn always_supported(
         _plugin: *const clap_plugin,
-        _api: *const i8,
+        api: *const i8,
         _is_floating: bool,
     ) -> bool {
+        if !api.is_null() {
+            *NEGOTIATED_GUI_API.lock().unwrap() =
+                CStr::from_ptr(api).to_string_lossy().into_owned();
+        }
         true
     }
 
@@ -3588,11 +3620,15 @@ mod tests {
 
     /// The host states its display scale before the editor opens; a plugin
     /// told 1.0 on a 2.0 screen lays its editor out at half size. The old code
-    /// hardcoded 1.0 and dropped whatever the host had stated.
+    /// hardcoded 1.0 and dropped whatever the host had stated. This drives the
+    /// physical-pixel API this platform selects (x11 here), which is the one
+    /// the scale does apply to; the cocoa half of the rule is pinned by
+    /// `set_scale_is_skipped_for_the_logical_pixel_cocoa_api`.
     #[test]
     fn opening_the_editor_hands_the_plugin_the_host_stated_scale() {
         let _guard = GUI_SCALE_TEST_LOCK.lock().unwrap();
         SCALES_PASSED_TO_PLUGIN.lock().unwrap().clear();
+        NEGOTIATED_GUI_API.lock().unwrap().clear();
         let mut plugin: clap_plugin = unsafe { mem::zeroed() };
         plugin.get_extension = Some(scale_recording_get_extension);
         let plugin_ptr = Box::into_raw(Box::new(plugin)) as *const clap_plugin;
@@ -3606,6 +3642,11 @@ mod tests {
             .open_gui(ptr::null_mut())
             .expect("the recording gui opens");
 
+        assert_eq!(
+            NEGOTIATED_GUI_API.lock().unwrap().as_str(),
+            ClapWrapper::platform_api().to_str().expect("api is utf-8"),
+            "the test opens the editor through this platform's own window API"
+        );
         assert_eq!(
             SCALES_PASSED_TO_PLUGIN.lock().unwrap().as_slice(),
             [2.0],
@@ -3625,6 +3666,79 @@ mod tests {
             wrapper.editor_content_scale,
             crate::traits::DEFAULT_EDITOR_CONTENT_SCALE,
             "a scale with no meaning cannot replace the one that has a default"
+        );
+    }
+
+    /// gui.h's own rule: set_scale is for physical-pixel window APIs, and
+    /// cocoa "uses logical size, don't call set_scale". The OS already applied
+    /// the scale in a cocoa editor's logical size, so a host that passes its
+    /// 2.0 on top of that double-sizes the editor — and JUCE wrappers honor
+    /// the call, so the host is the one who must not make it.
+    #[test]
+    fn set_scale_is_skipped_for_the_logical_pixel_cocoa_api() {
+        use clap_sys::ext::gui::{
+            CLAP_WINDOW_API_COCOA, CLAP_WINDOW_API_WIN32, CLAP_WINDOW_API_X11,
+        };
+
+        assert!(!ClapWrapper::scale_applies_to(CLAP_WINDOW_API_COCOA));
+        assert!(ClapWrapper::scale_applies_to(CLAP_WINDOW_API_X11));
+        assert!(ClapWrapper::scale_applies_to(CLAP_WINDOW_API_WIN32));
+    }
+
+    // ── Sidechain input ports get silence, not leftover engine channels ───
+
+    /// The first sample each declared input channel carried on the last block,
+    /// in declaration order — what a plugin's detector on any port actually
+    /// saw.
+    static SAMPLED_INPUT_CHANNELS: std::sync::Mutex<Vec<f32>> = std::sync::Mutex::new(Vec::new());
+
+    unsafe extern "C" fn stub_process_input_sampling(
+        _plugin: *const clap_plugin,
+        process: *const clap_process,
+    ) -> i32 {
+        let mut sampled = SAMPLED_INPUT_CHANNELS.lock().unwrap();
+        sampled.clear();
+        for buffer_index in 0..(*process).audio_inputs_count {
+            let buffer = (*process).audio_inputs.add(buffer_index as usize);
+            for channel in 0..(*buffer).channel_count {
+                let channel_data = *(*buffer).data32.add(channel as usize);
+                sampled.push(*channel_data);
+            }
+        }
+        // Keep the output write the other stubs perform, so the block still
+        // carries observable audio.
+        stub_process_buffer_capturing(_plugin, process)
+    }
+
+    fn input_sampling_plugin_ptr() -> *const clap_plugin {
+        let mut plugin: clap_plugin = unsafe { mem::zeroed() };
+        plugin.get_extension = Some(stub_get_extension);
+        plugin.activate = Some(stub_activate);
+        plugin.deactivate = Some(stub_deactivate);
+        plugin.start_processing = Some(stub_start_processing);
+        plugin.stop_processing = Some(stub_stop_processing);
+        plugin.process = Some(stub_process_input_sampling);
+        Box::into_raw(Box::new(plugin)) as *const clap_plugin
+    }
+
+    /// A `[1, 1]` compressor — mono main, mono sidechain — must see the
+    /// engine's left on its main port and silence on the sidechain. The old
+    /// positional mapping wired the engine's right channel into the sidechain
+    /// detector: the compressor ducked against the very signal it was
+    /// processing.
+    #[test]
+    fn a_sidechain_input_port_receives_silence_not_the_engines_right_channel() {
+        let _guard = BUFFER_TEST_LOCK.lock().unwrap();
+        let layout = AudioBusLayout::declared(&[1, 1], &[1]).expect("layout builds");
+        let mut wrapper = stub_wrapper_over(layout, input_sampling_plugin_ptr());
+
+        process_stereo_block(&mut wrapper, 0.7, 0.9);
+
+        let sampled = SAMPLED_INPUT_CHANNELS.lock().unwrap().clone();
+        assert_eq!(
+            sampled,
+            vec![0.7, 0.0],
+            "main port carries the engine's left; the unconnected sidechain port stays silent"
         );
     }
 
