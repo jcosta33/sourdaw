@@ -662,6 +662,71 @@ describe('pull-request delivery', () => {
         expect(calls.indexOf('complete:2372')).toBeGreaterThan(calls.indexOf('retarget:43:main'));
     });
 
+    it('recovers the newest X to Y receipt after merge', () => {
+        const bodyX = relationshipBody('Closes #2372');
+        const bodyY = relationshipBody('Closes #2373');
+        const receipt = (
+            id: string,
+            body: string,
+            closingIssue: number,
+            createdAt: string
+        ): DeliveryReceiptComment => ({
+            id,
+            body: deliveryReceiptBody(42, 'head', body, closingIssue),
+            authorNodeId: AUTHOR_BOT_NODE_ID,
+            authorLogin: 'renamed-author[bot]',
+            authorType: 'Bot',
+            createdAt,
+            updatedAt: createdAt,
+        });
+        const { port, calls, tracker } = fakePort({
+            primary: [pullRequest({ state: 'MERGED', body: relationshipBody('None.') })],
+            receipts: [
+                receipt('IC_x', bodyX, 2372, '2026-08-21T00:00:00Z'),
+                receipt('IC_y', bodyY, 2373, '2026-08-21T00:00:01Z'),
+            ],
+        });
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls).toContain('complete:2373');
+        expect(calls).not.toContain('complete:2372');
+    });
+
+    it('allows tied historical receipts when the newest receipt is unique', () => {
+        const bodyA = relationshipBody('Closes #2371');
+        const bodyB = relationshipBody('Closes #2372');
+        const bodyC = relationshipBody('Closes #2373');
+        const receipt = (
+            id: string,
+            body: string,
+            closingIssue: number,
+            createdAt: string
+        ): DeliveryReceiptComment => ({
+            id,
+            body: deliveryReceiptBody(42, 'head', body, closingIssue),
+            authorNodeId: AUTHOR_BOT_NODE_ID,
+            authorLogin: 'renamed-author[bot]',
+            authorType: 'Bot',
+            createdAt,
+            updatedAt: createdAt,
+        });
+        const { port, calls, tracker } = fakePort({
+            primary: [pullRequest({ state: 'MERGED', body: relationshipBody('None.') })],
+            receipts: [
+                receipt('IC_a', bodyA, 2371, '2026-08-21T00:00:00Z'),
+                receipt('IC_b', bodyB, 2372, '2026-08-21T00:00:00Z'),
+                receipt('IC_c', bodyC, 2373, '2026-08-21T00:00:01Z'),
+            ],
+        });
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls).toContain('complete:2373');
+        expect(calls).not.toContain('complete:2371');
+        expect(calls).not.toContain('complete:2372');
+    });
+
     it('refuses merged recovery when the newest same-head receipt ordering is ambiguous', () => {
         const staleBody = relationshipBody('Closes #2372');
         const currentBody = relationshipBody('Closes #2373');
@@ -780,6 +845,27 @@ describe('pull-request delivery', () => {
             expect(() => deliverPullRequest(42, port, tracker)).toThrow(/invalid delivery receipt/);
             expect(calls).not.toContain('merge:42:head');
         }
+    });
+
+    it('rejects an immutable-looking receipt with equal invalid timestamps', () => {
+        const closes = relationshipBody('Closes #2372');
+        const { port, calls, tracker } = fakePort({
+            primary: [pullRequest({ body: closes }), pullRequest({ body: closes })],
+            receipts: [
+                {
+                    id: 'IC_invalid_timestamp',
+                    body: deliveryReceiptBody(42, 'head', closes, 2372),
+                    authorNodeId: AUTHOR_BOT_NODE_ID,
+                    authorLogin: 'renamed-author[bot]',
+                    authorType: 'Bot',
+                    createdAt: 'not-a-timestamp',
+                    updatedAt: 'not-a-timestamp',
+                },
+            ],
+        });
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/invalid delivery receipt/);
+        expect(calls).not.toContain('merge:42:head');
     });
 
     it('rejects adjacent byte-identical receipt payloads instead of choosing authority', () => {

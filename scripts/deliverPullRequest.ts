@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
+import { linkSync, lstatSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 import {
     AUTHOR_BOT_NODE_ID,
@@ -515,16 +517,27 @@ function orderedDeliveryReceiptLineage(
     const ordered = deliveryReceiptsForHead(comments, pullRequest).sort(
         (left, right) => Date.parse(left.createdAt) - Date.parse(right.createdAt)
     );
-    for (let index = 1; index < ordered.length; index += 1) {
-        const previous = ordered[index - 1];
-        const current = ordered[index];
+    const timestampGroups: Array<{ timestamp: number; receipts: DeliveryReceiptComment[] }> = [];
+    for (const receipt of ordered) {
+        const timestamp = Date.parse(receipt.createdAt);
+        const currentGroup = timestampGroups.at(-1);
+        if (currentGroup?.timestamp === timestamp) {
+            currentGroup.receipts.push(receipt);
+        } else {
+            timestampGroups.push({ timestamp, receipts: [receipt] });
+        }
+    }
+    if ((timestampGroups.at(-1)?.receipts.length ?? 0) > 1) {
+        fail(`PR #${pullRequest.number} has ambiguous delivery receipt timestamps`);
+    }
+    for (let index = 1; index < timestampGroups.length; index += 1) {
+        const previous = timestampGroups[index - 1];
+        const current = timestampGroups[index];
         if (previous === undefined || current === undefined) {
             fail(`PR #${pullRequest.number} has an invalid delivery receipt lineage`);
         }
-        if (Date.parse(previous.createdAt) === Date.parse(current.createdAt)) {
-            fail(`PR #${pullRequest.number} has ambiguous delivery receipt timestamps`);
-        }
-        if (previous.body === current.body) {
+        const previousBodies = new Set(previous.receipts.map((receipt) => receipt.body));
+        if (current.receipts.some((receipt) => previousBodies.has(receipt.body))) {
             fail(`PR #${pullRequest.number} has duplicate delivery receipts`);
         }
     }
@@ -1213,8 +1226,171 @@ export type DeliveryAuthentication = {
     session: { configDir: string; env: NodeJS.ProcessEnv; dispose: () => void };
 };
 
+type DeliveryLockOwner = {
+    version: 1;
+    pid: number;
+    token: string;
+};
+
+export type DeliverySerialization = <Value>(
+    primaryRoot: string,
+    number: number,
+    operation: () => Promise<Value>
+) => Promise<Value>;
+
+const DELIVERY_LOCK_TOKEN_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+
+function deliveryLockErrorCode(error: unknown): string | undefined {
+    return typeof error === 'object' && error !== null && 'code' in error && typeof error.code === 'string'
+        ? error.code
+        : undefined;
+}
+
+function deliveryLockPath(primaryRoot: string, number: number): string {
+    if (!Number.isSafeInteger(number) || number <= 0) {
+        fail('delivery lock requires a positive pull-request number');
+    }
+    return join(primaryRoot, '.git', `sourdaw-delivery-pr-${number}.lock`);
+}
+
+function assertDeliveryReclaimAbsent(path: string, number: number): void {
+    try {
+        lstatSync(`${path}.reclaim`);
+    } catch (error) {
+        if (deliveryLockErrorCode(error) === 'ENOENT') {
+            return;
+        }
+        fail(`PR #${number} delivery lock reclamation cannot be verified`);
+    }
+    fail(`PR #${number} delivery lock reclamation is already in progress`);
+}
+
+function parseDeliveryLockOwner(contents: string, number: number): DeliveryLockOwner {
+    let value: unknown;
+    try {
+        value = JSON.parse(contents) as unknown;
+    } catch {
+        fail(`PR #${number} delivery lock ownership is malformed`);
+    }
+    if (
+        typeof value !== 'object' ||
+        value === null ||
+        Object.keys(value).length !== 3 ||
+        !('version' in value) ||
+        value.version !== 1 ||
+        !('pid' in value) ||
+        typeof value.pid !== 'number' ||
+        !Number.isSafeInteger(value.pid) ||
+        value.pid <= 0 ||
+        !('token' in value) ||
+        typeof value.token !== 'string' ||
+        !DELIVERY_LOCK_TOKEN_PATTERN.test(value.token)
+    ) {
+        fail(`PR #${number} delivery lock ownership is malformed`);
+    }
+    return { version: 1, pid: value.pid, token: value.token };
+}
+
+function createDeliveryLockRecord(path: string, contents: string, token: string): boolean {
+    const temporaryPath = `${path}.${token}.tmp`;
+    writeFileSync(temporaryPath, contents, { encoding: 'utf8', flag: 'wx', mode: 0o600 });
+    try {
+        linkSync(temporaryPath, path);
+        return true;
+    } catch (error) {
+        if (deliveryLockErrorCode(error) === 'EEXIST') {
+            return false;
+        }
+        throw error;
+    } finally {
+        rmSync(temporaryPath, { force: true });
+    }
+}
+
+function readDeliveryLockOwner(path: string, number: number): DeliveryLockOwner {
+    let contents: string;
+    try {
+        contents = readFileSync(path, 'utf8');
+    } catch {
+        fail(`PR #${number} delivery lock ownership cannot be verified`);
+    }
+    return parseDeliveryLockOwner(contents, number);
+}
+
+function deliveryLockOwnerState(owner: DeliveryLockOwner): 'live' | 'dead' | 'uncertain' {
+    try {
+        process.kill(owner.pid, 0);
+        return 'live';
+    } catch (error) {
+        return deliveryLockErrorCode(error) === 'ESRCH' ? 'dead' : 'uncertain';
+    }
+}
+
+function acquireDeliveryLock(primaryRoot: string, number: number): { path: string; owner: DeliveryLockOwner } {
+    const path = deliveryLockPath(primaryRoot, number);
+    const owner: DeliveryLockOwner = { version: 1, pid: process.pid, token: randomUUID() };
+    const contents = JSON.stringify(owner);
+    assertDeliveryReclaimAbsent(path, number);
+    if (createDeliveryLockRecord(path, contents, owner.token)) {
+        return { path, owner };
+    }
+
+    const previousOwner = readDeliveryLockOwner(path, number);
+    const previousOwnerState = deliveryLockOwnerState(previousOwner);
+    if (previousOwnerState === 'live') {
+        fail(`PR #${number} is already being delivered by process ${previousOwner.pid}`);
+    }
+    if (previousOwnerState === 'uncertain') {
+        fail(`PR #${number} delivery lock ownership cannot be verified`);
+    }
+
+    const reclaimPath = `${path}.reclaim`;
+    if (!createDeliveryLockRecord(reclaimPath, contents, owner.token)) {
+        fail(`PR #${number} delivery lock reclamation is already in progress`);
+    }
+    try {
+        const confirmedOwner = readDeliveryLockOwner(path, number);
+        if (
+            confirmedOwner.pid !== previousOwner.pid ||
+            confirmedOwner.token !== previousOwner.token ||
+            deliveryLockOwnerState(confirmedOwner) !== 'dead'
+        ) {
+            fail(`PR #${number} delivery lock changed while reclaiming its dead owner`);
+        }
+        unlinkSync(path);
+        if (!createDeliveryLockRecord(path, contents, owner.token)) {
+            fail(`PR #${number} delivery lock changed while reclaiming its dead owner`);
+        }
+        return { path, owner };
+    } finally {
+        releaseDeliveryLock(reclaimPath, number, owner);
+    }
+}
+
+function releaseDeliveryLock(path: string, number: number, owner: DeliveryLockOwner): void {
+    const currentOwner = readDeliveryLockOwner(path, number);
+    if (currentOwner.token !== owner.token) {
+        fail(`PR #${number} delivery lock ownership changed before release`);
+    }
+    unlinkSync(path);
+}
+
+export async function withPullRequestDeliveryLock<Value>(
+    primaryRoot: string,
+    number: number,
+    operation: () => Promise<Value>
+): Promise<Value> {
+    const lock = acquireDeliveryLock(primaryRoot, number);
+    try {
+        return await operation();
+    } finally {
+        releaseDeliveryLock(lock.path, number, lock.owner);
+    }
+}
+
 export type DeliveryCoordinatorDependencies = {
     primaryRoot: () => string;
+    serializeDelivery: DeliverySerialization;
     authenticateAuthor: (primaryRoot: string) => Promise<DeliveryAuthentication>;
     authenticateTracker: (primaryRoot: string) => Promise<DeliveryAuthentication>;
     repositoryName: (session: DeliveryAuthentication['session'], primaryRoot: string) => string;
@@ -1227,6 +1403,7 @@ export type DeliveryCoordinatorDependencies = {
 function defaultDeliveryCoordinatorDependencies(cwd: string): DeliveryCoordinatorDependencies {
     return {
         primaryRoot: () => resolvePrimaryRoot(),
+        serializeDelivery: withPullRequestDeliveryLock,
         authenticateAuthor: (primaryRoot) => authenticateRole({ primaryRoot, role: 'author' }),
         authenticateTracker: (primaryRoot) => authenticateTrackerAuthor({ primaryRoot }),
         repositoryName: (session, primaryRoot) =>
@@ -1256,25 +1433,27 @@ export async function coordinateDelivery(
     dependencies: DeliveryCoordinatorDependencies = defaultDeliveryCoordinatorDependencies(process.cwd())
 ): Promise<void> {
     const primaryRoot = dependencies.primaryRoot();
-    const authorAuth = await dependencies.authenticateAuthor(primaryRoot);
-    let trackerAuth: DeliveryAuthentication | undefined;
-    try {
-        if (!isAuthorBotNodeId(authorAuth.minted.actorNodeId)) {
-            fail(`minted actor ${authorAuth.minted.actorNodeId} is not ${AUTHOR_BOT_NODE_ID}`);
+    await dependencies.serializeDelivery(primaryRoot, number, async () => {
+        const authorAuth = await dependencies.authenticateAuthor(primaryRoot);
+        let trackerAuth: DeliveryAuthentication | undefined;
+        try {
+            if (!isAuthorBotNodeId(authorAuth.minted.actorNodeId)) {
+                fail(`minted actor ${authorAuth.minted.actorNodeId} is not ${AUTHOR_BOT_NODE_ID}`);
+            }
+            const repository = dependencies.repositoryName(authorAuth.session, primaryRoot);
+            assertRequiredRepository(repository);
+            const authenticatedTracker = await dependencies.authenticateTracker(primaryRoot);
+            trackerAuth = authenticatedTracker;
+            const trackerPort = dependencies.trackerPort(authenticatedTracker.session);
+            dependencies.deliver(number, dependencies.deliveryPort(repository, authorAuth, primaryRoot), {
+                complete: (issueNumber) =>
+                    dependencies.completeIssue(issueNumber, authenticatedTracker.minted.actorNodeId, trackerPort),
+            });
+        } finally {
+            trackerAuth?.session.dispose();
+            authorAuth.session.dispose();
         }
-        const repository = dependencies.repositoryName(authorAuth.session, primaryRoot);
-        assertRequiredRepository(repository);
-        const authenticatedTracker = await dependencies.authenticateTracker(primaryRoot);
-        trackerAuth = authenticatedTracker;
-        const trackerPort = dependencies.trackerPort(authenticatedTracker.session);
-        dependencies.deliver(number, dependencies.deliveryPort(repository, authorAuth, primaryRoot), {
-            complete: (issueNumber) =>
-                dependencies.completeIssue(issueNumber, authenticatedTracker.minted.actorNodeId, trackerPort),
-        });
-    } finally {
-        trackerAuth?.session.dispose();
-        authorAuth.session.dispose();
-    }
+    });
 }
 
 export async function runDeliverCli(args: string[], dependencies?: DeliveryCoordinatorDependencies): Promise<number> {

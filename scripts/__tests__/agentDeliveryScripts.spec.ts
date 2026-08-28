@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import {
     chmodSync,
     existsSync,
@@ -15,7 +15,7 @@ import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { parseDocument } from 'yaml';
 
-import { coordinateDelivery } from '../deliverPullRequest.ts';
+import { coordinateDelivery, withPullRequestDeliveryLock } from '../deliverPullRequest.ts';
 import { AUTHOR_BOT_NODE_ID } from '../githubAppIdentity.ts';
 import { githubTrackerIssuePort } from '../reconcileTrackerIssue.ts';
 import {
@@ -750,6 +750,128 @@ describe('package scripts and gitignore', () => {
         ).resolves.toBe(0);
     });
 
+    it('refuses a live delivery owner before authentication or delivery starts', async () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-'));
+        mkdirSync(join(root, '.git'));
+        const entered: string[] = [];
+        const dependencies: DeliveryCoordinatorDependencies = {
+            primaryRoot: () => root,
+            serializeDelivery: withPullRequestDeliveryLock,
+            authenticateAuthor: async () => {
+                entered.push('authenticate');
+                throw new Error('authentication should not start');
+            },
+            authenticateTracker: async () => expect.fail('tracker authentication should not start'),
+            repositoryName: () => expect.fail('repository lookup should not start'),
+            deliveryPort: () => expect.fail('delivery port should not be created'),
+            trackerPort: () => expect.fail('tracker port should not be created'),
+            completeIssue: () => expect.fail('tracker completion should not start'),
+            deliver: () => {
+                entered.push('deliver');
+            },
+        };
+
+        try {
+            await withPullRequestDeliveryLock(root, 2495, async () => {
+                await expect(coordinateDelivery(2495, dependencies)).rejects.toThrow(/already being delivered/);
+            });
+            expect(entered).toEqual([]);
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('reclaims one well-formed lock whose owner process is conclusively dead', async () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-'));
+        const gitDirectory = join(root, '.git');
+        const lockPath = join(gitDirectory, 'sourdaw-delivery-pr-2495.lock');
+        mkdirSync(gitDirectory);
+        const deadProcess = spawnSync(process.execPath, ['-e', 'process.exit(0)']);
+        expect(deadProcess.status).toBe(0);
+        expect(deadProcess.pid).toBeTypeOf('number');
+        writeFileSync(
+            lockPath,
+            JSON.stringify({ version: 1, pid: deadProcess.pid, token: '00000000-0000-4000-8000-000000000001' })
+        );
+        let delivered = false;
+
+        try {
+            await withPullRequestDeliveryLock(root, 2495, async () => {
+                delivered = true;
+            });
+            expect(delivered).toBe(true);
+            expect(existsSync(lockPath)).toBe(false);
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('releases the current delivery token after success and failure', async () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-'));
+        const lockPath = join(root, '.git', 'sourdaw-delivery-pr-2495.lock');
+        mkdirSync(join(root, '.git'));
+
+        try {
+            await withPullRequestDeliveryLock(root, 2495, async () => undefined);
+            expect(existsSync(lockPath)).toBe(false);
+
+            await expect(
+                withPullRequestDeliveryLock(root, 2495, async () => {
+                    throw new Error('delivery failed');
+                })
+            ).rejects.toThrow('delivery failed');
+            expect(existsSync(lockPath)).toBe(false);
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('does not release a delivery lock whose ownership token changed', async () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-'));
+        const lockPath = join(root, '.git', 'sourdaw-delivery-pr-2495.lock');
+        mkdirSync(join(root, '.git'));
+
+        try {
+            await expect(
+                withPullRequestDeliveryLock(root, 2495, async () => {
+                    writeFileSync(
+                        lockPath,
+                        JSON.stringify({
+                            version: 1,
+                            pid: process.pid,
+                            token: '00000000-0000-4000-8000-000000000002',
+                        })
+                    );
+                })
+            ).rejects.toThrow(/ownership changed before release/);
+            expect(existsSync(lockPath)).toBe(true);
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('keeps per-PR owners isolated without releasing the wrong delivery', async () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-'));
+        const firstLock = join(root, '.git', 'sourdaw-delivery-pr-2495.lock');
+        const secondLock = join(root, '.git', 'sourdaw-delivery-pr-2496.lock');
+        mkdirSync(join(root, '.git'));
+
+        try {
+            await withPullRequestDeliveryLock(root, 2495, async () => {
+                await withPullRequestDeliveryLock(root, 2496, async () => undefined);
+                expect(existsSync(firstLock)).toBe(true);
+                expect(existsSync(secondLock)).toBe(false);
+                await expect(withPullRequestDeliveryLock(root, 2495, async () => undefined)).rejects.toThrow(
+                    /already being delivered/
+                );
+                expect(existsSync(firstLock)).toBe(true);
+            });
+            expect(existsSync(firstLock)).toBe(false);
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
     it('wires PR operations and the regular-issue adapter to distinct least-privilege sessions', async () => {
         const disposed: string[] = [];
         const authentication = (token: string, permissions: Record<string, string>): DeliveryAuthentication => ({
@@ -781,6 +903,14 @@ describe('package scripts and gitignore', () => {
         let trackerPort: ReconcileTrackerIssuePort | undefined;
         const dependencies: DeliveryCoordinatorDependencies = {
             primaryRoot: () => '/repo',
+            serializeDelivery: async (_primaryRoot, number, operation) => {
+                seen.push(`lock:${number}:acquire`);
+                try {
+                    await operation();
+                } finally {
+                    seen.push(`lock:${number}:release`);
+                }
+            },
             authenticateAuthor: async () => author,
             authenticateTracker: async () => tracker,
             repositoryName: (session) => {
@@ -828,10 +958,12 @@ describe('package scripts and gitignore', () => {
         expect(author.minted.permissions).toEqual({ contents: 'write', pull_requests: 'write' });
         expect(tracker.minted.permissions).toEqual({ issues: 'write' });
         expect(seen).toEqual([
+            'lock:2495:acquire',
             'repository:ghs_author',
             'tracker:ghs_tracker',
             'delivery:ghs_author',
             `complete:${AUTHOR_BOT_NODE_ID}`,
+            'lock:2495:release',
         ]);
         expect(adapterRequests).toEqual([
             {

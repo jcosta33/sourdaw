@@ -315,6 +315,11 @@ the other role's file. Delivery authenticates the author and reviewer roles by t
 actor node IDs in `scripts/githubAppIdentity.ts`; mutable App slugs and bot logins are display only.
 The two role IDs are never interchangeable. `deliver` does not mint the reviewer.
 
+`deliver` serializes each pull request through an atomic owner record in the protected primary
+checkout's Git metadata. It holds that ownership from before authentication through merge or
+already-merged recovery and tracker completion, refuses a live or unverifiable owner without
+waiting, and only reclaims a well-formed owner whose process is conclusively dead.
+
 The protected primary checkout is the launcher trust boundary for snapshot-backed GitHub writes.
 Run `lane:publish`, `deliver`, and `issue:reconcile` through its package route. The launcher and the
 command's whole script closure must match one pinned `origin/main` commit and are read only from the
