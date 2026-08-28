@@ -93,6 +93,7 @@ vi.mock('../Transport/WindowControls', () => ({
 
 const windowChromeMocks = vi.hoisted(() => ({
     frameless: false,
+    windowControlsOverlay: false,
     minimize: vi.fn<() => Promise<void>>(),
     toggleMaximize: vi.fn<() => Promise<boolean>>(),
     close: vi.fn<() => Promise<void>>(),
@@ -103,6 +104,7 @@ const windowChromeMocks = vi.hoisted(() => ({
 vi.mock('#/modules/WorkspaceShell/useCases/windowChrome', () => ({
     windowChromeControls: () => ({
         frameless: windowChromeMocks.frameless,
+        windowControlsOverlay: windowChromeMocks.windowControlsOverlay,
         minimize: windowChromeMocks.minimize,
         toggleMaximize: windowChromeMocks.toggleMaximize,
         close: windowChromeMocks.close,
@@ -150,6 +152,7 @@ describe('TransportBar', () => {
         voiceRuntimeMocks.toggleVoiceInput.mockClear();
         voiceRuntimeMocks.isVoiceInputAvailable.mockReturnValue(false);
         windowChromeMocks.frameless = false;
+        windowChromeMocks.windowControlsOverlay = false;
         windowChromeMocks.toggleMaximize.mockClear();
         windowChromeMocks.toggleMaximize.mockResolvedValue(true);
         // Reset the hoisted hook return-values to defaults after clearAllMocks.
@@ -190,12 +193,41 @@ describe('TransportBar', () => {
         expect(screen.getByTestId('window-titlebar-region')).toHaveClass('desktop-titlebar-region');
     });
 
+    it('leaves the titlebar row unmodified when the shell runs neither desktop chrome', () => {
+        renderTransportBar();
+
+        const region = screen.getByTestId('window-titlebar-region');
+        expect(region).not.toHaveClass('desktop-titlebar-region--frameless');
+        expect(region).not.toHaveClass('desktop-titlebar-region--overlay');
+    });
+
     it('marks the titlebar row as the frameless drag region and mounts the window controls', () => {
         windowChromeMocks.frameless = true;
         renderTransportBar();
 
-        expect(screen.getByTestId('window-titlebar-region')).toHaveClass('desktop-titlebar-region--frameless');
+        const region = screen.getByTestId('window-titlebar-region');
+        expect(region).toHaveClass('desktop-titlebar-region--frameless');
+        expect(region).not.toHaveClass('desktop-titlebar-region--overlay');
         expect(screen.getByTestId('window-controls')).toBeInTheDocument();
+    });
+
+    it('insets the titlebar row past the overlaid native controls and mounts none of its own', () => {
+        windowChromeMocks.windowControlsOverlay = true;
+        renderTransportBar();
+
+        const region = screen.getByTestId('window-titlebar-region');
+        expect(region).toHaveClass('desktop-titlebar-region--overlay');
+        expect(region).not.toHaveClass('desktop-titlebar-region--frameless');
+        expect(screen.queryByTestId('window-controls')).not.toBeInTheDocument();
+    });
+
+    it('leaves a double-click on the overlaid titlebar row to the operating system', () => {
+        windowChromeMocks.windowControlsOverlay = true;
+        renderTransportBar();
+
+        fireEvent.doubleClick(screen.getByTestId('window-titlebar-region'));
+
+        expect(windowChromeMocks.toggleMaximize).not.toHaveBeenCalled();
     });
 
     it('toggles maximize on a double-click on the titlebar row itself', () => {

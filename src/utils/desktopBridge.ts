@@ -348,3 +348,15 @@ export function desktopWindowControls(): SourdawDesktopBridge['windowControls'] 
 export function usesFramelessWindowChrome(): boolean {
     return isDesktopRuntime() && desktopPlatform() === 'linux';
 }
+
+/**
+ * True on the macOS desktop build, where the shell keeps the native
+ * traffic-light controls and overlays them on the app's own title-bar band.
+ *
+ * The renderer has to answer this from the platform: Electron reports
+ * `display-mode: browser`, so a `(display-mode: window-controls-overlay)` media
+ * query never matches and CSS alone cannot tell that the overlay is there.
+ */
+export function usesWindowControlsOverlayChrome(): boolean {
+    return isDesktopRuntime() && desktopPlatform() === 'darwin';
+}

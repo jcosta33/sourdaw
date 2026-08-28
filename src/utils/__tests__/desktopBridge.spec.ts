@@ -15,6 +15,7 @@ import {
     desktopInvoke,
     desktopListen,
     usesFramelessWindowChrome,
+    usesWindowControlsOverlayChrome,
     writeFileBytes,
 } from '../desktopBridge';
 
@@ -96,6 +97,7 @@ describe('desktopBridge', () => {
         it('should answer the platform probes without the bridge rather than throwing', () => {
             expect(desktopPlatform()).toBeNull();
             expect(usesFramelessWindowChrome()).toBe(false);
+            expect(usesWindowControlsOverlayChrome()).toBe(false);
         });
     });
 
@@ -114,6 +116,17 @@ describe('desktopBridge', () => {
 
             installBridge('win32');
             expect(usesFramelessWindowChrome()).toBe(false);
+        });
+
+        it('should treat only the darwin desktop build as window-controls-overlay chrome', () => {
+            installBridge('darwin');
+            expect(usesWindowControlsOverlayChrome()).toBe(true);
+
+            installBridge('linux');
+            expect(usesWindowControlsOverlayChrome()).toBe(false);
+
+            installBridge('win32');
+            expect(usesWindowControlsOverlayChrome()).toBe(false);
         });
 
         it('should hand the window-control surface through', async () => {
