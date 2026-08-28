@@ -2779,12 +2779,13 @@ describe('confirmPendingChatActions transaction admission', () => {
         configureAiWorkflowCommandPreflightFixture('project-1');
         configureCommandBatchIdempotency({ canExecute: () => true });
         const ownedStorage = createAutomergeStorage<{ bpm: number }>('owned', 'transport');
+        const executeTempo = vi.fn((action: SetTempoAction) => {
+            ownedStorage.set({ bpm: action.payload.bpm });
+        });
         registerHandlerMap({
             setTempo: {
                 canReapplyAfterDivergence: (action) => action.payload.expectedBpm !== undefined,
-                execute: (action: SetTempoAction) => {
-                    ownedStorage.set({ bpm: action.payload.bpm });
-                },
+                execute: executeTempo,
                 describe: (action) => ({
                     label: 'Set tempo',
                     inverseAction: {
@@ -2877,6 +2878,7 @@ describe('confirmPendingChatActions transaction admission', () => {
         ).resolves.toMatchObject({ status: 'failed', durableCommit: true });
 
         expect(runtimeMocks.renderOffline).toHaveBeenCalledOnce();
+        expect(executeTempo).toHaveBeenCalledOnce();
         const verifiedReceipt = await getVersionedCommandBatchIdempotentReplay({
             authority: commandBatch.authority,
             serialized: commandBatch.serialized,
@@ -2938,6 +2940,7 @@ describe('confirmPendingChatActions transaction admission', () => {
             currentStatus: 'executed',
         });
         expect(runtimeMocks.renderOffline).toHaveBeenCalledOnce();
+        expect(executeTempo).toHaveBeenCalledOnce();
         const manualContinuation = agentRunLifecycle
             .get('confirmation-warned-render')
             ?.pendingEffectContinuations.find(({ batchId }) => batchId === 'group-warned-render');
@@ -2968,7 +2971,7 @@ describe('confirmPendingChatActions transaction admission', () => {
             })
         ).resolves.toEqual({
             status: 'failed',
-            reason: 'Receipt-bound section renders can only be retried through their retained confirmation authority.',
+            reason: 'Generic pending-effect recovery cannot execute receipt-bound section renders. The original confirmation is required and may be unavailable after reload.',
         });
         expect(runtimeMocks.renderOffline).toHaveBeenCalledOnce();
         expect(

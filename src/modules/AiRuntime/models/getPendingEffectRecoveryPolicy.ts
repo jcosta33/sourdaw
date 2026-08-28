@@ -7,7 +7,7 @@ export function getPendingEffectRecoveryPolicy(effects: readonly AgentRunPending
     if (effects.some(({ operation }) => operation === 'renderProjectSections')) {
         return {
             recovery: 'manual-repair',
-            reason: 'Receipt-bound section renders can only be retried through their retained confirmation authority.',
+            reason: 'Generic pending-effect recovery cannot execute receipt-bound section renders. The original confirmation is required and may be unavailable after reload.',
         };
     }
     if (effects.some(({ remediation }) => remediation === 'manual-repair')) {

@@ -622,6 +622,12 @@ describe('agent run recovery', () => {
                 recordedAt: 120 + index,
             });
         }
+        agentRunLifecycle.requirePendingEffectManualRepair({
+            runId: 'run-persisted-runtime-effects',
+            batchId: 'batch-manual-effect',
+            reason: 'The retained render requires manual review.',
+            requiredAt: 130,
+        });
 
         const persistedBytes = window.localStorage.getItem('sourdaw-agent-runs');
         expect(persistedBytes).toContain('"pendingEffectContinuations"');
@@ -701,6 +707,7 @@ describe('agent run recovery', () => {
                     effects: [expect.objectContaining({ kind: 'external-effect', remediation: 'manual-repair' })],
                     recovery: 'manual-repair',
                     serializedBatch: '{"batch":"manual-effect"}',
+                    lastError: 'The retained render requires manual review.',
                 },
             ],
             batches: expect.arrayContaining([
@@ -751,7 +758,7 @@ describe('agent run recovery', () => {
                 steps: expect.arrayContaining([
                     expect.objectContaining({ workId: 'batch-generic-effect', state: 'external-pending' }),
                     expect.objectContaining({ workId: 'batch-mixed-effects', state: 'external-pending' }),
-                    expect.objectContaining({ workId: 'batch-manual-effect', state: 'external-pending' }),
+                    expect.objectContaining({ workId: 'batch-manual-effect', state: 'manual-repair', updatedAt: 130 }),
                 ]),
             },
         });
@@ -775,7 +782,7 @@ describe('agent run recovery', () => {
             })
         ).resolves.toEqual({
             status: 'failed',
-            reason: 'Receipt-bound section renders can only be retried through their retained confirmation authority.',
+            reason: 'Generic pending-effect recovery cannot execute receipt-bound section renders. The original confirmation is required and may be unavailable after reload.',
         });
 
         expect(commandRecoveryMocks.getVersionedCommandBatchIdempotentReplay).toHaveBeenCalledTimes(3);
@@ -796,7 +803,7 @@ describe('agent run recovery', () => {
                     batchId: 'batch-manual-effect',
                     recovery: 'manual-repair',
                     lastError:
-                        'Receipt-bound section renders can only be retried through their retained confirmation authority.',
+                        'Generic pending-effect recovery cannot execute receipt-bound section renders. The original confirmation is required and may be unavailable after reload.',
                 },
             ],
             batches: expect.arrayContaining([
@@ -916,7 +923,7 @@ describe('agent run recovery', () => {
             })
         ).resolves.toEqual({
             status: 'failed',
-            reason: 'Receipt-bound section renders can only be retried through their retained confirmation authority.',
+            reason: 'Generic pending-effect recovery cannot execute receipt-bound section renders. The original confirmation is required and may be unavailable after reload.',
         });
         expect(commandRecoveryMocks.executeVersionedCommandBatchEnvelope).not.toHaveBeenCalled();
         expect(agentRunLifecycle.get('run-mixed-manual-effects')?.pendingEffectContinuations).toEqual([

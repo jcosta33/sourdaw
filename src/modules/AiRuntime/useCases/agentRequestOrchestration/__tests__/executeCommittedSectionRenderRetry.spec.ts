@@ -317,6 +317,8 @@ describe('executeCommittedSectionRenderRetry', () => {
                 content: expect.stringContaining('Do not reconcile or replay this committed batch'),
             })
         );
+        expect(mocks.completeContinuation).not.toHaveBeenCalled();
+        expect(mocks.updateFollowUp).not.toHaveBeenCalledWith(expect.objectContaining({ status: 'complete' }));
     });
 
     it('preserves retryability when the render budget hard limit is reached', async () => {
@@ -416,6 +418,7 @@ describe('executeCommittedSectionRenderRetry', () => {
                 content: expect.stringContaining('budget reconciliation could not be persisted'),
             })
         );
+        expect(mocks.reconcileBudget).toHaveBeenCalledWith(expect.objectContaining({ consumed: 0 }));
         expect(mocks.logError).toHaveBeenCalledOnce();
     });
 

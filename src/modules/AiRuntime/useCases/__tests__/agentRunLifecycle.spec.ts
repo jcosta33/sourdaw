@@ -13,6 +13,20 @@ function createRenderReviewRun(): void {
         createdRevision: 'heads-render-review',
         createdAt: 1,
     });
+    agentRunLifecycle.recordSagaStep({
+        runId: 'run-render-review',
+        step: createAgentSagaStep({
+            stepId: 'effect:render-review',
+            order: 0,
+            owner: 'external-effect',
+            workId: 'batch-render-review',
+            receiptIdentity: '1:run-render-review:batch-render-review:partially-committed',
+            state: 'external-pending',
+            relatedArtifactIds: ['render-verse'],
+            updatedAt: 2,
+            compensationAvailable: false,
+        }),
+    });
     agentRunLifecycle.recordPendingEffectContinuation({
         runId: 'run-render-review',
         continuation: {
@@ -150,7 +164,7 @@ describe('agentRunLifecycle', () => {
             expect.objectContaining({
                 recovery: 'manual-repair',
                 lastError:
-                    'Receipt-bound section renders can only be retried through their retained confirmation authority.',
+                    'Generic pending-effect recovery cannot execute receipt-bound section renders. The original confirmation is required and may be unavailable after reload.',
             }),
         ]);
 
@@ -179,13 +193,20 @@ describe('agentRunLifecycle', () => {
                 effects: [expect.objectContaining({ remediation: 'manual-repair' })],
             }),
         ]);
+        expect(agentRunLifecycle.get('run-render-review')?.saga.steps).toContainEqual(
+            expect.objectContaining({
+                owner: 'external-effect',
+                workId: 'batch-render-review',
+                state: 'manual-repair',
+                updatedAt: 3,
+            })
+        );
         expect(selectAgentRunPendingEffectRecoveries(readAgentRunState())).toEqual([
             expect.objectContaining({
                 runId: 'run-render-review',
                 batchId: 'batch-render-review',
                 recovery: 'manual-repair',
-                lastError:
-                    'Receipt-bound section renders can only be retried through their retained confirmation authority.',
+                lastError: 'The retained render has a truncated tail.',
             }),
         ]);
     });

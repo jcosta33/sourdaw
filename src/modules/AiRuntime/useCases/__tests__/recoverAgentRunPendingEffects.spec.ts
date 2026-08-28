@@ -58,12 +58,12 @@ describe('recoverAgentRunPendingEffects', () => {
             recoverAgentRunPendingEffects({ runId: 'run-render-recovery', batchId: 'batch-render-recovery' })
         ).resolves.toEqual({
             status: 'failed',
-            reason: 'Receipt-bound section renders can only be retried through their retained confirmation authority.',
+            reason: 'Generic pending-effect recovery cannot execute receipt-bound section renders. The original confirmation is required and may be unavailable after reload.',
         });
         expect(mocks.requireManualRepair).toHaveBeenCalledWith({
             runId: 'run-render-recovery',
             batchId: 'batch-render-recovery',
-            reason: 'Receipt-bound section renders can only be retried through their retained confirmation authority.',
+            reason: 'Generic pending-effect recovery cannot execute receipt-bound section renders. The original confirmation is required and may be unavailable after reload.',
         });
         expect(mocks.getReceipt).not.toHaveBeenCalled();
         expect(mocks.executeBatch).not.toHaveBeenCalled();
@@ -79,7 +79,7 @@ describe('recoverAgentRunPendingEffects', () => {
             recoverAgentRunPendingEffects({ runId: 'run-render-recovery', batchId: 'batch-render-recovery' })
         ).resolves.toMatchObject({
             status: 'failed',
-            reason: expect.stringContaining('retained confirmation authority'),
+            reason: expect.stringContaining('original confirmation is required and may be unavailable after reload'),
         });
         expect(mocks.getReceipt).not.toHaveBeenCalled();
         expect(mocks.executeBatch).not.toHaveBeenCalled();
