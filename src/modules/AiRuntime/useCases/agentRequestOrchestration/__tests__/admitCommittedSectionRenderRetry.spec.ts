@@ -165,7 +165,7 @@ describe('admitCommittedSectionRenderRetry', () => {
         registerHandlerMap(getAudioRenderingHandlers());
     });
 
-    it('admits only the canonical warned render command with exact durable and tracked proof', () => {
+    it('arms canonical evidence without a tracked run but requires that run for retry proof', () => {
         const fixture = createFixture();
         mocks.getRun.mockReturnValue(undefined);
 
@@ -176,6 +176,7 @@ describe('admitCommittedSectionRenderRetry', () => {
                 phase: 'arming',
             })
         ).toEqual({ durableReceipt: fixture.receipt, status: 'admitted' });
+        expect(mocks.getRun).not.toHaveBeenCalled();
 
         expect(
             admitCommittedSectionRenderRetry({
@@ -185,6 +186,7 @@ describe('admitCommittedSectionRenderRetry', () => {
                 phase: 'proof',
             })
         ).toEqual({ status: 'proof-mismatch' });
+        expect(mocks.getRun).toHaveBeenCalledOnce();
 
         bindTrackedRun(fixture);
         expect(
@@ -455,7 +457,7 @@ describe('admitCommittedSectionRenderRetry', () => {
         ).toEqual({ status: 'proof-mismatch' });
     });
 
-    it('rejects a canonical batch containing two render commands', () => {
+    it('rejects ambiguous cardinality from two approved render actions and commands', () => {
         const fixture = createFixture();
         const secondAction = {
             type: 'renderProjectSections',
@@ -497,6 +499,8 @@ describe('admitCommittedSectionRenderRetry', () => {
             firstSerializedCommand,
             serializeVersionedCommandEnvelope(secondCommand),
         ];
+        fixture.confirmation.actions.push(secondAction);
+        fixture.confirmation.approvalSnapshot.actions.push(secondAction);
         fixture.confirmation.executedActions.push({
             actionType: 'renderProjectSections',
             commandId: secondCommand.commandId,
@@ -512,6 +516,17 @@ describe('admitCommittedSectionRenderRetry', () => {
                 confirmation: fixture.confirmation,
                 durableReceipt: fixture.receipt,
                 phase: 'arming',
+            })
+        ).toEqual({ status: 'proof-mismatch' });
+
+        fixture.commandBatch = commandBatch;
+        bindTrackedRun(fixture);
+        expect(
+            admitCommittedSectionRenderRetry({
+                confirmation: fixture.confirmation,
+                durableReceipt: fixture.receipt,
+                expectedCommandBatch: commandBatch,
+                phase: 'proof',
             })
         ).toEqual({ status: 'proof-mismatch' });
     });
