@@ -15,12 +15,14 @@ type PersistIdentityMigrationInput = {
     project: ProjectStoreState;
     previousProjectId: string | undefined;
     candidateProjectId: string;
+    isSuperseded: () => boolean;
 };
 
 async function persistIdentityMigration({
     project,
     previousProjectId,
     candidateProjectId,
+    isSuperseded,
 }: PersistIdentityMigrationInput): Promise<boolean> {
     projectStore.set({
         ...project,
@@ -53,8 +55,23 @@ async function persistIdentityMigration({
     const current = projectStore.value;
     if (current?.identityMigrationPending && current.projectId === candidateProjectId) {
         projectStore.set({ ...current, identityMigrationPending: false });
+        return true;
     }
-    return true;
+
+    // A successor migration owns the projection now; its own settlement
+    // publishes the identity, and this attempt is spent rather than failed.
+    if (isSuperseded()) {
+        return true;
+    }
+
+    // Nothing superseded this migration, yet the candidate is gone from the
+    // projection: the store write was discarded while persistence was in
+    // flight — an ambient action transaction aborted it, or a document-origin
+    // projection rebased over it. The project still carries its legacy
+    // identity, so reporting success here hands `saveProject` a projection
+    // `buildProjectData` refuses, and the user sees a save fail against a
+    // snapshot error that never names identity.
+    throw new Error('[migrateActiveProjectIdentity] Minted project identity did not survive persistence');
 }
 
 /**
@@ -101,7 +118,14 @@ export function migrateActiveProjectIdentity(): Promise<boolean> {
 
     void (async () => {
         try {
-            deferred.resolve(await persistIdentityMigration({ project, previousProjectId, candidateProjectId }));
+            deferred.resolve(
+                await persistIdentityMigration({
+                    project,
+                    previousProjectId,
+                    candidateProjectId,
+                    isSuperseded: () => activeIdentityMigration !== migration,
+                })
+            );
         } catch (error) {
             deferred.reject(error);
         } finally {
