@@ -1,0 +1,21 @@
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/executePromptCommandPreview.spec.ts
+  s_a40848e8f8cca9::t_85ab9a9357afc9 242-258,295-333,337
+  s_a40848e8f8cca9::t_6fb2632e7af78b 334-336
+  s_a40848e8f8cca9::t_a7d4d247e7838e 338
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "4ff3d85999cbf3e82fb1e28f38213ed755650e8d",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
