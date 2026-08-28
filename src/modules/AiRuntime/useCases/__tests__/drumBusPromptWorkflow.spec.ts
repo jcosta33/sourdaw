@@ -2501,7 +2501,11 @@ describe('drum bus prompt workflow', () => {
         if (!confirmation || !jobs) {
             throw new Error('Expected materialized EX-11 render jobs');
         }
-        await retryAgentProjectSectionRenders({ jobs, sourceRevision: confirmation.projectRevision });
+        await retryAgentProjectSectionRenders({
+            approvedJobs: jobs,
+            jobs,
+            sourceRevision: confirmation.projectRevision ?? '',
+        });
         expect(getAgentSectionRenderArtifacts()).toEqual(
             jobs.map((job) =>
                 expect.objectContaining({
@@ -2740,8 +2744,9 @@ describe('drum bus prompt workflow', () => {
         });
         runtimeMocks.renderOffline.mockResolvedValue(createTestAudioBuffer());
         await retryAgentProjectSectionRenders({
+            approvedJobs: [missingJob],
             jobs: [missingJob],
-            sourceRevision: committedConfirmation.followUpProjectRevision,
+            sourceRevision: committedConfirmation.followUpProjectRevision ?? '',
         });
         const renderCallCount = runtimeMocks.renderOffline.mock.calls.length;
 

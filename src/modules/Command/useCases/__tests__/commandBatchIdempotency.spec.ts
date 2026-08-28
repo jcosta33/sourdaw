@@ -1617,6 +1617,7 @@ describe('command batch idempotency', () => {
                             effectAttempts += 1;
                             return Promise.reject(new Error('render unavailable'));
                         },
+                        afterAmbiguousCommit: () => Promise.reject(new Error('render unavailable')),
                     };
                 },
             }),
@@ -1706,6 +1707,7 @@ describe('command batch idempotency', () => {
         const execute = vi.fn(() => ({
             status: 'written' as const,
             afterCommit: () => Promise.reject(new Error('render unavailable')),
+            afterAmbiguousCommit: () => Promise.reject(new Error('render unavailable')),
         }));
         registerHandlerMap({ setTrackGain: createHandler({ execute }) });
         const batch = compileBatch({ batchId: `batch-finalize-${failure}` });
@@ -1771,6 +1773,7 @@ describe('command batch idempotency', () => {
             const execute = vi.fn(() => ({
                 status: 'written' as const,
                 afterCommit: () => Promise.reject(new Error('render unavailable')),
+                afterAmbiguousCommit: () => Promise.reject(new Error('render unavailable')),
             }));
             registerHandlerMap({ setTrackGain: createHandler({ execute }) });
             const batch = compileBatch({ batchId: `batch-finalize-race-${interleaving}` });

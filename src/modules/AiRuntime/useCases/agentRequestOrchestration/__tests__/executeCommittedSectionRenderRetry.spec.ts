@@ -154,7 +154,6 @@ function createInput(): Parameters<typeof executeCommittedSectionRenderRetry>[0]
             resolvedAt: 2,
             kind: 'app_actions',
             projectRevision: 'revision-source',
-            commandBatch,
             actions: [action],
             approvalSnapshot: { actions: [action], actionLabels: ['Render Verse'], protectedUnchanged: [] },
             executionMode: 'atomic',
