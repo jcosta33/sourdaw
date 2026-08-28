@@ -1,0 +1,28 @@
+src/modules/AiRuntime/useCases/__tests__/sendChatMessage.spec.ts
+  s_a40848e8f8cca9::t_870f91ed1e7d38 26,1847,1870,1888-1899,1916
+  s_a40848e8f8cca9::t_5ac124aa04e269 1842-1846,1849-1853,1855,1858-1864,1867-1869,1871-1883,1885-1887,1900-1903,1908-1910,1912,1915,1917-1921
+  s_a40848e8f8cca9::t_1581910abf74e4 1848,1857,1866,1911
+  s_a40848e8f8cca9::t_0e279c72868597 1854
+  s_a40848e8f8cca9::t_a1ebdd28f88bc7 1856,1884
+  s_a40848e8f8cca9::t_835bcdaf237884 1865
+  s_a40848e8f8cca9::t_bbcb89ac0fc765 1904-1907,1913-1914
+src/modules/AiRuntime/useCases/__tests__/confirmPendingChatActions.spec.ts
+  s_a40848e8f8cca9::t_ad547a1601bb2e 298-322
+  s_a40848e8f8cca9::t_952f098fcb75e0 777-832
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "aaf7f001b386e2c451fc16ced12fbb2b89e2eb39",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
