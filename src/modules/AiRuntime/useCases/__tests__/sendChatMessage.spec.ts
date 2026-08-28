@@ -1891,9 +1891,12 @@ describe('sendChatMessage retained-provider selection', () => {
                         ([input]) => input.workId === 'batch-graph'
                     );
                     expect(commandSettlementIndex).toBeGreaterThanOrEqual(0);
-                    expect(cancelRun.mock.invocationCallOrder[0]).toBeLessThan(
-                        settleWorkLease.mock.invocationCallOrder[commandSettlementIndex]
-                    );
+                    const cancellationOrder = cancelRun.mock.invocationCallOrder[0];
+                    const commandSettlementOrder = settleWorkLease.mock.invocationCallOrder[commandSettlementIndex];
+                    if (cancellationOrder === undefined || commandSettlementOrder === undefined) {
+                        throw new Error('Expected invalidation cancellation to precede command lease settlement.');
+                    }
+                    expect(cancellationOrder).toBeLessThan(commandSettlementOrder);
                 } else {
                     expect(cancelRun).not.toHaveBeenCalled();
                 }
@@ -1902,7 +1905,7 @@ describe('sendChatMessage retained-provider selection', () => {
                     expect.objectContaining({ isStreaming: false, error: reason, content })
                 );
                 expect(run).toMatchObject({ phase, retriableWork: [] });
-                expect(run.errors).toEqual(errors.length === 0 ? [] : expect.arrayContaining(errors));
+                expect(run.errors).toEqual(errors.length === 0 ? [] : expect.arrayContaining([...errors]));
                 expect(run.workLeases).toEqual(
                     expect.arrayContaining([
                         expect.objectContaining({

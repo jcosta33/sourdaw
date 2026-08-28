@@ -307,7 +307,7 @@ function createWarningBatchResult(input: {
         status: input.status,
         actions: [],
         warning: 'The command completed with a follow-up warning.',
-    } as const;
+    };
     return {
         ...result,
         receipt: createVerifiedBatchReceipt({
