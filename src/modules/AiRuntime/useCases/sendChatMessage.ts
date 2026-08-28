@@ -423,14 +423,10 @@ export async function sendChatMessage(
                     );
                 },
             });
-            agentRunWorkLease.settle({
-                runId,
-                workId: providerWorkId,
-                leaseId: providerLease.leaseId,
-                cancellationGeneration: providerLease.cancellationGeneration,
-                idempotencyKey: providerLease.idempotencyKey,
-                receiptIdentity: providerLease.receiptIdentity,
+            settleAgentRunWorkLeaseSafely({
+                lease: providerLease,
                 terminalState: 'completed',
+                settle: agentRunWorkLease.settle,
             });
 
             if (options?.resume && result.actions.length === 0) {
@@ -1700,8 +1696,12 @@ export async function sendChatMessage(
             );
         }
         if (providerResult && !providerUsageRecorded) {
-            recordAgentProviderUsage(runId, providerResult, providerReceiptIdentity, { terminal: true });
-            providerUsageRecorded = true;
+            try {
+                recordAgentProviderUsage(runId, providerResult, providerReceiptIdentity, { terminal: true });
+                providerUsageRecorded = true;
+            } catch (usageError) {
+                logger.error(new Error('Provider failure usage accounting failed', { cause: usageError }));
+            }
         }
         if (configurationChanged) {
             await agentRunCancellation.cancel({ runId, reason: errorMessage });

@@ -460,6 +460,15 @@ describe('confirmPendingChatActions transaction admission', () => {
                     message: 'Agent run work lease settlement failed',
                 })
             );
+            expect(settle).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    runId: 'confirmation-batch',
+                    workId: 'group-batch',
+                    leaseId: expect.any(String),
+                    receiptIdentity: 'command:confirmation-batch:group-batch',
+                    terminalState: 'completed',
+                })
+            );
             expect(chatStore.value?.messages[0]).toMatchObject({
                 error: 'Agent run recovery state could not be persisted after execution. The verified command receipt remains authoritative; do not retry automatically.',
                 pendingActionConfirmationStatus: 'executed',
@@ -578,6 +587,15 @@ describe('confirmPendingChatActions transaction admission', () => {
                 expect.objectContaining({
                     cause: leaseSettlementError,
                     message: 'Agent run work lease settlement failed',
+                })
+            );
+            expect(settle).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    runId: 'confirmation-error-path',
+                    workId: 'group-error-path',
+                    leaseId: expect.any(String),
+                    receiptIdentity: 'command:confirmation-error-path:group-error-path',
+                    terminalState: 'failed',
                 })
             );
             expect(chatStore.value?.messages[0]).toMatchObject({
@@ -1144,6 +1162,11 @@ describe('confirmPendingChatActions transaction admission', () => {
             status: 'executed',
         });
         expect(agentRunLifecycle.get('confirmation-reapproval')?.revisions.approved).toBe(currentRevision);
+        expect(agentRunLifecycle.get('confirmation-reapproval')?.workLeases).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({ workId: 'group-reapproval', terminalState: 'completed' }),
+            ])
+        );
         expect(execute).toHaveBeenCalledOnce();
         expect(getCrdtDoc<Record<string, unknown>>('owned')).toMatchObject({ transport: { bpm: 132 } });
     });

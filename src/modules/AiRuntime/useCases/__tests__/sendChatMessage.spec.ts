@@ -498,6 +498,24 @@ function createSuccessfulWebLlmEngine(content: string) {
     };
 }
 
+function createFailingWebLlmEngine(content: string, error: Error) {
+    async function* streamCompletion() {
+        yield {
+            choices: [{ delta: { content } }],
+        };
+        throw error;
+    }
+
+    return {
+        interruptGenerate: vi.fn(),
+        chat: {
+            completions: {
+                create: vi.fn(async () => streamCompletion()),
+            },
+        },
+    };
+}
+
 describe('sendChatMessage retained-provider selection', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -597,12 +615,97 @@ describe('sendChatMessage retained-provider selection', () => {
                 expect.objectContaining({ isStreaming: false, content, error: undefined })
             );
             expect(run?.errors).toEqual([]);
+            expect(run?.phase).toBe('completed');
+            expect(JSON.parse(localStorage.getItem('sourdaw-agent-runs') ?? '')).toMatchObject({
+                json: {
+                    runs: [expect.objectContaining({ runId: run?.runId, phase: 'completed' })],
+                },
+            });
             expect(run?.workLeases).toEqual(
                 expect.arrayContaining([
                     expect.objectContaining({ workId: 'provider-response', terminalState: 'completed' }),
                 ])
             );
             expect(llmStatusStore.value).toEqual({ state: 'ready', backend: 'webllm', modelId: 'fixture-model' });
+            expect(mocks.setActiveAborter).toHaveBeenLastCalledWith(null);
+            expect(mocks.setChatGenerating).toHaveBeenLastCalledWith(false);
+            expect(loggerError).toHaveBeenCalledOnce();
+        } finally {
+            recordProviderUsage.mockRestore();
+            loggerError.mockRestore();
+        }
+    });
+
+    it('preserves a planning rejection when provider work settlement persistence fails', async () => {
+        const rejectionReason = 'The requested command cannot be resolved.';
+        const storageFailure = new DOMException('The quota has been exceeded.', 'QuotaExceededError');
+        const loggerError = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+        const settleWorkLease = vi.spyOn(agentRunWorkLease, 'settle').mockImplementationOnce(() => {
+            throw storageFailure;
+        });
+        mocks.planPromptActions.mockResolvedValue({
+            context: {},
+            result: {
+                actions: [],
+                rawText: 'fixture rejection',
+                requiresConfirmation: false,
+                rejectionReason,
+            },
+            projectRevision: 'revision-fixture',
+        });
+
+        try {
+            await expect(sendChatMessage('resolve this command', { mode: 'apply' })).resolves.toBeUndefined();
+
+            expect(mocks.appendChatMessage).toHaveBeenLastCalledWith(
+                expect.objectContaining({
+                    role: 'assistant',
+                    content: `Command not executed: ${rejectionReason}`,
+                    error: rejectionReason,
+                })
+            );
+            expect(settleWorkLease).toHaveBeenCalledWith(
+                expect.objectContaining({ workId: 'provider-planning', terminalState: 'completed' })
+            );
+            expect(mocks.setActiveAborter).toHaveBeenLastCalledWith(null);
+            expect(mocks.setChatGenerating).toHaveBeenLastCalledWith(false);
+        } finally {
+            settleWorkLease.mockRestore();
+            loggerError.mockRestore();
+        }
+    });
+
+    it('keeps a streamed provider failure terminal when usage persistence fails', async () => {
+        const providerError = new Error('WebLLM provider failed during streaming');
+        const partialContent = 'The bridge starts with a muted guitar.';
+        const storageFailure = new DOMException('The quota has been exceeded.', 'QuotaExceededError');
+        const loggerError = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+        const recordProviderUsage = vi.spyOn(agentRunLifecycle, 'recordProviderUsage').mockImplementation(() => {
+            throw storageFailure;
+        });
+        mocks.getLlmEngine.mockReturnValue(createFailingWebLlmEngine(partialContent, providerError));
+
+        try {
+            await expect(sendChatMessage('Summarize the arrangement.', { mode: 'explain' })).resolves.toBeUndefined();
+
+            const run = agentRunLifecycle.get(getMostRecentlyAdmittedRunId());
+            expect(mocks.updateChatMessage).toHaveBeenCalledWith(
+                expect.any(String),
+                expect.objectContaining({
+                    isStreaming: false,
+                    error: providerError.message,
+                    content: `${partialContent}\n\n_Response incomplete because the provider stream failed._`,
+                })
+            );
+            expect(run).toEqual(
+                expect.objectContaining({
+                    phase: 'failed',
+                    workLeases: expect.arrayContaining([
+                        expect.objectContaining({ workId: 'provider-response', terminalState: 'failed' }),
+                    ]),
+                })
+            );
+            expect(llmStatusStore.value).toEqual({ state: 'error', message: providerError.message });
             expect(mocks.setActiveAborter).toHaveBeenLastCalledWith(null);
             expect(mocks.setChatGenerating).toHaveBeenLastCalledWith(false);
             expect(loggerError).toHaveBeenCalledOnce();
