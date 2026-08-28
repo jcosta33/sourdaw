@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 
+import { probeBrowserWebGpuHardware } from './browserAiHardware';
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 async function openChatPanel(page: Page): Promise<void> {
@@ -18,11 +19,34 @@ test.describe('Chat composer', () => {
         await openChatPanel(page);
     });
 
-    test('opens disabled while local AI is unavailable and closes on toggle', async ({ page }) => {
+    // The composer is enabled by an admitted backend, and browser-local
+    // admission requires a WebGPU device. The expectation is read from
+    // Chromium's own adapter rather than assumed of the runner, so the
+    // enabled and disabled contracts are both real assertions. The general
+    // matrix has no adapter and therefore proves only the disabled branch; the
+    // enabled branch is proven by browserAiAdmittedPresentation.spec.ts on the
+    // hardware leg, and runs here as well on a developer machine with a GPU.
+    test('follows local AI admission and closes on toggle', async ({ page }, testInfo) => {
         const input = page.getByRole('textbox', { name: 'Chat message input', exact: true });
         await expect(input).toBeVisible();
-        await expect(input).toBeDisabled();
-        await expect(page.getByText('Local AI Not Available', { exact: true })).toBeVisible();
+
+        const hardware = await probeBrowserWebGpuHardware(page);
+        await testInfo.attach('webgpu-hardware-probe', {
+            body: JSON.stringify(hardware),
+            contentType: 'application/json',
+        });
+
+        if (hardware.status === 'unavailable') {
+            // Asserted before the disabled state: the composer is also disabled
+            // while detection is still running, so the settled label is what
+            // distinguishes a refused backend from an unfinished probe.
+            await expect(page.getByText('AI Not Available', { exact: true })).toBeVisible();
+            await expect(input).toBeDisabled();
+        } else {
+            await expect(input).toBeEnabled();
+            await expect(page.getByText('AI Not Available', { exact: true })).toHaveCount(0);
+            await expect(page.getByText('Checking AI availability', { exact: true })).toHaveCount(0);
+        }
 
         const toggle = page.getByRole('button', { name: 'Toggle AI chat panel', exact: true });
         await toggle.click();
