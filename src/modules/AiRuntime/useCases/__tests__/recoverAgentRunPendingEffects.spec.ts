@@ -141,11 +141,9 @@ describe('recoverAgentRunPendingEffects', () => {
     });
 
     it.each([
-        ['pending receipt', 'serialized batch', { ...renderRecovery(), serializedBatch: '{not-json' }],
-        ['pending receipt', 'authority', { ...renderRecovery(), authority: { projectId: 'tampered-project' } }],
-        ['finalized receipt', 'serialized batch', { ...renderRecovery(), serializedBatch: '{not-json' }],
-        ['finalized receipt', 'authority', { ...renderRecovery(), authority: { projectId: 'tampered-project' } }],
-    ])('fails closed when the retained %s %s is tampered', async (_receiptState, _label, continuation) => {
+        ['serialized batch', { ...renderRecovery(), serializedBatch: '{not-json' }],
+        ['authority', { ...renderRecovery(), authority: { projectId: 'tampered-project' } }],
+    ])('fails closed when the retained %s cannot load a verified receipt', async (_label, continuation) => {
         mocks.getRecovery.mockReturnValue(continuation);
         mocks.getReceipt.mockRejectedValue(new Error('receipt verification rejected the retained proof'));
 
@@ -154,6 +152,48 @@ describe('recoverAgentRunPendingEffects', () => {
         ).resolves.toEqual({
             status: 'failed',
             reason: 'The durable commit evidence for this pending-effect continuation could not be read: receipt verification rejected the retained proof',
+        });
+        expect(mocks.completeRecovery).not.toHaveBeenCalled();
+        expect(mocks.executeBatch).not.toHaveBeenCalled();
+    });
+
+    it.each([
+        [
+            'pending verified receipt',
+            { ...renderRecovery(), receiptIdentity: '2:run-render-recovery:batch-render-recovery:committed' },
+            {
+                schemaVersion: 2,
+                runId: 'run-render-recovery',
+                batchId: 'batch-render-recovery',
+                outcome: 'partially-committed',
+                pendingEffects: [renderRecovery().effects[0]],
+            },
+        ],
+        [
+            'already-finalized verified receipt',
+            { ...renderRecovery(), receiptIdentity: '2:run-render-recovery:batch-render-recovery:committed' },
+            {
+                schemaVersion: 2,
+                runId: 'run-render-recovery',
+                batchId: 'batch-render-recovery',
+                outcome: 'committed',
+                pendingEffects: [],
+            },
+        ],
+    ])('rejects a tampered receipt identity against an %s', async (_label, continuation, receipt) => {
+        mocks.getRecovery.mockReturnValue(continuation);
+        mocks.getReceipt.mockResolvedValue(receipt);
+
+        await expect(
+            recoverAgentRunPendingEffects({ runId: 'run-render-recovery', batchId: 'batch-render-recovery' })
+        ).resolves.toEqual({
+            status: 'failed',
+            reason: 'The durable project checkpoint does not match the retained pending-effect proof.',
+        });
+        expect(mocks.failRecovery).toHaveBeenCalledWith({
+            runId: 'run-render-recovery',
+            batchId: 'batch-render-recovery',
+            reason: 'The durable project checkpoint does not match the retained pending-effect proof.',
         });
         expect(mocks.completeRecovery).not.toHaveBeenCalled();
         expect(mocks.executeBatch).not.toHaveBeenCalled();
