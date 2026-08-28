@@ -81,6 +81,11 @@ type AddDeviceAction = Extract<AppAction, { type: 'addDevice' }>;
 type RenderSectionsAction = Extract<AppAction, { type: 'renderProjectSections' }>;
 type ConfirmedActionBatchResult = Awaited<ReturnType<typeof executeVersionedCommandBatchEnvelope>>;
 
+const FAILURE_PERSISTENCE_WARNING =
+    'Agent run failure recovery state could not be persisted. The work failed, and no successful artifact is claimed. Review the durable run state before retrying.';
+const STALE_FAILURE_WARNING =
+    'Agent work failed after its run lease was cancelled or replaced. No successful artifact is claimed, and the terminal run was not reopened.';
+
 const runtimeMocks = vi.hoisted(() => ({
     applyRuntimeGraphDelta: vi.fn(),
     getRuntimeGraphRevision: vi.fn(() => 4),
@@ -996,9 +1001,10 @@ describe('confirmPendingChatActions transaction admission', () => {
             });
             expect(chatStore.value?.messages[0]).toMatchObject({
                 pendingActionConfirmationStatus: 'failed',
-                error: reason,
+                error: `${reason} ${STALE_FAILURE_WARNING}`,
                 content: expect.stringContaining(content),
             });
+            expect(chatStore.value?.messages[0]?.content).toContain(STALE_FAILURE_WARNING);
         }
     );
 
@@ -1418,10 +1424,15 @@ describe('confirmPendingChatActions transaction admission', () => {
                 })
             );
             expect(chatStore.value?.messages[0]).toMatchObject({
-                error: 'Tempo engine unavailable',
+                error: `Tempo engine unavailable ${FAILURE_PERSISTENCE_WARNING}`,
                 pendingActionConfirmationStatus: 'failed',
             });
             expect(chatStore.value?.messages[0]?.content).toContain('Tempo engine unavailable');
+            expect(chatStore.value?.messages[0]?.content).toContain(FAILURE_PERSISTENCE_WARNING);
+            expect(agentRunLifecycle.get('confirmation-error-path')).toMatchObject({
+                phase: 'failed',
+                workLeases: [expect.objectContaining({ workId: 'group-error-path', terminalState: null })],
+            });
         } finally {
             settle.mockRestore();
             loggerError.mockRestore();

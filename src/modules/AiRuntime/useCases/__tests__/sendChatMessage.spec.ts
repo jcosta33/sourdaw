@@ -16,10 +16,7 @@ import { agentRunStore } from '../../stores/agentRunStore';
 import { llmStatusStore } from '../../stores/llmStatusStore';
 import { bridgeGroundedLlmToolCalls } from '../agentReference/bridgeGroundedLlmToolCalls';
 import { materializeBatchLocalActionIdentities } from '../agentReference/materializeBatchLocalActionIdentities';
-import {
-    AGENT_RUN_PROVIDER_PERSISTENCE_WARNING,
-    AGENT_RUN_STALE_COMPLETION_WARNING,
-} from '../agentRequestOrchestration/settleAgentRunWorkLeaseSafely';
+import { AGENT_RUN_PROVIDER_PERSISTENCE_WARNING } from '../agentRequestOrchestration/settleAgentRunWorkLeaseSafely';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { recoverInterruptedAgentRuns } from '../agentRunRecovery';
 import { agentRunWorkLease } from '../agentRunWorkLease';
@@ -35,6 +32,20 @@ type CloudStreamOptions = Parameters<typeof streamCloudChatCompletion>[2];
 
 const PROVIDER_PERSISTENCE_WARNING =
     'Agent run provider response recovery state could not be persisted after execution. The retained response remains visible, but its lifecycle is not durably settled. Review it before retrying.';
+const FAILURE_PERSISTENCE_WARNING =
+    'Agent run failure recovery state could not be persisted. The work failed, and no successful artifact is claimed. Review the durable run state before retrying.';
+const COMPLETION_PERSISTENCE_WARNING =
+    'Agent run completion recovery state could not be persisted. No completed artifact is claimed. Review the durable run state before retrying.';
+const PROVIDER_FAILURE_PERSISTENCE_WARNING =
+    'Agent run provider failure recovery state could not be persisted. The visible partial response remains available, but it is not a completed response. Review the durable run state before retrying.';
+const STALE_FAILURE_WARNING =
+    'Agent work failed after its run lease was cancelled or replaced. No successful artifact is claimed, and the terminal run was not reopened.';
+const STALE_PROVIDER_FAILURE_WARNING =
+    'Agent provider work failed after its run lease was cancelled or replaced. The visible partial response was retained without reopening the terminal run.';
+const STALE_PROVIDER_COMPLETION_WARNING =
+    'Agent provider work completed after its run lease was cancelled or replaced. The visible provider output was retained without reopening the terminal run.';
+const STALE_CANCELLATION_WARNING =
+    'Agent work was cancelled after its run lease was cancelled or replaced. No successful artifact is claimed, and the terminal run was not reopened.';
 
 let plannedRunId: string | null = null;
 
@@ -860,8 +871,8 @@ describe('sendChatMessage retained-provider selection', () => {
                 expect.any(String),
                 expect.objectContaining({
                     isStreaming: false,
-                    content: `${content}\n\n_${AGENT_RUN_STALE_COMPLETION_WARNING}_`,
-                    error: AGENT_RUN_STALE_COMPLETION_WARNING,
+                    content: `${content}\n\n_${STALE_PROVIDER_COMPLETION_WARNING}_`,
+                    error: STALE_PROVIDER_COMPLETION_WARNING,
                 })
             );
             expect(llmStatusStore.value).toEqual({ state: 'ready', backend: 'webllm', modelId: 'fixture-model' });
@@ -950,8 +961,8 @@ describe('sendChatMessage retained-provider selection', () => {
                 expect.any(String),
                 expect.objectContaining({
                     isStreaming: false,
-                    error: providerError.message,
-                    content: `${partialContent}\n\n_Response incomplete because the provider stream failed._`,
+                    error: `${providerError.message}\n\n${STALE_PROVIDER_FAILURE_WARNING}`,
+                    content: `${partialContent}\n\n_Response incomplete because the provider stream failed._\n\n_${STALE_PROVIDER_FAILURE_WARNING}_`,
                 })
             );
             expect(llmStatusStore.value).toEqual({ state: 'error', message: providerError.message });
@@ -985,8 +996,8 @@ describe('sendChatMessage retained-provider selection', () => {
                 expect.any(String),
                 expect.objectContaining({
                     isStreaming: false,
-                    error: `${providerError.message}\n\n${PROVIDER_PERSISTENCE_WARNING}`,
-                    content: `${partialContent}\n\n_Response incomplete because the provider stream failed._\n\n_${PROVIDER_PERSISTENCE_WARNING}_`,
+                    error: `${providerError.message}\n\n${PROVIDER_FAILURE_PERSISTENCE_WARNING}`,
+                    content: `${partialContent}\n\n_Response incomplete because the provider stream failed._\n\n_${PROVIDER_FAILURE_PERSISTENCE_WARNING}_`,
                 })
             );
             expect(llmStatusStore.value).toEqual({ state: 'error', message: providerError.message });
@@ -1130,8 +1141,8 @@ describe('sendChatMessage retained-provider selection', () => {
             expect(mocks.appendChatMessage).toHaveBeenLastCalledWith(
                 expect.objectContaining({
                     role: 'assistant',
-                    content: `Command plan was not retained. ${PROVIDER_PERSISTENCE_WARNING}`,
-                    error: PROVIDER_PERSISTENCE_WARNING,
+                    content: `Command plan was not retained. ${COMPLETION_PERSISTENCE_WARNING}`,
+                    error: COMPLETION_PERSISTENCE_WARNING,
                 })
             );
             expect(settleWorkLease).toHaveBeenCalledWith(
@@ -1164,8 +1175,8 @@ describe('sendChatMessage retained-provider selection', () => {
             expect(mocks.appendChatMessage).toHaveBeenLastCalledWith(
                 expect.objectContaining({
                     role: 'assistant',
-                    content: expect.stringContaining(PROVIDER_PERSISTENCE_WARNING),
-                    error: PROVIDER_PERSISTENCE_WARNING,
+                    content: expect.stringContaining(COMPLETION_PERSISTENCE_WARNING),
+                    error: COMPLETION_PERSISTENCE_WARNING,
                 })
             );
             expect(run).toMatchObject({
@@ -1266,8 +1277,8 @@ describe('sendChatMessage retained-provider selection', () => {
                 expect.any(String),
                 expect.objectContaining({
                     isStreaming: false,
-                    error: `WebLLM provider failed\n\n${PROVIDER_PERSISTENCE_WARNING}`,
-                    content: `Sorry, I encountered an error while thinking about that.\n\n_${PROVIDER_PERSISTENCE_WARNING}_`,
+                    error: `WebLLM provider failed\n\n${FAILURE_PERSISTENCE_WARNING}`,
+                    content: `Sorry, I encountered an error while thinking about that.\n\n_${FAILURE_PERSISTENCE_WARNING}_`,
                 })
             );
             expect(armedSetItemCount).not.toBeNull();
@@ -1319,8 +1330,8 @@ describe('sendChatMessage retained-provider selection', () => {
             expect(mocks.appendChatMessage).toHaveBeenLastCalledWith(
                 expect.objectContaining({
                     role: 'assistant',
-                    content: `Failed to process prompt command.\n\n_${PROVIDER_PERSISTENCE_WARNING}_`,
-                    error: `Planning provider failed\n\n${PROVIDER_PERSISTENCE_WARNING}`,
+                    content: `Failed to process prompt command.\n\n_${FAILURE_PERSISTENCE_WARNING}_`,
+                    error: `Planning provider failed\n\n${FAILURE_PERSISTENCE_WARNING}`,
                 })
             );
             expect(armedSetItemCount).not.toBeNull();
@@ -1367,8 +1378,8 @@ describe('sendChatMessage retained-provider selection', () => {
             expect(mocks.appendChatMessage).toHaveBeenLastCalledWith(
                 expect.objectContaining({
                     role: 'assistant',
-                    content: `Failed to process prompt command.\n\n_${AGENT_RUN_STALE_COMPLETION_WARNING}_`,
-                    error: `Planning provider failed\n\n${AGENT_RUN_STALE_COMPLETION_WARNING}`,
+                    content: `Failed to process prompt command.\n\n_${STALE_FAILURE_WARNING}_`,
+                    error: `Planning provider failed\n\n${STALE_FAILURE_WARNING}`,
                 })
             );
             expect(agentRunLifecycle.get(admittedRunId ?? '')).toMatchObject({
@@ -1870,6 +1881,7 @@ describe('sendChatMessage retained-provider selection', () => {
             persistedTerminalState: 'cancelled' as const,
             errors: [],
             content: 'The project changed before this command could commit. Review it and submit the command again.',
+            settlementWarning: STALE_FAILURE_WARNING,
         },
         {
             status: 'ambiguous' as const,
@@ -1880,12 +1892,22 @@ describe('sendChatMessage retained-provider selection', () => {
             errors: [expect.objectContaining({ category: 'conflict', retriable: false })],
             content:
                 'The command stopped after an uncertain partial commit: The command may have partially committed before interruption. Do not retry it; inspect the project first.',
+            settlementWarning: null,
         },
     ] as const;
 
     it.each(immediateFailureResults)(
         'keeps an immediate $status command terminal with its exact terminal command lease',
-        async ({ status, reason, phase, terminalState, persistedTerminalState, errors, content }) => {
+        async ({
+            status,
+            reason,
+            phase,
+            terminalState,
+            persistedTerminalState,
+            errors,
+            content,
+            settlementWarning,
+        }) => {
             configureCommandGraphForwarding('immediate');
             mocks.executePlannedActions.mockResolvedValue({ status, reason, actions: [] });
             const settleWorkLease = vi.spyOn(agentRunWorkLease, 'settle');
@@ -1924,7 +1946,11 @@ describe('sendChatMessage retained-provider selection', () => {
                 }
                 expect(mocks.updateChatMessage).toHaveBeenLastCalledWith(
                     expect.any(String),
-                    expect.objectContaining({ isStreaming: false, error: reason, content })
+                    expect.objectContaining({
+                        isStreaming: false,
+                        error: settlementWarning ? `${reason}\n\n${settlementWarning}` : reason,
+                        content: settlementWarning ? `${content}\n\n_${settlementWarning}_` : content,
+                    })
                 );
                 expect(run).toMatchObject({ phase, retriableWork: [] });
                 expect(run.errors).toEqual(errors.length === 0 ? [] : expect.arrayContaining([...errors]));
@@ -1967,8 +1993,8 @@ describe('sendChatMessage retained-provider selection', () => {
                 expect.any(String),
                 expect.objectContaining({
                     isStreaming: false,
-                    error: commandFailure,
-                    content: `Failed to execute prompt command atomically: ${commandFailure}`,
+                    error: `${commandFailure}\n\n${FAILURE_PERSISTENCE_WARNING}`,
+                    content: `Failed to execute prompt command atomically: ${commandFailure}\n\n_${FAILURE_PERSISTENCE_WARNING}_`,
                 })
             );
             expect(armedSetItemCount).not.toBeNull();
@@ -1985,6 +2011,19 @@ describe('sendChatMessage retained-provider selection', () => {
                     ]),
                 })
             );
+            expect(JSON.parse(localStorage.getItem('sourdaw-agent-runs') ?? '')).toMatchObject({
+                json: {
+                    runs: [
+                        expect.objectContaining({
+                            runId: admittedRunId,
+                            phase: 'executing',
+                            workLeases: expect.arrayContaining([
+                                expect.objectContaining({ workId: 'batch-graph', terminalState: null }),
+                            ]),
+                        }),
+                    ],
+                },
+            });
             expect(loggerError).not.toHaveBeenCalled();
             expect(mocks.setActiveAborter).toHaveBeenLastCalledWith(null);
             expect(mocks.setChatGenerating).toHaveBeenLastCalledWith(false);
@@ -2030,18 +2069,20 @@ describe('sendChatMessage retained-provider selection', () => {
             terminalState: 'completed',
             phase: 'completed',
             content: 'No project changes were needed.',
+            settlementWarning: null,
         },
         {
             status: 'cancelled',
             terminalState: 'cancelled',
             phase: 'cancelled',
             content: 'Command cancelled before it committed. No project changes were applied.',
+            settlementWarning: STALE_CANCELLATION_WARNING,
         },
     ] as const;
 
     it.each(directTerminalCommandResults)(
         'settles a direct $status command with its exact $terminalState lease',
-        async ({ status, terminalState, phase, content }) => {
+        async ({ status, terminalState, phase, content, settlementWarning }) => {
             configureCommandGraphForwarding('immediate');
             const settleWorkLease = vi.spyOn(agentRunWorkLease, 'settle');
             if (status === 'cancelled') {
@@ -2084,7 +2125,11 @@ describe('sendChatMessage retained-provider selection', () => {
                 });
                 expect(mocks.updateChatMessage).toHaveBeenLastCalledWith(
                     expect.any(String),
-                    expect.objectContaining({ isStreaming: false, content })
+                    expect.objectContaining({
+                        isStreaming: false,
+                        error: settlementWarning ?? undefined,
+                        content: settlementWarning ? `${content}\n\n_${settlementWarning}_` : content,
+                    })
                 );
             } finally {
                 settleWorkLease.mockRestore();

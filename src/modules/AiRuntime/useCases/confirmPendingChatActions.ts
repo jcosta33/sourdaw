@@ -1316,17 +1316,21 @@ export async function confirmPendingChatActions(
             await retainCommittedPendingActionResources(confirmation.id);
             return createCommittedEffectFailureResult(priorVerifiedBatchReceipt, reason);
         }
-        let canUpdateTrackedRun = true;
+        let trackedLeaseSettlement: ReturnType<typeof settleAgentRunWorkLeaseSafely> = {
+            accepted: true,
+            warning: null,
+        };
         if (trackedWorkLease) {
-            canUpdateTrackedRun = settleAgentRunWorkLeaseSafely({
+            trackedLeaseSettlement = settleAgentRunWorkLeaseSafely({
                 lease: trackedWorkLease,
                 terminalState: 'failed',
+                evidence: 'none',
                 settle: agentRunWorkLease.settle,
                 reportFailure: (error) =>
                     logger.error(new Error('Agent run work lease settlement failed', { cause: error })),
-            }).accepted;
+            });
         }
-        if (canUpdateTrackedRun) {
+        if (trackedLeaseSettlement.accepted) {
             recordTrackedAgentRunFailure(confirmation, {
                 category: error instanceof AiProposalInvalidatedError ? 'conflict' : 'internal',
                 retriable: false,
@@ -1334,15 +1338,16 @@ export async function confirmPendingChatActions(
                 knownDomain: error instanceof AiProposalInvalidatedError,
             });
         }
+        const userVisibleReason = [reason, trackedLeaseSettlement.warning].filter(Boolean).join(' ');
         updatePendingActionConfirmationStatus({
             confirmationId: confirmation.id,
             status: 'failed',
-            error: reason,
+            error: userVisibleReason,
         });
         updateChatMessage(confirmation.assistantMessageId, {
             pendingActionConfirmationStatus: 'failed',
-            error: reason,
-            content: `Failed to execute confirmed actions atomically:\n\n${reason}`,
+            error: userVisibleReason,
+            content: `Failed to execute confirmed actions atomically:\n\n${userVisibleReason}`,
         });
         await settlePendingActionResourcesBestEffort({ confirmationId: confirmation.id, disposition: 'discard' });
         return { status: 'failed', reason };
@@ -1407,6 +1412,14 @@ export async function confirmPendingChatActions(
         trackedLeaseSettlement = settleAgentRunWorkLeaseSafely({
             lease: trackedWorkLease,
             terminalState,
+            evidence:
+                batchResult.status === 'committed' ||
+                batchResult.status === 'committed-with-warning' ||
+                batchResult.status === 'executed' ||
+                batchResult.status === 'executed-with-warning' ||
+                batchResult.status === 'idempotent-replay'
+                    ? 'verified-command-receipt'
+                    : 'none',
             settle: agentRunWorkLease.settle,
             reportFailure: (error) =>
                 logger.error(new Error('Agent run work lease settlement failed', { cause: error })),
@@ -1640,17 +1653,18 @@ export async function confirmPendingChatActions(
     }
 
     if (batchResult.status === 'ambiguous') {
+        const userVisibleReason = [batchResult.reason, trackedLeaseSettlement.warning].filter(Boolean).join(' ');
         if (recoveringPendingEffects && priorVerifiedBatchReceipt) {
             await retainCommittedPendingActionResources(confirmation.id);
             updatePendingActionConfirmationStatus({
                 confirmationId: confirmation.id,
                 status: 'failed',
-                error: batchResult.reason,
+                error: userVisibleReason,
             });
             updateChatMessage(confirmation.assistantMessageId, {
                 pendingActionConfirmationStatus: 'failed',
-                error: batchResult.reason,
-                content: `The project change remains durably committed, but pending-effect reconciliation is still incomplete: ${batchResult.reason}`,
+                error: userVisibleReason,
+                content: `The project change remains durably committed, but pending-effect reconciliation is still incomplete: ${userVisibleReason}`,
             });
             return createCommittedEffectFailureResult(priorVerifiedBatchReceipt, batchResult.reason);
         }
@@ -1667,12 +1681,12 @@ export async function confirmPendingChatActions(
         updatePendingActionConfirmationStatus({
             confirmationId: confirmation.id,
             status: 'failed',
-            error: batchResult.reason,
+            error: userVisibleReason,
         });
         updateChatMessage(confirmation.assistantMessageId, {
             pendingActionConfirmationStatus: 'failed',
-            error: batchResult.reason,
-            content: `The confirmed command stopped after an uncertain partial commit: ${batchResult.reason}. Do not retry it; inspect the project first.`,
+            error: userVisibleReason,
+            content: `The confirmed command stopped after an uncertain partial commit: ${batchResult.reason}. Do not retry it; inspect the project first.${trackedLeaseSettlement.warning ? ` ${trackedLeaseSettlement.warning}` : ''}`,
         });
         return { status: 'failed', reason: batchResult.reason };
     }
@@ -1692,10 +1706,11 @@ export async function confirmPendingChatActions(
         return createCommittedEffectFailureResult(priorVerifiedBatchReceipt, batchResult.reason);
     }
 
+    const userVisibleFailure = [batchResult.reason, trackedLeaseSettlement.warning].filter(Boolean).join(' ');
     updatePendingActionConfirmationStatus({
         confirmationId: confirmation.id,
         status: 'failed',
-        error: batchResult.reason,
+        error: userVisibleFailure,
     });
     let failureCategory: AgentRunErrorCategory = 'project';
     if (batchResult.status === 'conflicted') {
@@ -1712,8 +1727,8 @@ export async function confirmPendingChatActions(
     }
     updateChatMessage(confirmation.assistantMessageId, {
         pendingActionConfirmationStatus: 'failed',
-        error: batchResult.reason,
-        content: `Failed to execute confirmed actions atomically:\n\n${batchResult.reason}`,
+        error: userVisibleFailure,
+        content: `Failed to execute confirmed actions atomically:\n\n${userVisibleFailure}`,
     });
     await settlePendingActionResourcesBestEffort({ confirmationId: confirmation.id, disposition: 'discard' });
     return { status: 'failed', reason: batchResult.reason };

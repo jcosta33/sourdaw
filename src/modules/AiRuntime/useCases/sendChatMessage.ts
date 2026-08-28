@@ -53,7 +53,6 @@ import { normalizeAgentFailure } from './agentErrorAndSaga';
 import { createStemImportConfirmationResourceLease } from './agentReference/createStemImportConfirmationResourceLease';
 import {
     AGENT_RUN_PERSISTENCE_WARNING,
-    AGENT_RUN_PROVIDER_PERSISTENCE_WARNING,
     AGENT_RUN_STALE_COMPLETION_WARNING,
     settleAgentRunWorkLeaseSafely,
 } from './agentRequestOrchestration/settleAgentRunWorkLeaseSafely';
@@ -163,6 +162,14 @@ function tryRecordTerminalFailure(input: Parameters<typeof agentRunLifecycle.rec
     }
 }
 
+function appendSettlementWarning(content: string, warning: string | null): string {
+    return warning ? `${content}\n\n_${warning}_` : content;
+}
+
+function appendSettlementWarningToError(reason: string, warning: string | null): string {
+    return warning ? `${reason}\n\n${warning}` : reason;
+}
+
 function completeProviderResponseBestEffort(input: {
     lease: Parameters<typeof settleAgentRunWorkLeaseSafely>[0]['lease'];
     result: ModelProviderResult;
@@ -171,6 +178,7 @@ function completeProviderResponseBestEffort(input: {
     const settlement = settleAgentRunWorkLeaseSafely({
         lease: input.lease,
         terminalState: 'completed',
+        evidence: 'visible-provider-output',
         settle: agentRunWorkLease.settle,
         reportFailure: (error) =>
             logger.error(new Error('Completed provider work lease settlement failed', { cause: error })),
@@ -358,6 +366,7 @@ export async function sendChatMessage(
         settleAgentRunWorkLeaseSafely({
             lease: providerLease,
             terminalState: 'failed',
+            evidence: 'none',
             settle: agentRunWorkLease.settle,
             reportFailure: (settlementError) =>
                 logger.error(new Error('Resumed provider work lease settlement failed', { cause: settlementError })),
@@ -432,6 +441,7 @@ export async function sendChatMessage(
             const providerPlanningSettlement = settleAgentRunWorkLeaseSafely({
                 lease: providerLease,
                 terminalState: 'completed',
+                evidence: 'none',
                 settle: agentRunWorkLease.settle,
                 reportFailure: (settlementError) =>
                     logger.error(
@@ -834,6 +844,7 @@ export async function sendChatMessage(
                         settleAgentRunWorkLeaseSafely({
                             lease: previewLeaseResult.lease,
                             terminalState: 'failed',
+                            evidence: 'none',
                             settle: agentRunWorkLease.settle,
                         });
                         agentRunLifecycle.updateBatchStatus({
@@ -851,6 +862,7 @@ export async function sendChatMessage(
                         const settlement = settleAgentRunWorkLeaseSafely({
                             lease: previewLeaseResult.lease,
                             terminalState: 'completed',
+                            evidence: 'visible-work-output',
                             settle: agentRunWorkLease.settle,
                             reportFailure: (settlementError) =>
                                 logger.error(
@@ -891,6 +903,7 @@ export async function sendChatMessage(
                     const previewSettlement = settleAgentRunWorkLeaseSafely({
                         lease: previewLeaseResult.lease,
                         terminalState: preview.status === 'cancelled' ? 'cancelled' : 'failed',
+                        evidence: 'none',
                         settle: agentRunWorkLease.settle,
                     });
                     if (!previewSettlement.accepted) {
@@ -1030,6 +1043,7 @@ export async function sendChatMessage(
                     settleAgentRunWorkLeaseSafely({
                         lease: commandLeaseResult.lease,
                         terminalState: 'failed',
+                        evidence: 'none',
                         settle: agentRunWorkLease.settle,
                     });
                     throw error;
@@ -1049,6 +1063,10 @@ export async function sendChatMessage(
                 const commandLeaseSettlement = settleAgentRunWorkLeaseSafely({
                     lease: commandLeaseResult.lease,
                     terminalState: commandLeaseTerminalState,
+                    evidence:
+                        (execution.status === 'committed' || execution.status === 'executed') && execution.receipt
+                            ? 'verified-command-receipt'
+                            : 'none',
                     settle: agentRunWorkLease.settle,
                 });
                 const commandLeasePersistenceWarning = commandLeaseSettlement.warning;
@@ -1147,9 +1165,11 @@ export async function sendChatMessage(
                     }
                     updateChatMessage(assistantMsgId, {
                         isStreaming: false,
-                        error: execution.reason,
-                        content:
+                        error: appendSettlementWarningToError(execution.reason, commandLeasePersistenceWarning),
+                        content: appendSettlementWarning(
                             'The project changed before this command could commit. Review it and submit the command again.',
+                            commandLeasePersistenceWarning
+                        ),
                     });
                     return undefined;
                 }
@@ -1163,7 +1183,11 @@ export async function sendChatMessage(
                     }
                     updateChatMessage(assistantMsgId, {
                         isStreaming: false,
-                        content: 'Command cancelled before it committed. No project changes were applied.',
+                        error: commandLeasePersistenceWarning ?? undefined,
+                        content: appendSettlementWarning(
+                            'Command cancelled before it committed. No project changes were applied.',
+                            commandLeasePersistenceWarning
+                        ),
                     });
                     return undefined;
                 }
@@ -1179,7 +1203,11 @@ export async function sendChatMessage(
                     }
                     updateChatMessage(assistantMsgId, {
                         isStreaming: false,
-                        content: 'No project changes were needed.',
+                        error: commandLeasePersistenceWarning ?? undefined,
+                        content: appendSettlementWarning(
+                            'No project changes were needed.',
+                            commandLeasePersistenceWarning
+                        ),
                     });
                     return undefined;
                 }
@@ -1206,16 +1234,22 @@ export async function sendChatMessage(
                     }
                     updateChatMessage(assistantMsgId, {
                         isStreaming: false,
-                        error: execution.reason,
-                        content: `The command stopped after an uncertain partial commit: ${execution.reason}. Do not retry it; inspect the project first.`,
+                        error: appendSettlementWarningToError(execution.reason, commandLeasePersistenceWarning),
+                        content: appendSettlementWarning(
+                            `The command stopped after an uncertain partial commit: ${execution.reason}. Do not retry it; inspect the project first.`,
+                            commandLeasePersistenceWarning
+                        ),
                     });
                     return undefined;
                 }
 
                 updateChatMessage(assistantMsgId, {
                     isStreaming: false,
-                    error: execution.reason,
-                    content: `Failed to execute prompt command atomically: ${execution.reason}`,
+                    error: appendSettlementWarningToError(execution.reason, commandLeasePersistenceWarning),
+                    content: appendSettlementWarning(
+                        `Failed to execute prompt command atomically: ${execution.reason}`,
+                        commandLeasePersistenceWarning
+                    ),
                 });
                 if (commandLeaseSettlement.accepted) {
                     tryRecordTerminalFailure({
@@ -1304,6 +1338,7 @@ export async function sendChatMessage(
                     const providerPlanningFailureSettlement = settleAgentRunWorkLeaseSafely({
                         lease: providerLease,
                         terminalState: 'failed',
+                        evidence: 'none',
                         settle: agentRunWorkLease.settle,
                         reportFailure: (settlementError) =>
                             logger.error(
@@ -1791,6 +1826,7 @@ export async function sendChatMessage(
             settleAgentRunWorkLeaseSafely({
                 lease: providerLease,
                 terminalState: 'cancelled',
+                evidence: 'none',
                 settle: agentRunWorkLease.settle,
             });
             const parsed = thinkParser.snapshot();
@@ -1803,10 +1839,15 @@ export async function sendChatMessage(
             llmStatusStore.set({ state: 'idle' });
             return undefined;
         }
+        const failedProviderOutput = thinkParser.snapshot();
         const providerFailureSettlement = !wasAborted
             ? settleAgentRunWorkLeaseSafely({
                   lease: providerLease,
                   terminalState: 'failed',
+                  evidence:
+                      failedProviderOutput.content.length > 0 || (failedProviderOutput.reasoning?.length ?? 0) > 0
+                          ? 'visible-provider-output'
+                          : 'none',
                   settle: agentRunWorkLease.settle,
                   reportFailure: (settlementError) =>
                       logger.error(
@@ -1817,7 +1858,7 @@ export async function sendChatMessage(
         if (wasAborted) {
             await agentRunCancellation.cancel({ runId, reason: errorMessage });
             // Clean abort, leave generated partial content intact and strip parsing blocks
-            const parsed = thinkParser.snapshot();
+            const parsed = failedProviderOutput;
             updateChatMessage(assistantMsgId, {
                 isStreaming: false,
                 content: parsed.content,
@@ -1848,12 +1889,9 @@ export async function sendChatMessage(
                     terminal: true,
                 });
             }
-            const parsed = thinkParser.snapshot();
+            const parsed = failedProviderOutput;
             const hasPartialContent = parsed.content.length > 0 || (parsed.reasoning?.length ?? 0) > 0;
-            const persistenceWarning =
-                providerFailureSettlement?.warning === AGENT_RUN_PROVIDER_PERSISTENCE_WARNING
-                    ? AGENT_RUN_PROVIDER_PERSISTENCE_WARNING
-                    : null;
+            const persistenceWarning = providerFailureSettlement?.warning ?? null;
             const providerFailureContent = hasPartialContent
                 ? `${parsed.content}\n\n_Response incomplete because the provider stream failed._`
                 : 'Sorry, I encountered an error while thinking about that.';

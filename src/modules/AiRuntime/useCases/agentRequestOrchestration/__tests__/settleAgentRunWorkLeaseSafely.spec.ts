@@ -13,8 +13,12 @@ const PROVIDER_PERSISTENCE_WARNING =
     'Agent run provider response recovery state could not be persisted after execution. The retained response remains visible, but its lifecycle is not durably settled. Review it before retrying.';
 const WORK_PERSISTENCE_WARNING =
     'Agent run work recovery state could not be persisted after execution. The retained work outcome remains visible, but its lifecycle is not durably settled. Review it before retrying.';
-const STALE_COMPLETION_WARNING =
-    'Agent work completed after its run lease was cancelled or replaced. The durable receipt was retained without reopening the terminal run.';
+const STALE_FAILURE_WARNING =
+    'Agent work failed after its run lease was cancelled or replaced. No successful artifact is claimed, and the terminal run was not reopened.';
+const FAILURE_PERSISTENCE_WARNING =
+    'Agent run failure recovery state could not be persisted. The work failed, and no successful artifact is claimed. Review the durable run state before retrying.';
+const CANCELLATION_PERSISTENCE_WARNING =
+    'Agent run cancellation recovery state could not be persisted. The work was cancelled, and no successful artifact is claimed. Review the durable run state before retrying.';
 
 const lease: AgentRunWorkLease = {
     leaseId: 'lease-1',
@@ -39,7 +43,14 @@ describe('settleAgentRunWorkLeaseSafely', () => {
         (terminalState) => {
             const settle = vi.fn(() => ({ status: 'settled' as const }));
 
-            expect(settleAgentRunWorkLeaseSafely({ lease, terminalState, settle })).toEqual({
+            expect(
+                settleAgentRunWorkLeaseSafely({
+                    lease,
+                    terminalState,
+                    evidence: terminalState === 'completed' ? 'verified-command-receipt' : 'none',
+                    settle,
+                })
+            ).toEqual({
                 accepted: true,
                 warning: null,
             });
@@ -62,9 +73,10 @@ describe('settleAgentRunWorkLeaseSafely', () => {
                 settleAgentRunWorkLeaseSafely({
                     lease,
                     terminalState: 'failed',
+                    evidence: 'none',
                     settle: () => ({ status }),
                 })
-            ).toEqual({ accepted: false, warning: STALE_COMPLETION_WARNING });
+            ).toEqual({ accepted: false, warning: STALE_FAILURE_WARNING });
         }
     );
 
@@ -75,7 +87,8 @@ describe('settleAgentRunWorkLeaseSafely', () => {
         expect(
             settleAgentRunWorkLeaseSafely({
                 lease,
-                terminalState: 'cancelled',
+                terminalState: 'completed',
+                evidence: 'verified-command-receipt',
                 settle: () => {
                     throw error;
                 },
@@ -83,6 +96,19 @@ describe('settleAgentRunWorkLeaseSafely', () => {
             })
         ).toEqual({ accepted: true, warning: PERSISTENCE_WARNING });
         expect(reportFailure).toHaveBeenCalledWith(error);
+    });
+
+    it('does not claim a completed artifact when cancelled settlement persistence fails', () => {
+        expect(
+            settleAgentRunWorkLeaseSafely({
+                lease,
+                terminalState: 'cancelled',
+                evidence: 'none',
+                settle: () => {
+                    throw new Error('storage unavailable');
+                },
+            })
+        ).toEqual({ accepted: true, warning: CANCELLATION_PERSISTENCE_WARNING });
     });
 
     it('keeps non-command persistence warnings specific to visible unsettled work', () => {
@@ -96,21 +122,40 @@ describe('settleAgentRunWorkLeaseSafely', () => {
     it.each([
         {
             ownerKind: 'provider' as const,
+            evidence: 'visible-provider-output' as const,
             warning: PROVIDER_PERSISTENCE_WARNING,
         },
         {
             ownerKind: 'render' as const,
+            evidence: 'visible-work-output' as const,
             warning: WORK_PERSISTENCE_WARNING,
         },
-    ])('reports the $ownerKind-specific persistence warning when settlement throws', ({ ownerKind, warning }) => {
+    ])(
+        'reports the $ownerKind-specific completed-evidence warning when settlement throws',
+        ({ ownerKind, evidence, warning }) => {
+            expect(
+                settleAgentRunWorkLeaseSafely({
+                    lease: { ...lease, ownerKind },
+                    terminalState: 'completed',
+                    evidence,
+                    settle: () => {
+                        throw new Error('storage unavailable');
+                    },
+                })
+            ).toEqual({ accepted: true, warning });
+        }
+    );
+
+    it('does not claim a provider response when failed work has no retained output evidence', () => {
         expect(
             settleAgentRunWorkLeaseSafely({
-                lease: { ...lease, ownerKind },
+                lease: { ...lease, ownerKind: 'provider' },
                 terminalState: 'failed',
+                evidence: 'none',
                 settle: () => {
                     throw new Error('storage unavailable');
                 },
             })
-        ).toEqual({ accepted: true, warning });
+        ).toEqual({ accepted: true, warning: FAILURE_PERSISTENCE_WARNING });
     });
 });
