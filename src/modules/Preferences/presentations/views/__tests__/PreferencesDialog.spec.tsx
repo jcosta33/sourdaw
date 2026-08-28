@@ -71,7 +71,7 @@ describe('PreferencesDialog', () => {
         );
         expect(shell?.children).toHaveLength(2);
         expect(shell?.children[0]).toBe(sideRail);
-        expect(shell?.children[1]).toHaveClass('flex-1', 'gap-5', 'bg-surface-base/60', 'p-5');
+        expect(shell?.children[1]).toHaveClass('flex-1', 'gap-5', 'bg-surface-base/60', 'p-5', '[&>*]:shrink-0');
 
         expect(navigation.tagName).toBe('NAV');
         expect(navigation).toHaveClass(
@@ -105,6 +105,7 @@ describe('PreferencesDialog', () => {
         ]);
         expect(buttons.every((button) => button.tagName === 'BUTTON')).toBe(true);
         expect(buttons.slice(0, 8).every((button) => button.getAttribute('type') === 'button')).toBe(true);
+        expect(buttons.slice(0, 8).every((button) => button.classList.contains('justify-start'))).toBe(true);
         expect(Array.from(navigation.children).slice(1, 9)).toEqual(buttons.slice(0, 8));
     });
 

@@ -6,6 +6,7 @@ import {
     desktopPathJoin,
     desktopPlatform,
     desktopSaveDialog,
+    desktopSetZoomFactor,
     desktopSamplesBaseUrl,
     desktopWindowControls,
     invokeForBinaryResponse,
@@ -22,6 +23,9 @@ type MutableWindow = Record<string, unknown>;
 
 const createBridgeMock = (platform = 'linux') => ({
     platform,
+    display: {
+        setZoomFactor: vi.fn(),
+    },
     invoke: vi.fn().mockResolvedValue('bridged'),
     invokeBinary: vi.fn().mockResolvedValue('binary-result'),
     invokeBinaryResponse: vi.fn().mockResolvedValue(new Uint8Array([1, 2, 3])),
@@ -128,6 +132,16 @@ describe('desktopBridge', () => {
             expect(bridge.windowControls.close).toHaveBeenCalledTimes(1);
             expect(bridge.windowControls.toggleMaximize).toHaveBeenCalledTimes(1);
             expect(bridge.windowControls.isMaximized).toHaveBeenCalledTimes(1);
+        });
+    });
+
+    describe('display scaling', () => {
+        it('hands the zoom factor to the preload display capability', () => {
+            const bridge = installBridge();
+
+            desktopSetZoomFactor(1.25);
+
+            expect(bridge.display.setZoomFactor).toHaveBeenCalledWith(1.25);
         });
     });
 

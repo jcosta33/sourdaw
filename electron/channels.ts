@@ -117,6 +117,10 @@ export type SourdawBridge = {
      * Linux window controls — without an async round trip.
      */
     readonly platform: string;
+    /** Renderer display controls that must stay inside Electron's viewport model. */
+    display: {
+        readonly setZoomFactor: (factor: number) => void;
+    };
     /** Invoke a command whose arguments and result are JSON. */
     invoke: (command: string, args?: readonly unknown[]) => Promise<unknown>;
     /**

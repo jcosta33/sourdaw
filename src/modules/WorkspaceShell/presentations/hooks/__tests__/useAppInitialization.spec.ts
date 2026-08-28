@@ -7,6 +7,7 @@ import { syncKneadToEngine } from '#/modules/Knead/useCases';
 import { finishProjectLoading, loadProject, saveProject } from '#/modules/Project/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
+import { applyDisplayScale } from '../../../useCases/applyDisplayScale';
 import { useAppInitialization } from '../useAppInitialization';
 
 const projectStoreMock = vi.hoisted(() => ({
@@ -55,6 +56,7 @@ vi.mock('#/modules/Transport/useCases', () => ({
     getTransportState: vi.fn(() => transportStateMock.current),
 }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
+vi.mock('../../../useCases/applyDisplayScale', () => ({ applyDisplayScale: vi.fn() }));
 const mockPreferencesValueHolder: { current: Record<string, unknown> | null } = { current: { uiScale: 1 } };
 const preferenceListeners = vi.hoisted(() => new Set<() => void>());
 // Mock the preferences store the hook imports from #/modules/Preferences/stores,
@@ -418,6 +420,35 @@ describe('useAppInitialization — autosave governed by preferences', () => {
         projectStoreMock.current = { dirty: true, loading: false };
         vi.advanceTimersByTime(10_000);
         expect(saveProject).toHaveBeenCalledOnce();
+    });
+});
+
+describe('useAppInitialization — display scale', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        projectStoreMock.current = null;
+        mockPreferencesValueHolder.current = { uiScale: 1.25, autoSave: false };
+        try {
+            localStorage.setItem('wd:first-load-hint-shown', '1');
+        } catch {
+            // ignore: localStorage may be unavailable
+        }
+    });
+
+    it('applies the stored scale and follows preference changes', () => {
+        const { unmount } = renderHook(() => useAppInitialization());
+
+        expect(applyDisplayScale).toHaveBeenCalledWith(1.25);
+
+        mockPreferencesValueHolder.current = { uiScale: 0.9, autoSave: false };
+        act(() => {
+            for (const listener of preferenceListeners) {
+                listener();
+            }
+        });
+
+        expect(applyDisplayScale).toHaveBeenLastCalledWith(0.9);
+        unmount();
     });
 });
 
