@@ -1,0 +1,19 @@
+src/modules/PluginHost/useCases/pluginLifecycle/__tests__/watchExternalPluginParameterEvents.spec.ts
+  s_1bc00dc7c705a0::t_6c8515041c4e92 159-176
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "2e2def099819c9f6f8ffc58b7c025585e0ae5169",
+  "prompts": {},
+  "sessions": {
+    "s_1bc00dc7c705a0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a07bf59fae6bb5167",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
