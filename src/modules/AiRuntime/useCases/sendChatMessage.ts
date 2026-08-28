@@ -1,5 +1,4 @@
 import { logger } from '#/infra/logger/appLogger';
-import { executeVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
 import { captureProjectRevision, settlePendingProjectWritesAndCaptureRevision } from '#/modules/CrdtDocument/useCases';
 
 import { AiProposalInvalidatedError } from '../errors/AiProposalInvalidatedError';
@@ -24,8 +23,8 @@ import {
 } from '../stores/chatStore';
 
 import { normalizeAgentFailure } from './agentErrorAndSaga';
-import { createStemImportConfirmationResourceLease } from './agentReference/createStemImportConfirmationResourceLease';
 import { executeImmediatePromptCommand } from './agentRequestOrchestration/executeImmediatePromptCommand';
+import { executePromptCommandPreview } from './agentRequestOrchestration/executePromptCommandPreview';
 import { materializePromptCommandPlan } from './agentRequestOrchestration/materializePromptCommandPlan';
 import { persistPromptActionConfirmation } from './agentRequestOrchestration/persistPromptActionConfirmation';
 import {
@@ -76,10 +75,6 @@ function tryRecordTerminalFailure(input: Parameters<typeof agentRunLifecycle.rec
     } catch {
         // The user-visible failure remains authoritative when its recovery record cannot persist.
     }
-}
-
-function appendSettlementWarning(content: string, warning: string | null): string {
-    return warning ? `${content}\n\n_${warning}_` : content;
 }
 
 function getProviderBudgetCategory(backend: RunnableAiBackend): string {
@@ -363,129 +358,20 @@ export async function sendChatMessage(
                 const { commandGroup, compiledActionExecution, parsedCommandBatch } = materializedPlan;
                 const { commandEnvelopes, commandBatch } = compiledActionExecution;
                 if (interactionMode === 'preview') {
-                    const previewWorkId = `preview:${parsedCommandBatch.envelope.batchId}`;
-                    const previewReceiptIdentity = `preview:${runId}:${parsedCommandBatch.envelope.batchId}`;
-                    const previewLeaseResult = agentRunWorkLease.claim({
+                    await executePromptCommandPreview({
                         runId,
-                        workId: previewWorkId,
-                        ownerKind: 'command',
-                        cleanupOwner: 'command-preview',
-                        idempotencyKey: previewReceiptIdentity,
-                        receiptIdentity: previewReceiptIdentity,
-                        idempotent: true,
-                        retriable: false,
+                        assistantMessageId: assistantMsgId,
+                        actions: result.actions,
+                        actionLabels: confirmationDescription.actionLabels,
+                        abortController: aborter,
+                        projectRevision,
+                        commandBatch,
+                        parsedCommandBatch,
+                        onExecutionSettlementWarning: (warning) => {
+                            commandExecutionSettlementWarning = warning;
+                        },
                     });
-                    if (previewLeaseResult.status !== 'claimed') {
-                        throw new Error(`Agent preview work could not be claimed: ${previewLeaseResult.status}`);
-                    }
-                    agentRunLifecycle.transitionPhase({ runId, phase: 'previewing', revision: projectRevision });
-                    const resourceLease = createStemImportConfirmationResourceLease(runId, result.actions);
-                    const releasePreviewCancellation = agentRunCancellation.bindAbortController({
-                        runId,
-                        lease: previewLeaseResult.lease,
-                        controller: aborter,
-                        reason: 'User cancelled the run while command preview was active.',
-                    });
-                    let preview: Awaited<ReturnType<typeof executeVersionedCommandBatchEnvelope>>;
-                    try {
-                        preview = await executeVersionedCommandBatchEnvelope(commandBatch);
-                        if (preview.status === 'cancelled') {
-                            await agentRunCancellation.cancel({ runId, reason: preview.reason });
-                        } else if (
-                            (preview.status === 'rejected' ||
-                                preview.status === 'conflicted' ||
-                                preview.status === 'failed') &&
-                            captureProjectRevision() !== projectRevision
-                        ) {
-                            await agentRunCancellation.cancel({ runId, reason: preview.reason });
-                        }
-                    } catch (error) {
-                        settleAgentRunWorkLeaseSafely({
-                            lease: previewLeaseResult.lease,
-                            terminalState: 'failed',
-                            evidence: 'none',
-                            settle: agentRunWorkLease.settle,
-                        });
-                        agentRunLifecycle.updateBatchStatus({
-                            runId,
-                            batchId: parsedCommandBatch.envelope.batchId,
-                            status: 'failed',
-                        });
-                        throw error;
-                    } finally {
-                        releasePreviewCancellation();
-                        await resourceLease?.releaseBestEffort();
-                    }
-                    if (preview.status === 'previewed') {
-                        preview.resource.release();
-                        const settlement = settleAgentRunWorkLeaseSafely({
-                            lease: previewLeaseResult.lease,
-                            terminalState: 'completed',
-                            evidence: 'visible-work-output',
-                            settle: agentRunWorkLease.settle,
-                            reportFailure: (settlementError) =>
-                                logger.error(
-                                    new Error('Preview work lease settlement failed', { cause: settlementError })
-                                ),
-                        });
-                        if (!settlement.accepted) {
-                            const currentRun = agentRunLifecycle.get(runId);
-                            if (currentRun?.phase === 'cancelled' || currentRun?.phase === 'partially-completed') {
-                                return undefined;
-                            }
-                            throw new Error('Agent preview work could not be settled');
-                        }
-                        updateChatMessage(assistantMsgId, {
-                            isStreaming: false,
-                            error: settlement.warning ?? undefined,
-                            content: appendSettlementWarning(
-                                `Previewed without changing the project:\n\n${confirmationDescription.actionLabels.map((label) => `- ${label}`).join('\n')}`,
-                                settlement.warning
-                            ),
-                        });
-                        try {
-                            agentRunLifecycle.updateBatchStatus({
-                                runId,
-                                batchId: parsedCommandBatch.envelope.batchId,
-                                status: 'previewed',
-                            });
-                        } catch (batchPersistenceError) {
-                            logger.error(
-                                new Error('Preview batch persistence failed', { cause: batchPersistenceError })
-                            );
-                        }
-                        if (settlement.warning === null) {
-                            try {
-                                agentRunLifecycle.transitionPhase({ runId, phase: 'completed' });
-                            } catch (lifecyclePersistenceError) {
-                                logger.error(
-                                    new Error('Preview lifecycle persistence failed', {
-                                        cause: lifecyclePersistenceError,
-                                    })
-                                );
-                            }
-                        }
-                        return undefined;
-                    }
-                    const previewSettlement = settleAgentRunWorkLeaseSafely({
-                        lease: previewLeaseResult.lease,
-                        terminalState: preview.status === 'cancelled' ? 'cancelled' : 'failed',
-                        evidence: 'none',
-                        settle: agentRunWorkLease.settle,
-                    });
-                    if (!previewSettlement.accepted) {
-                        const currentRun = agentRunLifecycle.get(runId);
-                        if (currentRun?.phase === 'cancelled' || currentRun?.phase === 'partially-completed') {
-                            return undefined;
-                        }
-                        throw new Error('Agent preview work could not be settled after a non-preview outcome');
-                    }
-                    agentRunLifecycle.updateBatchStatus({
-                        runId,
-                        batchId: parsedCommandBatch.envelope.batchId,
-                        status: 'failed',
-                    });
-                    throw new Error('reason' in preview ? preview.reason : 'Command preview did not produce a preview');
+                    return undefined;
                 }
 
                 if (compiledActionExecution.requiresConfirmation) {

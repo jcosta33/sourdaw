@@ -436,7 +436,10 @@ function configurePromptPlanning(
     return authority;
 }
 
-function configureCommandGraphForwarding(branch: 'immediate' | 'confirmation' | 'plan') {
+function configureCommandGraphForwarding(
+    branch: 'immediate' | 'confirmation' | 'plan',
+    projectRevision = 'revision-fixture'
+) {
     const requiresConfirmation = branch === 'confirmation';
     const scope = {
         targetIds: [...commandGraphFixture.fullTargetIds],
@@ -501,10 +504,10 @@ function configureCommandGraphForwarding(branch: 'immediate' | 'confirmation' | 
                 providerKnownTargetIds: commandGraphFixture.providerKnownTargetIds,
                 providerProposal: commandGraphFixture.providerProposal,
             },
-            projectRevision: 'revision-fixture',
+            projectRevision,
         };
     });
-    return commandBatch;
+    return { commandBatch, projectRevision };
 }
 
 function createPendingResumeDecision(input: {
@@ -1727,10 +1730,49 @@ describe('sendChatMessage retained-provider selection', () => {
         }
     });
 
+    it('retains a failed preview settlement warning in the outer assistant failure', async () => {
+        const executionError = new Error('Preview executor failed');
+        const storageFailure = new DOMException('The quota has been exceeded.', 'QuotaExceededError');
+        const loggerError = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+        const settleLease = agentRunWorkLease.settle;
+        const settleWorkLease = vi.spyOn(agentRunWorkLease, 'settle').mockImplementation((input) => {
+            if (input.workId.startsWith('preview:')) {
+                throw storageFailure;
+            }
+            return settleLease(input);
+        });
+        configureCommandGraphForwarding('plan');
+        mocks.executeVersionedCommandBatchEnvelope.mockRejectedValue(executionError);
+
+        try {
+            await expect(sendChatMessage(commandGraphFixture.prompt, { mode: 'preview' })).resolves.toBeUndefined();
+
+            const commandAssistantMessage = mocks.appendChatMessage.mock.calls
+                .map(([message]) => message)
+                .find((message) => message.role === 'assistant' && message.isCommandAction === true);
+            expect(mocks.updateChatMessage).toHaveBeenCalledWith(commandAssistantMessage?.id, {
+                isStreaming: false,
+                content: `Failed to execute prompt command.\n\n_${WORK_PERSISTENCE_WARNING}_`,
+                error: `${executionError.message}\n\n${WORK_PERSISTENCE_WARNING}`,
+            });
+            expect(loggerError).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    message: 'Failed preview work lease settlement failed',
+                    cause: storageFailure,
+                })
+            );
+        } finally {
+            settleWorkLease.mockRestore();
+            loggerError.mockRestore();
+        }
+    });
+
     it('settles a successful preview with its exact completed work lease', async () => {
         const previewResource = { release: vi.fn() };
         const settleWorkLease = vi.spyOn(agentRunWorkLease, 'settle');
-        configureCommandGraphForwarding('plan');
+        const bindAbortController = vi.spyOn(agentRunCancellation, 'bindAbortController');
+        const transitionPhase = vi.spyOn(agentRunLifecycle, 'transitionPhase');
+        const { commandBatch, projectRevision } = configureCommandGraphForwarding('plan', 'revision-planned-preview');
         mocks.executeVersionedCommandBatchEnvelope.mockResolvedValue({
             status: 'previewed',
             resource: previewResource,
@@ -1740,7 +1782,22 @@ describe('sendChatMessage retained-provider selection', () => {
             await expect(sendChatMessage(commandGraphFixture.prompt, { mode: 'preview' })).resolves.toBeUndefined();
 
             const run = getPlannedRun();
+            const commandAssistantMessage = mocks.appendChatMessage.mock.calls
+                .map(([message]) => message)
+                .find((message) => message.role === 'assistant' && message.isCommandAction === true);
+            const activeAbortController = mocks.setActiveAborter.mock.calls
+                .map(([controller]) => controller)
+                .find((controller) => controller instanceof AbortController);
+            const previewCancellationBinding = bindAbortController.mock.calls
+                .map(([input]) => input)
+                .find((input) => input.lease.workId === 'preview:batch-graph');
             const previewReceiptIdentity = `preview:${run.runId}:batch-graph`;
+            expect(mocks.executeVersionedCommandBatchEnvelope).toHaveBeenCalledWith(commandBatch);
+            expect(transitionPhase).toHaveBeenCalledWith({
+                runId: run.runId,
+                phase: 'previewing',
+                revision: projectRevision,
+            });
             expect(settleWorkLease).toHaveBeenCalledWith({
                 runId: run.runId,
                 workId: 'preview:batch-graph',
@@ -1765,8 +1822,60 @@ describe('sendChatMessage retained-provider selection', () => {
                 ]),
             });
             expect(previewResource.release).toHaveBeenCalledOnce();
+            expect(commandAssistantMessage).toEqual(expect.objectContaining({ id: expect.any(String) }));
+            expect(mocks.updateChatMessage).toHaveBeenCalledWith(
+                commandAssistantMessage?.id,
+                expect.objectContaining({
+                    isStreaming: false,
+                    content:
+                        'Previewed without changing the project:\n\n- Create Drum Bus\n- Set Drum Bus gain\n- Remove Kick',
+                })
+            );
+            expect(activeAbortController).toBeInstanceOf(AbortController);
+            expect(previewCancellationBinding?.controller).toBe(activeAbortController);
         } finally {
+            transitionPhase.mockRestore();
+            bindAbortController.mockRestore();
             settleWorkLease.mockRestore();
+        }
+    });
+
+    it('cancels a rejected preview when the project advanced beyond its planned revision', async () => {
+        const rejectionReason = 'Preview targets changed after planning.';
+        const cancelRun = vi.spyOn(agentRunCancellation, 'cancel');
+        configureCommandGraphForwarding('plan', 'revision-planned-stale');
+        mocks.executeVersionedCommandBatchEnvelope.mockResolvedValue({
+            status: 'rejected',
+            reason: rejectionReason,
+        });
+
+        try {
+            await expect(sendChatMessage(commandGraphFixture.prompt, { mode: 'preview' })).resolves.toBeUndefined();
+
+            const run = getPlannedRun();
+            expect(mocks.captureProjectRevision).toHaveReturnedWith('revision-fixture');
+            expect(cancelRun).toHaveBeenCalledWith({ runId: run.runId, reason: rejectionReason });
+        } finally {
+            cancelRun.mockRestore();
+        }
+    });
+
+    it('leases and releases planned prepared-stem resources during preview', async () => {
+        const action = createStemImportAction('buffer-preview-stem');
+        const discardPreparedStems = vi.spyOn(preparedStemImportCleanup, 'discard').mockResolvedValue(undefined);
+        configurePromptPlanning(action, 'ready', createProviderProposal(['stem-kick']));
+        mocks.executeVersionedCommandBatchEnvelope.mockResolvedValue({
+            status: 'previewed',
+            resource: { release: vi.fn() },
+        });
+
+        try {
+            await expect(sendChatMessage('Import the prepared stems', { mode: 'preview' })).resolves.toBeUndefined();
+
+            expect(discardPreparedStems).toHaveBeenCalledWith(action.payload.stems);
+            expect(getPlannedRun().temporaryAssets).toEqual([]);
+        } finally {
+            discardPreparedStems.mockRestore();
         }
     });
 
@@ -2368,7 +2477,7 @@ describe('sendChatMessage retained-provider selection', () => {
     );
 
     it('forwards a compiler-produced graph and provider-known scope through immediate application', async () => {
-        const commandBatch = configureCommandGraphForwarding('immediate');
+        const { commandBatch } = configureCommandGraphForwarding('immediate');
         const settleWorkLease = vi.spyOn(agentRunWorkLease, 'settle');
 
         try {
