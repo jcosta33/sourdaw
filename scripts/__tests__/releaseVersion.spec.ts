@@ -250,26 +250,53 @@ describe('changelog', () => {
         expect(() => entry('0.2.0', '28-08-2026', [{ number: 1, title: 'fix: a' }])).toThrow('not YYYY-MM-DD');
     });
 
-    it('keeps the newest entry directly under the preamble', () => {
-        const afterFirst = upsertChangelogEntry(CHANGELOG_PREAMBLE, version('0.2.0'), firstEntry);
-        const afterSecond = upsertChangelogEntry(afterFirst, version('0.3.0'), secondEntry);
+    it('keeps a released entry and puts the new one directly under the preamble', () => {
+        const released = upsertChangelogEntry(CHANGELOG_PREAMBLE, version('0.2.0'), firstEntry, []);
+        const afterSecond = upsertChangelogEntry(released, version('0.3.0'), secondEntry, ['v0.2.0']);
         expect(afterSecond).toBe(`${CHANGELOG_PREAMBLE}\n${secondEntry}\n${firstEntry}`);
     });
 
     it('replaces an entry it already recorded rather than stacking a second one', () => {
-        const afterFirst = upsertChangelogEntry(CHANGELOG_PREAMBLE, version('0.2.0'), firstEntry);
+        const afterFirst = upsertChangelogEntry(CHANGELOG_PREAMBLE, version('0.2.0'), firstEntry, []);
         const revised = entry('0.2.0', '2026-08-29', [
             { number: 20, title: 'feat(mixer): add a post-fader send' },
             { number: 21, title: 'fix(mixer): clamp the send level' },
         ]);
-        const afterRevision = upsertChangelogEntry(afterFirst, version('0.2.0'), revised);
+        const afterRevision = upsertChangelogEntry(afterFirst, version('0.2.0'), revised, []);
         expect(afterRevision).toBe(`${CHANGELOG_PREAMBLE}\n${revised}`);
         expect(afterRevision).not.toContain('2026-08-28');
     });
 
+    it('drops an unreleased entry whose version the new proposal no longer matches', () => {
+        const stale = upsertChangelogEntry(CHANGELOG_PREAMBLE, version('0.2.0'), firstEntry, []);
+        const rebuilt = entry('0.3.0', '2026-09-04', [
+            { number: 20, title: 'feat(mixer): add a post-fader send' },
+            { number: 40, title: 'feat(engine): add a bus' },
+        ]);
+        const afterSecond = upsertChangelogEntry(stale, version('0.3.0'), rebuilt, []);
+        expect(afterSecond).toBe(`${CHANGELOG_PREAMBLE}\n${rebuilt}`);
+        expect(afterSecond).not.toContain('## v0.2.0');
+        expect(afterSecond.split('(#20)').length - 1).toBe(1);
+    });
+
+    it('drops every unreleased entry above the newest released one', () => {
+        const released = upsertChangelogEntry(CHANGELOG_PREAMBLE, version('0.2.0'), firstEntry, []);
+        const stale = upsertChangelogEntry(released, version('0.3.0'), secondEntry, ['v0.2.0']);
+        const rebuilt = entry('0.4.0', '2026-09-11', [{ number: 40, title: 'feat(engine): add a bus' }]);
+        const afterThird = upsertChangelogEntry(stale, version('0.4.0'), rebuilt, ['v0.2.0']);
+        expect(afterThird).toBe(`${CHANGELOG_PREAMBLE}\n${rebuilt}\n${firstEntry}`);
+        expect(afterThird).not.toContain('## v0.3.0');
+    });
+
+    it('refuses to propose a version that is already released', () => {
+        expect(() => upsertChangelogEntry(CHANGELOG_PREAMBLE, version('0.2.0'), firstEntry, ['v0.2.0'])).toThrow(
+            'v0.2.0 is already released'
+        );
+    });
+
     it('scopes a section body to its own tag range', () => {
-        const afterFirst = upsertChangelogEntry(CHANGELOG_PREAMBLE, version('0.2.0'), firstEntry);
-        const afterSecond = upsertChangelogEntry(afterFirst, version('0.3.0'), secondEntry);
+        const released = upsertChangelogEntry(CHANGELOG_PREAMBLE, version('0.2.0'), firstEntry, []);
+        const afterSecond = upsertChangelogEntry(released, version('0.3.0'), secondEntry, ['v0.2.0']);
         expect(changelogSectionBody(afterSecond, version('0.3.0'))).toBe(
             '### Features\n\n- feat(engine): add a bus (#40)'
         );
@@ -279,10 +306,13 @@ describe('changelog', () => {
         expect(changelogSectionBody(afterSecond, version('0.9.0'))).toBeUndefined();
     });
 
-    it('refuses a changelog that does not start with the preamble', () => {
-        expect(() => upsertChangelogEntry('# Something else\n', version('0.2.0'), firstEntry)).toThrow(
+    it('refuses a changelog that does not start with the preamble, or one carrying a foreign section', () => {
+        expect(() => upsertChangelogEntry('# Something else\n', version('0.2.0'), firstEntry, [])).toThrow(
             'does not start with the changelog preamble'
         );
+        expect(() =>
+            upsertChangelogEntry(`${CHANGELOG_PREAMBLE}\n## Unreleased\n\nnotes\n`, version('0.2.0'), firstEntry, [])
+        ).toThrow('is not a version section');
     });
 });
 

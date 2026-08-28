@@ -3,8 +3,14 @@ import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 
 import { DEPENDENCY_LICENSE_PROOFS_PATH } from '../dependencyLicenseReport.ts';
-import { proposeRelease, releaseCommitSubject, type ProposeReleasePort } from '../proposeRelease.ts';
-import { CHANGELOG_PATH, CHANGELOG_PREAMBLE, RELEASE_INVENTORY_PATH, packageVersion } from '../releaseVersion.ts';
+import { proposeRelease, type ProposeReleasePort } from '../proposeRelease.ts';
+import {
+    CHANGELOG_PATH,
+    CHANGELOG_PREAMBLE,
+    RELEASE_INVENTORY_PATH,
+    packageVersion,
+    releaseCommitSubject,
+} from '../releaseVersion.ts';
 
 import type { MergedPullRequest } from '../releaseVersion.ts';
 
@@ -43,15 +49,17 @@ const inventory = (manifestDigest: string, proofsDigest: string) => `{
 }
 `;
 
+const occurrences = (text: string, needle: string) => text.split(needle).length - 1;
+
 const range: MergedPullRequest[] = [
     { number: 10, title: 'fix(arrangement): preserve reorder track state' },
     { number: 20, title: 'feat(mixer): add a post-fader send' },
 ];
 
 type Overrides = {
-    previousTag?: string | undefined;
+    releaseTags?: string[];
     versionAtBase?: string;
-    range?: MergedPullRequest[];
+    range?: MergedPullRequest[] | (() => MergedPullRequest[]);
     files?: Record<string, string>;
 };
 
@@ -70,9 +78,10 @@ function fakePort(overrides: Overrides = {}): ProposeReleasePort & {
     return {
         files,
         messages,
-        latestReleaseTag: () => ('previousTag' in overrides ? overrides.previousTag : undefined),
+        releaseTags: () => overrides.releaseTags ?? [],
         versionAtBase: () => overrides.versionAtBase ?? '0.1.0',
-        mergedPullRequests: () => overrides.range ?? range,
+        mergedPullRequests: () =>
+            typeof overrides.range === 'function' ? overrides.range() : (overrides.range ?? range),
         readWorkspaceFile: (path) => files[path] ?? '',
         writeWorkspaceFile: (path, contents) => {
             files[path] = contents;
@@ -97,7 +106,7 @@ describe('proposing a release', () => {
 
     it('baselines a later release on the latest release tag', () => {
         const port = fakePort({
-            previousTag: 'v0.4.2',
+            releaseTags: ['v0.3.0', 'v0.4.2'],
             versionAtBase: '0.4.2',
             range: [{ number: 30, title: 'fix(engine): stop drift' }],
         });
@@ -141,12 +150,26 @@ describe('proposing a release', () => {
         expect(port.messages.some((message) => message.includes(releaseCommitSubject('0.2.0')))).toBe(true);
     });
 
-    it('converges on one entry and one bump when it runs twice in the same lane', () => {
+    it('converges on one entry and one bump when the same range is proposed twice', () => {
         const port = fakePort();
         proposeRelease(port);
         const afterFirst = { ...port.files };
         proposeRelease(port);
         expect(port.files).toEqual(afterFirst);
+    });
+
+    it('replaces the stale proposal when a second run computes a different version', () => {
+        const fixOnly = [range[0] as MergedPullRequest];
+        const ranges = [fixOnly, range];
+        const port = fakePort({ range: () => ranges.shift() ?? range });
+        expect(proposeRelease(port)?.version).toBe('0.1.1');
+        expect(proposeRelease(port)?.version).toBe('0.2.0');
+        const changelog = port.files[CHANGELOG_PATH] ?? '';
+        expect(changelog).not.toContain('## v0.1.1');
+        expect(occurrences(changelog, '## v')).toBe(1);
+        expect(occurrences(changelog, '(#10)')).toBe(1);
+        expect(occurrences(changelog, '(#20)')).toBe(1);
+        expect(packageVersion(port.files['package.json'] ?? '')).toBe('0.2.0');
     });
 
     it('proposes nothing and writes nothing when no merged change asks for a version', () => {
@@ -165,7 +188,7 @@ describe('proposing a release', () => {
     });
 
     it('refuses a base whose manifest disagrees with the latest release tag', () => {
-        expect(() => proposeRelease(fakePort({ previousTag: 'v0.4.2', versionAtBase: '0.3.0' }))).toThrow(
+        expect(() => proposeRelease(fakePort({ releaseTags: ['v0.4.2'], versionAtBase: '0.3.0' }))).toThrow(
             'package.json on the release base is 0.3.0 but the latest release tag is v0.4.2'
         );
     });

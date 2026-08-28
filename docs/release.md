@@ -33,9 +33,11 @@ pnpm release:propose
 ```
 
 It rewrites the version, the changelog entry, and every digest the release gates pin to
-`package.json`, all from the base revision, so running it again converges instead of stacking a
-second entry. Commit it with the conventional subject it prints, then open the pull request with
-`pnpm lane:publish` from the primary checkout, and deliver it the ordinary way — reviewed, then
+`package.json`, all from the base revision. Running it again rebuilds that proposal from scratch —
+it drops every changelog entry above the newest released one, so a rerun after `main` moved replaces
+the stale proposal rather than recording a version that was never tagged. A released entry is a fact
+and is never touched. Commit it with the conventional subject it prints, then open the pull request
+with `pnpm lane:publish` from the primary checkout, and deliver it the ordinary way — reviewed, then
 `pnpm deliver`.
 
 Cut the release from the primary checkout, against the squash commit that merge left on `main`:
@@ -46,7 +48,10 @@ pnpm release:cut <X.Y.Z> --commit <merge-sha>
 ```
 
 It creates the annotated tag on that exact revision and one GitHub Release bound to it, through the
-same author App the delivery scripts mint. It refuses a tag or release that already exists, a commit
+same author App the delivery scripts mint. The release pull request's own merge sits at the end of
+the range being tagged and the proposal that wrote the changelog could not have contained it, so it
+is dropped from the notes — which is what makes the notes the set the changelog recorded. It refuses
+a tag or release that already exists, a commit
 `main` does not contain, a commit whose `package.json` is a different version, a version that does
 not advance the latest tag, and a committed changelog entry that disagrees with the notes the tag
 range produces — that last one means the range moved after the proposal, and re-proposing is the

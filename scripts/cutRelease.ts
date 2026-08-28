@@ -37,6 +37,7 @@ import {
     parseSemanticVersion,
     releaseBody,
     releaseTagName,
+    withoutTheReleaseCommit,
     type MergedPullRequest,
     type SemanticVersion,
 } from './releaseVersion.ts';
@@ -155,7 +156,7 @@ export function cutRelease(version: string, commit: string, authorNodeId: string
     }
     const previousTag = port.latestReleaseTag();
     assertVersionAdvances(semantic, previousTag);
-    const notes = composeReleaseNotes(port.mergedPullRequests(previousTag, commit));
+    const notes = composeReleaseNotes(withoutTheReleaseCommit(port.mergedPullRequests(previousTag, commit), semantic));
     assertChangelogMatchesNotes(commit, semantic, notes, port);
     assertTagReceipt(port.createTag(tag, commit, releaseTagMessage(tag)), tag);
     assertReleaseReceipt(port.createRelease(tag, commit, releaseBody(notes, tag)), tag, commit);

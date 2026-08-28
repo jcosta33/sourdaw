@@ -6,6 +6,7 @@ import {
     CHANGELOG_PREAMBLE,
     composeChangelogEntry,
     parseSemanticVersion,
+    releaseCommitSubject,
     upsertChangelogEntry,
     type MergedPullRequest,
 } from '../releaseVersion.ts';
@@ -22,7 +23,8 @@ function changelogFor(version: string, pullRequests: MergedPullRequest[]): strin
     return upsertChangelogEntry(
         CHANGELOG_PREAMBLE,
         semantic,
-        composeChangelogEntry(semantic, '2026-08-28', pullRequests)
+        composeChangelogEntry(semantic, '2026-08-28', pullRequests),
+        []
     );
 }
 
@@ -54,7 +56,7 @@ function fakePort(overrides: Overrides = {}): CutReleasePort & { calls: string[]
         latestReleaseTag: () => ('latestReleaseTag' in overrides ? overrides.latestReleaseTag : 'v0.2.0'),
         commitIsOnMain: () => overrides.onMain ?? true,
         manifestVersionAt: () => overrides.manifestVersion ?? '0.3.0',
-        changelogAt: () => overrides.changelog ?? changelogFor('0.3.0', overrides.range ?? range),
+        changelogAt: () => overrides.changelog ?? changelogFor('0.3.0', range),
         mergedPullRequests: () => overrides.range ?? range,
         createTag: (tag, target, message) => {
             calls.push(`createTag:${tag}:${target}:${message}`);
@@ -123,6 +125,15 @@ describe('cutting a release', () => {
                 '- fix(arrangement): preserve reorder track state (#10)',
             ].join('\n'),
         ]);
+    });
+
+    it('drops the release pull request its own merge added to the range', () => {
+        const port = fakePort({
+            range: [...range, { number: 21, title: releaseCommitSubject('0.3.0') }],
+        });
+        expect(cut(port)).toBe(`release-cut:v0.3.0:${commit}`);
+        expect(port.notes[0]).not.toContain(releaseCommitSubject('0.3.0'));
+        expect(port.notes[0]).not.toContain('(#21)');
     });
 
     it('cuts the first release of a repository that carries no release tag yet', () => {

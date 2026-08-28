@@ -9,9 +9,9 @@ import { resolvePrimaryRoot, spawnCapture } from './githubAppIdentity.ts';
 import { fail } from './prContract.ts';
 import {
     assertRevisionPresent,
-    latestReleaseTag,
     manifestVersionAtRevision,
     mergedPullRequestsInRange,
+    releaseTagNames,
 } from './releaseHistory.ts';
 import {
     CHANGELOG_PATH,
@@ -20,9 +20,11 @@ import {
     compareSemanticVersions,
     composeChangelogEntry,
     formatSemanticVersion,
+    latestReleaseTagOf,
     nextVersion,
     parseReleaseTagName,
     parseSemanticVersion,
+    releaseCommitSubject,
     releaseTagName,
     upsertChangelogEntry,
     withPackageVersion,
@@ -61,7 +63,7 @@ function rewritePinnedDigests(manifest: string, port: ProposeReleasePort): void 
 }
 
 export type ProposeReleasePort = {
-    latestReleaseTag: () => string | undefined;
+    releaseTags: () => string[];
     versionAtBase: () => string;
     mergedPullRequests: (previousTag: string | undefined) => MergedPullRequest[];
     readWorkspaceFile: (path: string) => string;
@@ -79,10 +81,6 @@ export type ReleaseProposal = {
 };
 
 const usage = 'usage: pnpm release:propose';
-
-export function releaseCommitSubject(version: string): string {
-    return `chore(release): ${version}`;
-}
 
 /**
  * The version the next release starts from. A cut release leaves the tag and `main`'s manifest
@@ -111,7 +109,8 @@ function baseVersion(port: ProposeReleasePort, previousTag: string | undefined):
  * second proposal in the same lane converges rather than stacking a second entry or a second bump.
  */
 export function proposeRelease(port: ProposeReleasePort): ReleaseProposal | undefined {
-    const previousTag = port.latestReleaseTag();
+    const releaseTags = port.releaseTags();
+    const previousTag = latestReleaseTagOf(releaseTags);
     const base = baseVersion(port, previousTag);
     const pullRequests = port.mergedPullRequests(previousTag);
     const increment = aggregateIncrement(pullRequests);
@@ -129,7 +128,8 @@ export function proposeRelease(port: ProposeReleasePort): ReleaseProposal | unde
         upsertChangelogEntry(
             port.readWorkspaceFile(CHANGELOG_PATH),
             version,
-            composeChangelogEntry(version, port.today(), pullRequests)
+            composeChangelogEntry(version, port.today(), pullRequests),
+            releaseTags
         )
     );
     rewritePinnedDigests(manifest, port);
@@ -162,7 +162,7 @@ export function shellPort(root: string): ProposeReleasePort {
     const git = (args: string[]) => spawnCapture('git', args, { cwd: root });
     const gh = (args: string[]) => spawnCapture('gh', args, { cwd: root });
     return {
-        latestReleaseTag: () => latestReleaseTag(gh),
+        releaseTags: () => releaseTagNames(gh),
         versionAtBase: () => manifestVersionAtRevision(RELEASE_BASE_REVISION, git),
         mergedPullRequests: (previousTag) => mergedPullRequestsInRange(previousTag, RELEASE_BASE_REVISION, git, gh),
         readWorkspaceFile: (path) => readFileSync(join(root, path), 'utf8'),

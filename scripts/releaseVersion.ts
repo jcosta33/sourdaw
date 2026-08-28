@@ -282,19 +282,79 @@ export function changelogSectionBody(changelog: string, version: SemanticVersion
     return changelog.slice(headingEnd + 1, nextSectionStart(changelog, headingEnd)).trim();
 }
 
+type ChangelogSection = { version: SemanticVersion; text: string };
+
+function sectionStartOffsets(body: string): number[] {
+    const offsets = [0];
+    for (let index = body.indexOf('\n## '); index >= 0; index = body.indexOf('\n## ', index + 1)) {
+        offsets.push(index + 1);
+    }
+    return offsets;
+}
+
+function changelogSections(body: string): ChangelogSection[] {
+    if (body === '') {
+        return [];
+    }
+    if (!body.startsWith('## ')) {
+        fail(`${CHANGELOG_PATH} content does not start with a version section`);
+    }
+    const offsets = sectionStartOffsets(body);
+    return offsets.map((start, position) => {
+        const text = body.slice(start, offsets[position + 1] ?? body.length);
+        const headingEnd = text.includes('\n') ? text.indexOf('\n') : text.length;
+        const heading = text.slice(0, headingEnd);
+        const version = parseReleaseTagName(/^## (\S+)/.exec(heading)?.[1] ?? '');
+        if (version === undefined) {
+            fail(`${CHANGELOG_PATH} carries a section that is not a version section: ${heading}`);
+        }
+        return { version, text };
+    });
+}
+
 /**
- * Replaces this version's entry when one is already recorded, so re-proposing a release in the same
- * lane converges on one entry instead of stacking duplicates.
+ * Rebuilds the unreleased head of the changelog around this entry. Every section above the newest
+ * released one is a proposal that never became a release, so it is dropped rather than kept: a
+ * second proposal computes a different version whenever `main` moved under the lane, and keeping
+ * the first would record a version nothing was ever tagged at, with its pull requests listed twice.
+ * A released section is a fact and is never touched.
  */
-export function upsertChangelogEntry(changelog: string, version: SemanticVersion, entry: string): string {
+export function upsertChangelogEntry(
+    changelog: string,
+    version: SemanticVersion,
+    entry: string,
+    releasedTags: readonly string[]
+): string {
     if (!changelog.startsWith(CHANGELOG_PREAMBLE)) {
         fail(`${CHANGELOG_PATH} does not start with the changelog preamble`);
     }
-    const start = changelogSectionStart(changelog, version);
-    const withoutEntry =
-        start < 0 ? changelog : changelog.slice(0, start) + changelog.slice(nextSectionStart(changelog, start));
-    const remainder = withoutEntry.slice(CHANGELOG_PREAMBLE.length).trimStart();
-    return `${CHANGELOG_PREAMBLE}\n${entry}${remainder === '' ? '' : `\n${remainder}`}`;
+    const released = new Set(releasedTags);
+    if (released.has(releaseTagName(version))) {
+        fail(`${releaseTagName(version)} is already released; it cannot be proposed again`);
+    }
+    const sections = changelogSections(changelog.slice(CHANGELOG_PREAMBLE.length).trim());
+    const firstReleased = sections.findIndex((section) => released.has(releaseTagName(section.version)));
+    const remainder = (firstReleased < 0 ? [] : sections.slice(firstReleased))
+        .map((section) => section.text.trim())
+        .join('\n\n');
+    return `${CHANGELOG_PREAMBLE}\n${entry}${remainder === '' ? '' : `\n${remainder}\n`}`;
+}
+
+export function releaseCommitSubject(version: string): string {
+    return `chore(release): ${version}`;
+}
+
+/**
+ * The release pull request's own squash commit sits at the end of the range being tagged, and the
+ * proposal that wrote the changelog could not have contained it — it is the commit that proposal
+ * became. Dropping it is what makes the notes the set the changelog recorded.
+ */
+export function withoutTheReleaseCommit(
+    pullRequests: readonly MergedPullRequest[],
+    version: SemanticVersion
+): MergedPullRequest[] {
+    const subject = releaseCommitSubject(formatSemanticVersion(version));
+    return pullRequests.filter((pullRequest) => pullRequest.title !== subject);
 }
 
 const PACKAGE_VERSION_FIELD_PATTERN = /^(\s*"version": ")(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)("(?:,?)$)/m;
