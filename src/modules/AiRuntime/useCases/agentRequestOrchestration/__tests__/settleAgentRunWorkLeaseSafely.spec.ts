@@ -47,7 +47,7 @@ describe('settleAgentRunWorkLeaseSafely', () => {
         }
     );
 
-    it.each(['missing-lease', 'stale', 'already-settled'] as const)(
+    it.each(['missing-lease', 'missing-run', 'stale', 'already-settled'] as const)(
         'rejects a %s settlement without reopening the run',
         (status) => {
             expect(

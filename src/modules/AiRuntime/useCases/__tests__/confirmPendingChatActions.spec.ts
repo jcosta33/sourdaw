@@ -276,6 +276,27 @@ function createStaleLateBatchResult(input: {
     };
 }
 
+function createIdempotentReplayBatchResult(
+    commandBatch: ReturnType<typeof compileVersionedCommandBatchEnvelope>
+): ConfirmedActionBatchResult {
+    const parsed = parseVersionedCommandBatchEnvelope(commandBatch.serialized, commandBatch.authority);
+    if (parsed.status !== 'valid') {
+        throw new Error('Expected the replay command batch fixture to remain valid.');
+    }
+    const result: { status: 'executed'; actions: [] } = { status: 'executed', actions: [] };
+    return {
+        status: 'idempotent-replay',
+        actions: [],
+        receipt: createVerifiedBatchReceipt({
+            contentHash: 'idempotent-replay-stale-settlement',
+            envelope: parsed.envelope,
+            observedBaseRevision: 'revision-fixture',
+            resultingRevision: 'revision-fixture',
+            result,
+        }),
+    };
+}
+
 describe('confirmPendingChatActions transaction admission', () => {
     beforeEach(() => {
         stemResourceMocks.releasePreviewAudioBuffer.mockClear();
@@ -598,6 +619,18 @@ describe('confirmPendingChatActions transaction admission', () => {
         expect(observedSignal?.aborted).toBe(false);
         expect(agentRunLifecycle.get('confirmation-batch')).toMatchObject({
             phase: 'completed',
+            receipts: [
+                expect.objectContaining({
+                    workId: 'group-batch',
+                    receiptIdentity: '2:confirmation-batch:group-batch:committed',
+                }),
+            ],
+            committedWork: [
+                expect.objectContaining({
+                    workId: 'group-batch',
+                    receiptIdentity: '2:confirmation-batch:group-batch:committed',
+                }),
+            ],
             saga: {
                 steps: [
                     expect.objectContaining({
@@ -767,7 +800,11 @@ describe('confirmPendingChatActions transaction admission', () => {
                 captureMutationAuthorization.mockRestore();
             }
 
-            expect(agentRunLifecycle.get(runId)).toMatchObject({ phase: 'cancelled' });
+            expect(agentRunLifecycle.get(runId)).toMatchObject({
+                phase: 'cancelled',
+                errors: [],
+                pendingEffectContinuations: [],
+            });
             expect(chatStore.value?.messages[0]).toMatchObject({
                 pendingActionConfirmationStatus: 'failed',
                 error: reason,
@@ -775,6 +812,48 @@ describe('confirmPendingChatActions transaction admission', () => {
             });
         }
     );
+
+    it('retains an idempotent replay receipt without reopening a stale cancelled run', async () => {
+        const runId = 'idempotent-replay-stale-settlement';
+        const confirmationId = 'confirmation-idempotent-replay-stale-settlement';
+        const batchId = 'group-idempotent-replay-stale-settlement';
+        const commandBatch = configureLateSettlementConfirmation({ runId, confirmationId, batchId });
+        const commandUseCases = await import('#/modules/Command/useCases');
+        const crdtUseCases = await import('#/modules/CrdtDocument/useCases');
+        const captureMutationAuthorization = vi
+            .spyOn(crdtUseCases, 'captureProjectMutationAuthorization')
+            .mockReturnValue(() => true);
+        const execute = vi
+            .spyOn(commandUseCases, 'executeVersionedCommandBatchEnvelope')
+            .mockResolvedValue(createIdempotentReplayBatchResult(commandBatch));
+        const settle = vi.spyOn(agentRunWorkLease, 'settle').mockImplementation(() => {
+            agentRunLifecycle.transitionPhase({ runId, phase: 'cancelled' });
+            return { status: 'stale' };
+        });
+
+        try {
+            await expect(confirmPendingChatActions({ confirmationId })).resolves.toEqual({ status: 'executed' });
+        } finally {
+            settle.mockRestore();
+            execute.mockRestore();
+            captureMutationAuthorization.mockRestore();
+        }
+
+        expect(agentRunLifecycle.get(runId)).toMatchObject({
+            phase: 'partially-completed',
+            receipts: [
+                expect.objectContaining({
+                    workId: batchId,
+                    receiptIdentity: `2:${runId}:${batchId}:executed`,
+                }),
+            ],
+        });
+        expect(chatStore.value?.messages[0]).toMatchObject({
+            pendingActionConfirmationStatus: 'executed',
+            error: expect.stringContaining('cancelled or replaced'),
+            content: expect.stringContaining('durable receipt was retained without reopening the terminal run'),
+        });
+    });
 
     it('keeps a stale late no-op cancelled instead of claiming fresh completion', async () => {
         const runId = 'late-no-op-settlement';

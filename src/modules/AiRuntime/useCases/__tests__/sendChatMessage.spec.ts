@@ -668,6 +668,8 @@ describe('sendChatMessage retained-provider selection', () => {
     it('keeps a streamed provider failure cancelled after stale settlement', async () => {
         const providerError = new Error('WebLLM provider failed during streaming');
         const partialContent = 'The bridge starts with a muted guitar.';
+        const providerUsage = await import('../recordAgentProviderUsage');
+        const recordProviderUsageCall = vi.spyOn(providerUsage, 'recordAgentProviderUsage');
         const settleWorkLease = vi.spyOn(agentRunWorkLease, 'settle').mockImplementation((input) => {
             agentRunLifecycle.transitionPhase({ runId: input.runId, phase: 'cancelled' });
             return { status: 'stale' };
@@ -677,8 +679,43 @@ describe('sendChatMessage retained-provider selection', () => {
         try {
             await expect(sendChatMessage('Summarize the arrangement.', { mode: 'explain' })).resolves.toBeUndefined();
 
-            const run = agentRunLifecycle.get(getMostRecentlyAdmittedRunId());
+            const runId = getMostRecentlyAdmittedRunId();
+            const run = agentRunLifecycle.get(runId);
+            if (run === null) {
+                throw new Error('Expected the stale failed-provider run to remain inspectable.');
+            }
+            const providerReceiptIdentity = `provider:webllm:${run.runId}`;
             expect(run).toMatchObject({ phase: 'cancelled', errors: [] });
+            expect(recordProviderUsageCall).toHaveBeenCalledWith(
+                run.runId,
+                {
+                    schemaVersion: 2,
+                    provider: 'webllm',
+                    model: 'fixture-model',
+                    correlationId: providerReceiptIdentity,
+                    status: 'partial',
+                    finishReason: 'error',
+                    failure: {
+                        code: 'provider-stream-failed',
+                        retryable: true,
+                        safeMessage: 'The model provider request failed.',
+                        correlationId: providerReceiptIdentity,
+                        partialOutputDisposition: 'preserve',
+                    },
+                    partialOutputDisposition: 'preserve',
+                    output: { text: partialContent, reasoning: '', toolCalls: [], structuredOutput: null },
+                    usage: {
+                        inputTokens: null,
+                        outputTokens: null,
+                        cachedInputTokens: null,
+                        reasoningTokens: null,
+                        provenance: 'unavailable',
+                    },
+                    ignoredProviderEvents: [],
+                },
+                providerReceiptIdentity,
+                { terminal: true }
+            );
             expect(mocks.updateChatMessage).toHaveBeenCalledWith(
                 expect.any(String),
                 expect.objectContaining({
@@ -692,6 +729,7 @@ describe('sendChatMessage retained-provider selection', () => {
             expect(mocks.setChatGenerating).toHaveBeenLastCalledWith(false);
         } finally {
             settleWorkLease.mockRestore();
+            recordProviderUsageCall.mockRestore();
         }
     });
 
