@@ -2248,7 +2248,13 @@ describe('drum bus prompt workflow', () => {
         const finalizedTrackedReceipt = finalizedRun?.receipts.find(
             ({ workId }) => workId === committedConfirmation.groupId
         );
-        if (!finalizedConfirmation || !finalizedRun || !finalizedContinuation || !finalizedTrackedReceipt) {
+        if (
+            !finalizedConfirmation ||
+            !finalizedRun ||
+            !finalizedContinuation ||
+            !finalizedTrackedReceipt ||
+            finalizedRun.revisions.committed === null
+        ) {
             throw new Error('Expected finalized receipt and retained continuation');
         }
         agentRunLifecycle.recordCommittedWork({
@@ -2501,10 +2507,14 @@ describe('drum bus prompt workflow', () => {
         if (!confirmation || !jobs) {
             throw new Error('Expected materialized EX-11 render jobs');
         }
+        const sourceRevision = confirmation.projectRevision;
+        if (sourceRevision === null) {
+            throw new Error('Expected project revision for materialized EX-11 render jobs');
+        }
         await retryAgentProjectSectionRenders({
             approvedJobs: jobs,
             jobs,
-            sourceRevision: confirmation.projectRevision ?? '',
+            sourceRevision,
         });
         expect(getAgentSectionRenderArtifacts()).toEqual(
             jobs.map((job) =>
@@ -2743,10 +2753,14 @@ describe('drum bus prompt workflow', () => {
             pendingActionFollowUpStatus: 'retryable',
         });
         runtimeMocks.renderOffline.mockResolvedValue(createTestAudioBuffer());
+        const sourceRevision = committedConfirmation.followUpProjectRevision;
+        if (sourceRevision === null) {
+            throw new Error('Expected retryable follow-up project revision');
+        }
         await retryAgentProjectSectionRenders({
             approvedJobs: [missingJob],
             jobs: [missingJob],
-            sourceRevision: committedConfirmation.followUpProjectRevision ?? '',
+            sourceRevision,
         });
         const renderCallCount = runtimeMocks.renderOffline.mock.calls.length;
 
