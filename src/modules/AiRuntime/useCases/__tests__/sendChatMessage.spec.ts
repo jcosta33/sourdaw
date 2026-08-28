@@ -1768,7 +1768,8 @@ describe('sendChatMessage retained-provider selection', () => {
         const previewResource = { release: vi.fn() };
         const settleWorkLease = vi.spyOn(agentRunWorkLease, 'settle');
         const bindAbortController = vi.spyOn(agentRunCancellation, 'bindAbortController');
-        configureCommandGraphForwarding('plan');
+        const transitionPhase = vi.spyOn(agentRunLifecycle, 'transitionPhase');
+        const commandBatch = configureCommandGraphForwarding('plan');
         mocks.executeVersionedCommandBatchEnvelope.mockResolvedValue({
             status: 'previewed',
             resource: previewResource,
@@ -1788,6 +1789,12 @@ describe('sendChatMessage retained-provider selection', () => {
                 .map(([input]) => input)
                 .find((input) => input.lease.workId === 'preview:batch-graph');
             const previewReceiptIdentity = `preview:${run.runId}:batch-graph`;
+            expect(mocks.executeVersionedCommandBatchEnvelope).toHaveBeenCalledWith(commandBatch);
+            expect(transitionPhase).toHaveBeenCalledWith({
+                runId: run.runId,
+                phase: 'previewing',
+                revision: 'revision-fixture',
+            });
             expect(settleWorkLease).toHaveBeenCalledWith({
                 runId: run.runId,
                 workId: 'preview:batch-graph',
@@ -1824,6 +1831,7 @@ describe('sendChatMessage retained-provider selection', () => {
             expect(activeAbortController).toBeInstanceOf(AbortController);
             expect(previewCancellationBinding?.controller).toBe(activeAbortController);
         } finally {
+            transitionPhase.mockRestore();
             bindAbortController.mockRestore();
             settleWorkLease.mockRestore();
         }
