@@ -8,6 +8,7 @@ import type { Track } from '../../../../models/TrackViewTypes';
 const mockSetTrackGain = vi.fn();
 const mockSetTrackPan = vi.fn();
 const mockExecuteAppAction = vi.fn();
+const mockReleaseTouchAutomation = vi.fn();
 
 vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Arrangement/useCases')>();
@@ -20,13 +21,13 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
     };
 });
 
-vi.mock('#/modules/Command/useCases', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('#/modules/Command/useCases')>();
-    return {
-        ...actual,
-        executeAppAction: (...args: unknown[]) => mockExecuteAppAction(...args),
-    };
-});
+vi.mock('#/modules/Command/useCases', () => ({
+    executeAppAction: (...args: unknown[]) => mockExecuteAppAction(...args),
+}));
+
+vi.mock('#/modules/Automation/useCases', () => ({
+    releaseTouchAutomation: (...args: unknown[]) => mockReleaseTouchAutomation(...args),
+}));
 
 vi.mock('#/components/daw/DawHeaderBand', () => ({
     DawHeaderBand: ({ title }: { title?: string }) => <div data-testid="header-band">{title}</div>,
@@ -139,6 +140,7 @@ describe('TrackLevelSection', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
+        mockExecuteAppAction.mockResolvedValue(undefined);
     });
 
     it('should render without crashing', () => {
@@ -218,6 +220,15 @@ describe('TrackLevelSection', () => {
             payload: { trackId: 'track-1', pan: 11, expectedPan: 10 },
         });
         expect(mockSetTrackPan).not.toHaveBeenCalledWith('track-1', 11, false);
+    });
+
+    it('disarms Touch recording on pointerup even when the gesture never committed', () => {
+        render(<TrackLevelSection track={{ ...mockTrack, automationMode: 'touch' }} />);
+        fireEvent.pointerUp(screen.getByTestId('inspector-track-gain-release'));
+        expect(mockReleaseTouchAutomation).toHaveBeenCalledWith('track-1', 'gain');
+        expect(mockExecuteAppAction).not.toHaveBeenCalled();
+        fireEvent.pointerUp(screen.getByTestId('inspector-track-pan'));
+        expect(mockReleaseTouchAutomation).toHaveBeenCalledWith('track-1', 'pan');
     });
 
     it('should render two surface cards', () => {

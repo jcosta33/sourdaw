@@ -41,6 +41,12 @@ const restoreEngineFromProjectTruth = (track: Track, parameterId: LevelParameter
     setTrackPan(track.id, committed?.pan ?? track.pan, true);
 };
 
+const releaseTouch = (track: Track, parameterId: LevelParameter): void => {
+    if (track.automationMode === 'touch') {
+        releaseTouchAutomation(track.id, parameterId);
+    }
+};
+
 const commitLevelGesture = (
     action: Parameters<typeof executeAppAction>[0],
     track: Track,
@@ -55,9 +61,7 @@ const commitLevelGesture = (
             restoreEngineFromProjectTruth(track, parameterId);
         } finally {
             clearGesture();
-            if (track.automationMode === 'touch') {
-                releaseTouchAutomation(track.id, parameterId);
-            }
+            releaseTouch(track, parameterId);
         }
     })();
 };
@@ -98,39 +102,51 @@ export const TrackLevelSection = ({ track }: TrackLevelSectionProps): ReactEleme
                              * the mixer reads `150%` here, and a control that
                              * stopped at 100 would write that make-up gain away
                              * on first touch.
+                             *
+                             * Pointer/key release disarms Touch recording even
+                             * when the gesture ended on the start value and
+                             * never dispatched — same split as the mixer fader.
                              */}
-                            <Slider
-                                value={[activeGain * 100]}
-                                onValueChange={([value]) => {
-                                    if (value === undefined) {
-                                        return;
-                                    }
-                                    const gain = value / 100;
-                                    setLocalGain(gain);
-                                    setTrackGain(track.id, gain, true);
-                                }}
-                                onValueCommit={([value]) => {
-                                    if (value === undefined) {
-                                        return;
-                                    }
-                                    const gain = value / 100;
-                                    setLocalGain(gain);
-                                    commitLevelGesture(
-                                        {
-                                            type: 'setTrackGain',
-                                            payload: { trackId: track.id, gain, expectedGain: track.gain },
-                                        },
-                                        track,
-                                        'gain',
-                                        () => setLocalGain(null)
-                                    );
-                                }}
-                                max={FADER_MAX_GAIN * 100}
-                                step={1}
-                                aria-label={`${track.name} gain`}
-                                data-testid="inspector-track-gain"
+                            <div
+                                role="presentation"
                                 className="w-full"
-                            />
+                                data-testid="inspector-track-gain-release"
+                                onPointerUp={() => releaseTouch(track, 'gain')}
+                                onKeyUp={() => releaseTouch(track, 'gain')}
+                            >
+                                <Slider
+                                    value={[activeGain * 100]}
+                                    onValueChange={([value]) => {
+                                        if (value === undefined) {
+                                            return;
+                                        }
+                                        const gain = value / 100;
+                                        setLocalGain(gain);
+                                        setTrackGain(track.id, gain, true);
+                                    }}
+                                    onValueCommit={([value]) => {
+                                        if (value === undefined) {
+                                            return;
+                                        }
+                                        const gain = value / 100;
+                                        setLocalGain(gain);
+                                        commitLevelGesture(
+                                            {
+                                                type: 'setTrackGain',
+                                                payload: { trackId: track.id, gain, expectedGain: track.gain },
+                                            },
+                                            track,
+                                            'gain',
+                                            () => setLocalGain(null)
+                                        );
+                                    }}
+                                    max={FADER_MAX_GAIN * 100}
+                                    step={1}
+                                    aria-label={`${track.name} gain`}
+                                    data-testid="inspector-track-gain"
+                                    className="w-full"
+                                />
+                            </div>
                         </Row>
                     </Stack>
                 </SurfaceCard>
@@ -143,7 +159,13 @@ export const TrackLevelSection = ({ track }: TrackLevelSectionProps): ReactEleme
                                 <MidiLearnButton targetType="trackPan" trackId={track.id} />
                             </Row>
                         </Stack>
-                        <Row justify="center" shrink={false} data-testid="inspector-track-pan">
+                        <Row
+                            justify="center"
+                            shrink={false}
+                            data-testid="inspector-track-pan"
+                            onPointerUp={() => releaseTouch(track, 'pan')}
+                            onKeyUp={() => releaseTouch(track, 'pan')}
+                        >
                             <RotaryKnob
                                 value={activePan}
                                 onChange={(value, isTransient) => {
