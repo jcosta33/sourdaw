@@ -106,6 +106,28 @@ describe('the exit cascade under its deadline', () => {
     });
 });
 
+describe('plugin command admission before the cascade', () => {
+    it('refuses plugin IPC before native shutdown is invoked', async () => {
+        const refusePluginCommands = vi.fn();
+        const shutdown = vi.fn(() => undefined);
+        const { timers } = manualTimers();
+        let refusedBeforeShutdown = false;
+
+        const run = vi.fn(async () => {
+            refusePluginCommands();
+            refusedBeforeShutdown = shutdown.mock.calls.length === 0;
+            return runShutdownWithDeadline({ shutdown, timers });
+        });
+        const handler = createQuitHandler(run, { exit: () => undefined, report: () => undefined });
+
+        handler({ preventDefault: () => undefined });
+        await vi.waitFor(() => expect(shutdown).toHaveBeenCalled());
+
+        expect(refusePluginCommands).toHaveBeenCalledTimes(1);
+        expect(refusedBeforeShutdown).toBe(true);
+    });
+});
+
 describe('the before-quit handler', () => {
     const completed: ShutdownOutcome = { status: 'completed', report: undefined };
 

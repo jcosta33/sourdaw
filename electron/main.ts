@@ -39,6 +39,7 @@ import { createCommandStream, createEventForwarder } from './events.js';
 import { loadNativeAddon, NATIVE_ADDON_PATH_ENV, resolveNativeAddonPath, type NativeHost } from './native.js';
 import { forwardNativeEvent } from './nativeEventRouter.js';
 import { registerPluginWindowHost, type EditorWindowOptions, type EditorWindow } from './pluginGui.js';
+import { createPluginCommandAdmission } from './pluginCommandAdmission.js';
 import { APP_ENTRY_URL, APP_ORIGIN, handleAppProtocol, registerAppScheme, resolveContentRoots } from './protocol.js';
 import { registerCommandRouter } from './router.js';
 import { createScanSupervisor, type ScanSupervisor } from './scan.js';
@@ -289,6 +290,7 @@ const rendererTarget = (): BrowserWindow['webContents'] | undefined =>
 
 let nativeHost: NativeHost | undefined;
 let scanSupervisor: ScanSupervisor | undefined;
+const pluginCommandAdmission = createPluginCommandAdmission();
 
 /**
  * The plugin-scan supervisor, over a real `utilityProcess`.
@@ -392,6 +394,7 @@ const startNativeSurface = (): void => {
         native: () => nativeHost,
         isTrustedFrameUrl: isAllowedFrameUrl,
         createStream: (streamId) => createCommandStream({ streamId, target: rendererTarget, channel: STREAM_CHANNEL }),
+        acceptsCommand: pluginCommandAdmission.acceptsCommand,
         // Every exposed command except the one whose backend is another
         // process. Its channel is registered by `registerScanCommand`, so the
         // renderer-visible surface is identical either way.
@@ -401,7 +404,12 @@ const startNativeSurface = (): void => {
     registerVoiceDictation({ ipcMain, native: () => nativeHost, isTrustedFrameUrl: isAllowedFrameUrl });
 
     scanSupervisor = createUtilityScanSupervisor(addonPath);
-    registerScanCommand({ ipcMain, isTrustedFrameUrl: isAllowedFrameUrl, supervisor: scanSupervisor });
+    registerScanCommand({
+        ipcMain,
+        isTrustedFrameUrl: isAllowedFrameUrl,
+        supervisor: scanSupervisor,
+        acceptsCommand: pluginCommandAdmission.acceptsCommand,
+    });
 
     if (nativeHost !== undefined) {
         registerPluginWindowHost(nativeHost, {
@@ -468,6 +476,7 @@ app.on(
             // the shell that a hostile plugin can already have wedged — waiting
             // on the host's cascade with a scan still running would spend the
             // deadline on a process that only needs killing.
+            pluginCommandAdmission.refusePluginCommands();
             scanSupervisor?.dispose();
             const host = nativeHost;
             if (host === undefined) {
