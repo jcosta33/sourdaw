@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+import { logger } from '#/infra/logger/appLogger';
 import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
 
 import { createMockAudioContext } from '../../../../helpers/__tests__/audioContext.mock';
@@ -867,6 +868,30 @@ describe('TrackNode', () => {
             }
 
             expect(bridgeSetParam).not.toHaveBeenCalled();
+        });
+
+        it('reports each refused param name once, however many times it is written', async () => {
+            const controller = await resolveExternalPluginDevice('dev-repeat');
+            const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+
+            // A refused write arrives from the scheduler's tick grid, so a
+            // report per occurrence would bury the session log under one
+            // repeated fault at 100 Hz.
+            controller.setParam('not-a-number', 0.1);
+            controller.setParam('not-a-number', 0.2);
+
+            expect(warn).toHaveBeenCalledTimes(1);
+            expect(warn.mock.calls[0]![0]).toContain('not-a-number');
+
+            // Per name, not once per device: a second bad name is a second
+            // fault and still has to be reported.
+            controller.setParam('another-bad-name', 0.3);
+
+            expect(warn).toHaveBeenCalledTimes(2);
+            expect(warn.mock.calls[1]![0]).toContain('another-bad-name');
+            expect(bridgeSetParam).not.toHaveBeenCalled();
+
+            warn.mockRestore();
         });
     });
 
