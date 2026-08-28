@@ -1,0 +1,65 @@
+src/modules/WorkspaceShell/repositories/setDisplayScale.ts
+  s_ae074277795b45::t_44e5a52698c061 1-15
+electron/channels.ts
+  s_ae074277795b45::t_44e5a52698c061 120-123
+src/types/sourdaw-desktop.d.ts
+  s_ae074277795b45::t_44e5a52698c061 38-41
+electron/preload.ts
+  s_ae074277795b45::t_44e5a52698c061 15,19-22
+src/modules/WorkspaceShell/presentations/hooks/__tests__/useAppInitialization.spec.ts
+  s_ae074277795b45::t_fc329250698586 426-454
+  s_ae074277795b45::t_6e6f6975f2e266 10,59
+src/utils/desktopBridge.ts
+  s_ae074277795b45::t_44e5a52698c061 337-341
+src/modules/WorkspaceShell/presentations/hooks/useAppInitialization.ts
+  s_ae074277795b45::t_44e5a52698c061 20-21,193
+  s_ae074277795b45::t_92dcdb4c32ce1f 191,196-197
+electron/bridge.ts
+  s_ae074277795b45::t_44e5a52698c061 179-180,243-245
+  s_a40848e8f8cca9::t_d67a47ac4bb386 246
+src/modules/WorkspaceShell/useCases/applyDisplayScale.ts
+  s_ae074277795b45::t_44e5a52698c061 1-5
+src/modules/WorkspaceShell/repositories/__tests__/setDisplayScale.spec.ts
+  s_ae074277795b45::t_4e8a6bc5ec9562 1-40
+src/modules/Project/presentations/views/__tests__/RecentProjectsMenu.spec.tsx
+  s_ae074277795b45::t_6101a17bc16e0e 99-114
+src/utils/__tests__/desktopBridge.spec.ts
+  s_ae074277795b45::t_4e8a6bc5ec9562 9,26-28,138-144
+  s_a40848e8f8cca9::t_b6bb5d663db3a8 145-147
+src/modules/Preferences/presentations/views/PreferencesDialog.tsx
+  s_ae074277795b45::t_44e5a52698c061 97,130
+src/modules/Preferences/presentations/views/__tests__/PreferencesDialog.spec.tsx
+  s_ae074277795b45::t_6101a17bc16e0e 74,108
+tests/e2e/desktopRuntime.spec.ts
+  s_ae074277795b45::t_44e5a52698c061 74-76
+src/modules/Project/presentations/views/RecentProjectsMenu.tsx
+  s_ae074277795b45::t_44e5a52698c061 195,208,220,272,284
+electron/__tests__/bridge.spec.ts
+  s_ae074277795b45::t_4e8a6bc5ec9562 81,95-101
+  s_ae074277795b45::t_f6edb2631d0c83 68
+  s_a40848e8f8cca9::t_ebdd9504761bc5 102-103
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "52ae30e493f4346a93265714e71c37b6db5bc2b3",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ae074277795b45": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04ab5-5234-7100-be1c-76ebfaba88d3",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
