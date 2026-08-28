@@ -645,6 +645,44 @@ describe('executeAppActionBatch', () => {
         });
     });
 
+    it.each(['reconcile', 'manual-repair'] as const)(
+        'records declared external-effect %s remediation after commit',
+        async (remediation) => {
+            const failure = new Error('section render follow-up requires review');
+            Reflect.set(failure, 'pendingEffect', {
+                kind: 'external-effect',
+                remediation,
+                reason: 'Exact section render evidence requires review.',
+                state: 'pending',
+            });
+            const afterCommit = vi.fn().mockRejectedValue(failure);
+            const afterAmbiguousCommit = vi.fn().mockRejectedValue(failure);
+            registerHandlerMap({
+                setEditingTool: createHandler<SetEditingToolAction>({
+                    execute: () => ({ status: 'written', afterCommit, afterAmbiguousCommit }),
+                }),
+            });
+
+            const result = await executeAppActionBatch([{ type: 'setEditingTool', payload: { tool: 'marquee' } }]);
+
+            expect(result).toMatchObject({
+                status: 'committed-with-warning',
+                warningDetails: [
+                    expect.objectContaining({
+                        pendingEffect: {
+                            commandId: expect.any(String),
+                            kind: 'external-effect',
+                            operation: 'setEditingTool',
+                            reason: 'Exact section render evidence requires review.',
+                            remediation,
+                            state: 'pending',
+                        },
+                    }),
+                ],
+            });
+        }
+    );
+
     it('recovers a deferred-effect failure by reconciling durable truth', async () => {
         const afterCommit = vi.fn().mockRejectedValue(new Error('event unavailable'));
         const reconcileRuntime = vi.fn();

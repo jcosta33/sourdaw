@@ -16,6 +16,21 @@ type RenderAgentProjectSectionsInput = {
     signal?: AbortSignal;
 };
 
+class SectionRenderFollowUpError extends Error {
+    readonly pendingEffect: {
+        kind: 'external-effect';
+        remediation: 'reconcile' | 'manual-repair';
+        reason: string;
+        state: 'pending';
+    };
+
+    constructor(reason: string, remediation: 'reconcile' | 'manual-repair') {
+        super(reason);
+        this.name = 'SectionRenderFollowUpError';
+        this.pendingEffect = { kind: 'external-effect', remediation, reason, state: 'pending' };
+    }
+}
+
 function createCancellationError(): Error {
     const error = new Error('Agent section rendering was cancelled');
     error.name = 'AbortError';
@@ -175,6 +190,11 @@ export async function renderAgentProjectSections(input: RenderAgentProjectSectio
     }
 
     if (failures.length > 0) {
-        throw new Error(`Section render follow-up requires review: ${failures.join('; ')}`);
+        const reason = `Section render follow-up requires review: ${failures.join('; ')}`;
+        const allRequestedArtifactsPresent = input.jobs.every((job) => {
+            const artifact = existingByJobId.get(job.jobId);
+            return artifact !== undefined && jobMatchesArtifact(job, artifact, input.sourceRevision);
+        });
+        throw new SectionRenderFollowUpError(reason, allRequestedArtifactsPresent ? 'manual-repair' : 'reconcile');
     }
 }

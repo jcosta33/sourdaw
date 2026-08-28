@@ -81,10 +81,11 @@ function createPendingEffectRecoveryReceipt(input: {
     batchId: string;
     pendingEffects: readonly RecoveryPendingEffect[];
     outcome: 'partially-committed' | 'committed';
+    runId?: string;
 }) {
     return {
         schemaVersion: 1,
-        runId: 'run-persisted-runtime-effects',
+        runId: input.runId ?? 'run-persisted-runtime-effects',
         batchId: input.batchId,
         outcome: input.outcome,
         pendingEffects: input.outcome === 'partially-committed' ? [...input.pendingEffects] : [],
@@ -859,6 +860,68 @@ describe('agent run recovery', () => {
                 ]),
             },
         });
+    });
+
+    it('never executes a mixed continuation when any durable effect requires manual repair', async () => {
+        createAgentRun({
+            runId: 'run-mixed-manual-effects',
+            request: 'Retain warned render and unrelated external recovery.',
+            mode: 'macro',
+            createdRevision: 'heads-mixed-manual',
+            createdAt: 1,
+        });
+        const pendingEffects = [
+            {
+                commandId: 'command-warned-render',
+                kind: 'external-effect' as const,
+                operation: 'renderProjectSections',
+                reason: 'tail truncated',
+                remediation: 'manual-repair' as const,
+                state: 'pending' as const,
+            },
+            {
+                commandId: 'command-unrelated-effect',
+                kind: 'external-effect' as const,
+                operation: 'setTrackGain',
+                reason: 'publication pending',
+                remediation: 'reconcile' as const,
+                state: 'pending' as const,
+            },
+        ];
+        agentRunLifecycle.recordPendingEffectContinuation({
+            runId: 'run-mixed-manual-effects',
+            continuation: {
+                authority: createContinuationAuthority(),
+                batchId: 'batch-mixed-manual-effects',
+                effects: pendingEffects,
+                lastError: null,
+                recovery: 'reconcile-batch',
+                receiptIdentity: '1:run-mixed-manual-effects:batch-mixed-manual-effects:partially-committed',
+                serializedBatch: '{"batch":"mixed-manual-effects"}',
+            },
+        });
+        commandRecoveryMocks.getVersionedCommandBatchIdempotentReplay.mockResolvedValue(
+            createPendingEffectRecoveryReceipt({
+                batchId: 'batch-mixed-manual-effects',
+                pendingEffects,
+                outcome: 'partially-committed',
+                runId: 'run-mixed-manual-effects',
+            })
+        );
+
+        await expect(
+            recoverAgentRunPendingEffects({
+                runId: 'run-mixed-manual-effects',
+                batchId: 'batch-mixed-manual-effects',
+            })
+        ).resolves.toEqual({
+            status: 'failed',
+            reason: 'At least one retained external effect requires manual repair and cannot be retried exactly.',
+        });
+        expect(commandRecoveryMocks.executeVersionedCommandBatchEnvelope).not.toHaveBeenCalled();
+        expect(agentRunLifecycle.get('run-mixed-manual-effects')?.pendingEffectContinuations).toEqual([
+            expect.objectContaining({ recovery: 'manual-repair' }),
+        ]);
     });
 
     it('hydrates retired local-provider evidence without restoring an executable route', async () => {

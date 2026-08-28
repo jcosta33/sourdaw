@@ -690,7 +690,13 @@ function recordAgentRunPendingEffectContinuation(input: {
 }): AgentRun | null {
     const recordedAt = input.recordedAt ?? Date.now();
     const state = readAgentRunState();
-    const continuation = structuredClone(input.continuation);
+    const clonedContinuation = structuredClone(input.continuation);
+    const continuation = {
+        ...clonedContinuation,
+        recovery: clonedContinuation.effects.some(({ remediation }) => remediation === 'manual-repair')
+            ? 'manual-repair'
+            : clonedContinuation.recovery,
+    } satisfies AgentRunPendingEffectContinuation;
     const existingRecovery = getPendingEffectRecoveryLedger(state).find((recovery) =>
         isPendingEffectRecovery(recovery, { runId: input.runId, batchId: continuation.batchId })
     );

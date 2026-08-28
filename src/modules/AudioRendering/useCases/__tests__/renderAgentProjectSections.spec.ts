@@ -182,9 +182,47 @@ describe('renderAgentProjectSections', () => {
             return Promise.resolve(createAudioBuffer());
         });
 
-        await expect(renderAgentProjectSections(input)).rejects.toThrow('tail truncated');
+        await expect(renderAgentProjectSections(input)).rejects.toMatchObject({
+            message: expect.stringContaining('tail truncated'),
+            pendingEffect: {
+                kind: 'external-effect',
+                remediation: 'manual-repair',
+                reason: expect.stringContaining('tail truncated'),
+                state: 'pending',
+            },
+        });
 
         expect(getAgentSectionRenderArtifacts()[0]?.warnings).toEqual(['tail truncated']);
+    });
+
+    it('keeps missing render work reconcilable when another retained artifact has warnings', async () => {
+        const jobs = [
+            createJob(),
+            createJob({
+                jobId: 'render-missing-chorus',
+                sectionId: 'section-missing-chorus',
+                sectionName: 'Missing Chorus',
+                startBeat: 64,
+                endBeat: 96,
+            }),
+        ];
+        mocks.renderOffline
+            .mockImplementationOnce((options: { onWarning?: (warning: string) => void }) => {
+                options.onWarning?.('tail truncated');
+                return Promise.resolve(createAudioBuffer());
+            })
+            .mockRejectedValueOnce(new Error('renderer unavailable'));
+
+        await expect(renderAgentProjectSections({ jobs, sourceRevision: 'revision-a' })).rejects.toMatchObject({
+            pendingEffect: {
+                kind: 'external-effect',
+                remediation: 'reconcile',
+                state: 'pending',
+            },
+        });
+        expect(getAgentSectionRenderArtifacts()).toEqual([
+            expect.objectContaining({ jobId: 'render-chorus-one', warnings: ['tail truncated'] }),
+        ]);
     });
 
     it('rejects invalid buffers and job-capacity overflow without attaching artifacts', async () => {

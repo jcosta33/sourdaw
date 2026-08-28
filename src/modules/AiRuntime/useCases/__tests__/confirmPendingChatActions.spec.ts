@@ -2876,6 +2876,17 @@ describe('confirmPendingChatActions transaction admission', () => {
         ).resolves.toMatchObject({ status: 'failed', durableCommit: true });
 
         expect(runtimeMocks.renderOffline).toHaveBeenCalledOnce();
+        const verifiedReceipt = await getVersionedCommandBatchIdempotentReplay({
+            authority: commandBatch.authority,
+            serialized: commandBatch.serialized,
+        });
+        expect(verifiedReceipt?.pendingEffects).toEqual([
+            expect.objectContaining({
+                kind: 'external-effect',
+                remediation: 'manual-repair',
+                reason: expect.stringContaining('tail truncated'),
+            }),
+        ]);
         expect(getAgentSectionRenderArtifacts()).toContainEqual(
             expect.objectContaining({ jobId: renderJob.jobId, warnings: ['tail truncated'] })
         );
@@ -2922,6 +2933,22 @@ describe('confirmPendingChatActions transaction admission', () => {
             currentStatus: 'executed',
         });
         expect(runtimeMocks.renderOffline).toHaveBeenCalledOnce();
+        const manualContinuation = agentRunLifecycle
+            .get('confirmation-warned-render')
+            ?.pendingEffectContinuations.find(({ batchId }) => batchId === 'group-warned-render');
+        if (!manualContinuation) {
+            throw new Error('Expected retained render continuation');
+        }
+        agentRunLifecycle.recordPendingEffectContinuation({
+            runId: 'confirmation-warned-render',
+            continuation: {
+                ...manualContinuation,
+                effects: manualContinuation.effects.map((effect) =>
+                    effect.kind === 'external-effect' ? { ...effect, remediation: 'reconcile' } : effect
+                ),
+                recovery: 'reconcile-batch',
+            },
+        });
         clearAgentSectionRenderArtifacts();
         mutateCrdtDoc<Record<string, unknown>>({
             id: 'independent',

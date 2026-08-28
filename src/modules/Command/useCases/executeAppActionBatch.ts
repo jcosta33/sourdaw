@@ -163,6 +163,22 @@ function getPendingPostCommitEffect(
             state: declared.state,
         };
     }
+    if (
+        declared?.kind === 'external-effect' &&
+        declared.state === 'pending' &&
+        typeof declared.reason === 'string' &&
+        declared.reason.trim().length > 0 &&
+        (declared.remediation === 'reconcile' || declared.remediation === 'manual-repair')
+    ) {
+        return {
+            commandId: prepared.envelope.commandId,
+            kind: declared.kind,
+            operation: prepared.action.type,
+            reason: declared.reason,
+            remediation: declared.remediation,
+            state: declared.state,
+        };
+    }
     if (prepared.postCommitEffect?.kind === 'runtime-graph') {
         return {
             commandId: prepared.envelope.commandId,

@@ -188,7 +188,7 @@ function hasExactDurableReceipt(
         pendingEffect?.commandId === binding.approvedCommand.commandId &&
         pendingEffect.operation === binding.approvedCommand.operation &&
         pendingEffect.kind === 'external-effect' &&
-        pendingEffect.remediation === 'reconcile' &&
+        (pendingEffect.remediation === 'reconcile' || pendingEffect.remediation === 'manual-repair') &&
         pendingEffect.state === 'pending'
     );
 }
@@ -268,6 +268,9 @@ export function admitCommittedSectionRenderRetry(
     }
     if (input.phase === 'arming') {
         return { durableReceipt: input.durableReceipt, status: 'admitted' };
+    }
+    if (input.durableReceipt.pendingEffects[0]?.remediation === 'manual-repair') {
+        return { status: 'proof-mismatch' };
     }
     if (
         !hasExactBatchBinding(input.confirmation, approvedBatch, input.durableReceipt) ||

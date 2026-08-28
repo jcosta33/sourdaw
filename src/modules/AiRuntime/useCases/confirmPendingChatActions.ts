@@ -1105,7 +1105,11 @@ export async function confirmPendingChatActions(
                         batchId: batchResult.receipt.batchId,
                         reason: manualReviewReason,
                     });
-                    const surfacedManualReviewError = [manualReviewReason, manualReviewPersistenceWarning]
+                    const surfacedManualReviewError = [
+                        manualReviewReason,
+                        manualReviewPersistenceWarning,
+                        runPersistenceWarning,
+                    ]
                         .filter(Boolean)
                         .join(' ');
                     updatePendingActionFollowUp({
