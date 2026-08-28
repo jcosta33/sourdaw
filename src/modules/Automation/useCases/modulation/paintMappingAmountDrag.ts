@@ -1,20 +1,24 @@
 import { flushPendingMappingAmountDrag } from './flushPendingMappingAmountDrag';
-import { mappingAmountDragState } from './mappingAmountDragState';
+import { mappingAmountDragKey, mappingAmountDragState } from './mappingAmountDragState';
+import { type MappingTarget } from './removeMapping';
 
 /**
- * Record a new amount during an active drag gesture. The store is written at
- * most once per animation frame — the modulation-amount counterpart of
- * `paintDrawPoint`.
+ * Record a new amount during an active drag gesture on one mapping. The store
+ * is written at most once per animation frame — the modulation-amount
+ * counterpart of `paintDrawPoint`.
  */
-export function paintMappingAmountDrag(amount: number): void {
-    const activeSession = mappingAmountDragState.activeSession;
-    if (activeSession === null || !Number.isFinite(amount)) {
+export function paintMappingAmountDrag(modulatorId: string, target: MappingTarget, amount: number): void {
+    if (!Number.isFinite(amount)) {
+        return;
+    }
+    const session = mappingAmountDragState.activeSessions.get(mappingAmountDragKey(modulatorId, target));
+    if (!session) {
         return;
     }
 
-    activeSession.pendingAmount = Math.max(-1, Math.min(1, amount));
+    session.pendingAmount = Math.max(-1, Math.min(1, amount));
 
-    if (activeSession.rafId === null) {
-        activeSession.rafId = requestAnimationFrame(flushPendingMappingAmountDrag);
+    if (session.rafId === null) {
+        session.rafId = requestAnimationFrame(() => flushPendingMappingAmountDrag(session));
     }
 }

@@ -3,7 +3,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { modulationStore } from '../../../stores/modulationStore';
 import { beginMappingAmountDrag } from '../beginMappingAmountDrag';
 import { endMappingAmountDrag } from '../endMappingAmountDrag';
-import { flushPendingMappingAmountDrag } from '../flushPendingMappingAmountDrag';
 import { isMappingAmountDragActive } from '../isMappingAmountDragActive';
 import { mappingAmountDragState } from '../mappingAmountDragState';
 import { paintMappingAmountDrag } from '../paintMappingAmountDrag';
@@ -18,9 +17,10 @@ vi.mock('#/modules/Command/useCases', () => ({
     pushUndoEntry: mocks.pushUndoEntry,
 }));
 
-const TARGET = { targetTrackId: 'track-1', targetDeviceId: 'device-1', targetParamId: 'cutoff' };
+const TARGET_A = { targetTrackId: 'track-1', targetDeviceId: 'device-1', targetParamId: 'cutoff' };
+const TARGET_B = { targetTrackId: 'track-1', targetDeviceId: 'device-1', targetParamId: 'resonance' };
 
-function seedStore(amount: number): void {
+function seedStore(amountA: number, amountB: number): void {
     modulationStore.set({
         modulators: [
             {
@@ -29,15 +29,18 @@ function seedStore(amount: number): void {
                 trackId: 'track-1',
                 kind: 'lfo',
                 config: { kind: 'lfo', waveform: 'sine', rate: 1, sync: true, phase: 0, depth: 1 },
-                mappings: [{ ...TARGET, amount }],
+                mappings: [
+                    { ...TARGET_A, amount: amountA },
+                    { ...TARGET_B, amount: amountB },
+                ],
                 enabled: true,
             },
         ],
     });
 }
 
-function currentAmount(): number | undefined {
-    return modulationStore.value?.modulators.find((m) => m.id === 'mod-1')?.mappings[0]?.amount;
+function currentAmount(target: { targetParamId: string }): number | undefined {
+    return modulationStore.value?.modulators[0]?.mappings.find((m) => m.targetParamId === target.targetParamId)?.amount;
 }
 
 function stubAnimationFrame() {
@@ -66,12 +69,12 @@ function stubAnimationFrame() {
 
 describe('mappingAmountDrag', () => {
     beforeEach(() => {
-        seedStore(0.2);
+        seedStore(0.2, 0.4);
         mocks.pushUndoEntry.mockReset();
     });
 
     afterEach(() => {
-        mappingAmountDragState.activeSession = null;
+        mappingAmountDragState.activeSessions.clear();
         vi.unstubAllGlobals();
         modulationStore.set({ modulators: [] });
         mocks.pushUndoEntry.mockReset();
@@ -81,20 +84,20 @@ describe('mappingAmountDrag', () => {
         const animationFrame = stubAnimationFrame();
         const setSpy = vi.spyOn(modulationStore, 'set');
 
-        beginMappingAmountDrag('mod-1', TARGET);
-        paintMappingAmountDrag(0.4);
-        paintMappingAmountDrag(0.6);
-        paintMappingAmountDrag(0.8);
+        beginMappingAmountDrag('mod-1', TARGET_A);
+        paintMappingAmountDrag('mod-1', TARGET_A, 0.4);
+        paintMappingAmountDrag('mod-1', TARGET_A, 0.6);
+        paintMappingAmountDrag('mod-1', TARGET_A, 0.8);
 
-        expect(isMappingAmountDragActive()).toBe(true);
+        expect(isMappingAmountDragActive('mod-1', TARGET_A)).toBe(true);
         expect(animationFrame.requestAnimationFrameMock).toHaveBeenCalledTimes(1);
         expect(setSpy).not.toHaveBeenCalled();
-        expect(currentAmount()).toBe(0.2);
+        expect(currentAmount(TARGET_A)).toBe(0.2);
 
         animationFrame.flushFrame();
 
         expect(setSpy).toHaveBeenCalledTimes(1);
-        expect(currentAmount()).toBe(0.8);
+        expect(currentAmount(TARGET_A)).toBe(0.8);
         setSpy.mockRestore();
     });
 
@@ -102,74 +105,101 @@ describe('mappingAmountDrag', () => {
         const animationFrame = stubAnimationFrame();
         const setSpy = vi.spyOn(modulationStore, 'set');
 
-        beginMappingAmountDrag('mod-1', TARGET);
-        paintMappingAmountDrag(0.4);
+        beginMappingAmountDrag('mod-1', TARGET_A);
+        paintMappingAmountDrag('mod-1', TARGET_A, 0.4);
         animationFrame.flushFrame();
-        paintMappingAmountDrag(0.6);
+        paintMappingAmountDrag('mod-1', TARGET_A, 0.6);
         animationFrame.flushFrame();
 
         expect(setSpy).toHaveBeenCalledTimes(2);
-        expect(currentAmount()).toBe(0.6);
+        expect(currentAmount(TARGET_A)).toBe(0.6);
         setSpy.mockRestore();
+    });
+
+    it('keeps two mappings’ gestures isolated: one ends without touching the other', () => {
+        stubAnimationFrame();
+        beginMappingAmountDrag('mod-1', TARGET_A);
+        beginMappingAmountDrag('mod-1', TARGET_B);
+
+        // Both sessions are live at once, each with its own restore point.
+        expect(isMappingAmountDragActive('mod-1', TARGET_A)).toBe(true);
+        expect(isMappingAmountDragActive('mod-1', TARGET_B)).toBe(true);
+
+        paintMappingAmountDrag('mod-1', TARGET_A, 0.9);
+        paintMappingAmountDrag('mod-1', TARGET_B, -0.5);
+
+        endMappingAmountDrag('mod-1', TARGET_A);
+
+        expect(currentAmount(TARGET_A)).toBe(0.9);
+        expect(currentAmount(TARGET_B)).toBe(0.4);
+        expect(isMappingAmountDragActive('mod-1', TARGET_A)).toBe(false);
+        // B’s gesture survives A’s end and still commits its own amount.
+        expect(isMappingAmountDragActive('mod-1', TARGET_B)).toBe(true);
+
+        endMappingAmountDrag('mod-1', TARGET_B);
+        expect(currentAmount(TARGET_B)).toBe(-0.5);
+
+        // Two independent undo entries, one per gesture.
+        expect(mocks.pushUndoEntry).toHaveBeenCalledTimes(2);
     });
 
     it('ends the gesture with one undo entry whose undo and redo restore the gesture bounds', () => {
         const animationFrame = stubAnimationFrame();
-        beginMappingAmountDrag('mod-1', TARGET);
-        paintMappingAmountDrag(0.9);
+        beginMappingAmountDrag('mod-1', TARGET_A);
+        paintMappingAmountDrag('mod-1', TARGET_A, 0.9);
 
-        endMappingAmountDrag();
+        endMappingAmountDrag('mod-1', TARGET_A);
 
         expect(animationFrame.cancelAnimationFrameMock).toHaveBeenCalledWith(101);
-        expect(isMappingAmountDragActive()).toBe(false);
-        expect(currentAmount()).toBe(0.9);
+        expect(isMappingAmountDragActive('mod-1', TARGET_A)).toBe(false);
+        expect(currentAmount(TARGET_A)).toBe(0.9);
         expect(mocks.pushUndoEntry).toHaveBeenCalledTimes(1);
 
         const [label, undo, redo] = mocks.pushUndoEntry.mock.calls[0]!;
         expect(label).toBe('Adjust modulation amount');
 
         undo();
-        expect(currentAmount()).toBe(0.2);
+        expect(currentAmount(TARGET_A)).toBe(0.2);
 
         redo();
-        expect(currentAmount()).toBe(0.9);
+        expect(currentAmount(TARGET_A)).toBe(0.9);
     });
 
     it('registers no undo entry for a click that never changed the amount', () => {
         stubAnimationFrame();
         const setSpy = vi.spyOn(modulationStore, 'set');
 
-        beginMappingAmountDrag('mod-1', TARGET);
-        endMappingAmountDrag();
+        beginMappingAmountDrag('mod-1', TARGET_A);
+        endMappingAmountDrag('mod-1', TARGET_A);
 
         expect(setSpy).not.toHaveBeenCalled();
         expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
         setSpy.mockRestore();
     });
 
-    it('closes a stranded gesture with its undo entry when a new drag begins', () => {
-        stubAnimationFrame();
-        beginMappingAmountDrag('mod-1', TARGET);
-        paintMappingAmountDrag(0.5);
-        flushPendingMappingAmountDrag();
+    it('closes a stranded gesture with its undo entry when the same mapping begins again', () => {
+        const animationFrame = stubAnimationFrame();
+        beginMappingAmountDrag('mod-1', TARGET_A);
+        paintMappingAmountDrag('mod-1', TARGET_A, 0.5);
+        animationFrame.flushFrame();
 
-        beginMappingAmountDrag('mod-1', TARGET);
+        beginMappingAmountDrag('mod-1', TARGET_A);
 
         expect(mocks.pushUndoEntry).toHaveBeenCalledTimes(1);
-        expect(isMappingAmountDragActive()).toBe(true);
+        expect(isMappingAmountDragActive('mod-1', TARGET_A)).toBe(true);
 
-        endMappingAmountDrag();
+        endMappingAmountDrag('mod-1', TARGET_A);
     });
 
     it('ignores paints with no active session and begins nothing for an unknown mapping', () => {
         stubAnimationFrame();
         const setSpy = vi.spyOn(modulationStore, 'set');
 
-        paintMappingAmountDrag(0.9);
+        paintMappingAmountDrag('mod-1', TARGET_A, 0.9);
         expect(setSpy).not.toHaveBeenCalled();
 
-        beginMappingAmountDrag('mod-1', { ...TARGET, targetParamId: 'missing' });
-        expect(isMappingAmountDragActive()).toBe(false);
+        beginMappingAmountDrag('mod-1', { ...TARGET_A, targetParamId: 'missing' });
+        expect(isMappingAmountDragActive('mod-1', TARGET_A)).toBe(false);
         setSpy.mockRestore();
     });
 });

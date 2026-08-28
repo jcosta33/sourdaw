@@ -37,12 +37,26 @@ function makeModulatorWithMapping(amount: number): StoreValue['modulators'][numb
     };
 }
 
+function makeModulatorWithTwoMappings(amountA: number, amountB: number): StoreValue['modulators'][number] {
+    return {
+        id: 'mod-1',
+        name: 'LFO 1',
+        kind: 'lfo',
+        trackId: 'track-1',
+        enabled: true,
+        mappings: [
+            { targetTrackId: 'track-1', targetDeviceId: 'device-1', targetParamId: 'cutoff', amount: amountA },
+            { targetTrackId: 'track-1', targetDeviceId: 'device-1', targetParamId: 'resonance', amount: amountB },
+        ],
+    };
+}
+
 function makeTrack(id: string, name: string): TrackRef {
     return { id, name, devices: [{ id: 'device-1', name: 'Filter', type: 'mock-plugin' }] };
 }
 
-function currentAmount(): number | undefined {
-    return mocks.modState.modulators[0]?.mappings[0]?.amount;
+function currentAmount(paramId = 'cutoff'): number | undefined {
+    return mocks.modState.modulators[0]?.mappings.find((mapping) => mapping.targetParamId === paramId)?.amount;
 }
 
 /** Captures rAF callbacks without running them, so a test decides when a frame ends. */
@@ -98,7 +112,10 @@ vi.mock('#/modules/Arrangement/stores', () => ({
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
     getPluginById: () => ({
-        parameters: [{ id: 'cutoff', name: 'Cutoff', automatable: true, minValue: 0, maxValue: 1 }],
+        parameters: [
+            { id: 'cutoff', name: 'Cutoff', automatable: true, minValue: 0, maxValue: 1 },
+            { id: 'resonance', name: 'Resonance', automatable: true, minValue: 0, maxValue: 1 },
+        ],
     }),
 }));
 
@@ -120,7 +137,7 @@ describe('ModulationMatrix', () => {
     });
 
     afterEach(() => {
-        mappingAmountDragState.activeSession = null;
+        mappingAmountDragState.activeSessions.clear();
         vi.unstubAllGlobals();
     });
 
@@ -215,5 +232,51 @@ describe('ModulationMatrix', () => {
 
         expect(mocks.addModulator).toHaveBeenCalledTimes(1);
         expect(mocks.addModulator.mock.calls[0]![0]).toMatchObject({ trackId: 'track-1', kind: 'lfo' });
+    });
+
+    it('should keep a second mapping drag off the first mapping’s active session', () => {
+        stubAnimationFrame();
+        mocks.modState = { modulators: [makeModulatorWithTwoMappings(0.2, 0.4)] };
+        mocks.trackState = { tracks: [makeTrack('track-1', 'Lead')] };
+        render(<ModulationMatrix />);
+
+        const sliderCutoff = screen.getByLabelText(/Amount for .* Cutoff$/);
+        const sliderResonance = screen.getByLabelText(/Amount for .* Resonance$/);
+
+        // Finger 1 starts dragging the cutoff slider (its session goes active).
+        fireEvent.pointerDown(sliderCutoff);
+        fireEvent.change(sliderCutoff, { target: { value: '0.3' } });
+        // Finger 2 drags the resonance slider while cutoff's session is live.
+        fireEvent.change(sliderResonance, { target: { value: '-0.5' } });
+
+        // The resonance change committed to ITS OWN mapping synchronously…
+        expect(currentAmount('resonance')).toBe(-0.5);
+        // …and did not paint into the cutoff gesture: cutoff still holds its
+        // own dragged amount once its own gesture ends.
+        fireEvent.pointerUp(sliderCutoff);
+        expect(currentAmount('cutoff')).toBe(0.3);
+
+        // One undo entry per gesture: B's synchronous commit plus A's drag.
+        expect(mocks.pushUndoEntry).toHaveBeenCalledTimes(2);
+    });
+
+    it('should push the undo entry at unmount when the row disappears mid-gesture without its own pointerup', () => {
+        stubAnimationFrame();
+        mocks.modState = { modulators: [makeModulatorWithMapping(0.2)] };
+        const view = render(<ModulationMatrix />);
+
+        const slider = screen.getByLabelText(/Amount for /);
+        fireEvent.pointerDown(slider);
+        fireEvent.change(slider, { target: { value: '0.7' } });
+        expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+
+        // The row unmounts (panel closed) before any pointerup arrives.
+        view.unmount();
+
+        expect(mocks.pushUndoEntry).toHaveBeenCalledTimes(1);
+        expect(currentAmount()).toBe(0.7);
+        const [, undo] = mocks.pushUndoEntry.mock.calls[0]!;
+        undo();
+        expect(currentAmount()).toBe(0.2);
     });
 });

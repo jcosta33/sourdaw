@@ -14,6 +14,16 @@ export type MappingAmountDragSession = {
     rafId: number | null;
 };
 
-export const mappingAmountDragState: { activeSession: MappingAmountDragSession | null } = {
-    activeSession: null,
+/**
+ * One slot per mapping, not one global session: two pointers can drag two
+ * sliders at once (implicit pointer capture keeps each input firing its own
+ * change events), and a single slot would route the second gesture's values
+ * into the first mapping.
+ */
+export const mappingAmountDragState: { activeSessions: Map<string, MappingAmountDragSession> } = {
+    activeSessions: new Map(),
 };
+
+export function mappingAmountDragKey(modulatorId: string, target: MappingTarget): string {
+    return [modulatorId, target.targetTrackId, target.targetDeviceId, target.targetParamId].join(' ');
+}

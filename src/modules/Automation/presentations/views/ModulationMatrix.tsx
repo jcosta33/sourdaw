@@ -1,4 +1,4 @@
-import { type ChangeEvent, type ReactElement, useEffect, useState } from 'react';
+import { type ChangeEvent, type ReactElement, useEffect, useRef, useState } from 'react';
 
 import { Plus, Trash2, X } from 'lucide-react';
 
@@ -22,7 +22,7 @@ import { beginMappingAmountDrag } from '../../useCases/modulation/beginMappingAm
 import { endMappingAmountDrag } from '../../useCases/modulation/endMappingAmountDrag';
 import { isMappingAmountDragActive } from '../../useCases/modulation/isMappingAmountDragActive';
 import { paintMappingAmountDrag } from '../../useCases/modulation/paintMappingAmountDrag';
-import { removeMapping } from '../../useCases/modulation/removeMapping';
+import { type MappingTarget, removeMapping } from '../../useCases/modulation/removeMapping';
 import { removeModulator } from '../../useCases/modulation/removeModulator';
 import { updateModulator } from '../../useCases/modulation/updateModulator';
 
@@ -405,7 +405,35 @@ type MappingRowProps = {
     destination: DestinationLabel | null;
 };
 
+/**
+ * End one mapping's amount-drag gesture from the window, not from the input's
+ * own pointerup: a pointerup landing outside the input (window focus lost
+ * mid-drag, an overlay swallowing it) never fires the input's React handlers,
+ * and the per-frame flush would keep committing the partial amount with no
+ * undo entry. This is the slider-drag counterpart of `startMouseDrag`'s
+ * window-level mouseup contract: listeners are attached at begin, removed on
+ * the first end, and the returned teardown runs the same end path so an
+ * owning row can close the gesture on unmount. Idempotent.
+ */
+function startAmountDragEndWatch(modulatorId: string, target: MappingTarget): () => void {
+    let ended = false;
+    const endOnce = (): void => {
+        if (ended) {
+            return;
+        }
+        ended = true;
+        window.removeEventListener('pointerup', endOnce);
+        window.removeEventListener('pointercancel', endOnce);
+        endMappingAmountDrag(modulatorId, target);
+    };
+
+    window.addEventListener('pointerup', endOnce);
+    window.addEventListener('pointercancel', endOnce);
+    return endOnce;
+}
+
 const MappingRow = ({ modulator, mapping, destination }: MappingRowProps): ReactElement => {
+    const amountDragEndRef = useRef<(() => void) | null>(null);
     const sourceLabel = `${modulator.name} · ${KIND_LABELS[modulator.kind]}`;
     const destinationLabel =
         destination !== null
@@ -415,11 +443,29 @@ const MappingRow = ({ modulator, mapping, destination }: MappingRowProps): React
     // A drag gesture (pointer down → changes → pointer up) coalesces into one
     // store write per animation frame and one undo entry for the whole
     // gesture; a keyboard step is a complete gesture in a single change event
-    // and commits synchronously — same one write, same one undo entry.
+    // and commits synchronously — same one write, same one undo entry. The
+    // active-session check is scoped to THIS mapping: another pointer dragging
+    // another row runs its own independent session, and its change events must
+    // commit to their own mapping rather than paint into this row's gesture.
     const target = {
         targetTrackId: mapping.targetTrackId,
         targetDeviceId: mapping.targetDeviceId,
         targetParamId: mapping.targetParamId,
+    };
+
+    // Closes a still-live drag if this row unmounts before pointerup does —
+    // the rAF flush has already committed the partial amount, so the undo
+    // entry must be pushed here, not left for the next begin on this mapping.
+    // Same ref-held teardown contract as AutomationLaneRow's activeDragCancelRef.
+    useEffect(() => {
+        return () => {
+            amountDragEndRef.current?.();
+        };
+    }, []);
+
+    const handleAmountPointerDown = (): void => {
+        beginMappingAmountDrag(modulator.id, target);
+        amountDragEndRef.current = startAmountDragEndWatch(modulator.id, target);
     };
 
     const handleAmountChange = (event: ChangeEvent<HTMLInputElement>): void => {
@@ -427,13 +473,13 @@ const MappingRow = ({ modulator, mapping, destination }: MappingRowProps): React
         if (!Number.isFinite(next)) {
             return;
         }
-        if (isMappingAmountDragActive()) {
-            paintMappingAmountDrag(next);
+        if (isMappingAmountDragActive(modulator.id, target)) {
+            paintMappingAmountDrag(modulator.id, target, next);
             return;
         }
         beginMappingAmountDrag(modulator.id, target);
-        paintMappingAmountDrag(next);
-        endMappingAmountDrag();
+        paintMappingAmountDrag(modulator.id, target, next);
+        endMappingAmountDrag(modulator.id, target);
     };
 
     return (
@@ -449,9 +495,7 @@ const MappingRow = ({ modulator, mapping, destination }: MappingRowProps): React
                         step={0.01}
                         value={mapping.amount}
                         onChange={handleAmountChange}
-                        onPointerDown={() => beginMappingAmountDrag(modulator.id, target)}
-                        onPointerUp={endMappingAmountDrag}
-                        onPointerCancel={endMappingAmountDrag}
+                        onPointerDown={handleAmountPointerDown}
                         className="w-28 accent-[var(--color-accent-cyan)]"
                         aria-label={`Amount for ${sourceLabel} to ${destinationLabel}`}
                     />

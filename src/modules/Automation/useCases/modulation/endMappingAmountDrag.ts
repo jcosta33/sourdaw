@@ -4,7 +4,7 @@ import { type ModulatorMapping } from '../../models/Modulator';
 import { modulationStore } from '../../stores/modulationStore';
 
 import { flushPendingMappingAmountDrag } from './flushPendingMappingAmountDrag';
-import { mappingAmountDragState } from './mappingAmountDragState';
+import { mappingAmountDragKey, mappingAmountDragState } from './mappingAmountDragState';
 import { type MappingTarget } from './removeMapping';
 import { updateMapping } from './updateMapping';
 
@@ -17,32 +17,31 @@ function sameTarget(mapping: ModulatorMapping, target: MappingTarget): boolean {
 }
 
 /**
- * End the drag and register a single undo entry for the whole gesture — the
- * modulation-amount counterpart of `endDrawSession`: cancel the pending frame
- * flush, flush the final amount, then push one entry restoring the amount the
- * gesture started from.
+ * End the drag on one mapping and register a single undo entry for the whole
+ * gesture — the modulation-amount counterpart of `endDrawSession`: cancel the
+ * pending frame flush, flush the final amount, then push one entry restoring
+ * the amount the gesture started from. A no-op for a mapping with no session.
  */
-export function endMappingAmountDrag(): void {
-    const activeSession = mappingAmountDragState.activeSession;
-    if (activeSession === null) {
+export function endMappingAmountDrag(modulatorId: string, target: MappingTarget): void {
+    const key = mappingAmountDragKey(modulatorId, target);
+    const session = mappingAmountDragState.activeSessions.get(key);
+    if (!session) {
         return;
     }
 
-    if (activeSession.rafId !== null) {
-        cancelAnimationFrame(activeSession.rafId);
-        activeSession.rafId = null;
+    if (session.rafId !== null) {
+        cancelAnimationFrame(session.rafId);
+        session.rafId = null;
     }
-    flushPendingMappingAmountDrag();
-
-    const { modulatorId, target, previousAmount } = activeSession;
-    mappingAmountDragState.activeSession = null;
+    flushPendingMappingAmountDrag(session);
+    mappingAmountDragState.activeSessions.delete(key);
 
     const mapping = modulationStore.value?.modulators
         .find((m) => m.id === modulatorId)
         ?.mappings.find((x) => sameTarget(x, target));
     // No committed change to undo: a click that never moved the thumb, or a
     // mapping that vanished mid-gesture (removed by a peer).
-    if (!mapping || mapping.amount === previousAmount) {
+    if (!mapping || mapping.amount === session.previousAmount) {
         return;
     }
     const finalAmount = mapping.amount;
@@ -50,7 +49,7 @@ export function endMappingAmountDrag(): void {
     pushUndoEntry(
         'Adjust modulation amount',
         () => {
-            updateMapping(modulatorId, target, { amount: previousAmount });
+            updateMapping(modulatorId, target, { amount: session.previousAmount });
         },
         () => {
             updateMapping(modulatorId, target, { amount: finalAmount });
