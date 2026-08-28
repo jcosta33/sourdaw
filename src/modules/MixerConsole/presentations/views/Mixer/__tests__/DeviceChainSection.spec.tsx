@@ -12,6 +12,7 @@ type PluginStub = { id: string; name: string };
 const mocks = vi.hoisted(() => ({
     selectTrack: vi.fn(),
     executeAppAction: vi.fn(),
+    executeAddDeviceAction: vi.fn(() => Promise.resolve({ status: 'applied', deviceId: 'device-added' })),
     compileReorderDevicesAction: vi.fn(),
     getPlatformPlugins: vi.fn<() => PluginStub[]>(() => []),
     openInspector: vi.fn(),
@@ -20,6 +21,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('#/modules/Arrangement/useCases', () => ({
     selectTrack: mocks.selectTrack,
     compileReorderDevicesAction: mocks.compileReorderDevicesAction,
+    executeAddDeviceAction: mocks.executeAddDeviceAction,
     getPlatformPlugins: mocks.getPlatformPlugins,
 }));
 
@@ -160,26 +162,22 @@ describe('DeviceChainSection', () => {
 
         fireEvent.click(screen.getByText('cancel'));
         expect(screen.queryByText('+ Delay Line')).not.toBeInTheDocument();
-        expect(mocks.executeAppAction).not.toHaveBeenCalled();
+        expect(mocks.executeAddDeviceAction).not.toHaveBeenCalled();
 
         fireEvent.click(screen.getByText('+ add'));
         fireEvent.click(screen.getByText('+ Delay Line'));
 
         // By id, not by the label on the button: `addDevice` matches on name
-        // *or* id, and three catalog names are carried by two plugins each.
-        expect(mocks.executeAppAction).toHaveBeenCalledWith({
-            type: 'addDevice',
-            payload: { trackId: 'track-7', deviceType: 'plug-1' },
-        });
+        // *or* id, and three catalog names are carried by two plugins each. The
+        // guarded dispatch door consumes a committed-degraded runtime outcome
+        // instead of leaking it as an unhandled rejection.
+        expect(mocks.executeAddDeviceAction).toHaveBeenCalledWith('track-7', 'plug-1');
         expect(screen.queryByText('+ Delay Line')).not.toBeInTheDocument();
 
         // The MIDI FX menu passes the factory NAME (its id is not a catalog
         // device type), exactly as the raw call did.
         fireEvent.click(screen.getByText('+ add'));
         fireEvent.click(screen.getByText('♪ Chord Generator'));
-        expect(mocks.executeAppAction).toHaveBeenLastCalledWith({
-            type: 'addDevice',
-            payload: { trackId: 'track-7', deviceType: 'Chord Generator' },
-        });
+        expect(mocks.executeAddDeviceAction).toHaveBeenLastCalledWith('track-7', 'Chord Generator');
     });
 });

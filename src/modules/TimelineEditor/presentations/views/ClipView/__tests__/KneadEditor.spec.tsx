@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach, type MockInstance } fr
 
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import { useStore } from '#/infra/store/useStore';
-import { compileAddDeviceAction } from '#/modules/Arrangement/useCases';
+import { executeAddDeviceAction } from '#/modules/Arrangement/useCases';
 import { executeAppAction } from '#/modules/Command/useCases';
 import { type KneadClipState, type NoteBlob } from '#/modules/Knead/stores';
 import { analyzeClipPitch, updateClipKneadState } from '#/modules/Knead/useCases';
@@ -15,7 +15,7 @@ import { useTracks } from '../../../hooks/useTracks';
 import { KneadEditor } from '../KneadEditor';
 
 const actionMocks = vi.hoisted(() => ({
-    compileAddDeviceAction: vi.fn(),
+    executeAddDeviceAction: vi.fn(),
     executeAppAction: vi.fn(),
 }));
 
@@ -106,7 +106,7 @@ vi.mock('../../../hooks/useTracks', () => ({
 
 vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Arrangement/useCases')>()),
-    compileAddDeviceAction: actionMocks.compileAddDeviceAction,
+    executeAddDeviceAction: actionMocks.executeAddDeviceAction,
 }));
 
 // Was previously registered twice for this specifier; the second registration
@@ -136,10 +136,7 @@ describe('KneadEditor', () => {
         const emit = vi.fn().mockResolvedValue(undefined);
         injectDependencies(notifyUser, { eventBus: { emit } });
         vi.clearAllMocks();
-        actionMocks.compileAddDeviceAction.mockReturnValue({
-            type: 'addDevice',
-            payload: { trackId: 'track-1', deviceType: 'knead', deviceId: 'device-knead', expectedDeviceIds: [] },
-        });
+        actionMocks.executeAddDeviceAction.mockResolvedValue({ status: 'applied', deviceId: 'device-knead' });
         actionMocks.executeAppAction.mockResolvedValue(undefined);
     });
 
@@ -153,11 +150,9 @@ describe('KneadEditor', () => {
         expect(screen.getByText('Enable Pitch Editor')).toBeInTheDocument();
 
         fireEvent.click(screen.getByText('Enable Pitch Editor'));
-        expect(compileAddDeviceAction).toHaveBeenCalledWith('track-1', 'knead');
-        expect(executeAppAction).toHaveBeenCalledWith({
-            type: 'addDevice',
-            payload: { trackId: 'track-1', deviceType: 'knead', deviceId: 'device-knead', expectedDeviceIds: [] },
-        });
+        // One guarded dispatch door: it compiles the action and consumes a
+        // committed-degraded runtime outcome instead of leaking a rejection.
+        expect(executeAddDeviceAction).toHaveBeenCalledWith('track-1', 'knead');
     });
 
     it('should render canvas element', () => {

@@ -13,6 +13,7 @@ import {
     getPlatformPlugins,
     getPluginById,
     compileReorderDevicesAction,
+    executeAddDeviceAction,
     projectTrackToLiveStrip,
 } from '#/modules/Arrangement/useCases';
 import { executeAppAction } from '#/modules/Command/useCases';
@@ -202,11 +203,12 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                             // is undoable — the same
                                             // mutation issued by an AI
                                             // prompt already goes through
-                                            // this action.
-                                            void executeAppAction({
-                                                type: 'addDevice',
-                                                payload: { trackId: track.id, deviceType: plugin.id },
-                                            });
+                                            // this action. The dispatch door
+                                            // consumes the committed-degraded
+                                            // rejection so an unrealizable
+                                            // runtime never surfaces as an
+                                            // unhandled rejection.
+                                            void executeAddDeviceAction(track.id, plugin.id);
                                             setShowDeviceMenu(false);
                                         }}
                                     >
@@ -224,10 +226,7 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                         className={cn(menuBtnClass, 'text-foreground hover:bg-accent/50')}
                                         role="menuitem"
                                         onClick={() => {
-                                            void executeAppAction({
-                                                type: 'addDevice',
-                                                payload: { trackId: track.id, deviceType: plugin.id },
-                                            });
+                                            void executeAddDeviceAction(track.id, plugin.id);
                                             setShowDeviceMenu(false);
                                         }}
                                     >
@@ -247,10 +246,7 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                                 className={cn(menuBtnClass, 'text-foreground')}
                                                 role="menuitem"
                                                 onClick={() => {
-                                                    void executeAppAction({
-                                                        type: 'addDevice',
-                                                        payload: { trackId: track.id, deviceType: plugin.id },
-                                                    });
+                                                    void executeAddDeviceAction(track.id, plugin.id);
                                                     setShowDeviceMenu(false);
                                                 }}
                                             >
