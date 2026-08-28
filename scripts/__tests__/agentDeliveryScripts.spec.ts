@@ -806,6 +806,71 @@ describe('package scripts and gitignore', () => {
         }
     });
 
+    it('recovers a dead reclaimer marker before contending on a fresh atomic reclaim', async () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-'));
+        const gitDirectory = join(root, '.git');
+        const lockPath = join(gitDirectory, 'sourdaw-delivery-pr-2495.lock');
+        const reclaimPath = `${lockPath}.reclaim`;
+        mkdirSync(gitDirectory);
+        const deadOwner = spawnSync(process.execPath, ['-e', 'process.exit(0)']);
+        const deadReclaimer = spawnSync(process.execPath, ['-e', 'process.exit(0)']);
+        expect(deadOwner.status).toBe(0);
+        expect(deadReclaimer.status).toBe(0);
+        writeFileSync(
+            lockPath,
+            JSON.stringify({ version: 1, pid: deadOwner.pid, token: '00000000-0000-4000-8000-000000000001' })
+        );
+        writeFileSync(
+            reclaimPath,
+            JSON.stringify({ version: 1, pid: deadReclaimer.pid, token: '00000000-0000-4000-8000-000000000002' })
+        );
+        let delivered = false;
+
+        try {
+            await withPullRequestDeliveryLock(root, 2495, async () => {
+                delivered = true;
+            });
+            expect(delivered).toBe(true);
+            expect(existsSync(lockPath)).toBe(false);
+            expect(existsSync(reclaimPath)).toBe(false);
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('fails closed on live or malformed reclaimer markers', async () => {
+        for (const marker of [
+            {
+                contents: JSON.stringify({
+                    version: 1,
+                    pid: process.pid,
+                    token: '00000000-0000-4000-8000-000000000001',
+                }),
+                error: /reclamation is already in progress/,
+            },
+            { contents: 'not-json', error: /ownership is malformed/ },
+        ]) {
+            const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-'));
+            const lockPath = join(root, '.git', 'sourdaw-delivery-pr-2495.lock');
+            const reclaimPath = `${lockPath}.reclaim`;
+            mkdirSync(join(root, '.git'));
+            writeFileSync(reclaimPath, marker.contents);
+            let delivered = false;
+
+            try {
+                await expect(
+                    withPullRequestDeliveryLock(root, 2495, async () => {
+                        delivered = true;
+                    })
+                ).rejects.toThrow(marker.error);
+                expect(delivered).toBe(false);
+                expect(existsSync(reclaimPath)).toBe(true);
+            } finally {
+                rmSync(root, { recursive: true, force: true });
+            }
+        }
+    });
+
     it('releases the current delivery token after success and failure', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-'));
         const lockPath = join(root, '.git', 'sourdaw-delivery-pr-2495.lock');

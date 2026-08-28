@@ -693,10 +693,9 @@ describe('pull-request delivery', () => {
         expect(calls).not.toContain('complete:2372');
     });
 
-    it('allows tied historical receipts when the newest receipt is unique', () => {
-        const bodyA = relationshipBody('Closes #2371');
-        const bodyB = relationshipBody('Closes #2372');
-        const bodyC = relationshipBody('Closes #2373');
+    it('recovers a unique newer X after tied historical X and Y receipts', () => {
+        const bodyX = relationshipBody('Closes #2372');
+        const bodyY = relationshipBody('Closes #2373');
         const receipt = (
             id: string,
             body: string,
@@ -714,17 +713,16 @@ describe('pull-request delivery', () => {
         const { port, calls, tracker } = fakePort({
             primary: [pullRequest({ state: 'MERGED', body: relationshipBody('None.') })],
             receipts: [
-                receipt('IC_a', bodyA, 2371, '2026-08-21T00:00:00Z'),
-                receipt('IC_b', bodyB, 2372, '2026-08-21T00:00:00Z'),
-                receipt('IC_c', bodyC, 2373, '2026-08-21T00:00:01Z'),
+                receipt('IC_historical_x', bodyX, 2372, '2026-08-21T00:00:00Z'),
+                receipt('IC_historical_y', bodyY, 2373, '2026-08-21T00:00:00Z'),
+                receipt('IC_newest_x', bodyX, 2372, '2026-08-21T00:00:01Z'),
             ],
         });
 
         deliverPullRequest(42, port, tracker);
 
-        expect(calls).toContain('complete:2373');
-        expect(calls).not.toContain('complete:2371');
-        expect(calls).not.toContain('complete:2372');
+        expect(calls).toContain('complete:2372');
+        expect(calls).not.toContain('complete:2373');
     });
 
     it('refuses merged recovery when the newest same-head receipt ordering is ambiguous', () => {

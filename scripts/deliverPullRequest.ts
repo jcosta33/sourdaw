@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
-import { linkSync, lstatSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
+import { linkSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import {
@@ -536,8 +536,11 @@ function orderedDeliveryReceiptLineage(
         if (previous === undefined || current === undefined) {
             fail(`PR #${pullRequest.number} has an invalid delivery receipt lineage`);
         }
-        const previousBodies = new Set(previous.receipts.map((receipt) => receipt.body));
-        if (current.receipts.some((receipt) => previousBodies.has(receipt.body))) {
+        if (
+            previous.receipts.length === 1 &&
+            current.receipts.length === 1 &&
+            previous.receipts[0]?.body === current.receipts[0]?.body
+        ) {
             fail(`PR #${pullRequest.number} has duplicate delivery receipts`);
         }
     }
@@ -1253,16 +1256,35 @@ function deliveryLockPath(primaryRoot: string, number: number): string {
     return join(primaryRoot, '.git', `sourdaw-delivery-pr-${number}.lock`);
 }
 
-function assertDeliveryReclaimAbsent(path: string, number: number): void {
+function recoverDeadDeliveryReclaim(path: string, number: number): void {
+    const reclaimPath = `${path}.reclaim`;
+    let contents: string;
     try {
-        lstatSync(`${path}.reclaim`);
+        contents = readFileSync(reclaimPath, 'utf8');
     } catch (error) {
         if (deliveryLockErrorCode(error) === 'ENOENT') {
             return;
         }
         fail(`PR #${number} delivery lock reclamation cannot be verified`);
     }
-    fail(`PR #${number} delivery lock reclamation is already in progress`);
+    const owner = parseDeliveryLockOwner(contents, number);
+    const ownerState = deliveryLockOwnerState(owner);
+    if (ownerState === 'live') {
+        fail(`PR #${number} delivery lock reclamation is already in progress by process ${owner.pid}`);
+    }
+    if (ownerState === 'uncertain') {
+        fail(`PR #${number} delivery lock reclamation cannot be verified`);
+    }
+
+    const confirmedOwner = readDeliveryLockOwner(reclaimPath, number);
+    if (
+        confirmedOwner.pid !== owner.pid ||
+        confirmedOwner.token !== owner.token ||
+        deliveryLockOwnerState(confirmedOwner) !== 'dead'
+    ) {
+        fail(`PR #${number} delivery lock reclamation changed before dead-owner recovery`);
+    }
+    unlinkSync(reclaimPath);
 }
 
 function parseDeliveryLockOwner(contents: string, number: number): DeliveryLockOwner {
@@ -1330,7 +1352,7 @@ function acquireDeliveryLock(primaryRoot: string, number: number): { path: strin
     const path = deliveryLockPath(primaryRoot, number);
     const owner: DeliveryLockOwner = { version: 1, pid: process.pid, token: randomUUID() };
     const contents = JSON.stringify(owner);
-    assertDeliveryReclaimAbsent(path, number);
+    recoverDeadDeliveryReclaim(path, number);
     if (createDeliveryLockRecord(path, contents, owner.token)) {
         return { path, owner };
     }
