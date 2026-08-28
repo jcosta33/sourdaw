@@ -1,0 +1,21 @@
+crates/daw-plugin-host/src/vst3_wrapper/tests.rs
+  s_4f908a5afb6b58::t_159ab3400b403d 2133,2136-2139
+  s_4f908a5afb6b58::t_24dbfe47cc7a3a 2091,2099-2102
+  s_4f908a5afb6b58::t_85c6641a3068e6 1622-1651
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "02ccfbb4eb49c6ac9b62c279436b5308da5c1919",
+  "prompts": {},
+  "sessions": {
+    "s_4f908a5afb6b58": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fcb92ba4-bf56-47a4-8b57-803f335a449e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
