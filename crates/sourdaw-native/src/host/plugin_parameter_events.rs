@@ -37,10 +37,12 @@
 //! a flag and raises a second process-wide hint, and this thread answers it.
 //!
 //! Answering *does* take the control seam, because `params.flush()` is a call
-//! into the plugin. That is the one thing this thread does under a lock, it runs
-//! only on a tick that found the flush hint raised, and it is bounded by a
-//! timeout far shorter than a command's, so a busy instance cannot hold the knob
-//! drain behind it.
+//! into the plugin. That is the one thing this thread does under a lock, and it
+//! never waits for one: the gate an instance's control commands serialize on is
+//! taken only if it is free right now, and the seam the audio thread holds for
+//! the length of a block is waited on under a short timeout. An instance it
+//! could not get into is skipped, and the hint goes back up for the next tick,
+//! so no plugin's knob feed is ever behind another plugin's `open_gui`.
 
 use crate::events::{EventSink, EventSinkExt};
 use crate::host::native_bridge::SharedHostedPlugin;
@@ -71,10 +73,11 @@ const DRAIN_INTERVAL: Duration = Duration::from_millis(16);
 /// How long answering one flush may wait for the audio thread to release an
 /// instance.
 ///
-/// A fraction of the two seconds a plugin command allows, because this thread
-/// also carries the knob drain: a flush that parked here for seconds would
-/// freeze every other plugin's editor feedback behind one busy instance. A visit
-/// that could not get in raises the hint again rather than waiting, so the next
+/// This is the only wait the flush leg makes — `try_with_control` refuses the
+/// control gate rather than queueing on it — and it is a fraction of the two
+/// seconds a plugin command allows, because it is sized for the audio thread
+/// holding the seam for the length of a block, not for a command of unbounded
+/// duration. A visit that could not get in raises the hint again, so the next
 /// tick tries and the ask is not lost.
 const FLUSH_CONTROL_TIMEOUT: Duration = Duration::from_millis(50);
 
@@ -264,7 +267,7 @@ fn flush_pending_parameters(engine_plugins: &EnginePlugins) -> bool {
     let mut answered = false;
 
     for (instance_id, runtime) in runtimes_to_flush(engine_plugins) {
-        let reached = runtime.with_control(FLUSH_CONTROL_TIMEOUT, |plugin| {
+        let reached = runtime.try_with_control(FLUSH_CONTROL_TIMEOUT, |plugin| {
             Ok(plugin.flush_parameters_off_audio_thread())
         });
 
@@ -502,6 +505,67 @@ mod tests {
                 }),
             )]
         );
+    }
+
+    /// The gate an instance's control commands serialize on is held for as long
+    /// as the command holding it runs, and `open_gui` or `set_state` on a large
+    /// preset is unbounded third-party code. A flush leg that queued on it would
+    /// park this thread — and with it every other plugin's knob feed — for that
+    /// whole duration.
+    ///
+    /// The tick runs on its own thread here so a leg that parks fails the test
+    /// rather than hanging the suite.
+    #[test]
+    fn a_tick_skips_an_instance_whose_control_gate_is_held_and_asks_again_later() {
+        let _guard = hint_guard();
+        let (engine_plugins, queue, runtime) = instance_map(asking_for_a_flush(fixture_wrapper()));
+        let sink = Arc::new(RecordingEventSink::default());
+
+        assert!(queue.push(PluginParameterEvent::value(5, 0.75)));
+        take_pending_parameter_events_signal();
+
+        let (holding, gate_taken) = std::sync::mpsc::channel();
+        let (release, released) = std::sync::mpsc::channel();
+        let holder = std::thread::spawn(move || {
+            runtime
+                .with_control(Duration::from_secs(5), |_plugin| {
+                    holding.send(()).expect("the test is still listening");
+                    released.recv().expect("the test releases the gate");
+                    Ok(())
+                })
+                .expect("a live fixture accepts control");
+        });
+        gate_taken
+            .recv_timeout(Duration::from_secs(2))
+            .expect("the holder takes the gate");
+
+        let (finished, ticked) = std::sync::mpsc::channel();
+        let ticking_plugins = Arc::clone(&engine_plugins);
+        let ticking_sink = Arc::clone(&sink);
+        std::thread::spawn(move || {
+            run_tick(
+                &ticking_plugins,
+                &mut OpenGestures::new(),
+                ticking_sink.as_ref(),
+            );
+            let _ = finished.send(());
+        });
+
+        ticked
+            .recv_timeout(Duration::from_secs(2))
+            .expect("the tick must not queue on a control gate another caller holds");
+        assert_eq!(
+            sink.events(),
+            Vec::new(),
+            "an instance the flush could not get into has handed nothing over"
+        );
+        assert!(
+            take_pending_parameter_flush_signal(),
+            "a live instance the flush skipped must be asked again on the next tick"
+        );
+
+        release.send(()).expect("the holder is still waiting");
+        holder.join().expect("the holder thread finishes");
     }
 
     /// An instance mid-unload refuses public control, and the flush leg has to

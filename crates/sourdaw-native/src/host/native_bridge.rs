@@ -24,7 +24,7 @@ use daw_plugin_host::{
 use rtrb::Consumer;
 use std::cell::UnsafeCell;
 use std::sync::atomic::{AtomicU32, AtomicU64, AtomicU8, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex, MutexGuard, TryLockError};
 use std::thread;
 use std::time::{Duration, Instant};
 use tokio::runtime::RuntimeFlavor;
@@ -594,6 +594,32 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
         self.with_control_locked(timeout, operation)
     }
 
+    /// Run a control operation, but only if the control gate is free right now.
+    ///
+    /// [`with_control`](Self::with_control) waits twice: on the gate that
+    /// serializes this instance's control operations, and then on the RT seam
+    /// under `timeout`. Only the second wait is bounded — the gate is held for
+    /// however long the operation holding it takes, and `open_gui` or `set_state`
+    /// on a large preset is unbounded third-party code. That is fine for a
+    /// command answering one user action, and wrong for a caller serving every
+    /// instance on a timer: the parameter drain answers flush requests on the
+    /// same 16 ms tick that feeds every plugin's knobs to the renderer, so one
+    /// instance mid-`open_gui` would freeze all of them.
+    ///
+    /// So this refuses instead of waiting, and leaves what to do about it to the
+    /// caller, which is the one that knows whether coming back later is cheap.
+    /// The bounded RT wait is kept: that one is the audio thread holding the seam
+    /// for the length of a block, which is what `timeout` was sized for.
+    pub fn try_with_control<ResultValue>(
+        &self,
+        timeout: Duration,
+        operation: impl FnOnce(&mut Runtime) -> Result<ResultValue, String>,
+    ) -> Result<ResultValue, String> {
+        let _non_rt_control_guard = self.try_lock_non_rt_control()?;
+        self.ensure_active_lifecycle()?;
+        self.with_control_locked(timeout, operation)
+    }
+
     pub fn with_unload_control<ResultValue>(
         &self,
         timeout: Duration,
@@ -625,6 +651,24 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
                 self.name, error
             )
         })
+    }
+
+    /// Take the control gate without waiting for it.
+    ///
+    /// No async hand-off, because there is nothing to hand off: this never
+    /// blocks. A poisoned gate is taken rather than refused — the panic that
+    /// poisoned it happened inside some earlier operation's body, the gate itself
+    /// is free, and refusing forever would both silence this instance for the
+    /// life of the process and have a caller that retries spin on every tick.
+    fn try_lock_non_rt_control(&self) -> Result<MutexGuard<'_, ()>, String> {
+        match self.non_rt_control_lock.try_lock() {
+            Ok(guard) => Ok(guard),
+            Err(TryLockError::Poisoned(poisoned)) => Ok(poisoned.into_inner()),
+            Err(TryLockError::WouldBlock) => Err(format!(
+                "Plugin non-RT control path for '{}' is busy",
+                self.name
+            )),
+        }
     }
 
     fn ensure_active_lifecycle(&self) -> Result<(), String> {
