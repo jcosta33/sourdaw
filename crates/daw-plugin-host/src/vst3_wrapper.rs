@@ -1851,6 +1851,16 @@ impl HostedPluginRuntime for Vst3Wrapper {
         // state in which VST3 defines this value.
         unsafe { processor.getLatencySamples() }
     }
+
+    fn tail_samples(&self) -> u32 {
+        let Some(processor) = &self.processor else {
+            return 0;
+        };
+        // SAFETY: control path only; the processor is live. Unlike
+        // `getLatencySamples`, VST3 places no activation precondition on this
+        // one, so it is not gated on `activated`.
+        unsafe { processor.getTailSamples() }
+    }
 }
 
 // ---------------------------------------------------------------------------

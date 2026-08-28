@@ -67,6 +67,8 @@ struct FakeState {
     controller_gain: AtomicU64,
 
     latency: AtomicU32,
+    /// The processing tail the plugin declares, in frames.
+    tail: AtomicU32,
     event_input_buses: AtomicI32,
     max_block: AtomicI32,
     sample_rate: AtomicU64,
@@ -807,7 +809,7 @@ macro_rules! fake_component_impls {
             }
 
             unsafe fn getTailSamples(&self) -> uint32 {
-                0
+                self.state.tail.load(Ordering::Acquire)
             }
         }
     };
@@ -1926,6 +1928,40 @@ fn latency_converts_to_milliseconds_at_the_activation_rate() {
     let wrapper = load(&state, COMBINED_CID);
 
     assert!((wrapper.latency_ms() - 10.0).abs() < 1e-9);
+}
+
+// ── Tail ────────────────────────────────────────────────────────────────
+
+/// The plugin's own answer, asked through `IAudioProcessor::getTailSamples`. A
+/// host that never asks reports every reverb as having no tail at all.
+#[test]
+fn the_declared_tail_is_read_from_the_processor() {
+    let state = FakeState::new();
+    state.tail.store(96_000, Ordering::Release);
+    let wrapper = load(&state, COMBINED_CID);
+
+    assert_eq!(wrapper.tail_samples(), 96_000);
+}
+
+/// `kNoTail` is zero, and it is what a plugin that adds nothing after its input
+/// reports. Pinned so the absent case cannot drift into a sentinel.
+#[test]
+fn a_plugin_declaring_no_tail_reports_zero() {
+    let state = FakeState::new();
+    let wrapper = load(&state, COMBINED_CID);
+
+    assert_eq!(wrapper.tail_samples(), 0);
+}
+
+/// VST3 carries no tail-changed callback, so nothing is ever pending on this
+/// backend — the host asks, the plugin answers, and there is no flag between
+/// them to consume.
+#[test]
+fn a_vst3_plugin_never_has_a_tail_change_pending() {
+    let state = FakeState::new();
+    let mut wrapper = load(&state, COMBINED_CID);
+
+    assert_eq!(wrapper.take_tail_change(), None);
 }
 
 // ── State ───────────────────────────────────────────────────────────────

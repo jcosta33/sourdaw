@@ -421,4 +421,26 @@ pub trait HostedPluginRuntime: AudioPlugin {
 
     /// Reported latency in frames of the plugin's own activation rate.
     fn latency_samples(&self) -> u32;
+
+    /// Reported processing tail in frames of the plugin's own activation rate —
+    /// how long the plugin keeps sounding after its input goes quiet.
+    ///
+    /// Frames rather than the milliseconds latency is reported in, because both
+    /// formats define a sentinel at the top of the range for an infinite tail —
+    /// CLAP's "any value greater or equal to `INT32_MAX`", VST3's
+    /// `kInfiniteTail` — and a sentinel does not survive a conversion.
+    ///
+    /// Zero means no tail, which is also what a plugin that declares nothing
+    /// reports. Control path only.
+    fn tail_samples(&self) -> u32;
+
+    /// Take a tail change the plugin flagged, answering the tail it reports now,
+    /// or `None` when nothing was pending. Control path only.
+    ///
+    /// Defaults to `None` for a format that has no way for a plugin to announce
+    /// one: VST3 defines `getTailSamples` as a question the host asks and
+    /// carries no tail-changed callback, so nothing there is ever pending.
+    fn take_tail_change(&mut self) -> Option<u32> {
+        None
+    }
 }
