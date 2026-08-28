@@ -8,7 +8,7 @@ use daw_plugin_host::PluginParameter;
 use std::collections::HashMap;
 use std::ffi::c_void;
 use std::sync::atomic::AtomicU64;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
 pub struct PluginInstanceData {
@@ -272,6 +272,30 @@ impl Default for AppState {
     }
 }
 
+/// Every live plugin instance taken out of the stores, for a caller that is
+/// about to tear them down.
+pub struct LivePluginInstances {
+    /// Instances the command layer owns outright. Dropping one is its whole
+    /// teardown, because nothing else holds it.
+    pub command_owned: Vec<PluginInstanceData>,
+    /// Engine-owned instances. Their runtimes are shared — the scheduler and
+    /// the watcher threads hold clones — so dropping one runs the plugin's
+    /// teardown only once every other clone is gone.
+    pub engine_owned: Vec<EnginePluginInstanceData>,
+}
+
+/// Take a lock whose data stays usable after a panic elsewhere.
+///
+/// Every store here is a plain map or vec: a thread that panicked mid-write left
+/// it consistent enough to keep serving, and refusing to read it would turn one
+/// panic into a whole subsystem — teardown included — that can never run again.
+pub(crate) fn locked_or_poisoned<Value>(lock: &Mutex<Value>) -> MutexGuard<'_, Value> {
+    match lock.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    }
+}
+
 fn retain_runtime_once<Runtime>(retired_runtimes: &mut Vec<Arc<Runtime>>, runtime: Arc<Runtime>) {
     if retired_runtimes
         .iter()
@@ -366,6 +390,42 @@ impl AppState {
                 let mut retired_plugins = poisoned.into_inner();
                 retain_runtime_once(&mut retired_plugins, runtime);
             }
+        }
+    }
+
+    /// Take every live plugin instance out of the stores, leaving both empty,
+    /// and withdraw each engine-owned runtime's intent to process on the way
+    /// out.
+    ///
+    /// `begin_unload` withdraws the intent to process before the caller queues
+    /// the scheduler removal, the order `unload_plugin` keeps: the audio thread
+    /// acts on that intent if it visits the instance first, and the wrapper's
+    /// own `Drop` performs the stop off the audio thread if it does not. At exit
+    /// the removal follows within microseconds, so the off-thread fallback is
+    /// the expected path, not the exception — what this ordering buys is that
+    /// the stop is never *missed*, whichever side gets there.
+    ///
+    /// The instances come back undropped. Dropping one runs the plugin's own
+    /// teardown, third-party code of unbounded duration, and running that
+    /// inside a store's critical section parks every other plugin command for
+    /// its whole duration — the discipline `sweep_retired_runtimes` keeps for
+    /// the retirement vec.
+    pub fn take_live_plugin_instances(&self) -> LivePluginInstances {
+        let engine_owned = {
+            let mut engine_plugins = locked_or_poisoned(&self.engine_plugins);
+            for instance in engine_plugins.values() {
+                instance.runtime.begin_unload();
+            }
+            std::mem::take(&mut *engine_plugins).into_values().collect()
+        };
+
+        let command_owned = std::mem::take(&mut *locked_or_poisoned(&self.plugins))
+            .into_values()
+            .collect();
+
+        LivePluginInstances {
+            command_owned,
+            engine_owned,
         }
     }
 
@@ -745,6 +805,125 @@ mod tests {
             "CLAP teardown must not run inside the retirement critical section"
         );
         assert!(retired_runtimes.lock().expect("retirement lock").is_empty());
+    }
+
+    /// A command-owned instance that answers, from inside its own teardown,
+    /// whether the store it came out of was still locked.
+    ///
+    /// The same probe shape as `RetirementLockProbe`, for the same question:
+    /// plugin teardown is third-party code of unbounded duration, and running
+    /// it inside a store's critical section parks every concurrent plugin
+    /// command for its whole length.
+    struct StoreLockProbe {
+        plugins: Arc<Mutex<HashMap<String, PluginInstanceData>>>,
+        dropped: Arc<std::sync::atomic::AtomicBool>,
+        store_lock_was_free: Arc<std::sync::atomic::AtomicBool>,
+    }
+
+    impl AudioPlugin for StoreLockProbe {
+        fn process(&mut self, _: &[&[f32]], _: &mut [&mut [f32]], _: usize) {}
+
+        fn set_parameter(&mut self, _: u32, _: f64) {}
+
+        fn get_parameters(&self) -> Vec<PluginParameter> {
+            Vec::new()
+        }
+
+        fn get_state(&self) -> Result<Vec<u8>, String> {
+            Ok(Vec::new())
+        }
+
+        fn set_state(&mut self, _: &[u8]) -> Result<(), String> {
+            Ok(())
+        }
+    }
+
+    impl Drop for StoreLockProbe {
+        fn drop(&mut self) {
+            self.store_lock_was_free.store(
+                self.plugins.try_lock().is_ok(),
+                std::sync::atomic::Ordering::Relaxed,
+            );
+            self.dropped
+                .store(true, std::sync::atomic::Ordering::Relaxed);
+        }
+    }
+
+    #[test]
+    fn taking_live_instances_hands_them_back_undropped() {
+        let state = AppState::default();
+        let dropped = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let store_lock_was_free = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        state.plugins.lock().expect("plugins lock").insert(
+            "command-instance".to_string(),
+            PluginInstanceData {
+                plugin: Box::new(StoreLockProbe {
+                    plugins: Arc::clone(&state.plugins),
+                    dropped: Arc::clone(&dropped),
+                    store_lock_was_free: Arc::clone(&store_lock_was_free),
+                }),
+            },
+        );
+
+        let instances = state.take_live_plugin_instances();
+
+        assert!(
+            !dropped.load(std::sync::atomic::Ordering::Relaxed),
+            "an instance dropped inside the drain runs its teardown under the store lock"
+        );
+
+        drop(instances);
+
+        assert!(
+            dropped.load(std::sync::atomic::Ordering::Relaxed),
+            "the caller's drop must be what tears the instance down"
+        );
+        assert!(
+            store_lock_was_free.load(std::sync::atomic::Ordering::Relaxed),
+            "plugin teardown must not run inside the store's critical section"
+        );
+    }
+
+    #[test]
+    fn taking_live_instances_withdraws_each_runtimes_intent_to_process() {
+        let state = AppState::default();
+        let runtime = Arc::new(SharedHostedPlugin::new(
+            daw_plugin_host::ClapWrapper::new_engine_owned_command_fixture(
+                "Live Fixture",
+                Vec::new(),
+                false,
+            )
+            .into(),
+        ));
+        let processing = runtime.processing_gate();
+        state
+            .engine_plugins
+            .lock()
+            .expect("engine_plugins lock")
+            .insert(
+                "engine-instance".to_string(),
+                EnginePluginInstanceData {
+                    engine_plugin_id: 41,
+                    runtime,
+                    name: "Live Fixture".to_string(),
+                    parameters: Vec::new(),
+                    has_gui: false,
+                    bridge: None,
+                    relay_scratch: PluginRelayScratch::default(),
+                },
+            );
+        assert!(
+            processing.wants_processing(),
+            "the fixture must start wanted, or the withdrawal below proves nothing"
+        );
+
+        let instances = state.take_live_plugin_instances();
+
+        assert_eq!(instances.engine_owned.len(), 1);
+        assert!(
+            processing.has_pending_stop(),
+            "a runtime must leave the store with its stop already requested: the audio thread's chance to perform it ends with the scheduler removal that follows"
+        );
     }
 
     /// Load/unload cycling is what accumulates retirements, so the sweep has to
