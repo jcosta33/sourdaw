@@ -339,7 +339,8 @@ export async function submitAdmittedPromptRequest(
 
         const execute = async (
             successVerb?: 'Confirmed',
-            signal: AbortSignal | undefined = input.signal
+            signal: AbortSignal | undefined = input.signal,
+            onResourceOwnershipAcquired?: () => void
         ): ReturnType<typeof executePromptActionGroup> =>
             executePromptActionGroup({
                 actions: planned.result.actions,
@@ -350,6 +351,7 @@ export async function submitAdmittedPromptRequest(
                 runId,
                 prepared: compiled,
                 ...(successVerb ? { successVerb } : {}),
+                ...(onResourceOwnershipAcquired ? { onResourceOwnershipAcquired } : {}),
             });
 
         if (compiled.requiresConfirmation) {
@@ -372,8 +374,9 @@ export async function submitAdmittedPromptRequest(
             };
         }
 
-        planResourcesTransferred = true;
-        const execution = await execute();
+        const execution = await execute(undefined, input.signal, () => {
+            planResourcesTransferred = true;
+        });
         return { status: execution.status, runId };
     } catch (error) {
         recordPendingProviderResult(true);

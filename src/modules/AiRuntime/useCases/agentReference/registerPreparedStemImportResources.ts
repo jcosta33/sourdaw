@@ -264,7 +264,6 @@ function releasePreparedStemImportResources(input: {
         const registration = registrations.get(registrationKey);
         return registration ? [{ registrationKey, registration }] : [];
     });
-    const releasingKeys = new Set(releasingRegistrations.map(({ registrationKey }) => registrationKey));
     const settledBatchIds = new Set<string>();
     for (const { registration } of releasingRegistrations) {
         if (registration.recovery) {
@@ -272,31 +271,26 @@ function releasePreparedStemImportResources(input: {
         }
     }
 
-    // Do every fallible persistence mutation before detaching any cleanup owner.
-    // A failed transfer can therefore still be cancelled or discarded through
-    // every original registration.
+    const transferableRecoveryBatchIds = [...settledBatchIds].filter((batchId) =>
+        [...registrations.entries()].every(
+            ([registrationKey, registration]) =>
+                !registrationKey.startsWith(`${input.runId}\u0000`) ||
+                registration.recovery?.batchId !== batchId ||
+                releasingRegistrations.some((candidate) => candidate.registrationKey === registrationKey)
+        )
+    );
+
+    // One lifecycle mutation removes live assets and every matching recovery
+    // capsule together. It must persist before any cleanup owner is detached.
     if (agentRunLifecycle.get(input.runId)) {
-        agentRunLifecycle.forgetTemporaryAssets({
+        agentRunLifecycle.transferPreparedStemImportResources({
             runId: input.runId,
             assets: releasingRegistrations.map(({ registration }) => ({
                 assetId: registration.stem.audioBufferId,
                 cleanupOwner: CLEANUP_OWNER,
             })),
+            recoveryBatchIds: transferableRecoveryBatchIds,
         });
-    }
-    for (const batchId of settledBatchIds) {
-        const hasRemainingRegistration = [...registrations.entries()].some(
-            ([registrationKey, registration]) =>
-                registrationKey.startsWith(`${input.runId}\u0000`) &&
-                registration.recovery?.batchId === batchId &&
-                !releasingKeys.has(registrationKey)
-        );
-        if (
-            !hasRemainingRegistration &&
-            agentRunLifecycle.getPreparedStemImportRecovery({ runId: input.runId, batchId })
-        ) {
-            agentRunLifecycle.forgetPreparedStemImportRecovery({ runId: input.runId, batchId });
-        }
     }
 
     for (const { registrationKey, registration } of releasingRegistrations) {

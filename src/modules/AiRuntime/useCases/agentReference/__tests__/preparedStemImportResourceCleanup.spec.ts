@@ -268,7 +268,8 @@ describe('prepared stem import resource cleanup', () => {
         expect(agentRunLifecycle.get('stem-committed')?.temporaryAssets).toEqual([]);
     });
 
-    it('retains every stem cleanup owner when a multi-stem transfer persistence mutation fails', async () => {
+    it('retries one multi-stem and multi-recovery transfer without detaching cleanup owners early', async () => {
+        const runId = 'stem-transfer-persistence-failure';
         const twoStems = [
             ...stems,
             {
@@ -281,32 +282,47 @@ describe('prepared stem import resource cleanup', () => {
             },
         ];
         agentRunLifecycle.create({
-            runId: 'stem-transfer-persistence-failure',
+            runId,
             request: 'Import stems.',
             mode: 'plan',
             createdRevision: 'r1',
         });
-        preparedStemImportResources.register({ runId: 'stem-transfer-persistence-failure', stems: twoStems });
-        const transferFailure = new Error('prepared stem transfer persistence failed');
-        const forget = vi.spyOn(agentRunLifecycle, 'forgetTemporaryAssets').mockImplementationOnce(() => {
-            throw transferFailure;
+        preparedStemImportResources.register({ runId, stems: twoStems });
+        preparedStemImportResources.protect({
+            runId,
+            stems: [twoStems[0]!],
+            recovery: {
+                batchId: 'batch-transfer-1',
+                commandBatch: createRecoveryCommandBatch(runId, 'batch-transfer-1'),
+            },
+        });
+        preparedStemImportResources.protect({
+            runId,
+            stems: [twoStems[1]!],
+            recovery: {
+                batchId: 'batch-transfer-2',
+                commandBatch: createRecoveryCommandBatch(runId, 'batch-transfer-2'),
+            },
+        });
+        const durableBefore = window.localStorage.getItem('sourdaw-agent-runs');
+        const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementationOnce(() => {
+            throw new Error('prepared stem transfer persistence failed');
         });
 
-        expect(() =>
-            preparedStemImportResources.release({ runId: 'stem-transfer-persistence-failure', stems: twoStems })
-        ).toThrow(transferFailure);
-        expect(agentRunLifecycle.get('stem-transfer-persistence-failure')?.temporaryAssets).toEqual([
-            expect.objectContaining({ assetId: 'decoded-buffer-1', status: 'live' }),
-            expect.objectContaining({ assetId: 'decoded-buffer-2', status: 'live' }),
-        ]);
+        expect(() => preparedStemImportResources.release({ runId, stems: twoStems })).toThrow(
+            'Agent run state could not be persisted locally'
+        );
+        expect(agentRunLifecycle.get(runId)).toMatchObject({ temporaryAssets: [], preparedStemImports: [] });
+        expect(readAgentRunState().preparedStemImportRecoveryLedger ?? []).toEqual([]);
+        expect(window.localStorage.getItem('sourdaw-agent-runs')).toBe(durableBefore);
 
-        await expect(
-            preparedStemImportResources.discard({ runId: 'stem-transfer-persistence-failure', stems: twoStems })
-        ).resolves.toBeUndefined();
-        expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledWith('decoded-buffer-1');
-        expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledWith('decoded-buffer-2');
-        expect(agentRunLifecycle.get('stem-transfer-persistence-failure')?.temporaryAssets).toEqual([]);
-        forget.mockRestore();
+        preparedStemImportResources.release({ runId, stems: twoStems });
+        expect(setItem).toHaveBeenCalledTimes(2);
+        expect(window.localStorage.getItem('sourdaw-agent-runs')).not.toBe(durableBefore);
+
+        await expect(preparedStemImportResources.discard({ runId, stems: twoStems })).resolves.toBeUndefined();
+        expect(mocks.releasePreviewAudioBuffer).not.toHaveBeenCalled();
+        setItem.mockRestore();
     });
 
     it('keeps failed confirmation cleanup executable until the durable lease releases', async () => {

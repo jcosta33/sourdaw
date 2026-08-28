@@ -28,6 +28,7 @@ type ExecutePromptActionGroupInput = {
     executionMode?: 'atomic';
     signal?: AbortSignal;
     successVerb?: 'Executed' | 'Confirmed';
+    onResourceOwnershipAcquired?: () => void;
     runId: string;
     prepared: {
         commandBatch: Parameters<typeof issueAgentCommandApprovalBinding>[0]['commandBatch'];
@@ -284,6 +285,7 @@ export async function executePromptActionGroup(
               input.runId
           )
         : undefined;
+    input.onResourceOwnershipAcquired?.();
     const releaseImportedStems = async (): Promise<void> => {
         if (importedStemResourceLease) {
             await importedStemResourceLease.release();

@@ -480,6 +480,39 @@ describe('submitAdmittedPromptRequest', () => {
         expect(mocks.compileAgentActionExecution).not.toHaveBeenCalled();
     });
 
+    it('keeps plan-owned stems until execution acquires cleanup and then avoids a second cleanup', async () => {
+        const stems = [{ audioBufferId: 'prepared-stem-1', assetLeaseId: 'asset-lease-1' }];
+        const stemAction = { type: 'importStemSet', payload: { stems } } as AppAction;
+        const executorError = new Error('Command executor failed after resource acquisition');
+        mocks.compileAgentActionExecution.mockReturnValue({ ...compiled, requiresConfirmation: false });
+        mocks.executePromptActionGroup.mockImplementation(async (executionInput) => {
+            executionInput.onResourceOwnershipAcquired?.();
+            throw executorError;
+        });
+        const discard = vi.spyOn(preparedStemImportResources, 'discard').mockResolvedValue();
+
+        await expect(
+            submitAdmittedPromptRequest({ prompt: 'Import stems', source: 'prompt-bar', actions: [stemAction] })
+        ).rejects.toBe(executorError);
+
+        expect(discard).not.toHaveBeenCalled();
+    });
+
+    it('cleans plan-owned stems when execution cannot acquire cleanup responsibility', async () => {
+        const stems = [{ audioBufferId: 'prepared-stem-1', assetLeaseId: 'asset-lease-1' }];
+        const stemAction = { type: 'importStemSet', payload: { stems } } as AppAction;
+        const acquisitionError = new Error('Command resource acquisition failed');
+        mocks.compileAgentActionExecution.mockReturnValue({ ...compiled, requiresConfirmation: false });
+        mocks.executePromptActionGroup.mockRejectedValue(acquisitionError);
+        const discard = vi.spyOn(preparedStemImportResources, 'discard').mockResolvedValue();
+
+        await expect(
+            submitAdmittedPromptRequest({ prompt: 'Import stems', source: 'prompt-bar', actions: [stemAction] })
+        ).rejects.toBe(acquisitionError);
+
+        expect(discard).toHaveBeenCalledExactlyOnceWith({ runId: RUN_ID, stems });
+    });
+
     it('deduplicates fulfilled preview cancellation', async () => {
         const result = await submitAdmittedPromptRequest({
             prompt: 'Play',
