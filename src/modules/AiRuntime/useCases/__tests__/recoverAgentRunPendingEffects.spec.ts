@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
     getRecovery: vi.fn(),
     getReceipt: vi.fn(),
     logError: vi.fn(),
+    recordRecovery: vi.fn(),
     requireManualRepair: vi.fn(),
 }));
 
@@ -24,6 +25,7 @@ vi.mock('../agentRunLifecycle', () => ({
         completePendingEffectContinuation: mocks.completeRecovery,
         failPendingEffectContinuation: mocks.failRecovery,
         getPendingEffectRecovery: mocks.getRecovery,
+        recordPendingEffectContinuation: mocks.recordRecovery,
         requirePendingEffectManualRepair: mocks.requireManualRepair,
     },
 }));
@@ -77,6 +79,25 @@ describe('recoverAgentRunPendingEffects', () => {
         });
         expect(mocks.getReceipt).toHaveBeenCalledOnce();
         expect(mocks.executeBatch).not.toHaveBeenCalled();
+    });
+
+    it('promotes a prepared render continuation before making it visible as manual repair', async () => {
+        const prepared = { ...renderRecovery(), checkpoint: 'prepared' as const };
+        mocks.getRecovery.mockReturnValueOnce(prepared).mockReturnValueOnce({ ...prepared, checkpoint: 'durable' });
+
+        await expect(
+            recoverAgentRunPendingEffects({ runId: 'run-render-recovery', batchId: 'batch-render-recovery' })
+        ).resolves.toMatchObject({ status: 'failed' });
+
+        expect(mocks.recordRecovery).toHaveBeenCalledWith({
+            runId: 'run-render-recovery',
+            continuation: expect.objectContaining({
+                batchId: 'batch-render-recovery',
+                effects: renderRecovery().effects,
+                receiptIdentity: '2:run-render-recovery:batch-render-recovery:partially-committed',
+            }),
+        });
+        expect(mocks.requireManualRepair).toHaveBeenCalledOnce();
     });
 
     it('reconciles a runtime-graph effect that happens to share the render operation name', async () => {

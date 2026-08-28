@@ -588,7 +588,13 @@ describe('executeCommittedSectionRenderRetry', () => {
             status: 'failed',
             reason: 'Section render jobs remain incomplete: render-chorus',
         });
-        expect(mocks.reserveBudget).toHaveBeenCalledWith(expect.objectContaining({ estimate: 2 }));
+        expect(mocks.reserveBudget).toHaveBeenCalledWith({
+            runId: 'run-retry',
+            attemptId: 'render-retry:confirmation-retry:1',
+            category: 'maxRenderJobs',
+            estimate: 2,
+            provenance: 'versioned-estimate',
+        });
         expect(mocks.reconcileBudget).toHaveBeenCalledWith({
             runId: 'run-retry',
             attemptId: 'render-retry:confirmation-retry:1',

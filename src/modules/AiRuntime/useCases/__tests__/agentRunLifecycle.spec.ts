@@ -285,6 +285,17 @@ describe('agentRunLifecycle', () => {
             confirmationId: 'confirmation-render-retry',
             status: 'executed',
         });
+        pendingActionConfirmationStore.recordPendingActionExecution({
+            confirmationId: 'confirmation-render-retry',
+            execution: {
+                actionType: 'renderProjectSections',
+                commandId: 'command-render-review',
+                label: 'Render Verse',
+                executionKind: 'project',
+                affectedIds: ['render-verse'],
+                outcome: 'committed-with-warning',
+            },
+        });
         pendingActionConfirmationStore.updatePendingActionFollowUp({
             confirmationId: 'confirmation-render-retry',
             projectRevision: 'heads-render-review',

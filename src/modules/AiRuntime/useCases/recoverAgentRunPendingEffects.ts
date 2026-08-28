@@ -110,16 +110,6 @@ export async function recoverAgentRunPendingEffects(input: {
         });
         return { status: 'recovered' };
     }
-    const recoveryPolicy = getPendingEffectRecoveryPolicy(continuation.effects);
-    if (recoveryPolicy.recovery === 'manual-repair') {
-        const reason = recoveryPolicy.reason ?? 'The retained pending effect requires manual repair.';
-        try {
-            agentRunLifecycle.requirePendingEffectManualRepair({ ...input, reason });
-        } catch (error) {
-            logger.error(new Error('Pending-effect manual-repair state could not be persisted', { cause: error }));
-        }
-        return { status: 'failed', reason };
-    }
     if (continuation.checkpoint === 'prepared') {
         agentRunLifecycle.recordPendingEffectContinuation({
             runId: input.runId,
@@ -136,8 +126,22 @@ export async function recoverAgentRunPendingEffects(input: {
             },
         });
     }
+    const durableContinuation = agentRunLifecycle.getPendingEffectRecovery(input);
+    if (!durableContinuation || durableContinuation.checkpoint !== 'durable') {
+        return { status: 'failed', reason: 'The durable pending-effect continuation could not be promoted.' };
+    }
+    const recoveryPolicy = getPendingEffectRecoveryPolicy(durableContinuation.effects);
+    if (recoveryPolicy.recovery === 'manual-repair') {
+        const reason = recoveryPolicy.reason ?? 'The retained pending effect requires manual repair.';
+        try {
+            agentRunLifecycle.requirePendingEffectManualRepair({ ...input, reason });
+        } catch (error) {
+            logger.error(new Error('Pending-effect manual-repair state could not be persisted', { cause: error }));
+        }
+        return { status: 'failed', reason };
+    }
     if (
-        continuation.recovery === 'manual-repair' ||
+        durableContinuation.recovery === 'manual-repair' ||
         priorReceipt.pendingEffects.some(({ remediation }) => remediation === 'manual-repair')
     ) {
         const reason = 'At least one retained external effect requires manual repair and cannot be retried exactly.';

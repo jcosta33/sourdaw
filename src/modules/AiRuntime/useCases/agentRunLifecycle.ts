@@ -895,6 +895,10 @@ function completeAgentRunPendingEffectContinuation(input: {
         run.pendingEffectContinuations.find((continuation) => continuation.batchId === input.batchId) ??
         completedRecovery;
     if (!completedContinuation) {
+        if (hasExactlySettledPendingEffectContinuation(run, input)) {
+            persistAgentRunState(state);
+            return structuredClone(run);
+        }
         throw new Error(`Unknown pending effect continuation: ${input.batchId}`);
     }
     const pendingEffectContinuations = run.pendingEffectContinuations.filter(
@@ -971,6 +975,31 @@ function completeAgentRunPendingEffectContinuation(input: {
     runs[index] = next;
     persistAgentRunState(withPendingEffectRecoveryLedger({ ...state, runs }, pendingEffectRecoveryLedger));
     return structuredClone(next);
+}
+
+function hasExactlySettledPendingEffectContinuation(
+    run: AgentRun,
+    input: { batchId: string; receiptIdentity: string }
+): boolean {
+    const hasExactEntry = (entries: readonly { workId: string; receiptIdentity: string }[]) => {
+        const matches = entries.filter(({ workId }) => workId === input.batchId);
+        return matches.length === 1 && matches[0]?.receiptIdentity === input.receiptIdentity;
+    };
+    const batches = run.batches.filter(({ batchId }) => batchId === input.batchId);
+    const sagaSteps = run.saga.steps.filter(
+        (step) => step.owner === 'external-effect' && step.workId === input.batchId
+    );
+    return (
+        run.pendingEffectContinuations.every(({ batchId }) => batchId !== input.batchId) &&
+        hasExactEntry(run.receipts) &&
+        hasExactEntry(run.committedWork) &&
+        batches.length === 1 &&
+        batches[0]?.status === 'committed' &&
+        batches[0].receiptIdentity === input.receiptIdentity &&
+        sagaSteps.length === 1 &&
+        sagaSteps[0]?.state === 'committed' &&
+        sagaSteps[0].receiptIdentity === input.receiptIdentity
+    );
 }
 
 function recordAgentRunSagaCompensation(input: {

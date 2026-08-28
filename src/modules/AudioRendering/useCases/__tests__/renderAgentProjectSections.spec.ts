@@ -154,6 +154,19 @@ describe('renderAgentProjectSections', () => {
         expect(getAgentSectionRenderArtifacts().map((artifact) => artifact.jobId)).toEqual(['render-chorus-one']);
     });
 
+    it.each([
+        ['a mismatched sample rate', createAudioBuffer({ sampleRate: 48_000 })],
+        ['a non-positive channel count', createAudioBuffer({ numberOfChannels: 0 })],
+    ])('rejects %s without attaching an artifact', async (_label, buffer) => {
+        mocks.renderOffline.mockResolvedValueOnce(buffer);
+
+        await expect(renderAgentProjectSections({ jobs: [createJob()], sourceRevision: 'revision-a' })).rejects.toThrow(
+            'invalid section artifact'
+        );
+
+        expect(getAgentSectionRenderArtifacts()).toEqual([]);
+    });
+
     it('cancels the active render and prevents later jobs or artifacts after its execution signal aborts', async () => {
         const controller = new AbortController();
         const jobs = [

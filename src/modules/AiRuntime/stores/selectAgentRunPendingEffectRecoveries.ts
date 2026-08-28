@@ -39,12 +39,13 @@ function isOwnedByRetryableSectionRenderFollowUp(
 ): boolean {
     return (
         continuation.recovery !== 'manual-repair' &&
-        continuation.effects.some(
-            (effect) => effect.kind === 'external-effect' && effect.operation === 'renderProjectSections'
-        ) &&
+        continuation.effects.length === 1 &&
+        continuation.effects[0]?.kind === 'external-effect' &&
+        continuation.effects[0].operation === 'renderProjectSections' &&
         hasRetryableSectionRenderFollowUp({
             runId,
             batchId: continuation.batchId,
+            commandId: continuation.effects[0].commandId,
             serializedBatch: continuation.serializedBatch,
         })
     );

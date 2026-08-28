@@ -153,6 +153,7 @@ function bindTrackedRun(input: ReturnType<typeof createFixture>): void {
                 recovery: 'reconcile-batch',
                 serializedBatch: input.commandBatch.serialized,
                 authority: input.commandBatch.authority,
+                effects: structuredClone(input.receipt.pendingEffects),
             },
         ],
     });
@@ -567,6 +568,49 @@ describe('admitCommittedSectionRenderRetry', () => {
                     ...mocks.getRun(),
                     pendingEffectContinuations: [
                         { ...mocks.getRun().pendingEffectContinuations[0], recovery: 'manual-repair' },
+                    ],
+                });
+            },
+        ],
+        [
+            'extra continuation effect',
+            (fixture: ReturnType<typeof createFixture>) => {
+                bindTrackedRun(fixture);
+                mocks.getRun.mockReturnValue({
+                    ...mocks.getRun(),
+                    pendingEffectContinuations: [
+                        {
+                            ...mocks.getRun().pendingEffectContinuations[0],
+                            effects: [
+                                ...mocks.getRun().pendingEffectContinuations[0].effects,
+                                { ...fixture.receipt.pendingEffects[0]!, commandId: 'extra-render-command' },
+                            ],
+                        },
+                    ],
+                });
+            },
+        ],
+        [
+            'missing continuation effect',
+            (fixture: ReturnType<typeof createFixture>) => {
+                bindTrackedRun(fixture);
+                mocks.getRun.mockReturnValue({
+                    ...mocks.getRun(),
+                    pendingEffectContinuations: [{ ...mocks.getRun().pendingEffectContinuations[0], effects: [] }],
+                });
+            },
+        ],
+        [
+            'mismatched continuation effect',
+            (fixture: ReturnType<typeof createFixture>) => {
+                bindTrackedRun(fixture);
+                mocks.getRun.mockReturnValue({
+                    ...mocks.getRun(),
+                    pendingEffectContinuations: [
+                        {
+                            ...mocks.getRun().pendingEffectContinuations[0],
+                            effects: [{ ...fixture.receipt.pendingEffects[0]!, commandId: 'wrong-render-command' }],
+                        },
                     ],
                 });
             },

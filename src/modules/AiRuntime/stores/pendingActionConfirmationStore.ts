@@ -389,6 +389,7 @@ export function getPendingActionConfirmation(confirmationId: string): PendingApp
 export function hasRetryableSectionRenderFollowUp(input: {
     runId: string;
     batchId: string;
+    commandId: string;
     serializedBatch: string;
 }): boolean {
     return (
@@ -400,7 +401,14 @@ export function hasRetryableSectionRenderFollowUp(input: {
                 confirmation.followUpStatus === 'retryable' &&
                 confirmation.followUpProjectRevision !== null &&
                 confirmation.approvalSnapshot.commandBatch?.serialized === input.serializedBatch &&
-                confirmation.approvalSnapshot.actions.some((action) => action.type === 'renderProjectSections')
+                confirmation.approvalSnapshot.actions.filter((action) => action.type === 'renderProjectSections')
+                    .length === 1 &&
+                confirmation.executedActions.filter(
+                    (execution) =>
+                        execution.actionType === 'renderProjectSections' &&
+                        execution.commandId === input.commandId &&
+                        execution.executionKind === 'project'
+                ).length === 1
         ) ?? false
     );
 }
