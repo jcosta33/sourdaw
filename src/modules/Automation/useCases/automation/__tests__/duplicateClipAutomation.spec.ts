@@ -69,6 +69,13 @@ describe('duplicateClipAutomation', () => {
             id: 'source',
             clipId: 'clip-a',
             clipAutomationMode: 'multiplicative',
+            enabled: false,
+            collapsed: true,
+            linkedLaneId: 'lane-leader',
+            linkScale: -1,
+            viewMinValue: -0.5,
+            viewMaxValue: 1.5,
+            color: '#ff8800',
             points: [{ beat: 0, value: 0.5, curve: 'linear', tension: 0 }],
             trimPoints: [{ beat: 1, value: 0.2, curve: 'bezier', tension: 0, cp1: { x: 0.1, y: 0.2 } }],
             ghostPoints: [{ beat: 2, value: 0.3, curve: 'stairs', tension: 0, stairSteps: 4 }],
@@ -93,6 +100,16 @@ describe('duplicateClipAutomation', () => {
         // normalize repair on the next hydrate instead of the identity path.
         expect(is_exact_automation_lane(copy)).toBe(true);
         expect(copy.clipAutomationMode).toBe('multiplicative');
+        // Every assertion uses a non-default source value, so a field the copy
+        // stops carrying fails its assertion instead of passing on the factory
+        // default or on absence.
+        expect(copy.enabled).toBe(false);
+        expect(copy.collapsed).toBe(true);
+        expect(copy.linkedLaneId).toBe('lane-leader');
+        expect(copy.linkScale).toBe(-1);
+        expect(copy.viewMinValue).toBe(-0.5);
+        expect(copy.viewMaxValue).toBe(1.5);
+        expect(copy.color).toBe('#ff8800');
         expect(copy.trimPoints).toEqual(sourceLane.trimPoints);
         expect(copy.ghostPoints).toEqual(sourceLane.ghostPoints);
         expect(copy.objects).toHaveLength(1);

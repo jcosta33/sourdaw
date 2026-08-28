@@ -165,6 +165,19 @@ describe('handleRestoreAutomationLanePoints — malformed replacement points', (
         expect(mockedRestore).not.toHaveBeenCalled();
     });
 
+    it('refuses exact-shaped points listed out of beat order instead of writing them', () => {
+        setLane([makePoint()]);
+        const result = handleRestoreAutomationLanePoints.execute({
+            type: 'restoreAutomationLanePoints',
+            payload: {
+                laneId: 'lane1',
+                points: [makePoint({ id: 'p-late', beat: 5 }), makePoint({ id: 'p-early', beat: 0 })] as never,
+            },
+        });
+        expect(result).toEqual({ status: 'conflict' });
+        expect(mockedRestore).not.toHaveBeenCalled();
+    });
+
     it('reports a malformed point set as not-a-noop so it reaches execute and conflicts', () => {
         setLane([makePoint()]);
         expect(

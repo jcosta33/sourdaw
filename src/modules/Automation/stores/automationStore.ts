@@ -101,7 +101,7 @@ function is_finite_non_negative_number(value: unknown): value is number {
  * of taking the identity fast path in `sanitize_automation_store_state` and
  * skipping `get_normalized_points`'s sort entirely.
  */
-function is_sorted_by_beat(points: readonly { beat: number }[]): boolean {
+export function is_sorted_by_beat(points: readonly { beat: number }[]): boolean {
     for (let index = 1; index < points.length; index += 1) {
         if (points[index]!.beat < points[index - 1]!.beat) {
             return false;

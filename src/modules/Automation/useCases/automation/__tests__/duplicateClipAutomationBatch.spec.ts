@@ -179,6 +179,13 @@ describe('duplicateClipAutomationBatch', () => {
         const fullSource: AutomationLane = {
             ...source,
             clipAutomationMode: 'multiplicative',
+            enabled: false,
+            collapsed: true,
+            linkedLaneId: 'lane-leader',
+            linkScale: -1,
+            viewMinValue: -0.5,
+            viewMaxValue: 1.5,
+            color: '#ff8800',
             trimPoints: [{ beat: 0.5, value: 0.2, curve: 'linear', tension: 0 }],
             ghostPoints: [{ beat: 1.5, value: 0.4, curve: 'stairs', tension: 0, stairSteps: 8 }],
             objects: [
@@ -204,6 +211,15 @@ describe('duplicateClipAutomationBatch', () => {
         expect(copy.points).toEqual(fullSource.points);
         expect(copy.points[0]?.cp1).not.toBe(fullSource.points[0]?.cp1);
         expect(copy.clipAutomationMode).toBe('multiplicative');
+        // Non-default source values, so each assertion fails when its field
+        // stops being carried onto the copy.
+        expect(copy.enabled).toBe(false);
+        expect(copy.collapsed).toBe(true);
+        expect(copy.linkedLaneId).toBe('lane-leader');
+        expect(copy.linkScale).toBe(-1);
+        expect(copy.viewMinValue).toBe(-0.5);
+        expect(copy.viewMaxValue).toBe(1.5);
+        expect(copy.color).toBe('#ff8800');
         expect(copy.trimPoints).toEqual(fullSource.trimPoints);
         expect(copy.ghostPoints).toEqual(fullSource.ghostPoints);
         expect(copy.objects).toHaveLength(1);

@@ -2,7 +2,7 @@ import { createHandler } from '#/utils/createHandler';
 import { type AutomationPointSnapshot } from '#/utils/handlerContract';
 
 import { type AutomationPoint } from '../../models/Automation';
-import { is_exact_automation_point } from '../../stores/automationStore';
+import { is_exact_automation_point, is_sorted_by_beat } from '../../stores/automationStore';
 import { restoreAutomationLanePoints } from '../../useCases/automation/restoreAutomationLanePoints';
 import { getAutomationStoreState } from '../../useCases/getAutomationStoreState';
 
@@ -35,11 +35,13 @@ function pointsMatch(current: readonly AutomationPoint[], expected: readonly Aut
 
 /**
  * Every replacement point carries exactly the store's point shape, checked per
- * point the way `restoreAutomationLanes` checks whole lanes. This action
- * arrives from undo/redo of a possibly remote peer's document, so the payload
- * is document data rather than in-memory state: a malformed point set must
- * refuse the restore (conflict-style, like an `expectedPoints` divergence)
- * rather than write garbage into the lane.
+ * point the way `restoreAutomationLanes` checks whole lanes — including the
+ * ascending-by-beat order `is_exact_automation_lane` requires via
+ * `is_sorted_by_beat`. This action arrives from undo/redo of a possibly remote
+ * peer's document, so the payload is document data rather than in-memory
+ * state: a malformed or out-of-order point set must refuse the restore
+ * (conflict-style, like an `expectedPoints` divergence) rather than write
+ * garbage into the lane.
  */
 function isRestorablePointSet(points: readonly AutomationPointSnapshot[]): points is AutomationPoint[] {
     if (!Array.isArray(points)) {
@@ -50,7 +52,7 @@ function isRestorablePointSet(points: readonly AutomationPointSnapshot[]): point
             return false;
         }
     }
-    return true;
+    return is_sorted_by_beat(points);
 }
 
 export const handleRestoreAutomationLanePoints = createHandler<'restoreAutomationLanePoints'>({
