@@ -2,7 +2,7 @@
  * Plugin bridge types — DTOs for native plugin IPC.
  */
 
-import { type ScannedPlugin } from '../../models/ScannedPlugin';
+import { type QuarantinedPlugin, type ScannedPlugin } from '../../models/ScannedPlugin';
 
 export type PluginParameter = {
     id: number;
@@ -102,6 +102,8 @@ export type ScanResult = {
      */
     notices: string[];
     scan_duration_ms: number;
+    /** Candidates the scan skipped because a prior helper crash or hang quarantined them (#2911). */
+    quarantined: QuarantinedPlugin[];
 };
 
 export type PluginGuiInfo = {

@@ -31,6 +31,7 @@ function create_plugin_scan_state(overrides: Partial<PluginScanState> = {}): Plu
         errors: [],
         notices: [],
         lastScanTime: null,
+        quarantined: [],
         ...overrides,
     };
 }
@@ -53,6 +54,7 @@ const mocks = vi.hoisted(() => {
             errors: [],
             notices: [],
             lastScanTime: null,
+            quarantined: [],
         },
     };
     return {
@@ -110,7 +112,7 @@ describe('startPluginScan', () => {
         const mockPlugins = [create_scanned_plugin({ id: 'p1', name: 'Synth' })];
         mocks.scanPlugins.mockResolvedValue({
             ran: true,
-            result: { plugins: mockPlugins, errors: [], notices: [], scan_duration_ms: 0 },
+            result: { plugins: mockPlugins, errors: [], notices: [], scan_duration_ms: 0, quarantined: [] },
         });
 
         await startPluginScan();
@@ -142,6 +144,7 @@ describe('startPluginScan', () => {
                 errors: [],
                 notices: [refusal],
                 scan_duration_ms: 0,
+                quarantined: [],
             },
         });
 
@@ -167,6 +170,7 @@ describe('startPluginScan', () => {
                 errors: ['Cannot read /default/path: permission denied'],
                 notices: ['Audio Unit plugins are not loaded.'],
                 scan_duration_ms: 0,
+                quarantined: [],
             },
         });
 
@@ -223,6 +227,7 @@ describe('startPluginScan', () => {
                 errors: ['Cannot read /default/path: permission denied'],
                 notices: [],
                 scan_duration_ms: 0,
+                quarantined: [],
             },
         });
 
@@ -250,7 +255,7 @@ describe('startPluginScan', () => {
         });
         mocks.scanPlugins.mockResolvedValue({
             ran: true,
-            result: { plugins: [], errors: [], notices: [], scan_duration_ms: 0 },
+            result: { plugins: [], errors: [], notices: [], scan_duration_ms: 0, quarantined: [] },
         });
 
         await startPluginScan();
@@ -270,7 +275,7 @@ describe('startPluginScan', () => {
         mocks.getDefaultPluginPaths.mockResolvedValue(['/default/path']);
         mocks.scanPlugins.mockResolvedValue({
             ran: true,
-            result: { plugins: [], errors: [], notices: [], scan_duration_ms: 0 },
+            result: { plugins: [], errors: [], notices: [], scan_duration_ms: 0, quarantined: [] },
         });
 
         await startPluginScan();
@@ -290,7 +295,7 @@ describe('startPluginScan', () => {
         mocks.isScanPathAuthorized.mockImplementation((path: string) => Promise.resolve(path === '/granted/path'));
         mocks.scanPlugins.mockResolvedValue({
             ran: true,
-            result: { plugins: [], errors: [], notices: [], scan_duration_ms: 0 },
+            result: { plugins: [], errors: [], notices: [], scan_duration_ms: 0, quarantined: [] },
         });
 
         await startPluginScan();
@@ -343,7 +348,7 @@ describe('startPluginScan', () => {
         };
         scan_deferred.resolve({
             ran: true,
-            result: { plugins: [], errors: [], notices: [], scan_duration_ms: 0 },
+            result: { plugins: [], errors: [], notices: [], scan_duration_ms: 0, quarantined: [] },
         });
         await scan_promise;
 
@@ -390,5 +395,51 @@ describe('startPluginScan', () => {
         expect(mocks.pluginScanStoreSet).not.toHaveBeenCalled();
         expect(mocks.getDefaultPluginPaths).not.toHaveBeenCalled();
         expect(mocks.scanPlugins).not.toHaveBeenCalled();
+    });
+
+    it('calls the repository with a single argument on the default scan, matching every call site before this flag existed', async () => {
+        mocks.scanPlugins.mockResolvedValue({
+            ran: true,
+            result: { plugins: [], errors: [], notices: [], scan_duration_ms: 0, quarantined: [] },
+        });
+
+        await startPluginScan();
+
+        expect(mocks.scanPlugins.mock.calls.at(-1)).toHaveLength(1);
+    });
+
+    it('forwards an explicit retry flag to the repository', async () => {
+        mocks.scanPlugins.mockResolvedValue({
+            ran: true,
+            result: { plugins: [], errors: [], notices: [], scan_duration_ms: 0, quarantined: [] },
+        });
+
+        await startPluginScan({ retryQuarantined: true });
+
+        expect(mocks.scanPlugins).toHaveBeenCalledWith(expect.any(Array), true);
+    });
+
+    it('replaces the quarantined list with the registry snapshot the scan reported', async () => {
+        const previous_quarantine = [
+            { path: '/plugins/old.vst3', reason: 'Plugin scan helper timed out', quarantined_at_ms: 1 },
+        ];
+        mocks.pluginScanStoreValue.value = create_plugin_scan_state({ quarantined: previous_quarantine });
+        const fresh_quarantine = [
+            {
+                path: '/plugins/broken.vst3',
+                reason: 'Plugin scan helper exited unsuccessfully for /plugins/broken.vst3',
+                quarantined_at_ms: 2,
+            },
+        ];
+        mocks.scanPlugins.mockResolvedValue({
+            ran: true,
+            result: { plugins: [], errors: [], notices: [], scan_duration_ms: 0, quarantined: fresh_quarantine },
+        });
+
+        await startPluginScan();
+
+        expect(mocks.pluginScanStoreSet).toHaveBeenLastCalledWith(
+            expect.objectContaining({ quarantined: fresh_quarantine })
+        );
     });
 });

@@ -60,20 +60,33 @@ export const scanWorkerCommand = (execPath: string, scriptPath: string): ScanWor
     env: { ELECTRON_RUN_AS_NODE: '1' },
 });
 
-export type ScanWorkerRequest = { readonly paths: readonly string[] };
+export type ScanWorkerRequest = {
+    readonly paths: readonly string[];
+    readonly retryQuarantined?: boolean;
+};
 
 /** Parse a supervisor request. An unrecognised message is answered, never obeyed. */
 export const asScanWorkerRequest = (message: unknown): ScanWorkerRequest | undefined => {
     if (
-        typeof message === 'object' &&
-        message !== null &&
-        'paths' in message &&
-        Array.isArray(message.paths) &&
-        message.paths.every((entry) => typeof entry === 'string')
+        typeof message !== 'object' ||
+        message === null ||
+        !('paths' in message) ||
+        !Array.isArray(message.paths) ||
+        !message.paths.every((entry) => typeof entry === 'string')
     ) {
-        return { paths: message.paths };
+        return undefined;
     }
-    return undefined;
+    if ('retryQuarantined' in message) {
+        // A present-but-wrong-typed field is refused along with the rest of
+        // the message rather than silently dropped: a caller whose flag never
+        // arrives would have every quarantined binary scanned again with no
+        // sign that the retry request itself was lost.
+        if (typeof message.retryQuarantined !== 'boolean') {
+            return undefined;
+        }
+        return { paths: message.paths, retryQuarantined: message.retryQuarantined };
+    }
+    return { paths: message.paths };
 };
 
 /** Read one addon method, failing by name rather than as `undefined is not a function`. */
@@ -123,7 +136,10 @@ const main = (): void => {
         }
         void (async () => {
             try {
-                process.parentPort.postMessage({ ok: true, result: await scanPlugins(request.paths) });
+                process.parentPort.postMessage({
+                    ok: true,
+                    result: await scanPlugins(request.paths, request.retryQuarantined ?? false),
+                });
             } catch (error) {
                 process.parentPort.postMessage({
                     ok: false,

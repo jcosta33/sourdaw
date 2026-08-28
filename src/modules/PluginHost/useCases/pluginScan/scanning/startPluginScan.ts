@@ -5,7 +5,18 @@ import { pluginScanStore } from '../../../stores/pluginScanStore';
 
 import { getState } from './helpers';
 
-export async function startPluginScan(): Promise<void> {
+export type StartPluginScanOptions = {
+    /**
+     * Clear every quarantine record among this run's candidates before the
+     * scan helper runs, giving a binary whose helper previously crashed or
+     * timed out one more attempt (#2911). Omitted is the default incremental
+     * scan, which skips a quarantined candidate without ever clearing its
+     * record.
+     */
+    readonly retryQuarantined?: boolean;
+};
+
+export async function startPluginScan(options: StartPluginScanOptions = {}): Promise<void> {
     const state = getState();
     // In-flight guard: a scan already running owns the store. A second start
     // would race the first's awaited completion and overwrite its result
@@ -50,7 +61,12 @@ export async function startPluginScan(): Promise<void> {
             return;
         }
 
-        const attempt = await scanPlugins(allPaths);
+        // Called with one argument by default, matching every call site
+        // before this flag existed — existing assertions on the request
+        // pin an exact argument list, and a call arity that never changes
+        // for an ordinary scan is what keeps that pin meaningful.
+        const attempt =
+            options.retryQuarantined === true ? await scanPlugins(allPaths, true) : await scanPlugins(allPaths);
         if (!attempt.ran) {
             // No scan ran, so there is no result to apply: everything a scan
             // restates — the plugin list, the paths it merged, the time it
@@ -86,6 +102,10 @@ export async function startPluginScan(): Promise<void> {
                 isScanning: false,
                 errors: result.errors,
                 notices: [...refusedPathNotice, ...result.notices],
+                // Registry state, not this run's own output: the native side
+                // is authoritative for what is quarantined right now, whether
+                // this scan reported errors or not.
+                quarantined: result.quarantined,
                 // The native contract calls a non-empty error list "a scan the
                 // user has a problem with". That scan's `plugins` is the
                 // partial output of a failed run — writing it would drop every

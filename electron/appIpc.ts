@@ -57,11 +57,16 @@ export const registerScanCommand = ({ ipcMain, isTrustedFrameUrl, supervisor }: 
     ipcMain.handle(
         commandChannel(SCAN_COMMAND),
         withTrustedSender(SCAN_COMMAND, isTrustedFrameUrl, async (args) => {
-            const [paths] = asPositionalArguments(args);
+            const [paths, retryQuarantined] = asPositionalArguments(args);
             if (!isStringList(paths)) {
                 throw new TypeError('scan_plugins expects a list of paths');
             }
-            return supervisor.scan({ paths });
+            if (retryQuarantined !== undefined && typeof retryQuarantined !== 'boolean') {
+                throw new TypeError('scan_plugins expects retry_quarantined to be a boolean');
+            }
+            // Omitted rather than sent as `false`/`undefined`: keeps the ordinary
+            // scan call's request shape identical to before this flag existed.
+            return supervisor.scan(retryQuarantined === true ? { paths, retryQuarantined: true } : { paths });
         })
     );
 };
