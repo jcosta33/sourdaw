@@ -1170,6 +1170,11 @@ pub async fn load_plugin(
                 );
             }));
 
+            // Take the parameter-event queue before the wrapper is handed to
+            // the audio thread. Held on the record so the drain reaches it
+            // without the control seam — see `EnginePluginInstanceData`.
+            let parameter_events = AudioPlugin::parameter_event_queue(&wrapper);
+
             let shared_plugin = Arc::new(SharedHostedPlugin::new(wrapper));
 
             // The record insert re-decides the session ceiling
@@ -1189,6 +1194,7 @@ pub async fn load_plugin(
                     has_gui,
                     bridge: Some(bridge_handle),
                     relay_scratch: crate::state::PluginRelayScratch::default(),
+                    parameter_events,
                 },
             )?;
 
@@ -1990,6 +1996,7 @@ mod tests {
                 has_gui: true,
                 bridge,
                 relay_scratch: crate::state::PluginRelayScratch::default(),
+                parameter_events: None,
             },
         );
     }
@@ -2384,6 +2391,7 @@ mod tests {
                     has_gui: true,
                     bridge: None,
                     relay_scratch: crate::state::PluginRelayScratch::default(),
+                    parameter_events: None,
                 },
             );
     }
@@ -2775,6 +2783,7 @@ mod tests {
                 has_gui: false,
                 bridge: None,
                 relay_scratch: crate::state::PluginRelayScratch::default(),
+                parameter_events: None,
             }
         }
 

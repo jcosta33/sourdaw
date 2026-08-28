@@ -10,6 +10,7 @@
 //! per-bus storage the negotiated layout sizes — and refilled in place.
 //! `process` takes no lock, allocates nothing, and performs no I/O.
 
+use crate::parameter_events::PluginParameterEventQueue;
 use crate::params::PluginParameter;
 use crate::traits::{
     AudioPlugin, EditorWindowResizer, HostParameterUpdate, HostTransport, HostedPluginRuntime,
@@ -1139,6 +1140,12 @@ impl Vst3Wrapper {
         Arc::clone(&self.instance.host.state)
     }
 
+    /// The queue this plugin's own editor edits land in. Clone it to drain
+    /// without holding the wrapper.
+    pub fn parameter_event_queue(&self) -> Arc<PluginParameterEventQueue> {
+        self.instance.host.state.parameter_event_queue()
+    }
+
     /// Install the wake fired when this plugin flags a latency change. First
     /// install wins, so the wake cannot be hijacked mid-life.
     pub fn set_latency_change_notifier(&self, notifier: LatencyChangeNotifier) -> bool {
@@ -1562,7 +1569,7 @@ impl AudioPlugin for Vst3Wrapper {
         self.instance
             .host
             .state
-            .record_parameter_edit(param_id, clamped);
+            .queue_host_parameter_write(param_id, clamped);
     }
 
     /// The controller's parameter list, and the control-path visit the rest of
@@ -1691,6 +1698,10 @@ impl AudioPlugin for Vst3Wrapper {
 
     fn set_editor_content_scale(&mut self, scale: f64) {
         self.editor_scale = scale;
+    }
+
+    fn parameter_event_queue(&self) -> Option<Arc<PluginParameterEventQueue>> {
+        Some(Vst3Wrapper::parameter_event_queue(self))
     }
 }
 
