@@ -936,6 +936,41 @@ describe('package scripts and gitignore', () => {
         }
     });
 
+    it('rejects each invalid value guard in an exact three-key stale owner blob without takeover', async () => {
+        const deadProcess = spawnSync(process.execPath, ['-e', 'process.exit(0)']);
+        expect(deadProcess.status).toBe(0);
+        const validToken = '00000000-0000-4000-8000-000000000001';
+        const cases = [
+            { label: 'version', owner: { version: 2, pid: deadProcess.pid, token: validToken } },
+            { label: 'zero PID', owner: { version: 1, pid: 0, token: validToken } },
+            { label: 'negative PID', owner: { version: 1, pid: -1, token: validToken } },
+            { label: 'token', owner: { version: 1, pid: deadProcess.pid, token: 'not-a-uuid' } },
+        ];
+
+        for (const { label, owner } of cases) {
+            const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-'));
+            initializeDeliveryLockRepository(root);
+            expect(Object.keys(owner).sort(), label).toEqual(['pid', 'token', 'version']);
+            const contents = JSON.stringify(owner);
+            const originalOid = writeDeliveryLockOwner(root, 2495, contents);
+            let entered = false;
+
+            try {
+                await expect(
+                    withPullRequestDeliveryLock(root, 2495, async () => {
+                        entered = true;
+                    }),
+                    label
+                ).rejects.toThrow(/ownership is malformed/);
+                expect(entered, label).toBe(false);
+                expect(readDeliveryLockOid(root, 2495), label).toBe(originalOid);
+                expect(runGit(root, ['cat-file', 'blob', originalOid]), label).toBe(contents);
+            } finally {
+                rmSync(root, { recursive: true, force: true });
+            }
+        }
+    });
+
     it('reclaims one well-formed lock whose owner process is conclusively dead', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-'));
         initializeDeliveryLockRepository(root);

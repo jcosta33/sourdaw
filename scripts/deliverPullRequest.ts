@@ -585,6 +585,16 @@ function readDeliveryReceipt(pullRequest: PullRequestSnapshot, port: DeliveryPor
     return assertDeliveryReceiptForHead(newestDeliveryReceipt(lineage, pullRequest.number), pullRequest);
 }
 
+function validateStableDeliveryReceipt(
+    number: number,
+    expected: DeliveryReceiptPayload,
+    recovered: DeliveryReceiptPayload
+): void {
+    if (composeDeliveryReceipt(expected) !== composeDeliveryReceipt(recovered)) {
+        fail(`PR #${number} delivery receipt changed during delivery`);
+    }
+}
+
 function ensureDeliveryReceipt(
     pullRequest: PullRequestSnapshot,
     closingIssue: number | undefined,
@@ -728,6 +738,22 @@ function deliverPullRequestWithCiAdmission(
     const finalTrackerTarget = trackerCompletionTarget(finalSnapshot);
     validateStableTrackerTarget(number, initialTrackerTarget, finalTrackerTarget);
     validateStablePullRequest(initial, finalSnapshot);
+    if (finalSnapshot.state === 'MERGED') {
+        validateBaseBranch(finalSnapshot);
+        const recoveredReceipt = readDeliveryReceipt(finalSnapshot, port);
+        validateStableDeliveryReceipt(number, receipt, recoveredReceipt);
+        const finalDependents = port
+            .dependents(finalSnapshot.headRefName)
+            .filter((candidate) => candidate.number !== number);
+        validateDependentSet(dependents, finalDependents);
+        for (const dependent of finalDependents) {
+            validateDependent(port.pullRequest(dependent.number), dependent);
+        }
+        retargetDependents(finalDependents, finalSnapshot.baseRefName, port);
+        completeIssueAfterMerge(number, recoveredReceipt.closingIssue, tracker);
+        port.log(`PR #${number} became merged during delivery; repaired ${finalDependents.length} dependent(s)`);
+        return;
+    }
     validatePullRequest(finalSnapshot, port, ciAdmissionMode);
     validateBaseBranch(finalSnapshot);
     validateReview(number, port.reviewState(number, finalSnapshot.headRefOid));

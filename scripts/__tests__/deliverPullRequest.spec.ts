@@ -638,6 +638,26 @@ describe('pull-request delivery', () => {
         expect(calls).not.toContain('merge:42:head');
     });
 
+    it('recovers a stable final author-App merge without re-reviewing or merging again', () => {
+        const closes = relationshipBody('Closes #2372');
+        const child = stacked();
+        const { port, calls, tracker } = fakePort({
+            primary: [
+                pullRequest({ body: closes }),
+                pullRequest({ state: 'MERGED', body: closes, mergedByActorNodeId: AUTHOR_BOT_NODE_ID }),
+            ],
+            dependentSets: [[child], [child]],
+        });
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls.filter((call) => call === 'receipts:42')).toHaveLength(3);
+        expect(calls.filter((call) => call === 'review:42:head')).toHaveLength(1);
+        expect(calls).not.toContain('merge:42:head');
+        expect(calls).toContain('retarget:43:main');
+        expect(calls).toContain('complete:2372');
+    });
+
     it.each([
         { merger: 'automatic', actorNodeId: 'MDQ6QXBwOTk5OTk5' },
         { merger: 'unknown', actorNodeId: null },
