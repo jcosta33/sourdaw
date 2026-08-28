@@ -53,6 +53,7 @@ import { normalizeAgentFailure } from './agentErrorAndSaga';
 import { createStemImportConfirmationResourceLease } from './agentReference/createStemImportConfirmationResourceLease';
 import {
     AGENT_RUN_PERSISTENCE_WARNING,
+    AGENT_RUN_STALE_COMPLETION_WARNING,
     settleAgentRunWorkLeaseSafely,
 } from './agentRequestOrchestration/settleAgentRunWorkLeaseSafely';
 import { agentRunLifecycle } from './agentRunLifecycle';
@@ -165,8 +166,8 @@ function completeProviderResponseBestEffort(input: {
     lease: Parameters<typeof settleAgentRunWorkLeaseSafely>[0]['lease'];
     result: ModelProviderResult;
     receiptIdentity: string;
-}): void {
-    settleAgentRunWorkLeaseSafely({
+}): ReturnType<typeof settleAgentRunWorkLeaseSafely> {
+    const settlement = settleAgentRunWorkLeaseSafely({
         lease: input.lease,
         terminalState: 'completed',
         settle: agentRunWorkLease.settle,
@@ -178,11 +179,15 @@ function completeProviderResponseBestEffort(input: {
     } catch (error) {
         logger.error(new Error('Completed provider usage accounting failed', { cause: error }));
     }
+    if (!settlement.accepted) {
+        return settlement;
+    }
     try {
         agentRunLifecycle.transitionPhase({ runId: input.lease.runId, phase: 'completed' });
     } catch (error) {
         logger.error(new Error('Completed provider lifecycle persistence failed', { cause: error }));
     }
+    return settlement;
 }
 
 function getProviderBudgetCategory(backend: RunnableAiBackend): string {
@@ -1668,12 +1673,21 @@ export async function sendChatMessage(
             reasoning,
             error: incompleteError,
         });
-        completeProviderResponseBestEffort({
+        const providerSettlement = completeProviderResponseBestEffort({
             lease: providerLease,
             result: providerResult,
             receiptIdentity: providerReceiptIdentity,
         });
         providerUsageRecorded = true;
+        if (!providerSettlement.accepted) {
+            const warning = providerSettlement.warning ?? AGENT_RUN_STALE_COMPLETION_WARNING;
+            updateChatMessage(assistantMsgId, {
+                isStreaming: false,
+                content: `${cleanContent}${incompleteNotice}\n\n_${warning}_`,
+                reasoning,
+                error: incompleteError === undefined ? warning : `${incompleteError}\n\n${warning}`,
+            });
+        }
         llmStatusStore.set({ state: 'ready', backend, modelId: getBackendModelId(backend) });
     } catch (error) {
         const errorMessage = (() => {

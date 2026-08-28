@@ -12,6 +12,7 @@ import { agentRunStore } from '../../stores/agentRunStore';
 import { llmStatusStore } from '../../stores/llmStatusStore';
 import { bridgeGroundedLlmToolCalls } from '../agentReference/bridgeGroundedLlmToolCalls';
 import { materializeBatchLocalActionIdentities } from '../agentReference/materializeBatchLocalActionIdentities';
+import { AGENT_RUN_STALE_COMPLETION_WARNING } from '../agentRequestOrchestration/settleAgentRunWorkLeaseSafely';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { agentRunWorkLease } from '../agentRunWorkLease';
 import { compileArbitraryCommandList } from '../compileArbitraryCommandList';
@@ -594,6 +595,41 @@ describe('sendChatMessage retained-provider selection', () => {
         } finally {
             settleWorkLease.mockRestore();
             loggerError.mockRestore();
+        }
+    });
+
+    it('retains regular-chat content without reopening a cancelled run after stale provider settlement', async () => {
+        const content = 'The chorus is ready to automate.';
+        const recordProviderUsage = vi.spyOn(agentRunLifecycle, 'recordProviderUsage');
+        const transitionPhase = vi.spyOn(agentRunLifecycle, 'transitionPhase');
+        const settleWorkLease = vi.spyOn(agentRunWorkLease, 'settle').mockImplementation((input) => {
+            agentRunLifecycle.transitionPhase({ runId: input.runId, phase: 'cancelled' });
+            return { status: 'stale' };
+        });
+        mocks.getLlmEngine.mockReturnValue(createSuccessfulWebLlmEngine(content));
+
+        try {
+            await expect(sendChatMessage('Summarize the chorus.', { mode: 'explain' })).resolves.toBeUndefined();
+
+            const run = agentRunLifecycle.get(getMostRecentlyAdmittedRunId());
+            expect(run?.phase).toBe('cancelled');
+            expect(transitionPhase).not.toHaveBeenCalledWith(expect.objectContaining({ phase: 'completed' }));
+            expect(recordProviderUsage).toHaveBeenCalledOnce();
+            expect(mocks.updateChatMessage).toHaveBeenLastCalledWith(
+                expect.any(String),
+                expect.objectContaining({
+                    isStreaming: false,
+                    content: `${content}\n\n_${AGENT_RUN_STALE_COMPLETION_WARNING}_`,
+                    error: AGENT_RUN_STALE_COMPLETION_WARNING,
+                })
+            );
+            expect(llmStatusStore.value).toEqual({ state: 'ready', backend: 'webllm', modelId: 'fixture-model' });
+            expect(mocks.setActiveAborter).toHaveBeenLastCalledWith(null);
+            expect(mocks.setChatGenerating).toHaveBeenLastCalledWith(false);
+        } finally {
+            settleWorkLease.mockRestore();
+            transitionPhase.mockRestore();
+            recordProviderUsage.mockRestore();
         }
     });
 
