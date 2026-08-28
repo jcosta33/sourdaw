@@ -48,6 +48,14 @@ const HELPER_TIMED_OUT: &str = "Plugin scan helper timed out";
 /// quarantine every binary the process ever touched. See
 /// [`process_failure_message`], which is what keeps it out of
 /// [`is_process_failure`].
+///
+/// The inverse residual is accepted, not closed: a plugin whose own static
+/// initializer happens to call `exit(3)` reads as a self-diagnosed write
+/// refusal and escapes quarantine. That plugin still costs no more than one
+/// bounded spawn per scan — nothing near the deadline-exhausting repeat
+/// spawns an unquarantined *hang* would cost — because a plugin that hangs
+/// instead is still caught by `wait_bounded`'s timeout, which classifies
+/// entirely on elapsed time and never looks at an exit code at all.
 const RESPONSE_WRITE_REFUSAL_EXIT_CODE: i32 = 3;
 
 /// Whether an error from [`scan_descriptor_metadata`] or
