@@ -337,9 +337,10 @@ type FakeInput = {
     dependentSets?: StackedPullRequest[][];
     dirty?: boolean;
     headCheckRuns?: HeadCheckRun[] | Error;
-    gateRequiredCheckNames?: ReadonlySet<string>;
+    gateRequiredCheckNames?: ReadonlySet<string> | Error;
     deletesMergedBranches?: boolean;
     failRetargetOnce?: number;
+    primaryBaseRefNameOnReceiptRead?: string;
     receipts?: DeliveryReceiptComment[];
 };
 
@@ -389,6 +390,7 @@ function fakePort(input: FakeInput = {}) {
     }
     let lastDependents = dependentSets.at(-1) ?? [];
     let failedRetarget = false;
+    let primaryBaseRefName: string | undefined;
     const receipts = [...(input.receipts ?? [])];
     const port: DeliveryPort & {
         deliveryReceipts: (number: number) => DeliveryReceiptComment[];
@@ -401,7 +403,7 @@ function fakePort(input: FakeInput = {}) {
                 if (next === undefined) {
                     throw new Error('missing primary fixture');
                 }
-                return next;
+                return primaryBaseRefName === undefined ? next : { ...next, baseRefName: primaryBaseRefName };
             }
             const current = pullRequests.get(number);
             if (current === undefined) {
@@ -411,7 +413,11 @@ function fakePort(input: FakeInput = {}) {
         },
         gateRequiredCheckNames: () => {
             calls.push('gate-required-check-names');
-            return input.gateRequiredCheckNames ?? gatingCheckNames;
+            const required = input.gateRequiredCheckNames ?? gatingCheckNames;
+            if (required instanceof Error) {
+                throw required;
+            }
+            return required;
         },
         /**
          * Unreadable unless the case under test supplies the head's own check runs, so a delivery
@@ -458,6 +464,7 @@ function fakePort(input: FakeInput = {}) {
         },
         deliveryReceipts: (number) => {
             calls.push(`receipts:${number}`);
+            primaryBaseRefName = input.primaryBaseRefNameOnReceiptRead ?? primaryBaseRefName;
             return structuredClone(receipts);
         },
         addDeliveryReceipt: (number, receiptBody) => {
@@ -919,6 +926,14 @@ describe('pull-request delivery', () => {
         expect(calls).not.toContain('merge:42:head');
     });
 
+    it('rejects a base retargeted during receipt I/O before the final authority snapshot', () => {
+        const { port, calls } = fakePort({ primaryBaseRefNameOnReceiptRead: 'release/1.0' });
+
+        expect(() => deliverPullRequest(42, port)).toThrow(/targets release\/1\.0, not main/);
+        expect(calls).toContain('receipts:42');
+        expect(calls).not.toContain('merge:42:head');
+    });
+
     it.each(['COMMENTED', 'CHANGES_REQUESTED'])('rejects reviewer state %s', (state) => {
         const { port, calls } = fakePort({ review: { latestReviewerStateOnHead: state, unresolvedThreads: 0 } });
 
@@ -942,42 +957,25 @@ describe('pull-request delivery', () => {
     });
 
     it.each([
-        { ciState: 'successful', mergeStateStatus: 'CLEAN', evidence: undefined },
-        {
-            ciState: 'failed',
-            mergeStateStatus: 'UNSTABLE',
-            evidence: [checkRun(), checkRun({ name: 'Unit suite', conclusion: 'FAILURE' })],
-        },
-        {
-            ciState: 'pending',
-            mergeStateStatus: 'UNSTABLE',
-            evidence: [checkRun(), checkRun({ name: 'Unit suite', status: 'IN_PROGRESS', conclusion: null })],
-        },
-        { ciState: 'absent', mergeStateStatus: 'UNSTABLE', evidence: [] },
-        {
-            ciState: 'cancelled',
-            mergeStateStatus: 'UNSTABLE',
-            evidence: [checkRun({ conclusion: 'CANCELLED' })],
-        },
-        {
-            ciState: 'malformed',
-            mergeStateStatus: 'UNSTABLE',
-            evidence: new Error('malformed CI evidence'),
-        },
-        {
-            ciState: 'unavailable',
-            mergeStateStatus: 'UNSTABLE',
-            evidence: new Error('CI evidence unavailable'),
-        },
-    ])('merges with $ciState CI evidence while CI admission is advisory', ({ mergeStateStatus, evidence }) => {
+        { ciState: 'successful', mergeStateStatus: 'CLEAN' },
+        { ciState: 'failed', mergeStateStatus: 'BLOCKED' },
+        { ciState: 'pending', mergeStateStatus: 'UNKNOWN' },
+        { ciState: 'absent', mergeStateStatus: '' },
+        { ciState: 'cancelled', mergeStateStatus: 'UNSTABLE' },
+        { ciState: 'malformed', mergeStateStatus: 'not-a-github-state' },
+        { ciState: 'unavailable', mergeStateStatus: 'UNAVAILABLE' },
+    ])('merges with $ciState CI evidence while CI admission is advisory', ({ mergeStateStatus }) => {
+        const forbiddenCiRead = new Error('advisory delivery must not read CI evidence');
         const { port, calls } = fakePort({
             primary: [pullRequest({ mergeStateStatus }), pullRequest({ mergeStateStatus })],
-            headCheckRuns: evidence,
+            gateRequiredCheckNames: forbiddenCiRead,
+            headCheckRuns: forbiddenCiRead,
         });
 
         deliverPullRequest(42, port);
 
         expect(calls).toContain('merge:42:head');
+        expect(calls).not.toContain('gate-required-check-names');
         expect(calls.filter((call) => call.startsWith('checks:'))).toEqual([]);
     });
 

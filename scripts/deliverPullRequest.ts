@@ -676,22 +676,26 @@ function deliverPullRequestWithCiAdmission(
     }
     port.log(`review size: ${initial.changedFiles} file(s), +${initial.additions}/-${initial.deletions}`);
 
+    const receipt = ensureDeliveryReceipt(initial, initialTrackerTarget, port);
+
     port.fetch();
-    const current = resolveStructuralMergeability(port.pullRequest(number), port);
-    const currentTrackerTarget = trackerCompletionTarget(current);
-    validatePullRequest(current, port, ciAdmissionMode);
-    validateStableTrackerTarget(number, initialTrackerTarget, currentTrackerTarget);
-    validateStablePullRequest(initial, current);
-    validateReview(number, port.reviewState(number, current.headRefOid));
-    const currentDependents = port.dependents(current.headRefName).filter((candidate) => candidate.number !== number);
-    validateDependentSet(dependents, currentDependents);
-    for (const dependent of currentDependents) {
+    const finalSnapshot = resolveStructuralMergeability(port.pullRequest(number), port);
+    const finalTrackerTarget = trackerCompletionTarget(finalSnapshot);
+    validatePullRequest(finalSnapshot, port, ciAdmissionMode);
+    validateBaseBranch(finalSnapshot);
+    validateStableTrackerTarget(number, initialTrackerTarget, finalTrackerTarget);
+    validateStablePullRequest(initial, finalSnapshot);
+    validateReview(number, port.reviewState(number, finalSnapshot.headRefOid));
+    const finalDependents = port
+        .dependents(finalSnapshot.headRefName)
+        .filter((candidate) => candidate.number !== number);
+    validateDependentSet(dependents, finalDependents);
+    for (const dependent of finalDependents) {
         validateDependent(port.pullRequest(dependent.number), dependent);
     }
 
-    const receipt = ensureDeliveryReceipt(current, currentTrackerTarget, port);
-    port.merge(number, current.headRefOid, currentDependents.length > 0);
-    retargetDependents(currentDependents, current.baseRefName, port);
+    port.merge(number, finalSnapshot.headRefOid, finalDependents.length > 0);
+    retargetDependents(finalDependents, finalSnapshot.baseRefName, port);
     completeIssueAfterMerge(number, receipt.closingIssue, tracker);
 }
 
