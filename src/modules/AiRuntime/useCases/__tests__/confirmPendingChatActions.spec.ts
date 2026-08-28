@@ -690,9 +690,13 @@ describe('confirmPendingChatActions transaction admission', () => {
         const captureMutationAuthorization = vi
             .spyOn(crdtUseCases, 'captureProjectMutationAuthorization')
             .mockReturnValue(() => true);
+        const batchResult =
+            status === 'ambiguous'
+                ? { status: 'ambiguous' as const, reason, actions: [] }
+                : { status: 'failed' as const, reason, actions: [] };
         const execute = vi
             .spyOn(commandUseCases, 'executeVersionedCommandBatchEnvelope')
-            .mockResolvedValue({ status, reason });
+            .mockResolvedValue(batchResult);
         const settle = vi.spyOn(agentRunWorkLease, 'settle').mockImplementation(() => {
             agentRunLifecycle.transitionPhase({ runId, phase: 'cancelled' });
             return { status: 'stale' };
