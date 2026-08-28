@@ -341,6 +341,8 @@ type FakeInput = {
     deletesMergedBranches?: boolean;
     failRetargetOnce?: number;
     primaryBaseRefNameOnReceiptRead?: string;
+    primaryBodyOnReceiptRead?: string;
+    reviewStateOnReceiptRead?: ReviewState;
     receipts?: DeliveryReceiptComment[];
 };
 
@@ -391,6 +393,8 @@ function fakePort(input: FakeInput = {}) {
     let lastDependents = dependentSets.at(-1) ?? [];
     let failedRetarget = false;
     let primaryBaseRefName: string | undefined;
+    let primaryBody: string | undefined;
+    let reviewStateAfterReceipt: ReviewState | undefined;
     const receipts = [...(input.receipts ?? [])];
     const port: DeliveryPort & {
         deliveryReceipts: (number: number) => DeliveryReceiptComment[];
@@ -403,7 +407,11 @@ function fakePort(input: FakeInput = {}) {
                 if (next === undefined) {
                     throw new Error('missing primary fixture');
                 }
-                return primaryBaseRefName === undefined ? next : { ...next, baseRefName: primaryBaseRefName };
+                return {
+                    ...next,
+                    ...(primaryBaseRefName === undefined ? {} : { baseRefName: primaryBaseRefName }),
+                    ...(primaryBody === undefined ? {} : { body: primaryBody }),
+                };
             }
             const current = pullRequests.get(number);
             if (current === undefined) {
@@ -438,7 +446,9 @@ function fakePort(input: FakeInput = {}) {
         reviewState: (number, expectedHead) => {
             calls.push(`review:${number}:${expectedHead}`);
             return (
-                reviewStates.shift() ?? input.review ?? { latestReviewerStateOnHead: 'APPROVED', unresolvedThreads: 0 }
+                reviewStateAfterReceipt ??
+                reviewStates.shift() ??
+                input.review ?? { latestReviewerStateOnHead: 'APPROVED', unresolvedThreads: 0 }
             );
         },
         dependents: () => {
@@ -465,12 +475,14 @@ function fakePort(input: FakeInput = {}) {
         deliveryReceipts: (number) => {
             calls.push(`receipts:${number}`);
             primaryBaseRefName = input.primaryBaseRefNameOnReceiptRead ?? primaryBaseRefName;
+            primaryBody = input.primaryBodyOnReceiptRead ?? primaryBody;
+            reviewStateAfterReceipt = input.reviewStateOnReceiptRead ?? reviewStateAfterReceipt;
             return structuredClone(receipts);
         },
         addDeliveryReceipt: (number, receiptBody) => {
             calls.push(`add-receipt:${number}`);
             const receipt = {
-                id: `IC_delivery_${number}`,
+                id: `IC_delivery_${number}_${receipts.length + 1}`,
                 body: receiptBody,
                 authorNodeId: AUTHOR_BOT_NODE_ID,
                 authorLogin: 'renamed-author[bot]',
@@ -566,10 +578,38 @@ describe('pull-request delivery', () => {
         expect(calls.some((call) => call.startsWith('complete:'))).toBe(false);
     });
 
+    it('retries same-head metadata drift with a new canonical receipt while retaining the stale receipt', () => {
+        const originalBody = relationshipBody('Closes #2372');
+        const currentBody = relationshipBody('Closes #2373');
+        const { port, calls, receipts, tracker } = fakePort({
+            primary: [
+                pullRequest({ body: originalBody }),
+                pullRequest({ body: originalBody }),
+                pullRequest({ body: originalBody }),
+                pullRequest({ body: originalBody }),
+            ],
+            primaryBodyOnReceiptRead: currentBody,
+        });
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/closing target changed during delivery/);
+        expect(calls).not.toContain('merge:42:head');
+        expect(receipts.map((receipt) => receipt.body)).toEqual([deliveryReceiptBody(42, 'head', originalBody, 2372)]);
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(2);
+        expect(calls.filter((call) => call === 'merge:42:head')).toHaveLength(1);
+        expect(receipts.map((receipt) => receipt.body)).toEqual([
+            deliveryReceiptBody(42, 'head', originalBody, 2372),
+            deliveryReceiptBody(42, 'head', currentBody, 2373),
+        ]);
+        expect(calls).toContain('complete:2373');
+    });
+
     it('converges issue completion on an already-merged retry from its author-bot receipt', () => {
         const closes = relationshipBody('Closes #2372');
         const { port, calls, tracker } = fakePort({
-            primary: [pullRequest({ state: 'MERGED', body: relationshipBody('None.') })],
+            primary: [pullRequest({ state: 'MERGED', body: closes })],
             receipts: [
                 {
                     id: 'IC_delivery_42',
@@ -590,14 +630,38 @@ describe('pull-request delivery', () => {
         expect(calls.indexOf('complete:2372')).toBeGreaterThan(calls.indexOf('retarget:43:main'));
     });
 
-    it('writes the immutable delivery receipt before merge and uses it after mutable-body drift', () => {
+    it('recovers an already-merged delivery from exactly one current canonical receipt', () => {
+        const staleBody = relationshipBody('Closes #2372');
+        const currentBody = relationshipBody('Closes #2373');
+        const receipt = (id: string, body: string, closingIssue: number): DeliveryReceiptComment => ({
+            id,
+            body: deliveryReceiptBody(42, 'head', body, closingIssue),
+            authorNodeId: AUTHOR_BOT_NODE_ID,
+            authorLogin: 'renamed-author[bot]',
+            authorType: 'Bot',
+            createdAt: '2026-08-21T00:00:00Z',
+            updatedAt: '2026-08-21T00:00:00Z',
+        });
+        const { port, calls, tracker } = fakePort({
+            primary: [pullRequest({ state: 'MERGED', body: currentBody })],
+            receipts: [receipt('IC_stale', staleBody, 2372), receipt('IC_current', currentBody, 2373)],
+        });
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls).toContain('complete:2373');
+        expect(calls).not.toContain('complete:2372');
+        expect(calls).not.toContain('add-receipt:42');
+    });
+
+    it('writes the immutable delivery receipt before merge and uses it on an already-merged retry', () => {
         const closes = relationshipBody('Closes #2372');
         const child = stacked();
         const { port, calls, tracker } = fakePort({
             primary: [
                 pullRequest({ body: closes }),
                 pullRequest({ body: closes }),
-                pullRequest({ state: 'MERGED', body: relationshipBody('None.') }),
+                pullRequest({ state: 'MERGED', body: closes }),
             ],
             dependentSets: [[child], [child], []],
         });
@@ -657,22 +721,12 @@ describe('pull-request delivery', () => {
         expect(calls).toContain('complete:2372');
     });
 
-    it('fails closed on malformed, mismatched, or edited author-bot receipts', () => {
+    it('fails closed on malformed or edited author-bot receipts', () => {
         const closes = relationshipBody('Closes #2372');
-        const receipt = deliveryReceiptBody(42, 'head', closes, 2373);
         for (const existing of [
             {
                 id: 'IC_malformed',
                 body: '<!-- sourdaw-delivery-receipt:v1\nmalformed -->',
-                authorNodeId: AUTHOR_BOT_NODE_ID,
-                authorLogin: 'renamed-author[bot]',
-                authorType: 'Bot',
-                createdAt: '2026-08-21T00:00:00Z',
-                updatedAt: '2026-08-21T00:00:00Z',
-            },
-            {
-                id: 'IC_wrong_target',
-                body: receipt,
                 authorNodeId: AUTHOR_BOT_NODE_ID,
                 authorLogin: 'renamed-author[bot]',
                 authorType: 'Bot',
@@ -913,23 +967,21 @@ describe('pull-request delivery', () => {
         expect(calls).not.toContain('merge:42:head');
     });
 
-    it('rejects a review thread opened between the first and second pre-merge checks', () => {
+    it('rejects a review thread opened during receipt I/O at the post-receipt review check', () => {
         const { port, calls } = fakePort({
-            reviewStates: [
-                { latestReviewerStateOnHead: 'APPROVED', unresolvedThreads: 0 },
-                { latestReviewerStateOnHead: 'APPROVED', unresolvedThreads: 1 },
-            ],
+            reviewStateOnReceiptRead: { latestReviewerStateOnHead: 'APPROVED', unresolvedThreads: 1 },
         });
 
         expect(() => deliverPullRequest(42, port)).toThrow(/unresolved review thread/);
         expect(calls.filter((call) => call.startsWith('review:'))).toHaveLength(2);
+        expect(calls.indexOf('receipts:42')).toBeLessThan(calls.lastIndexOf('review:42:head'));
         expect(calls).not.toContain('merge:42:head');
     });
 
     it('rejects a base retargeted during receipt I/O before the final authority snapshot', () => {
         const { port, calls } = fakePort({ primaryBaseRefNameOnReceiptRead: 'release/1.0' });
 
-        expect(() => deliverPullRequest(42, port)).toThrow(/targets release\/1\.0, not main/);
+        expect(() => deliverPullRequest(42, port)).toThrow(/baseRefName changed during delivery/);
         expect(calls).toContain('receipts:42');
         expect(calls).not.toContain('merge:42:head');
     });

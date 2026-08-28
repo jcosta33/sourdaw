@@ -488,9 +488,11 @@ function expectedDeliveryReceipt(
 
 function deliveryReceiptCandidates(
     comments: DeliveryReceiptComment[],
-    pullRequest: Pick<PullRequestSnapshot, 'number' | 'headRefOid'>
+    pullRequest: Pick<PullRequestSnapshot, 'number' | 'headRefOid'>,
+    expected: DeliveryReceiptPayload
 ): DeliveryReceiptComment[] {
     const candidates: DeliveryReceiptComment[] = [];
+    const canonicalBody = composeDeliveryReceipt(expected);
     for (const comment of comments) {
         if (!isAuthorBotNodeId(comment.authorNodeId)) {
             continue;
@@ -500,7 +502,7 @@ function deliveryReceiptCandidates(
             continue;
         }
         assertOwnedDeliveryReceipt(comment, payload, pullRequest.number);
-        if (payload.head === pullRequest.headRefOid) {
+        if (payload.head === pullRequest.headRefOid && comment.body === canonicalBody) {
             candidates.push(comment);
         }
     }
@@ -527,29 +529,27 @@ function assertOwnedDeliveryReceipt(
 function assertCanonicalDeliveryReceipt(
     comment: DeliveryReceiptComment,
     pullRequest: Pick<PullRequestSnapshot, 'number' | 'headRefOid'>,
-    expected?: DeliveryReceiptPayload
+    expected: DeliveryReceiptPayload
 ): DeliveryReceiptPayload {
     const payload = parseDeliveryReceipt(comment.body);
     if (payload === undefined) {
         fail(`PR #${pullRequest.number} has an invalid delivery receipt`);
     }
     assertOwnedDeliveryReceipt(comment, payload, pullRequest.number);
-    if (
-        payload.head !== pullRequest.headRefOid ||
-        (expected !== undefined && comment.body !== composeDeliveryReceipt(expected))
-    ) {
+    if (payload.head !== pullRequest.headRefOid || comment.body !== composeDeliveryReceipt(expected)) {
         fail(`PR #${pullRequest.number} has an invalid delivery receipt`);
     }
     return payload;
 }
 
 function readDeliveryReceipt(pullRequest: PullRequestSnapshot, port: DeliveryPort): DeliveryReceiptPayload {
-    const candidates = deliveryReceiptCandidates(port.deliveryReceipts(pullRequest.number), pullRequest);
+    const expected = expectedDeliveryReceipt(pullRequest, trackerCompletionTarget(pullRequest));
+    const candidates = deliveryReceiptCandidates(port.deliveryReceipts(pullRequest.number), pullRequest, expected);
     const receipt = candidates[0];
     if (candidates.length !== 1 || receipt === undefined) {
         fail(`PR #${pullRequest.number} must have exactly one canonical delivery receipt`);
     }
-    return assertCanonicalDeliveryReceipt(receipt, pullRequest);
+    return assertCanonicalDeliveryReceipt(receipt, pullRequest, expected);
 }
 
 function ensureDeliveryReceipt(
@@ -558,7 +558,7 @@ function ensureDeliveryReceipt(
     port: DeliveryPort
 ): DeliveryReceiptPayload {
     const expected = expectedDeliveryReceipt(pullRequest, closingIssue);
-    const existing = deliveryReceiptCandidates(port.deliveryReceipts(pullRequest.number), pullRequest);
+    const existing = deliveryReceiptCandidates(port.deliveryReceipts(pullRequest.number), pullRequest, expected);
     if (existing.length > 1) {
         fail(`PR #${pullRequest.number} has duplicate delivery receipts`);
     }
@@ -568,7 +568,11 @@ function ensureDeliveryReceipt(
         try {
             receipt = port.addDeliveryReceipt(pullRequest.number, body);
         } catch (error) {
-            const recovered = deliveryReceiptCandidates(port.deliveryReceipts(pullRequest.number), pullRequest);
+            const recovered = deliveryReceiptCandidates(
+                port.deliveryReceipts(pullRequest.number),
+                pullRequest,
+                expected
+            );
             if (recovered.length !== 1 || recovered[0] === undefined) {
                 throw error;
             }
@@ -576,7 +580,7 @@ function ensureDeliveryReceipt(
         }
     }
     assertCanonicalDeliveryReceipt(receipt, pullRequest, expected);
-    const verified = deliveryReceiptCandidates(port.deliveryReceipts(pullRequest.number), pullRequest);
+    const verified = deliveryReceiptCandidates(port.deliveryReceipts(pullRequest.number), pullRequest, expected);
     if (verified.length !== 1 || verified[0]?.id !== receipt.id) {
         fail(`PR #${pullRequest.number} delivery receipt was not durably verified`);
     }
@@ -681,10 +685,10 @@ function deliverPullRequestWithCiAdmission(
     port.fetch();
     const finalSnapshot = resolveStructuralMergeability(port.pullRequest(number), port);
     const finalTrackerTarget = trackerCompletionTarget(finalSnapshot);
-    validatePullRequest(finalSnapshot, port, ciAdmissionMode);
-    validateBaseBranch(finalSnapshot);
     validateStableTrackerTarget(number, initialTrackerTarget, finalTrackerTarget);
     validateStablePullRequest(initial, finalSnapshot);
+    validatePullRequest(finalSnapshot, port, ciAdmissionMode);
+    validateBaseBranch(finalSnapshot);
     validateReview(number, port.reviewState(number, finalSnapshot.headRefOid));
     const finalDependents = port
         .dependents(finalSnapshot.headRefName)
