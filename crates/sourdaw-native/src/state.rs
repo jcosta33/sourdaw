@@ -5,6 +5,7 @@ use daw_plugin_host::AudioPlugin;
 use daw_plugin_host::EditorWindowResizer;
 use daw_plugin_host::HostedRuntime;
 use daw_plugin_host::PluginParameter;
+use daw_plugin_host::PluginParameterEventQueue;
 use std::collections::HashMap;
 use std::ffi::c_void;
 use std::sync::atomic::AtomicU64;
@@ -125,6 +126,14 @@ pub struct EnginePluginInstanceData {
     /// that owns it.
     pub bridge: Option<PluginAudioBridgeHandle>,
     pub relay_scratch: PluginRelayScratch,
+    /// The queue this plugin writes its own parameter edits into.
+    ///
+    /// Cloned off the runtime once at load and held here rather than reached
+    /// through the control seam on every drain: that seam can wait on the audio
+    /// thread, which bypasses a plugin whose lock is held, so draining through
+    /// it would trade a knob's latency for a dropout. `None` for a backend that
+    /// reports no plugin-side edits.
+    pub parameter_events: Option<Arc<PluginParameterEventQueue>>,
 }
 
 pub struct AppState {
@@ -910,6 +919,7 @@ mod tests {
                     has_gui: false,
                     bridge: None,
                     relay_scratch: PluginRelayScratch::default(),
+                    parameter_events: None,
                 },
             );
         assert!(

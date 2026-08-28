@@ -403,6 +403,7 @@ mod tests {
                     has_gui: true,
                     bridge: None,
                     relay_scratch: crate::state::PluginRelayScratch::default(),
+                    parameter_events: None,
                 },
             );
         processing

@@ -134,6 +134,10 @@ impl SourdawNative {
             Arc::clone(&singletons.app_state.engine_plugins),
         );
         crate::host::plugin_host_requests::start(
+            Arc::clone(&events),
+            Arc::clone(&singletons.app_state.engine_plugins),
+        );
+        crate::host::plugin_parameter_events::start(
             events,
             Arc::clone(&singletons.app_state.engine_plugins),
         );

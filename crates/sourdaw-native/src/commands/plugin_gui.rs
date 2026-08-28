@@ -737,6 +737,7 @@ mod tests {
                 has_gui,
                 bridge: None,
                 relay_scratch: crate::state::PluginRelayScratch::default(),
+                parameter_events: None,
             },
         );
     }
