@@ -1,6 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import {
+    compileVersionedCommandBatchEnvelope,
+    createVersionedCommandEnvelope,
+    parseVersionedCommandBatchEnvelope,
+    serializeVersionedCommandEnvelope,
+} from '#/modules/Command/useCases';
+import { type AppAction } from '#/utils/handlerContract';
+
 import { persistPromptActionConfirmation } from '../persistPromptActionConfirmation';
+
+const COMMAND_ID = '11111111-1111-4111-8111-111111111111';
 
 const mocks = vi.hoisted(() => ({
     createResourceLease: vi.fn(),
@@ -42,53 +52,48 @@ vi.mock('../../describeAgentRiskApproval', () => ({
 }));
 
 function createInput(): Parameters<typeof persistPromptActionConfirmation>[0] {
-    const scope = {
-        targetIds: ['track-kick'],
-        targetRanges: [],
+    const action = {
+        type: 'setTrackGain',
+        payload: { trackId: 'track-kick', gain: 0.8, expectedGain: 1 },
+    } satisfies AppAction;
+    const command = {
+        ...createVersionedCommandEnvelope({
+            action,
+            availableDeviceVersions: {},
+            expectedEffect: 'Set Kick gain to 0.8.',
+            normalizedProjectRevision: 'revision-confirmation',
+            objectReferences: [{ argument: 'trackId', id: 'track-kick', scope: 'stable' }],
+            parameterUnits: [{ argument: 'gain', unit: 'linear' }],
+            reason: 'Apply the confirmed Kick gain.',
+            time: [],
+        }),
+        commandId: COMMAND_ID,
+    };
+    const serializedCommand = serializeVersionedCommandEnvelope(command);
+    const commandBatch = compileVersionedCommandBatchEnvelope({
+        runId: 'run-confirmation',
+        batchId: 'batch-confirmation',
+        projectId: 'project-confirmation',
+        baseRevision: 'revision-confirmation',
+        intent: 'Set the Kick gain',
+        commands: [serializedCommand],
         protectedTargetIds: ['track-vocals'],
-        protectedRanges: [],
-    };
-    const grants = {
-        allowedOperationPrefixes: ['addTrack'],
-        create: true,
-        delete: false,
-        routing: false,
-        tempo: false,
-        master: false,
-        file: false,
-        audioUpload: false,
-        remoteGeneration: false,
-        autoCommit: false,
-    };
+    });
+    const parsedCommandBatch = parseVersionedCommandBatchEnvelope(commandBatch.serialized, commandBatch.authority);
+    if (parsedCommandBatch.status === 'invalid') {
+        throw new Error(parsedCommandBatch.reason);
+    }
     return {
         runId: 'run-confirmation',
-        prompt: 'Add a kick track',
+        prompt: 'Set the kick gain',
         assistantMessageId: 'assistant-confirmation',
-        actions: [{ type: 'addTrack', payload: { name: 'Kick', kind: 'audio' } }],
-        actionLabels: ['Add Kick'],
-        commandEnvelopes: ['command-envelope'],
-        commandBatch: {
-            serialized: '{}',
-            authority: {
-                projectId: 'project-confirmation',
-                baseRevision: 'revision-confirmation',
-                scope,
-                grants,
-                budgets: {
-                    maxCommands: 1,
-                    maxCreatedTracks: 1,
-                    maxDeletedObjects: 0,
-                    maxAffectedTracks: 1,
-                    maxAffectedClips: 0,
-                    maxAutomationPoints: 0,
-                    maxImportedAssets: 0,
-                    maxRenderJobs: 0,
-                },
-            },
-        },
+        actions: [action],
+        actionLabels: ['Set Kick gain'],
+        commandEnvelopes: [serializedCommand],
+        commandBatch,
         agentApproval: {
             schemaVersion: 1,
-            actionHashes: ['action-hash-add-kick'],
+            actionHashes: ['action-hash-set-kick-gain'],
             sourceRevision: 'revision-confirmation',
             targetFingerprints: { 'track-kick': 'fingerprint-kick' },
             advertisedTargetFingerprints: {},
@@ -102,7 +107,7 @@ function createInput(): Parameters<typeof persistPromptActionConfirmation>[0] {
             localActorId: 'actor-confirmation',
             policy: {
                 decision: 'confirm',
-                reasons: ['Creates a track.'],
+                reasons: ['Changes an existing track.'],
                 requiredTrustMode: 'apply-reversible',
                 risk: 'bounded-reversible',
             },
@@ -110,19 +115,10 @@ function createInput(): Parameters<typeof persistPromptActionConfirmation>[0] {
         affectedIds: ['track-kick'],
         protectedUnchanged: [{ id: 'track-vocals', name: 'Vocals' }],
         executionMode: 'atomic',
-        group: { groupId: 'group-confirmation', groupLabel: 'Add Kick' },
+        group: { groupId: 'group-confirmation', groupLabel: 'Set Kick gain' },
         projectRevision: 'revision-confirmation',
-        parsedCommandBatch: {
-            status: 'valid',
-            envelope: {
-                batchId: 'batch-confirmation',
-                commands: [{ commandId: 'command-add-kick' }],
-                idempotencyKey: 'batch-confirmation-idempotency',
-                preconditions: [],
-                scope,
-            },
-        },
-        content: 'Add Kick?',
+        parsedCommandBatch,
+        content: 'Set Kick gain?',
     };
 }
 
@@ -169,7 +165,7 @@ describe('persistPromptActionConfirmation', () => {
             source: 'command-execution',
             related: {
                 targetIds: ['track-kick'],
-                commandIds: ['command-add-kick'],
+                commandIds: [COMMAND_ID],
                 workIds: ['batch-confirmation'],
             },
             retry: 'never',
@@ -204,7 +200,8 @@ describe('persistPromptActionConfirmation', () => {
         mocks.updateChatMessage.mockImplementation(() => ordering.push('proposed-chat'));
         mocks.transitionPhase.mockImplementation(() => ordering.push('waiting-for-approval'));
 
-        persistPromptActionConfirmation(createInput());
+        const input = createInput();
+        persistPromptActionConfirmation(input);
 
         expect(ordering).toEqual(['resource-lease', 'proposal-retained', 'proposed-chat', 'waiting-for-approval']);
         const proposal = mocks.proposeConfirmation.mock.calls[0]?.[0];
@@ -212,22 +209,23 @@ describe('persistPromptActionConfirmation', () => {
             expect.objectContaining({
                 id: expect.stringMatching(/^prompt-confirmation-/),
                 runId: 'run-confirmation',
-                prompt: 'Add a kick track',
+                prompt: 'Set the kick gain',
                 assistantMessageId: 'assistant-confirmation',
-                actionLabels: ['Add Kick'],
-                commandEnvelopes: ['command-envelope'],
+                actionLabels: ['Set Kick gain'],
+                commandEnvelopes: input.commandEnvelopes,
+                commandBatch: input.commandBatch,
                 affectedIds: ['track-kick'],
                 protectedUnchanged: [{ id: 'track-vocals', name: 'Vocals' }],
-                risk: { level: 'bounded-reversible', reason: 'Creates a track.' },
+                risk: { level: 'bounded-reversible', reason: 'Changes an existing track.' },
                 executionMode: 'atomic',
                 groupId: 'group-confirmation',
-                groupLabel: 'Add Kick',
+                groupLabel: 'Set Kick gain',
                 projectRevision: 'revision-confirmation',
                 resourceLease,
             })
         );
         expect(mocks.createResourceLease).toHaveBeenCalledWith(
-            [{ type: 'addTrack', payload: { name: 'Kick', kind: 'audio' } }],
+            input.actions,
             `stem-promotion:${String(proposal?.id)}`,
             'run-confirmation'
         );
@@ -235,7 +233,7 @@ describe('persistPromptActionConfirmation', () => {
             isStreaming: false,
             pendingActionConfirmationId: proposal?.id,
             pendingActionConfirmationStatus: 'proposed',
-            content: 'Add Kick?\n\nRisk approval required.',
+            content: 'Set Kick gain?\n\nRisk approval required.',
         });
         expect(mocks.transitionPhase).toHaveBeenCalledWith({
             runId: 'run-confirmation',
