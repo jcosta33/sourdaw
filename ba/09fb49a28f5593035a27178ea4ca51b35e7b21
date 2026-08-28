@@ -1,0 +1,40 @@
+src/modules/AiRuntime/useCases/agentRequestOrchestration/admitCommittedSectionRenderRetry.ts
+  s_a40848e8f8cca9::t_8b366cfbdc496d 196-199,201-209,258-260,263-285,287-296,299-303,326-331,339,344-345
+  s_a40848e8f8cca9::t_0795c05db850a1 261-262,286,297-298,346-351
+  s_a40848e8f8cca9::t_5e999d7b015781 200,335-337
+src/modules/AiRuntime/useCases/__tests__/drumBusPromptWorkflow.spec.ts
+  s_a40848e8f8cca9::t_4411a6523eb10c 1694-1698
+  s_a40848e8f8cca9::t_c1ec5110f10d6d 24,1100,2265-2268
+  s_a40848e8f8cca9::t_24df7aebb7ab92 58
+  s_a40848e8f8cca9::t_36b22bfb2eb3a4 2205-2213,2217,2240-2243,2252-2253,2263-2264,2269-2279,2289-2298
+  s_a40848e8f8cca9::t_0795c05db850a1 2244-2251,2254-2261,2280-2288,2305
+src/modules/AiRuntime/stores/selectAgentRunPendingEffectRecoveries.ts
+  s_a40848e8f8cca9::t_8b366cfbdc496d 36-50,58-60,68
+  s_a40848e8f8cca9::t_24df7aebb7ab92 8
+  s_a40848e8f8cca9::t_c0625d8ad7c18e 9
+  s_a40848e8f8cca9::t_08d7a22cc1dd40 69-70
+src/modules/AiRuntime/useCases/agentRunLifecycle.ts
+  s_a40848e8f8cca9::t_ee792f74046ea6 864-865
+  s_a40848e8f8cca9::t_c12e9d7cdad49d 866-873
+src/modules/AiRuntime/stores/pendingActionConfirmationStore.ts
+  s_a40848e8f8cca9::t_8b366cfbdc496d 389-407
+src/modules/AiRuntime/useCases/__tests__/agentRunLifecycle.spec.ts
+  s_a40848e8f8cca9::t_ee792f74046ea6 165-167
+  s_a40848e8f8cca9::t_4411a6523eb10c 214-229
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "ba09fb49a28f5593035a27178ea4ca51b35e7b21",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
