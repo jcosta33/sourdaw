@@ -1,0 +1,40 @@
+src/modules/AiRuntime/useCases/agentRequestOrchestration/settleAgentRunWorkLeaseSafely.ts
+  s_a40848e8f8cca9::t_b19270bc2cb48e 59-78,86,96
+  s_a40848e8f8cca9::t_45d0f5d6e6d2e0 9-14,17-23,38,43-58,79-85,87-91,93-94,115,119
+src/modules/AiRuntime/useCases/sendChatMessage.ts
+  s_a40848e8f8cca9::t_f6e945c5cf1e17 181,369,444,847,865,906,1046,1066-1069,1341,1829
+  s_a40848e8f8cca9::t_f63d22b162bd1d 1842,1847-1850,1861,1892
+  s_a40848e8f8cca9::t_0611bf0f7ddc2c 165-172,1168-1169,1171-1172,1186-1190,1206-1210,1237-1241,1248-1252,1894
+src/modules/AiRuntime/useCases/__tests__/sendChatMessage.spec.ts
+  s_a40848e8f8cca9::t_39c56250ff4dfb 2022
+  s_a40848e8f8cca9::t_0cbce98c6fd290 35-36,41-42,1333-1334,1381-1382,1996
+  s_a40848e8f8cca9::t_08f19103603f86 37-40,43-44,999-1000,1144-1145,1178-1179,1280-1281
+  s_a40848e8f8cca9::t_b84e8e8ca36b25 45-48,874-875,964-965,1884,1895,1901
+  s_a40848e8f8cca9::t_072710ef43b68d 2014-2017
+  s_a40848e8f8cca9::t_939d3619894001 19,1902-1910,1949-1953,1997,2018-2021,2023-2026,2072,2079,2085,2128-2132
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/settleAgentRunWorkLeaseSafely.spec.ts
+  s_a40848e8f8cca9::t_53481a43bd53c9 16-21,46-53,76,79,125,130,148-149,152,154,159
+  s_a40848e8f8cca9::t_3ce8ba0127f7ba 90-91,101-111
+  s_a40848e8f8cca9::t_9a84698ce1269d 133-147
+  s_a40848e8f8cca9::t_fd3b1697771249 112-113
+src/modules/AiRuntime/useCases/__tests__/confirmPendingChatActions.spec.ts
+  s_a40848e8f8cca9::t_64e335be68bdfd 84-88,1004,1007,1427,1431-1435
+src/modules/AiRuntime/useCases/confirmPendingChatActions.ts
+  s_a40848e8f8cca9::t_102955b55b7ab4 1319-1322,1324,1327,1331,1333,1341,1345,1349-1350,1415-1422,1656,1662,1666-1667,1684,1688-1689,1709,1713,1730-1731
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "45e151d9ce886f7563faa6e4d5b02ed99829d90e",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
