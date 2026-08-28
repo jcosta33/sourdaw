@@ -1,0 +1,25 @@
+src/modules/PluginHost/useCases/pluginLifecycle/__tests__/resetExternalPluginRuntimeForGraphRebuild.spec.ts
+  s_4f908a5afb6b58::t_6afa1b7d5b3654 3
+  s_4f908a5afb6b58::t_57e858b72c45cf 78-84
+  s_4f908a5afb6b58::t_6083c75c5d0546 85-87
+src/modules/PluginHost/repositories/pluginBridge/types.ts
+  s_4f908a5afb6b58::t_d4d406f07612c0 14-21
+src/modules/PluginHost/useCases/pluginLifecycle/toExternalPluginParameters.ts
+  s_4f908a5afb6b58::t_314f89754e874d 16-19
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "2d8a10da9e41f6cbfc71c4915e4e1b9be1056db5",
+  "prompts": {},
+  "sessions": {
+    "s_4f908a5afb6b58": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fcb92ba4-bf56-47a4-8b57-803f335a449e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
