@@ -2,7 +2,6 @@ import { logger } from '#/infra/logger/appLogger';
 import {
     getAgentSectionRenderArtifacts,
     rebindAgentProjectSectionArtifactRevisions,
-    retryAgentProjectSectionRenders,
 } from '#/modules/AudioRendering/useCases';
 import { collaborationStore } from '#/modules/Collaboration/stores';
 import {
@@ -32,7 +31,6 @@ import {
     protectPendingActionResourceLease,
     recordPendingActionExecution,
     refreshPendingActionConfirmationApproval,
-    replacePendingActionExecutions,
     settlePendingActionResourceLeaseBestEffort,
     type PendingActionExecution,
     type PendingAppActionConfirmation,
@@ -42,6 +40,8 @@ import {
 
 import { normalizeAgentFailure } from './agentErrorAndSaga';
 import { admitCommittedSectionRenderRetry } from './agentRequestOrchestration/admitCommittedSectionRenderRetry';
+import { executeCommittedSectionRenderRetry } from './agentRequestOrchestration/executeCommittedSectionRenderRetry';
+import { projectSectionRenderConfirmation } from './agentRequestOrchestration/projectSectionRenderConfirmation';
 import {
     AGENT_RUN_PERSISTENCE_WARNING,
     AGENT_RUN_STALE_COMPLETION_WARNING,
@@ -489,46 +489,6 @@ function getApprovalPreflightFailure(confirmation: PendingAppActionConfirmation)
     return null;
 }
 
-function getSectionRenderReceiptScope(
-    confirmation: PendingAppActionConfirmation,
-    expectedSourceRevision: string | null = confirmation.followUpProjectRevision
-) {
-    const renderAction = confirmation.approvalSnapshot.actions.find(
-        (action) => action.type === 'renderProjectSections'
-    );
-    if (renderAction?.type !== 'renderProjectSections' || !renderAction.payload.jobs) {
-        return null;
-    }
-    const artifacts = getAgentSectionRenderArtifacts();
-    const completedJobIds = new Set<string>();
-    const completedAffectedIds = new Set<string>();
-    for (const job of renderAction.payload.jobs) {
-        const matchingArtifact = artifacts.some(
-            (artifact) =>
-                artifact.jobId === job.jobId &&
-                artifact.sectionId === job.sectionId &&
-                artifact.sectionName === job.sectionName &&
-                artifact.startBeat === job.startBeat &&
-                artifact.endBeat === job.endBeat &&
-                artifact.sampleRate === job.sampleRate &&
-                artifact.tailSeconds === job.tailSeconds &&
-                artifact.sourceRevision === expectedSourceRevision
-        );
-        if (matchingArtifact) {
-            completedJobIds.add(job.jobId);
-            completedAffectedIds.add(job.sectionId);
-            completedAffectedIds.add(job.jobId);
-        }
-    }
-    return {
-        jobs: renderAction.payload.jobs,
-        plannedAffectedIds: getPlannedActionAffectedIds(renderAction),
-        plannedRenderAffectedIds: new Set(renderAction.payload.jobs.flatMap((job) => [job.sectionId, job.jobId])),
-        completedAffectedIds,
-        completedJobIds,
-    };
-}
-
 function rebindFreshSectionRenderArtifactsToCommittedRevision(
     confirmation: PendingAppActionConfirmation,
     artifactsBeforeExecution: ReturnType<typeof getAgentSectionRenderArtifacts>,
@@ -564,234 +524,6 @@ function rebindFreshSectionRenderArtifactsToCommittedRevision(
         artifacts: freshArtifacts,
         sourceRevision: committedRevision,
     });
-}
-
-function getActualExecutionAffectedIds(
-    execution: PendingActionExecution,
-    confirmation: PendingAppActionConfirmation,
-    expectedSourceRevision: string | null = confirmation.followUpProjectRevision
-): string[] {
-    if (execution.actionType !== 'renderProjectSections') {
-        return execution.affectedIds;
-    }
-    const scope = getSectionRenderReceiptScope(confirmation, expectedSourceRevision);
-    if (!scope) {
-        return execution.affectedIds;
-    }
-    const nonRenderAffectedIds = execution.affectedIds.filter((id) => !scope.plannedRenderAffectedIds.has(id));
-    const completedPlannedAffectedIds = scope.plannedAffectedIds.filter((id) => scope.completedAffectedIds.has(id));
-    return [...new Set([...nonRenderAffectedIds, ...completedPlannedAffectedIds])];
-}
-
-function refreshPendingActionExecutions(
-    confirmation: PendingAppActionConfirmation,
-    expectedSourceRevision: string | null = confirmation.followUpProjectRevision
-): PendingAppActionConfirmation {
-    const current = getPendingActionConfirmation(confirmation.id) ?? confirmation;
-    const executions = current.executedActions.map((execution) => ({
-        ...execution,
-        affectedIds: getActualExecutionAffectedIds(execution, current, expectedSourceRevision),
-    }));
-    return replacePendingActionExecutions({ confirmationId: current.id, executions }) ?? current;
-}
-
-function formatExecutionReceipt(
-    executions: readonly PendingActionExecution[],
-    confirmation: PendingAppActionConfirmation,
-    expectedSourceRevision: string | null = confirmation.followUpProjectRevision
-): string {
-    const executedActions = executions
-        .map((execution) => {
-            const actualAffectedIds = getActualExecutionAffectedIds(execution, confirmation, expectedSourceRevision);
-            const affectedIds = actualAffectedIds.length > 0 ? actualAffectedIds.join(', ') : 'none';
-            const assignedIds = (execution.applicationAssigned?.ids ?? [])
-                .map(({ field, value }) => `${field}=${value}`)
-                .join(', ');
-            const assignedTimestamps = (execution.applicationAssigned?.timestamps ?? [])
-                .map(({ field, value }) => `${field}=${String(value)}`)
-                .join(', ');
-            const commandMetadata = execution.commandId
-                ? `\n  - Command: v${String(execution.commandSchemaVersion)} ${execution.commandId}\n  - Application-assigned IDs: ${assignedIds || 'none'}\n  - Application-assigned timestamps: ${assignedTimestamps || 'none'}`
-                : '';
-            return `- **${execution.actionType}**: ${execution.label}${commandMetadata}\n  - Affected IDs: ${affectedIds}\n  - Outcome: ${execution.outcome}`;
-        })
-        .join('\n');
-    const protectedAffectedIds = new Set(
-        executions.flatMap((execution) =>
-            getActualExecutionAffectedIds(execution, confirmation, expectedSourceRevision)
-        )
-    );
-    const approvedProtectedTargets = confirmation.approvalSnapshot.protectedUnchanged;
-    const preservedProtectedTargets = approvedProtectedTargets.every((target) => !protectedAffectedIds.has(target.id));
-    if (!preservedProtectedTargets) {
-        return executedActions;
-    }
-    const protectedUnchanged = approvedProtectedTargets.map((target) => `"${target.name}" (${target.id})`).join(', ');
-    if (!protectedUnchanged) {
-        return executedActions;
-    }
-    return `${executedActions}\n\nProtected unchanged: ${protectedUnchanged}`;
-}
-
-function getIncompleteSectionRenderJobs(
-    confirmation: PendingAppActionConfirmation,
-    expectedSourceRevision: string | null = confirmation.followUpProjectRevision
-) {
-    const scope = getSectionRenderReceiptScope(confirmation, expectedSourceRevision);
-    if (!scope) {
-        return null;
-    }
-    const jobs = scope.jobs.filter((job) => !scope.completedJobIds.has(job.jobId));
-    return jobs.length > 0 ? { jobs, missingJobIds: jobs.map((job) => job.jobId) } : null;
-}
-
-function completeCommittedSectionRenderRetry(receipt: CommandVerifiedBatchReceipt): void {
-    agentRunLifecycle.completePendingEffectContinuation({
-        runId: receipt.runId,
-        batchId: receipt.batchId,
-        receiptIdentity: getVerifiedReceiptIdentity(receipt),
-    });
-}
-
-async function retryCommittedSectionRenders(
-    confirmation: PendingAppActionConfirmation,
-    durableReceipt: CommandVerifiedBatchReceipt
-): ConfirmPendingChatActionsOutput {
-    if (chatStore.value?.isGenerating === true) {
-        return { status: 'busy' };
-    }
-    const followUp = getIncompleteSectionRenderJobs(confirmation);
-    if (!followUp) {
-        try {
-            completeCommittedSectionRenderRetry(durableReceipt);
-        } catch (error) {
-            const reason = error instanceof Error ? error.message : String(error);
-            updatePendingActionFollowUp({ confirmationId: confirmation.id, error: reason, status: 'retryable' });
-            updatePendingActionConfirmationStatus({
-                confirmationId: confirmation.id,
-                status: 'failed',
-                error: reason,
-            });
-            updateChatMessage(confirmation.assistantMessageId, {
-                pendingActionConfirmationStatus: 'failed',
-                pendingActionFollowUpStatus: 'retryable',
-                error: reason,
-                content: `All expected section render artifacts are present, but durable retry completion could not be recorded: ${reason}. Project actions were not replayed.`,
-            });
-            return { status: 'failed', reason };
-        }
-        updatePendingActionFollowUp({ confirmationId: confirmation.id, error: null, status: 'complete' });
-        updatePendingActionConfirmationStatus({ confirmationId: confirmation.id, status: 'executed' });
-        const refreshedConfirmation = refreshPendingActionExecutions(confirmation);
-        updateChatMessage(confirmation.assistantMessageId, {
-            pendingActionConfirmationStatus: 'executed',
-            pendingActionFollowUpStatus: 'complete',
-            error: undefined,
-            content: `Applied after confirmation:\n\n${formatExecutionReceipt(
-                refreshedConfirmation.executedActions,
-                refreshedConfirmation
-            )}\n\nAll section render artifacts are complete; project actions were not replayed.`,
-        });
-        return { status: 'executed' };
-    }
-
-    const sourceRevision = confirmation.followUpProjectRevision;
-    if (!sourceRevision || captureProjectRevision() !== sourceRevision) {
-        const reason =
-            'Project changed after the committed render receipt; the missing original artifacts cannot be recreated safely.';
-        updatePendingActionFollowUp({ confirmationId: confirmation.id, error: reason, status: 'failed' });
-        updatePendingActionConfirmationStatus({ confirmationId: confirmation.id, status: 'executed', error: reason });
-        updateChatMessage(confirmation.assistantMessageId, {
-            pendingActionConfirmationStatus: 'executed',
-            pendingActionFollowUpStatus: 'failed',
-            error: reason,
-            content: `The project changes remain committed, but the missing section renders were not retried: ${reason}`,
-        });
-        return { status: 'failed', reason };
-    }
-
-    const trackedRun = agentRunLifecycle.get(confirmation.runId);
-    const renderRetryBudget = (() => {
-        if (!trackedRun) {
-            return null;
-        }
-        const retryPrefix = `render-retry:${confirmation.id}:`;
-        const attemptId = `${retryPrefix}${trackedRun.budgetAttempts.filter((attempt) => attempt.attemptId.startsWith(retryPrefix)).length + 1}`;
-        const reservation = agentRunLifecycle.reserveBudget({
-            runId: confirmation.runId,
-            attemptId,
-            category: 'maxRenderJobs',
-            estimate: followUp.jobs.length,
-            provenance: 'versioned-estimate',
-        });
-        return { attemptId, reservation };
-    })();
-    if (renderRetryBudget?.reservation.status === 'hard-limit-reached') {
-        const reason = `The missing section renders exceed the user budget for ${renderRetryBudget.reservation.reason}.`;
-        updatePendingActionFollowUp({ confirmationId: confirmation.id, error: reason, status: 'retryable' });
-        updatePendingActionConfirmationStatus({ confirmationId: confirmation.id, status: 'executed', error: reason });
-        updateChatMessage(confirmation.assistantMessageId, {
-            pendingActionConfirmationStatus: 'executed',
-            pendingActionFollowUpStatus: 'retryable',
-            error: reason,
-            content: `The project changes remain committed, but the missing section renders were not retried because they exceed the user budget: ${reason}`,
-        });
-        return { status: 'failed', reason };
-    }
-
-    updatePendingActionFollowUp({ confirmationId: confirmation.id, status: 'running' });
-    updateChatMessage(confirmation.assistantMessageId, { pendingActionFollowUpStatus: 'running' });
-    setChatGenerating(true);
-    try {
-        await retryAgentProjectSectionRenders({ jobs: followUp.jobs, sourceRevision });
-        const remaining = getIncompleteSectionRenderJobs(confirmation);
-        if (remaining) {
-            throw new Error(`Section render jobs remain incomplete: ${remaining.missingJobIds.join(', ')}`);
-        }
-        completeCommittedSectionRenderRetry(durableReceipt);
-    } catch (error) {
-        const reason = error instanceof Error ? error.message : String(error);
-        updatePendingActionFollowUp({ confirmationId: confirmation.id, error: reason, status: 'retryable' });
-        updatePendingActionConfirmationStatus({ confirmationId: confirmation.id, status: 'executed', error: reason });
-        const refreshedConfirmation = refreshPendingActionExecutions(confirmation);
-        updateChatMessage(confirmation.assistantMessageId, {
-            pendingActionConfirmationStatus: 'executed',
-            pendingActionFollowUpStatus: 'retryable',
-            error: reason,
-            content: `Applied after confirmation:\n\n${formatExecutionReceipt(
-                refreshedConfirmation.executedActions,
-                refreshedConfirmation
-            )}\n\nThe project actions remain committed. Missing section renders are still incomplete: ${reason}. Retry missing renders without replaying the project actions.`,
-        });
-        return { status: 'failed', reason };
-    } finally {
-        if (renderRetryBudget?.reservation.status === 'reserved') {
-            const remainingJobs = getIncompleteSectionRenderJobs(confirmation);
-            const completedJobsCount = Math.max(0, followUp.jobs.length - (remainingJobs?.missingJobIds.length ?? 0));
-            agentRunLifecycle.reconcileBudgetAttempt({
-                runId: confirmation.runId,
-                attemptId: renderRetryBudget.attemptId,
-                consumed: completedJobsCount,
-                mode: 'final',
-                provenance: 'versioned-estimate',
-            });
-        }
-        setChatGenerating(false);
-    }
-
-    updatePendingActionFollowUp({ confirmationId: confirmation.id, error: null, status: 'complete' });
-    updatePendingActionConfirmationStatus({ confirmationId: confirmation.id, status: 'executed' });
-    const refreshedConfirmation = refreshPendingActionExecutions(confirmation);
-    updateChatMessage(confirmation.assistantMessageId, {
-        pendingActionConfirmationStatus: 'executed',
-        pendingActionFollowUpStatus: 'complete',
-        error: undefined,
-        content: `Applied after confirmation:\n\n${formatExecutionReceipt(
-            refreshedConfirmation.executedActions,
-            refreshedConfirmation
-        )}\n\nMissing section render artifacts completed without replaying project actions.`,
-    });
-    return { status: 'executed' };
 }
 
 function failCommittedSectionRenderRetryProof(
@@ -888,7 +620,10 @@ export async function confirmPendingChatActions(
             phase: 'proof',
         });
         if (retryAdmission.status === 'admitted') {
-            return retryCommittedSectionRenders(confirmation, retryAdmission.durableReceipt);
+            return executeCommittedSectionRenderRetry({
+                confirmation,
+                durableReceipt: retryAdmission.durableReceipt,
+            });
         }
         if (retryAdmission.status === 'proof-mismatch') {
             return failCommittedSectionRenderRetryProof(confirmation);
@@ -1185,7 +920,10 @@ export async function confirmPendingChatActions(
     }
     const budgetPersistenceWarning = commandBudget
         ? updateTrackedAgentRun(confirmation, () => {
-              const incompleteSectionRenders = getIncompleteSectionRenderJobs(confirmation, committedProjectRevision);
+              const incompleteSectionRenders = projectSectionRenderConfirmation({
+                  confirmation,
+                  expectedSourceRevision: committedProjectRevision,
+              }).incompleteSectionRenders;
               const actualRenderJobs = incompleteSectionRenders
                   ? Math.max(
                         0,
@@ -1260,7 +998,7 @@ export async function confirmPendingChatActions(
             .join(' ');
         await retainCommittedPendingActionResources(confirmation.id);
         const approvalLabelsByCommandId = getApprovalLabelsByCommandId(confirmation);
-        const executedLabels: PendingActionExecution[] = batchResult.actions.map(
+        const unprojectedExecutedLabels: PendingActionExecution[] = batchResult.actions.map(
             ({ action, label, receipt }, index) => {
                 const approvedLabel = receipt ? approvalLabelsByCommandId.get(receipt.commandId) : undefined;
                 const execution: PendingActionExecution = {
@@ -1280,13 +1018,16 @@ export async function confirmPendingChatActions(
                         : {}),
                     outcome: batchResult.status,
                 };
-                return {
-                    ...execution,
-                    affectedIds: getActualExecutionAffectedIds(execution, confirmation, committedProjectRevision),
-                };
+                return execution;
             }
         );
-        const executionReceipt = formatExecutionReceipt(executedLabels, confirmation, committedProjectRevision);
+        const executionProjection = projectSectionRenderConfirmation({
+            confirmation,
+            executions: unprojectedExecutedLabels,
+            expectedSourceRevision: committedProjectRevision,
+        });
+        const executedLabels = executionProjection.executions;
+        const executionReceipt = executionProjection.receipt;
         let warning: string | undefined;
         if (batchResult.status === 'committed-with-warning' || batchResult.status === 'executed-with-warning') {
             warning = batchResult.warning;
@@ -1323,7 +1064,10 @@ export async function confirmPendingChatActions(
                 status: effectsPending ? 'failed' : 'executed',
                 ...(warning ? { error: warning } : {}),
             });
-            const incompleteSectionRenders = getIncompleteSectionRenderJobs(confirmation, committedProjectRevision);
+            const incompleteSectionRenders = projectSectionRenderConfirmation({
+                confirmation,
+                expectedSourceRevision: committedProjectRevision,
+            }).incompleteSectionRenders;
             // Arm the render retry only for the exact committed-batch shape the
             // retry gate will later admit; anything else must stay fail-closed.
             // The binding predicates read executedActions, so they run against
