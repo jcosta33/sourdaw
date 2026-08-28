@@ -34,6 +34,8 @@ const PROVIDER_PERSISTENCE_WARNING =
     'Agent run provider response recovery state could not be persisted after execution. The retained response remains visible, but its lifecycle is not durably settled. Review it before retrying.';
 const WORK_PERSISTENCE_WARNING =
     'Agent run work recovery state could not be persisted after execution. The retained work outcome remains visible, but its lifecycle is not durably settled. Review it before retrying.';
+const COMMAND_PERSISTENCE_WARNING =
+    'Agent run recovery state could not be persisted after execution. The verified command receipt remains authoritative; do not retry automatically.';
 const FAILURE_PERSISTENCE_WARNING =
     'Agent run failure recovery state could not be persisted. The work failed, and no successful artifact is claimed. Review the durable run state before retrying.';
 const COMPLETION_PERSISTENCE_WARNING =
@@ -1997,6 +1999,161 @@ describe('sendChatMessage retained-provider selection', () => {
             });
         } finally {
             settleWorkLease.mockRestore();
+        }
+    });
+
+    it.each(['committed', 'executed'] as const)(
+        'records a durable immediate %s receipt ledger and terminal batch identity',
+        async (status) => {
+            configureCommandGraphForwarding('immediate');
+            mocks.executePlannedActions.mockImplementation(async () => {
+                const runId = getMostRecentlyAdmittedRunId();
+                return {
+                    status,
+                    actions: [],
+                    receipt: {
+                        schemaVersion: 2,
+                        runId,
+                        batchId: 'batch-graph',
+                        outcome: status,
+                        pendingEffects: [],
+                        links: { render: [], analysis: [] },
+                    },
+                };
+            });
+
+            await expect(sendChatMessage(commandGraphFixture.prompt, { mode: 'apply' })).resolves.toBeDefined();
+
+            const run = getPlannedRun();
+            const receiptIdentity = `2:${run.runId}:batch-graph:${status}`;
+            const receiptLedger = [expect.objectContaining({ workId: 'batch-graph', receiptIdentity })];
+            const terminalBatch = [
+                expect.objectContaining({
+                    batchId: 'batch-graph',
+                    status: 'committed',
+                    receiptIdentity,
+                }),
+            ];
+            expect(run).toMatchObject({
+                phase: 'completed',
+                receipts: receiptLedger,
+                committedWork: receiptLedger,
+                batches: terminalBatch,
+            });
+            const durableRun = JSON.parse(localStorage.getItem('sourdaw-agent-runs') ?? '').json.runs.find(
+                (candidate: { runId: string }) => candidate.runId === run.runId
+            );
+            expect(durableRun).toMatchObject({
+                phase: 'completed',
+                receipts: receiptLedger,
+                committedWork: receiptLedger,
+                batches: terminalBatch,
+            });
+        }
+    );
+
+    it('persists the immediate no-op batch terminal status', async () => {
+        configureCommandGraphForwarding('immediate');
+        mocks.executePlannedActions.mockResolvedValue({ status: 'no-op', actions: [] });
+
+        await expect(sendChatMessage(commandGraphFixture.prompt, { mode: 'apply' })).resolves.toBeUndefined();
+
+        const run = getPlannedRun();
+        expect(run.batches).toContainEqual(
+            expect.objectContaining({ batchId: 'batch-graph', status: 'no-op', receiptIdentity: null })
+        );
+        const durableRun = JSON.parse(localStorage.getItem('sourdaw-agent-runs') ?? '').json.runs.find(
+            (candidate: { runId: string }) => candidate.runId === run.runId
+        );
+        expect(durableRun.batches).toContainEqual(
+            expect.objectContaining({ batchId: 'batch-graph', status: 'no-op', receiptIdentity: null })
+        );
+    });
+
+    it.each(['committed', 'executed'] as const)(
+        'surfaces command lease persistence failure after an immediate %s receipt',
+        async (status) => {
+            const storageFailure = new DOMException('The quota has been exceeded.', 'QuotaExceededError');
+            const settleLease = agentRunWorkLease.settle;
+            const settleWorkLease = vi.spyOn(agentRunWorkLease, 'settle').mockImplementation((input) => {
+                if (input.workId === 'batch-graph') {
+                    throw storageFailure;
+                }
+                return settleLease(input);
+            });
+            configureCommandGraphForwarding('immediate');
+            mocks.executePlannedActions.mockImplementation(async () => {
+                const runId = getMostRecentlyAdmittedRunId();
+                return {
+                    status,
+                    actions: [],
+                    receipt: {
+                        schemaVersion: 2,
+                        runId,
+                        batchId: 'batch-graph',
+                        outcome: status,
+                        pendingEffects: [],
+                        links: { render: [], analysis: [] },
+                    },
+                };
+            });
+
+            try {
+                await expect(sendChatMessage(commandGraphFixture.prompt, { mode: 'apply' })).resolves.toBeDefined();
+
+                const run = getPlannedRun();
+                expect(run.receipts).toContainEqual(expect.objectContaining({ workId: 'batch-graph' }));
+                expect(run.committedWork).toContainEqual(expect.objectContaining({ workId: 'batch-graph' }));
+                expect(mocks.updateChatMessage).toHaveBeenLastCalledWith(
+                    expect.any(String),
+                    expect.objectContaining({
+                        isStreaming: false,
+                        error: COMMAND_PERSISTENCE_WARNING,
+                        content: expect.stringContaining(COMMAND_PERSISTENCE_WARNING),
+                    })
+                );
+                expect(mocks.updateChatMessage).toHaveBeenLastCalledWith(
+                    expect.any(String),
+                    expect.objectContaining({ content: expect.stringContaining('Do not retry automatically') })
+                );
+            } finally {
+                settleWorkLease.mockRestore();
+            }
+        }
+    );
+
+    it.each([
+        { outcome: 'success', rejects: false },
+        { outcome: 'executor rejection', rejects: true },
+    ])('releases immediate command cancellation registration after $outcome', async ({ rejects }) => {
+        configureCommandGraphForwarding('immediate');
+        const bindAbortController = agentRunCancellation.bindAbortController;
+        const releaseCommandCancellation = vi.fn();
+        const bindCommandCancellation = vi
+            .spyOn(agentRunCancellation, 'bindAbortController')
+            .mockImplementation((input) => {
+                const release = bindAbortController(input);
+                if (input.lease.workId !== 'batch-graph') {
+                    return release;
+                }
+                return () => {
+                    releaseCommandCancellation();
+                    release();
+                };
+            });
+        if (rejects) {
+            mocks.executePlannedActions.mockRejectedValue(new Error('Command execution rejected'));
+        } else {
+            mocks.executePlannedActions.mockResolvedValue({ status: 'no-op', actions: [] });
+        }
+
+        try {
+            await expect(sendChatMessage(commandGraphFixture.prompt, { mode: 'apply' })).resolves.toBeUndefined();
+
+            expect(releaseCommandCancellation).toHaveBeenCalledOnce();
+            expect(mocks.setActiveAborter).toHaveBeenLastCalledWith(null);
+        } finally {
+            bindCommandCancellation.mockRestore();
         }
     });
 
