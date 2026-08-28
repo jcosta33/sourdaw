@@ -5,9 +5,9 @@ import { TrackLevelSection } from '../TrackLevelSection';
 
 import type { Track } from '../../../../models/TrackViewTypes';
 
-// Mock external dependencies
 const mockSetTrackGain = vi.fn();
 const mockSetTrackPan = vi.fn();
+const mockExecuteAppAction = vi.fn();
 
 vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Arrangement/useCases')>();
@@ -20,6 +20,14 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
     };
 });
 
+vi.mock('#/modules/Command/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Command/useCases')>();
+    return {
+        ...actual,
+        executeAppAction: (...args: unknown[]) => mockExecuteAppAction(...args),
+    };
+});
+
 vi.mock('#/components/daw/DawHeaderBand', () => ({
     DawHeaderBand: ({ title }: { title?: string }) => <div data-testid="header-band">{title}</div>,
 }));
@@ -28,19 +36,26 @@ vi.mock('#/components/ui/slider', () => ({
     Slider: ({
         value,
         onValueChange,
+        onValueCommit,
         'aria-label': ariaLabel,
     }: {
         value: number[];
         onValueChange: (values: number[]) => void;
+        onValueCommit?: (values: number[]) => void;
         'aria-label'?: string;
     }) => (
-        <input
-            type="range"
-            data-testid="slider"
-            data-label={ariaLabel}
-            value={value[0]}
-            onChange={(event) => onValueChange([Number(event.target.value)])}
-        />
+        <>
+            <input
+                type="range"
+                data-testid="slider"
+                data-label={ariaLabel}
+                value={value[0]}
+                onChange={(event) => onValueChange([Number(event.target.value)])}
+            />
+            <button type="button" data-testid="slider-commit" onClick={() => onValueCommit?.(value)}>
+                Commit
+            </button>
+        </>
     ),
 }));
 
@@ -51,10 +66,15 @@ vi.mock('#/components/daw/RotaryKnob', () => ({
         'aria-label': ariaLabel,
     }: {
         value: number;
-        onChange: (v: number) => void;
+        onChange: (v: number, isTransient?: boolean) => void;
         'aria-label'?: string;
     }) => (
-        <button data-testid="rotary-knob" data-label={ariaLabel} data-value={value} onClick={() => onChange(value + 1)}>
+        <button
+            data-testid="rotary-knob"
+            data-label={ariaLabel}
+            data-value={value}
+            onClick={() => onChange(value + 1, false)}
+        >
             Knob
         </button>
     ),
@@ -174,16 +194,30 @@ describe('TrackLevelSection', () => {
         render(<TrackLevelSection track={mockTrack} />);
         const slider = screen.getByTestId('slider');
         fireEvent.change(slider, { target: { value: '80' } });
-        // Slider drag (onValueChange) is a transient update: engine-only, isTransient=true.
         expect(mockSetTrackGain).toHaveBeenCalledWith('track-1', 0.8, true);
+        expect(mockExecuteAppAction).not.toHaveBeenCalled();
     });
 
-    it('should call setTrackPan when knob value changes', () => {
+    it('commits settled gain through executeAppAction so undo can restore it', () => {
         render(<TrackLevelSection track={mockTrack} />);
-        const knob = screen.getByTestId('rotary-knob');
-        fireEvent.click(knob);
-        // Knob mock fires onChange without isTransient, so the commit branch runs: isTransient=false.
-        expect(mockSetTrackPan).toHaveBeenCalledWith('track-1', 11, false);
+        const slider = screen.getByTestId('slider');
+        fireEvent.change(slider, { target: { value: '80' } });
+        fireEvent.click(screen.getByTestId('slider-commit'));
+        expect(mockExecuteAppAction).toHaveBeenCalledWith({
+            type: 'setTrackGain',
+            payload: { trackId: 'track-1', gain: 0.8, expectedGain: 0.75 },
+        });
+        expect(mockSetTrackGain).not.toHaveBeenCalledWith('track-1', 0.8, false);
+    });
+
+    it('commits settled pan through executeAppAction so undo can restore it', () => {
+        render(<TrackLevelSection track={mockTrack} />);
+        fireEvent.click(screen.getByTestId('rotary-knob'));
+        expect(mockExecuteAppAction).toHaveBeenCalledWith({
+            type: 'setTrackPan',
+            payload: { trackId: 'track-1', pan: 11, expectedPan: 10 },
+        });
+        expect(mockSetTrackPan).not.toHaveBeenCalledWith('track-1', 11, false);
     });
 
     it('should render two surface cards', () => {

@@ -4,7 +4,11 @@ import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { Row, Stack } from '#/components/layout';
 import { Slider } from '#/components/ui/slider';
+import { logger } from '#/infra/logger/appLogger';
+import { trackStore } from '#/modules/Arrangement/stores';
 import { setTrackGain, setTrackPan } from '#/modules/Arrangement/useCases';
+import { releaseTouchAutomation } from '#/modules/Automation/useCases';
+import { executeAppAction } from '#/modules/Command/useCases';
 import { MidiLearnButton } from '#/modules/ControlSurface/presentations/views';
 import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
 
@@ -16,23 +20,54 @@ type TrackLevelSectionProps = {
     track: Track;
 };
 
+type LevelParameter = 'gain' | 'pan';
+
+const formatPan = (param: number): string => {
+    if (param === 0) {
+        return 'C';
+    }
+    if (param > 0) {
+        return `R${param}`;
+    }
+    return `L${Math.abs(param)}`;
+};
+
+const restoreEngineFromProjectTruth = (track: Track, parameterId: LevelParameter): void => {
+    const committed = trackStore.value?.tracks.find((candidate) => candidate.id === track.id);
+    if (parameterId === 'gain') {
+        setTrackGain(track.id, committed?.gain ?? track.gain, true);
+        return;
+    }
+    setTrackPan(track.id, committed?.pan ?? track.pan, true);
+};
+
+const commitLevelGesture = (
+    action: Parameters<typeof executeAppAction>[0],
+    track: Track,
+    parameterId: LevelParameter,
+    clearGesture: () => void
+): void => {
+    void (async () => {
+        try {
+            await executeAppAction(action);
+        } catch (error) {
+            logger.error(new Error(`Inspector level commit failed for action: ${action.type}`, { cause: error }));
+            restoreEngineFromProjectTruth(track, parameterId);
+        } finally {
+            clearGesture();
+            if (track.automationMode === 'touch') {
+                releaseTouchAutomation(track.id, parameterId);
+            }
+        }
+    })();
+};
+
 export const TrackLevelSection = ({ track }: TrackLevelSectionProps): ReactElement => {
     const [localGain, setLocalGain] = useState<number | null>(null);
     const [localPan, setLocalPan] = useState<number | null>(null);
 
     const activeGain = localGain !== null ? localGain : track.gain;
     const activePan = localPan !== null ? localPan : track.pan;
-
-    const renderIife_20 = () => {
-        const param = activePan;
-        if (param === 0) {
-            return 'C';
-        }
-        if (param > 0) {
-            return `R${param}`;
-        }
-        return `L${Math.abs(param)}`;
-    };
 
     return (
         <div>
@@ -63,28 +98,32 @@ export const TrackLevelSection = ({ track }: TrackLevelSectionProps): ReactEleme
                              * the mixer reads `150%` here, and a control that
                              * stopped at 100 would write that make-up gain away
                              * on first touch.
-                             *
-                             * These two handlers deliberately call `setTrackGain`
-                             * rather than `executeAppAction`: an Inspector gain
-                             * edit has never recorded an undo entry, on any
-                             * value, so routing it is a separate repair to the
-                             * mutation path and not part of carrying the
-                             * ceiling. Widening the travel is what stops this
-                             * control destroying a value it cannot represent.
                              */}
                             <Slider
                                 value={[activeGain * 100]}
                                 onValueChange={([value]) => {
-                                    if (value !== undefined) {
-                                        setLocalGain(value / 100);
-                                        setTrackGain(track.id, value / 100, true);
+                                    if (value === undefined) {
+                                        return;
                                     }
+                                    const gain = value / 100;
+                                    setLocalGain(gain);
+                                    setTrackGain(track.id, gain, true);
                                 }}
                                 onValueCommit={([value]) => {
-                                    if (value !== undefined) {
-                                        setLocalGain(null);
-                                        setTrackGain(track.id, value / 100, false);
+                                    if (value === undefined) {
+                                        return;
                                     }
+                                    const gain = value / 100;
+                                    setLocalGain(gain);
+                                    commitLevelGesture(
+                                        {
+                                            type: 'setTrackGain',
+                                            payload: { trackId: track.id, gain, expectedGain: track.gain },
+                                        },
+                                        track,
+                                        'gain',
+                                        () => setLocalGain(null)
+                                    );
                                 }}
                                 max={FADER_MAX_GAIN * 100}
                                 step={1}
@@ -99,7 +138,7 @@ export const TrackLevelSection = ({ track }: TrackLevelSectionProps): ReactEleme
                     <Row gap={3} className="w-full">
                         <Stack justify="center" grow gap={1.5} className="min-w-0 overflow-hidden">
                             <label className="text-[10px] font-medium text-foreground truncate w-full">Pan</label>
-                            <span className="text-[10px] font-mono text-muted-foreground">{renderIife_20()}</span>
+                            <span className="text-[10px] font-mono text-muted-foreground">{formatPan(activePan)}</span>
                             <Row gap={1.5} className="mt-0.5">
                                 <MidiLearnButton targetType="trackPan" trackId={track.id} />
                             </Row>
@@ -111,10 +150,18 @@ export const TrackLevelSection = ({ track }: TrackLevelSectionProps): ReactEleme
                                     if (isTransient) {
                                         setLocalPan(value);
                                         setTrackPan(track.id, value, true);
-                                    } else {
-                                        setLocalPan(null);
-                                        setTrackPan(track.id, value, false);
+                                        return;
                                     }
+                                    setLocalPan(value);
+                                    commitLevelGesture(
+                                        {
+                                            type: 'setTrackPan',
+                                            payload: { trackId: track.id, pan: value, expectedPan: track.pan },
+                                        },
+                                        track,
+                                        'pan',
+                                        () => setLocalPan(null)
+                                    );
                                 }}
                                 min={-50}
                                 max={50}
