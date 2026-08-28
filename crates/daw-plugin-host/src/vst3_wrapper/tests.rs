@@ -29,6 +29,9 @@ use vst3::{uid, ComRef};
 const COMBINED_CID: TUID = uid(0x11111111, 0x22222222, 0x33333333, 0x44444444);
 const SPLIT_COMPONENT_CID: TUID = uid(0xAAAAAAAA, 0xBBBBBBBB, 0xCCCCCCCC, 0xDDDDDDDD);
 const SPLIT_CONTROLLER_CID: TUID = uid(0xAAAAAAAA, 0xBBBBBBBB, 0xCCCCCCCC, 0xEEEEEEEE);
+/// A second combined class, differing from `COMBINED_CID` only in what its
+/// factory row says it is: an instrument rather than an effect.
+const INSTRUMENT_CID: TUID = uid(0x11111111, 0x22222222, 0x33333333, 0x55555555);
 const UNKNOWN_CID: TUID = uid(0x00000000, 0x00000000, 0x00000000, 0x0000BEEF);
 
 const GAIN_PARAM: ParamID = 0;
@@ -1427,20 +1430,20 @@ impl IPluginFactoryTrait for FakeFactory {
     }
 
     unsafe fn countClasses(&self) -> int32 {
-        3
+        4
     }
 
     unsafe fn getClassInfo(&self, index: int32, info: *mut PClassInfo) -> tresult {
-        let Some((cid, category, name)) = class_entry(index) else {
+        let Some(entry) = class_entry(index) else {
             return kInvalidArgument;
         };
         if info.is_null() {
             return kInvalidArgument;
         }
-        (*info).cid = cid;
+        (*info).cid = entry.cid;
         (*info).cardinality = 0x7FFF_FFFF;
-        write_char8(&mut (*info).category, category);
-        write_char8(&mut (*info).name, name);
+        write_char8(&mut (*info).category, entry.category);
+        write_char8(&mut (*info).name, entry.name);
         kResultOk
     }
 
@@ -1457,7 +1460,9 @@ impl IPluginFactoryTrait for FakeFactory {
             return kInvalidArgument;
         }
         let state = Arc::clone(&self.state);
-        let pointer = if same_tuid(&cid, &COMBINED_CID) {
+        // The instrument class is the same object as the combined one: only its
+        // factory row differs, which is exactly what the host reads it for.
+        let pointer = if same_tuid(&cid, &COMBINED_CID) || same_tuid(&cid, &INSTRUMENT_CID) {
             ComWrapper::new(FakeCombined { state })
                 .to_com_ptr::<IComponent>()
                 .map(|component| component.into_raw() as *mut std::ffi::c_void)
@@ -1482,19 +1487,19 @@ impl IPluginFactoryTrait for FakeFactory {
 
 impl IPluginFactory2Trait for FakeFactory {
     unsafe fn getClassInfo2(&self, index: int32, info: *mut PClassInfo2) -> tresult {
-        let Some((cid, category, name)) = class_entry(index) else {
+        let Some(entry) = class_entry(index) else {
             return kInvalidArgument;
         };
         if info.is_null() {
             return kInvalidArgument;
         }
-        (*info).cid = cid;
+        (*info).cid = entry.cid;
         (*info).cardinality = 0x7FFF_FFFF;
-        write_char8(&mut (*info).category, category);
-        write_char8(&mut (*info).name, name);
+        write_char8(&mut (*info).category, entry.category);
+        write_char8(&mut (*info).name, entry.name);
         write_char8(&mut (*info).vendor, "Fake Audio");
         write_char8(&mut (*info).version, "3.2.1");
-        write_char8(&mut (*info).subCategories, "Fx|Reverb");
+        write_char8(&mut (*info).subCategories, entry.sub_categories);
         kResultOk
     }
 }
@@ -1509,15 +1514,41 @@ impl IPluginFactory3Trait for FakeFactory {
     }
 }
 
-fn class_entry(index: int32) -> Option<(TUID, &'static str, &'static str)> {
+/// One factory row: the class id, its VST3 category, its name, and the
+/// pipe-separated sub-categories `getClassInfo2` publishes for it.
+struct ClassEntry {
+    cid: TUID,
+    category: &'static str,
+    name: &'static str,
+    sub_categories: &'static str,
+}
+
+fn class_entry(index: int32) -> Option<ClassEntry> {
     match index {
-        0 => Some((COMBINED_CID, "Audio Module Class", "Fake Combined")),
-        1 => Some((SPLIT_COMPONENT_CID, "Audio Module Class", "Fake Split")),
-        2 => Some((
-            SPLIT_CONTROLLER_CID,
-            "Component Controller Class",
-            "Fake Split Controller",
-        )),
+        0 => Some(ClassEntry {
+            cid: COMBINED_CID,
+            category: "Audio Module Class",
+            name: "Fake Combined",
+            sub_categories: "Fx|Reverb",
+        }),
+        1 => Some(ClassEntry {
+            cid: SPLIT_COMPONENT_CID,
+            category: "Audio Module Class",
+            name: "Fake Split",
+            sub_categories: "Fx|Reverb",
+        }),
+        2 => Some(ClassEntry {
+            cid: SPLIT_CONTROLLER_CID,
+            category: "Component Controller Class",
+            name: "Fake Split Controller",
+            sub_categories: "Fx|Reverb",
+        }),
+        3 => Some(ClassEntry {
+            cid: INSTRUMENT_CID,
+            category: "Audio Module Class",
+            name: "Fake Instrument",
+            sub_categories: "Instrument|Synth",
+        }),
         _ => None,
     }
 }
@@ -2010,6 +2041,36 @@ fn a_refused_block_latches_and_wakes_the_control_path() {
         take_pending_process_refusal_signal(),
         "the refusal wakes the control path, which is the only thread that may report it"
     );
+}
+
+/// The other leg of DG-003. This class differs from the effect above only in the
+/// sub-categories its factory row publishes, so what changes the answer is the
+/// plugin's own declaration and nothing else. A synth with audio routed into it
+/// would otherwise emit that routed signal at unity out of a voice slot on
+/// refusal — and the CLAP build of the same synth already falls silent.
+#[test]
+fn a_refused_instrument_falls_silent_rather_than_passing_what_was_routed_into_it() {
+    let _guard = PROCESS_REFUSAL_HINT_TEST_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let state = FakeState::new();
+    let mut wrapper = load(&state, INSTRUMENT_CID);
+    state.refuses_process.store(true, Ordering::Release);
+    take_pending_process_refusal_signal();
+
+    let rendered = render(&mut wrapper, 0.5, 64);
+
+    assert_eq!(
+        state.process_calls.load(Ordering::Acquire),
+        1,
+        "the block reached the processor, so its answer is what was read"
+    );
+    assert_eq!(
+        rendered[0], 0.0,
+        "a failed instrument has no dry signal to pass, so its slot is silent"
+    );
+    assert!(wrapper.process_refused);
+    assert!(take_pending_process_refusal_signal());
 }
 
 // ── State ───────────────────────────────────────────────────────────────

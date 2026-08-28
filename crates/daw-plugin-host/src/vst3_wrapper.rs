@@ -25,6 +25,7 @@ use crate::vst3_class_id::same_class_id;
 use crate::vst3_editor::{plugin_offers_an_editor, EditorSession, EditorSize, Vst3Editor};
 use crate::vst3_host::{read_string128, MessageTarget, Vst3HostContext, Vst3HostState};
 use crate::vst3_module::Vst3Module;
+use crate::vst3_scanner::{category_from_vst3_sub_categories, split_sub_categories};
 use std::cell::Cell;
 use std::ffi::c_void;
 use std::path::Path;
@@ -41,8 +42,8 @@ use vst3::Steinberg::Vst::{
 };
 use vst3::Steinberg::{
     int32, int64, kInvalidArgument, kOutOfMemory, kResultFalse, kResultOk, tresult, IBStream,
-    IBStreamTrait, IBStream_::IStreamSeekMode_, IPluginBaseTrait, IPluginFactory,
-    IPluginFactoryTrait, TUID,
+    IBStreamTrait, IBStream_::IStreamSeekMode_, IPluginBaseTrait, IPluginFactory, IPluginFactory2,
+    IPluginFactory2Trait, IPluginFactoryTrait, TUID,
 };
 use vst3::{Class, ComPtr, ComRef, ComWrapper, Interface};
 
@@ -689,6 +690,10 @@ pub struct Vst3Instance {
     /// in-process by a test.
     _module: Option<Arc<Vst3Module>>,
     name: String,
+    /// Whether the factory calls this class an instrument. Read once here,
+    /// because the factory is only in hand while the instance is being created
+    /// and the audio thread may not walk a class list.
+    is_instrument: bool,
 }
 
 // SAFETY: every VST3 object here is reached through `&self`/`&mut self` under
@@ -760,6 +765,7 @@ impl Vst3Instance {
             host,
             _module: module,
             name: name.to_string(),
+            is_instrument: class_is_instrument(factory, class_id),
         };
         instance.attach_controller(factory);
         Ok(instance)
@@ -775,6 +781,11 @@ impl Vst3Instance {
 
     pub fn name(&self) -> &str {
         &self.name
+    }
+
+    /// Whether the factory calls this class an instrument, as read at creation.
+    pub fn is_instrument(&self) -> bool {
+        self.is_instrument
     }
 
     /// Whether the plugin declares an event input bus.
@@ -1012,6 +1023,9 @@ pub struct Vst3Wrapper {
     /// The restart flags this host does not act on, as last reported. Held so a
     /// flag word that stops growing stops printing.
     reported_restart_flags: int32,
+    /// Whether the factory calls this class an instrument. Copied off the
+    /// instance at activation so the audio thread reads a plain bool.
+    is_instrument: bool,
 }
 
 // SAFETY: as `Vst3Instance` — every VST3 object is reached under the seam's
@@ -1039,6 +1053,7 @@ impl Vst3Wrapper {
             editor: None,
             processor: None,
             accepts_midi: instance.accepts_midi(),
+            is_instrument: instance.is_instrument(),
             instance,
             has_editor: OnceLock::new(),
             editor_window: None,
@@ -1359,6 +1374,15 @@ impl Vst3Wrapper {
 
     /// Copy the block straight through, for every case where the plugin must not
     /// be handed it.
+    /// Write silence over the engine's bus, for a block whose output the plugin
+    /// did not produce.
+    fn silence_outputs(outputs: &mut [&mut [f32]], num_samples: usize) {
+        for out in outputs.iter_mut() {
+            let len = num_samples.min(out.len());
+            out[..len].fill(0.0);
+        }
+    }
+
     fn pass_through(inputs: &[&[f32]], outputs: &mut [&mut [f32]], num_samples: usize) {
         for (channel, out) in outputs.iter_mut().enumerate() {
             if channel >= inputs.len() {
@@ -1509,10 +1533,22 @@ impl Vst3Wrapper {
         };
 
         if refused {
-            // The output scratch was zeroed above, so keeping it would render a
-            // refusal as eternal silence. Passing the block through is what the
-            // other refusal paths in this method already do.
-            Self::pass_through(inputs, outputs, num_samples);
+            // The output scratch holds nothing the plugin stands behind, so it
+            // never reaches the bus. What does is what ADR 0021 DG-003 decides
+            // for a failed slot, in two legs: an effect passes its dry input,
+            // because muting a crashed EQ takes the track with it, and an
+            // instrument falls silent because it has no dry input to pass —
+            // a synth fed routed audio would otherwise emit that signal at
+            // unity out of a voice slot.
+            //
+            // The plugin's own sub-categories decide which leg, read from the
+            // factory at load. The CLAP backend splits the same way for the
+            // same reason.
+            if self.is_instrument {
+                Self::silence_outputs(outputs, num_samples);
+            } else {
+                Self::pass_through(inputs, outputs, num_samples);
+            }
             self.latch_process_refusal();
             return;
         }
@@ -1946,6 +1982,35 @@ pub fn class_name(factory: &ComPtr<IPluginFactory>, class_id: &TUID) -> Option<S
         }
     }
     None
+}
+
+/// Whether the factory calls this class an instrument.
+///
+/// Read from `getClassInfo2`, which is where VST3 keeps sub-categories, and
+/// mapped by the same function the scanner categorises with — so the browser and
+/// the audio path cannot disagree about what a plugin is. A factory too old to
+/// answer `IPluginFactory2`, or one listing no sub-categories, is not an
+/// instrument: the same default the scanner falls back to.
+pub fn class_is_instrument(factory: &ComPtr<IPluginFactory>, class_id: &TUID) -> bool {
+    let Some(factory2) = factory.cast::<IPluginFactory2>() else {
+        return false;
+    };
+    // SAFETY: the factory is live; each `info` is a valid out parameter.
+    unsafe {
+        let count = factory2.countClasses();
+        for index in 0..count {
+            let mut info: vst3::Steinberg::PClassInfo2 = std::mem::zeroed();
+            if factory2.getClassInfo2(index, &mut info) != kResultOk {
+                continue;
+            }
+            if !same_class_id(&info.cid, class_id) {
+                continue;
+            }
+            let sub_categories = split_sub_categories(&read_char8(&info.subCategories));
+            return category_from_vst3_sub_categories(&sub_categories) == "instrument";
+        }
+    }
+    false
 }
 
 /// Whether the factory itself lists this class.
