@@ -34,7 +34,9 @@ const MAX_RUNTIME_AUDIO_CHANNELS: u32 = 256;
 const MAX_LATENCY_REQUERY_PASSES: u32 = 4;
 
 use crate::clap_host::{create_host_descriptor, HostCallbackState, LatencyChangeNotifier};
-use crate::parameter_events::{PluginParameterEvent, PluginParameterEventQueue};
+use crate::parameter_events::{
+    PluginParameterEvent, PluginParameterEventKind, PluginParameterEventQueue,
+};
 use crate::params::PluginParameter;
 use crate::traits::{
     AudioPlugin, EditorWindowResizer, HostParameterUpdate, HostTransport, HostedPluginRuntime,
@@ -350,7 +352,83 @@ unsafe extern "C" fn output_events_try_push(
         return true;
     }
 
-    let header = &*event;
+    capture_header(&*queue, &*event, None)
+}
+
+/// The context a host-initiated write hands its capture list.
+///
+/// Lives on the caller's stack for the duration of one `flush` call, like the
+/// input event it accompanies. Nothing here is allocated.
+struct HostWriteCapture<'a> {
+    queue: &'a PluginParameterEventQueue,
+    /// The parameter the host just wrote. A `CLAP_EVENT_PARAM_VALUE` the plugin
+    /// emits for it during this same call is the plugin repeating back what it
+    /// was told, not an edit the user made.
+    written_param_id: u32,
+}
+
+/// Build the output list for a **host-initiated** parameter write.
+///
+/// A plugin is free to echo an applied value straight back as an output event —
+/// wrapper-generated plugins routinely do — and the ordinary capture list cannot
+/// tell that echo from a user turning the same knob in the plugin's editor. Fed
+/// to the renderer it would mark the project dirty on every automation point
+/// played back, which is the same echo the VST3 half avoids by writing host
+/// values through a queue the observers never see.
+///
+/// So the write's own parameter is dropped for the length of that one call.
+/// Every other parameter still passes: a plugin whose macro moves three
+/// dependent controls is reporting three real changes, and those are the events
+/// this capture exists for.
+///
+/// # Accepted bound
+/// A plugin that clamps, quantises or otherwise *corrects* the value it was
+/// handed reports that correction on this same call, and it is dropped with the
+/// echo. The host's recorded value is then the one it wrote until the plugin's
+/// next edit or a parameter rescan re-reads the contract. Distinguishing a
+/// correction from an echo needs a comparison the CLAP event carries no basis
+/// for — the plugin reports the value, never whether it changed it.
+fn capture_host_write_events(capture: &mut HostWriteCapture) -> clap_output_events {
+    clap_output_events {
+        ctx: capture as *mut HostWriteCapture as *mut c_void,
+        try_push: Some(host_write_try_push),
+    }
+}
+
+/// Take one event the plugin produced while answering a host write.
+///
+/// Same real-time contract as [`output_events_try_push`] — this runs on whatever
+/// thread called `set_parameter`, which is the control path today, and is held
+/// to the audio-thread rules anyway so the two lists cannot drift apart.
+unsafe extern "C" fn host_write_try_push(
+    list: *const clap_output_events,
+    event: *const clap_event_header,
+) -> bool {
+    if list.is_null() || event.is_null() {
+        return false;
+    }
+    let capture = (*list).ctx as *const HostWriteCapture;
+    if capture.is_null() {
+        return true;
+    }
+
+    let capture = &*capture;
+    capture_header(capture.queue, &*event, Some(capture.written_param_id))
+}
+
+/// Decode one header and store it, unless it is the echo of `written_param_id`.
+///
+/// Shared by both capture lists so the two can never decode differently: the
+/// only thing that separates them is which parameter, if any, is suppressed.
+///
+/// # Safety
+/// `header` must point at a live `clap_event_header` whose `size` describes the
+/// allocation it heads.
+unsafe fn capture_header(
+    queue: &PluginParameterEventQueue,
+    header: &clap_event_header,
+    written_param_id: Option<u32>,
+) -> bool {
     if header.space_id != CLAP_CORE_EVENT_SPACE_ID {
         return true;
     }
@@ -359,7 +437,23 @@ unsafe extern "C" fn output_events_try_push(
         return true;
     };
 
-    (*queue).push(captured)
+    // Absorbed rather than refused: the plugin did nothing wrong, and telling it
+    // the push failed would have it re-send an event the host will drop again.
+    if is_echo_of_host_write(&captured, written_param_id) {
+        return true;
+    }
+
+    queue.push(captured)
+}
+
+/// Whether this event is the plugin repeating a value the host just wrote.
+///
+/// Only a value event can be an echo. A gesture boundary is the plugin
+/// reporting that a user took hold of the control, which a host write never
+/// produces and which must reach the host even for the written parameter.
+fn is_echo_of_host_write(event: &PluginParameterEvent, written_param_id: Option<u32>) -> bool {
+    matches!(event.kind, PluginParameterEventKind::Value)
+        && written_param_id == Some(event.param_id)
 }
 
 /// Read one core-space header as an event this host models, or `None`.
@@ -746,6 +840,19 @@ impl ClapWrapper {
         if let Some(fixture) = self.command_fixture.as_mut() {
             fixture.parameters = parameters;
         }
+    }
+
+    /// The host callback state a fixture's plugin would call into.
+    ///
+    /// Stands in for the plugin raising a host callback: a crate that hosts this
+    /// fixture can arm `request_flush` or `rescan` exactly as a real plugin
+    /// does, and read the flag back to prove a follow-up consumed it. Without
+    /// it a downstream watcher's follow-up has no way to be driven at all, and
+    /// its only test would be that nothing happens.
+    #[cfg(feature = "engine-owned-command-fixture")]
+    #[doc(hidden)]
+    pub fn engine_owned_command_fixture_host_state(&self) -> &HostCallbackState {
+        &self.host_state
     }
 
     /// Query a plugin extension by ID. Returns null if not supported.
@@ -1835,10 +1942,14 @@ impl AudioPlugin for ClapWrapper {
             };
 
             if let Some(flush) = params.flush {
-                // The plugin answers a host write on the same call, and a
-                // parameter whose value depends on the one just written comes
-                // back here — so this flush captures like every other.
-                let out_events = capture_output_events(&self.parameter_events);
+                // A parameter whose value depends on the one just written comes
+                // back here and is a real change worth capturing. The written
+                // parameter's own value is not — see `capture_host_write_events`.
+                let mut capture = HostWriteCapture {
+                    queue: &self.parameter_events,
+                    written_param_id: param_id,
+                };
+                let out_events = capture_host_write_events(&mut capture);
                 flush(self.plugin, &input_events, &out_events);
             }
         }
@@ -2121,7 +2232,6 @@ impl HostedPluginRuntime for ClapWrapper {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::parameter_events::PluginParameterEventKind;
 
     // ── Latency query + change notification (PH-4) ──────────────────────
 
@@ -4324,6 +4434,75 @@ mod tests {
 
         assert!(!wrapper.flush_parameters_off_audio_thread());
         assert_eq!(FLUSH_CALLS.load(Ordering::Relaxed), 0);
+    }
+
+    /// A host write is not a plugin edit. Wrapper-generated plugins echo the
+    /// applied value straight back as an output event, and captured it would
+    /// reach the renderer as an edit the user made — marking the project dirty
+    /// on every automation point played back. Capturing that echo here is
+    /// exactly the bug `queue_host_parameter_write` avoids on the VST3 half.
+    #[test]
+    fn the_value_a_host_write_echoes_back_is_not_reported_as_a_plugin_edit() {
+        let _guard = EMIT_TEST_LOCK.lock().unwrap();
+        stage_emitted_events(vec![
+            // The plugin repeating what it was just told.
+            PluginParameterEvent::value(8, 0.44),
+            // A different control the write moved with it: a real change, and
+            // the whole reason this flush captures at all.
+            PluginParameterEvent::value(9, 0.10),
+        ]);
+        let mut wrapper = stub_wrapper(emitting_plugin_ptr());
+        wrapper.params_ext = &raw const EMITTING_PARAMS;
+
+        AudioPlugin::set_parameter(&mut wrapper, 8, 0.44);
+
+        assert_eq!(
+            captured_events(&wrapper),
+            vec![PluginParameterEvent::value(9, 0.10)],
+            "the written parameter's echo is dropped and every dependent change still passes"
+        );
+    }
+
+    /// Only a value can be an echo. A plugin that opens a gesture while
+    /// answering a host write is reporting that a user took hold of the control,
+    /// and swallowing that would leave the boundary unpaired.
+    #[test]
+    fn a_gesture_on_the_written_parameter_still_reaches_the_host() {
+        let _guard = EMIT_TEST_LOCK.lock().unwrap();
+        stage_emitted_events(vec![
+            PluginParameterEvent::gesture_begin(8),
+            PluginParameterEvent::value(8, 0.44),
+        ]);
+        let mut wrapper = stub_wrapper(emitting_plugin_ptr());
+        wrapper.params_ext = &raw const EMITTING_PARAMS;
+
+        AudioPlugin::set_parameter(&mut wrapper, 8, 0.44);
+
+        assert_eq!(
+            captured_events(&wrapper),
+            vec![PluginParameterEvent::gesture_begin(8)]
+        );
+    }
+
+    /// The suppression is scoped to the one call that carries the write. A
+    /// plugin's own later edit of that same parameter is an ordinary edit.
+    #[test]
+    fn the_written_parameter_is_only_suppressed_for_the_call_that_wrote_it() {
+        let _guard = EMIT_TEST_LOCK.lock().unwrap();
+        stage_emitted_events(vec![PluginParameterEvent::value(8, 0.44)]);
+        let mut wrapper = stub_wrapper(emitting_plugin_ptr());
+        wrapper.params_ext = &raw const EMITTING_PARAMS;
+
+        AudioPlugin::set_parameter(&mut wrapper, 8, 0.44);
+        assert!(captured_events(&wrapper).is_empty());
+
+        stage_emitted_events(vec![PluginParameterEvent::value(8, 0.90)]);
+        process_one_block(&mut wrapper);
+
+        assert_eq!(
+            captured_events(&wrapper),
+            vec![PluginParameterEvent::value(8, 0.90)]
+        );
     }
 
     /// The rescan ask has to survive from the plugin's callback to the control

@@ -95,8 +95,9 @@ impl PluginParameterEvent {
 /// [`push`](Self::push) is called from `clap_process.out_events.try_push`, which
 /// runs inside the plugin's `process()` on the audio thread. Every operation it
 /// performs is bounded and lock-free: two atomic loads, one masked index, one
-/// plain store into memory allocated when the queue was built, one atomic store,
-/// and — only when the queue is full — one atomic fetch-add. No allocation, no
+/// plain store into memory allocated when the queue was built, two atomic stores
+/// (the write cursor and the process-wide pending hint), and — only when the
+/// queue is full — one atomic fetch-add instead of both stores. No allocation, no
 /// lock, no syscall, no division, no unbounded loop.
 ///
 /// # Producer discipline
@@ -232,6 +233,32 @@ pub fn take_pending_parameter_events_signal() -> bool {
     PARAMETER_EVENTS_PENDING.swap(false, Ordering::AcqRel)
 }
 
+/// Process-wide hint that some plugin asked its host to call `params.flush()`.
+///
+/// Separate from the event hint because the two ticks cost different things: an
+/// event drain reads lock-free rings, while answering a flush takes each
+/// instance's control seam. Coalescing them would make every parameter edit pay
+/// for a seam the flush path needs and the drain does not.
+///
+/// A hint, never the record — each instance's own flag is. A lost signal costs
+/// at most one drain interval, because the flag stays set until a pass takes it.
+static PARAMETER_FLUSH_PENDING: AtomicBool = AtomicBool::new(false);
+
+/// Raise the flush hint. **Called from the plugin's own thread, which CLAP marks
+/// `[thread-safe]` for `request_flush` — so this may be the audio thread.**
+///
+/// One release store, and nothing else. That is the whole reason this exists: a
+/// channel wake would copy an instance id and take an allocator lock on the
+/// render thread.
+pub fn signal_pending_parameter_flush() {
+    PARAMETER_FLUSH_PENDING.store(true, Ordering::Release);
+}
+
+/// Read and clear the flush hint. The drain thread's second question.
+pub fn take_pending_parameter_flush_signal() -> bool {
+    PARAMETER_FLUSH_PENDING.swap(false, Ordering::AcqRel)
+}
+
 /// One instance's drained batch, after gesture pairing.
 #[derive(Debug, Default, PartialEq)]
 pub struct PairedParameterEvents {
@@ -301,6 +328,13 @@ pub fn is_empty_batch(batch: &PairedParameterEvents) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The pending hint is process-wide, so any test that pushes raises it for
+    /// every other test running beside it. The one test that reads the hint back
+    /// and the one test that pushes concurrently both take this, because
+    /// otherwise the pusher re-raises the hint between the reader's take and its
+    /// assertion that a second take finds nothing.
+    static EVENTS_SIGNAL_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     fn drained(queue: &PluginParameterEventQueue) -> Vec<PluginParameterEvent> {
         let mut out = Vec::new();
@@ -401,6 +435,9 @@ mod tests {
 
     #[test]
     fn the_pending_signal_is_raised_by_a_push_and_cleared_by_the_reader() {
+        let _guard = EVENTS_SIGNAL_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let queue = PluginParameterEventQueue::default();
         take_pending_parameter_events_signal();
 
@@ -524,5 +561,71 @@ mod tests {
             events: Vec::new(),
             dropped: 1,
         }));
+    }
+
+    /// The queue's whole purpose is to cross a thread boundary — the plugin
+    /// pushes on the audio thread and the watcher drains on its own — and every
+    /// test above it runs both ends on one thread, where the acquire/release
+    /// pairing that makes a published slot visible is never exercised at all.
+    ///
+    /// This drives the real topology: one producer thread, one consumer thread,
+    /// every event accounted for and in order. What it catches everywhere is a
+    /// producer or consumer that loses, duplicates or reorders under contention.
+    /// On a weakly-ordered host it also catches the fences themselves — relaxing
+    /// the write cursor's store/load pair breaks the order assertion here — while
+    /// a strongly-ordered one may let that mutation through, so the ordering is
+    /// argued from the acquire/release pairing rather than from this test alone.
+    #[test]
+    fn every_event_one_thread_pushes_reaches_the_thread_draining_it_in_order() {
+        use std::sync::Arc;
+
+        let _guard = EVENTS_SIGNAL_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+
+        // Deliberately far more events than slots, so the consumer must actually
+        // keep up and the producer must actually see the room it frees.
+        const CAPACITY: usize = 16;
+        const EVENTS: u32 = 10_000;
+
+        let queue = Arc::new(PluginParameterEventQueue::with_capacity(CAPACITY));
+        let producer_queue = Arc::clone(&queue);
+
+        let producer = std::thread::spawn(move || {
+            let mut sent = 0u32;
+            while sent < EVENTS {
+                // Retrying a refusal is what the CLAP output-list contract lets
+                // a plugin do, and it keeps this test about ordering rather
+                // than about how fast the consumer happens to run. Each refusal
+                // still bumps the drop counter, which counts refusals rather
+                // than losses, so nothing here asserts that counter is zero.
+                if producer_queue.push(PluginParameterEvent::value(sent, f64::from(sent))) {
+                    sent += 1;
+                }
+            }
+        });
+
+        let mut observed = Vec::with_capacity(EVENTS as usize);
+        let mut batch = Vec::new();
+        while (observed.len() as u32) < EVENTS {
+            queue.drain(&mut batch);
+            observed.append(&mut batch);
+        }
+        producer.join().expect("the producer thread finishes");
+
+        assert_eq!(
+            observed.len() as u32,
+            EVENTS,
+            "no event may be lost or duplicated"
+        );
+        let out_of_order = observed
+            .iter()
+            .enumerate()
+            .find(|(index, event)| event.param_id != *index as u32);
+        assert!(
+            out_of_order.is_none(),
+            "events must arrive in the order the producer pushed them, first break at {:?}",
+            out_of_order
+        );
     }
 }

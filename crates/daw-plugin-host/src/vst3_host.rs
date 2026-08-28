@@ -1110,6 +1110,33 @@ mod tests {
         assert!(drained(&handler_state).is_empty());
     }
 
+    /// AC-003 for VST3, through the entry point the plugin actually calls.
+    ///
+    /// The ride test above drives `record_gesture_*` directly, which the plugin
+    /// never touches — so reverting `beginEdit`/`endEdit` to the bare
+    /// `kResultOk` they used to be leaves it passing. This one goes through the
+    /// COM handler, and that mutation empties it.
+    #[test]
+    fn the_handlers_edit_brackets_reach_the_host_as_gesture_boundaries() {
+        let handler_state = std::sync::Arc::new(Vst3HostState::default());
+        let handler = Vst3ComponentHandler::new(std::sync::Arc::clone(&handler_state));
+
+        unsafe {
+            assert_eq!(handler.beginEdit(4), kResultOk);
+            assert_eq!(handler.performEdit(4, 0.6), kResultOk);
+            assert_eq!(handler.endEdit(4), kResultOk);
+        }
+
+        assert_eq!(
+            observed_events(&handler_state),
+            vec![
+                PluginParameterEvent::gesture_begin(4),
+                PluginParameterEvent::value(4, 0.6),
+                PluginParameterEvent::gesture_end(4),
+            ]
+        );
+    }
+
     #[test]
     fn the_host_names_itself_to_the_plugin() {
         let mut name: String128 = [0; 128];
