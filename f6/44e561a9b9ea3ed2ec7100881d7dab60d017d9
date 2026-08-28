@@ -1,0 +1,20 @@
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/persistPromptActionConfirmation.spec.ts
+  s_a40848e8f8cca9::t_edb024e1d79b9e 3-8,10,13-14,55-57,59-70,72-85,88,90-93,96,110,118,120-121,168,203-204,212,214-216,219,222,228,236
+  s_a40848e8f8cca9::t_655d5553d90424 9,58
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "f644e561a9b9ea3ed2ec7100881d7dab60d017d9",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
