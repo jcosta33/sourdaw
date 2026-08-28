@@ -1302,10 +1302,11 @@ mod tests {
     /// this comparison makes them write the right one.
     ///
     /// The stream carries one of everything the classification has to tell
-    /// apart: registrations, a placement that moves an effect without
-    /// registering one, chain removals that leave the effect registered, and
-    /// retirements that really free a slot because the strips they name really
-    /// hold the effects they name.
+    /// apart: registrations, placements that move an effect without
+    /// registering one, the whole detach-and-release vocabulary — a chain
+    /// removal and a strip removal on both the track and the bus side, each
+    /// leaving the effect registered — and retirements that really free a slot
+    /// because the strips they name really hold the effects they name.
     #[test]
     fn the_ledger_matches_the_scheduler_effect_table_it_counts() {
         let (mut engine, command_rx, _retired_adoption_rx) = engine_handle_for_command_capture(64);
@@ -1314,10 +1315,13 @@ mod tests {
 
         engine.add_track(1).expect("the track registers");
         engine.add_bus(50).expect("the bus registers");
+        // Two strips that exist to be removed with a device still on them.
+        engine.add_track(2).expect("the track registers");
+        engine.add_bus(51).expect("the bus registers");
 
-        // Five registrations: four built-in devices and one bridged plugin,
+        // Seven registrations: six built-in devices and one bridged plugin,
         // which take their slots from the same table.
-        for id in 7..=10 {
+        for id in 7..=12 {
             engine.add_effect(id, "knead").expect("device registers");
         }
         let (bridge, _bridge_handle) = create_audio_bridge(9_000);
@@ -1339,6 +1343,78 @@ mod tests {
                 )
                 .expect("the track splice registers");
         }
+        engine
+            .insert_bus_device(
+                50,
+                ChainEntry {
+                    effect_id: 10,
+                    kind: DeviceKind::Effect,
+                },
+                0,
+            )
+            .expect("the bus splice registers");
+        engine
+            .insert_track_device(
+                2,
+                ChainEntry {
+                    effect_id: 11,
+                    kind: DeviceKind::Effect,
+                },
+                0,
+            )
+            .expect("the track splice registers");
+        engine
+            .insert_bus_device(
+                51,
+                ChainEntry {
+                    effect_id: 12,
+                    kind: DeviceKind::Effect,
+                },
+                0,
+            )
+            .expect("the bus splice registers");
+
+        // The detach-and-release vocabulary, constructed directly: the graph
+        // layer never sends these plain forms — its remove-device retires in
+        // one command, because a removal followed by a retirement would run
+        // the device over the master mix for the blocks in between. Each
+        // leaves its effect registered — returned to the master chain, or
+        // detached off a strip that no longer exists — so each must move
+        // neither count.
+        engine
+            .remove_bus_device(50, 10)
+            .expect("the bus chain removal registers");
+        engine.remove_track(2).expect("the track removal registers");
+        engine.remove_bus(51).expect("the bus removal registers");
+
+        scheduler.update_graph();
+
+        assert!(
+            scheduler.timeline().track(2).is_none() && scheduler.timeline().bus(51).is_none(),
+            "the strip removals must have applied, or the counts below observe nothing"
+        );
+        assert!(
+            scheduler
+                .timeline()
+                .bus(50)
+                .expect("the bus applied")
+                .device_chain()
+                .is_empty(),
+            "the bus chain removal must have applied"
+        );
+        assert_eq!(
+            scheduler.effect_table_len(),
+            7,
+            "a bus chain removal and two strip removals must free no slot"
+        );
+        assert_eq!(
+            engine.registered_effect_count(),
+            7,
+            "the ledger must read all three removals as neutral"
+        );
+
+        // Effect 10 goes back onto the bus it was taken from, so the
+        // retirement below lands on a strip that really holds it.
         engine
             .insert_bus_device(
                 50,
@@ -1380,7 +1456,7 @@ mod tests {
         // could hold on a stream the callback ignored.
         assert_eq!(
             scheduler.effect_table_len(),
-            3,
+            5,
             "the retirements must free exactly the two slots they named"
         );
         assert!(
