@@ -442,6 +442,7 @@ describe('executeCommittedSectionRenderRetry', () => {
             approvedJobs: [JOB],
             jobs: [JOB],
             sourceRevision: 'revision-source',
+            onRenderAttempt: expect.any(Function),
             validateArtifactAttachment: expect.any(Function),
         });
         expect(mocks.reconcileBudget).toHaveBeenCalledWith({
@@ -463,6 +464,32 @@ describe('executeCommittedSectionRenderRetry', () => {
                 content: expect.stringContaining('incomplete-projected-id'),
             })
         );
+    });
+
+    it('charges a renderer attempt that fails before its artifact attaches and refuses the next retry at the hard limit', async () => {
+        const input = createInput();
+        mocks.project.mockReturnValue(projection(true));
+        mocks.retryRenders.mockImplementationOnce(
+            async (retryInput: { onRenderAttempt?: (job: typeof JOB) => void }) => {
+                retryInput.onRenderAttempt?.(JOB);
+                throw new Error('renderer unavailable');
+            }
+        );
+        mocks.reserveBudget
+            .mockReturnValueOnce({ status: 'reserved' })
+            .mockReturnValueOnce({ status: 'hard-limit-reached', reason: 'maxRenderJobs' });
+
+        await expect(executeCommittedSectionRenderRetry(input)).resolves.toEqual({
+            status: 'failed',
+            reason: 'renderer unavailable',
+        });
+        expect(mocks.reconcileBudget).toHaveBeenCalledWith(expect.objectContaining({ consumed: 1, mode: 'final' }));
+
+        await expect(executeCommittedSectionRenderRetry(input)).resolves.toEqual({
+            status: 'failed',
+            reason: 'The missing section renders exceed the user budget for maxRenderJobs.',
+        });
+        expect(mocks.retryRenders).toHaveBeenCalledOnce();
     });
 
     it('keeps render failure primary and clears generation when budget reconciliation throws', async () => {
@@ -551,6 +578,11 @@ describe('executeCommittedSectionRenderRetry', () => {
         mocks.project
             .mockReturnValueOnce(projectionForJobs([JOB, SECOND_JOB]))
             .mockReturnValue(projectionForJobs([SECOND_JOB], [JOB]));
+        mocks.retryRenders.mockImplementationOnce(
+            async (retryInput: { onRenderAttempt?: (job: typeof JOB) => void }) => {
+                retryInput.onRenderAttempt?.(JOB);
+            }
+        );
 
         await expect(executeCommittedSectionRenderRetry(input)).resolves.toEqual({
             status: 'failed',
@@ -570,6 +602,11 @@ describe('executeCommittedSectionRenderRetry', () => {
         const input = createInput();
         const finalProjection = projectionForJobs([JOB], [SECOND_JOB], [], 'eviction-projected-id');
         mocks.project.mockReturnValueOnce(projectionForJobs([SECOND_JOB], [JOB])).mockReturnValue(finalProjection);
+        mocks.retryRenders.mockImplementationOnce(
+            async (retryInput: { onRenderAttempt?: (job: typeof JOB) => void }) => {
+                retryInput.onRenderAttempt?.(SECOND_JOB);
+            }
+        );
 
         await expect(executeCommittedSectionRenderRetry(input)).resolves.toEqual({
             status: 'failed',
@@ -579,6 +616,7 @@ describe('executeCommittedSectionRenderRetry', () => {
             approvedJobs: [JOB, SECOND_JOB],
             jobs: [SECOND_JOB],
             sourceRevision: 'revision-source',
+            onRenderAttempt: expect.any(Function),
             validateArtifactAttachment: expect.any(Function),
         });
         expect(mocks.reconcileBudget).toHaveBeenCalledWith({
@@ -602,6 +640,11 @@ describe('executeCommittedSectionRenderRetry', () => {
         const input = createInput();
         const finalProjection = projectionForJobs([], [SECOND_JOB], [JOB], 'manual-review-projected-id');
         mocks.project.mockReturnValueOnce(projectionForJobs([SECOND_JOB], [], [JOB])).mockReturnValue(finalProjection);
+        mocks.retryRenders.mockImplementationOnce(
+            async (retryInput: { onRenderAttempt?: (job: typeof JOB) => void }) => {
+                retryInput.onRenderAttempt?.(SECOND_JOB);
+            }
+        );
 
         await expect(executeCommittedSectionRenderRetry(input)).resolves.toEqual({
             status: 'failed',
@@ -611,6 +654,7 @@ describe('executeCommittedSectionRenderRetry', () => {
             approvedJobs: [SECOND_JOB, JOB],
             jobs: [SECOND_JOB],
             sourceRevision: 'revision-source',
+            onRenderAttempt: expect.any(Function),
             validateArtifactAttachment: expect.any(Function),
         });
         expect(mocks.completeContinuation).not.toHaveBeenCalled();
@@ -690,6 +734,7 @@ describe('executeCommittedSectionRenderRetry', () => {
             approvedJobs: [SECOND_JOB, JOB],
             jobs: [SECOND_JOB],
             sourceRevision: 'revision-source',
+            onRenderAttempt: expect.any(Function),
             validateArtifactAttachment: expect.any(Function),
         });
         expect(mocks.completeContinuation).not.toHaveBeenCalled();
@@ -711,7 +756,12 @@ describe('executeCommittedSectionRenderRetry', () => {
         const input = createInput();
         const warnedProjection = projectionForJobs([], [], [JOB]);
         mocks.project.mockReturnValueOnce(projection(true)).mockReturnValue(warnedProjection);
-        mocks.retryRenders.mockRejectedValue(new Error('tail truncated'));
+        mocks.retryRenders.mockImplementationOnce(
+            async (retryInput: { onRenderAttempt?: (job: typeof JOB) => void }) => {
+                retryInput.onRenderAttempt?.(JOB);
+                throw new Error('tail truncated');
+            }
+        );
 
         await expect(executeCommittedSectionRenderRetry(input)).resolves.toEqual({
             status: 'failed',
@@ -800,6 +850,7 @@ describe('executeCommittedSectionRenderRetry', () => {
         mocks.project.mockReturnValueOnce(projection(true)).mockReturnValue(projection(false));
         mocks.finalizeCommandReceipt.mockResolvedValue({
             status: 'failed',
+            disposition: 'retryable',
             reason: 'Command checkpoint finalization failed',
         });
 
@@ -810,6 +861,45 @@ describe('executeCommittedSectionRenderRetry', () => {
         expect(mocks.completeContinuation).not.toHaveBeenCalled();
         expect(mocks.updateFollowUp).toHaveBeenLastCalledWith(
             expect.objectContaining({ status: 'retryable', error: 'Command checkpoint finalization failed' })
+        );
+        expect(mocks.requireManualRepair).not.toHaveBeenCalled();
+    });
+
+    it('requires manual repair when finalization detects revision drift after artifact attachment', async () => {
+        const input = createInput();
+        mocks.project.mockReturnValueOnce(projection(true)).mockReturnValue(projection(false));
+        mocks.finalizeCommandReceipt.mockResolvedValue({
+            status: 'failed',
+            disposition: 'manual-repair',
+            reason: 'The project changed before external-effect finalization',
+        });
+
+        await expect(executeCommittedSectionRenderRetry(input)).resolves.toEqual({
+            status: 'failed',
+            reason: 'The project changed before external-effect finalization',
+        });
+
+        expect(mocks.completeContinuation).not.toHaveBeenCalled();
+        expect(mocks.requireManualRepair).toHaveBeenCalledWith({
+            runId: 'run-retry',
+            batchId: 'batch-retry',
+            reason: 'The project changed before external-effect finalization',
+        });
+        expect(mocks.updateFollowUp).toHaveBeenLastCalledWith(
+            expect.objectContaining({
+                status: 'failed',
+                error: 'The project changed before external-effect finalization',
+            })
+        );
+        expect(mocks.updateConfirmation).toHaveBeenLastCalledWith(
+            expect.objectContaining({
+                status: 'executed',
+                error: 'The project changed before external-effect finalization',
+            })
+        );
+        expect(mocks.updateChat).toHaveBeenLastCalledWith(
+            'assistant-retry',
+            expect.objectContaining({ pendingActionFollowUpStatus: 'failed' })
         );
     });
 });

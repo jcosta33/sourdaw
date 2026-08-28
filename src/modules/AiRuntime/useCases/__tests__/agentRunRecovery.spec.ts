@@ -1270,6 +1270,47 @@ describe('agent run recovery', () => {
         );
     });
 
+    it('does not select a runtime-graph effect that merely shares the render operation name', async () => {
+        const runId = 'run-runtime-graph-render-name';
+        const batchId = 'batch-runtime-graph-render-name';
+        createAgentRun({
+            runId,
+            request: 'Reconcile a runtime graph repair.',
+            mode: 'apply',
+            createdRevision: 'heads-runtime-graph-render-name',
+            createdAt: 1,
+        });
+        agentRunLifecycle.recordPendingEffectContinuation({
+            runId,
+            continuation: {
+                authority: createContinuationAuthority(),
+                batchId,
+                effects: [
+                    {
+                        commandId: 'command-runtime-graph-render-name',
+                        kind: 'runtime-graph',
+                        operation: 'renderProjectSections',
+                        reason: 'Runtime graph repair interrupted.',
+                        remediation: 'retry',
+                        state: 'pending',
+                    },
+                ],
+                lastError: null,
+                receiptIdentity: `1:${runId}:${batchId}:partially-committed`,
+                recovery: 'reconcile-batch',
+                serializedBatch: `{"batch":"${batchId}"}`,
+            },
+            recordedAt: 2,
+        });
+
+        await expect(recoverRetainedSectionRenderEffects()).resolves.toBeUndefined();
+
+        expect(commandRecoveryMocks.getVersionedCommandBatchIdempotentReplay).not.toHaveBeenCalled();
+        expect(getAgentRun(runId)?.pendingEffectContinuations).toEqual([
+            expect.objectContaining({ batchId, recovery: 'reconcile-batch', lastError: null }),
+        ]);
+    });
+
     it('rejects unsupported persisted schema versions without overwriting their bytes', async () => {
         const futureState = { schemaVersion: 2, runs: [{ runId: 'future-run', futureReceipt: 'receipt-v2' }] };
         const rawFutureState = stringify(futureState);

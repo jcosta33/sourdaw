@@ -8,7 +8,9 @@ function getRetainedSectionRenderRecoveries(): Array<{ batchId: string; runId: s
             (recovery) =>
                 recovery.recovery !== 'manual-repair' &&
                 !recovery.effects.some(({ remediation }) => remediation === 'manual-repair') &&
-                recovery.effects.some(({ operation }) => operation === 'renderProjectSections')
+                recovery.effects.some(
+                    (effect) => effect.kind === 'external-effect' && effect.operation === 'renderProjectSections'
+                )
         )
         .map(({ batchId, runId }) => ({ batchId, runId }));
 }

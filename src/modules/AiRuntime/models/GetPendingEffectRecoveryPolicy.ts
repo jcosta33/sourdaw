@@ -4,7 +4,7 @@ export function getPendingEffectRecoveryPolicy(effects: readonly AgentRunPending
     recovery: 'manual-repair' | 'reconcile-batch';
     reason: string | null;
 } {
-    if (effects.some(({ operation }) => operation === 'renderProjectSections')) {
+    if (effects.some((effect) => effect.kind === 'external-effect' && effect.operation === 'renderProjectSections')) {
         return {
             recovery: 'manual-repair',
             reason: 'Generic pending-effect recovery cannot execute receipt-bound section renders. The original confirmation is required and may be unavailable after reload.',

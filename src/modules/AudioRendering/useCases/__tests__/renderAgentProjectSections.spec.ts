@@ -94,6 +94,43 @@ describe('renderAgentProjectSections', () => {
         ]);
     });
 
+    it('reports only jobs whose offline renderer begins, excluding retained and preflight-refused work', async () => {
+        const retainedJob = createJob();
+        const missingJob = createJob({
+            jobId: 'render-chorus-two',
+            sectionId: 'section-chorus-two',
+            sectionName: 'Chorus Two',
+            startBeat: 64,
+            endBeat: 96,
+        });
+        await renderAgentProjectSections({ jobs: [retainedJob], sourceRevision: 'revision-a' });
+        const sequence: string[] = [];
+        const onRenderAttempt = vi.fn((job: RenderProjectSectionJobSnapshot) => sequence.push(`attempt:${job.jobId}`));
+        mocks.renderOffline.mockImplementationOnce(() => {
+            sequence.push('render');
+            return Promise.resolve(createAudioBuffer());
+        });
+
+        await renderAgentProjectSections({
+            jobs: [retainedJob, missingJob],
+            sourceRevision: 'revision-a',
+            onRenderAttempt,
+        });
+
+        expect(onRenderAttempt).toHaveBeenCalledExactlyOnceWith(missingJob);
+        expect(sequence).toEqual(['attempt:render-chorus-two', 'render']);
+
+        mocks.captureProjectRevision.mockReturnValue('revision-b');
+        await expect(
+            renderAgentProjectSections({
+                jobs: [createJob({ jobId: 'render-preflight-refused' })],
+                sourceRevision: 'revision-a',
+                onRenderAttempt,
+            })
+        ).rejects.toThrow('Project changed during rendering');
+        expect(onRenderAttempt).toHaveBeenCalledExactlyOnce();
+    });
+
     it('never mixes artifacts from different project revisions in one render batch', async () => {
         const jobs = [
             createJob(),

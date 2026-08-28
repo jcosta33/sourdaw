@@ -16,6 +16,7 @@ type RenderAgentProjectSectionsInput = {
     sourceRevision: string;
     signal?: AbortSignal;
     validateArtifactAttachment?: () => string | null;
+    onRenderAttempt?: (job: RenderProjectSectionJobSnapshot) => void;
 };
 
 function createCancellationError(): Error {
@@ -131,6 +132,7 @@ export async function renderAgentProjectSections(input: RenderAgentProjectSectio
             input.signal?.addEventListener('abort', cancelActiveRender, { once: true });
             let buffer: AudioBuffer;
             try {
+                input.onRenderAttempt?.(job);
                 buffer = await renderOffline({
                     durationBeats: job.endBeat - job.startBeat,
                     startBeat: job.startBeat,

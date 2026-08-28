@@ -23,6 +23,7 @@ import { requireSectionRenderManualRepair } from './requireSectionRenderManualRe
 
 type CommandVerifiedBatchReceipt = ReturnType<typeof createVerifiedBatchReceipt>;
 type RetryResult = { status: 'busy' | 'executed' } | { status: 'failed'; reason: string };
+type FinalizeCommandReceiptResult = Awaited<ReturnType<typeof finalizeRecoveredCommandBatchEffects>>;
 type RetryBudget = {
     attemptId: string;
     reservation: ReturnType<typeof agentRunLifecycle.reserveBudget>;
@@ -55,10 +56,14 @@ async function finalizeCommandReceipt(
     confirmation: PendingAppActionConfirmation,
     receipt: CommandVerifiedBatchReceipt,
     commandBatch: Pick<Parameters<typeof finalizeRecoveredCommandBatchEffects>[0], 'authority' | 'serialized'>
-): Promise<CommandVerifiedBatchReceipt> {
+): Promise<FinalizeCommandReceiptResult> {
     const expectedProjectRevision = confirmation.followUpProjectRevision;
     if (!expectedProjectRevision) {
-        throw new Error('The committed render receipt authority is unavailable');
+        return {
+            status: 'failed',
+            disposition: 'retryable',
+            reason: 'The committed render receipt authority is unavailable',
+        };
     }
     const result = await finalizeRecoveredCommandBatchEffects({
         ...commandBatch,
@@ -66,10 +71,7 @@ async function finalizeCommandReceipt(
         expectedProjectRevision,
         validateRecoveredEffects: () => getApprovedRenderEvidenceFailure(confirmation),
     });
-    if (result.status === 'failed') {
-        throw new Error(result.reason);
-    }
-    return result.receipt;
+    return result;
 }
 
 function refreshConfirmationProjection(confirmation: PendingAppActionConfirmation) {
@@ -89,18 +91,16 @@ async function finishAlreadyComplete(
     commandBatch: Pick<Parameters<typeof finalizeRecoveredCommandBatchEffects>[0], 'authority' | 'serialized'>
 ): Promise<RetryResult> {
     try {
-        completeDurableContinuation(await finalizeCommandReceipt(confirmation, durableReceipt, commandBatch));
+        const result = await finalizeCommandReceipt(confirmation, durableReceipt, commandBatch);
+        if (result.status === 'failed') {
+            return result.disposition === 'manual-repair'
+                ? finishTerminalFinalizationManualRepair(confirmation, durableReceipt.batchId, result.reason)
+                : failAlreadyCompleteFinalization(confirmation, result.reason);
+        }
+        completeDurableContinuation(result.receipt);
     } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);
-        updatePendingActionFollowUp({ confirmationId: confirmation.id, error: reason, status: 'retryable' });
-        updatePendingActionConfirmationStatus({ confirmationId: confirmation.id, status: 'failed', error: reason });
-        updateChatMessage(confirmation.assistantMessageId, {
-            pendingActionConfirmationStatus: 'failed',
-            pendingActionFollowUpStatus: 'retryable',
-            error: reason,
-            content: `All expected section render artifacts are present, but durable retry completion could not be recorded: ${reason}. Project actions were not replayed.`,
-        });
-        return { status: 'failed', reason };
+        return failAlreadyCompleteFinalization(confirmation, reason);
     }
     updatePendingActionFollowUp({ confirmationId: confirmation.id, error: null, status: 'complete' });
     updatePendingActionConfirmationStatus({ confirmationId: confirmation.id, status: 'executed' });
@@ -112,6 +112,18 @@ async function finishAlreadyComplete(
         content: `Applied after confirmation:\n\n${refreshed.projection.receipt}\n\nAll section render artifacts are complete; project actions were not replayed.`,
     });
     return { status: 'executed' };
+}
+
+function failAlreadyCompleteFinalization(confirmation: PendingAppActionConfirmation, reason: string): RetryResult {
+    updatePendingActionFollowUp({ confirmationId: confirmation.id, error: reason, status: 'retryable' });
+    updatePendingActionConfirmationStatus({ confirmationId: confirmation.id, status: 'failed', error: reason });
+    updateChatMessage(confirmation.assistantMessageId, {
+        pendingActionConfirmationStatus: 'failed',
+        pendingActionFollowUpStatus: 'retryable',
+        error: reason,
+        content: `All expected section render artifacts are present, but durable retry completion could not be recorded: ${reason}. Project actions were not replayed.`,
+    });
+    return { status: 'failed', reason };
 }
 
 function failStaleRevision(confirmation: PendingAppActionConfirmation): RetryResult {
@@ -248,20 +260,46 @@ function finishRetentionCapacityManualRepair(
     return { status: 'failed', reason };
 }
 
+function finishTerminalFinalizationManualRepair(
+    confirmation: PendingAppActionConfirmation,
+    batchId: string,
+    reason: string,
+    persistenceWarning: string | null = null
+): RetryResult {
+    const manualRepairPersistenceWarning = requireSectionRenderManualRepair({
+        runId: confirmation.runId,
+        batchId,
+        reason,
+    });
+    const surfacedError = [reason, persistenceWarning, manualRepairPersistenceWarning].filter(Boolean).join('\n\n');
+    updatePendingActionFollowUp({ confirmationId: confirmation.id, error: surfacedError, status: 'failed' });
+    updatePendingActionConfirmationStatus({
+        confirmationId: confirmation.id,
+        status: manualRepairPersistenceWarning ? 'failed' : 'executed',
+        error: surfacedError,
+    });
+    const refreshed = refreshConfirmationProjection(confirmation);
+    updateChatMessage(confirmation.assistantMessageId, {
+        pendingActionConfirmationStatus: manualRepairPersistenceWarning ? 'failed' : 'executed',
+        pendingActionFollowUpStatus: 'failed',
+        error: surfacedError,
+        content: `Applied after confirmation:\n\n${refreshed.projection.receipt}\n\nThe project commands were not replayed. The durable section-render receipt cannot be finalized safely and requires manual repair: ${reason}.${persistenceWarning ? `\n\n_${persistenceWarning}_` : ''}${manualRepairPersistenceWarning ? `\n\n${manualRepairPersistenceWarning}` : ''}`,
+    });
+    return { status: 'failed', reason };
+}
+
 function reconcileRetryBudget(
     confirmation: PendingAppActionConfirmation,
     budget: RetryBudget | null,
-    attemptedJobs: ReadonlyArray<{ jobId: string }>
+    attemptedRenderJobIds: ReadonlySet<string>
 ): void {
     if (budget?.reservation.status !== 'reserved') {
         return;
     }
-    const performedJobIds = projectSectionRenderConfirmation({ confirmation }).performedSectionRenderJobIds;
-    const completedJobsCount = attemptedJobs.filter(({ jobId }) => performedJobIds.has(jobId)).length;
     agentRunLifecycle.reconcileBudgetAttempt({
         runId: confirmation.runId,
         attemptId: budget.attemptId,
-        consumed: completedJobsCount,
+        consumed: attemptedRenderJobIds.size,
         mode: 'final',
         provenance: 'versioned-estimate',
     });
@@ -270,10 +308,10 @@ function reconcileRetryBudget(
 function reconcileRetryBudgetBestEffort(
     confirmation: PendingAppActionConfirmation,
     budget: RetryBudget | null,
-    attemptedJobs: ReadonlyArray<{ jobId: string }>
+    attemptedRenderJobIds: ReadonlySet<string>
 ): string | null {
     try {
-        reconcileRetryBudget(confirmation, budget, attemptedJobs);
+        reconcileRetryBudget(confirmation, budget, attemptedRenderJobIds);
         return null;
     } catch (error) {
         logger.error(new Error(RENDER_RETRY_BUDGET_PERSISTENCE_WARNING, { cause: error }));
@@ -336,13 +374,16 @@ export async function executeCommittedSectionRenderRetry(input: {
     let retentionCapacityFailureReason: string | null = null;
     let retentionCapacityManualRepair: RetryResult | null = null;
     let manualReviewProjection: SectionRenderProjection | null = null;
+    let terminalFinalizationReason: string | null = null;
     let budgetPersistenceWarning: string | null = null;
+    const attemptedRenderJobIds = new Set<string>();
     try {
         try {
             await retryAgentProjectSectionRenders({
                 approvedJobs: initialProjection.approvedSectionRenderJobs,
                 jobs: followUp.jobs,
                 sourceRevision,
+                onRenderAttempt: (job) => attemptedRenderJobIds.add(job.jobId),
                 validateArtifactAttachment: () =>
                     canExecuteCommandBatchEffects()
                         ? null
@@ -366,9 +407,16 @@ export async function executeCommittedSectionRenderRetry(input: {
         }
         if (renderFailureReason === undefined && !retentionCapacityFailureReason && !manualReviewProjection) {
             try {
-                completeDurableContinuation(
-                    await finalizeCommandReceipt(confirmation, durableReceipt, input.commandBatch)
-                );
+                const result = await finalizeCommandReceipt(confirmation, durableReceipt, input.commandBatch);
+                if (result.status === 'failed') {
+                    if (result.disposition === 'manual-repair') {
+                        terminalFinalizationReason = result.reason;
+                    } else {
+                        renderFailureReason = result.reason;
+                    }
+                } else {
+                    completeDurableContinuation(result.receipt);
+                }
             } catch (error) {
                 renderFailureReason = error instanceof Error ? error.message : String(error);
             }
@@ -382,7 +430,7 @@ export async function executeCommittedSectionRenderRetry(input: {
                     retentionCapacityFailureReason
                 );
             }
-            budgetPersistenceWarning = reconcileRetryBudgetBestEffort(confirmation, budget, followUp.jobs);
+            budgetPersistenceWarning = reconcileRetryBudgetBestEffort(confirmation, budget, attemptedRenderJobIds);
         } finally {
             setChatGenerating(false);
         }
@@ -392,6 +440,14 @@ export async function executeCommittedSectionRenderRetry(input: {
     }
     if (manualReviewProjection) {
         return finishManualReview(confirmation, durableReceipt.batchId, budgetPersistenceWarning);
+    }
+    if (terminalFinalizationReason) {
+        return finishTerminalFinalizationManualRepair(
+            confirmation,
+            durableReceipt.batchId,
+            terminalFinalizationReason,
+            budgetPersistenceWarning
+        );
     }
     if (renderFailureReason !== undefined) {
         return failIncompleteRetry(confirmation, renderFailureReason, budgetPersistenceWarning);

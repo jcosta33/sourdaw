@@ -79,6 +79,40 @@ describe('recoverAgentRunPendingEffects', () => {
         expect(mocks.executeBatch).not.toHaveBeenCalled();
     });
 
+    it('reconciles a runtime-graph effect that happens to share the render operation name', async () => {
+        const recovery = renderRecovery();
+        const runtimeGraphEffect = {
+            ...recovery.effects[0],
+            kind: 'runtime-graph' as const,
+            remediation: 'retry' as const,
+        };
+        mocks.getRecovery.mockReturnValue({ ...recovery, effects: [runtimeGraphEffect] });
+        mocks.getReceipt.mockResolvedValue({
+            schemaVersion: 2,
+            runId: 'run-render-recovery',
+            batchId: 'batch-render-recovery',
+            outcome: 'partially-committed',
+            pendingEffects: [runtimeGraphEffect],
+        });
+        mocks.executeBatch.mockResolvedValue({
+            status: 'idempotent-replay',
+            receipt: {
+                schemaVersion: 2,
+                runId: 'run-render-recovery',
+                batchId: 'batch-render-recovery',
+                outcome: 'committed',
+                pendingEffects: [],
+            },
+        });
+
+        await expect(
+            recoverAgentRunPendingEffects({ runId: 'run-render-recovery', batchId: 'batch-render-recovery' })
+        ).resolves.toEqual({ status: 'recovered' });
+
+        expect(mocks.executeBatch).toHaveBeenCalledOnce();
+        expect(mocks.requireManualRepair).not.toHaveBeenCalled();
+    });
+
     it('remains non-executable when manual-repair persistence fails', async () => {
         const persistenceFailure = new Error('persistence unavailable');
         mocks.requireManualRepair.mockImplementation(() => {

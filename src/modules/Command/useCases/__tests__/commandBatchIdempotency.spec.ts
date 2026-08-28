@@ -1650,6 +1650,7 @@ describe('command batch idempotency', () => {
             })
         ).resolves.toEqual({
             status: 'failed',
+            disposition: 'retryable',
             reason: 'Command batch external-effect recovery is already in progress',
         });
         leaseAvailable = true;
@@ -1662,6 +1663,7 @@ describe('command batch idempotency', () => {
             })
         ).resolves.toEqual({
             status: 'failed',
+            disposition: 'manual-repair',
             reason: 'The pending project checkpoint changed before finalization',
         });
         projectRevisionOverride = revision(999);
@@ -1674,6 +1676,7 @@ describe('command batch idempotency', () => {
             })
         ).resolves.toEqual({
             status: 'failed',
+            disposition: 'manual-repair',
             reason: 'The project changed before external-effect finalization',
         });
         projectRevisionOverride = null;
@@ -1729,6 +1732,7 @@ describe('command batch idempotency', () => {
     });
 
     it.each([
+        'invalid serialized batch',
         'denied initial authority',
         'unavailable checkpoint',
         'malformed stored receipt',
@@ -1780,14 +1784,23 @@ describe('command batch idempotency', () => {
         }
         const mutationCountBeforeFinalization = mutationCount;
 
+        const serialized = failure === 'invalid serialized batch' ? '{not-json' : batch.serialized;
+        const expectedDisposition =
+            failure === 'invalid serialized batch' ||
+            failure === 'unavailable checkpoint' ||
+            failure === 'malformed stored receipt' ||
+            failure === 'completed checkpoint with pending effects'
+                ? 'manual-repair'
+                : 'retryable';
+
         await expect(
             finalizeRecoveredCommandBatchEffects({
                 authority: batch.authority,
-                serialized: batch.serialized,
+                serialized,
                 pendingReceipt: first.receipt,
                 expectedProjectRevision,
             })
-        ).resolves.toMatchObject({ status: 'failed' });
+        ).resolves.toMatchObject({ status: 'failed', disposition: expectedDisposition });
 
         expect(mutationCount).toBe(mutationCountBeforeFinalization);
         expect(execute).toHaveBeenCalledOnce();
