@@ -837,7 +837,9 @@ function requireAgentRunPendingEffectManualRepair(input: {
         saga: {
             ...run.saga,
             steps: run.saga.steps.map((step) =>
-                step.workId === input.batchId ? { ...step, state: 'manual-repair', updatedAt: requiredAt } : step
+                step.owner === 'external-effect' && step.workId === input.batchId
+                    ? { ...step, state: 'manual-repair', updatedAt: requiredAt }
+                    : step
             ),
         },
         pendingEffectContinuations: run.pendingEffectContinuations.map((candidate) =>

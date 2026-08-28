@@ -33,7 +33,8 @@ describe('retryAgentProjectSectionRenders', () => {
         });
 
         expect(mocks.renderSections).toHaveBeenCalledExactlyOnceWith({
-            jobs: [retainedJob, missingJob],
+            jobs: [missingJob],
+            retentionProtectedJobIds: [retainedJob.jobId, missingJob.jobId],
             sourceRevision: 'revision-render',
             validateArtifactAttachment: undefined,
             onRenderAttempt: undefined,

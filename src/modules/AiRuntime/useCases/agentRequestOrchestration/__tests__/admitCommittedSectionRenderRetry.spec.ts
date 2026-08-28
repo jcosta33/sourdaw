@@ -200,7 +200,7 @@ describe('admitCommittedSectionRenderRetry', () => {
         ).toEqual({ durableReceipt: fixture.receipt, status: 'admitted' });
     });
 
-    it('arms exact manual-review evidence but never admits it for retry execution', () => {
+    it('rejects manual-review evidence during arming and proof', () => {
         const fixture = createFixture();
         const pendingEffect = fixture.receipt.pendingEffects[0];
         if (!pendingEffect || pendingEffect.kind !== 'external-effect') {
@@ -214,7 +214,7 @@ describe('admitCommittedSectionRenderRetry', () => {
                 durableReceipt: fixture.receipt,
                 phase: 'arming',
             })
-        ).toEqual({ durableReceipt: fixture.receipt, status: 'admitted' });
+        ).toEqual({ status: 'proof-mismatch' });
 
         bindTrackedRun(fixture);
         expect(

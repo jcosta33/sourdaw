@@ -183,7 +183,7 @@ function hasExactDurableReceipt(
         pendingEffect?.commandId === binding.approvedCommand.commandId &&
         pendingEffect.operation === binding.approvedCommand.operation &&
         pendingEffect.kind === 'external-effect' &&
-        (pendingEffect.remediation === 'reconcile' || pendingEffect.remediation === 'manual-repair') &&
+        pendingEffect.remediation === 'reconcile' &&
         pendingEffect.state === 'pending'
     );
 }

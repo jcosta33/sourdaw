@@ -271,6 +271,41 @@ describe('renderAgentProjectSections', () => {
         expect(getAgentSectionRenderArtifacts()).toEqual([]);
     });
 
+    it('does not begin rendering when attachment authority is denied at preflight', async () => {
+        const onRenderAttempt = vi.fn();
+
+        await expect(
+            renderAgentProjectSections({
+                jobs: [createJob()],
+                sourceRevision: 'revision-a',
+                onRenderAttempt,
+                validateArtifactAttachment: () =>
+                    'Only the authoritative collaboration host can attach section render artifacts.',
+            })
+        ).rejects.toThrow('Only the authoritative collaboration host');
+
+        expect(onRenderAttempt).not.toHaveBeenCalled();
+        expect(mocks.renderOffline).not.toHaveBeenCalled();
+        expect(getAgentSectionRenderArtifacts()).toEqual([]);
+    });
+
+    it('continues to later jobs after one renderer rejects and preserves the successful artifact', async () => {
+        const jobs = [
+            createJob(),
+            createJob({ jobId: 'render-chorus-two', sectionId: 'section-chorus-two', sectionName: 'Chorus Two' }),
+        ];
+        const onRenderAttempt = vi.fn();
+        mocks.renderOffline.mockRejectedValueOnce(new Error('first renderer unavailable'));
+
+        await expect(
+            renderAgentProjectSections({ jobs, sourceRevision: 'revision-a', onRenderAttempt })
+        ).rejects.toThrow('first renderer unavailable');
+
+        expect(onRenderAttempt).toHaveBeenCalledTimes(2);
+        expect(mocks.renderOffline).toHaveBeenCalledTimes(2);
+        expect(getAgentSectionRenderArtifacts()).toEqual([expect.objectContaining({ jobId: 'render-chorus-two' })]);
+    });
+
     it('keeps successful artifacts and retries only unfinished jobs after a transient failure', async () => {
         const jobs = [
             createJob(),
@@ -386,6 +421,42 @@ describe('renderAgentProjectSections', () => {
             jobs.slice(1).map((job) => job.jobId)
         );
         expect(mocks.renderOffline).toHaveBeenCalledTimes(17);
+    });
+
+    it('renders only the executable job while protecting retained approved artifacts from eviction', async () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-08-28T10:00:00Z'));
+        const retainedJob = createJob({ jobId: 'render-retained' });
+        await renderAgentProjectSections({ jobs: [retainedJob], sourceRevision: 'revision-a' });
+        const fillerJobs = Array.from({ length: 15 }, (_, index) =>
+            createJob({
+                jobId: `render-filler-${String(index)}`,
+                sectionId: `section-filler-${String(index)}`,
+                sectionName: `Filler ${String(index)}`,
+            })
+        );
+        for (const job of fillerJobs) {
+            vi.advanceTimersByTime(1);
+            await renderAgentProjectSections({ jobs: [job], sourceRevision: 'revision-a' });
+        }
+        const missingJob = createJob({
+            jobId: 'render-missing',
+            sectionId: 'section-missing',
+            sectionName: 'Missing',
+        });
+        const onRenderAttempt = vi.fn();
+        mocks.renderOffline.mockClear();
+
+        await renderAgentProjectSections({
+            jobs: [missingJob],
+            retentionProtectedJobIds: [retainedJob.jobId, missingJob.jobId],
+            sourceRevision: 'revision-a',
+            onRenderAttempt,
+        });
+
+        expect(onRenderAttempt).toHaveBeenCalledExactlyOnceWith(missingJob);
+        expect(mocks.renderOffline).toHaveBeenCalledOnce();
+        expect(getAgentSectionRenderArtifacts().map((artifact) => artifact.jobId)).toContain(retainedJob.jobId);
     });
 
     it('expires old artifacts and rejects a buffer larger than the session byte bound', async () => {

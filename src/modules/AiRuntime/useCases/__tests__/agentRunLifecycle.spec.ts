@@ -433,7 +433,7 @@ describe('agentRunLifecycle', () => {
         expect(agentRunLifecycle.get('run-render-review')?.saga.steps).toEqual(
             expect.arrayContaining([
                 expect.objectContaining({ stepId: 'effect:render-review', state: 'manual-repair', updatedAt: 4 }),
-                expect.objectContaining({ stepId: 'runtime:render-review', state: 'manual-repair', updatedAt: 4 }),
+                expect.objectContaining({ stepId: 'runtime:render-review', state: 'external-pending', updatedAt: 3 }),
             ])
         );
         expect(selectAgentRunPendingEffectRecoveries(state)).toEqual([

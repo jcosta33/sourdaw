@@ -8,11 +8,13 @@ import { SectionRenderFollowUpError, SectionRenderRetentionCapacityError } from 
 import { agentSectionRenderArtifactStore } from '../stores/agentSectionRenderArtifactStore';
 
 import { pruneExpiredAgentSectionRenderArtifacts } from './pruneExpiredAgentSectionRenderArtifacts';
+import { scheduleAgentSectionRenderArtifactExpiry } from './scheduleAgentSectionRenderArtifactExpiry';
 
 const PCM_SAMPLE_BYTE_SIZE = Float32Array.BYTES_PER_ELEMENT;
 
 type RenderAgentProjectSectionsInput = {
     jobs: readonly RenderProjectSectionJobSnapshot[];
+    retentionProtectedJobIds?: readonly string[];
     sourceRevision: string;
     signal?: AbortSignal;
     validateArtifactAttachment?: () => string | null;
@@ -108,7 +110,7 @@ export async function renderAgentProjectSections(input: RenderAgentProjectSectio
             throw new Error(`Section render job identity is already owned by another artifact: ${job.jobId}`);
         }
     }
-    const protectedJobIds = new Set(input.jobs.map((job) => job.jobId));
+    const protectedJobIds = new Set(input.retentionProtectedJobIds ?? input.jobs.map((job) => job.jobId));
     const failures: string[] = [];
     let retentionCapacityFailure = false;
     for (const job of input.jobs) {
@@ -184,6 +186,7 @@ export async function renderAgentProjectSections(input: RenderAgentProjectSectio
                 protectedJobIds
             );
             agentSectionRenderArtifactStore.set({ artifacts: retainedArtifacts });
+            scheduleAgentSectionRenderArtifactExpiry();
             existingByJobId.set(job.jobId, artifact);
             if (warnings.length > 0) {
                 failures.push(`${job.jobId}: ${warnings.join('; ')}`);

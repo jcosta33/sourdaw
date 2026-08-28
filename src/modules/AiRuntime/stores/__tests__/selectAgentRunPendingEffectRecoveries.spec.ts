@@ -88,6 +88,7 @@ function createRetainedRenderRecovery() {
 function createRetryableConfirmation(input: {
     authority: ReturnType<typeof createRetainedRenderRecovery>;
     followUpRevision: string;
+    outcome?: 'committed' | 'committed-with-warning' | 'failed';
 }): void {
     proposePendingActionConfirmation({
         id: 'confirmation-render-owner',
@@ -110,7 +111,7 @@ function createRetryableConfirmation(input: {
             label: 'Render section',
             executionKind: 'project',
             affectedIds: ['section-render-owner'],
-            outcome: 'committed-with-warning',
+            outcome: input.outcome ?? 'committed-with-warning',
         },
     });
     updatePendingActionFollowUp({
@@ -157,4 +158,16 @@ describe('selectAgentRunPendingEffectRecoveries', () => {
             expect.objectContaining({ runId: RUN_ID, batchId: BATCH_ID }),
         ]);
     });
+
+    it.each(['committed', 'failed'] as const)(
+        'keeps generic recovery visible when the render outcome is %s',
+        (outcome) => {
+            const authority = createRetainedRenderRecovery();
+            createRetryableConfirmation({ authority, followUpRevision: COMMITTED_REVISION, outcome });
+
+            expect(selectAgentRunPendingEffectRecoveries(readAgentRunState())).toEqual([
+                expect.objectContaining({ runId: RUN_ID, batchId: BATCH_ID }),
+            ]);
+        }
+    );
 });

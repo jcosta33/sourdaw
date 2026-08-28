@@ -418,7 +418,8 @@ export function hasRetryableSectionRenderFollowUp(input: {
                     (execution) =>
                         execution.actionType === 'renderProjectSections' &&
                         execution.commandId === input.commandId &&
-                        execution.executionKind === 'project'
+                        execution.executionKind === 'project' &&
+                        execution.outcome === 'committed-with-warning'
                 ).length === 1
         ) ?? false
     );

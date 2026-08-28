@@ -1094,9 +1094,44 @@ export async function confirmPendingChatActions(
                         durableReceipt: batchResult.receipt,
                         phase: 'arming',
                     }).status === 'admitted';
+                const requiresManualRenderRepair = batchResult.receipt.pendingEffects.some(
+                    (effect) =>
+                        effect.kind === 'external-effect' &&
+                        effect.operation === 'renderProjectSections' &&
+                        effect.remediation === 'manual-repair' &&
+                        effect.state === 'pending'
+                );
                 if (!canRebindSectionRenderArtifacts) {
                     manualReviewReason =
                         'Project changed during the original render, so missing original artifacts cannot be retried safely.';
+                    manualReviewPersistenceWarning = requireSectionRenderManualRepair({
+                        runId: confirmation.runId,
+                        batchId: batchResult.receipt.batchId,
+                        reason: manualReviewReason,
+                    });
+                    const surfacedManualReviewError = [
+                        manualReviewReason,
+                        manualReviewPersistenceWarning,
+                        runPersistenceWarning,
+                    ]
+                        .filter(Boolean)
+                        .join(' ');
+                    updatePendingActionFollowUp({
+                        confirmationId: confirmation.id,
+                        error: surfacedManualReviewError,
+                        projectRevision: null,
+                        status: 'failed',
+                    });
+                    updatePendingActionConfirmationStatus({
+                        confirmationId: confirmation.id,
+                        status: manualReviewPersistenceWarning ? 'failed' : 'executed',
+                        error: surfacedManualReviewError,
+                    });
+                } else if (requiresManualRenderRepair) {
+                    manualReviewReason =
+                        reviewRequiredSectionRenders.length > 0
+                            ? `Section render artifacts require manual review: ${formatSectionRenderReviewSummary(reviewRequiredSectionRenders)}.`
+                            : (batchResult.warning ?? 'Section render artifacts require manual repair.');
                     manualReviewPersistenceWarning = requireSectionRenderManualRepair({
                         runId: confirmation.runId,
                         batchId: batchResult.receipt.batchId,
