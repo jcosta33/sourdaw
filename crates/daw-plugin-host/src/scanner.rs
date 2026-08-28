@@ -25,6 +25,15 @@ const MAX_SCANNED_PARAMETER_DESCRIPTORS: u32 = 256;
 const MAX_SCANNED_PARAMETER_NAME_BYTES: usize = 128;
 const MAX_SCANNED_PARAMETER_METADATA_BYTES: usize = 32 * 1024;
 
+/// The most plugins one bundle's factory may declare before the scan refuses it.
+///
+/// `get_plugin_count` is a bundle-supplied `u32` and therefore an untrusted
+/// loop bound, like every other count the scanner walks. A bundle claiming
+/// four billion plugins would otherwise hold the worker inside a walk until
+/// its deadline killed it and report as broken rather than as unusual. Real
+/// bundles declare a handful.
+const MAX_SCANNED_BUNDLE_PLUGINS: u32 = 32;
+
 /// The most audio ports, per direction, the scanner will walk on one plugin.
 ///
 /// `clap_plugin_audio_ports::count` is a plugin-supplied `u32`, so it is an
@@ -172,6 +181,10 @@ pub struct ScannedParameterDescriptor {
 /// wanted the id.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct ClapDescriptorMetadata {
+    /// The plugin's own display name, as its descriptor declares it. The name
+    /// a bundle's plugins are told apart by in the browser — a file stem names
+    /// the bundle, not the plugin.
+    pub name: String,
     pub vendor: String,
     pub id: String,
     pub version: String,
@@ -204,6 +217,12 @@ pub struct ScannedDescriptor {
     /// the wire name a scan publishes must be the one the extractor that read
     /// the file claims, not one the consumer guessed from an extension.
     pub format: String,
+    /// The plugin's own display name, when the format's descriptor carries one
+    /// worth showing. `None` falls back to the file stem — which is the right
+    /// name for a format that does not declare one, and the wrong one for the
+    /// second plugin in a multi-plugin bundle.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
     pub vendor: String,
     /// Move-survivable identity from the plugin's own descriptor — CLAP's
     /// reverse-DNS id, VST3's class CID. Empty when the format has no such id or
@@ -229,8 +248,14 @@ impl ClapDescriptorMetadata {
     /// The CLAP extractor's half of the seam: CLAP descriptor facts rendered in
     /// the scan's own vocabulary.
     pub fn into_scanned_descriptor(self) -> ScannedDescriptor {
+        let name = if self.name.is_empty() {
+            None
+        } else {
+            Some(self.name)
+        };
         ScannedDescriptor {
             format: PluginFormat::Clap.wire_name().to_string(),
+            name,
             category: category_from_clap_features(&self.features),
             vendor: self.vendor,
             descriptor_id: self.id,
@@ -604,6 +629,53 @@ fn capability_metadata_reason(
 /// Takes the neutral descriptor, so nothing here knows which format produced
 /// it: `format` and `category` are the extractor's answers, carried through.
 pub fn scanned_plugin(path: &Path, descriptor: ScannedDescriptor) -> ScannedPlugin {
+    scanned_plugin_with_id(path, descriptor, stable_id(path))
+}
+
+/// The scan DTOs for every plugin one bundle declares, in factory order.
+///
+/// CLAP's factory is count/index shaped and a bundle may declare many plugins
+/// behind one file; registering only the first hides the rest. The first
+/// plugin keeps [`stable_id`] of the path alone — the id every already-saved
+/// project recorded for a single-plugin bundle, so nothing that resolves today
+/// stops resolving — and each sibling is keyed by its own descriptor id,
+/// because two plugins in one file cannot share one registry key.
+pub fn scanned_bundle_plugins(path: &Path, bundle: Vec<ScannedDescriptor>) -> Vec<ScannedPlugin> {
+    bundle
+        .into_iter()
+        .enumerate()
+        .map(|(position, descriptor)| {
+            let id = if position == 0 {
+                stable_id(path)
+            } else {
+                bundle_sibling_id(path, &descriptor.descriptor_id)
+            };
+            scanned_plugin_with_id(path, descriptor, id)
+        })
+        .collect()
+}
+
+/// A registry id for a bundle sibling: the path identity folded with the
+/// plugin's own descriptor id, so each plugin a multi-plugin bundle declares
+/// resolves independently of the file it shipped in.
+pub fn bundle_sibling_id(path: &Path, descriptor_id: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(path.to_string_lossy().as_bytes());
+    // The separator is the NUL byte, which cannot appear in a path on any
+    // supported platform, so no (path, id) pair can collide with a different
+    // pair's concatenation.
+    hasher.update([0]);
+    hasher.update(descriptor_id.as_bytes());
+    let digest = hasher.finalize();
+    format!(
+        "{:016x}",
+        u64::from_be_bytes(digest[..8].try_into().expect("sha256 is 32 bytes"))
+    )
+}
+
+/// [`scanned_plugin`] with the id the caller already decided, so the one-plugin
+/// and the whole-bundle shapes cannot drift apart.
+fn scanned_plugin_with_id(path: &Path, descriptor: ScannedDescriptor, id: String) -> ScannedPlugin {
     let capabilities = descriptor.capabilities;
     // Flattened here and nowhere else: `num_inputs`/`num_outputs`/`has_custom_ui`
     // are a flat wire contract, and the moment they are read apart from
@@ -612,8 +684,11 @@ pub fn scanned_plugin(path: &Path, descriptor: ScannedDescriptor) -> ScannedPlug
     let audio_channels = capabilities.and_then(|capabilities| capabilities.audio_channels);
 
     ScannedPlugin {
-        id: stable_id(path),
-        name: plugin_name_from_path(path),
+        id,
+        name: descriptor
+            .name
+            .filter(|name| !name.is_empty())
+            .unwrap_or_else(|| plugin_name_from_path(path)),
         vendor: descriptor.vendor,
         format: descriptor.format,
         category: descriptor.category,
@@ -1046,16 +1121,19 @@ mod tests {
 
 // ── CLAP metadata extraction ────────────────────────────────────────────
 
-/// Load a CLAP plugin temporarily to read its descriptor.
+/// Load a CLAP plugin temporarily to read the descriptors of every plugin its
+/// factory declares.
 ///
-/// Returns everything the descriptor carries in one pass. It used to return
-/// only vendor and id, and the caller that wanted the id `dlopen`ed the plugin a
-/// second time to get it — so every CLAP was loaded, init'd and deinit'd twice
-/// per scan.
+/// Returns everything the descriptors carry in one pass, one row per plugin in
+/// factory order. It used to return only vendor and id, and the caller that
+/// wanted the id `dlopen`ed the plugin a second time to get it — so every CLAP
+/// was loaded, init'd and deinit'd twice per scan. Then it returned only the
+/// first plugin's row, and the rest of a multi-plugin bundle never reached the
+/// browse list at all.
 ///
 /// # Safety
 /// Calls into native CLAP plugin entry points.
-pub fn extract_clap_metadata(path: &Path) -> Result<ClapDescriptorMetadata, String> {
+pub fn extract_clap_metadata(path: &Path) -> Result<Vec<ClapDescriptorMetadata>, String> {
     unsafe {
         let lib =
             Library::new(path).map_err(|error| format!("Cannot load CLAP candidate: {error}"))?;
@@ -1092,13 +1170,17 @@ pub fn extract_clap_metadata(path: &Path) -> Result<ClapDescriptorMetadata, Stri
     }
 }
 
-/// Create a CLAP instance inside the scan worker, inspect the extensions
-/// discovery needs — `clap.params`, `clap.audio-ports`, `clap.gui` — and destroy
-/// it without activation. The app process never receives the instance.
+/// Create one CLAP instance — the plugin `plugin_id` names inside the bundle —
+/// in the scan worker, inspect the extensions discovery needs — `clap.params`,
+/// `clap.audio-ports`, `clap.gui` — and destroy it without activation. The app
+/// process never receives the instance.
 ///
 /// # Safety
 /// Calls third-party CLAP entry points and must only run in the bounded scan worker.
-pub fn extract_clap_instance_metadata(path: &Path) -> Result<ScannedInstance, String> {
+pub fn extract_clap_instance_metadata(
+    path: &Path,
+    plugin_id: &str,
+) -> Result<ScannedInstance, String> {
     unsafe {
         let library =
             Library::new(path).map_err(|error| format!("Cannot load CLAP candidate: {error}"))?;
@@ -1118,7 +1200,7 @@ pub fn extract_clap_instance_metadata(path: &Path) -> Result<ScannedInstance, St
             }
         }
 
-        let result = extract_instance_metadata_from_factory(entry_ref);
+        let result = extract_instance_metadata_from_factory(entry_ref, plugin_id);
 
         if let Some(deinit) = entry_ref.deinit {
             deinit();
@@ -1135,9 +1217,8 @@ unsafe fn owned_c_string(value: *const i8) -> String {
     CStr::from_ptr(value).to_string_lossy().into_owned()
 }
 
-unsafe fn first_plugin_factory(
-    entry_ref: &clap_plugin_entry,
-) -> Result<&clap_plugin_factory, String> {
+/// The bundle's plugin factory, or why it cannot be reached.
+unsafe fn plugin_factory(entry_ref: &clap_plugin_entry) -> Result<&clap_plugin_factory, String> {
     let factory_id = CLAP_PLUGIN_FACTORY_ID.as_ptr() as *const i8;
     let factory_ptr = match entry_ref.get_factory {
         Some(get_factory) => get_factory(factory_id),
@@ -1149,9 +1230,16 @@ unsafe fn first_plugin_factory(
     Ok(&*(factory_ptr as *const clap_plugin_factory))
 }
 
-unsafe fn first_plugin_descriptor(
-    factory: &clap_plugin_factory,
-) -> Result<&clap_sys::plugin::clap_plugin_descriptor, String> {
+/// Every descriptor the factory declares, in factory order.
+///
+/// CLAP's factory is count/index shaped: `get_plugin_count` reports how many
+/// plugins the bundle declares and `get_plugin_descriptor(index)` returns each
+/// one, so walking index 0 alone registers only the first plugin of a
+/// multi-plugin bundle and hides the rest — u-he and other vendors ship
+/// several plugins behind one `.clap` file.
+unsafe fn factory_plugin_descriptors<'a>(
+    factory: &'a clap_plugin_factory,
+) -> Result<Vec<&'a clap_sys::plugin::clap_plugin_descriptor>, String> {
     let count = match factory.get_plugin_count {
         Some(get_plugin_count) => get_plugin_count(factory),
         None => return Err("CLAP factory has no plugin count".to_string()),
@@ -1159,15 +1247,22 @@ unsafe fn first_plugin_descriptor(
     if count == 0 {
         return Err("CLAP factory contains no plugins".to_string());
     }
+    if count > MAX_SCANNED_BUNDLE_PLUGINS {
+        return Err("CLAP bundle plugin count exceeds scanner bounds".to_string());
+    }
     let get_descriptor = match factory.get_plugin_descriptor {
-        Some(get_plugin_descriptor) => get_plugin_descriptor,
+        Some(get_descriptor) => get_descriptor,
         None => return Err("CLAP factory has no descriptor lookup".to_string()),
     };
-    let descriptor = get_descriptor(factory, 0);
-    if descriptor.is_null() {
-        return Err("CLAP factory returned a null descriptor".to_string());
+    let mut descriptors = Vec::with_capacity(count as usize);
+    for index in 0..count {
+        let descriptor = get_descriptor(factory, index);
+        if descriptor.is_null() {
+            return Err("CLAP factory returned a null descriptor".to_string());
+        }
+        descriptors.push(&*descriptor);
     }
-    Ok(&*descriptor)
+    Ok(descriptors)
 }
 
 unsafe fn bounded_parameter_name(value: &[std::os::raw::c_char]) -> Result<String, String> {
@@ -1334,14 +1429,17 @@ unsafe fn extract_audio_channels(
     }))
 }
 
+/// Inspect the one plugin `plugin_id` names in the bundle. The id is the
+/// caller's — the descriptor pass already read it — because the plugin to
+/// instantiate is a choice about the bundle, not a fact the factory hands out
+/// on its own.
 unsafe fn extract_instance_metadata_from_factory(
     entry_ref: &clap_plugin_entry,
+    plugin_id: &str,
 ) -> Result<ScannedInstance, String> {
-    let factory = first_plugin_factory(entry_ref)?;
-    let descriptor = first_plugin_descriptor(factory)?;
-    let plugin_id = owned_c_string(descriptor.id);
+    let factory = plugin_factory(entry_ref)?;
     if plugin_id.is_empty() {
-        return Err("CLAP descriptor has no stable plugin id".to_string());
+        return Err("CLAP instance inspection has no plugin id to instantiate".to_string());
     }
     let plugin_id = CString::new(plugin_id)
         .map_err(|_| "CLAP descriptor id contains a null byte".to_string())?;
@@ -1430,48 +1528,17 @@ unsafe fn owned_feature_list(features: *const *const i8) -> Vec<String> {
     collected
 }
 
-/// Read the descriptor of the factory's first plugin. Called with the entry
-/// already init'd — the caller is responsible for deinit.
-unsafe fn extract_from_factory(
-    entry_ref: &clap_plugin_entry,
+/// Read one factory descriptor row into the scan's own vocabulary, refusing a
+/// descriptor that claims no stable plugin id.
+unsafe fn descriptor_metadata(
+    descriptor: &clap_sys::plugin::clap_plugin_descriptor,
 ) -> Result<ClapDescriptorMetadata, String> {
-    let factory_id = CLAP_PLUGIN_FACTORY_ID.as_ptr() as *const i8;
-    let factory_ptr = match entry_ref.get_factory {
-        Some(f) => f(factory_id),
-        None => return Err("CLAP entry has no factory lookup".to_string()),
-    };
-
-    if factory_ptr.is_null() {
-        return Err("CLAP entry returned no plugin factory".to_string());
-    }
-
-    let factory = &*(factory_ptr as *const clap_plugin_factory);
-
-    let count = match factory.get_plugin_count {
-        Some(f) => f(factory),
-        None => return Err("CLAP factory has no plugin count".to_string()),
-    };
-
-    if count == 0 {
-        return Err("CLAP factory contains no plugins".to_string());
-    }
-
-    let get_desc = match factory.get_plugin_descriptor {
-        Some(f) => f,
-        None => return Err("CLAP factory has no descriptor lookup".to_string()),
-    };
-
-    let desc = get_desc(factory, 0);
-    if desc.is_null() {
-        return Err("CLAP factory returned a null descriptor".to_string());
-    }
-
-    let desc_ref = &*desc;
     let metadata = ClapDescriptorMetadata {
-        vendor: owned_c_string(desc_ref.vendor),
-        id: owned_c_string(desc_ref.id),
-        version: owned_c_string(desc_ref.version),
-        features: owned_feature_list(desc_ref.features),
+        name: owned_c_string(descriptor.name),
+        vendor: owned_c_string(descriptor.vendor),
+        id: owned_c_string(descriptor.id),
+        version: owned_c_string(descriptor.version),
+        features: owned_feature_list(descriptor.features),
         parameters: None,
         parameter_metadata_reason: None,
         capabilities: None,
@@ -1480,6 +1547,18 @@ unsafe fn extract_from_factory(
         return Err("CLAP descriptor has no stable plugin id".to_string());
     }
     Ok(metadata)
+}
+
+/// Read the descriptors of every plugin the factory declares. Called with the
+/// entry already init'd — the caller is responsible for deinit.
+unsafe fn extract_from_factory(
+    entry_ref: &clap_plugin_entry,
+) -> Result<Vec<ClapDescriptorMetadata>, String> {
+    let factory = plugin_factory(entry_ref)?;
+    factory_plugin_descriptors(factory)?
+        .into_iter()
+        .map(|descriptor| descriptor_metadata(descriptor))
+        .collect()
 }
 
 #[cfg(test)]
@@ -1523,6 +1602,9 @@ mod instance_metadata_tests {
     static ACTIVATE_CALLS: AtomicUsize = AtomicUsize::new(0);
 
     static TEST_ID: &[u8] = b"org.example.scan-safe\0";
+    /// `TEST_ID` as the `&str` the descriptor pass hands the instance pass —
+    /// the owned form `owned_c_string` produces, without the C terminator.
+    const TEST_PLUGIN_ID: &str = "org.example.scan-safe";
     static TEST_VENDOR: &[u8] = b"Example\0";
     static TEST_VERSION: &[u8] = b"1.0.0\0";
     static TEST_DESCRIPTOR: clap_plugin_descriptor = clap_plugin_descriptor {
@@ -1857,6 +1939,179 @@ mod instance_metadata_tests {
         &raw const BARE_FACTORY as *const c_void
     }
 
+    // ── Multi-plugin bundles ────────────────────────────────────────────
+    //
+    // CLAP's factory is count/index shaped and a bundle may declare many
+    // plugins behind one file. The scanner used to read index 0 and drop the
+    // rest, so every plugin after the first was invisible to the browse list.
+
+    static SECOND_TEST_ID: &[u8] = b"org.example.scan-safe-b\0";
+    static SECOND_TEST_NAME: &[u8] = b"Second Plugin\0";
+    static SECOND_TEST_DESCRIPTOR: clap_plugin_descriptor = clap_plugin_descriptor {
+        clap_version: CLAP_VERSION,
+        id: SECOND_TEST_ID.as_ptr() as *const c_char,
+        name: SECOND_TEST_NAME.as_ptr() as *const c_char,
+        vendor: TEST_VENDOR.as_ptr() as *const c_char,
+        url: std::ptr::null(),
+        manual_url: std::ptr::null(),
+        support_url: std::ptr::null(),
+        version: TEST_VERSION.as_ptr() as *const c_char,
+        description: std::ptr::null(),
+        features: std::ptr::null(),
+    };
+
+    /// The plugin id the multi-plugin factory was last asked to instantiate, so
+    /// a test can prove the instance pass created the plugin it was pointed at
+    /// rather than the bundle's first.
+    static LAST_CREATED_ID: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
+
+    unsafe extern "C" fn bundle_factory_plugin_count(_factory: *const clap_plugin_factory) -> u32 {
+        2
+    }
+
+    unsafe extern "C" fn bundle_factory_descriptor(
+        _factory: *const clap_plugin_factory,
+        index: u32,
+    ) -> *const clap_plugin_descriptor {
+        match index {
+            0 => &raw const TEST_DESCRIPTOR,
+            1 => &raw const SECOND_TEST_DESCRIPTOR,
+            _ => std::ptr::null(),
+        }
+    }
+
+    unsafe extern "C" fn bundle_factory_create_plugin(
+        _factory: *const clap_plugin_factory,
+        _host: *const clap_host,
+        plugin_id: *const c_char,
+    ) -> *const clap_plugin {
+        *LAST_CREATED_ID.lock().unwrap() = CStr::from_ptr(plugin_id).to_string_lossy().into_owned();
+        test_factory_create_plugin(std::ptr::null(), std::ptr::null(), std::ptr::null())
+    }
+
+    static BUNDLE_FACTORY: clap_plugin_factory = clap_plugin_factory {
+        get_plugin_count: Some(bundle_factory_plugin_count),
+        get_plugin_descriptor: Some(bundle_factory_descriptor),
+        create_plugin: Some(bundle_factory_create_plugin),
+    };
+
+    unsafe extern "C" fn bundle_entry_factory(_factory_id: *const c_char) -> *const c_void {
+        &raw const BUNDLE_FACTORY as *const c_void
+    }
+
+    #[test]
+    fn every_plugin_a_bundle_declares_is_read_not_just_the_first() {
+        let _fixture = lock_fixture();
+        let entry = entry_over(bundle_entry_factory);
+
+        let metadata = unsafe { extract_from_factory(&entry) }
+            .expect("a two-plugin bundle is a legal bundle, not a scan failure");
+
+        let ids: Vec<&str> = metadata.iter().map(|row| row.id.as_str()).collect();
+        assert_eq!(
+            ids,
+            [TEST_PLUGIN_ID, "org.example.scan-safe-b"],
+            "factory order is the order the factory declared, and index 1 must not be dropped"
+        );
+        assert_eq!(metadata[1].name, "Second Plugin");
+    }
+
+    /// The whole point of the fix this pins: a bundle whose factory claims more
+    /// plugins than the scanner will walk must be refused by name, not walked
+    /// until the worker's deadline kills it.
+    #[test]
+    fn an_unbounded_bundle_plugin_count_is_refused_rather_than_walked() {
+        unsafe extern "C" fn unbounded_plugin_count(_factory: *const clap_plugin_factory) -> u32 {
+            u32::MAX
+        }
+        static UNBOUNDED_FACTORY: clap_plugin_factory = clap_plugin_factory {
+            get_plugin_count: Some(unbounded_plugin_count),
+            get_plugin_descriptor: Some(bundle_factory_descriptor),
+            create_plugin: None,
+        };
+        unsafe extern "C" fn unbounded_entry_factory(_factory_id: *const c_char) -> *const c_void {
+            &raw const UNBOUNDED_FACTORY as *const c_void
+        }
+        let entry = entry_over(unbounded_entry_factory);
+
+        let error = unsafe { extract_from_factory(&entry) }
+            .expect_err("an absurd bundle plugin count must fail closed");
+        assert_eq!(error, "CLAP bundle plugin count exceeds scanner bounds");
+    }
+
+    /// Instance inspection instantiates the plugin its id names. The id is the
+    /// descriptor pass's answer, so the second plugin of a bundle gets its own
+    /// parameters rather than the first plugin's.
+    #[test]
+    fn instance_inspection_creates_the_plugin_its_id_names_not_the_bundles_first() {
+        let _fixture = lock_fixture();
+        DESTROY_CALLS.store(0, Ordering::Relaxed);
+        let entry = entry_over(bundle_entry_factory);
+
+        let metadata =
+            unsafe { extract_instance_metadata_from_factory(&entry, "org.example.scan-safe-b") }
+                .expect("inspecting the second plugin of a bundle should succeed");
+
+        assert_eq!(
+            *LAST_CREATED_ID.lock().unwrap(),
+            "org.example.scan-safe-b",
+            "create_plugin must receive the requested plugin's id, not index 0's"
+        );
+        assert_eq!(
+            metadata.parameters.len(),
+            1,
+            "the requested plugin's parameter contract is the one reported"
+        );
+        assert_eq!(DESTROY_CALLS.load(Ordering::Relaxed), 1);
+    }
+
+    #[test]
+    fn a_bundle_sibling_gets_its_own_registry_id_and_its_own_name() {
+        let path = Path::new("/plugins/TwoPlugins.clap");
+        let bundle = vec![
+            ClapDescriptorMetadata {
+                name: "First Plugin".to_string(),
+                id: TEST_PLUGIN_ID.to_string(),
+                ..ClapDescriptorMetadata::default()
+            }
+            .into_scanned_descriptor(),
+            ClapDescriptorMetadata {
+                name: "Second Plugin".to_string(),
+                id: "org.example.scan-safe-b".to_string(),
+                ..ClapDescriptorMetadata::default()
+            }
+            .into_scanned_descriptor(),
+        ];
+
+        let scanned = scanned_bundle_plugins(path, bundle);
+
+        // The first plugin keeps the path's own id — the one every saved
+        // project recorded while the bundle appeared to hold one plugin.
+        assert_eq!(scanned[0].id, stable_id(path));
+        assert_ne!(scanned[1].id, scanned[0].id);
+        assert_eq!(
+            scanned[1].id,
+            bundle_sibling_id(path, "org.example.scan-safe-b")
+        );
+        assert_eq!(
+            (scanned[0].name.as_str(), scanned[1].name.as_str()),
+            ("First Plugin", "Second Plugin"),
+            "two plugins in one file cannot both be named after the file"
+        );
+    }
+
+    /// A descriptor that claims no name falls back to the file stem, which is
+    /// what every single-plugin bundle has always shown.
+    #[test]
+    fn a_plugin_with_no_descriptor_name_keeps_the_file_stem_name() {
+        let scanned = scanned_plugin(
+            Path::new("/plugins/Bare.clap"),
+            ClapDescriptorMetadata::default().into_scanned_descriptor(),
+        );
+
+        assert_eq!(scanned.name, "Bare");
+    }
+
     fn entry_over(
         get_factory: unsafe extern "C" fn(*const c_char) -> *const c_void,
     ) -> clap_plugin_entry {
@@ -1878,7 +2133,7 @@ mod instance_metadata_tests {
         ACTIVATE_CALLS.store(0, Ordering::Relaxed);
         let entry = entry_over(test_entry_factory);
 
-        let metadata = unsafe { extract_instance_metadata_from_factory(&entry) }
+        let metadata = unsafe { extract_instance_metadata_from_factory(&entry, TEST_PLUGIN_ID) }
             .expect("parameter scan should succeed");
 
         assert_eq!(CREATE_CALLS.load(Ordering::Relaxed), 1);
@@ -1920,7 +2175,7 @@ mod instance_metadata_tests {
         DESTROY_CALLS.store(0, Ordering::Relaxed);
         let entry = entry_over(test_entry_factory);
 
-        let metadata = unsafe { extract_instance_metadata_from_factory(&entry) }
+        let metadata = unsafe { extract_instance_metadata_from_factory(&entry, TEST_PLUGIN_ID) }
             .expect("capability scan should succeed");
 
         // Stereo main plus a mono sidechain in, stereo out: summed from the
@@ -1971,7 +2226,7 @@ mod instance_metadata_tests {
         let _fixture = lock_fixture();
         let entry = entry_over(bare_entry_factory);
 
-        let metadata = unsafe { extract_instance_metadata_from_factory(&entry) }
+        let metadata = unsafe { extract_instance_metadata_from_factory(&entry, TEST_PLUGIN_ID) }
             .expect("a plugin with no extensions is a legal plugin, not a scan failure");
 
         assert_eq!(metadata.capabilities.audio_channels, None);
