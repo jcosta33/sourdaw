@@ -28,8 +28,9 @@ reference machine. In the three months before this decision, 121 commits changed
 cost buys provenance the instrument cannot resolve, since the harness publishes two significant
 figures and documents a clock floor of roughly ±10%, while a codegen shift from outside
 grand_boule's call graph is realistically below that floor against a ~20% budget headroom. The
-coupling blocked two approved crumbs pull requests (#2943, #2957) despite their changes lying
-outside every code path the bench exercises.
+coupling blocked two approved crumbs pull requests (#2943, #2957) whose changes lie outside
+grand_boule's compile-time closure and cannot move the piano's measured row — and #2957's
+voice-stealing path is one the bench's 32-of-128-voices crumbs recipe never triggers.
 
 The one load-bearing objection to narrowing is that the check also asserts a whole-mix
 `referenceProject` budget — the measured reference project is an eleven-device audio-thread mix
