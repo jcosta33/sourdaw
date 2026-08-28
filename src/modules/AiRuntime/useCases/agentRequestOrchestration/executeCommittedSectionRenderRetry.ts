@@ -145,13 +145,13 @@ function failIncompleteRetry(
 function reconcileRetryBudget(
     confirmation: PendingAppActionConfirmation,
     budget: RetryBudget | null,
-    plannedJobCount: number
+    attemptedJobs: ReadonlyArray<{ jobId: string }>
 ): void {
     if (budget?.reservation.status !== 'reserved') {
         return;
     }
-    const remaining = projectSectionRenderConfirmation({ confirmation }).incompleteSectionRenders;
-    const completedJobsCount = Math.max(0, plannedJobCount - (remaining?.missingJobIds.length ?? 0));
+    const completedJobIds = projectSectionRenderConfirmation({ confirmation }).completedSectionRenderJobIds;
+    const completedJobsCount = attemptedJobs.filter(({ jobId }) => completedJobIds.has(jobId)).length;
     agentRunLifecycle.reconcileBudgetAttempt({
         runId: confirmation.runId,
         attemptId: budget.attemptId,
@@ -164,10 +164,10 @@ function reconcileRetryBudget(
 function reconcileRetryBudgetBestEffort(
     confirmation: PendingAppActionConfirmation,
     budget: RetryBudget | null,
-    plannedJobCount: number
+    attemptedJobs: ReadonlyArray<{ jobId: string }>
 ): string | null {
     try {
-        reconcileRetryBudget(confirmation, budget, plannedJobCount);
+        reconcileRetryBudget(confirmation, budget, attemptedJobs);
         return null;
     } catch (error) {
         logger.error(new Error(RENDER_RETRY_BUDGET_PERSISTENCE_WARNING, { cause: error }));
@@ -232,7 +232,7 @@ export async function executeCommittedSectionRenderRetry(input: {
         renderFailureReason = error instanceof Error ? error.message : String(error);
     } finally {
         try {
-            budgetPersistenceWarning = reconcileRetryBudgetBestEffort(confirmation, budget, followUp.jobs.length);
+            budgetPersistenceWarning = reconcileRetryBudgetBestEffort(confirmation, budget, followUp.jobs);
         } finally {
             setChatGenerating(false);
         }

@@ -98,6 +98,7 @@ export function projectSectionRenderConfirmation(input: ProjectSectionRenderConf
     }));
     const incompleteJobs = scope?.jobs.filter((job) => !scope.completedJobIds.has(job.jobId)) ?? [];
     return {
+        completedSectionRenderJobIds: scope?.completedJobIds ?? new Set<string>(),
         executions,
         incompleteSectionRenders:
             incompleteJobs.length > 0

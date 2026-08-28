@@ -147,16 +147,20 @@ function createInput(): Parameters<typeof executeCommittedSectionRenderRetry>[0]
     };
 }
 
-function projectionForJobs(jobs: (typeof JOB)[]) {
+function projectionForJobs(incompleteJobs: (typeof JOB)[], completedJobs: (typeof JOB)[] = []) {
     return {
+        completedSectionRenderJobIds: new Set(completedJobs.map(({ jobId }) => jobId)),
         executions: [],
-        incompleteSectionRenders: jobs.length > 0 ? { jobs, missingJobIds: jobs.map(({ jobId }) => jobId) } : null,
+        incompleteSectionRenders:
+            incompleteJobs.length > 0
+                ? { jobs: incompleteJobs, missingJobIds: incompleteJobs.map(({ jobId }) => jobId) }
+                : null,
         receipt: '- **renderProjectSections**: Render Verse',
     };
 }
 
 function projection(incomplete: boolean) {
-    return projectionForJobs(incomplete ? [JOB] : []);
+    return projectionForJobs(incomplete ? [JOB] : [], incomplete ? [] : [JOB]);
 }
 
 describe('executeCommittedSectionRenderRetry', () => {
@@ -317,13 +321,36 @@ describe('executeCommittedSectionRenderRetry', () => {
         const input = createInput();
         mocks.project
             .mockReturnValueOnce(projectionForJobs([JOB, SECOND_JOB]))
-            .mockReturnValue(projectionForJobs([SECOND_JOB]));
+            .mockReturnValue(projectionForJobs([SECOND_JOB], [JOB]));
 
         await expect(executeCommittedSectionRenderRetry(input)).resolves.toEqual({
             status: 'failed',
             reason: 'Section render jobs remain incomplete: render-chorus',
         });
         expect(mocks.reserveBudget).toHaveBeenCalledWith(expect.objectContaining({ estimate: 2 }));
+        expect(mocks.reconcileBudget).toHaveBeenCalledWith({
+            runId: 'run-retry',
+            attemptId: 'render-retry:confirmation-retry:1',
+            consumed: 1,
+            mode: 'final',
+            provenance: 'versioned-estimate',
+        });
+    });
+
+    it('charges a completed attempted job when an earlier artifact is evicted', async () => {
+        const input = createInput();
+        mocks.project
+            .mockReturnValueOnce(projectionForJobs([SECOND_JOB], [JOB]))
+            .mockReturnValue(projectionForJobs([JOB], [SECOND_JOB]));
+
+        await expect(executeCommittedSectionRenderRetry(input)).resolves.toEqual({
+            status: 'failed',
+            reason: 'Section render jobs remain incomplete: render-verse',
+        });
+        expect(mocks.retryRenders).toHaveBeenCalledWith({
+            jobs: [SECOND_JOB],
+            sourceRevision: 'revision-source',
+        });
         expect(mocks.reconcileBudget).toHaveBeenCalledWith({
             runId: 'run-retry',
             attemptId: 'render-retry:confirmation-retry:1',
