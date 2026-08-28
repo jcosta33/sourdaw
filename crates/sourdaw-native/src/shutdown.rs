@@ -11,36 +11,44 @@
 //! 3. Sweep the retirement vec. Load and unload are the only other sweep sites,
 //!    so without this terminal one the last retirement of a session is never
 //!    freed and a plugin that persists settings in `destroy` never gets to.
-//! 4. Tear down every instance that is still *live*. Nothing else ever will:
-//!    the host process does not run destructors at exit, so a plugin left in
-//!    the stores is a CLAP or VST3 binary killed mid-flight, without the
-//!    `deactivate`/`destroy` or `setActive(0)`/`terminate` its format requires.
+//! 4. Retire every instance that is still *live* into that same vec and free it
+//!    from there. Nothing else ever will: the host process does not run
+//!    destructors at exit, so a plugin left in the stores is a CLAP or VST3
+//!    binary killed mid-flight, without the `deactivate`/`destroy` or
+//!    `setActive(0)`/`terminate` its format requires.
 //!
 //! Step 3 has to follow step 2 — closing an editor is what can retire a runtime
 //! — and step 2 is best effort, so a failure there must not skip it. Step 4
 //! follows both, because an instance whose editor is still open would be torn
-//! down with its editor. That is why this lives in the crate rather than in
-//! each shell: a shell that reimplements the cascade can silently drop a step,
-//! and the second shell has no `RunEvent::Exit` to hang it off.
+//! down with its editor. Step 4 sweeps as it waits, which is what keeps the
+//! retirement vec's reclamation terminal: a runtime the scheduler releases
+//! during step 4's wait window would otherwise be past its only sweep. That is
+//! why this lives in the crate rather than in each shell: a shell that
+//! reimplements the cascade can silently drop a step, and the second shell has
+//! no `RunEvent::Exit` to hang it off.
 
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use crate::commands::collab::{shutdown_discovery, CollabState};
 use crate::commands::plugin_gui::close_every_plugin_gui;
 use crate::host::native_bridge::SharedHostedPlugin;
 use crate::host::plugin_window::PluginWindowHost;
-use crate::state::{AppState, EnginePluginInstanceData};
+use crate::state::{locked_or_poisoned, AppState, EnginePluginInstanceData};
 
-/// How long the teardown pass waits, in total, for the scheduler to release the
-/// runtimes whose removal it has just queued.
+/// How long the teardown pass may spend *waiting* for the scheduler to release
+/// the runtimes whose removal it has just queued.
 ///
 /// The audio thread applies a queued removal within a callback period and the
 /// reclaimer thread drops the slot right after, so this is generous for the
-/// ordinary case. It is one budget for the whole pass rather than one per
-/// instance, so a stalled audio thread costs the exit the same whether one
-/// plugin is loaded or thirty — and the shell's own exit deadline survives it.
+/// ordinary case. Only sleeping is charged to it: a plugin whose `destroy`
+/// persists a large preset takes as long as it takes, and charging that to a
+/// wall clock fixed at the pass's start would leave every instance after the
+/// first with nothing left to wait with. It is one budget for the whole pass
+/// rather than one per instance, so a stalled audio thread costs the exit the
+/// same whether one plugin is loaded or thirty — and the shell's own exit
+/// deadline survives it.
 const SCHEDULER_RELEASE_BUDGET: Duration = Duration::from_millis(500);
 
 /// Poll interval while waiting for that release.
@@ -60,9 +68,14 @@ pub struct ShutdownReport {
     /// Live instances whose own teardown ran before the process exited.
     pub destroyed_instances: usize,
     /// Live instances left standing because something else still held the
-    /// runtime when the pass's deadline passed, one name each. Their teardown
+    /// runtime when the waiting budget ran out, one name each. Their teardown
     /// did *not* run here.
     pub abandoned_instances: Vec<String>,
+    /// Runtimes still sitting in the retirement vec when the pass gave up,
+    /// including every abandoned instance above — they are retained there
+    /// rather than left for a background thread to free. Non-zero means the
+    /// terminal reclamation point was not reached for that many plugins.
+    pub unreclaimed_retirements: usize,
 }
 
 /// Run the exit cascade. Idempotent: a second call finds nothing left to do.
@@ -100,9 +113,19 @@ pub fn shutdown(
 ///
 /// This pass — not a `Drop` on some later teardown that never comes — is what
 /// gives a plugin binary the termination its format specifies. It takes no
-/// plugin control lock of its own: an instance is torn down only once nothing
-/// else holds its runtime, so there is no lock here for the close pass that
-/// precedes it, or a watcher thread, to be waiting on.
+/// plugin control lock of its own: a runtime is freed only once nothing else
+/// holds it, so there is no lock here for the close pass that precedes it, or a
+/// watcher thread, to be waiting on.
+///
+/// Known residual window, deliberately left open: this pass takes neither the
+/// plugin runtime gate nor a per-instance lifecycle lock, so a `load_plugin`
+/// already in flight when the shell begins quitting can insert its instance
+/// after the drain and go untorn-down and unreported. Taking the runtime gate's
+/// write side would close it, but that gate is `async` and this cascade runs
+/// synchronously on the shell's JS thread — blocking there is what a load's own
+/// completion needs, so the acquisition could wedge the graceful exit into the
+/// shell's force-exit instead. The window is microseconds wide and its cost is
+/// one plugin missing its teardown, which is what the whole pass improves on.
 fn destroy_live_plugin_instances(app_state: &AppState, report: &mut ShutdownReport) {
     let instances = app_state.take_live_plugin_instances();
 
@@ -112,74 +135,126 @@ fn destroy_live_plugin_instances(app_state: &AppState, report: &mut ShutdownRepo
     drop(instances.command_owned);
 
     let runtimes = remove_runtimes_from_scheduler(app_state, instances.engine_owned);
-    destroy_released_runtimes(runtimes, report);
+    let retired = retire_for_reclamation(app_state, runtimes);
+    reclaim_until_waiting_budget_is_spent(app_state);
+    record_reclamation(app_state, retired, report);
+}
+
+/// One runtime handed to the retirement vec, and the name to report it under if
+/// it never comes back out.
+struct RetiredForTeardown {
+    name: String,
+    runtime: Weak<SharedHostedPlugin>,
 }
 
 /// Queue every engine-owned runtime's removal from the audio graph, and hand
 /// the runtimes back.
 ///
 /// Removal is what makes the scheduler release its own `Arc`, and that release
-/// is the acknowledgment the teardown below waits for. A removal that cannot be
-/// queued — no engine running, or an engine that will not take the command — is
-/// not fatal: the runtime is still handed back, and an instance nothing else
-/// holds is torn down anyway.
+/// is the acknowledgment the reclamation below waits for.
 fn remove_runtimes_from_scheduler(
     app_state: &AppState,
     instances: Vec<EnginePluginInstanceData>,
 ) -> Vec<Arc<SharedHostedPlugin>> {
-    let mut engine = match app_state.engine.lock() {
-        Ok(engine) => engine,
-        Err(poisoned) => poisoned.into_inner(),
-    };
+    let mut engine = locked_or_poisoned(&app_state.engine);
 
     instances
         .into_iter()
         .map(|instance| {
             if let Some(engine) = engine.as_mut() {
-                let _ = engine.remove_plugin(instance.engine_plugin_id);
+                report_refused_scheduler_removal(
+                    engine.remove_plugin(instance.engine_plugin_id),
+                    &instance.name,
+                );
             }
             instance.runtime
         })
         .collect()
 }
 
-/// Drop each runtime once this pass is its only owner, which is when the
-/// plugin's teardown runs.
-///
-/// A runtime the scheduler or a watcher thread still holds cannot be torn down
-/// here at all — the drop would free nothing while a clone survives — so it is
-/// reported rather than waited on past the deadline. Waiting longer would spend
-/// the shell's exit deadline to reach the same outcome.
-fn destroy_released_runtimes(runtimes: Vec<Arc<SharedHostedPlugin>>, report: &mut ShutdownReport) {
-    let deadline = Instant::now() + SCHEDULER_RELEASE_BUDGET;
-
-    for runtime in runtimes {
-        runtime.retire();
-
-        if !wait_until_sole_owner(&runtime, deadline) {
-            report.abandoned_instances.push(runtime.name().to_string());
-            continue;
-        }
-
-        // Sole owner, so no other thread can be inside the wrapper: this is the
-        // point at which running third-party teardown is safe.
-        drop(runtime);
-        report.destroyed_instances += 1;
+/// A removal the engine would not take is diagnostic, not fatal: the runtime is
+/// retired either way, so it stays this process's to free rather than the
+/// scheduler's, and the report names it if the wait expires. Swallowing the
+/// refusal silently would leave the one case that produces an abandoned
+/// instance — the scheduler keeping its `Arc` forever — with no trace at all.
+fn report_refused_scheduler_removal(removal: Result<(), String>, plugin_name: &str) {
+    if let Err(error) = removal {
+        eprintln!("[Shutdown] scheduler removal refused for '{plugin_name}': {error}");
     }
 }
 
-fn wait_until_sole_owner(runtime: &Arc<SharedHostedPlugin>, deadline: Instant) -> bool {
+/// Hand every runtime to the retirement vec, and let go of the pass's own
+/// reference only after that.
+///
+/// The vec is what keeps this thread the last owner. Dropping the pass's `Arc`
+/// while the scheduler — or the host-request or latency watcher — still holds
+/// one makes *that* thread the final owner, and it would then run
+/// `gui.destroy`, `deactivate`, `destroy` and the entry's `deinit`, every one of
+/// them main-thread work in CLAP, with the same affinity for VST3's
+/// `terminate`. `unload_plugin` retains before it lets go for exactly this
+/// reason.
+fn retire_for_reclamation(
+    app_state: &AppState,
+    runtimes: Vec<Arc<SharedHostedPlugin>>,
+) -> Vec<RetiredForTeardown> {
+    runtimes
+        .into_iter()
+        .map(|runtime| {
+            runtime.retire();
+            let retired = RetiredForTeardown {
+                name: runtime.name().to_string(),
+                runtime: Arc::downgrade(&runtime),
+            };
+            app_state.retain_retired_engine_plugin(runtime);
+            retired
+        })
+        .collect()
+}
+
+/// Sweep the retirement vec until it is empty or the waiting budget is spent.
+///
+/// Sweeping rather than dropping directly is what runs each plugin's teardown
+/// here, on this thread, with the retirement mutex free. The loop sweeps once
+/// more after every wait, so a runtime the scheduler releases mid-pass — an
+/// unload seconds before the quit, say — still reaches the reclamation point
+/// instead of falling past it.
+fn reclaim_until_waiting_budget_is_spent(app_state: &AppState) {
+    let mut remaining_budget = SCHEDULER_RELEASE_BUDGET;
+
     loop {
-        if Arc::strong_count(runtime) == 1 {
-            return true;
+        app_state.sweep_retired_engine_plugins();
+
+        if retirement_count(app_state) == 0 || remaining_budget.is_zero() {
+            return;
         }
 
-        if Instant::now() >= deadline {
-            return false;
-        }
-
-        thread::sleep(SCHEDULER_RELEASE_POLL);
+        let slept = SCHEDULER_RELEASE_POLL.min(remaining_budget);
+        thread::sleep(slept);
+        remaining_budget -= slept;
     }
+}
+
+fn record_reclamation(
+    app_state: &AppState,
+    retired: Vec<RetiredForTeardown>,
+    report: &mut ShutdownReport,
+) {
+    for instance in retired {
+        // A dead `Weak` is the teardown itself having run: the sweep is the only
+        // thing that could have freed the runtime.
+        if instance.runtime.strong_count() == 0 {
+            report.destroyed_instances += 1;
+            continue;
+        }
+
+        report.abandoned_instances.push(instance.name);
+    }
+
+    report.unreclaimed_retirements = retirement_count(app_state);
+}
+
+fn retirement_count(app_state: &AppState) -> usize {
+    locked_or_poisoned(&app_state.retired_engine_plugins).len()
 }
 
 #[cfg(test)]
@@ -189,6 +264,7 @@ mod tests {
     use daw_plugin_host::ProcessingGate;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::{Arc, Mutex};
+    use std::time::Instant;
 
     /// Records what the stores held at `destroy_window` time.
     ///
@@ -305,6 +381,27 @@ mod tests {
                     ),
                 },
             );
+    }
+
+    /// A second owner of a live instance's runtime, standing in for the
+    /// scheduler slot or a watcher thread.
+    fn engine_runtime(state: &AppState, instance_id: &str) -> Arc<SharedHostedPlugin> {
+        state
+            .engine_plugins
+            .lock()
+            .expect("engine_plugins lock should be available")
+            .get(instance_id)
+            .map(|instance| Arc::clone(&instance.runtime))
+            .expect("the fixture instance should be in the store")
+    }
+
+    fn retirement_vec_holds(state: &AppState, runtime: &Arc<SharedHostedPlugin>) -> bool {
+        state
+            .retired_engine_plugins
+            .lock()
+            .expect("retirement lock should be available")
+            .iter()
+            .any(|retired| Arc::ptr_eq(retired, runtime))
     }
 
     fn engine_plugin_count(state: &AppState) -> usize {
@@ -466,20 +563,16 @@ mod tests {
     }
 
     /// A runtime the scheduler — or a watcher thread — still holds cannot be
-    /// terminated here: the drop would free nothing while a clone survives. The
-    /// pass must say so instead of claiming a teardown that never ran, and must
-    /// not spend the shell's exit deadline waiting for one.
+    /// terminated here: freeing it would free nothing while a clone survives.
+    /// The pass must say so instead of claiming a teardown that never ran, must
+    /// leave the runtime retired rather than let the other owner become its
+    /// last — the plugin's teardown would then run on that thread — and must
+    /// not spend the shell's exit deadline waiting.
     #[test]
     fn a_runtime_something_else_still_holds_is_reported_rather_than_claimed() {
         let state = AppState::default();
         let processing = insert_live_engine_plugin(&state, "engine-instance");
-        let scheduler_reference = state
-            .engine_plugins
-            .lock()
-            .expect("engine_plugins lock should be available")
-            .get("engine-instance")
-            .map(|instance| Arc::clone(&instance.runtime))
-            .expect("the fixture instance should be in the store");
+        let scheduler_reference = engine_runtime(&state, "engine-instance");
 
         let started = Instant::now();
         let report = shutdown(&CollabState::default(), &state, Some(&NoWindowHost));
@@ -498,12 +591,97 @@ mod tests {
         );
         assert_eq!(
             Arc::strong_count(&scheduler_reference),
-            1,
-            "the pass must release its own reference and leave the other owner's alone"
+            2,
+            "the runtime must be left retained, so this process — not the other owner — frees it"
         );
         assert!(
-            elapsed < Duration::from_secs(2),
-            "the wait must be bounded well inside the shell's exit deadline, took {elapsed:?}"
+            retirement_vec_holds(&state, &scheduler_reference),
+            "an abandoned runtime belongs in the retirement vec, not in a background thread's hands"
         );
+        assert_eq!(
+            report.unreclaimed_retirements, 1,
+            "the report must say the reclamation point was not reached"
+        );
+        assert!(
+            elapsed < SCHEDULER_RELEASE_BUDGET * 4,
+            "the wait must stay within a small multiple of its own budget, took {elapsed:?}"
+        );
+    }
+
+    /// Time the pass spends blocked — on a contended store lock, or inside one
+    /// plugin's own unbounded teardown — must not come out of the waiting
+    /// budget. A clock started when the pass began would let the first slow
+    /// thing spend the whole allowance and abandon every instance behind it.
+    ///
+    /// The contended retirement lock stands in for that slow thing: it delays
+    /// the pass past its entire budget without the pass sleeping once.
+    #[test]
+    fn time_the_pass_spends_not_waiting_does_not_spend_the_waiting_budget() {
+        let state = Arc::new(AppState::default());
+        let processing = insert_live_engine_plugin(&state, "engine-instance");
+        let scheduler_reference = engine_runtime(&state, "engine-instance");
+        let blocked_for = SCHEDULER_RELEASE_BUDGET + Duration::from_millis(100);
+
+        let blocking_state = Arc::clone(&state);
+        let blocker = thread::spawn(move || {
+            let retirements = blocking_state
+                .retired_engine_plugins
+                .lock()
+                .expect("retirement lock should be available");
+            thread::sleep(blocked_for);
+            drop(retirements);
+        });
+        // Let the blocker take the lock before the cascade reaches for it.
+        thread::sleep(Duration::from_millis(20));
+
+        let release = thread::spawn(move || {
+            thread::sleep(blocked_for + Duration::from_millis(50));
+            drop(scheduler_reference);
+        });
+
+        let report = shutdown(&CollabState::default(), &state, Some(&NoWindowHost));
+        blocker.join().expect("the blocking thread should finish");
+        release.join().expect("the releasing thread should finish");
+
+        assert_eq!(
+            processing.off_audio_thread_stops(),
+            1,
+            "the instance must still have a full budget to wait with once the pass is unblocked"
+        );
+        assert_eq!(report.destroyed_instances, 1);
+        assert!(report.abandoned_instances.is_empty());
+    }
+
+    /// The retirement vec's reclamation point has to stay terminal. A runtime
+    /// the scheduler releases *during* the teardown pass — an unload moments
+    /// before the quit — is past the cascade's own sweep, so the pass has to
+    /// sweep as it waits or that plugin's `destroy` never runs.
+    #[test]
+    fn a_runtime_released_during_the_pass_is_still_reclaimed() {
+        let state = Arc::new(AppState::default());
+        let processing = insert_live_engine_plugin(&state, "engine-instance");
+        let scheduler_reference = engine_runtime(&state, "engine-instance");
+
+        let releasing_state = Arc::clone(&state);
+        let release = thread::spawn(move || {
+            // Long enough that the first sweep cannot see the release, short
+            // enough to land inside the waiting budget — the scheduler
+            // acknowledging a queued removal a few callbacks late.
+            thread::sleep(Duration::from_millis(50));
+            drop(scheduler_reference);
+            drop(releasing_state);
+        });
+
+        let report = shutdown(&CollabState::default(), &state, Some(&NoWindowHost));
+        release.join().expect("the releasing thread should finish");
+
+        assert_eq!(
+            processing.off_audio_thread_stops(),
+            1,
+            "the release must be picked up by a later sweep and the teardown run here"
+        );
+        assert_eq!(report.destroyed_instances, 1);
+        assert!(report.abandoned_instances.is_empty());
+        assert_eq!(report.unreclaimed_retirements, 0);
     }
 }

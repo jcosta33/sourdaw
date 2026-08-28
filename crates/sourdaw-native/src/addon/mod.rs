@@ -198,13 +198,16 @@ impl SourdawNative {
     }
 
     /// Run the process-exit cascade: retire discovery, close every plugin
-    /// editor, then sweep the retirement vec.
+    /// editor, sweep the retirement vec, then terminate every instance still
+    /// loaded.
     ///
     /// A shell must call this on its quit path. The Tauri shell got the same
-    /// three steps from `RunEvent::Exit`; a Node shell has no equivalent hook,
-    /// so the cascade is an explicit entry point rather than something each
-    /// shell reassembles — and `load_plugin` / `unload_plugin` are reachable
-    /// through this surface, so the retirement vec fills here too.
+    /// steps from `RunEvent::Exit`; a Node shell has no equivalent hook, so the
+    /// cascade is an explicit entry point rather than something each shell
+    /// reassembles — and `load_plugin` / `unload_plugin` are reachable through
+    /// this surface, so the stores and the retirement vec fill here too. The
+    /// terminal step matters most here: this process does not run destructors
+    /// at exit, so an instance the cascade does not terminate never is.
     ///
     /// Returns the diagnostic report; nothing in it fails the exit. Idempotent.
     #[napi]
