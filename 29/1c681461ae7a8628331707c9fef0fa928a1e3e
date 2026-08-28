@@ -1,0 +1,20 @@
+crates/daw-plugin-host/src/clap_wrapper.rs
+  s_4f908a5afb6b58::t_965b2771652055 4380-4382
+  s_4f908a5afb6b58::t_26753f031a15c4 4362-4379,4383-4401
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "291c681461ae7a8628331707c9fef0fa928a1e3e",
+  "prompts": {},
+  "sessions": {
+    "s_4f908a5afb6b58": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fcb92ba4-bf56-47a4-8b57-803f335a449e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
