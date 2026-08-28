@@ -600,6 +600,8 @@ describe('sendChatMessage retained-provider selection', () => {
 
     it('retains regular-chat content without reopening a cancelled run after stale provider settlement', async () => {
         const content = 'The chorus is ready to automate.';
+        const providerUsage = await import('../recordAgentProviderUsage');
+        const recordProviderUsageCall = vi.spyOn(providerUsage, 'recordAgentProviderUsage');
         const recordProviderUsage = vi.spyOn(agentRunLifecycle, 'recordProviderUsage');
         const transitionPhase = vi.spyOn(agentRunLifecycle, 'transitionPhase');
         const settleWorkLease = vi.spyOn(agentRunWorkLease, 'settle').mockImplementation((input) => {
@@ -611,10 +613,39 @@ describe('sendChatMessage retained-provider selection', () => {
         try {
             await expect(sendChatMessage('Summarize the chorus.', { mode: 'explain' })).resolves.toBeUndefined();
 
-            const run = agentRunLifecycle.get(getMostRecentlyAdmittedRunId());
-            expect(run?.phase).toBe('cancelled');
+            const runId = getMostRecentlyAdmittedRunId();
+            const run = agentRunLifecycle.get(runId);
+            if (run === null) {
+                throw new Error('Expected the stale provider run to remain inspectable.');
+            }
+            const providerReceiptIdentity = `provider:webllm:${run.runId}`;
+            expect(run.phase).toBe('cancelled');
             expect(transitionPhase).not.toHaveBeenCalledWith(expect.objectContaining({ phase: 'completed' }));
             expect(recordProviderUsage).toHaveBeenCalledOnce();
+            expect(recordProviderUsageCall).toHaveBeenCalledWith(
+                run.runId,
+                {
+                    schemaVersion: 2,
+                    provider: 'webllm',
+                    model: 'fixture-model',
+                    correlationId: providerReceiptIdentity,
+                    status: 'complete',
+                    finishReason: 'stop',
+                    failure: null,
+                    partialOutputDisposition: 'none',
+                    output: { text: content, reasoning: '', toolCalls: [], structuredOutput: null },
+                    usage: {
+                        inputTokens: null,
+                        outputTokens: null,
+                        cachedInputTokens: null,
+                        reasoningTokens: null,
+                        provenance: 'unavailable',
+                    },
+                    ignoredProviderEvents: [],
+                },
+                providerReceiptIdentity,
+                { terminal: true }
+            );
             expect(mocks.updateChatMessage).toHaveBeenLastCalledWith(
                 expect.any(String),
                 expect.objectContaining({
@@ -630,6 +661,37 @@ describe('sendChatMessage retained-provider selection', () => {
             settleWorkLease.mockRestore();
             transitionPhase.mockRestore();
             recordProviderUsage.mockRestore();
+            recordProviderUsageCall.mockRestore();
+        }
+    });
+
+    it('keeps a streamed provider failure cancelled after stale settlement', async () => {
+        const providerError = new Error('WebLLM provider failed during streaming');
+        const partialContent = 'The bridge starts with a muted guitar.';
+        const settleWorkLease = vi.spyOn(agentRunWorkLease, 'settle').mockImplementation((input) => {
+            agentRunLifecycle.transitionPhase({ runId: input.runId, phase: 'cancelled' });
+            return { status: 'stale' };
+        });
+        mocks.getLlmEngine.mockReturnValue(createFailingWebLlmEngine(partialContent, providerError));
+
+        try {
+            await expect(sendChatMessage('Summarize the arrangement.', { mode: 'explain' })).resolves.toBeUndefined();
+
+            const run = agentRunLifecycle.get(getMostRecentlyAdmittedRunId());
+            expect(run).toMatchObject({ phase: 'cancelled', errors: [] });
+            expect(mocks.updateChatMessage).toHaveBeenCalledWith(
+                expect.any(String),
+                expect.objectContaining({
+                    isStreaming: false,
+                    error: providerError.message,
+                    content: `${partialContent}\n\n_Response incomplete because the provider stream failed._`,
+                })
+            );
+            expect(llmStatusStore.value).toEqual({ state: 'error', message: providerError.message });
+            expect(mocks.setActiveAborter).toHaveBeenLastCalledWith(null);
+            expect(mocks.setChatGenerating).toHaveBeenLastCalledWith(false);
+        } finally {
+            settleWorkLease.mockRestore();
         }
     });
 
@@ -1212,6 +1274,76 @@ describe('sendChatMessage retained-provider selection', () => {
             plan: { scope: { targetIds: commandGraphFixture.fullTargetIds } },
         });
     });
+
+    const staleImmediateCommandResults = [
+        { status: 'committed', outcome: 'committed', content: 'The project change committed.' },
+        { status: 'executed', outcome: 'executed', content: 'The runtime command executed.' },
+    ] satisfies readonly {
+        status: 'committed' | 'executed';
+        outcome: 'committed' | 'executed';
+        content: string;
+    }[];
+
+    it.each(staleImmediateCommandResults)(
+        'keeps a stale immediate $status receipt terminal after cancellation',
+        async ({ status, outcome, content }) => {
+            configureCommandGraphForwarding('immediate');
+            const claimWorkLease = vi.spyOn(agentRunWorkLease, 'claim');
+            const transitionPhase = vi.spyOn(agentRunLifecycle, 'transitionPhase');
+            const settleLease = agentRunWorkLease.settle;
+            const settleWorkLease = vi.spyOn(agentRunWorkLease, 'settle').mockImplementation((input) => {
+                if (input.workId === 'batch-graph') {
+                    agentRunLifecycle.transitionPhase({ runId: input.runId, phase: 'cancelled' });
+                    return { status: 'stale' };
+                }
+                return settleLease(input);
+            });
+            mocks.executePlannedActions.mockImplementation(async () => {
+                const runId = getMostRecentlyAdmittedRunId();
+                return {
+                    status,
+                    actions: [],
+                    receipt: {
+                        schemaVersion: 2,
+                        runId,
+                        batchId: 'batch-graph',
+                        outcome,
+                        pendingEffects: [],
+                        links: { render: [], analysis: [] },
+                    },
+                };
+            });
+
+            try {
+                await expect(sendChatMessage(commandGraphFixture.prompt, { mode: 'apply' })).resolves.toBeDefined();
+
+                const run = getPlannedRun();
+                const receiptIdentity = `2:${run.runId}:batch-graph:${outcome}`;
+                expect(run).toMatchObject({
+                    phase: 'partially-completed',
+                    receipts: [expect.objectContaining({ workId: 'batch-graph', receiptIdentity })],
+                });
+                expect(transitionPhase).not.toHaveBeenCalledWith(expect.objectContaining({ phase: 'completed' }));
+                expect(claimWorkLease.mock.calls.filter(([input]) => input.workId === 'batch-graph')).toHaveLength(1);
+                expect(mocks.updateChatMessage).toHaveBeenLastCalledWith(
+                    expect.any(String),
+                    expect.objectContaining({
+                        isStreaming: false,
+                        error: expect.stringContaining('cancelled or replaced'),
+                        content: expect.stringContaining(content),
+                    })
+                );
+                expect(mocks.updateChatMessage).toHaveBeenLastCalledWith(
+                    expect.any(String),
+                    expect.objectContaining({ content: expect.stringContaining('Do not retry automatically') })
+                );
+            } finally {
+                settleWorkLease.mockRestore();
+                transitionPhase.mockRestore();
+                claimWorkLease.mockRestore();
+            }
+        }
+    );
 
     it('preserves a fast command failure when agent-run storage fails after the command lease is claimed', async () => {
         const commandFailure = 'Command executor failed';

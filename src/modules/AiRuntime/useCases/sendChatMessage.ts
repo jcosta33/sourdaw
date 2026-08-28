@@ -1745,13 +1745,13 @@ export async function sendChatMessage(
             llmStatusStore.set({ state: 'idle' });
             return undefined;
         }
-        if (!wasAborted) {
-            settleAgentRunWorkLeaseSafely({
-                lease: providerLease,
-                terminalState: 'failed',
-                settle: agentRunWorkLease.settle,
-            });
-        }
+        const providerFailureSettlement = !wasAborted
+            ? settleAgentRunWorkLeaseSafely({
+                  lease: providerLease,
+                  terminalState: 'failed',
+                  settle: agentRunWorkLease.settle,
+              })
+            : null;
         if (wasAborted) {
             await agentRunCancellation.cancel({ runId, reason: errorMessage });
             // Clean abort, leave generated partial content intact and strip parsing blocks
@@ -1774,16 +1774,18 @@ export async function sendChatMessage(
                 llmStatusStore.set(previousLlmStatus ?? { state: 'idle' });
             }
         } else {
-            tryRecordTerminalFailure({
-                runId,
-                error: normalizeAgentFailure({
-                    category: 'provider',
-                    source: 'provider-planning',
-                    retry: 'read-only',
-                    knownDomain: false,
-                }),
-                terminal: true,
-            });
+            if (providerFailureSettlement?.accepted) {
+                tryRecordTerminalFailure({
+                    runId,
+                    error: normalizeAgentFailure({
+                        category: 'provider',
+                        source: 'provider-planning',
+                        retry: 'read-only',
+                        knownDomain: false,
+                    }),
+                    terminal: true,
+                });
+            }
             const parsed = thinkParser.snapshot();
             const hasPartialContent = parsed.content.length > 0 || (parsed.reasoning?.length ?? 0) > 0;
             updateChatMessage(assistantMsgId, {
