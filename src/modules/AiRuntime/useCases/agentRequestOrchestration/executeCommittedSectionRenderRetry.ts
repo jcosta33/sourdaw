@@ -49,6 +49,12 @@ function refreshConfirmationProjection(confirmation: PendingAppActionConfirmatio
     };
 }
 
+function getReviewSummary(projection: SectionRenderProjection): string {
+    return projection.reviewRequiredSectionRenders
+        .map(({ jobId, warnings }) => `${jobId} (${warnings.join('; ')})`)
+        .join(', ');
+}
+
 function finishAlreadyComplete(
     confirmation: PendingAppActionConfirmation,
     durableReceipt: CommandVerifiedBatchReceipt
@@ -134,20 +140,19 @@ function failIncompleteRetry(
     updatePendingActionFollowUp({ confirmationId: confirmation.id, error: reason, status: 'retryable' });
     updatePendingActionConfirmationStatus({ confirmationId: confirmation.id, status: 'executed', error: reason });
     const refreshed = refreshConfirmationProjection(confirmation);
+    const reviewSummary = getReviewSummary(refreshed.projection);
     updateChatMessage(confirmation.assistantMessageId, {
         pendingActionConfirmationStatus: 'executed',
         pendingActionFollowUpStatus: 'retryable',
         error: reason,
-        content: `Applied after confirmation:\n\n${refreshed.projection.receipt}\n\nThe project actions remain committed. Missing section renders are still incomplete: ${reason}. Retry missing renders without replaying the project actions.${persistenceWarning ? `\n\n_${persistenceWarning}_` : ''}`,
+        content: `Applied after confirmation:\n\n${refreshed.projection.receipt}\n\nThe project actions remain committed. Missing section renders are still incomplete: ${reason}. Retry missing renders without replaying the project actions.${reviewSummary ? ` Retained render artifacts still require manual review: ${reviewSummary}.` : ''}${persistenceWarning ? `\n\n_${persistenceWarning}_` : ''}`,
     });
     return { status: 'failed', reason };
 }
 
 function finishManualReview(confirmation: PendingAppActionConfirmation): RetryResult {
     const refreshed = refreshConfirmationProjection(confirmation);
-    const reviewSummary = refreshed.projection.reviewRequiredSectionRenders
-        .map(({ jobId, warnings }) => `${jobId} (${warnings.join('; ')})`)
-        .join(', ');
+    const reviewSummary = getReviewSummary(refreshed.projection);
     const reason = `Section render artifacts require manual review: ${reviewSummary}.`;
     updatePendingActionFollowUp({ confirmationId: confirmation.id, error: reason, status: 'failed' });
     updatePendingActionConfirmationStatus({ confirmationId: confirmation.id, status: 'executed', error: reason });
@@ -250,10 +255,12 @@ export async function executeCommittedSectionRenderRetry(input: {
             renderFailureReason = error instanceof Error ? error.message : String(error);
         }
         const liveProjection = projectSectionRenderConfirmation({ confirmation });
-        if (liveProjection.reviewRequiredSectionRenders.length > 0) {
+        if (liveProjection.incompleteSectionRenders) {
+            if (renderFailureReason === undefined) {
+                renderFailureReason = `Section render jobs remain incomplete: ${liveProjection.incompleteSectionRenders.missingJobIds.join(', ')}`;
+            }
+        } else if (liveProjection.reviewRequiredSectionRenders.length > 0) {
             manualReviewProjection = liveProjection;
-        } else if (renderFailureReason === undefined && liveProjection.incompleteSectionRenders) {
-            renderFailureReason = `Section render jobs remain incomplete: ${liveProjection.incompleteSectionRenders.missingJobIds.join(', ')}`;
         }
         if (renderFailureReason === undefined && !manualReviewProjection) {
             try {

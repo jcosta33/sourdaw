@@ -461,6 +461,35 @@ describe('executeCommittedSectionRenderRetry', () => {
         );
     });
 
+    it('keeps a missing job retryable when another retained artifact requires review', async () => {
+        const input = createInput();
+        const incompleteProjection = projectionForJobs([SECOND_JOB], [], [JOB]);
+        mocks.project.mockReturnValue(incompleteProjection);
+        mocks.retryRenders.mockRejectedValue(new Error('renderer unavailable'));
+
+        await expect(executeCommittedSectionRenderRetry(input)).resolves.toEqual({
+            status: 'failed',
+            reason: 'renderer unavailable',
+        });
+        expect(mocks.retryRenders).toHaveBeenCalledWith({
+            jobs: [SECOND_JOB],
+            sourceRevision: 'revision-source',
+        });
+        expect(mocks.completeContinuation).not.toHaveBeenCalled();
+        expect(mocks.updateFollowUp).toHaveBeenLastCalledWith({
+            confirmationId: 'confirmation-retry',
+            error: 'renderer unavailable',
+            status: 'retryable',
+        });
+        expect(mocks.updateChat).toHaveBeenLastCalledWith(
+            'assistant-retry',
+            expect.objectContaining({
+                pendingActionFollowUpStatus: 'retryable',
+                content: expect.stringContaining('Retained render artifacts still require manual review'),
+            })
+        );
+    });
+
     it('maps a newly persisted warned artifact to manual review and charges the attempted job', async () => {
         const input = createInput();
         const warnedProjection = projectionForJobs([], [], [JOB]);
