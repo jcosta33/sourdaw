@@ -1,0 +1,21 @@
+src/modules/AiRuntime/stores/__tests__/selectAgentRunPendingEffectRecoveries.spec.ts
+  s_a40848e8f8cca9::t_66764da5746de9 91,162
+src/modules/AudioRendering/handlers/__tests__/handleRenderProjectSections.spec.ts
+  s_a40848e8f8cca9::t_66764da5746de9 59-62,94
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "e90bbddedf0a72d16279111706e4d534356f77e7",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
