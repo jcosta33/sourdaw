@@ -459,7 +459,7 @@ describe('admitCommittedSectionRenderRetry', () => {
 
         finalizedReceipt.atomicity = 'atomic';
         const trackedRun = mocks.getRun();
-        trackedRun.batches[0]!.status = 'prepared';
+        trackedRun.batches[0]!.status = 'failed';
         expect(
             admitCommittedSectionRenderRetry({
                 confirmation: fixture.confirmation,
