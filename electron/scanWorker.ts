@@ -98,6 +98,30 @@ export const nativeCommand = (host: NativeHost, method: string): NativeCommand =
     return implementation;
 };
 
+export type ScanWorkerResponse =
+    { readonly ok: true; readonly result: unknown } | { readonly ok: false; readonly error: string };
+
+/**
+ * Handle one supervisor request end to end: parse it, run the scan through
+ * `scanPlugins`, and shape the response `scan.ts`'s `asWorkerMessage` expects.
+ *
+ * Exported and pure of `parentPort` so a test can drive it directly with a
+ * fake `scanPlugins` and assert exactly what it was called with — in
+ * particular, that a parsed `retryQuarantined` actually reaches the native
+ * call rather than being silently dropped between parsing and dispatch.
+ */
+export const handleScanRequest = async (message: unknown, scanPlugins: NativeCommand): Promise<ScanWorkerResponse> => {
+    const request = asScanWorkerRequest(message);
+    if (request === undefined) {
+        return { ok: false, error: 'The plugin scan request was malformed' };
+    }
+    try {
+        return { ok: true, result: await scanPlugins(request.paths, request.retryQuarantined ?? false) };
+    } catch (error) {
+        return { ok: false, error: error instanceof Error ? error.message : String(error) };
+    }
+};
+
 const main = (): void => {
     const addon = loadNativeAddon({
         path: resolveNativeAddonPath({
@@ -129,24 +153,9 @@ const main = (): void => {
     const scanPlugins = nativeCommand(host, 'scanPlugins');
 
     process.parentPort.on('message', (event) => {
-        const request = asScanWorkerRequest(event.data);
-        if (request === undefined) {
-            process.parentPort.postMessage({ ok: false, error: 'The plugin scan request was malformed' });
-            return;
-        }
-        void (async () => {
-            try {
-                process.parentPort.postMessage({
-                    ok: true,
-                    result: await scanPlugins(request.paths, request.retryQuarantined ?? false),
-                });
-            } catch (error) {
-                process.parentPort.postMessage({
-                    ok: false,
-                    error: error instanceof Error ? error.message : String(error),
-                });
-            }
-        })();
+        void handleScanRequest(event.data, scanPlugins).then((response) => {
+            process.parentPort.postMessage(response);
+        });
     });
 };
 
