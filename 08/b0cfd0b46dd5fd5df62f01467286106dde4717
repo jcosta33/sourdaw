@@ -1,0 +1,51 @@
+src/utils/desktopBridge.ts
+  s_a965280ab2852d::t_45b8d7eb7d22ed 351-362
+src/utils/__tests__/desktopBridge.spec.ts
+  s_a965280ab2852d::t_5ae3fe49ee9a31 121-130
+  s_a965280ab2852d::t_06ebe3c10046dc 18
+  s_a965280ab2852d::t_43002cf990c56c 100
+  s_4f908a5afb6b58::t_3c2e3c427b2466 120
+src/modules/WorkspaceShell/presentations/views/TransportBar.tsx
+  s_a965280ab2852d::t_0ab724c06c1b36 70-72
+  s_a965280ab2852d::t_7e9f01819ae31d 107-111
+  s_a965280ab2852d::t_a2f1a0610f0a9e 11
+src/modules/WorkspaceShell/presentations/views/Transport/__tests__/WindowControls.spec.tsx
+  s_a965280ab2852d::t_8bc2a76574218e 21-23
+src/modules/WorkspaceShell/useCases/windowChrome.ts
+  s_a965280ab2852d::t_042d0d893177cc 3
+src/modules/WorkspaceShell/repositories/windowChrome.ts
+  s_a965280ab2852d::t_8d9d74b48c13a0 22-23,32
+  s_a965280ab2852d::t_394fb0336e4a3e 1-5,10-11
+src/styles/main.css
+  s_a965280ab2852d::t_bbccff22e458fe 20-27,30-33,35-47
+src/modules/WorkspaceShell/presentations/views/__tests__/TransportBar.spec.tsx
+  s_a965280ab2852d::t_a83e4a7e29ae33 155
+  s_a965280ab2852d::t_a80aca1ceae1c9 107
+  s_a965280ab2852d::t_7ce90b328c2224 96
+  s_a965280ab2852d::t_c84c65fff262f1 196-203,208-210,214-231
+  s_a965280ab2852d::t_60720e7f188a2c 232
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "08b0cfd0b46dd5fd5df62f01467286106dde4717",
+  "prompts": {},
+  "sessions": {
+    "s_4f908a5afb6b58": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fcb92ba4-bf56-47a4-8b57-803f335a449e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_a965280ab2852d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "841ddf43-6056-4aac-ad0f-c09b754df0ba",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
