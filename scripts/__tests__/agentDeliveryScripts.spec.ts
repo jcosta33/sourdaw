@@ -1,4 +1,5 @@
-import { execFileSync, spawnSync } from 'node:child_process';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
+import { once } from 'node:events';
 import {
     chmodSync,
     existsSync,
@@ -11,6 +12,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
+import { createInterface } from 'node:readline';
 
 import { describe, expect, it } from 'vitest';
 import { parseDocument } from 'yaml';
@@ -781,6 +783,39 @@ describe('package scripts and gitignore', () => {
         }
     });
 
+    it('leaves malformed primary-lock bytes untouched and starts no authentication or operation', async () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-'));
+        const lockPath = join(root, '.git', 'sourdaw-delivery-pr-2495.lock');
+        const malformed = '{"pid":"not-a-number"}';
+        mkdirSync(join(root, '.git'));
+        writeFileSync(lockPath, malformed);
+        const entered: string[] = [];
+        const dependencies: DeliveryCoordinatorDependencies = {
+            primaryRoot: () => root,
+            serializeDelivery: withPullRequestDeliveryLock,
+            authenticateAuthor: async () => {
+                entered.push('authenticate');
+                throw new Error('authentication should not start');
+            },
+            authenticateTracker: async () => expect.fail('tracker authentication should not start'),
+            repositoryName: () => expect.fail('repository lookup should not start'),
+            deliveryPort: () => expect.fail('delivery port should not be created'),
+            trackerPort: () => expect.fail('tracker port should not be created'),
+            completeIssue: () => expect.fail('tracker completion should not start'),
+            deliver: () => {
+                entered.push('deliver');
+            },
+        };
+
+        try {
+            await expect(coordinateDelivery(2495, dependencies)).rejects.toThrow(/ownership is malformed/);
+            expect(entered).toEqual([]);
+            expect(readFileSync(lockPath, 'utf8')).toBe(malformed);
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
     it('reclaims one well-formed lock whose owner process is conclusively dead', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-'));
         const gitDirectory = join(root, '.git');
@@ -936,6 +971,72 @@ describe('package scripts and gitignore', () => {
             rmSync(root, { recursive: true, force: true });
         }
     });
+
+    it('admits exactly one fresh process while a same-PR contender is held at the lock boundary', async () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-'));
+        mkdirSync(join(root, '.git'));
+        const moduleUrl = new URL('../deliverPullRequest.ts', import.meta.url).href;
+        const childSource = `
+import { createInterface } from 'node:readline';
+import { withPullRequestDeliveryLock } from ${JSON.stringify(moduleUrl)};
+
+const input = createInterface({ input: process.stdin, crlfDelay: Infinity });
+const commands = input[Symbol.asyncIterator]();
+console.log('ready');
+await commands.next();
+try {
+    await withPullRequestDeliveryLock(${JSON.stringify(root)}, 2495, async () => {
+        console.log('entered');
+        await commands.next();
+    });
+    console.log('released');
+} catch (error) {
+    console.log('refused:' + (error instanceof Error ? error.message : String(error)));
+} finally {
+    input.close();
+}
+`;
+        const startContender = () => {
+            const child = spawn(
+                process.execPath,
+                ['--no-warnings', '--experimental-strip-types', '--input-type=module', '--eval', childSource],
+                { stdio: ['pipe', 'pipe', 'pipe'] }
+            );
+            const lines = createInterface({ input: child.stdout, crlfDelay: Infinity })[Symbol.asyncIterator]();
+            return { child, lines, exited: once(child, 'exit') };
+        };
+        const contenders = [startContender(), startContender()];
+
+        try {
+            const ready = await Promise.all(contenders.map(({ lines }) => lines.next()));
+            expect(ready.map((line) => line.value)).toEqual(['ready', 'ready']);
+            for (const contender of contenders) {
+                contender.child.stdin.write('go\n');
+            }
+
+            const outcomes = await Promise.all(contenders.map(({ lines }) => lines.next()));
+            const values = outcomes.map((line) => line.value ?? '');
+            expect(values.filter((value) => value === 'entered')).toHaveLength(1);
+            expect(
+                values.filter((value) => value.startsWith('refused:PR #2495 is already being delivered'))
+            ).toHaveLength(1);
+
+            const winner = contenders[values.findIndex((value) => value === 'entered')];
+            expect(winner).toBeDefined();
+            winner?.child.stdin.write('release\n');
+            expect((await winner?.lines.next())?.value).toBe('released');
+            for (const contender of contenders) {
+                contender.child.stdin.end();
+            }
+            const exits = await Promise.all(contenders.map(({ exited }) => exited));
+            expect(exits.map(([code]) => code)).toEqual([0, 0]);
+        } finally {
+            for (const contender of contenders) {
+                contender.child.kill();
+            }
+            rmSync(root, { recursive: true, force: true });
+        }
+    }, 10_000);
 
     it('wires PR operations and the regular-issue adapter to distinct least-privilege sessions', async () => {
         const disposed: string[] = [];

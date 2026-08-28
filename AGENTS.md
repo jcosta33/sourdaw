@@ -320,6 +320,11 @@ checkout's Git metadata. It holds that ownership from before authentication thro
 already-merged recovery and tracker completion, refuses a live or unverifiable owner without
 waiting, and only reclaims a well-formed owner whose process is conclusively dead.
 
+Already-merged recovery proceeds only when GitHub's immutable merged-by actor is the author App.
+Same-head delivery receipts retain the issue-comment REST endpoint's ascending comment-ID order;
+that immutable response order decides adjacency and newest authority, while timestamps only prove
+that an App-owned comment remained unedited.
+
 The protected primary checkout is the launcher trust boundary for snapshot-backed GitHub writes.
 Run `lane:publish`, `deliver`, and `issue:reconcile` through its package route. The launcher and the
 command's whole script closure must match one pinned `origin/main` commit and are read only from the

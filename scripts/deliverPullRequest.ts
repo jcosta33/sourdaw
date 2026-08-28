@@ -54,6 +54,7 @@ export type PullRequestSnapshot = {
     changedFiles: number;
     additions: number;
     deletions: number;
+    mergedByActorNodeId: string | null;
 };
 
 export type ReviewState = {
@@ -514,33 +515,14 @@ function orderedDeliveryReceiptLineage(
     comments: DeliveryReceiptComment[],
     pullRequest: Pick<PullRequestSnapshot, 'number' | 'headRefOid'>
 ): DeliveryReceiptComment[] {
-    const ordered = deliveryReceiptsForHead(comments, pullRequest).sort(
-        (left, right) => Date.parse(left.createdAt) - Date.parse(right.createdAt)
-    );
-    const timestampGroups: Array<{ timestamp: number; receipts: DeliveryReceiptComment[] }> = [];
-    for (const receipt of ordered) {
-        const timestamp = Date.parse(receipt.createdAt);
-        const currentGroup = timestampGroups.at(-1);
-        if (currentGroup?.timestamp === timestamp) {
-            currentGroup.receipts.push(receipt);
-        } else {
-            timestampGroups.push({ timestamp, receipts: [receipt] });
-        }
-    }
-    if ((timestampGroups.at(-1)?.receipts.length ?? 0) > 1) {
-        fail(`PR #${pullRequest.number} has ambiguous delivery receipt timestamps`);
-    }
-    for (let index = 1; index < timestampGroups.length; index += 1) {
-        const previous = timestampGroups[index - 1];
-        const current = timestampGroups[index];
+    const ordered = deliveryReceiptsForHead(comments, pullRequest);
+    for (let index = 1; index < ordered.length; index += 1) {
+        const previous = ordered[index - 1];
+        const current = ordered[index];
         if (previous === undefined || current === undefined) {
             fail(`PR #${pullRequest.number} has an invalid delivery receipt lineage`);
         }
-        if (
-            previous.receipts.length === 1 &&
-            current.receipts.length === 1 &&
-            previous.receipts[0]?.body === current.receipts[0]?.body
-        ) {
+        if (previous.body === current.body) {
             fail(`PR #${pullRequest.number} has duplicate delivery receipts`);
         }
     }
@@ -702,6 +684,12 @@ function completeIssueAfterMerge(
     }
 }
 
+function validateAuthorAppMerger(pullRequest: PullRequestSnapshot): void {
+    if (pullRequest.state !== 'MERGED' || !isAuthorBotNodeId(pullRequest.mergedByActorNodeId)) {
+        fail(`PR #${pullRequest.number} was not merged by the author App`);
+    }
+}
+
 function deliverPullRequestWithCiAdmission(
     number: number,
     port: DeliveryPort,
@@ -712,6 +700,7 @@ function deliverPullRequestWithCiAdmission(
     const initialRead = port.pullRequest(number);
     if (initialRead.state === 'MERGED') {
         validateBaseBranch(initialRead);
+        validateAuthorAppMerger(initialRead);
         const receipt = readDeliveryReceipt(initialRead, port);
         const remaining = port.dependents(initialRead.headRefName).filter((candidate) => candidate.number !== number);
         retargetDependents(remaining, initialRead.baseRefName, port);
@@ -735,6 +724,9 @@ function deliverPullRequestWithCiAdmission(
 
     port.fetch();
     const finalSnapshot = resolveStructuralMergeability(port.pullRequest(number), port);
+    if (finalSnapshot.state === 'MERGED') {
+        validateAuthorAppMerger(finalSnapshot);
+    }
     const finalTrackerTarget = trackerCompletionTarget(finalSnapshot);
     validateStableTrackerTarget(number, initialTrackerTarget, finalTrackerTarget);
     validateStablePullRequest(initial, finalSnapshot);
@@ -750,6 +742,7 @@ function deliverPullRequestWithCiAdmission(
     }
 
     port.merge(number, finalSnapshot.headRefOid, finalDependents.length > 0);
+    validateAuthorAppMerger(port.pullRequest(number));
     retargetDependents(finalDependents, finalSnapshot.baseRefName, port);
     completeIssueAfterMerge(number, receipt.closingIssue, tracker);
 }
@@ -980,6 +973,19 @@ function toDeliveryReceiptComment(value: unknown): DeliveryReceiptComment {
     };
 }
 
+function toPullRequestSnapshot(value: string, number: number): PullRequestSnapshot {
+    const parsed = parseJson<
+        Omit<PullRequestSnapshot, 'mergedByActorNodeId'> & {
+            mergedBy?: { id?: unknown } | null;
+        }
+    >(value, `PR #${number}`);
+    const { mergedBy, ...snapshot } = parsed;
+    return {
+        ...snapshot,
+        mergedByActorNodeId: typeof mergedBy?.id === 'string' ? mergedBy.id : null,
+    };
+}
+
 export function shellPort(
     repository: string,
     shell: ShellRunner = { capture, run },
@@ -1005,6 +1011,7 @@ export function shellPort(
         'changedFiles',
         'additions',
         'deletions',
+        'mergedBy',
     ].join(',');
     const readRollupPage = (number: number, headRefOid: string, cursor: string | null): RollupPage =>
         parseRollupPage(
@@ -1043,9 +1050,9 @@ export function shellPort(
             shell.run('git', ['fetch', '--prune', 'origin']);
         },
         pullRequest: (number) =>
-            parseJson<PullRequestSnapshot>(
+            toPullRequestSnapshot(
                 shell.capture('gh', ['pr', 'view', String(number), '--repo', repository, '--json', pullRequestFields]),
-                `PR #${number}`
+                number
             ),
         headCheckRuns: (number, headRefOid) =>
             readHeadCheckRuns(number, (cursor) => readRollupPage(number, headRefOid, cursor)),
@@ -1170,6 +1177,8 @@ export function shellPort(
                 `base=${baseBranch}`,
                 '--silent',
             ]),
+        // REST issue comments are returned in ascending comment-ID order. Pagination, flattening,
+        // and filtering preserve that immutable order; receipt authority must never sort by time.
         deliveryReceipts: (number) => {
             const pages = parseJson<unknown>(
                 shell.capture('gh', [
