@@ -20,11 +20,28 @@ type DdspRenderProbe = {
     }>;
 };
 
+/**
+ * The reasons the product is allowed to give for refusing WebGPU. A refusal
+ * naming anything else is an unadmitted verdict, so the report contract below
+ * rejects it rather than reading the refusal as merely "unavailable".
+ */
+const WEB_GPU_UNAVAILABLE_REASONS = [
+    'missing-surface',
+    'adapter-unavailable',
+    'fallback-adapter',
+    'device-unavailable',
+    'probe-failed',
+] as const;
+
+type WebGpuUnavailableReason = (typeof WEB_GPU_UNAVAILABLE_REASONS)[number];
+
+type BrowserAiWebGpuResult = { status: 'supported' } | { reason: WebGpuUnavailableReason; status: 'unavailable' };
+
 type BrowserAiCapabilityReport = {
     capability: 'supported' | 'unsupported-browser';
     crossOriginIsolated: boolean;
     opfsAvailable: boolean;
-    webGpu: { reason?: string; status: 'supported' | 'unavailable' };
+    webGpu: BrowserAiWebGpuResult;
     workerAvailable: boolean;
 };
 
@@ -35,19 +52,36 @@ declare global {
     }
 }
 
+function isWebGpuUnavailableReason(value: unknown): value is WebGpuUnavailableReason {
+    return WEB_GPU_UNAVAILABLE_REASONS.some((reason) => reason === value);
+}
+
+/**
+ * The persisted probe result is a closed discriminated union: admission carries
+ * a bare `supported`, and a refusal carries exactly one admitted reason. Both
+ * arms are key-exact so a field grown onto either one is caught here instead of
+ * passing unobserved through the boundary assertions.
+ */
+function isWebGpuProbeResult(value: unknown): value is BrowserAiWebGpuResult {
+    if (!isRecord(value)) {
+        return false;
+    }
+    if (value.status === 'supported') {
+        return Object.keys(value).length === 1;
+    }
+    return value.status === 'unavailable' && Object.keys(value).length === 2 && isWebGpuUnavailableReason(value.reason);
+}
+
 function isBrowserAiCapabilityReport(value: unknown): value is BrowserAiCapabilityReport {
     if (!isRecord(value)) {
         return false;
     }
-    const report = value;
-    const webGpu = report.webGpu;
     return (
-        (report.capability === 'supported' || report.capability === 'unsupported-browser') &&
-        typeof report.crossOriginIsolated === 'boolean' &&
-        typeof report.opfsAvailable === 'boolean' &&
-        typeof report.workerAvailable === 'boolean' &&
-        isRecord(webGpu) &&
-        (webGpu.status === 'supported' || webGpu.status === 'unavailable')
+        (value.capability === 'supported' || value.capability === 'unsupported-browser') &&
+        typeof value.crossOriginIsolated === 'boolean' &&
+        typeof value.opfsAvailable === 'boolean' &&
+        typeof value.workerAvailable === 'boolean' &&
+        isWebGpuProbeResult(value.webGpu)
     );
 }
 
@@ -134,10 +168,14 @@ async function assertBrowserAiCapabilityBoundary({
     const observedReport = await getBrowserAiCapabilityReport(page, testInfo);
     const dialog = await openBrowserAiPreferences(page);
     if (hardwareProbe.status === 'unavailable') {
+        // A refusal names why it refused. The report contract has already
+        // pinned that reason to the admitted vocabulary and the arm to exactly
+        // two keys, so matching the discriminant here neither invents a runner
+        // specific reason nor lets an unnamed refusal through.
         expect(observedReport).toEqual(
             expect.objectContaining({
                 capability: 'unsupported-browser',
-                webGpu: { status: 'unavailable' },
+                webGpu: expect.objectContaining({ status: 'unavailable' }),
             })
         );
         await expect(dialog.getByText('Browser AI Unavailable', { exact: true })).toBeVisible();
