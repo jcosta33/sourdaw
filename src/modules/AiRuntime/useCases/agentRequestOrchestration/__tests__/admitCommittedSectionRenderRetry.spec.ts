@@ -166,7 +166,14 @@ function bindFinalizedCrashWindow(input: ReturnType<typeof createFixture>) {
         revisions: { committed: COMMITTED_REVISION },
         receipts: [{ workId: BATCH_ID, receiptIdentity: pendingReceiptIdentity }],
         committedWork: [{ workId: BATCH_ID, receiptIdentity: pendingReceiptIdentity }],
-        batches: [{ batchId: BATCH_ID, status: 'committed', receiptIdentity: pendingReceiptIdentity }],
+        batches: [
+            {
+                batchId: BATCH_ID,
+                commandIds: [renderCommandId],
+                status: 'committed',
+                receiptIdentity: pendingReceiptIdentity,
+            },
+        ],
         pendingEffectContinuations: [
             {
                 batchId: BATCH_ID,
@@ -416,7 +423,7 @@ describe('admitCommittedSectionRenderRetry', () => {
             revisions: { committed: COMMITTED_REVISION },
             receipts: [{ workId: BATCH_ID, receiptIdentity }],
             committedWork: [{ workId: BATCH_ID, receiptIdentity }],
-            batches: [{ batchId: BATCH_ID, status: 'committed', receiptIdentity }],
+            batches: [{ batchId: BATCH_ID, commandIds: [renderCommandId], status: 'committed', receiptIdentity }],
             pendingEffectContinuations: [],
             saga: {
                 steps: [
@@ -452,6 +459,26 @@ describe('admitCommittedSectionRenderRetry', () => {
 
         finalizedReceipt.atomicity = 'atomic';
         const trackedRun = mocks.getRun();
+        trackedRun.batches[0]!.status = 'prepared';
+        expect(
+            admitCommittedSectionRenderRetry({
+                confirmation: fixture.confirmation,
+                durableReceipt: finalizedReceipt,
+                expectedCommandBatch: fixture.commandBatch,
+                phase: 'proof',
+            })
+        ).toEqual({ status: 'proof-mismatch' });
+        trackedRun.batches[0]!.status = 'committed';
+        trackedRun.batches[0]!.receiptIdentity = 'wrong-finalized-receipt';
+        expect(
+            admitCommittedSectionRenderRetry({
+                confirmation: fixture.confirmation,
+                durableReceipt: finalizedReceipt,
+                expectedCommandBatch: fixture.commandBatch,
+                phase: 'proof',
+            })
+        ).toEqual({ status: 'proof-mismatch' });
+        trackedRun.batches[0]!.receiptIdentity = receiptIdentity;
         trackedRun.saga.steps[0]!.stepId = `effect:${BATCH_ID}:unrelated-command`;
         expect(
             admitCommittedSectionRenderRetry({
@@ -503,6 +530,15 @@ describe('admitCommittedSectionRenderRetry', () => {
         [
             'wrong batch identity',
             (run: ReturnType<typeof bindFinalizedCrashWindow>) => (run.batches[0]!.receiptIdentity = 'wrong-receipt'),
+        ],
+        [
+            'wrong batch command',
+            (run: ReturnType<typeof bindFinalizedCrashWindow>) => (run.batches[0]!.commandIds = ['foreign-command']),
+        ],
+        [
+            'duplicate batch command',
+            (run: ReturnType<typeof bindFinalizedCrashWindow>) =>
+                run.batches[0]!.commandIds.push(run.batches[0]!.commandIds[0]!),
         ],
     ])('rejects a finalized crash window with %s', (_label, mutate) => {
         const fixture = createFixture();

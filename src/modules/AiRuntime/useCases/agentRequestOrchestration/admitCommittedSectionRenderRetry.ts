@@ -311,6 +311,10 @@ function hasExactFinalizedContinuationBinding(
             matchingBatches.length === 1 &&
             matchingBatches[0]?.status === 'committed' &&
             matchingBatches[0].receiptIdentity === finalizedReceiptIdentity &&
+            matchingBatches[0].commandIds.length === approvedBatch.commands.length &&
+            matchingBatches[0].commandIds.every(
+                (commandId, index) => commandId === approvedBatch.commands[index]?.commandId
+            ) &&
             matchingSagaSteps.length === 1 &&
             matchingSagaSteps[0]?.stepId === `effect:${confirmation.groupId}:${binding.approvedCommand.commandId}` &&
             matchingSagaSteps[0]?.state === 'committed' &&
@@ -342,6 +346,10 @@ function hasExactFinalizedContinuationBinding(
         matchingBatches.length === 1 &&
         matchingBatches[0]?.status === 'committed' &&
         matchingBatches[0].receiptIdentity === pendingReceiptIdentity &&
+        matchingBatches[0].commandIds.length === approvedBatch.commands.length &&
+        matchingBatches[0].commandIds.every(
+            (commandId, index) => commandId === approvedBatch.commands[index]?.commandId
+        ) &&
         matchingSagaSteps.length === 1 &&
         matchingSagaSteps[0]?.stepId === `effect:${confirmation.groupId}:${binding.approvedCommand.commandId}` &&
         matchingSagaSteps[0]?.state === 'external-pending' &&
