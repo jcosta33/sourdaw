@@ -12,6 +12,7 @@ import { trackStore } from '../../stores/trackStore';
 import { getPluginById } from '../getPluginById';
 
 import { detectSilentBake } from './detectSilentBake';
+import { freezeCompensationOmitTypes } from './freezeCompensationOmitTypes';
 import { renderTrackOffline, type RenderScheduleTally } from './renderOffline';
 
 export const activeFreezeTasks = new Map<string, AbortController>();
@@ -197,7 +198,10 @@ export async function freezeTrack(trackId: string, freezeIdOverride?: string): P
         // buffer was baked. Frozen playback compensates against this, so a later
         // plugin-latency change cannot drift the frozen take out of alignment
         // (nothing marks a frozen track stale on a latency change).
-        const compensationSeconds = getCompensationDelay(trackId, scheduleTally.withheldDeviceTypes);
+        const compensationSeconds = getCompensationDelay(
+            trackId,
+            freezeCompensationOmitTypes(track.devices, scheduleTally.withheldDeviceTypes)
+        );
 
         scope(() => {
             updateTrack(trackId, (time) => ({

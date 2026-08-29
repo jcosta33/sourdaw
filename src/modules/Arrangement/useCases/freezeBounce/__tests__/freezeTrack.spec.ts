@@ -255,14 +255,26 @@ describe('freezeTrack', () => {
         expect(getCompensationDelay).toHaveBeenCalledWith('t1', []);
     });
 
-    it('pins compensation omitting device types withheld from the offline print', async () => {
+    it('pins compensation omitting a non-bypassed external-plugin even when the print withholds nothing', async () => {
+        // Live `buildDeviceChain` degrades `external-plugin` with `continue` and an
+        // empty entries list — it never sets `releaseWithheld`, so the offline
+        // tally's withheld list stays empty. Freeze must still omit that type
+        // from the pinned compensation figure; otherwise the dry take leads.
         trackStore.set({
             tracks: [
                 {
                     id: 't1',
                     kind: 'audio',
                     clips: [{ startBeat: 0, endBeat: 4 }],
-                    devices: [{ id: 'dev-native', type: 'external-plugin', bypassed: false, parameterValues: {} }],
+                    devices: [
+                        {
+                            id: 'dev-native',
+                            name: 'Plugin',
+                            type: 'external-plugin',
+                            bypassed: false,
+                            parameterValues: {},
+                        },
+                    ],
                     freezeState: { status: 'unfrozen' },
                 } as any,
             ],
@@ -274,21 +286,15 @@ describe('freezeTrack', () => {
             }
             return 0;
         });
-        vi.mocked(renderTrackOffline).mockImplementation(async (_track, _start, _end, options) => {
-            options?.onScheduled?.({
-                scheduledNotes: 0,
-                scheduledBuffers: ['clip-1'],
-                withheldDeviceTypes: ['external-plugin'],
-            });
-            return {
-                sampleRate: 44100,
-                numberOfChannels: 2,
-                getChannelData: () => new Float32Array([0.5]),
-                length: 1,
-                duration: 1 / 44100,
-                copyFromChannel: vi.fn(),
-                copyToChannel: vi.fn(),
-            };
+        // Real degrade: no withheld types, and onScheduled may be omitted entirely.
+        vi.mocked(renderTrackOffline).mockResolvedValue({
+            sampleRate: 44100,
+            numberOfChannels: 2,
+            getChannelData: () => new Float32Array([0.5]),
+            length: 1,
+            duration: 1 / 44100,
+            copyFromChannel: vi.fn(),
+            copyToChannel: vi.fn(),
         });
 
         await freezeTrack('t1');
@@ -299,7 +305,51 @@ describe('freezeTrack', () => {
         }
         const storedTrack = trackStore.value!.tracks[0]!;
         expect(frozenCall[1](storedTrack).freezeState.compensationSeconds).toBe(0.048);
-        expect(getCompensationDelay).toHaveBeenCalledWith('t1', ['external-plugin']);
+        const omitArg = vi.mocked(getCompensationDelay).mock.calls.at(-1)?.[1] ?? [];
+        expect(omitArg).toContain('external-plugin');
+    });
+
+    it('does not omit a bypassed external-plugin from freeze compensation', async () => {
+        trackStore.set({
+            tracks: [
+                {
+                    id: 't1',
+                    kind: 'audio',
+                    clips: [{ startBeat: 0, endBeat: 4 }],
+                    devices: [
+                        {
+                            id: 'dev-native',
+                            name: 'Plugin',
+                            type: 'external-plugin',
+                            bypassed: true,
+                            parameterValues: {},
+                        },
+                    ],
+                    freezeState: { status: 'unfrozen' },
+                } as any,
+            ],
+            selectedTrackId: null,
+        });
+        vi.mocked(getCompensationDelay).mockReturnValue(0.016);
+        vi.mocked(renderTrackOffline).mockResolvedValue({
+            sampleRate: 44100,
+            numberOfChannels: 2,
+            getChannelData: () => new Float32Array([0.5]),
+            length: 1,
+            duration: 1 / 44100,
+            copyFromChannel: vi.fn(),
+            copyToChannel: vi.fn(),
+        });
+
+        await freezeTrack('t1');
+
+        const frozenCall = vi.mocked(updateTrack).mock.calls[1];
+        if (!frozenCall) {
+            throw new Error('expected second updateTrack call');
+        }
+        const storedTrack = trackStore.value!.tracks[0]!;
+        expect(frozenCall[1](storedTrack).freezeState.compensationSeconds).toBe(0.016);
+        expect(getCompensationDelay).toHaveBeenCalledWith('t1', []);
     });
 
     it('handles render failure gracefully', async () => {
