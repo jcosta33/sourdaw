@@ -280,7 +280,7 @@ function createTestAudioBuffer(sampleRate: number): AudioBuffer {
             channelData.set(source, bufferOffset);
         },
         duration: 1,
-        getChannelData: (): Float32Array => channelData,
+        getChannelData: () => channelData,
         length: channelData.length,
         numberOfChannels: 2,
         sampleRate,
