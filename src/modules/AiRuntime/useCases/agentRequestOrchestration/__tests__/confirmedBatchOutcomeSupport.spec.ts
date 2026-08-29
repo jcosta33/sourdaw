@@ -121,7 +121,6 @@ describe('confirmedBatchOutcomeSupport', () => {
             ).toEqual({
                 warning: AGENT_RUN_PERSISTENCE_WARNING,
                 effectsPending: false,
-                committedWorkRecorded: true,
             });
         } finally {
             setItem.mockRestore();
@@ -151,10 +150,10 @@ describe('confirmedBatchOutcomeSupport', () => {
         expect(window.localStorage.getItem('sourdaw-agent-runs')).toContain(receiptIdentity);
     });
 
-    it('reports no committed work when the receipt writer rejects before recording it', () => {
+    it('returns the persistence warning when atomic receipt recording rejects before recording work', () => {
         const { confirmation, receipt } = createConfirmationAndReceipt();
         createExecutingRun(confirmation);
-        const recordCommittedWork = vi.spyOn(agentRunLifecycle, 'recordCommittedWork').mockImplementationOnce(() => {
+        const recordReceiptSaga = vi.spyOn(agentRunLifecycle, 'recordReceiptSaga').mockImplementationOnce(() => {
             throw new Error('The receipt writer rejected the committed work.');
         });
 
@@ -165,13 +164,12 @@ describe('confirmedBatchOutcomeSupport', () => {
                 completesRun: false,
             });
         } finally {
-            recordCommittedWork.mockRestore();
+            recordReceiptSaga.mockRestore();
         }
 
         expect(receiptPersistence).toEqual({
             warning: AGENT_RUN_PERSISTENCE_WARNING,
             effectsPending: false,
-            committedWorkRecorded: false,
         });
         expect(agentRunLifecycle.get(confirmation.runId)).toMatchObject({
             phase: 'executing',

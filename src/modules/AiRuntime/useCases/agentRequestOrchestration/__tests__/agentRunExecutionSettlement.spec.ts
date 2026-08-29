@@ -328,6 +328,63 @@ describe('agentRunExecutionSettlement', () => {
         expect(readAgentRunState().runs[0]).toMatchObject({ phase: 'partially-completed' });
     });
 
+    it('persists an ordinary committed recovery failure in one write for terminal reload recovery', () => {
+        const confirmation = createConfirmation();
+        const receipt = createReceipt(confirmation);
+        const receiptIdentity = `${receipt.schemaVersion}:${receipt.runId}:${receipt.batchId}:${receipt.outcome}`;
+        agentRunLifecycle.create({
+            runId: confirmation.runId,
+            request: confirmation.prompt,
+            mode: 'apply',
+            createdRevision: confirmation.projectRevision,
+        });
+        agentRunLifecycle.transitionPhase({ runId: confirmation.runId, phase: 'planning' });
+        agentRunLifecycle.transitionPhase({ runId: confirmation.runId, phase: 'executing' });
+        agentRunLifecycle.recordBatch({
+            runId: confirmation.runId,
+            batch: { batchId: 'batch-1', commandIds: [], status: 'executing', receiptIdentity: null },
+        });
+        const setItem = vi.spyOn(Storage.prototype, 'setItem');
+        setItem.mockClear();
+
+        agentRunExecutionSettlement.recordCommittedRecoveryFailure(confirmation, {
+            category: 'internal',
+            retriable: false,
+            receipt,
+            actions: confirmation.actions,
+            commandBatch: confirmation.approvalSnapshot.commandBatch,
+            revertGroupId: 'batch-1',
+            committedRevision: 'revision-2',
+        });
+
+        expect(setItem).toHaveBeenCalledExactlyOnceWith('sourdaw-agent-runs', expect.any(String));
+        setItem.mockRestore();
+        const persisted = window.localStorage.getItem('sourdaw-agent-runs');
+        if (!persisted) {
+            throw new Error('Expected ordinary committed recovery settlement to persist the AgentRun state.');
+        }
+        const reloadedState = sanitizeAgentRunState(parse(persisted));
+        expect(selectAgentRunPendingEffectRecoveries(reloadedState)).toEqual([]);
+        expect(reloadedState.runs).toEqual([
+            expect.objectContaining({
+                phase: 'partially-completed',
+                revisions: expect.objectContaining({ committed: 'revision-2' }),
+                batches: [expect.objectContaining({ batchId: 'batch-1', status: 'committed', receiptIdentity })],
+                committedWork: [
+                    expect.objectContaining({
+                        workId: 'batch-1',
+                        receiptIdentity,
+                        revertGroupId: 'batch-1',
+                    }),
+                ],
+                errors: [expect.objectContaining({ workId: null })],
+            }),
+        ]);
+
+        agentRunLifecycle.cancel({ runId: confirmation.runId, reason: 'Cancellation raced with terminal recovery.' });
+        expect(agentRunLifecycle.get(confirmation.runId)).toMatchObject({ phase: 'partially-completed' });
+    });
+
     it('returns a persistence warning when terminal recovery settlement cannot be saved', () => {
         const confirmation = createConfirmation();
         const receiptIdentity = '1:run-1:batch-1:committed';
