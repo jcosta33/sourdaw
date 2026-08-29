@@ -309,6 +309,11 @@ pub trait AudioPlugin: Send + Sync {
     /// on it just as much: a view told to lay out at a size its window has not
     /// taken yet lays out against the window it is still in.
     ///
+    /// Every size crossing this seam — in and out, here and on every editor
+    /// method beside it — is in the logical units the host's window seam sizes
+    /// in. Both formats state editor sizes in physical pixels on Windows and
+    /// X11, and converting to and from that is the backend's own business.
+    ///
     /// The default refuses, because a backend with no editor has no size to
     /// negotiate.
     fn request_editor_size(&mut self, _width: u32, _height: u32) -> Result<(u32, u32), String> {

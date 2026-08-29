@@ -3147,7 +3147,7 @@ fn a_display_scale_change_restates_the_scale_and_renegotiates_the_size() {
     // sizes in, so nothing is restated there and the rect does not change.
     // Windows and X11 state physical pixels: the same editor occupies twice the
     // rect, and is worth the same number of window units.
-    let view_units = if cfg!(any(target_os = "windows", target_os = "linux")) {
+    let view_units = if crate::vst3_editor::platform_states_content_scale() {
         2
     } else {
         1

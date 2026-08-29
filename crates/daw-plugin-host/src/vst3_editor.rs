@@ -257,7 +257,7 @@ fn platform_view_type() -> Option<FIDString> {
 
 /// Whether this platform states `ViewRect` in physical pixels, and therefore
 /// needs to be told the scale it is running at.
-fn platform_states_content_scale() -> bool {
+pub(crate) fn platform_states_content_scale() -> bool {
     states_content_scale(std::env::consts::OS)
 }
 
@@ -1075,7 +1075,7 @@ mod tests {
     /// conversion.
     #[test]
     fn only_the_platforms_whose_view_rect_is_physical_convert_by_the_display_scale() {
-        let expected = if cfg!(any(target_os = "windows", target_os = "linux")) {
+        let expected = if platform_states_content_scale() {
             2.0
         } else {
             1.0
