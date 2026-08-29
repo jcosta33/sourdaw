@@ -2423,6 +2423,93 @@ describe('command batch idempotency', () => {
         });
     });
 
+    it('emits exact finalization evidence for an observer-only committed warning', async () => {
+        const batch = compileBatch({ batchId: 'finalization-observer-warning' });
+        const proof = await getVersionedCommandBatchCommitProof(batch);
+        const onProjectCommitFinalized = vi.fn();
+        const onProjectCommitFinalizationUnavailable = vi.fn();
+
+        const result = await executeVersionedCommandBatchEnvelope({
+            authority: batch.authority,
+            confirmed: true,
+            serialized: batch.serialized,
+            onProjectCommitPrepared: () => {
+                throw new Error('project commit observer unavailable');
+            },
+            options: { onProjectCommitFinalized, onProjectCommitFinalizationUnavailable },
+        });
+
+        expect(result).toMatchObject({
+            status: 'committed-with-warning',
+            receipt: { pendingEffects: [] },
+            warningDetails: [
+                expect.objectContaining({ kind: 'observer', message: expect.stringContaining('observer unavailable') }),
+            ],
+        });
+        expect(getProjectCommandBatchIdempotencyCheckpoint(proof)).toMatchObject({ status: 'complete' });
+        expect(onProjectCommitFinalized).toHaveBeenCalledExactlyOnceWith({ revision: revision(2) });
+        expect(onProjectCommitFinalizationUnavailable).not.toHaveBeenCalled();
+    });
+
+    const callbackSilentNonCommitCases = [
+        {
+            name: 'failed',
+            expectedStatus: 'failed',
+            setup: () => {
+                rejectInitialProjectCommit = true;
+            },
+        },
+        {
+            name: 'conflicted',
+            expectedStatus: 'conflicted',
+            setup: () => {
+                commandBatchPreflightPort.setProvider(({ projectDocument: stagedProject }) => ({
+                    audioGraphValid: true,
+                    availableAssetHashes: [],
+                    availableAudioBufferIds: [],
+                    lockedRanges: [],
+                    projectId: 'project-idempotency',
+                    projectInvariantsValid: stagedProject === undefined,
+                    targetFingerprints: { 'track-vocal': 'track:track-vocal' },
+                }));
+            },
+        },
+        {
+            name: 'ambiguous',
+            expectedStatus: 'ambiguous',
+            setup: () => {
+                commandBatchIdempotencyPort.setRepository({
+                    lookup: () => Promise.resolve({ status: 'missing' }),
+                    claim: () => Promise.resolve({ status: 'pending' }),
+                    complete: () => Promise.resolve(),
+                });
+            },
+        },
+    ] as const;
+
+    it.each(callbackSilentNonCommitCases)(
+        'never emits finalization evidence for a realistic $name result',
+        async ({ expectedStatus, setup }) => {
+            setup();
+            const batch = compileBatch({ batchId: `finalization-${expectedStatus}` });
+            const callbacks = {
+                onProjectCommitFinalized: vi.fn(),
+                onProjectCommitFinalizationUnavailable: vi.fn(),
+            };
+
+            const result = await executeVersionedCommandBatchEnvelope({
+                authority: batch.authority,
+                confirmed: true,
+                serialized: batch.serialized,
+                options: callbacks,
+            });
+
+            expect(result.status).toBe(expectedStatus);
+            expect(callbacks.onProjectCommitFinalized).not.toHaveBeenCalled();
+            expect(callbacks.onProjectCommitFinalizationUnavailable).not.toHaveBeenCalled();
+        }
+    );
+
     it('never emits finalization evidence for a real no-op result', async () => {
         clearHandlerRegistry();
         const execute = vi.fn();

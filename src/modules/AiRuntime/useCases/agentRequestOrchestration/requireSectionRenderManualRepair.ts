@@ -1,4 +1,5 @@
 import { logger } from '#/infra/logger/appLogger';
+import { type compileVersionedCommandBatchEnvelope, type createVerifiedBatchReceipt } from '#/modules/Command/useCases';
 
 import { agentRunLifecycle } from '../agentRunLifecycle';
 
@@ -9,8 +10,40 @@ export function requireSectionRenderManualRepair(input: {
     runId: string;
     batchId: string;
     reason: string;
+    missingEffect?: {
+        commandId: string;
+        existingEffects: ReturnType<typeof createVerifiedBatchReceipt>['pendingEffects'];
+        receiptIdentity: string;
+        serializedBatch: string;
+        authority: ReturnType<typeof compileVersionedCommandBatchEnvelope>['authority'];
+    };
 }): string | null {
     try {
+        if (input.missingEffect) {
+            agentRunLifecycle.recordPendingEffectContinuation({
+                runId: input.runId,
+                continuation: {
+                    authority: structuredClone(input.missingEffect.authority),
+                    batchId: input.batchId,
+                    effects: [
+                        ...structuredClone(input.missingEffect.existingEffects),
+                        {
+                            commandId: input.missingEffect.commandId,
+                            kind: 'external-effect',
+                            operation: 'renderProjectSections',
+                            reason: input.reason,
+                            remediation: 'manual-repair',
+                            state: 'pending',
+                        },
+                    ],
+                    lastError: input.reason,
+                    receiptIdentity: input.missingEffect.receiptIdentity,
+                    recovery: 'manual-repair',
+                    serializedBatch: input.missingEffect.serializedBatch,
+                },
+            });
+            return null;
+        }
         agentRunLifecycle.requirePendingEffectManualRepair(input);
         return null;
     } catch (error) {

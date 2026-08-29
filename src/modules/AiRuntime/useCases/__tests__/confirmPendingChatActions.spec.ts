@@ -3421,6 +3421,7 @@ describe('confirmPendingChatActions transaction admission', () => {
                 status: 'failed',
                 durableCommit: true,
                 reason: expect.stringContaining('render artifact vanished'),
+                effects: [],
                 continuation: { kind: 'manual-repair' },
             });
         } finally {
@@ -3441,7 +3442,16 @@ describe('confirmPendingChatActions transaction admission', () => {
             selectAgentRunPendingEffectRecoveries(readAgentRunState()).find(
                 ({ runId, batchId }) => runId === 'confirmation-rebind-failure' && batchId === 'group-rebind-failure'
             )
-        ).toMatchObject({ recovery: 'manual-repair' });
+        ).toMatchObject({
+            recovery: 'manual-repair',
+            effects: [
+                expect.objectContaining({
+                    commandId: envelope.commandId,
+                    operation: 'renderProjectSections',
+                    remediation: 'manual-repair',
+                }),
+            ],
+        });
     });
 
     it('requires manual recovery when an ownerless mutation lands during a two-job render', async () => {

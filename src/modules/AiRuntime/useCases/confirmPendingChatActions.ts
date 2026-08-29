@@ -1,6 +1,8 @@
 import { logger } from '#/infra/logger/appLogger';
 import {
+    type compileVersionedCommandBatchEnvelope,
     type executeVersionedCommandBatchEnvelope,
+    parseVersionedCommandBatchEnvelope,
     type refreshVersionedCommandBatchForApproval,
 } from '#/modules/Command/useCases';
 
@@ -9,6 +11,7 @@ import { type AgentRunErrorCategory } from '../models/AgentRun';
 import { type ChatActionConfirmationStatus } from '../models/Chat';
 import { updateChatMessage } from '../stores/chatStore';
 import {
+    type PendingAppActionConfirmation,
     updatePendingActionConfirmationStatus,
     updatePendingActionFollowUp,
 } from '../stores/pendingActionConfirmationStore';
@@ -71,6 +74,20 @@ const COMPLETED_BATCH_STATUSES = new Set([
     'executed-with-warning',
     'no-op',
 ]);
+
+function getApprovedSectionRenderCommandId(
+    confirmation: PendingAppActionConfirmation,
+    commandBatch: ReturnType<typeof compileVersionedCommandBatchEnvelope>
+): string | null {
+    const parsed = parseVersionedCommandBatchEnvelope(commandBatch.serialized, commandBatch.authority);
+    if (
+        parsed.status !== 'valid' ||
+        !confirmation.approvalSnapshot.actions.some(({ type }) => type === 'renderProjectSections')
+    ) {
+        return null;
+    }
+    return parsed.envelope.commands.find(({ operation }) => operation === 'renderProjectSections')?.commandId ?? null;
+}
 
 function getTrackedLeaseSettlementContract(batchResult: ConfirmedBatchResult): {
     terminalState: 'completed' | 'cancelled' | 'failed';
@@ -241,6 +258,9 @@ export async function confirmPendingChatActions(
         const hasPendingRenderEffects = batchResult.receipt.pendingEffects.some(
             (effect) => effect.kind === 'external-effect' && effect.operation === 'renderProjectSections'
         );
+        const approvedRenderCommandId = getApprovedSectionRenderCommandId(confirmation, commandBatch);
+        const requiresRenderManualRepair = hasPendingRenderEffects || approvedRenderCommandId !== null;
+        const requiresRecoveryFollowUp = hasPendingEffects || requiresRenderManualRepair;
         const runPersistenceWarning = agentRunExecutionSettlement.recordCommittedRecoveryFailure(confirmation, {
             category: 'internal',
             retriable: false,
@@ -250,11 +270,22 @@ export async function confirmPendingChatActions(
             revertGroupId: group.groupId,
             ...(committedProjectRevision ? { committedRevision: committedProjectRevision } : {}),
         });
-        const manualRepairPersistenceWarning = hasPendingRenderEffects
+        const manualRepairPersistenceWarning = requiresRenderManualRepair
             ? requireSectionRenderManualRepair({
                   runId: confirmation.runId,
                   batchId: batchResult.receipt.batchId,
                   reason,
+                  ...(!hasPendingRenderEffects && approvedRenderCommandId
+                      ? {
+                            missingEffect: {
+                                commandId: approvedRenderCommandId,
+                                existingEffects: batchResult.receipt.pendingEffects,
+                                receiptIdentity: `${batchResult.receipt.schemaVersion}:${batchResult.receipt.runId}:${batchResult.receipt.batchId}:${batchResult.receipt.outcome}`,
+                                serializedBatch: commandBatch.serialized,
+                                authority: commandBatch.authority,
+                            },
+                        }
+                      : {}),
               })
             : null;
         const userVisibleReason = [
@@ -271,7 +302,7 @@ export async function confirmPendingChatActions(
             status: 'failed',
             error: userVisibleReason,
         });
-        if (hasPendingEffects) {
+        if (requiresRecoveryFollowUp) {
             updatePendingActionFollowUp({
                 confirmationId: confirmation.id,
                 error: userVisibleReason,
@@ -281,17 +312,18 @@ export async function confirmPendingChatActions(
         }
         updateChatMessage(confirmation.assistantMessageId, {
             pendingActionConfirmationStatus: 'failed',
+            ...(requiresRecoveryFollowUp ? { pendingActionFollowUpStatus: 'failed' } : {}),
             error: userVisibleReason,
-            content: hasPendingEffects
+            content: requiresRecoveryFollowUp
                 ? `The project change is durably committed, but its finalization evidence is unavailable: ${userVisibleReason}. Do not replay these actions; use the retained pending-effect recovery guidance.`
                 : `The project change is durably committed, but its finalization evidence is unavailable: ${userVisibleReason}. Do not replay these actions. Inspect the current project state before further automation.`,
         });
         await pendingActionResourceSettlement.retainCommitted(confirmation.id);
-        return hasPendingEffects
+        return requiresRecoveryFollowUp
             ? confirmedBatchOutcomeSupport.createCommittedEffectFailureResult(
                   batchResult.receipt,
                   userVisibleReason,
-                  hasPendingRenderEffects ? 'manual-repair' : undefined
+                  requiresRenderManualRepair ? 'manual-repair' : undefined
               )
             : confirmedBatchOutcomeSupport.createCommittedFinalizationEvidenceFailureResult(userVisibleReason);
     }
