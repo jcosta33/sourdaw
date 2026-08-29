@@ -1,0 +1,65 @@
+src/modules/AiRuntime/useCases/agentRequestOrchestration/admitCommittedSectionRenderRetry.ts
+  s_a40848e8f8cca9::t_11473af67e816e 326
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/projectSectionRenderConfirmation.spec.ts
+  s_a40848e8f8cca9::t_6cf794b2a203d4 226-230
+  s_a40848e8f8cca9::t_6cd0154f875665 3,77-89,167-225,231-240
+src/modules/AiRuntime/useCases/agentRequestOrchestration/executeConfirmedCommandBatch.ts
+  s_a40848e8f8cca9::t_9e0c8dc239649d 6,153-155,165-167
+  s_a40848e8f8cca9::t_8ca5155442cf2a 142-143,157,190-191
+  s_a40848e8f8cca9::t_32668ee60953ea 95-97,99-102,104-107,110-112,118-119,126-127,129-141,144-152,156,159-162,164,168-170,177-178,180,192-193,215,256,268,279-280
+  s_a40848e8f8cca9::t_6bdac0b25672ed 19,77-91,93-94,103,113-117,120-125,128,163,171-176,179,194,196-213
+  s_a40848e8f8cca9::t_6811788017ea19 158
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/executeConfirmedCommandBatch.spec.ts
+  s_a40848e8f8cca9::t_0a2abc7b9f5e2a 783-802,833
+  s_a40848e8f8cca9::t_c4b7db336c79c0 21,31,318-328,330-376,379-380,382-385,387,391-436,438-441
+  s_a40848e8f8cca9::t_1178b505b817eb 834-835,837-881
+  s_a40848e8f8cca9::t_6ae6a28247a39f 377-378,381,386,388-390,442-450
+  s_a40848e8f8cca9::t_26ca24d17adeec 317,329
+  s_a40848e8f8cca9::t_cf3593ecf617b6 657-663,668,676,679-686,697,706-782,803-832
+  s_a40848e8f8cca9::t_a220f24d228c62 437
+  s_4f908a5afb6b58::t_ce02f358a2c7de 451-452,836
+src/modules/AiRuntime/useCases/agentRequestOrchestration/projectSectionRenderConfirmation.ts
+  s_a40848e8f8cca9::t_31bf20aee155ad 138,141
+  s_a40848e8f8cca9::t_2b95771371e889 2,21-22,24-31,37-38,41,51-56,58-95,98-101,103-110,113,129-137,139-140,142-143,177-179,183-188,193-197,199-201
+  s_a40848e8f8cca9::t_d9e2c704be2d9e 17-20,23
+  s_a40848e8f8cca9::t_054a8493668b04 8,32-36,42-50,102
+  s_a40848e8f8cca9::t_9533909bd5a1f1 115-118,121-124,180-182,189-192
+  s_a40848e8f8cca9::t_cc75fd8b196119 114
+  s_c35a383286ec6a::t_419f6a35221253 207
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/admitCommittedSectionRenderRetry.spec.ts
+  s_a40848e8f8cca9::t_ab2d3faa37b721 181,320-328,554,564-573
+src/modules/AiRuntime/useCases/__tests__/agentRunRecovery.spec.ts
+  s_a40848e8f8cca9::t_dafd9def51428b 690,697,705,707-708,776,797,802-807,832,846,860,875-876
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "3c1f5314a82c9a2aecc3f945e21c062e9c162853",
+  "prompts": {},
+  "sessions": {
+    "s_4f908a5afb6b58": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fcb92ba4-bf56-47a4-8b57-803f335a449e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_c35a383286ec6a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a2510750ac582fc31",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
