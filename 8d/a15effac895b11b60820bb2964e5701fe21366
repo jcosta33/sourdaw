@@ -1,0 +1,124 @@
+src/modules/Transport/useCases/playheadScheduler/readNativeEngineCursorBeats.ts
+  s_4f908a5afb6b58::t_01d14507298a4c 1-38
+.agents/decisions/0039-transport-features-follow-the-fed-back-playhead.md
+  s_4f908a5afb6b58::t_a7060b2ce774e2 1-89
+src/modules/Transport/useCases/tempoMap/__tests__/projectEngineTransportMaps.spec.ts
+  s_4f908a5afb6b58::t_0bbb5c4c4258cc 1-110
+  s_4f908a5afb6b58::t_20deb77371af1d 111-113
+src/modules/AudioEngine/models/EngineTransportPosition.ts
+  s_4f908a5afb6b58::t_321d537d38eae7 1-89
+src/modules/AudioEngine/useCases/livePlayback/startNativeEnginePlayheadFeed.ts
+  s_4f908a5afb6b58::t_e99f4507e58562 1-22
+src/modules/AudioEngine/useCases/livePlayback/nativeEnginePlayheadFeedState.ts
+  s_4f908a5afb6b58::t_1ba828e87bf647 1-64
+src/modules/AudioEngine/repositories/engineTransport/__tests__/getEngineTransportPosition.spec.ts
+  s_4f908a5afb6b58::t_3d1cc6c4c34f49 1-62
+src/modules/AudioEngine/repositories/engineTransport/setEngineTransportMaps.ts
+  s_4f908a5afb6b58::t_454f7e008a77ca 1-62
+src/modules/Transport/useCases/playheadScheduler/__tests__/readNativeEngineCursorBeats.spec.ts
+  s_4f908a5afb6b58::t_468f0923a3d8f9 1-43
+src/modules/AudioEngine/useCases/livePlayback/stopNativeEnginePlayheadFeed.ts
+  s_4f908a5afb6b58::t_e365960a64cfa5 1-19
+src/modules/AudioEngine/useCases/livePlayback/readNativeEnginePlayheadSeconds.ts
+  s_4f908a5afb6b58::t_d11c833e1a3618 1-33
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeEnginePlayheadFeed.spec.ts
+  s_4f908a5afb6b58::t_c47ec464558d37 1-115
+crates/sourdaw-native/src/commands/engine_transport.rs
+  s_4f908a5afb6b58::t_5089336ed307d5 1-403
+  s_4f908a5afb6b58::t_265eff0195a572 404-415
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeLiveGraphSession.spec.ts
+  s_4f908a5afb6b58::t_29ad6784fa69cb 129-131
+  s_4f908a5afb6b58::t_50e285090429bb 36-37,46-64
+  s_4f908a5afb6b58::t_0fc9f1736ed93a 35
+  s_4f908a5afb6b58::t_6611d8cf269ed4 179-200,242,259,273
+  s_4f908a5afb6b58::t_c9fe127ad725ec 284-287
+  s_a40848e8f8cca9::t_de10cbba55a54d 149,162,208,224,299
+src/modules/AudioEngine/repositories/engineTransport/getEngineTransportPosition.ts
+  s_4f908a5afb6b58::t_92d21da32f78a5 1-45
+crates/sourdaw-native/src/addon/mod.rs
+  s_4f908a5afb6b58::t_5148eb50aeac2a 700-717
+src/modules/Transport/useCases/transportControls/__tests__/startPlayback.spec.ts
+  s_4f908a5afb6b58::t_916b51063ca1cf 203-226
+.agents/decisions/README.md
+  s_ac2814038e6178::t_910615a01cd695 55
+crates/sourdaw-native/src/commands/graph.rs
+  s_c35a383286ec6a::t_fb64088a98ab66 897,905
+crates/sourdaw-native/src/commands/mod.rs
+  s_c35a383286ec6a::t_ac54ca7cf943e5 6
+electron/__tests__/commands.spec.ts
+  s_c35a383286ec6a::t_13879e1ccb514a 363-364
+electron/commands.ts
+  s_c35a383286ec6a::t_2898d85d840387 61-62
+electron/pluginCommandAdmission.ts
+  s_c35a383286ec6a::t_3ad96bab16ede1 19-24
+src/modules/AudioEngine/useCases/index.ts
+  s_c35a383286ec6a::t_926fb14d7be203 109
+src/modules/AudioEngine/useCases/livePlayback/nativeLiveGraphSessionState.ts
+  s_c35a383286ec6a::t_f9d8e4654405be 20-31,38
+src/modules/AudioEngine/useCases/livePlayback/startNativeLiveGraphSession.ts
+  s_c35a383286ec6a::t_61c565ee3fddbf 24,36-37,43,48-55,141-154
+src/modules/AudioEngine/useCases/livePlayback/stopNativeLiveGraphSession.ts
+  s_c35a383286ec6a::t_8111617448f84a 16,30-33
+src/modules/Transport/useCases/index.ts
+  s_c35a383286ec6a::t_aa9b1deae5b839 29
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadScheduler.spec.ts
+  s_c35a383286ec6a::t_050ee14e289e07 55-57,140-141,282-319
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamNotes.spec.ts
+  s_5bc713c7419668::t_8db0e53076b83c 128-130
+src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts
+  s_ac2814038e6178::t_3c7fbcad4238a2 34,342-351
+src/modules/Transport/useCases/tempoMap/projectEngineTransportMaps.ts
+  s_c35a383286ec6a::t_7010342a43dfdf 1-232
+src/modules/Transport/useCases/transportControls/startPlayback.ts
+  s_c35a383286ec6a::t_975a3d0d85c20c 14,70-73
+src/utils/sourdawCommandArguments.ts
+  s_c35a383286ec6a::t_55e3b9b627d75d 46-47
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "8da15effac895b11b60820bb2964e5701fe21366",
+  "prompts": {},
+  "sessions": {
+    "s_4f908a5afb6b58": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fcb92ba4-bf56-47a4-8b57-803f335a449e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_5bc713c7419668": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04eae-8363-7df0-9056-917d1434ccdf",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ac2814038e6178": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04eb4-7ed4-7a71-b3a4-4b01bcc4ed08",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_c35a383286ec6a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a2510750ac582fc31",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
