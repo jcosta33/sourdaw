@@ -48,6 +48,22 @@ type ResolveConfirmationAdmissionResult =
           recoveringPendingEffects: boolean;
       };
 
+function hasSameAdmissionBinding(
+    current: PendingAppActionConfirmation,
+    admitted: PendingAppActionConfirmation
+): boolean {
+    const currentBatch = current.approvalSnapshot.commandBatch;
+    const admittedBatch = admitted.approvalSnapshot.commandBatch;
+    return (
+        current.id === admitted.id &&
+        current.runId === admitted.runId &&
+        current.status === admitted.status &&
+        current.projectRevision === admitted.projectRevision &&
+        currentBatch?.serialized === admittedBatch?.serialized &&
+        JSON.stringify(currentBatch?.authority) === JSON.stringify(admittedBatch?.authority)
+    );
+}
+
 function consumeConfirmationAdmission(
     admission: ResolveConfirmationAdmissionResult
 ): ResolveConfirmationAdmissionResult {
@@ -58,7 +74,25 @@ function consumeConfirmationAdmission(
     if (!current) {
         return { status: 'handled', result: { status: 'missing' } };
     }
-    if (current.status !== admission.confirmation.status) {
+    if (!hasSameAdmissionBinding(current, admission.confirmation)) {
+        return { status: 'handled', result: { status: 'not_pending', currentStatus: current.status } };
+    }
+    if (admission.status === 'render-retry') {
+        const retry = admitCommittedSectionRenderRetry({
+            confirmation: current,
+            durableReceipt: admission.durableReceipt,
+            expectedCommandBatch: admission.commandBatch,
+            phase: 'proof',
+        });
+        if (retry.status === 'admitted') {
+            return { ...admission, confirmation: current, durableReceipt: retry.durableReceipt };
+        }
+        if (retry.status === 'proof-mismatch') {
+            return {
+                status: 'handled',
+                result: confirmationTerminalSettlement.failSectionRenderRetryProof(current),
+            };
+        }
         return { status: 'handled', result: { status: 'not_pending', currentStatus: current.status } };
     }
     if (chatStore.value?.isGenerating === true) {
@@ -68,9 +102,7 @@ function consumeConfirmationAdmission(
         });
         return { status: 'handled', result: { status: 'busy' } };
     }
-    return admission.status === 'ready'
-        ? { ...admission, confirmation: current }
-        : { ...admission, confirmation: current };
+    return { ...admission, confirmation: current };
 }
 
 async function resolveConfirmationAdmission(input: {
