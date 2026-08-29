@@ -1,0 +1,22 @@
+.agents/skills/review-stances/test-validity.md
+  s_4f908a5afb6b58::t_0619409009f886 17-18
+  s_4f908a5afb6b58::t_bff6466149f81d 42-62
+.agents/skills/review-stances/session-lifecycle.md
+  s_4f908a5afb6b58::t_be5f6b812438d1 1-49
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "1badb71e7ece975b15a53e6aab283a3f2e965051",
+  "prompts": {},
+  "sessions": {
+    "s_4f908a5afb6b58": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fcb92ba4-bf56-47a4-8b57-803f335a449e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
