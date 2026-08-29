@@ -113,7 +113,7 @@ export const TransportBar = (): ReactElement => {
             >
                 {/* Left wing (flex-1 basis-0 ensures the center is absolutely geometrically centered) */}
                 <Row grow gap={1} className="basis-0">
-                    <Row gap={0} shrink={false}>
+                    <Row gap={0} shrink={false} data-testid="project-menu-control">
                         <ProjectName name={project.name} dirty={project.dirty} />
                         <RecentProjectsMenu />
                     </Row>

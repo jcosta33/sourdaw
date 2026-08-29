@@ -412,8 +412,11 @@ describe('TransportBar', () => {
     it('keeps the project name and menu trigger in one gapless control', () => {
         renderTransportBar();
 
-        const splitControl = screen.getByTestId('project-name').closest('.gap-0');
+        const splitControl = screen.getByTestId('project-menu-control');
+        const projectName = screen.getByTestId('project-name');
+        const menuTrigger = screen.getByTestId('recent-projects');
 
-        expect(splitControl).toContainElement(screen.getByTestId('recent-projects'));
+        expect(splitControl).toHaveClass('gap-0', 'shrink-0');
+        expect(Array.from(splitControl.children)).toEqual([projectName, menuTrigger]);
     });
 });

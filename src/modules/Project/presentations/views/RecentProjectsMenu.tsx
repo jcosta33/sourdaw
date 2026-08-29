@@ -176,7 +176,7 @@ export const RecentProjectsMenu = (): ReactElement => {
                         aria-haspopup="menu"
                         onClick={() => setOpen((prev) => !prev)}
                     >
-                        <ChevronDown className="size-3" aria-hidden="true" />
+                        <ChevronDown data-testid="project-menu-chevron" className="size-3" aria-hidden="true" />
                     </Button>
                 </TooltipTrigger>
                 <TooltipContent>Project menu</TooltipContent>
