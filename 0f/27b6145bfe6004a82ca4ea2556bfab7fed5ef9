@@ -1,0 +1,59 @@
+src/modules/WorkspaceShell/useCases/applyDisplayScale.ts
+  s_ae074277795b45::t_25a6aac686c62c 1-2,6
+electron/__tests__/preload.spec.ts
+  s_ae074277795b45::t_275cef01273a04 1-45
+src/modules/Preferences/stores/preferencesStore.ts
+  s_ae074277795b45::t_25a6aac686c62c 12,58
+src/modules/WorkspaceShell/useCases/__tests__/applyDisplayScale.spec.ts
+  s_ae074277795b45::t_275cef01273a04 1-23
+src/modules/WorkspaceShell/presentations/views/__tests__/AppShell.spec.tsx
+  s_ae074277795b45::t_275cef01273a04 432-433
+src/modules/WorkspaceShell/repositories/setDisplayScale.ts
+  s_ae074277795b45::t_bac1fa1fe7b54e 6,8,25-34,37-38
+  s_ae074277795b45::t_25a6aac686c62c 3-5,7,9-18,22-23,43-46
+  s_ae074277795b45::t_020dc2092b5f27 24
+src/modules/Preferences/useCases/normalizeUiScale.ts
+  s_ae074277795b45::t_25a6aac686c62c 1
+src/modules/WorkspaceShell/presentations/views/AppShell.tsx
+  s_ae074277795b45::t_25a6aac686c62c 568
+src/modules/Preferences/presentations/views/__tests__/PreferencesDialog.spec.tsx
+  s_ae074277795b45::t_7f7c0daae3a197 79,88-89,91
+  s_ae074277795b45::t_e5adb2b1b2f293 58,63
+  s_ae074277795b45::t_f9768a5c99b1a7 72-74
+src/modules/Preferences/presentations/views/PreferencesDialog.tsx
+  s_ae074277795b45::t_bac1fa1fe7b54e 85-86
+  s_ae074277795b45::t_35dbf2a3797d2d 82
+  s_ae074277795b45::t_336a82b8fc9788 83
+src/modules/Preferences/useCases/__tests__/updatePreferences.spec.ts
+  s_ae074277795b45::t_e5adb2b1b2f293 55-79
+src/modules/Preferences/useCases/updatePreferences.ts
+  s_ae074277795b45::t_35dbf2a3797d2d 3,12-16
+src/modules/WorkspaceShell/repositories/__tests__/setDisplayScale.spec.ts
+  s_ae074277795b45::t_7f7c0daae3a197 40-47
+  s_ae074277795b45::t_275cef01273a04 1,13-19,24,26-27,48,51-54,58,62-73
+  s_ae074277795b45::t_4e6b54f6f76b5d 22,25
+src/modules/Preferences/useCases/index.ts
+  s_ae074277795b45::t_25a6aac686c62c 9
+src/modules/Preferences/models/Preferences.ts
+  s_ae074277795b45::t_25a6aac686c62c 64-74,117
+src/modules/Preferences/stores/__tests__/validateStoredPreferences.spec.ts
+  s_ae074277795b45::t_275cef01273a04 80-94
+src/modules/WorkspaceShell/presentations/hooks/__tests__/useAppInitialization.spec.ts
+  s_ae074277795b45::t_275cef01273a04 452-459
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "0f27b6145bfe6004a82ca4ea2556bfab7fed5ef9",
+  "prompts": {},
+  "sessions": {
+    "s_ae074277795b45": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04ab5-5234-7100-be1c-76ebfaba88d3",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
