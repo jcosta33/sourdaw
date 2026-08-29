@@ -41,7 +41,7 @@ export type AgentRunReceiptSagaProjection = {
 export function projectAgentRunReceiptSaga(
     input: AgentRunReceiptSagaInput & {
         existingSagaSteps: readonly AgentRunSagaStep[];
-        hasPendingEffectContinuation: boolean;
+        hasPendingEffectRecovery: boolean;
         recordedAt?: number;
     }
 ): AgentRunReceiptSagaProjection {
@@ -192,7 +192,7 @@ export function projectAgentRunReceiptSaga(
         },
         sagaSteps,
         pendingEffectContinuation,
-        completesPendingEffectContinuation: pendingEffects.length === 0 && input.hasPendingEffectContinuation,
+        completesPendingEffectContinuation: pendingEffects.length === 0 && input.hasPendingEffectRecovery,
         effectsPending: input.receipt.outcome === 'partially-committed',
     };
 }

@@ -11,6 +11,8 @@ import {
 } from '#/modules/Command/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
+import { agentRunStore, readAgentRunState } from '../../stores/agentRunStore';
+import { normalizeAgentFailure } from '../agentErrorAndSaga';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { recoverInterruptedAgentRuns } from '../agentRunRecovery';
 import { agentRunWorkLease } from '../agentRunWorkLease';
@@ -110,35 +112,42 @@ if (STEM_COMMAND?.operation !== ACTIONS[0].type || DEVICE_COMMAND?.operation !==
 
 async function createReceipt(pendingEffects: readonly PendingEffect[]): Promise<Receipt> {
     const proof = await getVersionedCommandBatchCommitProof(COMMAND_BATCH);
+    const actions = COMMAND_ENVELOPE.commands.map((command, index) => {
+        const action = ACTIONS[index];
+        const compensation = COMMAND_COMPENSATION[index];
+        if (!action || !compensation) {
+            throw new Error(`Missing command receipt fixture for ${command.commandId}`);
+        }
+        return {
+            action,
+            receipt: createVersionedCommandReceipt({
+                envelope: command,
+                compensation,
+            }),
+        };
+    });
     return createVerifiedBatchReceipt({
         contentHash: proof.contentHash,
         envelope: COMMAND_ENVELOPE,
         observedBaseRevision: BASE_REVISION,
         resultingRevision: BASE_REVISION,
-        result: {
-            status: 'committed-with-warning',
-            warning: 'A post-commit effect remains pending.',
-            warningDetails: pendingEffects.map((pendingEffect) => ({
-                kind: 'external-effect',
-                message: pendingEffect.reason,
-                commandId: pendingEffect.commandId,
-                pendingEffect,
-            })),
-            actions: COMMAND_ENVELOPE.commands.map((command, index) => {
-                const action = ACTIONS[index];
-                const compensation = COMMAND_COMPENSATION[index];
-                if (!action || !compensation) {
-                    throw new Error(`Missing command receipt fixture for ${command.commandId}`);
-                }
-                return {
-                    action,
-                    receipt: createVersionedCommandReceipt({
-                        envelope: command,
-                        compensation,
-                    }),
-                };
-            }),
-        },
+        result:
+            pendingEffects.length > 0
+                ? {
+                      status: 'committed-with-warning',
+                      warning: 'A post-commit effect remains pending.',
+                      warningDetails: pendingEffects.map((pendingEffect) => ({
+                          kind: 'external-effect',
+                          message: pendingEffect.reason,
+                          commandId: pendingEffect.commandId,
+                          pendingEffect,
+                      })),
+                      actions,
+                  }
+                : {
+                      status: 'committed',
+                      actions,
+                  },
     });
 }
 
@@ -291,6 +300,186 @@ describe('recordAgentRunReceiptSaga', () => {
                 ]),
             },
         });
+    });
+
+    it('retains manual repair during an idempotent pending receipt replay until a final receipt settles it', async () => {
+        const pendingEffect = {
+            commandId: STEM_COMMAND.commandId,
+            kind: 'external-effect' as const,
+            operation: STEM_COMMAND.operation,
+            reason: 'imported stem runtime reconciliation remains pending',
+            remediation: 'reconcile' as const,
+            state: 'pending' as const,
+        };
+        const pendingReceipt = await createReceipt([pendingEffect]);
+        recordAgentRunReceiptSaga({
+            runId: 'run-agent-effects',
+            receipt: pendingReceipt,
+            actions: ACTIONS,
+            completesRun: true,
+            commandBatch: COMMAND_BATCH,
+        });
+        agentRunLifecycle.requirePendingEffectManualRepair({
+            runId: 'run-agent-effects',
+            batchId: 'batch-agent-effects',
+            reason: 'Manual stem reconciliation is required.',
+            requiredAt: 200,
+        });
+
+        recordAgentRunReceiptSaga({
+            runId: 'run-agent-effects',
+            receipt: pendingReceipt,
+            actions: ACTIONS,
+            completesRun: true,
+            commandBatch: COMMAND_BATCH,
+        });
+
+        expect(agentRunLifecycle.get('run-agent-effects')).toMatchObject({
+            pendingEffectContinuations: [
+                expect.objectContaining({
+                    recovery: 'manual-repair',
+                    lastError: 'Manual stem reconciliation is required.',
+                    effects: [expect.objectContaining({ remediation: 'manual-repair' })],
+                }),
+            ],
+            saga: {
+                steps: expect.arrayContaining([
+                    expect.objectContaining({ owner: 'external-effect', state: 'manual-repair' }),
+                ]),
+            },
+        });
+        expect(readAgentRunState().pendingEffectRecoveryLedger).toEqual([
+            expect.objectContaining({
+                recovery: 'manual-repair',
+                lastError: 'Manual stem reconciliation is required.',
+                effects: [expect.objectContaining({ remediation: 'manual-repair' })],
+            }),
+        ]);
+
+        recordAgentRunReceiptSaga({
+            runId: 'run-agent-effects',
+            receipt: await createReceipt([]),
+            actions: ACTIONS,
+            completesRun: true,
+            commandBatch: COMMAND_BATCH,
+        });
+
+        expect(agentRunLifecycle.get('run-agent-effects')).toMatchObject({
+            phase: 'completed',
+            pendingEffectContinuations: [],
+        });
+        expect(readAgentRunState().pendingEffectRecoveryLedger).toBeUndefined();
+    });
+
+    it('heals a restart-crash ledger without a live continuation when the final receipt arrives', async () => {
+        const pendingEffect = {
+            commandId: STEM_COMMAND.commandId,
+            kind: 'external-effect' as const,
+            operation: STEM_COMMAND.operation,
+            reason: 'imported stem runtime reconciliation remains pending',
+            remediation: 'reconcile' as const,
+            state: 'pending' as const,
+        };
+        recordAgentRunReceiptSaga({
+            runId: 'run-agent-effects',
+            receipt: await createReceipt([pendingEffect]),
+            actions: ACTIONS,
+            completesRun: true,
+            commandBatch: COMMAND_BATCH,
+        });
+        const restartCrashState = readAgentRunState();
+        agentRunStore.set({
+            ...restartCrashState,
+            runs: restartCrashState.runs.map((run) =>
+                run.runId === 'run-agent-effects' ? { ...run, pendingEffectContinuations: [] } : run
+            ),
+        });
+
+        recordAgentRunReceiptSaga({
+            runId: 'run-agent-effects',
+            receipt: await createReceipt([]),
+            actions: ACTIONS,
+            completesRun: true,
+            commandBatch: COMMAND_BATCH,
+        });
+
+        expect(agentRunLifecycle.get('run-agent-effects')).toMatchObject({
+            phase: 'completed',
+            pendingEffectContinuations: [],
+            saga: {
+                steps: expect.arrayContaining([
+                    expect.objectContaining({ owner: 'external-effect', state: 'committed' }),
+                ]),
+            },
+        });
+        expect(readAgentRunState().pendingEffectRecoveryLedger).toBeUndefined();
+
+        agentRunLifecycle.cancel({
+            runId: 'run-agent-effects',
+            reason: 'Cancellation raced with final receipt healing.',
+        });
+        expect(agentRunLifecycle.get('run-agent-effects')).toMatchObject({ phase: 'completed' });
+    });
+
+    it('projects import receipt facts identically through normal and atomic recovery settlement', async () => {
+        const pendingEffect = {
+            commandId: STEM_COMMAND.commandId,
+            kind: 'external-effect' as const,
+            operation: STEM_COMMAND.operation,
+            reason: 'imported stem runtime reconciliation remains pending',
+            remediation: 'reconcile' as const,
+            state: 'pending' as const,
+        };
+        const receipt = await createReceipt([pendingEffect]);
+        const now = vi.spyOn(Date, 'now').mockReturnValue(300);
+        try {
+            recordAgentRunReceiptSaga({
+                runId: 'run-agent-effects',
+                receipt,
+                actions: ACTIONS,
+                revertGroupId: 'batch-agent-effects',
+                committedRevision: BASE_REVISION,
+                completesRun: true,
+                commandBatch: COMMAND_BATCH,
+            });
+            const normal = agentRunLifecycle.get('run-agent-effects');
+            const normalLedger = readAgentRunState().pendingEffectRecoveryLedger;
+            if (!normal) {
+                throw new Error('Expected normal receipt settlement to retain its AgentRun.');
+            }
+
+            agentRunLifecycle.clear();
+            createRun();
+            agentRunLifecycle.recordCommittedRecoveryFailure({
+                runId: 'run-agent-effects',
+                receipt,
+                actions: ACTIONS,
+                revertGroupId: 'batch-agent-effects',
+                committedRevision: BASE_REVISION,
+                completesRun: true,
+                commandBatch: COMMAND_BATCH,
+                error: normalizeAgentFailure({
+                    category: 'internal',
+                    source: 'command-execution',
+                    occurredAt: 300,
+                    related: { receiptIdentities: ['receipt-recovery-failure'] },
+                }),
+            });
+            const recovered = agentRunLifecycle.get('run-agent-effects');
+            if (!recovered) {
+                throw new Error('Expected atomic receipt settlement to retain its AgentRun.');
+            }
+            const { errors: _normalErrors, phase: _normalPhase, ...normalProjection } = normal;
+            const { errors: _recoveredErrors, phase: _recoveredPhase, ...recoveredProjection } = recovered;
+
+            expect(recoveredProjection).toEqual(normalProjection);
+            expect(readAgentRunState().pendingEffectRecoveryLedger).toEqual(normalLedger);
+            expect(recovered.saga.steps).toContainEqual(
+                expect.objectContaining({ stepId: 'import:batch-agent-effects', owner: 'import' })
+            );
+        } finally {
+            now.mockRestore();
+        }
     });
 
     it('retains the exact continuation across a receipt-write crash without clearing independent restart work', async () => {

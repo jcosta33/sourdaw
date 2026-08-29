@@ -659,29 +659,59 @@ function applyAgentRunReceiptSagaProjection(
     pendingEffectRecoveryLedger: AgentRunPendingEffectRecovery[],
     projection: ReturnType<typeof projectAgentRunReceiptSaga>
 ): { run: AgentRun; pendingEffectRecoveryLedger: AgentRunPendingEffectRecovery[] } {
-    for (const step of projection.sagaSteps) {
+    const matchingContinuation = run.pendingEffectContinuations.find(
+        (continuation) => continuation.batchId === projection.work.workId
+    );
+    const matchingRecovery = pendingEffectRecoveryLedger.find((recovery) =>
+        isPendingEffectRecovery(recovery, { runId: run.runId, batchId: projection.work.workId })
+    );
+    const manualRecovery = [matchingContinuation, matchingRecovery].find(
+        (recovery) => recovery?.receiptIdentity === projection.receiptIdentity && recovery.recovery === 'manual-repair'
+    );
+    const projectedSagaSteps = projection.sagaSteps.map((step) => {
+        if (!manualRecovery || step.owner !== 'external-effect' || step.workId !== projection.work.workId) {
+            return step;
+        }
+        const existingManualStep = run.saga.steps.find(
+            (candidate) => candidate.stepId === step.stepId && candidate.state === 'manual-repair'
+        );
+        return existingManualStep ? structuredClone(existingManualStep) : { ...step, state: 'manual-repair' as const };
+    });
+    for (const step of projectedSagaSteps) {
         const existing = run.saga.steps.find((candidate) => candidate.stepId === step.stepId);
         if (existing && existing.order !== step.order) {
             throw new Error(`Agent saga step order changed: ${step.stepId}`);
         }
     }
     const sagaSteps = [
-        ...run.saga.steps.filter((step) => !projection.sagaSteps.some((next) => next.stepId === step.stepId)),
-        ...projection.sagaSteps.map((step) => structuredClone(step)),
+        ...run.saga.steps.filter((step) => !projectedSagaSteps.some((next) => next.stepId === step.stepId)),
+        ...projectedSagaSteps.map((step) => structuredClone(step)),
     ].sort((left, right) => left.order - right.order);
     let pendingEffectContinuations = run.pendingEffectContinuations;
     let nextPendingEffectRecoveryLedger = pendingEffectRecoveryLedger;
     if (projection.pendingEffectContinuation) {
+        const continuation = manualRecovery
+            ? structuredClone(manualRecovery)
+            : structuredClone(projection.pendingEffectContinuation);
+        const continuationWithoutRecoveryIdentity = {
+            authority: continuation.authority,
+            batchId: continuation.batchId,
+            effects: continuation.effects,
+            lastError: continuation.lastError,
+            receiptIdentity: continuation.receiptIdentity,
+            recovery: continuation.recovery,
+            serializedBatch: continuation.serializedBatch,
+        } satisfies AgentRunPendingEffectContinuation;
         pendingEffectContinuations = [
             ...run.pendingEffectContinuations.filter((continuation) => continuation.batchId !== projection.work.workId),
-            projection.pendingEffectContinuation,
+            continuationWithoutRecoveryIdentity,
         ];
         nextPendingEffectRecoveryLedger = [
             ...pendingEffectRecoveryLedger.filter(
                 (recovery) => !isPendingEffectRecovery(recovery, { runId: run.runId, batchId: projection.work.workId })
             ),
             {
-                ...structuredClone(projection.pendingEffectContinuation),
+                ...continuationWithoutRecoveryIdentity,
                 runId: run.runId,
                 checkpoint: 'durable' as const,
             },
@@ -700,9 +730,7 @@ function applyAgentRunReceiptSagaProjection(
     let phase = reduceAgentRunTransition(run.phase, {
         type: 'work-committed',
         completesRun: projection.work.completesRun !== false,
-        hasUnsettledExternalSagaStep: run.saga.steps.some(
-            (step) => step.state === 'pending' || step.state === 'external-pending' || step.state === 'uncompensated'
-        ),
+        hasUnsettledExternalSagaStep,
     });
     phase = reduceAgentRunTransition(phase, {
         type: 'saga-updated',
@@ -782,9 +810,11 @@ function recordAgentRunReceiptSaga(input: AgentRunReceiptSagaInput): { effectsPe
     const projection = projectAgentRunReceiptSaga({
         ...input,
         existingSagaSteps: run.saga.steps,
-        hasPendingEffectContinuation: run.pendingEffectContinuations.some(
-            (continuation) => continuation.batchId === input.receipt.batchId
-        ),
+        hasPendingEffectRecovery:
+            run.pendingEffectContinuations.some((continuation) => continuation.batchId === input.receipt.batchId) ||
+            getPendingEffectRecoveryLedger(state).some((recovery) =>
+                isPendingEffectRecovery(recovery, { runId: input.runId, batchId: input.receipt.batchId })
+            ),
     });
     const applied = applyAgentRunReceiptSagaProjection(run, getPendingEffectRecoveryLedger(state), projection);
     const runs = [...state.runs];
@@ -806,9 +836,11 @@ function recordAgentRunCommittedRecoveryFailure(input: AgentRunReceiptSagaInput 
     const projection = projectAgentRunReceiptSaga({
         ...input,
         existingSagaSteps: run.saga.steps,
-        hasPendingEffectContinuation: run.pendingEffectContinuations.some(
-            (continuation) => continuation.batchId === input.receipt.batchId
-        ),
+        hasPendingEffectRecovery:
+            run.pendingEffectContinuations.some((continuation) => continuation.batchId === input.receipt.batchId) ||
+            getPendingEffectRecoveryLedger(state).some((recovery) =>
+                isPendingEffectRecovery(recovery, { runId: input.runId, batchId: input.receipt.batchId })
+            ),
         recordedAt: input.error.occurredAt,
     });
     const applied = applyAgentRunReceiptSagaProjection(run, getPendingEffectRecoveryLedger(state), projection);
