@@ -24,6 +24,7 @@ import { type NativeGraphTransport } from '../../../repositories/nativeGraph/nat
 import { type NativeGraphAvailability } from '../../../repositories/nativeGraph/probeNativeGraphTransport';
 import { nativeLiveGraphSession } from '../nativeLiveGraphSessionState';
 import { type LiveGraphTopologyInput } from '../projectLiveGraphTopology';
+import { repositionNativeLiveGraphSession } from '../repositionNativeLiveGraphSession';
 import { startNativeLiveGraphSession } from '../startNativeLiveGraphSession';
 import { stopNativeLiveGraphSession } from '../stopNativeLiveGraphSession';
 
@@ -165,6 +166,7 @@ beforeEach(() => {
     mocks.topologyOverride = null;
     nativeLiveGraphSession.backend = null;
     nativeLiveGraphSession.carriesAudio = false;
+    nativeLiveGraphSession.rolling = false;
     nativeLiveGraphSession.pending = Promise.resolve();
     trackStore.set({ tracks: [createTrack({ id: 'audio-1' })], selectedTrackId: null, ghostClips: [] });
 });
@@ -408,5 +410,130 @@ describe('stopNativeLiveGraphSession', () => {
         ]);
         expect(appliedBatches()[1]?.commands).toEqual([{ kind: 'set-transport', playing: true, positionSeconds: 0 }]);
         expect(appliedBatches()[2]?.commands).toEqual([{ kind: 'set-transport', playing: false, positionSeconds: 4 }]);
+    });
+});
+
+describe('repositionNativeLiveGraphSession', () => {
+    it('declines when no session ever started, which is the browser-build answer', async () => {
+        const result = await repositionNativeLiveGraphSession({ positionSeconds: 4 });
+
+        expect(result).toEqual({ outcome: 'declined', reason: 'no live native graph session' });
+        expect(mocks.applyGraphCommands).not.toHaveBeenCalled();
+    });
+
+    it('locates a rolling engine with the transport alone, re-sending neither topology nor maps', async () => {
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS });
+        mocks.setEngineTransportMaps.mockClear();
+
+        const result = await repositionNativeLiveGraphSession({ positionSeconds: 12.5 });
+
+        expect(result).toEqual({ outcome: 'repositioned' });
+        // The loop region and the tempo and meter maps are owned by their own
+        // engine commands and survive a locate untouched, so a reposition that
+        // re-sent them would be re-stating what the engine already holds.
+        expect(mocks.setEngineTransportMaps).not.toHaveBeenCalled();
+        expect(appliedBatches().at(-1)?.commands).toEqual([
+            { kind: 'set-transport', playing: true, positionSeconds: 12.5 },
+        ]);
+        // A locate that replaced would tear down the topology the plugin
+        // runtimes are standing on to move the playhead a few beats.
+        expect(appliedBatches().at(-1)?.replaceTopology).toBeUndefined();
+    });
+
+    it('refuses to roll an engine the session parked because its maps were declined', async () => {
+        mocks.setEngineTransportMaps.mockResolvedValueOnce({ outcome: 'declined', reason: 'malformed maps' });
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS });
+        const batchesBefore = appliedBatches().length;
+
+        const result = await repositionNativeLiveGraphSession({ positionSeconds: 12.5 });
+
+        // `playing: true` would set that engine rolling under the *previous*
+        // take's tempo map and loop seam — the exact state the park exists to
+        // keep unreachable — while Web Audio plays straight through it.
+        expect(result).toEqual({ outcome: 'declined', reason: 'native transport is parked' });
+        expect(appliedBatches()).toHaveLength(batchesBefore);
+    });
+
+    it('sends nothing to an engine a stop already parked', async () => {
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS });
+        await stopNativeLiveGraphSession({ positionSeconds: 8 });
+        const batchesBefore = appliedBatches().length;
+
+        const result = await repositionNativeLiveGraphSession({ positionSeconds: 12.5 });
+
+        expect(result).toEqual({ outcome: 'declined', reason: 'native transport is parked' });
+        expect(appliedBatches()).toHaveLength(batchesBefore);
+    });
+
+    it('keeps the session when the engine refuses the locate', async () => {
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS });
+        mocks.applyGraphCommands.mockResolvedValue({
+            acceptance: 'rejected',
+            application: 'not-applied',
+            reason: 'command-queue-full',
+        });
+
+        const result = await repositionNativeLiveGraphSession({ positionSeconds: 12.5 });
+
+        expect(result).toEqual({ outcome: 'declined', reason: 'command-queue-full' });
+        expect(nativeLiveGraphSession.backend).not.toBeNull();
+    });
+
+    it('never overtakes a start that is still in flight', async () => {
+        let releaseStart = (): void => undefined;
+        const startApplied = new Promise<void>((resolve) => {
+            releaseStart = () => {
+                resolve();
+            };
+        });
+        mocks.applyGraphCommands.mockImplementationOnce(() => startApplied.then(() => APPLIED));
+
+        const start = startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS });
+        const reposition = repositionNativeLiveGraphSession({ positionSeconds: 12.5 });
+        releaseStart();
+        await start;
+
+        // Admitted ahead of the start, this would locate the session it is
+        // replacing and then be overwritten by the start's own roll at the old
+        // position — the seek silently lost.
+        expect(await reposition).toEqual({ outcome: 'repositioned' });
+        expect(appliedBatches()[1]?.commands).toEqual([{ kind: 'set-transport', playing: true, positionSeconds: 0 }]);
+        expect(appliedBatches()[2]?.commands).toEqual([
+            { kind: 'set-transport', playing: true, positionSeconds: 12.5 },
+        ]);
+    });
+
+    it('leaves a burst of locates settled where the gesture ended, not where the round trips resolved', async () => {
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS });
+
+        // A drag-scrub emits one seek per pointer frame, and the engine keeps
+        // whichever locate reached it *last*. Round trips that resolve out of
+        // order are the hazard: here the earliest locate is the slowest, so
+        // issuing all three at once without the session chain would land 12
+        // first and 4 last, leaving the engine four seconds behind a gesture
+        // that ended at twelve.
+        const settleMs = new Map([
+            [4, 30],
+            [8, 10],
+            [12, 0],
+        ]);
+        const reached: number[] = [];
+        mocks.applyGraphCommands.mockImplementation(({ batch }) => {
+            const command = (batch as AudioGraphCommandBatch).commands[0];
+            const position = command?.kind === 'set-transport' ? command.positionSeconds : -1;
+            return new Promise((resolve) => {
+                setTimeout(
+                    () => {
+                        reached.push(position);
+                        resolve(APPLIED);
+                    },
+                    settleMs.get(position) ?? 0
+                );
+            });
+        });
+
+        await Promise.all([4, 8, 12].map((positionSeconds) => repositionNativeLiveGraphSession({ positionSeconds })));
+
+        expect(reached).toEqual([4, 8, 12]);
     });
 });

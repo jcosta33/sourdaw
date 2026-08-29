@@ -46,6 +46,10 @@ export function stopNativeLiveGraphSession(
             // reach it.
             return { outcome: 'declined', reason: result.reason };
         }
+        // Cleared only once the park actually applied. A refused stop leaves a
+        // still-rolling engine, and recording it as parked would be a claim
+        // about the engine that the engine never made.
+        nativeLiveGraphSession.rolling = false;
         return { outcome: 'stopped' };
     });
 }

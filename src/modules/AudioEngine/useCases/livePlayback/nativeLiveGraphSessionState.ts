@@ -29,6 +29,18 @@ export type NativeLiveGraphSession = {
      * engine on the first run whose topology carries audio.
      */
     carriesAudio: boolean;
+    /**
+     * Whether this session left the engine's transport rendering.
+     *
+     * The engine's own `is_playing`, as far as the app knows it — which is not
+     * the same as the app's transport state. A session can be started and
+     * deliberately parked: `startNativeLiveGraphSession` refuses to roll when
+     * the transport maps decline, because a roll would run the take under the
+     * previous take's tempo map and loop seam. Anything that would move a
+     * rolling engine reads this, so it cannot set a parked one rolling as a
+     * side effect of doing so.
+     */
+    rolling: boolean;
     /** The tail of this session's serialised command chain. */
     pending: Promise<unknown>;
 };
@@ -36,6 +48,7 @@ export type NativeLiveGraphSession = {
 export const nativeLiveGraphSession: NativeLiveGraphSession = {
     backend: null,
     carriesAudio: false,
+    rolling: false,
     pending: Promise.resolve(),
 };
 

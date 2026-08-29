@@ -118,14 +118,16 @@ function readSessionTopology(): Readonly<{
 async function rollNativeTransport(
     backend: ReturnType<typeof createNativeLiveGraphBackend>,
     positionSeconds: number
-): Promise<void> {
+): Promise<boolean> {
     const rolling = await backend.apply({
         schemaVersion: 1,
         commands: [{ kind: 'set-transport', playing: true, positionSeconds }],
     });
     if (rolling.application !== 'applied') {
         logger.warn(`[AudioEngine] native transport did not start rolling: ${rolling.reason}`);
+        return false;
     }
+    return true;
 }
 
 export function startNativeLiveGraphSession(
@@ -175,6 +177,9 @@ export function startNativeLiveGraphSession(
         nativeLiveGraphSession.backend?.dispose();
         nativeLiveGraphSession.backend = backend;
         nativeLiveGraphSession.carriesAudio = commands.some((command) => command.kind === 'schedule-clip');
+        // The topology went out parked (see the batch above), so this session
+        // has not rolled yet whatever the one it replaced was doing.
+        nativeLiveGraphSession.rolling = false;
 
         // After the topology, never with it: the maps have their own owner and
         // their own command (the transport ownership law in `graph.rs`). Before
@@ -196,7 +201,7 @@ export function startNativeLiveGraphSession(
             // rather than merely unlikely.
             logger.warn(`[AudioEngine] native transport left parked: maps declined: ${maps.reason}`);
         } else {
-            await rollNativeTransport(backend, input.positionSeconds);
+            nativeLiveGraphSession.rolling = await rollNativeTransport(backend, input.positionSeconds);
         }
         startNativeEnginePlayheadFeed();
         return { outcome: 'started', runtimeRevision: result.runtimeRevision, reports: result.reports };
