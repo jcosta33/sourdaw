@@ -1,0 +1,65 @@
+.agents/decisions/0028-native-provider-credential-sessions.md
+  s_a40848e8f8cca9::t_57f266a188800b 51-53
+src/modules/Preferences/presentations/views/preferences/AiSection.tsx
+  s_a40848e8f8cca9::t_96fb0443b0c79a 27,56,110-112,155,239,309-327,329-330,337-339,343-347,349,362
+  s_a40848e8f8cca9::t_9ab61974feab6b 350,388
+tests/e2e/aiConfirmApplyUndo.spec.ts
+  s_a40848e8f8cca9::t_c103fde431ad21 20-26
+src/modules/AiRuntime/repositories/__tests__/providerAdapterConformance.spec.ts
+  s_a40848e8f8cca9::t_2beabd647e93ff 169-187
+src/modules/AiRuntime/repositories/openProviderGatewaySession.ts
+  s_a40848e8f8cca9::t_39d6b2b3254094 3-4,11-13
+crates/sourdaw-native/src/addon/mod.rs
+  s_a40848e8f8cca9::t_9b5436586091cc 27,274
+src/modules/AiRuntime/models/HostedLlmProvider.ts
+  s_a40848e8f8cca9::t_39d6b2b3254094 2,6,12-13
+  s_a40848e8f8cca9::t_87ad9bd329bade 22
+src/modules/AiRuntime/repositories/cloudLlm/setCloudProviderConfig.ts
+  s_a40848e8f8cca9::t_30295538073344 30,38-40
+  s_a40848e8f8cca9::t_39d6b2b3254094 21-23,58-60,68
+src/modules/AiRuntime/repositories/cloudLlm/cloudSession.ts
+  s_a40848e8f8cca9::t_39d6b2b3254094 2,98
+  s_a40848e8f8cca9::t_87ad9bd329bade 10,18
+src/modules/AiRuntime/useCases/cloudApiManagement/configureCloudProvider.ts
+  s_a40848e8f8cca9::t_39d6b2b3254094 44-45,51-63,67-68
+crates/sourdaw-native/src/commands/provider_gateway.rs
+  s_a40848e8f8cca9::t_fdeb0633ed8e13 870-874,889-916
+  s_a40848e8f8cca9::t_9b5436586091cc 107,346,358,377,570,728,755,778,786,794,808,818,865,883
+  s_a40848e8f8cca9::t_c82287da90beb6 565,857
+  s_4f908a5afb6b58::t_783642df5d0128 866-869,917
+src/modules/Preferences/presentations/views/preferences/__tests__/AiSection.spec.tsx
+  s_a40848e8f8cca9::t_569b7ae06a7570 96,104-166
+  s_a40848e8f8cca9::t_7ffc3a60acbcd0 167
+src/modules/AiRuntime/repositories/cloudLlm/__tests__/setCloudProviderConfig.spec.ts
+  s_a40848e8f8cca9::t_0bc6bfd5a0e60d 40,48,57,66,88,97,110-115,132,150-155,159-192,194
+  s_a40848e8f8cca9::t_5c6c2d3cc02b2b 193
+src/modules/AiRuntime/repositories/cloudLlm/__tests__/clearCloudProviderConfig.spec.ts
+  s_a40848e8f8cca9::t_c103fde431ad21 27-32
+src/modules/AiRuntime/useCases/cloudApiManagement/__tests__/configureCloudProvider.spec.ts
+  s_a40848e8f8cca9::t_8f4bafaefc40f1 33-38,44,54,66-71,78-83,90,104-110,118-123,127-133,135-136
+  s_a40848e8f8cca9::t_f6454ca95eec3a 134,137-146
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "fc32506ace569af413170ec810cf1c200182f0cf",
+  "prompts": {},
+  "sessions": {
+    "s_4f908a5afb6b58": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fcb92ba4-bf56-47a4-8b57-803f335a449e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
