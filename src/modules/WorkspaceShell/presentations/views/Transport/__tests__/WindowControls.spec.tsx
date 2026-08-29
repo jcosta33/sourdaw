@@ -18,6 +18,9 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../../../../useCases/windowChrome', () => ({
     windowChromeControls: () => ({
         frameless: mocks.frameless,
+        // These controls exist only on the frameless build, so overlay chrome is
+        // never the context they render in.
+        windowControlsOverlay: false,
         minimize: mocks.minimize,
         toggleMaximize: mocks.toggleMaximize,
         close: mocks.close,

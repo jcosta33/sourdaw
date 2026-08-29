@@ -17,33 +17,59 @@
     }
 }
 
-@media (display-mode: window-controls-overlay) {
-    .desktop-titlebar-region {
-        margin-left: env(titlebar-area-x, 0px);
-        width: env(titlebar-area-width, 100%);
-        -webkit-app-region: drag;
-        app-region: drag;
-    }
-
-    .desktop-titlebar-region :is(a, button, input, label, select, textarea, [role='button'], [tabindex]) {
-        -webkit-app-region: no-drag;
-        app-region: no-drag;
-    }
-}
-
 /*
- * The media query above only matches under the macOS window-controls overlay.
- * On the frameless Linux build it never matches, so the titlebar row opts into
- * the same drag contract through an un-gated modifier class instead.
+ * Which platform chrome the shell runs is decided by the renderer, not by CSS:
+ * Electron reports `display-mode: browser` on every platform, so a
+ * `(display-mode: window-controls-overlay)` query never matches and would gate
+ * these rules out of existence. The titlebar row carries the matching modifier
+ * class instead.
  */
+
+/* Both desktop chromes hand the titlebar row to the window manager. */
+.desktop-titlebar-region--overlay,
 .desktop-titlebar-region--frameless {
     -webkit-app-region: drag;
     app-region: drag;
 }
 
-.desktop-titlebar-region--frameless :is(a, button, input, label, select, textarea, [role='button'], [tabindex]) {
+/*
+ * Everything clickable in that row takes its clicks back, stated once so the
+ * two chromes cannot drift apart. The window manager swallows a press on a drag
+ * region as the start of a window move, so anything missing from this list
+ * stops responding altogether.
+ *
+ * Popup surfaces are named by ARIA role rather than by tag: the row hosts menus,
+ * listboxes and dialogs rendered inline, whose rows are plain divs carrying
+ * `onClick`. Opting a surface out clears its whole rectangle, so every control
+ * inside it stays clickable whatever it is built from.
+ */
+:is(.desktop-titlebar-region--overlay, .desktop-titlebar-region--frameless)
+    :is(
+        a,
+        button,
+        input,
+        label,
+        select,
+        textarea,
+        [role='button'],
+        [role='dialog'],
+        [role='listbox'],
+        [role='menu'],
+        [tabindex]
+    ) {
     -webkit-app-region: no-drag;
     app-region: no-drag;
+}
+
+/*
+ * macOS only: the native traffic lights are drawn over the app's own titlebar
+ * band, so the row starts where the overlay ends. The `titlebar-area-*` env
+ * values are populated whenever an overlay is present; the fallbacks cover a
+ * context without one, such as the browser build sharing this stylesheet.
+ */
+.desktop-titlebar-region--overlay {
+    margin-left: env(titlebar-area-x, 0px);
+    width: env(titlebar-area-width, 100%);
 }
 
 /* ── DAW-specific utilities ────────────────────────────────────────────── */

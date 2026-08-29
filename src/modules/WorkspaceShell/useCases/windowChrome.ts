@@ -1,6 +1,6 @@
 import { getWindowChromeControls, type WindowChromeControls } from '../repositories/windowChrome';
 
-/** The frameless desktop window chrome's controls, for the header's own buttons. */
+/** The desktop window chrome the shell runs, with the frameless build's own buttons. */
 export function windowChromeControls(): WindowChromeControls {
     return getWindowChromeControls();
 }
