@@ -24,6 +24,7 @@ import { createExecutionCommandEnvelope } from '../createExecutionCommandEnvelop
 import { createRecoveredVerifiedBatchReceipt } from '../createRecoveredVerifiedBatchReceipt';
 import { createVerifiedBatchReceipt } from '../createVerifiedBatchReceipt';
 import { createVersionedCommandReceipt } from '../createVersionedCommandReceipt';
+import { finalizeRecoveredCommandBatchEffects } from '../finalizeRecoveredCommandBatchEffects';
 import { getCommandBatchContentHash } from '../getCommandBatchContentHash';
 import { getProjectCommandBatchIdempotencyCheckpoint } from '../getProjectCommandBatchIdempotencyCheckpoint';
 import { getVersionedCommandBatchCommitDisposition } from '../getVersionedCommandBatchCommitDisposition';
@@ -1599,6 +1600,325 @@ describe('command batch idempotency', () => {
             pendingEffects: [expect.objectContaining({ commandId: '11111111-1111-4111-8111-111111111111' })],
         });
         expect(effectAttempts).toBe(2);
+    });
+
+    it('finalizes a proven external effect and heals its completed checkpoint after revision advances without replay', async () => {
+        clearHandlerRegistry();
+        const gainStorage = createAutomergeStorage<{ value: number }>('root', 'trackGain');
+        expect(gainStorage.hydrate?.()).toBe(true);
+        let effectAttempts = 0;
+        registerHandlerMap({
+            setTrackGain: createHandler({
+                execute: () => {
+                    gainStorage.set({ value: 0.8 });
+                    return {
+                        status: 'written',
+                        afterCommit: () => {
+                            effectAttempts += 1;
+                            return Promise.reject(new Error('render unavailable'));
+                        },
+                        afterAmbiguousCommit: () => Promise.reject(new Error('render unavailable')),
+                    };
+                },
+            }),
+        });
+        const batch = compileBatch({ batchId: 'batch-proven-effect', runId: 'run-proven-effect' });
+        const first = await executeVersionedCommandBatchEnvelope({
+            authority: batch.authority,
+            confirmed: true,
+            serialized: batch.serialized,
+        });
+        if (first.status !== 'committed-with-warning') {
+            throw new Error('Expected a durable pending-effect receipt');
+        }
+        let leaseAvailable = false;
+        commandBatchIdempotencyPort.setRepository({
+            lookup: () => Promise.resolve({ status: 'missing' }),
+            claim: () => Promise.resolve({ status: 'claimed' }),
+            complete: () => Promise.resolve(),
+            tryAcquireRecoveryLease: () => Promise.resolve(leaseAvailable),
+            release: () => Promise.resolve(),
+        });
+        const expectedProjectRevision = commandProjectRevisionPort.capture();
+
+        await expect(
+            finalizeRecoveredCommandBatchEffects({
+                authority: batch.authority,
+                serialized: batch.serialized,
+                pendingReceipt: first.receipt,
+                expectedProjectRevision,
+            })
+        ).resolves.toEqual({
+            status: 'failed',
+            disposition: 'retryable',
+            reason: 'Command batch external-effect recovery is already in progress',
+        });
+        leaseAvailable = true;
+        await expect(
+            finalizeRecoveredCommandBatchEffects({
+                authority: batch.authority,
+                serialized: batch.serialized,
+                pendingReceipt: { ...first.receipt, warnings: [...first.receipt.warnings, 'tampered'] },
+                expectedProjectRevision,
+            })
+        ).resolves.toEqual({
+            status: 'failed',
+            disposition: 'manual-repair',
+            reason: 'The pending project checkpoint changed before finalization',
+        });
+        projectRevisionOverride = revision(999);
+        await expect(
+            finalizeRecoveredCommandBatchEffects({
+                authority: batch.authority,
+                serialized: batch.serialized,
+                pendingReceipt: first.receipt,
+                expectedProjectRevision,
+            })
+        ).resolves.toEqual({
+            status: 'failed',
+            disposition: 'manual-repair',
+            reason: 'The project changed before external-effect finalization',
+        });
+        projectRevisionOverride = null;
+
+        const finalized = await finalizeRecoveredCommandBatchEffects({
+            authority: batch.authority,
+            serialized: batch.serialized,
+            pendingReceipt: first.receipt,
+            expectedProjectRevision,
+        });
+        const retainedEvidence = vi.fn(() => null);
+        const alreadyFinalized = await finalizeRecoveredCommandBatchEffects({
+            authority: batch.authority,
+            serialized: batch.serialized,
+            pendingReceipt: first.receipt,
+            expectedProjectRevision,
+            validateRecoveredEffects: retainedEvidence,
+        });
+        const evictedEvidence = await finalizeRecoveredCommandBatchEffects({
+            authority: batch.authority,
+            serialized: batch.serialized,
+            pendingReceipt: first.receipt,
+            expectedProjectRevision,
+            validateRecoveredEffects: () => 'Approved section render artifact is no longer retained.',
+        });
+        commandBatchExecutionAuthorityPort.setProvider(() => false);
+        const unavailableAuthority = await finalizeRecoveredCommandBatchEffects({
+            authority: batch.authority,
+            serialized: batch.serialized,
+            pendingReceipt: first.receipt,
+            expectedProjectRevision,
+            validateRecoveredEffects: retainedEvidence,
+        });
+        commandBatchExecutionAuthorityPort.setProvider(() => true);
+        const replay = await getVersionedCommandBatchIdempotentReplay({
+            authority: batch.authority,
+            serialized: batch.serialized,
+        });
+
+        expect(finalized).toMatchObject({ status: 'finalized', receipt: { pendingEffects: [], outcome: 'committed' } });
+        expect(alreadyFinalized).toMatchObject({ status: 'already-finalized', receipt: { pendingEffects: [] } });
+        expect(retainedEvidence).toHaveBeenCalledExactlyOnceWith();
+        expect(evictedEvidence).toEqual({
+            status: 'failed',
+            reason: 'Approved section render artifact is no longer retained.',
+        });
+        expect(unavailableAuthority).toEqual({
+            status: 'failed',
+            reason: 'Only the authoritative collaboration host can finalize recovery',
+        });
+        expect(replay).toMatchObject({ pendingEffects: [], outcome: 'committed' });
+        expect(effectAttempts).toBe(1);
+    });
+
+    it.each([
+        'invalid serialized batch',
+        'denied initial authority',
+        'unavailable checkpoint',
+        'malformed stored receipt',
+        'completed checkpoint with pending effects',
+        'revision capture failure',
+    ])('does not finalize recovery when there is %s', async (failure) => {
+        clearHandlerRegistry();
+        const gainStorage = createAutomergeStorage<{ value: number }>('root', 'trackGain');
+        expect(gainStorage.hydrate?.()).toBe(true);
+        const execute = vi.fn(() => ({
+            status: 'written' as const,
+            afterCommit: () => Promise.reject(new Error('render unavailable')),
+            afterAmbiguousCommit: () => Promise.reject(new Error('render unavailable')),
+        }));
+        registerHandlerMap({ setTrackGain: createHandler({ execute }) });
+        const batch = compileBatch({ batchId: `batch-finalize-${failure}` });
+        const first = await executeVersionedCommandBatchEnvelope({
+            authority: batch.authority,
+            confirmed: true,
+            serialized: batch.serialized,
+        });
+        if (first.status !== 'committed-with-warning') {
+            throw new Error('Expected a durable pending-effect receipt');
+        }
+        const expectedProjectRevision = commandProjectRevisionPort.capture();
+
+        if (failure === 'denied initial authority') {
+            commandBatchExecutionAuthorityPort.setProvider(() => false);
+        } else if (failure === 'unavailable checkpoint') {
+            delete projectDocument.commandBatchIdempotency;
+        } else if (failure === 'malformed stored receipt') {
+            projectDocument.commandBatchIdempotency = { records: [{ malformed: true }] };
+        } else if (failure === 'completed checkpoint with pending effects') {
+            const parsed = parseVersionedCommandBatchEnvelope(batch.serialized, batch.authority);
+            if (parsed.status === 'invalid') {
+                throw new Error('Expected a valid command batch');
+            }
+            persistProjectCommandBatchIdempotencyCheckpoint({
+                projectId: parsed.envelope.projectId,
+                idempotencyKey: parsed.envelope.idempotencyKey,
+                contentHash: await getCommandBatchContentHash(parsed.envelope),
+                state: 'complete',
+                serializedReceipt: JSON.stringify(first.receipt),
+            });
+        } else {
+            commandProjectRevisionPort.setProvider(() => {
+                throw new Error('revision capture unavailable');
+            });
+        }
+        const mutationCountBeforeFinalization = mutationCount;
+
+        const serialized = failure === 'invalid serialized batch' ? '{not-json' : batch.serialized;
+        const expectedDisposition =
+            failure === 'invalid serialized batch' ||
+            failure === 'unavailable checkpoint' ||
+            failure === 'malformed stored receipt' ||
+            failure === 'completed checkpoint with pending effects'
+                ? 'manual-repair'
+                : 'retryable';
+
+        await expect(
+            finalizeRecoveredCommandBatchEffects({
+                authority: batch.authority,
+                serialized,
+                pendingReceipt: first.receipt,
+                expectedProjectRevision,
+            })
+        ).resolves.toMatchObject({ status: 'failed', disposition: expectedDisposition });
+
+        expect(mutationCount).toBe(mutationCountBeforeFinalization);
+        expect(execute).toHaveBeenCalledOnce();
+        const replay = await getVersionedCommandBatchIdempotentReplay({
+            authority: batch.authority,
+            serialized: batch.serialized,
+        });
+        expect(replay?.outcome).not.toBe('committed');
+    });
+
+    it.each(['project revision changes', 'execution authority is revoked'])(
+        'keeps the pending checkpoint when %s after recovery preflight',
+        async (interleaving) => {
+            clearHandlerRegistry();
+            const gainStorage = createAutomergeStorage<{ value: number }>('root', 'trackGain');
+            expect(gainStorage.hydrate?.()).toBe(true);
+            const execute = vi.fn(() => ({
+                status: 'written' as const,
+                afterCommit: () => Promise.reject(new Error('render unavailable')),
+                afterAmbiguousCommit: () => Promise.reject(new Error('render unavailable')),
+            }));
+            registerHandlerMap({ setTrackGain: createHandler({ execute }) });
+            const batch = compileBatch({ batchId: `batch-finalize-race-${interleaving}` });
+            const first = await executeVersionedCommandBatchEnvelope({
+                authority: batch.authority,
+                confirmed: true,
+                serialized: batch.serialized,
+            });
+            if (first.status !== 'committed-with-warning') {
+                throw new Error('Expected a durable pending-effect receipt');
+            }
+            const expectedProjectRevision = commandProjectRevisionPort.capture();
+            const mutationCountBeforeFinalization = mutationCount;
+            if (interleaving === 'project revision changes') {
+                let captures = 0;
+                commandProjectRevisionPort.setProvider(() => {
+                    captures += 1;
+                    return captures === 1 ? expectedProjectRevision : revision(999);
+                });
+            } else {
+                let authorityChecks = 0;
+                commandBatchExecutionAuthorityPort.setProvider(() => {
+                    authorityChecks += 1;
+                    return authorityChecks < 3;
+                });
+            }
+
+            await expect(
+                finalizeRecoveredCommandBatchEffects({
+                    authority: batch.authority,
+                    serialized: batch.serialized,
+                    pendingReceipt: first.receipt,
+                    expectedProjectRevision,
+                })
+            ).resolves.toMatchObject({ status: 'failed' });
+
+            expect(mutationCount).toBe(mutationCountBeforeFinalization);
+            expect(execute).toHaveBeenCalledOnce();
+            await expect(
+                getVersionedCommandBatchIdempotentReplay({ authority: batch.authority, serialized: batch.serialized })
+            ).resolves.toMatchObject({ outcome: 'partially-committed', pendingEffects: expect.any(Array) });
+        }
+    );
+
+    it('keeps the checkpoint pending when retained-effect proof is evicted while finalization waits for its lease', async () => {
+        clearHandlerRegistry();
+        const gainStorage = createAutomergeStorage<{ value: number }>('root', 'trackGain');
+        expect(gainStorage.hydrate?.()).toBe(true);
+        const execute = vi.fn(() => ({
+            status: 'written' as const,
+            afterCommit: () => Promise.reject(new Error('render unavailable')),
+            afterAmbiguousCommit: () => Promise.reject(new Error('render unavailable')),
+        }));
+        registerHandlerMap({ setTrackGain: createHandler({ execute }) });
+        const batch = compileBatch({ batchId: 'batch-finalize-retained-proof' });
+        const first = await executeVersionedCommandBatchEnvelope({
+            authority: batch.authority,
+            confirmed: true,
+            serialized: batch.serialized,
+        });
+        if (first.status !== 'committed-with-warning') {
+            throw new Error('Expected a durable pending-effect receipt');
+        }
+        const expectedProjectRevision = commandProjectRevisionPort.capture();
+        const mutationCountBeforeFinalization = mutationCount;
+        let releaseRecoveryLease!: (value: boolean) => void;
+        const recoveryLease = new Promise<boolean>((resolve) => {
+            releaseRecoveryLease = resolve;
+        });
+        commandBatchIdempotencyPort.setRepository({
+            lookup: () => Promise.resolve({ status: 'missing' }),
+            claim: () => Promise.resolve({ status: 'claimed' }),
+            complete: () => Promise.resolve(),
+            tryAcquireRecoveryLease: () => recoveryLease,
+            release: () => Promise.resolve(),
+        });
+        let approvedArtifactRetained = true;
+        const finalization = finalizeRecoveredCommandBatchEffects({
+            authority: batch.authority,
+            serialized: batch.serialized,
+            pendingReceipt: first.receipt,
+            expectedProjectRevision,
+            validateRecoveredEffects: () =>
+                approvedArtifactRetained ? null : 'Approved section render artifact is no longer retained.',
+        });
+
+        approvedArtifactRetained = false;
+        releaseRecoveryLease(true);
+
+        await expect(finalization).resolves.toEqual({
+            status: 'failed',
+            reason: 'Approved section render artifact is no longer retained.',
+        });
+        expect(mutationCount).toBe(mutationCountBeforeFinalization);
+        expect(execute).toHaveBeenCalledOnce();
+        await expect(
+            getVersionedCommandBatchIdempotentReplay({ authority: batch.authority, serialized: batch.serialized })
+        ).resolves.toMatchObject({ outcome: 'partially-committed', pendingEffects: expect.any(Array) });
     });
 
     it('routes needs-reconcile runtime truth through a current-project rebuild instead of exact effect retry', async () => {

@@ -2,11 +2,13 @@ import { stringify } from 'superjson';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { readAgentRunState, sanitizeAgentRunState } from '../../stores/agentRunStore';
+import { selectAgentRunPendingEffectRecoveries } from '../../stores/selectAgentRunPendingEffectRecoveries';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { recoverInterruptedAgentRuns } from '../agentRunRecovery';
 import { agentRunWorkLease } from '../agentRunWorkLease';
 import { createAgentSagaStep } from '../createAgentSagaStep';
 import { recoverAgentRunPendingEffects } from '../recoverAgentRunPendingEffects';
+import { recoverRetainedSectionRenderEffects } from '../recoverRetainedSectionRenderEffects';
 
 const commandRecoveryMocks = vi.hoisted(() => ({
     executeVersionedCommandBatchEnvelope: vi.fn(),
@@ -81,10 +83,11 @@ function createPendingEffectRecoveryReceipt(input: {
     batchId: string;
     pendingEffects: readonly RecoveryPendingEffect[];
     outcome: 'partially-committed' | 'committed';
+    runId?: string;
 }) {
     return {
         schemaVersion: 1,
-        runId: 'run-persisted-runtime-effects',
+        runId: input.runId ?? 'run-persisted-runtime-effects',
         batchId: input.batchId,
         outcome: input.outcome,
         pendingEffects: input.outcome === 'partially-committed' ? [...input.pendingEffects] : [],
@@ -547,7 +550,7 @@ describe('agent run recovery', () => {
                     {
                         commandId: 'command-reconcile-generic',
                         kind: 'external-effect' as const,
-                        operation: 'setTrackPan',
+                        operation: 'renderProjectSections',
                         reason: 'publication queue unavailable',
                         remediation: 'reconcile' as const,
                         state: 'pending' as const,
@@ -621,6 +624,12 @@ describe('agent run recovery', () => {
                 recordedAt: 120 + index,
             });
         }
+        agentRunLifecycle.requirePendingEffectManualRepair({
+            runId: 'run-persisted-runtime-effects',
+            batchId: 'batch-manual-effect',
+            reason: 'The retained render requires manual review.',
+            requiredAt: 130,
+        });
 
         const persistedBytes = window.localStorage.getItem('sourdaw-agent-runs');
         expect(persistedBytes).toContain('"pendingEffectContinuations"');
@@ -700,6 +709,7 @@ describe('agent run recovery', () => {
                     effects: [expect.objectContaining({ kind: 'external-effect', remediation: 'manual-repair' })],
                     recovery: 'manual-repair',
                     serializedBatch: '{"batch":"manual-effect"}',
+                    lastError: 'The retained render requires manual review.',
                 },
             ],
             batches: expect.arrayContaining([
@@ -750,7 +760,7 @@ describe('agent run recovery', () => {
                 steps: expect.arrayContaining([
                     expect.objectContaining({ workId: 'batch-generic-effect', state: 'external-pending' }),
                     expect.objectContaining({ workId: 'batch-mixed-effects', state: 'external-pending' }),
-                    expect.objectContaining({ workId: 'batch-manual-effect', state: 'external-pending' }),
+                    expect.objectContaining({ workId: 'batch-manual-effect', state: 'manual-repair', updatedAt: 130 }),
                 ]),
             },
         });
@@ -766,7 +776,10 @@ describe('agent run recovery', () => {
                 runId: 'run-persisted-runtime-effects',
                 batchId: 'batch-mixed-effects',
             })
-        ).resolves.toEqual({ status: 'recovered' });
+        ).resolves.toEqual({
+            status: 'failed',
+            reason: 'Generic pending-effect recovery cannot execute receipt-bound section renders. The original confirmation is required and may be unavailable after reload.',
+        });
         await expect(
             recoverAgentRunPendingEffects({
                 runId: 'run-persisted-runtime-effects',
@@ -774,28 +787,38 @@ describe('agent run recovery', () => {
             })
         ).resolves.toEqual({
             status: 'failed',
-            reason: 'At least one retained external effect requires manual repair and cannot be retried exactly.',
+            reason: 'Generic pending-effect recovery cannot execute receipt-bound section renders. The original confirmation is required and may be unavailable after reload.',
         });
 
         expect(commandRecoveryMocks.getVersionedCommandBatchIdempotentReplay).toHaveBeenCalledTimes(3);
-        expect(commandRecoveryMocks.executeVersionedCommandBatchEnvelope).toHaveBeenCalledTimes(2);
+        expect(commandRecoveryMocks.executeVersionedCommandBatchEnvelope).toHaveBeenCalledTimes(1);
         expect(commandRecoveryMocks.executeVersionedCommandBatchEnvelope).toHaveBeenNthCalledWith(1, {
             authority: continuationAuthority,
             serialized: '{"batch":"generic-effect"}',
-        });
-        expect(commandRecoveryMocks.executeVersionedCommandBatchEnvelope).toHaveBeenNthCalledWith(2, {
-            authority: continuationAuthority,
-            serialized: '{"batch":"mixed-effects"}',
         });
         expect(hydratedAgentRunLifecycle.get('run-persisted-runtime-effects')).toMatchObject({
             phase: 'partially-completed',
             manualResume: { required: false, workIds: [] },
             pendingEffectContinuations: [
                 {
+                    batchId: 'batch-mixed-effects',
+                    recovery: 'manual-repair',
+                    lastError:
+                        'Generic pending-effect recovery cannot execute receipt-bound section renders. The original confirmation is required and may be unavailable after reload.',
+                    effects: [
+                        expect.objectContaining({ kind: 'runtime-graph', remediation: 'repair' }),
+                        expect.objectContaining({
+                            kind: 'external-effect',
+                            operation: 'renderProjectSections',
+                            remediation: 'manual-repair',
+                        }),
+                    ],
+                },
+                {
                     batchId: 'batch-manual-effect',
                     recovery: 'manual-repair',
                     lastError:
-                        'At least one retained external effect requires manual repair and cannot be retried exactly.',
+                        'Generic pending-effect recovery cannot execute receipt-bound section renders. The original confirmation is required and may be unavailable after reload.',
                 },
             ],
             batches: expect.arrayContaining([
@@ -805,7 +828,7 @@ describe('agent run recovery', () => {
                 }),
                 expect.objectContaining({
                     batchId: 'batch-mixed-effects',
-                    receiptIdentity: '1:run-persisted-runtime-effects:batch-mixed-effects:committed',
+                    receiptIdentity: '1:run-persisted-runtime-effects:batch-mixed-effects:partially-committed',
                 }),
                 expect.objectContaining({
                     batchId: 'batch-manual-effect',
@@ -819,7 +842,7 @@ describe('agent run recovery', () => {
                 }),
                 expect.objectContaining({
                     workId: 'batch-mixed-effects',
-                    receiptIdentity: '1:run-persisted-runtime-effects:batch-mixed-effects:committed',
+                    receiptIdentity: '1:run-persisted-runtime-effects:batch-mixed-effects:partially-committed',
                 }),
                 expect.objectContaining({
                     workId: 'batch-manual-effect',
@@ -833,7 +856,7 @@ describe('agent run recovery', () => {
                 }),
                 expect.objectContaining({
                     workId: 'batch-mixed-effects',
-                    receiptIdentity: '1:run-persisted-runtime-effects:batch-mixed-effects:committed',
+                    receiptIdentity: '1:run-persisted-runtime-effects:batch-mixed-effects:partially-committed',
                 }),
                 expect.objectContaining({
                     workId: 'batch-manual-effect',
@@ -849,16 +872,78 @@ describe('agent run recovery', () => {
                     }),
                     expect.objectContaining({
                         workId: 'batch-mixed-effects',
-                        receiptIdentity: '1:run-persisted-runtime-effects:batch-mixed-effects:committed',
-                        state: 'committed',
+                        receiptIdentity: '1:run-persisted-runtime-effects:batch-mixed-effects:partially-committed',
+                        state: 'manual-repair',
                     }),
                     expect.objectContaining({
                         workId: 'batch-manual-effect',
-                        state: 'external-pending',
+                        state: 'manual-repair',
                     }),
                 ]),
             },
         });
+    });
+
+    it('never executes a mixed continuation when any durable effect requires manual repair', async () => {
+        createAgentRun({
+            runId: 'run-mixed-manual-effects',
+            request: 'Retain warned render and unrelated external recovery.',
+            mode: 'macro',
+            createdRevision: 'heads-mixed-manual',
+            createdAt: 1,
+        });
+        const pendingEffects = [
+            {
+                commandId: 'command-warned-render',
+                kind: 'external-effect' as const,
+                operation: 'renderProjectSections',
+                reason: 'tail truncated',
+                remediation: 'manual-repair' as const,
+                state: 'pending' as const,
+            },
+            {
+                commandId: 'command-unrelated-effect',
+                kind: 'external-effect' as const,
+                operation: 'setTrackGain',
+                reason: 'publication pending',
+                remediation: 'reconcile' as const,
+                state: 'pending' as const,
+            },
+        ];
+        agentRunLifecycle.recordPendingEffectContinuation({
+            runId: 'run-mixed-manual-effects',
+            continuation: {
+                authority: createContinuationAuthority(),
+                batchId: 'batch-mixed-manual-effects',
+                effects: pendingEffects,
+                lastError: null,
+                recovery: 'reconcile-batch',
+                receiptIdentity: '1:run-mixed-manual-effects:batch-mixed-manual-effects:partially-committed',
+                serializedBatch: '{"batch":"mixed-manual-effects"}',
+            },
+        });
+        commandRecoveryMocks.getVersionedCommandBatchIdempotentReplay.mockResolvedValue(
+            createPendingEffectRecoveryReceipt({
+                batchId: 'batch-mixed-manual-effects',
+                pendingEffects,
+                outcome: 'partially-committed',
+                runId: 'run-mixed-manual-effects',
+            })
+        );
+
+        await expect(
+            recoverAgentRunPendingEffects({
+                runId: 'run-mixed-manual-effects',
+                batchId: 'batch-mixed-manual-effects',
+            })
+        ).resolves.toEqual({
+            status: 'failed',
+            reason: 'Generic pending-effect recovery cannot execute receipt-bound section renders. The original confirmation is required and may be unavailable after reload.',
+        });
+        expect(commandRecoveryMocks.executeVersionedCommandBatchEnvelope).not.toHaveBeenCalled();
+        expect(agentRunLifecycle.get('run-mixed-manual-effects')?.pendingEffectContinuations).toEqual([
+            expect.objectContaining({ recovery: 'manual-repair' }),
+        ]);
     });
 
     it('hydrates retired local-provider evidence without restoring an executable route', async () => {
@@ -1055,6 +1140,244 @@ describe('agent run recovery', () => {
             })
         ).not.toThrow();
         expect(window.localStorage.getItem('sourdaw-agent-runs')).toContain('current-build-run');
+    });
+
+    it.each([
+        ['committed', 'clears the stale continuation without executing a render'],
+        ['partially-committed', 'converts the still-pending render to durable manual repair'],
+    ] as const)('inspects retained section-render receipts during startup: %s', async (outcome, _expectation) => {
+        const runId = `run-startup-render-${outcome}`;
+        const batchId = `batch-startup-render-${outcome}`;
+        const pendingEffect = {
+            commandId: 'command-startup-render',
+            kind: 'external-effect' as const,
+            operation: 'renderProjectSections',
+            reason: 'Renderer stopped before completion.',
+            remediation: 'reconcile' as const,
+            state: 'pending' as const,
+        };
+        createAgentRun({
+            runId,
+            request: 'Render the retained section.',
+            mode: 'apply',
+            createdRevision: 'heads-startup-render',
+            createdAt: 1,
+        });
+        agentRunLifecycle.recordPendingEffectContinuation({
+            runId,
+            continuation: {
+                authority: createContinuationAuthority(),
+                batchId,
+                effects: [pendingEffect],
+                lastError: null,
+                receiptIdentity: `1:${runId}:${batchId}:partially-committed`,
+                recovery: 'reconcile-batch',
+                serializedBatch: `{"batch":"${batchId}"}`,
+            },
+            recordedAt: 2,
+        });
+        commandRecoveryMocks.getVersionedCommandBatchIdempotentReplay.mockResolvedValue(
+            createPendingEffectRecoveryReceipt({
+                batchId,
+                outcome,
+                pendingEffects: outcome === 'partially-committed' ? [pendingEffect] : [],
+                runId,
+            })
+        );
+
+        await expect(recoverInterruptedAgentRuns({ recoveredAt: 3 })).resolves.toEqual({ recoveredRunIds: [runId] });
+        await expect(recoverRetainedSectionRenderEffects()).resolves.toBeUndefined();
+
+        expect(commandRecoveryMocks.executeVersionedCommandBatchEnvelope).not.toHaveBeenCalled();
+        if (outcome === 'committed') {
+            expect(readAgentRunState().pendingEffectRecoveryLedger).toBeUndefined();
+            expect(getAgentRun(runId)?.pendingEffectContinuations).toEqual([]);
+            return;
+        }
+        expect(getAgentRun(runId)?.pendingEffectContinuations).toMatchObject([
+            {
+                recovery: 'manual-repair',
+                effects: [{ remediation: 'manual-repair', operation: 'renderProjectSections' }],
+            },
+        ]);
+    });
+
+    it('dispatches only retained section-render entries from a mixed durable recovery ledger', async () => {
+        const runId = 'run-mixed-retained-startup';
+        const firstRenderBatchId = 'batch-retained-render-one';
+        const secondRenderBatchId = 'batch-retained-render-two';
+        const genericBatchId = 'batch-unrelated-external';
+        const firstRenderEffect = {
+            commandId: 'command-retained-render-one',
+            kind: 'external-effect' as const,
+            operation: 'renderProjectSections',
+            reason: 'Renderer stopped before completion.',
+            remediation: 'reconcile' as const,
+            state: 'pending' as const,
+        };
+        const secondRenderEffect = {
+            ...firstRenderEffect,
+            commandId: 'command-retained-render-two',
+        };
+        const genericEffect = {
+            commandId: 'command-unrelated-external',
+            kind: 'external-effect' as const,
+            operation: 'setTrackGain',
+            reason: 'Publication queue unavailable.',
+            remediation: 'reconcile' as const,
+            state: 'pending' as const,
+        };
+        createAgentRun({
+            runId,
+            request: 'Recover one retained render and one unrelated effect.',
+            mode: 'apply',
+            createdRevision: 'heads-mixed-retained-startup',
+            createdAt: 1,
+        });
+        for (const [batchId, effect] of [
+            [firstRenderBatchId, firstRenderEffect],
+            [secondRenderBatchId, secondRenderEffect],
+            [genericBatchId, genericEffect],
+        ] as const) {
+            agentRunLifecycle.recordPendingEffectContinuation({
+                runId,
+                continuation: {
+                    authority: createContinuationAuthority(),
+                    batchId,
+                    effects: [effect],
+                    lastError: null,
+                    receiptIdentity: `1:${runId}:${batchId}:partially-committed`,
+                    recovery: 'reconcile-batch',
+                    serializedBatch: `{"batch":"${batchId}"}`,
+                },
+                recordedAt: 2,
+            });
+        }
+        commandRecoveryMocks.getVersionedCommandBatchIdempotentReplay.mockImplementation(({ serialized }) => {
+            const batchId = serialized.includes(firstRenderBatchId) ? firstRenderBatchId : secondRenderBatchId;
+            const effect = batchId === firstRenderBatchId ? firstRenderEffect : secondRenderEffect;
+            return Promise.resolve(
+                createPendingEffectRecoveryReceipt({
+                    batchId,
+                    outcome: 'partially-committed',
+                    pendingEffects: [effect],
+                    runId,
+                })
+            );
+        });
+
+        await expect(recoverRetainedSectionRenderEffects()).resolves.toBeUndefined();
+
+        expect(commandRecoveryMocks.getVersionedCommandBatchIdempotentReplay).toHaveBeenCalledTimes(2);
+        expect(commandRecoveryMocks.getVersionedCommandBatchIdempotentReplay).toHaveBeenCalledWith({
+            authority: createContinuationAuthority(),
+            serialized: `{"batch":"${firstRenderBatchId}"}`,
+        });
+        expect(commandRecoveryMocks.getVersionedCommandBatchIdempotentReplay).toHaveBeenCalledWith({
+            authority: createContinuationAuthority(),
+            serialized: `{"batch":"${secondRenderBatchId}"}`,
+        });
+        expect(commandRecoveryMocks.executeVersionedCommandBatchEnvelope).not.toHaveBeenCalled();
+        expect(getAgentRun(runId)?.pendingEffectContinuations).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({ batchId: firstRenderBatchId, recovery: 'manual-repair' }),
+                expect.objectContaining({ batchId: secondRenderBatchId, recovery: 'manual-repair' }),
+                expect.objectContaining({ batchId: genericBatchId, recovery: 'reconcile-batch', lastError: null }),
+            ])
+        );
+    });
+
+    it('promotes prepared section-render recovery to visible durable manual repair at startup', async () => {
+        const runId = 'run-prepared-render-startup';
+        const batchId = 'batch-prepared-render-startup';
+        const effect = {
+            commandId: 'command-prepared-render-startup',
+            kind: 'external-effect' as const,
+            operation: 'renderProjectSections',
+            reason: 'Renderer stopped before completion.',
+            remediation: 'reconcile' as const,
+            state: 'pending' as const,
+        };
+        createAgentRun({
+            runId,
+            request: 'Recover a prepared retained render.',
+            mode: 'apply',
+            createdRevision: 'heads-prepared-render-startup',
+            createdAt: 1,
+        });
+        agentRunLifecycle.preparePendingEffectContinuation({
+            runId,
+            continuation: {
+                authority: createContinuationAuthority(),
+                batchId,
+                effects: [effect],
+                lastError: null,
+                receiptIdentity: `1:${runId}:${batchId}:partially-committed`,
+                recovery: 'reconcile-batch',
+                serializedBatch: `{"batch":"${batchId}"}`,
+            },
+        });
+        commandRecoveryMocks.getVersionedCommandBatchIdempotentReplay.mockResolvedValue(
+            createPendingEffectRecoveryReceipt({
+                batchId,
+                outcome: 'partially-committed',
+                pendingEffects: [effect],
+                runId,
+            })
+        );
+
+        await expect(recoverRetainedSectionRenderEffects()).resolves.toBeUndefined();
+
+        expect(agentRunLifecycle.get(runId)?.pendingEffectContinuations).toEqual([
+            expect.objectContaining({ batchId, recovery: 'manual-repair' }),
+        ]);
+        expect(readAgentRunState().pendingEffectRecoveryLedger).toEqual([
+            expect.objectContaining({ runId, batchId, checkpoint: 'durable', recovery: 'manual-repair' }),
+        ]);
+        expect(selectAgentRunPendingEffectRecoveries(readAgentRunState())).toEqual([
+            expect.objectContaining({ runId, batchId, recovery: 'manual-repair' }),
+        ]);
+    });
+
+    it('does not select a runtime-graph effect that merely shares the render operation name', async () => {
+        const runId = 'run-runtime-graph-render-name';
+        const batchId = 'batch-runtime-graph-render-name';
+        createAgentRun({
+            runId,
+            request: 'Reconcile a runtime graph repair.',
+            mode: 'apply',
+            createdRevision: 'heads-runtime-graph-render-name',
+            createdAt: 1,
+        });
+        agentRunLifecycle.recordPendingEffectContinuation({
+            runId,
+            continuation: {
+                authority: createContinuationAuthority(),
+                batchId,
+                effects: [
+                    {
+                        commandId: 'command-runtime-graph-render-name',
+                        kind: 'runtime-graph',
+                        operation: 'renderProjectSections',
+                        reason: 'Runtime graph repair interrupted.',
+                        remediation: 'retry',
+                        state: 'pending',
+                    },
+                ],
+                lastError: null,
+                receiptIdentity: `1:${runId}:${batchId}:partially-committed`,
+                recovery: 'reconcile-batch',
+                serializedBatch: `{"batch":"${batchId}"}`,
+            },
+            recordedAt: 2,
+        });
+
+        await expect(recoverRetainedSectionRenderEffects()).resolves.toBeUndefined();
+
+        expect(commandRecoveryMocks.getVersionedCommandBatchIdempotentReplay).not.toHaveBeenCalled();
+        expect(getAgentRun(runId)?.pendingEffectContinuations).toEqual([
+            expect.objectContaining({ batchId, recovery: 'reconcile-batch', lastError: null }),
+        ]);
     });
 
     it('rejects unsupported persisted schema versions without overwriting their bytes', async () => {

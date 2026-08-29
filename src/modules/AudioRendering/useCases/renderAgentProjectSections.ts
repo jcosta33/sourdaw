@@ -4,16 +4,21 @@ import { type RenderProjectSectionJobSnapshot } from '#/utils/handlerContract';
 
 import { type AgentSectionRenderArtifact } from '../models/AgentSectionRenderArtifact';
 import { AGENT_SECTION_RENDER_RETENTION_POLICY } from '../models/AgentSectionRenderRetentionPolicy';
+import { SectionRenderFollowUpError, SectionRenderRetentionCapacityError } from '../models/SectionRenderFollowUpError';
 import { agentSectionRenderArtifactStore } from '../stores/agentSectionRenderArtifactStore';
 
 import { pruneExpiredAgentSectionRenderArtifacts } from './pruneExpiredAgentSectionRenderArtifacts';
+import { scheduleAgentSectionRenderArtifactExpiry } from './scheduleAgentSectionRenderArtifactExpiry';
 
 const PCM_SAMPLE_BYTE_SIZE = Float32Array.BYTES_PER_ELEMENT;
 
 type RenderAgentProjectSectionsInput = {
     jobs: readonly RenderProjectSectionJobSnapshot[];
+    retentionProtectedJobIds?: readonly string[];
     sourceRevision: string;
     signal?: AbortSignal;
+    validateArtifactAttachment?: () => string | null;
+    onRenderAttempt?: (job: RenderProjectSectionJobSnapshot) => void;
 };
 
 function createCancellationError(): Error {
@@ -43,13 +48,20 @@ function failureReason(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
 }
 
+function assertArtifactAttachmentAllowed(input: RenderAgentProjectSectionsInput): void {
+    const reason = input.validateArtifactAttachment?.();
+    if (reason) {
+        throw new Error(reason);
+    }
+}
+
 function retainArtifactsForIncoming(
     artifacts: readonly AgentSectionRenderArtifact[],
     incoming: AgentSectionRenderArtifact,
     protectedJobIds: ReadonlySet<string>
 ): AgentSectionRenderArtifact[] {
     if (incoming.byteSize > AGENT_SECTION_RENDER_RETENTION_POLICY.maxPcmBytes) {
-        throw new Error(
+        throw new SectionRenderRetentionCapacityError(
             `Section render artifact byte capacity exceeded: ${String(incoming.byteSize)}/${String(AGENT_SECTION_RENDER_RETENTION_POLICY.maxPcmBytes)}`
         );
     }
@@ -64,7 +76,7 @@ function retainArtifactsForIncoming(
     ) {
         const candidate = evictionCandidates.shift();
         if (!candidate) {
-            throw new Error(
+            throw new SectionRenderRetentionCapacityError(
                 `Section render artifact retention capacity cannot preserve the current job set: ${String(retained.length + 1)} artifacts, ${String(retainedBytes + incoming.byteSize)} bytes`
             );
         }
@@ -82,9 +94,12 @@ export async function renderAgentProjectSections(input: RenderAgentProjectSectio
         throw createCancellationError();
     }
     if (input.jobs.length > AGENT_SECTION_RENDER_RETENTION_POLICY.maxArtifacts) {
-        throw new Error(
-            `Section render artifact capacity exceeded: ${String(input.jobs.length)}/${String(AGENT_SECTION_RENDER_RETENTION_POLICY.maxArtifacts)}`
-        );
+        const reason = `Section render artifact capacity exceeded: ${String(input.jobs.length)}/${String(AGENT_SECTION_RENDER_RETENTION_POLICY.maxArtifacts)}`;
+        throw new SectionRenderFollowUpError({
+            failureKind: 'retention-capacity',
+            reason,
+            remediation: 'manual-repair',
+        });
     }
     pruneExpiredAgentSectionRenderArtifacts();
     const initialArtifacts = agentSectionRenderArtifactStore.value?.artifacts ?? [];
@@ -95,8 +110,9 @@ export async function renderAgentProjectSections(input: RenderAgentProjectSectio
             throw new Error(`Section render job identity is already owned by another artifact: ${job.jobId}`);
         }
     }
-    const protectedJobIds = new Set(input.jobs.map((job) => job.jobId));
+    const protectedJobIds = new Set(input.retentionProtectedJobIds ?? input.jobs.map((job) => job.jobId));
     const failures: string[] = [];
+    let retentionCapacityFailure = false;
     for (const job of input.jobs) {
         if (input.signal?.aborted) {
             throw createCancellationError();
@@ -114,10 +130,17 @@ export async function renderAgentProjectSections(input: RenderAgentProjectSectio
             if (captureProjectRevision() !== input.sourceRevision) {
                 throw new Error('Project changed during rendering; the artifact was not attached');
             }
+        } catch (error) {
+            failures.push(`${job.jobId}: ${failureReason(error)}`);
+            continue;
+        }
+        assertArtifactAttachmentAllowed(input);
+        try {
             const cancelActiveRender = () => cancelExport();
             input.signal?.addEventListener('abort', cancelActiveRender, { once: true });
             let buffer: AudioBuffer;
             try {
+                input.onRenderAttempt?.(job);
                 buffer = await renderOffline({
                     durationBeats: job.endBeat - job.startBeat,
                     startBeat: job.startBeat,
@@ -134,6 +157,7 @@ export async function renderAgentProjectSections(input: RenderAgentProjectSectio
             if (captureProjectRevision() !== input.sourceRevision) {
                 throw new Error('Project changed during rendering; the artifact was not attached');
             }
+            assertArtifactAttachmentAllowed(input);
             if (buffer.sampleRate !== job.sampleRate || buffer.length <= 0 || buffer.numberOfChannels <= 0) {
                 throw new Error('Offline renderer returned an invalid section artifact');
             }
@@ -162,6 +186,7 @@ export async function renderAgentProjectSections(input: RenderAgentProjectSectio
                 protectedJobIds
             );
             agentSectionRenderArtifactStore.set({ artifacts: retainedArtifacts });
+            scheduleAgentSectionRenderArtifactExpiry();
             existingByJobId.set(job.jobId, artifact);
             if (warnings.length > 0) {
                 failures.push(`${job.jobId}: ${warnings.join('; ')}`);
@@ -170,11 +195,27 @@ export async function renderAgentProjectSections(input: RenderAgentProjectSectio
             if (input.signal?.aborted) {
                 throw createCancellationError();
             }
+            retentionCapacityFailure ||= error instanceof SectionRenderRetentionCapacityError;
             failures.push(`${job.jobId}: ${failureReason(error)}`);
         }
     }
 
     if (failures.length > 0) {
-        throw new Error(`Section render follow-up requires review: ${failures.join('; ')}`);
+        const reason = `Section render follow-up requires review: ${failures.join('; ')}`;
+        const allRequestedArtifactsPresent = input.jobs.every((job) => {
+            const artifact = existingByJobId.get(job.jobId);
+            return artifact !== undefined && jobMatchesArtifact(job, artifact, input.sourceRevision);
+        });
+        let failureKind: 'retention-capacity' | 'review-required' | 'render-incomplete' = 'render-incomplete';
+        if (retentionCapacityFailure) {
+            failureKind = 'retention-capacity';
+        } else if (allRequestedArtifactsPresent) {
+            failureKind = 'review-required';
+        }
+        throw new SectionRenderFollowUpError({
+            failureKind,
+            reason,
+            remediation: failureKind === 'render-incomplete' ? 'reconcile' : 'manual-repair',
+        });
     }
 }

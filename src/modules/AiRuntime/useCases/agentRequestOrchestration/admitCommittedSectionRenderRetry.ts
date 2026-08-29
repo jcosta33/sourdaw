@@ -1,6 +1,8 @@
 import { parseVersionedCommandBatchEnvelope, type createVerifiedBatchReceipt } from '#/modules/Command/useCases';
 
+import { type AgentRunPendingEffect } from '../../models/AgentRun';
 import { type PendingAppActionConfirmation } from '../../stores/pendingActionConfirmationStore';
+import { hasExactAgentCommandBatchAuthority } from '../../validators/hasExactAgentCommandBatchAuthority';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { getExactAgentActionHash } from '../getExactAgentActionHash';
 
@@ -61,13 +63,6 @@ function isEligible(confirmation: PendingAppActionConfirmation): boolean {
     );
 }
 
-function hasExactCanonicalAuthority(expected: unknown, candidate: unknown): boolean {
-    return (
-        getExactAgentActionHash({ operation: 'commandBatchAuthority', arguments: candidate }) ===
-        getExactAgentActionHash({ operation: 'commandBatchAuthority', arguments: expected })
-    );
-}
-
 function hasExpectedCommandBatch(
     expected: ApprovedCommandBatch,
     candidate: PendingAppActionConfirmation['approvalSnapshot']['commandBatch']
@@ -75,7 +70,7 @@ function hasExpectedCommandBatch(
     return (
         candidate !== undefined &&
         candidate.serialized === expected.serialized &&
-        hasExactCanonicalAuthority(expected.authority, candidate.authority)
+        hasExactAgentCommandBatchAuthority(expected.authority, candidate.authority)
     );
 }
 
@@ -193,6 +188,25 @@ function hasExactDurableReceipt(
     );
 }
 
+function hasExactFinalizedReceipt(
+    receipt: CommandVerifiedBatchReceipt | null,
+    binding: WarnedRenderPayloadBinding
+): receipt is CommandVerifiedBatchReceipt {
+    if (
+        !receipt ||
+        receipt.outcome !== 'committed' ||
+        receipt.atomicity !== 'atomic' ||
+        receipt.pendingEffects.length > 0
+    ) {
+        return false;
+    }
+    const renderOutcomes = receipt.commandOutcomes.filter(
+        ({ commandId, operation }) =>
+            commandId === binding.approvedCommand.commandId && operation === binding.approvedCommand.operation
+    );
+    return renderOutcomes.length === 1 && renderOutcomes[0]?.outcome === 'committed';
+}
+
 function hasExactBatchBinding(
     confirmation: PendingAppActionConfirmation,
     approvedBatch: ParsedApprovedRetryBatch,
@@ -209,6 +223,27 @@ function hasExactBatchBinding(
 
 function getReceiptIdentity(receipt: CommandVerifiedBatchReceipt): string {
     return `${receipt.schemaVersion}:${receipt.runId}:${receipt.batchId}:${receipt.outcome}`;
+}
+
+function hasExactContinuationEffects(
+    continuationEffects: readonly AgentRunPendingEffect[],
+    receiptEffects: readonly AgentRunPendingEffect[]
+): boolean {
+    return (
+        continuationEffects.length === receiptEffects.length &&
+        continuationEffects.every((effect, index) => {
+            const receiptEffect = receiptEffects[index];
+            return (
+                receiptEffect !== undefined &&
+                effect.commandId === receiptEffect.commandId &&
+                effect.kind === receiptEffect.kind &&
+                effect.operation === receiptEffect.operation &&
+                effect.reason === receiptEffect.reason &&
+                effect.remediation === receiptEffect.remediation &&
+                effect.state === receiptEffect.state
+            );
+        })
+    );
 }
 
 function hasExactTrackedRunBinding(
@@ -237,7 +272,96 @@ function hasExactTrackedRunBinding(
         continuation?.receiptIdentity === receiptIdentity &&
         continuation.recovery === 'reconcile-batch' &&
         continuation.serializedBatch === approvedCommandBatch.serialized &&
-        hasExactCanonicalAuthority(approvedCommandBatch.authority, continuation.authority)
+        hasExactAgentCommandBatchAuthority(approvedCommandBatch.authority, continuation.authority) &&
+        hasExactContinuationEffects(continuation.effects, receipt.pendingEffects)
+    );
+}
+
+function hasExactFinalizedContinuationBinding(
+    confirmation: PendingAppActionConfirmation,
+    approvedBatch: ParsedApprovedRetryBatch,
+    binding: WarnedRenderPayloadBinding,
+    finalizedReceipt: CommandVerifiedBatchReceipt
+): boolean {
+    const approvedCommandBatch = confirmation.approvalSnapshot.commandBatch;
+    if (!approvedCommandBatch) {
+        return false;
+    }
+    const trackedRun = agentRunLifecycle.get(confirmation.runId);
+    if (!trackedRun || trackedRun.revisions.committed !== confirmation.followUpProjectRevision) {
+        return false;
+    }
+    const matchingContinuations = trackedRun.pendingEffectContinuations.filter(
+        ({ batchId }) => batchId === confirmation.groupId
+    );
+    const continuation = matchingContinuations[0];
+    const finalizedReceiptIdentity = getReceiptIdentity(finalizedReceipt);
+    if (matchingContinuations.length === 0) {
+        const matchingReceipts = trackedRun.receipts.filter(({ workId }) => workId === confirmation.groupId);
+        const matchingCommittedWork = trackedRun.committedWork.filter(({ workId }) => workId === confirmation.groupId);
+        const matchingBatches = trackedRun.batches.filter(({ batchId }) => batchId === confirmation.groupId);
+        const matchingSagaSteps = trackedRun.saga.steps.filter(
+            (step) => step.owner === 'external-effect' && step.workId === confirmation.groupId
+        );
+        return (
+            matchingReceipts.length === 1 &&
+            matchingReceipts[0]?.receiptIdentity === finalizedReceiptIdentity &&
+            matchingCommittedWork.length === 1 &&
+            matchingCommittedWork[0]?.receiptIdentity === finalizedReceiptIdentity &&
+            matchingBatches.length === 1 &&
+            matchingBatches[0]?.status === 'committed' &&
+            matchingBatches[0].receiptIdentity === finalizedReceiptIdentity &&
+            matchingBatches[0].commandIds.length === approvedBatch.commands.length &&
+            matchingBatches[0].commandIds.every(
+                (commandId, index) => commandId === approvedBatch.commands[index]?.commandId
+            ) &&
+            matchingSagaSteps.length === 1 &&
+            matchingSagaSteps[0]?.stepId === `effect:${confirmation.groupId}:${binding.approvedCommand.commandId}` &&
+            matchingSagaSteps[0]?.state === 'committed' &&
+            matchingSagaSteps[0].receiptIdentity === finalizedReceiptIdentity
+        );
+    }
+    if (
+        matchingContinuations.length !== 1 ||
+        !continuation ||
+        continuation.recovery !== 'reconcile-batch' ||
+        continuation.serializedBatch !== approvedCommandBatch.serialized ||
+        !hasExactAgentCommandBatchAuthority(approvedCommandBatch.authority, continuation.authority)
+    ) {
+        return false;
+    }
+    const pendingReceiptIdentity = `${finalizedReceipt.schemaVersion}:${finalizedReceipt.runId}:${finalizedReceipt.batchId}:partially-committed`;
+    const matchingReceipts = trackedRun.receipts.filter(({ workId }) => workId === confirmation.groupId);
+    const matchingCommittedWork = trackedRun.committedWork.filter(({ workId }) => workId === confirmation.groupId);
+    const matchingBatches = trackedRun.batches.filter(({ batchId }) => batchId === confirmation.groupId);
+    const matchingSagaSteps = trackedRun.saga.steps.filter(
+        (step) => step.owner === 'external-effect' && step.workId === confirmation.groupId
+    );
+    const pendingEffect = continuation.effects[0];
+    return (
+        matchingReceipts.length === 1 &&
+        matchingReceipts[0]?.receiptIdentity === pendingReceiptIdentity &&
+        matchingCommittedWork.length === 1 &&
+        matchingCommittedWork[0]?.receiptIdentity === pendingReceiptIdentity &&
+        matchingBatches.length === 1 &&
+        matchingBatches[0]?.status === 'committed' &&
+        matchingBatches[0].receiptIdentity === pendingReceiptIdentity &&
+        matchingBatches[0].commandIds.length === approvedBatch.commands.length &&
+        matchingBatches[0].commandIds.every(
+            (commandId, index) => commandId === approvedBatch.commands[index]?.commandId
+        ) &&
+        matchingSagaSteps.length === 1 &&
+        matchingSagaSteps[0]?.stepId === `effect:${confirmation.groupId}:${binding.approvedCommand.commandId}` &&
+        matchingSagaSteps[0]?.state === 'external-pending' &&
+        matchingSagaSteps[0].receiptIdentity === pendingReceiptIdentity &&
+        continuation.receiptIdentity === pendingReceiptIdentity &&
+        continuation.effects.length === 1 &&
+        pendingEffect?.commandId === binding.approvedCommand.commandId &&
+        pendingEffect.operation === binding.approvedCommand.operation &&
+        pendingEffect.kind === 'external-effect' &&
+        pendingEffect.remediation === 'reconcile' &&
+        pendingEffect.state === 'pending' &&
+        approvedBatch.envelope.batchId === continuation.batchId
     );
 }
 
@@ -263,17 +387,28 @@ export function admitCommittedSectionRenderRetry(
         return { status: 'proof-mismatch' };
     }
     const renderBinding = getWarnedRenderBinding(input.confirmation, approvedBatch);
-    if (!renderBinding || !hasExactDurableReceipt(input.durableReceipt, renderBinding)) {
+    if (!renderBinding) {
+        return { status: 'proof-mismatch' };
+    }
+    const durableReceipt = input.durableReceipt;
+    if (!durableReceipt) {
+        return { status: 'proof-mismatch' };
+    }
+    const hasPendingReceipt = hasExactDurableReceipt(durableReceipt, renderBinding);
+    const hasFinalizedReceipt = hasExactFinalizedReceipt(durableReceipt, renderBinding);
+    if (!hasPendingReceipt && !hasFinalizedReceipt) {
         return { status: 'proof-mismatch' };
     }
     if (input.phase === 'arming') {
-        return { durableReceipt: input.durableReceipt, status: 'admitted' };
+        return hasPendingReceipt ? { durableReceipt, status: 'admitted' } : { status: 'proof-mismatch' };
     }
     if (
-        !hasExactBatchBinding(input.confirmation, approvedBatch, input.durableReceipt) ||
-        !hasExactTrackedRunBinding(input.confirmation, input.durableReceipt)
+        !hasExactBatchBinding(input.confirmation, approvedBatch, durableReceipt) ||
+        (hasPendingReceipt
+            ? !hasExactTrackedRunBinding(input.confirmation, durableReceipt)
+            : !hasExactFinalizedContinuationBinding(input.confirmation, approvedBatch, renderBinding, durableReceipt))
     ) {
         return { status: 'proof-mismatch' };
     }
-    return { durableReceipt: input.durableReceipt, status: 'admitted' };
+    return { durableReceipt, status: 'admitted' };
 }

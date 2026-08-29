@@ -94,6 +94,43 @@ describe('renderAgentProjectSections', () => {
         ]);
     });
 
+    it('reports only jobs whose offline renderer begins, excluding retained and preflight-refused work', async () => {
+        const retainedJob = createJob();
+        const missingJob = createJob({
+            jobId: 'render-chorus-two',
+            sectionId: 'section-chorus-two',
+            sectionName: 'Chorus Two',
+            startBeat: 64,
+            endBeat: 96,
+        });
+        await renderAgentProjectSections({ jobs: [retainedJob], sourceRevision: 'revision-a' });
+        const sequence: string[] = [];
+        const onRenderAttempt = vi.fn((job: RenderProjectSectionJobSnapshot) => sequence.push(`attempt:${job.jobId}`));
+        mocks.renderOffline.mockImplementationOnce(() => {
+            sequence.push('render');
+            return Promise.resolve(createAudioBuffer());
+        });
+
+        await renderAgentProjectSections({
+            jobs: [retainedJob, missingJob],
+            sourceRevision: 'revision-a',
+            onRenderAttempt,
+        });
+
+        expect(onRenderAttempt).toHaveBeenCalledExactlyOnceWith(missingJob);
+        expect(sequence).toEqual(['attempt:render-chorus-two', 'render']);
+
+        mocks.captureProjectRevision.mockReturnValue('revision-b');
+        await expect(
+            renderAgentProjectSections({
+                jobs: [createJob({ jobId: 'render-preflight-refused' })],
+                sourceRevision: 'revision-a',
+                onRenderAttempt,
+            })
+        ).rejects.toThrow('Project changed during rendering');
+        expect(onRenderAttempt).toHaveBeenCalledTimes(1);
+    });
+
     it('never mixes artifacts from different project revisions in one render batch', async () => {
         const jobs = [
             createJob(),
@@ -115,6 +152,19 @@ describe('renderAgentProjectSections', () => {
 
         expect(mocks.renderOffline).toHaveBeenCalledOnce();
         expect(getAgentSectionRenderArtifacts().map((artifact) => artifact.jobId)).toEqual(['render-chorus-one']);
+    });
+
+    it.each([
+        ['a mismatched sample rate', createAudioBuffer({ sampleRate: 48_000 })],
+        ['a non-positive channel count', createAudioBuffer({ numberOfChannels: 0 })],
+    ])('rejects %s without attaching an artifact', async (_label, buffer) => {
+        mocks.renderOffline.mockResolvedValueOnce(buffer);
+
+        await expect(renderAgentProjectSections({ jobs: [createJob()], sourceRevision: 'revision-a' })).rejects.toThrow(
+            'invalid section artifact'
+        );
+
+        expect(getAgentSectionRenderArtifacts()).toEqual([]);
     });
 
     it('cancels the active render and prevents later jobs or artifacts after its execution signal aborts', async () => {
@@ -146,6 +196,114 @@ describe('renderAgentProjectSections', () => {
         await expect(rendering).rejects.toThrow(/cancel/i);
         expect(mocks.renderOffline).toHaveBeenCalledOnce();
         expect(getAgentSectionRenderArtifacts()).toEqual([]);
+    });
+
+    it('refuses attachment when its injected authority validator changes during an awaited render', async () => {
+        let finishRender!: (buffer: ReturnType<typeof createAudioBuffer>) => void;
+        let attachmentAllowed = true;
+        mocks.renderOffline.mockImplementationOnce(
+            () =>
+                new Promise((resolve) => {
+                    finishRender = resolve;
+                })
+        );
+
+        const rendering = renderAgentProjectSections({
+            jobs: [createJob()],
+            sourceRevision: 'revision-a',
+            validateArtifactAttachment: () =>
+                attachmentAllowed
+                    ? null
+                    : 'Only the authoritative collaboration host can attach section render artifacts.',
+        });
+        await vi.waitFor(() => expect(mocks.renderOffline).toHaveBeenCalledOnce());
+        attachmentAllowed = false;
+        finishRender(createAudioBuffer());
+
+        await expect(rendering).rejects.toMatchObject({
+            message: expect.stringContaining(
+                'Only the authoritative collaboration host can attach section render artifacts.'
+            ),
+            pendingEffect: expect.objectContaining({ remediation: 'reconcile', state: 'pending' }),
+        });
+        expect(getAgentSectionRenderArtifacts()).toEqual([]);
+    });
+
+    it('aborts before a second render when attachment authority is lost during the first render', async () => {
+        const jobs = [
+            createJob(),
+            createJob({
+                jobId: 'render-chorus-two',
+                sectionId: 'section-chorus-two',
+                sectionName: 'Chorus Two',
+                startBeat: 64,
+                endBeat: 96,
+            }),
+        ];
+        let finishFirstRender!: (buffer: ReturnType<typeof createAudioBuffer>) => void;
+        let attachmentAllowed = true;
+        const onRenderAttempt = vi.fn();
+        mocks.renderOffline.mockImplementationOnce(
+            () =>
+                new Promise((resolve) => {
+                    finishFirstRender = resolve;
+                })
+        );
+
+        const rendering = renderAgentProjectSections({
+            jobs,
+            sourceRevision: 'revision-a',
+            onRenderAttempt,
+            validateArtifactAttachment: () =>
+                attachmentAllowed
+                    ? null
+                    : 'Only the authoritative collaboration host can attach section render artifacts.',
+        });
+        await vi.waitFor(() => expect(mocks.renderOffline).toHaveBeenCalledOnce());
+        attachmentAllowed = false;
+        finishFirstRender(createAudioBuffer());
+
+        await expect(rendering).rejects.toEqual(
+            new Error('Only the authoritative collaboration host can attach section render artifacts.')
+        );
+        expect(mocks.renderOffline).toHaveBeenCalledOnce();
+        expect(onRenderAttempt).toHaveBeenCalledExactlyOnceWith(jobs[0]);
+        expect(getAgentSectionRenderArtifacts()).toEqual([]);
+    });
+
+    it('does not begin rendering when attachment authority is denied at preflight', async () => {
+        const onRenderAttempt = vi.fn();
+
+        await expect(
+            renderAgentProjectSections({
+                jobs: [createJob()],
+                sourceRevision: 'revision-a',
+                onRenderAttempt,
+                validateArtifactAttachment: () =>
+                    'Only the authoritative collaboration host can attach section render artifacts.',
+            })
+        ).rejects.toThrow('Only the authoritative collaboration host');
+
+        expect(onRenderAttempt).not.toHaveBeenCalled();
+        expect(mocks.renderOffline).not.toHaveBeenCalled();
+        expect(getAgentSectionRenderArtifacts()).toEqual([]);
+    });
+
+    it('continues to later jobs after one renderer rejects and preserves the successful artifact', async () => {
+        const jobs = [
+            createJob(),
+            createJob({ jobId: 'render-chorus-two', sectionId: 'section-chorus-two', sectionName: 'Chorus Two' }),
+        ];
+        const onRenderAttempt = vi.fn();
+        mocks.renderOffline.mockRejectedValueOnce(new Error('first renderer unavailable'));
+
+        await expect(
+            renderAgentProjectSections({ jobs, sourceRevision: 'revision-a', onRenderAttempt })
+        ).rejects.toThrow('first renderer unavailable');
+
+        expect(onRenderAttempt).toHaveBeenCalledTimes(2);
+        expect(mocks.renderOffline).toHaveBeenCalledTimes(2);
+        expect(getAgentSectionRenderArtifacts()).toEqual([expect.objectContaining({ jobId: 'render-chorus-two' })]);
     });
 
     it('keeps successful artifacts and retries only unfinished jobs after a transient failure', async () => {
@@ -182,9 +340,47 @@ describe('renderAgentProjectSections', () => {
             return Promise.resolve(createAudioBuffer());
         });
 
-        await expect(renderAgentProjectSections(input)).rejects.toThrow('tail truncated');
+        await expect(renderAgentProjectSections(input)).rejects.toMatchObject({
+            message: expect.stringContaining('tail truncated'),
+            pendingEffect: {
+                kind: 'external-effect',
+                remediation: 'manual-repair',
+                reason: expect.stringContaining('tail truncated'),
+                state: 'pending',
+            },
+        });
 
         expect(getAgentSectionRenderArtifacts()[0]?.warnings).toEqual(['tail truncated']);
+    });
+
+    it('keeps missing render work reconcilable when another retained artifact has warnings', async () => {
+        const jobs = [
+            createJob(),
+            createJob({
+                jobId: 'render-missing-chorus',
+                sectionId: 'section-missing-chorus',
+                sectionName: 'Missing Chorus',
+                startBeat: 64,
+                endBeat: 96,
+            }),
+        ];
+        mocks.renderOffline
+            .mockImplementationOnce((options: { onWarning?: (warning: string) => void }) => {
+                options.onWarning?.('tail truncated');
+                return Promise.resolve(createAudioBuffer());
+            })
+            .mockRejectedValueOnce(new Error('renderer unavailable'));
+
+        await expect(renderAgentProjectSections({ jobs, sourceRevision: 'revision-a' })).rejects.toMatchObject({
+            pendingEffect: {
+                kind: 'external-effect',
+                remediation: 'reconcile',
+                state: 'pending',
+            },
+        });
+        expect(getAgentSectionRenderArtifacts()).toEqual([
+            expect.objectContaining({ jobId: 'render-chorus-one', warnings: ['tail truncated'] }),
+        ]);
     });
 
     it('rejects invalid buffers and job-capacity overflow without attaching artifacts', async () => {
@@ -227,6 +423,42 @@ describe('renderAgentProjectSections', () => {
         expect(mocks.renderOffline).toHaveBeenCalledTimes(17);
     });
 
+    it('renders only the executable job while protecting retained approved artifacts from eviction', async () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-08-28T10:00:00Z'));
+        const retainedJob = createJob({ jobId: 'render-retained' });
+        await renderAgentProjectSections({ jobs: [retainedJob], sourceRevision: 'revision-a' });
+        const fillerJobs = Array.from({ length: 15 }, (_, index) =>
+            createJob({
+                jobId: `render-filler-${String(index)}`,
+                sectionId: `section-filler-${String(index)}`,
+                sectionName: `Filler ${String(index)}`,
+            })
+        );
+        for (const job of fillerJobs) {
+            vi.advanceTimersByTime(1);
+            await renderAgentProjectSections({ jobs: [job], sourceRevision: 'revision-a' });
+        }
+        const missingJob = createJob({
+            jobId: 'render-missing',
+            sectionId: 'section-missing',
+            sectionName: 'Missing',
+        });
+        const onRenderAttempt = vi.fn();
+        mocks.renderOffline.mockClear();
+
+        await renderAgentProjectSections({
+            jobs: [missingJob],
+            retentionProtectedJobIds: [retainedJob.jobId, missingJob.jobId],
+            sourceRevision: 'revision-a',
+            onRenderAttempt,
+        });
+
+        expect(onRenderAttempt).toHaveBeenCalledExactlyOnceWith(missingJob);
+        expect(mocks.renderOffline).toHaveBeenCalledOnce();
+        expect(getAgentSectionRenderArtifacts().map((artifact) => artifact.jobId)).toContain(retainedJob.jobId);
+    });
+
     it('expires old artifacts and rejects a buffer larger than the session byte bound', async () => {
         vi.useFakeTimers();
         vi.setSystemTime(new Date('2026-08-11T08:00:00Z'));
@@ -251,6 +483,35 @@ describe('renderAgentProjectSections', () => {
             'artifact byte capacity exceeded'
         );
         expect(getAgentSectionRenderArtifacts()).toEqual([]);
+    });
+
+    it('preserves approved artifacts when a missing artifact cannot coexist within retention capacity', async () => {
+        const frameCount = Math.floor(
+            (AGENT_SECTION_RENDER_RETENTION_POLICY.maxPcmBytes * 3) / (4 * 2 * Float32Array.BYTES_PER_ELEMENT)
+        );
+        const firstJob = createJob({ jobId: 'render-chorus-one' });
+        const missingJob = createJob({
+            jobId: 'render-chorus-two',
+            sectionId: 'section-chorus-two',
+            sectionName: 'Chorus Two',
+            startBeat: 64,
+            endBeat: 96,
+        });
+        mocks.renderOffline.mockResolvedValue(createAudioBuffer({ length: frameCount }));
+
+        await renderAgentProjectSections({ jobs: [firstJob], sourceRevision: 'revision-a' });
+
+        await expect(
+            renderAgentProjectSections({ jobs: [firstJob, missingJob], sourceRevision: 'revision-a' })
+        ).rejects.toMatchObject({
+            pendingEffect: {
+                kind: 'external-effect',
+                remediation: 'manual-repair',
+                state: 'pending',
+            },
+        });
+
+        expect(getAgentSectionRenderArtifacts().map((artifact) => artifact.jobId)).toEqual([firstJob.jobId]);
     });
 
     it('rejects a reused job identity whose render provenance differs', async () => {
