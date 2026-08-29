@@ -139,6 +139,9 @@ function stackedDeliveryPort(finalSettings: MergeSettings) {
                     )
                 );
             }
+            if (joined.includes('mergedBy{__typename')) {
+                return shellMergedByGraphql({ __typename: 'Bot', id: AUTHOR_BOT_NODE_ID });
+            }
             if (joined.includes('query=')) {
                 return JSON.stringify({
                     data: {
@@ -264,10 +267,32 @@ function pullRequest(overrides: Partial<PullRequestSnapshot> = {}): PullRequestS
 }
 
 function shellPullRequest(snapshot: PullRequestSnapshot): Omit<PullRequestSnapshot, 'mergedByActorNodeId'> & {
-    mergedBy: { id: string } | null;
+    mergedBy: { is_bot: true; login: string } | null;
 } {
     const { mergedByActorNodeId, ...fields } = snapshot;
-    return { ...fields, mergedBy: mergedByActorNodeId === null ? null : { id: mergedByActorNodeId } };
+    return {
+        ...fields,
+        mergedBy:
+            mergedByActorNodeId === null
+                ? null
+                : {
+                      is_bot: true,
+                      login:
+                          mergedByActorNodeId === AUTHOR_BOT_NODE_ID ? 'renamed-author[bot]' : 'renamed-foreign[bot]',
+                  },
+    };
+}
+
+function shellMergedByGraphql(mergedBy: { __typename: 'Bot'; id: string } | { __typename: 'User' } | null): string {
+    return JSON.stringify({
+        data: {
+            repository: {
+                pullRequest: {
+                    mergedBy,
+                },
+            },
+        },
+    });
 }
 
 function checkRun(overrides: Partial<HeadCheckRun> = {}): HeadCheckRun {
@@ -2175,15 +2200,23 @@ describe('delivery shell boundary', () => {
         const port = shellPort('jcosta33/sourdaw', {
             capture: (command, args) => {
                 captures.push({ command, args });
-                return JSON.stringify(
-                    shellPullRequest(pullRequest({ state: 'MERGED', mergedByActorNodeId: AUTHOR_BOT_NODE_ID }))
-                );
+                const joined = args.join(' ');
+                if (joined.includes('pr view')) {
+                    return JSON.stringify(
+                        shellPullRequest(pullRequest({ state: 'MERGED', mergedByActorNodeId: AUTHOR_BOT_NODE_ID }))
+                    );
+                }
+                if (joined.includes('mergedBy{__typename')) {
+                    return shellMergedByGraphql({ __typename: 'Bot', id: AUTHOR_BOT_NODE_ID });
+                }
+                throw new Error(`unexpected capture: ${command} ${joined}`);
             },
             run: () => undefined,
         });
 
         expect(port.pullRequest(42).mergedByActorNodeId).toBe(AUTHOR_BOT_NODE_ID);
         expect(captures[0]?.args.join(' ')).toContain('mergedBy');
+        expect(captures[1]?.args.join(' ')).toContain('mergedBy{__typename');
     });
 
     it('preserves paginated REST issue-comment response order for receipt authority', () => {
@@ -2216,41 +2249,62 @@ describe('delivery shell boundary', () => {
     });
 
     it.each([
-        { merger: 'foreign', actorNodeId: REVIEWER_BOT_NODE_ID },
-        { merger: 'unknown', actorNodeId: null },
-    ])('shellPort refuses $merger merged-by authority before any recovery effect', ({ actorNodeId }) => {
-        const effects: string[] = [];
-        const port = shellPort('jcosta33/sourdaw', {
-            capture: (_command, args) => {
-                const joined = args.join(' ');
-                if (joined.includes('pr view')) {
-                    return JSON.stringify(
-                        shellPullRequest(pullRequest({ state: 'MERGED', mergedByActorNodeId: actorNodeId }))
-                    );
-                }
-                effects.push(`capture:${joined}`);
-                throw new Error(`unexpected recovery read: ${joined}`);
-            },
-            run: (command, args) => {
-                if (command === 'git' && args[0] === 'fetch') {
-                    return;
-                }
-                effects.push(`run:${command}:${args.join(' ')}`);
-            },
-        });
+        {
+            merger: 'foreign',
+            shellSnapshot: pullRequest({ state: 'MERGED', mergedByActorNodeId: REVIEWER_BOT_NODE_ID }),
+            graphQlMergedBy: { __typename: 'Bot' as const, id: REVIEWER_BOT_NODE_ID },
+            expectedError: /not merged by the author App/,
+        },
+        {
+            merger: 'null',
+            shellSnapshot: pullRequest({ state: 'MERGED', mergedByActorNodeId: null }),
+            graphQlMergedBy: null,
+            expectedError: /merger cannot be verified/,
+        },
+        {
+            merger: 'non-Bot',
+            shellSnapshot: pullRequest({ state: 'MERGED' }),
+            graphQlMergedBy: { __typename: 'User' as const },
+            expectedError: /merger cannot be verified/,
+        },
+    ])(
+        'shellPort refuses $merger merged-by authority before any recovery effect',
+        ({ shellSnapshot, graphQlMergedBy, expectedError }) => {
+            const effects: string[] = [];
+            const port = shellPort('jcosta33/sourdaw', {
+                capture: (_command, args) => {
+                    const joined = args.join(' ');
+                    if (joined.includes('pr view')) {
+                        return JSON.stringify(shellPullRequest(shellSnapshot));
+                    }
+                    if (joined.includes('mergedBy{__typename')) {
+                        return shellMergedByGraphql(graphQlMergedBy);
+                    }
+                    effects.push(`capture:${joined}`);
+                    throw new Error(`unexpected recovery read: ${joined}`);
+                },
+                run: (command, args) => {
+                    if (command === 'git' && args[0] === 'fetch') {
+                        return;
+                    }
+                    effects.push(`run:${command}:${args.join(' ')}`);
+                },
+            });
 
-        expect(() =>
-            deliverPullRequest(42, port, {
-                complete: (issue) => effects.push(`complete:${issue}`),
-            })
-        ).toThrow(/not merged by the author App/);
-        expect(effects).toEqual([]);
-    });
+            expect(() =>
+                deliverPullRequest(42, port, {
+                    complete: (issue) => effects.push(`complete:${issue}`),
+                })
+            ).toThrow(expectedError);
+            expect(effects).toEqual([]);
+        }
+    );
 
     it('uses REST response order, not created_at order, for shellPort merged recovery', () => {
         const bodyX = relationshipBody('Closes #2372');
         const bodyY = relationshipBody('Closes #2373');
         const effects: string[] = [];
+        const captures: string[] = [];
         const comment = (id: string, receiptBody: string, createdAt: string) => ({
             node_id: id,
             body: receiptBody,
@@ -2261,8 +2315,12 @@ describe('delivery shell boundary', () => {
         const port = shellPort('jcosta33/sourdaw', {
             capture: (_command, args) => {
                 const joined = args.join(' ');
+                captures.push(joined);
                 if (joined.includes('pr view')) {
                     return JSON.stringify(shellPullRequest(pullRequest({ state: 'MERGED' })));
+                }
+                if (joined.includes('mergedBy{__typename')) {
+                    return shellMergedByGraphql({ __typename: 'Bot', id: AUTHOR_BOT_NODE_ID });
                 }
                 if (joined.includes('issues/42/comments?per_page=100')) {
                     return JSON.stringify([
@@ -2282,6 +2340,11 @@ describe('delivery shell boundary', () => {
             complete: (issue) => effects.push(`complete:${issue}`),
         });
 
+        expect(captures.slice(0, 3)).toEqual([
+            expect.stringContaining('pr view 42'),
+            expect.stringContaining('mergedBy{__typename'),
+            'api --paginate --slurp repos/jcosta33/sourdaw/issues/42/comments?per_page=100',
+        ]);
         expect(effects).toEqual(['complete:2373']);
     });
 
