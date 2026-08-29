@@ -270,7 +270,6 @@ function hasExactTrackedRunBinding(
     return (
         matchingContinuations.length === 1 &&
         continuation?.receiptIdentity === receiptIdentity &&
-        continuation.recovery === 'reconcile-batch' &&
         continuation.serializedBatch === approvedCommandBatch.serialized &&
         hasExactAgentCommandBatchAuthority(approvedCommandBatch.authority, continuation.authority) &&
         hasExactContinuationEffects(continuation.effects, receipt.pendingEffects)
@@ -324,7 +323,6 @@ function hasExactFinalizedContinuationBinding(
     if (
         matchingContinuations.length !== 1 ||
         !continuation ||
-        continuation.recovery !== 'reconcile-batch' ||
         continuation.serializedBatch !== approvedCommandBatch.serialized ||
         !hasExactAgentCommandBatchAuthority(approvedCommandBatch.authority, continuation.authority)
     ) {

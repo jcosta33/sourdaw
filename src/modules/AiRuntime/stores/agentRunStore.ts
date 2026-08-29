@@ -32,6 +32,7 @@ import {
     type AgentRunWorkLease,
 } from '../models/AgentRun';
 import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
+import { getPendingEffectRecoveryPolicy } from '../models/GetPendingEffectRecoveryPolicy';
 import { hasSamePreparedStemImportRecovery } from '../validators/hasSamePreparedStemImportRecovery';
 
 const MAX_RUNS = 50;
@@ -282,20 +283,19 @@ function readPendingEffectContinuation(value: unknown): AgentRunPendingEffectCon
         serializedBatch === null ||
         authority === null ||
         lastError === undefined ||
-        (value.recovery !== 'reconcile-batch' && value.recovery !== 'manual-repair') ||
-        (value.recovery === 'manual-repair' && !effects.some(({ remediation }) => remediation === 'manual-repair')) ||
-        (value.recovery === 'reconcile-batch' && effects.some(({ remediation }) => remediation === 'manual-repair'))
+        (value.recovery !== 'reconcile-batch' && value.recovery !== 'manual-repair')
     ) {
         return null;
     }
+    const recoveryPolicy = getPendingEffectRecoveryPolicy(effects);
     return {
         batchId,
         effects,
         receiptIdentity,
-        recovery: value.recovery,
+        recovery: recoveryPolicy.recovery,
         serializedBatch,
         authority,
-        lastError,
+        lastError: lastError ?? (recoveryPolicy.recovery === 'manual-repair' ? recoveryPolicy.reason : null),
     };
 }
 

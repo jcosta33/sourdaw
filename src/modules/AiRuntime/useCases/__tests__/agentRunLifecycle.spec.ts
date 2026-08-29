@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { MISSING_EXACT_CHECKPOINT_RECOVERY_REASON } from '../../models/GetPendingEffectRecoveryPolicy';
 import { agentRunStore, readAgentRunState } from '../../stores/agentRunStore';
 import * as pendingActionConfirmationStore from '../../stores/pendingActionConfirmationStore';
 import { selectAgentRunPendingEffectRecoveries } from '../../stores/selectAgentRunPendingEffectRecoveries';
@@ -264,7 +265,10 @@ describe('agentRunLifecycle', () => {
         durableRecovery.effects[0] = { ...durableRecovery.effects[0]!, operation: 'setTrackGain' };
 
         expect(selectAgentRunPendingEffectRecoveries(state)).toEqual([
-            expect.objectContaining({ recovery: 'reconcile-batch', lastError: null }),
+            expect.objectContaining({
+                recovery: 'manual-repair',
+                lastError: MISSING_EXACT_CHECKPOINT_RECOVERY_REASON,
+            }),
         ]);
     });
 
@@ -293,6 +297,8 @@ describe('agentRunLifecycle', () => {
         expect(selectAgentRunPendingEffectRecoveries(state)).toEqual([
             expect.objectContaining({
                 effects: [expect.objectContaining({ kind: 'runtime-graph', operation: 'renderProjectSections' })],
+                recovery: 'manual-repair',
+                lastError: MISSING_EXACT_CHECKPOINT_RECOVERY_REASON,
             }),
         ]);
 
@@ -472,7 +478,7 @@ describe('agentRunLifecycle', () => {
         ).toThrow('Unknown durable pending effect continuation: batch-render-review');
         expect(agentRunLifecycle.get('run-render-review')?.pendingEffectContinuations).toEqual(continuationBefore);
         expect(readAgentRunState().pendingEffectRecoveryLedger).toEqual(
-            checkpoint ? [expect.objectContaining({ checkpoint: 'prepared', recovery: 'reconcile-batch' })] : []
+            checkpoint ? [expect.objectContaining({ checkpoint: 'prepared', recovery: 'manual-repair' })] : []
         );
     });
 });

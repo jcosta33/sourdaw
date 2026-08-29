@@ -53,6 +53,7 @@ import {
 } from '#/modules/CrdtDocument/useCases';
 import { type ActionHandler, type AppAction, type AppActionType } from '#/utils/handlerContract';
 
+import { MISSING_EXACT_CHECKPOINT_RECOVERY_REASON } from '../../models/GetPendingEffectRecoveryPolicy';
 import { readAgentRunState } from '../../stores/agentRunStore';
 import { aiActionHistoryStore, clearAiHistory } from '../../stores/aiActionHistoryStore';
 import { chatStore, stopGenerating } from '../../stores/chatStore';
@@ -84,6 +85,7 @@ type SetTempoAction = Extract<AppAction, { type: 'setTempo' }>;
 type AddDeviceAction = Extract<AppAction, { type: 'addDevice' }>;
 type RenderSectionsAction = Extract<AppAction, { type: 'renderProjectSections' }>;
 type ConfirmedActionBatchResult = Awaited<ReturnType<typeof executeVersionedCommandBatchEnvelope>>;
+type VerifiedPendingEffect = ReturnType<typeof createVerifiedBatchReceipt>['pendingEffects'][number];
 
 const FAILURE_PERSISTENCE_WARNING =
     'Agent run failure recovery state could not be persisted. The work failed, and no successful artifact is claimed. Review the durable run state before retrying.';
@@ -95,9 +97,6 @@ const STALE_RECEIPT_FAILURE_WARNING =
     'Agent work failed after its run lease was cancelled or replaced. The verified failure receipt was retained without reopening the terminal run.';
 const STALE_RECEIPT_CANCELLATION_WARNING =
     'Agent work was cancelled after its run lease was cancelled or replaced. The verified cancellation receipt was retained without reopening the terminal run.';
-const EXACT_CHECKPOINT_REVISION_RECOVERY_REASON =
-    'Pending project checkpoint recovery requires exact post-commit project revision evidence.';
-
 const runtimeMocks = vi.hoisted(() => ({
     applyRuntimeGraphDelta: vi.fn(),
     getRuntimeGraphRevision: vi.fn(() => 4),
@@ -363,7 +362,7 @@ function createPendingRenderBatchResult(
         reason: 'comparison renderer unavailable',
         remediation: 'reconcile' as const,
         state: 'pending' as const,
-    };
+    } satisfies VerifiedPendingEffect;
     const result = {
         status: 'committed-with-warning' as const,
         actions: [],
@@ -401,7 +400,7 @@ function createPendingRuntimeGraphBatchResult(
         reason: 'runtime graph revision is stale',
         remediation: 'retry' as const,
         state: 'pending' as const,
-    };
+    } satisfies VerifiedPendingEffect;
     const result = {
         status: 'committed-with-warning' as const,
         actions: [],
@@ -1316,7 +1315,7 @@ describe('confirmPendingChatActions transaction admission', () => {
                 effects: [
                     expect.objectContaining({ kind: 'runtime-graph', operation: 'addDevice', remediation: 'retry' }),
                 ],
-                continuation: { kind: 'reconcile-exact-batch' },
+                continuation: { kind: 'manual-repair' },
             });
         } finally {
             execute.mockRestore();
@@ -1393,6 +1392,152 @@ describe('confirmPendingChatActions transaction admission', () => {
             pendingActionConfirmationStatus: 'failed',
             pendingActionFollowUpStatus: undefined,
             content: expect.stringContaining('Do not replay these actions'),
+        });
+        expect(retain).toHaveBeenCalledOnce();
+        expect(release).not.toHaveBeenCalled();
+    });
+
+    it('marks a real promoted pending-effect continuation manual when stale lease settlement rejects finalization', async () => {
+        const runId = 'confirmation-real-stale-pending-effects';
+        const confirmationId = 'confirmation-real-stale-pending-effects';
+        const batchId = 'group-real-stale-pending-effects';
+        configureAiWorkflowCommandPreflightFixture('project-real-stale-pending-effects');
+        configureCommandBatchIdempotency({ canExecute: () => true });
+        const ownedStorage = createAutomergeStorage<{ bpm: number }>('owned', 'transport');
+        let injectedForeignMutation = false;
+        registerHandlerMap({
+            setTempo: {
+                canReapplyAfterDivergence: (action) => action.payload.expectedBpm !== undefined,
+                execute: (action: SetTempoAction) => {
+                    ownedStorage.set({ bpm: action.payload.bpm });
+                    return {
+                        status: 'written',
+                        afterCommit: () => {
+                            if (!injectedForeignMutation) {
+                                mutateCrdtDoc<Record<string, unknown>>({
+                                    id: 'independent',
+                                    changeFn: (doc) => {
+                                        doc.staleSettlementMutation = true;
+                                    },
+                                });
+                                injectedForeignMutation = true;
+                            }
+                            return Promise.reject(new Error('tempo runtime unavailable'));
+                        },
+                        afterAmbiguousCommit: () => Promise.reject(new Error('tempo runtime still unavailable')),
+                    };
+                },
+                describe: (action) => ({
+                    label: 'Set tempo',
+                    inverseAction: {
+                        type: 'setTempo',
+                        payload: { bpm: 120, expectedBpm: action.payload.bpm },
+                    },
+                }),
+                previewExecution: 'isolated-project',
+                undoable: true,
+                validate: () => true,
+            },
+        });
+        const action = { type: 'setTempo', payload: { bpm: 132 } } satisfies SetTempoAction;
+        const projectRevision = captureProjectRevision();
+        const envelope = migrateLegacyAppActionToVersionedCommandEnvelope({
+            action,
+            expectedEffect: 'Tempo changes to 132 BPM.',
+            normalizedProjectRevision: projectRevision,
+            options: { groupId: batchId, groupLabel: 'Set tempo batch', source: 'prompt' },
+        });
+        const commandBatch = compileVersionedCommandBatchEnvelope({
+            runId,
+            batchId,
+            projectId: 'project-real-stale-pending-effects',
+            baseRevision: projectRevision,
+            intent: 'set tempo to 132',
+            commands: [serializeVersionedCommandEnvelope(envelope)],
+        });
+        agentRunLifecycle.create({
+            runId,
+            request: 'set tempo to 132',
+            mode: 'macro',
+            createdRevision: projectRevision,
+        });
+        agentRunLifecycle.transitionPhase({ runId, phase: 'planning' });
+        agentRunLifecycle.transitionPhase({ runId, phase: 'waiting-for-approval' });
+        const retain = vi.fn().mockResolvedValue(undefined);
+        const release = vi.fn().mockResolvedValue(undefined);
+        proposePendingActionConfirmation({
+            id: confirmationId,
+            runId,
+            prompt: 'set tempo to 132',
+            assistantMessageId: 'assistant-1',
+            actions: [action],
+            actionLabels: ['Set tempo to 132 BPM'],
+            commandBatch,
+            agentApproval: compileAgentRiskApproval({ commandBatch }),
+            executionMode: 'atomic',
+            groupId: batchId,
+            groupLabel: 'Set tempo batch',
+            projectRevision,
+            resourceLease: { bytes: 1, release, retain },
+        });
+        const settle = vi.spyOn(agentRunWorkLease, 'settle').mockImplementation(() => {
+            agentRunLifecycle.transitionPhase({ runId, phase: 'cancelled' });
+            return { status: 'stale' };
+        });
+
+        try {
+            await expect(confirmPendingChatActions({ confirmationId })).resolves.toMatchObject({
+                status: 'failed',
+                durableCommit: true,
+                reason: expect.stringContaining(AGENT_RUN_STALE_COMPLETION_WARNING),
+                recovery: { kind: 'inspect-current-project', replay: 'forbidden' },
+            });
+        } finally {
+            settle.mockRestore();
+        }
+
+        expect(getCrdtDoc<Record<string, unknown>>('owned')).toMatchObject({ transport: { bpm: 132 } });
+        expect(getCrdtDoc<Record<string, unknown>>('independent')).toMatchObject({ staleSettlementMutation: true });
+        expect(agentRunLifecycle.get(runId)).toMatchObject({
+            phase: 'cancelled',
+            pendingEffectContinuations: [
+                expect.objectContaining({
+                    batchId,
+                    recovery: 'manual-repair',
+                    lastError: MISSING_EXACT_CHECKPOINT_RECOVERY_REASON,
+                    effects: [
+                        expect.objectContaining({
+                            commandId: envelope.commandId,
+                            operation: 'setTempo',
+                            remediation: 'reconcile',
+                            state: 'pending',
+                        }),
+                    ],
+                }),
+            ],
+            workLeases: [expect.objectContaining({ workId: batchId, terminalState: null })],
+        });
+        expect(readAgentRunState().pendingEffectRecoveryLedger).toEqual([
+            expect.objectContaining({
+                runId,
+                batchId,
+                checkpoint: 'durable',
+                recovery: 'manual-repair',
+                lastError: MISSING_EXACT_CHECKPOINT_RECOVERY_REASON,
+            }),
+        ]);
+        expect(selectAgentRunPendingEffectRecoveries(readAgentRunState())).toEqual([
+            expect.objectContaining({
+                runId,
+                batchId,
+                recovery: 'manual-repair',
+                lastError: MISSING_EXACT_CHECKPOINT_RECOVERY_REASON,
+            }),
+        ]);
+        expect(getPendingActionConfirmation(confirmationId)).toMatchObject({
+            status: 'failed',
+            followUpProjectRevision: null,
+            followUpStatus: null,
         });
         expect(retain).toHaveBeenCalledOnce();
         expect(release).not.toHaveBeenCalled();
@@ -2547,7 +2692,7 @@ describe('confirmPendingChatActions transaction admission', () => {
             status: 'failed',
             durableCommit: true,
             effects: [expect.objectContaining({ kind: 'external-effect', remediation: 'reconcile' })],
-            continuation: { kind: 'reconcile-exact-batch' },
+            continuation: { kind: 'manual-repair' },
         });
         expect(effectAttempts).toBe(2);
         expect(prepareForCommit).toHaveBeenCalledOnce();
@@ -2594,7 +2739,7 @@ describe('confirmPendingChatActions transaction admission', () => {
             continuation: {
                 authority: 'authoritative-collaboration-host',
                 idempotency: 'project-checkpoint',
-                kind: 'reconcile-exact-batch',
+                kind: 'manual-repair',
             },
         });
         expect(recoveryPrepareForCommit).toHaveBeenCalledOnce();
@@ -2628,12 +2773,12 @@ describe('confirmPendingChatActions transaction admission', () => {
         ).resolves.toEqual({
             status: 'failed',
             durableCommit: true,
-            reason: EXACT_CHECKPOINT_REVISION_RECOVERY_REASON,
+            reason: MISSING_EXACT_CHECKPOINT_RECOVERY_REASON,
             effects: [...priorReceipt.pendingEffects],
             continuation: {
                 authority: 'authoritative-collaboration-host',
                 idempotency: 'project-checkpoint',
-                kind: 'reconcile-exact-batch',
+                kind: 'manual-repair',
             },
         });
 
@@ -2648,7 +2793,7 @@ describe('confirmPendingChatActions transaction admission', () => {
 
         expect(effectAttempts).toBe(2);
         expect(chatStore.value?.messages[0]?.content).toContain('pending-effect reconciliation is still incomplete');
-        expect(chatStore.value?.messages[0]?.content).toContain(EXACT_CHECKPOINT_REVISION_RECOVERY_REASON);
+        expect(chatStore.value?.messages[0]?.content).toContain(MISSING_EXACT_CHECKPOINT_RECOVERY_REASON);
         expect(chatStore.value?.messages[0]?.content).not.toContain('without replaying project or runtime effects');
         expect(chatStore.value?.messages[0]?.content).not.toContain('tempo runtime unavailable');
         executeBatch.mockRestore();
@@ -2945,7 +3090,7 @@ describe('confirmPendingChatActions transaction admission', () => {
             continuation: {
                 authority: 'authoritative-collaboration-host',
                 idempotency: 'project-checkpoint',
-                kind: 'reconcile-exact-batch',
+                kind: 'manual-repair',
             },
         });
         expect(trackStore.value?.tracks[0]?.devices.map((device) => device.id)).toEqual([
@@ -3036,7 +3181,7 @@ describe('confirmPendingChatActions transaction admission', () => {
             })
         ).resolves.toEqual({
             status: 'failed',
-            reason: EXACT_CHECKPOINT_REVISION_RECOVERY_REASON,
+            reason: MISSING_EXACT_CHECKPOINT_RECOVERY_REASON,
         });
 
         expect(trackStore.value?.tracks[0]?.devices.map((device) => device.id)).toEqual([
@@ -3051,7 +3196,7 @@ describe('confirmPendingChatActions transaction admission', () => {
             pendingEffectContinuations: [
                 expect.objectContaining({
                     batchId: 'group-runtime-effect',
-                    lastError: EXACT_CHECKPOINT_REVISION_RECOVERY_REASON,
+                    lastError: MISSING_EXACT_CHECKPOINT_RECOVERY_REASON,
                 }),
             ],
             saga: {
@@ -3470,13 +3615,18 @@ describe('confirmPendingChatActions transaction admission', () => {
             });
 
         try {
-            await expect(
-                confirmPendingChatActions({ confirmationId: 'confirmation-rebind-failure' })
-            ).resolves.toMatchObject({
+            const result = await confirmPendingChatActions({ confirmationId: 'confirmation-rebind-failure' });
+            expect(result).toMatchObject({
                 status: 'failed',
                 durableCommit: true,
                 reason: expect.stringContaining('render artifact vanished'),
-                effects: [],
+                effects: [
+                    expect.objectContaining({
+                        commandId: renderEnvelope.commandId,
+                        operation: 'renderProjectSections',
+                        remediation: 'manual-repair',
+                    }),
+                ],
                 continuation: { kind: 'manual-repair' },
             });
         } finally {
@@ -3607,8 +3757,10 @@ describe('confirmPendingChatActions transaction admission', () => {
                 return createPendingRuntimeGraphBatchResult(commandBatch);
             });
 
+        let result: Awaited<ReturnType<typeof confirmPendingChatActions>> | null = null;
         try {
-            await expect(confirmPendingChatActions({ confirmationId })).resolves.toMatchObject({
+            result = await confirmPendingChatActions({ confirmationId });
+            expect(result).toMatchObject({
                 status: 'failed',
                 durableCommit: true,
                 continuation: { kind: 'manual-repair' },
@@ -3617,6 +3769,25 @@ describe('confirmPendingChatActions transaction admission', () => {
             execute.mockRestore();
             captureMutationAuthorization.mockRestore();
         }
+        if (result === null) {
+            throw new Error('Expected confirmation to return a durable manual-repair failure.');
+        }
+        expect(result).toMatchObject({
+            effects: [
+                expect.objectContaining({
+                    commandId: addDeviceEnvelope.commandId,
+                    kind: 'runtime-graph',
+                    operation: 'addDevice',
+                    remediation: 'retry',
+                }),
+                expect.objectContaining({
+                    commandId: renderEnvelope.commandId,
+                    kind: 'external-effect',
+                    operation: 'renderProjectSections',
+                    remediation: 'manual-repair',
+                }),
+            ],
+        });
 
         const continuation = selectAgentRunPendingEffectRecoveries(readAgentRunState()).find(
             (candidate) => candidate.runId === runId && candidate.batchId === batchId

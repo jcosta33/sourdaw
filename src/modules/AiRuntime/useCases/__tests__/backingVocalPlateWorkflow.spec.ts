@@ -1362,7 +1362,7 @@ describe('backing-vocal plate workflow', () => {
             continuation: {
                 authority: 'authoritative-collaboration-host',
                 idempotency: 'project-checkpoint',
-                kind: 'reconcile-exact-batch',
+                kind: 'manual-repair',
             },
         });
 
@@ -1488,7 +1488,7 @@ describe('backing-vocal plate workflow', () => {
         expect(getAgentSectionRenderArtifacts().map((artifact) => artifact.jobId)).toEqual([completedJob.jobId]);
         expect(agentRunLifecycle.get(confirmation.runId)?.pendingEffectContinuations).toEqual(
             expect.arrayContaining([
-                expect.objectContaining({ batchId: confirmation.groupId, recovery: 'reconcile-batch' }),
+                expect.objectContaining({ batchId: confirmation.groupId, recovery: 'manual-repair' }),
             ])
         );
 

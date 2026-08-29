@@ -2,6 +2,8 @@ import { logger } from '#/infra/logger/appLogger';
 import { type createVerifiedBatchReceipt, parseVersionedCommandEnvelope } from '#/modules/Command/useCases';
 import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 
+import { type AgentRunPendingEffect } from '../../models/AgentRun';
+import { getPendingEffectRecoveryPolicy } from '../../models/GetPendingEffectRecoveryPolicy';
 import { type PendingAppActionConfirmation } from '../../stores/pendingActionConfirmationStore';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { recordAgentRunReceiptSaga } from '../recordAgentRunReceiptSaga';
@@ -9,13 +11,12 @@ import { recordAgentRunReceiptSaga } from '../recordAgentRunReceiptSaga';
 import { AGENT_RUN_PERSISTENCE_WARNING } from './settleAgentRunWorkLeaseSafely';
 
 export type CommandVerifiedBatchReceipt = ReturnType<typeof createVerifiedBatchReceipt>;
-type PendingEffect = CommandVerifiedBatchReceipt['pendingEffects'][number];
 
 export type CommittedEffectFailureResult = {
     status: 'failed';
     durableCommit: true;
     reason: string;
-    effects: PendingEffect[];
+    effects: AgentRunPendingEffect[];
     continuation: {
         authority: 'authoritative-collaboration-host';
         idempotency: 'project-checkpoint';
@@ -61,21 +62,21 @@ function getApprovalLabelsByCommandId(confirmation: PendingAppActionConfirmation
 function createCommittedEffectFailureResult(
     receipt: CommandVerifiedBatchReceipt,
     reason = receipt.warnings[0] ?? receipt.modelSummary,
-    continuationKind?: CommittedEffectFailureResult['continuation']['kind']
+    continuationKind?: CommittedEffectFailureResult['continuation']['kind'],
+    effects: readonly AgentRunPendingEffect[] = receipt.pendingEffects
 ): CommittedEffectFailureResult {
+    const recoveryPolicy = getPendingEffectRecoveryPolicy(effects);
     return {
         status: 'failed',
         durableCommit: true,
         reason,
-        effects: [...receipt.pendingEffects],
+        effects: structuredClone(effects),
         continuation: {
             authority: 'authoritative-collaboration-host',
             idempotency: 'project-checkpoint',
             kind:
                 continuationKind ??
-                (receipt.pendingEffects.some(({ remediation }) => remediation === 'manual-repair')
-                    ? 'manual-repair'
-                    : 'reconcile-exact-batch'),
+                (recoveryPolicy.recovery === 'manual-repair' ? 'manual-repair' : 'reconcile-exact-batch'),
         },
     };
 }

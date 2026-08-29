@@ -49,6 +49,8 @@ type RecordPostCommitRecoveryFailure =
     typeof import('../agentRunExecutionSettlement').agentRunExecutionSettlement.recordPostCommitRecoveryFailure;
 type RecordCommittedRecoveryFailure =
     typeof import('../agentRunExecutionSettlement').agentRunExecutionSettlement.recordCommittedRecoveryFailure;
+type GetArtifacts = typeof import('#/modules/AudioRendering/useCases').getAgentSectionRenderArtifacts;
+type RebindArtifacts = typeof import('#/modules/AudioRendering/useCases').rebindAgentProjectSectionArtifactRevisions;
 
 const mocks = vi.hoisted(() => ({
     bindCancellation: vi.fn<BindCancellation>(),
@@ -56,8 +58,8 @@ const mocks = vi.hoisted(() => ({
     captureAuthorization: vi.fn<CaptureAuthorization>(),
     captureRevision: vi.fn<CaptureRevision>(),
     executeBatch: vi.fn<TestBatchExecutor>(),
-    getArtifacts: vi.fn(() => []),
-    rebindArtifacts: vi.fn(),
+    getArtifacts: vi.fn<GetArtifacts>(),
+    rebindArtifacts: vi.fn<RebindArtifacts>(),
     issueApprovalBinding: vi.fn<ApprovalBindingIssuer>(),
     prepareContinuation: vi.fn<PrepareContinuation>(),
     prepareResourceLease: vi.fn<PrepareResourceLease>(),
@@ -291,6 +293,7 @@ beforeEach(() => {
     projectMutationAuthorized = true;
     mocks.captureAuthorization.mockReturnValue(() => projectMutationAuthorized);
     mocks.captureRevision.mockReturnValue('revision-2');
+    mocks.getArtifacts.mockReturnValue([]);
     mocks.prepareResourceLease.mockResolvedValue(undefined);
     mocks.protectResourceLease.mockReturnValue(undefined);
     mocks.prepareContinuation.mockReturnValue({ promote: () => undefined, discard: () => undefined });

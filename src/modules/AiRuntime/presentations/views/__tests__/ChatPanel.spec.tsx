@@ -1,6 +1,7 @@
 import { act, render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { MISSING_EXACT_CHECKPOINT_RECOVERY_REASON } from '../../../models/GetPendingEffectRecoveryPolicy';
 import { ChatPanel } from '../ChatPanel';
 
 // Mock external dependencies - factories are hoisted, so define mocks inside
@@ -389,7 +390,7 @@ describe('ChatPanel', () => {
         );
     });
 
-    it('owns persisted retry, repair, reconciliation, and manual continuations after chat history is gone', () => {
+    it('shows persisted pending-effect continuations as manual guidance after chat history is gone', () => {
         (useStore as ReturnType<typeof vi.fn>).mockImplementation((store) =>
             store === agentRunStore
                 ? {
@@ -397,6 +398,7 @@ describe('ChatPanel', () => {
                       runs: [
                           {
                               runId: 'run-retry',
+                              revisions: { created: null, planned: null, approved: null, committed: null },
                               pendingEffectContinuations: [
                                   {
                                       batchId: 'batch-retry',
@@ -417,6 +419,7 @@ describe('ChatPanel', () => {
                           },
                           {
                               runId: 'run-repair',
+                              revisions: { created: null, planned: null, approved: null, committed: null },
                               pendingEffectContinuations: [
                                   {
                                       batchId: 'batch-repair',
@@ -437,6 +440,7 @@ describe('ChatPanel', () => {
                           },
                           {
                               runId: 'run-reconcile',
+                              revisions: { created: null, planned: null, approved: null, committed: null },
                               pendingEffectContinuations: [
                                   {
                                       batchId: 'batch-reconcile',
@@ -457,6 +461,7 @@ describe('ChatPanel', () => {
                           },
                           {
                               runId: 'run-manual',
+                              revisions: { created: null, planned: null, approved: null, committed: null },
                               pendingEffectContinuations: [
                                   {
                                       batchId: 'batch-manual',
@@ -506,23 +511,12 @@ describe('ChatPanel', () => {
 
         render(<ChatPanel />);
 
-        fireEvent.click(screen.getByRole('button', { name: 'Retry runtime effect' }));
-        fireEvent.click(screen.getByRole('button', { name: 'Repair audio graph' }));
-        fireEvent.click(screen.getByRole('button', { name: 'Reconcile pending effects' }));
-        expect(recoverAgentRunPendingEffects).toHaveBeenNthCalledWith(1, {
-            runId: 'run-retry',
-            batchId: 'batch-retry',
-        });
-        expect(recoverAgentRunPendingEffects).toHaveBeenNthCalledWith(2, {
-            runId: 'run-repair',
-            batchId: 'batch-repair',
-        });
-        expect(recoverAgentRunPendingEffects).toHaveBeenNthCalledWith(3, {
-            runId: 'run-reconcile',
-            batchId: 'batch-reconcile',
-        });
-        expect(recoverAgentRunPendingEffects).toHaveBeenCalledTimes(3);
-        expect(screen.getByText('Manual repair required')).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Retry runtime effect' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Repair audio graph' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Reconcile pending effects' })).not.toBeInTheDocument();
+        expect(recoverAgentRunPendingEffects).not.toHaveBeenCalled();
+        expect(screen.getAllByText('Manual repair required')).toHaveLength(4);
+        expect(screen.getAllByText(MISSING_EXACT_CHECKPOINT_RECOVERY_REASON)).toHaveLength(1);
         expect(screen.getByRole('list', { name: 'Pending effects for batch batch-manual' })).toHaveTextContent(
             'publishRender: The external system cannot prove an exact retry.'
         );
@@ -536,7 +530,7 @@ describe('ChatPanel', () => {
         expect(screen.getByText('The durable graph repair is ready.')).toBeInTheDocument();
     });
 
-    it('renders recovery owned by an evicted run from the non-evictable ledger', () => {
+    it('renders evicted-run recovery as manual guidance from the non-evictable ledger', () => {
         (useStore as ReturnType<typeof vi.fn>).mockImplementation((store) =>
             store === agentRunStore
                 ? {
@@ -576,11 +570,10 @@ describe('ChatPanel', () => {
         expect(screen.getByRole('list', { name: 'Pending effects for batch batch-evicted' })).toHaveTextContent(
             'loadExternalPlugin: The native plugin host needs a graph rebuild.'
         );
-        fireEvent.click(screen.getByRole('button', { name: 'Repair audio graph' }));
-        expect(recoverAgentRunPendingEffects).toHaveBeenCalledWith({
-            runId: 'run-evicted',
-            batchId: 'batch-evicted',
-        });
+        expect(screen.getByText('Manual repair required')).toBeInTheDocument();
+        expect(screen.getByText(MISSING_EXACT_CHECKPOINT_RECOVERY_REASON)).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Repair audio graph' })).not.toBeInTheDocument();
+        expect(recoverAgentRunPendingEffects).not.toHaveBeenCalled();
     });
 
     it('surfaces retained prepared media when an evicted run requires manual repair', () => {

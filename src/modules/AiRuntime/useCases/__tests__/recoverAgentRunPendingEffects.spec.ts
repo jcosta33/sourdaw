@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { MISSING_EXACT_CHECKPOINT_RECOVERY_REASON } from '../../models/GetPendingEffectRecoveryPolicy';
 import { recoverAgentRunPendingEffects } from '../recoverAgentRunPendingEffects';
 
 const mocks = vi.hoisted(() => ({
@@ -94,13 +95,14 @@ describe('recoverAgentRunPendingEffects', () => {
             continuation: expect.objectContaining({
                 batchId: 'batch-render-recovery',
                 effects: renderRecovery().effects,
+                recovery: 'manual-repair',
                 receiptIdentity: '2:run-render-recovery:batch-render-recovery:partially-committed',
             }),
         });
         expect(mocks.requireManualRepair).toHaveBeenCalledOnce();
     });
 
-    it('reconciles a runtime-graph effect that happens to share the render operation name', async () => {
+    it('refuses runtime-graph recovery without exact checkpoint evidence', async () => {
         const recovery = renderRecovery();
         const runtimeGraphEffect = {
             ...recovery.effects[0],
@@ -115,23 +117,21 @@ describe('recoverAgentRunPendingEffects', () => {
             outcome: 'partially-committed',
             pendingEffects: [runtimeGraphEffect],
         });
-        mocks.executeBatch.mockResolvedValue({
-            status: 'idempotent-replay',
-            receipt: {
-                schemaVersion: 2,
-                runId: 'run-render-recovery',
-                batchId: 'batch-render-recovery',
-                outcome: 'committed',
-                pendingEffects: [],
-            },
-        });
 
         await expect(
             recoverAgentRunPendingEffects({ runId: 'run-render-recovery', batchId: 'batch-render-recovery' })
-        ).resolves.toEqual({ status: 'recovered' });
+        ).resolves.toEqual({
+            status: 'failed',
+            reason: MISSING_EXACT_CHECKPOINT_RECOVERY_REASON,
+        });
 
-        expect(mocks.executeBatch).toHaveBeenCalledOnce();
-        expect(mocks.requireManualRepair).not.toHaveBeenCalled();
+        expect(mocks.executeBatch).not.toHaveBeenCalled();
+        expect(mocks.requireManualRepair).toHaveBeenCalledWith({
+            runId: 'run-render-recovery',
+            batchId: 'batch-render-recovery',
+            reason: MISSING_EXACT_CHECKPOINT_RECOVERY_REASON,
+            preserveEffects: true,
+        });
     });
 
     it('remains non-executable when manual-repair persistence fails', async () => {

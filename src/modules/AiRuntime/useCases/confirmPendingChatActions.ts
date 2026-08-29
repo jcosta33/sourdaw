@@ -7,8 +7,9 @@ import {
 } from '#/modules/Command/useCases';
 
 import { AiProposalInvalidatedError } from '../errors/AiProposalInvalidatedError';
-import { type AgentRunErrorCategory } from '../models/AgentRun';
+import { type AgentRunErrorCategory, type AgentRunPendingEffect } from '../models/AgentRun';
 import { type ChatActionConfirmationStatus } from '../models/Chat';
+import { MISSING_EXACT_CHECKPOINT_RECOVERY_REASON } from '../models/GetPendingEffectRecoveryPolicy';
 import { updateChatMessage } from '../stores/chatStore';
 import {
     type PendingAppActionConfirmation,
@@ -35,6 +36,7 @@ import {
 } from './agentRequestOrchestration/settleAgentRunWorkLeaseSafely';
 import { settleConfirmedBatchOutcome } from './agentRequestOrchestration/settleConfirmedBatchOutcome';
 import { settleVerifiedBatchReplay } from './agentRequestOrchestration/settleVerifiedBatchReplay';
+import { agentRunLifecycle } from './agentRunLifecycle';
 import { agentRunWorkLease } from './agentRunWorkLease';
 import { getVerifiedBatchReplayDisposition } from './getVerifiedBatchReplayDisposition';
 import { recoverPreparedStemImportResources } from './recoverPreparedStemImportResources';
@@ -112,6 +114,37 @@ function getTrackedLeaseSettlementContract(batchResult: ConfirmedBatchResult): {
             ? 'verified-command-receipt'
             : 'none';
     return { terminalState, evidence };
+}
+
+function markPromotedPendingEffectsManualRepair(input: {
+    runId: string;
+    batchId: string;
+    reason: string;
+}): string | null {
+    const continuation = agentRunLifecycle.getPendingEffectRecovery(input);
+    if (!continuation || continuation.checkpoint !== 'durable') {
+        return null;
+    }
+    try {
+        agentRunLifecycle.requirePendingEffectManualRepair({
+            ...input,
+            preserveEffects: true,
+        });
+        return null;
+    } catch (error) {
+        logger.error(
+            new Error('Promoted pending-effect continuation could not be marked manual repair', { cause: error })
+        );
+        return AGENT_RUN_PERSISTENCE_WARNING;
+    }
+}
+
+function readDurableContinuationEffects(input: {
+    runId: string;
+    batchId: string;
+    fallbackEffects: readonly AgentRunPendingEffect[];
+}): readonly AgentRunPendingEffect[] {
+    return agentRunLifecycle.getPendingEffectRecovery(input)?.effects ?? input.fallbackEffects;
 }
 
 export async function confirmPendingChatActions(
@@ -223,10 +256,21 @@ export async function confirmPendingChatActions(
     const finalizationEvidenceUnavailable =
         batchCommittedProject && (committedProjectRevision === null || finalizationEvidenceFailure !== null);
     if (finalizationEvidenceUnavailable && !trackedLeaseSettlement.accepted) {
-        const reason = [
+        const finalizationReason =
             finalizationEvidenceFailure ??
-                'The committed command batch did not expose its exact project checkpoint revision.',
+            'The committed command batch did not expose its exact project checkpoint revision.';
+        const manualRepairPersistenceWarning =
+            batchResult.receipt.pendingEffects.length > 0
+                ? markPromotedPendingEffectsManualRepair({
+                      runId: confirmation.runId,
+                      batchId: batchResult.receipt.batchId,
+                      reason: MISSING_EXACT_CHECKPOINT_RECOVERY_REASON,
+                  })
+                : null;
+        const reason = [
+            finalizationReason,
             trackedLeaseSettlement.warning ?? AGENT_RUN_PERSISTENCE_WARNING,
+            manualRepairPersistenceWarning,
         ]
             .filter(Boolean)
             .join(' ');
@@ -288,6 +332,13 @@ export async function confirmPendingChatActions(
                       : {}),
               })
             : null;
+        const committedEffectFailureEffects = requiresRecoveryFollowUp
+            ? readDurableContinuationEffects({
+                  runId: confirmation.runId,
+                  batchId: batchResult.receipt.batchId,
+                  fallbackEffects: batchResult.receipt.pendingEffects,
+              })
+            : batchResult.receipt.pendingEffects;
         const userVisibleReason = [
             reason,
             runPersistenceWarning,
@@ -323,7 +374,8 @@ export async function confirmPendingChatActions(
             ? confirmedBatchOutcomeSupport.createCommittedEffectFailureResult(
                   batchResult.receipt,
                   userVisibleReason,
-                  requiresRenderManualRepair ? 'manual-repair' : undefined
+                  requiresRenderManualRepair ? 'manual-repair' : undefined,
+                  committedEffectFailureEffects
               )
             : confirmedBatchOutcomeSupport.createCommittedFinalizationEvidenceFailureResult(userVisibleReason);
     }

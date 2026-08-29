@@ -146,7 +146,7 @@ describe('selectAgentRunPendingEffectRecoveries', () => {
         });
 
         expect(selectAgentRunPendingEffectRecoveries(readAgentRunState())).toEqual([
-            expect.objectContaining({ runId: RUN_ID, batchId: BATCH_ID }),
+            expect.objectContaining({ runId: RUN_ID, batchId: BATCH_ID, recovery: 'manual-repair' }),
         ]);
     });
 
@@ -155,7 +155,7 @@ describe('selectAgentRunPendingEffectRecoveries', () => {
         createRetryableConfirmation({ authority, followUpRevision: 'revision-render-foreign' });
 
         expect(selectAgentRunPendingEffectRecoveries(readAgentRunState())).toEqual([
-            expect.objectContaining({ runId: RUN_ID, batchId: BATCH_ID }),
+            expect.objectContaining({ runId: RUN_ID, batchId: BATCH_ID, recovery: 'manual-repair' }),
         ]);
     });
 
@@ -166,7 +166,7 @@ describe('selectAgentRunPendingEffectRecoveries', () => {
             createRetryableConfirmation({ authority, followUpRevision: COMMITTED_REVISION, outcome });
 
             expect(selectAgentRunPendingEffectRecoveries(readAgentRunState())).toEqual([
-                expect.objectContaining({ runId: RUN_ID, batchId: BATCH_ID }),
+                expect.objectContaining({ runId: RUN_ID, batchId: BATCH_ID, recovery: 'manual-repair' }),
             ]);
         }
     );

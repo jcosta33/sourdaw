@@ -1017,6 +1017,7 @@ function requireAgentRunPendingEffectManualRepair(input: {
     batchId: string;
     reason: string;
     requiredAt?: number;
+    preserveEffects?: boolean;
 }): AgentRun {
     const requiredAt = input.requiredAt ?? Date.now();
     const state = readAgentRunState();
@@ -1033,9 +1034,11 @@ function requireAgentRunPendingEffectManualRepair(input: {
         throw new Error(`Unknown durable pending effect continuation: ${input.batchId}`);
     }
     const requireManualRepairEffects = (effects: AgentRunPendingEffect[]): AgentRunPendingEffect[] =>
-        effects.map((effect) =>
-            effect.kind === 'external-effect' ? { ...effect, remediation: 'manual-repair' } : effect
-        );
+        input.preserveEffects
+            ? effects
+            : effects.map((effect) =>
+                  effect.kind === 'external-effect' ? { ...effect, remediation: 'manual-repair' } : effect
+              );
     const next = {
         ...run,
         updatedAt: requiredAt,

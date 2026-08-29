@@ -256,6 +256,7 @@ describe('admitCommittedSectionRenderRetry', () => {
         expect(mocks.getRun).toHaveBeenCalledOnce();
 
         bindTrackedRun(fixture);
+        mocks.getRun().pendingEffectContinuations[0]!.recovery = 'manual-repair';
         expect(
             admitCommittedSectionRenderRetry({
                 confirmation: fixture.confirmation,
@@ -623,11 +624,6 @@ describe('admitCommittedSectionRenderRetry', () => {
                 (run.pendingEffectContinuations[0]!.receiptIdentity = 'wrong'),
         ],
         [
-            'wrong continuation recovery',
-            (run: ReturnType<typeof bindFinalizedCrashWindow>) =>
-                (run.pendingEffectContinuations[0]!.recovery = 'manual-repair'),
-        ],
-        [
             'wrong continuation batch',
             (run: ReturnType<typeof bindFinalizedCrashWindow>) =>
                 (run.pendingEffectContinuations[0]!.batchId = 'wrong'),
@@ -887,18 +883,6 @@ describe('admitCommittedSectionRenderRetry', () => {
                     ...mocks.getRun(),
                     pendingEffectContinuations: [
                         { ...mocks.getRun().pendingEffectContinuations[0], serializedBatch: 'stale-batch' },
-                    ],
-                });
-            },
-        ],
-        [
-            'manual-repair continuation',
-            (fixture: ReturnType<typeof createFixture>) => {
-                bindTrackedRun(fixture);
-                mocks.getRun.mockReturnValue({
-                    ...mocks.getRun(),
-                    pendingEffectContinuations: [
-                        { ...mocks.getRun().pendingEffectContinuations[0], recovery: 'manual-repair' },
                     ],
                 });
             },
