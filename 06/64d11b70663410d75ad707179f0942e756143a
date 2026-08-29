@@ -1,0 +1,23 @@
+src/styles/testing/mainStylesheetRules.ts
+  s_a965280ab2852d::t_ff80e2f19ce396 52-68,74-78,81-83
+  s_a965280ab2852d::t_f5fedd4874b134 17-22,29-31,51
+  s_a965280ab2852d::t_0022d9b525cf48 32-33,85
+src/styles/testing/__tests__/mainStylesheetRules.spec.ts
+  s_a965280ab2852d::t_2e9505debc5b4c 1-25
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "0664d11b70663410d75ad707179f0942e756143a",
+  "prompts": {},
+  "sessions": {
+    "s_a965280ab2852d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "841ddf43-6056-4aac-ad0f-c09b754df0ba",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
