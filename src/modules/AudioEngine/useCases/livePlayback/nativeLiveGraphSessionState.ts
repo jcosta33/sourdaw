@@ -17,12 +17,25 @@ import { type AudioGraphBackend } from '../../models/AudioGraphBackend';
 
 export type NativeLiveGraphSession = {
     backend: AudioGraphBackend | null;
+    /**
+     * Whether the topology this session sent actually gives the engine
+     * something to sound.
+     *
+     * Derived from the batch, never declared: today `projectLiveGraphTopology`
+     * emits no `schedule-clip`, so the engine renders silence and Web Audio is
+     * what a musician hears. Anything that must follow the audible transport
+     * — the playback cursor above all — reads this rather than assuming a
+     * running engine is the one making the sound, and starts following the
+     * engine on the first run whose topology carries audio.
+     */
+    carriesAudio: boolean;
     /** The tail of this session's serialised command chain. */
     pending: Promise<unknown>;
 };
 
 export const nativeLiveGraphSession: NativeLiveGraphSession = {
     backend: null,
+    carriesAudio: false,
     pending: Promise.resolve(),
 };
 

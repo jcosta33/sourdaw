@@ -11,6 +11,7 @@ import { timeSignatureMapStore } from '../../stores/timeSignatureMapStore';
 import { ensureTrackStrips } from '../ensureTrackStrips';
 import { startPlayheadScheduler } from '../playheadScheduler/startPlayheadScheduler';
 import { secondsBetweenBeats } from '../secondsBetweenBeats';
+import { projectEngineTransportMaps } from '../tempoMap/projectEngineTransportMaps';
 
 export function startPlayback(): void {
     const state = getTransportState();
@@ -66,6 +67,10 @@ export function startPlayback(): void {
     Promise.resolve(
         startNativeLiveGraphSession({
             positionSeconds: secondsBetweenBeats(tempoMapStore.value?.changes ?? [], 0, startPosition, state.tempo),
+            // Read here, at the moment of play, so the engine follows the map
+            // the timeline holds now rather than the one it held when the
+            // session object was made.
+            transportMaps: projectEngineTransportMaps(),
         })
     )
         .then((result) => {

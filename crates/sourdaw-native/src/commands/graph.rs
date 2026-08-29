@@ -904,7 +904,7 @@ impl QueueBudgets {
     }
 }
 
-fn finite(value: f64, what: &str) -> Result<f64, String> {
+pub(crate) fn finite(value: f64, what: &str) -> Result<f64, String> {
     if value.is_finite() {
         Ok(value)
     } else {
@@ -912,7 +912,7 @@ fn finite(value: f64, what: &str) -> Result<f64, String> {
     }
 }
 
-fn seconds_to_frames(seconds: f64, sample_rate: f32, what: &str) -> Result<u64, String> {
+pub(crate) fn seconds_to_frames(seconds: f64, sample_rate: f32, what: &str) -> Result<u64, String> {
     let seconds = finite(seconds, what)?;
     if seconds < 0.0 {
         return Err(format!("{what} is negative"));

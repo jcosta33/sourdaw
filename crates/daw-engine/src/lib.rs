@@ -8,6 +8,7 @@ pub mod offline;
 pub mod plugin_slot;
 pub mod scheduler;
 pub mod timeline;
+pub mod transport_map;
 
 use audio_thread::{spawn_audio_thread_with_diagnostics, AudioThreadHandle};
 use engine_events::{engine_event_channel, EngineEvent};
@@ -18,8 +19,9 @@ use midi::diagnostics::{
 use plugin_slot::NativePlugin;
 use rtrb::{Consumer, Producer, PushError, RingBuffer};
 use scheduler::{
-    graph_progress_channel, BuiltinEffectType, GraphCommand, GraphProgressReader,
-    GraphProgressSnapshot, PluginCore, RetiredGraphObjects, EFFECT_TABLE_CAPACITY,
+    graph_progress_channel, transport_position_channel, BuiltinEffectType, GraphCommand,
+    GraphProgressReader, GraphProgressSnapshot, PluginCore, RetiredGraphObjects,
+    TransportPositionReader, TransportPositionSnapshot, EFFECT_TABLE_CAPACITY,
 };
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::Sender;
@@ -114,6 +116,7 @@ pub struct EngineHandle {
     midi_rt_diagnostics: ActiveMidiRtDiagnosticsReader,
     timeline_rt_diagnostics: TimelineRtDiagnosticsReader,
     graph_progress: GraphProgressReader,
+    transport_position: TransportPositionReader,
     engine_events: Consumer<EngineEvent>,
     /// The rate the stream actually opened at. Every command that names a time
     /// in seconds is converted to frames against this and nothing else.
@@ -149,6 +152,7 @@ impl EngineHandle {
         let (timeline_diagnostics_tx, timeline_diagnostics_reader) =
             timeline_rt_diagnostics_channel();
         let (graph_progress_tx, graph_progress_reader) = graph_progress_channel();
+        let (transport_position_tx, transport_position_reader) = transport_position_channel();
         let (engine_event_tx, engine_event_rx) = engine_event_channel();
         let (thread_handle, sample_rate, bridge_round_trip_frames, retired_adoption_tx) =
             spawn_audio_thread_with_diagnostics(
@@ -156,6 +160,7 @@ impl EngineHandle {
                 diagnostics_tx,
                 timeline_diagnostics_tx,
                 graph_progress_tx,
+                transport_position_tx,
                 engine_event_tx,
                 force_default_buffer,
             )?;
@@ -173,6 +178,7 @@ impl EngineHandle {
             midi_rt_diagnostics: diagnostics_reader,
             timeline_rt_diagnostics: timeline_diagnostics_reader,
             graph_progress: graph_progress_reader,
+            transport_position: transport_position_reader,
             engine_events: engine_event_rx,
             sample_rate,
             bridge_round_trip_frames,
@@ -378,6 +384,21 @@ impl EngineHandle {
     /// landed, so a lagging echo over-refuses and never under-refuses.
     pub fn graph_progress_snapshot(&mut self) -> GraphProgressSnapshot {
         self.graph_progress.snapshot()
+    }
+
+    /// Read where the transport stands, outside the callback.
+    ///
+    /// Deliberately its own channel rather than a second reading of
+    /// [`Self::graph_progress_snapshot`]: that one is the queue ledger's
+    /// release evidence and its meaning is a happens-before, not a position a
+    /// cursor may draw. Reading it at UI rate would tie the ledger's contract
+    /// to the cursor's refresh rate.
+    ///
+    /// The snapshot may lag by up to one callback, which is what a cursor
+    /// wants: it is the last position the engine actually rendered, never a
+    /// position it predicts.
+    pub fn transport_position_snapshot(&mut self) -> TransportPositionSnapshot {
+        self.transport_position.snapshot()
     }
 
     /// Take every engine event published since the last drain.
@@ -792,6 +813,7 @@ pub fn engine_handle_for_command_capture(
     let (_diagnostics_tx, diagnostics_reader) = active_midi_rt_diagnostics_channel();
     let (_timeline_diagnostics_tx, timeline_diagnostics_reader) = timeline_rt_diagnostics_channel();
     let (_graph_progress_tx, graph_progress_reader) = graph_progress_channel();
+    let (_transport_position_tx, transport_position_reader) = transport_position_channel();
     let (_engine_event_tx, engine_event_rx) = engine_event_channel();
     let (retired_adoption_tx, retired_adoption_rx) = std::sync::mpsc::channel();
 
@@ -806,6 +828,7 @@ pub fn engine_handle_for_command_capture(
             midi_rt_diagnostics: diagnostics_reader,
             timeline_rt_diagnostics: timeline_diagnostics_reader,
             graph_progress: graph_progress_reader,
+            transport_position: transport_position_reader,
             engine_events: engine_event_rx,
             sample_rate: 48_000.0,
             // Seeded exactly as a real stream is before its first callback.
@@ -829,7 +852,8 @@ mod tests {
     };
     use crate::plugin_slot::NativePlugin;
     use crate::scheduler::{
-        graph_progress_channel, AudioScheduler, BuiltinEffectType, GraphCommand, PluginCore,
+        graph_progress_channel, transport_position_channel, AudioScheduler, BuiltinEffectType,
+        GraphCommand, PluginCore,
     };
     use crate::timeline::timeline_rt_diagnostics_channel;
     use crate::timeline::{ChainEntry, DeviceKind, DeviceParam, TimelineTrack};
@@ -1501,6 +1525,7 @@ mod tests {
         let (_timeline_diagnostics_tx, timeline_diagnostics_reader) =
             timeline_rt_diagnostics_channel();
         let (_graph_progress_tx, graph_progress_reader) = graph_progress_channel();
+        let (_transport_position_tx, transport_position_reader) = transport_position_channel();
         let (_engine_event_tx, engine_event_rx) = engine_event_channel();
         let (retired_adoption_tx, _retired_adoption_rx) = std::sync::mpsc::channel();
 
@@ -1515,6 +1540,7 @@ mod tests {
                 midi_rt_diagnostics: diagnostics_reader,
                 timeline_rt_diagnostics: timeline_diagnostics_reader,
                 graph_progress: graph_progress_reader,
+                transport_position: transport_position_reader,
                 engine_events: engine_event_rx,
                 sample_rate: 48_000.0,
                 bridge_round_trip_frames: crate::audio_thread::new_bridge_round_trip_slot(),

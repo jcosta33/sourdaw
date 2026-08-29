@@ -697,6 +697,24 @@ impl SourdawNative {
         )?)
     }
 
+    #[napi]
+    pub async fn engine_transport_position(&self) -> Result<Value> {
+        json(reason(
+            commands::engine_transport::engine_transport_position(&self.singletons.app_state).await,
+        )?)
+    }
+
+    #[napi]
+    pub async fn engine_transport_set_maps(&self, maps: Value) -> Result<Value> {
+        let payload = serde_json::from_value(maps).map_err(|error| {
+            Error::from_reason(format!("transport maps are malformed: {error}"))
+        })?;
+        json(reason(
+            commands::engine_transport::set_transport_maps(payload, &self.singletons.app_state)
+                .await,
+        )?)
+    }
+
     // ── Plugin GUI ─────────────────────────────────────────────────────
 
     #[napi]

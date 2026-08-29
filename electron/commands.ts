@@ -58,6 +58,8 @@ export const EXPOSED_COMMANDS = [
     'detect_onsets',
     'detect_smart_loop_points',
     'engine_rt_diagnostics',
+    'engine_transport_position',
+    'engine_transport_set_maps',
     'feed_crumbs_record_input',
     'get_crumbs_position',
     'get_default_plugin_paths',
