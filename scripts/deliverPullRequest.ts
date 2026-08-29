@@ -34,6 +34,8 @@ export type HeadCheckRun = {
     name: string;
     status: string;
     conclusion: string | null;
+    /** When GitHub began this attempt, or null where the rollup entry reports no start. */
+    startedAt: string | null;
 };
 
 export type PullRequestSnapshot = {
@@ -157,9 +159,9 @@ function validateCiAdmission(pullRequest: PullRequestSnapshot, checks: CheckEvid
  * Push and approved-review runs still report on the same pull-request head, and GitHub can keep the
  * aggregate `UNSTABLE` when cancelled check runs remain on that head beside later successes on the
  * same commit. Tolerating that state means proving the head green here instead of trusting the
- * aggregate: nothing failed, nothing is still running, the one required check succeeded, and every
- * cancelled name also succeeded. Every other status still refuses, because it reports something
- * other than checks.
+ * aggregate: no check name's newest attempt failed, nothing is still running, the one required check
+ * succeeded, and every cancelled name also succeeded. Every other status still refuses, because it
+ * reports something other than checks.
  */
 function validateRequiredCiAdmission(pullRequest: PullRequestSnapshot, checks: CheckEvidencePort): void {
     if (pullRequest.mergeStateStatus === 'CLEAN') {
@@ -218,7 +220,7 @@ function resolveStructuralMergeability(
 function validateSupersededChecks(pullRequest: PullRequestSnapshot, checks: CheckEvidencePort): void {
     const state = `PR #${pullRequest.number} merge state is ${pullRequest.mergeStateStatus}`;
     const checkRuns = checks.headCheckRuns(pullRequest.number, pullRequest.headRefOid);
-    const failed = checkRuns.find(isFailedCheckRun);
+    const failed = unretiredFailedCheckRun(checkRuns);
     if (failed !== undefined) {
         fail(`${state} and check ${failed.name} concluded ${failed.conclusion ?? 'nothing'}`);
     }
@@ -233,6 +235,47 @@ function validateSupersededChecks(pullRequest: PullRequestSnapshot, checks: Chec
     if (undecided !== undefined) {
         fail(`${state} and check ${undecided} was cancelled and never succeeded on ${pullRequest.headRefOid}`);
     }
+}
+
+/**
+ * A rerun of one job on the same commit reports under the same check name, so a name can carry
+ * several attempts and only the newest of them is this head's verdict. Push and approved-review runs
+ * produce exactly that: a job that failed on a runner-setup step under the push run is re-executed
+ * green by the review run, and counting the retired attempt refuses a head every attempt of which
+ * has since been decided.
+ *
+ * Recency is read from `startedAt`, the moment GitHub began the attempt. It is the field that orders
+ * attempts by when they were launched, which is what "superseded" means: the rerun is launched after
+ * the attempt it replaces, however long either takes to finish. `completedAt` orders that same pair
+ * backwards whenever a slow first attempt outlives a fast rerun, and a node id encodes no promise
+ * about time at all.
+ */
+function unretiredFailedCheckRun(checkRuns: HeadCheckRun[]): HeadCheckRun | undefined {
+    return checkRuns
+        .filter(isFailedCheckRun)
+        .find((failed) => !checkRuns.some((candidate) => retiresAttempt(candidate, failed)));
+}
+
+/**
+ * Only a later attempt that itself reached a verdict retires an earlier one. A later cancellation or
+ * a still-running rerun decides nothing, so reading either as the newer word would drop a real
+ * failure out of the evidence — the one direction this rule must never move. Attempts GitHub reports
+ * no start for, and attempts that share a start, order nothing and so retire nothing: absent or
+ * ambiguous recency leaves the failure standing rather than guessing it away.
+ */
+function retiresAttempt(candidate: HeadCheckRun, attempt: HeadCheckRun): boolean {
+    return (
+        candidate.name === attempt.name &&
+        candidate.status === SETTLED_CHECK_STATUS &&
+        candidate.conclusion !== SUPERSEDED_CONCLUSION &&
+        startedAfter(candidate, attempt)
+    );
+}
+
+function startedAfter(candidate: HeadCheckRun, attempt: HeadCheckRun): boolean {
+    const candidateStart = Date.parse(candidate.startedAt ?? '');
+    const attemptStart = Date.parse(attempt.startedAt ?? '');
+    return Number.isFinite(candidateStart) && Number.isFinite(attemptStart) && candidateStart > attemptStart;
 }
 
 /**
@@ -889,8 +932,10 @@ type RawRollupEntry = {
     name?: unknown;
     status?: unknown;
     conclusion?: unknown;
+    startedAt?: unknown;
     context?: unknown;
     state?: unknown;
+    createdAt?: unknown;
 };
 
 const UNSETTLED_STATUS_CONTEXT_STATES = new Set(['PENDING', 'EXPECTED']);
@@ -907,8 +952,8 @@ const ROLLUP_QUERY = `query($owner:String!,$name:String!,$oid:GitObjectID!,$curs
             pageInfo{hasNextPage endCursor}
             nodes{
               __typename
-              ... on CheckRun{name status conclusion}
-              ... on StatusContext{context state}
+              ... on CheckRun{name status conclusion startedAt}
+              ... on StatusContext{context state createdAt}
             }
           }
         }
@@ -974,19 +1019,26 @@ function toHeadCheckRun(value: unknown, pullRequestNumber: number): HeadCheckRun
             name: entry.name,
             status: entry.status,
             conclusion: typeof entry.conclusion === 'string' && entry.conclusion !== '' ? entry.conclusion : null,
+            startedAt: reportedTimestamp(entry.startedAt),
         };
     }
     if (entry.__typename === 'StatusContext' && typeof entry.context === 'string' && typeof entry.state === 'string') {
-        return toStatusContextCheckRun(entry.context, entry.state);
+        // A status context carries no start of its own; its creation is when the reporting integration
+        // first spoke about this commit, which is the same ordering evidence for the same purpose.
+        return toStatusContextCheckRun(entry.context, entry.state, reportedTimestamp(entry.createdAt));
     }
     return fail(`cannot read a check on PR #${pullRequestNumber}`);
 }
 
-function toStatusContextCheckRun(name: string, state: string): HeadCheckRun {
+function reportedTimestamp(value: unknown): string | null {
+    return typeof value === 'string' && value !== '' ? value : null;
+}
+
+function toStatusContextCheckRun(name: string, state: string, startedAt: string | null): HeadCheckRun {
     if (UNSETTLED_STATUS_CONTEXT_STATES.has(state)) {
-        return { name, status: state, conclusion: null };
+        return { name, status: state, conclusion: null, startedAt };
     }
-    return { name, status: SETTLED_CHECK_STATUS, conclusion: state };
+    return { name, status: SETTLED_CHECK_STATUS, conclusion: state, startedAt };
 }
 
 function toDeliveryReceiptComment(value: unknown): DeliveryReceiptComment {

@@ -296,8 +296,15 @@ function shellMergedByGraphql(mergedBy: { __typename: 'Bot'; id: string } | { __
 }
 
 function checkRun(overrides: Partial<HeadCheckRun> = {}): HeadCheckRun {
-    return { name: 'Gate', status: 'COMPLETED', conclusion: 'SUCCESS', ...overrides };
+    return { name: 'Gate', status: 'COMPLETED', conclusion: 'SUCCESS', startedAt: null, ...overrides };
 }
+
+/**
+ * The two runs one commit carries once a pull request is approved while its push run is in flight:
+ * the push run starts first, the approved-review run starts later and re-executes the same job names.
+ */
+const PUSH_RUN_START = '2026-08-29T10:00:00Z';
+const REVIEW_RUN_START = '2026-08-29T10:05:00Z';
 
 const LIVE_WORKFLOW_SOURCE = readFileSync(join(import.meta.dirname, '../..', WORKFLOW_PATH), 'utf8');
 
@@ -317,11 +324,11 @@ const gatingCheckNames: ReadonlySet<string> = new Set(
  */
 function supersededRunCheckRuns(): HeadCheckRun[] {
     return [
-        checkRun({ name: 'Lint', conclusion: 'CANCELLED' }),
-        checkRun({ name: 'Gate', conclusion: 'CANCELLED' }),
-        checkRun({ name: 'Native audio backend (macOS)', conclusion: 'SKIPPED' }),
-        checkRun({ name: 'Lint' }),
-        checkRun(),
+        checkRun({ name: 'Lint', conclusion: 'CANCELLED', startedAt: PUSH_RUN_START }),
+        checkRun({ name: 'Gate', conclusion: 'CANCELLED', startedAt: PUSH_RUN_START }),
+        checkRun({ name: 'Native audio backend (macOS)', conclusion: 'SKIPPED', startedAt: PUSH_RUN_START }),
+        checkRun({ name: 'Lint', startedAt: REVIEW_RUN_START }),
+        checkRun({ startedAt: REVIEW_RUN_START }),
     ];
 }
 
@@ -1473,6 +1480,140 @@ describe('pull-request delivery', () => {
         }
     );
 
+    /**
+     * The shape PR #2981 stranded on: `Unit suite 2/4` failed on a runner-setup step under the push
+     * run, and the approved-review run re-executed that same check name green on the same commit. The
+     * head carries both attempts, the newest is the verdict, and counting the retired one refuses a
+     * head whose every check has since been decided.
+     */
+    it('merges an UNSTABLE head whose failed check was rerun to success on the same commit', () => {
+        const unstable = { mergeStateStatus: 'UNSTABLE' };
+        const { port, calls } = fakePort({
+            primary: [pullRequest(unstable), pullRequest(unstable)],
+            headCheckRuns: [
+                ...supersededRunCheckRuns(),
+                checkRun({ name: 'Unit suite 2/4', conclusion: 'FAILURE', startedAt: PUSH_RUN_START }),
+                checkRun({ name: 'Unit suite 2/4', startedAt: REVIEW_RUN_START }),
+            ],
+        });
+
+        deliverPullRequestWithRequiredCi(42, port);
+
+        expect(calls).toContain('merge:42:head');
+    });
+
+    /**
+     * The same two attempts the other way round: the rerun is the one that failed, so the earlier
+     * success is the retired attempt and the head carries a live failure.
+     */
+    it('refuses an UNSTABLE head whose newest attempt under a name failed after an earlier success', () => {
+        const { port, calls } = fakePort({
+            primary: [pullRequest({ mergeStateStatus: 'UNSTABLE' })],
+            headCheckRuns: [
+                ...supersededRunCheckRuns(),
+                checkRun({ name: 'Unit suite 2/4', startedAt: PUSH_RUN_START }),
+                checkRun({ name: 'Unit suite 2/4', conclusion: 'FAILURE', startedAt: REVIEW_RUN_START }),
+            ],
+        });
+
+        let thrown: unknown;
+        try {
+            deliverPullRequestWithRequiredCi(42, port);
+        } catch (error) {
+            thrown = error;
+        }
+
+        expect(String(thrown)).toBe('Error: PR #42 merge state is UNSTABLE and check Unit suite 2/4 concluded FAILURE');
+        expect(calls).not.toContain('merge:42:head');
+    });
+
+    it('refuses an UNSTABLE head whose failed check was never rerun', () => {
+        const { port, calls } = fakePort({
+            primary: [pullRequest({ mergeStateStatus: 'UNSTABLE' })],
+            headCheckRuns: [
+                ...supersededRunCheckRuns(),
+                checkRun({ name: 'Unit suite 2/4', conclusion: 'FAILURE', startedAt: PUSH_RUN_START }),
+            ],
+        });
+
+        let thrown: unknown;
+        try {
+            deliverPullRequestWithRequiredCi(42, port);
+        } catch (error) {
+            thrown = error;
+        }
+
+        expect(String(thrown)).toBe('Error: PR #42 merge state is UNSTABLE and check Unit suite 2/4 concluded FAILURE');
+        expect(calls).not.toContain('merge:42:head');
+    });
+
+    /**
+     * Recency cuts the other way too: an earlier success is no verdict on a head whose newest attempt
+     * under that name is still running.
+     */
+    it('refuses an UNSTABLE head whose newest attempt under a name is still running', () => {
+        const { port, calls } = fakePort({
+            primary: [pullRequest({ mergeStateStatus: 'UNSTABLE' })],
+            headCheckRuns: [
+                ...supersededRunCheckRuns(),
+                checkRun({ name: 'Unit suite 2/4', startedAt: PUSH_RUN_START }),
+                checkRun({
+                    name: 'Unit suite 2/4',
+                    status: 'IN_PROGRESS',
+                    conclusion: null,
+                    startedAt: REVIEW_RUN_START,
+                }),
+            ],
+        });
+
+        let thrown: unknown;
+        try {
+            deliverPullRequestWithRequiredCi(42, port);
+        } catch (error) {
+            thrown = error;
+        }
+
+        expect(String(thrown)).toBe(
+            'Error: PR #42 merge state is UNSTABLE and check Unit suite 2/4 is still IN_PROGRESS'
+        );
+        expect(calls).not.toContain('merge:42:head');
+    });
+
+    /**
+     * A failure is retired only by a later attempt that reached a verdict of its own and can be proven
+     * later. A cancellation and a run still in flight decide nothing; two attempts sharing a start, or
+     * one GitHub reports no start for, order nothing. Each of these would merge over a real failure if
+     * it counted as the newer word.
+     */
+    it.each([
+        { shape: 'a later cancellation', later: { conclusion: 'CANCELLED', startedAt: REVIEW_RUN_START } },
+        {
+            shape: 'a later run still in flight',
+            later: { status: 'IN_PROGRESS', conclusion: null, startedAt: REVIEW_RUN_START },
+        },
+        { shape: 'a success that started in the same instant', later: { startedAt: PUSH_RUN_START } },
+        { shape: 'a success GitHub reports no start for', later: { startedAt: null } },
+    ])('keeps refusing a failed check that only $shape stands beside', ({ later }) => {
+        const { port, calls } = fakePort({
+            primary: [pullRequest({ mergeStateStatus: 'UNSTABLE' })],
+            headCheckRuns: [
+                ...supersededRunCheckRuns(),
+                checkRun({ name: 'Unit suite 2/4', conclusion: 'FAILURE', startedAt: PUSH_RUN_START }),
+                checkRun({ name: 'Unit suite 2/4', ...later }),
+            ],
+        });
+
+        let thrown: unknown;
+        try {
+            deliverPullRequestWithRequiredCi(42, port);
+        } catch (error) {
+            thrown = error;
+        }
+
+        expect(String(thrown)).toBe('Error: PR #42 merge state is UNSTABLE and check Unit suite 2/4 concluded FAILURE');
+        expect(calls).not.toContain('merge:42:head');
+    });
+
     it('refuses an UNSTABLE head whose checks have not all settled', () => {
         const { port, calls } = fakePort({
             primary: [pullRequest({ mergeStateStatus: 'UNSTABLE' })],
@@ -2265,11 +2406,34 @@ describe('delivery shell boundary', () => {
         const { captures, port } = rollupPort([
             {
                 nodes: [
-                    { __typename: 'CheckRun', name: 'Gate', status: 'COMPLETED', conclusion: 'SUCCESS' },
-                    { __typename: 'CheckRun', name: 'Lint', status: 'COMPLETED', conclusion: 'CANCELLED' },
-                    { __typename: 'CheckRun', name: 'End-to-end 1/12', status: 'IN_PROGRESS', conclusion: '' },
-                    { __typename: 'StatusContext', context: 'coverage/external', state: 'FAILURE' },
-                    { __typename: 'StatusContext', context: 'deploy/preview', state: 'PENDING' },
+                    {
+                        __typename: 'CheckRun',
+                        name: 'Gate',
+                        status: 'COMPLETED',
+                        conclusion: 'SUCCESS',
+                        startedAt: REVIEW_RUN_START,
+                    },
+                    {
+                        __typename: 'CheckRun',
+                        name: 'Lint',
+                        status: 'COMPLETED',
+                        conclusion: 'CANCELLED',
+                        startedAt: PUSH_RUN_START,
+                    },
+                    {
+                        __typename: 'CheckRun',
+                        name: 'End-to-end 1/12',
+                        status: 'IN_PROGRESS',
+                        conclusion: '',
+                        startedAt: '',
+                    },
+                    {
+                        __typename: 'StatusContext',
+                        context: 'coverage/external',
+                        state: 'FAILURE',
+                        createdAt: PUSH_RUN_START,
+                    },
+                    { __typename: 'StatusContext', context: 'deploy/preview', state: 'PENDING', createdAt: null },
                 ],
             },
         ]);
@@ -2279,12 +2443,27 @@ describe('delivery shell boundary', () => {
         expect(rollupCaptures(captures)).toHaveLength(1);
         expect(rollupCaptures(captures)[0]).toContain('oid=head');
         expect(checkRuns).toEqual([
-            { name: 'Gate', status: 'COMPLETED', conclusion: 'SUCCESS' },
-            { name: 'Lint', status: 'COMPLETED', conclusion: 'CANCELLED' },
-            { name: 'End-to-end 1/12', status: 'IN_PROGRESS', conclusion: null },
-            { name: 'coverage/external', status: 'COMPLETED', conclusion: 'FAILURE' },
-            { name: 'deploy/preview', status: 'PENDING', conclusion: null },
+            { name: 'Gate', status: 'COMPLETED', conclusion: 'SUCCESS', startedAt: REVIEW_RUN_START },
+            { name: 'Lint', status: 'COMPLETED', conclusion: 'CANCELLED', startedAt: PUSH_RUN_START },
+            { name: 'End-to-end 1/12', status: 'IN_PROGRESS', conclusion: null, startedAt: null },
+            { name: 'coverage/external', status: 'COMPLETED', conclusion: 'FAILURE', startedAt: PUSH_RUN_START },
+            { name: 'deploy/preview', status: 'PENDING', conclusion: null, startedAt: null },
         ]);
+    });
+
+    /**
+     * The rollup read is the only place recency evidence can enter, so the query has to ask for it.
+     * Without these fields every attempt arrives unordered and the newest-attempt rule degrades,
+     * silently, to counting every attempt a head ever carried.
+     */
+    it('asks the rollup for the evidence that orders one name attempts', () => {
+        const { captures, port } = rollupPort([{ nodes: rollupNodes([checkRun()]) }]);
+
+        port.headCheckRuns(42, 'head');
+
+        const query = rollupCaptures(captures)[0] ?? '';
+        expect(query).toContain('on CheckRun{name status conclusion startedAt}');
+        expect(query).toContain('on StatusContext{context state createdAt}');
     });
 
     /**
@@ -2546,9 +2725,9 @@ describe('delivery shell boundary', () => {
         ]);
 
         expect(port.headCheckRuns(42, 'head')).toEqual([
-            { name: 'Lint', status: 'COMPLETED', conclusion: 'CANCELLED' },
-            { name: 'Gate', status: 'COMPLETED', conclusion: 'SUCCESS' },
-            { name: 'Lint', status: 'COMPLETED', conclusion: 'SUCCESS' },
+            { name: 'Lint', status: 'COMPLETED', conclusion: 'CANCELLED', startedAt: null },
+            { name: 'Gate', status: 'COMPLETED', conclusion: 'SUCCESS', startedAt: null },
+            { name: 'Lint', status: 'COMPLETED', conclusion: 'SUCCESS', startedAt: null },
         ]);
         expect(rollupCaptures(captures)).toHaveLength(2);
         expect(rollupCaptures(captures)[0]).not.toContain('cursor=');
@@ -2617,8 +2796,8 @@ describe('delivery shell boundary', () => {
         ]);
 
         expect(port.headCheckRuns(42, 'head')).toEqual([
-            { name: 'Gate', status: 'COMPLETED', conclusion: 'SUCCESS' },
-            { name: 'Lint', status: 'COMPLETED', conclusion: 'SUCCESS' },
+            { name: 'Gate', status: 'COMPLETED', conclusion: 'SUCCESS', startedAt: null },
+            { name: 'Lint', status: 'COMPLETED', conclusion: 'SUCCESS', startedAt: null },
         ]);
         expect(rollupCaptures(captures)).toHaveLength(1);
     });
