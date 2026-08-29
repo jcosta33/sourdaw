@@ -401,6 +401,11 @@ fn polarization_decay_hz(note_frequency_hz: f32) -> PolarizationDecay {
         ['crates/daw-dsp/benches/wasm/deviceRecipes.js', 'export const grandBoule = 1;'],
         ['crates/daw-dsp/benches/wasm/quantumCostProcessor.js', 'export const processor = 1;'],
         ['crates/daw-dsp/benches/wasm/run.mjs', 'export const runner = 1;'],
+        ['crates/daw-dsp/benches/wasm/measurementCensus.mjs', 'export const census = 1;'],
+        [
+            'crates/daw-dsp/benches/wasm/measurementCensus.d.mts',
+            'export function grandBouleMeasurementSourcePaths(): string[];',
+        ],
         ['crates/daw-dsp/benches/wasm/renderTable.mjs', 'export const renderer = 1;'],
         ['crates/daw-dsp/benches/wasm/renderTable.d.mts', 'export function renderGeneratedRegion(): string;'],
         ['crates/daw-dsp/benches/quantum-cost-table.json', '{}'],
@@ -2055,6 +2060,8 @@ describe('release inventory', () => {
                 'crates/daw-dsp/benches/wasm/deviceRecipes.js',
                 'crates/daw-dsp/benches/wasm/quantumCostProcessor.js',
                 'crates/daw-dsp/benches/wasm/run.mjs',
+                'crates/daw-dsp/benches/wasm/measurementCensus.mjs',
+                'crates/daw-dsp/benches/wasm/measurementCensus.d.mts',
                 'crates/daw-dsp/benches/wasm/renderTable.mjs',
                 'crates/daw-dsp/benches/wasm/renderTable.d.mts',
                 'crates/daw-dsp/benches/quantum-cost-table.json',
@@ -2408,6 +2415,22 @@ describe('release inventory', () => {
         expect(census).toContain('crates/daw-dsp/src/primitives/time_stretch/mod.rs');
         expect(census).not.toContain('public/wasm/daw-dsp/daw_dsp_bg.wasm');
         expect(census.some((path) => path.startsWith('crates/daw-dsp/src/crumbs/'))).toBe(false);
+    });
+
+    it('pins the census definition module in the release-proof boundary', () => {
+        const releaseProof = GRAND_BOULE_RELEASE_REGISTRY.boundaries.find(
+            ({ digestLabel }) => digestLabel === 'grand-boule-release-proof'
+        );
+        // The census lived inline in scripts/checkReleaseInventory.ts, which the boundary already
+        // pins; as a standalone module it must stay in the tracked set, or the release inventory
+        // validates against a recording made before the census definition changed.
+        for (const modulePath of [
+            'crates/daw-dsp/benches/wasm/measurementCensus.mjs',
+            'crates/daw-dsp/benches/wasm/measurementCensus.d.mts',
+        ]) {
+            expect(releaseProof?.paths).toContain(modulePath);
+            expect(releaseProof?.gitPathspecs).toContain(modulePath);
+        }
     });
 
     it('gates the whole-engine reference project budget apart from the Grand Boule admission', () => {
