@@ -156,12 +156,43 @@ const lease = {
     settledAt: null,
 } satisfies AgentRunWorkLease;
 
+const protectedAction = {
+    type: 'setTrackGain',
+    payload: { trackId: 'track-protected', gain: 0.8, expectedGain: 1 },
+} satisfies PendingAppActionConfirmation['actions'][number];
+
+const protectedTarget = { id: 'track-protected', name: 'Protected track' };
+
 function execute(options: { priorVerifiedBatchReceipt?: CommandVerifiedBatchReceipt | null } = {}) {
     return beginConfirmedCommandExecution({
         confirmation,
         priorVerifiedBatchReceipt: options.priorVerifiedBatchReceipt ?? null,
         recoveringPendingEffects: false,
     });
+}
+
+async function expectAuthorizationPreflightFailure(
+    currentConfirmation: PendingAppActionConfirmation,
+    reason: string
+): Promise<void> {
+    const result = beginConfirmedCommandExecution({
+        confirmation: currentConfirmation,
+        priorVerifiedBatchReceipt: null,
+        recoveringPendingEffects: false,
+    });
+
+    expect(result.status).toBe('settled');
+    if (result.status !== 'settled') {
+        throw new Error('Expected authorization preflight rejection to settle.');
+    }
+    await result.result;
+    expect(mocks.failPreflight).toHaveBeenCalledWith(currentConfirmation, reason, 'authorization');
+    expect(mocks.parseBatch).not.toHaveBeenCalled();
+    expect(mocks.reserveBudget).not.toHaveBeenCalled();
+    expect(mocks.claimLease).not.toHaveBeenCalled();
+    expect(mocks.updateConfirmation).not.toHaveBeenCalled();
+    expect(mocks.transitionToExecuting).not.toHaveBeenCalled();
+    expect(mocks.updateMessage).not.toHaveBeenCalled();
 }
 
 async function createVerifiedRecoveryReceipt(): Promise<CommandVerifiedBatchReceipt> {
@@ -244,6 +275,49 @@ describe('beginConfirmedCommandExecution', () => {
         expect(mocks.reserveBudget).not.toHaveBeenCalled();
         expect(mocks.claimLease).not.toHaveBeenCalled();
         expect(mocks.updateConfirmation).not.toHaveBeenCalled();
+    });
+
+    it('settles a confirmation without an exact risk approval binding before admission continues', async () => {
+        const confirmationWithoutApproval = {
+            ...confirmation,
+            approvalSnapshot: { ...confirmation.approvalSnapshot, agentApproval: undefined },
+        } satisfies PendingAppActionConfirmation;
+
+        await expectAuthorizationPreflightFailure(
+            confirmationWithoutApproval,
+            'The command batch has no exact risk approval binding.'
+        );
+    });
+
+    it('settles immutable proposal drift that does not target a protected current object', async () => {
+        const driftedConfirmation = {
+            ...confirmation,
+            actionLabels: ['A changed action label'],
+        } satisfies PendingAppActionConfirmation;
+
+        await expectAuthorizationPreflightFailure(
+            driftedConfirmation,
+            'The executable action batch no longer matches the approved proposal.'
+        );
+    });
+
+    it('settles an approved snapshot that targets a protected object', async () => {
+        const protectedConfirmation = {
+            ...confirmation,
+            actions: [protectedAction],
+            protectedUnchanged: [protectedTarget],
+            approvalSnapshot: {
+                ...confirmation.approvalSnapshot,
+                actions: [protectedAction],
+                protectedUnchanged: [protectedTarget],
+            },
+        } satisfies PendingAppActionConfirmation;
+        mocks.getAffectedIds.mockReturnValueOnce([]).mockReturnValueOnce([protectedTarget.id]);
+
+        await expectAuthorizationPreflightFailure(
+            protectedConfirmation,
+            'The approved action batch targets protected IDs: track-protected.'
+        );
     });
 
     it.each([
@@ -415,5 +489,9 @@ describe('beginConfirmedCommandExecution', () => {
         expect(mocks.claimLease).not.toHaveBeenCalled();
         expect(mocks.updateConfirmation).toHaveBeenCalledWith({ confirmationId: 'confirmation-1', status: 'accepted' });
         expect(mocks.transitionToExecuting).toHaveBeenCalledWith(confirmation);
+        expect(mocks.updateMessage).toHaveBeenCalledWith('assistant-1', {
+            pendingActionConfirmationStatus: 'accepted',
+            content: 'Confirming:\n\n- Add an effect',
+        });
     });
 });
