@@ -326,9 +326,8 @@ expect(
     'only pull_request and approved reviews may share a PR-number concurrency group'
 );
 expect(
-    concurrency?.['cancel-in-progress'] ===
-        "${{ github.event_name == 'pull_request' || (github.event_name == 'pull_request_review' && github.event.review.state == 'approved') }}",
-    'concurrency cancellation must include pull_request and approved reviews without including other review states, schedule, or workflow_dispatch'
+    concurrency?.['cancel-in-progress'] === "${{ github.event_name == 'pull_request' }}",
+    'only newer pull_request runs may cancel in-progress work; approved reviews must wait without cancelling'
 );
 expect(
     decide?.if === "github.event_name != 'pull_request_review' || github.event.review.state == 'approved'",
@@ -585,7 +584,7 @@ expectShardFailureWarning(unitFailureWarning, 'unit', 'Unit suite', '2');
 expectShardFailureWarning(e2eFailureWarning, 'e2e', 'End-to-end', '11');
 expect(
     dependencyReview?.if === 'github.event.pull_request != null',
-    'dependency review must gate on the pull request payload, not on the pull_request event, so an approval that cancels the push run still produces a verdict'
+    'dependency review must gate on the pull request payload, not on the pull_request event, so an approval run can validate the head after any in-flight push run finishes'
 );
 expect(
     dependencyReviewWith['base-ref'] === '${{ github.event.pull_request.base.sha }}',

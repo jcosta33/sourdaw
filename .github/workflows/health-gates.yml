@@ -54,9 +54,10 @@ permissions:
 concurrency:
   # Pull-request runs and approved reviews share the PR-number group. Every
   # other event gets a run-id group, so it replaces neither validation nor
-  # another non-validating run.
+  # another non-validating run. Only a newer push cancels in-flight validation;
+  # an approving review waits for that push run instead of erasing its evidence.
   group: health-gates-${{ (github.event_name == 'pull_request' || (github.event_name == 'pull_request_review' && github.event.review.state == 'approved')) && github.event.pull_request.number || github.run_id }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' || (github.event_name == 'pull_request_review' && github.event.review.state == 'approved') }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   NODE_VERSION: 24.19.0
@@ -378,10 +379,11 @@ jobs:
     # blocks every non-loopback request and asserts nothing reached one, so it
     # cannot fail on a third-party host being unreachable the way the full
     # end-to-end suite does. The suite itself still owns breadth, nightly.
-    # Both events, for the reason `dependency-review` states: an approving review
-    # cancels the in-flight push run, so a job gated on `pull_request` alone can
-    # never complete on the run that reports. As a Gate member it has to. What
-    # keeps it off comment-only reviews is `decide` skipping and the implicit
+    # Both events, for the reason `dependency-review` states: the approval run
+    # has to validate the current head too, but it must wait behind any in-flight
+    # push run instead of cancelling it. As a Gate member this leg therefore keys
+    # off the pull-request payload rather than the triggering event. What keeps
+    # it off comment-only reviews is `decide` skipping and the implicit
     # `success()` on `needs`.
     if: github.event.pull_request != null && needs.decide.outputs.e2e == 'true'
     runs-on: ubuntu-latest
@@ -654,12 +656,12 @@ jobs:
   dependency-review:
     name: Dependency review
     needs: decide
-    # Whichever run ultimately reports has to be the one that scans: the push
-    # run's concurrency group is cancelled by an approving review, so a gate on
-    # `pull_request` alone can leave every entry on a head either cancelled or
-    # skipped, with no success anywhere. Running on both events, with explicit
-    # refs, means an approval that cancels the push run still produces a
-    # verdict. Skipped on schedule and dispatch runs, which carry no pull
+    # Whichever run ultimately reports has to be the one that scans: a newer
+    # push may replace stale validation, while an approving review waits for any
+    # in-flight push run and then validates the same head under the review event.
+    # Running on both events, with explicit refs, keeps one successful scan on
+    # the current head instead of letting event-gated skips or cancellations
+    # erase it. Skipped on schedule and dispatch runs, which carry no pull
     # request to diff. A `commented` or `changes_requested` review carries one
     # too, so this condition alone is true there; what keeps the scan off those
     # runs is `decide` skipping and the implicit `success()` on `needs`.
@@ -689,15 +691,15 @@ jobs:
     # Both read their config from the trusted base revision, never from the head.
     #
     # Whichever run ultimately reports has to be the one that scans, exactly as
-    # for `dependency-review` above: the push run's concurrency group is
-    # cancelled by an approving review, so a gate on `pull_request` alone can
-    # leave every entry on a head either cancelled or skipped, with no success
-    # anywhere. Running on both events, off the already env-pinned base and head
-    # SHAs, means an approval that cancels the push run still produces a verdict.
-    # Skipped on schedule and dispatch runs, which carry no pull request to diff.
-    # A `commented` or `changes_requested` review carries one too, so this
-    # condition alone is true there; what keeps the scan off those runs is
-    # `decide` skipping and the implicit `success()` on `needs`.
+    # for `dependency-review` above: a newer push may replace stale validation,
+    # while an approving review waits for any in-flight push run and then scans
+    # the same base/head pair under the review event. Running on both events,
+    # off the already env-pinned base and head SHAs, keeps one successful scan
+    # on the current head instead of letting event-gated skips or cancellations
+    # erase it. Skipped on schedule and dispatch runs, which carry no pull
+    # request to diff. A `commented` or `changes_requested` review carries one
+    # too, so this condition alone is true there; what keeps the scan off those
+    # runs is `decide` skipping and the implicit `success()` on `needs`.
     if: github.event.pull_request != null
     runs-on: ubuntu-latest
     timeout-minutes: 10

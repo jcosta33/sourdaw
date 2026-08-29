@@ -1,4 +1,5 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn, spawnSync, type ChildProcessByStdio } from 'node:child_process';
+import { once } from 'node:events';
 import {
     chmodSync,
     existsSync,
@@ -11,11 +12,17 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
+import { createInterface } from 'node:readline';
 
 import { describe, expect, it } from 'vitest';
 import { parseDocument } from 'yaml';
 
-import { coordinateDelivery } from '../deliverPullRequest.ts';
+import {
+    coordinateDelivery,
+    deliverPullRequest,
+    shellPort,
+    withPullRequestDeliveryLock,
+} from '../deliverPullRequest.ts';
 import { AUTHOR_BOT_NODE_ID } from '../githubAppIdentity.ts';
 import { githubTrackerIssuePort } from '../reconcileTrackerIssue.ts';
 import {
@@ -28,14 +35,250 @@ import {
     trustedSnapshotEnv,
 } from '../trustedGithubWriteBootstrap.ts';
 
-import type { DeliveryAuthentication, DeliveryCoordinatorDependencies, DeliveryPort } from '../deliverPullRequest.ts';
+import type {
+    DeliveryAuthentication,
+    DeliveryCoordinatorDependencies,
+    DeliveryReceiptComment,
+    DeliveryPort,
+    PullRequestSnapshot,
+    StackedPullRequest,
+    TrackerCompletionPort,
+} from '../deliverPullRequest.ts';
 import type { ReconcileTrackerIssuePort } from '../trackerIssueReconciliation.ts';
+import type { Readable, Writable } from 'node:stream';
 
 function runGit(repository: string, args: string[]): string {
     const env = { ...process.env };
     delete env.GIT_DIR;
     delete env.GIT_WORK_TREE;
     return execFileSync('git', args, { cwd: repository, env, encoding: 'utf8' }).trim();
+}
+
+function initializeDeliveryLockRepository(root: string): void {
+    runGit(root, ['init', '--quiet']);
+}
+
+function deliveryLockRef(number: number): string {
+    return `refs/sourdaw/delivery/pr-${number}`;
+}
+
+function writeDeliveryLockOwner(root: string, number: number, contents: string): string {
+    const oid = execFileSync('git', ['hash-object', '-w', '--stdin'], {
+        cwd: root,
+        encoding: 'utf8',
+        input: contents,
+    }).trim();
+    runGit(root, ['update-ref', deliveryLockRef(number), oid]);
+    return oid;
+}
+
+function readDeliveryLockOid(root: string, number: number): string {
+    return runGit(root, ['rev-parse', '--verify', deliveryLockRef(number)]);
+}
+
+function deliveryLockExists(root: string, number: number): boolean {
+    try {
+        readDeliveryLockOid(root, number);
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+function pullRequestSnapshot(overrides: Partial<PullRequestSnapshot> = {}): PullRequestSnapshot {
+    return {
+        number: 2495,
+        state: 'OPEN',
+        isDraft: false,
+        title: 'fix(delivery): keep recovery fenced',
+        body: [
+            '### 🎯 What does this PR do?',
+            'Keep delivery stable.',
+            '',
+            '### 🧪 How to test',
+            'Run the focused delivery checks.',
+            '',
+            '### 🖼️ Screenshots',
+            'None.',
+            '',
+            '### 📌 Related tickets & additional notes',
+            'Closes #2406',
+        ].join('\n'),
+        headRefName: 'agent/2495/delivery-lock',
+        headRefOid: 'a'.repeat(40),
+        baseRefName: 'main',
+        baseRefOid: 'b'.repeat(40),
+        mergeable: 'MERGEABLE',
+        mergeStateStatus: 'CLEAN',
+        reviewDecision: 'APPROVED',
+        changedFiles: 1,
+        additions: 2,
+        deletions: 1,
+        mergedByActorNodeId: null,
+        ...overrides,
+    };
+}
+
+function ghPullRequestView(snapshot: PullRequestSnapshot, mergedBy: unknown): string {
+    const { mergedByActorNodeId: _mergedByActorNodeId, ...rest } = snapshot;
+    return JSON.stringify({ ...rest, mergedBy });
+}
+
+function ghMergedByGraphql(mergedBy: unknown): string {
+    return JSON.stringify({
+        data: {
+            repository: {
+                pullRequest: {
+                    mergedBy,
+                },
+            },
+        },
+    });
+}
+
+function deliveryReceiptComment(body: string, id = 'comment-1'): DeliveryReceiptComment {
+    return {
+        id,
+        body,
+        authorNodeId: AUTHOR_BOT_NODE_ID,
+        authorLogin: 'sourdaw-author[bot]',
+        authorType: 'Bot',
+        createdAt: '2026-08-29T08:00:00Z',
+        updatedAt: '2026-08-29T08:00:00Z',
+    };
+}
+
+type LockContender = {
+    child: ChildProcessByStdio<Writable, Readable, Readable>;
+    lines: AsyncIterableIterator<string>;
+    stderr: string[];
+    closed: Promise<[number | null, NodeJS.Signals | null]>;
+};
+
+type LockContenderStartup =
+    | {
+          kind: 'ready';
+          value: string | undefined;
+      }
+    | {
+          kind: 'closed';
+          code: number | null;
+          signal: NodeJS.Signals | null;
+          stderr: string;
+      };
+
+function describeLockContenderStartup(index: number, outcome: LockContenderStartup): string {
+    if (outcome.kind === 'ready') {
+        return `contender ${index + 1}: stdout=${JSON.stringify(outcome.value ?? null)}`;
+    }
+    return `contender ${index + 1}: code=${outcome.code ?? 'null'} signal=${outcome.signal ?? 'null'} stderr=${JSON.stringify(outcome.stderr)}`;
+}
+
+async function waitForLockContenderReady(contender: LockContender): Promise<LockContenderStartup> {
+    const outcome = await Promise.race([
+        contender.lines.next().then((line) => ({ kind: 'line' as const, line })),
+        contender.closed.then(([code, signal]) => ({ kind: 'closed' as const, code, signal })),
+    ]);
+    if (outcome.kind === 'line') {
+        if (!outcome.line.done) {
+            return { kind: 'ready', value: outcome.line.value };
+        }
+        const [code, signal] = await contender.closed;
+        return {
+            kind: 'closed',
+            code,
+            signal,
+            stderr: contender.stderr.join('').trim(),
+        };
+    }
+    return {
+        kind: 'closed',
+        code: outcome.code,
+        signal: outcome.signal,
+        stderr: contender.stderr.join('').trim(),
+    };
+}
+
+async function contendForDeliveryLock(root: string): Promise<string[]> {
+    const moduleUrl = new URL('../deliverPullRequest.ts', import.meta.url).href;
+    const tsxImport = import.meta.resolve('tsx');
+    const repositoryRoot = join(import.meta.dirname, '..', '..');
+    const childSource = `
+import { createInterface } from 'node:readline';
+import { withPullRequestDeliveryLock } from ${JSON.stringify(moduleUrl)};
+
+const input = createInterface({ input: process.stdin, crlfDelay: Infinity });
+const commands = input[Symbol.asyncIterator]();
+console.log('ready');
+await commands.next();
+try {
+    await withPullRequestDeliveryLock(${JSON.stringify(root)}, 2495, async () => {
+        console.log('entered');
+        await commands.next();
+    });
+    console.log('released');
+} catch (error) {
+    console.log('refused:' + (error instanceof Error ? error.message : String(error)));
+} finally {
+    input.close();
+}
+`;
+    const startContender = (): LockContender => {
+        const stdio: ['pipe', 'pipe', 'pipe'] = ['pipe', 'pipe', 'pipe'];
+        const child = spawn(
+            process.execPath,
+            ['--no-warnings', '--import', tsxImport, '--input-type=module', '--eval', childSource],
+            {
+                cwd: repositoryRoot,
+                stdio,
+            }
+        );
+        const stderr: string[] = [];
+        child.stderr.setEncoding('utf8');
+        child.stderr.on('data', (chunk: string) => stderr.push(chunk));
+        const lines = createInterface({ input: child.stdout, crlfDelay: Infinity })[Symbol.asyncIterator]();
+        return {
+            child,
+            lines,
+            stderr,
+            closed: once(child, 'close') as Promise<[number | null, NodeJS.Signals | null]>,
+        };
+    };
+    const contenders = [startContender(), startContender()];
+
+    try {
+        const ready = await Promise.all(contenders.map(waitForLockContenderReady));
+        if (ready.some((outcome) => outcome.kind === 'closed')) {
+            expect.fail(ready.map((outcome, index) => describeLockContenderStartup(index, outcome)).join('\n'));
+        }
+        const readyValues = ready.map((outcome) => {
+            if (outcome.kind !== 'ready') {
+                expect.fail(`unexpected contender startup state: ${outcome.kind}`);
+            }
+            return outcome.value;
+        });
+        expect(readyValues).toEqual(['ready', 'ready']);
+        for (const contender of contenders) {
+            contender.child.stdin.write('go\n');
+        }
+
+        const outcomes = await Promise.all(contenders.map(({ lines }) => lines.next()));
+        const values = outcomes.map((line) => line.value ?? '');
+        const winner = contenders[values.findIndex((value) => value === 'entered')];
+        expect(winner).toBeDefined();
+        winner?.child.stdin.write('release\n');
+        expect((await winner?.lines.next())?.value).toBe('released');
+        for (const contender of contenders) {
+            contender.child.stdin.end();
+        }
+        const exits = await Promise.all(contenders.map(({ closed }) => closed));
+        expect(exits.map(([code]) => code)).toEqual([0, 0]);
+        return values;
+    } finally {
+        for (const contender of contenders) {
+            contender.child.kill();
+        }
+    }
 }
 
 function runPackageRoute(repository: string, args: string[]): string {
@@ -118,12 +361,13 @@ type WorkflowRecord = Record<string, unknown>;
 const AUTHORIZED_APPROVAL_CONDITION =
     "github.event_name != 'pull_request_review' || github.event.review.state == 'approved'";
 // Only a pull-request push and an approving review validate a head, so only
-// those two share the PR-number group and may cancel each other. Every other
-// event is isolated on its own run id and replaces nothing.
+// those two share the PR-number group. A newer pull-request push may replace
+// stale validation; an approving review validates and queues behind that push
+// instead of cancelling it. Every other event is isolated on its own run id.
 const VALIDATING_EVENT_CONDITION =
     "github.event_name == 'pull_request' || (github.event_name == 'pull_request_review' && github.event.review.state == 'approved')";
 const REVIEW_ISOLATED_CONCURRENCY_GROUP = `health-gates-\${{ (${VALIDATING_EVENT_CONDITION}) && github.event.pull_request.number || github.run_id }}`;
-const AUTHORIZED_CANCELLATION_CONDITION = `\${{ ${VALIDATING_EVENT_CONDITION} }}`;
+const AUTHORIZED_CANCELLATION_CONDITION = "${{ github.event_name == 'pull_request' }}";
 const GATE_SUMMARY_NAME = 'Gate';
 // `!cancelled()` rather than `always()`: the summary must still evaluate failed
 // and skipped dependencies on a live run, while the approval predicate keeps a
@@ -197,6 +441,168 @@ function stableInformationalGateSummary(workflow: WorkflowRecord): WorkflowRecor
 }
 
 describe('package scripts and gitignore', () => {
+    it.each([
+        {
+            label: 'author bot',
+            graphQlMergedBy: { __typename: 'Bot', id: AUTHOR_BOT_NODE_ID },
+            expectedActorNodeId: AUTHOR_BOT_NODE_ID,
+        },
+        {
+            label: 'foreign bot',
+            graphQlMergedBy: { __typename: 'Bot', id: 'B_foreign-bot-node-id' },
+            expectedActorNodeId: 'B_foreign-bot-node-id',
+        },
+    ])(
+        'reads the immutable merged bot ID from GraphQL for a $label merger',
+        ({ graphQlMergedBy, expectedActorNodeId }) => {
+            const mergedSnapshot = pullRequestSnapshot({ state: 'MERGED' });
+            const requests: Array<{ command: string; args: string[] }> = [];
+            const port = shellPort(
+                'jcosta33/sourdaw',
+                {
+                    capture: (command, args) => {
+                        requests.push({ command, args });
+                        if (args[0] === 'pr' && args[1] === 'view') {
+                            return ghPullRequestView(mergedSnapshot, {
+                                is_bot: true,
+                                login: 'sourdaw-author[bot]',
+                            });
+                        }
+                        if (args[0] === 'api' && args[1] === 'graphql') {
+                            return ghMergedByGraphql(graphQlMergedBy);
+                        }
+                        throw new Error(`unexpected shell capture: ${command} ${args.join(' ')}`);
+                    },
+                    run: () => expect.fail('pullRequest should not run shell commands'),
+                },
+                {}
+            );
+
+            const snapshot = port.pullRequest(2495);
+
+            expect(snapshot.mergedByActorNodeId).toBe(expectedActorNodeId);
+            expect(requests).toHaveLength(2);
+            expect(requests[0]?.args).toEqual([
+                'pr',
+                'view',
+                '2495',
+                '--repo',
+                'jcosta33/sourdaw',
+                '--json',
+                expect.stringContaining('mergedBy'),
+            ]);
+            expect(requests[1]?.args).toContain('graphql');
+            expect(requests[1]?.args.some((arg) => arg.includes('mergedBy{__typename ... on Bot{id}}'))).toBe(true);
+        }
+    );
+
+    it.each([
+        { label: 'null merger', graphQlMergedBy: null },
+        { label: 'non-Bot merger', graphQlMergedBy: { __typename: 'User' } },
+    ])('fails closed when GraphQL returns a $label for a merged PR', ({ graphQlMergedBy }) => {
+        const mergedSnapshot = pullRequestSnapshot({ state: 'MERGED' });
+        const port = shellPort(
+            'jcosta33/sourdaw',
+            {
+                capture: (_command, args) => {
+                    if (args[0] === 'pr' && args[1] === 'view') {
+                        return ghPullRequestView(mergedSnapshot, {
+                            is_bot: true,
+                            login: 'sourdaw-author[bot]',
+                        });
+                    }
+                    if (args[0] === 'api' && args[1] === 'graphql') {
+                        return ghMergedByGraphql(graphQlMergedBy);
+                    }
+                    throw new Error(`unexpected shell capture: ${args.join(' ')}`);
+                },
+                run: () => expect.fail('pullRequest should not run shell commands'),
+            },
+            {}
+        );
+
+        expect(() => port.pullRequest(2495)).toThrow(/merger cannot be verified/);
+    });
+
+    it('recovers a final merged snapshot whose mergeability remains UNKNOWN', () => {
+        const initial = pullRequestSnapshot();
+        const final = pullRequestSnapshot({
+            state: 'MERGED',
+            mergeable: 'UNKNOWN',
+            mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
+        });
+        const dependentBefore: StackedPullRequest = {
+            number: 2601,
+            state: 'OPEN',
+            headRefName: 'agent/2601/stacked-dependent',
+            headRefOid: 'c'.repeat(40),
+            baseRefName: initial.headRefName,
+        };
+        let dependentAfter = { ...dependentBefore };
+        let receiptBody = '';
+        let receipt: DeliveryReceiptComment | undefined;
+        const retargets: Array<{ number: number; base: string }> = [];
+        const trackerCompletions: number[] = [];
+        const logs: string[] = [];
+        const tracker: TrackerCompletionPort = {
+            complete: (issueNumber) => {
+                trackerCompletions.push(issueNumber);
+            },
+        };
+        const port: DeliveryPort = {
+            fetch: () => undefined,
+            pullRequest: (number) => {
+                if (number === 2495) {
+                    return receipt === undefined ? initial : final;
+                }
+                if (number === dependentBefore.number) {
+                    return pullRequestSnapshot({
+                        ...dependentAfter,
+                        body: initial.body,
+                        title: 'fix(delivery): dependent stays stable',
+                        baseRefOid: initial.baseRefOid,
+                        mergeable: 'MERGEABLE',
+                        mergeStateStatus: 'CLEAN',
+                        reviewDecision: 'APPROVED',
+                        changedFiles: 1,
+                        additions: 1,
+                        deletions: 0,
+                    });
+                }
+                return expect.fail(`unexpected pull request read: ${number}`);
+            },
+            gateRequiredCheckNames: () => new Set(['Gate']),
+            headCheckRuns: () => [],
+            reviewState: () => ({ latestReviewerStateOnHead: 'APPROVED', unresolvedThreads: 0 }),
+            dependents: (baseBranch) => (baseBranch === initial.headRefName ? [dependentBefore] : []),
+            repositoryDeletesMergedBranches: () => false,
+            merge: () => expect.fail('merge should not run after the final snapshot is already merged'),
+            retarget: (number, baseBranch) => {
+                retargets.push({ number, base: baseBranch });
+                dependentAfter = { ...dependentAfter, baseRefName: baseBranch };
+            },
+            deliveryReceipts: () => (receipt === undefined ? [] : [receipt]),
+            addDeliveryReceipt: (_number, body) => {
+                receiptBody = body;
+                receipt = deliveryReceiptComment(body);
+                return receipt;
+            },
+            log: (message) => {
+                logs.push(message);
+            },
+        };
+
+        deliverPullRequest(2495, port, tracker);
+
+        expect(receiptBody).toContain(`head: ${initial.headRefOid}`);
+        expect(retargets).toEqual([{ number: 2601, base: 'main' }]);
+        expect(trackerCompletions).toEqual([2406]);
+        expect(logs).toEqual([
+            'review size: 1 file(s), +2/-1',
+            'PR #2495 became merged during delivery; repaired 1 dependent(s)',
+        ]);
+    });
+
     it('defines the trusted pnpm commands as direct node invocations', () => {
         const pkg = JSON.parse(readFileSync(join(import.meta.dirname, '../../package.json'), 'utf8')) as {
             scripts: Record<string, string>;
@@ -759,6 +1165,244 @@ describe('package scripts and gitignore', () => {
         ).resolves.toBe(0);
     });
 
+    it('refuses a live delivery owner before authentication or delivery starts', async () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-'));
+        initializeDeliveryLockRepository(root);
+        const entered: string[] = [];
+        const dependencies: DeliveryCoordinatorDependencies = {
+            primaryRoot: () => root,
+            serializeDelivery: withPullRequestDeliveryLock,
+            authenticateAuthor: async () => {
+                entered.push('authenticate');
+                throw new Error('authentication should not start');
+            },
+            authenticateTracker: async () => expect.fail('tracker authentication should not start'),
+            repositoryName: () => expect.fail('repository lookup should not start'),
+            deliveryPort: () => expect.fail('delivery port should not be created'),
+            trackerPort: () => expect.fail('tracker port should not be created'),
+            completeIssue: () => expect.fail('tracker completion should not start'),
+            deliver: () => {
+                entered.push('deliver');
+            },
+        };
+
+        try {
+            await withPullRequestDeliveryLock(root, 2495, async () => {
+                await expect(coordinateDelivery(2495, dependencies)).rejects.toThrow(/already being delivered/);
+            });
+            expect(entered).toEqual([]);
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('leaves malformed primary-lock bytes untouched and starts no authentication or operation', async () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-'));
+        const malformed = '{"pid":"not-a-number"}';
+        initializeDeliveryLockRepository(root);
+        const originalOid = writeDeliveryLockOwner(root, 2495, malformed);
+        const entered: string[] = [];
+        const dependencies: DeliveryCoordinatorDependencies = {
+            primaryRoot: () => root,
+            serializeDelivery: withPullRequestDeliveryLock,
+            authenticateAuthor: async () => {
+                entered.push('authenticate');
+                throw new Error('authentication should not start');
+            },
+            authenticateTracker: async () => expect.fail('tracker authentication should not start'),
+            repositoryName: () => expect.fail('repository lookup should not start'),
+            deliveryPort: () => expect.fail('delivery port should not be created'),
+            trackerPort: () => expect.fail('tracker port should not be created'),
+            completeIssue: () => expect.fail('tracker completion should not start'),
+            deliver: () => {
+                entered.push('deliver');
+            },
+        };
+
+        try {
+            await expect(coordinateDelivery(2495, dependencies)).rejects.toThrow(/ownership is malformed/);
+            expect(entered).toEqual([]);
+            expect(readDeliveryLockOid(root, 2495)).toBe(originalOid);
+            expect(runGit(root, ['cat-file', 'blob', originalOid])).toBe(malformed);
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('fails closed without changing current or stale owner blobs that carry an extra key', async () => {
+        const deadProcess = spawnSync(process.execPath, ['-e', 'process.exit(0)']);
+        expect(deadProcess.status).toBe(0);
+        for (const pid of [process.pid, deadProcess.pid]) {
+            const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-'));
+            initializeDeliveryLockRepository(root);
+            const contents = JSON.stringify({
+                version: 1,
+                pid,
+                token: '00000000-0000-4000-8000-000000000001',
+                extra: true,
+            });
+            const originalOid = writeDeliveryLockOwner(root, 2495, contents);
+            let entered = false;
+
+            try {
+                await expect(
+                    withPullRequestDeliveryLock(root, 2495, async () => {
+                        entered = true;
+                    })
+                ).rejects.toThrow(/ownership is malformed/);
+                expect(entered).toBe(false);
+                expect(readDeliveryLockOid(root, 2495)).toBe(originalOid);
+                expect(runGit(root, ['cat-file', 'blob', originalOid])).toBe(contents);
+            } finally {
+                rmSync(root, { recursive: true, force: true });
+            }
+        }
+    });
+
+    it('rejects each invalid value guard in an exact three-key stale owner blob without takeover', async () => {
+        const deadProcess = spawnSync(process.execPath, ['-e', 'process.exit(0)']);
+        expect(deadProcess.status).toBe(0);
+        const validToken = '00000000-0000-4000-8000-000000000001';
+        const cases = [
+            { label: 'version', owner: { version: 2, pid: deadProcess.pid, token: validToken } },
+            { label: 'zero PID', owner: { version: 1, pid: 0, token: validToken } },
+            { label: 'negative PID', owner: { version: 1, pid: -1, token: validToken } },
+            { label: 'token', owner: { version: 1, pid: deadProcess.pid, token: 'not-a-uuid' } },
+        ];
+
+        for (const { label, owner } of cases) {
+            const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-'));
+            initializeDeliveryLockRepository(root);
+            expect(Object.keys(owner).sort(), label).toEqual(['pid', 'token', 'version']);
+            const contents = JSON.stringify(owner);
+            const originalOid = writeDeliveryLockOwner(root, 2495, contents);
+            let entered = false;
+
+            try {
+                await expect(
+                    withPullRequestDeliveryLock(root, 2495, async () => {
+                        entered = true;
+                    }),
+                    label
+                ).rejects.toThrow(/ownership is malformed/);
+                expect(entered, label).toBe(false);
+                expect(readDeliveryLockOid(root, 2495), label).toBe(originalOid);
+                expect(runGit(root, ['cat-file', 'blob', originalOid]), label).toBe(contents);
+            } finally {
+                rmSync(root, { recursive: true, force: true });
+            }
+        }
+    });
+
+    it('refuses a well-formed lock whose owner process is conclusively dead without takeover', async () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-'));
+        initializeDeliveryLockRepository(root);
+        const deadProcess = spawnSync(process.execPath, ['-e', 'process.exit(0)']);
+        expect(deadProcess.status).toBe(0);
+        expect(deadProcess.pid).toBeTypeOf('number');
+        const contents = JSON.stringify({
+            version: 1,
+            pid: deadProcess.pid,
+            token: '00000000-0000-4000-8000-000000000001',
+        });
+        const originalOid = writeDeliveryLockOwner(root, 2495, contents);
+        let delivered = false;
+
+        try {
+            await expect(
+                withPullRequestDeliveryLock(root, 2495, async () => {
+                    delivered = true;
+                })
+            ).rejects.toThrow(/already being delivered/);
+            expect(delivered).toBe(false);
+            expect(readDeliveryLockOid(root, 2495)).toBe(originalOid);
+            expect(runGit(root, ['cat-file', 'blob', originalOid])).toBe(contents);
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('releases the current delivery token after success and failure', async () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-'));
+        initializeDeliveryLockRepository(root);
+
+        try {
+            const sentinel = Symbol('delivery-result');
+            await expect(withPullRequestDeliveryLock(root, 2495, async () => sentinel)).resolves.toBe(sentinel);
+            expect(deliveryLockExists(root, 2495)).toBe(false);
+
+            await expect(
+                withPullRequestDeliveryLock(root, 2495, async () => {
+                    throw new Error('delivery failed');
+                })
+            ).rejects.toThrow('delivery failed');
+            expect(deliveryLockExists(root, 2495)).toBe(false);
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('does not release a delivery lock whose ownership token changed', async () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-'));
+        initializeDeliveryLockRepository(root);
+        let replacementOid = '';
+
+        try {
+            await expect(
+                withPullRequestDeliveryLock(root, 2495, async () => {
+                    replacementOid = writeDeliveryLockOwner(
+                        root,
+                        2495,
+                        JSON.stringify({
+                            version: 1,
+                            pid: process.pid,
+                            token: '00000000-0000-4000-8000-000000000002',
+                        })
+                    );
+                })
+            ).rejects.toThrow(/ownership changed before release/);
+            expect(readDeliveryLockOid(root, 2495)).toBe(replacementOid);
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('keeps per-PR owners isolated without releasing the wrong delivery', async () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-'));
+        initializeDeliveryLockRepository(root);
+
+        try {
+            await withPullRequestDeliveryLock(root, 2495, async () => {
+                await withPullRequestDeliveryLock(root, 2496, async () => undefined);
+                expect(deliveryLockExists(root, 2495)).toBe(true);
+                expect(deliveryLockExists(root, 2496)).toBe(false);
+                await expect(withPullRequestDeliveryLock(root, 2495, async () => undefined)).rejects.toThrow(
+                    /already being delivered/
+                );
+                expect(deliveryLockExists(root, 2495)).toBe(true);
+            });
+            expect(deliveryLockExists(root, 2495)).toBe(false);
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('admits exactly one fresh process while a same-PR contender is held at the lock boundary', async () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-'));
+        initializeDeliveryLockRepository(root);
+
+        try {
+            const values = await contendForDeliveryLock(root);
+            expect(values.filter((value) => value === 'entered')).toHaveLength(1);
+            expect(
+                values.filter((value) => value.startsWith('refused:PR #2495 is already being delivered'))
+            ).toHaveLength(1);
+            expect(deliveryLockExists(root, 2495)).toBe(false);
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    }, 10_000);
+
     it('wires PR operations and the regular-issue adapter to distinct least-privilege sessions', async () => {
         const disposed: string[] = [];
         const authentication = (token: string, permissions: Record<string, string>): DeliveryAuthentication => ({
@@ -790,6 +1434,14 @@ describe('package scripts and gitignore', () => {
         let trackerPort: ReconcileTrackerIssuePort | undefined;
         const dependencies: DeliveryCoordinatorDependencies = {
             primaryRoot: () => '/repo',
+            serializeDelivery: async (_primaryRoot, number, operation) => {
+                seen.push(`lock:${number}:acquire`);
+                try {
+                    return await operation();
+                } finally {
+                    seen.push(`lock:${number}:release`);
+                }
+            },
             authenticateAuthor: async () => author,
             authenticateTracker: async () => tracker,
             repositoryName: (session) => {
@@ -837,10 +1489,12 @@ describe('package scripts and gitignore', () => {
         expect(author.minted.permissions).toEqual({ contents: 'write', pull_requests: 'write' });
         expect(tracker.minted.permissions).toEqual({ issues: 'write' });
         expect(seen).toEqual([
+            'lock:2495:acquire',
             'repository:ghs_author',
             'tracker:ghs_tracker',
             'delivery:ghs_author',
             `complete:${AUTHOR_BOT_NODE_ID}`,
+            'lock:2495:release',
         ]);
         expect(adapterRequests).toEqual([
             {
