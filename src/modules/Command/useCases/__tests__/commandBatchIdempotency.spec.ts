@@ -2335,7 +2335,7 @@ describe('command batch idempotency', () => {
     it('reports unavailable finalization evidence after a durable commit without reclassifying the batch', async () => {
         const batch = compileBatch();
         const proof = await getVersionedCommandBatchCommitProof(batch);
-        const onProjectCommitFinalized = vi.fn(() => {
+        const onProjectCommitFinalized = vi.fn<ProjectCommitFinalized>(() => {
             throw new Error('render artifact vanished');
         });
         const onProjectCommitFinalizationUnavailable = vi.fn(() => {
