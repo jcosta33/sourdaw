@@ -779,7 +779,7 @@ describe('executePromptActionGroup', () => {
         const expectedContinuation = {
             batchId: BATCH_ID,
             effects: [effect],
-            recovery: 'reconcile-batch',
+            recovery: 'manual-repair',
             serializedBatch: fixture.commandBatch.serialized,
             authority: fixture.commandBatch.authority,
         };

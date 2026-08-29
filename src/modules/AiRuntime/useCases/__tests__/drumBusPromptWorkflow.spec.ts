@@ -1666,7 +1666,7 @@ describe('drum bus prompt workflow', () => {
             continuation: {
                 authority: 'authoritative-collaboration-host',
                 idempotency: 'project-checkpoint',
-                kind: 'reconcile-exact-batch',
+                kind: 'manual-repair',
             },
         });
 

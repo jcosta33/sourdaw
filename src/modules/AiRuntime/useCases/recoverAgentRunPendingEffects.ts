@@ -5,7 +5,10 @@ import {
 } from '#/modules/Command/useCases';
 
 import { type AgentRunPendingEffect } from '../models/AgentRun';
-import { getPendingEffectRecoveryPolicy } from '../models/GetPendingEffectRecoveryPolicy';
+import {
+    getPendingEffectRecoveryPolicy,
+    MISSING_EXACT_CHECKPOINT_RECOVERY_REASON,
+} from '../models/GetPendingEffectRecoveryPolicy';
 
 import { agentRunLifecycle } from './agentRunLifecycle';
 
@@ -111,17 +114,16 @@ export async function recoverAgentRunPendingEffects(input: {
         return { status: 'recovered' };
     }
     if (continuation.checkpoint === 'prepared') {
+        const recoveryPolicy = getPendingEffectRecoveryPolicy(priorReceipt.pendingEffects);
         agentRunLifecycle.recordPendingEffectContinuation({
             runId: input.runId,
             continuation: {
                 authority: continuation.authority,
                 batchId: continuation.batchId,
                 effects: structuredClone(priorReceipt.pendingEffects),
-                lastError: null,
+                lastError: recoveryPolicy.reason,
                 receiptIdentity: getReceiptIdentity(priorReceipt),
-                recovery: priorReceipt.pendingEffects.some(({ remediation }) => remediation === 'manual-repair')
-                    ? 'manual-repair'
-                    : 'reconcile-batch',
+                recovery: recoveryPolicy.recovery,
                 serializedBatch: continuation.serializedBatch,
             },
         });
@@ -134,7 +136,11 @@ export async function recoverAgentRunPendingEffects(input: {
     if (recoveryPolicy.recovery === 'manual-repair') {
         const reason = recoveryPolicy.reason ?? 'The retained pending effect requires manual repair.';
         try {
-            agentRunLifecycle.requirePendingEffectManualRepair({ ...input, reason });
+            agentRunLifecycle.requirePendingEffectManualRepair({
+                ...input,
+                reason,
+                preserveEffects: reason === MISSING_EXACT_CHECKPOINT_RECOVERY_REASON,
+            });
         } catch (error) {
             logger.error(new Error('Pending-effect manual-repair state could not be persisted', { cause: error }));
         }

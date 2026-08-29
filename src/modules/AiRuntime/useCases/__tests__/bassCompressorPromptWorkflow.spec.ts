@@ -1201,7 +1201,7 @@ describe('bass compressor prompt workflow', () => {
             continuation: {
                 authority: 'authoritative-collaboration-host',
                 idempotency: 'project-checkpoint',
-                kind: 'reconcile-exact-batch',
+                kind: 'manual-repair',
             },
         });
         expectRuntimeDeviceChain('track-bass-di', BASS_DI_INSERTED_DEVICE_IDS);
@@ -1252,7 +1252,7 @@ describe('bass compressor prompt workflow', () => {
             continuation: {
                 authority: 'authoritative-collaboration-host',
                 idempotency: 'project-checkpoint',
-                kind: 'reconcile-exact-batch',
+                kind: 'manual-repair',
             },
         });
         expectRuntimeDeviceChain('track-bass-di', BASS_DI_INSERTED_DEVICE_IDS);
@@ -1317,7 +1317,7 @@ describe('bass compressor prompt workflow', () => {
             continuation: {
                 authority: 'authoritative-collaboration-host',
                 idempotency: 'project-checkpoint',
-                kind: 'reconcile-exact-batch',
+                kind: 'manual-repair',
             },
         });
         expect(getTrack('track-bass-di').devices.map((device) => device.id)).toEqual([
@@ -1377,7 +1377,7 @@ describe('bass compressor prompt workflow', () => {
             continuation: {
                 authority: 'authoritative-collaboration-host',
                 idempotency: 'project-checkpoint',
-                kind: 'reconcile-exact-batch',
+                kind: 'manual-repair',
             },
         });
         const receipt = chatStore.value?.messages.find(
