@@ -9,6 +9,10 @@ import { requireSectionRenderManualRepair } from '../agentRequestOrchestration/r
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { createAgentSagaStep } from '../createAgentSagaStep';
 
+type VerifiedPendingEffects = NonNullable<
+    Parameters<typeof requireSectionRenderManualRepair>[0]['missingEffects']
+>['existingEffects'];
+
 function createRenderReviewRun(): void {
     agentRunLifecycle.create({
         runId: 'run-render-review',
@@ -559,6 +563,16 @@ describe('agentRunLifecycle', () => {
         if (!recovery) {
             throw new Error('Expected the existing reconcile render recovery.');
         }
+        const existingEffects = [
+            {
+                commandId: 'command-render-review',
+                kind: 'external-effect',
+                operation: 'renderProjectSections',
+                reason: 'tail truncated',
+                remediation: 'reconcile',
+                state: 'pending',
+            },
+        ] satisfies VerifiedPendingEffects;
         const state = readAgentRunState();
         agentRunStore.set({
             ...state,
@@ -595,7 +609,7 @@ describe('agentRunLifecycle', () => {
                 reason: 'The finalized render binding is unavailable.',
                 missingEffects: {
                     commandIds: ['command-render-review'],
-                    existingEffects: recovery.effects,
+                    existingEffects,
                     receiptIdentity: recovery.receiptIdentity,
                     serializedBatch: recovery.serializedBatch,
                     authority: recovery.authority,

@@ -38,6 +38,8 @@ import { executeApprovedVersionedCommandBatchEnvelope as executeVersionedCommand
 type SetTrackGainAction = Extract<AppAction, { type: 'setTrackGain' }>;
 type SetTrackPanAction = Extract<AppAction, { type: 'setTrackPan' }>;
 type SetPlaybackAction = Extract<AppAction, { type: 'setPlayback' }>;
+type ExecuteCommandBatchInput = Parameters<typeof executeVersionedCommandBatchEnvelope>[0];
+type ProjectCommitFinalized = NonNullable<NonNullable<ExecuteCommandBatchInput['options']>['onProjectCommitFinalized']>;
 
 const mocks = vi.hoisted(() => ({
     clearSemanticContext: vi.fn(),
@@ -2305,7 +2307,7 @@ describe('command batch idempotency', () => {
         const batch = compileBatch();
         const proof = await getVersionedCommandBatchCommitProof(batch);
         let checkpointDuringCallback: ReturnType<typeof getProjectCommandBatchIdempotencyCheckpoint> | null = null;
-        const onProjectCommitFinalized = vi.fn(() => {
+        const onProjectCommitFinalized = vi.fn<ProjectCommitFinalized>(() => {
             checkpointDuringCallback = getProjectCommandBatchIdempotencyCheckpoint(proof);
         });
 

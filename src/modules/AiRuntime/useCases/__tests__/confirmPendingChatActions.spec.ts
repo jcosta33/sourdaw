@@ -1133,6 +1133,9 @@ describe('confirmPendingChatActions transaction admission', () => {
                 .mockImplementation(async (input) => {
                     if (status === 'committed-with-warning') {
                         const batchResult = createWarningBatchResult({ status, commandBatch });
+                        if (batchResult.status !== 'committed-with-warning') {
+                            throw new Error('Expected the committed warning fixture to carry its verified receipt.');
+                        }
                         input.options?.onProjectCommitFinalized?.({
                             receipt: batchResult.receipt,
                             revision: 'revision-warning-checkpoint',
