@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
+import { existsSync, lstatSync } from 'node:fs';
+import { resolve } from 'node:path';
 
 import {
     AUTHOR_BOT_NODE_ID,
@@ -86,8 +88,8 @@ export type DeliveryPort = CheckEvidencePort & {
     retarget: (number: number, baseBranch: string) => void;
     deliveryReceipts: (number: number) => DeliveryReceiptComment[];
     addDeliveryReceipt: (number: number, body: string) => DeliveryReceiptComment;
-    readDeliveryReceiptAuthority: (number: number) => string | undefined;
-    writeDeliveryReceiptAuthority: (number: number, receiptId: string) => void;
+    readDeliveryReceiptAuthority: (number: number) => PersistedDeliveryReceiptAuthority | undefined;
+    writeDeliveryReceiptAuthority: (number: number, authority: PersistedDeliveryReceiptAuthority) => void;
     clearDeliveryReceiptAuthority: (number: number) => void;
     log: (message: string) => void;
 };
@@ -128,6 +130,13 @@ const STRUCTURAL_MERGEABILITY_REFRESH_LIMIT = 1;
 type CiAdmissionMode = 'advisory' | 'required';
 
 const ACTIVE_CI_ADMISSION_MODE: CiAdmissionMode = 'advisory';
+
+export type DeliveryReceiptAuthorityPhase = 'prepared' | 'merge-authorized' | 'terminal';
+
+export type PersistedDeliveryReceiptAuthority = {
+    phase: DeliveryReceiptAuthorityPhase;
+    receiptId: string;
+};
 
 function validatePullRequest(
     pullRequest: PullRequestSnapshot,
@@ -755,7 +764,33 @@ function assertCanonicalDeliveryReceipt(
     return payload;
 }
 
-function readStableMergedRecoveryReceipt(pullRequest: PullRequestSnapshot, port: DeliveryPort): DeliveryReceiptPayload {
+function persistPreparedDeliveryReceiptAuthority(number: number, receiptId: string, port: DeliveryPort): void {
+    port.writeDeliveryReceiptAuthority(number, { phase: 'prepared', receiptId });
+}
+
+function persistMergeAuthorizedDeliveryReceiptAuthority(number: number, receiptId: string, port: DeliveryPort): void {
+    port.writeDeliveryReceiptAuthority(number, { phase: 'merge-authorized', receiptId });
+}
+
+function persistTerminalDeliveryReceiptAuthority(number: number, receiptId: string, port: DeliveryPort): void {
+    port.writeDeliveryReceiptAuthority(number, { phase: 'terminal', receiptId });
+}
+
+function readExactDeliveryReceipt(
+    pullRequest: PullRequestSnapshot,
+    port: DeliveryPort,
+    expectedReceiptId: string
+): DeliveryReceiptComment {
+    const lineage = orderedDeliveryReceiptLineage(port.deliveryReceipts(pullRequest.number), pullRequest);
+    const receipt = lineage.find((comment) => comment.id === expectedReceiptId);
+    if (receipt === undefined) {
+        fail(`PR #${pullRequest.number} delivery receipt changed during recovery`);
+    }
+    assertDeliveryReceiptForHead(receipt, pullRequest);
+    return receipt;
+}
+
+function readStableMergedRecoveryReceipt(pullRequest: PullRequestSnapshot, port: DeliveryPort): DeliveryReceiptComment {
     const firstLineage = orderedDeliveryReceiptLineage(port.deliveryReceipts(pullRequest.number), pullRequest);
     const first = authoritativeDeliveryReceipt(firstLineage, pullRequest);
     const secondLineage = orderedDeliveryReceiptLineage(port.deliveryReceipts(pullRequest.number), pullRequest);
@@ -763,20 +798,19 @@ function readStableMergedRecoveryReceipt(pullRequest: PullRequestSnapshot, port:
     if (first.id !== second.id) {
         fail(`PR #${pullRequest.number} delivery receipt changed during recovery`);
     }
-    return assertDeliveryReceiptForHead(second, pullRequest);
+    assertDeliveryReceiptForHead(second, pullRequest);
+    return second;
 }
 
 function readPersistedMergedRecoveryReceipt(
     pullRequest: PullRequestSnapshot,
     port: DeliveryPort,
-    expectedReceiptId: string
-): DeliveryReceiptPayload {
-    const lineage = orderedDeliveryReceiptLineage(port.deliveryReceipts(pullRequest.number), pullRequest);
-    const receipt = lineage.find((comment) => comment.id === expectedReceiptId);
-    if (receipt === undefined) {
-        fail(`PR #${pullRequest.number} delivery receipt changed during recovery`);
+    authority: PersistedDeliveryReceiptAuthority
+): DeliveryReceiptComment {
+    if (authority.phase === 'prepared') {
+        fail(`PR #${pullRequest.number} delivery receipt authority is not merge-authorized`);
     }
-    return assertDeliveryReceiptForHead(receipt, pullRequest);
+    return readExactDeliveryReceipt(pullRequest, port, authority.receiptId);
 }
 
 function validateStableDeliveryReceipt(
@@ -934,10 +968,14 @@ function deliverPullRequestWithCiAdmission(
             receiptAuthority === undefined
                 ? readStableMergedRecoveryReceipt(initial, port)
                 : readPersistedMergedRecoveryReceipt(initial, port, receiptAuthority);
+        const receiptPayload = assertDeliveryReceiptForHead(receipt, initial);
+        if (receiptAuthority?.phase !== 'terminal') {
+            persistMergeAuthorizedDeliveryReceiptAuthority(number, receipt.id, port);
+        }
         const remaining = port.dependents(initial.headRefName).filter((candidate) => candidate.number !== number);
         retargetDependents(remaining, initial.baseRefName, port);
-        completeIssueAfterMerge(number, receipt.closingIssue, tracker);
-        port.clearDeliveryReceiptAuthority(number);
+        completeIssueAfterMerge(number, receiptPayload.closingIssue, tracker);
+        persistTerminalDeliveryReceiptAuthority(number, receipt.id, port);
         port.log(`PR #${number} was already merged; repaired ${remaining.length} remaining dependent(s)`);
         return;
     }
@@ -953,7 +991,7 @@ function deliverPullRequestWithCiAdmission(
     port.log(`review size: ${initial.changedFiles} file(s), +${initial.additions}/-${initial.deletions}`);
 
     const receipt = ensureDeliveryReceipt(initial, initialTrackerTarget, port, ciAdmissionMode);
-    port.writeDeliveryReceiptAuthority(number, receipt.id);
+    persistPreparedDeliveryReceiptAuthority(number, receipt.id, port);
     const receiptPayload = assertDeliveryReceiptForHead(receipt, initial);
 
     port.fetch();
@@ -966,8 +1004,9 @@ function deliverPullRequestWithCiAdmission(
     validateStablePullRequest(initial, finalSnapshot);
     if (finalSnapshot.state === 'MERGED') {
         validateBaseBranch(finalSnapshot);
-        const recoveredReceipt = readPersistedMergedRecoveryReceipt(finalSnapshot, port, receipt.id);
-        validateStableDeliveryReceipt(number, receiptPayload, recoveredReceipt);
+        const recoveredReceipt = readExactDeliveryReceipt(finalSnapshot, port, receipt.id);
+        const recoveredPayload = assertCanonicalDeliveryReceipt(recoveredReceipt, finalSnapshot, receiptPayload);
+        validateStableDeliveryReceipt(number, receiptPayload, recoveredPayload);
         const finalDependents = port
             .dependents(finalSnapshot.headRefName)
             .filter((candidate) => candidate.number !== number);
@@ -975,9 +1014,10 @@ function deliverPullRequestWithCiAdmission(
         for (const dependent of finalDependents) {
             validateDependent(port.pullRequest(dependent.number), dependent);
         }
+        persistMergeAuthorizedDeliveryReceiptAuthority(number, recoveredReceipt.id, port);
         retargetDependents(finalDependents, finalSnapshot.baseRefName, port);
-        completeIssueAfterMerge(number, recoveredReceipt.closingIssue, tracker);
-        port.clearDeliveryReceiptAuthority(number);
+        completeIssueAfterMerge(number, recoveredPayload.closingIssue, tracker);
+        persistTerminalDeliveryReceiptAuthority(number, recoveredReceipt.id, port);
         port.log(`PR #${number} became merged during delivery; repaired ${finalDependents.length} dependent(s)`);
         return;
     }
@@ -992,12 +1032,13 @@ function deliverPullRequestWithCiAdmission(
         validateDependent(port.pullRequest(dependent.number), dependent);
     }
 
+    persistMergeAuthorizedDeliveryReceiptAuthority(number, receipt.id, port);
     port.merge(number, finalSnapshot.headRefOid, finalDependents.length > 0);
     const mergedSnapshot = port.pullRequest(number);
     validatePostMergeSnapshot(finalSnapshot, mergedSnapshot, number, finalTrackerTarget);
     retargetDependents(finalDependents, finalSnapshot.baseRefName, port);
     completeIssueAfterMerge(number, receiptPayload.closingIssue, tracker);
-    port.clearDeliveryReceiptAuthority(number);
+    persistTerminalDeliveryReceiptAuthority(number, receipt.id, port);
 }
 
 export function deliverPullRequest(number: number, port: DeliveryPort, tracker: TrackerCompletionPort): void {
@@ -1512,8 +1553,8 @@ export function shellPort(
                 )
             ),
         readDeliveryReceiptAuthority: (number) => readDeliveryReceiptAuthority(primaryRoot, number),
-        writeDeliveryReceiptAuthority: (number, receiptId) =>
-            writeDeliveryReceiptAuthority(primaryRoot, number, receiptId),
+        writeDeliveryReceiptAuthority: (number, authority) =>
+            writeDeliveryReceiptAuthority(primaryRoot, number, authority),
         clearDeliveryReceiptAuthority: (number) => clearDeliveryReceiptAuthority(primaryRoot, number),
         log: (message) => console.log(message),
     };
@@ -1548,7 +1589,8 @@ type DeliveryLockOwner = {
 };
 
 type DeliveryReceiptAuthority = {
-    version: 1;
+    version: 2;
+    phase: DeliveryReceiptAuthorityPhase;
     receiptId: string;
 };
 
@@ -1628,19 +1670,32 @@ function parseDeliveryReceiptAuthority(contents: string, number: number): Delive
     } catch {
         fail(`PR #${number} delivery receipt authority is malformed`);
     }
+    if (typeof value !== 'object' || value === null) {
+        fail(`PR #${number} delivery receipt authority is malformed`);
+    }
     if (
-        typeof value !== 'object' ||
-        value === null ||
-        Object.keys(value).length !== 2 ||
+        Object.keys(value).length === 2 &&
+        'version' in value &&
+        value.version === 1 &&
+        'receiptId' in value &&
+        typeof value.receiptId === 'string' &&
+        value.receiptId !== ''
+    ) {
+        return { version: 2, phase: 'prepared', receiptId: value.receiptId };
+    }
+    if (
+        Object.keys(value).length !== 3 ||
         !('version' in value) ||
-        value.version !== 1 ||
+        value.version !== 2 ||
+        !('phase' in value) ||
+        (value.phase !== 'prepared' && value.phase !== 'merge-authorized' && value.phase !== 'terminal') ||
         !('receiptId' in value) ||
         typeof value.receiptId !== 'string' ||
         value.receiptId === ''
     ) {
         fail(`PR #${number} delivery receipt authority is malformed`);
     }
-    return { version: 1, receiptId: value.receiptId };
+    return { version: 2, phase: value.phase, receiptId: value.receiptId };
 }
 
 function writeDeliveryLockOwner(primaryRoot: string, owner: DeliveryLockOwner, number: number): string {
@@ -1689,17 +1744,29 @@ function readOptionalDeliveryRefOid(
     number: number,
     label: string
 ): string | undefined {
-    const result = deliveryLockGit(primaryRoot, ['for-each-ref', '--format=%(objectname)', ref]);
+    const result = deliveryLockGit(primaryRoot, ['show-ref', '--verify', '--hash', '--', ref]);
     if (result.error !== undefined) {
         throw result.error;
     }
-    if (result.status !== 0) {
+    if (result.status === 0) {
+        return deliveryObjectId(result.stdout, `PR #${number} ${label} object identity is malformed`);
+    }
+    const refPath = deliveryLockGit(primaryRoot, ['rev-parse', '--git-path', ref]);
+    if (refPath.error !== undefined) {
+        throw refPath.error;
+    }
+    if (refPath.status !== 0) {
         fail(`PR #${number} ${label} cannot be verified`);
     }
-    if (result.stdout.trim() === '') {
+    const exactRefPath = resolve(primaryRoot, refPath.stdout.trim());
+    if (!existsSync(exactRefPath)) {
         return undefined;
     }
-    return deliveryObjectId(result.stdout, `PR #${number} ${label} object identity is malformed`);
+    if (!lstatSync(exactRefPath).isFile()) {
+        return undefined;
+    }
+    fail(`PR #${number} ${label} cannot be verified`);
+    return undefined;
 }
 
 function readDeliveryLockOwner(primaryRoot: string, oid: string, number: number): DeliveryLockOwner {
@@ -1732,7 +1799,14 @@ function updateDeliveryLockRef(primaryRoot: string, args: string[]): boolean {
     return result.status === 0;
 }
 
-function readDeliveryReceiptAuthority(primaryRoot: string, number: number): string | undefined {
+function toPersistedDeliveryReceiptAuthority(authority: DeliveryReceiptAuthority): PersistedDeliveryReceiptAuthority {
+    return { phase: authority.phase, receiptId: authority.receiptId };
+}
+
+function readDeliveryReceiptAuthority(
+    primaryRoot: string,
+    number: number
+): PersistedDeliveryReceiptAuthority | undefined {
     const oid = readOptionalDeliveryRefOid(
         primaryRoot,
         deliveryReceiptAuthorityRef(number),
@@ -1742,18 +1816,24 @@ function readDeliveryReceiptAuthority(primaryRoot: string, number: number): stri
     if (oid === undefined) {
         return undefined;
     }
-    return readDeliveryReceiptAuthorityBlob(primaryRoot, oid, number).receiptId;
+    return toPersistedDeliveryReceiptAuthority(readDeliveryReceiptAuthorityBlob(primaryRoot, oid, number));
 }
 
-function writeDeliveryReceiptAuthority(primaryRoot: string, number: number, receiptId: string): void {
-    if (receiptId === '') {
+function writeDeliveryReceiptAuthority(
+    primaryRoot: string,
+    number: number,
+    authority: PersistedDeliveryReceiptAuthority
+): void {
+    if (authority.receiptId === '') {
         fail(`PR #${number} delivery receipt authority is malformed`);
     }
-    const oid = writeDeliveryReceiptAuthorityBlob(primaryRoot, { version: 1, receiptId }, number);
+    const stored: DeliveryReceiptAuthority = { version: 2, phase: authority.phase, receiptId: authority.receiptId };
+    const oid = writeDeliveryReceiptAuthorityBlob(primaryRoot, stored, number);
     if (!updateDeliveryLockRef(primaryRoot, [deliveryReceiptAuthorityRef(number), oid])) {
         fail(`PR #${number} delivery receipt authority could not be stored`);
     }
-    if (readDeliveryReceiptAuthority(primaryRoot, number) !== receiptId) {
+    const verified = readDeliveryReceiptAuthority(primaryRoot, number);
+    if (verified === undefined || verified.phase !== authority.phase || verified.receiptId !== authority.receiptId) {
         fail(`PR #${number} delivery receipt authority could not be verified`);
     }
 }

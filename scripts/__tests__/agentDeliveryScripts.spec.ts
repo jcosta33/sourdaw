@@ -42,6 +42,7 @@ import type {
     DeliveryCoordinatorDependencies,
     DeliveryReceiptComment,
     DeliveryPort,
+    PersistedDeliveryReceiptAuthority,
     PullRequestSnapshot,
     StackedPullRequest,
     TrackerCompletionPort,
@@ -66,6 +67,10 @@ function deliveryLockRef(number: number): string {
     return `refs/sourdaw/delivery/pr-${number}`;
 }
 
+function deliveryReceiptAuthorityRef(number: number): string {
+    return `refs/sourdaw/delivery-receipt/pr-${number}`;
+}
+
 function writeDeliveryLockOwner(root: string, number: number, contents: string): string {
     const oid = execFileSync('git', ['hash-object', '-w', '--stdin'], {
         cwd: root,
@@ -87,6 +92,27 @@ function deliveryLockExists(root: string, number: number): boolean {
     } catch {
         return false;
     }
+}
+
+function writeDeliveryReceiptAuthority(root: string, number: number, contents: string): string {
+    const oid = execFileSync('git', ['hash-object', '-w', '--stdin'], {
+        cwd: root,
+        encoding: 'utf8',
+        input: contents,
+    }).trim();
+    runGit(root, ['update-ref', deliveryReceiptAuthorityRef(number), oid]);
+    return oid;
+}
+
+function readDeliveryReceiptAuthorityOid(root: string, number: number): string {
+    return runGit(root, ['show-ref', '--verify', '--hash', deliveryReceiptAuthorityRef(number)]);
+}
+
+function writeRawRef(root: string, ref: string, contents: string): void {
+    const gitDir = runGit(root, ['rev-parse', '--git-dir']);
+    const path = join(root, gitDir, ref);
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, contents);
 }
 
 function pullRequestSnapshot(overrides: Partial<PullRequestSnapshot> = {}): PullRequestSnapshot {
@@ -545,7 +571,7 @@ describe('package scripts and gitignore', () => {
         let dependentAfter = { ...dependentBefore };
         let receiptBody = '';
         let receipt: DeliveryReceiptComment | undefined;
-        let persistedReceiptId: string | undefined;
+        let persistedReceiptAuthority: PersistedDeliveryReceiptAuthority | undefined;
         const retargets: Array<{ number: number; base: string }> = [];
         const trackerCompletions: number[] = [];
         const logs: string[] = [];
@@ -592,12 +618,12 @@ describe('package scripts and gitignore', () => {
                 receipt = deliveryReceiptComment(body);
                 return receipt;
             },
-            readDeliveryReceiptAuthority: () => persistedReceiptId,
-            writeDeliveryReceiptAuthority: (_number, receiptId) => {
-                persistedReceiptId = receiptId;
+            readDeliveryReceiptAuthority: () => persistedReceiptAuthority,
+            writeDeliveryReceiptAuthority: (_number, authority) => {
+                persistedReceiptAuthority = authority;
             },
             clearDeliveryReceiptAuthority: () => {
-                persistedReceiptId = undefined;
+                persistedReceiptAuthority = undefined;
             },
             log: (message) => {
                 logs.push(message);
@@ -1414,6 +1440,154 @@ describe('package scripts and gitignore', () => {
             rmSync(root, { recursive: true, force: true });
         }
     }, 10_000);
+
+    it('reads retained delivery receipt authority from an exact temp-repository ref until explicitly cleared', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-authority-'));
+        initializeDeliveryLockRepository(root);
+
+        try {
+            const port = shellPort(
+                'jcosta33/sourdaw',
+                {
+                    capture: () => expect.fail('receipt authority reads should not query GitHub'),
+                    run: () => expect.fail('receipt authority reads should not run shell commands'),
+                },
+                { primaryRoot: root }
+            );
+
+            port.writeDeliveryReceiptAuthority(2495, {
+                phase: 'terminal',
+                receiptId: 'IC_exact_authority',
+            });
+
+            expect(port.readDeliveryReceiptAuthority(2495)).toEqual({
+                phase: 'terminal',
+                receiptId: 'IC_exact_authority',
+            });
+            expect(port.readDeliveryReceiptAuthority(2495)).toEqual({
+                phase: 'terminal',
+                receiptId: 'IC_exact_authority',
+            });
+            expect(readDeliveryReceiptAuthorityOid(root, 2495)).toMatch(/^[0-9a-f]{40,64}$/u);
+
+            port.clearDeliveryReceiptAuthority(2495);
+
+            expect(port.readDeliveryReceiptAuthority(2495)).toBeUndefined();
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('refuses malformed delivery receipt authority refs and blobs in a temp repository', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-authority-'));
+        initializeDeliveryLockRepository(root);
+
+        try {
+            const port = shellPort(
+                'jcosta33/sourdaw',
+                {
+                    capture: () => expect.fail('receipt authority reads should not query GitHub'),
+                    run: () => expect.fail('receipt authority reads should not run shell commands'),
+                },
+                { primaryRoot: root }
+            );
+
+            writeRawRef(root, deliveryReceiptAuthorityRef(2495), 'not-a-real-oid\n');
+            expect(() => port.readDeliveryReceiptAuthority(2495)).toThrow(/cannot be verified/i);
+
+            rmSync(join(root, '.git', 'refs', 'sourdaw'), { recursive: true, force: true });
+            writeDeliveryReceiptAuthority(root, 2495, JSON.stringify({ version: 1, receiptId: '' }));
+            expect(() => port.readDeliveryReceiptAuthority(2495)).toThrow(/delivery receipt authority is malformed/i);
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('rejects child-prefix delivery receipt refs instead of treating them as exact authority', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-authority-'));
+        initializeDeliveryLockRepository(root);
+
+        try {
+            const childOid = execFileSync('git', ['hash-object', '-w', '--stdin'], {
+                cwd: root,
+                encoding: 'utf8',
+                input: JSON.stringify({ version: 1, receiptId: 'IC_child_only' }),
+            }).trim();
+            runGit(root, ['update-ref', `${deliveryReceiptAuthorityRef(2495)}/child`, childOid]);
+            const port = shellPort(
+                'jcosta33/sourdaw',
+                {
+                    capture: () => expect.fail('receipt authority reads should not query GitHub'),
+                    run: () => expect.fail('receipt authority reads should not run shell commands'),
+                },
+                { primaryRoot: root }
+            );
+
+            expect(port.readDeliveryReceiptAuthority(2495)).toBeUndefined();
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('does not delete a delivery receipt authority ref whose object changed after verification', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-authority-'));
+        const wrapperRoot = mkdtempSync(join(tmpdir(), 'sourdaw-git-wrapper-'));
+        initializeDeliveryLockRepository(root);
+
+        try {
+            writeDeliveryReceiptAuthority(root, 2495, JSON.stringify({ version: 1, receiptId: 'IC_original' }));
+            const replacementOid = execFileSync('git', ['hash-object', '-w', '--stdin'], {
+                cwd: root,
+                encoding: 'utf8',
+                input: JSON.stringify({ version: 1, receiptId: 'IC_replacement' }),
+            }).trim();
+            const realGit = execFileSync('which', ['git'], { encoding: 'utf8' }).trim();
+            const wrapperPath = join(wrapperRoot, 'git');
+            writeFileSync(
+                wrapperPath,
+                [
+                    '#!/usr/bin/env bash',
+                    'set -euo pipefail',
+                    `real_git=${JSON.stringify(realGit)}`,
+                    `ref=${JSON.stringify(deliveryReceiptAuthorityRef(2495))}`,
+                    `replacement=${JSON.stringify(replacementOid)}`,
+                    `marker=${JSON.stringify(join(wrapperRoot, 'swapped'))}`,
+                    'if [[ "${1:-}" == "show-ref" && "${2:-}" == "--verify" && "${5:-}" == "$ref" && ! -e "$marker" ]]; then',
+                    '  output="$("$real_git" "$@")"',
+                    '  status=$?',
+                    '  : > "$marker"',
+                    '  "$real_git" update-ref "$ref" "$replacement"',
+                    '  printf "%s\\n" "$output"',
+                    '  exit "$status"',
+                    'fi',
+                    'exec "$real_git" "$@"',
+                ].join('\n')
+            );
+            chmodSync(wrapperPath, 0o755);
+
+            const previousPath = process.env.PATH;
+            process.env.PATH = `${wrapperRoot}:${previousPath ?? ''}`;
+            try {
+                const port = shellPort(
+                    'jcosta33/sourdaw',
+                    {
+                        capture: () => expect.fail('receipt authority reads should not query GitHub'),
+                        run: () => expect.fail('receipt authority reads should not run shell commands'),
+                    },
+                    { primaryRoot: root }
+                );
+
+                expect(() => port.clearDeliveryReceiptAuthority(2495)).toThrow(/could not be cleared/i);
+            } finally {
+                process.env.PATH = previousPath;
+            }
+
+            expect(readDeliveryReceiptAuthorityOid(root, 2495)).toBe(replacementOid);
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+            rmSync(wrapperRoot, { recursive: true, force: true });
+        }
+    });
 
     it('wires PR operations and the regular-issue adapter to distinct least-privilege sessions', async () => {
         const disposed: string[] = [];

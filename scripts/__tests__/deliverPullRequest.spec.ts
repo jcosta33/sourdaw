@@ -16,6 +16,7 @@ import {
     shellPort,
     type DeliveryPort,
     type HeadCheckRun,
+    type PersistedDeliveryReceiptAuthority,
     type PullRequestSnapshot,
     type ReviewState,
     type ShellRunner,
@@ -386,7 +387,7 @@ type FakeInput = {
     primaryBodyOnReceiptRead?: string;
     reviewStateOnReceiptRead?: ReviewState;
     receipts?: DeliveryReceiptComment[];
-    persistedReceiptId?: string;
+    persistedReceiptAuthority?: PersistedDeliveryReceiptAuthority;
     mergedPrimaryAfterMerge?: Partial<PullRequestSnapshot>;
 };
 
@@ -459,7 +460,7 @@ function fakePort(input: FakeInput = {}) {
     let reviewStateAfterReceipt: ReviewState | undefined;
     let lastPrimary: PullRequestSnapshot | undefined;
     let mergedPrimary: PullRequestSnapshot | undefined;
-    let persistedReceiptId = input.persistedReceiptId;
+    let persistedReceiptAuthority = input.persistedReceiptAuthority;
     const receipts = [...(input.receipts ?? [])];
     const port: DeliveryPort & {
         deliveryReceipts: (number: number) => DeliveryReceiptComment[];
@@ -579,12 +580,12 @@ function fakePort(input: FakeInput = {}) {
             }
             return structuredClone(receipt);
         },
-        readDeliveryReceiptAuthority: () => persistedReceiptId,
-        writeDeliveryReceiptAuthority: (_number, receiptId) => {
-            persistedReceiptId = receiptId;
+        readDeliveryReceiptAuthority: () => persistedReceiptAuthority,
+        writeDeliveryReceiptAuthority: (_number, authority) => {
+            persistedReceiptAuthority = authority;
         },
         clearDeliveryReceiptAuthority: () => {
-            persistedReceiptId = undefined;
+            persistedReceiptAuthority = undefined;
         },
         log: (message) => calls.push(message),
     };
@@ -893,6 +894,18 @@ describe('pull-request delivery', () => {
         expect(calls.filter((call) => call === 'complete:2372')).toHaveLength(2);
         expect(calls.filter((call) => call === 'complete:2373')).toHaveLength(0);
         expect(calls).toContain('PR #42 was already merged; repaired 0 remaining dependent(s)');
+
+        const originalDeliveryReceipts = port.deliveryReceipts;
+        port.deliveryReceipts = (number) => {
+            calls.push(`receipts:${number}`);
+            return structuredClone(receipts.slice(0, 2));
+        };
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/delivery receipt changed during recovery/i);
+        expect(calls.filter((call) => call === 'complete:2372')).toHaveLength(2);
+        expect(calls.filter((call) => call === 'complete:2373')).toHaveLength(0);
+
+        port.deliveryReceipts = originalDeliveryReceipts;
     });
 
     it('stops merged recovery when one stale receipt listing still points at Y and later fresh recovery completes only X', () => {
@@ -1039,6 +1052,31 @@ describe('pull-request delivery', () => {
         expect(calls.filter((call) => call === 'complete:2372')).toHaveLength(2);
         expect(calls.filter((call) => call === 'complete:2373')).toHaveLength(0);
         expect(calls).toContain('PR #42 was already merged; repaired 0 remaining dependent(s)');
+    });
+
+    it('does not let a pre-validation X receipt authorize later merged recovery after the body changes to Y', () => {
+        const bodyX = relationshipBody('Closes #2372');
+        const bodyY = relationshipBody('Closes #2373');
+        const { port, calls, tracker } = fakePort({
+            primary: [
+                pullRequest({ body: bodyX }),
+                pullRequest({ body: bodyY }),
+                pullRequest({ state: 'MERGED', body: bodyY }),
+            ],
+            dependentSets: [[], []],
+        });
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/closing target changed during delivery/i);
+        expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(1);
+        expect(calls.filter((call) => call === 'merge:42:head')).toHaveLength(0);
+        expect(calls.filter((call) => call === 'complete:2372')).toHaveLength(0);
+        expect(calls.filter((call) => call === 'complete:2373')).toHaveLength(0);
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(
+            /delivery receipt authority is not merge-authorized/i
+        );
+        expect(calls.filter((call) => call === 'complete:2372')).toHaveLength(0);
+        expect(calls.filter((call) => call === 'complete:2373')).toHaveLength(0);
     });
 
     it('completes the receipt issue after a single-receipt merged body drift', () => {
