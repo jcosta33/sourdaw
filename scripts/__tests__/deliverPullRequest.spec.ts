@@ -312,9 +312,8 @@ const gatingCheckNames: ReadonlySet<string> = new Set(
 );
 
 /**
- * The shape an approving review leaves behind when its own run cancels the push run still in
- * flight: every cancelled name succeeded again on the same commit, beside a job the workflow
- * skipped outright and never cancelled.
+ * A tolerated cancelled-check shape: every cancelled name succeeded again on the same commit,
+ * beside a job the workflow skipped outright and never cancelled.
  */
 function supersededRunCheckRuns(): HeadCheckRun[] {
     return [
@@ -1432,8 +1431,8 @@ describe('pull-request delivery', () => {
     });
 
     /**
-     * The cancelled run is a corpse of the push run the approval superseded. Its `Gate` is what
-     * makes GitHub call the head UNSTABLE; the run that actually decided the head passed.
+     * A cancelled run can leave its `Gate` behind on the head even when a later run on the same commit
+     * passed, which is what makes GitHub call the head UNSTABLE here.
      */
     it('merges an UNSTABLE head whose only non-success runs were cancelled and whose Gate succeeded', () => {
         const unstable = { mergeStateStatus: 'UNSTABLE' };
@@ -1522,11 +1521,9 @@ describe('pull-request delivery', () => {
     });
 
     /**
-     * The live shape of `Dependency review` on an approval run: the push run's attempt was
-     * cancelled, and the review-triggered run skipped the job because it is gated on
-     * `pull_request`. `Gate` passes on `skipped`, so a green `Gate` is not a dependency verdict, and
-     * the skips are not one either. `Gate` needs that job, so this is why `deliver` refuses PR
-     * #2795's head today.
+     * The live shape of `Dependency review` when a cancelled attempt is followed only by later skips.
+     * `Gate` passes on `skipped`, so a green `Gate` is not a dependency verdict, and the skips are not
+     * one either. `Gate` needs that job, so this is why `deliver` refuses PR #2795's head today.
      */
     it('refuses an UNSTABLE head whose cancelled gate dependency only ever skipped beside it', () => {
         const { port, calls } = fakePort({

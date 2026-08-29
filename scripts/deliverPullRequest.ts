@@ -154,13 +154,12 @@ function validateCiAdmission(pullRequest: PullRequestSnapshot, checks: CheckEvid
 }
 
 /**
- * An approving review re-runs the health gates in the same concurrency group as the push run that
- * is still in flight, so that earlier run is cancelled and its check runs — its `Gate` included —
- * stay `CANCELLED` on the head forever. GitHub reports the head `UNSTABLE` for those corpses even
- * though the review-triggered run the branch ruleset reads succeeded on the same commit. Tolerating
- * that state means proving the head green here instead of trusting the aggregate: nothing failed,
- * nothing is still running, the one required check succeeded, and every cancelled name also
- * succeeded. Every other status still refuses, because it reports something other than checks.
+ * Push and approved-review runs still report on the same pull-request head, and GitHub can keep the
+ * aggregate `UNSTABLE` when cancelled check runs remain on that head beside later successes on the
+ * same commit. Tolerating that state means proving the head green here instead of trusting the
+ * aggregate: nothing failed, nothing is still running, the one required check succeeded, and every
+ * cancelled name also succeeded. Every other status still refuses, because it reports something
+ * other than checks.
  */
 function validateRequiredCiAdmission(pullRequest: PullRequestSnapshot, checks: CheckEvidencePort): void {
     if (pullRequest.mergeStateStatus === 'CLEAN') {
@@ -249,14 +248,14 @@ function isFailedCheckRun(check: HeadCheckRun): boolean {
 }
 
 /**
- * Tolerating a cancellation rests on the review-triggered run having re-run that same job on the
- * same commit, which is only observable as a success under the same check name. A name that was
- * cancelled and never succeeded on the head therefore carries no verdict at all, and a skipped
- * sibling does not supply one: the review-triggered run skips every job gated on `pull_request`,
- * `Gate` passes on `skipped`, so a green `Gate` says nothing about whether that job ran.
- * `Dependency review` has exactly this shape on an approval run — one cancellation, skips beside
- * it, no success anywhere. This rule consequently refuses such a head rather than merging with no
- * dependency-scan verdict, which is the honest outcome: an undecided scan is not a passing scan.
+ * Tolerating a cancellation rests on some later run having re-run that same job on the same commit,
+ * which is only observable as a success under the same check name. A name that was cancelled and
+ * never succeeded on the head therefore carries no verdict at all, and a skipped sibling does not
+ * supply one: jobs gated on the pull-request payload can still skip on a later run, and `Gate`
+ * passes on `skipped`, so a green `Gate` says nothing about whether that job ran.
+ * `Dependency review` has exactly this shape when its cancellation is followed only by skips beside
+ * it, with no success anywhere. This rule consequently refuses such a head rather than merging with
+ * no dependency-scan verdict, which is the honest outcome: an undecided scan is not a passing scan.
  *
  * Only a check whose verdict gates the merge is evidence. `Nightly failure report` is cancelled on
  * the same superseded run and never succeeds on a pull request, but it reports a nightly schedule
