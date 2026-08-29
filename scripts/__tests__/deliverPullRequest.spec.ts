@@ -826,6 +826,7 @@ describe('pull-request delivery', () => {
                 pullRequest({ body: bodyY }),
                 pullRequest({ body: bodyY }),
                 pullRequest({ body: bodyY }),
+                pullRequest({ state: 'MERGED', body: bodyX }),
                 pullRequest({ state: 'MERGED', body: relationshipBody('None.') }),
             ],
             primaryBodyOnReceiptRead: bodyX,
@@ -978,6 +979,7 @@ describe('pull-request delivery', () => {
             primary: [
                 pullRequest({ body: closes }),
                 pullRequest({ body: closes }),
+                pullRequest({ state: 'MERGED', body: closes }),
                 pullRequest({ state: 'MERGED', body: relationshipBody('None.') }),
             ],
             dependentSets: [[child], [child], []],

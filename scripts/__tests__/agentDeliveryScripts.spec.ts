@@ -147,8 +147,61 @@ function deliveryReceiptComment(body: string, id = 'comment-1'): DeliveryReceipt
     };
 }
 
+type LockContender = {
+    child: ReturnType<typeof spawn>;
+    lines: AsyncIterableIterator<string>;
+    stderr: string[];
+    closed: Promise<[number | null, NodeJS.Signals | null]>;
+};
+
+type LockContenderStartup =
+    | {
+          kind: 'ready';
+          value: string | undefined;
+      }
+    | {
+          kind: 'closed';
+          code: number | null;
+          signal: NodeJS.Signals | null;
+          stderr: string;
+      };
+
+function describeLockContenderStartup(index: number, outcome: LockContenderStartup): string {
+    if (outcome.kind === 'ready') {
+        return `contender ${index + 1}: stdout=${JSON.stringify(outcome.value ?? null)}`;
+    }
+    return `contender ${index + 1}: code=${outcome.code ?? 'null'} signal=${outcome.signal ?? 'null'} stderr=${JSON.stringify(outcome.stderr)}`;
+}
+
+async function waitForLockContenderReady(contender: LockContender): Promise<LockContenderStartup> {
+    const outcome = await Promise.race([
+        contender.lines.next().then((line) => ({ kind: 'line' as const, line })),
+        contender.closed.then(([code, signal]) => ({ kind: 'closed' as const, code, signal })),
+    ]);
+    if (outcome.kind === 'line') {
+        if (!outcome.line.done) {
+            return { kind: 'ready', value: outcome.line.value };
+        }
+        const [code, signal] = await contender.closed;
+        return {
+            kind: 'closed',
+            code,
+            signal,
+            stderr: contender.stderr.join('').trim(),
+        };
+    }
+    return {
+        kind: 'closed',
+        code: outcome.code,
+        signal: outcome.signal,
+        stderr: contender.stderr.join('').trim(),
+    };
+}
+
 async function contendForDeliveryLock(root: string): Promise<string[]> {
     const moduleUrl = new URL('../deliverPullRequest.ts', import.meta.url).href;
+    const tsxImport = import.meta.resolve('tsx');
+    const repositoryRoot = join(import.meta.dirname, '..', '..');
     const childSource = `
 import { createInterface } from 'node:readline';
 import { withPullRequestDeliveryLock } from ${JSON.stringify(moduleUrl)};
@@ -169,20 +222,40 @@ try {
     input.close();
 }
 `;
-    const startContender = () => {
+    const startContender = (): LockContender => {
         const child = spawn(
             process.execPath,
-            ['--no-warnings', '--experimental-strip-types', '--input-type=module', '--eval', childSource],
-            { stdio: ['pipe', 'pipe', 'pipe'] }
+            ['--no-warnings', '--import', tsxImport, '--input-type=module', '--eval', childSource],
+            {
+                cwd: repositoryRoot,
+                stdio: ['pipe', 'pipe', 'pipe'],
+            }
         );
+        const stderr: string[] = [];
+        child.stderr.setEncoding('utf8');
+        child.stderr.on('data', (chunk: string) => stderr.push(chunk));
         const lines = createInterface({ input: child.stdout, crlfDelay: Infinity })[Symbol.asyncIterator]();
-        return { child, lines, exited: once(child, 'exit') };
+        return {
+            child,
+            lines,
+            stderr,
+            closed: once(child, 'close') as Promise<[number | null, NodeJS.Signals | null]>,
+        };
     };
     const contenders = [startContender(), startContender()];
 
     try {
-        const ready = await Promise.all(contenders.map(({ lines }) => lines.next()));
-        expect(ready.map((line) => line.value)).toEqual(['ready', 'ready']);
+        const ready = await Promise.all(contenders.map(waitForLockContenderReady));
+        if (ready.some((outcome) => outcome.kind === 'closed')) {
+            expect.fail(ready.map((outcome, index) => describeLockContenderStartup(index, outcome)).join('\n'));
+        }
+        const readyValues = ready.map((outcome) => {
+            if (outcome.kind !== 'ready') {
+                expect.fail(`unexpected contender startup state: ${outcome.kind}`);
+            }
+            return outcome.value;
+        });
+        expect(readyValues).toEqual(['ready', 'ready']);
         for (const contender of contenders) {
             contender.child.stdin.write('go\n');
         }
@@ -196,7 +269,7 @@ try {
         for (const contender of contenders) {
             contender.child.stdin.end();
         }
-        const exits = await Promise.all(contenders.map(({ exited }) => exited));
+        const exits = await Promise.all(contenders.map(({ closed }) => closed));
         expect(exits.map(([code]) => code)).toEqual([0, 0]);
         return values;
     } finally {
