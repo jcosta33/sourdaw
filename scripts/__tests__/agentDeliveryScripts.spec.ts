@@ -971,50 +971,33 @@ describe('package scripts and gitignore', () => {
         }
     });
 
-    it('reclaims one well-formed lock whose owner process is conclusively dead', async () => {
+    it('refuses a well-formed lock whose owner process is conclusively dead without takeover', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-'));
         initializeDeliveryLockRepository(root);
         const deadProcess = spawnSync(process.execPath, ['-e', 'process.exit(0)']);
         expect(deadProcess.status).toBe(0);
         expect(deadProcess.pid).toBeTypeOf('number');
-        writeDeliveryLockOwner(
-            root,
-            2495,
-            JSON.stringify({ version: 1, pid: deadProcess.pid, token: '00000000-0000-4000-8000-000000000001' })
-        );
+        const contents = JSON.stringify({
+            version: 1,
+            pid: deadProcess.pid,
+            token: '00000000-0000-4000-8000-000000000001',
+        });
+        const originalOid = writeDeliveryLockOwner(root, 2495, contents);
         let delivered = false;
 
         try {
-            await withPullRequestDeliveryLock(root, 2495, async () => {
-                delivered = true;
-            });
-            expect(delivered).toBe(true);
-            expect(deliveryLockExists(root, 2495)).toBe(false);
+            await expect(
+                withPullRequestDeliveryLock(root, 2495, async () => {
+                    delivered = true;
+                })
+            ).rejects.toThrow(/already being delivered/);
+            expect(delivered).toBe(false);
+            expect(readDeliveryLockOid(root, 2495)).toBe(originalOid);
+            expect(runGit(root, ['cat-file', 'blob', originalOid])).toBe(contents);
         } finally {
             rmSync(root, { recursive: true, force: true });
         }
     });
-
-    it('admits exactly one simultaneous contender for a dead owner', async () => {
-        const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-'));
-        initializeDeliveryLockRepository(root);
-        const deadProcess = spawnSync(process.execPath, ['-e', 'process.exit(0)']);
-        expect(deadProcess.status).toBe(0);
-        writeDeliveryLockOwner(
-            root,
-            2495,
-            JSON.stringify({ version: 1, pid: deadProcess.pid, token: '00000000-0000-4000-8000-000000000001' })
-        );
-
-        try {
-            const values = await contendForDeliveryLock(root);
-            expect(values.filter((value) => value === 'entered')).toHaveLength(1);
-            expect(values.filter((value) => value.startsWith('refused:'))).toHaveLength(1);
-            expect(deliveryLockExists(root, 2495)).toBe(false);
-        } finally {
-            rmSync(root, { recursive: true, force: true });
-        }
-    }, 10_000);
 
     it('releases the current delivery token after success and failure', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-'));

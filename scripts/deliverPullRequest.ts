@@ -1276,12 +1276,6 @@ export type DeliverySerialization = <Value>(
 
 const DELIVERY_LOCK_TOKEN_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
-function deliveryLockErrorCode(error: unknown): string | undefined {
-    return typeof error === 'object' && error !== null && 'code' in error && typeof error.code === 'string'
-        ? error.code
-        : undefined;
-}
-
 function deliveryLockRef(number: number): string {
     if (!Number.isSafeInteger(number) || number <= 0) {
         fail('delivery lock requires a positive pull-request number');
@@ -1376,15 +1370,6 @@ function updateDeliveryLockRef(primaryRoot: string, args: string[]): boolean {
     return result.status === 0;
 }
 
-function deliveryLockOwnerState(owner: DeliveryLockOwner): 'live' | 'dead' | 'uncertain' {
-    try {
-        process.kill(owner.pid, 0);
-        return 'live';
-    } catch (error) {
-        return deliveryLockErrorCode(error) === 'ESRCH' ? 'dead' : 'uncertain';
-    }
-}
-
 function acquireDeliveryLock(primaryRoot: string, number: number): { ref: string; oid: string } {
     const ref = deliveryLockRef(number);
     const owner: DeliveryLockOwner = { version: 1, pid: process.pid, token: randomUUID() };
@@ -1398,18 +1383,7 @@ function acquireDeliveryLock(primaryRoot: string, number: number): { ref: string
         fail(`PR #${number} delivery lock could not be acquired`);
     }
     const previousOwner = readDeliveryLockOwner(primaryRoot, previousOid, number);
-    const previousOwnerState = deliveryLockOwnerState(previousOwner);
-    if (previousOwnerState === 'live') {
-        fail(`PR #${number} is already being delivered by process ${previousOwner.pid}`);
-    }
-    if (previousOwnerState === 'uncertain') {
-        fail(`PR #${number} delivery lock ownership cannot be verified`);
-    }
-
-    if (!updateDeliveryLockRef(primaryRoot, [ref, oid, previousOid])) {
-        fail(`PR #${number} delivery lock changed while reclaiming its dead owner`);
-    }
-    return { ref, oid };
+    return fail(`PR #${number} is already being delivered by process ${previousOwner.pid}`);
 }
 
 function releaseDeliveryLock(primaryRoot: string, ref: string, oid: string, number: number): void {

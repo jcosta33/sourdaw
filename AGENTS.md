@@ -316,10 +316,12 @@ actor node IDs in `scripts/githubAppIdentity.ts`; mutable App slugs and bot logi
 The two role IDs are never interchangeable. `deliver` does not mint the reviewer.
 
 `deliver` serializes each pull request through a per-PR Git ref in the protected primary checkout.
-The ref points to a strict owner blob and every acquire, dead-owner takeover, and release is a Git
-compare-and-swap. Delivery holds that ownership from before authentication through merge or
-already-merged recovery and tracker completion, refuses a live or unverifiable owner without
-waiting, and only replaces a well-formed owner whose process is conclusively dead.
+The ref points to a strict owner blob; acquisition is a zero-ref Git compare-and-swap and release
+requires the acquired object ID. Delivery holds that ownership from before authentication through
+merge or already-merged recovery and tracker completion. Any existing owner is validated and then
+refused without waiting or automatic takeover, regardless of process liveness. A crashed delivery
+leaves its ref in place: recovery requires separate remote reconciliation and fencing before that
+ref is cleared.
 
 Already-merged recovery proceeds only when GitHub's immutable merged-by actor is the author App.
 Same-head delivery receipts retain the issue-comment REST endpoint's ascending comment-ID order;
