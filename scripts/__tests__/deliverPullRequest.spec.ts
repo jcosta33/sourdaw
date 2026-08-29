@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -385,6 +386,7 @@ type FakeInput = {
     primaryBodyOnReceiptRead?: string;
     reviewStateOnReceiptRead?: ReviewState;
     receipts?: DeliveryReceiptComment[];
+    persistedReceiptId?: string;
     mergedPrimaryAfterMerge?: Partial<PullRequestSnapshot>;
 };
 
@@ -457,6 +459,7 @@ function fakePort(input: FakeInput = {}) {
     let reviewStateAfterReceipt: ReviewState | undefined;
     let lastPrimary: PullRequestSnapshot | undefined;
     let mergedPrimary: PullRequestSnapshot | undefined;
+    let persistedReceiptId = input.persistedReceiptId;
     const receipts = [...(input.receipts ?? [])];
     const port: DeliveryPort & {
         deliveryReceipts: (number: number) => DeliveryReceiptComment[];
@@ -575,6 +578,13 @@ function fakePort(input: FakeInput = {}) {
                 throw new Error('delivery receipt response was lost');
             }
             return structuredClone(receipt);
+        },
+        readDeliveryReceiptAuthority: () => persistedReceiptId,
+        writeDeliveryReceiptAuthority: (_number, receiptId) => {
+            persistedReceiptId = receiptId;
+        },
+        clearDeliveryReceiptAuthority: () => {
+            persistedReceiptId = undefined;
         },
         log: (message) => calls.push(message),
     };
@@ -924,12 +934,13 @@ describe('pull-request delivery', () => {
                 throw new Error('tracker unavailable');
             }
         };
+        let staleMergedRecovery = false;
         let receiptReadCount = 0;
         const originalDeliveryReceipts = port.deliveryReceipts;
         port.deliveryReceipts = (number) => {
             calls.push(`receipts:${number}`);
             receiptReadCount += 1;
-            if (receiptReadCount === 4) {
+            if (staleMergedRecovery && receiptReadCount <= 5) {
                 return structuredClone(receipts.slice(0, 2));
             }
             return originalDeliveryReceipts(number);
@@ -940,10 +951,14 @@ describe('pull-request delivery', () => {
         );
         expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(1);
 
+        staleMergedRecovery = true;
+        const receiptReadsBeforeRecovery = calls.filter((call) => call === 'receipts:42').length;
         expect(() => deliverPullRequest(42, port, tracker)).toThrow(/delivery receipt changed during recovery/i);
+        expect(calls.filter((call) => call === 'receipts:42')).toHaveLength(receiptReadsBeforeRecovery + 1);
         expect(calls.filter((call) => call === 'complete:2372')).toHaveLength(1);
         expect(calls.filter((call) => call === 'complete:2373')).toHaveLength(0);
 
+        staleMergedRecovery = false;
         deliverPullRequest(42, port, tracker);
 
         expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(1);
@@ -1497,14 +1512,9 @@ describe('pull-request delivery', () => {
     it('rethrows a failed receipt POST when no new receipt ID appeared after stale pre-reads hid newer authority', () => {
         const bodyX = relationshipBody('Closes #2372');
         const bodyY = relationshipBody('Closes #2373');
-        const receipt = (
-            id: string,
-            body: string,
-            closingIssue: number,
-            createdAt: string
-        ): DeliveryReceiptComment => ({
+        const receipt = (id: string, body: string, createdAt: string): DeliveryReceiptComment => ({
             id,
-            body: deliveryReceiptBody(42, 'head', body, closingIssue),
+            body,
             authorNodeId: AUTHOR_BOT_NODE_ID,
             authorLogin: 'renamed-author[bot]',
             authorType: 'Bot',
@@ -1514,8 +1524,16 @@ describe('pull-request delivery', () => {
         const { port, calls, receipts, tracker } = fakePort({
             primary: [pullRequest({ body: bodyX }), pullRequest({ body: bodyX })],
             receipts: [
-                receipt('IC_historical_x', bodyX, 2372, '2026-08-21T00:00:00Z'),
-                receipt('IC_hidden_y', bodyY, 2373, '2026-08-21T00:00:01Z'),
+                receipt(
+                    'IC_preexisting_v2_x',
+                    visibleDeliveryReceiptBody(42, 'head', bodyX, 2372, 'successful'),
+                    '2026-08-21T00:00:00Z'
+                ),
+                receipt(
+                    'IC_hidden_y',
+                    visibleDeliveryReceiptBody(42, 'head', bodyY, 2373, 'successful'),
+                    '2026-08-21T00:00:01Z'
+                ),
             ],
         });
         let receiptReadCount = 0;
@@ -1534,7 +1552,9 @@ describe('pull-request delivery', () => {
 
         expect(() => deliverPullRequest(42, port, tracker)).toThrow(/delivery receipt post failed before write/);
         expect(calls).not.toContain('merge:42:head');
-        expect(receipts.map((entry) => entry.id)).toEqual(['IC_historical_x', 'IC_hidden_y']);
+        expect(calls.filter((call) => call === 'complete:2372')).toHaveLength(0);
+        expect(calls.filter((call) => call === 'complete:2373')).toHaveLength(0);
+        expect(receipts.map((entry) => entry.id)).toEqual(['IC_preexisting_v2_x', 'IC_hidden_y']);
     });
 
     it('converges stale retry receipts and finishes already-merged recovery without deleting either comment', () => {
@@ -2933,6 +2953,8 @@ describe('delivery shell boundary', () => {
         const bodyY = relationshipBody('Closes #2373');
         const effects: string[] = [];
         const captures: string[] = [];
+        const primaryRoot = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-shell-port-'));
+        execFileSync('git', ['init', '--quiet'], { cwd: primaryRoot });
         const comment = (id: string, receiptBody: string, createdAt: string) => ({
             node_id: id,
             body: receiptBody,
@@ -2940,33 +2962,41 @@ describe('delivery shell boundary', () => {
             created_at: createdAt,
             updated_at: createdAt,
         });
-        const port = shellPort('jcosta33/sourdaw', {
-            capture: (_command, args) => {
-                const joined = args.join(' ');
-                captures.push(joined);
-                if (joined.includes('pr view')) {
-                    return JSON.stringify(shellPullRequest(pullRequest({ state: 'MERGED' })));
-                }
-                if (joined.includes('mergedBy{__typename')) {
-                    return shellMergedByGraphql({ __typename: 'Bot', id: AUTHOR_BOT_NODE_ID });
-                }
-                if (joined.includes('issues/42/comments?per_page=100')) {
-                    return JSON.stringify([
-                        [comment('IC_x', deliveryReceiptBody(42, 'head', bodyX, 2372), '2026-08-21T00:00:02Z')],
-                        [comment('IC_y', deliveryReceiptBody(42, 'head', bodyY, 2373), '2026-08-21T00:00:01Z')],
-                    ]);
-                }
-                if (joined.includes('pulls?state=open')) {
-                    return JSON.stringify([[]]);
-                }
-                throw new Error(`unexpected capture: ${joined}`);
+        const port = shellPort(
+            'jcosta33/sourdaw',
+            {
+                capture: (_command, args) => {
+                    const joined = args.join(' ');
+                    captures.push(joined);
+                    if (joined.includes('pr view')) {
+                        return JSON.stringify(shellPullRequest(pullRequest({ state: 'MERGED' })));
+                    }
+                    if (joined.includes('mergedBy{__typename')) {
+                        return shellMergedByGraphql({ __typename: 'Bot', id: AUTHOR_BOT_NODE_ID });
+                    }
+                    if (joined.includes('issues/42/comments?per_page=100')) {
+                        return JSON.stringify([
+                            [comment('IC_x', deliveryReceiptBody(42, 'head', bodyX, 2372), '2026-08-21T00:00:02Z')],
+                            [comment('IC_y', deliveryReceiptBody(42, 'head', bodyY, 2373), '2026-08-21T00:00:01Z')],
+                        ]);
+                    }
+                    if (joined.includes('pulls?state=open')) {
+                        return JSON.stringify([[]]);
+                    }
+                    throw new Error(`unexpected capture: ${joined}`);
+                },
+                run: () => undefined,
             },
-            run: () => undefined,
-        });
+            { primaryRoot }
+        );
 
-        deliverPullRequest(42, port, {
-            complete: (issue) => effects.push(`complete:${issue}`),
-        });
+        try {
+            deliverPullRequest(42, port, {
+                complete: (issue) => effects.push(`complete:${issue}`),
+            });
+        } finally {
+            rmSync(primaryRoot, { recursive: true, force: true });
+        }
 
         expect(captures.slice(0, 3)).toEqual([
             expect.stringContaining('pr view 42'),

@@ -86,6 +86,9 @@ export type DeliveryPort = CheckEvidencePort & {
     retarget: (number: number, baseBranch: string) => void;
     deliveryReceipts: (number: number) => DeliveryReceiptComment[];
     addDeliveryReceipt: (number: number, body: string) => DeliveryReceiptComment;
+    readDeliveryReceiptAuthority: (number: number) => string | undefined;
+    writeDeliveryReceiptAuthority: (number: number, receiptId: string) => void;
+    clearDeliveryReceiptAuthority: (number: number) => void;
     log: (message: string) => void;
 };
 
@@ -763,17 +766,17 @@ function readStableMergedRecoveryReceipt(pullRequest: PullRequestSnapshot, port:
     return assertDeliveryReceiptForHead(second, pullRequest);
 }
 
-function readExpectedDeliveryReceipt(
+function readPersistedMergedRecoveryReceipt(
     pullRequest: PullRequestSnapshot,
     port: DeliveryPort,
-    expected: DeliveryReceiptPayload
+    expectedReceiptId: string
 ): DeliveryReceiptPayload {
     const lineage = orderedDeliveryReceiptLineage(port.deliveryReceipts(pullRequest.number), pullRequest);
-    const receipt = authoritativeEquivalentDeliveryReceipt(lineage, expected, pullRequest);
+    const receipt = lineage.find((comment) => comment.id === expectedReceiptId);
     if (receipt === undefined) {
-        fail(`PR #${pullRequest.number} has no delivery receipt for its current head`);
+        fail(`PR #${pullRequest.number} delivery receipt changed during recovery`);
     }
-    return assertCanonicalDeliveryReceipt(receipt, pullRequest, expected);
+    return assertDeliveryReceiptForHead(receipt, pullRequest);
 }
 
 function validateStableDeliveryReceipt(
@@ -791,7 +794,7 @@ function ensureDeliveryReceipt(
     closingIssue: number | undefined,
     port: DeliveryPort,
     ciAdmissionMode: CiAdmissionMode
-): DeliveryReceiptPayload {
+): DeliveryReceiptComment {
     const expected = expectedDeliveryReceipt(pullRequest, closingIssue, ciAdmissionMode);
     const expectedBody = composeDeliveryReceipt(expected);
     const existing = orderedDeliveryReceiptLineage(port.deliveryReceipts(pullRequest.number), pullRequest);
@@ -841,7 +844,8 @@ function ensureDeliveryReceipt(
     ) {
         fail(`PR #${pullRequest.number} delivery receipt was not durably verified`);
     }
-    return assertCanonicalDeliveryReceipt(verified, pullRequest, expected);
+    assertCanonicalDeliveryReceipt(verified, pullRequest, expected);
+    return verified;
 }
 
 function validateDependent(current: PullRequestSnapshot, expected: StackedPullRequest): void {
@@ -925,10 +929,15 @@ function deliverPullRequestWithCiAdmission(
     if (initial.state === 'MERGED') {
         validateBaseBranch(initial);
         validateAuthorAppMerger(initial);
-        const receipt = readStableMergedRecoveryReceipt(initial, port);
+        const receiptAuthority = port.readDeliveryReceiptAuthority(number);
+        const receipt =
+            receiptAuthority === undefined
+                ? readStableMergedRecoveryReceipt(initial, port)
+                : readPersistedMergedRecoveryReceipt(initial, port, receiptAuthority);
         const remaining = port.dependents(initial.headRefName).filter((candidate) => candidate.number !== number);
         retargetDependents(remaining, initial.baseRefName, port);
         completeIssueAfterMerge(number, receipt.closingIssue, tracker);
+        port.clearDeliveryReceiptAuthority(number);
         port.log(`PR #${number} was already merged; repaired ${remaining.length} remaining dependent(s)`);
         return;
     }
@@ -944,6 +953,8 @@ function deliverPullRequestWithCiAdmission(
     port.log(`review size: ${initial.changedFiles} file(s), +${initial.additions}/-${initial.deletions}`);
 
     const receipt = ensureDeliveryReceipt(initial, initialTrackerTarget, port, ciAdmissionMode);
+    port.writeDeliveryReceiptAuthority(number, receipt.id);
+    const receiptPayload = assertDeliveryReceiptForHead(receipt, initial);
 
     port.fetch();
     const finalSnapshot = resolveStructuralMergeability(port.pullRequest(number), port);
@@ -955,8 +966,8 @@ function deliverPullRequestWithCiAdmission(
     validateStablePullRequest(initial, finalSnapshot);
     if (finalSnapshot.state === 'MERGED') {
         validateBaseBranch(finalSnapshot);
-        const recoveredReceipt = readExpectedDeliveryReceipt(finalSnapshot, port, receipt);
-        validateStableDeliveryReceipt(number, receipt, recoveredReceipt);
+        const recoveredReceipt = readPersistedMergedRecoveryReceipt(finalSnapshot, port, receipt.id);
+        validateStableDeliveryReceipt(number, receiptPayload, recoveredReceipt);
         const finalDependents = port
             .dependents(finalSnapshot.headRefName)
             .filter((candidate) => candidate.number !== number);
@@ -966,6 +977,7 @@ function deliverPullRequestWithCiAdmission(
         }
         retargetDependents(finalDependents, finalSnapshot.baseRefName, port);
         completeIssueAfterMerge(number, recoveredReceipt.closingIssue, tracker);
+        port.clearDeliveryReceiptAuthority(number);
         port.log(`PR #${number} became merged during delivery; repaired ${finalDependents.length} dependent(s)`);
         return;
     }
@@ -984,7 +996,8 @@ function deliverPullRequestWithCiAdmission(
     const mergedSnapshot = port.pullRequest(number);
     validatePostMergeSnapshot(finalSnapshot, mergedSnapshot, number, finalTrackerTarget);
     retargetDependents(finalDependents, finalSnapshot.baseRefName, port);
-    completeIssueAfterMerge(number, receipt.closingIssue, tracker);
+    completeIssueAfterMerge(number, receiptPayload.closingIssue, tracker);
+    port.clearDeliveryReceiptAuthority(number);
 }
 
 export function deliverPullRequest(number: number, port: DeliveryPort, tracker: TrackerCompletionPort): void {
@@ -1266,12 +1279,13 @@ function readMergedByActorNodeId(
 export function shellPort(
     repository: string,
     shell: ShellRunner = { capture, run },
-    options: { gitToken?: string; helperDir?: string } = {}
+    options: { gitToken?: string; helperDir?: string; primaryRoot?: string } = {}
 ): DeliveryPort {
     const [owner, name] = repository.split('/');
     if (owner === undefined || name === undefined) {
         fail(`invalid GitHub repository: ${repository}`);
     }
+    const primaryRoot = options.primaryRoot ?? process.cwd();
     const pullRequestFields = [
         'number',
         'state',
@@ -1497,6 +1511,10 @@ export function shellPort(
                     `delivery receipt for PR #${number}`
                 )
             ),
+        readDeliveryReceiptAuthority: (number) => readDeliveryReceiptAuthority(primaryRoot, number),
+        writeDeliveryReceiptAuthority: (number, receiptId) =>
+            writeDeliveryReceiptAuthority(primaryRoot, number, receiptId),
+        clearDeliveryReceiptAuthority: (number) => clearDeliveryReceiptAuthority(primaryRoot, number),
         log: (message) => console.log(message),
     };
 }
@@ -1529,6 +1547,11 @@ type DeliveryLockOwner = {
     token: string;
 };
 
+type DeliveryReceiptAuthority = {
+    version: 1;
+    receiptId: string;
+};
+
 export type DeliverySerialization = <Value>(
     primaryRoot: string,
     number: number,
@@ -1544,6 +1567,13 @@ function deliveryLockRef(number: number): string {
     return `refs/sourdaw/delivery/pr-${number}`;
 }
 
+function deliveryReceiptAuthorityRef(number: number): string {
+    if (!Number.isSafeInteger(number) || number <= 0) {
+        fail('delivery receipt authority requires a positive pull-request number');
+    }
+    return `refs/sourdaw/delivery-receipt/pr-${number}`;
+}
+
 function deliveryLockGit(primaryRoot: string, args: string[], input?: string) {
     return spawnSync('git', args, {
         cwd: primaryRoot,
@@ -1551,6 +1581,14 @@ function deliveryLockGit(primaryRoot: string, args: string[], input?: string) {
         shell: false,
         ...(input === undefined ? {} : { input }),
     });
+}
+
+function deliveryObjectId(value: string, invalidMessage: string): string {
+    const oid = value.trim();
+    if (!/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u.test(oid)) {
+        fail(invalidMessage);
+    }
+    return oid;
 }
 
 function parseDeliveryLockOwner(contents: string, number: number): DeliveryLockOwner {
@@ -1580,11 +1618,29 @@ function parseDeliveryLockOwner(contents: string, number: number): DeliveryLockO
 }
 
 function deliveryLockObjectId(value: string, number: number): string {
-    const oid = value.trim();
-    if (!/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u.test(oid)) {
-        fail(`PR #${number} delivery lock object identity is malformed`);
+    return deliveryObjectId(value, `PR #${number} delivery lock object identity is malformed`);
+}
+
+function parseDeliveryReceiptAuthority(contents: string, number: number): DeliveryReceiptAuthority {
+    let value: unknown;
+    try {
+        value = JSON.parse(contents) as unknown;
+    } catch {
+        fail(`PR #${number} delivery receipt authority is malformed`);
     }
-    return oid;
+    if (
+        typeof value !== 'object' ||
+        value === null ||
+        Object.keys(value).length !== 2 ||
+        !('version' in value) ||
+        value.version !== 1 ||
+        !('receiptId' in value) ||
+        typeof value.receiptId !== 'string' ||
+        value.receiptId === ''
+    ) {
+        fail(`PR #${number} delivery receipt authority is malformed`);
+    }
+    return { version: 1, receiptId: value.receiptId };
 }
 
 function writeDeliveryLockOwner(primaryRoot: string, owner: DeliveryLockOwner, number: number): string {
@@ -1596,6 +1652,21 @@ function writeDeliveryLockOwner(primaryRoot: string, owner: DeliveryLockOwner, n
         fail(`PR #${number} delivery lock owner could not be stored`);
     }
     return deliveryLockObjectId(result.stdout, number);
+}
+
+function writeDeliveryReceiptAuthorityBlob(
+    primaryRoot: string,
+    authority: DeliveryReceiptAuthority,
+    number: number
+): string {
+    const result = deliveryLockGit(primaryRoot, ['hash-object', '-w', '--stdin'], JSON.stringify(authority));
+    if (result.error !== undefined) {
+        throw result.error;
+    }
+    if (result.status !== 0) {
+        fail(`PR #${number} delivery receipt authority could not be stored`);
+    }
+    return deliveryObjectId(result.stdout, `PR #${number} delivery receipt authority object identity is malformed`);
 }
 
 function readDeliveryLockOid(primaryRoot: string, ref: string, number: number): string | undefined {
@@ -1612,6 +1683,25 @@ function readDeliveryLockOid(primaryRoot: string, ref: string, number: number): 
     return deliveryLockObjectId(result.stdout, number);
 }
 
+function readOptionalDeliveryRefOid(
+    primaryRoot: string,
+    ref: string,
+    number: number,
+    label: string
+): string | undefined {
+    const result = deliveryLockGit(primaryRoot, ['for-each-ref', '--format=%(objectname)', ref]);
+    if (result.error !== undefined) {
+        throw result.error;
+    }
+    if (result.status !== 0) {
+        fail(`PR #${number} ${label} cannot be verified`);
+    }
+    if (result.stdout.trim() === '') {
+        return undefined;
+    }
+    return deliveryObjectId(result.stdout, `PR #${number} ${label} object identity is malformed`);
+}
+
 function readDeliveryLockOwner(primaryRoot: string, oid: string, number: number): DeliveryLockOwner {
     const result = deliveryLockGit(primaryRoot, ['cat-file', 'blob', oid]);
     if (result.error !== undefined) {
@@ -1623,12 +1713,60 @@ function readDeliveryLockOwner(primaryRoot: string, oid: string, number: number)
     return parseDeliveryLockOwner(result.stdout, number);
 }
 
+function readDeliveryReceiptAuthorityBlob(primaryRoot: string, oid: string, number: number): DeliveryReceiptAuthority {
+    const result = deliveryLockGit(primaryRoot, ['cat-file', 'blob', oid]);
+    if (result.error !== undefined) {
+        throw result.error;
+    }
+    if (result.status !== 0) {
+        fail(`PR #${number} delivery receipt authority cannot be verified`);
+    }
+    return parseDeliveryReceiptAuthority(result.stdout, number);
+}
+
 function updateDeliveryLockRef(primaryRoot: string, args: string[]): boolean {
     const result = deliveryLockGit(primaryRoot, ['update-ref', ...args]);
     if (result.error !== undefined) {
         throw result.error;
     }
     return result.status === 0;
+}
+
+function readDeliveryReceiptAuthority(primaryRoot: string, number: number): string | undefined {
+    const oid = readOptionalDeliveryRefOid(
+        primaryRoot,
+        deliveryReceiptAuthorityRef(number),
+        number,
+        'delivery receipt authority'
+    );
+    if (oid === undefined) {
+        return undefined;
+    }
+    return readDeliveryReceiptAuthorityBlob(primaryRoot, oid, number).receiptId;
+}
+
+function writeDeliveryReceiptAuthority(primaryRoot: string, number: number, receiptId: string): void {
+    if (receiptId === '') {
+        fail(`PR #${number} delivery receipt authority is malformed`);
+    }
+    const oid = writeDeliveryReceiptAuthorityBlob(primaryRoot, { version: 1, receiptId }, number);
+    if (!updateDeliveryLockRef(primaryRoot, [deliveryReceiptAuthorityRef(number), oid])) {
+        fail(`PR #${number} delivery receipt authority could not be stored`);
+    }
+    if (readDeliveryReceiptAuthority(primaryRoot, number) !== receiptId) {
+        fail(`PR #${number} delivery receipt authority could not be verified`);
+    }
+}
+
+function clearDeliveryReceiptAuthority(primaryRoot: string, number: number): void {
+    const ref = deliveryReceiptAuthorityRef(number);
+    const oid = readOptionalDeliveryRefOid(primaryRoot, ref, number, 'delivery receipt authority');
+    if (oid === undefined) {
+        return;
+    }
+    if (!updateDeliveryLockRef(primaryRoot, ['-d', ref, oid])) {
+        fail(`PR #${number} delivery receipt authority could not be cleared`);
+    }
 }
 
 function acquireDeliveryLock(primaryRoot: string, number: number): { ref: string; oid: string } {
@@ -1698,6 +1836,7 @@ function defaultDeliveryCoordinatorDependencies(cwd: string): DeliveryCoordinato
             return shellPort(repository, shell, {
                 gitToken: authentication.minted.token,
                 helperDir: authentication.session.configDir,
+                primaryRoot,
             });
         },
         trackerPort: (session) => trackerIssueShellPort(session, cwd),

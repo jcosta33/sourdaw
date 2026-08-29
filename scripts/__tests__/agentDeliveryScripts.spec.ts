@@ -10,9 +10,11 @@ import {
     rmSync,
     writeFileSync,
 } from 'node:fs';
+import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { createInterface } from 'node:readline';
+import { pathToFileURL } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 import { parseDocument } from 'yaml';
@@ -46,6 +48,8 @@ import type {
 } from '../deliverPullRequest.ts';
 import type { ReconcileTrackerIssuePort } from '../trackerIssueReconciliation.ts';
 import type { Readable, Writable } from 'node:stream';
+
+const require = createRequire(import.meta.url);
 
 function runGit(repository: string, args: string[]): string {
     const env = { ...process.env };
@@ -200,8 +204,8 @@ async function waitForLockContenderReady(contender: LockContender): Promise<Lock
 }
 
 async function contendForDeliveryLock(root: string): Promise<string[]> {
-    const moduleUrl = new URL('../deliverPullRequest.ts', import.meta.url).href;
-    const tsxImport = import.meta.resolve('tsx');
+    const moduleUrl = pathToFileURL(join(import.meta.dirname, '../deliverPullRequest.ts')).href;
+    const tsxImport = require.resolve('tsx');
     const repositoryRoot = join(import.meta.dirname, '..', '..');
     const childSource = `
 import { createInterface } from 'node:readline';
@@ -541,6 +545,7 @@ describe('package scripts and gitignore', () => {
         let dependentAfter = { ...dependentBefore };
         let receiptBody = '';
         let receipt: DeliveryReceiptComment | undefined;
+        let persistedReceiptId: string | undefined;
         const retargets: Array<{ number: number; base: string }> = [];
         const trackerCompletions: number[] = [];
         const logs: string[] = [];
@@ -586,6 +591,13 @@ describe('package scripts and gitignore', () => {
                 receiptBody = body;
                 receipt = deliveryReceiptComment(body);
                 return receipt;
+            },
+            readDeliveryReceiptAuthority: () => persistedReceiptId,
+            writeDeliveryReceiptAuthority: (_number, receiptId) => {
+                persistedReceiptId = receiptId;
+            },
+            clearDeliveryReceiptAuthority: () => {
+                persistedReceiptId = undefined;
             },
             log: (message) => {
                 logs.push(message);
@@ -1427,6 +1439,9 @@ describe('package scripts and gitignore', () => {
             retarget: () => undefined,
             deliveryReceipts: () => [],
             addDeliveryReceipt: () => expect.fail('delivery domain should be injected in this coordinator test'),
+            readDeliveryReceiptAuthority: () => undefined,
+            writeDeliveryReceiptAuthority: () => undefined,
+            clearDeliveryReceiptAuthority: () => undefined,
             log: () => undefined,
         };
         const seen: string[] = [];
