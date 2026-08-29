@@ -6,10 +6,12 @@
  * rule still styles it — deleting or renaming the rule leaves such an assertion
  * green. Matching the shipped selector against the rendered DOM closes that gap.
  *
- * Reading a rule's text is not enough on its own: a rule inside a query that
- * never holds is text that never applies, which is the exact shape of the defect
- * the titlebar specs exist to catch. So the stylesheet is scanned rather than
- * pattern-matched, and every rule carries the conditions it was found under.
+ * This is a scanner, not a CSS parser. It reports the rules it is sure of and
+ * refuses the rest: a rule counts only when every block enclosing it is an
+ * at-rule this file classifies. Anything else throws. That way an unread
+ * construct costs a loud failure rather than a selector that looks fine and
+ * describes something the browser never applies — which is the whole reason the
+ * titlebar specs read the stylesheet instead of trusting a class name.
  */
 
 import { readFileSync } from 'node:fs';
@@ -28,25 +30,47 @@ export type StylesheetRule = {
     readonly selector: string;
     readonly declarations: readonly Declaration[];
     /**
-     * The conditional group at-rules enclosing this rule, outermost first, and
-     * empty when the rule applies wherever its selector matches.
+     * The conditional at-rules enclosing this rule, outermost first, and empty
+     * when the rule applies wherever its selector matches.
      */
     readonly conditional: readonly string[];
 };
 
-/**
- * At-rules whose body applies only while a query holds. `@layer` is absent on
- * purpose: it orders the cascade, it does not decide whether a rule applies.
- */
-const CONDITIONAL_GROUP_AT_RULES = new Set(['@media', '@supports', '@container', '@document']);
+/** Members apply exactly where their selectors match; the at-rule orders them. */
+const TRANSPARENT_AT_RULES = new Set(['@layer']);
 
-const isConditionalGroup = (prelude: string): boolean =>
-    CONDITIONAL_GROUP_AT_RULES.has((/^@[a-z-]+/iu.exec(prelude)?.[0] ?? '').toLowerCase());
+/** Members apply only while a query holds. */
+const CONDITIONAL_AT_RULES = new Set(['@media', '@supports', '@container']);
+
+/** Nested blocks are not style rules — a keyframe step is a point in time. */
+const OPAQUE_AT_RULES = new Set(['@keyframes']);
+
+type BlockKind = 'style' | 'transparent' | 'conditional' | 'opaque' | 'unread';
+
+function kindOf(prelude: string): BlockKind {
+    if (!prelude.startsWith('@')) {
+        return 'style';
+    }
+    const atRule = (/^@[a-z-]+/iu.exec(prelude)?.[0] ?? '').toLowerCase();
+    if (TRANSPARENT_AT_RULES.has(atRule)) {
+        return 'transparent';
+    }
+    if (CONDITIONAL_AT_RULES.has(atRule)) {
+        return 'conditional';
+    }
+    if (OPAQUE_AT_RULES.has(atRule)) {
+        return 'opaque';
+    }
+    return 'unread';
+}
+
+const IMPORTANT = /\s*!important$/iu;
 
 /**
  * Split a block into declarations. A value may itself contain a colon — a `url()`
  * scheme, say — so only the first one separates a declaration, and text carrying
- * none at all (an at-rule body such as `@apply`) is not a declaration.
+ * none at all (an at-rule body such as `@apply`) is not a declaration. `!important`
+ * changes which rule wins, not what the rule sets, so it is not part of the value.
  */
 function declarationsOf(block: string): Declaration[] {
     return block
@@ -55,27 +79,35 @@ function declarationsOf(block: string): Declaration[] {
             const separator = text.indexOf(':');
             return separator === -1
                 ? undefined
-                : { property: text.slice(0, separator).trim(), value: text.slice(separator + 1).trim() };
+                : {
+                      property: text.slice(0, separator).trim(),
+                      value: text
+                          .slice(separator + 1)
+                          .trim()
+                          .replace(IMPORTANT, ''),
+                  };
         })
         .filter((declaration): declaration is Declaration => declaration !== undefined);
 }
 
 type OpenBlock = {
     readonly prelude: string;
+    readonly kind: BlockKind;
     /** What the enclosing block had collected before this one opened. */
     readonly enclosingText: string;
 };
 
 /**
- * Every style rule in a stylesheet, in file order, each with the conditional
- * group at-rules it sits under.
+ * The style rules a stylesheet applies, in file order, each with the conditional
+ * at-rules it sits under.
  *
- * Nesting is tracked rather than skipped: a rule inside `@media`, `@supports` or
- * `@container` is reported with that query, not as a top-level rule. An at-rule
- * is a context, never a rule of its own, so `@layer` and `@utility` contribute
- * their members and nothing else. A style rule that comes out with no selector
- * means the scan lost it, and throws here rather than at a caller passing `''`
- * to `matches` or `closest`.
+ * A rule is reported only when every block above it is an at-rule classified
+ * here. A rule nested in another style rule is refused rather than reported
+ * without its ancestor, because reading that ancestor back out means resolving
+ * `&`, which is a parser's job and not this file's. A rule under an at-rule this
+ * file does not classify is refused too: it may apply always, sometimes, or in
+ * one frame of a transition, and guessing is what a guard must not do. A
+ * classified at-rule whose nested blocks are not rules contributes nothing.
  */
 export function parseStylesheet(css: string): readonly StylesheetRule[] {
     const rules: StylesheetRule[] = [];
@@ -93,11 +125,14 @@ export function parseStylesheet(css: string): readonly StylesheetRule[] {
         }
 
         if (character === '"' || character === "'") {
-            // Kept verbatim, quotes included: a quoted run is part of the
-            // selector or the value it sits in — `[role='menu']`, say — and only
-            // its braces and comment markers must go uninterpreted.
-            const end = css.indexOf(character, index + 1);
-            const close = end === -1 ? css.length : end + 1;
+            // Kept verbatim, quotes and escapes included: a quoted run is part
+            // of the selector or value it sits in — `[role='menu']`, say — and
+            // only its braces and comment markers must go uninterpreted.
+            let cursor = index + 1;
+            while (cursor < css.length && css[cursor] !== character) {
+                cursor += css[cursor] === '\\' ? 2 : 1;
+            }
+            const close = Math.min(cursor + 1, css.length);
             text += css.slice(index, close);
             index = close;
             continue;
@@ -107,7 +142,8 @@ export function parseStylesheet(css: string): readonly StylesheetRule[] {
             // A prelude runs from the end of the last declaration, so a block
             // nested under one keeps the enclosing rule's own text intact.
             const boundary = text.lastIndexOf(';');
-            open.push({ prelude: text.slice(boundary + 1).trim(), enclosingText: text.slice(0, boundary + 1) });
+            const prelude = text.slice(boundary + 1).trim();
+            open.push({ prelude, kind: kindOf(prelude), enclosingText: text.slice(0, boundary + 1) });
             text = '';
             index += 1;
             continue;
@@ -118,15 +154,8 @@ export function parseStylesheet(css: string): readonly StylesheetRule[] {
             if (block === undefined) {
                 throw new Error('stylesheet closes a block that was never opened');
             }
-            if (!block.prelude.startsWith('@')) {
-                if (block.prelude === '') {
-                    throw new Error(`stylesheet rule parsed with no selector: {${text.trim()}}`);
-                }
-                rules.push({
-                    selector: block.prelude,
-                    declarations: declarationsOf(text),
-                    conditional: open.map(({ prelude }) => prelude).filter(isConditionalGroup),
-                });
+            if (block.kind === 'style') {
+                rules.push(...reportable(block, text, open));
             }
             text = block.enclosingText;
             index += 1;
@@ -137,12 +166,43 @@ export function parseStylesheet(css: string): readonly StylesheetRule[] {
         index += 1;
     }
 
+    if (open.length > 0) {
+        throw new Error(`stylesheet ends inside ${String(open.length)} unclosed block(s)`);
+    }
     return rules;
 }
 
-/** Every rule `main.css` ships, as `parseStylesheet` reads them. */
+/** The closed style rule, as one rule or as none — or a refusal to read it. */
+function reportable(block: OpenBlock, body: string, enclosing: readonly OpenBlock[]): StylesheetRule[] {
+    if (enclosing.some(({ kind }) => kind === 'opaque')) {
+        return [];
+    }
+    const unread = enclosing.find(({ kind }) => kind === 'style' || kind === 'unread');
+    if (unread !== undefined) {
+        throw new Error(`stylesheet nests ${block.prelude} inside ${unread.prelude}, which this scanner does not read`);
+    }
+    if (block.prelude === '') {
+        throw new Error(`stylesheet rule parsed with no selector: {${body.trim()}}`);
+    }
+    return [
+        {
+            selector: block.prelude,
+            declarations: declarationsOf(body),
+            conditional: enclosing.filter(({ kind }) => kind === 'conditional').map(({ prelude }) => prelude),
+        },
+    ];
+}
+
+/**
+ * Every rule `main.css` ships. A stylesheet this size yielding none means the
+ * scan lost its place rather than that the file holds none, so it throws.
+ */
 export function stylesheetRules(): readonly StylesheetRule[] {
-    return parseStylesheet(mainStylesheet);
+    const rules = parseStylesheet(mainStylesheet);
+    if (rules.length === 0) {
+        throw new Error('main.css parsed to no rules at all');
+    }
+    return rules;
 }
 
 /**

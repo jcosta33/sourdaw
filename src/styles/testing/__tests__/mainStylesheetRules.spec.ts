@@ -51,9 +51,48 @@ describe('mainStylesheetRules', () => {
         expect(selectorDeclaringIn(layered, 'app-region', 'drag')).toBe('.desktop-titlebar-region');
     });
 
-    it('reports an at-rule body as its member rules and never as a rule itself', () => {
-        const utility = parseStylesheet('@utility daw-seam { background: red; }');
+    it('refuses a nested rule rather than reporting it without its ancestor', () => {
+        // Reported bare, `:is(button)` answers `closest` for any button on the
+        // page — the assertion it feeds means "inside the titlebar row".
+        const nested = '.desktop-titlebar-region { :is(button) { app-region: no-drag; } }';
 
-        expect(utility).toEqual([]);
+        expect(() => parseStylesheet(nested)).toThrow('which this scanner does not read');
+    });
+
+    it('refuses a rule under an at-rule it cannot classify', () => {
+        // `@scope` narrows where the rule applies and `@starting-style` narrows
+        // when. Reading either as unconditional is the failure this guards.
+        expect(() => parseStylesheet(`@scope (.titlebar) { ${DRAG_RULE} }`)).toThrow(
+            'which this scanner does not read'
+        );
+        expect(() => parseStylesheet(`@starting-style { ${DRAG_RULE} }`)).toThrow('which this scanner does not read');
+    });
+
+    it('reads an animation step as a moment rather than as a rule', () => {
+        const animated = parseStylesheet(
+            `@keyframes slide { from { margin-left: env(titlebar-area-x, 0px); } 50% { margin-left: 0; } } ${DRAG_RULE}`
+        );
+
+        // A step is neither a selector nor a second declaration of the property.
+        expect(animated.map((rule) => rule.selector)).toEqual(['.desktop-titlebar-region']);
+    });
+
+    it('reads a value the same whether or not it claims importance', () => {
+        const important = parseStylesheet('.desktop-titlebar-region { app-region: drag !important; }');
+
+        // `!important` decides which rule wins, not what the rule sets.
+        expect(selectorDeclaringIn(important, 'app-region', 'drag')).toBe('.desktop-titlebar-region');
+    });
+
+    it('reads past an escaped quote instead of running off the end of the file', () => {
+        const escaped = `.quoted::before { content: "\\""; } ${DRAG_RULE}`;
+
+        // An unterminated string swallows every rule after it, and a scan that
+        // ends mid-block must say so rather than return what it managed to read.
+        expect(parseStylesheet(escaped).map((rule) => rule.selector)).toEqual([
+            '.quoted::before',
+            '.desktop-titlebar-region',
+        ]);
+        expect(() => parseStylesheet('.desktop-titlebar-region { app-region: drag;')).toThrow('unclosed block');
     });
 });
