@@ -160,34 +160,380 @@ const LOADER_EXEMPT_SPECIFIER = 'yaml';
  * the other two — and the dynamic call is the shape this loader itself uses, so the bare-specifier
  * rule passed vacuously on the very file it was written to hold.
  *
- * A specifier written inside a comment or a string literal matches too. That is why the prose here
- * spells none of these shapes out: the rule reads its own file, and an example in a comment would be
- * refused as an unresolvable dependency.
+ * Specifiers are collected by walking syntax, not by regex over raw source. Comments and the contents
+ * of string and template literals cannot contribute; only a real `from` / `import` / `import()` form
+ * at code depth can. That keeps an example in this comment from being refused as a dependency.
  */
-const MODULE_SPECIFIER_PATTERNS = [
-    /\bfrom\s+['"]([^'"]+)['"]/g,
-    /\bimport\s+['"]([^'"]+)['"]/g,
-    /\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/g,
-];
-
-function moduleSpecifiers(source: string): string[] {
+export function snapshotImportSpecifiers(source: string): string[] {
     const specifiers = new Set<string>();
-    for (const pattern of MODULE_SPECIFIER_PATTERNS) {
-        for (const match of source.matchAll(pattern)) {
-            if (match[1] !== undefined) {
-                specifiers.add(match[1]);
-            }
-        }
-    }
+    scanImportSpecifiers(source, 0, source.length, specifiers);
     return [...specifiers];
 }
 
-function bareModuleSpecifiers(source: string): string[] {
-    return moduleSpecifiers(source).filter((specifier) => !specifier.startsWith('.') && !specifier.startsWith('node:'));
+function scanImportSpecifiers(
+    source: string,
+    start: number,
+    end: number,
+    specifiers: Set<string>,
+    stopAtDepthZero = false
+): number {
+    let index = start;
+    let depth = stopAtDepthZero ? 1 : null;
+    while (index < end) {
+        const commentEnd = skipComment(source, index);
+        if (commentEnd !== undefined) {
+            index = commentEnd;
+            continue;
+        }
+        const quote = source[index];
+        if (quote === "'" || quote === '"') {
+            index = skipQuoted(source, index, quote);
+            continue;
+        }
+        if (quote === '`') {
+            index = scanTemplate(source, index, end, specifiers);
+            continue;
+        }
+        const regexEnd = skipRegexLiteral(source, index);
+        if (regexEnd !== undefined) {
+            index = regexEnd;
+            continue;
+        }
+        if (depth !== null) {
+            if (source[index] === '{') {
+                depth += 1;
+                index += 1;
+                continue;
+            }
+            if (source[index] === '}') {
+                depth -= 1;
+                if (depth === 0) {
+                    return index + 1;
+                }
+                index += 1;
+                continue;
+            }
+        }
+        if (isKeywordAt(source, index, 'from')) {
+            const afterKeyword = index + 4;
+            const specifier = readModuleStringAfter(source, afterKeyword);
+            if (specifier !== undefined) {
+                specifiers.add(specifier.value);
+                index = specifier.end;
+                continue;
+            }
+        }
+        if (isKeywordAt(source, index, 'import')) {
+            const afterKeyword = index + 6;
+            const sideEffect = readModuleStringAfter(source, afterKeyword);
+            if (sideEffect !== undefined) {
+                specifiers.add(sideEffect.value);
+                index = sideEffect.end;
+                continue;
+            }
+            const dynamic = readDynamicImportSpecifier(source, afterKeyword);
+            if (dynamic !== undefined) {
+                const before = index === 0 ? undefined : source[index - 1];
+                if (before !== '.') {
+                    specifiers.add(dynamic.value);
+                }
+                index = dynamic.end;
+                continue;
+            }
+        }
+        index += 1;
+    }
+    return index;
+}
+
+function scanTemplate(source: string, index: number, end: number, specifiers: Set<string>): number {
+    let cursor = index + 1;
+    while (cursor < end) {
+        const character = source[cursor];
+        if (character === '\\') {
+            cursor += 2;
+            continue;
+        }
+        if (character === '`') {
+            return cursor + 1;
+        }
+        if (character === '$' && source[cursor + 1] === '{') {
+            cursor = scanImportSpecifiers(source, cursor + 2, end, specifiers, true);
+            continue;
+        }
+        cursor += 1;
+    }
+    return end;
+}
+
+function isKeywordAt(source: string, index: number, keyword: string): boolean {
+    if (!source.startsWith(keyword, index)) {
+        return false;
+    }
+    const before = index === 0 ? undefined : source[index - 1];
+    const after = source[index + keyword.length];
+    return !isIdentifierContinue(before) && !isIdentifierContinue(after);
+}
+
+function isIdentifierContinue(character: string | undefined): boolean {
+    return character !== undefined && /[A-Za-z0-9_$]/.test(character);
+}
+
+function isLineTerminator(character: string): boolean {
+    return character === '\n' || character === '\r' || character === '\u2028' || character === '\u2029';
+}
+
+function skipComment(source: string, index: number): number | undefined {
+    if (source.startsWith('//', index)) {
+        let cursor = index + 2;
+        while (cursor < source.length && !isLineTerminator(source[cursor] ?? '')) {
+            cursor += 1;
+        }
+        return cursor < source.length ? cursor + 1 : source.length;
+    }
+    if (source.startsWith('/*', index)) {
+        const end = source.indexOf('*/', index + 2);
+        return end === -1 ? source.length : end + 2;
+    }
+    return undefined;
+}
+
+const REGEX_PREFIX_KEYWORDS = new Set([
+    'return',
+    'throw',
+    'case',
+    'delete',
+    'typeof',
+    'void',
+    'await',
+    'yield',
+    'in',
+    'of',
+    'instanceof',
+    'new',
+    'extends',
+]);
+
+function skipRegexLiteral(source: string, index: number): number | undefined {
+    if (source[index] !== '/') {
+        return undefined;
+    }
+    if (!canStartRegexLiteral(source, index)) {
+        return undefined;
+    }
+    let cursor = index + 1;
+    let inClass = false;
+    while (cursor < source.length) {
+        const character = source[cursor];
+        if (character === undefined) {
+            break;
+        }
+        if (character === '\\') {
+            cursor += 2;
+            continue;
+        }
+        if (inClass) {
+            if (character === ']') {
+                inClass = false;
+            }
+            cursor += 1;
+            continue;
+        }
+        if (character === '[') {
+            inClass = true;
+            cursor += 1;
+            continue;
+        }
+        if (character === '/') {
+            cursor += 1;
+            while (cursor < source.length && /[a-z]/i.test(source[cursor] ?? '')) {
+                cursor += 1;
+            }
+            return cursor;
+        }
+        if (isLineTerminator(character)) {
+            return undefined;
+        }
+        cursor += 1;
+    }
+    return undefined;
+}
+
+function canStartRegexLiteral(source: string, index: number): boolean {
+    let cursor = index - 1;
+    while (cursor >= 0) {
+        const character = source[cursor];
+        if (character === undefined) {
+            break;
+        }
+        if (isWhiteSpace(character) || isLineTerminator(character)) {
+            cursor -= 1;
+            continue;
+        }
+        if (character === '/' && cursor >= 1 && source[cursor - 1] === '*') {
+            const open = source.lastIndexOf('/*', cursor - 1);
+            if (open === -1) {
+                return false;
+            }
+            cursor = open - 1;
+            continue;
+        }
+        if ('([{;=,.!?:~%^&*+<>|'.includes(character) || character === '-' || character === '}') {
+            return true;
+        }
+        if (character === ')' || character === ']' || character === '"' || character === "'" || character === '`') {
+            return false;
+        }
+        if (isIdentifierContinue(character)) {
+            let start = cursor;
+            while (start >= 0 && isIdentifierContinue(source[start])) {
+                start -= 1;
+            }
+            const identifier = source.slice(start + 1, cursor + 1);
+            return REGEX_PREFIX_KEYWORDS.has(identifier);
+        }
+        if (character >= '0' && character <= '9') {
+            return false;
+        }
+        return false;
+    }
+    return true;
+}
+
+function skipQuoted(source: string, index: number, quote: "'" | '"'): number {
+    let cursor = index + 1;
+    while (cursor < source.length) {
+        const character = source[cursor];
+        if (character === '\\') {
+            cursor += 2;
+            continue;
+        }
+        if (character === quote) {
+            return cursor + 1;
+        }
+        cursor += 1;
+    }
+    return source.length;
+}
+
+type ReadSpecifier = { value: string; end: number };
+
+function readModuleStringAfter(source: string, index: number): ReadSpecifier | undefined {
+    const start = skipWhitespace(source, index);
+    const quote = source[start];
+    if (quote === "'" || quote === '"') {
+        return readQuotedValue(source, start, quote);
+    }
+    if (quote === '`') {
+        return readStaticTemplateValue(source, start);
+    }
+    return undefined;
+}
+
+function readDynamicImportSpecifier(source: string, index: number): ReadSpecifier | undefined {
+    let cursor = skipWhitespace(source, index);
+    if (source[cursor] !== '(') {
+        return undefined;
+    }
+    cursor += 1;
+    while (true) {
+        cursor = skipWhitespace(source, cursor);
+        if (source[cursor] !== '(') {
+            break;
+        }
+        cursor += 1;
+    }
+    return readModuleStringAfter(source, cursor);
+}
+
+function readQuotedValue(source: string, index: number, quote: "'" | '"'): ReadSpecifier | undefined {
+    let cursor = index + 1;
+    let value = '';
+    while (cursor < source.length) {
+        const character = source[cursor];
+        if (character === '\\') {
+            if (cursor + 1 >= source.length) {
+                return undefined;
+            }
+            value += source[cursor + 1];
+            cursor += 2;
+            continue;
+        }
+        if (character === quote) {
+            return { value, end: cursor + 1 };
+        }
+        if (character === '\n' || character === '\r') {
+            return undefined;
+        }
+        value += character;
+        cursor += 1;
+    }
+    return undefined;
+}
+
+function isWhiteSpace(character: string): boolean {
+    return (
+        character === '\t' ||
+        character === '\v' ||
+        character === '\f' ||
+        character === ' ' ||
+        character === '\u00A0' ||
+        character === '\uFEFF' ||
+        /\p{General_Category=Space_Separator}/u.test(character)
+    );
+}
+
+function readStaticTemplateValue(source: string, index: number): ReadSpecifier | undefined {
+    let cursor = index + 1;
+    let value = '';
+    while (cursor < source.length) {
+        const character = source[cursor];
+        if (character === '\\') {
+            if (cursor + 1 >= source.length) {
+                return undefined;
+            }
+            value += source[cursor + 1];
+            cursor += 2;
+            continue;
+        }
+        if (character === '`') {
+            return { value, end: cursor + 1 };
+        }
+        if (character === '$' && source[cursor + 1] === '{') {
+            return undefined;
+        }
+        value += character;
+        cursor += 1;
+    }
+    return undefined;
+}
+
+function skipWhitespace(source: string, index: number): number {
+    let cursor = index;
+    while (cursor < source.length) {
+        const commentEnd = skipComment(source, cursor);
+        if (commentEnd !== undefined) {
+            cursor = commentEnd;
+            continue;
+        }
+        const character = source[cursor];
+        if (character !== undefined && (isWhiteSpace(character) || isLineTerminator(character))) {
+            cursor += 1;
+            continue;
+        }
+        break;
+    }
+    return cursor;
+}
+
+export function bareModuleSpecifiers(source: string): string[] {
+    return snapshotImportSpecifiers(source).filter(
+        (specifier) => !specifier.startsWith('.') && !specifier.startsWith('node:')
+    );
 }
 
 function localModuleDependencies(path: string, source: string): string[] {
-    const dependencies = moduleSpecifiers(source)
+    const dependencies = snapshotImportSpecifiers(source)
         .filter((specifier) => specifier.startsWith('.'))
         .map((specifier) => posix.normalize(posix.join(posix.dirname(path), specifier)));
     return [...new Set(dependencies)];
