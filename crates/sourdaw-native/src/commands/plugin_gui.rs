@@ -46,6 +46,105 @@ pub struct PluginGuiInfo {
     pub height: u32,
 }
 
+/// The size a plugin granted its editor, which is the size its host window must
+/// hold. snake_case on the wire, like the other plugin DTOs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PluginEditorSize {
+    pub width: u32,
+    pub height: u32,
+}
+
+/// What an editor that just opened tells the shell about the window it is in.
+struct OpenedEditor {
+    size: (u32, u32),
+    /// Whether the user may drag this window's edges. Unknowable before the
+    /// open: both formats answer it through a view that does not exist yet.
+    can_resize: bool,
+}
+
+/// Make one call into an instance's plugin, through whichever map owns it and
+/// on the shell's UI thread.
+///
+/// The two stores are reached differently — the command-owned one by holding its
+/// mutex, the engine-owned one by claiming the runtime owner's control gate —
+/// but the thread rule is the same for both, and it is the module's: the claim
+/// is taken here, and only the call crosses.
+fn call_plugin_on_ui_thread<Answer: Send + 'static>(
+    instance_id: &str,
+    windows_host: &dyn PluginWindowHost,
+    state: &AppState,
+    call: impl FnOnce(&mut (dyn AudioPlugin + 'static)) -> Answer + Send + 'static,
+) -> Result<Answer, String> {
+    {
+        let mut plugins = state
+            .plugins
+            .lock()
+            .map_err(|e| format!("Failed to lock plugins: {}", e))?;
+        if let Some(instance) = plugins.get_mut(instance_id) {
+            return lend_on_ui_thread(windows_host, instance.plugin.as_mut(), call);
+        }
+    }
+
+    let is_engine_owned = state
+        .engine_plugins
+        .lock()
+        .map(|engine_plugins| engine_plugins.contains_key(instance_id))
+        .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
+    if !is_engine_owned {
+        return Err(format!("No plugin instance: {}", instance_id));
+    }
+
+    state.with_engine_plugin_control(instance_id, |plugin| {
+        lend_on_ui_thread(windows_host, plugin, |plugin| call(plugin))
+    })
+}
+
+/// Resize an open editor because the host's own window was resized.
+///
+/// MUST be async, like every other command that reaches a window: it waits on
+/// the shell's UI thread, and a synchronous command that did so from the thread
+/// it is waiting for would deadlock.
+///
+/// Reports the size the plugin granted, which is not always the one asked for —
+/// both formats let a plugin quantise a host-chosen size, and the window has to
+/// end up at what it answered rather than at what the user dragged to.
+pub async fn resize_plugin_gui(
+    instance_id: String,
+    width: u32,
+    height: u32,
+    windows_host: &dyn PluginWindowHost,
+    state: &AppState,
+) -> Result<PluginEditorSize, String> {
+    let (width, height) =
+        call_plugin_on_ui_thread(&instance_id, windows_host, state, move |plugin| {
+            plugin.request_editor_size(width, height)
+        })
+        .and_then(|granted| granted)?;
+
+    Ok(PluginEditorSize { width, height })
+}
+
+/// State the display scale of an editor that is already open, because its
+/// window moved to a display of a different density.
+///
+/// The size comes back for the same reason it does from a resize: the plugin
+/// lays itself out again at the new scale, and what that came to is the plugin's
+/// answer rather than the host's arithmetic.
+pub async fn apply_plugin_gui_scale(
+    instance_id: String,
+    scale_factor: f64,
+    windows_host: &dyn PluginWindowHost,
+    state: &AppState,
+) -> Result<PluginEditorSize, String> {
+    let (width, height) =
+        call_plugin_on_ui_thread(&instance_id, windows_host, state, move |plugin| {
+            plugin.apply_editor_content_scale(scale_factor)
+        })
+        .and_then(|granted| granted)?;
+
+    Ok(PluginEditorSize { width, height })
+}
+
 /// Query whether a loaded plugin instance supports a custom GUI.
 pub async fn is_plugin_gui_supported(
     instance_id: String,
@@ -218,15 +317,22 @@ pub async fn open_plugin_gui(
     // cast back on the far side — the same representation `JsEditorWindow` holds
     // it in for the same reason.
     let handle = handle_ptr as usize;
-    let open_editor = move |plugin: &mut dyn AudioPlugin| {
-        open_editor_or_release_host_window(
+    let open_editor = move |plugin: &mut dyn AudioPlugin| -> Result<OpenedEditor, String> {
+        let size = open_editor_or_release_host_window(
             plugin,
             |plugin| {
                 plugin.set_editor_window_resizer(resize_window);
                 plugin.set_editor_content_scale(scale_factor);
             },
             |plugin| plugin.open_gui(handle as *mut std::ffi::c_void),
-        )
+        )?;
+
+        // Asked here, on the thread the editor lives on and while its view is
+        // still open, because that is the only place the question has an answer.
+        Ok(OpenedEditor {
+            size,
+            can_resize: plugin.editor_can_resize(),
+        })
     };
     let gui_size_result = if let Some(runtime) = engine_runtime.as_ref() {
         runtime
@@ -249,8 +355,11 @@ pub async fn open_plugin_gui(
         .and_then(|opened| opened)
     };
 
-    let (width, height) = match gui_size_result {
-        Ok(size) => size,
+    let OpenedEditor {
+        size: (width, height),
+        can_resize,
+    } = match gui_size_result {
+        Ok(opened) => opened,
         Err(error) => {
             plugin_window.destroy();
             return Err(error);
@@ -272,6 +381,9 @@ pub async fn open_plugin_gui(
                 )
             },
             || {
+                // Before the window is shown, so a fixed-size editor never
+                // appears with edges the user can drag and the plugin refuses.
+                plugin_window.set_resizable(can_resize);
                 plugin_window.set_size(width, height);
                 plugin_window.show_and_focus();
             },
@@ -878,6 +990,130 @@ mod tests {
         );
     }
 
+    /// A host-driven resize is as thread-affine as the open: it calls
+    /// `checkSizeConstraint` and `onSize` on VST3, and `adjust_size` and
+    /// `set_size` on CLAP, all of them bound to the thread that owns the window.
+    /// The command runs on a worker, so the call has to be carried across.
+    #[test]
+    fn resizing_an_editor_runs_the_plugins_gui_lifecycle_on_the_shell_thread() {
+        let state = AppState::default();
+        let gui_threads =
+            insert_engine_owned_fixture_watching_gui_threads(&state, "engine-owned-fixture", true);
+        let windows = DedicatedUiWindowHost::start();
+        crate::block_on_test(open_plugin_gui(
+            "engine-owned-fixture".to_string(),
+            &windows,
+            &state,
+        ))
+        .expect("the fixture editor should open");
+
+        let granted = crate::block_on_test(resize_plugin_gui(
+            "engine-owned-fixture".to_string(),
+            1024,
+            768,
+            &windows,
+            &state,
+        ))
+        .expect("an open editor should accept a host resize");
+
+        assert_eq!(
+            granted,
+            PluginEditorSize {
+                width: 1024,
+                height: 768
+            },
+            "the size the plugin granted is what the shell must snap its window to"
+        );
+        assert_eq!(
+            recorded_threads(&gui_threads),
+            [windows.thread_id, windows.thread_id],
+            "the resize must reach the plugin on the shell's thread, like the open"
+        );
+    }
+
+    /// The scale half of the same crossing: a window moved to another display
+    /// tells its editor, and both formats bind that call to the editor's thread.
+    #[test]
+    fn re_scaling_an_editor_runs_the_plugins_gui_lifecycle_on_the_shell_thread() {
+        let state = AppState::default();
+        let gui_threads =
+            insert_engine_owned_fixture_watching_gui_threads(&state, "engine-owned-fixture", true);
+        let windows = DedicatedUiWindowHost::start();
+        crate::block_on_test(open_plugin_gui(
+            "engine-owned-fixture".to_string(),
+            &windows,
+            &state,
+        ))
+        .expect("the fixture editor should open");
+
+        crate::block_on_test(apply_plugin_gui_scale(
+            "engine-owned-fixture".to_string(),
+            2.0,
+            &windows,
+            &state,
+        ))
+        .expect("an open editor should accept the scale of the display it moved to");
+
+        assert_eq!(
+            recorded_threads(&gui_threads),
+            [windows.thread_id, windows.thread_id],
+            "the re-scale must reach the plugin on the shell's thread too"
+        );
+    }
+
+    /// A command that names nothing must say so rather than reaching into the
+    /// engine's store for an instance that is not there.
+    #[test]
+    fn resizing_an_instance_that_does_not_exist_is_refused_by_name() {
+        let state = AppState::default();
+        let windows = DedicatedUiWindowHost::start();
+
+        let refused = crate::block_on_test(resize_plugin_gui(
+            "ghost".to_string(),
+            800,
+            600,
+            &windows,
+            &state,
+        ));
+
+        assert_eq!(refused, Err("No plugin instance: ghost".to_string()));
+    }
+
+    /// The window is created before the plugin can be asked whether its editor
+    /// resizes, so the answer has to reach the shell on the open. A host that
+    /// decided for itself gives every fixed-layout editor a draggable frame, or
+    /// freezes every resizable one.
+    #[test]
+    fn the_window_is_told_whether_the_plugins_own_editor_accepts_a_host_size() {
+        for can_resize in [true, false] {
+            let state = AppState::default();
+            state.plugins.lock().expect("plugins lock").insert(
+                "command-instance".into(),
+                PluginInstanceData {
+                    plugin: Box::new(RecordingPlugin {
+                        opens: Ok((640, 480)),
+                        calls: Vec::new(),
+                        can_resize,
+                    }),
+                },
+            );
+            let windows = DedicatedUiWindowHost::start();
+
+            crate::block_on_test(open_plugin_gui(
+                "command-instance".to_string(),
+                &windows,
+                &state,
+            ))
+            .expect("the recording plugin's editor should open");
+
+            assert_eq!(
+                windows.editor_resizable(),
+                Some(can_resize),
+                "the window must be told the plugin's own answer"
+            );
+        }
+    }
+
     /// The close half. `close_gui` is what reaches VST3 `removed` and CLAP
     /// `gui.destroy`, both as thread-affine as the open, and it runs from a
     /// different command with a different control claim.
@@ -1471,9 +1707,20 @@ mod tests {
     struct RecordingPlugin {
         opens: Result<(u32, u32), String>,
         calls: Vec<&'static str>,
+        /// What this plugin answers when asked whether its editor accepts a
+        /// host-chosen size.
+        can_resize: bool,
     }
 
     impl AudioPlugin for RecordingPlugin {
+        fn has_gui(&self) -> bool {
+            true
+        }
+
+        fn editor_can_resize(&self) -> bool {
+            self.can_resize
+        }
+
         fn process(&mut self, _: &[&[f32]], _: &mut [&mut [f32]], _: usize) {}
         fn set_parameter(&mut self, _: u32, _: f64) {}
         fn get_parameters(&self) -> Vec<daw_plugin_host::PluginParameter> {
@@ -1508,6 +1755,7 @@ mod tests {
         let mut plugin = RecordingPlugin {
             opens: Err("gui.create() failed".to_string()),
             calls: Vec::new(),
+            can_resize: false,
         };
 
         let opened = open_editor_or_release_host_window(
@@ -1527,6 +1775,7 @@ mod tests {
         let mut plugin = RecordingPlugin {
             opens: Ok((640, 480)),
             calls: Vec::new(),
+            can_resize: false,
         };
 
         let opened = open_editor_or_release_host_window(

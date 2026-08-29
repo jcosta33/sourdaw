@@ -44,7 +44,7 @@
 
 use std::ffi::c_void;
 use std::ptr;
-use std::sync::atomic::{AtomicBool, AtomicPtr, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicPtr, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -257,8 +257,18 @@ fn platform_view_type() -> Option<FIDString> {
 
 /// Whether this platform states `ViewRect` in physical pixels, and therefore
 /// needs to be told the scale it is running at.
-fn platform_states_content_scale() -> bool {
-    cfg!(any(target_os = "windows", target_os = "linux"))
+pub(crate) fn platform_states_content_scale() -> bool {
+    states_content_scale(std::env::consts::OS)
+}
+
+/// The rule behind that answer, as a table an operating system is looked up in.
+///
+/// Written for a named platform rather than compiled for this one so that the
+/// whole table is observable wherever the tests run: a `cfg!` here would make
+/// every check of it re-derive the answer it is meant to pin, and the two
+/// branches nobody builds would never be read at all.
+fn states_content_scale(operating_system: &str) -> bool {
+    matches!(operating_system, "windows" | "linux")
 }
 
 /// Everything the frame owns on behalf of one open editor.
@@ -275,10 +285,15 @@ pub struct EditorFrameState {
     view: AtomicPtr<FUnknown>,
     /// How the host resizes the native window the view is drawn into.
     window: Mutex<Option<EditorWindowResizer>>,
-    /// How many `ViewRect` units one logical window unit is worth here. Fixed
-    /// at open: an editor that moves to a display of a different scale is not
-    /// re-scaled, which is tracked separately.
-    view_units_per_logical: f64,
+    /// How many `ViewRect` units one logical window unit is worth here, as
+    /// `f64` bits.
+    ///
+    /// Not fixed at open, and atomic because the frame the plugin calls into
+    /// reads it from whatever thread the plugin called on: an editor whose
+    /// window reaches a display of a different scale is restated through
+    /// [`Vst3Editor::apply_content_scale`], and every size crossing this seam
+    /// afterwards has to convert by the new factor.
+    view_units_per_logical: AtomicU64,
     /// The size the host window is at, in logical units.
     granted_width: AtomicU32,
     granted_height: AtomicU32,
@@ -297,7 +312,9 @@ impl EditorFrameState {
         Self {
             view: AtomicPtr::new(ptr::null_mut()),
             window: Mutex::new(window),
-            view_units_per_logical: view_units_per_logical_unit(scale_factor),
+            view_units_per_logical: AtomicU64::new(
+                view_units_per_logical_unit(scale_factor).to_bits(),
+            ),
             granted_width: AtomicU32::new(0),
             granted_height: AtomicU32::new(0),
             resizing: AtomicBool::new(false),
@@ -392,12 +409,23 @@ impl EditorFrameState {
         }
     }
 
+    fn view_units_per_logical(&self) -> f64 {
+        f64::from_bits(self.view_units_per_logical.load(Ordering::Acquire))
+    }
+
+    /// Restate the conversion every size crossing the window seam uses. Called
+    /// with the new display scale, already reduced to this platform's factor.
+    fn set_view_units_per_logical(&self, units: f64) {
+        self.view_units_per_logical
+            .store(units.to_bits(), Ordering::Release);
+    }
+
     fn to_logical(&self, size: EditorSize) -> EditorSize {
-        size.to_logical(self.view_units_per_logical)
+        size.to_logical(self.view_units_per_logical())
     }
 
     fn to_view_units(&self, size: EditorSize) -> EditorSize {
-        size.to_view_units(self.view_units_per_logical)
+        size.to_view_units(self.view_units_per_logical())
     }
 
     fn granted(&self) -> EditorSize {
@@ -679,6 +707,54 @@ impl Vst3Editor {
         &self.state
     }
 
+    /// Whether the view accepts a size the host chose.
+    ///
+    /// The host window's own resizability follows this answer: a view that says
+    /// no gets a window the user cannot drag, which is what every established
+    /// host does with a fixed-layout editor.
+    pub fn can_resize(&self) -> bool {
+        // SAFETY: control path only; the view is attached and live.
+        unsafe { self.view.canResize() == kResultTrue }
+    }
+
+    /// Restate the display scale this editor runs at, and report the size its
+    /// host window must take now.
+    ///
+    /// Both halves move together, and neither is optional. The view is told the
+    /// new scale, which on the platforms whose `ViewRect` is physical pixels is
+    /// the only way it can lay itself out at the right density; and the size is
+    /// renegotiated, because the same rect is worth a different number of
+    /// logical window units once the factor changes. A host that applied one
+    /// without the other leaves the editor drawing at one density inside a
+    /// window sized for another.
+    ///
+    /// A fixed-size editor is re-scaled too. Its rect does not change, but what
+    /// that rect is worth to the window seam does, so the window still moves —
+    /// it is only the negotiation that a view refusing `canResize` is spared.
+    pub fn apply_content_scale(&self, scale_factor: f64) -> Result<EditorSize, String> {
+        self.state
+            .set_view_units_per_logical(view_units_per_logical_unit(scale_factor));
+
+        // SAFETY: control path only; the view is live. Unlike the open path's
+        // application this one runs against an attached view, which is the case
+        // the interface exists for — a host tells an editor its scale changed.
+        let stated = unsafe {
+            if platform_states_content_scale() {
+                apply_content_scale(&self.view, self.state.view_units_per_logical() as f32);
+            }
+            read_view_size(&self.view)
+        }
+        .ok_or_else(|| "[VST3] this editor states no size to re-scale".to_string())?;
+
+        let logical = self.state.to_logical(stated);
+        if !self.can_resize() {
+            self.state.resize_host_window(logical);
+            self.state.record_granted(logical);
+            return Ok(logical);
+        }
+        self.request_size(logical)
+    }
+
     /// Resize the editor because the *host* wants a different size, stated in
     /// the logical units the window seam speaks.
     ///
@@ -800,7 +876,7 @@ unsafe fn attach(
     plugin_name: &str,
 ) -> Result<(), String> {
     if platform_states_content_scale() {
-        apply_content_scale(view, state.view_units_per_logical as f32);
+        apply_content_scale(view, state.view_units_per_logical() as f32);
     }
 
     // A view that states no size yet is not a refusal: plugins exist that only
@@ -855,7 +931,8 @@ unsafe fn read_view_size(view: &ComPtr<IPlugView>) -> Option<EditorSize> {
 }
 
 /// # Safety
-/// The view is live and not yet attached.
+/// The view is live. Attached or not: the interface exists so that a host can
+/// state a scale that changed under an editor that is already on screen.
 unsafe fn apply_content_scale(view: &ComPtr<IPlugView>, scale: f32) {
     // A plugin that does not implement the interface has nothing to be told, and
     // that is not a failure: the scale is advice, and the editor still attaches.
@@ -998,13 +1075,36 @@ mod tests {
     /// conversion.
     #[test]
     fn only_the_platforms_whose_view_rect_is_physical_convert_by_the_display_scale() {
-        let expected = if cfg!(any(target_os = "windows", target_os = "linux")) {
+        let expected = if platform_states_content_scale() {
             2.0
         } else {
             1.0
         };
 
         assert_eq!(view_units_per_logical_unit(2.0), expected);
+    }
+
+    /// The per-platform truth table behind every conversion in this file, read
+    /// on whatever platform the tests run on.
+    ///
+    /// The VST3 SDK states `ViewRect` in physical pixels on Windows and X11 and
+    /// in logical points on macOS, and `IPlugViewContentScaleSupport` exists for
+    /// exactly the platforms of the first kind. One wrong entry either halves
+    /// every editor on a Retina display or leaves a Windows editor drawing at a
+    /// quarter of its window.
+    #[test]
+    fn the_view_rect_is_physical_on_windows_and_x11_and_logical_everywhere_else() {
+        for physical in ["windows", "linux"] {
+            assert!(states_content_scale(physical), "{physical}");
+        }
+        for logical in ["macos", "ios", "freebsd"] {
+            assert!(!states_content_scale(logical), "{logical}");
+        }
+        assert_eq!(
+            platform_states_content_scale(),
+            states_content_scale(std::env::consts::OS),
+            "the live gate must be that table read for this platform, not a second copy of it"
+        );
     }
 
     /// A scale the shell could not measure must convert nothing. Dividing by

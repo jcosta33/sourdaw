@@ -97,6 +97,18 @@ impl AudioPlugin for HostedRuntime {
         delegate!(self, backend => backend.set_editor_content_scale(scale))
     }
 
+    fn editor_can_resize(&self) -> bool {
+        delegate!(self, backend => backend.editor_can_resize())
+    }
+
+    fn request_editor_size(&mut self, width: u32, height: u32) -> Result<(u32, u32), String> {
+        delegate!(self, backend => backend.request_editor_size(width, height))
+    }
+
+    fn apply_editor_content_scale(&mut self, scale: f64) -> Result<(u32, u32), String> {
+        delegate!(self, backend => backend.apply_editor_content_scale(scale))
+    }
+
     fn apply_pending_editor_resize(&mut self) -> Option<(u32, u32)> {
         delegate!(self, backend => backend.apply_pending_editor_resize())
     }
