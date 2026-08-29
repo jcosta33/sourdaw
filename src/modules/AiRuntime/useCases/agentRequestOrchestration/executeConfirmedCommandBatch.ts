@@ -154,19 +154,22 @@ function getCommittedRenderJobs(
                 `The verified checkpoint has ambiguous pending effects for render command ${command.commandId}.`
             );
         }
-        if (commandOutcome.outcome !== 'committed' || pendingEffects.length === 1) {
+        if (commandOutcome.outcome !== 'committed') {
             return [];
         }
         const commandLinks = checkpointReceipt.links.render.filter(({ commandId }) => commandId === command.commandId);
+        const hasPendingEffect = pendingEffects.length === 1;
         if (
-            commandLinks.length !== jobs.length ||
-            jobs.some((job) => commandLinks.filter(({ jobId }) => jobId === job.jobId).length !== 1)
+            !hasPendingEffect &&
+            (commandLinks.length !== jobs.length ||
+                jobs.some((job) => commandLinks.filter(({ jobId }) => jobId === job.jobId).length !== 1))
         ) {
             throw new Error(
                 `The verified checkpoint has ambiguous artifact links for render command ${command.commandId}.`
             );
         }
-        return jobs;
+        const allowMissingArtifact = hasPendingEffect;
+        return jobs.map((job) => ({ allowMissingArtifact, job }));
     });
 }
 
@@ -176,7 +179,7 @@ function getFreshArtifactBindings(
 ) {
     const preexistingJobIds = new Set(artifactsBeforeExecution.map(({ jobId }) => jobId));
     const currentArtifacts = getAgentSectionRenderArtifacts();
-    return committedJobs.map((job) => {
+    return committedJobs.flatMap(({ allowMissingArtifact, job }) => {
         const matchingArtifacts = currentArtifacts.filter(
             (candidate) =>
                 candidate.jobId === job.jobId &&
@@ -188,10 +191,16 @@ function getFreshArtifactBindings(
                 candidate.tailSeconds === job.tailSeconds
         );
         const artifact = matchingArtifacts[0];
-        if (preexistingJobIds.has(job.jobId) || matchingArtifacts.length !== 1 || !artifact) {
+        if (preexistingJobIds.has(job.jobId) || matchingArtifacts.length > 1) {
             throw new Error(`Exactly one fresh section render artifact is required for committed job ${job.jobId}.`);
         }
-        return { job, renderedAt: artifact.renderedAt, sourceRevision: artifact.sourceRevision };
+        if (!artifact) {
+            if (allowMissingArtifact) {
+                return [];
+            }
+            throw new Error(`Exactly one fresh section render artifact is required for committed job ${job.jobId}.`);
+        }
+        return [{ job, renderedAt: artifact.renderedAt, sourceRevision: artifact.sourceRevision }];
     });
 }
 
@@ -253,7 +262,6 @@ export async function executeConfirmedCommandBatch(
     let committedProjectRevision: string | null = null;
     let finalizationEvidenceFailure: string | null = null;
     let canRebindSectionRenderArtifacts = false;
-    let projectCommitCheckpointReceipt: CommandVerifiedBatchReceipt | null = null;
     try {
         const executionOptions = {
             ...group,
@@ -265,19 +273,24 @@ export async function executeConfirmedCommandBatch(
                 }
             },
             onProjectCommitCheckpoint: ({ receipt }: { receipt: CommandVerifiedBatchReceipt }) => {
-                projectCommitCheckpointReceipt = receipt;
                 return prepareAgentRunPendingEffectContinuation({
                     runId: confirmation.runId,
                     receipt,
                     commandBatch,
                 });
             },
-            onProjectCommitFinalized: ({ revision }: { revision: string }) => {
+            onProjectCommitFinalized: ({
+                receipt,
+                revision,
+            }: {
+                receipt: CommandVerifiedBatchReceipt;
+                revision: string;
+            }) => {
                 committedProjectRevision = revision;
                 rebindFreshSectionRenderArtifactsToCommittedRevision(
                     confirmation,
                     commandBatch,
-                    projectCommitCheckpointReceipt,
+                    receipt,
                     sectionRenderArtifactsBeforeExecution,
                     revision
                 );

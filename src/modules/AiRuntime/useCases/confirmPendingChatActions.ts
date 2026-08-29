@@ -38,6 +38,7 @@ import { settleConfirmedBatchOutcome } from './agentRequestOrchestration/settleC
 import { settleVerifiedBatchReplay } from './agentRequestOrchestration/settleVerifiedBatchReplay';
 import { agentRunLifecycle } from './agentRunLifecycle';
 import { agentRunWorkLease } from './agentRunWorkLease';
+import { getExactAgentActionHash } from './getExactAgentActionHash';
 import { getVerifiedBatchReplayDisposition } from './getVerifiedBatchReplayDisposition';
 import { recoverPreparedStemImportResources } from './recoverPreparedStemImportResources';
 
@@ -77,18 +78,23 @@ const COMPLETED_BATCH_STATUSES = new Set([
     'no-op',
 ]);
 
-function getApprovedSectionRenderCommandId(
+function getApprovedSectionRenderCommandIds(
     confirmation: PendingAppActionConfirmation,
     commandBatch: ReturnType<typeof compileVersionedCommandBatchEnvelope>
-): string | null {
+): string[] {
     const parsed = parseVersionedCommandBatchEnvelope(commandBatch.serialized, commandBatch.authority);
-    if (
-        parsed.status !== 'valid' ||
-        !confirmation.approvalSnapshot.actions.some(({ type }) => type === 'renderProjectSections')
-    ) {
-        return null;
+    if (parsed.status !== 'valid' || parsed.envelope.commands.length !== confirmation.approvalSnapshot.actions.length) {
+        return [];
     }
-    return parsed.envelope.commands.find(({ operation }) => operation === 'renderProjectSections')?.commandId ?? null;
+    return confirmation.approvalSnapshot.actions.flatMap((action, index) => {
+        const command = parsed.envelope.commands[index];
+        if (action.type !== 'renderProjectSections' || command?.operation !== 'renderProjectSections') {
+            return [];
+        }
+        const actionHash = getExactAgentActionHash({ operation: action.type, arguments: action.payload });
+        const commandHash = getExactAgentActionHash({ operation: command.operation, arguments: command.arguments });
+        return actionHash === commandHash ? [command.commandId] : [];
+    });
 }
 
 function getTrackedLeaseSettlementContract(batchResult: ConfirmedBatchResult): {
@@ -302,8 +308,8 @@ export async function confirmPendingChatActions(
         const hasPendingRenderEffects = batchResult.receipt.pendingEffects.some(
             (effect) => effect.kind === 'external-effect' && effect.operation === 'renderProjectSections'
         );
-        const approvedRenderCommandId = getApprovedSectionRenderCommandId(confirmation, commandBatch);
-        const requiresRenderManualRepair = hasPendingRenderEffects || approvedRenderCommandId !== null;
+        const approvedRenderCommandIds = getApprovedSectionRenderCommandIds(confirmation, commandBatch);
+        const requiresRenderManualRepair = hasPendingRenderEffects || approvedRenderCommandIds.length > 0;
         const requiresRecoveryFollowUp = hasPendingEffects || requiresRenderManualRepair;
         const runPersistenceWarning = agentRunExecutionSettlement.recordCommittedRecoveryFailure(confirmation, {
             category: 'internal',
@@ -319,10 +325,10 @@ export async function confirmPendingChatActions(
                   runId: confirmation.runId,
                   batchId: batchResult.receipt.batchId,
                   reason,
-                  ...(!hasPendingRenderEffects && approvedRenderCommandId
+                  ...(approvedRenderCommandIds.length > 0
                       ? {
-                            missingEffect: {
-                                commandId: approvedRenderCommandId,
+                            missingEffects: {
+                                commandIds: approvedRenderCommandIds,
                                 existingEffects: batchResult.receipt.pendingEffects,
                                 receiptIdentity: `${batchResult.receipt.schemaVersion}:${batchResult.receipt.runId}:${batchResult.receipt.batchId}:${batchResult.receipt.outcome}`,
                                 serializedBatch: commandBatch.serialized,

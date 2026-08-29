@@ -197,7 +197,7 @@ describe('projectSectionRenderConfirmation', () => {
                 commandSchemaVersion: firstCommand.schemaVersion,
                 label: 'Render Verse',
                 executionKind: 'project',
-                affectedIds: ['shared-non-render-id', JOB.sectionId, JOB.jobId, secondJob.sectionId, secondJob.jobId],
+                affectedIds: ['verse-execution-id', JOB.sectionId, JOB.jobId, secondJob.sectionId, secondJob.jobId],
                 outcome: 'committed-with-warning',
             },
             {
@@ -206,7 +206,7 @@ describe('projectSectionRenderConfirmation', () => {
                 commandSchemaVersion: secondCommand.schemaVersion,
                 label: 'Render Chorus',
                 executionKind: 'project',
-                affectedIds: ['shared-non-render-id', JOB.sectionId, JOB.jobId, secondJob.sectionId, secondJob.jobId],
+                affectedIds: ['chorus-execution-id', JOB.sectionId, JOB.jobId, secondJob.sectionId, secondJob.jobId],
                 outcome: 'committed-with-warning',
             },
         ];
@@ -215,19 +215,23 @@ describe('projectSectionRenderConfirmation', () => {
         const projected = projectSectionRenderConfirmation({ confirmation });
 
         expect(projected.approvedSectionRenderJobs).toEqual([JOB, secondJob]);
-        expect(projected.executions[0]?.affectedIds).toEqual(['shared-non-render-id', JOB.sectionId, JOB.jobId]);
+        expect(projected.executions[0]?.affectedIds).toEqual(['verse-execution-id', JOB.sectionId, JOB.jobId]);
         expect(projected.executions[1]?.affectedIds).toEqual([
-            'shared-non-render-id',
+            'chorus-execution-id',
             secondJob.sectionId,
             secondJob.jobId,
         ]);
         expect(projected.completedSectionRenderJobIds).toEqual(new Set([JOB.jobId, secondJob.jobId]));
         expect(projected.incompleteSectionRenders).toBeNull();
 
-        confirmation.approvalSnapshot.commandEnvelopes.reverse();
-        const mismatched = projectSectionRenderConfirmation({ confirmation });
-        expect(mismatched.executions[0]?.affectedIds).toEqual(['shared-non-render-id']);
-        expect(mismatched.executions[1]?.affectedIds).toEqual(['shared-non-render-id']);
+        confirmation.executedActions.reverse();
+        const reordered = projectSectionRenderConfirmation({ confirmation });
+        expect(reordered.executions[0]?.affectedIds).toEqual([
+            'chorus-execution-id',
+            secondJob.sectionId,
+            secondJob.jobId,
+        ]);
+        expect(reordered.executions[1]?.affectedIds).toEqual(['verse-execution-id', JOB.sectionId, JOB.jobId]);
     });
 
     it('keeps an ambiguous duplicate artifact incomplete', () => {

@@ -1259,11 +1259,14 @@ describe('command batch idempotency', () => {
         rejectProjectReceiptFinalization = true;
         rejectReceiptPersistence = true;
         const batch = compileBatch();
+        const onProjectCommitFinalized = vi.fn();
+        const onProjectCommitFinalizationUnavailable = vi.fn();
 
         const first = await executeVersionedCommandBatchEnvelope({
             authority: batch.authority,
             confirmed: true,
             serialized: batch.serialized,
+            options: { onProjectCommitFinalized, onProjectCommitFinalizationUnavailable },
         });
         const projectCommitProof = await getVersionedCommandBatchCommitProof(batch);
         projectDocument = structuredClone(projectDocument);
@@ -1303,6 +1306,10 @@ describe('command batch idempotency', () => {
         expect(first.status).toBe('committed-with-warning');
         expect('warning' in first ? first.warning : '').toContain('post-commit receipt finalization was interrupted');
         expect('receipt' in first ? first.receipt.outcome : null).toBe('partially-committed');
+        expect(onProjectCommitFinalized).not.toHaveBeenCalled();
+        expect(onProjectCommitFinalizationUnavailable).toHaveBeenCalledExactlyOnceWith({
+            reason: 'project receipt finalization unavailable',
+        });
         expect(firstRetry).toMatchObject({
             status: 'ambiguous',
             reason: EXACT_CHECKPOINT_REVISION_RECOVERY_REASON,
@@ -2280,7 +2287,10 @@ describe('command batch idempotency', () => {
         await completionStarted;
         try {
             expect(onProjectCommitFinalized).toHaveBeenCalledOnce();
-            expect(onProjectCommitFinalized).toHaveBeenCalledWith({ revision: revision(2) });
+            expect(onProjectCommitFinalized).toHaveBeenCalledWith({
+                receipt: expect.objectContaining({ batchId: proof.batchId, outcome: 'committed' }),
+                revision: revision(2),
+            });
             expect(checkpointDuringCallback).toMatchObject({ status: 'complete' });
         } finally {
             releaseCompletion();
@@ -2308,7 +2318,10 @@ describe('command batch idempotency', () => {
 
         expect(result).toMatchObject({ status: 'committed' });
         expect(getProjectCommandBatchIdempotencyCheckpoint(proof)).toMatchObject({ status: 'complete' });
-        expect(onProjectCommitFinalized).toHaveBeenCalledExactlyOnceWith({ revision: revision(2) });
+        expect(onProjectCommitFinalized).toHaveBeenCalledExactlyOnceWith({
+            receipt: result.receipt,
+            revision: revision(2),
+        });
         expect(onProjectCommitFinalizationUnavailable).toHaveBeenCalledExactlyOnceWith({
             reason: 'render artifact vanished',
         });
@@ -2454,7 +2467,10 @@ describe('command batch idempotency', () => {
             ],
         });
         expect(getProjectCommandBatchIdempotencyCheckpoint(proof)).toMatchObject({ status: 'complete' });
-        expect(onProjectCommitFinalized).toHaveBeenCalledExactlyOnceWith({ revision: revision(2) });
+        expect(onProjectCommitFinalized).toHaveBeenCalledExactlyOnceWith({
+            receipt: result.receipt,
+            revision: revision(2),
+        });
         expect(onProjectCommitFinalizationUnavailable).not.toHaveBeenCalled();
     });
 

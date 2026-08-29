@@ -33,8 +33,11 @@ type ExecuteVersionedCommandBatchEnvelopeInput = {
             promote: (result: { receipt: ReturnType<typeof createVerifiedBatchReceipt> }) => void;
             discard: () => void;
         } | void;
-        /** Observe the exact revision after the final project checkpoint becomes visible. */
-        onProjectCommitFinalized?: (result: { revision: string }) => void;
+        /** Observe the exact durable receipt and revision after the final project checkpoint becomes visible. */
+        onProjectCommitFinalized?: (result: {
+            receipt: ReturnType<typeof createVerifiedBatchReceipt>;
+            revision: string;
+        }) => void;
         /** Observe why exact post-checkpoint evidence could not be provided after a durable project commit. */
         onProjectCommitFinalizationUnavailable?: (result: { reason: string }) => void;
         /** Refuse final checkpoint evidence when the caller's project-write authority was invalidated. */
@@ -597,6 +600,8 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
     if (idempotencyContentHash !== null) {
         if (result.status === 'committed' || result.status === 'committed-with-warning') {
             let finalizationEvidenceError: unknown = null;
+            let finalProjectReceipt: ReturnType<typeof createVerifiedBatchReceipt> | null = null;
+            let projectCheckpointPersistenceError: unknown = null;
             try {
                 if (input.options?.shouldFinalizeProjectCommit?.() === false) {
                     finalizationEvidenceError = new Error(
@@ -625,8 +630,10 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
                     state: hasPendingExternalEffect ? 'effects-pending' : 'complete',
                     serializedReceipt: JSON.stringify(projectReceipt),
                 });
+                finalProjectReceipt = projectReceipt;
                 finalized = { ...finalized, receipt: projectReceipt };
-            } catch {
+            } catch (error) {
+                projectCheckpointPersistenceError = error;
                 if (projectCommitRecovery.receipt) {
                     finalized = {
                         status: 'committed-with-warning' as const,
@@ -639,6 +646,12 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
             }
             if (finalizationEvidenceError !== null) {
                 reportUnavailableProjectCommitFinalization(input.options, finalizationEvidenceError);
+            } else if (projectCheckpointPersistenceError !== null || finalProjectReceipt === null) {
+                reportUnavailableProjectCommitFinalization(
+                    input.options,
+                    projectCheckpointPersistenceError ??
+                        new Error('The durable project checkpoint could not be persisted for finalization evidence.')
+                );
             } else {
                 try {
                     const checkpoint = getProjectCommandBatchIdempotencyCheckpoint({
@@ -649,10 +662,28 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
                     if (checkpoint.status !== 'complete' && checkpoint.status !== 'pending') {
                         throw new Error('The durable project checkpoint is unavailable for finalization evidence.');
                     }
+                    const serializedFinalReceipt = JSON.stringify(finalProjectReceipt);
+                    if (checkpoint.serializedReceipt !== serializedFinalReceipt) {
+                        throw new Error('The durable project checkpoint does not contain the exact finalized receipt.');
+                    }
+                    const durableFinalReceipt = parseStoredVerifiedBatchReceipt({
+                        baseRevision: parsed.envelope.baseRevision,
+                        batchId: parsed.envelope.batchId,
+                        commands: parsed.envelope.commands,
+                        contentHash: idempotencyContentHash,
+                        runId: parsed.envelope.runId,
+                        serializedReceipt: checkpoint.serializedReceipt,
+                    });
+                    if (!durableFinalReceipt) {
+                        throw new Error('The durable project checkpoint receipt is invalid for finalization evidence.');
+                    }
                     if (!commandProjectRevisionPort.isConfigured()) {
                         throw new Error('The project revision provider is unavailable for finalization evidence.');
                     }
-                    input.options?.onProjectCommitFinalized?.({ revision: commandProjectRevisionPort.capture() });
+                    input.options?.onProjectCommitFinalized?.({
+                        receipt: durableFinalReceipt,
+                        revision: commandProjectRevisionPort.capture(),
+                    });
                 } catch (error) {
                     reportUnavailableProjectCommitFinalization(input.options, error);
                 }

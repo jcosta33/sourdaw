@@ -1131,10 +1131,14 @@ describe('confirmPendingChatActions transaction admission', () => {
             const execute = vi
                 .spyOn(commandUseCases, 'executeVersionedCommandBatchEnvelope')
                 .mockImplementation(async (input) => {
+                    const batchResult = createWarningBatchResult({ status, commandBatch });
                     if (status === 'committed-with-warning') {
-                        input.options?.onProjectCommitFinalized?.({ revision: 'revision-warning-checkpoint' });
+                        input.options?.onProjectCommitFinalized?.({
+                            receipt: batchResult.receipt,
+                            revision: 'revision-warning-checkpoint',
+                        });
                     }
-                    return createWarningBatchResult({ status, commandBatch });
+                    return batchResult;
                 });
             const settle = vi.spyOn(agentRunWorkLease, 'settle');
 
@@ -3697,6 +3701,18 @@ describe('confirmPendingChatActions transaction admission', () => {
             type: 'renderProjectSections',
             payload: { sectionIds: [renderJob.sectionId], jobs: [renderJob] },
         } satisfies RenderSectionsAction;
+        const secondRenderJob = {
+            ...renderJob,
+            jobId: 'render-mixed-manual-repair-chorus',
+            sectionId: 'section-mixed-manual-repair-chorus',
+            sectionName: 'Mixed Manual Repair Chorus',
+            startBeat: 16,
+            endBeat: 32,
+        };
+        const secondRenderAction = {
+            type: 'renderProjectSections',
+            payload: { sectionIds: [secondRenderJob.sectionId], jobs: [secondRenderJob] },
+        } satisfies RenderSectionsAction;
         const projectRevision = captureProjectRevision();
         const addDeviceEnvelope = migrateLegacyAppActionToVersionedCommandEnvelope({
             action: addDeviceAction,
@@ -3710,6 +3726,12 @@ describe('confirmPendingChatActions transaction admission', () => {
             normalizedProjectRevision: projectRevision,
             options: { groupId: batchId, groupLabel: 'Insert compressor and render', source: 'prompt' },
         });
+        const secondRenderEnvelope = migrateLegacyAppActionToVersionedCommandEnvelope({
+            action: secondRenderAction,
+            expectedEffect: 'Render the chorus for comparison.',
+            normalizedProjectRevision: projectRevision,
+            options: { groupId: batchId, groupLabel: 'Insert compressor and render', source: 'prompt' },
+        });
         const commandBatch = compileVersionedCommandBatchEnvelope({
             runId,
             batchId,
@@ -3719,6 +3741,7 @@ describe('confirmPendingChatActions transaction admission', () => {
             commands: [
                 serializeVersionedCommandEnvelope(addDeviceEnvelope),
                 serializeVersionedCommandEnvelope(renderEnvelope),
+                serializeVersionedCommandEnvelope(secondRenderEnvelope),
             ],
         });
         agentRunLifecycle.create({
@@ -3734,8 +3757,8 @@ describe('confirmPendingChatActions transaction admission', () => {
             runId,
             prompt: 'Insert the compressor and render the section.',
             assistantMessageId: 'assistant-1',
-            actions: [addDeviceAction, renderAction],
-            actionLabels: ['Insert compressor after EQ on Bass', 'Render section'],
+            actions: [addDeviceAction, renderAction, secondRenderAction],
+            actionLabels: ['Insert compressor after EQ on Bass', 'Render section', 'Render chorus'],
             commandBatch,
             agentApproval: compileAgentRiskApproval({ commandBatch }),
             executionMode: 'atomic',
@@ -3786,6 +3809,12 @@ describe('confirmPendingChatActions transaction admission', () => {
                     operation: 'renderProjectSections',
                     remediation: 'manual-repair',
                 }),
+                expect.objectContaining({
+                    commandId: secondRenderEnvelope.commandId,
+                    kind: 'external-effect',
+                    operation: 'renderProjectSections',
+                    remediation: 'manual-repair',
+                }),
             ],
         });
 
@@ -3807,6 +3836,13 @@ describe('confirmPendingChatActions transaction admission', () => {
             }),
             expect.objectContaining({
                 commandId: renderEnvelope.commandId,
+                kind: 'external-effect',
+                operation: 'renderProjectSections',
+                remediation: 'manual-repair',
+                reason: 'The final project revision is unavailable.',
+            }),
+            expect.objectContaining({
+                commandId: secondRenderEnvelope.commandId,
                 kind: 'external-effect',
                 operation: 'renderProjectSections',
                 remediation: 'manual-repair',

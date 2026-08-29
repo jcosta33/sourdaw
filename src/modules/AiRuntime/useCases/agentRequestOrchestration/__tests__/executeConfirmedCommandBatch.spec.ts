@@ -314,7 +314,9 @@ function createRenderArtifact(input: {
     };
 }
 
-function createRenderBatchFixture(input: { duplicateSecondJobId?: boolean; pendingCommandIndex?: number } = {}) {
+function createRenderBatchFixture(
+    input: { duplicateSecondJobId?: boolean; pendingCommandIndex?: number; singleCommand?: boolean } = {}
+) {
     const jobs = [
         {
             jobId: 'render-verse',
@@ -335,13 +337,20 @@ function createRenderBatchFixture(input: { duplicateSecondJobId?: boolean; pendi
             tailSeconds: 0.5,
         },
     ];
-    const actions = jobs.map(
-        (job) =>
-            ({
-                type: 'renderProjectSections',
-                payload: { sectionIds: [job.sectionId], jobs: [job] },
-            }) satisfies AppAction
-    );
+    const actions = input.singleCommand
+        ? [
+              {
+                  type: 'renderProjectSections',
+                  payload: { sectionIds: jobs.map(({ sectionId }) => sectionId), jobs },
+              } satisfies AppAction,
+          ]
+        : jobs.map(
+              (job) =>
+                  ({
+                      type: 'renderProjectSections',
+                      payload: { sectionIds: [job.sectionId], jobs: [job] },
+                  }) satisfies AppAction
+          );
     const commands = actions.map((renderAction, index) =>
         createVersionedCommandEnvelope({
             action: renderAction,
@@ -522,7 +531,7 @@ describe('executeConfirmedCommandBatch', () => {
             });
             input.onProjectCommitPrepared?.();
             input.options?.onProjectCommitCheckpoint?.({ receipt });
-            input.options?.onProjectCommitFinalized?.({ revision: 'revision-checkpoint' });
+            input.options?.onProjectCommitFinalized?.({ receipt, revision: 'revision-checkpoint' });
             return completedBatchResult;
         });
 
@@ -638,7 +647,7 @@ describe('executeConfirmedCommandBatch', () => {
             controller?.abort('cancelled after project commit');
             expect(input.options?.signal?.aborted).toBe(true);
             expect(input.options?.shouldFinalizeProjectCommit?.()).toBe(true);
-            input.options?.onProjectCommitFinalized?.({ revision: 'revision-checkpoint' });
+            input.options?.onProjectCommitFinalized?.({ receipt, revision: 'revision-checkpoint' });
             return completedBatchResult;
         });
 
@@ -667,7 +676,10 @@ describe('executeConfirmedCommandBatch', () => {
         mocks.executeBatch.mockImplementation(async (input) => {
             input.options?.onProjectCommitCheckpoint?.({ receipt: fixture.receipt });
             try {
-                input.options?.onProjectCommitFinalized?.({ revision: 'revision-checkpoint' });
+                input.options?.onProjectCommitFinalized?.({
+                    receipt: fixture.receipt,
+                    revision: 'revision-checkpoint',
+                });
             } catch (error) {
                 input.options?.onProjectCommitFinalizationUnavailable?.({
                     reason: error instanceof Error ? error.message : String(error),
@@ -715,7 +727,7 @@ describe('executeConfirmedCommandBatch', () => {
         mocks.getArtifacts.mockReturnValueOnce([]).mockReturnValueOnce(artifacts);
         mocks.executeBatch.mockImplementation(async (input) => {
             input.options?.onProjectCommitCheckpoint?.({ receipt: fixture.receipt });
-            input.options?.onProjectCommitFinalized?.({ revision: 'revision-checkpoint' });
+            input.options?.onProjectCommitFinalized?.({ receipt: fixture.receipt, revision: 'revision-checkpoint' });
             return fixture.batchResult;
         });
 
@@ -752,8 +764,8 @@ describe('executeConfirmedCommandBatch', () => {
         });
         mocks.getArtifacts.mockReturnValueOnce([]).mockReturnValueOnce([verseArtifact]);
         mocks.executeBatch.mockImplementation(async (input) => {
-            input.options?.onProjectCommitCheckpoint?.({ receipt: fixture.receipt });
-            input.options?.onProjectCommitFinalized?.({ revision: 'revision-checkpoint' });
+            input.options?.onProjectCommitCheckpoint?.({ receipt });
+            input.options?.onProjectCommitFinalized?.({ receipt: fixture.receipt, revision: 'revision-checkpoint' });
             return fixture.batchResult;
         });
 
@@ -777,6 +789,87 @@ describe('executeConfirmedCommandBatch', () => {
             ],
             sourceRevision: 'revision-checkpoint',
         });
+    });
+
+    it('rebinds the successful job while a sibling job in the same pending render command remains missing', async () => {
+        const fixture = createRenderBatchFixture({ pendingCommandIndex: 0, singleCommand: true });
+        const verseArtifact = createRenderArtifact({
+            ...fixture.jobs[0]!,
+            renderedAt: 1,
+            sourceRevision: 'revision-before-command',
+        });
+        mocks.getArtifacts.mockReturnValueOnce([]).mockReturnValueOnce([verseArtifact]);
+        mocks.executeBatch.mockImplementation(async (input) => {
+            input.options?.onProjectCommitCheckpoint?.({ receipt: fixture.receipt });
+            input.options?.onProjectCommitFinalized?.({ receipt: fixture.receipt, revision: 'revision-checkpoint' });
+            return fixture.batchResult;
+        });
+
+        const result = await executeConfirmedCommandBatch({
+            confirmation: fixture.confirmation,
+            commandBatch: fixture.commandBatch,
+            approvedBatchId: 'batch-render',
+            trackedWorkLease: lease,
+            priorVerifiedBatchReceipt: null,
+            recoveringPendingEffects: false,
+        });
+
+        expect(result).toMatchObject({ status: 'completed', canRebindSectionRenderArtifacts: true });
+        expect(mocks.rebindArtifacts).toHaveBeenCalledWith({
+            artifacts: [
+                {
+                    job: fixture.jobs[0],
+                    renderedAt: 1,
+                    sourceRevision: 'revision-before-command',
+                },
+            ],
+            sourceRevision: 'revision-checkpoint',
+        });
+    });
+
+    it('withholds finalization when an exact matching render artifact predates execution', async () => {
+        const fixture = createRenderBatchFixture();
+        const verseArtifact = createRenderArtifact({
+            ...fixture.jobs[0]!,
+            renderedAt: 1,
+            sourceRevision: 'revision-before-command',
+        });
+        const chorusArtifact = createRenderArtifact({
+            ...fixture.jobs[1]!,
+            renderedAt: 2,
+            sourceRevision: 'revision-before-command',
+        });
+        mocks.getArtifacts.mockReturnValueOnce([verseArtifact]).mockReturnValueOnce([verseArtifact, chorusArtifact]);
+        mocks.executeBatch.mockImplementation(async (input) => {
+            try {
+                input.options?.onProjectCommitFinalized?.({
+                    receipt: fixture.receipt,
+                    revision: 'revision-checkpoint',
+                });
+            } catch (error) {
+                input.options?.onProjectCommitFinalizationUnavailable?.({
+                    reason: error instanceof Error ? error.message : String(error),
+                });
+            }
+            return fixture.batchResult;
+        });
+
+        const result = await executeConfirmedCommandBatch({
+            confirmation: fixture.confirmation,
+            commandBatch: fixture.commandBatch,
+            approvedBatchId: 'batch-render',
+            trackedWorkLease: lease,
+            priorVerifiedBatchReceipt: null,
+            recoveringPendingEffects: false,
+        });
+
+        expect(result).toMatchObject({
+            status: 'completed',
+            canRebindSectionRenderArtifacts: false,
+            finalizationEvidenceFailure:
+                'Exactly one fresh section render artifact is required for committed job render-verse.',
+        });
+        expect(mocks.rebindArtifacts).not.toHaveBeenCalled();
     });
 
     it.each([
@@ -809,7 +902,10 @@ describe('executeConfirmedCommandBatch', () => {
         mocks.executeBatch.mockImplementation(async (input) => {
             input.options?.onProjectCommitCheckpoint?.({ receipt: fixture.receipt });
             try {
-                input.options?.onProjectCommitFinalized?.({ revision: 'revision-checkpoint' });
+                input.options?.onProjectCommitFinalized?.({
+                    receipt: fixture.receipt,
+                    revision: 'revision-checkpoint',
+                });
             } catch (error) {
                 input.options?.onProjectCommitFinalizationUnavailable?.({
                     reason: error instanceof Error ? error.message : String(error),
@@ -852,7 +948,10 @@ describe('executeConfirmedCommandBatch', () => {
         mocks.executeBatch.mockImplementation(async (input) => {
             input.options?.onProjectCommitCheckpoint?.({ receipt: fixture.receipt });
             try {
-                input.options?.onProjectCommitFinalized?.({ revision: 'revision-checkpoint' });
+                input.options?.onProjectCommitFinalized?.({
+                    receipt: fixture.receipt,
+                    revision: 'revision-checkpoint',
+                });
             } catch (error) {
                 input.options?.onProjectCommitFinalizationUnavailable?.({
                     reason: error instanceof Error ? error.message : String(error),
