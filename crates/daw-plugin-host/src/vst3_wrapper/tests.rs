@@ -3412,9 +3412,9 @@ fn a_timer_registered_through_the_frame_fires_until_it_is_unregistered() {
 
     // SAFETY: the same live handler.
     assert_eq!(unsafe { run_loop.unregisterTimer(raw) }, kResultOk);
-    std::thread::sleep(std::time::Duration::from_millis(100));
+    pump_for(std::time::Duration::from_millis(100));
     let settled = timer.wakes.load(Ordering::Acquire);
-    std::thread::sleep(std::time::Duration::from_millis(100));
+    pump_for(std::time::Duration::from_millis(100));
 
     assert_eq!(
         timer.wakes.load(Ordering::Acquire),
@@ -3506,12 +3506,15 @@ fn an_event_handler_registered_through_the_frame_is_called_on_descriptor_readine
     }
 }
 
-/// Poll for a condition rather than sleeping a fixed time: the service thread
-/// is real, and a fixed sleep is either flaky or slow.
+/// Poll for a condition rather than sleeping a fixed time. Nothing services
+/// the editor run-loop registry in this process on its own: production gets
+/// its pump from Electron's main loop calling `service_editor_run_loops`, and
+/// here the test drives that same call itself, standing in for Electron.
 #[cfg(target_os = "linux")]
 fn wait_until(mut condition: impl FnMut() -> bool) -> bool {
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
     while std::time::Instant::now() < deadline {
+        crate::vst3_run_loop::service_editor_run_loops();
         if condition() {
             return true;
         }
@@ -3521,17 +3524,32 @@ fn wait_until(mut condition: impl FnMut() -> bool) -> bool {
 }
 
 /// Long enough for a wrongly-eager service to have fired, short enough not to
-/// dominate the suite.
+/// dominate the suite. Pumps the same way `wait_until` does, so a handler
+/// that should not fire yet is given every chance to fire wrongly.
 #[cfg(target_os = "linux")]
 fn wait_briefly(mut condition: impl FnMut() -> bool) -> bool {
     let deadline = std::time::Instant::now() + std::time::Duration::from_millis(100);
     while std::time::Instant::now() < deadline {
+        crate::vst3_run_loop::service_editor_run_loops();
         if condition() {
             return true;
         }
         std::thread::sleep(std::time::Duration::from_millis(2));
     }
     condition()
+}
+
+/// Pumps the editor run-loop registry for roughly `duration`, the way
+/// `wait_until` and `wait_briefly` do, without waiting on any condition.
+/// Used to prove that pumping after an `unregister*` call does not wake a
+/// handler that is no longer registered.
+#[cfg(target_os = "linux")]
+fn pump_for(duration: std::time::Duration) {
+    let deadline = std::time::Instant::now() + duration;
+    while std::time::Instant::now() < deadline {
+        crate::vst3_run_loop::service_editor_run_loops();
+        std::thread::sleep(std::time::Duration::from_millis(2));
+    }
 }
 
 // ── RT-path allocation ──────────────────────────────────────────────────
