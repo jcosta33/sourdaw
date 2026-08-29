@@ -1,0 +1,19 @@
+electron/__tests__/pluginGui.spec.ts
+  s_4f908a5afb6b58::t_88ee0fdaea617c 423-479
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "89117ddf56cbc0df0fbb369ba8bc06b0935d9a4d",
+  "prompts": {},
+  "sessions": {
+    "s_4f908a5afb6b58": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fcb92ba4-bf56-47a4-8b57-803f335a449e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
