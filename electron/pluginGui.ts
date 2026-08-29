@@ -13,11 +13,23 @@
  *   it; `alwaysOnTop` is only the fallback that keeps an unparented editor
  *   reachable. Ownership is a destruction cascade as well as a z-order
  *   relationship, so no other window may ever become the parent.
- * - When the OS ends an editor window — title-bar close, or the owner-destroy
- *   cascade — the addon's reset must run *off* this event path. The notify
- *   call is an async napi method, so it only schedules work on the addon's
- *   executor; running the reset inline on the main thread is the documented
- *   deadlock with GUI-affine plugins.
+ * - When the OS asks to end an editor window, the plugin is still parented into
+ *   it, and both formats un-parent against a live parent: VST3 specifies
+ *   `IPlugView::removed` against the window the view was attached to, and CLAP's
+ *   `gui.destroy` releases the same parenting. So the close is stopped, the
+ *   window is hidden in that same turn, the addon's teardown is awaited, and
+ *   only then is the window destroyed for real. Hiding is what keeps the stop
+ *   invisible: a hidden window is still a live parent — minimising the DAW hides
+ *   every editor with its view attached — while a window left on screen for the
+ *   teardown is a frozen editor, because the plugin call is carried back to this
+ *   same thread. `destroy` raises no second close, so the shell's own close path
+ *   — which already detached before it reached the window host — passes straight
+ *   through, and so does the exit cascade.
+ * - That teardown must run *off* this event path. The notify call is an async
+ *   napi method, so it only schedules work on the addon's executor; running it
+ *   inline on the main thread is the documented deadlock with GUI-affine
+ *   plugins. It is also why waiting for it means returning from the event
+ *   first — which is exactly what stopping the close buys.
  * - A plugin editor's own event loop, where the format has one the host drives,
  *   belongs to the thread that owns the window. That is this thread, so the
  *   pump runs here, and only while an editor is open.
@@ -83,8 +95,13 @@ export type EditorWindowBounds = {
     readonly height: number;
 };
 
-/** The part of Electron's resize event this module uses. */
-export type EditorResizeEvent = {
+/**
+ * The part of a stoppable Electron window event this module uses.
+ *
+ * `will-resize` and `close` are both stoppable, and stopping them is the whole
+ * of what this module does with either.
+ */
+export type PreventableEditorEvent = {
     readonly preventDefault: () => void;
 };
 
@@ -120,11 +137,15 @@ export type EditorWindow = {
      * them and the real window stops satisfying this slice.
      */
     readonly on: {
+        (event: 'close', listener: (event: PreventableEditorEvent) => void): unknown;
         (event: 'closed', listener: () => void): unknown;
         (event: 'resize', listener: () => void): unknown;
         (event: 'resized', listener: () => void): unknown;
         (event: 'moved', listener: () => void): unknown;
-        (event: 'will-resize', listener: (event: EditorResizeEvent, newBounds: EditorWindowBounds) => void): unknown;
+        (
+            event: 'will-resize',
+            listener: (event: PreventableEditorEvent, newBounds: EditorWindowBounds) => void
+        ): unknown;
     };
 };
 
@@ -167,8 +188,12 @@ export type PluginWindowHostDeps = {
      * with the size it takes at that scale.
      */
     readonly applyEditorScale: (instanceId: string, scaleFactor: number) => Promise<EditorSize>;
-    /** Reports an OS-level close to the addon. Must only schedule, never block. */
-    readonly notifyClosed: (instanceId: string, label: string) => void;
+    /**
+     * Reports an OS-level close to the addon, and resolves once the plugin has
+     * left the window. Must only schedule on this thread, never block it: the
+     * teardown it runs needs this thread free to carry the editor calls.
+     */
+    readonly notifyClosed: (instanceId: string, label: string) => Promise<void>;
     /** Absent where no hosted format needs a host-driven run loop. */
     readonly runLoopPump?: EditorRunLoopPump;
 };
@@ -259,6 +284,16 @@ type EditorRecord = {
     inGesture: boolean;
     /** The pending settle for a size change no commit is coming for. */
     settle: ReturnType<typeof setTimeout> | undefined;
+    /**
+     * Whether this editor is on its way out of its window.
+     *
+     * A window whose OS close was stopped stays in the registry until the
+     * teardown returns, and keeps raising everything a window raises. The latch
+     * is what stops those events becoming plugin calls: each would claim the
+     * control gate the teardown is itself waiting on, behind a plugin that is
+     * mid-`close_gui`.
+     */
+    closing: boolean;
 };
 
 /**
@@ -271,6 +306,22 @@ type EditorRecord = {
  * short enough that the editor follows the window while the user is watching.
  */
 const RESIZE_SETTLE_MS = 200;
+
+/**
+ * How long a window the OS asked to close is held open for the plugin in it.
+ *
+ * A heuristic rather than a sum. The teardown's hop back to this thread and the
+ * engine's control claim are each bounded at two seconds, but the command-owned
+ * store is reached by a plain mutex with no bound at all, so no arithmetic over
+ * the parts yields a number. What this has to be is longer than any teardown a
+ * plugin is going to finish, and short enough that a window the user has
+ * already watched disappear does not keep the app waiting on it.
+ *
+ * Past it the window is destroyed regardless — an editor the user asked to
+ * close and cannot is a worse failure than a teardown that missed its parent,
+ * which is where every OS close stood before this.
+ */
+const DETACH_DEADLINE_MS = 5_000;
 
 export const createPluginWindowHost = (deps: PluginWindowHostDeps): PluginWindowHost => {
     const editors = new Map<string, EditorRecord>();
@@ -289,6 +340,21 @@ export const createPluginWindowHost = (deps: PluginWindowHostDeps): PluginWindow
     const liveEditor = (label: string): EditorRecord | undefined => {
         const record = editors.get(label);
         return record !== undefined && !record.window.isDestroyed() ? record : undefined;
+    };
+
+    /**
+     * The editor a call may still address.
+     *
+     * Live, and not already leaving. A window whose OS close was stopped is held
+     * open only so its plugin can un-parent from it, and everything still
+     * arriving at it in that time — a resize, a move, a display change, the DAW
+     * restoring from minimise — is about an editor on its way out. Only
+     * `destroy` looks past this, because the backend ending such a window early
+     * is exactly what it is for.
+     */
+    const openEditor = (label: string): EditorRecord | undefined => {
+        const record = liveEditor(label);
+        return record?.closing === false ? record : undefined;
     };
 
     /**
@@ -320,7 +386,7 @@ export const createPluginWindowHost = (deps: PluginWindowHostDeps): PluginWindow
      * or the answer's own follow-up negotiates a size the window has left.
      */
     const negotiateSize = async (label: string, requested: EditorSize): Promise<void> => {
-        const record = liveEditor(label);
+        const record = openEditor(label);
         if (record === undefined) {
             return;
         }
@@ -361,7 +427,7 @@ export const createPluginWindowHost = (deps: PluginWindowHostDeps): PluginWindow
      * and leave the editor at the old density for the rest of its life.
      */
     const followDisplayScale = async (label: string): Promise<void> => {
-        const record = liveEditor(label);
+        const record = openEditor(label);
         if (record === undefined || record.scaling) {
             return;
         }
@@ -392,7 +458,7 @@ export const createPluginWindowHost = (deps: PluginWindowHostDeps): PluginWindow
 
     /** Take the size the window has settled at to the plugin, now. */
     const settleSize = (label: string): void => {
-        const record = liveEditor(label);
+        const record = openEditor(label);
         if (record === undefined) {
             return;
         }
@@ -410,7 +476,7 @@ export const createPluginWindowHost = (deps: PluginWindowHostDeps): PluginWindow
      * window stopped rather than about somewhere it passed through.
      */
     const scheduleSettle = (label: string): void => {
-        const record = liveEditor(label);
+        const record = openEditor(label);
         if (record === undefined) {
             return;
         }
@@ -418,6 +484,60 @@ export const createPluginWindowHost = (deps: PluginWindowHostDeps): PluginWindow
         record.settle = setTimeout(() => {
             settleSize(label);
         }, RESIZE_SETTLE_MS);
+    };
+
+    /**
+     * Stop asking this editor's plugin anything.
+     *
+     * The latch has to outlive the settle it cancels. A window held open for its
+     * teardown keeps raising everything a window raises, and each of those would
+     * become a control-gate call against a plugin that is mid-`close_gui` —
+     * behind the gate the teardown is itself waiting on.
+     */
+    const stopAskingThePlugin = (record: EditorRecord | undefined): void => {
+        if (record === undefined) {
+            return;
+        }
+        record.closing = true;
+        clearTimeout(record.settle);
+        record.settle = undefined;
+        record.inGesture = false;
+    };
+
+    /**
+     * Tell the addon a window is ending, and log rather than throw when that
+     * fails: neither close path can act on the failure, and both go on to end
+     * the window anyway.
+     */
+    const reportClosedWindow = async (instanceId: string, label: string): Promise<void> => {
+        try {
+            await deps.notifyClosed(instanceId, label);
+        } catch (error) {
+            console.error(`[shell] plugin window close reset failed: ${String(error)}`);
+        }
+    };
+
+    /**
+     * End a window the OS asked to close, once the plugin has left it.
+     *
+     * That order is the whole point of stopping the close, and it is the only
+     * one either format is specified against: a view un-parents from a live
+     * window or from nothing at all. `destroy` raises no second `close`, so the
+     * window ends here and the `closed` bookkeeping still runs exactly once.
+     */
+    const detachThenDestroy = async (window: EditorWindow, instanceId: string, label: string): Promise<void> => {
+        let expiry: ReturnType<typeof setTimeout> | undefined;
+        const deadline = new Promise<void>((resolve) => {
+            expiry = setTimeout(resolve, DETACH_DEADLINE_MS);
+        });
+        try {
+            await Promise.race([reportClosedWindow(instanceId, label), deadline]);
+        } finally {
+            clearTimeout(expiry);
+        }
+        if (!window.isDestroyed()) {
+            window.destroy();
+        }
     };
 
     deps.watchDisplayChanges(() => {
@@ -453,19 +573,47 @@ export const createPluginWindowHost = (deps: PluginWindowHostDeps): PluginWindow
         }
         const { window, parented } = built;
 
-        // Wired before the window is published, per the seam contract: a
-        // window that exists with no close handling is a leak. The reset is
-        // idempotent and tolerates a close for a window that was never
-        // published.
+        // Both close listeners are wired before the window is published, per the
+        // seam contract: a window that exists with no close handling is a leak.
+        // The addon's reset is idempotent and tolerates a close for a window
+        // that was never published.
+
+        // Whether this window's teardown is already running. A user who clicks
+        // the title bar again while the plugin is still leaving must not start a
+        // second teardown, and must not get the window destroyed under the first.
+        let detaching = false;
+        window.on('close', (event: PreventableEditorEvent) => {
+            // Stopped before anything else, on every close: letting the platform
+            // destroy the window here is the un-parent against a dead parent
+            // that both formats forbid, whether it is the first close or the
+            // fifth.
+            event.preventDefault();
+            if (detaching) {
+                return;
+            }
+            detaching = true;
+            stopAskingThePlugin(editors.get(request.label));
+            // Off screen in the same turn as the click, because the teardown is
+            // seconds of frozen editor otherwise: the plugin call it makes is
+            // carried back to this very thread, so nothing repaints until it
+            // returns. A hidden window is still a live parent — the DAW hides
+            // every editor on minimise with its view fully attached — so this
+            // costs the un-parent nothing.
+            window.hide();
+            void detachThenDestroy(window, request.instanceId, request.label);
+        });
+
         window.on('closed', () => {
             const record = editors.get(request.label);
             if (record?.window === window) {
-                clearTimeout(record.settle);
-                record.inGesture = false;
+                stopAskingThePlugin(record);
                 editors.delete(request.label);
                 trackEditorCount();
             }
-            deps.notifyClosed(request.instanceId, request.label);
+            // Idempotent on the addon side, which is what makes it safe after a
+            // stopped close already reported this window: the second report
+            // finds no record and changes nothing.
+            void reportClosedWindow(request.instanceId, request.label);
         });
 
         // A size the plugin already refused is refused again: the drag is
@@ -473,8 +621,8 @@ export const createPluginWindowHost = (deps: PluginWindowHostDeps): PluginWindow
         // instead of taking a shape the editor will not draw at and then
         // bouncing off it. Only a repeat can be caught here — the plugin's own
         // answer is asynchronous, and this event is not.
-        window.on('will-resize', (event: EditorResizeEvent, newBounds: EditorWindowBounds) => {
-            const record = editors.get(request.label);
+        window.on('will-resize', (event: PreventableEditorEvent, newBounds: EditorWindowBounds) => {
+            const record = openEditor(request.label);
             if (record === undefined) {
                 return;
             }
@@ -527,6 +675,7 @@ export const createPluginWindowHost = (deps: PluginWindowHostDeps): PluginWindow
             queued: undefined,
             inGesture: false,
             settle: undefined,
+            closing: false,
         });
         trackEditorCount();
 
@@ -546,7 +695,7 @@ export const createPluginWindowHost = (deps: PluginWindowHostDeps): PluginWindow
     };
 
     const withEditor = (label: string, operate: (window: EditorWindow) => void): void => {
-        const record = liveEditor(label);
+        const record = openEditor(label);
         if (record !== undefined) {
             operate(record.window);
         }
@@ -556,7 +705,7 @@ export const createPluginWindowHost = (deps: PluginWindowHostDeps): PluginWindow
         create,
         exists: (label) => editors.has(label),
         setSize: (request) => {
-            const record = liveEditor(request.label);
+            const record = openEditor(request.label);
             if (record === undefined) {
                 return;
             }
@@ -582,9 +731,10 @@ export const createPluginWindowHost = (deps: PluginWindowHostDeps): PluginWindow
             });
         },
         destroy: (label) => {
-            withEditor(label, (window) => {
-                window.destroy();
-            });
+            // Reaches past `openEditor` on purpose: the backend ending a window
+            // whose stopped close is still being answered is the one call that
+            // must land anyway.
+            liveEditor(label)?.window.destroy();
         },
         hide: (label) => {
             withEditor(label, (window) => {
@@ -733,12 +883,11 @@ export const registerPluginWindowHost = (
         requestEditorSize: (instanceId, width, height) =>
             editorSizeFrom(resizeGui.call(native, instanceId, width, height)),
         applyEditorScale: (instanceId, scaleFactor) => editorSizeFrom(applyScale.call(native, instanceId, scaleFactor)),
-        notifyClosed: (instanceId, label) => {
-            // Fire and forget: the napi method is async, so this only
-            // schedules the reset on the addon's executor.
-            void Promise.resolve(notifyClosed.call(native, instanceId, label)).catch((error: unknown) => {
-                console.error(`[shell] plugin window close reset failed: ${String(error)}`);
-            });
+        notifyClosed: async (instanceId, label) => {
+            // The napi method is async, so the call itself only schedules the
+            // reset on the addon's executor; awaiting it is how the caller knows
+            // the plugin is out of the window.
+            await Promise.resolve(notifyClosed.call(native, instanceId, label));
         },
     });
     register.call(

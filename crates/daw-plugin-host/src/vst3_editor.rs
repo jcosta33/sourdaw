@@ -8,13 +8,14 @@
 //! the view is released, because releasing an attached view leaves the plugin's
 //! child window parented to a window the host is about to destroy.
 //!
-//! That detach-before-release order is the host's own close path, where the
-//! native window is still alive when the editor is torn down. It does not hold
-//! when the OS ends the window instead: the shell reports that close only after
-//! the platform has already destroyed the window, so `removed` runs against a
-//! parent that is gone. The gap is known, is shared with the CLAP editor path,
-//! and is tracked separately — nothing in this module can close it, because by
-//! the time the report arrives there is nothing left to detach from.
+//! A live parent is what that order needs, and supplying one is the shell's
+//! obligation rather than this module's: a shell stops the platform's own close
+//! of an editor window, reports it while the native window is still standing,
+//! and destroys the window only once the teardown has returned. It bounds that
+//! wait, because an editor a user cannot close is the worse failure — so a
+//! plugin that never lets go loses its parent instead of holding the window
+//! open. Nothing here can check any of it, because a report carries no window,
+//! so it is the shell's to keep like the thread rule below.
 //!
 //! None of this is reachable from the audio thread, and none of it takes a lock
 //! the audio thread holds. `IPlugView` is specified to be driven from the thread

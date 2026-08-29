@@ -488,12 +488,14 @@ fn publish_plugin_gui_window_in_label_order(
 
 /// Reset "GUI open" bookkeeping after the OS reports the plugin window is
 /// closing (title-bar close request, or the owner-destroy cascade). The shell
-/// destroys the window itself; this closes the plugin's internal GUI (hide +
-/// destroy, via the same owning paths as `close_plugin_gui`) and drops the
-/// `plugin_windows` entry, so a later `open_plugin_gui` recreates the GUI
-/// instead of failing with "GUI is already open" on stale state and leaking the
-/// plugin's internal GUI resources. It never drops the plugin, so no
-/// audio-thread/retire-list concern applies.
+/// destroys the window itself, and destroys it only after this returns: both
+/// formats un-parent the plugin's child window from the host's, so the teardown
+/// below needs the window it was attached to still standing. This closes the
+/// plugin's internal GUI (hide + destroy, via the same owning paths as
+/// `close_plugin_gui`) and drops the `plugin_windows` entry, so a later
+/// `open_plugin_gui` recreates the GUI instead of failing with "GUI is already
+/// open" on stale state and leaking the plugin's internal GUI resources. It
+/// never drops the plugin, so no audio-thread/retire-list concern applies.
 ///
 /// The report names one *opening* — the shell echoes back the label it was
 /// given, and a label carries the opening's sequence number — and the whole
