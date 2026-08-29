@@ -206,6 +206,16 @@ pub trait PluginEditorWindow: Send + Sync {
     /// the platform.
     fn set_size(&self, width: u32, height: u32);
 
+    /// Whether the user may drag this window's edges.
+    ///
+    /// Stated after the editor opens rather than at creation, because that is
+    /// where the answer first exists: both formats answer it through a view the
+    /// plugin has not created yet. A window is therefore built fixed and widened
+    /// here, which is the safe order — a window the user cannot drag until the
+    /// editor is up costs nothing, and one that could be dragged before the
+    /// plugin was asked can be dragged to a size it refuses.
+    fn set_resizable(&self, resizable: bool);
+
     /// The display scale this window was created at.
     ///
     /// A plugin editor is not always sized in the same units the window is: VST3
@@ -345,9 +355,16 @@ pub mod testing {
         work: mpsc::Sender<Arc<UiThreadTask>>,
         pub thread_id: ThreadId,
         thread: Mutex<Option<JoinHandle<()>>>,
+        editor_resizable: Arc<Mutex<Option<bool>>>,
     }
 
     impl DedicatedUiWindowHost {
+        /// What the host told this shell's editor window about dragging its
+        /// edges, or `None` if it was never told.
+        pub fn editor_resizable(&self) -> Option<bool> {
+            *self.editor_resizable.lock().expect("resizable record")
+        }
+
         pub fn start() -> Self {
             let (work, queued) = mpsc::channel::<Arc<UiThreadTask>>();
             let (announce, announced) = mpsc::channel();
@@ -364,6 +381,7 @@ pub mod testing {
                 work,
                 thread_id,
                 thread: Mutex::new(Some(thread)),
+                editor_resizable: Arc::new(Mutex::new(None)),
             }
         }
     }
@@ -399,8 +417,11 @@ pub mod testing {
     }
 
     /// A window with no platform behind it: enough for an editor to be opened
-    /// into, and nothing more.
-    pub struct BareEditorWindow;
+    /// into, and it remembers the one thing a host tells it that a test asks
+    /// about.
+    pub struct BareEditorWindow {
+        resizable: Arc<Mutex<Option<bool>>>,
+    }
 
     impl PluginEditorWindow for BareEditorWindow {
         fn native_handle_ptr(&self) -> Result<*mut std::ffi::c_void, String> {
@@ -408,6 +429,10 @@ pub mod testing {
         }
 
         fn set_size(&self, _width: u32, _height: u32) {}
+
+        fn set_resizable(&self, resizable: bool) {
+            *self.resizable.lock().expect("resizable record") = Some(resizable);
+        }
 
         fn show_and_focus(&self) {}
 
@@ -425,7 +450,9 @@ pub mod testing {
             _title: &str,
             _instance_id: &str,
         ) -> Result<Box<dyn PluginEditorWindow>, String> {
-            Ok(Box::new(BareEditorWindow))
+            Ok(Box::new(BareEditorWindow {
+                resizable: Arc::clone(&self.editor_resizable),
+            }))
         }
 
         fn destroy_window(&self, _label: &str) {}

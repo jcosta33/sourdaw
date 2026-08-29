@@ -31,8 +31,8 @@ use crate::host::plugin_window::{NoWindowHost, PluginWindowHost};
 use crate::NativeSingletons;
 
 use windows::{
-    CreateEditorWindowFn, EditorWindowExistsFn, EditorWindowLabelFn, EditorWindowSizeRequest,
-    JsWindowCallbacks, JsWindowHost,
+    CreateEditorWindowFn, EditorWindowExistsFn, EditorWindowLabelFn, EditorWindowResizableFn,
+    EditorWindowSizeRequest, JsWindowCallbacks, JsWindowHost,
 };
 
 use daw_core::{PluginId, PluginInstanceId};
@@ -183,6 +183,7 @@ impl SourdawNative {
         create_editor_window: CreateEditorWindowFn,
         editor_window_exists: EditorWindowExistsFn,
         set_editor_window_size: Function<'_, EditorWindowSizeRequest, ()>,
+        set_editor_window_resizable: EditorWindowResizableFn,
         show_and_focus_editor_window: EditorWindowLabelFn,
         destroy_editor_window: EditorWindowLabelFn,
         hide_editor_window: EditorWindowLabelFn,
@@ -194,6 +195,7 @@ impl SourdawNative {
                 create: create_editor_window,
                 exists: editor_window_exists,
                 set_size: set_editor_window_size.create_ref()?,
+                set_resizable: set_editor_window_resizable,
                 show_and_focus: show_and_focus_editor_window,
                 destroy: destroy_editor_window,
                 hide: hide_editor_window,
@@ -707,6 +709,48 @@ impl SourdawNative {
         json(reason(
             commands::plugin_gui::open_plugin_gui(
                 instance_id,
+                windows.as_ref(),
+                &self.singletons.app_state,
+            )
+            .await,
+        )?)
+    }
+
+    /// The shell's window was resized by the user; the plugin decides what it
+    /// will run at, and the shell snaps its window to the answer.
+    #[napi]
+    pub async fn resize_plugin_gui(
+        &self,
+        instance_id: String,
+        width: u32,
+        height: u32,
+    ) -> Result<Value> {
+        let windows = self.window_host();
+        json(reason(
+            commands::plugin_gui::resize_plugin_gui(
+                instance_id,
+                width,
+                height,
+                windows.as_ref(),
+                &self.singletons.app_state,
+            )
+            .await,
+        )?)
+    }
+
+    /// The shell's window is on a display of a different density than the one
+    /// the editor was opened at.
+    #[napi]
+    pub async fn apply_plugin_gui_scale(
+        &self,
+        instance_id: String,
+        scale_factor: f64,
+    ) -> Result<Value> {
+        let windows = self.window_host();
+        json(reason(
+            commands::plugin_gui::apply_plugin_gui_scale(
+                instance_id,
+                scale_factor,
                 windows.as_ref(),
                 &self.singletons.app_state,
             )

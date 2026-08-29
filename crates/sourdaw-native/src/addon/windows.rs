@@ -96,6 +96,12 @@ pub struct EditorWindowSizeRequest {
     pub height: u32,
 }
 
+#[napi(object)]
+pub struct EditorWindowResizableRequest {
+    pub label: String,
+    pub resizable: bool,
+}
+
 // Weak (the last parameter) for the same reason as the event sink: the window
 // host lives for the process, and a referenced threadsafe function would pin
 // the Node event loop so `app.quit()` could never drain.
@@ -109,6 +115,14 @@ pub type CreateEditorWindowFn = ThreadsafeFunction<
 >;
 pub type EditorWindowExistsFn = ThreadsafeFunction<String, bool, String, Status, false, true>;
 pub type EditorWindowLabelFn = ThreadsafeFunction<String, (), String, Status, false, true>;
+pub type EditorWindowResizableFn = ThreadsafeFunction<
+    EditorWindowResizableRequest,
+    (),
+    EditorWindowResizableRequest,
+    Status,
+    false,
+    true,
+>;
 
 /// The shell's resize callback, kept as a reference rather than a threadsafe
 /// function: it is only ever called on the main thread, and calling it there is
@@ -208,6 +222,7 @@ pub struct JsWindowCallbacks {
     pub create: CreateEditorWindowFn,
     pub exists: EditorWindowExistsFn,
     pub set_size: EditorWindowSizeCallback,
+    pub set_resizable: EditorWindowResizableFn,
     pub show_and_focus: EditorWindowLabelFn,
     pub destroy: EditorWindowLabelFn,
     pub hide: EditorWindowLabelFn,
@@ -423,6 +438,21 @@ impl PluginEditorWindow for JsEditorWindow {
                 eprintln!("[Plugin] {error}");
             }
         });
+    }
+
+    /// Queued rather than waited on, unlike a resize: nothing reads an answer
+    /// back from it, and it is stated while the window is still hidden, so the
+    /// user cannot reach an edge before it lands.
+    fn set_resizable(&self, resizable: bool) {
+        // Status discarded for the same reason every other queued window call
+        // discards it: a window that is already gone is not a failure of this.
+        let _ = self.callbacks.set_resizable.call(
+            EditorWindowResizableRequest {
+                label: self.label.clone(),
+                resizable,
+            },
+            ThreadsafeFunctionCallMode::NonBlocking,
+        );
     }
 
     fn show_and_focus(&self) {
