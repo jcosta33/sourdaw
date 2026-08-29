@@ -123,6 +123,7 @@ describe('AiSection', () => {
         render(<AiSection />);
 
         const apiKey = screen.getByLabelText('Hosted AI API key');
+        expect(screen.getByText(/API-key authentication/u)).toBeInTheDocument();
         fireEvent.change(apiKey, { target: { value: 'sk-provider-change' } });
         fireEvent.change(screen.getByLabelText('Hosted AI provider'), { target: { value: 'openai' } });
         expect(apiKey).toHaveValue('');

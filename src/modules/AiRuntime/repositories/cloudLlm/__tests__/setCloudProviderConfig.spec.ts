@@ -76,6 +76,7 @@ describe('setCloudProviderConfig', () => {
         expect(getCloudProviderRuntime()).toMatchObject({
             provider: 'openai',
             model: 'gpt-test',
+            authentication: 'api-key',
             session_id: 'provider-session-00000000000000000000000000000000',
         });
         expect(isCloudAvailable()).toBe(true);

@@ -7,7 +7,7 @@ import { type CompiledProviderAdapter } from '../providerAdapterRegistry';
 export type AnthropicCloudRuntime = Readonly<{
     provider: 'anthropic';
     model: string;
-    authentication?: HostedLlmAuthentication;
+    authentication: HostedLlmAuthentication;
     session_id: string;
 }>;
 
@@ -15,7 +15,7 @@ export type OpenAiCompatibleCloudRuntime = Readonly<{
     provider: 'openai' | 'openai-compatible';
     model: string;
     base_url: string;
-    authentication?: HostedLlmAuthentication;
+    authentication: HostedLlmAuthentication;
     adapter?: CompiledProviderAdapter | null;
     session_id: string | null;
 }>;

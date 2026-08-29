@@ -19,5 +19,5 @@ export type HostedLlmProviderInfo = {
     provider: HostedLlmProvider;
     model: string;
     baseUrl: string | null;
-    authentication?: HostedLlmAuthentication;
+    authentication: HostedLlmAuthentication;
 };

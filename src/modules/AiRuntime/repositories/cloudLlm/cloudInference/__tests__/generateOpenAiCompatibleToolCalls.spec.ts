@@ -5,6 +5,7 @@ import { generateOpenAiCompatibleToolCalls } from '../generateOpenAiCompatibleTo
 
 const runtime: OpenAiCompatibleCloudRuntime = {
     provider: 'openai-compatible',
+    authentication: 'none',
     session_id: null,
     model: 'gpt-5.2',
     base_url: 'http://localhost:1234/v1',
@@ -374,6 +375,7 @@ describe('generateOpenAiCompatibleToolCalls', () => {
     it('omits authorization for an auth-free compatible endpoint', async () => {
         const authFreeRuntime: OpenAiCompatibleCloudRuntime = {
             provider: 'openai-compatible',
+            authentication: 'none',
             session_id: null,
             model: 'local-model',
             base_url: 'http://localhost:1234/v1',

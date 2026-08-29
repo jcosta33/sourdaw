@@ -52,6 +52,7 @@ const BASE_INSTALLATION: ProviderAdapterInstallationInput = {
 function createAdapterRuntime(): OpenAiCompatibleCloudRuntime {
     return {
         provider: 'openai-compatible',
+        authentication: 'api-key',
         session_id: 'provider-session-00000000000000000000000000000000',
         model: 'studio-model-v1',
         base_url: 'https://models.example.test:8443/v1',
