@@ -45,7 +45,6 @@ type BindCancellation = typeof import('../../cancelAgentRun').agentRunCancellati
 type CancelRun = typeof import('../../cancelAgentRun').agentRunCancellation.cancel;
 type CaptureAuthorization = typeof import('#/modules/CrdtDocument/useCases').captureProjectMutationAuthorization;
 type CaptureRevision = typeof import('#/modules/CrdtDocument/useCases').captureProjectRevision;
-type CaptureUnownedMutations = typeof import('#/modules/CrdtDocument/useCases').captureUnownedProjectMutations;
 type RecordPostCommitRecoveryFailure =
     typeof import('../agentRunExecutionSettlement').agentRunExecutionSettlement.recordPostCommitRecoveryFailure;
 type RecordCommittedRecoveryFailure =
@@ -56,7 +55,6 @@ const mocks = vi.hoisted(() => ({
     cancelRun: vi.fn<CancelRun>(),
     captureAuthorization: vi.fn<CaptureAuthorization>(),
     captureRevision: vi.fn<CaptureRevision>(),
-    captureUnownedMutations: vi.fn<CaptureUnownedMutations>(),
     executeBatch: vi.fn<TestBatchExecutor>(),
     getArtifacts: vi.fn(() => []),
     rebindArtifacts: vi.fn(),
@@ -88,7 +86,6 @@ vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     captureProjectMutationAuthorization: mocks.captureAuthorization,
     captureProjectRevision: mocks.captureRevision,
-    captureUnownedProjectMutations: mocks.captureUnownedMutations,
 }));
 vi.mock('../../../stores/chatStore', () => ({
     setActiveAborter: mocks.setActiveAborter,
@@ -294,7 +291,6 @@ beforeEach(() => {
     projectMutationAuthorized = true;
     mocks.captureAuthorization.mockReturnValue(() => projectMutationAuthorized);
     mocks.captureRevision.mockReturnValue('revision-2');
-    mocks.captureUnownedMutations.mockReturnValue(0);
     mocks.prepareResourceLease.mockResolvedValue(undefined);
     mocks.protectResourceLease.mockReturnValue(undefined);
     mocks.prepareContinuation.mockReturnValue({ promote: () => undefined, discard: () => undefined });
@@ -392,7 +388,7 @@ describe('executeConfirmedCommandBatch', () => {
         expect(mocks.setChatGenerating).toHaveBeenLastCalledWith(false);
     });
 
-    it('keeps fresh render artifacts unrebound when an ownerless project mutation lands before finalization', async () => {
+    it('keeps fresh render artifacts unrebound when Command denies finalization after a foreign project mutation', async () => {
         mocks.getArtifacts.mockReturnValueOnce([]).mockReturnValueOnce([
             {
                 jobId: 'render-1',
@@ -406,7 +402,6 @@ describe('executeConfirmedCommandBatch', () => {
                 sourceRevision: 'revision-before-command',
             },
         ]);
-        mocks.captureUnownedMutations.mockReturnValueOnce(4).mockReturnValueOnce(5);
         const renderConfirmation = {
             ...confirmation,
             approvalSnapshot: {
@@ -433,7 +428,11 @@ describe('executeConfirmedCommandBatch', () => {
             },
         } satisfies PendingAppActionConfirmation;
         mocks.executeBatch.mockImplementation(async (input) => {
-            input.options?.onProjectCommitFinalized?.({ revision: 'revision-checkpoint' });
+            projectMutationAuthorized = false;
+            expect(input.options?.shouldFinalizeProjectCommit?.()).toBe(false);
+            input.options?.onProjectCommitFinalizationUnavailable?.({
+                reason: 'The project changed outside the confirmed command before finalization evidence was recorded.',
+            });
             return completedBatchResult;
         });
 
@@ -441,10 +440,10 @@ describe('executeConfirmedCommandBatch', () => {
 
         expect(result).toMatchObject({
             status: 'completed',
-            committedProjectRevision: 'revision-checkpoint',
+            committedProjectRevision: null,
             canRebindSectionRenderArtifacts: false,
             finalizationEvidenceFailure:
-                'The project changed outside the confirmed command while render evidence was finalizing.',
+                'The project changed outside the confirmed command before finalization evidence was recorded.',
         });
         expect(mocks.rebindArtifacts).not.toHaveBeenCalled();
     });

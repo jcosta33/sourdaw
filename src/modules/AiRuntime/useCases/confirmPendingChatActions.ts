@@ -190,6 +190,25 @@ export async function confirmPendingChatActions(
         abortSignal,
     } = executionFlight;
     const batchCommittedProject = batchResult.status === 'committed' || batchResult.status === 'committed-with-warning';
+    const budgetPersistenceWarning = commandBudget
+        ? agentRunExecutionSettlement.reconcileCommandBudget({
+              confirmation,
+              ...commandBudget,
+              actualRenderJobs: renderJobAttempts,
+          })
+        : null;
+
+    let trackedLeaseSettlement: ReturnType<typeof settleAgentRunWorkLeaseSafely> = { accepted: true, warning: null };
+    if (trackedWorkLease) {
+        const settlementContract = getTrackedLeaseSettlementContract(batchResult);
+        trackedLeaseSettlement = settleAgentRunWorkLeaseSafely({
+            lease: trackedWorkLease,
+            ...settlementContract,
+            settle: agentRunWorkLease.settle,
+            reportFailure: (error) =>
+                logger.error(new Error('Agent run work lease settlement failed', { cause: error })),
+        });
+    }
     if (batchCommittedProject && (committedProjectRevision === null || finalizationEvidenceFailure !== null)) {
         const reason =
             finalizationEvidenceFailure ??
@@ -212,7 +231,13 @@ export async function confirmPendingChatActions(
                   reason,
               })
             : null;
-        const userVisibleReason = [reason, runPersistenceWarning, manualRepairPersistenceWarning]
+        const userVisibleReason = [
+            reason,
+            runPersistenceWarning,
+            manualRepairPersistenceWarning,
+            budgetPersistenceWarning,
+            trackedLeaseSettlement.warning,
+        ]
             .filter(Boolean)
             .join(' ');
         updatePendingActionConfirmationStatus({
@@ -235,25 +260,6 @@ export async function confirmPendingChatActions(
         return confirmedBatchOutcomeSupport.createCommittedEffectFailureResult(batchResult.receipt, userVisibleReason);
     }
     const settledProjectRevision = committedProjectRevision ?? confirmation.projectRevision;
-    const budgetPersistenceWarning = commandBudget
-        ? agentRunExecutionSettlement.reconcileCommandBudget({
-              confirmation,
-              ...commandBudget,
-              actualRenderJobs: renderJobAttempts,
-          })
-        : null;
-
-    let trackedLeaseSettlement: ReturnType<typeof settleAgentRunWorkLeaseSafely> = { accepted: true, warning: null };
-    if (trackedWorkLease) {
-        const settlementContract = getTrackedLeaseSettlementContract(batchResult);
-        trackedLeaseSettlement = settleAgentRunWorkLeaseSafely({
-            lease: trackedWorkLease,
-            ...settlementContract,
-            settle: agentRunWorkLease.settle,
-            reportFailure: (error) =>
-                logger.error(new Error('Agent run work lease settlement failed', { cause: error })),
-        });
-    }
 
     if (batchResult.status === 'idempotent-replay') {
         return settleVerifiedBatchReplay({

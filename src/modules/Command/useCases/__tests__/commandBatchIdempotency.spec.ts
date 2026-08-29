@@ -2298,6 +2298,29 @@ describe('command batch idempotency', () => {
         });
     });
 
+    it('does not write final checkpoint evidence when the caller revokes finalization authority', async () => {
+        const batch = compileBatch();
+        const onProjectCommitFinalized = vi.fn();
+        const onProjectCommitFinalizationUnavailable = vi.fn();
+
+        const result = await executeVersionedCommandBatchEnvelope({
+            authority: batch.authority,
+            confirmed: true,
+            serialized: batch.serialized,
+            options: {
+                onProjectCommitFinalized,
+                onProjectCommitFinalizationUnavailable,
+                shouldFinalizeProjectCommit: () => false,
+            },
+        });
+
+        expect(result).toMatchObject({ status: 'committed' });
+        expect(onProjectCommitFinalized).not.toHaveBeenCalled();
+        expect(onProjectCommitFinalizationUnavailable).toHaveBeenCalledExactlyOnceWith({
+            reason: 'The project changed outside the confirmed command before finalization evidence was recorded.',
+        });
+    });
+
     it('never emits finalization evidence for rejected, cancelled, or idempotent replay outcomes', async () => {
         const callbacks = {
             onProjectCommitFinalized: vi.fn(),
@@ -2309,6 +2332,8 @@ describe('command batch idempotency', () => {
             serialized: rejectedBatch.serialized,
             options: callbacks,
         });
+        expect(callbacks.onProjectCommitFinalized).not.toHaveBeenCalled();
+        expect(callbacks.onProjectCommitFinalizationUnavailable).not.toHaveBeenCalled();
         const cancelledBatch = compileBatch({ batchId: 'finalization-cancelled' });
         const cancelled = await executeVersionedCommandBatchEnvelope({
             authority: cancelledBatch.authority,
@@ -2316,14 +2341,14 @@ describe('command batch idempotency', () => {
             serialized: cancelledBatch.serialized,
             options: { ...callbacks, shouldExecute: () => false },
         });
+        expect(callbacks.onProjectCommitFinalized).not.toHaveBeenCalled();
+        expect(callbacks.onProjectCommitFinalizationUnavailable).not.toHaveBeenCalled();
         const replayBatch = compileBatch({ batchId: 'finalization-replay' });
         await executeVersionedCommandBatchEnvelope({
             authority: replayBatch.authority,
             confirmed: true,
             serialized: replayBatch.serialized,
         });
-        callbacks.onProjectCommitFinalized.mockClear();
-        callbacks.onProjectCommitFinalizationUnavailable.mockClear();
         const replay = await executeVersionedCommandBatchEnvelope({
             authority: replayBatch.authority,
             confirmed: true,

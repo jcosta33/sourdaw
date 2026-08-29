@@ -2942,7 +2942,7 @@ describe('confirmPendingChatActions transaction admission', () => {
         expect(getPendingActionConfirmation('confirmation-foreign-flush')).toMatchObject({ status: 'invalidated' });
     });
 
-    it('binds fresh render artifacts to the batch checkpoint before a later owned app action', async () => {
+    it('keeps callback evidence bound to the checkpoint before a later foreign app action', async () => {
         configureAiWorkflowCommandPreflightFixture('project-1');
         configureCommandBatchIdempotency({ canExecute: () => true });
         const ownedStorage = createAutomergeStorage<{ bpm: number }>('owned', 'transport');
@@ -3001,8 +3001,8 @@ describe('confirmPendingChatActions transaction admission', () => {
             });
         });
         // The batch flight awaits durable idempotency completion after its
-        // project checkpoint is visible. Land an ownerless project mutation in
-        // that await so no retained render artifact can be relabelled across it.
+        // project checkpoint is visible. Land a foreign app action in that
+        // await: its later revision must not relabel checkpoint evidence.
         let foreignWriteInjected = false;
         let checkpointRevision: string | null = null;
         let foreignRevision: string | null = null;
@@ -3013,12 +3013,7 @@ describe('confirmPendingChatActions transaction admission', () => {
                     if (lastRenderAttempted && !foreignWriteInjected) {
                         checkpointRevision = captureProjectRevision();
                         foreignWriteInjected = true;
-                        mutateCrdtDoc<Record<string, unknown>>({
-                            id: 'foreign-render-writer',
-                            changeFn: (doc) => {
-                                doc.changedDuringRender = true;
-                            },
-                        });
+                        await executeAppAction({ type: 'setTempo', payload: { bpm: 144 } });
                         foreignRevision = captureProjectRevision();
                     }
                     return task();
@@ -3082,26 +3077,151 @@ describe('confirmPendingChatActions transaction admission', () => {
         }
         expect(committedConfirmation).toMatchObject({
             status: 'failed',
-            followUpProjectRevision: null,
-            followUpStatus: 'failed',
+            followUpProjectRevision: checkpointRevision,
+            followUpStatus: 'retryable',
         });
         const artifacts = getAgentSectionRenderArtifacts();
         expect(artifacts).toHaveLength(1);
-        expect(artifacts[0]).toMatchObject({ jobId: verseJob.jobId });
-        expect(artifacts[0]?.sourceRevision).not.toBe(checkpointRevision);
+        expect(artifacts[0]).toMatchObject({ jobId: verseJob.jobId, sourceRevision: checkpointRevision });
+        expect(artifacts[0]?.sourceRevision).not.toBe(foreignRevision);
 
-        // No retry is armed: the retained artifact cannot cross the ownerless
-        // mutation into a different project checkpoint.
+        // The retry stays bound to the batch checkpoint and must fail closed
+        // rather than treat the later foreign revision as its source.
         const renderCallsBeforeRetry = runtimeMocks.renderOffline.mock.calls.length;
         await expect(
             confirmPendingChatActions({ confirmationId: 'confirmation-render-rebind' })
-        ).resolves.toMatchObject({ status: 'not_pending' });
+        ).resolves.toMatchObject({ status: 'failed' });
         expect(runtimeMocks.renderOffline).toHaveBeenCalledTimes(renderCallsBeforeRetry);
+    });
+
+    it('requires manual recovery when an ownerless mutation lands during a two-job render', async () => {
+        configureAiWorkflowCommandPreflightFixture('project-1');
+        configureCommandBatchIdempotency({ canExecute: () => true });
+        const ownedStorage = createAutomergeStorage<{ bpm: number }>('owned', 'transport');
+        registerHandlerMap({
+            setTempo: {
+                canReapplyAfterDivergence: (action) => action.payload.expectedBpm !== undefined,
+                execute: (action: SetTempoAction) => ownedStorage.set({ bpm: action.payload.bpm }),
+                describe: (action) => ({
+                    label: 'Set tempo',
+                    inverseAction: { type: 'setTempo', payload: { bpm: 120, expectedBpm: action.payload.bpm } },
+                }),
+                undoable: true,
+                validate: () => true,
+            },
+        });
+        registerHandlerMap(getAudioRenderingHandlers());
+        const verseJob = {
+            jobId: 'render-ownerless-verse',
+            sectionId: 'section-ownerless-verse',
+            sectionName: 'Ownerless Verse',
+            startBeat: 0,
+            endBeat: 16,
+            sampleRate: 44_100,
+            tailSeconds: 0,
+        };
+        const chorusJob = {
+            ...verseJob,
+            jobId: 'render-ownerless-chorus',
+            sectionId: 'section-ownerless-chorus',
+            sectionName: 'Ownerless Chorus',
+            startBeat: 16,
+            endBeat: 48,
+        };
+        const tempoAction = { type: 'setTempo', payload: { bpm: 132 } } satisfies SetTempoAction;
+        const renderAction = {
+            type: 'renderProjectSections',
+            payload: { sectionIds: [verseJob.sectionId, chorusJob.sectionId], jobs: [verseJob, chorusJob] },
+        } satisfies RenderSectionsAction;
+        let ownerlessMutationInjected = false;
+        runtimeMocks.renderOffline.mockReset();
+        runtimeMocks.renderOffline.mockImplementation((options: { startBeat?: number }) => {
+            if (options.startBeat === verseJob.startBeat) {
+                ownerlessMutationInjected = true;
+                mutateCrdtDoc<Record<string, unknown>>({
+                    id: 'ownerless-render-writer',
+                    changeFn: (doc) => {
+                        doc.changedDuringRender = true;
+                    },
+                });
+                return Promise.resolve({
+                    sampleRate: verseJob.sampleRate,
+                    length: 88_200,
+                    numberOfChannels: 2,
+                    duration: 2,
+                });
+            }
+            return Promise.reject(new Error('comparison renderer unavailable'));
+        });
+        const projectRevision = captureProjectRevision();
+        const serializeCommand = (action: SetTempoAction | RenderSectionsAction, expectedEffect: string) =>
+            serializeVersionedCommandEnvelope(
+                migrateLegacyAppActionToVersionedCommandEnvelope({
+                    action,
+                    expectedEffect,
+                    normalizedProjectRevision: projectRevision,
+                    options: {
+                        groupId: 'group-ownerless-render',
+                        groupLabel: 'Tempo and ownerless renders',
+                        source: 'prompt',
+                    },
+                })
+            );
+        const commandBatch = compileVersionedCommandBatchEnvelope({
+            runId: 'confirmation-ownerless-render',
+            batchId: 'group-ownerless-render',
+            projectId: 'project-1',
+            baseRevision: projectRevision,
+            intent: 'set tempo and render two sections',
+            commands: [
+                serializeCommand(tempoAction, 'Tempo changes to 132 BPM.'),
+                serializeCommand(renderAction, 'Render Ownerless Verse and Ownerless Chorus.'),
+            ],
+        });
+        agentRunLifecycle.create({
+            runId: 'confirmation-ownerless-render',
+            request: 'set tempo and render two sections',
+            mode: 'macro',
+            createdRevision: projectRevision,
+            budgets: { limits: { maxCommands: 2, maxRenderJobs: 2 }, consumed: {} },
+        });
+        agentRunLifecycle.transitionPhase({ runId: 'confirmation-ownerless-render', phase: 'planning' });
+        agentRunLifecycle.transitionPhase({ runId: 'confirmation-ownerless-render', phase: 'waiting-for-approval' });
+        proposePendingActionConfirmation({
+            id: 'confirmation-ownerless-render',
+            runId: 'confirmation-ownerless-render',
+            prompt: 'set tempo and render two sections',
+            assistantMessageId: 'assistant-1',
+            actions: [tempoAction, renderAction],
+            actionLabels: ['Set tempo to 132 BPM', 'Render Ownerless Verse and Ownerless Chorus'],
+            commandBatch,
+            agentApproval: compileAgentRiskApproval({ commandBatch }),
+            executionMode: 'atomic',
+            groupId: 'group-ownerless-render',
+            groupLabel: 'Tempo and ownerless renders',
+            projectRevision,
+        });
+
+        await expect(
+            confirmPendingChatActions({ confirmationId: 'confirmation-ownerless-render' })
+        ).resolves.toMatchObject({ status: 'failed', durableCommit: true });
+
+        expect(ownerlessMutationInjected).toBe(true);
+        expect(getPendingActionConfirmation('confirmation-ownerless-render')).toMatchObject({
+            status: 'failed',
+            followUpProjectRevision: null,
+            followUpStatus: 'failed',
+        });
         expect(
             selectAgentRunPendingEffectRecoveries(readAgentRunState()).find(
-                ({ runId, batchId }) => runId === 'confirmation-render-rebind' && batchId === 'group-render-rebind'
+                ({ runId, batchId }) =>
+                    runId === 'confirmation-ownerless-render' && batchId === 'group-ownerless-render'
             )
         ).toMatchObject({ recovery: 'manual-repair' });
+        expect(agentRunLifecycle.get('confirmation-ownerless-render')).toMatchObject({
+            budgets: { consumed: { maxCommands: 2, maxRenderJobs: 2 } },
+            workLeases: [expect.objectContaining({ workId: 'group-ownerless-render', terminalState: 'completed' })],
+        });
     });
 
     it.each([false, true])(

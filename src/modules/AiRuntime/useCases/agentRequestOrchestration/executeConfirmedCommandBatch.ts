@@ -4,11 +4,7 @@ import {
 } from '#/modules/AudioRendering/useCases';
 import { collaborationStore } from '#/modules/Collaboration/stores';
 import { executeVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
-import {
-    captureProjectMutationAuthorization,
-    captureProjectRevision,
-    captureUnownedProjectMutations,
-} from '#/modules/CrdtDocument/useCases';
+import { captureProjectMutationAuthorization, captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 import { type HandlerDeferredEffectAttempt } from '#/utils/handlerContract';
 
 import { type AgentRunWorkLease } from '../../models/AgentRun';
@@ -144,7 +140,6 @@ export async function executeConfirmedCommandBatch(
     // Capture before the batch owner exists. The check binds that exact owner
     // on its first in-transaction call and retains it across handler awaits.
     const isProjectMutationAuthorized = captureProjectMutationAuthorization();
-    const unownedMutationBaseline = captureUnownedProjectMutations();
     let renderJobAttempts = 0;
     let committedProjectRevision: string | null = null;
     let finalizationEvidenceFailure: string | null = null;
@@ -168,11 +163,6 @@ export async function executeConfirmedCommandBatch(
             },
             onProjectCommitFinalized: ({ revision }: { revision: string }) => {
                 committedProjectRevision = revision;
-                if (captureUnownedProjectMutations() !== unownedMutationBaseline) {
-                    finalizationEvidenceFailure =
-                        'The project changed outside the confirmed command while render evidence was finalizing.';
-                    return;
-                }
                 rebindFreshSectionRenderArtifactsToCommittedRevision(
                     confirmation,
                     sectionRenderArtifactsBeforeExecution,
@@ -183,6 +173,8 @@ export async function executeConfirmedCommandBatch(
             onProjectCommitFinalizationUnavailable: ({ reason }: { reason: string }) => {
                 finalizationEvidenceFailure = reason;
             },
+            shouldFinalizeProjectCommit: () =>
+                isConfirmationExecutionAuthorized(isProjectMutationAuthorized, aborter.signal),
             requireCompensation: confirmation.executionMode === 'atomic',
             shouldExecute: () => {
                 if (!isConfirmationExecutionAuthorized(isProjectMutationAuthorized, aborter.signal)) {

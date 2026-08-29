@@ -39,6 +39,8 @@ type ExecuteVersionedCommandBatchEnvelopeInput = {
         onProjectCommitFinalized?: (result: { revision: string }) => void;
         /** Observe why exact post-checkpoint evidence could not be provided after a durable project commit. */
         onProjectCommitFinalizationUnavailable?: (result: { reason: string }) => void;
+        /** Refuse final checkpoint evidence when the caller's project-write authority was invalidated. */
+        shouldFinalizeProjectCommit?: () => boolean;
     };
     onProjectCommitPrepared?: () => void;
 };
@@ -673,52 +675,61 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
     };
     if (idempotencyContentHash !== null) {
         if (result.status === 'committed' || result.status === 'committed-with-warning') {
-            try {
-                const hasPendingExternalEffect =
-                    result.status === 'committed-with-warning' &&
-                    result.warningDetails?.some(({ kind }) => kind === 'external-effect') === true;
-                const projectReceipt = createVerifiedBatchReceipt({
-                    contentHash: batchContentHash,
-                    envelope: resolvedEnvelope,
-                    observedBaseRevision,
-                    receiptWarnings: [...receiptWarnings, PROJECT_RECEIPT_REVISION_WARNING],
-                    resultingRevision: null,
-                    result,
-                });
-                persistProjectCommandBatchIdempotencyCheckpoint({
-                    projectId: parsed.envelope.projectId,
-                    idempotencyKey: parsed.envelope.idempotencyKey,
-                    contentHash: idempotencyContentHash,
-                    state: hasPendingExternalEffect ? 'effects-pending' : 'complete',
-                    serializedReceipt: JSON.stringify(projectReceipt),
-                });
-                finalized = { ...finalized, receipt: projectReceipt };
-            } catch {
-                if (projectCommitRecovery.receipt) {
-                    finalized = {
-                        status: 'committed-with-warning' as const,
-                        actions: result.actions,
-                        warning: PROJECT_COMMIT_RECOVERY_WARNING,
-                        warningDetails: [{ kind: 'observer' as const, message: PROJECT_COMMIT_RECOVERY_WARNING }],
-                        receipt: projectCommitRecovery.receipt,
-                    };
+            if (input.options?.shouldFinalizeProjectCommit?.() === false) {
+                reportUnavailableProjectCommitFinalization(
+                    input.options,
+                    new Error(
+                        'The project changed outside the confirmed command before finalization evidence was recorded.'
+                    )
+                );
+            } else {
+                try {
+                    const hasPendingExternalEffect =
+                        result.status === 'committed-with-warning' &&
+                        result.warningDetails?.some(({ kind }) => kind === 'external-effect') === true;
+                    const projectReceipt = createVerifiedBatchReceipt({
+                        contentHash: batchContentHash,
+                        envelope: resolvedEnvelope,
+                        observedBaseRevision,
+                        receiptWarnings: [...receiptWarnings, PROJECT_RECEIPT_REVISION_WARNING],
+                        resultingRevision: null,
+                        result,
+                    });
+                    persistProjectCommandBatchIdempotencyCheckpoint({
+                        projectId: parsed.envelope.projectId,
+                        idempotencyKey: parsed.envelope.idempotencyKey,
+                        contentHash: idempotencyContentHash,
+                        state: hasPendingExternalEffect ? 'effects-pending' : 'complete',
+                        serializedReceipt: JSON.stringify(projectReceipt),
+                    });
+                    finalized = { ...finalized, receipt: projectReceipt };
+                } catch {
+                    if (projectCommitRecovery.receipt) {
+                        finalized = {
+                            status: 'committed-with-warning' as const,
+                            actions: result.actions,
+                            warning: PROJECT_COMMIT_RECOVERY_WARNING,
+                            warningDetails: [{ kind: 'observer' as const, message: PROJECT_COMMIT_RECOVERY_WARNING }],
+                            receipt: projectCommitRecovery.receipt,
+                        };
+                    }
                 }
-            }
-            try {
-                const checkpoint = getProjectCommandBatchIdempotencyCheckpoint({
-                    projectId: parsed.envelope.projectId,
-                    idempotencyKey: parsed.envelope.idempotencyKey,
-                    contentHash: idempotencyContentHash,
-                });
-                if (checkpoint.status !== 'complete' && checkpoint.status !== 'pending') {
-                    throw new Error('The durable project checkpoint is unavailable for finalization evidence.');
+                try {
+                    const checkpoint = getProjectCommandBatchIdempotencyCheckpoint({
+                        projectId: parsed.envelope.projectId,
+                        idempotencyKey: parsed.envelope.idempotencyKey,
+                        contentHash: idempotencyContentHash,
+                    });
+                    if (checkpoint.status !== 'complete' && checkpoint.status !== 'pending') {
+                        throw new Error('The durable project checkpoint is unavailable for finalization evidence.');
+                    }
+                    if (!commandProjectRevisionPort.isConfigured()) {
+                        throw new Error('The project revision provider is unavailable for finalization evidence.');
+                    }
+                    input.options?.onProjectCommitFinalized?.({ revision: commandProjectRevisionPort.capture() });
+                } catch (error) {
+                    reportUnavailableProjectCommitFinalization(input.options, error);
                 }
-                if (!commandProjectRevisionPort.isConfigured()) {
-                    throw new Error('The project revision provider is unavailable for finalization evidence.');
-                }
-                input.options?.onProjectCommitFinalized?.({ revision: commandProjectRevisionPort.capture() });
-            } catch (error) {
-                reportUnavailableProjectCommitFinalization(input.options, error);
             }
         }
         settlePreparedProjectCommitRecovery({
