@@ -89,6 +89,8 @@ const {
     flushDeferredStorageNoticeMock,
     getAutomationParameterRangeMock,
     setAutomationParameterRangeResolverMock,
+    setTrackGainMock,
+    setTrackPanMock,
     setMidiLearnDependenciesMock,
     registerCrdtStorageRuntimeMock,
     captureProjectRevisionMock,
@@ -145,6 +147,11 @@ const {
         flushDeferredStorageNoticeMock: vi.fn(),
         getAutomationParameterRangeMock: vi.fn(),
         setAutomationParameterRangeResolverMock: vi.fn(),
+        // Distinguishable from the shared noop on purpose: the learned-controls
+        // registration assertion pins these by reference, so rewiring bootstrap
+        // to another barrel's exports has to change what reaches that call.
+        setTrackGainMock: vi.fn(),
+        setTrackPanMock: vi.fn(),
         setMidiLearnDependenciesMock: vi.fn(),
         registerCrdtStorageRuntimeMock: vi.fn<() => void>(),
         captureProjectRevisionMock: vi.fn<() => string>(() => 'revision-1'),
@@ -201,8 +208,8 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     getPluginById: noop,
     persistDevicePatch: noop,
     cleanupUnusedFreezeFiles: noop,
-    setTrackGain: noop,
-    setTrackPan: noop,
+    setTrackGain: setTrackGainMock,
+    setTrackPan: setTrackPanMock,
     setDeviceParameter: noop,
     getArrangementHandlers: sentinelHandlers('Arrangement'),
     initStalenessDetection: noop,
@@ -222,8 +229,6 @@ vi.mock('#/modules/AudioAnalysis/useCases', () => ({
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     updateDeviceParam: noop,
     updateDevicePatch: noop,
-    setTrackGain: noop,
-    setTrackPan: noop,
     getAudioContext: noop,
     getCompensationDelay: noop,
     getFinalFeatureHandlers: sentinelHandlers('FinalFeature'),
@@ -732,15 +737,16 @@ describe('bootstrap', () => {
      * the engine, but it injects its own stand-ins, so nothing there can tell
      * which functions production hands in. This is the only seam that observes
      * what bootstrap registers: Arrangement's barrel exports `setTrackGain` and
-     * `setTrackPan` as the hoisted `noop`, so pinning them by reference makes
-     * deleting or rewiring the bootstrap call fail here instead of at the first
-     * learned MIDI message.
+     * `setTrackPan` as dedicated hoisted stand-ins (not the shared `noop`, which
+     * other barrels also export), so pinning them by reference makes deleting or
+     * rewiring the bootstrap call fail here instead of at the first learned MIDI
+     * message.
      */
     it('wires learned MIDI controls to Arrangement gain and pan setters', () => {
         expect(setMidiLearnDependenciesMock).toHaveBeenCalledExactlyOnceWith(
             expect.objectContaining({
-                setTrackGainArrangement: noop,
-                setTrackPanArrangement: noop,
+                setTrackGainArrangement: setTrackGainMock,
+                setTrackPanArrangement: setTrackPanMock,
             })
         );
     });
