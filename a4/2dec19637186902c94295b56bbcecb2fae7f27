@@ -1,0 +1,104 @@
+src/modules/AiRuntime/stores/__tests__/selectAgentRunPendingEffectRecoveries.spec.ts
+  s_a40848e8f8cca9::t_e05c37efa81aae 149,158,169
+src/modules/AiRuntime/useCases/__tests__/confirmPendingChatActions.spec.ts
+  s_a40848e8f8cca9::t_5dbe1ec394c574 1400-1545,3199,3774
+  s_a40848e8f8cca9::t_b499acfb3fdd71 3619,3623-3629,3762-3763,3775-3790
+  s_a40848e8f8cca9::t_5c1865e6893961 3618,3760,3772-3773
+  s_a40848e8f8cca9::t_3615036ef02c1d 56,1318,2695,2742,2776,2781,2796,3093
+  s_a40848e8f8cca9::t_f1d4f7c69dac93 88,365,403
+  s_4f908a5afb6b58::t_8488c914c0eb5a 3184
+src/modules/AiRuntime/useCases/__tests__/backingVocalPlateWorkflow.spec.ts
+  s_a40848e8f8cca9::t_79f23841f76c33 1491
+  s_a40848e8f8cca9::t_3c434a92c5a34e 1365
+src/modules/AiRuntime/stores/__tests__/agentRunStore.spec.ts
+  s_a40848e8f8cca9::t_397345e13bbfa9 3-7,10,32-48,230-278
+  s_a40848e8f8cca9::t_1dcabc8f0c9d1e 279-281
+  s_660d309138b3b1::t_6e1f588983b4fd 282
+src/modules/AiRuntime/useCases/agentRunLifecycle.ts
+  s_a40848e8f8cca9::t_61f0b5ab015efb 1020,1037-1041
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/admitCommittedSectionRenderRetry.spec.ts
+  s_a40848e8f8cca9::t_6bcde4dfce0dfe 259
+src/modules/AiRuntime/useCases/agentRequestOrchestration/confirmedBatchOutcomeSupport.ts
+  s_a40848e8f8cca9::t_2b41f961a90d84 6,68,79
+  s_a40848e8f8cca9::t_4a6fc5dc93626a 5,19,65-66,73
+src/modules/AiRuntime/useCases/__tests__/executePromptActionGroup.spec.ts
+  s_a40848e8f8cca9::t_ac899ae6a417ff 782
+src/modules/AiRuntime/models/GetPendingEffectRecoveryPolicy.ts
+  s_a40848e8f8cca9::t_b4f2f7f4c85eae 3-5,22-25
+  s_a40848e8f8cca9::t_8453e47d2e6777 26-27
+src/modules/AiRuntime/useCases/__tests__/drumBusPromptWorkflow.spec.ts
+  s_a40848e8f8cca9::t_3c434a92c5a34e 1665
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/executeConfirmedCommandBatch.spec.ts
+  s_a40848e8f8cca9::t_4c594220c0a373 296
+  s_a40848e8f8cca9::t_b0464f391844b3 52-53,61-62
+src/modules/AiRuntime/useCases/__tests__/recoverAgentRunPendingEffects.spec.ts
+  s_a40848e8f8cca9::t_65d1351c2875c1 3,98,105,123-126,128-134
+src/modules/AiRuntime/useCases/__tests__/bassCompressorPromptWorkflow.spec.ts
+  s_a40848e8f8cca9::t_3c434a92c5a34e 1204,1255,1320,1380
+src/modules/AiRuntime/presentations/views/__tests__/ChatPanel.spec.tsx
+  s_a40848e8f8cca9::t_1819640f72b788 401,422,443,464
+  s_a40848e8f8cca9::t_348094b400ad30 4,393,514-519
+  s_a40848e8f8cca9::t_6f6f5cc4eed2f5 533,573-576
+src/modules/AiRuntime/useCases/__tests__/agentRunLifecycle.spec.ts
+  s_a40848e8f8cca9::t_6bd8065c3888cf 3
+  s_a40848e8f8cca9::t_7b9e7b8166ecee 268-271,300-301
+  s_a40848e8f8cca9::t_79f23841f76c33 481
+src/modules/AiRuntime/useCases/recoverAgentRunPendingEffects.ts
+  s_a40848e8f8cca9::t_47d3a431bb8450 8-11,117,124,126,139-143
+src/modules/AiRuntime/useCases/createAgentRunPendingEffectContinuation.ts
+  s_a40848e8f8cca9::t_3c114f7d8a1159 4,13,18-19
+src/modules/AiRuntime/stores/agentRunStore.ts
+  s_a40848e8f8cca9::t_deaad489610cb5 35,286,290,295,298
+src/modules/AiRuntime/useCases/__tests__/agentRunRecovery.spec.ts
+  s_a40848e8f8cca9::t_e716a9b9b5c3f2 1252-1254
+  s_a40848e8f8cca9::t_1abee1945e8e47 4
+  s_a40848e8f8cca9::t_b1aba6af963f07 1350-1352
+  s_a40848e8f8cca9::t_ab80f7a7fe10d9 1146-1148,1180,1185-1186
+  s_a40848e8f8cca9::t_09cee1ea157e3b 1187-1188
+  s_a40848e8f8cca9::t_c0f3b472af3bd6 1255-1256
+  s_a40848e8f8cca9::t_90cd5a670b763b 1353-1354
+  s_660d309138b3b1::t_6e78b59172d396 1193,1246
+src/modules/AiRuntime/useCases/recoverRetainedSectionRenderEffects.ts
+  s_a40848e8f8cca9::t_e60c016adb1b3f 1,6
+  s_a40848e8f8cca9::t_f70445edd7d386 7-9
+  s_a40848e8f8cca9::t_f7f1936271e357 10-11
+  s_660d309138b3b1::t_3da30a3f65f96d 16-17
+src/modules/AiRuntime/useCases/confirmPendingChatActions.ts
+  s_a40848e8f8cca9::t_d2849b3f6f9d04 259,261-271,273
+  s_a40848e8f8cca9::t_4aa7b3572f4b71 10,39
+  s_a40848e8f8cca9::t_6bd8065c3888cf 12,135-137
+  s_a40848e8f8cca9::t_0ca761274693fe 119-134,138-149
+  s_a40848e8f8cca9::t_91dd9a446617d7 335-341,377-378
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "a42dec19637186902c94295b56bbcecb2fae7f27",
+  "prompts": {},
+  "sessions": {
+    "s_4f908a5afb6b58": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fcb92ba4-bf56-47a4-8b57-803f335a449e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_660d309138b3b1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04e74-ec96-7322-8b6f-9ea7247ee58e",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
