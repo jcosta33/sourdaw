@@ -47,6 +47,8 @@ type CaptureAuthorization = typeof import('#/modules/CrdtDocument/useCases').cap
 type CaptureUnownedMutations = typeof import('#/modules/CrdtDocument/useCases').captureUnownedProjectMutations;
 type RecordPostCommitRecoveryFailure =
     typeof import('../agentRunExecutionSettlement').agentRunExecutionSettlement.recordPostCommitRecoveryFailure;
+type RecordCommittedRecoveryFailure =
+    typeof import('../agentRunExecutionSettlement').agentRunExecutionSettlement.recordCommittedRecoveryFailure;
 
 const mocks = vi.hoisted(() => ({
     bindCancellation: vi.fn<BindCancellation>(),
@@ -59,6 +61,7 @@ const mocks = vi.hoisted(() => ({
     prepareContinuation: vi.fn<PrepareContinuation>(),
     prepareResourceLease: vi.fn<PrepareResourceLease>(),
     protectResourceLease: vi.fn<ProtectResourceLease>(),
+    recordCommittedRecoveryFailure: vi.fn<RecordCommittedRecoveryFailure>(),
     recordPostCommitRecoveryFailure: vi.fn<RecordPostCommitRecoveryFailure>(),
     recordReceipt: vi.fn<RecordTrackedAgentRunReceipt>(),
     retainCommitted: vi.fn(),
@@ -103,7 +106,10 @@ vi.mock('../../prepareAgentRunPendingEffectContinuation', () => ({
     prepareAgentRunPendingEffectContinuation: mocks.prepareContinuation,
 }));
 vi.mock('../agentRunExecutionSettlement', () => ({
-    agentRunExecutionSettlement: { recordPostCommitRecoveryFailure: mocks.recordPostCommitRecoveryFailure },
+    agentRunExecutionSettlement: {
+        recordCommittedRecoveryFailure: mocks.recordCommittedRecoveryFailure,
+        recordPostCommitRecoveryFailure: mocks.recordPostCommitRecoveryFailure,
+    },
 }));
 vi.mock('../confirmedBatchOutcomeSupport', () => ({
     confirmedBatchOutcomeSupport: {
@@ -572,7 +578,7 @@ describe('executeConfirmedCommandBatch', () => {
         expect(mocks.recordPostCommitRecoveryFailure).not.toHaveBeenCalled();
     });
 
-    it('should surface the receipt persistence warning through committed-effect recovery failure', async () => {
+    it('should atomically terminalize committed recovery when receipt recording fails before work is live', async () => {
         mocks.prepareResourceLease.mockRejectedValue(new Error('pending-effect continuation failed'));
         mocks.recordReceipt.mockReturnValue({
             warning: 'Agent run persistence warning.',
@@ -593,6 +599,13 @@ describe('executeConfirmedCommandBatch', () => {
             pendingActionConfirmationStatus: 'failed',
             error: reason,
             content: `The project change remains durably committed, but pending-effect reconciliation could not continue: ${reason}`,
+        });
+        expect(mocks.recordCommittedRecoveryFailure).toHaveBeenCalledWith(confirmation, {
+            category: 'internal',
+            retriable: false,
+            workId: 'batch-1',
+            revertGroupId: 'batch-1',
+            receiptIdentity: 'receipt-identity',
         });
         expect(mocks.recordPostCommitRecoveryFailure).not.toHaveBeenCalled();
     });

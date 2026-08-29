@@ -201,7 +201,14 @@ export async function executeConfirmedCommandBatch(
             );
             const runPersistenceWarning =
                 receiptPersistence.warning && !receiptPersistence.committedWorkRecorded
-                    ? null
+                    ? agentRunExecutionSettlement.recordCommittedRecoveryFailure(confirmation, {
+                          category: 'internal',
+                          retriable: false,
+                          workId: priorVerifiedBatchReceipt.batchId,
+                          revertGroupId: group.groupId,
+                          receiptIdentity:
+                              confirmedBatchOutcomeSupport.getVerifiedReceiptIdentity(priorVerifiedBatchReceipt),
+                      })
                     : agentRunExecutionSettlement.recordPostCommitRecoveryFailure(confirmation, {
                           category: 'internal',
                           retriable: false,

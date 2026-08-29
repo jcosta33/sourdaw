@@ -154,11 +154,56 @@ function recordPostCommitRecoveryFailure(
     return recordTerminalFailure(confirmation, input, false);
 }
 
+function recordCommittedRecoveryFailure(
+    confirmation: PendingAppActionConfirmation,
+    input: Omit<AgentRunFailureInput, 'compensation'> & {
+        workId: string;
+        revertGroupId: string;
+        receiptIdentity: string;
+    }
+): string | null {
+    const parsedBatch = confirmation.approvalSnapshot.commandBatch
+        ? parseVersionedCommandBatchEnvelope(
+              confirmation.approvalSnapshot.commandBatch.serialized,
+              confirmation.approvalSnapshot.commandBatch.authority
+          )
+        : null;
+    const commandIds =
+        parsedBatch?.status === 'valid' ? parsedBatch.envelope.commands.map((command) => command.commandId) : [];
+    if (!agentRunLifecycle.get(confirmation.runId)) {
+        return null;
+    }
+    try {
+        agentRunLifecycle.recordCommittedRecoveryFailure({
+            runId: confirmation.runId,
+            workId: input.workId,
+            revertGroupId: input.revertGroupId,
+            receiptIdentity: input.receiptIdentity,
+            error: normalizeAgentFailure({
+                category: input.category,
+                source: 'command-execution',
+                related: {
+                    targetIds: confirmation.affectedIds,
+                    commandIds,
+                    workIds: [],
+                    receiptIdentities: [input.receiptIdentity],
+                },
+                retry: input.retriable ? 'owner-proven-idempotent' : 'never',
+                knownDomain: input.knownDomain ?? true,
+            }),
+        });
+        return null;
+    } catch (error) {
+        return lifecyclePersistenceWarning(error);
+    }
+}
+
 export const agentRunExecutionSettlement = {
     cancelBeforeCommit,
     cancelFromVerifiedReceipt,
     completeNoOp,
     recordFailure,
+    recordCommittedRecoveryFailure,
     recordPostCommitRecoveryFailure,
     reconcileCommandBudget,
     transitionToExecuting,

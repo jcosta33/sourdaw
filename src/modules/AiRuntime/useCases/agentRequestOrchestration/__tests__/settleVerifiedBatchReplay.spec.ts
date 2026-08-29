@@ -258,6 +258,21 @@ describe('settleVerifiedBatchReplay', () => {
         }
     );
 
+    it('records partially committed replay work under the approved ID when confirmation group ID mismatches', async () => {
+        const input = {
+            ...createInput(true),
+            approvedBatchId: 'approved-batch-1',
+            confirmation: { ...confirmation, groupId: 'untrusted-confirmation-group' },
+        };
+
+        await settleVerifiedBatchReplay(input);
+
+        expect(mocks.recordReceipt).toHaveBeenCalledWith(input.confirmation, input.receipt, {
+            revertGroupId: 'approved-batch-1',
+            completesRun: false,
+        });
+    });
+
     it('preserves a verified replay warning in the confirmation and chat status', async () => {
         mocks.getReplay.mockReturnValue({ status: 'committed', warning: 'prior warning' });
 

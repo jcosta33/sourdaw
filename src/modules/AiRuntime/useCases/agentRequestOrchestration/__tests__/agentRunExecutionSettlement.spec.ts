@@ -125,6 +125,93 @@ describe('agentRunExecutionSettlement', () => {
         });
     });
 
+    it('atomically records committed recovery before terminalizing a pre-write receipt failure', () => {
+        const confirmation = createConfirmation();
+        const receiptIdentity = '1:run-1:batch-1:committed';
+        agentRunLifecycle.create({
+            runId: confirmation.runId,
+            request: confirmation.prompt,
+            mode: 'apply',
+            createdRevision: confirmation.projectRevision,
+        });
+        agentRunLifecycle.transitionPhase({ runId: confirmation.runId, phase: 'planning' });
+        agentRunLifecycle.transitionPhase({ runId: confirmation.runId, phase: 'executing' });
+        agentRunLifecycle.recordBatch({
+            runId: confirmation.runId,
+            batch: { batchId: 'batch-1', commandIds: [], status: 'executing', receiptIdentity: null },
+        });
+
+        agentRunExecutionSettlement.recordCommittedRecoveryFailure(confirmation, {
+            category: 'internal',
+            retriable: false,
+            workId: 'batch-1',
+            revertGroupId: 'batch-1',
+            receiptIdentity,
+        });
+
+        expect(agentRunLifecycle.get(confirmation.runId)).toMatchObject({
+            phase: 'partially-completed',
+            batches: [{ batchId: 'batch-1', status: 'committed', receiptIdentity }],
+            committedWork: [{ workId: 'batch-1', receiptIdentity, revertGroupId: 'batch-1' }],
+            errors: [
+                expect.objectContaining({
+                    category: 'internal',
+                    workId: null,
+                    related: expect.objectContaining({ receiptIdentities: [receiptIdentity], workIds: [] }),
+                }),
+            ],
+        });
+
+        agentRunLifecycle.cancel({ runId: confirmation.runId, reason: 'Cancellation raced with recovery.' });
+
+        expect(agentRunLifecycle.get(confirmation.runId)).toMatchObject({
+            phase: 'partially-completed',
+            batches: [{ batchId: 'batch-1', status: 'committed', receiptIdentity }],
+        });
+    });
+
+    it('keeps atomic committed recovery terminal when local storage rejects its write', () => {
+        const confirmation = createConfirmation();
+        const receiptIdentity = '1:run-1:batch-1:committed';
+        agentRunLifecycle.create({
+            runId: confirmation.runId,
+            request: confirmation.prompt,
+            mode: 'apply',
+            createdRevision: confirmation.projectRevision,
+        });
+        agentRunLifecycle.transitionPhase({ runId: confirmation.runId, phase: 'planning' });
+        agentRunLifecycle.transitionPhase({ runId: confirmation.runId, phase: 'executing' });
+        agentRunLifecycle.recordBatch({
+            runId: confirmation.runId,
+            batch: { batchId: 'batch-1', commandIds: [], status: 'executing', receiptIdentity: null },
+        });
+        const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementationOnce(() => {
+            throw new DOMException('The quota has been exceeded.', 'QuotaExceededError');
+        });
+
+        try {
+            expect(
+                agentRunExecutionSettlement.recordCommittedRecoveryFailure(confirmation, {
+                    category: 'internal',
+                    retriable: false,
+                    workId: 'batch-1',
+                    revertGroupId: 'batch-1',
+                    receiptIdentity,
+                })
+            ).toBe(AGENT_RUN_PERSISTENCE_WARNING);
+        } finally {
+            setItem.mockRestore();
+        }
+
+        agentRunLifecycle.cancel({ runId: confirmation.runId, reason: 'Cancellation raced with recovery.' });
+
+        expect(agentRunLifecycle.get(confirmation.runId)).toMatchObject({
+            phase: 'partially-completed',
+            committedWork: [{ workId: 'batch-1', receiptIdentity, revertGroupId: 'batch-1' }],
+            errors: [expect.objectContaining({ workId: null })],
+        });
+    });
+
     it('returns a persistence warning when terminal recovery settlement cannot be saved', () => {
         const confirmation = createConfirmation();
         const receiptIdentity = '1:run-1:batch-1:committed';

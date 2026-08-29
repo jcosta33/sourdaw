@@ -653,6 +653,44 @@ function recordAgentRunError(input: {
     });
 }
 
+function recordAgentRunCommittedRecoveryFailure(input: {
+    runId: string;
+    workId: string;
+    receiptIdentity: string;
+    revertGroupId: string;
+    error: AgentRunError;
+    committedAt?: number;
+}): AgentRun {
+    if (input.error.workId !== null) {
+        throw new Error('Committed recovery failures cannot target the committed command batch.');
+    }
+    const committedAt = input.committedAt ?? input.error.occurredAt;
+    return updateAgentRun(input.runId, committedAt, (run) => {
+        const committedWork = {
+            workId: input.workId,
+            receiptIdentity: input.receiptIdentity,
+            revertGroupId: input.revertGroupId,
+            committedAt,
+        };
+        return {
+            ...run,
+            phase: reduceAgentRunTransition(run.phase, {
+                type: 'error-recorded',
+                terminal: true,
+                hasCommittedWork: true,
+            }),
+            receipts: [...run.receipts.filter((receipt) => receipt.workId !== input.workId), committedWork],
+            batches: run.batches.map((batch) =>
+                batch.batchId === input.workId
+                    ? { ...batch, status: 'committed', receiptIdentity: input.receiptIdentity }
+                    : batch
+            ),
+            committedWork: [...run.committedWork.filter((work) => work.workId !== input.workId), committedWork],
+            errors: [...run.errors, structuredClone(input.error)],
+        };
+    });
+}
+
 /** Records only application-owned saga facts; external owners still perform effects and compensation. */
 function recordAgentRunSagaStep(input: { runId: string; step: AgentRunSagaStep; recordedAt?: number }): AgentRun {
     const recordedAt = input.recordedAt ?? input.step.updatedAt;
@@ -1728,6 +1766,7 @@ export const agentRunLifecycle = {
     recordArtifact: recordAgentRunArtifact,
     recordBatch: recordAgentRunBatch,
     recordCommittedWork: recordAgentRunCommittedWork,
+    recordCommittedRecoveryFailure: recordAgentRunCommittedRecoveryFailure,
     recordContextEvidence: recordAgentRunContextEvidence,
     recordError: recordAgentRunError,
     recordPendingEffectContinuation: recordAgentRunPendingEffectContinuation,
