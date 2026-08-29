@@ -60,7 +60,8 @@ and overlapping files.
 
 Reviewers are blind. Each one gets the head, the diff, and exactly one stance — never another
 reviewer's prose, the author's transcript, or the orchestrator's reasoning. Independence is the
-entire value, and a reviewer shown prior findings anchors to them.
+entire value, and a reviewer shown prior findings anchors to them. Reviewers never confer: findings
+meet only in the orchestrator.
 
 Assign one independent stance per material risk. Expect about three on a typical PR; never add a
 stance to meet that number or omit one to stay near it. The recurring surfaces are correctness,
@@ -70,10 +71,19 @@ semantic clarity, conformance to `docs/07-conventions.md`), and test validity.
 
 Tier each reviewer by the criticality of its stance, not the size of the diff: economy for narrow
 low-risk checks, standard for behavioral and integration risk, the strongest tier for real-time
-audio, security, data loss, irreversible change, or a disputed severe finding.
+audio, security, data loss, irreversible change, or a disputed severe finding. The shape of the
+change escalates too: wide diffusion across modules, heavy churn on a defect-prone surface, or a
+surface many recent lanes have touched raises the tier whatever the diff is about. A stance at the
+strongest tier may be drawn twice, from different models, and merged by the orchestrator, because
+independent draws surface different findings; that extends the model-diversity rule and licenses no
+extra stance to reach a number.
 
 Review test validity as its own stance. A passing check is not evidence. Ask what would have to
-break for this check to fail, and whether it observes the thing its name claims.
+break for this check to fail, and whether it observes the thing its name claims. The standard probe
+is mechanical — revert the behavioural hunk, or apply one targeted mutation, and run the named
+spec; a spec that stays green has failed the stance. The reviewer names that probe; performing it
+belongs to the orchestrator's validation or the author's repair, inside a lane that exists for the
+change, because a reviewer holds no writable tree.
 
 Each reviewer's stance names a posture, not only a surface. A reviewer's job is to try to break the
 change and report the strongest thing it found — with a concrete failure scenario, the inputs or
@@ -91,8 +101,9 @@ did not.
 
 The orchestrator owns every finding. Validate each one against the live code before acting on it:
 discard what is wrong, out of scope, or personal style, and never forward it. Send the survivors to
-the implementing agent as a precise repair task. An implementing agent never judges a finding
-against its own work, never accepts that work, and never merges it. The orchestrator writes a
+the implementing agent as a precise repair task, in the orchestrator's own words: reviewer prose
+anchors the author exactly as it anchors another reviewer. An implementing agent never judges a
+finding against its own work, never accepts that work, and never merges it. The orchestrator writes a
 discarded finding, with its one-line reason, into the review bundle as `discarded.json`, beside
 `review.json` — the same way the caller writes `review.json` itself; no script produces either file.
 Discarding is the orchestrator's own judgement about a blind reviewer's work, and an unrecorded
@@ -118,6 +129,13 @@ the reviewer identity's findings standing against the head that earned them, and
 identity's answering pushes and `Done` replies — while the orchestrator's judgement is evidenced by
 the scripts only it runs and by `review.json` and `discarded.json` in the bundle, never by a
 persona on the pull request.
+
+A defect that reaches `main` is fixed under Ownership, but never only fixed. The orchestrator
+traces it to the pull request that introduced it and the stance that should have caught it —
+missing, mis-tiered, or mis-prompted. The lesson has a durable home: a stance's dispatch guidance
+lives as a tracked file under `.agents/skills/`, and an escape lesson is an edit to that stance's
+file, so a cold orchestrator inherits every prior escape. Escapes are the only measure a review
+architecture has; one that never learns from them is unmeasured, not proven.
 
 ## Docs
 
@@ -178,6 +196,16 @@ and returns an answer the pipeline was going to give anyway.
 | Prove wasm freshness  | `pnpm wasm:verify`                           |
 
 Tests use at most two workers. Playwright uses one. See [testing](./docs/06-testing.md).
+
+Rerun-to-green is forbidden as a response to failure: never re-run a failed check to make it pass,
+never bump a head to reroll one, and never read a pass produced by a retry as clean. Committed test
+infrastructure may retry on its own and report the run green; that reporting discharges nothing — a
+result that needed a retry is a flaky result, and it creates the same duty a failure does. A
+failure that vanishes on retry with no relevant change is a defect with a name — a race, an
+ordering or isolation dependency, leaked state, or environment — and it gets a fix, a lane, or an
+issue; green-by-retry launders a failure exactly as a weakened test does. In a DAW the retried
+"flake" is disproportionately likely to be a real timing defect, because concurrency and scheduling
+are where flakiness and product risk coincide.
 
 ## Map
 
@@ -430,9 +458,13 @@ Before merge the orchestrator does its own final check on the current head, beca
 says the gates passed and nothing more. Read the diff: confirm the change does what it was specified
 to do, that a test observes what its name claims, and that every accepted finding is actually
 addressed there rather than silenced. For the checks themselves a green `Gate` on this head is the
-evidence, not a second local run of the same commands. Formatting is the exception worth doing
-locally, because it rewrites rather than reports: run it on the changed files and stage what it
-rewrote.
+evidence, not a second local run of the same commands — and reading the pipeline means reading past
+the summary, because a leg the workflow softens reports a caused regression as a warning
+annotation, not a red check, so the pre-merge read covers those annotations too. A failed check is
+never waved off as flake, whether it shows red or only as a warning on a softened leg: an
+unexplained failure is attributed to the change, or to a named pre-existing defect and filed, or it
+blocks. Formatting is the exception worth doing locally, because it rewrites rather than reports:
+run it on the changed files and stage what it rewrote.
 
 Unrelated `origin/main` movement does not by itself stale a review. Re-review when the feature head
 changes in a way that touches the reviewed surface, and when you resolve conflicts. Base
@@ -462,8 +494,11 @@ a workflow that cannot be read for what it gates on. It merges into
 retarget the delivery scripts did not make, and `deliver` refuses it rather than squashing onto a
 branch the change was never reviewed against. Do not merge any other way.
 
-Keep batches small, live lanes few, merges prompt. A finished change waits only on that GitHub
-review. Enable hooks: `git config core.hooksPath .githooks`.
+Keep batches small, live lanes few, merges prompt. A diff too large for its reviewers to attack
+whole is too large to merge whole, and splitting it is the author's obligation, not the reviewer's
+burden. Drain before filling: open no new lane while a finished head waits only on review or merge.
+A finished change waits only on that GitHub review. Enable hooks:
+`git config core.hooksPath .githooks`.
 
 ## Safety
 
