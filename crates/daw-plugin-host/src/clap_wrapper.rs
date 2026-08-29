@@ -4351,10 +4351,11 @@ mod tests {
 
     /// The host states its display scale before the editor opens; a plugin
     /// told 1.0 on a 2.0 screen lays its editor out at half size. The old code
-    /// hardcoded 1.0 and dropped whatever the host had stated. This drives the
-    /// physical-pixel API this platform selects (x11 here), which is the one
-    /// the scale does apply to; the cocoa half of the rule is pinned by
-    /// `set_scale_is_skipped_for_the_logical_pixel_cocoa_api`.
+    /// hardcoded 1.0 and dropped whatever the host had stated.
+    ///
+    /// The expectation is the platform's, because the open path this drives is:
+    /// win32 and x11 are told the host's scale, and cocoa — whose logical sizes
+    /// already carry the OS scale — is told nothing at all.
     #[test]
     fn opening_the_editor_hands_the_plugin_the_host_stated_scale() {
         let _guard = GUI_SCALE_TEST_LOCK.lock().unwrap();
@@ -4378,10 +4379,16 @@ mod tests {
             ClapWrapper::platform_api().to_str().expect("api is utf-8"),
             "the test opens the editor through this platform's own window API"
         );
+        let stated: &[f64] = if ClapWrapper::scale_applies_to(ClapWrapper::platform_api()) {
+            &[2.0]
+        } else {
+            &[]
+        };
         assert_eq!(
             SCALES_PASSED_TO_PLUGIN.lock().unwrap().as_slice(),
-            [2.0],
-            "set_scale receives the host's display scale, not a hardcoded 1.0"
+            stated,
+            "set_scale receives the host's display scale, not a hardcoded 1.0, and a \
+             logical-pixel API receives no scale at all"
         );
     }
 
@@ -4414,6 +4421,250 @@ mod tests {
         assert!(!ClapWrapper::scale_applies_to(CLAP_WINDOW_API_COCOA));
         assert!(ClapWrapper::scale_applies_to(CLAP_WINDOW_API_X11));
         assert!(ClapWrapper::scale_applies_to(CLAP_WINDOW_API_WIN32));
+    }
+
+    // ── The host's window and the editor's size move together ─────────────
+
+    static EDITOR_RESIZE_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    /// Every step of the host-driven resize sequence, in the order it happened:
+    /// the plugin's own calls and the host's window moves in one log, because
+    /// the order between them is the contract.
+    static EDITOR_RESIZE_TRACE: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+    /// The size `get_size` states, which `set_size` and `set_scale` both move.
+    static STATED_EDITOR_SIZE: std::sync::Mutex<(u32, u32)> =
+        std::sync::Mutex::new(UNSCALED_EDITOR);
+    /// The editor's size at a scale of 1, which a stated scale is applied to.
+    const UNSCALED_EDITOR: (u32, u32) = (640, 480);
+
+    fn record_editor_step(step: String) {
+        EDITOR_RESIZE_TRACE.lock().unwrap().push(step);
+    }
+
+    fn editor_steps() -> Vec<String> {
+        EDITOR_RESIZE_TRACE.lock().unwrap().clone()
+    }
+
+    unsafe extern "C" fn resizable_can_resize(_plugin: *const clap_plugin) -> bool {
+        true
+    }
+
+    /// A plugin that only runs at one size, which is what `adjust_size` is for.
+    unsafe extern "C" fn quantising_adjust_size(
+        _plugin: *const clap_plugin,
+        width: *mut u32,
+        height: *mut u32,
+    ) -> bool {
+        record_editor_step(format!("adjust_size({}x{})", *width, *height));
+        *width = 800;
+        *height = 600;
+        true
+    }
+
+    unsafe extern "C" fn recording_set_size(
+        _plugin: *const clap_plugin,
+        width: u32,
+        height: u32,
+    ) -> bool {
+        record_editor_step(format!("set_size({width}x{height})"));
+        *STATED_EDITOR_SIZE.lock().unwrap() = (width, height);
+        true
+    }
+
+    unsafe extern "C" fn stated_get_size(
+        _plugin: *const clap_plugin,
+        width: *mut u32,
+        height: *mut u32,
+    ) -> bool {
+        let (stated_width, stated_height) = *STATED_EDITOR_SIZE.lock().unwrap();
+        *width = stated_width;
+        *height = stated_height;
+        true
+    }
+
+    /// A plugin that lays itself out at the density it is told, the way a real
+    /// one on a physical-pixel window API does.
+    unsafe extern "C" fn scale_following_set_scale(
+        _plugin: *const clap_plugin,
+        scale: f64,
+    ) -> bool {
+        record_editor_step(format!("set_scale({scale})"));
+        *STATED_EDITOR_SIZE.lock().unwrap() = (
+            (f64::from(UNSCALED_EDITOR.0) * scale) as u32,
+            (f64::from(UNSCALED_EDITOR.1) * scale) as u32,
+        );
+        true
+    }
+
+    unsafe extern "C" fn resizable_get_extension(
+        _plugin: *const clap_plugin,
+        id: *const i8,
+    ) -> *const c_void {
+        static RESIZABLE_GUI: clap_plugin_gui = clap_plugin_gui {
+            is_api_supported: Some(always_supported),
+            get_preferred_api: None,
+            create: Some(succeeding_create),
+            destroy: None,
+            set_scale: Some(scale_following_set_scale),
+            get_size: Some(stated_get_size),
+            can_resize: Some(resizable_can_resize),
+            get_resize_hints: None,
+            adjust_size: Some(quantising_adjust_size),
+            set_size: Some(recording_set_size),
+            set_parent: Some(succeeding_set_parent),
+            set_transient: None,
+            suggest_title: None,
+            show: None,
+            hide: None,
+        };
+        if CStr::from_ptr(id) == CLAP_EXT_GUI {
+            return &raw const RESIZABLE_GUI as *const c_void;
+        }
+        ptr::null()
+    }
+
+    /// The same editor without the three calls gui.h defines the host-driven
+    /// resize sequence in terms of — which is how a fixed-size CLAP editor
+    /// declares itself.
+    unsafe extern "C" fn fixed_size_get_extension(
+        _plugin: *const clap_plugin,
+        id: *const i8,
+    ) -> *const c_void {
+        static FIXED_SIZE_GUI: clap_plugin_gui = clap_plugin_gui {
+            is_api_supported: Some(always_supported),
+            get_preferred_api: None,
+            create: Some(succeeding_create),
+            destroy: None,
+            set_scale: Some(scale_following_set_scale),
+            get_size: Some(stated_get_size),
+            can_resize: None,
+            get_resize_hints: None,
+            adjust_size: None,
+            set_size: None,
+            set_parent: Some(succeeding_set_parent),
+            set_transient: None,
+            suggest_title: None,
+            show: None,
+            hide: None,
+        };
+        if CStr::from_ptr(id) == CLAP_EXT_GUI {
+            return &raw const FIXED_SIZE_GUI as *const c_void;
+        }
+        ptr::null()
+    }
+
+    /// A wrapper whose editor is open over the given `gui` extension, with the
+    /// host's window seam recording into the same trace the plugin's calls do.
+    fn wrapper_with_open_editor(
+        get_extension: unsafe extern "C" fn(*const clap_plugin, *const i8) -> *const c_void,
+    ) -> ClapWrapper {
+        *STATED_EDITOR_SIZE.lock().unwrap() = UNSCALED_EDITOR;
+        EDITOR_RESIZE_TRACE.lock().unwrap().clear();
+
+        let mut plugin: clap_plugin = unsafe { mem::zeroed() };
+        plugin.get_extension = Some(get_extension);
+        let plugin_ptr = Box::into_raw(Box::new(plugin)) as *const clap_plugin;
+        let gui_ext =
+            unsafe { ClapWrapper::query_extension::<clap_plugin_gui>(&*plugin_ptr, CLAP_EXT_GUI) };
+        let mut wrapper = stub_wrapper(plugin_ptr);
+        wrapper.gui_ext = gui_ext;
+        wrapper.set_editor_window_resizer(Arc::new(|width, height| {
+            record_editor_step(format!("window({width}x{height})"));
+        }));
+        wrapper
+            .open_gui(ptr::null_mut())
+            .expect("the recording gui opens");
+        EDITOR_RESIZE_TRACE.lock().unwrap().clear();
+        wrapper
+    }
+
+    /// The user drags the window; the plugin decides what it will run at. A host
+    /// that applies its own number leaves the editor drawing outside its window,
+    /// and one that tells the plugin before moving the window has it lay out
+    /// against the shape it is leaving.
+    #[test]
+    fn a_host_window_resize_lands_on_the_size_the_plugin_adjusted_it_to() {
+        let _guard = EDITOR_RESIZE_TEST_LOCK.lock().unwrap();
+        let mut wrapper = wrapper_with_open_editor(resizable_get_extension);
+
+        let granted = wrapper
+            .request_editor_size(1000, 900)
+            .expect("a resizable editor must accept an adjusted size");
+
+        assert_eq!(
+            granted,
+            (800, 600),
+            "the seam must report what adjust_size wrote, which is the size the window snaps to"
+        );
+        assert_eq!(
+            editor_steps(),
+            [
+                "adjust_size(1000x900)",
+                "window(800x600)",
+                "set_size(800x600)"
+            ],
+            "the window must be moved to the adjusted size before the plugin is told to move into it"
+        );
+    }
+
+    /// `can_resize` is the plugin's own answer, and gui.h defines the whole
+    /// host-driven sequence as reachable only through it. A host that asks
+    /// anyway drags a fixed-layout editor into a shape it never agreed to.
+    #[test]
+    fn a_fixed_size_editor_is_never_asked_for_a_size_the_host_chose() {
+        let _guard = EDITOR_RESIZE_TEST_LOCK.lock().unwrap();
+        let mut wrapper = wrapper_with_open_editor(fixed_size_get_extension);
+
+        assert!(!wrapper.editor_can_resize());
+
+        let refusal = wrapper
+            .request_editor_size(1000, 900)
+            .expect_err("a fixed-size editor must refuse a host-chosen size");
+
+        assert!(
+            refusal.contains("no resizable open editor"),
+            "got: {refusal}"
+        );
+        assert_eq!(
+            editor_steps(),
+            Vec::<String>::new(),
+            "neither the plugin nor the window may move for a refused resize"
+        );
+    }
+
+    /// A window dragged to a display of another density has to tell the editor,
+    /// and then find out what the editor became: the plugin lays itself out
+    /// again, and the window it sits in has to follow it.
+    #[test]
+    fn a_display_scale_change_restates_the_scale_and_resizes_the_window_to_what_it_produced() {
+        let _guard = EDITOR_RESIZE_TEST_LOCK.lock().unwrap();
+        let mut wrapper = wrapper_with_open_editor(resizable_get_extension);
+
+        let granted = wrapper
+            .apply_editor_content_scale(2.0)
+            .expect("an open editor must accept the scale of the display it moved to");
+
+        // cocoa states logical sizes that already carry the OS scale, so it is
+        // told nothing and lays out nothing again; win32 and x11 are physical.
+        let expected = if ClapWrapper::scale_applies_to(ClapWrapper::platform_api()) {
+            (1280, 960)
+        } else {
+            UNSCALED_EDITOR
+        };
+        assert_eq!(
+            granted,
+            expected,
+            "the size must be re-read from the plugin, not assumed from the scale, got: {:?}",
+            editor_steps()
+        );
+        assert_eq!(
+            editor_steps().last(),
+            Some(&format!("window({}x{})", expected.0, expected.1)),
+            "the window must end at the size the re-scaled editor states"
+        );
+        assert_eq!(
+            wrapper.editor_content_scale, 2.0,
+            "the scale is kept, so an editor reopened on that display opens at it"
+        );
     }
 
     // ── Sidechain input ports get silence, not leftover engine channels ───
