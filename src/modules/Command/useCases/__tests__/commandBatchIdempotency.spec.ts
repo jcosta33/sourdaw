@@ -154,6 +154,7 @@ describe('command batch idempotency', () => {
     let rejectInitialProjectCommit: boolean;
     let rejectProjectReceiptFinalization: boolean;
     let rejectReceiptPersistence: boolean;
+    let rewriteFinalProjectReceiptOnReadback: boolean;
     let runtimeEffectGate: Promise<void> | null;
     let runtimeEffectCount: number;
     let runtimeGain: number;
@@ -174,6 +175,7 @@ describe('command batch idempotency', () => {
         rejectInitialProjectCommit = false;
         rejectProjectReceiptFinalization = false;
         rejectReceiptPersistence = false;
+        rewriteFinalProjectReceiptOnReadback = false;
         runtimeEffectGate = null;
         runtimeEffectCount = 0;
         runtimeGain = 1;
@@ -230,6 +232,35 @@ describe('command batch idempotency', () => {
                 }
                 const draft = structuredClone(projectDocument);
                 changeFn(draft);
+                if (rewriteFinalProjectReceiptOnReadback && mutationCount === 1) {
+                    const ledger = draft.commandBatchIdempotency;
+                    if (typeof ledger !== 'object' || ledger === null || !('records' in ledger)) {
+                        throw new Error('Expected the finalized project receipt ledger.');
+                    }
+                    const records = ledger.records;
+                    if (!Array.isArray(records) || records.length !== 1) {
+                        throw new Error('Expected one finalized project receipt.');
+                    }
+                    const record = records[0];
+                    if (
+                        typeof record !== 'object' ||
+                        record === null ||
+                        !('serializedReceipt' in record) ||
+                        typeof record.serializedReceipt !== 'string'
+                    ) {
+                        throw new Error('Expected one serialized finalized project receipt.');
+                    }
+                    const parsedReceipt: unknown = JSON.parse(record.serializedReceipt);
+                    if (
+                        typeof parsedReceipt !== 'object' ||
+                        parsedReceipt === null ||
+                        !('modelSummary' in parsedReceipt)
+                    ) {
+                        throw new Error('Expected a valid finalized project receipt.');
+                    }
+                    parsedReceipt.modelSummary = 'A different valid durable receipt.';
+                    record.serializedReceipt = JSON.stringify(parsedReceipt);
+                }
                 projectDocument = draft;
                 mutationCount += 1;
             },
@@ -2316,14 +2347,41 @@ describe('command batch idempotency', () => {
             options: { onProjectCommitFinalized, onProjectCommitFinalizationUnavailable },
         });
 
-        expect(result).toMatchObject({ status: 'committed' });
+        if (result.status !== 'committed') {
+            throw new Error('Expected the committed result to carry its verified receipt.');
+        }
         expect(getProjectCommandBatchIdempotencyCheckpoint(proof)).toMatchObject({ status: 'complete' });
         expect(onProjectCommitFinalized).toHaveBeenCalledExactlyOnceWith({
             receipt: result.receipt,
             revision: revision(2),
         });
+        const finalizedEvidence = onProjectCommitFinalized.mock.calls[0]?.[0];
+        if (!finalizedEvidence) {
+            throw new Error('Expected parsed durable finalization evidence.');
+        }
+        expect(finalizedEvidence.receipt).not.toBe(result.receipt);
         expect(onProjectCommitFinalizationUnavailable).toHaveBeenCalledExactlyOnceWith({
             reason: 'render artifact vanished',
+        });
+    });
+
+    it('withholds finalization when durable readback returns a different valid receipt', async () => {
+        rewriteFinalProjectReceiptOnReadback = true;
+        const batch = compileBatch({ batchId: 'finalization-different-durable-receipt' });
+        const onProjectCommitFinalized = vi.fn();
+        const onProjectCommitFinalizationUnavailable = vi.fn();
+
+        const result = await executeVersionedCommandBatchEnvelope({
+            authority: batch.authority,
+            confirmed: true,
+            serialized: batch.serialized,
+            options: { onProjectCommitFinalized, onProjectCommitFinalizationUnavailable },
+        });
+
+        expect(result.status).toBe('committed');
+        expect(onProjectCommitFinalized).not.toHaveBeenCalled();
+        expect(onProjectCommitFinalizationUnavailable).toHaveBeenCalledExactlyOnceWith({
+            reason: 'The durable project checkpoint does not contain the exact finalized receipt.',
         });
     });
 
@@ -2466,6 +2524,9 @@ describe('command batch idempotency', () => {
                 expect.objectContaining({ kind: 'observer', message: expect.stringContaining('observer unavailable') }),
             ],
         });
+        if (result.status !== 'committed-with-warning') {
+            throw new Error('Expected the committed warning result to carry its verified receipt.');
+        }
         expect(getProjectCommandBatchIdempotencyCheckpoint(proof)).toMatchObject({ status: 'complete' });
         expect(onProjectCommitFinalized).toHaveBeenCalledExactlyOnceWith({
             receipt: result.receipt,

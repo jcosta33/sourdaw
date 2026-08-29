@@ -1131,14 +1131,15 @@ describe('confirmPendingChatActions transaction admission', () => {
             const execute = vi
                 .spyOn(commandUseCases, 'executeVersionedCommandBatchEnvelope')
                 .mockImplementation(async (input) => {
-                    const batchResult = createWarningBatchResult({ status, commandBatch });
                     if (status === 'committed-with-warning') {
+                        const batchResult = createWarningBatchResult({ status, commandBatch });
                         input.options?.onProjectCommitFinalized?.({
                             receipt: batchResult.receipt,
                             revision: 'revision-warning-checkpoint',
                         });
+                        return batchResult;
                     }
-                    return batchResult;
+                    return createWarningBatchResult({ status, commandBatch });
                 });
             const settle = vi.spyOn(agentRunWorkLease, 'settle');
 

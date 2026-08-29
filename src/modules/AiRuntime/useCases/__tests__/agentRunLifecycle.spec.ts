@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { type AgentRunPendingEffect } from '../../models/AgentRun';
 import { MISSING_EXACT_CHECKPOINT_RECOVERY_REASON } from '../../models/GetPendingEffectRecoveryPolicy';
 import { agentRunStore, readAgentRunState } from '../../stores/agentRunStore';
 import * as pendingActionConfirmationStore from '../../stores/pendingActionConfirmationStore';
@@ -452,6 +453,101 @@ describe('agentRunLifecycle', () => {
             }),
         ]);
     });
+
+    it.each([1, 2])(
+        'durably projects %i synthesized render repair step(s) before terminal restart recovery',
+        (renderCount) => {
+            createRenderReviewRun();
+            const recovery = agentRunLifecycle.getPendingEffectRecovery({
+                runId: 'run-render-review',
+                batchId: 'batch-render-review',
+            });
+            if (!recovery) {
+                throw new Error('Expected the render recovery authority fixture.');
+            }
+            const receiptIdentity = `2:run-render-review:batch-render-review:partially-committed`;
+            const state = readAgentRunState();
+            agentRunStore.set({
+                ...state,
+                runs: state.runs.map((run) =>
+                    run.runId === 'run-render-review'
+                        ? {
+                              ...run,
+                              phase: 'failed',
+                              saga: {
+                                  schemaVersion: 1,
+                                  steps: [
+                                      createAgentSagaStep({
+                                          stepId: 'effect:batch-render-review:command-render-repair-1',
+                                          order: 0,
+                                          owner: 'external-effect',
+                                          workId: 'batch-render-review',
+                                          receiptIdentity,
+                                          state: 'committed',
+                                          relatedArtifactIds: [],
+                                          updatedAt: 4,
+                                          compensationAvailable: false,
+                                      }),
+                                  ],
+                              },
+                          }
+                        : run
+                ),
+            });
+            const effects: AgentRunPendingEffect[] = Array.from({ length: renderCount }, (_, index) => ({
+                commandId: `command-render-repair-${String(index + 1)}`,
+                kind: 'external-effect',
+                operation: 'renderProjectSections',
+                reason: 'The finalized render artifact binding is unavailable.',
+                remediation: 'manual-repair',
+                state: 'pending',
+            }));
+            agentRunLifecycle.recordPendingEffectContinuation({
+                runId: 'run-render-review',
+                continuation: {
+                    authority: recovery.authority,
+                    batchId: 'batch-render-review',
+                    effects,
+                    lastError: 'The finalized render artifact binding is unavailable.',
+                    receiptIdentity,
+                    recovery: 'manual-repair',
+                    serializedBatch: recovery.serializedBatch,
+                },
+                recordedAt: 5,
+            });
+
+            const serializedState = window.localStorage.getItem('sourdaw-agent-runs');
+            if (!serializedState) {
+                throw new Error('Expected the manual render repair projection to be durable.');
+            }
+            agentRunLifecycle.clear();
+            window.localStorage.setItem('sourdaw-agent-runs', serializedState);
+            agentRunStore.hydrate();
+
+            const hydrated = agentRunLifecycle.get('run-render-review');
+            expect(hydrated?.saga.steps).toHaveLength(renderCount);
+            expect(hydrated?.saga.steps).toEqual(
+                effects.map((effect, index) =>
+                    expect.objectContaining({
+                        stepId: `effect:batch-render-review:${effect.commandId}`,
+                        order: index,
+                        owner: 'external-effect',
+                        workId: 'batch-render-review',
+                        receiptIdentity,
+                        state: 'manual-repair',
+                    })
+                )
+            );
+            expect(agentRunLifecycle.recoverInterruptedState({ recoveredAt: 6 })).toEqual({
+                recoveredRunIds: ['run-render-review'],
+            });
+            expect(
+                selectAgentRunPendingEffectRecoveries(readAgentRunState()).find(
+                    ({ runId, batchId }) => runId === 'run-render-review' && batchId === 'batch-render-review'
+                )
+            ).toMatchObject({ checkpoint: 'durable', recovery: 'manual-repair', effects });
+        }
+    );
 
     it.each([
         ['missing', undefined],

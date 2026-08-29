@@ -888,6 +888,66 @@ function recordAgentRunSagaStep(input: { runId: string; step: AgentRunSagaStep; 
     });
 }
 
+function projectManualRenderRepairSagaSteps(
+    run: AgentRun,
+    continuation: AgentRunPendingEffectContinuation,
+    recordedAt: number
+): AgentRunSagaStep[] {
+    const commandIds = [
+        ...new Set(
+            continuation.effects.flatMap((effect) =>
+                effect.kind === 'external-effect' &&
+                effect.operation === 'renderProjectSections' &&
+                effect.remediation === 'manual-repair'
+                    ? [effect.commandId]
+                    : []
+            )
+        ),
+    ];
+    if (commandIds.length === 0) {
+        return run.saga.steps;
+    }
+    const targetStepIds = new Set(commandIds.map((commandId) => `effect:${continuation.batchId}:${commandId}`));
+    const projectedSteps = run.saga.steps
+        .filter(
+            (step, index, steps) =>
+                !targetStepIds.has(step.stepId) || steps.findIndex(({ stepId }) => stepId === step.stepId) === index
+        )
+        .map((step): AgentRunSagaStep =>
+            targetStepIds.has(step.stepId)
+                ? {
+                      ...step,
+                      owner: 'external-effect',
+                      workId: continuation.batchId,
+                      receiptIdentity: continuation.receiptIdentity,
+                      state: 'manual-repair',
+                      compensation: { ...step.compensation, available: false },
+                      updatedAt: recordedAt,
+                  }
+                : step
+        );
+    let nextOrder = projectedSteps.reduce((highest, step) => Math.max(highest, step.order), -1) + 1;
+    for (const commandId of commandIds) {
+        const stepId = `effect:${continuation.batchId}:${commandId}`;
+        if (projectedSteps.some((step) => step.stepId === stepId)) {
+            continue;
+        }
+        projectedSteps.push({
+            stepId,
+            order: nextOrder,
+            owner: 'external-effect',
+            workId: continuation.batchId,
+            receiptIdentity: continuation.receiptIdentity,
+            state: 'manual-repair',
+            compensation: { available: false, attempts: 0, lastError: null },
+            relatedArtifactIds: [],
+            updatedAt: recordedAt,
+        });
+        nextOrder += 1;
+    }
+    return projectedSteps.toSorted((left, right) => left.order - right.order);
+}
+
 function recordAgentRunPendingEffectContinuation(input: {
     runId: string;
     continuation: AgentRunPendingEffectContinuation;
@@ -931,6 +991,10 @@ function recordAgentRunPendingEffectContinuation(input: {
             ...current.pendingEffectContinuations.filter((candidate) => candidate.batchId !== continuation.batchId),
             continuation,
         ],
+        saga: {
+            schemaVersion: 1,
+            steps: projectManualRenderRepairSagaSteps(current, continuation, recordedAt),
+        },
     } satisfies AgentRun;
     const runs = [...state.runs];
     runs[index] = next;
