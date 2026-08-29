@@ -675,45 +675,50 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
     };
     if (idempotencyContentHash !== null) {
         if (result.status === 'committed' || result.status === 'committed-with-warning') {
-            if (input.options?.shouldFinalizeProjectCommit?.() === false) {
-                reportUnavailableProjectCommitFinalization(
-                    input.options,
-                    new Error(
+            let finalizationEvidenceError: unknown = null;
+            try {
+                if (input.options?.shouldFinalizeProjectCommit?.() === false) {
+                    finalizationEvidenceError = new Error(
                         'The project changed outside the confirmed command before finalization evidence was recorded.'
-                    )
-                );
-            } else {
-                try {
-                    const hasPendingExternalEffect =
-                        result.status === 'committed-with-warning' &&
-                        result.warningDetails?.some(({ kind }) => kind === 'external-effect') === true;
-                    const projectReceipt = createVerifiedBatchReceipt({
-                        contentHash: batchContentHash,
-                        envelope: resolvedEnvelope,
-                        observedBaseRevision,
-                        receiptWarnings: [...receiptWarnings, PROJECT_RECEIPT_REVISION_WARNING],
-                        resultingRevision: null,
-                        result,
-                    });
-                    persistProjectCommandBatchIdempotencyCheckpoint({
-                        projectId: parsed.envelope.projectId,
-                        idempotencyKey: parsed.envelope.idempotencyKey,
-                        contentHash: idempotencyContentHash,
-                        state: hasPendingExternalEffect ? 'effects-pending' : 'complete',
-                        serializedReceipt: JSON.stringify(projectReceipt),
-                    });
-                    finalized = { ...finalized, receipt: projectReceipt };
-                } catch {
-                    if (projectCommitRecovery.receipt) {
-                        finalized = {
-                            status: 'committed-with-warning' as const,
-                            actions: result.actions,
-                            warning: PROJECT_COMMIT_RECOVERY_WARNING,
-                            warningDetails: [{ kind: 'observer' as const, message: PROJECT_COMMIT_RECOVERY_WARNING }],
-                            receipt: projectCommitRecovery.receipt,
-                        };
-                    }
+                    );
                 }
+            } catch (error) {
+                finalizationEvidenceError = error;
+            }
+            try {
+                const hasPendingExternalEffect =
+                    result.status === 'committed-with-warning' &&
+                    result.warningDetails?.some(({ kind }) => kind === 'external-effect') === true;
+                const projectReceipt = createVerifiedBatchReceipt({
+                    contentHash: batchContentHash,
+                    envelope: resolvedEnvelope,
+                    observedBaseRevision,
+                    receiptWarnings: [...receiptWarnings, PROJECT_RECEIPT_REVISION_WARNING],
+                    resultingRevision: null,
+                    result,
+                });
+                persistProjectCommandBatchIdempotencyCheckpoint({
+                    projectId: parsed.envelope.projectId,
+                    idempotencyKey: parsed.envelope.idempotencyKey,
+                    contentHash: idempotencyContentHash,
+                    state: hasPendingExternalEffect ? 'effects-pending' : 'complete',
+                    serializedReceipt: JSON.stringify(projectReceipt),
+                });
+                finalized = { ...finalized, receipt: projectReceipt };
+            } catch {
+                if (projectCommitRecovery.receipt) {
+                    finalized = {
+                        status: 'committed-with-warning' as const,
+                        actions: result.actions,
+                        warning: PROJECT_COMMIT_RECOVERY_WARNING,
+                        warningDetails: [{ kind: 'observer' as const, message: PROJECT_COMMIT_RECOVERY_WARNING }],
+                        receipt: projectCommitRecovery.receipt,
+                    };
+                }
+            }
+            if (finalizationEvidenceError !== null) {
+                reportUnavailableProjectCommitFinalization(input.options, finalizationEvidenceError);
+            } else {
                 try {
                     const checkpoint = getProjectCommandBatchIdempotencyCheckpoint({
                         projectId: parsed.envelope.projectId,

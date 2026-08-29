@@ -2298,8 +2298,9 @@ describe('command batch idempotency', () => {
         });
     });
 
-    it('does not write final checkpoint evidence when the caller revokes finalization authority', async () => {
+    it('writes the durable checkpoint but withholds caller evidence when finalization authority is revoked', async () => {
         const batch = compileBatch();
+        const proof = await getVersionedCommandBatchCommitProof(batch);
         const onProjectCommitFinalized = vi.fn();
         const onProjectCommitFinalizationUnavailable = vi.fn();
 
@@ -2315,9 +2316,37 @@ describe('command batch idempotency', () => {
         });
 
         expect(result).toMatchObject({ status: 'committed' });
+        expect(getProjectCommandBatchIdempotencyCheckpoint(proof)).toMatchObject({ status: 'complete' });
         expect(onProjectCommitFinalized).not.toHaveBeenCalled();
         expect(onProjectCommitFinalizationUnavailable).toHaveBeenCalledExactlyOnceWith({
             reason: 'The project changed outside the confirmed command before finalization evidence was recorded.',
+        });
+    });
+
+    it('writes the durable checkpoint when the finalization predicate throws', async () => {
+        const batch = compileBatch({ batchId: 'finalization-predicate-throws' });
+        const proof = await getVersionedCommandBatchCommitProof(batch);
+        const onProjectCommitFinalized = vi.fn();
+        const onProjectCommitFinalizationUnavailable = vi.fn();
+
+        const result = await executeVersionedCommandBatchEnvelope({
+            authority: batch.authority,
+            confirmed: true,
+            serialized: batch.serialized,
+            options: {
+                onProjectCommitFinalized,
+                onProjectCommitFinalizationUnavailable,
+                shouldFinalizeProjectCommit: () => {
+                    throw new Error('finalization authority unavailable');
+                },
+            },
+        });
+
+        expect(result).toMatchObject({ status: 'committed' });
+        expect(getProjectCommandBatchIdempotencyCheckpoint(proof)).toMatchObject({ status: 'complete' });
+        expect(onProjectCommitFinalized).not.toHaveBeenCalled();
+        expect(onProjectCommitFinalizationUnavailable).toHaveBeenCalledExactlyOnceWith({
+            reason: 'finalization authority unavailable',
         });
     });
 
