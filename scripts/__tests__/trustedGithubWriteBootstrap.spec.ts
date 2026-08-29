@@ -73,6 +73,29 @@ describe('snapshotImportSpecifiers', () => {
         expect(bareModuleSpecifiers(source)).toEqual(['fs']);
     });
 
+    it('ends // comments at LS or PS so a following import is still collected', () => {
+        expect(snapshotImportSpecifiers("// comment\u2028import fs from 'fs';\n")).toEqual(['fs']);
+        expect(snapshotImportSpecifiers("// comment\u2029import fs from 'fs';\n")).toEqual(['fs']);
+        expect(bareModuleSpecifiers("// comment\u2028import fs from 'fs';\n")).toEqual(['fs']);
+        expect(bareModuleSpecifiers("// comment\u2029import fs from 'fs';\n")).toEqual(['fs']);
+    });
+
+    it('collects imports separated by LS or PS whitespace', () => {
+        expect(snapshotImportSpecifiers("import\u2028'yaml'")).toEqual(['yaml']);
+        expect(snapshotImportSpecifiers("from\u2029'yaml'")).toEqual(['yaml']);
+        expect(snapshotImportSpecifiers("import\u2028('yaml')")).toEqual(['yaml']);
+        expect(bareModuleSpecifiers("import\u2028'yaml'")).toEqual(['yaml']);
+        expect(bareModuleSpecifiers("from\u2029'yaml'")).toEqual(['yaml']);
+        expect(bareModuleSpecifiers("import\u2028('yaml')")).toEqual(['yaml']);
+    });
+
+    it('collects static template literal dynamic import specifiers', () => {
+        expect(snapshotImportSpecifiers('await import(`yaml`)')).toEqual(['yaml']);
+        expect(bareModuleSpecifiers('await import(`yaml`)')).toEqual(['yaml']);
+        expect(snapshotImportSpecifiers('await import(`yaml${x}`)')).toEqual([]);
+        expect(bareModuleSpecifiers('await import(`yaml${x}`)')).toEqual([]);
+    });
+
     it('does not collect method-call import() after . or ?.', () => {
         expect(snapshotImportSpecifiers("registry.import('yaml');")).toEqual([]);
         expect(snapshotImportSpecifiers("registry?.import('yaml');")).toEqual([]);

@@ -413,10 +413,13 @@ type ReadSpecifier = { value: string; end: number };
 function readModuleStringAfter(source: string, index: number): ReadSpecifier | undefined {
     const start = skipWhitespace(source, index);
     const quote = source[start];
-    if (quote !== "'" && quote !== '"') {
-        return undefined;
+    if (quote === "'" || quote === '"') {
+        return readQuotedValue(source, start, quote);
     }
-    return readQuotedValue(source, start, quote);
+    if (quote === '`') {
+        return readStaticTemplateValue(source, start);
+    }
+    return undefined;
 }
 
 function readDynamicImportSpecifier(source: string, index: number): ReadSpecifier | undefined {
@@ -452,6 +455,43 @@ function readQuotedValue(source: string, index: number, quote: "'" | '"'): ReadS
     return undefined;
 }
 
+function isWhiteSpace(character: string): boolean {
+    return (
+        character === '\t' ||
+        character === '\v' ||
+        character === '\f' ||
+        character === ' ' ||
+        character === '\u00A0' ||
+        character === '\uFEFF' ||
+        /\p{General_Category=Space_Separator}/u.test(character)
+    );
+}
+
+function readStaticTemplateValue(source: string, index: number): ReadSpecifier | undefined {
+    let cursor = index + 1;
+    let value = '';
+    while (cursor < source.length) {
+        const character = source[cursor];
+        if (character === '\\') {
+            if (cursor + 1 >= source.length) {
+                return undefined;
+            }
+            value += source[cursor + 1];
+            cursor += 2;
+            continue;
+        }
+        if (character === '`') {
+            return { value, end: cursor + 1 };
+        }
+        if (character === '$' && source[cursor + 1] === '{') {
+            return undefined;
+        }
+        value += character;
+        cursor += 1;
+    }
+    return undefined;
+}
+
 function skipWhitespace(source: string, index: number): number {
     let cursor = index;
     while (cursor < source.length) {
@@ -461,7 +501,7 @@ function skipWhitespace(source: string, index: number): number {
             continue;
         }
         const character = source[cursor];
-        if (character === ' ' || character === '\t' || character === '\n' || character === '\r') {
+        if (character !== undefined && (isWhiteSpace(character) || isLineTerminator(character))) {
             cursor += 1;
             continue;
         }
