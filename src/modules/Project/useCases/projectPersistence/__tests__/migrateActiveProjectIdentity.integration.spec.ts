@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { runWithAutomergeStorageTransaction } from '#/infra/store/storage/createAutomergeStorage';
+import {
+    resetAutomergeStorageProjections,
+    runWithAutomergeStorageTransaction,
+} from '#/infra/store/storage/createAutomergeStorage';
+import { automergeRepository } from '#/modules/CrdtDocument/repositories/automergeRepository';
 import { createCrdtDoc, getCrdtDoc, registerCrdtStorageRuntime, removeCrdtDoc } from '#/modules/CrdtDocument/useCases';
 
 import { createDefaultProductionBrief } from '../../../models/ProductionBrief';
@@ -56,8 +60,16 @@ describe('migrateActiveProjectIdentity against a live legacy Automerge document'
         mocks.persistCrdtProject.mockReset();
         mocks.persistCrdtProject.mockResolvedValue(undefined);
         registerCrdtStorageRuntime();
-        createCrdtDoc('root', { projectMeta: legacyProjectMeta() });
+        createCrdtDoc('root');
+        automergeRepository.changeDoc<Record<string, unknown>>('root', (doc) => {
+            doc.projectMeta = legacyProjectMeta();
+        });
+        // The previous test's projected cache and any write it left pending
+        // belong to the document just replaced; a hydrate would otherwise
+        // rebase them onto this one and carry its identity across.
+        resetAutomergeStorageProjections('root');
         projectStore.hydrate();
+        expect(projectStore.value?.projectId).toBeUndefined();
     });
 
     afterEach(() => {
