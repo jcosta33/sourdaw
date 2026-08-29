@@ -267,11 +267,13 @@ pub trait PluginWindowHost: UiThread {
     /// The implementation owns two things the body cannot express: owning the
     /// window by the DAW window (falling back to
     /// [`plugin_editor_needs_always_on_top`] when the platform refuses), and
-    /// wiring the OS-close path — when the platform ends this window, the shell
-    /// must run [`crate::commands::plugin_gui::reset_plugin_gui_state_after_os_close`]
-    /// for `(instance_id, label)`, off the event thread. Without that wiring a
-    /// title-bar close leaves the plugin's internal GUI alive and the instance
-    /// permanently unopenable.
+    /// wiring the OS-close path — when the platform asks to end this window, the
+    /// shell must run [`crate::commands::plugin_gui::reset_plugin_gui_state_after_os_close`]
+    /// for `(instance_id, label)`, off the event thread and before the window is
+    /// destroyed. Without that wiring a title-bar close leaves the plugin's
+    /// internal GUI alive and the instance permanently unopenable; with it in
+    /// the wrong order it un-parents the plugin's child window from a parent the
+    /// platform has already destroyed.
     ///
     /// That wiring is attached here, at creation — before the window is
     /// published to `plugin_windows` — and not after the caller finishes
