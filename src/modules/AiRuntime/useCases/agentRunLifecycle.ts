@@ -213,7 +213,7 @@ function createLegacyAgentRunPlan(input: {
         stoppingConditions: ['Stop if the persisted project revision is no longer current.'],
         alternatives: [],
         needsUserDecision: false,
-    };
+    } satisfies AgentRun;
 }
 
 function clearAgentRuns(): void {
@@ -1251,6 +1251,70 @@ function completeAgentRunPendingEffectContinuation(input: {
     return structuredClone(next);
 }
 
+function settleAgentRunPendingEffectManualReview(input: {
+    runId: string;
+    batchId: string;
+    receiptIdentity: string;
+    disposition: 'accepted' | 'discarded' | 'missing-evidence';
+    settledAt?: number;
+}): AgentRun {
+    const settledAt = input.settledAt ?? Date.now();
+    const state = readAgentRunState();
+    const runIndex = state.runs.findIndex((run) => run.runId === input.runId);
+    if (runIndex < 0) {
+        throw new Error(`Unknown agent run: ${input.runId}`);
+    }
+    const run = state.runs[runIndex]!;
+    const continuation = run.pendingEffectContinuations.find((candidate) => candidate.batchId === input.batchId);
+    const recovery = getPendingEffectRecoveryLedger(state).find((candidate) =>
+        isPendingEffectRecovery(candidate, input)
+    );
+    if (
+        !continuation ||
+        !recovery ||
+        continuation.receiptIdentity !== input.receiptIdentity ||
+        recovery.receiptIdentity !== input.receiptIdentity ||
+        continuation.recovery !== 'manual-repair'
+    ) {
+        throw new Error('The exact manual-review obligation is stale or unavailable.');
+    }
+    const pendingEffectContinuations = run.pendingEffectContinuations.filter(
+        (candidate) => candidate.batchId !== input.batchId
+    );
+    const steps = run.saga.steps.map((step) =>
+        step.owner === 'external-effect' && step.workId === input.batchId
+            ? { ...step, state: 'reviewed' as const, manualReviewDisposition: input.disposition, updatedAt: settledAt }
+            : step
+    );
+    const hasRecoveryObligation =
+        steps.some(
+            (step) =>
+                step.state === 'pending' ||
+                step.state === 'external-pending' ||
+                step.state === 'uncompensated' ||
+                step.state === 'manual-repair'
+        ) ||
+        pendingEffectContinuations.length > 0 ||
+        run.workLeases.some((lease) => lease.terminalState === null) ||
+        run.temporaryAssets.some((asset) => asset.status !== 'released');
+    const runs = [...state.runs];
+    runs[runIndex] = {
+        ...run,
+        updatedAt: settledAt,
+        phase: reduceAgentRunTransition(run.phase, { type: 'pending-effect-completed', hasRecoveryObligation }),
+        pendingEffectContinuations,
+        manualResume: hasRecoveryObligation
+            ? run.manualResume
+            : { required: false, reason: null, workIds: [], requiredAt: null },
+        saga: { schemaVersion: 1, steps },
+    } satisfies AgentRun;
+    const pendingEffectRecoveryLedger = getPendingEffectRecoveryLedger(state).filter(
+        (candidate) => !isPendingEffectRecovery(candidate, input)
+    );
+    persistAgentRunState(withPendingEffectRecoveryLedger({ ...state, runs }, pendingEffectRecoveryLedger));
+    return structuredClone(runs[runIndex]);
+}
+
 function hasExactlySettledPendingEffectContinuation(
     run: AgentRun,
     input: { batchId: string; receiptIdentity: string }
@@ -2010,6 +2074,7 @@ export const agentRunLifecycle = {
     failPendingEffectContinuation: failAgentRunPendingEffectContinuation,
     requirePendingEffectManualRepair: requireAgentRunPendingEffectManualRepair,
     completePendingEffectContinuation: completeAgentRunPendingEffectContinuation,
+    settlePendingEffectManualReview: settleAgentRunPendingEffectManualReview,
     recordSagaStep: recordAgentRunSagaStep,
     recordSagaCompensation: recordAgentRunSagaCompensation,
     recordApplicationToolEvidence: recordAgentRunApplicationToolEvidence,

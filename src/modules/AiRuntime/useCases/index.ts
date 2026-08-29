@@ -72,3 +72,4 @@ export { createAgentSagaStep } from './createAgentSagaStep';
 export { agentRunControls } from './getAgentRunControlProjection';
 export { deleteAgentRunArtifacts } from './deleteAgentRunArtifacts';
 export { getAgentRunSagaProjection } from './getAgentRunSagaProjection';
+export { settleRetainedSectionRenderManualReview } from './settleRetainedSectionRenderManualReview';

@@ -586,6 +586,7 @@ function readSagaStep(value: unknown): AgentRunSagaStep | null {
         'compensated',
         'uncompensated',
         'manual-repair',
+        'reviewed',
     ];
     const lastError = readNullableString(value.compensation.lastError);
     const attempts = readNonNegativeInteger(value.compensation.attempts);
@@ -604,6 +605,15 @@ function readSagaStep(value: unknown): AgentRunSagaStep | null {
     ) {
         return null;
     }
+    const manualReviewDisposition =
+        value.manualReviewDisposition === 'accepted' ||
+        value.manualReviewDisposition === 'discarded' ||
+        value.manualReviewDisposition === 'missing-evidence'
+            ? value.manualReviewDisposition
+            : undefined;
+    if (value.manualReviewDisposition !== undefined && manualReviewDisposition === undefined) {
+        return null;
+    }
     return {
         stepId,
         order,
@@ -613,6 +623,7 @@ function readSagaStep(value: unknown): AgentRunSagaStep | null {
         state: value.state as AgentRunSagaStep['state'],
         compensation: { available: value.compensation.available, attempts, lastError },
         relatedArtifactIds,
+        ...(manualReviewDisposition ? { manualReviewDisposition } : {}),
         updatedAt,
     };
 }

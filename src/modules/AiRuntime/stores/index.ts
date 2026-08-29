@@ -28,3 +28,5 @@ export type { AgentRunPendingEffectRecoveryProjection } from './selectAgentRunPe
 
 export { selectPreparedStemImportManualRepairs } from './selectPreparedStemImportManualRepairs';
 export type { PreparedStemImportManualRepairProjection } from './selectPreparedStemImportManualRepairs';
+
+export { selectRetainedSectionRenderManualReviews } from './selectRetainedSectionRenderManualReviews';
