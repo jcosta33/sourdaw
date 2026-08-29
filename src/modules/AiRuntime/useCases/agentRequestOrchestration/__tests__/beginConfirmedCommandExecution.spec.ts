@@ -469,6 +469,10 @@ describe('beginConfirmedCommandExecution', () => {
         expect(mocks.parseBatch).not.toHaveBeenCalled();
         expect(mocks.reserveBudget).not.toHaveBeenCalled();
         expect(mocks.claimLease).not.toHaveBeenCalled();
+        expect(mocks.updateMessage).toHaveBeenCalledWith('assistant-1', {
+            pendingActionConfirmationStatus: 'accepted',
+            content: 'Confirming:\n\n- Add an effect',
+        });
     });
 
     it('returns ordinary admission synchronously after reserving budget, claiming work, and writing accepted state', () => {
