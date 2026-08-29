@@ -614,6 +614,11 @@ export const createPluginWindowHost = (deps: PluginWindowHostDeps): PluginWindow
             return failure(`A window labelled ${request.label} already exists`);
         }
 
+        const parent = deps.getParentWindow();
+        if (parent !== undefined && ownersInTeardown.has(parent)) {
+            return failure('The parent window is tearing down');
+        }
+
         let built: { window: EditorWindow; parented: boolean };
         try {
             built = buildWindow(request.title);
@@ -799,6 +804,16 @@ export const createPluginWindowHost = (deps: PluginWindowHostDeps): PluginWindow
  * raising `close`, so this intercept never stacks a second detach wait on the
  * exit cascade.
  */
+/**
+ * Owners whose detach-then-destroy is in flight.
+ *
+ * `create` refuses to parent a new editor to one of these: `detachOpenEditors`
+ * snapshots labels once, so a late child would miss the drain and then take
+ * CloseImmediately from `owner.destroy()`. Crash recovery parents to the
+ * replacement window instead, which is not in this set.
+ */
+const ownersInTeardown = new WeakSet<object>();
+
 export const interceptOwnerWindowTeardown = (
     owner: OwnerWindow,
     detachOpenEditors: () => Promise<void>
@@ -809,6 +824,7 @@ export const interceptOwnerWindowTeardown = (
         if (inFlight !== undefined) {
             return inFlight;
         }
+        ownersInTeardown.add(owner);
         inFlight = (async () => {
             try {
                 owner.hide();

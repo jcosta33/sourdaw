@@ -518,6 +518,105 @@ describe('createPluginWindowHost', () => {
     });
 
     /**
+     * `detachOpenEditors` snapshots labels once. A create that parents to the
+     * still-live owner during that await would miss the drain and then take
+     * CloseImmediately from `owner.destroy()` — notifyClosed against a dead
+     * window. Refuse create against an owner already in teardown instead.
+     */
+    it('refuses create against an owner already tearing down', async () => {
+        const owner = createFakeOwnerWindow();
+        let releaseFirstDetach: () => void = () => {};
+        const firstDetachHeld = new Promise<void>((resolve) => {
+            releaseFirstDetach = resolve;
+        });
+        const lateAliveAtNotify: boolean[] = [];
+        const harness: Harness = createHarness({
+            getParentWindow: () => owner as never,
+            notifyClosed: vi.fn((_instanceId: string, label: string): Promise<void> => {
+                if (label === 'plugin-b') {
+                    const late = harness.windows[1];
+                    if (late !== undefined) {
+                        lateAliveAtNotify.push(!late.isDestroyed());
+                    }
+                }
+                if (label === 'plugin-a') {
+                    return firstDetachHeld;
+                }
+                return Promise.resolve();
+            }),
+        });
+        const { destroyAfterEditorsDetach } = interceptOwnerWindowTeardown(owner, () =>
+            harness.host.detachOpenEditors()
+        );
+        harness.host.create(request('plugin-a', 'instance-a'));
+        owner.adopt(onlyWindow(harness.windows));
+
+        const teardown = destroyAfterEditorsDetach();
+        await settled();
+
+        const late = harness.host.create(request('plugin-b', 'instance-b'));
+        expect(late.error).toMatch(/tearing down/i);
+        expect(harness.host.exists('plugin-b')).toBe(false);
+
+        releaseFirstDetach();
+        await teardown;
+
+        expect(lateAliveAtNotify).toEqual([]);
+        expect(owner.isDestroyed()).toBe(true);
+    });
+
+    /**
+     * Crash recovery rebinds getParentWindow to the replacement. Creates during
+     * the crashed owner's detach must parent there and survive its destroy.
+     */
+    it('creates against a replacement owner while a crashed owner is tearing down', async () => {
+        const crashedOwner = createFakeOwnerWindow();
+        const replacementOwner = createFakeOwnerWindow();
+        let parent: FakeOwnerWindow = crashedOwner;
+        let releaseFirstDetach: () => void = () => {};
+        const firstDetachHeld = new Promise<void>((resolve) => {
+            releaseFirstDetach = resolve;
+        });
+        const harness: Harness = createHarness({
+            getParentWindow: () => parent as never,
+            notifyClosed: vi.fn((_instanceId: string, label: string): Promise<void> => {
+                if (label === 'plugin-a') {
+                    return firstDetachHeld;
+                }
+                return Promise.resolve();
+            }),
+        });
+        const { destroyAfterEditorsDetach } = interceptOwnerWindowTeardown(crashedOwner, () =>
+            harness.host.detachOpenEditors()
+        );
+        harness.host.create(request('plugin-a', 'instance-a'));
+        crashedOwner.adopt(onlyWindow(harness.windows));
+
+        const teardown = destroyAfterEditorsDetach();
+        await settled();
+
+        parent = replacementOwner;
+        interceptOwnerWindowTeardown(replacementOwner, () => harness.host.detachOpenEditors());
+
+        const late = harness.host.create(request('plugin-b', 'instance-b'));
+        expect(late.error).toBeNull();
+        expect(late.parented).toBe(true);
+        const lateEditor = harness.windows[1];
+        if (lateEditor === undefined) {
+            throw new Error('expected the replacement-parented editor');
+        }
+        replacementOwner.adopt(lateEditor);
+
+        releaseFirstDetach();
+        await teardown;
+
+        expect(harness.host.exists('plugin-b')).toBe(true);
+        expect(lateEditor.isDestroyed()).toBe(false);
+        expect(crashedOwner.isDestroyed()).toBe(true);
+        expect(replacementOwner.isDestroyed()).toBe(false);
+    });
+
+    /**
      * The stop must not be visible. The teardown's plugin call is carried back
      * to this thread, so a window left on screen for it is a frozen editor for
      * as long as the plugin takes — where the platform's own close made it
