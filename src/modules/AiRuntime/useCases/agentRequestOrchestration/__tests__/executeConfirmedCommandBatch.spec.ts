@@ -45,7 +45,6 @@ type BindCancellation = typeof import('../../cancelAgentRun').agentRunCancellati
 type CancelRun = typeof import('../../cancelAgentRun').agentRunCancellation.cancel;
 type CaptureAuthorization = typeof import('#/modules/CrdtDocument/useCases').captureProjectMutationAuthorization;
 type CaptureRevision = typeof import('#/modules/CrdtDocument/useCases').captureProjectRevision;
-type CaptureUnownedMutations = typeof import('#/modules/CrdtDocument/useCases').captureUnownedProjectMutations;
 type RecordPostCommitRecoveryFailure =
     typeof import('../agentRunExecutionSettlement').agentRunExecutionSettlement.recordPostCommitRecoveryFailure;
 type RecordCommittedRecoveryFailure =
@@ -56,9 +55,9 @@ const mocks = vi.hoisted(() => ({
     cancelRun: vi.fn<CancelRun>(),
     captureAuthorization: vi.fn<CaptureAuthorization>(),
     captureRevision: vi.fn<CaptureRevision>(),
-    captureUnownedMutations: vi.fn<CaptureUnownedMutations>(),
     executeBatch: vi.fn<TestBatchExecutor>(),
     getArtifacts: vi.fn(() => []),
+    rebindArtifacts: vi.fn(),
     issueApprovalBinding: vi.fn<ApprovalBindingIssuer>(),
     prepareContinuation: vi.fn<PrepareContinuation>(),
     prepareResourceLease: vi.fn<PrepareResourceLease>(),
@@ -75,7 +74,10 @@ const mocks = vi.hoisted(() => ({
 
 const collaboration = vi.hoisted(() => ({ value: undefined as { localPeerId: string } | undefined }));
 
-vi.mock('#/modules/AudioRendering/useCases', () => ({ getAgentSectionRenderArtifacts: mocks.getArtifacts }));
+vi.mock('#/modules/AudioRendering/useCases', () => ({
+    getAgentSectionRenderArtifacts: mocks.getArtifacts,
+    rebindAgentProjectSectionArtifactRevisions: mocks.rebindArtifacts,
+}));
 vi.mock('#/modules/Collaboration/stores', () => ({ collaborationStore: collaboration }));
 vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
@@ -84,7 +86,6 @@ vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     captureProjectMutationAuthorization: mocks.captureAuthorization,
     captureProjectRevision: mocks.captureRevision,
-    captureUnownedProjectMutations: mocks.captureUnownedMutations,
 }));
 vi.mock('../../../stores/chatStore', () => ({
     setActiveAborter: mocks.setActiveAborter,
@@ -290,7 +291,6 @@ beforeEach(() => {
     projectMutationAuthorized = true;
     mocks.captureAuthorization.mockReturnValue(() => projectMutationAuthorized);
     mocks.captureRevision.mockReturnValue('revision-2');
-    mocks.captureUnownedMutations.mockReturnValue(4);
     mocks.prepareResourceLease.mockResolvedValue(undefined);
     mocks.protectResourceLease.mockReturnValue(undefined);
     mocks.prepareContinuation.mockReturnValue({ promote: () => undefined, discard: () => undefined });
@@ -338,6 +338,7 @@ describe('executeConfirmedCommandBatch', () => {
             });
             input.onProjectCommitPrepared?.();
             input.options?.onProjectCommitCheckpoint?.({ receipt });
+            input.options?.onProjectCommitFinalized?.({ revision: 'revision-checkpoint' });
             return completedBatchResult;
         });
 
@@ -347,6 +348,8 @@ describe('executeConfirmedCommandBatch', () => {
             status: 'completed',
             batchResult: completedBatchResult,
             group: { groupId: 'batch-1', groupLabel: 'Set tempo' },
+            committedProjectRevision: 'revision-checkpoint',
+            canRebindSectionRenderArtifacts: true,
             renderJobAttempts: 1,
             cancellationTriggeredByInvalidation: false,
             abortSignal: expect.objectContaining({ aborted: false }),
@@ -370,6 +373,7 @@ describe('executeConfirmedCommandBatch', () => {
             }),
         });
         expect(mocks.prepareContinuation).toHaveBeenCalledWith({ runId: 'run-1', receipt, commandBatch });
+        expect(mocks.captureAuthorization).toHaveBeenCalledOnce();
         expect(events).toEqual(['prepare', 'execute', 'protect', 'release-cancellation']);
         const boundController = mocks.bindCancellation.mock.calls[0]?.[0].controller;
         expect(mocks.bindCancellation).toHaveBeenCalledWith({

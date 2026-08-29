@@ -1050,7 +1050,12 @@ describe('confirmPendingChatActions transaction admission', () => {
                 .mockReturnValue(() => true);
             const execute = vi
                 .spyOn(commandUseCases, 'executeVersionedCommandBatchEnvelope')
-                .mockResolvedValue(createWarningBatchResult({ status, commandBatch }));
+                .mockImplementation(async (input) => {
+                    if (status === 'committed-with-warning') {
+                        input.options?.onProjectCommitFinalized?.({ revision: 'revision-warning-checkpoint' });
+                    }
+                    return createWarningBatchResult({ status, commandBatch });
+                });
             const settle = vi.spyOn(agentRunWorkLease, 'settle');
 
             try {
@@ -2898,7 +2903,7 @@ describe('confirmPendingChatActions transaction admission', () => {
         expect(getPendingActionConfirmation('confirmation-foreign-flush')).toMatchObject({ status: 'invalidated' });
     });
 
-    it('refuses to relabel fresh render artifacts onto a revision carrying a foreign write', async () => {
+    it('binds fresh render artifacts to the batch checkpoint before a later owned app action', async () => {
         configureAiWorkflowCommandPreflightFixture('project-1');
         configureCommandBatchIdempotency({ canExecute: () => true });
         const ownedStorage = createAutomergeStorage<{ bpm: number }>('owned', 'transport');
@@ -2942,7 +2947,6 @@ describe('confirmPendingChatActions transaction admission', () => {
             type: 'renderProjectSections',
             payload: { sectionIds: [verseJob.sectionId, chorusJob.sectionId], jobs: [verseJob, chorusJob] },
         } satisfies RenderSectionsAction;
-        let renderTimeRevision: string | null = null;
         let lastRenderAttempted = false;
         runtimeMocks.renderOffline.mockReset();
         runtimeMocks.renderOffline.mockImplementation((options: { startBeat?: number }) => {
@@ -2950,7 +2954,6 @@ describe('confirmPendingChatActions transaction admission', () => {
                 lastRenderAttempted = true;
                 return Promise.reject(new Error('comparison renderer unavailable'));
             }
-            renderTimeRevision ??= captureProjectRevision();
             return Promise.resolve({
                 sampleRate: verseJob.sampleRate,
                 length: 88_200,
@@ -2958,24 +2961,23 @@ describe('confirmPendingChatActions transaction admission', () => {
                 duration: 2,
             });
         });
-        // The batch flight awaits the idempotency completion's lock; land the
-        // foreign write there, after the last render and before the caller
-        // captures the committed revision.
+        // The batch flight awaits durable idempotency completion after its
+        // project checkpoint is visible. Land a normal owned app action in
+        // that await so a late revision capture would mislabel the artifact.
         let foreignWriteInjected = false;
+        let checkpointRevision: string | null = null;
+        let foreignRevision: string | null = null;
         vi.stubGlobal('navigator', {
             ...navigator,
             locks: {
-                request: (_name: string, _options: LockOptions, task: () => unknown) => {
+                request: async (_name: string, _options: LockOptions, task: () => unknown) => {
                     if (lastRenderAttempted && !foreignWriteInjected) {
+                        checkpointRevision = captureProjectRevision();
                         foreignWriteInjected = true;
-                        mutateCrdtDoc<Record<string, unknown>>({
-                            id: 'independent',
-                            changeFn: (doc) => {
-                                doc.foreignTrackRename = true;
-                            },
-                        });
+                        await executeAppAction({ type: 'setTempo', payload: { bpm: 144 } });
+                        foreignRevision = captureProjectRevision();
                     }
-                    return Promise.resolve(task());
+                    return task();
                 },
             },
         });
@@ -3028,28 +3030,28 @@ describe('confirmPendingChatActions transaction admission', () => {
         ).resolves.toMatchObject({ status: 'failed', durableCommit: true });
 
         expect(foreignWriteInjected).toBe(true);
+        expect(checkpointRevision).not.toBeNull();
+        expect(foreignRevision).not.toBe(checkpointRevision);
         const committedConfirmation = getPendingActionConfirmation('confirmation-render-rebind');
-        if (renderTimeRevision === null) {
-            throw new Error('Expected a captured render-time revision');
+        if (checkpointRevision === null) {
+            throw new Error('Expected a captured batch checkpoint revision');
         }
         expect(committedConfirmation).toMatchObject({
-            status: 'executed',
-            followUpProjectRevision: null,
-            followUpStatus: 'failed',
+            status: 'failed',
+            followUpProjectRevision: checkpointRevision,
+            followUpStatus: 'retryable',
         });
         const artifacts = getAgentSectionRenderArtifacts();
         expect(artifacts).toHaveLength(1);
-        // The relabel was refused: the fresh artifact keeps its render-time
-        // revision instead of the polluted committed revision.
-        expect(artifacts[0]).toMatchObject({ jobId: verseJob.jobId, sourceRevision: renderTimeRevision });
+        expect(artifacts[0]).toMatchObject({ jobId: verseJob.jobId, sourceRevision: checkpointRevision });
+        expect(artifacts[0]?.sourceRevision).not.toBe(foreignRevision);
 
-        // The same foreign write that prevented the artifact rebind must also
-        // prevent the retry from being armed against the polluted revision.
+        // The retry stays bound to the batch checkpoint and must fail closed
+        // rather than treat the later foreign revision as its source.
         const renderCallsBeforeRetry = runtimeMocks.renderOffline.mock.calls.length;
-        await expect(confirmPendingChatActions({ confirmationId: 'confirmation-render-rebind' })).resolves.toEqual({
-            status: 'not_pending',
-            currentStatus: 'executed',
-        });
+        await expect(
+            confirmPendingChatActions({ confirmationId: 'confirmation-render-rebind' })
+        ).resolves.toMatchObject({ status: 'failed' });
         expect(runtimeMocks.renderOffline).toHaveBeenCalledTimes(renderCallsBeforeRetry);
     });
 

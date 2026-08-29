@@ -1,22 +1,14 @@
 import { logger } from '#/infra/logger/appLogger';
 import {
-    getAgentSectionRenderArtifacts,
-    rebindAgentProjectSectionArtifactRevisions,
-} from '#/modules/AudioRendering/useCases';
-import {
     type executeVersionedCommandBatchEnvelope,
     type refreshVersionedCommandBatchForApproval,
 } from '#/modules/Command/useCases';
-import { captureProjectRevision, captureUnownedProjectMutations } from '#/modules/CrdtDocument/useCases';
 
 import { AiProposalInvalidatedError } from '../errors/AiProposalInvalidatedError';
 import { type AgentRunErrorCategory } from '../models/AgentRun';
 import { type ChatActionConfirmationStatus } from '../models/Chat';
 import { updateChatMessage } from '../stores/chatStore';
-import {
-    type PendingAppActionConfirmation,
-    updatePendingActionConfirmationStatus,
-} from '../stores/pendingActionConfirmationStore';
+import { updatePendingActionConfirmationStatus } from '../stores/pendingActionConfirmationStore';
 
 import { agentRunExecutionSettlement } from './agentRequestOrchestration/agentRunExecutionSettlement';
 import { beginConfirmedCommandExecution } from './agentRequestOrchestration/beginConfirmedCommandExecution';
@@ -97,43 +89,6 @@ function getTrackedLeaseSettlementContract(batchResult: ConfirmedBatchResult): {
             ? 'verified-command-receipt'
             : 'none';
     return { terminalState, evidence };
-}
-
-function rebindFreshSectionRenderArtifactsToCommittedRevision(
-    confirmation: PendingAppActionConfirmation,
-    artifactsBeforeExecution: ReturnType<typeof getAgentSectionRenderArtifacts>,
-    committedRevision: string
-): void {
-    const renderAction = confirmation.approvalSnapshot.actions.find(
-        (action) => action.type === 'renderProjectSections'
-    );
-    if (renderAction?.type !== 'renderProjectSections' || !renderAction.payload.jobs) {
-        return;
-    }
-    const preexistingJobIds = new Set(artifactsBeforeExecution.map(({ jobId }) => jobId));
-    const currentArtifacts = getAgentSectionRenderArtifacts();
-    const freshArtifacts = renderAction.payload.jobs.flatMap((job) => {
-        if (preexistingJobIds.has(job.jobId)) {
-            return [];
-        }
-        const artifact = currentArtifacts.find(
-            (candidate) =>
-                candidate.jobId === job.jobId &&
-                candidate.sectionId === job.sectionId &&
-                candidate.sectionName === job.sectionName &&
-                candidate.startBeat === job.startBeat &&
-                candidate.endBeat === job.endBeat &&
-                candidate.sampleRate === job.sampleRate &&
-                candidate.tailSeconds === job.tailSeconds
-        );
-        return artifact ? [{ job, renderedAt: artifact.renderedAt, sourceRevision: artifact.sourceRevision }] : [];
-    });
-    // The durable receipt checkpoint advances the CRDT revision after post-commit
-    // rendering; only exact artifacts created by this execution may follow it.
-    rebindAgentProjectSectionArtifactRevisions({
-        artifacts: freshArtifacts,
-        sourceRevision: committedRevision,
-    });
 }
 
 export async function confirmPendingChatActions(
@@ -222,32 +177,18 @@ export async function confirmPendingChatActions(
     const {
         batchResult,
         group,
-        sectionRenderArtifactsBeforeExecution,
+        committedProjectRevision,
+        canRebindSectionRenderArtifacts,
         isProjectMutationAuthorized,
-        unownedMutationsBeforeBatch,
         renderJobAttempts,
         cancellationTriggeredByInvalidation,
         abortSignal,
     } = executionFlight;
-    const committedProjectRevision = captureProjectRevision();
-    // The batch flight contains awaited boundaries, so a foreign project write
-    // can land between the last render and this capture. Relabelling fresh
-    // artifacts against a revision carrying one would defeat the retry's
-    // sourceRevision guard, so the rebind runs only when no ownerless mutation
-    // landed during the flight. The authorization check is not usable here: the
-    // batch's own idempotency checkpoint write falsifies it even on a clean
-    // success. A refused relabel leaves the renders detectably incomplete under
-    // the committed revision; the project changes themselves stay committed.
-    const canRebindSectionRenderArtifacts =
-        (batchResult.status === 'committed' || batchResult.status === 'committed-with-warning') &&
-        captureUnownedProjectMutations() === unownedMutationsBeforeBatch;
-    if (canRebindSectionRenderArtifacts) {
-        rebindFreshSectionRenderArtifactsToCommittedRevision(
-            confirmation,
-            sectionRenderArtifactsBeforeExecution,
-            committedProjectRevision
-        );
+    const batchCommittedProject = batchResult.status === 'committed' || batchResult.status === 'committed-with-warning';
+    if (batchCommittedProject && committedProjectRevision === null) {
+        throw new Error('The committed command batch did not expose its exact project checkpoint revision.');
     }
+    const settledProjectRevision = committedProjectRevision ?? confirmation.projectRevision;
     const budgetPersistenceWarning = commandBudget
         ? agentRunExecutionSettlement.reconcileCommandBudget({
               confirmation,
@@ -302,7 +243,7 @@ export async function confirmPendingChatActions(
             confirmation,
             batchResult,
             groupId: group.groupId,
-            committedProjectRevision,
+            committedProjectRevision: settledProjectRevision,
             trackedLeaseSettlement,
             budgetPersistenceWarning,
             canRebindSectionRenderArtifacts,

@@ -35,6 +35,8 @@ type ExecuteVersionedCommandBatchEnvelopeInput = {
             promote: (result: { receipt: ReturnType<typeof createVerifiedBatchReceipt> }) => void;
             discard: () => void;
         } | void;
+        /** Observe the exact revision after the final project checkpoint becomes visible. */
+        onProjectCommitFinalized?: (result: { revision: string }) => void;
     };
     onProjectCommitPrepared?: () => void;
 };
@@ -687,6 +689,21 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
                         receipt: projectCommitRecovery.receipt,
                     };
                 }
+            }
+            try {
+                const checkpoint = getProjectCommandBatchIdempotencyCheckpoint({
+                    projectId: parsed.envelope.projectId,
+                    idempotencyKey: parsed.envelope.idempotencyKey,
+                    contentHash: idempotencyContentHash,
+                });
+                if (
+                    (checkpoint.status === 'complete' || checkpoint.status === 'pending') &&
+                    commandProjectRevisionPort.isConfigured()
+                ) {
+                    input.options?.onProjectCommitFinalized?.({ revision: commandProjectRevisionPort.capture() });
+                }
+            } catch {
+                // A missing checkpoint/revision leaves callers unable to bind post-commit evidence.
             }
         }
         settlePreparedProjectCommitRecovery({

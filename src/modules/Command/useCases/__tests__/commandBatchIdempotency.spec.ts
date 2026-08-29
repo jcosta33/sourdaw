@@ -2235,6 +2235,48 @@ describe('command batch idempotency', () => {
         expect(runtimeEffectCount).toBe(1);
     });
 
+    it('reports the visible final project checkpoint before durable repository completion settles', async () => {
+        let markCompletionStarted!: () => void;
+        let releaseCompletion!: () => void;
+        const completionStarted = new Promise<void>((resolve) => {
+            markCompletionStarted = resolve;
+        });
+        const completionGate = new Promise<void>((resolve) => {
+            releaseCompletion = resolve;
+        });
+        commandBatchIdempotencyPort.setRepository({
+            lookup: () => Promise.resolve({ status: 'missing' }),
+            claim: () => Promise.resolve({ status: 'claimed' }),
+            complete: async () => {
+                markCompletionStarted();
+                await completionGate;
+            },
+        });
+        const batch = compileBatch();
+        const proof = await getVersionedCommandBatchCommitProof(batch);
+        let checkpointDuringCallback: ReturnType<typeof getProjectCommandBatchIdempotencyCheckpoint> | null = null;
+        const onProjectCommitFinalized = vi.fn(() => {
+            checkpointDuringCallback = getProjectCommandBatchIdempotencyCheckpoint(proof);
+        });
+
+        const execution = executeVersionedCommandBatchEnvelope({
+            authority: batch.authority,
+            confirmed: true,
+            serialized: batch.serialized,
+            options: { onProjectCommitFinalized },
+        });
+        await completionStarted;
+        try {
+            expect(onProjectCommitFinalized).toHaveBeenCalledOnce();
+            expect(onProjectCommitFinalized).toHaveBeenCalledWith({ revision: revision(2) });
+            expect(checkpointDuringCallback).toMatchObject({ status: 'complete' });
+        } finally {
+            releaseCompletion();
+        }
+
+        await expect(execution).resolves.toMatchObject({ status: 'committed' });
+    });
+
     it('reclaims an orphaned pre-commit claim when project truth proves no commit occurred', async () => {
         const claim = vi.fn((input: { reclaimPending?: boolean }) =>
             Promise.resolve(input.reclaimPending ? ({ status: 'claimed' } as const) : ({ status: 'pending' } as const))

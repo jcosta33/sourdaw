@@ -1,11 +1,10 @@
-import { getAgentSectionRenderArtifacts } from '#/modules/AudioRendering/useCases';
+import {
+    getAgentSectionRenderArtifacts,
+    rebindAgentProjectSectionArtifactRevisions,
+} from '#/modules/AudioRendering/useCases';
 import { collaborationStore } from '#/modules/Collaboration/stores';
 import { executeVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
-import {
-    captureProjectMutationAuthorization,
-    captureProjectRevision,
-    captureUnownedProjectMutations,
-} from '#/modules/CrdtDocument/useCases';
+import { captureProjectMutationAuthorization, captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 import { type HandlerDeferredEffectAttempt } from '#/utils/handlerContract';
 
 import { type AgentRunWorkLease } from '../../models/AgentRun';
@@ -46,9 +45,9 @@ type ExecuteConfirmedCommandBatchResult =
               { status: 'previewed' }
           >;
           group: { groupId: string; groupLabel: string };
-          sectionRenderArtifactsBeforeExecution: ReturnType<typeof getAgentSectionRenderArtifacts>;
+          committedProjectRevision: string | null;
+          canRebindSectionRenderArtifacts: boolean;
           isProjectMutationAuthorized: () => boolean;
-          unownedMutationsBeforeBatch: number;
           renderJobAttempts: number;
           cancellationTriggeredByInvalidation: boolean;
           abortSignal: AbortSignal;
@@ -71,6 +70,41 @@ function hasCommittedProjectPriorReceipt(
     }
     const disposition = getVerifiedBatchReplayDisposition(receipt);
     return disposition.status === 'committed';
+}
+
+function rebindFreshSectionRenderArtifactsToCommittedRevision(
+    confirmation: PendingAppActionConfirmation,
+    artifactsBeforeExecution: ReturnType<typeof getAgentSectionRenderArtifacts>,
+    committedRevision: string
+): void {
+    const renderAction = confirmation.approvalSnapshot.actions.find(
+        (action) => action.type === 'renderProjectSections'
+    );
+    if (renderAction?.type !== 'renderProjectSections' || !renderAction.payload.jobs) {
+        return;
+    }
+    const preexistingJobIds = new Set(artifactsBeforeExecution.map(({ jobId }) => jobId));
+    const currentArtifacts = getAgentSectionRenderArtifacts();
+    const freshArtifacts = renderAction.payload.jobs.flatMap((job) => {
+        if (preexistingJobIds.has(job.jobId)) {
+            return [];
+        }
+        const artifact = currentArtifacts.find(
+            (candidate) =>
+                candidate.jobId === job.jobId &&
+                candidate.sectionId === job.sectionId &&
+                candidate.sectionName === job.sectionName &&
+                candidate.startBeat === job.startBeat &&
+                candidate.endBeat === job.endBeat &&
+                candidate.sampleRate === job.sampleRate &&
+                candidate.tailSeconds === job.tailSeconds
+        );
+        return artifact ? [{ job, renderedAt: artifact.renderedAt, sourceRevision: artifact.sourceRevision }] : [];
+    });
+    rebindAgentProjectSectionArtifactRevisions({
+        artifacts: freshArtifacts,
+        sourceRevision: committedRevision,
+    });
 }
 
 export async function executeConfirmedCommandBatch(
@@ -105,11 +139,9 @@ export async function executeConfirmedCommandBatch(
     // Capture before the batch owner exists. The check binds that exact owner
     // on its first in-transaction call and retains it across handler awaits.
     const isProjectMutationAuthorized = captureProjectMutationAuthorization();
-    // Ownerless-mutation baseline for the post-batch rebind gate. The batch's
-    // own writes (including its idempotency checkpoint) are owner-attributed,
-    // so only a foreign writer moves this counter.
-    const unownedMutationsBeforeBatch = captureUnownedProjectMutations();
     let renderJobAttempts = 0;
+    let committedProjectRevision: string | null = null;
+    let canRebindSectionRenderArtifacts = false;
     try {
         const executionOptions = {
             ...group,
@@ -126,6 +158,15 @@ export async function executeConfirmedCommandBatch(
                     receipt,
                     commandBatch,
                 });
+            },
+            onProjectCommitFinalized: ({ revision }: { revision: string }) => {
+                committedProjectRevision = revision;
+                rebindFreshSectionRenderArtifactsToCommittedRevision(
+                    confirmation,
+                    sectionRenderArtifactsBeforeExecution,
+                    revision
+                );
+                canRebindSectionRenderArtifacts = true;
             },
             requireCompensation: confirmation.executionMode === 'atomic',
             shouldExecute: () => {
@@ -185,9 +226,9 @@ export async function executeConfirmedCommandBatch(
             status: 'completed',
             batchResult,
             group,
-            sectionRenderArtifactsBeforeExecution,
+            committedProjectRevision,
+            canRebindSectionRenderArtifacts,
             isProjectMutationAuthorized,
-            unownedMutationsBeforeBatch,
             renderJobAttempts,
             cancellationTriggeredByInvalidation,
             abortSignal: aborter.signal,
