@@ -1,0 +1,52 @@
+src/modules/WorkspaceShell/presentations/views/WorkspaceMobileGate.tsx
+  s_ae074277795b45::t_cc58fee2ce9da4 4,28
+  s_ae074277795b45::t_f36417304e3961 21-25
+src/app/__tests__/main.spec.tsx
+  s_ae074277795b45::t_11fcb2b981c950 11,32-35,55-62,69,80,128
+  s_ae074277795b45::t_7ddb8998571f37 102-108
+  s_ae074277795b45::t_3d9888973ad32d 71-76,78,81-87
+  s_ae074277795b45::t_34f924677bd958 91-98
+  s_ae074277795b45::t_e2b2c54e6e66d6 79
+  s_ae074277795b45::t_2990b0efce305a 99-101
+src/modules/WorkspaceShell/presentations/views/__tests__/WorkspaceMobileGate.spec.tsx
+  s_ae074277795b45::t_7142a0bf3dbc04 6,9-29,106-108,126-146,148
+  s_ae074277795b45::t_5984403e873557 147
+src/modules/WorkspaceShell/useCases/resetDisplayScaleForStartup.ts
+  s_ae074277795b45::t_cc58fee2ce9da4 1-2,4,6
+  s_ae074277795b45::t_98c836592d2d88 3,5
+src/modules/Preferences/useCases/__tests__/updatePreferences.spec.ts
+  s_ae074277795b45::t_11fcb2b981c950 56
+src/modules/WorkspaceShell/presentations/hooks/useDisplayScaleSynchronization.ts
+  s_ae074277795b45::t_cc58fee2ce9da4 1-17
+src/modules/WorkspaceShell/presentations/hooks/__tests__/useDisplayScaleSynchronization.spec.ts
+  s_ae074277795b45::t_69d535f19e0064 1-18,22-58
+  s_ae074277795b45::t_edf0305d579f35 19-21
+tests/e2e/browserDisplayScale.spec.ts
+  s_ae074277795b45::t_11fcb2b981c950 46-48,50-51,295-298,325
+src/modules/WorkspaceShell/repositories/__tests__/setDisplayScale.spec.ts
+  s_ae074277795b45::t_11fcb2b981c950 31-52
+src/app/main.tsx
+  s_ae074277795b45::t_cc58fee2ce9da4 6,8,17-18,20-21
+  s_ae074277795b45::t_8f3a77e4b57887 19
+src/modules/WorkspaceShell/useCases/index.ts
+  s_ae074277795b45::t_cc58fee2ce9da4 5
+src/modules/WorkspaceShell/useCases/__tests__/resetDisplayScaleForStartup.spec.ts
+  s_ae074277795b45::t_11fcb2b981c950 1-8,11-15
+  s_ae074277795b45::t_8f3a77e4b57887 9-10
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "bbb57a48af97a79e67217c8b7836798d8b627cb3",
+  "prompts": {},
+  "sessions": {
+    "s_ae074277795b45": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04ab5-5234-7100-be1c-76ebfaba88d3",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
