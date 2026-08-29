@@ -366,8 +366,16 @@ function canStartRegexLiteral(source: string, index: number): boolean {
         if (character === undefined) {
             break;
         }
-        if (character === ' ' || character === '\t' || isLineTerminator(character)) {
+        if (isWhiteSpace(character) || isLineTerminator(character)) {
             cursor -= 1;
+            continue;
+        }
+        if (character === '/' && cursor >= 1 && source[cursor - 1] === '*') {
+            const open = source.lastIndexOf('/*', cursor - 1);
+            if (open === -1) {
+                return false;
+            }
+            cursor = open - 1;
             continue;
         }
         if ('([{;=,.!?:~%^&*+<>|'.includes(character) || character === '-' || character === '}') {
@@ -423,11 +431,19 @@ function readModuleStringAfter(source: string, index: number): ReadSpecifier | u
 }
 
 function readDynamicImportSpecifier(source: string, index: number): ReadSpecifier | undefined {
-    const openParen = skipWhitespace(source, index);
-    if (source[openParen] !== '(') {
+    let cursor = skipWhitespace(source, index);
+    if (source[cursor] !== '(') {
         return undefined;
     }
-    return readModuleStringAfter(source, openParen + 1);
+    cursor += 1;
+    while (true) {
+        cursor = skipWhitespace(source, cursor);
+        if (source[cursor] !== '(') {
+            break;
+        }
+        cursor += 1;
+    }
+    return readModuleStringAfter(source, cursor);
 }
 
 function readQuotedValue(source: string, index: number, quote: "'" | '"'): ReadSpecifier | undefined {

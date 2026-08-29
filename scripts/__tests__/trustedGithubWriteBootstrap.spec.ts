@@ -96,6 +96,23 @@ describe('snapshotImportSpecifiers', () => {
         expect(bareModuleSpecifiers('await import(`yaml${x}`)')).toEqual([]);
     });
 
+    it('unwraps grouping parentheses around dynamic import specifiers', () => {
+        expect(snapshotImportSpecifiers("await import(('yaml'))")).toEqual(['yaml']);
+        expect(snapshotImportSpecifiers("await import( ('yaml') )")).toEqual(['yaml']);
+        expect(snapshotImportSpecifiers("await import(/*c*/('yaml'))")).toEqual(['yaml']);
+        expect(snapshotImportSpecifiers('await import((`yaml`))')).toEqual(['yaml']);
+        expect(bareModuleSpecifiers("await import(('yaml'))")).toEqual(['yaml']);
+        expect(snapshotImportSpecifiers('await import((`yaml${x}`))')).toEqual([]);
+        expect(bareModuleSpecifiers('await import((`yaml${x}`))')).toEqual([]);
+    });
+
+    it('treats a slash after a block comment as a regex when the preceding token allows it', () => {
+        expect(snapshotImportSpecifiers("const x = /*c*/ /from 'yaml'/")).toEqual([]);
+        expect(bareModuleSpecifiers("const x = /*c*/ /from 'yaml'/")).toEqual([]);
+        expect(snapshotImportSpecifiers("const x = /from 'yaml'/")).toEqual([]);
+        expect(bareModuleSpecifiers("const x = /from 'yaml'/")).toEqual([]);
+    });
+
     it('does not collect method-call import() after . or ?.', () => {
         expect(snapshotImportSpecifiers("registry.import('yaml');")).toEqual([]);
         expect(snapshotImportSpecifiers("registry?.import('yaml');")).toEqual([]);
