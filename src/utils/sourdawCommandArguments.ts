@@ -37,7 +37,7 @@ export const SOURDAW_COMMAND_ARGUMENTS: ReadonlyMap<string, readonly string[]> =
     ['crumbs_all_sound_off', ['instance_id']],
     ['crumbs_note_off', ['instance_id', 'note']],
     ['crumbs_note_on', ['instance_id', 'note', 'velocity']],
-    ['denoise_audio', ['request']],
+    ['denoise_audio', ['request', 'samples']],
     ['destroy_crumbs', ['instance_id']],
     ['detect_onsets', ['instance_id', 'sample_id', 'algorithm']],
     ['detect_smart_loop_points', ['instance_id', 'sample_id']],
