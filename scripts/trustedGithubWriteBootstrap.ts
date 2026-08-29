@@ -160,34 +160,223 @@ const LOADER_EXEMPT_SPECIFIER = 'yaml';
  * the other two — and the dynamic call is the shape this loader itself uses, so the bare-specifier
  * rule passed vacuously on the very file it was written to hold.
  *
- * A specifier written inside a comment or a string literal matches too. That is why the prose here
- * spells none of these shapes out: the rule reads its own file, and an example in a comment would be
- * refused as an unresolvable dependency.
+ * Specifiers are collected by walking syntax, not by regex over raw source. Comments and the contents
+ * of string and template literals cannot contribute; only a real `from` / `import` / `import()` form
+ * at code depth can. That keeps an example in this comment from being refused as a dependency.
  */
-const MODULE_SPECIFIER_PATTERNS = [
-    /\bfrom\s+['"]([^'"]+)['"]/g,
-    /\bimport\s+['"]([^'"]+)['"]/g,
-    /\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/g,
-];
-
-function moduleSpecifiers(source: string): string[] {
+export function snapshotImportSpecifiers(source: string): string[] {
     const specifiers = new Set<string>();
-    for (const pattern of MODULE_SPECIFIER_PATTERNS) {
-        for (const match of source.matchAll(pattern)) {
-            if (match[1] !== undefined) {
-                specifiers.add(match[1]);
+    let index = 0;
+    while (index < source.length) {
+        const commentEnd = skipComment(source, index);
+        if (commentEnd !== undefined) {
+            index = commentEnd;
+            continue;
+        }
+        const stringEnd = skipStringOrTemplate(source, index);
+        if (stringEnd !== undefined) {
+            index = stringEnd;
+            continue;
+        }
+        if (isKeywordAt(source, index, 'from')) {
+            const afterKeyword = index + 4;
+            const specifier = readModuleStringAfter(source, afterKeyword);
+            if (specifier !== undefined) {
+                specifiers.add(specifier.value);
+                index = specifier.end;
+                continue;
             }
         }
+        if (isKeywordAt(source, index, 'import')) {
+            const afterKeyword = index + 6;
+            const sideEffect = readModuleStringAfter(source, afterKeyword);
+            if (sideEffect !== undefined) {
+                specifiers.add(sideEffect.value);
+                index = sideEffect.end;
+                continue;
+            }
+            const dynamic = readDynamicImportSpecifier(source, afterKeyword);
+            if (dynamic !== undefined) {
+                specifiers.add(dynamic.value);
+                index = dynamic.end;
+                continue;
+            }
+        }
+        index += 1;
     }
     return [...specifiers];
 }
 
-function bareModuleSpecifiers(source: string): string[] {
-    return moduleSpecifiers(source).filter((specifier) => !specifier.startsWith('.') && !specifier.startsWith('node:'));
+function isKeywordAt(source: string, index: number, keyword: string): boolean {
+    if (!source.startsWith(keyword, index)) {
+        return false;
+    }
+    const before = index === 0 ? undefined : source[index - 1];
+    const after = source[index + keyword.length];
+    return !isIdentifierContinue(before) && !isIdentifierContinue(after);
+}
+
+function isIdentifierContinue(character: string | undefined): boolean {
+    return character !== undefined && /[A-Za-z0-9_$]/.test(character);
+}
+
+function skipComment(source: string, index: number): number | undefined {
+    if (source.startsWith('//', index)) {
+        const newline = source.indexOf('\n', index + 2);
+        return newline === -1 ? source.length : newline + 1;
+    }
+    if (source.startsWith('/*', index)) {
+        const end = source.indexOf('*/', index + 2);
+        return end === -1 ? source.length : end + 2;
+    }
+    return undefined;
+}
+
+function skipStringOrTemplate(source: string, index: number): number | undefined {
+    const quote = source[index];
+    if (quote === "'" || quote === '"') {
+        return skipQuoted(source, index, quote);
+    }
+    if (quote === '`') {
+        return skipTemplate(source, index);
+    }
+    return undefined;
+}
+
+function skipQuoted(source: string, index: number, quote: "'" | '"'): number {
+    let cursor = index + 1;
+    while (cursor < source.length) {
+        const character = source[cursor];
+        if (character === '\\') {
+            cursor += 2;
+            continue;
+        }
+        if (character === quote) {
+            return cursor + 1;
+        }
+        cursor += 1;
+    }
+    return source.length;
+}
+
+function skipTemplate(source: string, index: number): number {
+    let cursor = index + 1;
+    while (cursor < source.length) {
+        const character = source[cursor];
+        if (character === '\\') {
+            cursor += 2;
+            continue;
+        }
+        if (character === '`') {
+            return cursor + 1;
+        }
+        if (character === '$' && source[cursor + 1] === '{') {
+            cursor = skipTemplateExpression(source, cursor + 2);
+            continue;
+        }
+        cursor += 1;
+    }
+    return source.length;
+}
+
+function skipTemplateExpression(source: string, index: number): number {
+    let depth = 1;
+    let cursor = index;
+    while (cursor < source.length) {
+        const commentEnd = skipComment(source, cursor);
+        if (commentEnd !== undefined) {
+            cursor = commentEnd;
+            continue;
+        }
+        const stringEnd = skipStringOrTemplate(source, cursor);
+        if (stringEnd !== undefined) {
+            cursor = stringEnd;
+            continue;
+        }
+        const character = source[cursor];
+        if (character === '{') {
+            depth += 1;
+        } else if (character === '}') {
+            depth -= 1;
+            if (depth === 0) {
+                return cursor + 1;
+            }
+        }
+        cursor += 1;
+    }
+    return source.length;
+}
+
+type ReadSpecifier = { value: string; end: number };
+
+function readModuleStringAfter(source: string, index: number): ReadSpecifier | undefined {
+    const start = skipWhitespace(source, index);
+    const quote = source[start];
+    if (quote !== "'" && quote !== '"') {
+        return undefined;
+    }
+    return readQuotedValue(source, start, quote);
+}
+
+function readDynamicImportSpecifier(source: string, index: number): ReadSpecifier | undefined {
+    const openParen = skipWhitespace(source, index);
+    if (source[openParen] !== '(') {
+        return undefined;
+    }
+    return readModuleStringAfter(source, openParen + 1);
+}
+
+function readQuotedValue(source: string, index: number, quote: "'" | '"'): ReadSpecifier | undefined {
+    let cursor = index + 1;
+    let value = '';
+    while (cursor < source.length) {
+        const character = source[cursor];
+        if (character === '\\') {
+            if (cursor + 1 >= source.length) {
+                return undefined;
+            }
+            value += source[cursor + 1];
+            cursor += 2;
+            continue;
+        }
+        if (character === quote) {
+            return { value, end: cursor + 1 };
+        }
+        if (character === '\n' || character === '\r') {
+            return undefined;
+        }
+        value += character;
+        cursor += 1;
+    }
+    return undefined;
+}
+
+function skipWhitespace(source: string, index: number): number {
+    let cursor = index;
+    while (cursor < source.length) {
+        const commentEnd = skipComment(source, cursor);
+        if (commentEnd !== undefined) {
+            cursor = commentEnd;
+            continue;
+        }
+        const character = source[cursor];
+        if (character === ' ' || character === '\t' || character === '\n' || character === '\r') {
+            cursor += 1;
+            continue;
+        }
+        break;
+    }
+    return cursor;
+}
+
+export function bareModuleSpecifiers(source: string): string[] {
+    return snapshotImportSpecifiers(source).filter(
+        (specifier) => !specifier.startsWith('.') && !specifier.startsWith('node:')
+    );
 }
 
 function localModuleDependencies(path: string, source: string): string[] {
-    const dependencies = moduleSpecifiers(source)
+    const dependencies = snapshotImportSpecifiers(source)
         .filter((specifier) => specifier.startsWith('.'))
         .map((specifier) => posix.normalize(posix.join(posix.dirname(path), specifier)));
     return [...new Set(dependencies)];
