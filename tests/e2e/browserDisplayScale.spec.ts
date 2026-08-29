@@ -60,7 +60,7 @@ async function setDisplayScale(app: FrameLocator, frame: Frame, scale: number): 
 
 async function expectUiScaleDragKeepsGeometryUntilCommit(page: Page, frame: Frame, dialog: Locator): Promise<void> {
     const slider = dialog.getByRole('slider', { name: 'UI Scale' });
-    const sliderRoot = dialog.locator('[data-slot="slider"]').filter({ has: slider });
+    const sliderRoot = dialog.locator('[data-slot="slider"]');
     await expect(sliderRoot).toHaveCount(1);
     const sliderBox = requireBox(await slider.boundingBox(), 'UI Scale slider thumb');
     const sliderRootBox = requireBox(await sliderRoot.boundingBox(), 'UI Scale slider');
