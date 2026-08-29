@@ -14,20 +14,27 @@ describe('downloadAudioWav', () => {
         vi.restoreAllMocks();
     });
 
-    it('downloads the WAV through an attached link and defers cleanup until a later task', () => {
-        const anchor = document.createElement('a');
-        vi.spyOn(document, 'createElement').mockReturnValue(anchor);
-        let parentAtClick: Node | null = null;
-        const click = vi.spyOn(anchor, 'click').mockImplementation(() => {
-            parentAtClick = anchor.parentNode;
-        });
+    it('downloads the exact WAV bytes through an attached anchor and defers cleanup until a later task', async () => {
+        const createElement = vi.spyOn(document, 'createElement');
+        const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+        const bytes = new Uint8Array([82, 73, 70, 70]);
 
-        downloadAudioWav(new Uint8Array([82, 73, 70, 70]).buffer, 'retained-chorus.wav');
+        downloadAudioWav(bytes.buffer, 'retained-chorus.wav');
 
-        expect(URL.createObjectURL).toHaveBeenCalledWith(expect.objectContaining({ type: 'audio/wav' }));
+        expect(createElement).toHaveBeenCalledExactlyOnceWith('a');
+        const anchor = createElement.mock.results[0]?.value;
+        if (!(anchor instanceof HTMLAnchorElement)) {
+            throw new Error('Expected an HTML anchor download element.');
+        }
+        const blob = vi.mocked(URL.createObjectURL).mock.calls[0]?.[0];
+        if (!(blob instanceof Blob)) {
+            throw new Error('Expected exact WAV bytes to be wrapped in a Blob.');
+        }
+        expect(blob.type).toBe('audio/wav');
+        expect(blob.size).toBe(bytes.byteLength);
+        expect(new Uint8Array(await blob.arrayBuffer())).toEqual(bytes);
         expect(anchor.href).toBe('blob:retained-render');
         expect(anchor.download).toBe('retained-chorus.wav');
-        expect(parentAtClick).toBe(document.body);
         expect(click).toHaveBeenCalledOnce();
         expect(anchor.parentNode).toBe(document.body);
         expect(URL.revokeObjectURL).not.toHaveBeenCalled();

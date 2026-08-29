@@ -740,6 +740,15 @@ function applyAgentRunReceiptSagaProjection(
         const continuation = manualRecovery
             ? structuredClone(manualRecovery)
             : structuredClone(projection.pendingEffectContinuation);
+        const createsRenderOnlyContinuation =
+            manualRecovery === undefined &&
+            continuation.effects.length > 0 &&
+            continuation.effects.every(
+                (effect) => effect.kind === 'external-effect' && effect.operation === 'renderProjectSections'
+            );
+        const sourceRevision = createsRenderOnlyContinuation
+            ? projection.work.committedRevision
+            : continuation.sourceRevision;
         const continuationWithoutRecoveryIdentity = {
             authority: continuation.authority,
             batchId: continuation.batchId,
@@ -748,6 +757,7 @@ function applyAgentRunReceiptSagaProjection(
             receiptIdentity: continuation.receiptIdentity,
             recovery: continuation.recovery,
             serializedBatch: continuation.serializedBatch,
+            ...(sourceRevision === undefined ? {} : { sourceRevision }),
         } satisfies AgentRunPendingEffectContinuation;
         pendingEffectContinuations = [
             ...run.pendingEffectContinuations.filter((continuation) => continuation.batchId !== projection.work.workId),

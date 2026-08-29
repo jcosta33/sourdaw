@@ -51,7 +51,10 @@ function createCommand(commandId: string, jobs: readonly RenderProjectSectionJob
     const command = migrateLegacyAppActionToVersionedCommandEnvelope({
         action: {
             type: 'renderProjectSections',
-            payload: { sectionIds: jobs.map(({ sectionId }) => sectionId), jobs: structuredClone(jobs) },
+            payload: {
+                sectionIds: jobs.map(({ sectionId }) => sectionId),
+                jobs: jobs.map((job) => structuredClone(job)),
+            },
         },
         expectedEffect: 'Render exact project sections',
         normalizedProjectRevision: 'revision-original',

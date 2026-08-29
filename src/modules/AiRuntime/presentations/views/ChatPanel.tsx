@@ -28,7 +28,10 @@ import { sendChatMessage } from '../../useCases/sendChatMessage';
 import { AgentRunDecisionControls } from '../components/AgentRunDecisionControls';
 import { ChatComposer } from '../components/ChatComposer';
 
-import { RetainedSectionRenderManualReview } from './RetainedSectionRenderManualReview';
+import {
+    RetainedSectionRenderManualReview,
+    type RetainedSectionRenderPreviewCoordinator,
+} from './RetainedSectionRenderManualReview';
 
 /**
  * Strict allow-list of markdown-derived HTML elements rendered from streamed,
@@ -260,6 +263,25 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
     const [inputValue, setInputValue] = useState('');
     const [decisionStatusMessage, setDecisionStatusMessage] = useState<string | null>(null);
     const [retainedReviewStatusMessage, setRetainedReviewStatusMessage] = useState<string | null>(null);
+    const activeRetainedPreviewRef = useRef<{ ownerId: string; stop: () => void } | null>(null);
+    const [retainedPreviewCoordinator] = useState<RetainedSectionRenderPreviewCoordinator>(() => ({
+        stopOther: (ownerId) => {
+            const active = activeRetainedPreviewRef.current;
+            if (active === null || active.ownerId === ownerId) {
+                return;
+            }
+            activeRetainedPreviewRef.current = null;
+            active.stop();
+        },
+        register: (ownerId, stop) => {
+            activeRetainedPreviewRef.current = { ownerId, stop };
+        },
+        release: (ownerId) => {
+            if (activeRetainedPreviewRef.current?.ownerId === ownerId) {
+                activeRetainedPreviewRef.current = null;
+            }
+        },
+    }));
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -460,6 +482,7 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
                         key={`${review.binding.runId}:${review.binding.batchId}`}
                         review={review}
                         onStatus={setRetainedReviewStatusMessage}
+                        previewCoordinator={retainedPreviewCoordinator}
                     />
                 ))}
                 {preparedStemManualRepairs.map((recovery) => (

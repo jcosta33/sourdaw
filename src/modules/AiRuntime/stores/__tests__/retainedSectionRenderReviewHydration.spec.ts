@@ -4,7 +4,11 @@ import { getAudioRenderingHandlers } from '#/modules/AudioRendering/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import {
     compileVersionedCommandBatchEnvelope,
+    createVerifiedBatchReceipt,
+    createVersionedCommandReceipt,
+    getVersionedCommandBatchCommitProof,
     migrateLegacyAppActionToVersionedCommandEnvelope,
+    parseVersionedCommandBatchEnvelope,
     serializeVersionedCommandEnvelope,
 } from '#/modules/Command/useCases';
 import { type RenderProjectSectionJobSnapshot } from '#/utils/handlerContract';
@@ -208,6 +212,110 @@ describe('retained section render review hydration', () => {
 
         expect(readAgentRunState().runs[0]?.pendingEffectContinuations[0]?.sourceRevision).toBe('revision-source');
         expect(readAgentRunState().pendingEffectRecoveryLedger?.[0]?.sourceRevision).toBe('revision-source');
+        const serializedState = JSON.stringify(readAgentRunState());
+
+        restartFrom(serializedState);
+
+        expect(selectRetainedSectionRenderManualReviews(readAgentRunState())).toHaveLength(1);
+    });
+
+    it('binds an ordinary partial render receipt to its committed revision before hydration', async () => {
+        const action = {
+            type: 'renderProjectSections' as const,
+            payload: { sectionIds: [job.sectionId], jobs: [structuredClone(job)] },
+        };
+        const command = migrateLegacyAppActionToVersionedCommandEnvelope({
+            action,
+            expectedEffect: 'Render exact review evidence',
+            normalizedProjectRevision: 'revision-before-receipt',
+        });
+        const commandBatch = compileVersionedCommandBatchEnvelope({
+            runId: 'run-receipt-review',
+            batchId: 'batch-receipt-review',
+            projectId: 'project-review',
+            baseRevision: 'revision-before-receipt',
+            intent: 'Render retained review evidence',
+            commands: [serializeVersionedCommandEnvelope({ ...command, commandId: 'command-receipt-review' })],
+        });
+        const parsed = parseVersionedCommandBatchEnvelope(commandBatch.serialized, commandBatch.authority);
+        if (parsed.status === 'invalid') {
+            throw new Error(parsed.reason);
+        }
+        const commandEnvelope = parsed.envelope.commands[0];
+        if (!commandEnvelope) {
+            throw new Error('Expected the receipt-bound render command.');
+        }
+        const pendingEffect = {
+            commandId: commandEnvelope.commandId,
+            kind: 'external-effect' as const,
+            operation: 'renderProjectSections',
+            reason: 'The retained render requires review.',
+            remediation: 'reconcile' as const,
+            state: 'pending' as const,
+        };
+        const proof = await getVersionedCommandBatchCommitProof(commandBatch);
+        const receipt = createVerifiedBatchReceipt({
+            contentHash: proof.contentHash,
+            envelope: parsed.envelope,
+            observedBaseRevision: 'revision-before-receipt',
+            resultingRevision: 'revision-receipt-commit',
+            result: {
+                status: 'committed-with-warning',
+                warning: 'A retained render effect remains pending.',
+                warningDetails: [
+                    {
+                        kind: 'external-effect',
+                        message: pendingEffect.reason,
+                        commandId: commandEnvelope.commandId,
+                        pendingEffect,
+                    },
+                ],
+                actions: [
+                    {
+                        action,
+                        receipt: createVersionedCommandReceipt({
+                            envelope: commandEnvelope,
+                            compensation: { available: false, strategy: 'none' },
+                        }),
+                    },
+                ],
+            },
+        });
+        agentRunLifecycle.create({
+            runId: 'run-receipt-review',
+            request: 'Review the ordinary retained render receipt.',
+            mode: 'macro',
+            createdRevision: 'revision-before-receipt',
+            createdAt: 1,
+        });
+        agentRunLifecycle.recordCommittedWork({
+            runId: 'run-receipt-review',
+            workId: 'prior-work',
+            receiptIdentity: 'receipt-prior-work',
+            committedRevision: 'revision-prior-work',
+            completesRun: false,
+            committedAt: 1,
+        });
+
+        agentRunLifecycle.recordReceiptSaga({
+            runId: 'run-receipt-review',
+            receipt,
+            actions: [action],
+            committedRevision: 'revision-receipt-commit',
+            completesRun: true,
+            commandBatch,
+        });
+
+        expect(agentRunLifecycle.get('run-receipt-review')?.pendingEffectContinuations[0]?.sourceRevision).toBe(
+            'revision-receipt-commit'
+        );
+        expect(readAgentRunState().pendingEffectRecoveryLedger?.[0]?.sourceRevision).toBe('revision-receipt-commit');
+        agentRunLifecycle.requirePendingEffectManualRepair({
+            runId: 'run-receipt-review',
+            batchId: 'batch-receipt-review',
+            reason: 'Review the exact retained evidence.',
+            requiredAt: 2,
+        });
         const serializedState = JSON.stringify(readAgentRunState());
 
         restartFrom(serializedState);

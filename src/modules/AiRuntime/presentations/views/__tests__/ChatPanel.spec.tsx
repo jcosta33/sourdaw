@@ -5,6 +5,16 @@ import { MISSING_EXACT_CHECKPOINT_RECOVERY_REASON } from '../../../models/GetPen
 import * as retainedReviewProjection from '../../../useCases/selectRetainedSectionRenderManualReviews';
 import { ChatPanel } from '../ChatPanel';
 
+const retainedPreviewMocks = vi.hoisted(() => ({
+    cache: vi.fn(),
+    play: vi.fn(),
+    release: vi.fn(),
+    exportWav: vi.fn(),
+    settle: vi.fn(),
+    stopVerse: vi.fn(),
+    stopChorus: vi.fn(),
+}));
+
 // Mock external dependencies - factories are hoisted, so define mocks inside
 vi.mock('#/infra/store/useStore', () => ({
     useStore: vi.fn(() => ({
@@ -65,14 +75,19 @@ vi.mock('remark-gfm', () => ({
     default: vi.fn(),
 }));
 
-vi.mock('../RetainedSectionRenderManualReview', () => ({
-    RetainedSectionRenderManualReview: ({ onStatus }: { onStatus: (message: string) => void }) => (
-        <div>
-            <p>Retained section render requires review</p>
-            <button onClick={() => onStatus('Exported the exact retained WAV.')}>Play Chorus</button>
-            <button onClick={() => onStatus('The exact WAV encoder failed.')}>Report retained review error</button>
-        </div>
-    ),
+vi.mock('#/modules/AudioEngine/useCases', () => ({
+    cacheAudioBuffer: retainedPreviewMocks.cache,
+    playCachedAudioBufferPreview: retainedPreviewMocks.play,
+    releasePreviewAudioBuffer: retainedPreviewMocks.release,
+}));
+
+vi.mock('#/modules/AudioRendering/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/AudioRendering/useCases')>()),
+    exportExactAgentSectionRenderArtifactAsWav: retainedPreviewMocks.exportWav,
+}));
+
+vi.mock('../../../useCases/settleRetainedSectionRenderManualReview', () => ({
+    settleRetainedSectionRenderManualReview: retainedPreviewMocks.settle,
 }));
 
 vi.mock('../../components/ChatComposer', () => ({
@@ -155,6 +170,60 @@ const capabilityReport = {
     detectedAt: 0,
 };
 
+type RetainedReview = ReturnType<typeof retainedReviewProjection.selectRetainedSectionRenderManualReviews>[number];
+
+const verseBuffer = { numberOfChannels: 2 } as AudioBuffer;
+const chorusBuffer = { numberOfChannels: 2 } as AudioBuffer;
+
+function createRetainedReview(input: {
+    runId: string;
+    batchId: string;
+    commandId: string;
+    jobId: string;
+    sectionName: string;
+    buffer: AudioBuffer;
+}): RetainedReview {
+    const job = {
+        jobId: input.jobId,
+        sectionId: `section-${input.jobId}`,
+        sectionName: input.sectionName,
+        startBeat: input.sectionName === 'Verse' ? 0 : 16,
+        endBeat: input.sectionName === 'Verse' ? 16 : 32,
+        sampleRate: 48_000,
+        tailSeconds: 1,
+    };
+    return {
+        binding: {
+            runId: input.runId,
+            batchId: input.batchId,
+            receiptIdentity: `receipt-${input.batchId}`,
+            sourceRevision: `revision-${input.batchId}`,
+            commands: [{ commandId: input.commandId, jobs: [job] }],
+        },
+        jobs: [
+            {
+                commandId: input.commandId,
+                job,
+                availability: 'available',
+                artifact: {
+                    owner: 'agent-section-render',
+                    retention: 'session',
+                    ...job,
+                    sourceRevision: `revision-${input.batchId}`,
+                    renderedAt: 1,
+                    durationSeconds: 1,
+                    frameCount: 48_000,
+                    channelCount: 2,
+                    byteSize: 384_000,
+                    warnings: [],
+                    buffer: input.buffer,
+                },
+                warnings: [],
+            },
+        ],
+    };
+}
+
 describe('ChatPanel', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -178,6 +247,13 @@ describe('ChatPanel', () => {
             selectedAlternativeId: 'keep-tempo',
         });
         (isLlmAvailable as ReturnType<typeof vi.fn>).mockReturnValue(true);
+        retainedPreviewMocks.cache.mockImplementation(({ buffer }: { buffer: AudioBuffer }) =>
+            buffer === verseBuffer ? 'cached-verse' : 'cached-chorus'
+        );
+        retainedPreviewMocks.play
+            .mockReturnValueOnce({ stop: retainedPreviewMocks.stopVerse })
+            .mockReturnValue({ stop: retainedPreviewMocks.stopChorus });
+        retainedPreviewMocks.exportWav.mockResolvedValue(true);
     });
 
     it('should render without crashing', () => {
@@ -630,53 +706,41 @@ describe('ChatPanel', () => {
     it('renders the focused retained-review surface while preserving generic manual repair guidance', () => {
         const selectReview = vi.spyOn(retainedReviewProjection, 'selectRetainedSectionRenderManualReviews');
         selectReview.mockReturnValue([
-            {
-                binding: {
-                    runId: 'run-render-review',
-                    batchId: 'batch-render-review',
-                    receiptIdentity: 'receipt-render-review',
-                    sourceRevision: 'revision-render-review',
-                    commands: [
-                        {
-                            commandId: 'command-render-review',
-                            jobs: [
-                                {
-                                    jobId: 'job-render-review',
-                                    sectionId: 'section-render-review',
-                                    sectionName: 'Chorus',
-                                    startBeat: 16,
-                                    endBeat: 32,
-                                    sampleRate: 48_000,
-                                    tailSeconds: 1,
-                                },
-                            ],
-                        },
-                    ],
-                },
-                jobs: [
-                    {
-                        commandId: 'command-render-review',
-                        job: {
-                            jobId: 'job-render-review',
-                            sectionId: 'section-render-review',
-                            sectionName: 'Chorus',
-                            startBeat: 16,
-                            endBeat: 32,
-                            sampleRate: 48_000,
-                            tailSeconds: 1,
-                        },
-                        availability: 'available',
-                        artifact: { buffer: {} as AudioBuffer, warnings: [] },
-                        warnings: [],
-                    },
-                ],
-            },
-        ] as unknown as ReturnType<typeof retainedReviewProjection.selectRetainedSectionRenderManualReviews>);
+            createRetainedReview({
+                runId: 'run-render-review',
+                batchId: 'batch-render-review',
+                commandId: 'command-render-review',
+                jobId: 'job-render-review',
+                sectionName: 'Chorus',
+                buffer: chorusBuffer,
+            }),
+        ]);
         (useStore as ReturnType<typeof vi.fn>).mockImplementation((store) =>
             store === agentRunStore
                 ? {
                       schemaVersion: 1,
                       runs: [
+                          {
+                              runId: 'run-render-review',
+                              revisions: { created: null, planned: null, approved: null, committed: null },
+                              pendingEffectContinuations: [
+                                  {
+                                      batchId: 'batch-render-review',
+                                      effects: [
+                                          {
+                                              commandId: 'command-render-review',
+                                              kind: 'external-effect',
+                                              operation: 'renderProjectSections',
+                                              reason: 'The retained render must be reviewed.',
+                                              remediation: 'manual-repair',
+                                              state: 'pending',
+                                          },
+                                      ],
+                                      recovery: 'manual-repair',
+                                      lastError: null,
+                                  },
+                              ],
+                          },
                           {
                               runId: 'run-generic-repair',
                               revisions: { created: null, planned: null, approved: null, committed: null },
@@ -707,6 +771,9 @@ describe('ChatPanel', () => {
 
         expect(screen.getByText('Retained section render requires review')).toBeInTheDocument();
         expect(screen.getByRole('button', { name: 'Play Chorus' })).toBeInTheDocument();
+        expect(
+            screen.queryByRole('list', { name: 'Pending effects for batch batch-render-review' })
+        ).not.toBeInTheDocument();
         expect(screen.getByRole('list', { name: 'Pending effects for batch batch-generic-repair' })).toHaveTextContent(
             'publishRender: Publication evidence must be inspected manually.'
         );
@@ -714,32 +781,69 @@ describe('ChatPanel', () => {
         selectReview.mockRestore();
     });
 
-    it('announces retained-review outcomes and errors when no agent decision exists', () => {
+    it('announces retained-review outcomes and errors when no agent decision exists', async () => {
         const selectReview = vi.spyOn(retainedReviewProjection, 'selectRetainedSectionRenderManualReviews');
         selectReview.mockReturnValue([
-            {
-                binding: {
-                    runId: 'run-render-review',
-                    batchId: 'batch-render-review',
-                    receiptIdentity: 'receipt-render-review',
-                    sourceRevision: 'revision-render-review',
-                    commands: [],
-                },
-                jobs: [],
-            },
+            createRetainedReview({
+                runId: 'run-render-review',
+                batchId: 'batch-render-review',
+                commandId: 'command-render-review',
+                jobId: 'job-render-review',
+                sectionName: 'Chorus',
+                buffer: chorusBuffer,
+            }),
         ]);
 
         render(<ChatPanel />);
 
         expect(agentRunControls.listDecisions).toHaveReturnedWith([]);
         expect(screen.queryByText('Agent decision required')).not.toBeInTheDocument();
-        fireEvent.click(screen.getByRole('button', { name: 'Play Chorus' }));
-        expect(screen.getByRole('status')).toHaveTextContent('Exported the exact retained WAV.');
+        fireEvent.click(screen.getByRole('button', { name: 'Export Chorus WAV' }));
+        expect(await screen.findByRole('status')).toHaveTextContent('Exported the exact retained WAV.');
         expect(screen.getByRole('status')).toHaveAttribute('aria-live', 'polite');
         expect(screen.getByRole('status')).toHaveAttribute('aria-atomic', 'true');
 
-        fireEvent.click(screen.getByRole('button', { name: 'Report retained review error' }));
-        expect(screen.getByRole('status')).toHaveTextContent('The exact WAV encoder failed.');
+        retainedPreviewMocks.exportWav.mockRejectedValueOnce(new Error('The exact WAV encoder failed.'));
+        fireEvent.click(screen.getByRole('button', { name: 'Export Chorus WAV' }));
+        expect(await screen.findByRole('status')).toHaveTextContent('The exact WAV encoder failed.');
+        selectReview.mockRestore();
+    });
+
+    it('stops and releases the active retained preview before another review card starts', () => {
+        const selectReview = vi.spyOn(retainedReviewProjection, 'selectRetainedSectionRenderManualReviews');
+        selectReview.mockReturnValue([
+            createRetainedReview({
+                runId: 'run-verse-review',
+                batchId: 'batch-verse-review',
+                commandId: 'command-verse-review',
+                jobId: 'job-verse-review',
+                sectionName: 'Verse',
+                buffer: verseBuffer,
+            }),
+            createRetainedReview({
+                runId: 'run-chorus-review',
+                batchId: 'batch-chorus-review',
+                commandId: 'command-chorus-review',
+                jobId: 'job-chorus-review',
+                sectionName: 'Chorus',
+                buffer: chorusBuffer,
+            }),
+        ]);
+
+        render(<ChatPanel />);
+        fireEvent.click(screen.getByRole('button', { name: 'Play Verse' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Play Chorus' }));
+
+        expect(retainedPreviewMocks.stopVerse).toHaveBeenCalledOnce();
+        expect(retainedPreviewMocks.release).toHaveBeenNthCalledWith(1, 'cached-verse');
+        expect(retainedPreviewMocks.stopVerse.mock.invocationCallOrder[0]).toBeLessThan(
+            retainedPreviewMocks.play.mock.invocationCallOrder[1]!
+        );
+        expect(retainedPreviewMocks.release.mock.invocationCallOrder[0]).toBeLessThan(
+            retainedPreviewMocks.play.mock.invocationCallOrder[1]!
+        );
+        expect(screen.getByRole('button', { name: 'Play Verse' })).toHaveAttribute('aria-pressed', 'false');
+        expect(screen.getByRole('button', { name: 'Stop Chorus' })).toHaveAttribute('aria-pressed', 'true');
         selectReview.mockRestore();
     });
 

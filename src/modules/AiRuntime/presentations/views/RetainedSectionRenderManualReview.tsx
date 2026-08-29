@@ -20,9 +20,16 @@ type AvailableJob = Extract<Review['jobs'][number], { availability: 'available' 
 type PreviewPlayback = NonNullable<ReturnType<typeof playCachedAudioBufferPreview>>;
 type ActivePreview = { bufferId: string; playback: PreviewPlayback };
 
+export type RetainedSectionRenderPreviewCoordinator = {
+    stopOther: (ownerId: string) => void;
+    register: (ownerId: string, stop: () => void) => void;
+    release: (ownerId: string) => void;
+};
+
 type RetainedSectionRenderManualReviewProps = {
     review: Review;
     onStatus: (message: string) => void;
+    previewCoordinator: RetainedSectionRenderPreviewCoordinator;
 };
 
 function getJobKey(job: Review['jobs'][number]): string {
@@ -51,7 +58,9 @@ function stopAndReleasePreview(preview: ActivePreview): unknown {
 export const RetainedSectionRenderManualReview = ({
     review,
     onStatus,
+    previewCoordinator,
 }: RetainedSectionRenderManualReviewProps): ReactElement => {
+    const previewOwnerId = `${review.binding.runId}:${review.binding.batchId}`;
     const previewsRef = useRef(new Map<string, ActivePreview>());
     const [playingJobKey, setPlayingJobKey] = useState<string | null>(null);
     const [workingJobKey, setWorkingJobKey] = useState<string | null>(null);
@@ -67,6 +76,7 @@ export const RetainedSectionRenderManualReview = ({
         if (playingJobKey === jobKey) {
             setPlayingJobKey(null);
         }
+        previewCoordinator.release(previewOwnerId);
         if (cleanupError) {
             onStatus(getErrorMessage(cleanupError));
         }
@@ -80,6 +90,7 @@ export const RetainedSectionRenderManualReview = ({
             cleanupError ??= previewCleanupError;
         }
         setPlayingJobKey(null);
+        previewCoordinator.release(previewOwnerId);
         if (reportErrors && cleanupError) {
             onStatus(getErrorMessage(cleanupError));
         }
@@ -91,8 +102,9 @@ export const RetainedSectionRenderManualReview = ({
                 stopAndReleasePreview(preview);
             }
             previewsRef.current.clear();
+            previewCoordinator.release(previewOwnerId);
         },
-        []
+        [previewCoordinator, previewOwnerId]
     );
 
     const play = (job: AvailableJob): void => {
@@ -102,6 +114,7 @@ export const RetainedSectionRenderManualReview = ({
             return;
         }
         releaseAllPreviews();
+        previewCoordinator.stopOther(previewOwnerId);
         let bufferId: string;
         try {
             bufferId = cacheAudioBuffer({ buffer: job.artifact.buffer });
@@ -124,6 +137,7 @@ export const RetainedSectionRenderManualReview = ({
                         onStatus(getErrorMessage(error));
                     }
                     setPlayingJobKey(null);
+                    previewCoordinator.release(previewOwnerId);
                 },
             });
         } catch (error) {
@@ -145,6 +159,7 @@ export const RetainedSectionRenderManualReview = ({
             return;
         }
         previewsRef.current.set(jobKey, { bufferId, playback });
+        previewCoordinator.register(previewOwnerId, releaseAllPreviews);
         setPlayingJobKey(jobKey);
     };
 

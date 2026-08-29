@@ -5,6 +5,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { RetainedSectionRenderManualReview } from '../RetainedSectionRenderManualReview';
 
+import type { selectRetainedSectionRenderManualReviews } from '../../../useCases/selectRetainedSectionRenderManualReviews';
+
 const mocks = vi.hoisted(() => ({
     cacheAudioBuffer: vi.fn(),
     playCachedAudioBufferPreview: vi.fn(),
@@ -12,6 +14,9 @@ const mocks = vi.hoisted(() => ({
     exportWav: vi.fn(),
     settle: vi.fn(),
     stop: vi.fn(),
+    stopOther: vi.fn(),
+    register: vi.fn(),
+    release: vi.fn(),
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
@@ -25,6 +30,12 @@ vi.mock('#/modules/AudioRendering/useCases', () => ({
 vi.mock('../../../useCases/settleRetainedSectionRenderManualReview', () => ({
     settleRetainedSectionRenderManualReview: mocks.settle,
 }));
+
+const previewCoordinator = {
+    stopOther: mocks.stopOther,
+    register: mocks.register,
+    release: mocks.release,
+};
 
 const stereoVerseBuffer = { numberOfChannels: 2, id: 'stereo-verse' } as unknown as AudioBuffer;
 const stereoChorusBuffer = { numberOfChannels: 2, id: 'stereo-chorus' } as unknown as AudioBuffer;
@@ -54,7 +65,29 @@ const binding = {
     commands: [{ commandId: 'command-review', jobs: [verse, chorus] }],
 };
 
-function availableReview() {
+type Review = ReturnType<typeof selectRetainedSectionRenderManualReviews>[number];
+
+function artifactFor(
+    job: typeof verse | typeof chorus,
+    buffer: AudioBuffer,
+    warnings: string[]
+): Extract<Review['jobs'][number], { availability: 'available' }>['artifact'] {
+    return {
+        owner: 'agent-section-render',
+        retention: 'session',
+        ...job,
+        sourceRevision: 'revision-review',
+        renderedAt: 1,
+        durationSeconds: 1,
+        frameCount: job.sampleRate,
+        channelCount: 2,
+        byteSize: job.sampleRate * 8,
+        warnings,
+        buffer,
+    };
+}
+
+function availableReview(): Review {
     return {
         binding,
         jobs: [
@@ -62,25 +95,29 @@ function availableReview() {
                 commandId: 'command-review',
                 job: verse,
                 availability: 'available' as const,
-                artifact: { buffer: stereoVerseBuffer },
+                artifact: artifactFor(verse, stereoVerseBuffer, []),
                 warnings: [],
             },
             {
                 commandId: 'command-review',
                 job: chorus,
                 availability: 'available' as const,
-                artifact: { buffer: stereoChorusBuffer },
+                artifact: artifactFor(chorus, stereoChorusBuffer, ['tail truncated']),
                 warnings: ['tail truncated'],
             },
         ],
     };
 }
 
-const Harness = ({ review = availableReview() }: { review?: ReturnType<typeof availableReview> }) => {
+const Harness = ({ review = availableReview() }: { review?: Review }) => {
     const [status, setStatus] = useState('');
     return (
         <>
-            <RetainedSectionRenderManualReview review={review} onStatus={setStatus} />
+            <RetainedSectionRenderManualReview
+                review={review}
+                onStatus={setStatus}
+                previewCoordinator={previewCoordinator}
+            />
             <output>{status}</output>
         </>
     );
@@ -154,6 +191,22 @@ describe('RetainedSectionRenderManualReview', () => {
             mocks.playCachedAudioBufferPreview.mock.invocationCallOrder[1]!
         );
         expect(screen.getByRole('button', { name: 'Play Verse' })).toHaveAttribute('aria-pressed', 'false');
+        expect(screen.getByRole('button', { name: 'Stop Chorus' })).toHaveAttribute('aria-pressed', 'true');
+    });
+
+    it('ignores Verse completion after Chorus owns playback without double-releasing either cache', () => {
+        render(<Harness />);
+        fireEvent.click(screen.getByRole('button', { name: 'Play Verse' }));
+        const verseOnEnded = mocks.playCachedAudioBufferPreview.mock.calls[0]?.[0].onEnded;
+        if (!verseOnEnded) {
+            throw new Error('Expected the Verse completion callback.');
+        }
+        fireEvent.click(screen.getByRole('button', { name: 'Play Chorus' }));
+
+        act(() => verseOnEnded());
+
+        expect(mocks.stop).toHaveBeenCalledOnce();
+        expect(mocks.releasePreviewAudioBuffer.mock.calls).toEqual([['cached-stereo-verse']]);
         expect(screen.getByRole('button', { name: 'Stop Chorus' })).toHaveAttribute('aria-pressed', 'true');
     });
 
@@ -249,19 +302,29 @@ describe('RetainedSectionRenderManualReview', () => {
     });
 
     it('shows one missing-evidence acknowledgement and visible operation errors', async () => {
-        const review = availableReview();
-        review.jobs[1] = {
-            commandId: 'command-review',
-            job: chorus,
-            availability: 'unavailable',
-            reason: 'The exact chorus evidence expired.',
-            warnings: [],
-        } as (typeof review.jobs)[number];
+        const available = availableReview();
+        const review: Review = {
+            ...available,
+            jobs: [
+                available.jobs[0]!,
+                {
+                    commandId: 'command-review',
+                    job: chorus,
+                    availability: 'unavailable',
+                    reason: 'The exact chorus evidence expired.',
+                    warnings: [],
+                },
+            ],
+        };
         const UnavailableHarness = () => {
             const [status, setStatus] = useState('');
             return (
                 <>
-                    <RetainedSectionRenderManualReview review={review} onStatus={setStatus} />
+                    <RetainedSectionRenderManualReview
+                        review={review}
+                        onStatus={setStatus}
+                        previewCoordinator={previewCoordinator}
+                    />
                     <output>{status}</output>
                 </>
             );
