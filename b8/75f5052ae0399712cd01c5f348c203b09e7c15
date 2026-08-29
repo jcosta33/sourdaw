@@ -1,0 +1,29 @@
+src/modules/MIDI/stores/__tests__/grooveTemplateRawProjectionLoss.spec.ts
+  s_a965280ab2852d::t_ffa83c2416a442 22
+  s_a965280ab2852d::t_7fe674399bfba1 1-21,23-50
+src/infra/store/storage/createAutomergeStorage.ts
+  s_a965280ab2852d::t_481b32fee67d51 258-262
+  s_a965280ab2852d::t_7e13fa36bc0aee 327-330,334
+  s_a965280ab2852d::t_8655a6101644b0 108-125
+  s_a965280ab2852d::t_491073958d71fb 873
+  s_a965280ab2852d::t_6212ab9abebb65 1270-1273
+  s_a965280ab2852d::t_4a6aedd9fa5872 107
+src/modules/MIDI/stores/grooveTemplateAutomergeStorage.ts
+  s_a965280ab2852d::t_74d80927794114 323-328
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "b875f5052ae0399712cd01c5f348c203b09e7c15",
+  "prompts": {},
+  "sessions": {
+    "s_a965280ab2852d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "841ddf43-6056-4aac-ad0f-c09b754df0ba",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
