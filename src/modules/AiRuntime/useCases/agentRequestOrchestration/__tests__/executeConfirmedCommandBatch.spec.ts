@@ -39,6 +39,8 @@ const mocks = vi.hoisted(() => ({
     prepareContinuation: vi.fn<PrepareContinuation>(),
     prepareResourceLease: vi.fn<PrepareResourceLease>(),
     protectResourceLease: vi.fn<ProtectResourceLease>(),
+    recordFailure: vi.fn(),
+    recordReceipt: vi.fn(() => ({ warning: null, effectsPending: false })),
     retainCommitted: vi.fn(),
     setActiveAborter: vi.fn(),
     setChatGenerating: vi.fn(),
@@ -80,6 +82,9 @@ vi.mock('../../issueAgentCommandApprovalBinding', () => ({
 vi.mock('../../prepareAgentRunPendingEffectContinuation', () => ({
     prepareAgentRunPendingEffectContinuation: mocks.prepareContinuation,
 }));
+vi.mock('../agentRunExecutionSettlement', () => ({
+    agentRunExecutionSettlement: { recordFailure: mocks.recordFailure },
+}));
 vi.mock('../confirmedBatchOutcomeSupport', () => ({
     confirmedBatchOutcomeSupport: {
         createCommittedEffectFailureResult: vi.fn((receipt, reason) => ({
@@ -87,6 +92,8 @@ vi.mock('../confirmedBatchOutcomeSupport', () => ({
             receipt,
             reason,
         })),
+        getVerifiedReceiptIdentity: vi.fn(() => 'receipt-identity'),
+        recordTrackedAgentRunReceipt: mocks.recordReceipt,
     },
 }));
 vi.mock('../pendingActionResourceSettlement', () => ({
@@ -136,6 +143,16 @@ function createNonDurableReceipt(status: 'no-op' | 'cancelled' | 'ambiguous' | '
             actions: [],
             reason: `The prior batch was ${status}.`,
         },
+    });
+}
+
+function createRuntimeReceipt() {
+    return createVerifiedBatchReceipt({
+        contentHash: 'receipt-executed',
+        envelope: parsedBatch.envelope,
+        observedBaseRevision: 'revision-1',
+        resultingRevision: 'revision-2',
+        result: { status: 'executed', actions: [] },
     });
 }
 
@@ -426,6 +443,16 @@ describe('executeConfirmedCommandBatch', () => {
             content:
                 'The project change remains durably committed, but pending-effect reconciliation could not continue: pending-effect continuation failed',
         });
+        expect(mocks.recordReceipt).toHaveBeenCalledWith(confirmation, receipt, {
+            revertGroupId: 'group-1',
+            completesRun: false,
+        });
+        expect(mocks.recordFailure).toHaveBeenCalledWith(confirmation, {
+            category: 'internal',
+            retriable: false,
+            workId: 'batch-1',
+            receiptIdentity: 'receipt-identity',
+        });
         expect(releaseCancellation).toHaveBeenCalledOnce();
         expect(mocks.setActiveAborter).toHaveBeenLastCalledWith(null);
         expect(mocks.setChatGenerating).toHaveBeenLastCalledWith(false);
@@ -447,6 +474,22 @@ describe('executeConfirmedCommandBatch', () => {
             expect(mocks.updateMessage).not.toHaveBeenCalled();
         }
     );
+
+    it('should return ordinary failure for an executed runtime receipt without retaining project resources', async () => {
+        mocks.prepareResourceLease.mockRejectedValue(new Error('resource preparation failed'));
+
+        const result = await execute({
+            priorVerifiedBatchReceipt: createRuntimeReceipt(),
+            recoveringPendingEffects: true,
+        });
+
+        expect(result).toMatchObject({ status: 'failed' });
+        expect(mocks.retainCommitted).not.toHaveBeenCalled();
+        expect(mocks.updateConfirmation).not.toHaveBeenCalled();
+        expect(mocks.updateMessage).not.toHaveBeenCalled();
+        expect(mocks.recordReceipt).not.toHaveBeenCalled();
+        expect(mocks.recordFailure).not.toHaveBeenCalled();
+    });
 
     it('should release preview resources and return the exact preview-mode failure', async () => {
         const resource = { release: vi.fn() };

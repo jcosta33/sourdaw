@@ -17,6 +17,7 @@ import { getVerifiedBatchReplayDisposition } from '../getVerifiedBatchReplayDisp
 import { issueAgentCommandApprovalBinding } from '../issueAgentCommandApprovalBinding';
 import { prepareAgentRunPendingEffectContinuation } from '../prepareAgentRunPendingEffectContinuation';
 
+import { agentRunExecutionSettlement } from './agentRunExecutionSettlement';
 import {
     confirmedBatchOutcomeSupport,
     type CommandVerifiedBatchReceipt,
@@ -57,12 +58,14 @@ function isConfirmationExecutionAuthorized(isProjectMutationAuthorized: () => bo
     return isProjectMutationAuthorized();
 }
 
-function hasDurablePriorReceipt(receipt: CommandVerifiedBatchReceipt | null): receipt is CommandVerifiedBatchReceipt {
+function hasCommittedProjectPriorReceipt(
+    receipt: CommandVerifiedBatchReceipt | null
+): receipt is CommandVerifiedBatchReceipt {
     if (!receipt) {
         return false;
     }
     const disposition = getVerifiedBatchReplayDisposition(receipt);
-    return disposition.status === 'committed' || disposition.status === 'executed';
+    return disposition.status === 'committed';
 }
 
 export async function executeConfirmedCommandBatch(
@@ -178,7 +181,17 @@ export async function executeConfirmedCommandBatch(
         };
     } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);
-        if (hasDurablePriorReceipt(priorVerifiedBatchReceipt)) {
+        if (hasCommittedProjectPriorReceipt(priorVerifiedBatchReceipt)) {
+            confirmedBatchOutcomeSupport.recordTrackedAgentRunReceipt(confirmation, priorVerifiedBatchReceipt, {
+                ...(confirmation.groupId ? { revertGroupId: confirmation.groupId } : {}),
+                completesRun: false,
+            });
+            agentRunExecutionSettlement.recordFailure(confirmation, {
+                category: 'internal',
+                retriable: false,
+                workId: priorVerifiedBatchReceipt.batchId,
+                receiptIdentity: confirmedBatchOutcomeSupport.getVerifiedReceiptIdentity(priorVerifiedBatchReceipt),
+            });
             updatePendingActionConfirmationStatus({
                 confirmationId: confirmation.id,
                 status: 'failed',
