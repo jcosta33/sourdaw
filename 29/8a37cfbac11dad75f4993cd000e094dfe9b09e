@@ -1,0 +1,225 @@
+crates/sourdaw-native/src/shutdown.rs
+  s_4f908a5afb6b58::t_02627797f6c096 151-153
+AGENTS.md
+  s_ae074277795b45::t_0639895bfa43be 244-248,261-263,282-289,300-303,318-323,333-335,337-341,343-345,347-349,352,354-374,383-387,391-393,429-435,448-463
+crates/sourdaw-native/src/addon/mod.rs
+  s_ae074277795b45::t_075e123c423b6e 58-66,330-334,337-345
+crates/sourdaw-native/src/commands/ai_audio.rs
+  s_ae074277795b45::t_abe35a9e285a8d 3-8,18,23-70,73-74,82-100,118,152,213-214,425-434,436,439-488
+electron/__tests__/commands.spec.ts
+  s_ae074277795b45::t_f1fd081eb56131 341
+electron/__tests__/pluginCommandAdmission.spec.ts
+  s_ae074277795b45::t_86f9412caa8732 1-64
+electron/__tests__/router.spec.ts
+  s_ae074277795b45::t_1c07d16fd5488e 12,44,47,55,157-189
+electron/__tests__/shutdown.spec.ts
+  s_ae074277795b45::t_85b7e603b5a22b 14-16,19-25,29-30,120-151
+electron/appIpc.ts
+  s_ae074277795b45::t_ee3566f12ef616 54,57-62,66-68
+electron/main.ts
+  s_ae074277795b45::t_7cf35dc6e33381 41,47,293,397,407-412,473-482
+electron/pluginCommandAdmission.ts
+  s_ae074277795b45::t_c864b8b39fbd19 1-49
+electron/router.ts
+  s_ae074277795b45::t_272d297276c1f4 150-151,160,169-171
+electron/shutdown.ts
+  s_ae074277795b45::t_92e8244ece8822 78-112
+release/open-source-inventory.json
+  s_ae074277795b45::t_829c2c44df0fe7 947
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  s_ae074277795b45::t_561a7c43d67b8f 120-126,128-132
+scripts/__tests__/checkReleaseInventory.spec.ts
+  s_ae074277795b45::t_6728872f6edbd6 105-109
+src/app/__tests__/bootstrap.spec.ts
+  s_ae074277795b45::t_3f2003c044ffe9 88,142-145,184,822-859
+src/app/bootstrap.ts
+  s_ae074277795b45::t_e8444d1491a71d 11,229-233
+src/modules/AiGeneration/repositories/nativeAIBridge/__tests__/audioDenoising.spec.ts
+  s_ae074277795b45::t_dcc8b42362ac3d 1-73
+src/modules/AiGeneration/repositories/nativeAIBridge/audioDenoising.ts
+  s_ae074277795b45::t_767ec0e053660a 4,9-10,14-16,24,30-77
+src/modules/AiGeneration/useCases/nativeAiBridge/__tests__/denoiseAudio.spec.ts
+  s_ae074277795b45::t_8721119a4bc060 17,28,38
+src/modules/AiGeneration/useCases/nativeAiBridge/helpers.ts
+  s_ae074277795b45::t_1395a902d01a27 2,8,15
+src/modules/AiRuntime/models/GetPendingEffectRecoveryPolicy.ts
+  s_ae074277795b45::t_9a00702cf8dc2b 1-20
+src/modules/AiRuntime/stores/__tests__/selectAgentRunPendingEffectRecoveries.spec.ts
+  s_ae074277795b45::t_d7e69ca0da8dbb 1-173
+src/modules/AiRuntime/stores/pendingActionConfirmationStore.ts
+  s_ae074277795b45::t_02959258453eba 4,7,391-427,574,592-593
+src/modules/AiRuntime/stores/selectAgentRunPendingEffectRecoveries.ts
+  s_ae074277795b45::t_08750b97db2a43 6-8,22-56,62,65-68,75-84
+src/modules/AiRuntime/useCases/__tests__/agentRunLifecycle.spec.ts
+  s_ae074277795b45::t_f769d6e818f20b 1,3-5,9-80,160-477
+src/modules/AiRuntime/useCases/__tests__/agentRunRecovery.spec.ts
+  s_ae074277795b45::t_75524c77a8a6f9 5,11,86,90,553,627-632,712,763,779-782,790,794,803-816,821,831,845,859,875-876,880,887-948,1145-1382
+src/modules/AiRuntime/useCases/__tests__/agentRunWorkLease.spec.ts
+  s_ae074277795b45::t_7a7705f865b8cd 25-28
+src/modules/AiRuntime/useCases/__tests__/backingVocalPlateWorkflow.spec.ts
+  s_ae074277795b45::t_16b91c8172a636 30,59,822-829,903,1001,1461-1521
+src/modules/AiRuntime/useCases/__tests__/confirmPendingChatActions.spec.ts
+  s_ae074277795b45::t_ad54f7b15118ed 54,63,2751-2752,2754-2758,2765-2766,2769-2770,2775-3226
+src/modules/AiRuntime/useCases/__tests__/drumBusPromptWorkflow.spec.ts
+  s_ae074277795b45::t_d71091103f99b9 24,58,1100,1694-1698,2205-2213,2217,2240-2294,2296-2304,2311,2510-2518,2756-2759,2761,2763
+src/modules/AiRuntime/useCases/__tests__/pendingChatActions.spec.ts
+  s_ae074277795b45::t_4890d27160a2a6 37,55
+src/modules/AiRuntime/useCases/__tests__/recordAgentRunReceiptSaga.spec.ts
+  s_ae074277795b45::t_30a083a3ce2de8 216-251
+src/modules/AiRuntime/useCases/__tests__/recoverAgentRunPendingEffects.spec.ts
+  s_ae074277795b45::t_4f4a4551bb48c7 1-256
+src/modules/AiRuntime/useCases/__tests__/sendChatMessage.spec.ts
+  s_ae074277795b45::t_2342fe34653ca6 21,410-415,1754-1755
+src/modules/AiRuntime/useCases/agentReference/__tests__/preparedStemImportResourceCleanup.spec.ts
+  s_ae074277795b45::t_2a36418ad2e68a 353-355,401-403
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/admitCommittedSectionRenderRetry.spec.ts
+  s_ae074277795b45::t_6c6a4907ef69ac 156,162-227,235,246,256,269-295,439-774,792,834-835,853-863,906-948
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/executeCommittedSectionRenderRetry.spec.ts
+  s_ae074277795b45::t_99814da5a81591 1-911
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/formatSectionRenderReviewSummary.spec.ts
+  s_ae074277795b45::t_ec26d5e54e6e2a 1-14
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/persistPromptActionConfirmation.spec.ts
+  s_ae074277795b45::t_84346241527958 66-69
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/projectSectionRenderConfirmation.spec.ts
+  s_ae074277795b45::t_6ec32fe1e0ae76 1-153
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/requireSectionRenderManualRepair.spec.ts
+  s_ae074277795b45::t_f4d7473c85ac62 1-48
+src/modules/AiRuntime/useCases/agentRequestOrchestration/admitCommittedSectionRenderRetry.ts
+  s_ae074277795b45::t_bea89ae2ac618c 3,5,73,191-209,228-248,275-364,390-399,403,406-409,413
+src/modules/AiRuntime/useCases/agentRequestOrchestration/executeCommittedSectionRenderRetry.ts
+  s_ae074277795b45::t_ac17f20c09549c 1-456
+src/modules/AiRuntime/useCases/agentRequestOrchestration/formatSectionRenderReviewSummary.ts
+  s_ae074277795b45::t_b5d5b81e7843fa 1-5
+src/modules/AiRuntime/useCases/agentRequestOrchestration/projectSectionRenderConfirmation.ts
+  s_ae074277795b45::t_98b54d4cfaa42e 1-121
+src/modules/AiRuntime/useCases/agentRequestOrchestration/requireSectionRenderManualRepair.ts
+  s_ae074277795b45::t_086b7bf86a0c99 1-20
+src/modules/AiRuntime/useCases/agentRunLifecycle.ts
+  s_ae074277795b45::t_f8665d3f03d431 15,693-699,703,810-872,900-903,982-1006,1737
+src/modules/AiRuntime/useCases/confirmPendingChatActions.ts
+  s_ae074277795b45::t_97d74e99993d0f 21,44-47,626-634,784,790-794,925,927-928,940,1004,1024,1027-1033,1070-1074,1081-1087,1093-1155,1162-1187,1199-1201,1203,1215-1220,1222-1229
+src/modules/AiRuntime/useCases/index.ts
+  s_ae074277795b45::t_e0cc6c4325d15a 66
+src/modules/AiRuntime/useCases/recoverAgentRunPendingEffects.ts
+  s_ae074277795b45::t_a0aee1126f539f 1,7-9,31-62,101-105,129-142,144
+src/modules/AiRuntime/useCases/recoverRetainedSectionRenderEffects.ts
+  s_ae074277795b45::t_2ee8f4d25911d9 1-23
+src/modules/AiRuntime/validators/hasExactAgentCommandBatchAuthority.ts
+  s_ae074277795b45::t_43f8279147f266 1-22
+src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts
+  s_ae074277795b45::t_9a07f6ba8bed55 995-1013,1342,1565
+src/modules/Arrangement/useCases/clipEditing/__tests__/glueClips.integration.spec.ts
+  s_ae074277795b45::t_a73d32a596284e 540-545,579
+src/modules/Arrangement/useCases/clipEditing/__tests__/restoreClipGlueStateRollback.spec.ts
+  s_ae074277795b45::t_b9f5c475336dd6 67-71,103
+src/modules/AudioRendering/handlers/__tests__/handleRenderProjectSections.spec.ts
+  s_ae074277795b45::t_7f298c52f2fe9b 59-62,64,69,87,91,93-98
+src/modules/AudioRendering/handlers/handleRenderProjectSections.ts
+  s_ae074277795b45::t_b46365c0d97e6a 67,70-81
+src/modules/AudioRendering/models/SectionRenderFollowUpError.ts
+  s_ae074277795b45::t_40fc2bdc514d27 1-36
+src/modules/AudioRendering/useCases/__tests__/getAgentSectionRenderArtifacts.spec.ts
+  s_ae074277795b45::t_7a5d211f8373a7 1-40
+src/modules/AudioRendering/useCases/__tests__/renderAgentProjectSections.spec.ts
+  s_ae074277795b45::t_8fa6bc74d2e62b 97-133,157-169,201-308,343-351,356-385,426-461,488-516
+src/modules/AudioRendering/useCases/__tests__/retryAgentProjectSectionRenders.spec.ts
+  s_ae074277795b45::t_ca28d5f5db4a89 1-47
+src/modules/AudioRendering/useCases/__tests__/scheduleAgentSectionRenderArtifactExpiry.spec.ts
+  s_ae074277795b45::t_40f5bb36a276b2 1-43
+src/modules/AudioRendering/useCases/clearAgentSectionRenderArtifacts.ts
+  s_ae074277795b45::t_0b86a94a23cf64 3-4,7
+src/modules/AudioRendering/useCases/getAgentSectionRenderArtifacts.ts
+  s_ae074277795b45::t_b1f7821d5cf2b3 1,4-7
+src/modules/AudioRendering/useCases/getSectionRenderFollowUpFailure.ts
+  s_ae074277795b45::t_2c88d76a813fa7 1-11
+src/modules/AudioRendering/useCases/index.ts
+  s_ae074277795b45::t_5d997f92fea37d 8
+src/modules/AudioRendering/useCases/rebindAgentProjectSectionArtifactRevisions.ts
+  s_ae074277795b45::t_7e403a6ae7b378 5-6,59
+src/modules/AudioRendering/useCases/removeAgentProjectSectionArtifacts.ts
+  s_ae074277795b45::t_94c8ed71d934c6 5-6,16
+src/modules/AudioRendering/useCases/renderAgentProjectSections.ts
+  s_ae074277795b45::t_df5b13bf944041 7,11,17,20-21,51-57,64,79,97-102,113,115,133-138,143,160,189,198,204-219
+src/modules/AudioRendering/useCases/retryAgentProjectSectionRenders.ts
+  s_ae074277795b45::t_6ce1db322890de 6,9-10,17-23
+src/modules/AudioRendering/useCases/scheduleAgentSectionRenderArtifactExpiry.ts
+  s_ae074277795b45::t_4abd0dcab12462 1-31
+src/modules/Automation/handlers/automation/__tests__/handleRestoreAutomationLanePoints.spec.ts
+  s_ae074277795b45::t_8531f8c79cd54c 137-191
+src/modules/Automation/handlers/automation/handleRestoreAutomationLanePoints.ts
+  s_ae074277795b45::t_c71acbc74b9e91 5,36-57,61-63,70,74-76
+src/modules/Automation/services/buildDuplicatedLane.ts
+  s_ae074277795b45::t_f5d616310deb7e 1-60
+src/modules/Automation/stores/automationStore.ts
+  s_ae074277795b45::t_bf73de17c8630f 104,188
+src/modules/Automation/useCases/automation/__tests__/duplicateClipAutomation.spec.ts
+  s_ae074277795b45::t_86d30f0ae0b8f8 3-4,18-19,66-125
+src/modules/Automation/useCases/automation/__tests__/duplicateClipAutomationBatch.spec.ts
+  s_ae074277795b45::t_9ed2d63c91d382 144-145,151-228,280-284
+src/modules/Automation/useCases/automation/duplicateClipAutomation.ts
+  s_ae074277795b45::t_7c183d2e99aaa0 1,10,15
+src/modules/Automation/useCases/automation/duplicateClipAutomationBatch.ts
+  s_ae074277795b45::t_ab8ac925bbea7a 1,21,28-32,43
+src/modules/Automation/useCases/automationRecording/__tests__/stopAutomationRecording.spec.ts
+  s_ae074277795b45::t_b474bd448ca73e 116,192-225
+src/modules/Automation/useCases/automationRecording/stopAutomationRecording.ts
+  s_ae074277795b45::t_d36be610e75059 17-29,41-44
+src/modules/Automation/useCases/modulation/__tests__/updateModulator.spec.ts
+  s_ae074277795b45::t_5de1b00571c4fd 37-46
+src/modules/Automation/useCases/modulation/updateModulator.ts
+  s_ae074277795b45::t_d9dd3cda7ad386 21-27
+src/modules/Command/useCases/__tests__/commandBatchIdempotency.spec.ts
+  s_ae074277795b45::t_9dbd67b633d58c 27,1605-1923
+src/modules/Command/useCases/__tests__/executeAppActionBatch.spec.ts
+  s_ae074277795b45::t_fe917d95f9b849 13,227-228,230,237-239,650-687
+src/modules/Command/useCases/__tests__/getCommandDeviceIds.spec.ts
+  s_ae074277795b45::t_86827979f4cd66 1-85
+src/modules/Command/useCases/canExecuteCommandBatchEffects.ts
+  s_ae074277795b45::t_057493cc05407a 1-6
+src/modules/Command/useCases/executeAppActionBatch.ts
+  s_ae074277795b45::t_a727a45b20f59a 166-181,270-271,287,347-348,371,777-778,826-827
+src/modules/Command/useCases/finalizeRecoveredCommandBatchEffects.ts
+  s_ae074277795b45::t_38309117889b57 1-229
+src/modules/Command/useCases/getCommandDeviceIds.ts
+  s_ae074277795b45::t_2a6cfc84aed9ae 1-15,29
+src/modules/Command/useCases/index.ts
+  s_ae074277795b45::t_1b2a4abde7ea08 13,57
+src/modules/Command/useCases/persistProjectCommandBatchIdempotencyCheckpoint.ts
+  s_ae074277795b45::t_b458ff42c7781d 7-9,14,16,22-24
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/mixerStripUndo.integration.spec.tsx
+  s_ae074277795b45::t_d578664fbacfbd 65-69
+src/utils/__tests__/desktopBridge.spec.ts
+  s_ae074277795b45::t_54b74bb018c116 138,140
+src/utils/handlerContract.ts
+  s_ae074277795b45::t_562dc7e0d40616 2332-2333,2338-2343,2400-2401
+src/utils/sourdawCommandArguments.ts
+  s_ae074277795b45::t_5aab683be2ee9f 40
+tests/e2e/browserAiWebGpuAdmission.spec.ts
+  s_ae074277795b45::t_2b71cb625fdeb3 23-39,44,55-74,80-84,171-174,178
+tests/e2e/devices.spec.ts
+  s_ae074277795b45::t_c3be5f432e9f48 17-28,31,42,48,53,56
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "298a37cfbac11dad75f4993cd000e094dfe9b09e",
+  "prompts": {},
+  "sessions": {
+    "s_4f908a5afb6b58": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fcb92ba4-bf56-47a4-8b57-803f335a449e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ae074277795b45": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04ab5-5234-7100-be1c-76ebfaba88d3",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
