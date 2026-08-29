@@ -191,4 +191,23 @@ describe('retained section render review hydration', () => {
         invalid.pendingEffectRecoveryLedger![0]!.effects[0]!.operation = 'setTrackGain';
         expect(sanitizeAgentRunState(invalid)).toEqual({ schemaVersion: 1, runs: [] });
     });
+
+    it('hydrates an unsettled source-revision-bound review from serialized localStorage', async () => {
+        createObligation();
+        const serializedState = window.localStorage.getItem('sourdaw-agent-runs');
+        if (!serializedState) {
+            throw new Error('Expected the persisted agent run payload.');
+        }
+        agentRunLifecycle.clear();
+        window.localStorage.setItem('sourdaw-agent-runs', serializedState);
+        vi.resetModules();
+
+        const freshStoreModule = await import('../agentRunStore');
+        const freshSelectorModule = await import('../../useCases/selectRetainedSectionRenderManualReviews');
+        const hydratedState = freshStoreModule.readAgentRunState();
+
+        expect(hydratedState.runs[0]?.pendingEffectContinuations[0]?.sourceRevision).toBe('revision-source');
+        expect(hydratedState.pendingEffectRecoveryLedger?.[0]?.sourceRevision).toBe('revision-source');
+        expect(freshSelectorModule.selectRetainedSectionRenderManualReviews(hydratedState)).toHaveLength(1);
+    });
 });

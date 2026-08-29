@@ -7,6 +7,7 @@ import {
     migrateLegacyAppActionToVersionedCommandEnvelope,
     serializeVersionedCommandEnvelope,
 } from '#/modules/Command/useCases';
+import { getTransportHandlers } from '#/modules/Transport/useCases';
 import { type RenderProjectSectionJobSnapshot } from '#/utils/handlerContract';
 
 import { agentRunStore, readAgentRunState } from '../../stores/agentRunStore';
@@ -65,14 +66,26 @@ function createCommand(commandId: string, commandJobs: readonly RenderProjectSec
     return serializeVersionedCommandEnvelope({ ...command, commandId });
 }
 
-function createReviewObligation() {
+function createTempoCommand(commandId: string): string {
+    const command = migrateLegacyAppActionToVersionedCommandEnvelope({
+        action: { type: 'setTempo', payload: { bpm: 121 } },
+        expectedEffect: 'Set tempo',
+        normalizedProjectRevision: 'revision-original',
+    });
+    return serializeVersionedCommandEnvelope({ ...command, commandId });
+}
+
+function createReviewObligation(input?: { commands?: string[]; effectCommandIds?: string[] }) {
     const commandBatch = compileVersionedCommandBatchEnvelope({
         runId: 'run-review',
         batchId: 'batch-review',
         projectId: 'project-review',
         baseRevision: 'revision-original',
         intent: 'Render retained sections',
-        commands: [createCommand('command-verse', [jobs[0]!]), createCommand('command-chorus', [jobs[1]!])],
+        commands: input?.commands ?? [
+            createCommand('command-verse', [jobs[0]!]),
+            createCommand('command-chorus', [jobs[1]!]),
+        ],
     });
     agentRunLifecycle.create({
         runId: 'run-review',
@@ -93,7 +106,7 @@ function createReviewObligation() {
         runId: 'run-review',
         continuation: {
             batchId: 'batch-review',
-            effects: ['command-verse', 'command-chorus'].map((commandId) => ({
+            effects: (input?.effectCommandIds ?? ['command-verse', 'command-chorus']).map((commandId) => ({
                 commandId,
                 kind: 'external-effect' as const,
                 operation: 'renderProjectSections',
@@ -137,6 +150,7 @@ describe('settleRetainedSectionRenderManualReview', () => {
         agentRunLifecycle.clear();
         clearHandlerRegistry();
         registerHandlerMap(getAudioRenderingHandlers());
+        registerHandlerMap(getTransportHandlers());
         vi.clearAllMocks();
         mocks.getExact.mockImplementation(({ job }) => artifactFor(job));
         mocks.disposeExact.mockReturnValue(true);
@@ -180,6 +194,73 @@ describe('settleRetainedSectionRenderManualReview', () => {
             ])
         );
         expect(mocks.disposeExact).not.toHaveBeenCalled();
+    });
+
+    it('settles the exact manual-review aggregate when the original batch has a non-render sibling', () => {
+        const review = createReviewObligation({
+            commands: [
+                createTempoCommand('command-tempo'),
+                createCommand('command-verse', [jobs[0]!]),
+                createCommand('command-chorus', [jobs[1]!]),
+            ],
+        });
+
+        expect(review.binding.commands.map(({ commandId }) => commandId)).toEqual(['command-verse', 'command-chorus']);
+        settleRetainedSectionRenderManualReview({ binding: review.binding, disposition: 'accepted' });
+
+        expect(readAgentRunState().runs[0]?.pendingEffectContinuations).toEqual([]);
+        expect(readAgentRunState().runs[0]?.saga.steps).toHaveLength(2);
+    });
+
+    it('settles only the warned render command when a clean render sibling has no pending effect', () => {
+        const review = createReviewObligation({
+            commands: [createCommand('command-clean', [jobs[0]!]), createCommand('command-chorus', [jobs[1]!])],
+            effectCommandIds: ['command-chorus'],
+        });
+
+        expect(review.binding.commands).toEqual([{ commandId: 'command-chorus', jobs: [jobs[1]] }]);
+        settleRetainedSectionRenderManualReview({ binding: review.binding, disposition: 'accepted' });
+
+        expect(readAgentRunState().runs[0]?.pendingEffectContinuations).toEqual([]);
+        expect(readAgentRunState().runs[0]?.saga.steps).toEqual([
+            expect.objectContaining({
+                stepId: 'effect:batch-review:command-chorus',
+                state: 'reviewed',
+                manualReviewDisposition: 'accepted',
+            }),
+        ]);
+    });
+
+    it('updates only the exact effect step IDs when another external effect shares the work ID', () => {
+        const review = createReviewObligation();
+        const state = readAgentRunState();
+        state.runs[0]!.saga.steps.push({
+            ...structuredClone(state.runs[0]!.saga.steps[0]!),
+            stepId: 'external:batch-review:unrelated',
+            order: 2,
+        });
+        agentRunStore.set(state);
+
+        settleRetainedSectionRenderManualReview({ binding: review.binding, disposition: 'accepted' });
+
+        expect(readAgentRunState().runs[0]?.saga.steps).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    stepId: 'effect:batch-review:command-verse',
+                    state: 'reviewed',
+                    manualReviewDisposition: 'accepted',
+                }),
+                expect.objectContaining({
+                    stepId: 'effect:batch-review:command-chorus',
+                    state: 'reviewed',
+                    manualReviewDisposition: 'accepted',
+                }),
+                expect.objectContaining({
+                    stepId: 'external:batch-review:unrelated',
+                    state: 'manual-repair',
+                }),
+            ])
+        );
     });
 
     it('persists discard settlement before disposing every exact artifact', () => {
@@ -285,5 +366,68 @@ describe('settleRetainedSectionRenderManualReview', () => {
             settleRetainedSectionRenderManualReview({ binding: review.binding, disposition: 'accepted' })
         ).toThrow('stale, ambiguous, or unavailable');
         expect(readAgentRunState().runs[0]?.pendingEffectContinuations).toHaveLength(1);
+    });
+
+    it.each([
+        [
+            'missing saga step',
+            (state: ReturnType<typeof readAgentRunState>) => {
+                state.runs[0]!.saga.steps.shift();
+            },
+        ],
+        [
+            'duplicate saga step',
+            (state: ReturnType<typeof readAgentRunState>) => {
+                state.runs[0]!.saga.steps.push(structuredClone(state.runs[0]!.saga.steps[0]!));
+            },
+        ],
+        [
+            'wrong saga receipt',
+            (state: ReturnType<typeof readAgentRunState>) => {
+                state.runs[0]!.saga.steps[0]!.receiptIdentity = 'wrong-receipt';
+            },
+        ],
+        [
+            'wrong saga owner',
+            (state: ReturnType<typeof readAgentRunState>) => {
+                state.runs[0]!.saga.steps[0]!.owner = 'render';
+            },
+        ],
+        [
+            'wrong saga work ID',
+            (state: ReturnType<typeof readAgentRunState>) => {
+                state.runs[0]!.saga.steps[0]!.workId = 'wrong-batch';
+            },
+        ],
+        [
+            'wrong saga state',
+            (state: ReturnType<typeof readAgentRunState>) => {
+                state.runs[0]!.saga.steps[0]!.state = 'committed';
+            },
+        ],
+        [
+            'extra targeted saga step',
+            (state: ReturnType<typeof readAgentRunState>) => {
+                state.runs[0]!.saga.steps.push({
+                    ...structuredClone(state.runs[0]!.saga.steps[0]!),
+                    stepId: 'effect:batch-review:command-extra',
+                    order: 2,
+                });
+            },
+        ],
+    ])('keeps the durable obligation when there is a %s', (_label, mutate) => {
+        const review = createReviewObligation();
+        const state = readAgentRunState();
+        mutate(state);
+        agentRunStore.set(state);
+
+        expect(() =>
+            settleRetainedSectionRenderManualReview({ binding: review.binding, disposition: 'accepted' })
+        ).toThrow('exact manual-review obligation is stale or unavailable');
+
+        const unsettled = readAgentRunState();
+        expect(unsettled.runs[0]?.pendingEffectContinuations).toHaveLength(1);
+        expect(unsettled.pendingEffectRecoveryLedger).toHaveLength(1);
+        expect(unsettled.runs[0]?.saga.steps.some(({ state }) => state === 'reviewed')).toBe(false);
     });
 });

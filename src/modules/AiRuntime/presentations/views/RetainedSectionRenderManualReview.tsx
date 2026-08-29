@@ -29,6 +29,25 @@ function getJobKey(job: Review['jobs'][number]): string {
     return `${job.commandId}:${job.job.jobId}`;
 }
 
+function getErrorMessage(error: unknown): string {
+    return error instanceof Error ? error.message : String(error);
+}
+
+function stopAndReleasePreview(preview: ActivePreview): unknown {
+    let cleanupError: unknown;
+    try {
+        preview.playback.stop();
+    } catch (error) {
+        cleanupError = error;
+    }
+    try {
+        releasePreviewAudioBuffer(preview.bufferId);
+    } catch (error) {
+        cleanupError ??= error;
+    }
+    return cleanupError;
+}
+
 export const RetainedSectionRenderManualReview = ({
     review,
     onStatus,
@@ -44,27 +63,32 @@ export const RetainedSectionRenderManualReview = ({
             return;
         }
         previewsRef.current.delete(jobKey);
-        preview.playback.stop();
-        releasePreviewAudioBuffer(preview.bufferId);
+        const cleanupError = stopAndReleasePreview(preview);
         if (playingJobKey === jobKey) {
             setPlayingJobKey(null);
         }
+        if (cleanupError) {
+            onStatus(getErrorMessage(cleanupError));
+        }
     };
 
-    const releaseAllPreviews = (): void => {
+    const releaseAllPreviews = (reportErrors = true): void => {
+        let cleanupError: unknown;
         for (const [jobKey, preview] of previewsRef.current) {
             previewsRef.current.delete(jobKey);
-            preview.playback.stop();
-            releasePreviewAudioBuffer(preview.bufferId);
+            const previewCleanupError = stopAndReleasePreview(preview);
+            cleanupError ??= previewCleanupError;
         }
         setPlayingJobKey(null);
+        if (reportErrors && cleanupError) {
+            onStatus(getErrorMessage(cleanupError));
+        }
     };
 
     useEffect(
         () => () => {
-            for (const { bufferId, playback } of previewsRef.current.values()) {
-                playback.stop();
-                releasePreviewAudioBuffer(bufferId);
+            for (const preview of previewsRef.current.values()) {
+                stopAndReleasePreview(preview);
             }
             previewsRef.current.clear();
         },
@@ -78,21 +102,45 @@ export const RetainedSectionRenderManualReview = ({
             return;
         }
         releaseAllPreviews();
-        const bufferId = cacheAudioBuffer({ buffer: job.artifact.buffer });
+        let bufferId: string;
+        try {
+            bufferId = cacheAudioBuffer({ buffer: job.artifact.buffer });
+        } catch (error) {
+            onStatus(getErrorMessage(error));
+            return;
+        }
         let playback: PreviewPlayback | null = null;
-        playback = playCachedAudioBufferPreview({
-            bufferId,
-            onEnded: () => {
-                if (previewsRef.current.get(jobKey)?.playback !== playback) {
-                    return;
-                }
-                previewsRef.current.delete(jobKey);
+        try {
+            playback = playCachedAudioBufferPreview({
+                bufferId,
+                onEnded: () => {
+                    if (previewsRef.current.get(jobKey)?.playback !== playback) {
+                        return;
+                    }
+                    previewsRef.current.delete(jobKey);
+                    try {
+                        releasePreviewAudioBuffer(bufferId);
+                    } catch (error) {
+                        onStatus(getErrorMessage(error));
+                    }
+                    setPlayingJobKey(null);
+                },
+            });
+        } catch (error) {
+            try {
                 releasePreviewAudioBuffer(bufferId);
-                setPlayingJobKey(null);
-            },
-        });
+            } catch {
+                // Preserve the playback startup failure while still attempting cache cleanup.
+            }
+            onStatus(getErrorMessage(error));
+            return;
+        }
         if (!playback) {
-            releasePreviewAudioBuffer(bufferId);
+            try {
+                releasePreviewAudioBuffer(bufferId);
+            } catch {
+                // The unavailable preview is the actionable status; cache release was still attempted.
+            }
             onStatus(`Preview audio for ${job.job.sectionName} is unavailable.`);
             return;
         }

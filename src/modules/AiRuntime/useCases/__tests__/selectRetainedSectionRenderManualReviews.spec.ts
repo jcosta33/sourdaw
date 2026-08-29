@@ -7,6 +7,7 @@ import {
     migrateLegacyAppActionToVersionedCommandEnvelope,
     serializeVersionedCommandEnvelope,
 } from '#/modules/Command/useCases';
+import { getTransportHandlers } from '#/modules/Transport/useCases';
 import { type RenderProjectSectionJobSnapshot } from '#/utils/handlerContract';
 
 import { type AgentRunPendingEffect, type AgentRunState } from '../../models/AgentRun';
@@ -58,23 +59,34 @@ function createCommand(commandId: string, jobs: readonly RenderProjectSectionJob
     return serializeVersionedCommandEnvelope({ ...command, commandId });
 }
 
-function createFixture() {
+function createTempoCommand(commandId: string): string {
+    const command = migrateLegacyAppActionToVersionedCommandEnvelope({
+        action: { type: 'setTempo', payload: { bpm: 121 } },
+        expectedEffect: 'Set tempo',
+        normalizedProjectRevision: 'revision-original',
+    });
+    return serializeVersionedCommandEnvelope({ ...command, commandId });
+}
+
+function createFixture(input?: { commands?: string[]; effectCommandIds?: string[] }) {
     const commandBatch = compileVersionedCommandBatchEnvelope({
         runId: 'run-review',
         batchId: 'batch-review',
         projectId: 'project-review',
         baseRevision: 'revision-original',
         intent: 'Render the retained review sections',
-        commands: [createCommand('command-a', [verse, chorus]), createCommand('command-b', [outro])],
+        commands: input?.commands ?? [createCommand('command-a', [verse, chorus]), createCommand('command-b', [outro])],
     });
-    const effects: AgentRunPendingEffect[] = ['command-a', 'command-b'].map((commandId) => ({
-        commandId,
-        kind: 'external-effect',
-        operation: 'renderProjectSections',
-        reason: 'Retained render requires review.',
-        remediation: 'manual-repair',
-        state: 'pending',
-    }));
+    const effects: AgentRunPendingEffect[] = (input?.effectCommandIds ?? ['command-a', 'command-b']).map(
+        (commandId) => ({
+            commandId,
+            kind: 'external-effect',
+            operation: 'renderProjectSections',
+            reason: 'Retained render requires review.',
+            remediation: 'manual-repair',
+            state: 'pending',
+        })
+    );
     const continuation = {
         batchId: 'batch-review',
         effects,
@@ -119,6 +131,7 @@ describe('selectRetainedSectionRenderManualReviews', () => {
     beforeEach(() => {
         clearHandlerRegistry();
         registerHandlerMap(getAudioRenderingHandlers());
+        registerHandlerMap(getTransportHandlers());
         artifacts.getExact.mockReset();
         artifacts.getExact.mockImplementation(({ job }) => artifactFor(job));
     });
@@ -147,6 +160,38 @@ describe('selectRetainedSectionRenderManualReviews', () => {
             ['command-b', 'job-outro', 'available'],
         ]);
         expect(artifacts.getExact).toHaveBeenCalledWith({ job: verse, sourceRevision: 'revision-original' });
+    });
+
+    it('projects only manual-review render effects when the original batch has a non-render sibling', () => {
+        const { state } = createFixture({
+            commands: [
+                createTempoCommand('command-tempo'),
+                createCommand('command-a', [verse, chorus]),
+                createCommand('command-b', [outro]),
+            ],
+        });
+
+        const reviews = selectRetainedSectionRenderManualReviews(state);
+
+        expect(reviews).toHaveLength(1);
+        expect(reviews[0]?.binding.commands).toEqual([
+            { commandId: 'command-a', jobs: [verse, chorus] },
+            { commandId: 'command-b', jobs: [outro] },
+        ]);
+        expect(reviews[0]?.jobs).toHaveLength(3);
+    });
+
+    it('ignores a clean render sibling that has no pending manual-review effect', () => {
+        const { state } = createFixture({
+            commands: [createCommand('command-clean', [verse, chorus]), createCommand('command-b', [outro])],
+            effectCommandIds: ['command-b'],
+        });
+
+        const reviews = selectRetainedSectionRenderManualReviews(state);
+
+        expect(reviews).toHaveLength(1);
+        expect(reviews[0]?.binding.commands).toEqual([{ commandId: 'command-b', jobs: [outro] }]);
+        expect(reviews[0]?.jobs.map(({ job }) => job.jobId)).toEqual(['job-outro']);
     });
 
     it.each([
@@ -221,6 +266,13 @@ describe('selectRetainedSectionRenderManualReviews', () => {
             (fixture: ReturnType<typeof createFixture>) => {
                 fixture.state.runs[0]!.pendingEffectContinuations[0]!.effects[0]!.commandId = 'wrong-command';
                 fixture.state.pendingEffectRecoveryLedger![0]!.effects[0]!.commandId = 'wrong-command';
+            },
+        ],
+        [
+            'duplicate effect command',
+            (fixture: ReturnType<typeof createFixture>) => {
+                fixture.state.runs[0]!.pendingEffectContinuations[0]!.effects[1]!.commandId = 'command-a';
+                fixture.state.pendingEffectRecoveryLedger![0]!.effects[1]!.commandId = 'command-a';
             },
         ],
         [

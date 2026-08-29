@@ -196,6 +196,36 @@ function hasSamePendingEffectManualReviewBinding(
     );
 }
 
+function getExactPendingEffectManualReviewSagaStepIds(
+    run: AgentRun,
+    continuation: AgentRunPendingEffectContinuation
+): Set<string> | null {
+    const expectedStepIds = new Set(
+        continuation.effects.map(({ commandId }) => `effect:${continuation.batchId}:${commandId}`)
+    );
+    if (continuation.effects.length === 0 || expectedStepIds.size !== continuation.effects.length) {
+        return null;
+    }
+    const targetedSteps = run.saga.steps.filter(({ stepId }) => stepId.startsWith(`effect:${continuation.batchId}:`));
+    if (targetedSteps.length !== expectedStepIds.size) {
+        return null;
+    }
+    for (const stepId of expectedStepIds) {
+        const matchingSteps = targetedSteps.filter((step) => step.stepId === stepId);
+        if (
+            matchingSteps.length !== 1 ||
+            matchingSteps[0]?.owner !== 'external-effect' ||
+            matchingSteps[0].workId !== continuation.batchId ||
+            matchingSteps[0].receiptIdentity !== continuation.receiptIdentity ||
+            matchingSteps[0].state !== 'manual-repair' ||
+            matchingSteps[0].manualReviewDisposition !== undefined
+        ) {
+            return null;
+        }
+    }
+    return expectedStepIds;
+}
+
 function createLegacyAgentRunPlan(input: {
     summary: string;
     commandIds: string[];
@@ -1326,11 +1356,15 @@ function settleAgentRunPendingEffectManualReview(input: {
     ) {
         throw new Error('The exact manual-review obligation is stale or unavailable.');
     }
+    const targetStepIds = getExactPendingEffectManualReviewSagaStepIds(run, continuation);
+    if (!targetStepIds) {
+        throw new Error('The exact manual-review obligation is stale or unavailable.');
+    }
     const pendingEffectContinuations = run.pendingEffectContinuations.filter(
         (candidate) => candidate.batchId !== input.batchId
     );
     const steps = run.saga.steps.map((step) =>
-        step.owner === 'external-effect' && step.workId === input.batchId
+        targetStepIds.has(step.stepId)
             ? { ...step, state: 'reviewed' as const, manualReviewDisposition: input.disposition, updatedAt: settledAt }
             : step
     );

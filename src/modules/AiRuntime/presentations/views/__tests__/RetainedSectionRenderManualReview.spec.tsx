@@ -160,6 +160,56 @@ describe('RetainedSectionRenderManualReview', () => {
         expect(await screen.findByText('The exact WAV encoder failed.')).toBeInTheDocument();
     });
 
+    it('shows a cache failure without attempting playback or retaining a preview', () => {
+        mocks.cacheAudioBuffer.mockImplementationOnce(() => {
+            throw new Error('Preview cache failed.');
+        });
+        render(<Harness />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Play Verse' }));
+
+        expect(screen.getByText('Preview cache failed.')).toBeInTheDocument();
+        expect(mocks.playCachedAudioBufferPreview).not.toHaveBeenCalled();
+        expect(mocks.releasePreviewAudioBuffer).not.toHaveBeenCalled();
+    });
+
+    it('releases a newly cached buffer and shows the playback startup failure', () => {
+        mocks.playCachedAudioBufferPreview.mockImplementationOnce(() => {
+            throw new Error('Preview playback failed.');
+        });
+        render(<Harness />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Play Verse' }));
+
+        expect(screen.getByText('Preview playback failed.')).toBeInTheDocument();
+        expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledWith('cached-stereo-verse');
+        expect(screen.getByRole('button', { name: 'Play Verse' })).toBeInTheDocument();
+    });
+
+    it('releases the preview cache and settles even when stopping playback throws', () => {
+        mocks.stop.mockImplementationOnce(() => {
+            throw new Error('Preview stop failed.');
+        });
+        render(<Harness />);
+        fireEvent.click(screen.getByRole('button', { name: 'Play Verse' }));
+
+        fireEvent.click(screen.getByRole('button', { name: 'Accept retained render batch' }));
+
+        expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledWith('cached-stereo-verse');
+        expect(mocks.settle).toHaveBeenCalledWith({ binding, disposition: 'accepted' });
+    });
+
+    it('releases the preview cache on unmount even when stopping playback throws', () => {
+        mocks.stop.mockImplementationOnce(() => {
+            throw new Error('Preview stop failed.');
+        });
+        const view = render(<Harness />);
+        fireEvent.click(screen.getByRole('button', { name: 'Play Chorus' }));
+
+        expect(() => view.unmount()).not.toThrow();
+        expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledWith('cached-stereo-chorus');
+    });
+
     it('shows one missing-evidence acknowledgement and visible operation errors', async () => {
         const review = availableReview();
         review.jobs[1] = {

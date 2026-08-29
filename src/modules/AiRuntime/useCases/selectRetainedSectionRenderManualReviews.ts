@@ -105,27 +105,29 @@ function getExactRenderCommands(continuation: AgentRunPendingEffectContinuation,
         parsed.status === 'invalid' ||
         parsed.envelope.runId !== runId ||
         parsed.envelope.batchId !== continuation.batchId ||
-        parsed.envelope.commands.length !== continuation.effects.length ||
-        parsed.envelope.commands.some((command) => command.operation !== 'renderProjectSections')
+        continuation.effects.length === 0
     ) {
         return null;
     }
-    const effectsByCommandId = new Map(continuation.effects.map((effect) => [effect.commandId, effect]));
-    if (effectsByCommandId.size !== continuation.effects.length) {
+    const effectCommandIds = new Set(continuation.effects.map(({ commandId }) => commandId));
+    if (effectCommandIds.size !== continuation.effects.length) {
         return null;
     }
     const commands: RetainedSectionRenderManualReviewBinding['commands'] = [];
     const seenJobIds = new Set<string>();
-    for (const command of parsed.envelope.commands) {
-        const effect = effectsByCommandId.get(command.commandId);
+    for (const effect of continuation.effects) {
         if (
-            !effect ||
             effect.kind !== 'external-effect' ||
             effect.operation !== 'renderProjectSections' ||
             effect.remediation !== 'manual-repair'
         ) {
             return null;
         }
+        const matchingCommands = parsed.envelope.commands.filter(({ commandId }) => commandId === effect.commandId);
+        if (matchingCommands.length !== 1 || matchingCommands[0]?.operation !== 'renderProjectSections') {
+            return null;
+        }
+        const command = matchingCommands[0];
         const jobs = command.arguments.jobs;
         if (!Array.isArray(jobs) || jobs.length === 0 || !jobs.every(isRenderJob)) {
             return null;
