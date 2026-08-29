@@ -199,14 +199,15 @@ export async function executeConfirmedCommandBatch(
                     completesRun: false,
                 }
             );
-            const runPersistenceWarning = receiptPersistence.warning
-                ? null
-                : agentRunExecutionSettlement.recordPostCommitRecoveryFailure(confirmation, {
-                      category: 'internal',
-                      retriable: false,
-                      receiptIdentity:
-                          confirmedBatchOutcomeSupport.getVerifiedReceiptIdentity(priorVerifiedBatchReceipt),
-                  });
+            const runPersistenceWarning =
+                receiptPersistence.warning && !receiptPersistence.committedWorkPersisted
+                    ? null
+                    : agentRunExecutionSettlement.recordPostCommitRecoveryFailure(confirmation, {
+                          category: 'internal',
+                          retriable: false,
+                          receiptIdentity:
+                              confirmedBatchOutcomeSupport.getVerifiedReceiptIdentity(priorVerifiedBatchReceipt),
+                      });
             const recoveryFailureReason = [reason, receiptPersistence.warning, runPersistenceWarning]
                 .filter(Boolean)
                 .join(' ');

@@ -75,8 +75,9 @@ function recordTrackedAgentRunReceipt(
     confirmation: PendingAppActionConfirmation,
     receipt: CommandVerifiedBatchReceipt,
     input?: { revertGroupId?: string; completesRun?: boolean; committedRevision?: string }
-): { warning: string | null; effectsPending: boolean } {
+): { warning: string | null; effectsPending: boolean; committedWorkPersisted: boolean } {
     let effectsPending = false;
+    let committedWorkPersisted = false;
     const warning = updateTrackedAgentRun(confirmation, () => {
         const recorded = recordAgentRunReceiptSaga({
             runId: confirmation.runId,
@@ -88,10 +89,13 @@ function recordTrackedAgentRunReceipt(
             ...(input?.revertGroupId ? { revertGroupId: input.revertGroupId } : {}),
             ...(input?.completesRun !== undefined ? { completesRun: input.completesRun } : {}),
             committedRevision: input?.committedRevision ?? captureProjectRevision(),
+            onCommittedWorkPersisted: () => {
+                committedWorkPersisted = true;
+            },
         });
         effectsPending = recorded.effectsPending;
     });
-    return { warning, effectsPending };
+    return { warning, effectsPending, committedWorkPersisted };
 }
 
 export const confirmedBatchOutcomeSupport = {

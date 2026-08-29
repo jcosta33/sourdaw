@@ -21,6 +21,7 @@ export function recordAgentRunReceiptSaga(input: {
     committedRevision?: string;
     completesRun?: boolean;
     commandBatch?: CommandBatch;
+    onCommittedWorkPersisted?: () => void;
 }): { effectsPending: boolean } {
     const receiptIdentity = getAgentRunReceiptIdentity(input.receipt);
     const recordedAt = Date.now();
@@ -58,6 +59,7 @@ export function recordAgentRunReceiptSaga(input: {
         renderJobIds: input.receipt.links.render.map((link) => link.jobId),
         analysisIds: input.receipt.links.analysis.map((link) => link.analysisId),
     });
+    input.onCommittedWorkPersisted?.();
     agentRunLifecycle.recordSagaStep({
         runId: input.runId,
         step: createAgentSagaStep({

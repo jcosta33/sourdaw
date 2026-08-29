@@ -16,11 +16,16 @@ import { type PendingAppActionConfirmation } from '../../../stores/pendingAction
 import { executeConfirmedCommandBatch } from '../executeConfirmedCommandBatch';
 
 type ExecuteBatch = typeof executeVersionedCommandBatchEnvelope;
-type TestBatchReceipt = ReturnType<typeof createVerifiedBatchReceipt>;
-type TestBatchExecutorResult =
-    | { status: 'committed'; actions: readonly []; receipt: TestBatchReceipt }
-    | { status: 'cancelled'; reason: string; actions: readonly []; receipt: TestBatchReceipt }
-    | { status: 'previewed'; resource: { baseRevision: string; release: () => void } };
+type ExecuteBatchResult = Awaited<ReturnType<ExecuteBatch>>;
+type CommittedBatchResult = Extract<ExecuteBatchResult, { status: 'committed' }>;
+type CancelledBatchResult = Extract<ExecuteBatchResult, { status: 'cancelled' }>;
+type PreviewedBatchResult = Pick<Extract<ExecuteBatchResult, { status: 'previewed' }>, 'status' | 'resource'>;
+type TestBatchExecutorResultByStatus = {
+    committed: CommittedBatchResult;
+    cancelled: CancelledBatchResult;
+    previewed: PreviewedBatchResult;
+};
+type TestBatchExecutorResult = TestBatchExecutorResultByStatus[keyof TestBatchExecutorResultByStatus];
 type TestBatchExecutor = (input: Parameters<ExecuteBatch>[0]) => Promise<TestBatchExecutorResult>;
 type ApprovalBindingIssuer = typeof import('../../issueAgentCommandApprovalBinding').issueAgentCommandApprovalBinding;
 type PrepareResourceLease =
@@ -141,15 +146,15 @@ const receipt = createVerifiedBatchReceipt({
 });
 const completedBatchResult = {
     status: 'committed' as const,
-    actions: [],
+    actions: [] as [],
     receipt,
-};
+} satisfies CommittedBatchResult;
 const cancelledBatchResult = {
     status: 'cancelled' as const,
     reason: 'execution refused',
-    actions: [],
+    actions: [] as [],
     receipt,
-};
+} satisfies CancelledBatchResult;
 
 function createNonDurableReceipt(status: 'no-op' | 'cancelled' | 'ambiguous' | 'failed') {
     return createVerifiedBatchReceipt({
@@ -272,7 +277,7 @@ beforeEach(() => {
     mocks.prepareResourceLease.mockResolvedValue(undefined);
     mocks.protectResourceLease.mockReturnValue(undefined);
     mocks.prepareContinuation.mockReturnValue({ promote: () => undefined, discard: () => undefined });
-    mocks.recordReceipt.mockReturnValue({ warning: null, effectsPending: false });
+    mocks.recordReceipt.mockReturnValue({ warning: null, effectsPending: false, committedWorkPersisted: true });
     mocks.issueApprovalBinding.mockImplementation(({ commandBatch: approvedBatch }) =>
         issueCommandApprovalBinding({
             authority: approvedBatch.authority,
@@ -562,7 +567,11 @@ describe('executeConfirmedCommandBatch', () => {
 
     it('should surface the receipt persistence warning through committed-effect recovery failure', async () => {
         mocks.prepareResourceLease.mockRejectedValue(new Error('pending-effect continuation failed'));
-        mocks.recordReceipt.mockReturnValue({ warning: 'Agent run persistence warning.', effectsPending: false });
+        mocks.recordReceipt.mockReturnValue({
+            warning: 'Agent run persistence warning.',
+            effectsPending: false,
+            committedWorkPersisted: false,
+        });
 
         const result = await execute({ priorVerifiedBatchReceipt: receipt, recoveringPendingEffects: true });
 
@@ -579,6 +588,23 @@ describe('executeConfirmedCommandBatch', () => {
             content: `The project change remains durably committed, but pending-effect reconciliation could not continue: ${reason}`,
         });
         expect(mocks.recordPostCommitRecoveryFailure).not.toHaveBeenCalled();
+    });
+
+    it('should terminalize recovery after a later receipt saga write failure preserves committed work', async () => {
+        mocks.prepareResourceLease.mockRejectedValue(new Error('pending-effect continuation failed'));
+        mocks.recordReceipt.mockReturnValue({
+            warning: 'Agent run persistence warning.',
+            effectsPending: false,
+            committedWorkPersisted: true,
+        });
+
+        await execute({ priorVerifiedBatchReceipt: receipt, recoveringPendingEffects: true });
+
+        expect(mocks.recordPostCommitRecoveryFailure).toHaveBeenCalledWith(confirmation, {
+            category: 'internal',
+            retriable: false,
+            receiptIdentity: 'receipt-identity',
+        });
     });
 
     it('should surface a terminal lifecycle persistence warning through committed-effect recovery failure', async () => {
@@ -603,7 +629,8 @@ describe('executeConfirmedCommandBatch', () => {
 
     it('should release preview resources and return the exact preview-mode failure', async () => {
         const resource = { baseRevision: 'revision-1', release: vi.fn() };
-        mocks.executeBatch.mockResolvedValue({ status: 'previewed', resource });
+        const previewedBatchResult = { status: 'previewed' as const, resource } satisfies PreviewedBatchResult;
+        mocks.executeBatch.mockResolvedValue(previewedBatchResult);
 
         const result = await execute();
 
