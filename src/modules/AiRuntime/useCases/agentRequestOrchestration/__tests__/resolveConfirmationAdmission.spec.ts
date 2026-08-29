@@ -10,10 +10,14 @@ import {
 import { type AppAction } from '#/utils/handlerContract';
 
 import { type PendingAppActionConfirmation } from '../../../stores/pendingActionConfirmationStore';
+import { type admitCommittedSectionRenderRetry } from '../admitCommittedSectionRenderRetry';
 import { confirmationAdmission } from '../resolveConfirmationAdmission';
 
+type RetryAdmissionInput = Parameters<typeof admitCommittedSectionRenderRetry>[0];
+type RetryAdmissionResult = ReturnType<typeof admitCommittedSectionRenderRetry>;
+
 const mocks = vi.hoisted(() => ({
-    admitRetry: vi.fn(() => ({ status: 'not-applicable' })),
+    admitRetry: vi.fn<(input: RetryAdmissionInput) => RetryAdmissionResult>(() => ({ status: 'ineligible' })),
     chat: vi.fn(),
     compileApproval: vi.fn(),
     getConfirmation: vi.fn(),
@@ -101,6 +105,14 @@ function getBatchCommandEnvelopes(commandBatch: ReturnType<typeof createBatch>):
     return parsed.envelope.commands.map(serializeVersionedCommandEnvelope);
 }
 
+function getBatchId(commandBatch: ReturnType<typeof createBatch>): string {
+    const parsed = parseVersionedCommandBatchEnvelope(commandBatch.serialized, commandBatch.authority);
+    if (parsed.status === 'invalid') {
+        throw new Error(parsed.reason);
+    }
+    return parsed.envelope.batchId;
+}
+
 function createConfirmation(
     input: {
         commandBatch?: ReturnType<typeof createBatch>;
@@ -134,7 +146,7 @@ function createConfirmation(
             ...(input.commandBatch ? { commandBatch: input.commandBatch } : {}),
         },
         executionMode: 'atomic',
-        groupId: input.commandBatch?.batchId ?? 'batch-1',
+        groupId: input.commandBatch ? getBatchId(input.commandBatch) : 'batch-1',
     };
 }
 
@@ -149,7 +161,7 @@ beforeEach(() => {
     mocks.getConfirmation.mockReturnValue(confirmation);
     mocks.getReplay.mockResolvedValue(null);
     mocks.revision.mockReturnValue('revision-1');
-    mocks.admitRetry.mockReturnValue({ status: 'not-applicable' });
+    mocks.admitRetry.mockReturnValue({ status: 'ineligible' });
     mocks.failRetryProof.mockReturnValue({ status: 'failed', reason: 'retry proof mismatch' });
     mocks.compileApproval.mockReturnValue({ approval: 'rebound' });
     mocks.failUnreadableEvidence.mockReturnValue({ status: 'failed', reason: 'unreadable evidence' });
@@ -391,7 +403,7 @@ describe('resolveConfirmationAdmission', () => {
         };
         mocks.getConfirmation.mockReturnValue(confirmation);
         mocks.getReplay.mockResolvedValue(durableReceipt);
-        mocks.admitRetry.mockImplementation(({ phase }: { phase: string }) =>
+        mocks.admitRetry.mockImplementation(({ phase }) =>
             phase === 'eligibility' ? { status: 'requires-proof' } : { status: 'admitted', durableReceipt }
         );
 
