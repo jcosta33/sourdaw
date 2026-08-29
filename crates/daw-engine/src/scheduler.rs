@@ -20,6 +20,7 @@ use crate::timeline::{
     TimelineRtDiagnosticsSnapshot, TimelineTrack, MAX_BUS_DEVICES, MAX_TIMELINE_BUSES,
     MAX_TIMELINE_TRACKS, MAX_TRACK_DEVICES,
 };
+use crate::transport_map::{LoopRegion, TransportMaps};
 use daw_dsp::knead::engine::KneadEngine;
 use rtrb::{Consumer, Producer, PushError};
 use triple_buffer::{Input, Output};
@@ -65,6 +66,72 @@ impl GraphProgressReader {
 pub(crate) fn graph_progress_channel() -> (Input<GraphProgressSnapshot>, GraphProgressReader) {
     let (input, output) = triple_buffer::triple_buffer(&GraphProgressSnapshot::default());
     (input, GraphProgressReader { output })
+}
+
+/// Where the engine's transport stands, for the UI that draws a playhead.
+///
+/// Deliberately not [`GraphProgressSnapshot`]. That snapshot is the queue
+/// ledger's release evidence and its `playhead_frame` carries a
+/// happens-before guarantee the ledger reasons about; a second consumer
+/// reading it for a different question would tie the ledger's contract to the
+/// cursor's. This channel answers only "where is the transport", and it is
+/// free to say so in whatever terms the cursor needs.
+///
+/// `loop_wraps` counts the seams the engine closed itself. The control thread
+/// owns the automation window and cannot see a wrap in the frame number alone
+/// — a wrap and an ordinary locate look identical after the fact — so the
+/// count is what tells it to re-arm the window for another pass.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct TransportPositionSnapshot {
+    pub playing: bool,
+    /// The absolute frame the last rendered span ended on, after any loop
+    /// wrap that span closed.
+    pub playhead_frame: u64,
+    /// Loop seams closed since the engine started, monotonic.
+    pub loop_wraps: u64,
+    /// The tempo in force at the playhead — the tempo map's answer while a map
+    /// is installed, the flat scalar otherwise.
+    pub tempo: f64,
+    pub time_sig_num: u16,
+    pub time_sig_denom: u16,
+}
+
+pub struct TransportPositionReader {
+    output: Output<TransportPositionSnapshot>,
+}
+
+impl TransportPositionReader {
+    pub fn snapshot(&mut self) -> TransportPositionSnapshot {
+        *self.output.read()
+    }
+}
+
+pub(crate) fn transport_position_channel(
+) -> (Input<TransportPositionSnapshot>, TransportPositionReader) {
+    let (input, output) = triple_buffer::triple_buffer(&TransportPositionSnapshot::default());
+    (input, TransportPositionReader { output })
+}
+
+/// Timeline spans one callback can be split into.
+///
+/// A callback renders at most [`MAX_CALLBACK_FRAMES`] frames and the engine
+/// honours no loop region shorter than
+/// [`crate::transport_map::MIN_LOOP_FRAMES`], so a callback holds at most
+/// `MAX_CALLBACK_FRAMES / MIN_LOOP_FRAMES` seams and one more span than that.
+/// Deriving the bound rather than writing a number keeps it true when either
+/// constant moves.
+const MAX_TIMELINE_SPANS_PER_BLOCK: usize =
+    1 + MAX_CALLBACK_FRAMES.div_ceil(crate::transport_map::MIN_LOOP_FRAMES as usize);
+
+/// One contiguous stretch of a callback that occupies one stretch of the
+/// timeline. Two of them differ when a loop seam falls inside the callback.
+#[derive(Clone, Copy, Debug, Default)]
+struct TimelineSpan {
+    /// Absolute timeline frame this span's first sample sits on.
+    block_start: u64,
+    /// Where the span starts inside the callback's buffers.
+    offset: usize,
+    frames: usize,
 }
 
 pub enum MidiFxKind {
@@ -206,6 +273,24 @@ pub enum GraphCommand {
         is_playing: bool,
         song_pos_seconds: f64,
     },
+    /// Install the arrangement's tempo and time-signature maps — the third
+    /// owner in the transport ownership law, and the authority for tempo,
+    /// meter and beat position at the playhead while it is installed.
+    ///
+    /// The maps arrive as one already-built box on the same contract as
+    /// [`GraphCommand::AddPlugin`]: the audio thread swaps the box in and
+    /// hands the one it replaced to the retirement channel, and never builds
+    /// or frees one (ADR 0020). Building them control-side is also what makes
+    /// the per-block lookup a binary search rather than an integral — see
+    /// [`crate::transport_map::TempoMap`].
+    SetTransportMaps(Box<TransportMaps>),
+    /// State the loop region and whether the transport honours it.
+    ///
+    /// Fixed-size and `Copy`, so it crosses the ring like any other scalar
+    /// command. The engine closes the seam itself, inside the callback that
+    /// reaches it, because only the thread that owns the playhead knows which
+    /// frame the region ends on.
+    SetLoopRegion(LoopRegion),
 
     /// Fence announcing that the next `commands` elements on the ring are one
     /// atomically published batch.
@@ -444,6 +529,8 @@ impl GraphCommand {
             | Self::SetMidiFxParam(..)
             | Self::SetTransport(..)
             | Self::SetTransportPlayback { .. }
+            | Self::SetTransportMaps(..)
+            | Self::SetLoopRegion(..)
             | Self::BeginBatch { .. }
             | Self::SwapCommandChannel { .. }
             | Self::AddTrack(..)
@@ -979,6 +1066,9 @@ pub struct RetiredGraphObjects {
     /// A track, bus, or clip the graph gave up. Each owns sample buffers, so
     /// dropping one on the callback is exactly the free ADR 0020 forbids.
     timeline_object: Option<RetiredTimelineObject>,
+    /// The tempo and meter maps a newer pair replaced. They own segment
+    /// vectors, so they leave on the same contract as everything else here.
+    transport_maps: Option<Box<TransportMaps>>,
     remaining_effects: Vec<ActiveEffect>,
     remaining_audio_bridges: Vec<PluginAudioBridge>,
     remaining_timeline: Option<TimelineGraph>,
@@ -997,6 +1087,7 @@ impl RetiredGraphObjects {
             audio_bridge,
             midi_fx,
             timeline_object: None,
+            transport_maps: None,
             remaining_effects: Vec::new(),
             remaining_audio_bridges: Vec::new(),
             remaining_timeline: None,
@@ -1030,6 +1121,12 @@ impl RetiredGraphObjects {
         Self::removed(None, None, Some(midi_fx))
     }
 
+    fn transport_maps(maps: Box<TransportMaps>) -> Self {
+        let mut retired = Self::removed(None, None, None);
+        retired.transport_maps = Some(maps);
+        retired
+    }
+
     /// The old command consumer a channel swap replaced. Its producer was
     /// dropped control-side when the swap was published, so the reclaimer's
     /// drain-until-abandoned loop terminates promptly.
@@ -1054,6 +1151,7 @@ impl RetiredGraphObjects {
             audio_bridge: pending.audio_bridge.take(),
             midi_fx: pending.midi_fx.take(),
             timeline_object: pending.timeline_object.take(),
+            transport_maps: pending.transport_maps.take(),
             remaining_effects,
             remaining_audio_bridges,
             remaining_timeline: Some(remaining_timeline),
@@ -1166,12 +1264,22 @@ pub struct AudioScheduler {
     retain_command_consumer: bool,
     sample_rate: f32,
     transport: TransportState,
+    /// The arrangement's tempo and meter, when a producer has installed them.
+    /// `None` leaves the flat scalars on `transport` authoritative, which is
+    /// exactly the behaviour every caller had before the maps existed — the
+    /// offline renderer included.
+    transport_maps: Option<Box<TransportMaps>>,
+    loop_region: LoopRegion,
+    /// Loop seams this engine has closed, for
+    /// [`TransportPositionSnapshot::loop_wraps`].
+    loop_wraps: u64,
     midi_rt_diagnostics: ActiveMidiRtDiagnostics,
     midi_rt_diagnostics_tx: Input<ActiveMidiRtDiagnosticsSnapshot>,
     timeline_rt_diagnostics_tx: Input<TimelineRtDiagnosticsSnapshot>,
     /// Fenced batches applied whole, for [`GraphProgressSnapshot`].
     batches_applied: u64,
     graph_progress_tx: Input<GraphProgressSnapshot>,
+    transport_position_tx: Input<TransportPositionSnapshot>,
     #[cfg(test)]
     rt_work: RtWorkCounters,
 }
@@ -1204,6 +1312,7 @@ impl AudioScheduler {
         let (timeline_diagnostics_tx, _timeline_diagnostics_reader) =
             timeline_rt_diagnostics_channel();
         let (graph_progress_tx, _graph_progress_reader) = graph_progress_channel();
+        let (transport_position_tx, _transport_position_reader) = transport_position_channel();
         Self::with_rt_diagnostics(
             command_rx,
             retired_tx,
@@ -1211,6 +1320,7 @@ impl AudioScheduler {
             midi_rt_diagnostics_tx,
             timeline_diagnostics_tx,
             graph_progress_tx,
+            transport_position_tx,
         )
     }
 
@@ -1221,6 +1331,7 @@ impl AudioScheduler {
         midi_rt_diagnostics_tx: Input<ActiveMidiRtDiagnosticsSnapshot>,
         timeline_rt_diagnostics_tx: Input<TimelineRtDiagnosticsSnapshot>,
         graph_progress_tx: Input<GraphProgressSnapshot>,
+        transport_position_tx: Input<TransportPositionSnapshot>,
     ) -> Self {
         let command_queue_capacity = command_rx.buffer().capacity();
         Self {
@@ -1243,11 +1354,15 @@ impl AudioScheduler {
             retain_command_consumer: !cfg!(test),
             sample_rate,
             transport: TransportState::default(),
+            transport_maps: None,
+            loop_region: LoopRegion::default(),
+            loop_wraps: 0,
             midi_rt_diagnostics: ActiveMidiRtDiagnostics::new(),
             midi_rt_diagnostics_tx,
             timeline_rt_diagnostics_tx,
             batches_applied: 0,
             graph_progress_tx,
+            transport_position_tx,
             #[cfg(test)]
             rt_work: RtWorkCounters::default(),
         }
@@ -1279,6 +1394,27 @@ impl AudioScheduler {
     pub(crate) fn publish_graph_progress(&mut self) {
         let snapshot = self.graph_progress();
         self.graph_progress_tx.write(snapshot);
+    }
+
+    /// Where the transport stands, read directly by same-thread drivers (the
+    /// offline renderer, tests). The live path publishes the same value
+    /// through [`Self::publish_transport_position`] at the end of each
+    /// callback.
+    pub const fn transport_position(&self) -> TransportPositionSnapshot {
+        TransportPositionSnapshot {
+            playing: self.transport.is_playing,
+            playhead_frame: self.playhead_frames,
+            loop_wraps: self.loop_wraps,
+            tempo: self.transport.tempo,
+            time_sig_num: self.transport.time_sig_num,
+            time_sig_denom: self.transport.time_sig_denom,
+        }
+    }
+
+    #[inline]
+    pub(crate) fn publish_transport_position(&mut self) {
+        let snapshot = self.transport_position();
+        self.transport_position_tx.write(snapshot);
     }
 
     /// The routed graph, for callers proving what a command did to it.
@@ -1560,6 +1696,18 @@ impl AudioScheduler {
                     self.transport.is_playing = is_playing;
                     self.transport.song_pos_seconds = song_pos_seconds;
                     self.transport.song_pos_beats = song_pos_seconds * self.transport.tempo / 60.0;
+                    None
+                }
+                GraphCommand::SetTransportMaps(maps) => {
+                    // A swap, never a build and never a free: the box that was
+                    // installed leaves through the retirement channel, and the
+                    // one arriving was built control-side (ADR 0020).
+                    self.transport_maps
+                        .replace(maps)
+                        .map(RetiredGraphObjects::transport_maps)
+                }
+                GraphCommand::SetLoopRegion(region) => {
+                    self.loop_region = region;
                     None
                 }
                 GraphCommand::AddTrack(track) => self.timeline.add_track(track).map(|rejected| {
@@ -2255,25 +2403,155 @@ impl AudioScheduler {
         );
     }
 
+    /// Re-derive the plugin-visible transport for the frame a span starts on.
+    ///
+    /// Only a scheduler holding maps does this. Without them the flat scalars
+    /// stand exactly where the last transport command left them, which is the
+    /// behaviour every caller had before the maps existed — the offline
+    /// renderer's determinism above all. With them, tempo, meter and beat
+    /// position are functions of the playhead again, so a device whose clock
+    /// is the transport (the arpeggiator's step timer, a hosted plugin's
+    /// sync) hears the tempo the arrangement actually has at that frame.
+    ///
+    /// Two binary searches and a multiply. Nothing allocates.
+    #[inline]
+    fn refresh_transport_at(&mut self, frame: u64) {
+        let Some(maps) = self.transport_maps.as_ref() else {
+            return;
+        };
+        let sample_rate = f64::from(self.sample_rate);
+        let (time_sig_num, time_sig_denom) = maps.time_signature.at(frame);
+        self.transport.tempo = maps.tempo.tempo_at(frame);
+        self.transport.time_sig_num = time_sig_num;
+        self.transport.time_sig_denom = time_sig_denom;
+        self.transport.song_pos_seconds = frame as f64 / sample_rate;
+        self.transport.song_pos_beats = maps.tempo.beats_at(frame, sample_rate);
+    }
+
+    /// How many of `remaining` frames the playhead can render before it
+    /// reaches the loop end.
+    ///
+    /// A stopped transport never wraps: the playhead stands still, so the
+    /// whole callback is one span. Neither does a playhead already at or past
+    /// the loop end — playing out of a region rather than being yanked back
+    /// into it is what a locate past the loop end means in every DAW that
+    /// allows one.
+    fn frames_until_loop_end(&self, block_start: u64, remaining: usize) -> usize {
+        if !self.transport.is_playing {
+            return remaining;
+        }
+        let Some(end) = self.loop_region.active_end() else {
+            return remaining;
+        };
+        if block_start >= end {
+            return remaining;
+        }
+        ((end - block_start) as usize).min(remaining)
+    }
+
+    /// Move the playhead past a rendered span, closing the loop seam when the
+    /// span ended on it.
+    ///
+    /// The wrap is not a locate. `TimelineGraph::seek` drops every queued
+    /// automation write stamped at or after its target, which on a wrap would
+    /// be the entire region — so the second pass round a loop would run with
+    /// the automation the first pass consumed *and* the automation it had not
+    /// reached yet both gone. Leaving the queue alone is strictly better: a
+    /// write the first pass never reached is still stamped ahead of the
+    /// playhead and lands again on the next pass. What the first pass did
+    /// consume cannot be replayed from here — the graph holds a window, not a
+    /// curve — so `loop_wraps` is published for the control thread that owns
+    /// the curve to re-arm it.
+    fn advance_playhead(&mut self, block_start: u64, span_frames: usize) {
+        if !self.transport.is_playing {
+            return;
+        }
+        let next = block_start.saturating_add(span_frames as u64);
+        match self.loop_region.active_end() {
+            Some(end) if block_start < end && next >= end => {
+                self.playhead_frames = self.loop_region.start_frame;
+                self.loop_wraps = self.loop_wraps.wrapping_add(1);
+            }
+            _ => self.playhead_frames = next,
+        }
+    }
+
+    /// Render the timeline stages of one callback, split at the loop seam.
+    ///
+    /// Returns the spans the callback was split into, so the stages that run
+    /// *after* the master insert chain can be applied against the timeline
+    /// frames each span actually occupies rather than against the callback's
+    /// first frame.
+    ///
+    /// The final span is never split, whatever the loop region says. That is
+    /// what makes this walk total — it always consumes the rest of the
+    /// callback — without depending on [`crate::transport_map::MIN_LOOP_FRAMES`]
+    /// being enforced anywhere else.
+    fn render_timeline_spans(
+        &mut self,
+        frames: usize,
+        left: &mut [f32],
+        right: &mut [f32],
+    ) -> ([TimelineSpan; MAX_TIMELINE_SPANS_PER_BLOCK], usize) {
+        let mut spans = [TimelineSpan::default(); MAX_TIMELINE_SPANS_PER_BLOCK];
+        let mut count = 0;
+        let mut offset = 0;
+
+        while offset < frames {
+            let block_start = self.playhead_frames;
+            let remaining = frames - offset;
+            let span_frames = if count + 1 == MAX_TIMELINE_SPANS_PER_BLOCK {
+                remaining
+            } else {
+                self.frames_until_loop_end(block_start, remaining)
+            };
+
+            self.refresh_transport_at(block_start);
+            self.apply_due_device_params(block_start, span_frames);
+            self.render_timeline(
+                block_start,
+                span_frames,
+                &mut left[offset..offset + span_frames],
+                &mut right[offset..offset + span_frames],
+            );
+
+            spans[count] = TimelineSpan {
+                block_start,
+                offset,
+                frames: span_frames,
+            };
+            count += 1;
+            offset += span_frames;
+            self.advance_playhead(block_start, span_frames);
+        }
+
+        (spans, count)
+    }
+
     /// Process a block of audio (called by the device's render callback,
     /// `RenderFn` in `crate::device`).
     ///
     /// The order is the strip's: the timeline renders tracks, sends, buses and
     /// the master sum; the master insert chain runs over that sum; the master
-    /// fader is applied last. The playhead then advances by exactly the frames
+    /// fader is applied last. The playhead advances by exactly the frames
     /// rendered, and only while the transport is playing, which is what makes
     /// a clip start and a parameter stamp address a position rather than a
     /// callback.
+    ///
+    /// A loop seam inside the callback splits the timeline stages — the ones
+    /// addressed in timeline frames — at the frame the region ends on, so the
+    /// seam lands on its sample rather than on the next block boundary. The
+    /// master insert chain is not split: it is a fixed device chain over the
+    /// summed mix, addressed by nothing on the timeline, and it already runs
+    /// unchanged across a stopped transport.
     #[inline]
     pub fn process_block(&mut self, left: &mut [f32], right: &mut [f32], num_samples: usize) {
         let frames = num_samples
             .min(left.len())
             .min(right.len())
             .min(MAX_CALLBACK_FRAMES);
-        let block_start = self.playhead_frames;
 
-        self.apply_due_device_params(block_start, frames);
-        self.render_timeline(block_start, frames, left, right);
+        let (spans, span_count) = self.render_timeline_spans(frames, left, right);
 
         // The master list carries insertion order explicitly. It is independent
         // of the effect table's swap-remove slots, so a teardown cannot change
@@ -2402,11 +2680,17 @@ impl AudioScheduler {
             self.rt_work.master_table_visits += master_visits;
         }
 
-        self.timeline
-            .apply_master_gain(block_start, frames, left, right);
-
-        if self.transport.is_playing {
-            self.playhead_frames = block_start.saturating_add(frames as u64);
+        // The master fader is the last stage of the strip and is stamped in
+        // timeline frames, so it follows the split the timeline stages made:
+        // applied once over the whole callback, a ramp would glide through the
+        // seam as if the loop had never closed.
+        for span in &spans[..span_count] {
+            self.timeline.apply_master_gain(
+                span.block_start,
+                span.frames,
+                &mut left[span.offset..span.offset + span.frames],
+                &mut right[span.offset..span.offset + span.frames],
+            );
         }
     }
 }
@@ -4519,6 +4803,82 @@ mod tests {
             assert_eq!(retired_count, removals);
         }
 
+        /// The transport maps and the loop seam are per-block work, so they
+        /// are guarded on the render path rather than only on the apply path:
+        /// installing a map must swap a box built control-side, and rendering
+        /// across a seam must resolve the map and split the callback without
+        /// touching the allocator. A map lookup that walked its segments, or a
+        /// seam split that collected its spans, would fail here.
+        #[test]
+        fn transport_maps_and_the_loop_seam_render_without_allocating() {
+            use crate::transport_map::{
+                LoopRegion, TempoMap, TempoSegment, TimeSignatureMap, TransportMaps,
+            };
+
+            let (mut command_tx, mut scheduler, mut retired_rx) = create_scheduler();
+            let maps = Box::new(TransportMaps {
+                tempo: TempoMap::new(
+                    &[
+                        TempoSegment {
+                            start_frame: 0,
+                            beats_per_minute: 120.0,
+                        },
+                        TempoSegment {
+                            start_frame: 600,
+                            beats_per_minute: 240.0,
+                        },
+                    ],
+                    48_000.0,
+                )
+                .expect("the guard's map is well formed"),
+                time_signature: TimeSignatureMap::flat(4, 4).expect("4/4 is well formed"),
+                sample_rate: 48_000.0,
+            });
+            command_tx
+                .push(GraphCommand::SetTransportMaps(maps))
+                .unwrap();
+            command_tx
+                .push(GraphCommand::SetLoopRegion(LoopRegion {
+                    enabled: true,
+                    start_frame: 0,
+                    end_frame: 512,
+                }))
+                .unwrap();
+            command_tx
+                .push(GraphCommand::SetTransportPlayback {
+                    is_playing: true,
+                    song_pos_seconds: 0.0,
+                })
+                .unwrap();
+
+            assert_no_alloc(|| {
+                scheduler.update_graph();
+            });
+
+            // Long enough to cross the seam twice and the tempo change once.
+            let mut left = [0.0; 1_024];
+            let mut right = [0.0; 1_024];
+            assert_no_alloc(|| {
+                scheduler.process_block(&mut left, &mut right, 1_024);
+            });
+            assert_eq!(scheduler.transport_position().loop_wraps, 2);
+
+            // Replacing an installed pair frees nothing on the callback: the
+            // box it displaces leaves over the retirement ring.
+            let replacement = Box::new(TransportMaps {
+                tempo: TempoMap::flat(90.0, 48_000.0).expect("a flat map is well formed"),
+                time_signature: TimeSignatureMap::flat(3, 4).expect("3/4 is well formed"),
+                sample_rate: 48_000.0,
+            });
+            command_tx
+                .push(GraphCommand::SetTransportMaps(replacement))
+                .unwrap();
+            assert_no_alloc(|| {
+                scheduler.update_graph();
+            });
+            assert!(retired_rx.pop().is_ok());
+        }
+
         #[test]
         fn add_plugin_and_add_plugin_with_bridge_apply_without_allocating() {
             let (mut command_tx, mut scheduler, mut retired_rx) = create_scheduler();
@@ -4692,6 +5052,7 @@ mod tests {
 mod timeline_tests {
     use super::*;
     use crate::timeline::{AutomationEvent, DeviceKind, RampShape, MAX_TIMELINE_TRACKS};
+    use crate::transport_map::{TempoMap, TempoSegment, TimeSignatureMap, TimeSignatureSegment};
     use rtrb::RingBuffer;
     use std::any::Any;
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -6039,5 +6400,353 @@ mod timeline_tests {
             vec![1.0; 8],
             "a change stamped past the stop must not fire on its own later"
         );
+    }
+
+    /// Counts the note-ons its chain hands it, so a MIDI FX whose clock is the
+    /// transport can be observed by how often it fires rather than by reading
+    /// its own state.
+    struct NoteOnCountingPlugin {
+        note_ons: Arc<AtomicUsize>,
+    }
+
+    impl NativePlugin for NoteOnCountingPlugin {
+        fn process_audio(&mut self, _left: &mut [f32], _right: &mut [f32], _num_samples: usize) {}
+
+        fn process_with_events(
+            &mut self,
+            _left: &mut [f32],
+            _right: &mut [f32],
+            _num_samples: usize,
+            midi_events: &[MidiNoteEvent],
+            _transport: &TransportState,
+        ) {
+            let note_ons = midi_events.iter().filter(|event| event.is_note_on).count();
+            self.note_ons.fetch_add(note_ons, Ordering::Relaxed);
+        }
+
+        fn name(&self) -> &str {
+            "note-on-counting-plugin"
+        }
+
+        fn accepts_midi(&self) -> bool {
+            true
+        }
+
+        fn as_any(&self) -> &dyn Any {
+            self
+        }
+
+        fn as_any_mut(&mut self) -> &mut dyn Any {
+            self
+        }
+    }
+
+    /// The device period the transport tests render on: small enough that a
+    /// tempo-driven step lands close to the frame it names, and a divisor of
+    /// one second at 48 kHz so a test can split its render on a second.
+    const TRANSPORT_TEST_BLOCK: usize = 480;
+
+    /// Render `frames` frames the way a device does — a sequence of callbacks,
+    /// not one buffer. `process_block` clamps a single call to
+    /// [`MAX_CALLBACK_FRAMES`], so a test that asked for a second in one call
+    /// would silently render a fraction of it.
+    fn render_frames(harness: &mut Harness, frames: usize) {
+        let mut rendered = 0;
+        while rendered < frames {
+            let block = (frames - rendered).min(TRANSPORT_TEST_BLOCK);
+            harness.render(block);
+            rendered += block;
+        }
+    }
+
+    fn tempo_maps(segments: &[TempoSegment]) -> Box<TransportMaps> {
+        Box::new(TransportMaps {
+            tempo: TempoMap::new(segments, 48_000.0).expect("the test map is well formed"),
+            time_signature: TimeSignatureMap::flat(4, 4).expect("4/4 is well formed"),
+            sample_rate: 48_000.0,
+        })
+    }
+
+    /// The map is the transport's clock: tempo, meter and beat position at the
+    /// playhead all come from it, and the beat position is the integral across
+    /// every segment rather than the current tempo scaled by elapsed time.
+    #[test]
+    fn the_transport_reads_tempo_meter_and_beats_from_the_map_at_the_playhead() {
+        let mut harness = Harness::new(16);
+        harness.playing();
+        harness.send(GraphCommand::SetTransportMaps(Box::new(TransportMaps {
+            tempo: TempoMap::new(
+                &[
+                    TempoSegment {
+                        start_frame: 0,
+                        beats_per_minute: 120.0,
+                    },
+                    TempoSegment {
+                        start_frame: 48_000,
+                        beats_per_minute: 240.0,
+                    },
+                ],
+                48_000.0,
+            )
+            .expect("the test map is well formed"),
+            time_signature: TimeSignatureMap::new(&[
+                TimeSignatureSegment {
+                    start_frame: 0,
+                    numerator: 4,
+                    denominator: 4,
+                },
+                TimeSignatureSegment {
+                    start_frame: 48_000,
+                    numerator: 7,
+                    denominator: 8,
+                },
+            ])
+            .expect("the test meter map is well formed"),
+            sample_rate: 48_000.0,
+        })));
+
+        render_frames(&mut harness, 48_000);
+        let transport = harness.scheduler.transport;
+        assert_eq!(transport.tempo, 120.0);
+        assert_eq!((transport.time_sig_num, transport.time_sig_denom), (4, 4));
+        // The final span of that render starts one block short of the change.
+        assert!(transport.song_pos_beats < 2.0);
+
+        render_frames(&mut harness, 48_000);
+        let transport = harness.scheduler.transport;
+        assert_eq!(transport.tempo, 240.0);
+        assert_eq!((transport.time_sig_num, transport.time_sig_denom), (7, 8));
+        // Two beats of 120 plus almost four of 240. The flat-scalar answer the
+        // map replaces would scale the whole elapsed time by the *current*
+        // tempo and land near eight.
+        assert!(transport.song_pos_beats > 5.0 && transport.song_pos_beats < 6.0);
+    }
+
+    /// The tempo map moves the output, not just a readout: the arpeggiator's
+    /// step clock is `song_pos_beats`, so a tempo change inside the render
+    /// changes the frames its notes land on. Doubling the tempo doubles the
+    /// steps the same span of frames holds.
+    #[test]
+    fn a_tempo_change_shifts_the_frames_the_arpeggiator_emits_on() {
+        const SECOND: usize = 48_000;
+
+        let steps_per_second = |segments: &[TempoSegment]| {
+            let mut harness = Harness::new(32);
+            let note_ons = Arc::new(AtomicUsize::new(0));
+            harness.send(GraphCommand::AddPlugin(
+                1,
+                Box::new(NoteOnCountingPlugin {
+                    note_ons: Arc::clone(&note_ons),
+                }),
+            ));
+            harness.send(GraphCommand::AddMidiFx(1, MidiFxKind::Arpeggiator.build()));
+            harness.send(GraphCommand::SetTransportMaps(tempo_maps(segments)));
+            harness.playing();
+            // One held note is the whole chord: the arp keeps its active-note
+            // list across blocks and steps on the transport alone.
+            harness.send(GraphCommand::SendMidiNote(1, note_on(60)));
+
+            render_frames(&mut harness, SECOND);
+            let first_second = note_ons.load(Ordering::Relaxed);
+            render_frames(&mut harness, SECOND);
+            (
+                first_second,
+                note_ons.load(Ordering::Relaxed) - first_second,
+            )
+        };
+
+        // The arp's default rate is a sixteenth note, so 120 BPM is eight steps
+        // a second and 240 BPM is sixteen.
+        let (flat_first, flat_second) = steps_per_second(&[TempoSegment {
+            start_frame: 0,
+            beats_per_minute: 120.0,
+        }]);
+        assert_eq!((flat_first, flat_second), (8, 8));
+
+        let (changed_first, changed_second) = steps_per_second(&[
+            TempoSegment {
+                start_frame: 0,
+                beats_per_minute: 120.0,
+            },
+            TempoSegment {
+                start_frame: SECOND as u64,
+                beats_per_minute: 240.0,
+            },
+        ]);
+        assert_eq!((changed_first, changed_second), (8, 16));
+    }
+
+    /// A track carrying a clip whose every sample names its own timeline
+    /// frame, so a rendered buffer reads back as the sequence of frames the
+    /// engine actually played.
+    fn track_with_frame_stamped_clip(harness: &mut Harness, track_id: usize, frames: usize) {
+        let material: Vec<f32> = (0..frames).map(|frame| (frame + 1) as f32).collect();
+        harness.send(GraphCommand::AddTrack(TimelineTrack::new(track_id)));
+        harness.send(GraphCommand::AddClip(
+            track_id,
+            TimelineClip::new(
+                1,
+                material,
+                Vec::new(),
+                placement(0, 0, frames as u64),
+                ClipPlayback::at_gain(1.0),
+            ),
+        ));
+    }
+
+    /// The loop seam is closed on its own sample. Every frame of the region is
+    /// played exactly once per pass: a seam that dropped a frame would skip a
+    /// stamp, and one that doubled a frame would repeat the region's last.
+    #[test]
+    fn a_loop_wraps_on_the_region_boundary_without_dropping_or_doubling_a_frame() {
+        const LOOP_START: u64 = 512;
+        const LOOP_END: u64 = 1_536;
+        const MATERIAL: usize = 4_096;
+
+        let mut harness = Harness::new(32);
+        track_with_frame_stamped_clip(&mut harness, 1, MATERIAL);
+        harness.send(GraphCommand::SetLoopRegion(LoopRegion {
+            enabled: true,
+            start_frame: LOOP_START,
+            end_frame: LOOP_END,
+        }));
+        harness.playing();
+        harness.send(GraphCommand::SeekFrames(LOOP_START));
+
+        // One callback long enough to hold the seam and keep going past it.
+        let (left, _right) = harness.render(1_536);
+
+        let stamp_at = |frame: u64| (frame + 1) as f32;
+        let expected: Vec<f32> = (LOOP_START..LOOP_END)
+            .chain(LOOP_START..LOOP_START + 512)
+            .map(stamp_at)
+            .collect();
+        assert_eq!(left, expected);
+
+        // And the playhead stands where the last rendered frame left it, one
+        // wrap later.
+        let position = harness.scheduler.transport_position();
+        assert_eq!(position.playhead_frame, LOOP_START + 512);
+        assert_eq!(position.loop_wraps, 1);
+    }
+
+    /// A loop region the engine refuses to honour changes nothing: playback
+    /// runs straight through it. The floor exists to bound the seam split, so
+    /// a region under it must be inert rather than half-applied.
+    #[test]
+    fn a_loop_region_shorter_than_the_floor_plays_straight_through() {
+        const MATERIAL: usize = 2_048;
+
+        let mut harness = Harness::new(32);
+        track_with_frame_stamped_clip(&mut harness, 1, MATERIAL);
+        harness.send(GraphCommand::SetLoopRegion(LoopRegion {
+            enabled: true,
+            start_frame: 0,
+            end_frame: crate::transport_map::MIN_LOOP_FRAMES - 1,
+        }));
+        harness.playing();
+
+        let (left, _right) = harness.render(1_024);
+
+        let expected: Vec<f32> = (0..1_024u64).map(|frame| (frame + 1) as f32).collect();
+        assert_eq!(left, expected);
+        assert_eq!(harness.scheduler.transport_position().loop_wraps, 0);
+    }
+
+    /// A wrap keeps the automation the first pass never reached. The graph
+    /// holds a window rather than a curve, so a wrap that treated itself as a
+    /// locate would drop the whole region's queue and leave every later pass
+    /// running on the level the first pass ended on.
+    #[test]
+    fn a_loop_wrap_keeps_the_automation_the_first_pass_had_not_reached() {
+        const LOOP_END: u64 = 1_024;
+
+        let mut harness = Harness::new(32);
+        track_with_constant_clip(&mut harness, 1, 9, 1.0, 4_096);
+        harness.send(GraphCommand::SetLoopRegion(LoopRegion {
+            enabled: true,
+            start_frame: 0,
+            end_frame: LOOP_END,
+        }));
+        harness.playing();
+        // Stamped inside the region and never reached on the first pass,
+        // because that pass only renders as far as frame 512.
+        harness.send(GraphCommand::AutomateParam {
+            target: AutomationTarget::TrackGain(1),
+            write: AutomationWrite::Append(AutomationEvent {
+                at_frame: 768,
+                duration_frames: 0,
+                value: 0.25,
+                shape: RampShape::Step,
+            }),
+        });
+
+        let (first, _) = harness.render(512);
+        assert_eq!(first, vec![1.0; 512]);
+
+        // Second callback runs 512 → 1024, wraps, then 0 → 512 again. The
+        // stamp at 768 falls inside it and must still be there.
+        let (second, _) = harness.render(1_024);
+        assert_eq!(second[0], 1.0, "before the stamp the gain is still unity");
+        assert_eq!(second[256], 0.25, "the stamp at frame 768 landed");
+        assert_eq!(
+            second[512], 0.25,
+            "and the level it set carries across the seam"
+        );
+        assert_eq!(harness.scheduler.transport_position().loop_wraps, 1);
+    }
+
+    /// The position channel is the cursor's, and separate from the ledger's on
+    /// purpose: reading it must not disturb what the ledger's own snapshot
+    /// says.
+    #[test]
+    fn the_position_channel_reports_the_transport_without_touching_the_ledgers() {
+        let mut harness = Harness::new(16);
+        harness.playing();
+        harness.render(256);
+
+        let position = harness.scheduler.transport_position();
+        assert!(position.playing);
+        assert_eq!(position.playhead_frame, 256);
+        assert_eq!(position.loop_wraps, 0);
+        assert_eq!(position.tempo, 120.0);
+        assert_eq!((position.time_sig_num, position.time_sig_denom), (4, 4));
+
+        // The ledger's own snapshot still answers its own question.
+        assert_eq!(harness.scheduler.graph_progress().playhead_frame, 256);
+        assert_eq!(harness.scheduler.graph_progress().batches_applied, 0);
+    }
+
+    /// The maps arrive built and leave through the retirement channel, exactly
+    /// as every other owning payload does: the callback never builds one and
+    /// never frees one (ADR 0020).
+    #[test]
+    fn installing_new_maps_retires_the_pair_they_replaced() {
+        let mut harness = Harness::new(16);
+        harness.send(GraphCommand::SetTransportMaps(tempo_maps(&[
+            TempoSegment {
+                start_frame: 0,
+                beats_per_minute: 100.0,
+            },
+        ])));
+        assert!(
+            harness.retired_rx.pop().is_err(),
+            "the first install replaces nothing, so it retires nothing"
+        );
+
+        harness.send(GraphCommand::SetTransportMaps(tempo_maps(&[
+            TempoSegment {
+                start_frame: 0,
+                beats_per_minute: 200.0,
+            },
+        ])));
+        assert!(
+            harness.retired_rx.pop().is_ok(),
+            "the replaced pair leaves over the retirement ring"
+        );
+
+        harness.playing();
+        harness.render(48_000);
+        assert_eq!(harness.scheduler.transport.tempo, 200.0);
     }
 }
