@@ -1,0 +1,76 @@
+src/modules/AudioEngine/repositories/nativeGraph/createNativeOfflineGraphBackend.ts
+  s_4f908a5afb6b58::t_c77cdc018fa978 73
+  s_4f908a5afb6b58::t_af428dca0527c9 150
+  s_4f908a5afb6b58::t_c55554b80b6b2e 48
+src/modules/AudioEngine/repositories/nativeGraph/readNativeStripReports.ts
+  s_4f908a5afb6b58::t_fc3cbef61fd0ca 1-46
+src/modules/Transport/useCases/transportControls/stopPlayback.ts
+  s_4f908a5afb6b58::t_fd91e7a39c40d9 1-2,8,10
+  s_4f908a5afb6b58::t_e8fed33ab2b8e7 53-63
+src/modules/AudioEngine/repositories/nativeGraph/createNativeLiveGraphBackend.ts
+  s_4f908a5afb6b58::t_4f043c58d1c66c 106-118
+  s_4f908a5afb6b58::t_6ec68b9589eab2 1-73,75-91,98-102,104-105,119-151
+  s_4f908a5afb6b58::t_6f90fd4e33761a 74
+  s_4f908a5afb6b58::t_164a856c4bc622 92-97,103
+src/modules/AudioEngine/useCases/livePlayback/projectLiveGraphTopology.ts
+  s_4f908a5afb6b58::t_fe49c4618f8aa6 1-156
+electron/__tests__/pluginCommandAdmission.spec.ts
+  s_4f908a5afb6b58::t_91fa8cb45fe79e 58-60
+  s_4f908a5afb6b58::t_a85aeadf13c972 11
+src/modules/AudioEngine/repositories/nativeGraph/nativeGraphTransport.ts
+  s_4f908a5afb6b58::t_d7a5d2f0a4f217 80-83
+src/modules/AudioEngine/useCases/livePlayback/stopNativeLiveGraphSession.ts
+  s_4f908a5afb6b58::t_9640e3eb6d3c67 1-46
+src/modules/AudioEngine/repositories/nativeGraph/__tests__/createNativeLiveGraphBackend.spec.ts
+  s_4f908a5afb6b58::t_97c694aa3b3611 1-212
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeLiveGraphSession.spec.ts
+  s_4f908a5afb6b58::t_4201a6b453c25e 1-3,12-21,25-28,35,43-44,58-96,100-102,107-116,123-126,128-150,156-162,164-166,172-182,189-203,205-219,221-232,234,238,240-242,244-254
+  s_4f908a5afb6b58::t_5a567b26de1383 233,235-237
+  s_4f908a5afb6b58::t_425415f99bd028 4-11,22-24,29-34,37-42,45-57,97-99,103-106,117-122,127,151-155,163,167-171,183-188,204,220,239
+  s_4f908a5afb6b58::t_d0a8df78f19a52 243
+  s_4f908a5afb6b58::t_0b34bf318c53b0 36
+src/modules/AudioEngine/useCases/livePlayback/__tests__/projectLiveGraphTopology.spec.ts
+  s_4f908a5afb6b58::t_37a78b442615a8 1-295
+src/modules/Transport/useCases/transportControls/__tests__/startPlayback.spec.ts
+  s_4f908a5afb6b58::t_94f94a5711b5a1 28
+  s_4f908a5afb6b58::t_792a404ef7161d 50-56
+  s_4f908a5afb6b58::t_ecea23a839f93f 3
+  s_4f908a5afb6b58::t_1b35e7453bb645 189-224
+  s_4f908a5afb6b58::t_61bd8107103a7d 252
+electron/pluginCommandAdmission.ts
+  s_4f908a5afb6b58::t_99e0177862df88 10-19,21
+src/modules/AudioEngine/useCases/index.ts
+  s_4f908a5afb6b58::t_1fbd1ec4417c8c 109-111
+src/modules/AudioEngine/useCases/livePlayback/startNativeLiveGraphSession.ts
+  s_4f908a5afb6b58::t_0b4ebda6faedc3 113-116
+  s_4f908a5afb6b58::t_afee8edd0df928 1-112,117-125
+electron/__tests__/commands.spec.ts
+  s_4f908a5afb6b58::t_8536bac3c99c43 340
+src/utils/sourdawCommandArguments.ts
+  s_4f908a5afb6b58::t_50157e9acd8dc0 23
+electron/commands.ts
+  s_4f908a5afb6b58::t_ac33efc40d2380 38
+  s_4f908a5afb6b58::t_ca15a3e9d7ac1e 132-138
+src/modules/Transport/useCases/transportControls/startPlayback.ts
+  s_4f908a5afb6b58::t_e6230bb596e345 2,9,13
+  s_4f908a5afb6b58::t_25682dd474b103 59-72,74-79
+  s_4f908a5afb6b58::t_dc1c8d386b2c35 73
+src/modules/AudioEngine/useCases/livePlayback/nativeLiveGraphSessionState.ts
+  s_4f908a5afb6b58::t_3259babd0dc10f 1-37
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "f25a71a56a13c1283310f51ff1aa58e8058cf5bd",
+  "prompts": {},
+  "sessions": {
+    "s_4f908a5afb6b58": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fcb92ba4-bf56-47a4-8b57-803f335a449e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
