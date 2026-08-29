@@ -25,6 +25,22 @@ export type ReviewComment = {
     authorNodeId: string | null;
     authorLogin: string | null;
     authorType: string | null;
+    reviewId: string | null;
+    reviewState: string | null;
+    reviewBody: string | null;
+    reviewCommitOid: string | null;
+    reviewAuthorNodeId: string | null;
+    reviewAuthorLogin: string | null;
+    reviewAuthorType: string | null;
+};
+export type PullRequestReview = {
+    id: string;
+    state: string;
+    body: string;
+    commitOid: string | null;
+    authorNodeId: string | null;
+    authorLogin: string | null;
+    authorType: string | null;
 };
 export type ReviewThread = {
     id: string;
@@ -39,15 +55,28 @@ export type ReviewThread = {
     rootAuthorType: string | null;
     comments: ReviewComment[];
 };
-export type ReviewThreadInspection = { head: string; thread: ReviewThread | null };
+export type ReviewThreadInspection = {
+    pullRequestId: string;
+    head: string;
+    thread: ReviewThread | null;
+    pendingReviews: PullRequestReview[];
+};
 export type ReviewReply = {
     id: string;
     fullDatabaseId: string;
     authorNodeId: string | null;
     authorLogin: string | null;
     authorType: string | null;
+    reviewId: string | null;
+    reviewState: string | null;
+    reviewBody: string | null;
+    reviewCommitOid: string | null;
+    reviewAuthorNodeId: string | null;
+    reviewAuthorLogin: string | null;
+    reviewAuthorType: string | null;
     clientMutationId: string;
 };
+export type ReviewEnvelopeReceipt = PullRequestReview & { clientMutationId: string };
 export type ReviewResolutionReceipt = {
     resolvedByNodeId: string;
     resolvedByLogin: string;
@@ -56,13 +85,24 @@ export type ReviewResolutionReceipt = {
 };
 export type ResolveReviewThreadPort = {
     inspect: (number: number, threadId: string) => ReviewThreadInspection;
-    replyDone: (threadId: string) => ReviewReply;
+    createPendingReview: (pullRequestId: string, commitOid: string, body: string) => ReviewEnvelopeReceipt;
+    replyDone: (threadId: string, reviewId: string) => ReviewReply;
+    submitReview: (reviewId: string, body: string) => ReviewEnvelopeReceipt;
+    updateReviewBody: (reviewId: string, body: string) => ReviewEnvelopeReceipt;
     resolve: (threadId: string) => ReviewResolutionReceipt;
     deleteReply: (replyId: string) => void;
+    deletePendingReview: (reviewId: string) => void;
     log: (message: string) => void;
 };
 export type ResolveReviewThreadArgs = { number?: number; threadId?: string; head?: string; help: boolean };
 const usage = 'usage: pnpm review:resolve <pr-number> --thread <graphql-thread-node-id> --head <40-hex-sha>';
+const RESOLUTION_REVIEW_SUMMARY = 'Resolved this review thread after applying the requested changes.';
+type ResolutionReviewContext = {
+    pullRequestId: string;
+    threadId: string;
+    expectedHead: string;
+    body: string;
+};
 
 export function parseResolveReviewThreadArgs(args: string[]): ResolveReviewThreadArgs {
     if (args[0] === '--help') {
@@ -103,24 +143,53 @@ export function resolveReviewThread(
     }
     const before = port.inspect(number, threadId);
     assertExpectedHead(before.head, expectedHead);
+    const context = resolutionReviewContext(before.pullRequestId, threadId, expectedHead);
     if (before.thread?.isResolved) {
-        assertCompletedResolution(before.thread, threadId);
+        repairCompletedResolution(number, before, context, port);
         return logResolutionSuccess(number, threadId, port);
     }
     assertResolvableThread(before.thread, threadId);
+    let pendingReviewCreated = false;
+    let createdPendingReviewId: string | undefined;
     let replyAttempted = false;
     let replyCreated = false;
     let createdReplyId: string | undefined;
+    let replyReviewId: string | undefined;
+    let reviewUpdateAttempted = false;
+    let reviewSubmitAttempted = false;
     let replyId: string | undefined;
     let resolveAttempted = false;
     let resolutionReceipt: ReviewResolutionReceipt | undefined;
     try {
+        let working = before;
         const existingReply = findReusableReply(before.thread);
         if (existingReply === undefined) {
+            let pendingReview = convergePendingReviews(working.pendingReviews, context, port);
+            if (pendingReview === undefined) {
+                const created = port.createPendingReview(working.pullRequestId, expectedHead, context.body);
+                assertReviewEnvelopeReceipt(
+                    created,
+                    createReviewClientMutationId(threadId),
+                    'PENDING',
+                    context.body,
+                    expectedHead,
+                    'create pending review'
+                );
+                pendingReviewCreated = true;
+                createdPendingReviewId = created.id;
+                working = port.inspect(number, threadId);
+                assertExpectedHeadAfterMutation(working.head, expectedHead);
+                assertResolvableThread(working.thread, threadId);
+                pendingReview = convergePendingReviews(working.pendingReviews, context, port);
+            }
+            if (pendingReview === undefined) {
+                fail(`review thread ${threadId} has no reusable pending author review`);
+            }
             replyAttempted = true;
-            const reply = port.replyDone(threadId);
-            assertReply(reply, replyClientMutationId(threadId));
+            const reply = port.replyDone(threadId, pendingReview.id);
+            assertReply(reply, replyClientMutationId(threadId), pendingReview.id, context);
             replyId = reply.id;
+            replyReviewId = pendingReview.id;
             replyCreated = true;
             createdReplyId = reply.id;
         } else {
@@ -133,22 +202,60 @@ export function resolveReviewThread(
         const converged = port.inspect(number, threadId);
         assertExpectedHeadAfterMutation(converged.head, expectedHead);
         assertResolvableThread(converged.thread, threadId);
-        replyId = requireOneReplyMarker(converged.thread, threadId).id;
+        const canonicalReply = requireOneReplyMarker(converged.thread, threadId);
+        replyId = canonicalReply.id;
+        let canonicalReview = requireReplyReview(canonicalReply, context, ['PENDING', 'COMMENTED'], true);
+        if (canonicalReview.body.trim() === '') {
+            reviewUpdateAttempted = true;
+            canonicalReview = port.updateReviewBody(canonicalReview.id, context.body);
+            assertReviewEnvelopeReceipt(
+                canonicalReview,
+                updateReviewClientMutationId(canonicalReview.id),
+                canonicalReview.state,
+                context.body,
+                expectedHead,
+                'update review body'
+            );
+        } else if (canonicalReview.body !== context.body) {
+            fail(`Done reply ${canonicalReply.id} is attached to a noncanonical author review`);
+        }
+        if (canonicalReview.state === 'PENDING') {
+            reviewSubmitAttempted = true;
+            canonicalReview = port.submitReview(canonicalReview.id, context.body);
+            assertReviewEnvelopeReceipt(
+                canonicalReview,
+                submitReviewClientMutationId(canonicalReview.id),
+                'COMMENTED',
+                context.body,
+                expectedHead,
+                'submit review'
+            );
+        }
+        const afterReview = reviewUpdateAttempted || reviewSubmitAttempted ? port.inspect(number, threadId) : converged;
+        assertExpectedHeadAfterMutation(afterReview.head, expectedHead);
+        assertResolvableThread(afterReview.thread, threadId);
+        assertCommentedResolutionReply(requireOneReplyMarker(afterReview.thread, threadId), context);
         resolveAttempted = true;
         const resolveReceipt = port.resolve(threadId);
         assertResolutionReceipt(resolveReceipt, resolveClientMutationId(threadId));
         resolutionReceipt = resolveReceipt;
         const verified = port.inspect(number, threadId);
         assertExpectedHeadAfterMutation(verified.head, expectedHead);
-        assertFinalResolution(verified.thread, threadId, replyId);
+        assertFinalResolution(verified.thread, threadId, replyId, context);
     } catch (error) {
         compensateResolution(
             number,
             threadId,
             before,
+            context,
+            pendingReviewCreated,
+            createdPendingReviewId,
             replyAttempted,
             replyCreated,
             createdReplyId,
+            replyReviewId,
+            reviewUpdateAttempted,
+            reviewSubmitAttempted,
             resolveAttempted,
             resolutionReceipt,
             port,
@@ -168,9 +275,15 @@ function compensateResolution(
     number: number,
     threadId: string,
     before: ReviewThreadInspection,
+    context: ResolutionReviewContext,
+    pendingReviewCreated: boolean,
+    createdPendingReviewId: string | undefined,
     replyAttempted: boolean,
     replyCreated: boolean,
     createdReplyId: string | undefined,
+    replyReviewId: string | undefined,
+    reviewUpdateAttempted: boolean,
+    reviewSubmitAttempted: boolean,
     resolveAttempted: boolean,
     resolutionReceipt: ReviewResolutionReceipt | undefined,
     port: ResolveReviewThreadPort,
@@ -184,29 +297,61 @@ function compensateResolution(
     if (current === undefined || current.thread === null || before.thread === null) {
         failures.push('cannot determine ambiguous review transaction state');
     } else {
-        const stateMayHaveMutated = resolutionReceipt !== undefined || resolveAttempted;
-        if (stateMayHaveMutated) {
+        const visibleReviewEvidence =
+            reviewUpdateAttempted &&
+            current.thread.comments.some((comment) => hasCanonicalCommentedReview(comment, context));
+        const submittedReviewEvidence =
+            reviewSubmitAttempted &&
+            current.thread.comments.some((comment) => hasCanonicalCommentedReview(comment, context));
+        const resolutionEvidence = resolutionReceipt !== undefined || resolveAttempted;
+        if (resolutionEvidence) {
             failures.push('review-thread resolution was attempted; preserving Done reply as durable evidence');
+        }
+        if (submittedReviewEvidence) {
+            failures.push('review submission was attempted; preserving submitted review evidence');
+        } else if (reviewSubmitAttempted) {
+            failures.push('review submission was attempted; preserving pending review evidence');
+        } else if (visibleReviewEvidence) {
+            failures.push('review body update was attempted; preserving submitted review evidence');
         }
         if (!resolveAttempted && current.thread.isResolved && replyCreated && createdReplyId !== undefined) {
             deleteCreatedNoncanonicalReply(current.thread, createdReplyId, port, failures);
+        } else if (pendingReviewCreated && !replyAttempted) {
+            deleteCreatedPendingReview(current.pendingReviews, createdPendingReviewId, context, port, failures);
         } else if (replyAttempted && !replyCreated) {
             failures.push('ambiguous review reply mutation; refusing to delete an unverified comment');
-        } else if (replyCreated && !stateMayHaveMutated) {
-            if (createdReplyId === undefined) {
+        } else if (
+            replyCreated &&
+            !resolutionEvidence &&
+            !submittedReviewEvidence &&
+            !visibleReviewEvidence &&
+            !reviewSubmitAttempted
+        ) {
+            if (createdReplyId === undefined || replyReviewId === undefined) {
                 failures.push('ambiguous review reply mutation; refusing to delete an unverified comment');
+            } else if (pendingReviewCreated && createdPendingReviewId === replyReviewId) {
+                deleteCreatedPendingReview(current.pendingReviews, createdPendingReviewId, context, port, failures);
             } else if (hasExpectedReply(current.thread, createdReplyId)) {
                 attempt(failures, 'delete review reply', () => port.deleteReply(createdReplyId));
             } else if (current.thread.comments.some((comment) => comment.id === createdReplyId)) {
                 failures.push('review reply receipt is no longer present; refusing to delete an unverified comment');
             }
+        } else if (
+            !pendingReviewCreated &&
+            current.pendingReviews.some((review) => isExactPendingReview(review, context))
+        ) {
+            failures.push('ambiguous pending review mutation; preserving exact pending review evidence');
         }
     }
     if (
         current !== undefined &&
         before.thread !== null &&
         !current.thread?.isResolved &&
-        resolutionReceipt === undefined
+        resolutionReceipt === undefined &&
+        !pendingReviewCreated &&
+        !replyAttempted &&
+        !reviewUpdateAttempted &&
+        !reviewSubmitAttempted
     ) {
         const beforeThread = before.thread;
         attempt(failures, 'verify review-thread compensation', () => {
@@ -214,7 +359,8 @@ function compensateResolution(
             if (
                 verified.thread === null ||
                 verified.thread.isResolved !== beforeThread.isResolved ||
-                !sameCommentIds(verified.thread.comments, beforeThread.comments)
+                !sameCommentIds(verified.thread.comments, beforeThread.comments) ||
+                !sameReviewIds(verified.pendingReviews, before.pendingReviews)
             ) {
                 fail(`review thread ${threadId} compensation was not verified`);
             }
@@ -229,6 +375,13 @@ function sameCommentIds(left: ReviewComment[], right: ReviewComment[]): boolean 
     }
     const ids = new Set(left.map((comment) => comment.id));
     return ids.size === right.length && right.every((comment) => ids.has(comment.id));
+}
+function sameReviewIds(left: PullRequestReview[], right: PullRequestReview[]): boolean {
+    if (left.length !== right.length) {
+        return false;
+    }
+    const ids = new Set(left.map((review) => review.id));
+    return ids.size === right.length && right.every((review) => ids.has(review.id));
 }
 function throwWithCompensation(original: unknown, failures: string[]): never {
     const message = errorMessage(original);
@@ -278,13 +431,72 @@ function isAuthorResolutionActor(nodeId: unknown, type: unknown): boolean {
 function isReviewerBotActor(nodeId: unknown, type: unknown): boolean {
     return type === 'Bot' && typeof nodeId === 'string' && isReviewerBotNodeId(nodeId);
 }
+function resolutionReviewContext(
+    pullRequestId: string,
+    threadId: string,
+    expectedHead: string
+): ResolutionReviewContext {
+    if (typeof pullRequestId !== 'string' || pullRequestId === '') {
+        fail('cannot read current pull-request node ID');
+    }
+    return {
+        pullRequestId,
+        threadId,
+        expectedHead,
+        body: [
+            RESOLUTION_REVIEW_SUMMARY,
+            `<!-- sourdaw-review-resolve pull-request:${pullRequestId} thread:${threadId} head:${expectedHead} -->`,
+        ].join('\n\n'),
+    };
+}
+function extractThreadIdFromBody(body: string): string {
+    const match = /thread:([^\s]+)\s+head:/.exec(body);
+    if (match?.[1] === undefined) {
+        fail('resolution review body is missing its thread marker');
+    }
+    return match[1];
+}
+function createReviewClientMutationId(threadId: string): string {
+    return `review-create:${threadId}`;
+}
 function replyClientMutationId(threadId: string): string {
     return `review-reply:${threadId}`;
+}
+function submitReviewClientMutationId(reviewId: string): string {
+    return `review-submit:${reviewId}`;
+}
+function updateReviewClientMutationId(reviewId: string): string {
+    return `review-update:${reviewId}`;
 }
 function resolveClientMutationId(threadId: string): string {
     return `review-resolve:${threadId}`;
 }
-function assertReply(reply: ReviewReply, expectedClientMutationId: string): void {
+function assertReviewEnvelopeReceipt(
+    receipt: ReviewEnvelopeReceipt,
+    expectedClientMutationId: string,
+    expectedState: string,
+    expectedBody: string,
+    expectedHead: string,
+    label: string
+): void {
+    if (
+        typeof receipt.id !== 'string' ||
+        receipt.id === '' ||
+        receipt.state !== expectedState ||
+        receipt.body !== expectedBody ||
+        receipt.commitOid !== expectedHead ||
+        !isAuthorBotActor(receipt.authorNodeId, receipt.authorType) ||
+        receipt.clientMutationId !== expectedClientMutationId
+    ) {
+        fail(`${label} returned an invalid result`);
+    }
+}
+function assertReply(
+    reply: ReviewReply,
+    expectedClientMutationId: string,
+    expectedReviewId: string,
+    context: ResolutionReviewContext
+): void {
     if (
         typeof reply.id !== 'string' ||
         reply.id === '' ||
@@ -293,6 +505,10 @@ function assertReply(reply: ReviewReply, expectedClientMutationId: string): void
         reply.clientMutationId !== expectedClientMutationId
     ) {
         fail('add review-thread reply returned an invalid result');
+    }
+    const review = requireReplyReview(reply, context, ['PENDING'], false);
+    if (review.id !== expectedReviewId) {
+        fail('add review-thread reply was not attached to the staged author review');
     }
 }
 function assertResolutionReceipt(receipt: ReviewResolutionReceipt, expectedClientMutationId: string): void {
@@ -303,12 +519,87 @@ function assertResolutionReceipt(receipt: ReviewResolutionReceipt, expectedClien
         fail('resolve review thread returned an invalid result');
     }
 }
+function toRequiredReview(
+    value: {
+        reviewId?: string | null;
+        reviewState?: string | null;
+        reviewBody?: string | null;
+        reviewCommitOid?: string | null;
+        reviewAuthorNodeId?: string | null;
+        reviewAuthorLogin?: string | null;
+        reviewAuthorType?: string | null;
+    },
+    label: string
+): PullRequestReview {
+    if (
+        typeof value.reviewId !== 'string' ||
+        value.reviewId === '' ||
+        typeof value.reviewState !== 'string' ||
+        typeof value.reviewBody !== 'string' ||
+        typeof value.reviewCommitOid !== 'string'
+    ) {
+        fail(`${label} is not attached to a readable pull-request review`);
+    }
+    return {
+        id: value.reviewId,
+        state: value.reviewState,
+        body: value.reviewBody,
+        commitOid: value.reviewCommitOid,
+        authorNodeId: value.reviewAuthorNodeId ?? null,
+        authorLogin: value.reviewAuthorLogin ?? null,
+        authorType: value.reviewAuthorType ?? null,
+    };
+}
+function requireReplyReview(
+    value: {
+        id?: string;
+        reviewId?: string | null;
+        reviewState?: string | null;
+        reviewBody?: string | null;
+        reviewCommitOid?: string | null;
+        reviewAuthorNodeId?: string | null;
+        reviewAuthorLogin?: string | null;
+        reviewAuthorType?: string | null;
+    },
+    context: ResolutionReviewContext,
+    allowedStates: string[],
+    allowEmptyBody: boolean
+): PullRequestReview {
+    const review = toRequiredReview(value, `Done reply ${value.id ?? 'unknown'}`);
+    if (!isAuthorBotActor(review.authorNodeId, review.authorType)) {
+        fail(`Done reply ${value.id ?? 'unknown'} is attached to a non-author review`);
+    }
+    if (!allowedStates.includes(review.state)) {
+        fail(`Done reply ${value.id ?? 'unknown'} is attached to an unsupported review state`);
+    }
+    if (review.commitOid !== context.expectedHead) {
+        fail(`Done reply ${value.id ?? 'unknown'} is attached to a stale review head`);
+    }
+    if (!allowEmptyBody && review.body !== context.body) {
+        fail(`Done reply ${value.id ?? 'unknown'} is attached to a noncanonical author review`);
+    }
+    if (!allowEmptyBody && review.body.trim() === '') {
+        fail(`Done reply ${value.id ?? 'unknown'} is attached to an empty author review`);
+    }
+    if (allowEmptyBody && review.body !== context.body && review.body.trim() !== '') {
+        fail(`Done reply ${value.id ?? 'unknown'} is attached to a noncanonical author review`);
+    }
+    return review;
+}
 function hasExpectedReply(thread: ReviewThread, replyId: string): boolean {
     return thread.comments.some(
         (comment) =>
             comment.id === replyId &&
             comment.body === 'Done' &&
             isAuthorBotActor(comment.authorNodeId, comment.authorType)
+    );
+}
+function hasCanonicalCommentedReview(comment: ReviewComment, context: ResolutionReviewContext): boolean {
+    return (
+        comment.reviewState === 'COMMENTED' &&
+        comment.reviewBody === context.body &&
+        comment.reviewCommitOid === context.expectedHead &&
+        isAuthorBotActor(comment.reviewAuthorNodeId, comment.reviewAuthorType)
     );
 }
 function validatedReplyMarkers(thread: ReviewThread): ReviewComment[] {
@@ -356,6 +647,31 @@ function convergeReplyMarkers(threadId: string, thread: ReviewThread | null, por
     }
     return canonical.id;
 }
+function isExactPendingReview(review: PullRequestReview, context: ResolutionReviewContext): boolean {
+    return (
+        review.state === 'PENDING' &&
+        review.body === context.body &&
+        review.commitOid === context.expectedHead &&
+        isAuthorBotActor(review.authorNodeId, review.authorType)
+    );
+}
+function convergePendingReviews(
+    pendingReviews: PullRequestReview[],
+    context: ResolutionReviewContext,
+    port: ResolveReviewThreadPort
+): PullRequestReview | undefined {
+    const exact = pendingReviews.filter((review) => isExactPendingReview(review, context));
+    const canonical = exact[0];
+    if (canonical === undefined) {
+        return undefined;
+    }
+    for (const review of exact) {
+        if (review.id !== canonical.id) {
+            port.deletePendingReview(review.id);
+        }
+    }
+    return canonical;
+}
 function requireOneOrMoreReplyMarker(thread: ReviewThread | null, threadId: string): ReviewComment {
     if (thread === null) {
         fail(`review thread ${threadId} was not found on this pull request`);
@@ -385,14 +701,77 @@ function deleteCreatedNoncanonicalReply(
     }
     attempt(failures, 'delete noncanonical review reply', () => port.deleteReply(createdReplyId));
 }
-function assertCompletedResolution(thread: ReviewThread, threadId: string): void {
+function deleteCreatedPendingReview(
+    pendingReviews: PullRequestReview[],
+    createdPendingReviewId: string | undefined,
+    context: ResolutionReviewContext,
+    port: ResolveReviewThreadPort,
+    failures: string[]
+): void {
+    if (createdPendingReviewId === undefined) {
+        failures.push('ambiguous pending review mutation; refusing to delete an unverified review');
+        return;
+    }
+    const review = pendingReviews.find((candidate) => candidate.id === createdPendingReviewId);
+    if (review === undefined) {
+        return;
+    }
+    if (!isExactPendingReview(review, context)) {
+        failures.push('pending review receipt is no longer exact; refusing to delete an unverified review');
+        return;
+    }
+    attempt(failures, 'delete pending review', () => port.deletePendingReview(createdPendingReviewId));
+}
+function assertCompletedResolution(thread: ReviewThread, threadId: string): ReviewComment {
     assertRootReviewer(thread, threadId);
     if (!isAuthorResolutionActor(thread.resolvedByNodeId, thread.resolvedByType)) {
         fail(`review thread ${threadId} was not resolved by ${AUTHOR_BOT_NODE_ID}`);
     }
-    requireOneReplyMarker(thread, threadId);
+    return requireOneReplyMarker(thread, threadId);
 }
-function assertFinalResolution(thread: ReviewThread | null, threadId: string, replyId: string): void {
+function assertCommentedResolutionReply(reply: ReviewComment, context: ResolutionReviewContext): void {
+    requireReplyReview(reply, context, ['COMMENTED'], false);
+}
+function repairCompletedResolution(
+    number: number,
+    inspection: ReviewThreadInspection,
+    context: ResolutionReviewContext,
+    port: ResolveReviewThreadPort
+): void {
+    const thread = inspection.thread;
+    if (thread === null) {
+        fail(`review thread ${context.threadId} was not found on this pull request`);
+    }
+    const reply = assertCompletedResolution(thread, context.threadId);
+    const review = requireReplyReview(reply, context, ['COMMENTED'], true);
+    if (review.body === context.body) {
+        return;
+    }
+    if (review.body.trim() !== '') {
+        fail(`Done reply ${reply.id} is attached to a noncanonical author review`);
+    }
+    const updated = port.updateReviewBody(review.id, context.body);
+    assertReviewEnvelopeReceipt(
+        updated,
+        updateReviewClientMutationId(review.id),
+        'COMMENTED',
+        context.body,
+        context.expectedHead,
+        'update review body'
+    );
+    const verified = port.inspect(number, context.threadId);
+    assertExpectedHeadAfterMutation(verified.head, context.expectedHead);
+    if (verified.thread === null) {
+        fail(`review thread ${context.threadId} was not found on this pull request`);
+    }
+    assertCommentedResolutionReply(assertCompletedResolution(verified.thread, context.threadId), context);
+}
+function assertFinalResolution(
+    thread: ReviewThread | null,
+    threadId: string,
+    replyId: string,
+    context: ResolutionReviewContext
+): void {
     if (
         thread?.id !== threadId ||
         !thread.isResolved ||
@@ -403,7 +782,7 @@ function assertFinalResolution(thread: ReviewThread | null, threadId: string, re
     if (!hasExpectedReply(thread, replyId)) {
         fail(`review reply receipt ${replyId} is not present on thread ${threadId}`);
     }
-    requireOneReplyMarker(thread, threadId);
+    assertCommentedResolutionReply(requireOneReplyMarker(thread, threadId), context);
 }
 function assertResolvableThread(thread: ReviewThread | null, expectedThreadId: string): void {
     if (thread === null || thread.id !== expectedThreadId) {
@@ -445,9 +824,14 @@ export function shellPort(session: GhSession, cwd: string = process.cwd()): Reso
     const gh = (args: string[]) => spawnCapture('gh', args, { cwd: primaryRoot, env: session.env });
     return {
         inspect: (number, id) => inspectReviewThread(number, id, gh),
-        replyDone: (id) => mutationReply(id, gh),
+        createPendingReview: (pullRequestId, commitOid, body) =>
+            createPendingReview(pullRequestId, commitOid, body, gh),
+        replyDone: (id, reviewId) => mutationReply(id, reviewId, gh),
+        submitReview: (reviewId, body) => submitReview(reviewId, body, gh),
+        updateReviewBody: (reviewId, body) => updateReviewBody(reviewId, body, gh),
         resolve: (id) => resolveThread(id, gh),
         deleteReply: (id) => deleteReply(id, gh),
+        deletePendingReview: (id) => deletePendingReview(id, gh),
         log: (message) => console.log(message),
     };
 }
@@ -462,10 +846,11 @@ export function inspectReviewThread(number: number, requestedThreadId: string, g
     }
     let cursor: string | undefined;
     const cursors = new Set<string>();
+    let pullRequestId: string | undefined;
     let head: string | undefined;
     for (;;) {
         const connection = cursor === undefined ? 'reviewThreads(first:100)' : 'reviewThreads(first:100,after:$cursor)';
-        const query = `query($owner:String!,$name:String!,$number:Int!${cursor === undefined ? '' : ',$cursor:String!'}){repository(owner:$owner,name:$name){pullRequest(number:$number){headRefOid ${connection}{nodes{id isResolved resolvedBy{id login __typename}} pageInfo{hasNextPage endCursor}}}}}`;
+        const query = `query($owner:String!,$name:String!,$number:Int!${cursor === undefined ? '' : ',$cursor:String!'}){repository(owner:$owner,name:$name){pullRequest(number:$number){id headRefOid ${connection}{nodes{id isResolved resolvedBy{id login __typename}} pageInfo{hasNextPage endCursor}}}}}`;
         const fields = ['-F', `owner=${owner}`, '-F', `name=${name}`, '-F', `number=${number}`];
         if (cursor !== undefined) {
             fields.push('-F', `cursor=${cursor}`);
@@ -474,6 +859,7 @@ export function inspectReviewThread(number: number, requestedThreadId: string, g
             data?: {
                 repository?: {
                     pullRequest?: {
+                        id?: unknown;
                         headRefOid?: unknown;
                         reviewThreads?: { nodes?: unknown; pageInfo?: { hasNextPage?: unknown; endCursor?: unknown } };
                     };
@@ -481,9 +867,10 @@ export function inspectReviewThread(number: number, requestedThreadId: string, g
             };
         };
         const pullRequest = response.data?.repository?.pullRequest;
-        if (typeof pullRequest?.headRefOid !== 'string') {
+        if (typeof pullRequest?.id !== 'string' || typeof pullRequest.headRefOid !== 'string') {
             fail(`cannot read current head for PR #${number}`);
         }
+        pullRequestId = pullRequest.id;
         if (head === undefined) {
             head = pullRequest.headRefOid;
         } else if (head !== pullRequest.headRefOid) {
@@ -507,6 +894,7 @@ export function inspectReviewThread(number: number, requestedThreadId: string, g
         );
         if (selected !== undefined) {
             return {
+                pullRequestId,
                 head,
                 thread: inspectThreadComments(
                     requestedThreadId,
@@ -516,14 +904,79 @@ export function inspectReviewThread(number: number, requestedThreadId: string, g
                     selected.resolvedBy?.__typename,
                     gh
                 ),
+                pendingReviews: inspectPendingReviews(number, pullRequestId, head, gh),
             };
         }
         if (!threads.pageInfo.hasNextPage) {
-            return { head, thread: null };
+            return {
+                pullRequestId,
+                head,
+                thread: null,
+                pendingReviews: inspectPendingReviews(number, pullRequestId, head, gh),
+            };
         }
         const next = threads.pageInfo.endCursor;
         if (typeof next !== 'string' || next === '' || cursors.has(next)) {
             fail(`invalid review-thread pagination for PR #${number}`);
+        }
+        cursors.add(next);
+        cursor = next;
+    }
+}
+function inspectPendingReviews(
+    number: number,
+    pullRequestId: string,
+    expectedHead: string,
+    gh: Gh
+): PullRequestReview[] {
+    const [owner, name] = REQUIRED_REPOSITORY.split('/');
+    if (owner === undefined || name === undefined) {
+        fail(`invalid GitHub repository: ${REQUIRED_REPOSITORY}`);
+    }
+    let cursor: string | undefined;
+    const cursors = new Set<string>();
+    const pending: PullRequestReview[] = [];
+    for (;;) {
+        const connection = cursor === undefined ? 'reviews(first:100)' : 'reviews(first:100,after:$cursor)';
+        const query = `query($owner:String!,$name:String!,$number:Int!${cursor === undefined ? '' : ',$cursor:String!'}){repository(owner:$owner,name:$name){pullRequest(number:$number){id headRefOid ${connection}{nodes{id state body commit{oid} author{login __typename ... on Bot{id}}} pageInfo{hasNextPage endCursor}}}}}`;
+        const fields = ['-F', `owner=${owner}`, '-F', `name=${name}`, '-F', `number=${number}`];
+        if (cursor !== undefined) {
+            fields.push('-F', `cursor=${cursor}`);
+        }
+        const response = graphql(gh, query, fields, `pull-request reviews for PR #${number}`) as {
+            data?: {
+                repository?: {
+                    pullRequest?: {
+                        id?: unknown;
+                        headRefOid?: unknown;
+                        reviews?: { nodes?: unknown; pageInfo?: { hasNextPage?: unknown; endCursor?: unknown } };
+                    };
+                };
+            };
+        };
+        const pullRequest = response.data?.repository?.pullRequest;
+        if (pullRequest?.id !== pullRequestId || pullRequest.headRefOid !== expectedHead) {
+            fail(`pull-request head changed while reading reviews for PR #${number}`);
+        }
+        const reviews = pullRequest.reviews;
+        if (!Array.isArray(reviews?.nodes) || typeof reviews.pageInfo?.hasNextPage !== 'boolean') {
+            fail(`invalid review page for PR #${number}`);
+        }
+        for (const value of reviews.nodes) {
+            const review = toPullRequestReview(value);
+            if (review !== null && review.state === 'PENDING') {
+                if (pending.some((current) => current.id === review.id)) {
+                    fail(`duplicate pull-request review ${review.id}`);
+                }
+                pending.push(review);
+            }
+        }
+        if (!reviews.pageInfo.hasNextPage) {
+            return pending;
+        }
+        const next = reviews.pageInfo.endCursor;
+        if (typeof next !== 'string' || next === '' || cursors.has(next)) {
+            fail(`invalid pull-request review pagination for PR #${number}`);
         }
         cursors.add(next);
         cursor = next;
@@ -545,7 +998,7 @@ function inspectThreadComments(
     const comments: ReviewComment[] = [];
     for (;;) {
         const connection = cursor === undefined ? 'comments(first:100)' : 'comments(first:100,after:$cursor)';
-        const query = `query($threadId:ID!${cursor === undefined ? '' : ',$cursor:String!'}){node(id:$threadId){... on PullRequestReviewThread{id ${connection}{nodes{id fullDatabaseId body author{login __typename ... on Bot{id}}} pageInfo{hasNextPage endCursor}}}}}`;
+        const query = `query($threadId:ID!${cursor === undefined ? '' : ',$cursor:String!'}){node(id:$threadId){... on PullRequestReviewThread{id ${connection}{nodes{id fullDatabaseId body author{login __typename ... on Bot{id}} pullRequestReview{id state body commit{oid} author{login __typename ... on Bot{id}}}} pageInfo{hasNextPage endCursor}}}}}`;
         const fields = ['-F', `threadId=${threadId}`];
         if (cursor !== undefined) {
             fields.push('-F', `cursor=${cursor}`);
@@ -604,10 +1057,12 @@ function toReviewComment(value: unknown): ReviewComment {
         fullDatabaseId?: unknown;
         body?: unknown;
         author?: { id?: unknown; login?: unknown; __typename?: unknown } | null;
+        pullRequestReview?: unknown;
     };
     if (typeof comment.id !== 'string' || !isDecimalId(comment.fullDatabaseId) || typeof comment.body !== 'string') {
         fail('invalid review comment');
     }
+    const review = toPullRequestReview(comment.pullRequestReview);
     return {
         id: comment.id,
         fullDatabaseId: comment.fullDatabaseId,
@@ -615,16 +1070,96 @@ function toReviewComment(value: unknown): ReviewComment {
         authorNodeId: typeof comment.author?.id === 'string' ? comment.author.id : null,
         authorLogin: typeof comment.author?.login === 'string' ? comment.author.login : null,
         authorType: typeof comment.author?.__typename === 'string' ? comment.author.__typename : null,
+        reviewId: review?.id ?? null,
+        reviewState: review?.state ?? null,
+        reviewBody: review?.body ?? null,
+        reviewCommitOid: review?.commitOid ?? null,
+        reviewAuthorNodeId: review?.authorNodeId ?? null,
+        reviewAuthorLogin: review?.authorLogin ?? null,
+        reviewAuthorType: review?.authorType ?? null,
     };
 }
-function mutationReply(threadId: string, gh: Gh): ReviewReply {
-    const clientMutationId = replyClientMutationId(threadId);
+function toPullRequestReview(value: unknown): PullRequestReview | null {
+    if (value === null || value === undefined) {
+        return null;
+    }
+    const review = value as {
+        id?: unknown;
+        state?: unknown;
+        body?: unknown;
+        commit?: { oid?: unknown } | null;
+        author?: { id?: unknown; login?: unknown; __typename?: unknown } | null;
+    };
+    if (typeof review.id !== 'string' || typeof review.state !== 'string' || typeof review.body !== 'string') {
+        fail('invalid pull-request review');
+    }
+    const commitOid = review.commit?.oid;
+    if (commitOid !== null && commitOid !== undefined && typeof commitOid !== 'string') {
+        fail('invalid pull-request review');
+    }
+    return {
+        id: review.id,
+        state: review.state,
+        body: review.body,
+        commitOid: typeof commitOid === 'string' ? commitOid : null,
+        authorNodeId: typeof review.author?.id === 'string' ? review.author.id : null,
+        authorLogin: typeof review.author?.login === 'string' ? review.author.login : null,
+        authorType: typeof review.author?.__typename === 'string' ? review.author.__typename : null,
+    };
+}
+function createPendingReview(pullRequestId: string, commitOid: string, body: string, gh: Gh): ReviewEnvelopeReceipt {
+    const clientMutationId = createReviewClientMutationId(extractThreadIdFromBody(body));
     const query =
-        'mutation($threadId:ID!,$body:String!,$clientMutationId:String!){addPullRequestReviewThreadReply(input:{pullRequestReviewThreadId:$threadId,body:$body,clientMutationId:$clientMutationId}){clientMutationId comment{id fullDatabaseId body author{login __typename ... on Bot{id}}}}}';
+        'mutation($pullRequestId:ID!,$body:String!,$commitOid:GitObjectID!,$clientMutationId:String!){addPullRequestReview(input:{pullRequestId:$pullRequestId,body:$body,commitOID:$commitOid,clientMutationId:$clientMutationId}){clientMutationId pullRequestReview{id state body commit{oid} author{login __typename ... on Bot{id}}}}}';
     const response = graphql(
         gh,
         query,
-        ['-F', `threadId=${threadId}`, '-f', 'body=Done', '-f', `clientMutationId=${clientMutationId}`],
+        [
+            '-F',
+            `pullRequestId=${pullRequestId}`,
+            '-f',
+            `body=${body}`,
+            '-F',
+            `commitOid=${commitOid}`,
+            '-f',
+            `clientMutationId=${clientMutationId}`,
+        ],
+        'create pending review'
+    ) as {
+        data?: {
+            addPullRequestReview?: {
+                clientMutationId?: unknown;
+                pullRequestReview?: unknown;
+            };
+        };
+    };
+    const receipt = toPullRequestReview(response.data?.addPullRequestReview?.pullRequestReview);
+    const responseClientMutationId = response.data?.addPullRequestReview?.clientMutationId;
+    if (receipt === null) {
+        fail('create pending review returned an invalid result');
+    }
+    return {
+        ...receipt,
+        clientMutationId: typeof responseClientMutationId === 'string' ? responseClientMutationId : '',
+    };
+}
+function mutationReply(threadId: string, reviewId: string, gh: Gh): ReviewReply {
+    const clientMutationId = replyClientMutationId(threadId);
+    const query =
+        'mutation($threadId:ID!,$reviewId:ID!,$body:String!,$clientMutationId:String!){addPullRequestReviewThreadReply(input:{pullRequestReviewId:$reviewId,pullRequestReviewThreadId:$threadId,body:$body,clientMutationId:$clientMutationId}){clientMutationId comment{id fullDatabaseId body author{login __typename ... on Bot{id}} pullRequestReview{id state body commit{oid} author{login __typename ... on Bot{id}}}}}}';
+    const response = graphql(
+        gh,
+        query,
+        [
+            '-F',
+            `threadId=${threadId}`,
+            '-F',
+            `reviewId=${reviewId}`,
+            '-f',
+            'body=Done',
+            '-f',
+            `clientMutationId=${clientMutationId}`,
+        ],
         'add review-thread reply'
     ) as {
         data?: {
@@ -635,6 +1170,7 @@ function mutationReply(threadId: string, gh: Gh): ReviewReply {
                     fullDatabaseId?: unknown;
                     body?: unknown;
                     author?: { id?: unknown; login?: unknown; __typename?: unknown } | null;
+                    pullRequestReview?: unknown;
                 };
             };
         };
@@ -652,13 +1188,75 @@ function mutationReply(threadId: string, gh: Gh): ReviewReply {
     ) {
         fail(`add review-thread reply returned an invalid result for ${threadId}`);
     }
+    const review = toPullRequestReview(comment.pullRequestReview);
     return {
         id: comment.id,
         fullDatabaseId: comment.fullDatabaseId,
         authorNodeId,
         authorLogin,
         authorType,
+        reviewId: review?.id ?? null,
+        reviewState: review?.state ?? null,
+        reviewBody: review?.body ?? null,
+        reviewCommitOid: review?.commitOid ?? null,
+        reviewAuthorNodeId: review?.authorNodeId ?? null,
+        reviewAuthorLogin: review?.authorLogin ?? null,
+        reviewAuthorType: review?.authorType ?? null,
         clientMutationId,
+    };
+}
+function submitReview(reviewId: string, body: string, gh: Gh): ReviewEnvelopeReceipt {
+    const clientMutationId = submitReviewClientMutationId(reviewId);
+    const query =
+        'mutation($reviewId:ID!,$body:String!,$clientMutationId:String!){submitPullRequestReview(input:{pullRequestReviewId:$reviewId,event:COMMENT,body:$body,clientMutationId:$clientMutationId}){clientMutationId pullRequestReview{id state body commit{oid} author{login __typename ... on Bot{id}}}}}';
+    const response = graphql(
+        gh,
+        query,
+        ['-F', `reviewId=${reviewId}`, '-f', `body=${body}`, '-f', `clientMutationId=${clientMutationId}`],
+        'submit review'
+    ) as {
+        data?: {
+            submitPullRequestReview?: {
+                clientMutationId?: unknown;
+                pullRequestReview?: unknown;
+            };
+        };
+    };
+    const receipt = toPullRequestReview(response.data?.submitPullRequestReview?.pullRequestReview);
+    const responseClientMutationId = response.data?.submitPullRequestReview?.clientMutationId;
+    if (receipt === null) {
+        fail(`submit review returned an invalid result for ${reviewId}`);
+    }
+    return {
+        ...receipt,
+        clientMutationId: typeof responseClientMutationId === 'string' ? responseClientMutationId : '',
+    };
+}
+function updateReviewBody(reviewId: string, body: string, gh: Gh): ReviewEnvelopeReceipt {
+    const clientMutationId = updateReviewClientMutationId(reviewId);
+    const query =
+        'mutation($reviewId:ID!,$body:String!,$clientMutationId:String!){updatePullRequestReview(input:{pullRequestReviewId:$reviewId,body:$body,clientMutationId:$clientMutationId}){clientMutationId pullRequestReview{id state body commit{oid} author{login __typename ... on Bot{id}}}}}';
+    const response = graphql(
+        gh,
+        query,
+        ['-F', `reviewId=${reviewId}`, '-f', `body=${body}`, '-f', `clientMutationId=${clientMutationId}`],
+        'update review body'
+    ) as {
+        data?: {
+            updatePullRequestReview?: {
+                clientMutationId?: unknown;
+                pullRequestReview?: unknown;
+            };
+        };
+    };
+    const receipt = toPullRequestReview(response.data?.updatePullRequestReview?.pullRequestReview);
+    const responseClientMutationId = response.data?.updatePullRequestReview?.clientMutationId;
+    if (receipt === null) {
+        fail(`update review body returned an invalid result for ${reviewId}`);
+    }
+    return {
+        ...receipt,
+        clientMutationId: typeof responseClientMutationId === 'string' ? responseClientMutationId : '',
     };
 }
 function resolveThread(threadId: string, gh: Gh): ReviewResolutionReceipt {
@@ -701,6 +1299,31 @@ function resolveThread(threadId: string, gh: Gh): ReviewResolutionReceipt {
         resolvedByType,
         clientMutationId,
     };
+}
+function deletePendingReview(reviewId: string, gh: Gh): void {
+    const response = graphql(
+        gh,
+        'mutation($reviewId:ID!,$clientMutationId:String!){deletePullRequestReview(input:{pullRequestReviewId:$reviewId,clientMutationId:$clientMutationId}){clientMutationId pullRequestReview{id state body commit{oid} author{login __typename ... on Bot{id}}}}}',
+        ['-F', `reviewId=${reviewId}`, '-f', `clientMutationId=${reviewId}`],
+        'delete pending review'
+    ) as {
+        data?: {
+            deletePullRequestReview?: {
+                clientMutationId?: unknown;
+                pullRequestReview?: unknown;
+            };
+        };
+    };
+    const receipt = toPullRequestReview(response.data?.deletePullRequestReview?.pullRequestReview);
+    if (
+        response.data?.deletePullRequestReview?.clientMutationId !== reviewId ||
+        receipt === null ||
+        receipt.id !== reviewId ||
+        receipt.state !== 'PENDING' ||
+        !isAuthorBotActor(receipt.authorNodeId, receipt.authorType)
+    ) {
+        fail(`delete pending review returned an invalid result for ${reviewId}`);
+    }
 }
 export function deleteReply(replyId: string, gh: Gh): void {
     const response = graphql(
