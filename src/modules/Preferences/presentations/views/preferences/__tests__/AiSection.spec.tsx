@@ -7,7 +7,9 @@ const mocks = vi.hoisted(() => ({
     admission: { webLlm: true },
     backendPreference: { value: 'auto' },
     configureCloudProvider: vi.fn(),
-    hostedProvider: { value: null },
+    hostedProvider: {
+        value: null as import('#/modules/AiRuntime/models/HostedLlmProvider').HostedLlmProviderInfo | null,
+    },
     isDesktop: true,
     llmStatus: { value: { state: 'idle' } },
     removeCloudProvider: vi.fn(),
