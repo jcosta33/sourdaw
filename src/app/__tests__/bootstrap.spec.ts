@@ -727,6 +727,24 @@ describe('bootstrap', () => {
         );
     });
 
+    /**
+     * The `handleMidiMessage` suite proves injected setters reach the store and
+     * the engine, but it injects its own stand-ins, so nothing there can tell
+     * which functions production hands in. This is the only seam that observes
+     * what bootstrap registers: Arrangement's barrel exports `setTrackGain` and
+     * `setTrackPan` as the hoisted `noop`, so pinning them by reference makes
+     * deleting or rewiring the bootstrap call fail here instead of at the first
+     * learned MIDI message.
+     */
+    it('wires learned MIDI controls to Arrangement gain and pan setters', () => {
+        expect(setMidiLearnDependenciesMock).toHaveBeenCalledExactlyOnceWith(
+            expect.objectContaining({
+                setTrackGainArrangement: noop,
+                setTrackPanArrangement: noop,
+            })
+        );
+    });
+
     describe('offline instrument setup dispatch', () => {
         // The offline device chain hands every worklet-backed device to this sink
         // member; bootstrap is the only place that knows which device types have
