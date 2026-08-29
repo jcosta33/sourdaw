@@ -14,18 +14,25 @@ import {
     createPluginWindowHost,
     registerPluginWindowHost,
     type CreateEditorWindowRequest,
-    type EditorResizeEvent,
     type EditorSize,
     type EditorWindow,
     type EditorWindowBounds,
     type EditorWindowOptions,
     type PluginWindowHost,
     type PluginWindowHostDeps,
+    type PreventableEditorEvent,
 } from '../pluginGui.js';
 
-type WillResizeListener = (event: EditorResizeEvent, bounds: EditorWindowBounds) => void;
+type WillResizeListener = (event: PreventableEditorEvent, bounds: EditorWindowBounds) => void;
+type CloseListener = (event: PreventableEditorEvent) => void;
 
 type FakeWindow = EditorWindow & {
+    /**
+     * The platform asks to end this window, as a title-bar click does. Answers
+     * whether the host stopped it; an unstopped one destroys the window, which
+     * is what the platform would then do.
+     */
+    readonly emitClose: () => boolean;
     readonly emitClosed: () => void;
     /** The OS applied a resize, as it reports one after the fact. */
     readonly emitResize: () => void;
@@ -45,6 +52,7 @@ type FakeWindow = EditorWindow & {
 };
 
 const createFakeWindow = (options: EditorWindowOptions): FakeWindow => {
+    const closeListeners: CloseListener[] = [];
     const closedListeners: (() => void)[] = [];
     const resizeListeners: (() => void)[] = [];
     const resizedListeners: (() => void)[] = [];
@@ -65,6 +73,21 @@ const createFakeWindow = (options: EditorWindowOptions): FakeWindow => {
     const bounds = (): EditorWindowBounds => ({ x: 0, y: 0, ...content });
     return {
         options,
+        emitClose: () => {
+            let prevented = false;
+            const event: PreventableEditorEvent = {
+                preventDefault: () => {
+                    prevented = true;
+                },
+            };
+            for (const listener of closeListeners) {
+                listener(event);
+            }
+            if (!prevented) {
+                emitClosed();
+            }
+            return prevented;
+        },
         emitClosed,
         emitResize: () => {
             for (const listener of resizeListeners) {
@@ -83,7 +106,7 @@ const createFakeWindow = (options: EditorWindowOptions): FakeWindow => {
         },
         emitWillResize: (pending) => {
             let prevented = false;
-            const event: EditorResizeEvent = {
+            const event: PreventableEditorEvent = {
                 preventDefault: () => {
                     prevented = true;
                 },
@@ -109,9 +132,13 @@ const createFakeWindow = (options: EditorWindowOptions): FakeWindow => {
             emitClosed();
         }),
         isDestroyed: () => destroyed,
-        on: (event: string, listener: (() => void) | WillResizeListener) => {
+        on: (event: string, listener: (() => void) | CloseListener | WillResizeListener) => {
             if (event === 'will-resize') {
                 willResizeListeners.push(listener);
+                return;
+            }
+            if (event === 'close') {
+                closeListeners.push(listener as CloseListener);
                 return;
             }
             const listeners = {
@@ -154,7 +181,7 @@ const windowNative = (overrides: Record<string, unknown> = {}): object => ({
 type Harness = {
     readonly host: ReturnType<typeof createPluginWindowHost>;
     readonly windows: FakeWindow[];
-    readonly notifyClosed: ReturnType<typeof vi.fn>;
+    readonly notifyClosed: PluginWindowHostDeps['notifyClosed'];
     readonly requestEditorSize: PluginWindowHostDeps['requestEditorSize'];
     readonly applyEditorScale: PluginWindowHostDeps['applyEditorScale'];
     /** A display was added, removed, or rescaled under every open editor. */
@@ -169,7 +196,7 @@ const grantsEverySize = (): PluginWindowHostDeps['requestEditorSize'] =>
 
 const createHarness = (overrides: Partial<PluginWindowHostDeps> = {}): Harness => {
     const windows: FakeWindow[] = [];
-    const notifyClosed = vi.fn();
+    const notifyClosed = overrides.notifyClosed ?? vi.fn((): Promise<void> => Promise.resolve());
     const requestEditorSize = overrides.requestEditorSize ?? grantsEverySize();
     const applyEditorScale =
         overrides.applyEditorScale ?? vi.fn((): Promise<EditorSize> => Promise.resolve({ width: 800, height: 600 }));
@@ -319,6 +346,164 @@ describe('createPluginWindowHost', () => {
         expect(notifyClosed).toHaveBeenCalledExactlyOnceWith('instance-a', 'plugin-a');
         expect(host.create(request()).error).toBeNull();
         expect(windows).toHaveLength(2);
+    });
+
+    /**
+     * The contract this whole path exists for. Both formats un-parent the
+     * plugin's child window from the host's — VST3 `IPlugView::removed`, CLAP
+     * `gui.destroy` — so the window they were attached to has to still be there
+     * when they run. The platform's own close destroys the window first, which
+     * is why it is stopped and re-issued after the teardown.
+     */
+    it('detaches the plugin while the window is still alive, and destroys it only afterwards', async () => {
+        const windowAliveAtReport: boolean[] = [];
+        const harness: Harness = createHarness({
+            notifyClosed: vi.fn((): Promise<void> => {
+                windowAliveAtReport.push(!onlyWindow(harness.windows).isDestroyed());
+                return Promise.resolve();
+            }),
+        });
+        harness.host.create(request());
+        const window = onlyWindow(harness.windows);
+
+        const stopped = window.emitClose();
+        const destroyedInsideTheEvent = window.destroy.mock.calls.length;
+        await settled();
+
+        expect(stopped).toBe(true);
+        expect(destroyedInsideTheEvent).toBe(0);
+        // The teardown that detaches the plugin saw a live window; only the
+        // bookkeeping report that follows the destroy saw a dead one.
+        expect(windowAliveAtReport).toEqual([true, false]);
+        expect(window.destroy).toHaveBeenCalledTimes(1);
+        expect(harness.host.exists('plugin-a')).toBe(false);
+    });
+
+    /**
+     * The destroy that ends a stopped close raises `closed`, and that path still
+     * reports. The addon's reset is idempotent — the second report finds the
+     * record already gone — and keeping it is what covers a window the platform
+     * destroys outright, with no close to stop.
+     */
+    it('still reports the closed window after the teardown that stopped its close', async () => {
+        const harness = createHarness();
+        harness.host.create(request());
+
+        onlyWindow(harness.windows).emitClose();
+        await settled();
+
+        expect(harness.notifyClosed).toHaveBeenCalledTimes(2);
+        expect(harness.notifyClosed).toHaveBeenNthCalledWith(1, 'instance-a', 'plugin-a');
+        expect(harness.notifyClosed).toHaveBeenNthCalledWith(2, 'instance-a', 'plugin-a');
+    });
+
+    /**
+     * A stopped close that never got un-stopped is an editor the user cannot
+     * close, which is worse than a teardown that missed its parent.
+     */
+    it('destroys the window anyway when the plugin teardown fails', async () => {
+        const reported = vi.spyOn(console, 'error').mockImplementation(() => {});
+        try {
+            const harness = createHarness({
+                notifyClosed: vi.fn(() => Promise.reject(new Error('the plugin never let go'))),
+            });
+            harness.host.create(request());
+            const window = onlyWindow(harness.windows);
+
+            window.emitClose();
+            await settled();
+
+            expect(window.destroy).toHaveBeenCalledTimes(1);
+            expect(harness.host.exists('plugin-a')).toBe(false);
+            expect(reported).toHaveBeenCalledWith(expect.stringContaining('the plugin never let go'));
+        } finally {
+            reported.mockRestore();
+        }
+    });
+
+    it('destroys the window at the deadline when the plugin teardown never answers', async () => {
+        vi.useFakeTimers();
+        try {
+            const harness = createHarness({ notifyClosed: vi.fn(() => new Promise<void>(() => {})) });
+            harness.host.create(request());
+            const window = onlyWindow(harness.windows);
+
+            window.emitClose();
+            await vi.advanceTimersByTimeAsync(4_999);
+            const destroyedBeforeTheDeadline = window.destroy.mock.calls.length;
+            await vi.advanceTimersByTimeAsync(1);
+
+            expect(destroyedBeforeTheDeadline).toBe(0);
+            expect(window.destroy).toHaveBeenCalledTimes(1);
+            expect(harness.host.exists('plugin-a')).toBe(false);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    /**
+     * A user whose editor did not disappear clicks the title bar again. The
+     * second close must not start a second teardown, and must not let the
+     * platform destroy the window out from under the first one.
+     */
+    it('stops a second OS close during a teardown without running the teardown twice', async () => {
+        let letGo = (): void => {};
+        const notifyClosed = vi.fn(
+            (): Promise<void> =>
+                new Promise<void>((resolve) => {
+                    letGo = resolve;
+                })
+        );
+        const harness = createHarness({ notifyClosed });
+        harness.host.create(request());
+        const window = onlyWindow(harness.windows);
+
+        expect(window.emitClose()).toBe(true);
+        expect(window.emitClose()).toBe(true);
+        expect(notifyClosed).toHaveBeenCalledTimes(1);
+        expect(window.destroy).not.toHaveBeenCalled();
+
+        letGo();
+        await settled();
+
+        expect(window.destroy).toHaveBeenCalledTimes(1);
+    });
+
+    /**
+     * The command path detaches in the backend before it ever addresses the
+     * window host, so the host's `destroy` is the immediate end of the window it
+     * has always been. Routing it through the OS-close teardown would tear the
+     * editor down twice.
+     */
+    it('destroys a window the backend closes without waiting for a teardown', () => {
+        const harness = createHarness();
+        harness.host.create(request());
+        const window = onlyWindow(harness.windows);
+
+        harness.host.destroy('plugin-a');
+
+        expect(window.destroy).toHaveBeenCalledTimes(1);
+        expect(harness.host.exists('plugin-a')).toBe(false);
+        expect(harness.notifyClosed).toHaveBeenCalledExactlyOnceWith('instance-a', 'plugin-a');
+    });
+
+    /** A plugin on its way out of a window is not asked what size to be. */
+    it('drops a pending size settle when the OS asks to close the window', async () => {
+        vi.useFakeTimers();
+        try {
+            const harness = createHarness({ notifyClosed: vi.fn(() => new Promise<void>(() => {})) });
+            harness.host.create(request());
+            const window = onlyWindow(harness.windows);
+            window.setContentSize(1000, 900);
+            window.emitResize();
+
+            window.emitClose();
+            await vi.advanceTimersByTimeAsync(200);
+
+            expect(harness.requestEditorSize).not.toHaveBeenCalled();
+        } finally {
+            vi.useRealTimers();
+        }
     });
 
     it('supports open, close, reopen across repeated cycles without leaking registrations', () => {
@@ -889,6 +1074,44 @@ describe('registerPluginWindowHost', () => {
         windows[0]?.emitClosed();
 
         expect(notify).toHaveBeenCalledExactlyOnceWith('instance-a', 'plugin-a');
+    });
+
+    /**
+     * The addon method is async, and its promise is what the stopped close waits
+     * on. A registration that dropped it would destroy the window in the same
+     * turn as the report, which is the platform behaviour the stop exists to
+     * replace.
+     */
+    it('holds a window the OS asked to close until the addon answers', async () => {
+        const register = vi.fn();
+        let answered = (): void => {};
+        const notify = vi.fn(
+            () =>
+                new Promise<void>((resolve) => {
+                    answered = resolve;
+                })
+        );
+        const windows: FakeWindow[] = [];
+        registerPluginWindowHost(
+            windowNative({ registerPluginWindowHost: register, notifyPluginWindowClosed: notify }),
+            shellDeps((options) => {
+                const window = createFakeWindow(options);
+                windows.push(window);
+                return window;
+            })
+        );
+        const create = register.mock.calls[0]?.[0] as (req: CreateEditorWindowRequest) => unknown;
+        create(request());
+        const window = onlyWindow(windows);
+
+        window.emitClose();
+        await settled();
+        const destroyedWhileWaiting = window.destroy.mock.calls.length;
+        answered();
+        await settled();
+
+        expect(destroyedWhileWaiting).toBe(0);
+        expect(window.destroy).toHaveBeenCalledTimes(1);
     });
 
     it('survives an addon built before this packet', () => {
