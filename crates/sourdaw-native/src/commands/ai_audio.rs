@@ -452,6 +452,16 @@ mod tests {
     }
 
     #[test]
+    fn decode_denoise_pcm_rejects_over_long_clips_before_allocating_pcm() {
+        let bytes = vec![0u8; (MAX_DENOISE_SAMPLES + 1) * BYTES_PER_SAMPLE];
+        let error = decode_denoise_pcm(&bytes).expect_err("over-long clip must be a command error");
+        assert!(
+            error.contains("ceiling"),
+            "expected a ceiling error, got {error}"
+        );
+    }
+
+    #[test]
     fn denoise_pcm_round_trip_is_little_endian() {
         let bytes = [0_u8, 0, 0x80, 0x3f, 0, 0, 0x80, 0xbf];
         let decoded = decode_denoise_pcm(&bytes).unwrap();
