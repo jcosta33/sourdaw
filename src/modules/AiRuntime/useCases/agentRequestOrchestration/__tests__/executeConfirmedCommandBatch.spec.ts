@@ -448,6 +448,27 @@ describe('executeConfirmedCommandBatch', () => {
         expect(mocks.rebindArtifacts).not.toHaveBeenCalled();
     });
 
+    it('keeps exact final revision evidence when cancellation arrives during a post-commit effect', async () => {
+        mocks.executeBatch.mockImplementation(async (input) => {
+            const controller = mocks.bindCancellation.mock.calls[0]?.[0].controller;
+            controller?.abort('cancelled after project commit');
+            expect(input.options?.signal?.aborted).toBe(true);
+            expect(input.options?.shouldFinalizeProjectCommit?.()).toBe(true);
+            input.options?.onProjectCommitFinalized?.({ revision: 'revision-checkpoint' });
+            return completedBatchResult;
+        });
+
+        const result = await execute();
+
+        expect(result).toMatchObject({
+            status: 'completed',
+            committedProjectRevision: 'revision-checkpoint',
+            canRebindSectionRenderArtifacts: true,
+            finalizationEvidenceFailure: null,
+            abortSignal: expect.objectContaining({ aborted: true }),
+        });
+    });
+
     it('keeps a rebind failure fail-closed after Command reports unavailable finalization evidence', async () => {
         mocks.rebindArtifacts.mockImplementation(() => {
             throw new Error('render artifact vanished');

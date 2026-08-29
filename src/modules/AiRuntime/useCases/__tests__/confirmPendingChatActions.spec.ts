@@ -14,6 +14,7 @@ import {
     getAgentSectionRenderArtifacts,
     getAudioRenderingHandlers,
 } from '#/modules/AudioRendering/useCases';
+import * as audioRenderingUseCases from '#/modules/AudioRendering/useCases';
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
@@ -188,6 +189,7 @@ function configureLateSettlementConfirmation(input: {
     confirmationId: string;
     batchId: string;
     resourceLease?: NonNullable<Parameters<typeof proposePendingActionConfirmation>[0]['resourceLease']>;
+    budgets?: Parameters<typeof agentRunLifecycle.create>[0]['budgets'];
 }): ReturnType<typeof compileVersionedCommandBatchEnvelope> {
     configureAiWorkflowCommandPreflightFixture('project-1');
     configureCommandBatchIdempotency({ canExecute: () => true });
@@ -228,6 +230,7 @@ function configureLateSettlementConfirmation(input: {
         request: 'set tempo to 132',
         mode: 'macro',
         createdRevision: projectRevision,
+        ...(input.budgets ? { budgets: input.budgets } : {}),
     });
     agentRunLifecycle.transitionPhase({ runId: input.runId, phase: 'planning' });
     agentRunLifecycle.transitionPhase({ runId: input.runId, phase: 'waiting-for-approval' });
@@ -334,6 +337,42 @@ function createWarningBatchResult(input: {
             envelope: parsed.envelope,
             observedBaseRevision: 'revision-fixture',
             resultingRevision: 'revision-fixture',
+            result,
+        }),
+    };
+}
+
+function createPendingRenderBatchResult(
+    commandBatch: ReturnType<typeof compileVersionedCommandBatchEnvelope>
+): ConfirmedActionBatchResult {
+    const parsed = parseVersionedCommandBatchEnvelope(commandBatch.serialized, commandBatch.authority);
+    if (parsed.status !== 'valid') {
+        throw new Error('Expected the pending-render command batch fixture to remain valid.');
+    }
+    const pendingEffect = {
+        commandId: parsed.envelope.commands[0]?.commandId,
+        kind: 'external-effect' as const,
+        operation: 'renderProjectSections',
+        reason: 'comparison renderer unavailable',
+        remediation: 'reconcile' as const,
+        state: 'pending' as const,
+    };
+    if (!pendingEffect.commandId) {
+        throw new Error('Expected the pending-render fixture command.');
+    }
+    const result = {
+        status: 'committed-with-warning' as const,
+        actions: [],
+        warning: pendingEffect.reason,
+        warningDetails: [{ kind: 'external-effect' as const, message: pendingEffect.reason, pendingEffect }],
+    };
+    return {
+        ...result,
+        receipt: createVerifiedBatchReceipt({
+            contentHash: 'pending-render-finalization-failure',
+            envelope: parsed.envelope,
+            observedBaseRevision: 'revision-fixture',
+            resultingRevision: null,
             result,
         }),
     };
@@ -1111,6 +1150,7 @@ describe('confirmPendingChatActions transaction admission', () => {
             confirmationId,
             batchId,
             resourceLease: { bytes: 1, release, retain },
+            budgets: { limits: { maxCommands: 1 }, consumed: {} },
         });
         const commandUseCases = await import('#/modules/Command/useCases');
         const crdtUseCases = await import('#/modules/CrdtDocument/useCases');
@@ -1147,10 +1187,78 @@ describe('confirmPendingChatActions transaction admission', () => {
             expect(chatStore.value?.messages[0]?.content).not.toContain('manual-repair');
             expect(retain).toHaveBeenCalledOnce();
             expect(release).not.toHaveBeenCalled();
+            expect(agentRunLifecycle.get(runId)).toMatchObject({
+                budgets: { consumed: { maxCommands: 1 } },
+                workLeases: [expect.objectContaining({ workId: batchId, terminalState: 'completed' })],
+            });
         } finally {
             execute.mockRestore();
             captureMutationAuthorization.mockRestore();
         }
+    });
+
+    it('retains a late committed receipt without reopening a cancelled run or inventing recovery work', async () => {
+        const runId = 'confirmation-stale-finalization-unavailable';
+        const confirmationId = 'confirmation-stale-finalization-unavailable';
+        const batchId = 'group-stale-finalization-unavailable';
+        const release = vi.fn().mockResolvedValue(undefined);
+        const retain = vi.fn().mockResolvedValue(undefined);
+        const commandBatch = configureLateSettlementConfirmation({
+            runId,
+            confirmationId,
+            batchId,
+            resourceLease: { bytes: 1, release, retain },
+            budgets: { limits: { maxCommands: 1 }, consumed: {} },
+        });
+        const commandUseCases = await import('#/modules/Command/useCases');
+        const crdtUseCases = await import('#/modules/CrdtDocument/useCases');
+        const captureMutationAuthorization = vi
+            .spyOn(crdtUseCases, 'captureProjectMutationAuthorization')
+            .mockReturnValue(() => true);
+        const execute = vi
+            .spyOn(commandUseCases, 'executeVersionedCommandBatchEnvelope')
+            .mockImplementation(async (input) => {
+                input.options?.onProjectCommitFinalizationUnavailable?.({ reason: 'render artifact vanished' });
+                return createPendingRenderBatchResult(commandBatch);
+            });
+        const settle = vi.spyOn(agentRunWorkLease, 'settle').mockImplementation(() => {
+            agentRunLifecycle.transitionPhase({ runId, phase: 'cancelled' });
+            return { status: 'stale' };
+        });
+
+        try {
+            await expect(confirmPendingChatActions({ confirmationId })).resolves.toMatchObject({
+                status: 'failed',
+                durableCommit: true,
+                reason: expect.stringContaining(AGENT_RUN_STALE_COMPLETION_WARNING),
+                recovery: { kind: 'inspect-current-project', replay: 'forbidden' },
+            });
+        } finally {
+            settle.mockRestore();
+            execute.mockRestore();
+            captureMutationAuthorization.mockRestore();
+        }
+
+        expect(agentRunLifecycle.get(runId)).toMatchObject({
+            phase: 'cancelled',
+            errors: [],
+            pendingEffectContinuations: [],
+            budgets: { consumed: { maxCommands: 1 } },
+            budgetAttempts: [expect.objectContaining({ category: 'maxCommands', actual: 0, final: false })],
+            workLeases: [expect.objectContaining({ workId: batchId, terminalState: null })],
+        });
+        expect(getPendingActionConfirmation(confirmationId)).toMatchObject({
+            status: 'failed',
+            followUpProjectRevision: null,
+            followUpStatus: null,
+        });
+        expect(chatStore.value?.messages[0]).toMatchObject({
+            pendingActionConfirmationStatus: 'failed',
+            pendingActionFollowUpStatus: undefined,
+            content: expect.stringContaining('Do not replay these actions'),
+        });
+        expect(retain).toHaveBeenCalledOnce();
+        expect(release).not.toHaveBeenCalled();
     });
 
     it('retains a verified receipt without reopening a cancelled run after stale lease settlement', async () => {
@@ -3108,6 +3216,102 @@ describe('confirmPendingChatActions transaction admission', () => {
         expect(runtimeMocks.renderOffline).toHaveBeenCalledTimes(renderCallsBeforeRetry);
     });
 
+    it('settles a committed render as manual recovery when artifact rebinding fails', async () => {
+        configureAiWorkflowCommandPreflightFixture('project-1');
+        configureCommandBatchIdempotency({ canExecute: () => true });
+        registerHandlerMap(getAudioRenderingHandlers());
+        const renderJob = {
+            jobId: 'render-rebind-failure',
+            sectionId: 'section-rebind-failure',
+            sectionName: 'Rebind Failure',
+            startBeat: 0,
+            endBeat: 16,
+            sampleRate: 44_100,
+            tailSeconds: 0,
+        };
+        const renderAction = {
+            type: 'renderProjectSections',
+            payload: { sectionIds: [renderJob.sectionId], jobs: [renderJob] },
+        } satisfies RenderSectionsAction;
+        runtimeMocks.renderOffline.mockResolvedValue({
+            sampleRate: renderJob.sampleRate,
+            length: 88_200,
+            numberOfChannels: 2,
+            duration: 2,
+        });
+        const projectRevision = captureProjectRevision();
+        const envelope = migrateLegacyAppActionToVersionedCommandEnvelope({
+            action: renderAction,
+            expectedEffect: 'Render the section for comparison.',
+            normalizedProjectRevision: projectRevision,
+            options: { groupId: 'group-rebind-failure', groupLabel: 'Render section', source: 'prompt' },
+        });
+        const commandBatch = compileVersionedCommandBatchEnvelope({
+            runId: 'confirmation-rebind-failure',
+            batchId: 'group-rebind-failure',
+            projectId: 'project-1',
+            baseRevision: projectRevision,
+            intent: 'render section',
+            commands: [serializeVersionedCommandEnvelope(envelope)],
+        });
+        agentRunLifecycle.create({
+            runId: 'confirmation-rebind-failure',
+            request: 'render section',
+            mode: 'macro',
+            createdRevision: projectRevision,
+        });
+        agentRunLifecycle.transitionPhase({ runId: 'confirmation-rebind-failure', phase: 'planning' });
+        agentRunLifecycle.transitionPhase({ runId: 'confirmation-rebind-failure', phase: 'waiting-for-approval' });
+        proposePendingActionConfirmation({
+            id: 'confirmation-rebind-failure',
+            runId: 'confirmation-rebind-failure',
+            prompt: 'render section',
+            assistantMessageId: 'assistant-1',
+            actions: [renderAction],
+            actionLabels: ['Render section'],
+            commandBatch,
+            agentApproval: compileAgentRiskApproval({ commandBatch }),
+            executionMode: 'atomic',
+            groupId: 'group-rebind-failure',
+            groupLabel: 'Render section',
+            projectRevision,
+        });
+        const rebind = vi
+            .spyOn(audioRenderingUseCases, 'rebindAgentProjectSectionArtifactRevisions')
+            .mockImplementation(() => {
+                throw new Error('render artifact vanished');
+            });
+
+        try {
+            await expect(
+                confirmPendingChatActions({ confirmationId: 'confirmation-rebind-failure' })
+            ).resolves.toMatchObject({
+                status: 'failed',
+                durableCommit: true,
+                reason: expect.stringContaining('render artifact vanished'),
+                continuation: { kind: 'manual-repair' },
+            });
+        } finally {
+            rebind.mockRestore();
+        }
+
+        expect(getPendingActionConfirmation('confirmation-rebind-failure')).toMatchObject({
+            status: 'failed',
+            followUpProjectRevision: null,
+            followUpStatus: 'failed',
+        });
+        expect(chatStore.value?.messages[0]).toMatchObject({
+            pendingActionConfirmationStatus: 'failed',
+            pendingActionFollowUpStatus: 'failed',
+            content: expect.not.stringContaining('Executed after confirmation'),
+        });
+        expect(
+            selectAgentRunPendingEffectRecoveries(readAgentRunState()).find(
+                ({ runId, batchId }) => runId === 'confirmation-rebind-failure' && batchId === 'group-rebind-failure'
+            )
+        ).toMatchObject({ recovery: 'manual-repair' });
+    });
+
     it('requires manual recovery when an ownerless mutation lands during a two-job render', async () => {
         configureAiWorkflowCommandPreflightFixture('project-1');
         configureCommandBatchIdempotency({ canExecute: () => true });
@@ -3201,6 +3405,8 @@ describe('confirmPendingChatActions transaction admission', () => {
         });
         agentRunLifecycle.transitionPhase({ runId: 'confirmation-ownerless-render', phase: 'planning' });
         agentRunLifecycle.transitionPhase({ runId: 'confirmation-ownerless-render', phase: 'waiting-for-approval' });
+        const release = vi.fn().mockResolvedValue(undefined);
+        const retain = vi.fn().mockResolvedValue(undefined);
         proposePendingActionConfirmation({
             id: 'confirmation-ownerless-render',
             runId: 'confirmation-ownerless-render',
@@ -3214,11 +3420,16 @@ describe('confirmPendingChatActions transaction admission', () => {
             groupId: 'group-ownerless-render',
             groupLabel: 'Tempo and ownerless renders',
             projectRevision,
+            resourceLease: { bytes: 1, release, retain },
         });
 
         await expect(
             confirmPendingChatActions({ confirmationId: 'confirmation-ownerless-render' })
-        ).resolves.toMatchObject({ status: 'failed', durableCommit: true });
+        ).resolves.toMatchObject({
+            status: 'failed',
+            durableCommit: true,
+            continuation: { kind: 'manual-repair' },
+        });
 
         expect(ownerlessMutationInjected).toBe(true);
         expect(getPendingActionConfirmation('confirmation-ownerless-render')).toMatchObject({
@@ -3236,6 +3447,8 @@ describe('confirmPendingChatActions transaction admission', () => {
             budgets: { consumed: { maxCommands: 2, maxRenderJobs: 2 } },
             workLeases: [expect.objectContaining({ workId: 'group-ownerless-render', terminalState: 'completed' })],
         });
+        expect(retain).toHaveBeenCalledOnce();
+        expect(release).not.toHaveBeenCalled();
     });
 
     it.each([false, true])(

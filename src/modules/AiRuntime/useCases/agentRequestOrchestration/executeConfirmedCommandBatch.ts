@@ -173,8 +173,7 @@ export async function executeConfirmedCommandBatch(
             onProjectCommitFinalizationUnavailable: ({ reason }: { reason: string }) => {
                 finalizationEvidenceFailure = reason;
             },
-            shouldFinalizeProjectCommit: () =>
-                isConfirmationExecutionAuthorized(isProjectMutationAuthorized, aborter.signal),
+            shouldFinalizeProjectCommit: isProjectMutationAuthorized,
             requireCompensation: confirmation.executionMode === 'atomic',
             shouldExecute: () => {
                 if (!isConfirmationExecutionAuthorized(isProjectMutationAuthorized, aborter.signal)) {

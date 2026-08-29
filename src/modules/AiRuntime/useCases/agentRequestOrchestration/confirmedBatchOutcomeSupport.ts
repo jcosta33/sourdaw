@@ -60,7 +60,8 @@ function getApprovalLabelsByCommandId(confirmation: PendingAppActionConfirmation
 
 function createCommittedEffectFailureResult(
     receipt: CommandVerifiedBatchReceipt,
-    reason = receipt.warnings[0] ?? receipt.modelSummary
+    reason = receipt.warnings[0] ?? receipt.modelSummary,
+    continuationKind?: CommittedEffectFailureResult['continuation']['kind']
 ): CommittedEffectFailureResult {
     return {
         status: 'failed',
@@ -70,9 +71,11 @@ function createCommittedEffectFailureResult(
         continuation: {
             authority: 'authoritative-collaboration-host',
             idempotency: 'project-checkpoint',
-            kind: receipt.pendingEffects.some(({ remediation }) => remediation === 'manual-repair')
-                ? 'manual-repair'
-                : 'reconcile-exact-batch',
+            kind:
+                continuationKind ??
+                (receipt.pendingEffects.some(({ remediation }) => remediation === 'manual-repair')
+                    ? 'manual-repair'
+                    : 'reconcile-exact-batch'),
         },
     };
 }

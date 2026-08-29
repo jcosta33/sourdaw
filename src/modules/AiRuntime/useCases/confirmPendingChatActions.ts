@@ -192,14 +192,6 @@ export async function confirmPendingChatActions(
         abortSignal,
     } = executionFlight;
     const batchCommittedProject = batchResult.status === 'committed' || batchResult.status === 'committed-with-warning';
-    const budgetPersistenceWarning = commandBudget
-        ? agentRunExecutionSettlement.reconcileCommandBudget({
-              confirmation,
-              ...commandBudget,
-              actualRenderJobs: renderJobAttempts,
-          })
-        : null;
-
     let trackedLeaseSettlement: ReturnType<typeof settleAgentRunWorkLeaseSafely> = { accepted: true, warning: null };
     if (trackedWorkLease) {
         const settlementContract = getTrackedLeaseSettlementContract(batchResult);
@@ -211,7 +203,37 @@ export async function confirmPendingChatActions(
                 logger.error(new Error('Agent run work lease settlement failed', { cause: error })),
         });
     }
-    if (batchCommittedProject && (committedProjectRevision === null || finalizationEvidenceFailure !== null)) {
+    const finalizationEvidenceUnavailable =
+        batchCommittedProject && (committedProjectRevision === null || finalizationEvidenceFailure !== null);
+    if (finalizationEvidenceUnavailable && !trackedLeaseSettlement.accepted) {
+        const reason = [
+            finalizationEvidenceFailure ??
+                'The committed command batch did not expose its exact project checkpoint revision.',
+            trackedLeaseSettlement.warning ?? AGENT_RUN_PERSISTENCE_WARNING,
+        ]
+            .filter(Boolean)
+            .join(' ');
+        updatePendingActionConfirmationStatus({
+            confirmationId: confirmation.id,
+            status: 'failed',
+            error: reason,
+        });
+        updateChatMessage(confirmation.assistantMessageId, {
+            pendingActionConfirmationStatus: 'failed',
+            error: reason,
+            content: `The project change is durably committed, but its finalization evidence arrived after the run lease was cancelled or replaced: ${reason} Do not replay these actions. Inspect the current project state before further automation.`,
+        });
+        await pendingActionResourceSettlement.retainCommitted(confirmation.id);
+        return confirmedBatchOutcomeSupport.createCommittedFinalizationEvidenceFailureResult(reason);
+    }
+    const budgetPersistenceWarning = commandBudget
+        ? agentRunExecutionSettlement.reconcileCommandBudget({
+              confirmation,
+              ...commandBudget,
+              actualRenderJobs: renderJobAttempts,
+          })
+        : null;
+    if (finalizationEvidenceUnavailable) {
         const reason =
             finalizationEvidenceFailure ??
             'The committed command batch did not expose its exact project checkpoint revision.';
@@ -266,7 +288,11 @@ export async function confirmPendingChatActions(
         });
         await pendingActionResourceSettlement.retainCommitted(confirmation.id);
         return hasPendingEffects
-            ? confirmedBatchOutcomeSupport.createCommittedEffectFailureResult(batchResult.receipt, userVisibleReason)
+            ? confirmedBatchOutcomeSupport.createCommittedEffectFailureResult(
+                  batchResult.receipt,
+                  userVisibleReason,
+                  hasPendingRenderEffects ? 'manual-repair' : undefined
+              )
             : confirmedBatchOutcomeSupport.createCommittedFinalizationEvidenceFailureResult(userVisibleReason);
     }
     const settledProjectRevision = committedProjectRevision ?? confirmation.projectRevision;
