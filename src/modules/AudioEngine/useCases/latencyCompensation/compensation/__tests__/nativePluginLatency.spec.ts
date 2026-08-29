@@ -163,4 +163,32 @@ describe('native plugin latency reaches plugin-delay compensation (RT-4)', () =>
         expect(getTrackLatency('guitar').deviceLatencyMs).toBeCloseTo(LIN_PHASE_MS + 5, 10);
         expect(getCompensationDelay('drums')).toBeCloseTo((LIN_PHASE_MS + 5) / 1000, 10);
     });
+
+    it('omitting external-plugin on the queried track drops its own device latency from the total', () => {
+        setUpNativePluginProject();
+        reportLatency('dev-native', LIN_PHASE_MS);
+
+        expect(getTrackLatency('guitar', new Set(), ['external-plugin'])).toEqual({
+            trackId: 'guitar',
+            deviceLatencyMs: 0,
+            totalLatencyMs: 0,
+        });
+        // Live max still includes the plugin, so omitted compensation matches drums'.
+        expect(getCompensationDelay('guitar', ['external-plugin'])).toBeCloseTo(LIN_PHASE_MS / 1000, 10);
+        expect(getCompensationDelay('guitar')).toBe(0);
+    });
+
+    it('does not pass omit into recursive downstream latency when the plugin is on a bus', () => {
+        mockTrackStore.value = {
+            tracks: [
+                makeTrack({ id: 'guitar', outputId: 'bus-fx' }),
+                makeTrack({ id: 'drums' }),
+                makeTrack({ id: 'bus-fx', devices: [{ id: 'dev-native' }] }),
+            ],
+        };
+        reportLatency('dev-native', LIN_PHASE_MS);
+
+        expect(getTrackLatency('guitar', new Set(), ['external-plugin']).totalLatencyMs).toBe(LIN_PHASE_MS);
+        expect(getCompensationDelay('guitar', ['external-plugin'])).toBe(0);
+    });
 });
