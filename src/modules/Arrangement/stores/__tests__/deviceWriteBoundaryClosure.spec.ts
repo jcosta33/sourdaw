@@ -463,13 +463,10 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // hydrates, or writes a device or AudioEngine node.
         'src/modules/AiRuntime/useCases/compileAgentActionExecution.ts': 10,
         'src/modules/AiRuntime/useCases/compileAgentRiskApproval.ts': 1,
-        // Count provenance: measured 3 in code — the `compileAgentRiskApproval`
-        // import, its module path in that same import, and the one call in the
-        // in-flight gate, whose standalone actor fallback the actor re-check
-        // mirrors (#1927). The file holds no load, compile, or hydration sink —
-        // its writes go through the versioned Command executor, not a hydration
-        // path.
-        'src/modules/AiRuntime/useCases/confirmPendingChatActions.ts': 3,
+        // Count provenance: 0 in code, was 3 — confirmation admission, and with
+        // it every `compileAgentRiskApproval` reference, moved to
+        // agentRequestOrchestration (#3048, #3052); that file is censused below.
+        // 'src/modules/AiRuntime/useCases/confirmPendingChatActions.ts': removed (0),
         'src/modules/AiRuntime/useCases/describeAgentRiskApproval.ts': 3,
         // Pending-effect continuation records keep only command-envelope types;
         // their two matches are type imports and type projections, never device IO.
@@ -478,7 +475,15 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/AiRuntime/useCases/validateAgentRiskApproval.ts': 7,
         'src/modules/AiRuntime/useCases/prepareAgentRunPendingEffectContinuation.ts': 2,
         'src/modules/AiRuntime/useCases/recordAgentRunPendingEffectContinuation.ts': 2,
-        'src/modules/AiRuntime/useCases/recordAgentRunReceiptSaga.ts': 2,
+        // Count provenance: 0 in code, was 2 — the receipt saga's project half,
+        // and with it both `compileVersionedCommandBatchEnvelope` type
+        // references, moved to `projectAgentRunReceiptSaga.ts` (#3052).
+        // 'src/modules/AiRuntime/useCases/recordAgentRunReceiptSaga.ts': removed (0),
+        // Count provenance: new file entry, measured 2 — a type-only import of
+        // `compileVersionedCommandBatchEnvelope` and the `ReturnType` projection
+        // that narrows its envelope to `authority` and `serialized`. Types only;
+        // the saga compiles no device and writes no engine state.
+        'src/modules/AiRuntime/useCases/projectAgentRunReceiptSaga.ts': 2,
         // Count provenance: 0 in code, was 5 — prompt plan materialization and
         // explain-response streaming were extracted to agentRequestOrchestration
         // (#2973, #2975), taking every `compileAgentActionExecution` and
@@ -626,6 +631,13 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // same import line, one ReturnType projection, and the one call.
         // Immutable Command-envelope compilation; no device hydration or write.
         'src/modules/AiRuntime/useCases/agentRequestOrchestration/materializePromptCommandPlan.ts': 4,
+        // Count provenance: new file entry, measured 3 — the
+        // `compileAgentRiskApproval` named import, its module path in that same
+        // import line, and the one call in the in-flight gate. These moved here
+        // from confirmPendingChatActions (#3048, #3052); the file compiles
+        // immutable approval metadata and holds no load, compile, or hydration
+        // sink.
+        'src/modules/AiRuntime/useCases/agentRequestOrchestration/resolveConfirmationAdmission.ts': 3,
         // Count provenance: new file entry, measured 1 — the single
         // `providerProtocol.compileRequest` call, extracted from
         // sendChatMessage (#2975). Provider-request compilation only.
@@ -879,6 +891,12 @@ const DEVICE_DATA_COUNTS = {
         'src/modules/Arrangement/repositories/presets/presetHelpers/synth.ts': 1,
         'src/modules/Arrangement/repositories/presets/presetHelpers/tremolo.ts': 1,
         'src/modules/Arrangement/repositories/presets/stringsPresets.ts': 6,
+        // Count provenance: new file entry from #3047, measured 1 — the
+        // `devices: readonly Device[]` parameter type on the freeze
+        // compensation omit-list builder. Same class as
+        // `matchesMaterializedPresetDevices.ts` below: a static declaration on a
+        // pure function that returns device type strings and touches no device.
+        'src/modules/Arrangement/useCases/freezeBounce/freezeCompensationOmitTypes.ts': 1,
         // Count provenance: measured 1 — parameter type `devices:` on a catalog
         // equality predicate. No write.
         'src/modules/Arrangement/useCases/preset/matchesMaterializedPresetDevices.ts': 1,

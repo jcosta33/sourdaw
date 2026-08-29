@@ -397,6 +397,11 @@ describe('ChatPanel', () => {
                       runs: [
                           {
                               runId: 'run-retry',
+                              // The recovery projection reads each run's committed
+                              // revision to decide which continuations a retryable
+                              // section-render follow-up already owns. None of these
+                              // runs has one, so every continuation stays the panel's.
+                              revisions: { created: null, planned: null, approved: null, committed: null },
                               pendingEffectContinuations: [
                                   {
                                       batchId: 'batch-retry',
@@ -417,6 +422,7 @@ describe('ChatPanel', () => {
                           },
                           {
                               runId: 'run-repair',
+                              revisions: { created: null, planned: null, approved: null, committed: null },
                               pendingEffectContinuations: [
                                   {
                                       batchId: 'batch-repair',
@@ -437,6 +443,7 @@ describe('ChatPanel', () => {
                           },
                           {
                               runId: 'run-reconcile',
+                              revisions: { created: null, planned: null, approved: null, committed: null },
                               pendingEffectContinuations: [
                                   {
                                       batchId: 'batch-reconcile',
@@ -444,7 +451,11 @@ describe('ChatPanel', () => {
                                           {
                                               commandId: 'command-reconcile',
                                               kind: 'external-effect',
-                                              operation: 'renderProjectSections',
+                                              // Not a section render: generic recovery cannot
+                                              // execute a receipt-bound one, so the policy
+                                              // would rate this continuation manual-repair
+                                              // and the reconcile affordance would be gone.
+                                              operation: 'publishRender',
                                               reason: 'The publication queue is unavailable.',
                                               remediation: 'reconcile',
                                               state: 'pending',
@@ -457,6 +468,7 @@ describe('ChatPanel', () => {
                           },
                           {
                               runId: 'run-manual',
+                              revisions: { created: null, planned: null, approved: null, committed: null },
                               pendingEffectContinuations: [
                                   {
                                       batchId: 'batch-manual',
@@ -527,7 +539,7 @@ describe('ChatPanel', () => {
             'publishRender: The external system cannot prove an exact retry.'
         );
         expect(screen.getByRole('list', { name: 'Pending effects for batch batch-reconcile' })).toHaveTextContent(
-            'renderProjectSections: The publication queue is unavailable.'
+            'publishRender: The publication queue is unavailable.'
         );
         expect(screen.getAllByRole('list', { name: 'Pending effects for batch batch-repair' })).toHaveLength(1);
         expect(screen.getByRole('list', { name: 'Pending effects for batch batch-repair' })).toHaveTextContent(

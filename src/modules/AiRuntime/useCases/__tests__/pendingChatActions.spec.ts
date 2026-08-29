@@ -260,18 +260,21 @@ describe('pending chat action confirmation', () => {
         expect(result).toEqual({ status: 'executed' });
         expect(projectMutationAuthorization.capture).toHaveBeenCalledOnce();
         expect(mocks.executeAppActionBatch.mock.calls[0]?.[0]).toEqual([pendingAction]);
+        // The undo group is the approved batch's own id, not a fresh id from
+        // `generateGroupId` — whose stand-in still answers `group-1`, so a
+        // regression back to a generated group cannot pass here.
         expect(mocks.executeAppActionBatch.mock.calls[0]?.[1]).toMatchObject({
-            groupId: 'group-1',
+            groupId: 'confirm-1',
             groupLabel: 'delete drums',
             source: 'prompt',
             requireCompensation: false,
         });
         expect(typeof mocks.executeAppActionBatch.mock.calls[0]?.[1]?.shouldExecute).toBe('function');
         expect(mocks.pushAiActionGroup).toHaveBeenCalledWith({
-            id: 'group-1',
+            id: 'confirm-1',
             prompt: 'delete drums',
             actions: [{ kind: 'appAction', actionType: 'removeTrack', label: 'Remove track' }],
-            groupId: 'group-1',
+            groupId: 'confirm-1',
             timestamp: expect.any(Number),
             reverted: false,
             executionKind: 'project',
@@ -859,8 +862,8 @@ describe('pending chat action confirmation', () => {
         ]);
         expect(mocks.executeAppActionBatch.mock.calls[0]?.[0]).toEqual([pendingAction, secondPendingAction]);
         expect(mocks.executeAppActionBatch.mock.calls[0]?.[1]).toMatchObject({
-            groupId: 'group-1',
-            groupLabel: 'delete drums',
+            groupId: 'confirm-1',
+            groupLabel: 'delete drums and clip',
             source: 'prompt',
             requireCompensation: true,
         });

@@ -512,6 +512,12 @@ vi.mock('../registerGlobalErrorHandlers', () => ({
 // dependency bootstrap.ts pulls in is already mocked by the time it runs.
 import '../bootstrap';
 
+// The interrupted-recovery case below re-evaluates the composition root under
+// `vi.resetModules()`, and the hoisted mocks it drives are shared with the boot
+// above, so their call records grow past what that boot did. Capture the boot's
+// own record here, before any case can add to it.
+const bootRaveModelProbes = [...initRaveModelsMock.mock.calls];
+
 function getDurableAssetOwnerRecoveryAfterProjectLoad(): DurableAssetOwnerRecoveryAfterProjectLoad {
     const dependencyCall = setProjectIdentityTransitionDependenciesMock.mock.calls.at(0);
     if (!dependencyCall) {
@@ -864,6 +870,6 @@ describe('bootstrap', () => {
         // Without this call raveStore.models stays empty forever, which would
         // withhold the RAVE palette entries permanently rather than gating them
         // on real model presence.
-        expect(initRaveModelsMock).toHaveBeenCalledExactlyOnceWith();
+        expect(bootRaveModelProbes).toEqual([[]]);
     });
 });
