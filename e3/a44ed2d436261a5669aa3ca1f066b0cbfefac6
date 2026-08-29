@@ -1,0 +1,29 @@
+src/modules/Preferences/useCases/__tests__/normalizeUiScale.spec.ts
+  s_ae074277795b45::t_050b2e6e07ad04 1-18
+src/app/__tests__/reloadApplication.spec.ts
+  s_ae074277795b45::t_050b2e6e07ad04 1-13
+src/app/__tests__/main.spec.tsx
+  s_ae074277795b45::t_050b2e6e07ad04 1-2,9,29-30,74-83
+src/modules/Preferences/useCases/normalizeUiScale.ts
+  s_ae074277795b45::t_26d692fbebc378 1-5
+src/app/main.tsx
+  s_ae074277795b45::t_26d692fbebc378 2,30
+src/app/reloadApplication.ts
+  s_ae074277795b45::t_26d692fbebc378 1-7
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "e3a44ed2d436261a5669aa3ca1f066b0cbfefac6",
+  "prompts": {},
+  "sessions": {
+    "s_ae074277795b45": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04ab5-5234-7100-be1c-76ebfaba88d3",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
