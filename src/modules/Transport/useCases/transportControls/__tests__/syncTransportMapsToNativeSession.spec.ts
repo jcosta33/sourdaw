@@ -232,13 +232,13 @@ describe('a write that lands only on a map store', () => {
 
 /** A promise plus the resolve/reject that settle it, for holding a round trip open mid-test. */
 function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void; reject: (error: unknown) => void } {
-    let resolve!: (value: T) => void;
-    let reject!: (error: unknown) => void;
-    const promise = new Promise<T>((res, rej) => {
-        resolve = res;
-        reject = rej;
+    let settleResolve!: (value: T) => void;
+    let settleReject!: (error: unknown) => void;
+    const promise = new Promise<T>((resolve, reject) => {
+        settleResolve = resolve;
+        settleReject = reject;
     });
-    return { promise, resolve, reject };
+    return { promise, resolve: settleResolve, reject: settleReject };
 }
 
 describe('a store change that lands while a send is in flight', () => {
