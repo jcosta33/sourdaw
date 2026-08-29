@@ -7,11 +7,13 @@ import type { AgentRunWorkLease } from '../../../models/AgentRun';
 import type { PendingAppActionConfirmation } from '../../../stores/pendingActionConfirmationStore';
 
 type CommandVerifiedBatchReceipt = ReturnType<typeof createVerifiedBatchReceipt>;
+type FailApprovalPreflight =
+    typeof import('../confirmationTerminalSettlement').confirmationTerminalSettlement.failApprovalPreflight;
 
 const mocks = vi.hoisted(() => ({
     captureRevision: vi.fn(() => 'revision-1'),
     claimLease: vi.fn(),
-    failPreflight: vi.fn(),
+    failPreflight: vi.fn<FailApprovalPreflight>(),
     getAffectedIds: vi.fn(() => []),
     getRun: vi.fn(),
     parseBatch: vi.fn(),
