@@ -24,9 +24,14 @@
  * - A size is the plugin's to grant, never the shell's to impose. A window the
  *   user drags asks the plugin what it will run at and ends up at that answer;
  *   a window on a display of a different density tells the editor its new scale
- *   and takes the size that produced. Both answers are asynchronous — they cost
- *   the audio host's control claim and a hop to this thread — so a drag is
- *   corrected on the answer rather than constrained during the gesture.
+ *   and takes the size that produced.
+ * - That question is asked once per gesture, when the gesture ends. Answering it
+ *   costs the audio host's control claim, held across a hop to this thread, and
+ *   every audio block that lands inside a claim is bypassed — so a question per
+ *   `resize` event would mute the instrument for the length of a drag. It is
+ *   also asked at the only moment the answer cannot fight the user: correcting
+ *   the size while the pointer is still down moves the window out from under
+ *   the edge being dragged.
  *
  * The window registry lives here, in the `editors` map, and nowhere else: the
  * addon probes and addresses windows by label through the callbacks, so a
@@ -117,6 +122,7 @@ export type EditorWindow = {
     readonly on: {
         (event: 'closed', listener: () => void): unknown;
         (event: 'resize', listener: () => void): unknown;
+        (event: 'resized', listener: () => void): unknown;
         (event: 'moved', listener: () => void): unknown;
         (event: 'will-resize', listener: (event: EditorResizeEvent, newBounds: EditorWindowBounds) => void): unknown;
     };
@@ -161,6 +167,13 @@ export type PluginWindowHostDeps = {
      * with the size it takes at that scale.
      */
     readonly applyEditorScale: (instanceId: string, scaleFactor: number) => Promise<EditorSize>;
+    /**
+     * Whether this platform emits `resized` when a resize gesture commits.
+     * Electron documents that event for darwin and win32 alone; where it is
+     * absent, a pause in the `resize` stream is the only end of gesture there
+     * is.
+     */
+    readonly reportsResizeCommit: boolean;
     /** Reports an OS-level close to the addon. Must only schedule, never block. */
     readonly notifyClosed: (instanceId: string, label: string) => void;
     /** Absent where no hosted format needs a host-driven run loop. */
@@ -237,12 +250,24 @@ type EditorRecord = {
      * directly rather than bouncing off it.
      */
     refusal: { readonly requested: EditorSize; readonly granted: EditorSize } | undefined;
-    /** The display scale last stated to the plugin. */
+    /** The display scale the plugin has taken. */
     scale: number;
     negotiating: boolean;
-    /** The size the drag reached while the plugin was answering the last one. */
+    scaling: boolean;
+    /** The size the window reached while the plugin was answering the last one. */
     queued: EditorSize | undefined;
+    /** The pending end-of-gesture negotiation, where the platform reports none. */
+    settle: ReturnType<typeof setTimeout> | undefined;
 };
+
+/**
+ * How long a window must hold still before its size counts as settled.
+ *
+ * Only used where the platform reports no gesture commit. Long enough that the
+ * pointer stream from a drag never pauses through it, short enough that the
+ * editor follows the window while the user is still watching.
+ */
+const RESIZE_SETTLE_MS = 200;
 
 export const createPluginWindowHost = (deps: PluginWindowHostDeps): PluginWindowHost => {
     const editors = new Map<string, EditorRecord>();
@@ -284,17 +309,23 @@ export const createPluginWindowHost = (deps: PluginWindowHostDeps): PluginWindow
      * Ask the plugin to take the size the window now has.
      *
      * Coalesced rather than queued: the answer costs a hop to the audio host's
-     * worker and back, and a drag produces resize events far faster than that.
-     * Only the newest size is worth asking about, because it is the one the
-     * window is at.
+     * worker and back, and a second gesture can commit inside that. Only the
+     * newest size is worth asking about, because it is the one the window is at.
+     *
+     * The size already granted is discarded after the in-flight check, not
+     * before it: a size arriving mid-answer has to reach `queued` either way,
+     * or the answer's own follow-up negotiates a size the window has left.
      */
     const negotiateSize = async (label: string, requested: EditorSize): Promise<void> => {
         const record = liveEditor(label);
-        if (record === undefined || (record.granted !== undefined && sameSize(record.granted, requested))) {
+        if (record === undefined) {
             return;
         }
         if (record.negotiating) {
             record.queued = requested;
+            return;
+        }
+        if (record.granted !== undefined && sameSize(record.granted, requested)) {
             return;
         }
 
@@ -321,11 +352,14 @@ export const createPluginWindowHost = (deps: PluginWindowHostDeps): PluginWindow
      * Tell an editor the scale of the display its window is on now.
      *
      * A no-op when it has not changed, which is what makes this safe to run on
-     * every window move and on every display event.
+     * every window move and on every display event. `record.scale` is the scale
+     * the plugin has *taken*, written only once it answers: recording a scale
+     * the editor refused would make that same guard swallow every later attempt
+     * and leave the editor at the old density for the rest of its life.
      */
     const followDisplayScale = async (label: string): Promise<void> => {
         const record = liveEditor(label);
-        if (record === undefined) {
+        if (record === undefined || record.scaling) {
             return;
         }
         const scale = usableScaleFactor(deps.getScaleFactor(record.window));
@@ -333,13 +367,47 @@ export const createPluginWindowHost = (deps: PluginWindowHostDeps): PluginWindow
             return;
         }
 
-        record.scale = scale;
+        record.scaling = true;
         try {
             const granted = await deps.applyEditorScale(record.instanceId, scale);
+            record.scale = scale;
             applyGranted(record, granted, granted);
         } catch (error) {
             console.warn(`[shell] plugin editor refused the display scale: ${String(error)}`);
+            return;
+        } finally {
+            record.scaling = false;
         }
+
+        // The window may have reached another display while the plugin was
+        // answering. Only after a scale it took: retrying a refusal here would
+        // spin, and the next display event retries it anyway.
+        if (usableScaleFactor(deps.getScaleFactor(record.window)) !== record.scale) {
+            void followDisplayScale(label);
+        }
+    };
+
+    /** Take the size the window ended its gesture at to the plugin, now. */
+    const settleSize = (label: string): void => {
+        const record = liveEditor(label);
+        if (record === undefined) {
+            return;
+        }
+        clearTimeout(record.settle);
+        record.settle = undefined;
+        void negotiateSize(label, contentSizeOf(record.window));
+    };
+
+    /** Restart the pause that stands in for a commit this platform never sends. */
+    const scheduleSettle = (label: string): void => {
+        const record = liveEditor(label);
+        if (record === undefined) {
+            return;
+        }
+        clearTimeout(record.settle);
+        record.settle = setTimeout(() => {
+            settleSize(label);
+        }, RESIZE_SETTLE_MS);
     };
 
     deps.watchDisplayChanges(() => {
@@ -380,7 +448,9 @@ export const createPluginWindowHost = (deps: PluginWindowHostDeps): PluginWindow
         // idempotent and tolerates a close for a window that was never
         // published.
         window.on('closed', () => {
-            if (editors.get(request.label)?.window === window) {
+            const record = editors.get(request.label);
+            if (record?.window === window) {
+                clearTimeout(record.settle);
                 editors.delete(request.label);
                 trackEditorCount();
             }
@@ -401,8 +471,18 @@ export const createPluginWindowHost = (deps: PluginWindowHostDeps): PluginWindow
             window.setContentSize(refusal.granted.width, refusal.granted.height);
         });
 
+        // Nothing is asked of the plugin while the pointer is down. Where the
+        // platform reports the commit, `resized` is the whole trigger; where it
+        // does not, the window holding still is what stands in for one.
         window.on('resize', () => {
-            void negotiateSize(request.label, contentSizeOf(window));
+            if (deps.reportsResizeCommit) {
+                return;
+            }
+            scheduleSettle(request.label);
+        });
+
+        window.on('resized', () => {
+            settleSize(request.label);
         });
 
         // A window dragged onto another monitor changes density without any
@@ -419,7 +499,9 @@ export const createPluginWindowHost = (deps: PluginWindowHostDeps): PluginWindow
             refusal: undefined,
             scale: scaleFactor,
             negotiating: false,
+            scaling: false,
             queued: undefined,
+            settle: undefined,
         });
         trackEditorCount();
 
@@ -457,6 +539,10 @@ export const createPluginWindowHost = (deps: PluginWindowHostDeps): PluginWindow
             // from the plugin, and the `resize` event it raises must not be put
             // back to the plugin as a host-driven one.
             record.granted = { width: request.width, height: request.height };
+            // The plugin moving itself settles any argument about a size it
+            // once refused. Keeping that refusal would veto the user dragging
+            // to a size the plugin has since chosen for itself.
+            record.refusal = undefined;
             record.window.setContentSize(request.width, request.height);
         },
         setResizable: (request) => {
@@ -529,6 +615,14 @@ const RUN_LOOP_INTERVAL_MS = 16;
  */
 const needsEditorRunLoopPump = (): boolean => process.platform === 'linux';
 
+/**
+ * Whether this platform tells the shell when a resize gesture has committed.
+ *
+ * Electron documents `resized` for darwin and win32; X11 sends only the stream
+ * of `resize` events, and there the gesture is over when that stream stops.
+ */
+const reportsResizeCommit = (): boolean => process.platform === 'darwin' || process.platform === 'win32';
+
 /** An idempotent interval pump: repeated starts keep the one timer. */
 export const createIntervalRunLoopPump = (
     service: () => void,
@@ -596,7 +690,10 @@ const editorSizeFrom = async (answer: unknown): Promise<EditorSize> => {
  */
 export const registerPluginWindowHost = (
     native: object,
-    deps: Omit<PluginWindowHostDeps, 'notifyClosed' | 'runLoopPump' | 'requestEditorSize' | 'applyEditorScale'>
+    deps: Omit<
+        PluginWindowHostDeps,
+        'notifyClosed' | 'runLoopPump' | 'requestEditorSize' | 'applyEditorScale' | 'reportsResizeCommit'
+    >
 ): boolean => {
     if (!hasPluginWindowHost(native)) {
         console.error(
@@ -614,6 +711,7 @@ export const registerPluginWindowHost = (
 
     const host = createPluginWindowHost({
         ...deps,
+        reportsResizeCommit: reportsResizeCommit(),
         runLoopPump: needsEditorRunLoopPump()
             ? createIntervalRunLoopPump(() => {
                   serviceRunLoops.call(native);

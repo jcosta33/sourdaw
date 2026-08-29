@@ -29,6 +29,8 @@ type FakeWindow = EditorWindow & {
     readonly emitClosed: () => void;
     /** The OS applied a resize, as it reports one after the fact. */
     readonly emitResize: () => void;
+    /** The user let go of the edge, where the platform reports that. */
+    readonly emitResized: () => void;
     readonly emitMoved: () => void;
     /** A drag in progress. Answers whether the host stopped it. */
     readonly emitWillResize: (bounds: EditorWindowBounds) => boolean;
@@ -45,6 +47,7 @@ type FakeWindow = EditorWindow & {
 const createFakeWindow = (options: EditorWindowOptions): FakeWindow => {
     const closedListeners: (() => void)[] = [];
     const resizeListeners: (() => void)[] = [];
+    const resizedListeners: (() => void)[] = [];
     const movedListeners: (() => void)[] = [];
     const willResizeListeners: WillResizeListener[] = [];
     let destroyed = false;
@@ -65,6 +68,11 @@ const createFakeWindow = (options: EditorWindowOptions): FakeWindow => {
         emitClosed,
         emitResize: () => {
             for (const listener of resizeListeners) {
+                listener();
+            }
+        },
+        emitResized: () => {
+            for (const listener of resizedListeners) {
                 listener();
             }
         },
@@ -106,7 +114,12 @@ const createFakeWindow = (options: EditorWindowOptions): FakeWindow => {
                 willResizeListeners.push(listener);
                 return;
             }
-            const listeners = { closed: closedListeners, resize: resizeListeners, moved: movedListeners }[event];
+            const listeners = {
+                closed: closedListeners,
+                resize: resizeListeners,
+                resized: resizedListeners,
+                moved: movedListeners,
+            }[event];
             listeners?.push(listener as () => void);
         },
     };
@@ -121,7 +134,10 @@ const request = (label = 'plugin-a', instanceId = 'instance-a'): CreateEditorWin
 /** The deps every registration test supplies, none of which it is about. */
 const shellDeps = (
     createWindow: PluginWindowHostDeps['createWindow']
-): Omit<PluginWindowHostDeps, 'notifyClosed' | 'runLoopPump' | 'requestEditorSize' | 'applyEditorScale'> => ({
+): Omit<
+    PluginWindowHostDeps,
+    'notifyClosed' | 'runLoopPump' | 'requestEditorSize' | 'applyEditorScale' | 'reportsResizeCommit'
+> => ({
     createWindow,
     getParentWindow: () => undefined,
     getScaleFactor: () => 1,
@@ -167,6 +183,9 @@ const createHarness = (overrides: Partial<PluginWindowHostDeps> = {}): Harness =
             windows.push(window);
             return window;
         }),
+        // The gesture-reporting platforms are the default, so a test that says
+        // nothing drives one editor resize per gesture rather than per event.
+        reportsResizeCommit: true,
         watchDisplayChanges: (onChanged) => {
             displaysChanged = onChanged;
         },
@@ -194,6 +213,16 @@ const createHarness = (overrides: Partial<PluginWindowHostDeps> = {}): Harness =
  * plugin granted a few microtasks after the event that asked for it.
  */
 const settled = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
+
+/**
+ * One resize gesture on a platform that reports its commit: the OS applies the
+ * size, says so, and says again that the user let go.
+ */
+const dragTo = (window: FakeWindow, size: EditorSize): void => {
+    window.setContentSize(size.width, size.height);
+    window.emitResize();
+    window.emitResized();
+};
 
 /** The one window a test opened, or a failure that says so. */
 const onlyWindow = (windows: FakeWindow[]): FakeWindow => {
@@ -418,13 +447,16 @@ describe('createPluginWindowHost', () => {
 
     it('lets the user drag only the editors whose plugin accepts a host-chosen size', () => {
         const { host, windows } = createHarness();
-        host.create(request());
-        const window = onlyWindow(windows);
+        host.create(request('plugin-a'));
+        host.create(request('plugin-b', 'instance-b'));
+        const [resizable, fixed] = windows;
 
         host.setResizable({ label: 'plugin-a', resizable: true });
         host.setResizable({ label: 'plugin-b', resizable: false });
+        host.setResizable({ label: 'plugin-c', resizable: true });
 
-        expect(window.setResizable).toHaveBeenCalledExactlyOnceWith(true);
+        expect(resizable?.setResizable).toHaveBeenCalledExactlyOnceWith(true);
+        expect(fixed?.setResizable).toHaveBeenCalledExactlyOnceWith(false);
     });
 
     it('asks the plugin what it will run at when the user drags the window, and lands on that answer', async () => {
@@ -433,8 +465,7 @@ describe('createPluginWindowHost', () => {
         host.create(request());
         const window = onlyWindow(windows);
 
-        window.setContentSize(1000, 900);
-        window.emitResize();
+        dragTo(window, { width: 1000, height: 900 });
         await settled();
 
         expect(requestEditorSize).toHaveBeenCalledExactlyOnceWith('instance-a', 1000, 900);
@@ -446,8 +477,7 @@ describe('createPluginWindowHost', () => {
         host.create(request());
         const window = onlyWindow(windows);
 
-        window.setContentSize(1000, 900);
-        window.emitResize();
+        dragTo(window, { width: 1000, height: 900 });
         await settled();
 
         expect(requestEditorSize).toHaveBeenCalledExactlyOnceWith('instance-a', 1000, 900);
@@ -455,9 +485,61 @@ describe('createPluginWindowHost', () => {
     });
 
     /**
+     * Every answer costs the audio host's control claim, held across a hop to
+     * this thread, and an instance whose block lands inside a claim emits
+     * nothing. One question per `resize` event would hold that claim end to end
+     * for the length of a drag and mute the instrument while the user resizes
+     * it.
+     */
+    it('asks the plugin nothing while the pointer is still down', async () => {
+        const { host, windows, requestEditorSize } = createHarness();
+        host.create(request());
+        const window = onlyWindow(windows);
+
+        for (const width of [820, 840, 860, 880]) {
+            window.setContentSize(width, 600);
+            window.emitResize();
+        }
+        await settled();
+        expect(requestEditorSize).not.toHaveBeenCalled();
+
+        window.emitResized();
+        await settled();
+
+        expect(requestEditorSize).toHaveBeenCalledExactlyOnceWith('instance-a', 880, 600);
+    });
+
+    /**
+     * X11 sends no commit, so the gesture is over when the window holds still.
+     * Without that fallback a Linux editor would never be told any size the
+     * user dragged the window to.
+     */
+    it('treats a window that holds still as a finished gesture where the platform reports none', async () => {
+        vi.useFakeTimers();
+        try {
+            const { host, windows, requestEditorSize } = createHarness({ reportsResizeCommit: false });
+            host.create(request());
+            const window = onlyWindow(windows);
+
+            for (const width of [820, 840, 860]) {
+                window.setContentSize(width, 600);
+                window.emitResize();
+                await vi.advanceTimersByTimeAsync(50);
+            }
+            expect(requestEditorSize).not.toHaveBeenCalled();
+
+            await vi.advanceTimersByTimeAsync(250);
+
+            expect(requestEditorSize).toHaveBeenCalledExactlyOnceWith('instance-a', 860, 600);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    /**
      * The plugin's own resize arrives through `setSize` and raises the same
-     * `resize` event a drag does. Putting it back to the plugin as a host
-     * request is a loop that never settles.
+     * events a gesture does. Putting it back to the plugin as a host request is
+     * a loop that never settles.
      */
     it('does not put the plugin its own resize back as a host-chosen size', async () => {
         const { host, windows, requestEditorSize } = createHarness();
@@ -466,17 +548,17 @@ describe('createPluginWindowHost', () => {
 
         host.setSize({ label: 'plugin-a', width: 500, height: 400 });
         window.emitResize();
+        window.emitResized();
         await settled();
 
         expect(requestEditorSize).not.toHaveBeenCalled();
     });
 
     /**
-     * A drag produces resize events far faster than the round trip to the audio
-     * host's worker, and only the size the window ended at is worth asking
-     * about.
+     * A second gesture can commit while the plugin is still answering the
+     * first, and only the size the window is at now is worth asking about.
      */
-    it('asks about the size the drag ended at, not every size it passed through', async () => {
+    it('asks about the size the window ended at, not every gesture it passed through', async () => {
         const asked: number[] = [];
         let grant = (_size: EditorSize): void => {};
         const requestEditorSize = vi.fn((_instanceId: string, width: number, _height: number) => {
@@ -489,11 +571,9 @@ describe('createPluginWindowHost', () => {
         host.create(request());
         const window = onlyWindow(windows);
 
-        window.setContentSize(900, 700);
-        window.emitResize();
+        dragTo(window, { width: 900, height: 700 });
         for (const width of [910, 920, 930]) {
-            window.setContentSize(width, 700);
-            window.emitResize();
+            dragTo(window, { width, height: 700 });
         }
         grant({ width: 900, height: 700 });
         await settled();
@@ -503,14 +583,49 @@ describe('createPluginWindowHost', () => {
         expect(asked).toEqual([900, 930]);
     });
 
+    /**
+     * The window ending back at a size the plugin already granted is still news
+     * while an older answer is in flight: that answer is about to put its own
+     * size on the window, and only a queued entry brings it back.
+     */
+    it('answers with the size the window is at when one arrives mid-negotiation', async () => {
+        const asked: number[] = [];
+        const grants: (() => void)[] = [];
+        const requestEditorSize = vi.fn(
+            (_instanceId: string, width: number, height: number) =>
+                new Promise<EditorSize>((resolve) => {
+                    asked.push(width);
+                    grants.push(() => {
+                        resolve({ width, height });
+                    });
+                })
+        );
+        const { host, windows } = createHarness({ requestEditorSize });
+        host.create(request());
+        const window = onlyWindow(windows);
+
+        dragTo(window, { width: 900, height: 700 });
+        grants.shift()?.();
+        await settled();
+
+        dragTo(window, { width: 1000, height: 700 });
+        dragTo(window, { width: 900, height: 700 });
+        grants.shift()?.();
+        await settled();
+        grants.shift()?.();
+        await settled();
+
+        expect(asked).toEqual([900, 1000, 900]);
+        expect(window.getContentSize()).toEqual([900, 700]);
+    });
+
     it('stops a drag back through a size the plugin already refused', async () => {
         const { host, windows } = createHarness({
             requestEditorSize: vi.fn(() => Promise.resolve({ width: 640, height: 480 })),
         });
         host.create(request());
         const window = onlyWindow(windows);
-        window.setContentSize(1000, 900);
-        window.emitResize();
+        dragTo(window, { width: 1000, height: 900 });
         await settled();
 
         const prevented = window.emitWillResize({ x: 0, y: 0, width: 1000, height: 900 });
@@ -525,11 +640,31 @@ describe('createPluginWindowHost', () => {
         });
         host.create(request());
         const window = onlyWindow(windows);
-        window.setContentSize(1000, 900);
-        window.emitResize();
+        dragTo(window, { width: 1000, height: 900 });
         await settled();
 
         expect(window.emitWillResize({ x: 0, y: 0, width: 700, height: 500 })).toBe(false);
+    });
+
+    /**
+     * A plugin that later picks the very size it once refused — from its own
+     * zoom menu, through `request_resize` — has settled the argument. A veto
+     * kept past that snaps the window back off the size the plugin is now
+     * drawing at.
+     */
+    it('stops vetoing a size the plugin has since chosen for itself', async () => {
+        const { host, windows } = createHarness({
+            requestEditorSize: vi.fn(() => Promise.resolve({ width: 640, height: 480 })),
+        });
+        host.create(request());
+        const window = onlyWindow(windows);
+        dragTo(window, { width: 1000, height: 900 });
+        await settled();
+
+        host.setSize({ label: 'plugin-a', width: 1000, height: 900 });
+
+        expect(window.emitWillResize({ x: 0, y: 0, width: 1000, height: 900 })).toBe(false);
+        expect(window.getContentSize()).toEqual([1000, 900]);
     });
 
     it('tells an editor dragged onto a denser display its new scale and takes the size that produced', async () => {
@@ -548,6 +683,38 @@ describe('createPluginWindowHost', () => {
         await settled();
 
         expect(applyEditorScale).toHaveBeenCalledExactlyOnceWith('instance-a', 2);
+        expect(window.getContentSize()).toEqual([1280, 960]);
+    });
+
+    /**
+     * A hop to the plugin can fail — a busy editor, or the UI-thread deadline
+     * expiring. Treating the attempt as the state would leave the editor at the
+     * old density permanently, because every later event finds the new scale
+     * already recorded and asks nothing.
+     */
+    it('tells the editor its density again after an attempt the plugin refused', async () => {
+        let scale = 1;
+        let refuse = true;
+        const applyEditorScale = vi.fn(() =>
+            refuse ? Promise.reject(new Error('the editor is busy')) : Promise.resolve({ width: 1280, height: 960 })
+        );
+        const { host, windows } = createHarness({ getScaleFactor: () => scale, applyEditorScale });
+        host.create(request());
+        const window = onlyWindow(windows);
+
+        scale = 2;
+        window.emitMoved();
+        await settled();
+        expect(applyEditorScale).toHaveBeenCalledTimes(1);
+
+        refuse = false;
+        window.emitMoved();
+        await settled();
+
+        expect(applyEditorScale.mock.calls).toEqual([
+            ['instance-a', 2],
+            ['instance-a', 2],
+        ]);
         expect(window.getContentSize()).toEqual([1280, 960]);
     });
 
@@ -575,8 +742,7 @@ describe('createPluginWindowHost', () => {
         host.create(request());
         const window = onlyWindow(windows);
 
-        window.setContentSize(1000, 900);
-        window.emitResize();
+        dragTo(window, { width: 1000, height: 900 });
         await settled();
 
         expect(host.exists('plugin-a')).toBe(true);
