@@ -34,11 +34,13 @@ type MapsUpdate = (input: {
 
 const mocks = vi.hoisted(() => ({
     updateTransportMaps: vi.fn<MapsUpdate>(),
+    isNativeLiveGraphSessionHeld: vi.fn<() => boolean>(),
     logger: { debug: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     startNativeLiveGraphSession: vi.fn(),
+    isNativeLiveGraphSessionHeld: mocks.isNativeLiveGraphSessionHeld,
     updateNativeLiveGraphSessionTransportMaps: mocks.updateTransportMaps,
 }));
 vi.mock('#/infra/logger/appLogger', () => ({ logger: mocks.logger }));
@@ -77,6 +79,7 @@ beforeEach(() => {
     unsubscribe?.();
     mocks.updateTransportMaps.mockReset();
     mocks.updateTransportMaps.mockResolvedValue({ outcome: 'updated' });
+    mocks.isNativeLiveGraphSessionHeld.mockReturnValue(true);
     mocks.logger.debug.mockClear();
     mocks.logger.warn.mockClear();
     transportStore.set({ ...defaultTransportState });
@@ -171,9 +174,10 @@ describe('loop gestures during playback', () => {
     });
 });
 
-describe('loop gestures while the transport is not playing', () => {
+describe('loop gestures while no native session is held', () => {
     it('send nothing, because the next play carries the region with the maps', () => {
-        playingWithLoop({ isPlaying: false });
+        playingWithLoop();
+        mocks.isNativeLiveGraphSessionHeld.mockReturnValue(false);
 
         toggleLoop();
         setLoopRegion(0, 16);

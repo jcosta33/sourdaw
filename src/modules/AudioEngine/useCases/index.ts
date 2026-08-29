@@ -106,6 +106,7 @@ export { getFinalFeatureHandlers } from './getFinalFeatureHandlers';
 export { configureAudioDeviceRuntimeSink } from './configureAudioDeviceRuntimeSink';
 export { initializeAudioEngine } from './initializeAudioEngine';
 
+export { isNativeLiveGraphSessionHeld } from './livePlayback/isNativeLiveGraphSessionHeld';
 export { readNativeEnginePlayheadSeconds } from './livePlayback/readNativeEnginePlayheadSeconds';
 export { repositionNativeLiveGraphSession } from './livePlayback/repositionNativeLiveGraphSession';
 export { startNativeLiveGraphSession } from './livePlayback/startNativeLiveGraphSession';

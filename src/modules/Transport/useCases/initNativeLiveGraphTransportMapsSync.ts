@@ -6,12 +6,14 @@
  * each commit. That missed every other writer — `addTempoChange` never touches
  * `transportStore`, and a CRDT `fromCrdt` hydrate writes the stores without
  * going through a gesture. Subscribing at the store boundary is the single
- * trigger: any maps-relevant `set` while playing re-projects and sends.
+ * trigger: any maps-relevant `set` while a native session is held re-projects and sends.
  *
  * The snapshot captured at init is the baseline so the first subscribe
  * notification is a real change, not a restatement of what play already
  * installed. Playhead, metronome, and other non-maps fields are ignored.
  */
+
+import { isNativeLiveGraphSessionHeld } from '#/modules/AudioEngine/useCases';
 
 import { tempoMapStore, type TempoMapStoreState } from '../stores/tempoMapStore';
 import { timeSignatureMapStore, type TimeSignatureMapStoreState } from '../stores/timeSignatureMapStore';
@@ -68,7 +70,7 @@ export function initNativeLiveGraphTransportMapsSync(): () => void {
         if (!changed) {
             return;
         }
-        if (transportStore.value?.isPlaying !== true) {
+        if (!isNativeLiveGraphSessionHeld()) {
             return;
         }
 

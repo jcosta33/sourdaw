@@ -3,7 +3,7 @@
  * (#3105, #3109).
  *
  * Called from `initNativeLiveGraphTransportMapsSync` whenever a maps-relevant
- * store write lands while the transport is playing — loop fields on
+ * store write lands while a native session is held — loop fields on
  * `transportStore`, or a change to `tempoMapStore` / `timeSignatureMapStore`.
  * The region and maps are read back out of those stores rather than passed
  * down, so every writer (gesture, tempo use case, CRDT hydrate) shares one
@@ -15,13 +15,12 @@
  * any other way would sit at a different second than the tempo map the engine
  * is already following puts it at.
  *
- * ── Only while playing ────────────────────────────────────────────────────
+ * ── Only while a session is held ──────────────────────────────────────────
  *
- * A parked engine renders no frame at all, so its loop seam is unobservable and
- * a write to it buys nothing; the next play re-sends the region with the maps
- * anyway (`startPlayback`). The gate is the transport's own `isPlaying` rather
- * than anything about the engine, because that is the state the write just
- * happened under.
+ * A parked engine renders no frame at all, so its loop seam is unobservable
+ * until play rolls it — but a session can stay held while parked, and a CRDT
+ * hydrate can clear `isPlaying` without stopping that session. The gate is
+ * whether this process holds a native backend, not the transport's `isPlaying`.
  *
  * ── Fired, never awaited ──────────────────────────────────────────────────
  *
@@ -32,13 +31,15 @@
  */
 
 import { logger } from '#/infra/logger/appLogger';
-import { updateNativeLiveGraphSessionTransportMaps } from '#/modules/AudioEngine/useCases';
+import {
+    isNativeLiveGraphSessionHeld,
+    updateNativeLiveGraphSessionTransportMaps,
+} from '#/modules/AudioEngine/useCases';
 
-import { getTransportState } from '../../repositories/transport/getTransportState';
 import { projectEngineTransportMaps } from '../tempoMap/projectEngineTransportMaps';
 
 export function sendLoopRegionToNativeSession(): void {
-    if (getTransportState()?.isPlaying !== true) {
+    if (!isNativeLiveGraphSessionHeld()) {
         return;
     }
 
