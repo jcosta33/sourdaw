@@ -1,0 +1,63 @@
+src/modules/AiRuntime/repositories/cloudLlm/__tests__/setCloudProviderConfig.spec.ts
+  s_a40848e8f8cca9::t_3279427c1b2f79 40,84,92,104,121,137-139
+  s_a40848e8f8cca9::t_e4d78f62745a46 63,70
+src/utils/sourdawCommandArguments.ts
+  s_a40848e8f8cca9::t_d18ce475419176 60
+electron/__tests__/commands.spec.ts
+  s_a40848e8f8cca9::t_e4d78f62745a46 377
+src/modules/Preferences/presentations/views/preferences/AiSection.tsx
+  s_a40848e8f8cca9::t_d18ce475419176 108,150,153,165,232,301-316,324-325
+  s_a40848e8f8cca9::t_b914aa53d15dc7 218-219,331
+tests/e2e/aiConfirmApplyUndo.spec.ts
+  s_a40848e8f8cca9::t_cf7dffe68dccd1 20
+src/modules/Preferences/presentations/views/preferences/__tests__/AiSection.spec.tsx
+  s_a40848e8f8cca9::t_e4d78f62745a46 80,83,87,95,98
+  s_a40848e8f8cca9::t_0aa29086041d6b 84-86
+src/modules/AiRuntime/models/HostedLlmProvider.ts
+  s_a40848e8f8cca9::t_d18ce475419176 10-11
+crates/sourdaw-native/src/addon/mod.rs
+  s_a40848e8f8cca9::t_d18ce475419176 271,278
+src/modules/AiRuntime/repositories/openProviderGatewaySession.ts
+  s_a40848e8f8cca9::t_d18ce475419176 6,13
+src/modules/AiRuntime/useCases/cloudApiManagement/configureCloudProvider.ts
+  s_a40848e8f8cca9::t_d18ce475419176 43-46
+  s_a40848e8f8cca9::t_8ff504fd4d1d3c 47-48,54
+src/modules/AiRuntime/repositories/cloudLlm/__tests__/clearCloudProviderConfig.spec.ts
+  s_a40848e8f8cca9::t_3279427c1b2f79 27
+src/modules/AiRuntime/useCases/cloudApiManagement/__tests__/configureCloudProvider.spec.ts
+  s_a40848e8f8cca9::t_3279427c1b2f79 33,39,48,59,65-67,73,86,91-94
+  s_a40848e8f8cca9::t_6a03faa391d374 95-97
+src/modules/AiRuntime/repositories/cloudLlm/setCloudProviderConfig.ts
+  s_a40848e8f8cca9::t_d18ce475419176 27-31,60-62
+PRIVACY.md
+  s_a40848e8f8cca9::t_96a7f4ce4498f4 26-31
+docs/architecture/09-ai-stack.md
+  s_a40848e8f8cca9::t_96a7f4ce4498f4 8-10
+crates/sourdaw-native/src/commands/provider_gateway.rs
+  s_a40848e8f8cca9::t_96a7f4ce4498f4 561,850-852,855-875
+  s_a40848e8f8cca9::t_d18ce475419176 107-110,117,119,346,351-352
+  s_a40848e8f8cca9::t_07df61e3c18351 126,363,562-565,849,853-854
+  s_a40848e8f8cca9::t_f63234f09c5a93 876-877
+.agents/decisions/0028-native-provider-credential-sessions.md
+  s_a40848e8f8cca9::t_0aa29086041d6b 6,20-22
+  s_a40848e8f8cca9::t_96a7f4ce4498f4 32-37,50-52,55-56
+src/modules/AiRuntime/repositories/__tests__/providerAdapterConformance.spec.ts
+  s_a40848e8f8cca9::t_e4d78f62745a46 145,152
+  s_a40848e8f8cca9::t_3279427c1b2f79 164
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "66b7763f132a39d4e007735934a1bae29feb5256",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
