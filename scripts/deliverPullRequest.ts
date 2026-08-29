@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
-import { existsSync, lstatSync } from 'node:fs';
+import { lstatSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 import {
@@ -963,6 +963,26 @@ function persistPreparedDeliveryReceiptAuthority(
     );
 }
 
+function restorePreArmedDeliveryReceiptAuthority(
+    number: number,
+    beforeArming: PersistedDeliveryReceiptAuthority | undefined,
+    armed: CurrentPersistedPreparedDeliveryReceiptAuthority,
+    port: DeliveryPort
+): void {
+    const current = port.readDeliveryReceiptAuthority(number);
+    if (!samePersistedDeliveryReceiptAuthority(current, armed)) {
+        return;
+    }
+    if (beforeArming === undefined || beforeArming.phase === 'legacy') {
+        port.clearDeliveryReceiptAuthority(number);
+        return;
+    }
+    if (samePersistedDeliveryReceiptAuthority(current, beforeArming)) {
+        return;
+    }
+    port.writeDeliveryReceiptAuthority(number, beforeArming);
+}
+
 function persistMergeAuthorizedDeliveryReceiptAuthority(
     number: number,
     receipt: Pick<DeliveryReceiptComment, 'id' | 'body'>,
@@ -1424,6 +1444,7 @@ function deliverPullRequestWithCiAdmission(
     const receipt = ensureDeliveryReceipt(initial, initialTrackerTarget, port, ciAdmissionMode);
     const receiptPayload = assertDeliveryReceiptForHead(receipt, initial);
     const preparedPostMergeValidation = persistedPreparedPostMergeValidation(initial, initialTrackerTarget);
+    const authorityBeforeFinalFetchArming = port.readDeliveryReceiptAuthority(number);
     persistPreparedDeliveryReceiptAuthority(number, receipt, port, preparedPostMergeValidation);
 
     port.fetch();
@@ -1431,9 +1452,27 @@ function deliverPullRequestWithCiAdmission(
     if (finalSnapshot.state === 'MERGED') {
         validateAuthorAppMerger(finalSnapshot);
     }
-    const finalTrackerTarget = trackerCompletionTarget(finalSnapshot);
-    validateStableTrackerTarget(number, initialTrackerTarget, finalTrackerTarget);
-    validateStablePullRequest(initial, finalSnapshot);
+    let finalTrackerTarget: number | undefined;
+    try {
+        finalTrackerTarget = trackerCompletionTarget(finalSnapshot);
+        validateStableTrackerTarget(number, initialTrackerTarget, finalTrackerTarget);
+        validateStablePullRequest(initial, finalSnapshot);
+    } catch (error) {
+        if (finalSnapshot.state !== 'MERGED') {
+            restorePreArmedDeliveryReceiptAuthority(
+                number,
+                authorityBeforeFinalFetchArming,
+                {
+                    phase: 'prepared',
+                    receiptId: receipt.id,
+                    receiptBody: receipt.body,
+                    postMergeValidation: preparedPostMergeValidation,
+                },
+                port
+            );
+        }
+        throw error;
+    }
     if (finalSnapshot.state === 'MERGED') {
         validateBaseBranch(finalSnapshot);
         persistPreparedDeliveryReceiptAuthority(number, receipt, port, preparedPostMergeValidation);
@@ -2309,13 +2348,18 @@ function readOptionalDeliveryRefOid(
         fail(`PR #${number} ${label} cannot be verified`);
     }
     const exactRefPath = resolve(primaryRoot, refPath.stdout.trim());
-    if (!existsSync(exactRefPath)) {
+    let refStats: ReturnType<typeof lstatSync>;
+    try {
+        refStats = lstatSync(exactRefPath);
+    } catch (error) {
+        if (!(error instanceof Error) || !('code' in error) || error.code !== 'ENOENT') {
+            throw error;
+        }
         if (!/not a valid ref/u.test(result.stderr)) {
             fail(`PR #${number} ${label} cannot be verified`);
         }
         return undefined;
     }
-    const refStats = lstatSync(exactRefPath);
     if (refStats.isDirectory()) {
         return undefined;
     }

@@ -1605,6 +1605,41 @@ describe('pull-request delivery', () => {
         expect(calls).toContain('receipt-authority:write:terminal:IC_delivery_42_1');
     });
 
+    it('disarms a failed open final-refresh validation so a later body-drift retry can deliver the current receipt', () => {
+        const closesX = relationshipBody('Closes #2372');
+        const closesY = relationshipBody('Closes #2373');
+        const { port, calls, tracker, persistedReceiptAuthority, receipts } = fakePort({
+            primary: [
+                pullRequest({ body: closesX }),
+                pullRequest({ body: closesY }),
+                pullRequest({ body: closesY }),
+                pullRequest({ body: closesY }),
+            ],
+            dependentSets: [[], []],
+        });
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/closing target changed during delivery/i);
+        expect(calls.filter((call) => call === 'merge:42:head')).toHaveLength(0);
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'prepared',
+            receiptId: 'IC_delivery_42_1',
+            receiptBody: visibleDeliveryReceiptBody(42, 'head', closesX, 2372, 'successful'),
+        });
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(2);
+        expect(calls.filter((call) => call === 'merge:42:head')).toHaveLength(1);
+        expect(calls).toContain('complete:2373');
+        expect(calls).not.toContain('complete:2372');
+        expect(receipts.map(({ id }) => id)).toEqual(['IC_delivery_42_1', 'IC_delivery_42_2']);
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'terminal',
+            receiptId: 'IC_delivery_42_2',
+            receiptBody: visibleDeliveryReceiptBody(42, 'head', closesY, 2373, 'successful'),
+        });
+    });
+
     it('completes the receipt issue after a single-receipt merged body drift', () => {
         const closes = relationshipBody('Closes #2372');
         const { port, calls, tracker } = fakePort({
@@ -4322,6 +4357,33 @@ describe('delivery shell boundary', () => {
         const targetPath = join(primaryRoot, 'symlink-target');
         mkdirSync(dirname(exactRefPath), { recursive: true });
         writeFileSync(targetPath, 'not-a-ref\n');
+        symlinkSync(targetPath, exactRefPath);
+        const port = shellPort(
+            'jcosta33/sourdaw',
+            { capture: () => expect.fail('unexpected capture'), run: () => undefined },
+            { primaryRoot }
+        );
+
+        try {
+            expect(() => port.readDeliveryReceiptAuthority(42)).toThrow(
+                /delivery receipt authority cannot be proven|delivery receipt authority cannot be verified/i
+            );
+        } finally {
+            rmSync(primaryRoot, { recursive: true, force: true });
+        }
+    });
+
+    it('rejects an exact broken symlink delivery receipt authority ref path', () => {
+        const primaryRoot = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-shell-port-'));
+        execFileSync('git', ['init', '--quiet'], { cwd: primaryRoot });
+        const ref = 'refs/sourdaw/delivery-receipt/pr-42';
+        const refPath = execFileSync('git', ['rev-parse', '--git-path', ref], {
+            cwd: primaryRoot,
+            encoding: 'utf8',
+        }).trim();
+        const exactRefPath = join(primaryRoot, refPath);
+        const targetPath = join(primaryRoot, 'missing-target');
+        mkdirSync(dirname(exactRefPath), { recursive: true });
         symlinkSync(targetPath, exactRefPath);
         const port = shellPort(
             'jcosta33/sourdaw',
