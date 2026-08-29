@@ -792,13 +792,22 @@ function readExactDeliveryReceipt(
 
 function readStableMergedRecoveryReceipt(pullRequest: PullRequestSnapshot, port: DeliveryPort): DeliveryReceiptComment {
     const firstLineage = orderedDeliveryReceiptLineage(port.deliveryReceipts(pullRequest.number), pullRequest);
+    if (firstLineage.length !== 1) {
+        fail(`PR #${pullRequest.number} delivery receipt authority cannot be proven`);
+    }
     const first = authoritativeDeliveryReceipt(firstLineage, pullRequest);
     const secondLineage = orderedDeliveryReceiptLineage(port.deliveryReceipts(pullRequest.number), pullRequest);
+    if (secondLineage.length !== 1) {
+        fail(`PR #${pullRequest.number} delivery receipt authority cannot be proven`);
+    }
     const second = authoritativeDeliveryReceipt(secondLineage, pullRequest);
     if (first.id !== second.id) {
         fail(`PR #${pullRequest.number} delivery receipt changed during recovery`);
     }
-    assertDeliveryReceiptForHead(second, pullRequest);
+    const payload = assertDeliveryReceiptForHead(second, pullRequest);
+    if (trackerCompletionTarget(pullRequest) !== payload.closingIssue) {
+        fail(`PR #${pullRequest.number} delivery receipt authority cannot be proven`);
+    }
     return second;
 }
 
@@ -1007,6 +1016,7 @@ function deliverPullRequestWithCiAdmission(
         const recoveredReceipt = readExactDeliveryReceipt(finalSnapshot, port, receipt.id);
         const recoveredPayload = assertCanonicalDeliveryReceipt(recoveredReceipt, finalSnapshot, receiptPayload);
         validateStableDeliveryReceipt(number, receiptPayload, recoveredPayload);
+        persistMergeAuthorizedDeliveryReceiptAuthority(number, recoveredReceipt.id, port);
         const finalDependents = port
             .dependents(finalSnapshot.headRefName)
             .filter((candidate) => candidate.number !== number);
@@ -1014,7 +1024,6 @@ function deliverPullRequestWithCiAdmission(
         for (const dependent of finalDependents) {
             validateDependent(port.pullRequest(dependent.number), dependent);
         }
-        persistMergeAuthorizedDeliveryReceiptAuthority(number, recoveredReceipt.id, port);
         retargetDependents(finalDependents, finalSnapshot.baseRefName, port);
         completeIssueAfterMerge(number, recoveredPayload.closingIssue, tracker);
         persistTerminalDeliveryReceiptAuthority(number, recoveredReceipt.id, port);
@@ -1744,6 +1753,13 @@ function readOptionalDeliveryRefOid(
     number: number,
     label: string
 ): string | undefined {
+    const symbolic = deliveryLockGit(primaryRoot, ['symbolic-ref', '-q', '--', ref]);
+    if (symbolic.error !== undefined) {
+        throw symbolic.error;
+    }
+    if (symbolic.status === 0) {
+        fail(`PR #${number} ${label} cannot be verified`);
+    }
     const result = deliveryLockGit(primaryRoot, ['show-ref', '--verify', '--hash', '--', ref]);
     if (result.error !== undefined) {
         throw result.error;

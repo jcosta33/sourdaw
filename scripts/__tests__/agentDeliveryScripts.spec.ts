@@ -1529,6 +1529,37 @@ describe('package scripts and gitignore', () => {
         }
     });
 
+    it('rejects symbolic delivery receipt authority refs before resolving any object ID', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-authority-'));
+        initializeDeliveryLockRepository(root);
+
+        try {
+            const targetOid = execFileSync('git', ['hash-object', '-w', '--stdin'], {
+                cwd: root,
+                encoding: 'utf8',
+                input: JSON.stringify({ version: 2, phase: 'terminal', receiptId: 'IC_symbolic_target' }),
+            }).trim();
+            runGit(root, ['update-ref', 'refs/sourdaw/delivery-receipt/pr-2495-target', targetOid]);
+            runGit(root, [
+                'symbolic-ref',
+                deliveryReceiptAuthorityRef(2495),
+                'refs/sourdaw/delivery-receipt/pr-2495-target',
+            ]);
+            const port = shellPort(
+                'jcosta33/sourdaw',
+                {
+                    capture: () => expect.fail('receipt authority reads should not query GitHub'),
+                    run: () => expect.fail('receipt authority reads should not run shell commands'),
+                },
+                { primaryRoot: root }
+            );
+
+            expect(() => port.readDeliveryReceiptAuthority(2495)).toThrow(/cannot be verified/i);
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
     it('does not delete a delivery receipt authority ref whose object changed after verification', () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-authority-'));
         const wrapperRoot = mkdtempSync(join(tmpdir(), 'sourdaw-git-wrapper-'));
