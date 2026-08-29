@@ -137,6 +137,7 @@ describe('settleConfirmedBatchOutcome', () => {
                 ],
             })
         );
+        expect(mocks.notify).toHaveBeenCalledWith('Confirmed: Add an effect', ['addDevice']);
         expect(mocks.updateConfirmation).toHaveBeenCalledWith(
             expect.objectContaining({ status: 'executed', ...(warning ? { error: warning } : {}) })
         );
@@ -170,6 +171,9 @@ describe('settleConfirmedBatchOutcome', () => {
             expect.objectContaining({ status: 'failed', error: 'follow-up warning' })
         );
         expect(mocks.createFailure).toHaveBeenCalledWith(input.batchResult.receipt, 'render still pending');
+        expect(mocks.notify).toHaveBeenCalledWith('Committed with pending external effects: Add an effect', [
+            'addDevice',
+        ]);
     });
 
     it('arms a retry only for incomplete warned project renders', async () => {
