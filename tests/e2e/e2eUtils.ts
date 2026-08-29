@@ -23,9 +23,9 @@ type SetupWorkspaceOptions = {
  * boundary directly.
  */
 export async function enable_direct_e2e_viewport(page: Page): Promise<void> {
-    // Setting the current browsing context persists into its first navigation;
-    // the init script covers every later document in the context.
-    await page.evaluate(() => {
+    // The page-scoped script covers this Page's first and later documents; the
+    // context script covers subsequently created Pages and frames.
+    await page.addInitScript(() => {
         window.name = 'sourdaw-e2e-direct';
     });
     await page.context().addInitScript(() => {
