@@ -1,0 +1,25 @@
+tests/e2e/browserDisplayScale.spec.ts
+  s_ae074277795b45::t_4e168a36c6e795 210-212
+src/components/daw/__tests__/DawContextMenuSurface.spec.tsx
+  s_ae074277795b45::t_4e168a36c6e795 60-82,86,92-94,98,102,109-110,113-126
+  s_ae074277795b45::t_7be6e5801c2fad 127
+src/components/daw/DawContextMenuSurface.tsx
+  s_ae074277795b45::t_c31d2b93794629 35-36
+  s_ae074277795b45::t_6b34d765c90ec7 37,40
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "52975ae1a94bb5ee9ec1ded2be79a7881e91b8fe",
+  "prompts": {},
+  "sessions": {
+    "s_ae074277795b45": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04ab5-5234-7100-be1c-76ebfaba88d3",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
