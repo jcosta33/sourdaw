@@ -1,0 +1,27 @@
+crates/daw-plugin-host/src/vst3_wrapper/tests.rs
+  s_4f908a5afb6b58::t_0c1f14ea139c2a 1147
+  s_4f908a5afb6b58::t_8d75a3830827d7 1256-1262,1270-1274
+  s_4f908a5afb6b58::t_c4afd3e07f8631 1134-1135
+  s_4f908a5afb6b58::t_dd57572e7519dc 3060-3180
+  s_4f908a5afb6b58::t_5f4b318e681093 23-24
+  s_4f908a5afb6b58::t_38817fc9f6f587 1253-1255,1263-1269,1275-1276
+  s_4f908a5afb6b58::t_85777202515218 1213-1216
+  s_4f908a5afb6b58::t_3e8288a3a69bc7 1084-1086
+  s_4f908a5afb6b58::t_d5d9522aec279a 3181
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "50ec8fa2a67a2299fb3fd84192fd258afff371af",
+  "prompts": {},
+  "sessions": {
+    "s_4f908a5afb6b58": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fcb92ba4-bf56-47a4-8b57-803f335a449e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
