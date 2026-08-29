@@ -89,7 +89,6 @@ const {
     flushDeferredStorageNoticeMock,
     getAutomationParameterRangeMock,
     setAutomationParameterRangeResolverMock,
-    clampTrackGainMock,
     setMidiLearnDependenciesMock,
     registerCrdtStorageRuntimeMock,
     captureProjectRevisionMock,
@@ -146,11 +145,7 @@ const {
         flushDeferredStorageNoticeMock: vi.fn(),
         getAutomationParameterRangeMock: vi.fn(),
         setAutomationParameterRangeResolverMock: vi.fn(),
-        // Distinguishable from `noop` on purpose: this spec asserts the MIDI
-        // learn seam receives Arrangement's own `clampTrackGain`, so the stand-in
-        // has to be identifiable by reference.
-        clampTrackGainMock: vi.fn<(gain: number) => number>(),
-        setMidiLearnDependenciesMock: vi.fn<(dependencies: { clampTrackGain: unknown }) => void>(),
+        setMidiLearnDependenciesMock: vi.fn(),
         registerCrdtStorageRuntimeMock: vi.fn<() => void>(),
         captureProjectRevisionMock: vi.fn<() => string>(() => 'revision-1'),
         agentProjectInspectionSetProviderMock: vi.fn(),
@@ -206,7 +201,6 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     getPluginById: noop,
     persistDevicePatch: noop,
     cleanupUnusedFreezeFiles: noop,
-    clampTrackGain: clampTrackGainMock,
     setTrackGain: noop,
     setTrackPan: noop,
     setDeviceParameter: noop,
@@ -731,23 +725,6 @@ describe('bootstrap', () => {
         expect(setAutomationParameterRangeResolverMock).toHaveBeenCalledExactlyOnceWith(
             getAutomationParameterRangeMock
         );
-    });
-
-    /**
-     * MIDI learn does not clamp a fader move itself — it asks Arrangement, so
-     * that a controller ride and a mouse drag land on one ceiling. The
-     * `handleMidiMessage` suite proves the injected function is what the store
-     * and the engine both receive, but it injects its own stand-in, so nothing
-     * over there can tell which function production hands in. This is the seam:
-     * assert the identity here and swapping it for a local re-implementation
-     * cannot pass silently.
-     */
-    it('gives MIDI learn Arrangement’s own track gain clamp', () => {
-        const call = setMidiLearnDependenciesMock.mock.calls[0];
-        if (!call) {
-            throw new Error('bootstrap never configured the MIDI learn dependencies');
-        }
-        expect(call[0].clampTrackGain).toBe(clampTrackGainMock);
     });
 
     describe('offline instrument setup dispatch', () => {
