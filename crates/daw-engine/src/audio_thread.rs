@@ -14,8 +14,9 @@ use crate::midi::diagnostics::{
     active_midi_rt_diagnostics_channel, ActiveMidiRtDiagnosticsSnapshot,
 };
 use crate::scheduler::{
-    graph_progress_channel, AudioScheduler, GraphCommand, GraphProgressSnapshot,
-    RetiredGraphObjects, RETIREMENT_QUEUE_CAPACITY,
+    graph_progress_channel, transport_position_channel, AudioScheduler, GraphCommand,
+    GraphProgressSnapshot, RetiredGraphObjects, TransportPositionSnapshot,
+    RETIREMENT_QUEUE_CAPACITY,
 };
 use crate::timeline::{timeline_rt_diagnostics_channel, TimelineRtDiagnosticsSnapshot};
 use rtrb::{Consumer, Producer, RingBuffer};
@@ -208,12 +209,14 @@ pub fn spawn_audio_thread(command_rx: Consumer<GraphCommand>) -> Result<AudioThr
     let (diagnostics_tx, _diagnostics_reader) = active_midi_rt_diagnostics_channel();
     let (timeline_diagnostics_tx, _timeline_diagnostics_reader) = timeline_rt_diagnostics_channel();
     let (graph_progress_tx, _graph_progress_reader) = graph_progress_channel();
+    let (transport_position_tx, _transport_position_reader) = transport_position_channel();
     let (engine_event_tx, _engine_event_rx) = engine_event_channel();
     spawn_audio_thread_with_diagnostics(
         command_rx,
         diagnostics_tx,
         timeline_diagnostics_tx,
         graph_progress_tx,
+        transport_position_tx,
         engine_event_tx,
         false,
     )
@@ -228,11 +231,13 @@ pub fn spawn_audio_thread(command_rx: Consumer<GraphCommand>) -> Result<AudioThr
 /// through a cell the factory fills before the ready handshake. The caller
 /// needs it because every graph command that names a time in seconds has to be
 /// converted to frames on *this* clock, and any other rate is a guess.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn spawn_audio_thread_with_diagnostics(
     command_rx: Consumer<GraphCommand>,
     midi_rt_diagnostics_tx: Input<ActiveMidiRtDiagnosticsSnapshot>,
     timeline_rt_diagnostics_tx: Input<TimelineRtDiagnosticsSnapshot>,
     graph_progress_tx: Input<GraphProgressSnapshot>,
+    transport_position_tx: Input<TransportPositionSnapshot>,
     engine_event_tx: Producer<EngineEvent>,
     force_default_buffer: bool,
 ) -> Result<
@@ -258,6 +263,7 @@ pub(crate) fn spawn_audio_thread_with_diagnostics(
             midi_rt_diagnostics_tx,
             timeline_rt_diagnostics_tx,
             graph_progress_tx,
+            transport_position_tx,
             engine_event_tx,
             force_default_buffer,
             &sample_rate_slot,
@@ -426,6 +432,7 @@ fn build_audio_stream(
     midi_rt_diagnostics_tx: Input<ActiveMidiRtDiagnosticsSnapshot>,
     timeline_rt_diagnostics_tx: Input<TimelineRtDiagnosticsSnapshot>,
     graph_progress_tx: Input<GraphProgressSnapshot>,
+    transport_position_tx: Input<TransportPositionSnapshot>,
     mut engine_event_tx: Producer<EngineEvent>,
     force_default_buffer: bool,
     sample_rate_out: &OnceLock<f32>,
@@ -454,6 +461,7 @@ fn build_audio_stream(
         midi_rt_diagnostics_tx,
         timeline_rt_diagnostics_tx,
         graph_progress_tx,
+        transport_position_tx,
     );
 
     let mut left_scratch = Box::new([0.0f32; MAX_CALLBACK_FRAMES]);
@@ -516,6 +524,10 @@ fn build_audio_stream(
         // holds because everything it vouches for has already
         // been drained, rendered and popped above.
         scheduler.publish_graph_progress();
+        // The cursor's channel, published on the same edge and for the same
+        // reason: one write per callback, after every block of it, so a reader
+        // between callbacks sees a position the engine actually reached.
+        scheduler.publish_transport_position();
     });
 
     // The backend may call this from the real-time thread — ALSA reports from

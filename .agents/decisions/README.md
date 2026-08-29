@@ -52,6 +52,7 @@ ADR numbers 0001 and 0002 are reserved and must not be reused.
 | [0036](0036-readmit-grand-boule.md)                                 | Readmit Grand Boule with a finite FIR body and project-authored voicings — **supersedes 0032, 0033, and 0034**                          |
 | [0037](0037-admit-webllm-qwen-conversions-under-apache-2.0.md)      | Admit byte-pinned WebLLM Qwen conversions with runtime notices and accepted checkpoint/build provenance gaps                            |
 | [0038](0038-grand-boule-measurement-census-scope.md)                | Scope the Grand Boule measurement census to the device's compile-time closure, not the whole-crate wasm                                 |
+| [0039](0039-transport-features-follow-the-fed-back-playhead.md)     | Metronome, count-in, pre-roll, punch and follow actions stay JS-side against the engine's fed-back playhead                             |
 
 Genuinely open decisions that are not yet ADRs live in the
 [open-decision docket](open-decision-docket.md).

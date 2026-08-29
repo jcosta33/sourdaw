@@ -21,6 +21,7 @@
  * was already in.
  */
 
+import { logger } from '#/infra/logger/appLogger';
 import {
     deriveEffectiveAudibility,
     deriveVcaMultiplier,
@@ -32,15 +33,26 @@ import {
 import { workspaceStore } from '#/modules/WorkspaceShell/stores';
 
 import { type AudioGraphStripReport } from '../../models/AudioGraphBackend';
+import { type EngineTransportMaps } from '../../models/EngineTransportPosition';
+import { setEngineTransportMaps } from '../../repositories/engineTransport/setEngineTransportMaps';
 import { createNativeLiveGraphBackend } from '../../repositories/nativeGraph/createNativeLiveGraphBackend';
 import { probeNativeGraphTransport } from '../../repositories/nativeGraph/probeNativeGraphTransport';
 
 import { nativeLiveGraphSession, queueOnNativeLiveGraphSession } from './nativeLiveGraphSessionState';
 import { projectLiveGraphTopology } from './projectLiveGraphTopology';
+import { startNativeEnginePlayheadFeed } from './startNativeEnginePlayheadFeed';
 
 export type StartNativeLiveGraphSessionInput = Readonly<{
     /** Where playback begins, on the engine's clock. */
     positionSeconds: number;
+    /**
+     * The arrangement's tempo map, meter map and loop region, already projected
+     * into engine coordinates.
+     *
+     * Passed in rather than read here because the arrangement owns them: this
+     * module owns the shape the engine reads, not what the timeline says.
+     */
+    transportMaps: EngineTransportMaps;
 }>;
 
 export type NativeLiveGraphSessionResult =
@@ -90,6 +102,32 @@ function readSessionTopology(): Readonly<{
     };
 }
 
+/**
+ * Set the engine rolling, once its maps and loop region are installed.
+ *
+ * Its own admission rather than part of the topology batch: that batch is an
+ * all-or-nothing fence, so a roll folded into it would have to be applied
+ * before the region it is bounded by.
+ *
+ * A refused roll leaves the session standing and the handle open — the topology
+ * is mirrored and plugin hosting is live, which is what a session is for while
+ * Web Audio remains the audible path. What the engine does not do is roll, so
+ * the playhead feed reports a parked transport and the cursor keeps the
+ * scheduler's own clock.
+ */
+async function rollNativeTransport(
+    backend: ReturnType<typeof createNativeLiveGraphBackend>,
+    positionSeconds: number
+): Promise<void> {
+    const rolling = await backend.apply({
+        schemaVersion: 1,
+        commands: [{ kind: 'set-transport', playing: true, positionSeconds }],
+    });
+    if (rolling.application !== 'applied') {
+        logger.warn(`[AudioEngine] native transport did not start rolling: ${rolling.reason}`);
+    }
+}
+
 export function startNativeLiveGraphSession(
     input: StartNativeLiveGraphSessionInput
 ): Promise<NativeLiveGraphSessionResult> {
@@ -101,9 +139,19 @@ export function startNativeLiveGraphSession(
         const topology = readSessionTopology();
         // Read after the probe, so the batch describes the project as it stands
         // when it is actually sent rather than when the gesture happened.
+        //
+        // Parked, not rolling. The loop region arrives with the maps, one
+        // awaited bridge round trip after this batch lands, and an engine
+        // already rolling renders that whole round trip: press play a beat
+        // before the loop end and it crosses the boundary before it is told
+        // where the boundary is. `frames_until_loop_end` then reads a playhead
+        // already past the region and never wraps again for the rest of the
+        // session. A parked transport advances no playhead at all
+        // (`advance_playhead` returns on `!is_playing`), so nothing can be
+        // rendered ahead of the region that governs it.
         const commands = projectLiveGraphTopology({
             ...topology,
-            transport: { playing: true, positionSeconds: input.positionSeconds },
+            transport: { playing: false, positionSeconds: input.positionSeconds },
         });
 
         const backend = createNativeLiveGraphBackend({ transport: availability.transport });
@@ -126,6 +174,31 @@ export function startNativeLiveGraphSession(
         // that was already working.
         nativeLiveGraphSession.backend?.dispose();
         nativeLiveGraphSession.backend = backend;
+        nativeLiveGraphSession.carriesAudio = commands.some((command) => command.kind === 'schedule-clip');
+
+        // After the topology, never with it: the maps have their own owner and
+        // their own command (the transport ownership law in `graph.rs`). Before
+        // the roll, because the loop region travels with them and the engine
+        // must not render a frame the region does not govern. Before the feed
+        // too, because a position read against no maps reports the engine's
+        // default tempo rather than the arrangement's.
+        const maps = await setEngineTransportMaps(input.transportMaps);
+        if (maps.outcome === 'declined') {
+            // The engine keeps whatever pair the *previous* session installed:
+            // nothing between sessions clears its maps or its loop region, and
+            // the install that would have replaced them is the one that just
+            // failed. Rolling now would run this take under the last take's
+            // tempo map and wrap at a loop seam this arrangement no longer has,
+            // while the Web Audio transport the musician hears plays straight
+            // through it. So the engine stays parked, and a parked transport
+            // renders no frame at all (`advance_playhead` returns on
+            // `!is_playing`), which is what makes the stale pair unreachable
+            // rather than merely unlikely.
+            logger.warn(`[AudioEngine] native transport left parked: maps declined: ${maps.reason}`);
+        } else {
+            await rollNativeTransport(backend, input.positionSeconds);
+        }
+        startNativeEnginePlayheadFeed();
         return { outcome: 'started', runtimeRevision: result.runtimeRevision, reports: result.reports };
     });
 }
