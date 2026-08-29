@@ -18,6 +18,20 @@ function createMissingRenderEffects(commandIds: readonly string[], reason: strin
     }));
 }
 
+function normalizeTargetedRenderEffect(
+    effect: AgentRunPendingEffect,
+    targetedCommandIds: ReadonlySet<string>
+): AgentRunPendingEffect {
+    if (
+        !targetedCommandIds.has(effect.commandId) ||
+        effect.kind !== 'external-effect' ||
+        effect.operation !== 'renderProjectSections'
+    ) {
+        return effect;
+    }
+    return { ...effect, remediation: 'manual-repair' };
+}
+
 export function requireSectionRenderManualRepair(input: {
     runId: string;
     batchId: string;
@@ -32,7 +46,11 @@ export function requireSectionRenderManualRepair(input: {
 }): string | null {
     try {
         if (input.missingEffects) {
-            const existingCommandIds = new Set(input.missingEffects.existingEffects.map(({ commandId }) => commandId));
+            const targetedCommandIds = new Set(input.missingEffects.commandIds);
+            const normalizedExistingEffects = input.missingEffects.existingEffects.map((effect) =>
+                normalizeTargetedRenderEffect(effect, targetedCommandIds)
+            );
+            const existingCommandIds = new Set(normalizedExistingEffects.map(({ commandId }) => commandId));
             const missingCommandIds = input.missingEffects.commandIds.filter(
                 (commandId, index, commandIds) =>
                     !existingCommandIds.has(commandId) && commandIds.indexOf(commandId) === index
@@ -43,7 +61,7 @@ export function requireSectionRenderManualRepair(input: {
                     authority: structuredClone(input.missingEffects.authority),
                     batchId: input.batchId,
                     effects: [
-                        ...structuredClone(input.missingEffects.existingEffects),
+                        ...structuredClone(normalizedExistingEffects),
                         ...createMissingRenderEffects(missingCommandIds, input.reason),
                     ],
                     lastError: input.reason,
