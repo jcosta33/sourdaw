@@ -408,4 +408,15 @@ describe('TransportBar', () => {
         expect(screen.getByText('Custom Song')).toBeInTheDocument();
         expect(screen.getByTitle('Unsaved changes')).toBeInTheDocument();
     });
+
+    it('keeps the project name and menu trigger in one gapless control', () => {
+        renderTransportBar();
+
+        const splitControl = screen.getByTestId('project-menu-control');
+        const projectName = screen.getByTestId('project-name');
+        const menuTrigger = screen.getByTestId('recent-projects');
+
+        expect(splitControl).toHaveClass('gap-0', 'shrink-0');
+        expect(Array.from(splitControl.children)).toEqual([projectName, menuTrigger]);
+    });
 });

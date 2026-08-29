@@ -1,5 +1,8 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 
+import { injectDependencies } from '#/infra/di/testing/injectDependencies';
+import { notifyUser } from '#/utils/Notification/notifyUser';
+
 import { installFakeIndexedDb } from '../../__tests__/fakeIndexedDb';
 import { runProjectLoadTransaction } from '../projectPersistence/helpers/runProjectLoadTransaction';
 import { loadProject } from '../projectPersistence/loadProject';
@@ -8,6 +11,10 @@ import { renameProject } from '../projectPersistence/saveProject/renameProject';
 import { saveProject } from '../projectPersistence/saveProject/saveProject';
 
 import type { ProjectStoreState } from '../../stores/projectStore';
+
+const { emit } = vi.hoisted(() => ({
+    emit: vi.fn(),
+}));
 
 const mocks = vi.hoisted(() => ({
     projectStoreValue: {
@@ -110,6 +117,8 @@ vi.mock('../projectPersistence/fileIO/buildProjectData', () => ({
 
 describe('Project Persistence Use Cases', () => {
     beforeEach(() => {
+        injectDependencies(notifyUser, { eventBus: { emit } });
+        emit.mockClear();
         vi.clearAllMocks();
         installFakeIndexedDb();
         mocks.buildProjectData.mockResolvedValue({ data: { version: 1, meta: { name: 'My Song' } } });
@@ -238,10 +247,11 @@ describe('Project Persistence Use Cases', () => {
     describe('saveProject', () => {
         it('persists CRDT and updates store metadata', async () => {
             mocks.projectStoreValue.value = {
+                ...mocks.projectStoreValue.value,
                 name: 'My Song',
                 createdAt: 1700000000000,
                 dirty: true,
-            } as unknown as ProjectStoreState;
+            };
 
             const savePromise = saveProject();
 

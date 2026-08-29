@@ -1,10 +1,50 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
 import { describe, it, expect } from 'vitest';
 
 import { parseStylesheet, selectorDeclaring, selectorDeclaringIn, stylesheetRules } from '../mainStylesheetRules';
 
 const DRAG_RULE = '.desktop-titlebar-region { app-region: drag; }';
+const mainStylesheet = readFileSync(resolve(process.cwd(), 'src/styles/main.css'), 'utf8');
+
+function utilityBody(name: string): string {
+    const utility = new RegExp(`@utility ${name} \\{([^{}]*)\\}`, 'u').exec(mainStylesheet)?.[1];
+    if (utility === undefined) {
+        throw new Error(`main.css has no ${name} utility`);
+    }
+    return utility;
+}
 
 describe('mainStylesheetRules', () => {
+    it('ships warm highlights for floating surfaces', () => {
+        const floatingSurface = utilityBody('daw-floating-surface');
+
+        expect(floatingSurface).toContain('rgba(255, 249, 242, 0.04)');
+        expect(floatingSurface).toContain('rgba(255, 249, 242, 0.12)');
+        expect(floatingSurface).not.toContain('rgba(255, 255, 255');
+    });
+
+    it('ships warm scrollbar highlights in the renderer stylesheet', () => {
+        const declarationsFor = (selector: string) =>
+            stylesheetRules()
+                .filter((rule) => rule.selector === selector)
+                .flatMap((rule) => rule.declarations);
+
+        expect(declarationsFor('*')).toContainEqual({
+            property: 'scrollbar-color',
+            value: 'rgba(255, 249, 242, 0.12) transparent',
+        });
+        expect(declarationsFor('::-webkit-scrollbar-thumb')).toContainEqual({
+            property: 'background',
+            value: 'rgba(255, 249, 242, 0.12)',
+        });
+        expect(declarationsFor('::-webkit-scrollbar-thumb:hover')).toContainEqual({
+            property: 'background',
+            value: 'rgba(255, 249, 242, 0.25)',
+        });
+    });
+
     it('reads the universal selector as itself rather than losing it', () => {
         // `main.css` resets every element twice over — the base layer and the
         // Firefox scrollbar rule. A parser that treats `*` as punctuation drops

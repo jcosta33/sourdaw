@@ -8,6 +8,7 @@ vi.mock('../requestAnthropicProvider', () => ({ requestAnthropicProvider: reques
 
 const runtime = {
     provider: 'anthropic' as const,
+    authentication: 'api-key' as const,
     model: 'claude-test',
     session_id: 'provider-session-00000000000000000000000000000000',
 };

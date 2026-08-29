@@ -20,7 +20,7 @@ export const DawChannelStripShell = ({
         gap={1.5}
         shrink={false}
         className={cn(
-            'rounded-lg border border-border-soft border-t-[var(--color-light-edge)] bg-[linear-gradient(180deg,#0c0c0c_0%,#0a0a0a_100%)] p-2 shadow-[0_1px_2px_rgba(0,0,0,0.4),inset_0_1px_0_rgba(255,255,255,0.03)]',
+            'rounded-lg border border-border-soft border-t-[var(--color-light-edge)] bg-[linear-gradient(180deg,var(--color-bg-well)_0%,var(--surface-base)_100%)] p-2 shadow-[0_1px_2px_rgba(0,0,0,0.4),inset_0_1px_0_rgba(255,249,242,0.03)]',
             selected ? 'border-transparent ring-1 ring-ring' : '',
             className
         )}

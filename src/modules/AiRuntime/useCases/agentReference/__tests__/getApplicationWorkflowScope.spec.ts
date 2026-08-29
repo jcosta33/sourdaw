@@ -67,11 +67,15 @@ const context: ProjectContext = {
 
 const protectedTargetIds = ['protected-explicit', 'protected-workflow'];
 
+/** The ranges the caller derived from the commands this run compiles. */
+const compiledTargetRanges = [{ startBeat: 12, endBeat: 27.5 }];
+
 function scopeFor(workflowCapabilityId: Parameters<typeof getApplicationWorkflowScope>[0]['workflowCapabilityId']) {
     return getApplicationWorkflowScope({
         actions: [],
         context,
         prompt: 'Keep the explicit reference unchanged.',
+        targetRanges: compiledTargetRanges,
         workflowCapabilityId,
     });
 }
@@ -95,7 +99,7 @@ describe('getApplicationWorkflowScope', () => {
         }
     });
 
-    it('derives bass-processing targets and target ranges', () => {
+    it('derives bass-processing targets over the compiled ranges', () => {
         mockGetBassProcessingCopyPromptScope.mockReturnValue({
             status: 'request',
             entries: [
@@ -108,14 +112,14 @@ describe('getApplicationWorkflowScope', () => {
         });
 
         expect(scopeFor('bass-processing-copy')).toEqual({
-            targetIds: ['layer-bass', 'track-bass', 'track-bass-double', 'section-chorus-two'],
-            targetRanges: [{ startBeat: 32, endBeat: 40 }],
+            targetIds: ['layer-bass', 'track-bass', 'track-bass-double'],
+            targetRanges: compiledTargetRanges,
             protectedTargetIds,
             protectedRanges: [],
         });
     });
 
-    it('derives articulation-transfer targets and relative note ranges', () => {
+    it('derives articulation-transfer targets over the compiled ranges', () => {
         mockGetArticulationTransferPromptScope.mockReturnValue({
             status: 'request',
             clipPairs: [
@@ -130,13 +134,13 @@ describe('getApplicationWorkflowScope', () => {
 
         expect(scopeFor('articulation-transfer')).toEqual({
             targetIds: ['track-strings', 'clip-chorus-one', 'clip-chorus-two'],
-            targetRanges: [{ startBeat: 0, endBeat: 3.5 }],
+            targetRanges: compiledTargetRanges,
             protectedTargetIds,
             protectedRanges: [],
         });
     });
 
-    it('derives MIDI-overlap targets and absolute note ranges', () => {
+    it('derives MIDI-overlap targets over the compiled ranges', () => {
         mockGetMidiOverlapTransformPromptScope.mockReturnValue({
             status: 'request',
             entries: [
@@ -150,13 +154,13 @@ describe('getApplicationWorkflowScope', () => {
 
         expect(scopeFor('midi-overlap-shortening')).toEqual({
             targetIds: ['clip-keys', 'track-keys'],
-            targetRanges: [{ startBeat: 8, endBeat: 15.75 }],
+            targetRanges: compiledTargetRanges,
             protectedTargetIds,
             protectedRanges: [],
         });
     });
 
-    it('derives syncopated-arpeggio targets without inventing ranges', () => {
+    it('derives syncopated-arpeggio targets over the compiled ranges', () => {
         mockGetSyncopatedArpeggioPromptScope.mockReturnValue({
             status: 'request',
             trackId: 'track-synth',
@@ -165,13 +169,13 @@ describe('getApplicationWorkflowScope', () => {
 
         expect(scopeFor('syncopated-arpeggio')).toEqual({
             targetIds: ['track-synth', 'clip-synth'],
-            targetRanges: [],
+            targetRanges: compiledTargetRanges,
             protectedTargetIds,
             protectedRanges: [],
         });
     });
 
-    it('derives drum-preview targets and the application section range', () => {
+    it('derives drum-preview targets over the compiled ranges', () => {
         mockGetDrumPreviewBranchesPromptScope.mockReturnValue({
             status: 'request',
             snare: { trackId: 'track-snare', clipId: 'clip-snare' },
@@ -181,7 +185,7 @@ describe('getApplicationWorkflowScope', () => {
 
         expect(scopeFor('drum-preview-branches')).toEqual({
             targetIds: ['track-snare', 'track-hats', 'clip-snare', 'clip-hats'],
-            targetRanges: [{ startBeat: 16, endBeat: 48 }],
+            targetRanges: compiledTargetRanges,
             protectedTargetIds,
             protectedRanges: [],
         });
@@ -196,7 +200,7 @@ describe('getApplicationWorkflowScope', () => {
 
         expect(scopeFor('drum-routing')).toEqual({
             targetIds: ['bus-drums', 'track-kick', 'track-snare', 'track-hats'],
-            targetRanges: [],
+            targetRanges: compiledTargetRanges,
             protectedTargetIds,
             protectedRanges: [],
         });

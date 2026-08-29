@@ -350,6 +350,19 @@ by their immutable bot actor node IDs in `scripts/githubAppIdentity.ts`; mutable
 logins are display only. The two role IDs are never interchangeable. `deliver` does not mint the
 reviewer.
 
+`deliver` serializes each pull request through a per-PR Git ref in the protected primary checkout.
+The ref points to a strict owner blob; acquisition is a zero-ref Git compare-and-swap and release
+requires the acquired object ID. Delivery holds that ownership from before authentication through
+merge or already-merged recovery and tracker completion. Any existing owner is validated and then
+refused without waiting or automatic takeover, regardless of process liveness. A crashed delivery
+leaves its ref in place: recovery requires separate remote reconciliation and fencing before that
+ref is cleared.
+
+Already-merged recovery proceeds only when GitHub's immutable merged-by actor is the author App.
+Same-head delivery receipts retain the issue-comment REST endpoint's ascending comment-ID order;
+that immutable response order decides adjacency and newest authority, while timestamps only prove
+that an App-owned comment remained unedited.
+
 The protected primary checkout is the launcher trust boundary for snapshot-backed GitHub writes.
 Run `lane:publish`, `deliver`, and `issue:reconcile` through its package route. The launcher and the
 command's whole script closure must match one pinned `origin/main` commit and are read only from the
@@ -454,45 +467,38 @@ it clears one, which is why a finding is validated before it is ever posted. Cla
 the thread. File out-of-scope feedback; do not grow the PR. Resolve a conversation only when the
 current head actually addresses it. A new head needs a new review.
 
-Before merge the orchestrator does its own final check on the current head, because a green pipeline
-says the gates passed and nothing more. Read the diff: confirm the change does what it was specified
-to do, that a test observes what its name claims, and that every accepted finding is actually
-addressed there rather than silenced. For the checks themselves a green `Gate` on this head is the
-evidence, not a second local run of the same commands — and reading the pipeline means reading past
-the summary, because a leg the workflow softens reports a caused regression as a warning
-annotation, not a red check, so the pre-merge read covers those annotations too. A failed check is
-never waved off as flake, whether it shows red or only as a warning on a softened leg: an
-unexplained failure is attributed to the change, or to a named pre-existing defect and filed, or it
-blocks. Formatting is the exception worth doing locally, because it rewrites rather than reports:
+Before merge the orchestrator does its own final check on the current head: read the diff, confirm
+the change does what it was specified to do, that a test observes what its name claims, and that
+every accepted finding is actually addressed there rather than silenced. Inspect the pipeline's
+result for that head past the summary, because a softened leg can report a caused regression only as
+a warning annotation. CI is advisory, so its result is diagnostic rather than merge authority, but
+an unexplained failure or warning is still attributed to the change, or to a named pre-existing
+defect and filed, or it blocks. The checks are the pipeline's job, not a second local run of the
+same commands. Formatting is the exception worth doing locally, because it rewrites rather than
+reports:
 run it on the changed files and stage what it rewrote.
 
 Unrelated `origin/main` movement does not by itself stale a review. Re-review when the feature head
 changes in a way that touches the reviewed surface, and when you resolve conflicts. Base
-compatibility is GitHub's ordinary mergeability gate: if the pull request is no longer `CLEAN` or
-its base branch changes, the pipeline runs again on the head that will actually merge.
+compatibility is GitHub's independent structural mergeability gate. Delivery retries one transient
+`UNKNOWN` result and refuses a conflict or a second `UNKNOWN`; CI's aggregate merge-state label does
+not substitute for that structural answer.
 
 An approval alone is weak evidence, so every consequential claim carries discriminating proof — a
 test that fails when the change is reverted, a measurement at the boundary users experience. That
 proof stays in the session; it is not the GitHub review.
 
-`pnpm deliver` squash-merges only after the immutable reviewer actor `APPROVED` the current head,
-the pull request is not a draft, the head is green, and threads are resolved. Green is `CLEAN`, or
-the one narrow `UNSTABLE` shape an approving review leaves behind when its own run cancels the push
-run it supersedes; the script defines that shape, and a green `Gate` is not itself a per-job verdict,
-because `Gate` passes on `skipped`. What gates the merge is read from the jobs `Gate` needs in
-`.github/workflows/health-gates.yml`, never restated in the script, so promoting a job into the gate
-binds this refusal to it and a job outside the gate — a nightly reporter, say — never blocks a
-delivery it was never evidence for. The copy that governs is the one committed at the `origin/main`
-commit the launcher pinned, never a lane's: a lane's copy is the very thing under review, and neither
-a working-tree file nor a local `HEAD` is a pinned input, so one uncommitted edit or one unpulled
-commit would silently reshape the gate for every delivery. Only the launcher can read that copy for
-the gate, so a `deliver` that did not come through it has no gating set at all and refuses outright
-rather than merging with no verdict. Any other merge state refuses, and so does a real failure, an
-unfinished check, a head no `Gate` ever passed on, a check rollup that cannot be read complete, and
-a workflow that cannot be read for what it gates on. It merges into
-`main` and nothing else: `lane:publish` opens every pull request there, so any other base is a
-retarget the delivery scripts did not make, and `deliver` refuses it rather than squashing onto a
-branch the change was never reviewed against. Do not merge any other way.
+`pnpm deliver` squash-merges only after the immutable reviewer actor `APPROVED` the current head at
+both validation points, the pull request is non-draft and structurally mergeable, and every review
+thread is resolved at both points. Head, head branch, base branch, body, canonical closing target,
+and stacked dependents must remain stable between those reads. CI admission is snapshot-backed and
+currently advisory: successful, failed, pending, absent, cancelled, malformed, and unavailable CI
+evidence do not block an otherwise valid delivery. The dormant required-CI path retains the pinned
+workflow-derived gate and complete-rollup rules the trusted launcher reads from the pinned
+`origin/main` workflow copy for a future authority change; a lane cannot select it or reshape it.
+Delivery merges into `main` and nothing else: `lane:publish` opens every pull request there, so any
+other base is a retarget the delivery scripts did not make, and `deliver` refuses it rather than
+squashing onto a branch the change was never reviewed against. Do not merge any other way.
 
 Keep batches small, live lanes few, merges prompt. A diff too large for its reviewers to attack
 whole is too large to merge whole, and splitting it is the author's obligation, not the reviewer's

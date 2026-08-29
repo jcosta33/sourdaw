@@ -89,6 +89,22 @@ describe('RecentProjectsMenu', () => {
         expect(screen.getByLabelText(/Project menu/i)).toBeInTheDocument();
     });
 
+    it('renders as the right segment of the project control', () => {
+        render(<RecentProjectsMenu />);
+
+        const trigger = screen.getByLabelText(/Project menu/i);
+
+        expect(trigger).toHaveClass(
+            'daw-readout-well',
+            'rounded-l-none',
+            'rounded-r-sm',
+            'border-l-[rgba(255,249,242,0.1)]',
+            'hover:brightness-[1.06]'
+        );
+        expect(trigger).toHaveAttribute('data-size', 'icon-sm');
+        expect(trigger).toContainElement(screen.getByTestId('project-menu-chevron'));
+    });
+
     it('should show menu when button is clicked', () => {
         render(<RecentProjectsMenu />);
         const button = screen.getByLabelText(/Project menu/i);

@@ -18,15 +18,26 @@ export const setCloudProviderConfig = inject({ logger })(
         async function setCloudProviderConfig(configuration: HostedLlmConfiguration): Promise<void> {
             let runtime: CloudProviderRuntime;
             if (configuration.provider === 'anthropic') {
+                if (configuration.authentication !== 'api-key') {
+                    throw new Error('Anthropic requires API-key authentication');
+                }
                 if (!isDesktopRuntime()) {
                     throw new Error('Hosted providers are available in desktop builds only');
                 }
                 runtime = {
                     provider: 'anthropic',
                     model: configuration.model,
-                    session_id: await openProviderGatewaySession(ANTHROPIC_PROVIDER_ADAPTER, 'anthropic'),
+                    authentication: configuration.authentication,
+                    session_id: await openProviderGatewaySession(
+                        ANTHROPIC_PROVIDER_ADAPTER,
+                        'anthropic',
+                        configuration.apiKey
+                    ),
                 };
             } else {
+                if (configuration.provider === 'openai' && configuration.authentication !== 'api-key') {
+                    throw new Error('OpenAI requires API-key authentication');
+                }
                 if (!configuration.baseUrl) {
                     throw new Error('OpenAI-compatible provider requires a base URL');
                 }
@@ -44,6 +55,9 @@ export const setCloudProviderConfig = inject({ logger })(
                           origin: parsedBaseUrl.origin,
                       })
                     : null;
+                if (adapter === null && (configuration.authentication !== 'none' || configuration.apiKey !== '')) {
+                    throw new Error('Authenticated OpenAI-compatible providers require HTTPS');
+                }
                 if (adapter !== null && !isDesktopRuntime()) {
                     throw new Error('Hosted providers are available in desktop builds only');
                 }
@@ -51,9 +65,12 @@ export const setCloudProviderConfig = inject({ logger })(
                     provider: configuration.provider,
                     model: configuration.model,
                     base_url: configuration.baseUrl,
+                    authentication: configuration.authentication,
                     adapter,
                     session_id:
-                        adapter === null ? null : await openProviderGatewaySession(adapter, configuration.provider),
+                        adapter === null
+                            ? null
+                            : await openProviderGatewaySession(adapter, configuration.provider, configuration.apiKey),
                 };
             }
 

@@ -22,7 +22,6 @@ import {
     quantiseDeviceParameterValue,
     cleanupUnusedFreezeFiles,
     runtimeGraphTopology,
-    clampTrackGain,
     setTrackGain as setTrackGainArrangement,
     setTrackPan as setTrackPanArrangement,
     setDeviceParameter,
@@ -39,8 +38,6 @@ import { setMixAnalysisDisplayLifecycle } from '#/modules/AudioAnalysis/useCases
 import {
     updateDeviceParam,
     updateDevicePatch,
-    setTrackGain as engineSetTrackGain,
-    setTrackPan as engineSetTrackPan,
     getAudioContext,
     getCompensationDelay,
     commitPitchEdit,
@@ -386,12 +383,9 @@ setModulationDependencies({
 });
 
 setMidiLearnDependencies({
-    clampTrackGain,
     setTrackGainArrangement,
     setTrackPanArrangement,
     setDeviceParameter,
-    engineSetTrackGain,
-    engineSetTrackPan,
     setFermenterMappedParam,
     recordAutomationValue,
     getTransportIsPlaying: () => getTransportState()?.isPlaying ?? false,

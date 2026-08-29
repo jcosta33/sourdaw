@@ -104,32 +104,25 @@ fn validate_adapter(adapter_id: &str, origin: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn load_credential(source: &str) -> Result<String, String> {
-    let (variable, required) = match source {
-        "anthropic" => ("SOURDAW_ANTHROPIC_API_KEY", true),
-        "openai" => ("SOURDAW_OPENAI_API_KEY", true),
-        "openai-compatible" => ("SOURDAW_OPENAI_COMPATIBLE_API_KEY", false),
+fn validate_credential(source: &str, credential: &Zeroizing<String>) -> Result<(), String> {
+    match source {
+        "anthropic" | "openai" | "openai-compatible" => (),
         _ => return Err("Provider gateway credential source is invalid".to_string()),
-    };
-    let credential = match std::env::var(variable) {
-        Ok(value) => value,
-        Err(std::env::VarError::NotPresent) if !required => String::new(),
-        Err(_) => return Err("Provider gateway credential is unavailable".to_string()),
-    };
+    }
     if credential.len() > MAX_API_KEY_BYTES {
         return Err("Provider gateway credential exceeds its size limit".to_string());
     }
-    if required && credential.is_empty() {
-        return Err("Provider gateway credential is unavailable".to_string());
+    if credential.is_empty() {
+        return Err("Provider gateway credential is invalid".to_string());
     }
-    Ok(credential)
+    Ok(())
 }
 
 fn validate_credential_binding(adapter_id: &str, origin: &str, source: &str) -> Result<(), String> {
     let valid = match source {
         "anthropic" => adapter_id == ANTHROPIC_ADAPTER_ID && origin == ANTHROPIC_ORIGIN,
         "openai" => adapter_id == OPENAI_ADAPTER_ID && origin == OPENAI_ORIGIN,
-        "openai-compatible" => adapter_id == OPENAI_ADAPTER_ID,
+        "openai-compatible" => adapter_id == OPENAI_ADAPTER_ID && origin != OPENAI_ORIGIN,
         _ => false,
     };
     if !valid {
@@ -349,23 +342,24 @@ pub async fn open_provider_gateway_session(
     adapter_id: String,
     origin: String,
     credential_source: String,
+    credential: Zeroizing<String>,
     state: &ProviderGatewayState,
 ) -> Result<String, String> {
     validate_adapter(&adapter_id, &origin)?;
     validate_credential_binding(&adapter_id, &origin, &credential_source)?;
-    let api_key = load_credential(&credential_source)?;
-    open_provider_gateway_session_with_credential(adapter_id, origin, api_key, state).await
+    validate_credential(&credential_source, &credential)?;
+    open_provider_gateway_session_with_credential(adapter_id, origin, credential, state).await
 }
 
 async fn open_provider_gateway_session_with_credential(
     adapter_id: String,
     origin: String,
-    api_key: String,
+    api_key: Zeroizing<String>,
     state: &ProviderGatewayState,
 ) -> Result<String, String> {
     validate_adapter(&adapter_id, &origin)?;
     if api_key.len() > MAX_API_KEY_BYTES
-        || (adapter_id == ANTHROPIC_ADAPTER_ID && api_key.is_empty())
+        || ((adapter_id == ANTHROPIC_ADAPTER_ID || origin == OPENAI_ORIGIN) && api_key.is_empty())
     {
         return Err("Provider gateway credential is invalid".to_string());
     }
@@ -379,7 +373,7 @@ async fn open_provider_gateway_session_with_credential(
         ProviderCredentialSession {
             adapter_id,
             origin,
-            api_key: Zeroizing::new(api_key),
+            api_key,
         },
     );
     Ok(session_id)
@@ -563,14 +557,16 @@ pub async fn provider_gateway_request(
 mod tests {
     use super::{
         admit_provider_gateway_request, await_provider_step_or_cancellation,
-        close_provider_gateway_session, open_provider_gateway_session_with_credential,
-        parse_canonical_origin, register_cancellation, request_cancellation,
-        validate_credential_binding, validate_resolved_addresses, ProviderGatewayEvent,
-        ProviderGatewayState, ANTHROPIC_ADAPTER_ID, ANTHROPIC_ORIGIN, CANCELLATION_TOMBSTONE_TTL,
+        close_provider_gateway_session, open_provider_gateway_session,
+        open_provider_gateway_session_with_credential, parse_canonical_origin,
+        register_cancellation, request_cancellation, validate_credential_binding,
+        validate_resolved_addresses, ProviderGatewayEvent, ProviderGatewayState,
+        ANTHROPIC_ADAPTER_ID, ANTHROPIC_ORIGIN, CANCELLATION_TOMBSTONE_TTL, MAX_API_KEY_BYTES,
         MAX_CANCELLATION_ENTRIES, MAX_CREDENTIAL_SESSIONS, OPENAI_ADAPTER_ID, OPENAI_ORIGIN,
     };
     use std::net::SocketAddr;
     use std::time::{Duration, Instant};
+    use zeroize::Zeroizing;
 
     #[test]
     fn provider_gateway_serializes_correlated_stream_events() {
@@ -728,7 +724,7 @@ mod tests {
         let session_id = open_provider_gateway_session_with_credential(
             OPENAI_ADAPTER_ID.to_string(),
             "https://api.example.com".to_string(),
-            "secret".to_string(),
+            Zeroizing::new("secret".to_string()),
             &state,
         )
         .await
@@ -755,7 +751,7 @@ mod tests {
         let session_id = open_provider_gateway_session_with_credential(
             OPENAI_ADAPTER_ID.to_string(),
             OPENAI_ORIGIN.to_string(),
-            "secret".to_string(),
+            Zeroizing::new("secret".to_string()),
             &state,
         )
         .await
@@ -778,7 +774,7 @@ mod tests {
         assert!(open_provider_gateway_session_with_credential(
             ANTHROPIC_ADAPTER_ID.to_string(),
             ANTHROPIC_ORIGIN.to_string(),
-            "secret".to_string(),
+            Zeroizing::new("secret".to_string()),
             &state,
         )
         .await
@@ -786,7 +782,7 @@ mod tests {
         assert!(open_provider_gateway_session_with_credential(
             ANTHROPIC_ADAPTER_ID.to_string(),
             "https://proxy.example.com".to_string(),
-            "secret".to_string(),
+            Zeroizing::new("secret".to_string()),
             &state,
         )
         .await
@@ -794,7 +790,7 @@ mod tests {
         assert!(open_provider_gateway_session_with_credential(
             ANTHROPIC_ADAPTER_ID.to_string(),
             ANTHROPIC_ORIGIN.to_string(),
-            String::new(),
+            Zeroizing::new(String::new()),
             &state,
         )
         .await
@@ -808,7 +804,7 @@ mod tests {
             open_provider_gateway_session_with_credential(
                 OPENAI_ADAPTER_ID.to_string(),
                 OPENAI_ORIGIN.to_string(),
-                "secret".to_string(),
+                Zeroizing::new("secret".to_string()),
                 &state,
             )
             .await
@@ -818,7 +814,7 @@ mod tests {
         assert!(open_provider_gateway_session_with_credential(
             OPENAI_ADAPTER_ID.to_string(),
             OPENAI_ORIGIN.to_string(),
-            "secret".to_string(),
+            Zeroizing::new("secret".to_string()),
             &state,
         )
         .await
@@ -850,5 +846,74 @@ mod tests {
             "openai-compatible"
         )
         .is_err());
+        assert!(
+            validate_credential_binding(OPENAI_ADAPTER_ID, OPENAI_ORIGIN, "openai-compatible")
+                .is_err()
+        );
+    }
+
+    #[tokio::test]
+    async fn session_opening_rejects_blank_credentials_for_every_provider_session() {
+        let state = ProviderGatewayState::default();
+
+        assert!(open_provider_gateway_session(
+            ANTHROPIC_ADAPTER_ID.to_string(),
+            ANTHROPIC_ORIGIN.to_string(),
+            "anthropic".to_string(),
+            Zeroizing::new(String::new()),
+            &state,
+        )
+        .await
+        .is_err());
+        assert!(open_provider_gateway_session(
+            OPENAI_ADAPTER_ID.to_string(),
+            OPENAI_ORIGIN.to_string(),
+            "openai".to_string(),
+            Zeroizing::new(String::new()),
+            &state,
+        )
+        .await
+        .is_err());
+        assert_eq!(
+            open_provider_gateway_session(
+                OPENAI_ADAPTER_ID.to_string(),
+                "https://provider.example".to_string(),
+                "openai-compatible".to_string(),
+                Zeroizing::new(String::new()),
+                &state,
+            )
+            .await
+            .expect_err("public compatible sessions require a credential"),
+            "Provider gateway credential is invalid"
+        );
+    }
+
+    #[tokio::test]
+    async fn session_opening_limits_credential_utf8_bytes() {
+        let state = ProviderGatewayState::default();
+        let exact_limit = Zeroizing::new("é".repeat(MAX_API_KEY_BYTES / 2));
+        assert!(open_provider_gateway_session(
+            OPENAI_ADAPTER_ID.to_string(),
+            OPENAI_ORIGIN.to_string(),
+            "openai".to_string(),
+            exact_limit,
+            &state,
+        )
+        .await
+        .is_ok());
+
+        let oversized = Zeroizing::new("é".repeat((MAX_API_KEY_BYTES / 2) + 1));
+        assert_eq!(
+            open_provider_gateway_session(
+                OPENAI_ADAPTER_ID.to_string(),
+                OPENAI_ORIGIN.to_string(),
+                "openai".to_string(),
+                oversized,
+                &state,
+            )
+            .await
+            .expect_err("credential over the byte limit must be rejected"),
+            "Provider gateway credential exceeds its size limit"
+        );
     }
 }

@@ -431,6 +431,7 @@ describe('verse Hall send automation workflow', () => {
         await cloudSession.clear();
         await cloudSession.replace_runtime({
             provider: 'openai-compatible',
+            authentication: 'none',
             session_id: null,
             model: 'fixture-model',
             base_url: 'http://localhost:1234/v1',
@@ -678,7 +679,13 @@ describe('verse Hall send automation workflow', () => {
         expect(undoStore.value?.past).toEqual([]);
     });
 
-    it('rejects stale confirmation when a collaborator changes one guarded Hall send', async () => {
+    // The edit below changes the exact send level this proposal names, but the
+    // status, reason and receipt asserted here are what *any* project change
+    // after the proposal produces — a collaborator edit elsewhere reaches the
+    // same terminal state through the same code path. This test therefore pins
+    // the project-changed disposition, not target-conflict detection; that the
+    // two are indistinguishable is the production defect filed as #2894.
+    it('leaves no automation or history residue when the project changes before confirmation', async () => {
         await sendChatMessage(PROMPT);
         const confirmation = getPendingActionConfirmation(getConfirmationId());
         trackStore.set({
@@ -694,16 +701,32 @@ describe('verse Hall send automation workflow', () => {
                     : track
             ),
         });
+        flushAutomergeStorageWrites();
 
-        const result = await confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' });
+        expect(await confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' })).toEqual({
+            status: 'invalidated',
+            reason: 'The project changed after this proposal was created. Review and submit the command again.',
+        });
 
-        expect(result.status).toBe('failed');
         expect(getSendLanes()).toEqual([]);
         expect(undoStore.value?.past).toEqual([]);
         expect(trackStore.value?.tracks.find((track) => track.id === 'track-backing-vocal')?.sends[0]?.level).toBe(0.3);
+        expect(getPendingActionConfirmation(confirmation?.id ?? '')).toMatchObject({
+            status: 'invalidated',
+            executedActions: [],
+        });
+        expect(
+            chatStore.value?.messages.find((message) => message.pendingActionConfirmationId === confirmation?.id)
+                ?.content
+        ).toBe(
+            'This proposal was not executed because the project changed after it was created. Review the current project and submit the command again.'
+        );
     });
 
-    it('rejects stale confirmation when a collaborator turns automation off for one vocal', async () => {
+    // The edit below turns off automation for a track this proposal names, but
+    // the status, reason and receipt asserted here are what *any* project
+    // change after the proposal produces — see #2894, as above.
+    it('leaves no automation or history residue when the project changes before confirmation via automation mode', async () => {
         await sendChatMessage(PROMPT);
         const confirmation = getPendingActionConfirmation(getConfirmationId());
         trackStore.set({
@@ -712,16 +735,25 @@ describe('verse Hall send automation workflow', () => {
                 track.id === 'track-backing-vocal' ? { ...track, automationMode: 'off' } : track
             ),
         });
+        flushAutomergeStorageWrites();
 
-        const result = await confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' });
+        expect(await confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' })).toEqual({
+            status: 'invalidated',
+            reason: 'The project changed after this proposal was created. Review and submit the command again.',
+        });
 
-        expect(result.status).toBe('failed');
         expect(getSendLanes()).toEqual([]);
         expect(undoStore.value?.past).toEqual([]);
+        expect(getPendingActionConfirmation(confirmation?.id ?? '')).toMatchObject({
+            status: 'invalidated',
+            executedActions: [],
+        });
         const proposal = chatStore.value?.messages.find(
             (message) => message.pendingActionConfirmationId === confirmation?.id
         );
-        expect(proposal?.content).not.toContain('Outcome: committed');
+        expect(proposal?.content).toBe(
+            'This proposal was not executed because the project changed after it was created. Review the current project and submit the command again.'
+        );
     });
 
     it('aborts the automation write without receipt or undo when its store write fails', async () => {

@@ -71,6 +71,7 @@ type GuardedCommandInput = {
     maxRssBytes?: number;
     timeoutMs?: number;
     outputLimitBytes?: number;
+    showOutput?: boolean;
     availableMemoryBytes?: number;
     memorySampler?: () => number | undefined;
     memoryReserveBytes?: number;
@@ -97,20 +98,28 @@ const hostPressureSampleIntervalMs = 2_000;
 class OutputTail {
     private value = Buffer.alloc(0);
     private totalBytes = 0;
-    private readonly limitBytes: number;
+    private readonly limitBytes: number | undefined;
 
-    public constructor(limitBytes: number) {
+    public constructor(limitBytes?: number) {
+        if (limitBytes !== undefined && !Number.isFinite(limitBytes)) {
+            throw new Error('OutputTail limitBytes must be a finite byte count when provided');
+        }
         this.limitBytes = limitBytes;
     }
 
     public append(chunk: Buffer): void {
         this.totalBytes += chunk.byteLength;
+        if (this.limitBytes === undefined) {
+            this.value = Buffer.concat([this.value, chunk]);
+            return;
+        }
         this.value = Buffer.concat([this.value, chunk]).subarray(-this.limitBytes);
     }
 
     public result(): { output: string; omittedBytes: number } {
+        const text = this.value.toString('utf8');
         return {
-            output: this.value.toString('utf8').trim(),
+            output: this.limitBytes === undefined ? text : text.trim(),
             omittedBytes: Math.max(0, this.totalBytes - this.value.byteLength),
         };
     }
@@ -876,7 +885,10 @@ async function waitForProcessTreeExit(
 export async function runGuardedCommand(input: GuardedCommandInput): Promise<GuardedCommandResult> {
     const profile = profiles[input.profile];
     const timeoutMs = input.timeoutMs ?? profile.timeoutMs;
-    const output = new OutputTail(input.outputLimitBytes ?? defaultOutputLimitBytes);
+    const output =
+        input.showOutput === true
+            ? new OutputTail()
+            : new OutputTail(input.outputLimitBytes ?? defaultOutputLimitBytes);
     const memoryReserveBytes = input.memoryReserveBytes ?? defaultMemoryReserveBytes;
     const readAvailableMemory = input.memorySampler ?? (() => input.availableMemoryBytes ?? availableMemoryBytes());
     const maxRssBytes = input.maxRssBytes ?? profile.maxRssBytes;
@@ -1254,6 +1266,7 @@ async function main(): Promise<number> {
             args: input.args,
             profile: input.profile,
             maxRssBytes: input.maxRssBytes,
+            showOutput: input.showOutput,
         });
         return emitGuardedResult(input.command, result, input.showOutput);
     } catch (error) {

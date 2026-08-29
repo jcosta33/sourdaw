@@ -36,17 +36,16 @@ const SCOPE_OUTPUT_REFERENCES = {
     code: '${{ steps.scope.outputs.code }}',
 };
 const CODE_CONDITION = "needs.decide.outputs.code == 'true'";
-// An approving review cancels the in-flight push run, so a job that gates on
-// the triggering event alone can never complete on the run that reports. Every
-// Gate member reading a pull request keys off the payload instead.
+// An approving review validates the same pull-request head under a different
+// event, but it must wait behind any in-flight push run instead of cancelling
+// it. Every Gate member reading a pull request keys off the payload instead.
 const PULL_REQUEST_PAYLOAD_CONDITION = 'github.event.pull_request != null';
 const SMOKE_CONDITION = `${PULL_REQUEST_PAYLOAD_CONDITION} && needs.decide.outputs.e2e == 'true'`;
 const EVENT_GATED_SMOKE_CONDITION = "github.event_name == 'pull_request' && needs.decide.outputs.e2e == 'true'";
 const SMOKE_COMMAND = 'pnpm test:e2e tests/e2e/smoke.spec.ts --retries=0';
 const PULL_REQUEST_CONCURRENCY_GROUP =
     "health-gates-${{ (github.event_name == 'pull_request' || (github.event_name == 'pull_request_review' && github.event.review.state == 'approved')) && github.event.pull_request.number || github.run_id }}";
-const PULL_REQUEST_CONCURRENCY_CANCELLATION =
-    "${{ github.event_name == 'pull_request' || (github.event_name == 'pull_request_review' && github.event.review.state == 'approved') }}";
+const PULL_REQUEST_CONCURRENCY_CANCELLATION = "${{ github.event_name == 'pull_request' }}";
 const GATE_CONDITION =
     "${{ !cancelled() && (github.event_name != 'pull_request_review' || github.event.review.state == 'approved') }}";
 const DEPENDENCY_REVIEW_ACTION = 'actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294';
@@ -796,7 +795,8 @@ describe('health gates workflow contract', () => {
 
     it('rejects review-triggered cancellation and changing the pull-request grouping key', () => {
         const cancellingReview = asRecord(structuredClone(workflow), 'cancelling review workflow');
-        recordAt(cancellingReview, 'concurrency')['cancel-in-progress'] = "${{ github.event_name != 'schedule' }}";
+        recordAt(cancellingReview, 'concurrency')['cancel-in-progress'] =
+            "${{ github.event_name == 'pull_request' || (github.event_name == 'pull_request_review' && github.event.review.state == 'approved') }}";
         expect(() => assertConcurrencyContract(cancellingReview)).toThrow(
             'only a newer pull-request run may cancel in-progress work'
         );
