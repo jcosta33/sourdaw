@@ -290,6 +290,12 @@ function readPendingEffectContinuation(value: unknown): AgentRunPendingEffectCon
         return null;
     }
     const recoveryPolicy = getPendingEffectRecoveryPolicy(effects);
+    const carriesOnlySectionRenderEffects = effects.every(
+        (effect) => effect.kind === 'external-effect' && effect.operation === 'renderProjectSections'
+    );
+    if (sourceRevision !== undefined && !carriesOnlySectionRenderEffects) {
+        return null;
+    }
     return {
         batchId,
         effects,
@@ -614,7 +620,10 @@ function readSagaStep(value: unknown): AgentRunSagaStep | null {
         value.manualReviewDisposition === 'missing-evidence'
             ? value.manualReviewDisposition
             : undefined;
-    if (value.manualReviewDisposition !== undefined && manualReviewDisposition === undefined) {
+    if (
+        (value.state === 'reviewed' && manualReviewDisposition === undefined) ||
+        (value.state !== 'reviewed' && value.manualReviewDisposition !== undefined)
+    ) {
         return null;
     }
     return {

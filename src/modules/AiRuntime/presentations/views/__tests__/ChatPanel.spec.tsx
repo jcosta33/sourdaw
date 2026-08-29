@@ -2,6 +2,7 @@ import { act, render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { MISSING_EXACT_CHECKPOINT_RECOVERY_REASON } from '../../../models/GetPendingEffectRecoveryPolicy';
+import * as retainedReviewProjection from '../../../useCases/selectRetainedSectionRenderManualReviews';
 import { ChatPanel } from '../ChatPanel';
 
 // Mock external dependencies - factories are hoisted, so define mocks inside
@@ -614,6 +615,93 @@ describe('ChatPanel', () => {
         expect(screen.getByText('Prepared stem import requires manual repair')).toBeInTheDocument();
         expect(screen.getByText('Retained media: buffer-evicted-stems')).toBeInTheDocument();
         expect(screen.getByText(/retained command proof is invalid/i)).toBeInTheDocument();
+    });
+
+    it('renders the focused retained-review surface while preserving generic manual repair guidance', () => {
+        const selectReview = vi.spyOn(retainedReviewProjection, 'selectRetainedSectionRenderManualReviews');
+        selectReview.mockReturnValue([
+            {
+                binding: {
+                    runId: 'run-render-review',
+                    batchId: 'batch-render-review',
+                    receiptIdentity: 'receipt-render-review',
+                    sourceRevision: 'revision-render-review',
+                    commands: [
+                        {
+                            commandId: 'command-render-review',
+                            jobs: [
+                                {
+                                    jobId: 'job-render-review',
+                                    sectionId: 'section-render-review',
+                                    sectionName: 'Chorus',
+                                    startBeat: 16,
+                                    endBeat: 32,
+                                    sampleRate: 48_000,
+                                    tailSeconds: 1,
+                                },
+                            ],
+                        },
+                    ],
+                },
+                jobs: [
+                    {
+                        commandId: 'command-render-review',
+                        job: {
+                            jobId: 'job-render-review',
+                            sectionId: 'section-render-review',
+                            sectionName: 'Chorus',
+                            startBeat: 16,
+                            endBeat: 32,
+                            sampleRate: 48_000,
+                            tailSeconds: 1,
+                        },
+                        availability: 'available',
+                        artifact: { buffer: {} as AudioBuffer, warnings: [] },
+                        warnings: [],
+                    },
+                ],
+            },
+        ] as unknown as ReturnType<typeof retainedReviewProjection.selectRetainedSectionRenderManualReviews>);
+        (useStore as ReturnType<typeof vi.fn>).mockImplementation((store) =>
+            store === agentRunStore
+                ? {
+                      schemaVersion: 1,
+                      runs: [
+                          {
+                              runId: 'run-generic-repair',
+                              revisions: { created: null, planned: null, approved: null, committed: null },
+                              pendingEffectContinuations: [
+                                  {
+                                      batchId: 'batch-generic-repair',
+                                      effects: [
+                                          {
+                                              commandId: 'command-publish',
+                                              kind: 'external-effect',
+                                              operation: 'publishRender',
+                                              reason: 'Publication evidence must be inspected manually.',
+                                              remediation: 'manual-repair',
+                                              state: 'pending',
+                                          },
+                                      ],
+                                      recovery: 'manual-repair',
+                                      lastError: null,
+                                  },
+                              ],
+                          },
+                      ],
+                  }
+                : chatState
+        );
+
+        render(<ChatPanel />);
+
+        expect(screen.getByText('Retained section render requires review')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Play Chorus' })).toBeInTheDocument();
+        expect(screen.getByRole('list', { name: 'Pending effects for batch batch-generic-repair' })).toHaveTextContent(
+            'publishRender: Publication evidence must be inspected manually.'
+        );
+        expect(screen.getByText('Manual repair required')).toBeInTheDocument();
+        selectReview.mockRestore();
     });
 
     it('should have correct accessibility attributes', () => {

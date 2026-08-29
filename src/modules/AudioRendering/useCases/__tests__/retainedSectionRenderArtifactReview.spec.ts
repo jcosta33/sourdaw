@@ -1,7 +1,8 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { type RenderProjectSectionJobSnapshot } from '#/utils/handlerContract';
 
+import { AGENT_SECTION_RENDER_RETENTION_POLICY } from '../../models/AgentSectionRenderRetentionPolicy';
 import { agentSectionRenderArtifactStore } from '../../stores/agentSectionRenderArtifactStore';
 import { disposeExactAgentSectionRenderArtifact } from '../disposeExactAgentSectionRenderArtifact';
 import { exportExactAgentSectionRenderArtifactAsWav } from '../exportExactAgentSectionRenderArtifactAsWav';
@@ -9,9 +10,14 @@ import { getExactAgentSectionRenderArtifact } from '../getExactAgentSectionRende
 
 const encode = vi.hoisted(() => vi.fn());
 const download = vi.hoisted(() => vi.fn());
+const nativeRuntime = vi.hoisted(() => vi.fn());
+const selectNativeFile = vi.hoisted(() => vi.fn());
+const writeNativeFile = vi.hoisted(() => vi.fn());
 vi.mock('../audioBufferToWav', () => ({ audioBufferToWav: encode }));
-vi.mock('#/modules/Project/useCases', () => ({ isNativeProjectRuntimeAvailable: () => false }));
+vi.mock('#/modules/Project/useCases', () => ({ isNativeProjectRuntimeAvailable: nativeRuntime }));
 vi.mock('../../repositories/audioExport/downloadAudioWav', () => ({ downloadAudioWav: download }));
+vi.mock('../audioExport/selectNativeAudioExportFile', () => ({ selectNativeAudioExportFile: selectNativeFile }));
+vi.mock('../audioExport/writeNativeAudioMixdownFile', () => ({ writeNativeAudioMixdownFile: writeNativeFile }));
 
 const job: RenderProjectSectionJobSnapshot = {
     jobId: 'job-1',
@@ -42,6 +48,12 @@ describe('retained section render review artifacts', () => {
         vi.clearAllMocks();
     });
 
+    beforeEach(() => {
+        nativeRuntime.mockReturnValue(false);
+        selectNativeFile.mockResolvedValue('/exports/Verse.wav');
+        writeNativeFile.mockResolvedValue(undefined);
+    });
+
     it('looks up, exports, and disposes only the exact revision-bound job', async () => {
         agentSectionRenderArtifactStore.set({ artifacts: [artifact] });
         encode.mockResolvedValue(new ArrayBuffer(4));
@@ -66,5 +78,57 @@ describe('retained section render review artifacts', () => {
             disposeExactAgentSectionRenderArtifact({ job: { ...job, jobId: 'other' }, sourceRevision: 'revision-1' })
         ).toBe(false);
         expect(agentSectionRenderArtifactStore.value?.artifacts).toEqual([artifact]);
+    });
+
+    it('fails closed for duplicate, expired, and evicted exact artifact evidence', () => {
+        agentSectionRenderArtifactStore.set({ artifacts: [artifact, { ...artifact }] });
+        expect(getExactAgentSectionRenderArtifact({ job, sourceRevision: 'revision-1' })).toBeNull();
+        expect(disposeExactAgentSectionRenderArtifact({ job, sourceRevision: 'revision-1' })).toBe(false);
+        expect(agentSectionRenderArtifactStore.value?.artifacts).toHaveLength(2);
+
+        agentSectionRenderArtifactStore.set({
+            artifacts: [
+                {
+                    ...artifact,
+                    renderedAt: Date.now() - AGENT_SECTION_RENDER_RETENTION_POLICY.maxAgeMs - 1,
+                },
+            ],
+        });
+        expect(getExactAgentSectionRenderArtifact({ job, sourceRevision: 'revision-1' })).toBeNull();
+
+        agentSectionRenderArtifactStore.set({ artifacts: [] });
+        expect(getExactAgentSectionRenderArtifact({ job, sourceRevision: 'revision-1' })).toBeNull();
+    });
+
+    it('uses the native select-and-write route without triggering a browser download', async () => {
+        agentSectionRenderArtifactStore.set({ artifacts: [artifact] });
+        encode.mockResolvedValue(new Uint8Array([1, 2, 3]).buffer);
+        nativeRuntime.mockReturnValue(true);
+
+        await expect(exportExactAgentSectionRenderArtifactAsWav({ job, sourceRevision: 'revision-1' })).resolves.toBe(
+            true
+        );
+
+        expect(selectNativeFile).toHaveBeenCalledWith({ formats: ['wav'], suggestedName: 'Verse.wav' });
+        expect(writeNativeFile).toHaveBeenCalledWith({
+            bytes: new Uint8Array([1, 2, 3]),
+            format: 'wav',
+            selectedFilePath: '/exports/Verse.wav',
+        });
+        expect(download).not.toHaveBeenCalled();
+    });
+
+    it('does not write when the native export picker is cancelled', async () => {
+        agentSectionRenderArtifactStore.set({ artifacts: [artifact] });
+        encode.mockResolvedValue(new ArrayBuffer(4));
+        nativeRuntime.mockReturnValue(true);
+        selectNativeFile.mockResolvedValue(null);
+
+        await expect(exportExactAgentSectionRenderArtifactAsWav({ job, sourceRevision: 'revision-1' })).resolves.toBe(
+            false
+        );
+
+        expect(writeNativeFile).not.toHaveBeenCalled();
+        expect(download).not.toHaveBeenCalled();
     });
 });

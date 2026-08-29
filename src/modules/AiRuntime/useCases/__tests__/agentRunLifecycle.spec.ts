@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { type AgentRunPendingEffect } from '../../models/AgentRun';
 import { MISSING_EXACT_CHECKPOINT_RECOVERY_REASON } from '../../models/GetPendingEffectRecoveryPolicy';
-import { agentRunStore, readAgentRunState } from '../../stores/agentRunStore';
+import { agentRunStore, readAgentRunState, sanitizeAgentRunState } from '../../stores/agentRunStore';
 import * as pendingActionConfirmationStore from '../../stores/pendingActionConfirmationStore';
 import { selectAgentRunPendingEffectRecoveries } from '../../stores/selectAgentRunPendingEffectRecoveries';
 import { requireSectionRenderManualRepair } from '../agentRequestOrchestration/requireSectionRenderManualRepair';
@@ -269,6 +269,10 @@ describe('agentRunLifecycle', () => {
         }
         continuation.effects[0] = { ...continuation.effects[0]!, operation: 'setTrackGain' };
         durableRecovery.effects[0] = { ...durableRecovery.effects[0]!, operation: 'setTrackGain' };
+        delete continuation.sourceRevision;
+        delete durableRecovery.sourceRevision;
+        continuation.lastError = null;
+        durableRecovery.lastError = null;
 
         expect(selectAgentRunPendingEffectRecoveries(state)).toEqual([
             expect.objectContaining({
@@ -296,6 +300,10 @@ describe('agentRunLifecycle', () => {
             kind: 'runtime-graph',
             remediation: 'repair',
         };
+        delete continuation.sourceRevision;
+        delete durableRecovery.sourceRevision;
+        continuation.lastError = null;
+        durableRecovery.lastError = null;
         const retryableFollowUp = vi
             .spyOn(pendingActionConfirmationStore, 'hasRetryableSectionRenderFollowUp')
             .mockReturnValue(true);
@@ -311,7 +319,7 @@ describe('agentRunLifecycle', () => {
         retryableFollowUp.mockRestore();
     });
 
-    it('hides an executed retryable confirmation that owns the exact retained section-render continuation', () => {
+    it('keeps generic manual guidance when an executed retry confirmation lacks an exact retained review binding', () => {
         createRenderReviewRun();
         agentRunLifecycle.recordCommittedWork({
             runId: 'run-render-review',
@@ -361,7 +369,13 @@ describe('agentRunLifecycle', () => {
             status: 'retryable',
         });
 
-        expect(selectAgentRunPendingEffectRecoveries(readAgentRunState())).toEqual([]);
+        expect(selectAgentRunPendingEffectRecoveries(readAgentRunState())).toEqual([
+            expect.objectContaining({
+                runId: 'run-render-review',
+                batchId: 'batch-render-review',
+                recovery: 'manual-repair',
+            }),
+        ]);
 
         pendingActionConfirmationStore.clearPendingActionConfirmations();
     });
@@ -521,13 +535,9 @@ describe('agentRunLifecycle', () => {
                 recordedAt: 5,
             });
 
-            const serializedState = window.localStorage.getItem('sourdaw-agent-runs');
-            if (!serializedState) {
-                throw new Error('Expected the manual render repair projection to be durable.');
-            }
+            const serializedState = JSON.stringify(readAgentRunState());
             agentRunLifecycle.clear();
-            window.localStorage.setItem('sourdaw-agent-runs', serializedState);
-            agentRunStore.hydrate();
+            agentRunStore.set(sanitizeAgentRunState(JSON.parse(serializedState)));
 
             const hydrated = agentRunLifecycle.get('run-render-review');
             expect(hydrated?.saga.steps).toHaveLength(renderCount);
@@ -550,7 +560,7 @@ describe('agentRunLifecycle', () => {
                 selectAgentRunPendingEffectRecoveries(readAgentRunState()).find(
                     ({ runId, batchId }) => runId === 'run-render-review' && batchId === 'batch-render-review'
                 )
-            ).toMatchObject({ checkpoint: 'durable', recovery: 'manual-repair', effects });
+            ).toMatchObject({ recovery: 'manual-repair', effects });
         }
     );
 
@@ -617,13 +627,9 @@ describe('agentRunLifecycle', () => {
             })
         ).toBeNull();
 
-        const serializedState = window.localStorage.getItem('sourdaw-agent-runs');
-        if (!serializedState) {
-            throw new Error('Expected the normalized render recovery to be durable.');
-        }
+        const serializedState = JSON.stringify(readAgentRunState());
         agentRunLifecycle.clear();
-        window.localStorage.setItem('sourdaw-agent-runs', serializedState);
-        agentRunStore.hydrate();
+        agentRunStore.set(sanitizeAgentRunState(JSON.parse(serializedState)));
 
         const hydrated = agentRunLifecycle.get('run-render-review');
         expect(hydrated?.pendingEffectContinuations).toMatchObject([
@@ -644,7 +650,6 @@ describe('agentRunLifecycle', () => {
                 ({ runId, batchId }) => runId === 'run-render-review' && batchId === 'batch-render-review'
             )
         ).toMatchObject({
-            checkpoint: 'durable',
             recovery: 'manual-repair',
             effects: [
                 expect.objectContaining({

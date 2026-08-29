@@ -179,6 +179,23 @@ function isPendingEffectRecovery(
     return recovery.runId === input.runId && recovery.batchId === input.batchId;
 }
 
+function hasSamePendingEffectManualReviewBinding(
+    continuation: AgentRunPendingEffectContinuation,
+    recovery: AgentRunPendingEffectRecovery
+): boolean {
+    return (
+        recovery.checkpoint === 'durable' &&
+        recovery.batchId === continuation.batchId &&
+        recovery.receiptIdentity === continuation.receiptIdentity &&
+        recovery.serializedBatch === continuation.serializedBatch &&
+        recovery.recovery === continuation.recovery &&
+        recovery.lastError === continuation.lastError &&
+        recovery.sourceRevision === continuation.sourceRevision &&
+        JSON.stringify(recovery.authority) === JSON.stringify(continuation.authority) &&
+        JSON.stringify(recovery.effects) === JSON.stringify(continuation.effects)
+    );
+}
+
 function createLegacyAgentRunPlan(input: {
     summary: string;
     commandIds: string[];
@@ -960,7 +977,7 @@ function recordAgentRunPendingEffectContinuation(input: {
     const continuation = {
         ...clonedContinuation,
         ...(clonedContinuation.sourceRevision === undefined &&
-        clonedContinuation.effects.some(
+        clonedContinuation.effects.every(
             (effect) => effect.kind === 'external-effect' && effect.operation === 'renderProjectSections'
         ) &&
         committedRevision
@@ -1129,7 +1146,11 @@ function requireAgentRunPendingEffectManualRepair(input: {
                       effects: requireManualRepairEffects(candidate.effects),
                       recovery: 'manual-repair',
                       lastError: input.reason,
-                      ...(candidate.sourceRevision === undefined && run.revisions.committed
+                      ...(candidate.sourceRevision === undefined &&
+                      run.revisions.committed &&
+                      requireManualRepairEffects(candidate.effects).every(
+                          (effect) => effect.kind === 'external-effect' && effect.operation === 'renderProjectSections'
+                      )
                           ? { sourceRevision: run.revisions.committed }
                           : {}),
                   }
@@ -1146,7 +1167,11 @@ function requireAgentRunPendingEffectManualRepair(input: {
                       effects: requireManualRepairEffects(candidate.effects),
                       recovery: 'manual-repair',
                       lastError: input.reason,
-                      ...(candidate.sourceRevision === undefined && run.revisions.committed
+                      ...(candidate.sourceRevision === undefined &&
+                      run.revisions.committed &&
+                      requireManualRepairEffects(candidate.effects).every(
+                          (effect) => effect.kind === 'external-effect' && effect.operation === 'renderProjectSections'
+                      )
                           ? { sourceRevision: run.revisions.committed }
                           : {}),
                   }
@@ -1269,6 +1294,7 @@ function settleAgentRunPendingEffectManualReview(input: {
     runId: string;
     batchId: string;
     receiptIdentity: string;
+    sourceRevision: string;
     disposition: 'accepted' | 'discarded' | 'missing-evidence';
     settledAt?: number;
 }): AgentRun {
@@ -1286,9 +1312,17 @@ function settleAgentRunPendingEffectManualReview(input: {
     if (
         !continuation ||
         !recovery ||
+        !hasSamePendingEffectManualReviewBinding(continuation, recovery) ||
         continuation.receiptIdentity !== input.receiptIdentity ||
         recovery.receiptIdentity !== input.receiptIdentity ||
-        continuation.recovery !== 'manual-repair'
+        continuation.recovery !== 'manual-repair' ||
+        continuation.sourceRevision !== input.sourceRevision ||
+        continuation.effects.some(
+            (effect) =>
+                effect.kind !== 'external-effect' ||
+                effect.operation !== 'renderProjectSections' ||
+                effect.remediation !== 'manual-repair'
+        )
     ) {
         throw new Error('The exact manual-review obligation is stale or unavailable.');
     }
@@ -1325,7 +1359,16 @@ function settleAgentRunPendingEffectManualReview(input: {
     const pendingEffectRecoveryLedger = getPendingEffectRecoveryLedger(state).filter(
         (candidate) => !isPendingEffectRecovery(candidate, input)
     );
-    persistAgentRunState(withPendingEffectRecoveryLedger({ ...state, runs }, pendingEffectRecoveryLedger));
+    try {
+        persistAgentRunState(withPendingEffectRecoveryLedger({ ...state, runs }, pendingEffectRecoveryLedger));
+    } catch (error) {
+        try {
+            persistAgentRunState(state);
+        } catch {
+            // The original durable state remains authoritative even when restoring the live cache also cannot persist.
+        }
+        throw error;
+    }
     return structuredClone(runs[runIndex]);
 }
 

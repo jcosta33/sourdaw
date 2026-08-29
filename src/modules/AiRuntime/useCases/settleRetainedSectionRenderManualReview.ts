@@ -1,82 +1,81 @@
 import { disposeExactAgentSectionRenderArtifact } from '#/modules/AudioRendering/useCases';
 
 import { readAgentRunState } from '../stores/agentRunStore';
-import { selectRetainedSectionRenderManualReviews } from '../stores/selectRetainedSectionRenderManualReviews';
 
 import { agentRunLifecycle } from './agentRunLifecycle';
+import { selectRetainedSectionRenderManualReviews } from './selectRetainedSectionRenderManualReviews';
 
-type ReviewBinding = {
-    runId: string;
-    batchId: string;
-    receiptIdentity: string;
-    commandId: string;
-    job: {
-        jobId: string;
-        sectionId: string;
-        sectionName: string;
-        startBeat: number;
-        endBeat: number;
-        sampleRate: number;
-        tailSeconds: number;
-    };
-    sourceRevision: string;
-};
+type Review = ReturnType<typeof selectRetainedSectionRenderManualReviews>[number];
+type ReviewBinding = Review['binding'];
 
-export function settleRetainedSectionRenderManualReview(
-    input: ReviewBinding & { disposition: 'accepted' | 'discarded' | 'missing-evidence' }
-): void {
-    const reviews = selectRetainedSectionRenderManualReviews(readAgentRunState());
-    const current = reviews.filter(
-        (review) =>
-            review.runId === input.runId &&
-            review.batchId === input.batchId &&
-            review.receiptIdentity === input.receiptIdentity &&
-            review.commandId === input.commandId &&
-            review.sourceRevision === input.sourceRevision &&
-            review.job.jobId === input.job.jobId &&
-            review.job.sectionId === input.job.sectionId &&
-            review.job.sectionName === input.job.sectionName &&
-            review.job.startBeat === input.job.startBeat &&
-            review.job.endBeat === input.job.endBeat &&
-            review.job.sampleRate === input.job.sampleRate &&
-            review.job.tailSeconds === input.job.tailSeconds
+function hasSameJob(left: ReviewBinding['commands'][number]['jobs'][number], right: typeof left): boolean {
+    return (
+        left.jobId === right.jobId &&
+        left.sectionId === right.sectionId &&
+        left.sectionName === right.sectionName &&
+        left.startBeat === right.startBeat &&
+        left.endBeat === right.endBeat &&
+        left.sampleRate === right.sampleRate &&
+        left.tailSeconds === right.tailSeconds
     );
-    if (current.length !== 1) {
+}
+
+function hasSameBinding(left: ReviewBinding, right: ReviewBinding): boolean {
+    return (
+        left.runId === right.runId &&
+        left.batchId === right.batchId &&
+        left.receiptIdentity === right.receiptIdentity &&
+        left.sourceRevision === right.sourceRevision &&
+        left.commands.length === right.commands.length &&
+        left.commands.every((command, commandIndex) => {
+            const candidate = right.commands[commandIndex];
+            return (
+                candidate !== undefined &&
+                command.commandId === candidate.commandId &&
+                command.jobs.length === candidate.jobs.length &&
+                command.jobs.every((job, jobIndex) => {
+                    const candidateJob = candidate.jobs[jobIndex];
+                    return candidateJob !== undefined && hasSameJob(job, candidateJob);
+                })
+            );
+        })
+    );
+}
+
+export function settleRetainedSectionRenderManualReview(input: {
+    binding: ReviewBinding;
+    disposition: 'accepted' | 'discarded' | 'missing-evidence';
+}): void {
+    const reviews = selectRetainedSectionRenderManualReviews(readAgentRunState());
+    const matchingReviews = reviews.filter((review) => hasSameBinding(review.binding, input.binding));
+    if (matchingReviews.length !== 1) {
         throw new Error('The exact retained render review is stale, ambiguous, or unavailable.');
     }
-    const aggregate = reviews.filter(
-        (candidate) =>
-            candidate.runId === input.runId &&
-            candidate.batchId === input.batchId &&
-            candidate.receiptIdentity === input.receiptIdentity &&
-            candidate.sourceRevision === input.sourceRevision
-    );
-    if (aggregate.length === 0) {
-        throw new Error('The retained render review aggregate is stale.');
-    }
+    const current = matchingReviews[0]!;
     if (input.disposition === 'missing-evidence') {
-        if (!aggregate.some((candidate) => candidate.availability === 'unavailable')) {
+        if (!current.jobs.some((candidate) => candidate.availability === 'unavailable')) {
             throw new Error(
                 'Missing evidence cannot be acknowledged while the exact retained render remains available.'
             );
         }
     } else {
-        if (aggregate.some((candidate) => candidate.availability !== 'available')) {
+        if (current.jobs.some((candidate) => candidate.availability !== 'available')) {
             throw new Error('The exact retained render is no longer available.');
         }
     }
     agentRunLifecycle.settlePendingEffectManualReview({
-        runId: input.runId,
-        batchId: input.batchId,
-        receiptIdentity: input.receiptIdentity,
+        runId: input.binding.runId,
+        batchId: input.binding.batchId,
+        receiptIdentity: input.binding.receiptIdentity,
+        sourceRevision: input.binding.sourceRevision,
         disposition: input.disposition,
     });
     if (input.disposition === 'discarded') {
-        const undisposed = aggregate.filter(
+        const undisposed = current.jobs.filter(
             (candidate) =>
                 !disposeExactAgentSectionRenderArtifact({
                     job: candidate.job,
-                    sourceRevision: candidate.sourceRevision,
+                    sourceRevision: input.binding.sourceRevision,
                 })
         );
         if (undisposed.length > 0) {

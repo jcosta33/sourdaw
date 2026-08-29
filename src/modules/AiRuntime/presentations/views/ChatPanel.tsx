@@ -1,19 +1,6 @@
 import { type ReactElement, type CSSProperties, useState, useRef, useEffect, useId, type KeyboardEvent } from 'react';
 
-import {
-    X,
-    Trash2,
-    Bot,
-    User,
-    ChevronRight,
-    ChevronDown,
-    Zap,
-    Check,
-    RotateCw,
-    Play,
-    Square,
-    Download,
-} from 'lucide-react';
+import { X, Trash2, Bot, User, ChevronRight, ChevronDown, Zap, Check, RotateCw } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
@@ -21,12 +8,6 @@ import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { useStore } from '#/infra/store/useStore';
-import {
-    cacheAudioBuffer,
-    playCachedAudioBufferPreview,
-    releasePreviewAudioBuffer,
-} from '#/modules/AudioEngine/useCases';
-import { exportExactAgentSectionRenderArtifactAsWav } from '#/modules/AudioRendering/useCases';
 import { capabilityStore } from '#/modules/BrowserAi/stores';
 import { cn } from '#/utils/Styles/cn';
 
@@ -36,20 +17,18 @@ import { agentRunStore } from '../../stores/agentRunStore';
 import { chatStore, clearChatMessages, toggleReasoning, setChatMode, stopGenerating } from '../../stores/chatStore';
 import { selectAgentRunPendingEffectRecoveries } from '../../stores/selectAgentRunPendingEffectRecoveries';
 import { selectPreparedStemImportManualRepairs } from '../../stores/selectPreparedStemImportManualRepairs';
-import {
-    selectRetainedSectionRenderManualReviews,
-    type RetainedSectionRenderManualReviewProjection,
-} from '../../stores/selectRetainedSectionRenderManualReviews';
 import { toggleChat } from '../../useCases/aiPanelActions/toggleChat';
 import { cancelPendingChatActions } from '../../useCases/cancelPendingChatActions';
 import { confirmPendingChatActions } from '../../useCases/confirmPendingChatActions';
 import { agentRunControls } from '../../useCases/getAgentRunControlProjection';
 import { isLlmAvailable } from '../../useCases/llmOrchestration/backendResolution/isLlmAvailable';
 import { recoverAgentRunPendingEffects } from '../../useCases/recoverAgentRunPendingEffects';
+import { selectRetainedSectionRenderManualReviews } from '../../useCases/selectRetainedSectionRenderManualReviews';
 import { sendChatMessage } from '../../useCases/sendChatMessage';
-import { settleRetainedSectionRenderManualReview } from '../../useCases/settleRetainedSectionRenderManualReview';
 import { AgentRunDecisionControls } from '../components/AgentRunDecisionControls';
 import { ChatComposer } from '../components/ChatComposer';
+
+import { RetainedSectionRenderManualReview } from './RetainedSectionRenderManualReview';
 
 /**
  * Strict allow-list of markdown-derived HTML elements rendered from streamed,
@@ -274,176 +253,6 @@ type ChatPanelProps = {
     style?: CSSProperties;
 };
 
-type PreviewPlayback = NonNullable<ReturnType<typeof playCachedAudioBufferPreview>>;
-
-const RetainedSectionRenderManualReviewCard = ({
-    reviews,
-    onStatus,
-}: {
-    reviews: readonly RetainedSectionRenderManualReviewProjection[];
-    onStatus: (message: string) => void;
-}): ReactElement => {
-    const review = reviews[0]!;
-    const hasUnavailableEvidence = reviews.some((candidate) => candidate.availability === 'unavailable');
-    const playbackRef = useRef<PreviewPlayback | null>(null);
-    const bufferIdRef = useRef<string | null>(null);
-    const [isPlaying, setIsPlaying] = useState(false);
-    const [isWorking, setIsWorking] = useState(false);
-    const releasePreview = (): void => {
-        playbackRef.current?.stop();
-        playbackRef.current = null;
-        if (bufferIdRef.current) {
-            releasePreviewAudioBuffer(bufferIdRef.current);
-            bufferIdRef.current = null;
-        }
-        setIsPlaying(false);
-    };
-    const previewBuffer = review.availability === 'available' ? review.artifact.buffer : null;
-    useEffect(() => releasePreview, [previewBuffer]);
-    const binding = {
-        runId: review.runId,
-        batchId: review.batchId,
-        receiptIdentity: review.receiptIdentity,
-        commandId: review.commandId,
-        job: review.job,
-        sourceRevision: review.sourceRevision,
-    };
-    const play = (): void => {
-        if (isPlaying) {
-            releasePreview();
-            return;
-        }
-        if (review.availability !== 'available') {
-            return;
-        }
-        if (!bufferIdRef.current) {
-            bufferIdRef.current = cacheAudioBuffer({ buffer: review.artifact.buffer });
-        }
-        let playback: PreviewPlayback | null = null;
-        playback = playCachedAudioBufferPreview({
-            bufferId: bufferIdRef.current,
-            onEnded: () => {
-                if (playbackRef.current === playback) {
-                    playbackRef.current = null;
-                    setIsPlaying(false);
-                }
-            },
-        });
-        if (!playback) {
-            onStatus('Preview audio is unavailable.');
-            return;
-        }
-        playbackRef.current = playback;
-        setIsPlaying(true);
-    };
-    const exportWav = async (): Promise<void> => {
-        try {
-            setIsWorking(true);
-            const exported = await exportExactAgentSectionRenderArtifactAsWav({
-                job: review.job,
-                sourceRevision: review.sourceRevision,
-            });
-            onStatus(exported ? 'Exported the exact retained WAV.' : 'WAV export was cancelled.');
-        } catch (error) {
-            onStatus(error instanceof Error ? error.message : String(error));
-        } finally {
-            setIsWorking(false);
-        }
-    };
-    const settle = (disposition: 'accepted' | 'discarded' | 'missing-evidence'): void => {
-        try {
-            setIsWorking(true);
-            releasePreview();
-            settleRetainedSectionRenderManualReview({ ...binding, disposition });
-            onStatus(
-                disposition === 'missing-evidence'
-                    ? 'Acknowledged unavailable render evidence.'
-                    : `Render review ${disposition}.`
-            );
-        } catch (error) {
-            onStatus(error instanceof Error ? error.message : String(error));
-        } finally {
-            setIsWorking(false);
-        }
-    };
-    return (
-        <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 text-xs">
-            <p className="font-medium text-foreground">Retained section render requires review</p>
-            <p className="mt-1 text-muted-foreground">
-                {review.job.sectionName}: beats {review.job.startBeat}–{review.job.endBeat}, {review.job.sampleRate} Hz.
-            </p>
-            <p className="mt-1 text-muted-foreground">
-                Receipt {review.receiptIdentity}; command {review.commandId}.
-            </p>
-            <ul className="mt-1 text-muted-foreground" aria-label="Receipt-bound retained render jobs">
-                {reviews.map((candidate) => (
-                    <li key={`${candidate.commandId}:${candidate.job.jobId}`}>
-                        {candidate.job.sectionName} ({candidate.commandId}):{' '}
-                        {candidate.availability === 'available'
-                            ? candidate.warnings.join('; ') || 'available'
-                            : `unavailable — ${candidate.reason}`}
-                    </li>
-                ))}
-            </ul>
-            {hasUnavailableEvidence ? (
-                <>
-                    <p className="mt-2 text-destructive">Evidence unavailable: {review.reason}</p>
-                    <Button
-                        size="xs"
-                        variant="secondary"
-                        className="mt-2 h-7 text-[11px]"
-                        disabled={isWorking}
-                        onClick={() => settle('missing-evidence')}
-                    >
-                        Acknowledge unavailable evidence
-                    </Button>
-                </>
-            ) : (
-                <Row gap={2} className="mt-2">
-                    <Button
-                        size="xs"
-                        variant="secondary"
-                        className="h-7 gap-1 text-[11px]"
-                        aria-pressed={isPlaying}
-                        onClick={play}
-                    >
-                        {isPlaying ? <Square className="size-3" /> : <Play className="size-3" />}
-                        {isPlaying ? 'Stop' : 'Play'}
-                    </Button>
-                    <Button
-                        size="xs"
-                        variant="secondary"
-                        className="h-7 gap-1 text-[11px]"
-                        disabled={isWorking}
-                        onClick={() => void exportWav()}
-                    >
-                        <Download className="size-3" />
-                        Export WAV
-                    </Button>
-                    <Button
-                        size="xs"
-                        variant="ghost"
-                        className="h-7 text-[11px]"
-                        disabled={isWorking}
-                        onClick={() => settle('accepted')}
-                    >
-                        Accept
-                    </Button>
-                    <Button
-                        size="xs"
-                        variant="ghost"
-                        className="h-7 text-[11px]"
-                        disabled={isWorking}
-                        onClick={() => settle('discarded')}
-                    >
-                        Discard
-                    </Button>
-                </Row>
-            )}
-        </div>
-    );
-};
-
 export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
     // Backend availability reads the subscribed BrowserAi runtime state.
     'use no memo';
@@ -575,7 +384,9 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
                                 effect.kind === 'external-effect' && effect.operation === 'renderProjectSections'
                         ) &&
                         retainedSectionRenderManualReviews.some(
-                            (review) => review.runId === continuation.runId && review.batchId === continuation.batchId
+                            (review) =>
+                                review.binding.runId === continuation.runId &&
+                                review.binding.batchId === continuation.batchId
                         );
                     if (renderOnlyManualReview) {
                         return null;
@@ -643,12 +454,10 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
                         </div>
                     );
                 })}
-                {Object.values(
-                    Object.groupBy(retainedSectionRenderManualReviews, (review) => `${review.runId}:${review.batchId}`)
-                ).map((reviews) => (
-                    <RetainedSectionRenderManualReviewCard
-                        key={`${reviews![0]!.runId}:${reviews![0]!.batchId}`}
-                        reviews={reviews!}
+                {retainedSectionRenderManualReviews.map((review) => (
+                    <RetainedSectionRenderManualReview
+                        key={`${review.binding.runId}:${review.binding.batchId}`}
+                        review={review}
                         onStatus={setDecisionStatusMessage}
                     />
                 ))}
