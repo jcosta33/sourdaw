@@ -683,6 +683,70 @@ describe('pull-request delivery', () => {
         expect(calls).toContain('complete:2372');
     });
 
+    it('recovers an UNKNOWN initial refresh that becomes a merged author-App head', () => {
+        const closes = relationshipBody('Closes #2372');
+        const child = stacked();
+        const seededReceipt: DeliveryReceiptComment = {
+            id: 'IC_seeded_x',
+            body: deliveryReceiptBody(42, 'head', closes, 2372),
+            authorNodeId: AUTHOR_BOT_NODE_ID,
+            authorLogin: 'renamed-author[bot]',
+            authorType: 'Bot',
+            createdAt: '2026-08-21T00:00:00.000Z',
+            updatedAt: '2026-08-21T00:00:00.000Z',
+        };
+        const { port, calls, tracker, receipts } = fakePort({
+            primary: [
+                pullRequest({ mergeable: 'UNKNOWN', body: closes }),
+                pullRequest({
+                    state: 'MERGED',
+                    mergeable: 'UNKNOWN',
+                    body: closes,
+                    mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
+                }),
+            ],
+            dependentSets: [[child]],
+            receipts: [seededReceipt],
+        });
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls.filter((call) => call === 'review:42:head')).toHaveLength(0);
+        expect(calls.filter((call) => call === 'receipts:42')).toHaveLength(1);
+        expect(calls).not.toContain('merge:42:head');
+        expect(calls).toContain('retarget:43:main');
+        expect(calls).toContain('complete:2372');
+        expect(calls).toContain('PR #42 was already merged; repaired 1 remaining dependent(s)');
+        expect(receipts.map((receipt) => receipt.body)).toEqual([deliveryReceiptBody(42, 'head', closes, 2372)]);
+    });
+
+    it('recovers a final UNKNOWN refresh that becomes a merged author-App head without re-reviewing', () => {
+        const closes = relationshipBody('Closes #2372');
+        const child = stacked();
+        const { port, calls, tracker } = fakePort({
+            primary: [
+                pullRequest({ body: closes }),
+                pullRequest({ mergeable: 'UNKNOWN', body: closes }),
+                pullRequest({
+                    state: 'MERGED',
+                    mergeable: 'UNKNOWN',
+                    body: closes,
+                    mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
+                }),
+            ],
+            dependentSets: [[child], [child]],
+        });
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls.filter((call) => call === 'review:42:head')).toHaveLength(1);
+        expect(calls.filter((call) => call === 'receipts:42')).toHaveLength(3);
+        expect(calls).not.toContain('merge:42:head');
+        expect(calls).toContain('retarget:43:main');
+        expect(calls).toContain('complete:2372');
+        expect(calls).toContain('PR #42 became merged during delivery; repaired 1 dependent(s)');
+    });
+
     it.each([
         { merger: 'automatic', actorNodeId: 'MDQ6QXBwOTk5OTk5' },
         { merger: 'unknown', actorNodeId: null },

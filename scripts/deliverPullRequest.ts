@@ -193,13 +193,24 @@ function resolveStructuralMergeability(
     port: Pick<DeliveryPort, 'pullRequest'>
 ): PullRequestSnapshot {
     let pullRequest = initial;
+    if (pullRequest.state === 'MERGED') {
+        return pullRequest;
+    }
     for (
         let refreshes = 0;
-        pullRequest.mergeable === 'UNKNOWN' && refreshes < STRUCTURAL_MERGEABILITY_REFRESH_LIMIT;
+        pullRequest.state !== 'MERGED' &&
+        pullRequest.mergeable === 'UNKNOWN' &&
+        refreshes < STRUCTURAL_MERGEABILITY_REFRESH_LIMIT;
         refreshes += 1
     ) {
         pullRequest = port.pullRequest(initial.number);
         validateStablePullRequest(initial, pullRequest);
+        if (pullRequest.state === 'MERGED') {
+            return pullRequest;
+        }
+    }
+    if (pullRequest.state === 'MERGED') {
+        return pullRequest;
     }
     validateStructuralMergeability(pullRequest);
     return pullRequest;
@@ -698,14 +709,6 @@ function validateAuthorAppMerger(pullRequest: PullRequestSnapshot): void {
     }
 }
 
-function resolveFinalPullRequestSnapshot(number: number, port: Pick<DeliveryPort, 'pullRequest'>): PullRequestSnapshot {
-    const finalSnapshot = port.pullRequest(number);
-    if (finalSnapshot.state === 'MERGED') {
-        return finalSnapshot;
-    }
-    return resolveStructuralMergeability(finalSnapshot, port);
-}
-
 function deliverPullRequestWithCiAdmission(
     number: number,
     port: DeliveryPort,
@@ -713,18 +716,17 @@ function deliverPullRequestWithCiAdmission(
     ciAdmissionMode: CiAdmissionMode
 ): void {
     port.fetch();
-    const initialRead = port.pullRequest(number);
-    if (initialRead.state === 'MERGED') {
-        validateBaseBranch(initialRead);
-        validateAuthorAppMerger(initialRead);
-        const receipt = readDeliveryReceipt(initialRead, port);
-        const remaining = port.dependents(initialRead.headRefName).filter((candidate) => candidate.number !== number);
-        retargetDependents(remaining, initialRead.baseRefName, port);
+    const initial = resolveStructuralMergeability(port.pullRequest(number), port);
+    if (initial.state === 'MERGED') {
+        validateBaseBranch(initial);
+        validateAuthorAppMerger(initial);
+        const receipt = readDeliveryReceipt(initial, port);
+        const remaining = port.dependents(initial.headRefName).filter((candidate) => candidate.number !== number);
+        retargetDependents(remaining, initial.baseRefName, port);
         completeIssueAfterMerge(number, receipt.closingIssue, tracker);
         port.log(`PR #${number} was already merged; repaired ${remaining.length} remaining dependent(s)`);
         return;
     }
-    const initial = resolveStructuralMergeability(initialRead, port);
     validateBaseBranch(initial);
     const initialTrackerTarget = trackerCompletionTarget(initial);
     validatePullRequest(initial, port, ciAdmissionMode);
@@ -739,7 +741,7 @@ function deliverPullRequestWithCiAdmission(
     const receipt = ensureDeliveryReceipt(initial, initialTrackerTarget, port);
 
     port.fetch();
-    const finalSnapshot = resolveFinalPullRequestSnapshot(number, port);
+    const finalSnapshot = resolveStructuralMergeability(port.pullRequest(number), port);
     if (finalSnapshot.state === 'MERGED') {
         validateAuthorAppMerger(finalSnapshot);
     }
