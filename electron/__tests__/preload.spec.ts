@@ -26,7 +26,7 @@ describe('preload display zoom wiring', () => {
     });
 
     it('routes the published display capability to webFrame.setZoomFactor', async () => {
-        await import('../preload');
+        await import('../preload.js');
 
         expect(mocks.exposeInMainWorld).toHaveBeenCalledWith('sourdaw', mocks.bridge);
         expect(mocks.createSourdawBridge).toHaveBeenCalledWith(
