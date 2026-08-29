@@ -64,9 +64,21 @@ export const handleRenderProjectSections = createHandler<'renderProjectSections'
             return { status: 'conflict' };
         }
         let sourceRevision: string | null = null;
+        let renderFlight: Promise<void> | null = null;
         const render = () => {
             sourceRevision ??= captureProjectRevision();
-            return renderAgentProjectSections({ jobs, sourceRevision, signal: context?.signal });
+            renderFlight ??= renderAgentProjectSections({
+                jobs,
+                sourceRevision,
+                signal: context?.signal,
+                onRenderAttempt: (job) =>
+                    context?.onDeferredEffectAttempt?.({
+                        kind: 'work-attempt',
+                        operation: action.type,
+                        workId: job.jobId,
+                    }),
+            });
+            return renderFlight;
         };
         return { status: 'written', afterCommit: render, afterAmbiguousCommit: render };
     },

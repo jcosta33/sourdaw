@@ -22,6 +22,10 @@ describe('agent run work leases', () => {
             createdRevision: 'heads-a',
             createdAt: 100,
         });
+        // `created` has no edge to `executing`: production records a plan first,
+        // so the tests below start from the phase a run actually holds when it
+        // claims command or render work.
+        agentRunLifecycle.transitionPhase({ runId: 'run-lease', phase: 'planning', transitionedAt: 101 });
     });
 
     it('binds immutable work authority and allows one exact terminal consume', () => {

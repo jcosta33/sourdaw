@@ -27,6 +27,7 @@ import { getAutomationHandlers } from '#/modules/Automation/useCases';
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
+    commandProjectRevisionPort,
     commandTrackDefaultsPort,
     configureCommandBatchIdempotency,
     executeAppAction,
@@ -55,6 +56,7 @@ import {
     clearPendingActionConfirmations,
     getPendingActionConfirmation,
 } from '../../stores/pendingActionConfirmationStore';
+import { agentRunLifecycle } from '../agentRunLifecycle';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { getPlannedActionAffectedIds } from '../getPlannedActionAffectedIds';
 import { sendChatMessage as sendChatMessageUseCase } from '../sendChatMessage';
@@ -817,6 +819,14 @@ function createTestAudioBuffer(sampleRate = 44_100): AudioBuffer {
     };
 }
 
+function createRetentionSizedTestAudioBuffer(frameCount: number): AudioBuffer {
+    return {
+        ...createTestAudioBuffer(),
+        duration: frameCount / 44_100,
+        length: frameCount,
+    };
+}
+
 function getExpectedPlateTailSeconds(): number {
     const descriptor = getPluginById('dutch-oven');
     if (!descriptor?.tail) {
@@ -890,6 +900,7 @@ describe('backing-vocal plate workflow', () => {
         // The durable batch receipt the render retry proof binds to is only
         // persisted when the idempotency checkpoint is configured.
         configureCommandBatchIdempotency({ canExecute: () => true });
+        commandProjectRevisionPort.setProvider(captureProjectRevision);
         await cloudSession.clear();
         await cloudSession.replace_runtime({
             provider: 'openai-compatible',
@@ -987,6 +998,7 @@ describe('backing-vocal plate workflow', () => {
         automationStore.set({ lanes: [] });
         transportStore.set({ ...defaultTransportState });
         configureAutomergeStoragePort(null);
+        commandProjectRevisionPort.setProvider(null);
         await cloudSession.clear();
         removeCrdtDoc('root');
         localStorage.removeItem('sourdaw:command-batch-idempotency:v1');
@@ -1444,6 +1456,67 @@ describe('backing-vocal plate workflow', () => {
         expect(getAgentSectionRenderArtifacts()).toEqual([]);
         expect(undoStore.value?.past).toEqual([]);
         expect(undoStore.value?.future).toHaveLength(11);
+    });
+
+    it('requires manual repair without evicting a completed artifact when the approved retry set exceeds retention', async () => {
+        await sendChatMessage(PROMPT);
+        const confirmation = getPendingActionConfirmation(getConfirmationId());
+        if (!confirmation) {
+            throw new Error('Expected EX-01 confirmation');
+        }
+        const renderAction = confirmation.actions.find((action) => action.type === 'renderProjectSections');
+        if (renderAction?.type !== 'renderProjectSections' || !renderAction.payload.jobs) {
+            throw new Error('Expected materialized render jobs');
+        }
+        const [completedJob, missingJob] = renderAction.payload.jobs;
+        if (!completedJob || !missingJob) {
+            throw new Error('Expected two materialized render jobs');
+        }
+        const frameCount = Math.floor((512 * 1024 * 1024 * 3) / (4 * 2 * Float32Array.BYTES_PER_ELEMENT));
+        runtimeMocks.renderOffline.mockImplementation((options: { startBeat?: number }) => {
+            if (options.startBeat === missingJob.startBeat) {
+                return Promise.reject(new Error('chorus two renderer unavailable'));
+            }
+            return Promise.resolve(createRetentionSizedTestAudioBuffer(frameCount));
+        });
+
+        await expect(confirmPendingChatActions({ confirmationId: confirmation.id })).resolves.toMatchObject({
+            status: 'failed',
+            durableCommit: true,
+        });
+        expect(getAgentSectionRenderArtifacts().map((artifact) => artifact.jobId)).toEqual([completedJob.jobId]);
+        expect(agentRunLifecycle.get(confirmation.runId)?.pendingEffectContinuations).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({ batchId: confirmation.groupId, recovery: 'reconcile-batch' }),
+            ])
+        );
+
+        runtimeMocks.renderOffline.mockResolvedValue(createRetentionSizedTestAudioBuffer(frameCount));
+        const retry = await confirmPendingChatActions({ confirmationId: confirmation.id });
+
+        expect(retry).toMatchObject({
+            status: 'failed',
+            reason: expect.stringContaining('retention capacity'),
+        });
+        expect(getAgentSectionRenderArtifacts().map((artifact) => artifact.jobId)).toEqual([completedJob.jobId]);
+        expect(getPendingActionConfirmation(confirmation.id)).toMatchObject({
+            status: 'executed',
+            followUpStatus: 'failed',
+        });
+        expect(agentRunLifecycle.get(confirmation.runId)?.pendingEffectContinuations).toEqual(
+            expect.arrayContaining([expect.objectContaining({ recovery: 'manual-repair' })])
+        );
+        const receipt = chatStore.value?.messages.find(
+            (message) => message.pendingActionConfirmationId === confirmation.id
+        );
+        expect(receipt?.content).toContain('project commands were not replayed');
+        expect(receipt?.content).toContain('require manual repair');
+
+        const renderCallsBeforeBlockedRetry = runtimeMocks.renderOffline.mock.calls.length;
+        await expect(confirmPendingChatActions({ confirmationId: confirmation.id })).resolves.toMatchObject({
+            status: 'not_pending',
+        });
+        expect(runtimeMocks.renderOffline).toHaveBeenCalledTimes(renderCallsBeforeBlockedRetry);
     });
 
     it('keeps the whole undo and redo group retryable across collaborator lane and freeze conflicts', async () => {

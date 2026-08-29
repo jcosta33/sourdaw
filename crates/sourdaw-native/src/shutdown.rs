@@ -148,7 +148,9 @@ pub fn shutdown(
 /// shell's force-exit instead. The window is as wide as whatever remains of an
 /// in-flight `load_plugin` — the tens to hundreds of milliseconds a plugin takes
 /// to instantiate and activate — not an instant, and its cost is that one plugin
-/// missing the teardown this pass exists to give it. #2977 tracks closing it.
+/// missing the teardown this pass exists to give it. The shell closes plugin
+/// IPC admission before calling this cascade (#2977); anything already past
+/// that gate when quit began is the only residual window.
 ///
 /// It also takes no store the shell's UI thread would have to wait for. The
 /// close pass ahead of it already refuses a busy store rather than parking, and

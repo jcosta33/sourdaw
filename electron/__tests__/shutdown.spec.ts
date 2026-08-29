@@ -11,11 +11,22 @@
  * The residue is recorded in the pull request rather than hidden behind these
  * assertions.
  */
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
 import { describe, expect, it, vi } from 'vitest';
 
-import { createQuitHandler, runShutdownWithDeadline, SHUTDOWN_DEADLINE_MS, type ShutdownOutcome } from '../shutdown.js';
+import {
+    createQuitHandler,
+    runBeforeQuitCascade,
+    runShutdownWithDeadline,
+    SHUTDOWN_DEADLINE_MS,
+    type ShutdownOutcome,
+} from '../shutdown.js';
 
 import type { Timers } from '../timers.js';
+
+const mainSource = readFileSync(resolve('electron/main.ts'), 'utf8');
 
 /** A clock that only moves when the test says so. */
 const manualTimers = (): { timers: Timers; fire: () => void; armed: () => number } => {
@@ -103,6 +114,38 @@ describe('the exit cascade under its deadline', () => {
 
     it('gives the cascade five seconds', () => {
         expect(SHUTDOWN_DEADLINE_MS).toBe(5_000);
+    });
+});
+
+describe('plugin command admission before the cascade', () => {
+    it('refuses plugin IPC before native shutdown is invoked', async () => {
+        // Pins the live before-quit body (`runBeforeQuitCascade`), not a
+        // test-local stand-in: dropping refuse or calling it after shutdown
+        // must fail this check.
+        const order: string[] = [];
+        const { timers } = manualTimers();
+
+        await runBeforeQuitCascade({
+            refusePluginCommands: () => {
+                order.push('refuse');
+            },
+            host: {
+                shutdown: () => {
+                    order.push('shutdown');
+                },
+            },
+            timers,
+        });
+
+        expect(order).toEqual(['refuse', 'shutdown']);
+    });
+
+    it('wires before-quit through runBeforeQuitCascade', () => {
+        // Leaving `shutdown.ts` intact while deleting the main wiring must fail.
+        // A no-op refuse callback must fail too — quit would still admit load_plugin.
+        expect(mainSource).toMatch(
+            /'before-quit',\s*createQuitHandler\(\s*\(\)\s*:\s*Promise<ShutdownOutcome>\s*=>\s*runBeforeQuitCascade\(\{[\s\S]*?refusePluginCommands:\s*\(\)\s*=>\s*pluginCommandAdmission\.refusePluginCommands\(\)/u
+        );
     });
 });
 

@@ -8,6 +8,7 @@ import {
     failMixAnalysis,
     initializeVoiceInputAvailability,
     recoverInterruptedAgentRuns,
+    recoverRetainedSectionRenderEffects,
     setVoiceToggleEventBus,
 } from '#/modules/AiRuntime/useCases';
 import { persistDeviceParam, resolveEligibleDeviceWriteTarget } from '#/modules/Arrangement/stores';
@@ -225,9 +226,11 @@ configureCollaborationAssetOwner({
 configureDurableAssetCommitProof({
     getDisposition: getVersionedCommandBatchCommitDisposition,
 });
-void recoverInterruptedAgentRuns().catch((error: unknown) => {
-    logger.error(new Error('Interrupted AI runs could not be recovered during startup', { cause: error }));
-});
+void recoverInterruptedAgentRuns()
+    .then(() => recoverRetainedSectionRenderEffects())
+    .catch((error: unknown) => {
+        logger.error(new Error('Interrupted AI runs could not be recovered during startup', { cause: error }));
+    });
 const createOfflineYeastProcessor = () =>
     createOfflineYeastMidiProcessor({
         resolveMusicalPosition: createMusicalPositionProjector(),

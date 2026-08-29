@@ -63,7 +63,10 @@ function createInput(): Parameters<typeof persistPromptActionConfirmation>[0] {
             expectedEffect: 'Set Kick gain to 0.8.',
             normalizedProjectRevision: 'revision-confirmation',
             objectReferences: [{ argument: 'trackId', id: 'track-kick', scope: 'stable' }],
-            parameterUnits: [{ argument: 'gain', unit: 'linear' }],
+            parameterUnits: [
+                { argument: 'gain', unit: 'linear-gain' },
+                { argument: 'expectedGain', unit: 'linear-gain' },
+            ],
             reason: 'Apply the confirmed Kick gain.',
             time: [],
         }),

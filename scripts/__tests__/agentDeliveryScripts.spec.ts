@@ -117,10 +117,19 @@ type WorkflowRecord = Record<string, unknown>;
 
 const AUTHORIZED_APPROVAL_CONDITION =
     "github.event_name != 'pull_request_review' || github.event.review.state == 'approved'";
-const REVIEW_ISOLATED_CONCURRENCY_GROUP = 'health-gates-${{ github.event.pull_request.number || github.ref }}';
-const AUTHORIZED_CANCELLATION_CONDITION = "${{ github.event_name == 'pull_request' }}";
+// Only a pull-request push and an approving review validate a head, so only
+// those two share the PR-number group and may cancel each other. Every other
+// event is isolated on its own run id and replaces nothing.
+const VALIDATING_EVENT_CONDITION =
+    "github.event_name == 'pull_request' || (github.event_name == 'pull_request_review' && github.event.review.state == 'approved')";
+const REVIEW_ISOLATED_CONCURRENCY_GROUP = `health-gates-\${{ (${VALIDATING_EVENT_CONDITION}) && github.event.pull_request.number || github.run_id }}`;
+const AUTHORIZED_CANCELLATION_CONDITION = `\${{ ${VALIDATING_EVENT_CONDITION} }}`;
 const GATE_SUMMARY_NAME = 'Gate';
-const AUTHORIZED_GATE_CONDITION = 'always()';
+// `!cancelled()` rather than `always()`: the summary must still evaluate failed
+// and skipped dependencies on a live run, while the approval predicate keeps a
+// deliberately skipped review run from reporting a green Gate over dependencies
+// that were all skipped with it.
+const AUTHORIZED_GATE_CONDITION = `\${{ !cancelled() && (${AUTHORIZED_APPROVAL_CONDITION}) }}`;
 const CODEQL_CONDITION = "needs.decide.outputs.heavy == 'true'";
 
 function asWorkflowRecord(value: unknown, label: string): WorkflowRecord {

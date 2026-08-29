@@ -1,4 +1,4 @@
-import { createAutomationLane, type AutomationLane } from '../../models/Automation';
+import { buildDuplicatedLane } from '../../services/buildDuplicatedLane';
 import { automationStore } from '../../stores/automationStore';
 
 type DuplicateClipAutomationBatchInput = {
@@ -18,29 +18,18 @@ export function duplicateClipAutomationBatch({ copies }: DuplicateClipAutomation
     const newLanes = copies.flatMap(({ sourceClipId, targetClipId, targetTrackId }) =>
         state.lanes
             .filter((lane) => lane.clipId === sourceClipId)
-            .map((lane) => ({
-                ...createAutomationLane(
-                    targetTrackId,
-                    lane.parameterId,
-                    lane.parameterName,
-                    lane.minValue,
-                    lane.maxValue,
-                    targetClipId
-                ),
-                points: lane.points.map((point) => ({
-                    ...point,
-                    cp1: point.cp1 ? { ...point.cp1 } : undefined,
-                    cp2: point.cp2 ? { ...point.cp2 } : undefined,
-                })),
-                visible: lane.visible,
-            }))
+            .map((lane) => buildDuplicatedLane(lane, targetTrackId, targetClipId))
     );
 
     if (newLanes.length === 0) {
         return () => undefined;
     }
 
-    const committedLanes = new Set<AutomationLane>(newLanes);
+    // The rollback matches lanes by id, not object identity: a CRDT hydrate
+    // reseats every store object onto a fresh instance (same ids, new
+    // references), so an identity-keyed filter would silently no-op after a
+    // reseat and leave the rolled-back batch in the project.
+    const committedLaneIds = new Set(newLanes.map((lane) => lane.id));
     let rollbackConsumed = false;
     function rollback(): void {
         if (rollbackConsumed) {
@@ -51,7 +40,7 @@ export function duplicateClipAutomationBatch({ copies }: DuplicateClipAutomation
             rollbackConsumed = true;
             return;
         }
-        const lanes = current.lanes.filter((lane) => !committedLanes.has(lane));
+        const lanes = current.lanes.filter((lane) => !committedLaneIds.has(lane.id));
         if (lanes.length !== current.lanes.length) {
             automationStore.set({ ...current, lanes });
         }

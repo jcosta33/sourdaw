@@ -38,12 +38,13 @@ import { EXPOSED_COMMANDS } from './commands.js';
 import { createCommandStream, createEventForwarder } from './events.js';
 import { loadNativeAddon, NATIVE_ADDON_PATH_ENV, resolveNativeAddonPath, type NativeHost } from './native.js';
 import { forwardNativeEvent } from './nativeEventRouter.js';
+import { createPluginCommandAdmission } from './pluginCommandAdmission.js';
 import { registerPluginWindowHost, type EditorWindowOptions, type EditorWindow } from './pluginGui.js';
 import { APP_ENTRY_URL, APP_ORIGIN, handleAppProtocol, registerAppScheme, resolveContentRoots } from './protocol.js';
 import { registerCommandRouter } from './router.js';
 import { createScanSupervisor, type ScanSupervisor } from './scan.js';
 import { applyPermissionPolicy, decideWindowOpen, isNavigationAllowed, trustedFrameGuard } from './security.js';
-import { createQuitHandler, runShutdownWithDeadline, type ShutdownOutcome } from './shutdown.js';
+import { createQuitHandler, runBeforeQuitCascade, type ShutdownOutcome } from './shutdown.js';
 import { systemTimers } from './timers.js';
 import { registerVoiceDictation } from './voiceDictation.js';
 import { getWindowChromeOptions } from './windowChrome.js';
@@ -289,6 +290,7 @@ const rendererTarget = (): BrowserWindow['webContents'] | undefined =>
 
 let nativeHost: NativeHost | undefined;
 let scanSupervisor: ScanSupervisor | undefined;
+const pluginCommandAdmission = createPluginCommandAdmission();
 
 /**
  * The plugin-scan supervisor, over a real `utilityProcess`.
@@ -392,6 +394,7 @@ const startNativeSurface = (): void => {
         native: () => nativeHost,
         isTrustedFrameUrl: isAllowedFrameUrl,
         createStream: (streamId) => createCommandStream({ streamId, target: rendererTarget, channel: STREAM_CHANNEL }),
+        acceptsCommand: pluginCommandAdmission.acceptsCommand,
         // Every exposed command except the one whose backend is another
         // process. Its channel is registered by `registerScanCommand`, so the
         // renderer-visible surface is identical either way.
@@ -401,7 +404,12 @@ const startNativeSurface = (): void => {
     registerVoiceDictation({ ipcMain, native: () => nativeHost, isTrustedFrameUrl: isAllowedFrameUrl });
 
     scanSupervisor = createUtilityScanSupervisor(addonPath);
-    registerScanCommand({ ipcMain, isTrustedFrameUrl: isAllowedFrameUrl, supervisor: scanSupervisor });
+    registerScanCommand({
+        ipcMain,
+        isTrustedFrameUrl: isAllowedFrameUrl,
+        supervisor: scanSupervisor,
+        acceptsCommand: pluginCommandAdmission.acceptsCommand,
+    });
 
     if (nativeHost !== undefined) {
         registerPluginWindowHost(nativeHost, {
@@ -462,19 +470,16 @@ void app.whenReady().then(() => {
 app.on(
     'before-quit',
     createQuitHandler(
-        async (): Promise<ShutdownOutcome> => {
-            // The scan worker first. It holds its own addon instance and its
-            // own tree of per-plugin child processes, and it is the one part of
-            // the shell that a hostile plugin can already have wedged — waiting
-            // on the host's cascade with a scan still running would spend the
-            // deadline on a process that only needs killing.
-            scanSupervisor?.dispose();
-            const host = nativeHost;
-            if (host === undefined) {
-                return { status: 'completed', report: undefined };
-            }
-            return runShutdownWithDeadline({ shutdown: () => host.shutdown(), timers: systemTimers });
-        },
+        (): Promise<ShutdownOutcome> =>
+            runBeforeQuitCascade({
+                refusePluginCommands: () => pluginCommandAdmission.refusePluginCommands(),
+                // The scan worker holds its own addon instance and its own tree
+                // of per-plugin child processes; a hostile plugin can already
+                // have wedged it, so dispose before waiting on the host cascade.
+                disposeScanSupervisor: () => scanSupervisor?.dispose(),
+                host: nativeHost,
+                timers: systemTimers,
+            }),
         {
             exit: (code) => app.exit(code),
             report: (outcome) => {

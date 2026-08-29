@@ -51,12 +51,21 @@ export type RegisterScanCommandInput = {
     readonly ipcMain: IpcMainLike;
     readonly isTrustedFrameUrl: TrustGuard;
     readonly supervisor: ScanSupervisor;
+    readonly acceptsCommand?: (command: string) => boolean;
 };
 
-export const registerScanCommand = ({ ipcMain, isTrustedFrameUrl, supervisor }: RegisterScanCommandInput): void => {
+export const registerScanCommand = ({
+    ipcMain,
+    isTrustedFrameUrl,
+    supervisor,
+    acceptsCommand,
+}: RegisterScanCommandInput): void => {
     ipcMain.handle(
         commandChannel(SCAN_COMMAND),
         withTrustedSender(SCAN_COMMAND, isTrustedFrameUrl, async (args) => {
+            if (acceptsCommand !== undefined && !acceptsCommand(SCAN_COMMAND)) {
+                throw new Error(`${SCAN_COMMAND} rejected: the application is shutting down`);
+            }
             const [paths, retryQuarantined] = asPositionalArguments(args);
             if (!isStringList(paths)) {
                 throw new TypeError('scan_plugins expects a list of paths');
