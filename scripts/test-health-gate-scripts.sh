@@ -326,9 +326,8 @@ expect(
     'only pull_request and approved reviews may share a PR-number concurrency group'
 );
 expect(
-    concurrency?.['cancel-in-progress'] ===
-        "${{ github.event_name == 'pull_request' || (github.event_name == 'pull_request_review' && github.event.review.state == 'approved') }}",
-    'concurrency cancellation must include pull_request and approved reviews without including other review states, schedule, or workflow_dispatch'
+    concurrency?.['cancel-in-progress'] === "${{ github.event_name == 'pull_request' }}",
+    'only newer pull_request runs may cancel in-progress work; approved reviews must wait without cancelling'
 );
 expect(
     decide?.if === "github.event_name != 'pull_request_review' || github.event.review.state == 'approved'",
