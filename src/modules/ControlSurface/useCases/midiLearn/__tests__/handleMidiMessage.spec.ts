@@ -56,12 +56,9 @@ const baseMapping: MidiMapping = {
 
 describe('handleMidiMessage', () => {
     const deps = {
-        clampTrackGain: vi.fn((gain: number) => gain),
         setTrackGainArrangement: vi.fn(),
         setTrackPanArrangement: vi.fn(),
         setDeviceParameter: vi.fn(),
-        engineSetTrackGain: vi.fn(),
-        engineSetTrackPan: vi.fn(),
         setFermenterMappedParam: vi.fn(),
         recordAutomationValue: vi.fn(),
         getTransportIsPlaying: vi.fn(() => false),
@@ -71,7 +68,6 @@ describe('handleMidiMessage', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
-        deps.clampTrackGain.mockImplementation((gain: number) => gain);
         deps.getTransportIsPlaying.mockReturnValue(false);
         deps.getTransportPlayheadPosition.mockReturnValue(0);
         deps.getAllTracks.mockReturnValue([]);
@@ -98,21 +94,24 @@ describe('handleMidiMessage', () => {
         expect(deps.setTrackGainArrangement).not.toHaveBeenCalled();
     });
 
-    it('scales and writes trackGain to both arrangement and engine', () => {
+    it('scales a trackGain mapping and hands it to the Arrangement setter once', () => {
+        // The Arrangement setter is the single owning write: it clamps, writes
+        // the engine, persists project truth and records the ride. There is no
+        // engine dependency in this surface to double it with — the
+        // composition is pinned by
+        // handleMidiMessageSingleEngineWrite.integration.spec.ts (#2772).
         handleMidiMessage(0, 7, 127);
 
+        expect(deps.setTrackGainArrangement).toHaveBeenCalledTimes(1);
         expect(deps.setTrackGainArrangement).toHaveBeenCalledWith('track1', 1);
-        expect(deps.engineSetTrackGain).toHaveBeenCalledWith('track1', 1);
     });
 
-    it('sends the store and the engine the same resolved gain when the mapping overruns the fader ceiling', () => {
-        // The engine-side call lands second and does not clamp on its own, so
-        // the raw scaled value used to overwrite the clamped one the store-side
-        // call had just installed: the audio node ran above the ceiling the
-        // project had just recorded, and the two disagreed until something else
-        // rewrote the node. Both calls now take one resolved value, so they
-        // cannot disagree.
-        deps.clampTrackGain.mockImplementation((gain: number) => Math.min(gain, 1));
+    it('hands the Arrangement setter the scaled value untouched when the mapping overruns the fader ceiling', () => {
+        // Clamping to the fader law belongs to the writer, not the messenger:
+        // `setTrackGain` resolves the request once on its way to both the
+        // engine and the project, so pre-clamping here would only ever
+        // disagree with it. A mapping that rides past the ceiling travels as
+        // the scaled value and lands clamped.
         midiLearnStore.set({
             mappingsSchemaVersion: 1,
             mappings: [{ ...baseMapping, maxValue: 2 }],
@@ -122,12 +121,11 @@ describe('handleMidiMessage', () => {
 
         handleMidiMessage(0, 7, 127);
 
-        expect(deps.setTrackGainArrangement).toHaveBeenCalledWith('track1', 1);
-        expect(deps.engineSetTrackGain).toHaveBeenCalledWith('track1', 1);
-        expect(deps.engineSetTrackGain).not.toHaveBeenCalledWith('track1', 2);
+        expect(deps.setTrackGainArrangement).toHaveBeenCalledTimes(1);
+        expect(deps.setTrackGainArrangement).toHaveBeenCalledWith('track1', 2);
     });
 
-    it('scales and writes trackPan to both arrangement and engine', () => {
+    it('scales a trackPan mapping and hands it to the Arrangement setter once', () => {
         midiLearnStore.set({
             mappingsSchemaVersion: 1,
             mappings: [{ ...baseMapping, targetType: 'trackPan', minValue: -50, maxValue: 50 }],
@@ -137,8 +135,8 @@ describe('handleMidiMessage', () => {
 
         handleMidiMessage(0, 7, 0);
 
+        expect(deps.setTrackPanArrangement).toHaveBeenCalledTimes(1);
         expect(deps.setTrackPanArrangement).toHaveBeenCalledWith('track1', -50);
-        expect(deps.engineSetTrackPan).toHaveBeenCalledWith('track1', -50);
     });
 
     it('skips a trackGain mapping with no trackId instead of writing an undefined target (F-11)', () => {
@@ -152,7 +150,6 @@ describe('handleMidiMessage', () => {
         handleMidiMessage(0, 7, 127);
 
         expect(deps.setTrackGainArrangement).not.toHaveBeenCalled();
-        expect(deps.engineSetTrackGain).not.toHaveBeenCalled();
     });
 
     it('skips a trackPan mapping with no trackId instead of writing an undefined target (F-11)', () => {
@@ -166,7 +163,6 @@ describe('handleMidiMessage', () => {
         handleMidiMessage(0, 7, 0);
 
         expect(deps.setTrackPanArrangement).not.toHaveBeenCalled();
-        expect(deps.engineSetTrackPan).not.toHaveBeenCalled();
     });
 
     it('writes a deviceParam mapping only when both deviceId and paramId are set', () => {

@@ -9,19 +9,15 @@ import type { Track } from '#/modules/Arrangement/stores';
  */
 export type MidiLearnDependencies = {
     /**
-     * What a gain request actually becomes: the fader law's clamp.
-     * `handleMidiMessage` writes the store and the engine through two separate
-     * calls, and only the store-side one clamps — so a controller riding a
-     * mapping past the fader ceiling left the engine running above the value
-     * the project recorded, and the two disagreed until something else rewrote
-     * the node. Resolving the value once, here, is what keeps the pair honest.
+     * Track gain and pan are written through the Arrangement setters alone.
+     * Each one clamps to its field's law, writes the engine, persists project
+     * truth and records the ride — a second, direct engine setter in this
+     * surface made every learned controller event drive the AudioParam's
+     * smoothing ramp twice (#2772), so no engine writer is exposed here.
      */
-    clampTrackGain: (gain: number) => number;
     setTrackGainArrangement: (trackId: string, gain: number) => void;
     setTrackPanArrangement: (trackId: string, pan: number) => void;
     setDeviceParameter: (deviceId: string, paramId: string, value: number) => void;
-    engineSetTrackGain: (trackId: string, gain: number) => void;
-    engineSetTrackPan: (trackId: string, pan: number) => void;
     setFermenterMappedParam: (input: { deviceId: string; paramId: string; value: number }) => void;
     recordAutomationValue: (trackId: string, lane: string, value: number, beat: number) => void;
     getTransportIsPlaying: () => boolean;
