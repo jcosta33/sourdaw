@@ -532,19 +532,20 @@ export const createPluginWindowHost = (deps: PluginWindowHostDeps): PluginWindow
         }
         const { window, parented } = built;
 
-        // Wired before the window is published, per the seam contract: a
-        // window that exists with no close handling is a leak. The reset is
-        // idempotent and tolerates a close for a window that was never
-        // published.
+        // Both close listeners are wired before the window is published, per the
+        // seam contract: a window that exists with no close handling is a leak.
+        // The addon's reset is idempotent and tolerates a close for a window
+        // that was never published.
 
         // Whether this window's teardown is already running. A user who clicks
         // the title bar again while the plugin is still leaving must not start a
         // second teardown, and must not get the window destroyed under the first.
         let detaching = false;
         window.on('close', (event: PreventableEditorEvent) => {
-            // Stopped before anything else: the plugin is parented into this
-            // window, and letting the platform destroy it here is the un-parent
-            // against a dead window that both formats forbid.
+            // Stopped before anything else, on every close: letting the platform
+            // destroy the window here is the un-parent against a dead parent
+            // that both formats forbid, whether it is the first close or the
+            // fifth.
             event.preventDefault();
             if (detaching) {
                 return;
