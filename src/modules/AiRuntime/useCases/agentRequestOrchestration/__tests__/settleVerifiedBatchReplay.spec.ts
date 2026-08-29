@@ -261,4 +261,47 @@ describe('settleVerifiedBatchReplay', () => {
             expect.objectContaining({ content: expect.stringContaining('will not replay') })
         );
     });
+
+    it('retains partially committed resources after a stale lease completion', async () => {
+        const input = {
+            ...createInput(true),
+            leaseSettlement: { accepted: false, warning: 'stale warning' },
+        };
+        let resolveResourcePromotion: (() => void) | null = null;
+        const resourcePromotion = new Promise<void>((resolve) => {
+            resolveResourcePromotion = resolve;
+        });
+        mocks.retain.mockReturnValueOnce(resourcePromotion);
+        let replaySettled = false;
+        const replay = settleVerifiedBatchReplay(input).then((result) => {
+            replaySettled = true;
+            return result;
+        });
+
+        expect(mocks.retain).toHaveBeenCalledWith('confirmation-1');
+        expect(replaySettled).toBe(false);
+        expect(mocks.status).not.toHaveBeenCalled();
+        expect(mocks.message).not.toHaveBeenCalled();
+
+        expect(resolveResourcePromotion).not.toBeNull();
+        resolveResourcePromotion?.();
+
+        await expect(replay).resolves.toMatchObject({
+            status: 'failed',
+            durableCommit: true,
+            reason: 'render pending',
+        });
+        expect(mocks.status).toHaveBeenCalledWith({
+            confirmationId: 'confirmation-1',
+            status: 'failed',
+            error: 'render pending stale warning',
+        });
+        expect(mocks.message).toHaveBeenCalledWith(
+            'assistant-1',
+            expect.objectContaining({
+                pendingActionConfirmationStatus: 'failed',
+                error: 'render pending stale warning',
+            })
+        );
+    });
 });
