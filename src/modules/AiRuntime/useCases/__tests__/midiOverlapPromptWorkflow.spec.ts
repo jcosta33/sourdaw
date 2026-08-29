@@ -817,17 +817,29 @@ describe('EX-04 selected MIDI overlap prompt workflow', () => {
                 });
             },
         ],
-    ])('rejects the entire confirmed batch when current scope %s', async (_label, mutateScope) => {
+    ])('invalidates the entire confirmed batch when current scope %s', async (_label, mutateScope) => {
         await sendChatMessage(PROMPT);
         const confirmationId = getConfirmationId();
         mutateScope();
+        flushAutomergeStorageWrites();
 
-        await confirmPendingChatActions({ confirmationId });
+        expect(await confirmPendingChatActions({ confirmationId })).toEqual({
+            status: 'invalidated',
+            reason: 'The project changed after this proposal was created. Review and submit the command again.',
+        });
 
         expect(getNoteDuration('clip-piano', 'piano-short-a')).toBe(1.04);
         expect(getNoteDuration('clip-strings', 'strings-short-a')).toBe(1.02);
-        expect(getPendingActionConfirmation(confirmationId)).toMatchObject({ status: 'failed', executedActions: [] });
+        expect(getPendingActionConfirmation(confirmationId)).toMatchObject({
+            status: 'invalidated',
+            executedActions: [],
+        });
         expect(undoStore.value?.past).toEqual([]);
+        expect(
+            chatStore.value?.messages.find((message) => message.pendingActionConfirmationId === confirmationId)?.content
+        ).toBe(
+            'This proposal was not executed because the project changed after it was created. Review the current project and submit the command again.'
+        );
     });
 
     it('converts the 30 ms threshold against the current project tempo', async () => {
@@ -850,7 +862,7 @@ describe('EX-04 selected MIDI overlap prompt workflow', () => {
         );
     });
 
-    it('rolls back the whole project batch without receipt or history when a later clip conflicts', async () => {
+    it('leaves no receipt or history residue when the project changes before confirmation', async () => {
         await sendChatMessage(PROMPT);
         const confirmationId = getConfirmationId();
         const state = midiStore.value!;
@@ -863,17 +875,26 @@ describe('EX-04 selected MIDI overlap prompt workflow', () => {
                 ),
             },
         });
+        flushAutomergeStorageWrites();
 
-        await confirmPendingChatActions({ confirmationId });
+        expect(await confirmPendingChatActions({ confirmationId })).toEqual({
+            status: 'invalidated',
+            reason: 'The project changed after this proposal was created. Review and submit the command again.',
+        });
 
         expect(getNoteDuration('clip-piano', 'piano-short-a')).toBe(1.04);
         expect(getNoteDuration('clip-strings', 'strings-short-a')).toBe(1.03);
-        expect(getPendingActionConfirmation(confirmationId)).toMatchObject({ status: 'failed', executedActions: [] });
+        expect(getPendingActionConfirmation(confirmationId)).toMatchObject({
+            status: 'invalidated',
+            executedActions: [],
+        });
         expect(undoStore.value?.past).toEqual([]);
         const receipt = chatStore.value?.messages.find(
             (message) => message.pendingActionConfirmationId === confirmationId
         );
-        expect(receipt?.content).not.toContain('Executed 2 actions');
+        expect(receipt?.content).toBe(
+            'This proposal was not executed because the project changed after it was created. Review the current project and submit the command again.'
+        );
     });
 
     it('keeps grouped undo and tempo-sensitive redo atomic and retryable on collaborator conflicts', async () => {

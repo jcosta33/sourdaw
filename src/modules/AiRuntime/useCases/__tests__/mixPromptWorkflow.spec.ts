@@ -693,7 +693,13 @@ describe('mix prompt workflow', () => {
         expect(terminalMessage?.content).not.toContain('Outcome: committed');
     });
 
-    it('rejects a stale later pan guard before any earlier runtime effect', async () => {
+    // The edit below changes the exact pan guard this proposal names, but the
+    // status, reason and receipt asserted here are what *any* project change
+    // after the proposal produces — a collaborator edit elsewhere reaches the
+    // same terminal state through the same code path. This test therefore pins
+    // the project-changed disposition, not target-conflict detection; that the
+    // two are indistinguishable is the production defect filed as #2894.
+    it('leaves no runtime effect or history residue when the project changes before confirmation', async () => {
         await sendChatMessage(PROMPT);
         const confirmation = getPendingActionConfirmation(getConfirmationId());
         if (!confirmation) {
@@ -706,16 +712,30 @@ describe('mix prompt workflow', () => {
             ),
         });
         runtimeMocks.pans.set('track-guitar-left', 12);
+        flushAutomergeStorageWrites();
 
         const result = await confirmPendingChatActions({ confirmationId: confirmation.id });
 
-        expect(result).toMatchObject({ status: 'failed' });
+        expect(result).toEqual({
+            status: 'invalidated',
+            reason: 'The project changed after this proposal was created. Review and submit the command again.',
+        });
         expect(runtimeMocks.setTrackGain).not.toHaveBeenCalled();
         expect(runtimeMocks.setTrackPan).not.toHaveBeenCalled();
         expect(runtimeMocks.setTrackMute).not.toHaveBeenCalled();
         expect(getTrack('track-lead-vocal').gain).toBe(1);
         expect(getTrack('track-guitar-left').pan).toBe(12);
         expect(undoStore.value?.past).toEqual([]);
+        expect(getPendingActionConfirmation(confirmation.id)).toMatchObject({
+            status: 'invalidated',
+            executedActions: [],
+        });
+        expect(
+            chatStore.value?.messages.find((message) => message.pendingActionConfirmationId === confirmation.id)
+                ?.content
+        ).toBe(
+            'This proposal was not executed because the project changed after it was created. Review the current project and submit the command again.'
+        );
     });
 
     it.each(['write', 'touch', 'latch'] as const)(

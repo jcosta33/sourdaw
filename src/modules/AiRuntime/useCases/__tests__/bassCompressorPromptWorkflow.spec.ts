@@ -1025,7 +1025,14 @@ describe('bass compressor prompt workflow', () => {
         expect(getConfirmation()?.protectedUnchanged).toEqual([{ id: 'track-bass-frozen', name: 'Bass Frozen' }]);
     });
 
-    it('rejects the stale proposal when a later target chain changed after approval', async () => {
+    // The edit below changes the exact target chain this proposal names, but
+    // the status, reason and receipt asserted here are what *any* project
+    // change after approval produces — a collaborator edit elsewhere reaches
+    // the same terminal state through the same code path. This test therefore
+    // pins the project-changed disposition, not target-conflict detection;
+    // that the two are indistinguishable is the production defect filed as
+    // #2894.
+    it('invalidates the stale proposal when a later target chain changed after approval', async () => {
         await sendChatMessage(PROMPT);
         const confirmation = getConfirmation();
         const state = trackStore.value;
@@ -1044,10 +1051,16 @@ describe('bass compressor prompt workflow', () => {
                 };
             }),
         });
+        // Settle the foreign write into the document so confirmation observes the
+        // divergence deterministically instead of racing the rAF-deferred flush.
+        flushFixtureTrackStore();
 
         const result = await confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' });
 
-        expect(result.status).toBe('failed');
+        expect(result).toEqual({
+            status: 'invalidated',
+            reason: 'The project changed after this proposal was created. Review and submit the command again.',
+        });
         expect(getTrack('track-bass-di').devices.map((device) => device.id)).toEqual(BASS_DI_DEVICE_IDS);
         expect(getTrack('track-bass-amp').devices.map((device) => device.id)).toEqual([
             ...BASS_AMP_DEVICE_IDS,
@@ -1055,6 +1068,16 @@ describe('bass compressor prompt workflow', () => {
         ]);
         expect(runtimeGraphDeltaSpy).not.toHaveBeenCalled();
         expect(undoStore.value?.past).toEqual([]);
+        expect(getPendingActionConfirmation(confirmation?.id ?? '')).toMatchObject({
+            status: 'invalidated',
+            executedActions: [],
+        });
+        expect(
+            chatStore.value?.messages.find((message) => message.pendingActionConfirmationId === confirmation?.id)
+                ?.content
+        ).toBe(
+            'This proposal was not executed because the project changed after it was created. Review the current project and submit the command again.'
+        );
     });
 
     it('applies no project, runtime, or undo change when the stale proposal is rejected before execution', async () => {
