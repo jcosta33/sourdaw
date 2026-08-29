@@ -1,0 +1,54 @@
+src/modules/AiRuntime/useCases/agentRunLifecycle.ts
+  s_a40848e8f8cca9::t_da8840afef9281 743-751,760
+src/modules/AudioRendering/repositories/audioExport/__tests__/downloadAudioWav.spec.ts
+  s_a40848e8f8cca9::t_4bd4db9ca46bc3 19
+  s_a40848e8f8cca9::t_d126ee14804898 17-18,20-35
+src/modules/AiRuntime/useCases/__tests__/selectRetainedSectionRenderManualReviews.spec.ts
+  s_a40848e8f8cca9::t_d126ee14804898 54
+  s_a40848e8f8cca9::t_d49b426cad513f 55-57
+src/modules/AiRuntime/presentations/views/__tests__/ChatPanel.spec.tsx
+  s_a40848e8f8cca9::t_82960de67d1a65 250
+  s_a40848e8f8cca9::t_de3abb78ce0e00 8-17,78-90,173-225,251-256,709-717,723-743,774-776,784,787-794,801-802,806-846
+  s_a40848e8f8cca9::t_e331335af9626a 226
+src/modules/AiRuntime/stores/__tests__/retainedSectionRenderReviewHydration.spec.ts
+  s_a40848e8f8cca9::t_82960de67d1a65 291-298
+  s_a40848e8f8cca9::t_a557ba4101fc98 7-9,11,222-290,299-318
+  s_a40848e8f8cca9::t_ee737a7d795662 319-321
+  s_96c094be0ff7c3::t_302b3270f1e620 322-325
+src/modules/AiRuntime/useCases/__tests__/settleRetainedSectionRenderManualReview.spec.ts
+  s_a40848e8f8cca9::t_d126ee14804898 61-64
+src/modules/AiRuntime/presentations/views/ChatPanel.tsx
+  s_a40848e8f8cca9::t_da8840afef9281 31-34,266-284,485
+src/modules/AiRuntime/presentations/views/RetainedSectionRenderManualReview.tsx
+  s_a40848e8f8cca9::t_da8840afef9281 23-28,32,61,63,79,93,105,107,117,140,162
+src/modules/AiRuntime/presentations/views/__tests__/RetainedSectionRenderManualReview.spec.tsx
+  s_a40848e8f8cca9::t_da8840afef9281 17-19,116-118,120,323-325,327
+  s_a40848e8f8cca9::t_40faa94424b15b 34-39,119,326
+  s_a40848e8f8cca9::t_4bd4db9ca46bc3 8
+  s_a40848e8f8cca9::t_d126ee14804898 68-90,98,105,112,197-212,305-318
+  s_a40848e8f8cca9::t_275345c10557a4 9
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "f78b2b25603a29603f970b0c97bcc2489e02fc31",
+  "prompts": {},
+  "sessions": {
+    "s_96c094be0ff7c3": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04f9e-81ba-7ff0-a0f6-2b1661af9c6b",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
