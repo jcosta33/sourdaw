@@ -166,17 +166,53 @@ const LOADER_EXEMPT_SPECIFIER = 'yaml';
  */
 export function snapshotImportSpecifiers(source: string): string[] {
     const specifiers = new Set<string>();
-    let index = 0;
-    while (index < source.length) {
+    scanImportSpecifiers(source, 0, source.length, specifiers);
+    return [...specifiers];
+}
+
+function scanImportSpecifiers(
+    source: string,
+    start: number,
+    end: number,
+    specifiers: Set<string>,
+    stopAtDepthZero = false
+): number {
+    let index = start;
+    let depth = stopAtDepthZero ? 1 : null;
+    while (index < end) {
         const commentEnd = skipComment(source, index);
         if (commentEnd !== undefined) {
             index = commentEnd;
             continue;
         }
-        const stringEnd = skipStringOrTemplate(source, index);
-        if (stringEnd !== undefined) {
-            index = stringEnd;
+        const quote = source[index];
+        if (quote === "'" || quote === '"') {
+            index = skipQuoted(source, index, quote);
             continue;
+        }
+        if (quote === '`') {
+            index = scanTemplate(source, index, end, specifiers);
+            continue;
+        }
+        const regexEnd = skipRegexLiteral(source, index);
+        if (regexEnd !== undefined) {
+            index = regexEnd;
+            continue;
+        }
+        if (depth !== null) {
+            if (source[index] === '{') {
+                depth += 1;
+                index += 1;
+                continue;
+            }
+            if (source[index] === '}') {
+                depth -= 1;
+                if (depth === 0) {
+                    return index + 1;
+                }
+                index += 1;
+                continue;
+            }
         }
         if (isKeywordAt(source, index, 'from')) {
             const afterKeyword = index + 4;
@@ -197,14 +233,37 @@ export function snapshotImportSpecifiers(source: string): string[] {
             }
             const dynamic = readDynamicImportSpecifier(source, afterKeyword);
             if (dynamic !== undefined) {
-                specifiers.add(dynamic.value);
+                const before = index === 0 ? undefined : source[index - 1];
+                if (before !== '.') {
+                    specifiers.add(dynamic.value);
+                }
                 index = dynamic.end;
                 continue;
             }
         }
         index += 1;
     }
-    return [...specifiers];
+    return index;
+}
+
+function scanTemplate(source: string, index: number, end: number, specifiers: Set<string>): number {
+    let cursor = index + 1;
+    while (cursor < end) {
+        const character = source[cursor];
+        if (character === '\\') {
+            cursor += 2;
+            continue;
+        }
+        if (character === '`') {
+            return cursor + 1;
+        }
+        if (character === '$' && source[cursor + 1] === '{') {
+            cursor = scanImportSpecifiers(source, cursor + 2, end, specifiers, true);
+            continue;
+        }
+        cursor += 1;
+    }
+    return end;
 }
 
 function isKeywordAt(source: string, index: number, keyword: string): boolean {
@@ -220,10 +279,17 @@ function isIdentifierContinue(character: string | undefined): boolean {
     return character !== undefined && /[A-Za-z0-9_$]/.test(character);
 }
 
+function isLineTerminator(character: string): boolean {
+    return character === '\n' || character === '\r' || character === '\u2028' || character === '\u2029';
+}
+
 function skipComment(source: string, index: number): number | undefined {
     if (source.startsWith('//', index)) {
-        const newline = source.indexOf('\n', index + 2);
-        return newline === -1 ? source.length : newline + 1;
+        let cursor = index + 2;
+        while (cursor < source.length && !isLineTerminator(source[cursor] ?? '')) {
+            cursor += 1;
+        }
+        return cursor < source.length ? cursor + 1 : source.length;
     }
     if (source.startsWith('/*', index)) {
         const end = source.indexOf('*/', index + 2);
@@ -232,15 +298,98 @@ function skipComment(source: string, index: number): number | undefined {
     return undefined;
 }
 
-function skipStringOrTemplate(source: string, index: number): number | undefined {
-    const quote = source[index];
-    if (quote === "'" || quote === '"') {
-        return skipQuoted(source, index, quote);
+const REGEX_PREFIX_KEYWORDS = new Set([
+    'return',
+    'throw',
+    'case',
+    'delete',
+    'typeof',
+    'void',
+    'await',
+    'yield',
+    'in',
+    'of',
+    'instanceof',
+    'new',
+    'extends',
+]);
+
+function skipRegexLiteral(source: string, index: number): number | undefined {
+    if (source[index] !== '/') {
+        return undefined;
     }
-    if (quote === '`') {
-        return skipTemplate(source, index);
+    if (!canStartRegexLiteral(source, index)) {
+        return undefined;
+    }
+    let cursor = index + 1;
+    let inClass = false;
+    while (cursor < source.length) {
+        const character = source[cursor];
+        if (character === undefined) {
+            break;
+        }
+        if (character === '\\') {
+            cursor += 2;
+            continue;
+        }
+        if (inClass) {
+            if (character === ']') {
+                inClass = false;
+            }
+            cursor += 1;
+            continue;
+        }
+        if (character === '[') {
+            inClass = true;
+            cursor += 1;
+            continue;
+        }
+        if (character === '/') {
+            cursor += 1;
+            while (cursor < source.length && /[a-z]/i.test(source[cursor] ?? '')) {
+                cursor += 1;
+            }
+            return cursor;
+        }
+        if (isLineTerminator(character)) {
+            return undefined;
+        }
+        cursor += 1;
     }
     return undefined;
+}
+
+function canStartRegexLiteral(source: string, index: number): boolean {
+    let cursor = index - 1;
+    while (cursor >= 0) {
+        const character = source[cursor];
+        if (character === undefined) {
+            break;
+        }
+        if (character === ' ' || character === '\t' || isLineTerminator(character)) {
+            cursor -= 1;
+            continue;
+        }
+        if ('([{;=,.!?:~%^&*+<>|'.includes(character) || character === '-' || character === '}') {
+            return true;
+        }
+        if (character === ')' || character === ']' || character === '"' || character === "'" || character === '`') {
+            return false;
+        }
+        if (isIdentifierContinue(character)) {
+            let start = cursor;
+            while (start >= 0 && isIdentifierContinue(source[start])) {
+                start -= 1;
+            }
+            const identifier = source.slice(start + 1, cursor + 1);
+            return REGEX_PREFIX_KEYWORDS.has(identifier);
+        }
+        if (character >= '0' && character <= '9') {
+            return false;
+        }
+        return false;
+    }
+    return true;
 }
 
 function skipQuoted(source: string, index: number, quote: "'" | '"'): number {
@@ -253,54 +402,6 @@ function skipQuoted(source: string, index: number, quote: "'" | '"'): number {
         }
         if (character === quote) {
             return cursor + 1;
-        }
-        cursor += 1;
-    }
-    return source.length;
-}
-
-function skipTemplate(source: string, index: number): number {
-    let cursor = index + 1;
-    while (cursor < source.length) {
-        const character = source[cursor];
-        if (character === '\\') {
-            cursor += 2;
-            continue;
-        }
-        if (character === '`') {
-            return cursor + 1;
-        }
-        if (character === '$' && source[cursor + 1] === '{') {
-            cursor = skipTemplateExpression(source, cursor + 2);
-            continue;
-        }
-        cursor += 1;
-    }
-    return source.length;
-}
-
-function skipTemplateExpression(source: string, index: number): number {
-    let depth = 1;
-    let cursor = index;
-    while (cursor < source.length) {
-        const commentEnd = skipComment(source, cursor);
-        if (commentEnd !== undefined) {
-            cursor = commentEnd;
-            continue;
-        }
-        const stringEnd = skipStringOrTemplate(source, cursor);
-        if (stringEnd !== undefined) {
-            cursor = stringEnd;
-            continue;
-        }
-        const character = source[cursor];
-        if (character === '{') {
-            depth += 1;
-        } else if (character === '}') {
-            depth -= 1;
-            if (depth === 0) {
-                return cursor + 1;
-            }
         }
         cursor += 1;
     }

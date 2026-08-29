@@ -45,6 +45,41 @@ describe('snapshotImportSpecifiers', () => {
         expect(bareModuleSpecifiers(source)).toEqual([]);
     });
 
+    it('ignores from, import, and dynamic-import shapes inside regex literals', () => {
+        expect(snapshotImportSpecifiers(`/from 'yaml'/`)).toEqual([]);
+        expect(snapshotImportSpecifiers(`/import 'yaml'/`)).toEqual([]);
+        expect(snapshotImportSpecifiers(`/import('yaml')/`)).toEqual([]);
+        expect(bareModuleSpecifiers(`/from 'yaml'/`)).toEqual([]);
+    });
+
+    it('does not treat /* inside a regex as a block comment that swallows a later import', () => {
+        const source = "const x = /a/*/b/;\nimport { parse } from 'yaml'";
+
+        expect(snapshotImportSpecifiers(source)).toEqual(['yaml']);
+        expect(bareModuleSpecifiers(source)).toEqual(['yaml']);
+    });
+
+    it('collects dynamic imports inside template interpolations', () => {
+        const source = "const x = `h ${await import('yaml')}`;";
+
+        expect(snapshotImportSpecifiers(source)).toEqual(['yaml']);
+        expect(bareModuleSpecifiers(source)).toEqual(['yaml']);
+    });
+
+    it('ends // comments at CR so a following import is still collected', () => {
+        const source = "// comment\rimport fs from 'fs';\n";
+
+        expect(snapshotImportSpecifiers(source)).toEqual(['fs']);
+        expect(bareModuleSpecifiers(source)).toEqual(['fs']);
+    });
+
+    it('does not collect method-call import() after . or ?.', () => {
+        expect(snapshotImportSpecifiers("registry.import('yaml');")).toEqual([]);
+        expect(snapshotImportSpecifiers("registry?.import('yaml');")).toEqual([]);
+        expect(bareModuleSpecifiers("registry.import('yaml');")).toEqual([]);
+        expect(snapshotImportSpecifiers("await import('yaml');")).toEqual(['yaml']);
+    });
+
     it('does not treat relative or node: specifiers as bare', () => {
         const source = `
             import { join } from 'node:path';
