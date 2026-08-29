@@ -698,6 +698,14 @@ function validateAuthorAppMerger(pullRequest: PullRequestSnapshot): void {
     }
 }
 
+function resolveFinalPullRequestSnapshot(number: number, port: Pick<DeliveryPort, 'pullRequest'>): PullRequestSnapshot {
+    const finalSnapshot = port.pullRequest(number);
+    if (finalSnapshot.state === 'MERGED') {
+        return finalSnapshot;
+    }
+    return resolveStructuralMergeability(finalSnapshot, port);
+}
+
 function deliverPullRequestWithCiAdmission(
     number: number,
     port: DeliveryPort,
@@ -731,7 +739,7 @@ function deliverPullRequestWithCiAdmission(
     const receipt = ensureDeliveryReceipt(initial, initialTrackerTarget, port);
 
     port.fetch();
-    const finalSnapshot = resolveStructuralMergeability(port.pullRequest(number), port);
+    const finalSnapshot = resolveFinalPullRequestSnapshot(number, port);
     if (finalSnapshot.state === 'MERGED') {
         validateAuthorAppMerger(finalSnapshot);
     }
@@ -1000,14 +1008,51 @@ function toDeliveryReceiptComment(value: unknown): DeliveryReceiptComment {
 function toPullRequestSnapshot(value: string, number: number): PullRequestSnapshot {
     const parsed = parseJson<
         Omit<PullRequestSnapshot, 'mergedByActorNodeId'> & {
-            mergedBy?: { id?: unknown } | null;
+            mergedBy?: { is_bot?: unknown; login?: unknown } | null;
         }
     >(value, `PR #${number}`);
-    const { mergedBy, ...snapshot } = parsed;
+    const { mergedBy: _mergedBy, ...snapshot } = parsed;
     return {
         ...snapshot,
-        mergedByActorNodeId: typeof mergedBy?.id === 'string' ? mergedBy.id : null,
+        mergedByActorNodeId: null,
     };
+}
+
+function readMergedByActorNodeId(
+    number: number,
+    repository: { owner: string; name: string },
+    shell: Pick<ShellRunner, 'capture'>
+): string {
+    const query =
+        'query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){mergedBy{__typename ... on Bot{id}}}}}';
+    const response = parseJson<{
+        data?: {
+            repository?: {
+                pullRequest?: {
+                    mergedBy?: { __typename?: unknown; id?: unknown } | null;
+                };
+            };
+        };
+    }>(
+        shell.capture('gh', [
+            'api',
+            'graphql',
+            '-f',
+            `query=${query}`,
+            '-f',
+            `owner=${repository.owner}`,
+            '-f',
+            `name=${repository.name}`,
+            '-F',
+            `number=${number}`,
+        ]),
+        `PR #${number} merger query`
+    );
+    const mergedBy = response.data?.repository?.pullRequest?.mergedBy;
+    if (mergedBy?.__typename !== 'Bot' || typeof mergedBy.id !== 'string') {
+        fail(`PR #${number} merger cannot be verified`);
+    }
+    return mergedBy.id;
 }
 
 export function shellPort(
@@ -1073,11 +1118,19 @@ export function shellPort(
             }
             shell.run('git', ['fetch', '--prune', 'origin']);
         },
-        pullRequest: (number) =>
-            toPullRequestSnapshot(
+        pullRequest: (number) => {
+            const snapshot = toPullRequestSnapshot(
                 shell.capture('gh', ['pr', 'view', String(number), '--repo', repository, '--json', pullRequestFields]),
                 number
-            ),
+            );
+            if (snapshot.state !== 'MERGED') {
+                return snapshot;
+            }
+            return {
+                ...snapshot,
+                mergedByActorNodeId: readMergedByActorNodeId(number, { owner, name }, shell),
+            };
+        },
         headCheckRuns: (number, headRefOid) =>
             readHeadCheckRuns(number, (cursor) => readRollupPage(number, headRefOid, cursor)),
         gateRequiredCheckNames: () => readGateRequiredCheckNames(),

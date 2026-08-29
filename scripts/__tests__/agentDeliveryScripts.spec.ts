@@ -17,7 +17,12 @@ import { createInterface } from 'node:readline';
 import { describe, expect, it } from 'vitest';
 import { parseDocument } from 'yaml';
 
-import { coordinateDelivery, withPullRequestDeliveryLock } from '../deliverPullRequest.ts';
+import {
+    coordinateDelivery,
+    deliverPullRequest,
+    shellPort,
+    withPullRequestDeliveryLock,
+} from '../deliverPullRequest.ts';
 import { AUTHOR_BOT_NODE_ID } from '../githubAppIdentity.ts';
 import { githubTrackerIssuePort } from '../reconcileTrackerIssue.ts';
 import {
@@ -30,7 +35,15 @@ import {
     trustedSnapshotEnv,
 } from '../trustedGithubWriteBootstrap.ts';
 
-import type { DeliveryAuthentication, DeliveryCoordinatorDependencies, DeliveryPort } from '../deliverPullRequest.ts';
+import type {
+    DeliveryAuthentication,
+    DeliveryCoordinatorDependencies,
+    DeliveryReceiptComment,
+    DeliveryPort,
+    PullRequestSnapshot,
+    StackedPullRequest,
+    TrackerCompletionPort,
+} from '../deliverPullRequest.ts';
 import type { ReconcileTrackerIssuePort } from '../trackerIssueReconciliation.ts';
 
 function runGit(repository: string, args: string[]): string {
@@ -69,6 +82,69 @@ function deliveryLockExists(root: string, number: number): boolean {
     } catch {
         return false;
     }
+}
+
+function pullRequestSnapshot(overrides: Partial<PullRequestSnapshot> = {}): PullRequestSnapshot {
+    return {
+        number: 2495,
+        state: 'OPEN',
+        isDraft: false,
+        title: 'fix(delivery): keep recovery fenced',
+        body: [
+            '### 🎯 What does this PR do?',
+            'Keep delivery stable.',
+            '',
+            '### 🧪 How to test',
+            'Run the focused delivery checks.',
+            '',
+            '### 🖼️ Screenshots',
+            'None.',
+            '',
+            '### 📌 Related tickets & additional notes',
+            'Closes #2406',
+        ].join('\n'),
+        headRefName: 'agent/2495/delivery-lock',
+        headRefOid: 'a'.repeat(40),
+        baseRefName: 'main',
+        baseRefOid: 'b'.repeat(40),
+        mergeable: 'MERGEABLE',
+        mergeStateStatus: 'CLEAN',
+        reviewDecision: 'APPROVED',
+        changedFiles: 1,
+        additions: 2,
+        deletions: 1,
+        mergedByActorNodeId: null,
+        ...overrides,
+    };
+}
+
+function ghPullRequestView(snapshot: PullRequestSnapshot, mergedBy: unknown): string {
+    const { mergedByActorNodeId: _mergedByActorNodeId, ...rest } = snapshot;
+    return JSON.stringify({ ...rest, mergedBy });
+}
+
+function ghMergedByGraphql(mergedBy: unknown): string {
+    return JSON.stringify({
+        data: {
+            repository: {
+                pullRequest: {
+                    mergedBy,
+                },
+            },
+        },
+    });
+}
+
+function deliveryReceiptComment(body: string, id = 'comment-1'): DeliveryReceiptComment {
+    return {
+        id,
+        body,
+        authorNodeId: AUTHOR_BOT_NODE_ID,
+        authorLogin: 'sourdaw-author[bot]',
+        authorType: 'Bot',
+        createdAt: '2026-08-29T08:00:00Z',
+        updatedAt: '2026-08-29T08:00:00Z',
+    };
 }
 
 async function contendForDeliveryLock(root: string): Promise<string[]> {
@@ -280,6 +356,168 @@ function stableInformationalGateSummary(workflow: WorkflowRecord): WorkflowRecor
 }
 
 describe('package scripts and gitignore', () => {
+    it.each([
+        {
+            label: 'author bot',
+            graphQlMergedBy: { __typename: 'Bot', id: AUTHOR_BOT_NODE_ID },
+            expectedActorNodeId: AUTHOR_BOT_NODE_ID,
+        },
+        {
+            label: 'foreign bot',
+            graphQlMergedBy: { __typename: 'Bot', id: 'B_foreign-bot-node-id' },
+            expectedActorNodeId: 'B_foreign-bot-node-id',
+        },
+    ])(
+        'reads the immutable merged bot ID from GraphQL for a $label merger',
+        ({ graphQlMergedBy, expectedActorNodeId }) => {
+            const mergedSnapshot = pullRequestSnapshot({ state: 'MERGED' });
+            const requests: Array<{ command: string; args: string[] }> = [];
+            const port = shellPort(
+                'jcosta33/sourdaw',
+                {
+                    capture: (command, args) => {
+                        requests.push({ command, args });
+                        if (args[0] === 'pr' && args[1] === 'view') {
+                            return ghPullRequestView(mergedSnapshot, {
+                                is_bot: true,
+                                login: 'sourdaw-author[bot]',
+                            });
+                        }
+                        if (args[0] === 'api' && args[1] === 'graphql') {
+                            return ghMergedByGraphql(graphQlMergedBy);
+                        }
+                        throw new Error(`unexpected shell capture: ${command} ${args.join(' ')}`);
+                    },
+                    run: () => expect.fail('pullRequest should not run shell commands'),
+                },
+                {}
+            );
+
+            const snapshot = port.pullRequest(2495);
+
+            expect(snapshot.mergedByActorNodeId).toBe(expectedActorNodeId);
+            expect(requests).toHaveLength(2);
+            expect(requests[0]?.args).toEqual([
+                'pr',
+                'view',
+                '2495',
+                '--repo',
+                'jcosta33/sourdaw',
+                '--json',
+                expect.stringContaining('mergedBy'),
+            ]);
+            expect(requests[1]?.args).toContain('graphql');
+            expect(requests[1]?.args.some((arg) => arg.includes('mergedBy{__typename ... on Bot{id}}'))).toBe(true);
+        }
+    );
+
+    it.each([
+        { label: 'null merger', graphQlMergedBy: null },
+        { label: 'non-Bot merger', graphQlMergedBy: { __typename: 'User' } },
+    ])('fails closed when GraphQL returns a $label for a merged PR', ({ graphQlMergedBy }) => {
+        const mergedSnapshot = pullRequestSnapshot({ state: 'MERGED' });
+        const port = shellPort(
+            'jcosta33/sourdaw',
+            {
+                capture: (_command, args) => {
+                    if (args[0] === 'pr' && args[1] === 'view') {
+                        return ghPullRequestView(mergedSnapshot, {
+                            is_bot: true,
+                            login: 'sourdaw-author[bot]',
+                        });
+                    }
+                    if (args[0] === 'api' && args[1] === 'graphql') {
+                        return ghMergedByGraphql(graphQlMergedBy);
+                    }
+                    throw new Error(`unexpected shell capture: ${args.join(' ')}`);
+                },
+                run: () => expect.fail('pullRequest should not run shell commands'),
+            },
+            {}
+        );
+
+        expect(() => port.pullRequest(2495)).toThrow(/merger cannot be verified/);
+    });
+
+    it('recovers a final merged snapshot whose mergeability remains UNKNOWN', () => {
+        const initial = pullRequestSnapshot();
+        const final = pullRequestSnapshot({
+            state: 'MERGED',
+            mergeable: 'UNKNOWN',
+            mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
+        });
+        const dependentBefore: StackedPullRequest = {
+            number: 2601,
+            state: 'OPEN',
+            headRefName: 'agent/2601/stacked-dependent',
+            headRefOid: 'c'.repeat(40),
+            baseRefName: initial.headRefName,
+        };
+        let dependentAfter = { ...dependentBefore };
+        let receiptBody = '';
+        let receipt: DeliveryReceiptComment | undefined;
+        const retargets: Array<{ number: number; base: string }> = [];
+        const trackerCompletions: number[] = [];
+        const logs: string[] = [];
+        const tracker: TrackerCompletionPort = {
+            complete: (issueNumber) => {
+                trackerCompletions.push(issueNumber);
+            },
+        };
+        const port: DeliveryPort = {
+            fetch: () => undefined,
+            pullRequest: (number) => {
+                if (number === 2495) {
+                    return receipt === undefined ? initial : final;
+                }
+                if (number === dependentBefore.number) {
+                    return pullRequestSnapshot({
+                        ...dependentAfter,
+                        body: initial.body,
+                        title: 'fix(delivery): dependent stays stable',
+                        baseRefOid: initial.baseRefOid,
+                        mergeable: 'MERGEABLE',
+                        mergeStateStatus: 'CLEAN',
+                        reviewDecision: 'APPROVED',
+                        changedFiles: 1,
+                        additions: 1,
+                        deletions: 0,
+                    });
+                }
+                return expect.fail(`unexpected pull request read: ${number}`);
+            },
+            gateRequiredCheckNames: () => new Set(['Gate']),
+            headCheckRuns: () => [],
+            reviewState: () => ({ latestReviewerStateOnHead: 'APPROVED', unresolvedThreads: 0 }),
+            dependents: (baseBranch) => (baseBranch === initial.headRefName ? [dependentBefore] : []),
+            repositoryDeletesMergedBranches: () => false,
+            merge: () => expect.fail('merge should not run after the final snapshot is already merged'),
+            retarget: (number, baseBranch) => {
+                retargets.push({ number, base: baseBranch });
+                dependentAfter = { ...dependentAfter, baseRefName: baseBranch };
+            },
+            deliveryReceipts: () => (receipt === undefined ? [] : [receipt]),
+            addDeliveryReceipt: (_number, body) => {
+                receiptBody = body;
+                receipt = deliveryReceiptComment(body);
+                return receipt;
+            },
+            log: (message) => {
+                logs.push(message);
+            },
+        };
+
+        deliverPullRequest(2495, port, tracker);
+
+        expect(receiptBody).toContain(`head: ${initial.headRefOid}`);
+        expect(retargets).toEqual([{ number: 2601, base: 'main' }]);
+        expect(trackerCompletions).toEqual([2406]);
+        expect(logs).toEqual([
+            'review size: 1 file(s), +2/-1',
+            'PR #2495 became merged during delivery; repaired 1 dependent(s)',
+        ]);
+    });
+
     it('defines the trusted pnpm commands as direct node invocations', () => {
         const pkg = JSON.parse(readFileSync(join(import.meta.dirname, '../../package.json'), 'utf8')) as {
             scripts: Record<string, string>;
