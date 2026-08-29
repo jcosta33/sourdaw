@@ -315,9 +315,8 @@ async function discardPreparedStemImportResourcesWithAuthority(
         if (registration?.recovery) {
             settledBatchIds.add(registration.recovery.batchId);
         }
-        const asset = agentRunLifecycle
-            .get(input.runId)
-            ?.temporaryAssets.find((candidate) => candidate.assetId === stem.audioBufferId);
+        const run = agentRunLifecycle.get(input.runId);
+        const asset = run?.temporaryAssets.find((candidate) => candidate.assetId === stem.audioBufferId);
         if (registration?.protected && authority === 'generic-release') {
             continue;
         }
@@ -325,12 +324,15 @@ async function discardPreparedStemImportResourcesWithAuthority(
             // A registration can outlive a refused atomic transfer because the
             // live store advances before durable persistence. It still owns the
             // physical stem, but must keep that ownership until the live
-            // post-transfer snapshot has been made durable.
+            // post-transfer snapshot has been made durable. A run that no
+            // longer exists — evicted from run history, or already deleted —
+            // has no snapshot left to make durable, so the physical discard is
+            // the whole of the obligation.
             if (!registration.physicalCleanupCompleted) {
                 await preparedStemImportCleanup.discard([stem]);
                 registration.physicalCleanupCompleted = true;
             }
-            if (!agentRunLifecycle.retryPersistence(input.runId)) {
+            if (run && !agentRunLifecycle.retryPersistence(input.runId)) {
                 throw new Error(`Prepared stem transfer run disappeared before durability retry: ${input.runId}`);
             }
             registration.unregister();
