@@ -20,7 +20,8 @@ use vst3::Steinberg::Vst::{
 };
 use vst3::Steinberg::{
     char16, char8, int16, kNoInterface, kNotImplemented, kResultFalse, kResultTrue, tresult,
-    uint32, FIDString, FUnknown, IPlugFrame, IPlugFrameTrait, IPlugView, IPlugViewTrait,
+    uint32, FIDString, FUnknown, IPlugFrame, IPlugFrameTrait, IPlugView,
+    IPlugViewContentScaleSupport, IPlugViewContentScaleSupportTrait, IPlugViewTrait,
     IPluginFactory2Trait, IPluginFactory3, IPluginFactory3Trait, PClassInfo, PClassInfo2,
     PClassInfoW, PFactoryInfo, TBool, ViewRect,
 };
@@ -1080,6 +1081,9 @@ struct FakeEditor {
     view: AtomicPtr<IPlugView>,
     /// The size `getSize` reports.
     size: Mutex<(u32, u32)>,
+    /// The rect this editor occupies at a scale of 1, which is what a stated
+    /// scale is applied to.
+    unscaled_size: Mutex<(u32, u32)>,
     /// An editor that states no size at all, whatever it is asked.
     states_no_size: AtomicBool,
     /// An editor that only knows its size once it can see its parent, which
@@ -1127,6 +1131,8 @@ struct FakeEditor {
     constrained_to: Mutex<Option<(u32, u32)>>,
     /// An editor that refuses every host-initiated size outright.
     refuses_constraints: AtomicBool,
+    /// Every scale factor the host stated, in the order it stated them.
+    content_scales: Mutex<Vec<f32>>,
     create_view_calls: AtomicI32,
 }
 
@@ -1138,6 +1144,7 @@ impl FakeEditor {
             ..Self::default()
         });
         *editor.size.lock().expect("size mutex") = (width, height);
+        *editor.unscaled_size.lock().expect("size mutex") = (width, height);
         editor
     }
 
@@ -1203,6 +1210,10 @@ impl FakeEditor {
             .push(CStr::from_ptr(value).to_string_lossy().into_owned());
     }
 
+    fn content_scales(&self) -> Vec<f32> {
+        self.content_scales.lock().expect("scale mutex").clone()
+    }
+
     fn platform_types(&self) -> Vec<String> {
         self.platform_types
             .lock()
@@ -1239,7 +1250,30 @@ struct FakeView {
 }
 
 impl Class for FakeView {
-    type Interfaces = (IPlugView,);
+    type Interfaces = (IPlugView, IPlugViewContentScaleSupport);
+}
+
+/// A view that lays itself out at the density it is told, the way a real one
+/// does: its `ViewRect` is physical pixels on the platforms that state a scale,
+/// so the same editor occupies twice the rect at twice the scale.
+///
+/// Not recorded in the shared call log. This interface is only reachable on the
+/// platforms whose `ViewRect` is physical, so logging it would make every
+/// order-asserting test read differently on Windows and Linux than on macOS.
+impl IPlugViewContentScaleSupportTrait for FakeView {
+    unsafe fn setContentScaleFactor(&self, scale: f32) -> tresult {
+        self.editor
+            .content_scales
+            .lock()
+            .expect("scale mutex")
+            .push(scale);
+        let (width, height) = *self.editor.unscaled_size.lock().expect("size mutex");
+        *self.editor.size.lock().expect("size mutex") = (
+            (width as f32 * scale) as u32,
+            (height as f32 * scale) as u32,
+        );
+        kResultOk
+    }
 }
 
 impl Drop for FakeView {
@@ -3021,6 +3055,128 @@ fn a_size_the_view_refuses_outright_stops_the_host_resize() {
         editor.calls()
     );
     assert_eq!(editor.on_size(), None);
+}
+
+/// The shell drags the window; the format seam is the only route from there to
+/// the plugin. A resize that stops at the wrapper leaves the editor drawing at
+/// the size it opened inside a window the user just made a different shape.
+#[test]
+fn a_host_window_resize_crosses_the_format_seam_and_lands_on_the_constrained_size() {
+    let editor = FakeEditor::sized(800, 600);
+    *editor.constrained_to.lock().expect("size mutex") = Some((640, 480));
+    let (window, window_sizes) = recording_window(&editor);
+    let state = state_with_editor(&editor);
+    let mut wrapper = load(&state, COMBINED_CID);
+    wrapper.set_editor_window_resizer(window);
+    wrapper
+        .open_gui(ptr::null_mut())
+        .expect("the fake editor opens");
+
+    let granted = wrapper
+        .request_editor_size(1000, 900)
+        .expect("a resizable editor must accept a constrained size");
+
+    assert_eq!(
+        granted,
+        (640, 480),
+        "the seam must report the size checkSizeConstraint wrote, which is the one the window snaps to"
+    );
+    assert!(
+        editor.position_of("checkSizeConstraint").is_some(),
+        "the request must have been put to the view, got: {:?}",
+        editor.calls()
+    );
+    assert_eq!(
+        window_sizes.lock().expect("window size mutex").last(),
+        Some(&(640, 480)),
+        "the host window must end up at the size the plugin granted"
+    );
+}
+
+/// The window's own resizability follows this answer, so it is read before a
+/// user can drag anything. A wrapper that answers for itself either freezes a
+/// resizable editor's window or offers a drag a fixed-layout editor will refuse.
+#[test]
+fn the_seam_answers_resizability_from_the_open_editors_own_can_resize() {
+    let editor = FakeEditor::sized(800, 600);
+    let state = state_with_editor(&editor);
+    let mut wrapper = load(&state, COMBINED_CID);
+
+    assert!(
+        !wrapper.editor_can_resize(),
+        "a plugin whose editor is not open has no size to accept"
+    );
+    let refusal = wrapper
+        .request_editor_size(1000, 900)
+        .expect_err("a closed editor cannot be resized");
+    assert!(refusal.contains("no open editor"), "got: {refusal}");
+
+    wrapper
+        .open_gui(ptr::null_mut())
+        .expect("the fake editor opens");
+    assert!(wrapper.editor_can_resize());
+
+    editor.fixed_size.store(true, Ordering::Release);
+    assert!(
+        !wrapper.editor_can_resize(),
+        "the answer must be the view's, read when it is asked"
+    );
+}
+
+/// A window dragged to a display of a different density has to tell the editor,
+/// and then find out what the editor became: the rect is worth a different
+/// number of window units at the new scale. Restating one without the other
+/// leaves the editor drawing at one density in a window sized for another.
+#[test]
+fn a_display_scale_change_restates_the_scale_and_renegotiates_the_size() {
+    let editor = FakeEditor::sized(800, 600);
+    let (window, window_sizes) = recording_window(&editor);
+    let state = state_with_editor(&editor);
+    let mut wrapper = load(&state, COMBINED_CID);
+    wrapper.set_editor_window_resizer(window);
+    wrapper
+        .open_gui(ptr::null_mut())
+        .expect("the fake editor opens");
+    let opened = editor.call_count();
+
+    let granted = wrapper
+        .apply_editor_content_scale(2.0)
+        .expect("an open editor must accept the scale of the display it moved to");
+
+    // macOS states its `ViewRect` in the same logical points the window seam
+    // sizes in, so nothing is restated there and the rect does not change.
+    // Windows and X11 state physical pixels: the same editor occupies twice the
+    // rect, and is worth the same number of window units.
+    let view_units = if cfg!(any(target_os = "windows", target_os = "linux")) {
+        2
+    } else {
+        1
+    };
+    assert_eq!(
+        editor.content_scales().last(),
+        (view_units == 2).then_some(&2.0),
+        "only a platform whose view rect is physical is told a scale"
+    );
+    assert_eq!(
+        editor.on_size(),
+        Some((800 * view_units, 600 * view_units)),
+        "the view must be renegotiated into the rect it occupies at the new scale"
+    );
+    assert!(
+        editor.calls_since(opened).contains(&"checkSizeConstraint"),
+        "the size must be put back to the view, got: {:?}",
+        editor.calls_since(opened)
+    );
+    assert_eq!(
+        granted,
+        (800, 600),
+        "the window keeps the units it had: it is the density inside them that changed"
+    );
+    assert_eq!(
+        window_sizes.lock().expect("window size mutex").last(),
+        Some(&granted),
+        "the window must be moved to the size the seam reported"
+    );
 }
 
 /// A view is told the rectangle it asked for. A host that normalises the ask to
