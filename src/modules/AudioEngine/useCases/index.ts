@@ -107,6 +107,7 @@ export { configureAudioDeviceRuntimeSink } from './configureAudioDeviceRuntimeSi
 export { initializeAudioEngine } from './initializeAudioEngine';
 
 export { readNativeEnginePlayheadSeconds } from './livePlayback/readNativeEnginePlayheadSeconds';
+export { repositionNativeLiveGraphSession } from './livePlayback/repositionNativeLiveGraphSession';
 export { startNativeLiveGraphSession } from './livePlayback/startNativeLiveGraphSession';
 export { stopNativeLiveGraphSession } from './livePlayback/stopNativeLiveGraphSession';
 
