@@ -1,0 +1,41 @@
+src/modules/AiRuntime/presentations/views/__tests__/ChatPanel.spec.tsx
+  s_a40848e8f8cca9::t_4c9560244940e7 71
+  s_a40848e8f8cca9::t_4ea04940f67984 68-70,72-77,717-742
+  s_a40848e8f8cca9::t_67921d4a9516d6 743-745
+src/modules/AiRuntime/useCases/__tests__/settleRetainedSectionRenderManualReview.spec.ts
+  s_a40848e8f8cca9::t_4ea04940f67984 266-287
+src/modules/AiRuntime/useCases/selectRetainedSectionRenderManualReviews.ts
+  s_a40848e8f8cca9::t_46cc935a9f1064 136-138
+src/modules/AudioRendering/repositories/audioExport/downloadAudioWav.ts
+  s_a40848e8f8cca9::t_4c9560244940e7 1-2,8,11-14
+src/modules/AiRuntime/useCases/agentRunLifecycle.ts
+  s_a40848e8f8cca9::t_4c9560244940e7 263,1371,1382-1383,1390-1393
+src/modules/AiRuntime/useCases/__tests__/selectRetainedSectionRenderManualReviews.spec.ts
+  s_a40848e8f8cca9::t_4ea04940f67984 71-76,78-79,202-214,219-221,226,229-230
+  s_a40848e8f8cca9::t_385d4e92688568 215-218,222-225,227-228
+src/modules/AudioRendering/repositories/audioExport/__tests__/downloadAudioWav.spec.ts
+  s_a40848e8f8cca9::t_4ea04940f67984 1-40
+src/modules/AiRuntime/stores/__tests__/retainedSectionRenderReviewHydration.spec.ts
+  s_a40848e8f8cca9::t_4ea04940f67984 195-217
+src/modules/AiRuntime/presentations/views/ChatPanel.tsx
+  s_a40848e8f8cca9::t_4c9560244940e7 262,462,534-543
+src/modules/AiRuntime/presentations/views/__tests__/RetainedSectionRenderManualReview.spec.tsx
+  s_a40848e8f8cca9::t_4ea04940f67984 3,122-158
+  s_a40848e8f8cca9::t_568d990b94173c 159
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "49dac30d48b6281951b81d4ff79045f863c61cbb",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
