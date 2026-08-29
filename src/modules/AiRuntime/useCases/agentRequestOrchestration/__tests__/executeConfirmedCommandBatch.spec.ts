@@ -51,6 +51,7 @@ type RecordCommittedRecoveryFailure =
     typeof import('../agentRunExecutionSettlement').agentRunExecutionSettlement.recordCommittedRecoveryFailure;
 type GetArtifacts = typeof import('#/modules/AudioRendering/useCases').getAgentSectionRenderArtifacts;
 type RebindArtifacts = typeof import('#/modules/AudioRendering/useCases').rebindAgentProjectSectionArtifactRevisions;
+type AgentSectionRenderArtifact = ReturnType<GetArtifacts>[number];
 
 const mocks = vi.hoisted(() => ({
     bindCancellation: vi.fn<BindCancellation>(),
@@ -269,6 +270,48 @@ const lease = {
 
 let projectMutationAuthorized = true;
 
+function createTestAudioBuffer(sampleRate: number): AudioBuffer {
+    const channelData = new Float32Array(sampleRate);
+    return {
+        copyFromChannel(destination: Float32Array, _channelNumber: number, bufferOffset = 0): void {
+            destination.set(channelData.subarray(bufferOffset, bufferOffset + destination.length));
+        },
+        copyToChannel(source: Float32Array, _channelNumber: number, bufferOffset = 0): void {
+            channelData.set(source, bufferOffset);
+        },
+        duration: 1,
+        getChannelData: (): Float32Array => channelData,
+        length: channelData.length,
+        numberOfChannels: 2,
+        sampleRate,
+    };
+}
+
+function createRenderArtifact(input: {
+    jobId: string;
+    sectionId: string;
+    sectionName: string;
+    startBeat: number;
+    endBeat: number;
+    sampleRate: number;
+    tailSeconds: number;
+    sourceRevision: string;
+    renderedAt: number;
+}): AgentSectionRenderArtifact {
+    const frameCount = input.sampleRate;
+    return {
+        ...input,
+        owner: 'agent-section-render',
+        retention: 'session',
+        durationSeconds: 1,
+        frameCount,
+        channelCount: 2,
+        byteSize: frameCount * 2 * Float32Array.BYTES_PER_ELEMENT,
+        warnings: [],
+        buffer: createTestAudioBuffer(input.sampleRate),
+    };
+}
+
 function execute(
     options: {
         trackedWorkLease?: AgentRunWorkLease | null;
@@ -393,7 +436,7 @@ describe('executeConfirmedCommandBatch', () => {
 
     it('keeps fresh render artifacts unrebound when Command denies finalization after a foreign project mutation', async () => {
         mocks.getArtifacts.mockReturnValueOnce([]).mockReturnValueOnce([
-            {
+            createRenderArtifact({
                 jobId: 'render-1',
                 sectionId: 'section-1',
                 sectionName: 'Verse',
@@ -403,7 +446,7 @@ describe('executeConfirmedCommandBatch', () => {
                 tailSeconds: 0,
                 renderedAt: 1,
                 sourceRevision: 'revision-before-command',
-            },
+            }),
         ]);
         const renderConfirmation = {
             ...confirmation,
@@ -491,7 +534,9 @@ describe('executeConfirmedCommandBatch', () => {
         } satisfies PendingAppActionConfirmation;
         mocks.getArtifacts
             .mockReturnValueOnce([])
-            .mockReturnValueOnce([{ ...renderJob, renderedAt: 1, sourceRevision: 'revision-before-command' }]);
+            .mockReturnValueOnce([
+                createRenderArtifact({ ...renderJob, renderedAt: 1, sourceRevision: 'revision-before-command' }),
+            ]);
         mocks.rebindArtifacts.mockImplementation(() => {
             throw new Error('render artifact vanished');
         });
