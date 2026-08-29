@@ -280,6 +280,57 @@ pub trait AudioPlugin: Send + Sync {
     /// [`DEFAULT_EDITOR_CONTENT_SCALE`].
     fn set_editor_content_scale(&mut self, _scale: f64) {}
 
+    /// Whether the plugin's editor accepts a size the *host* chose.
+    /// **Control path only.**
+    ///
+    /// Asked once the editor is open, because it is the open view that answers
+    /// it — VST3 through `canResize`, CLAP through `gui.can_resize`. The host
+    /// window follows: a fixed-size editor gets a window the user cannot drag,
+    /// because a frame that moves around an editor that cannot follow it leaves
+    /// the editor drawing outside its window.
+    ///
+    /// The default is `false`, which is the truthful answer for a backend with
+    /// no editor to resize.
+    fn editor_can_resize(&self) -> bool {
+        false
+    }
+
+    /// Resize the editor because the host's window was resized, reporting the
+    /// size the plugin constrained the request to. **Control path only.**
+    ///
+    /// The answer is the size the window must end at, and it is often not the
+    /// size that was asked for: every format lets the plugin rewrite a host
+    /// request into one its layout will actually run at — VST3 through
+    /// `checkSizeConstraint`, CLAP through `gui.adjust_size` — and a host that
+    /// kept its own number would leave the editor drawing outside its window.
+    ///
+    /// The window is resized before the plugin is told to move into it, on
+    /// every backend. VST3 states that order outright and CLAP's editors depend
+    /// on it just as much: a view told to lay out at a size its window has not
+    /// taken yet lays out against the window it is still in.
+    ///
+    /// The default refuses, because a backend with no editor has no size to
+    /// negotiate.
+    fn request_editor_size(&mut self, _width: u32, _height: u32) -> Result<(u32, u32), String> {
+        Err("Plugin does not support GUI".to_string())
+    }
+
+    /// Restate the display scale for an editor that is already open, reporting
+    /// the size its host window must take now. **Control path only.**
+    ///
+    /// Distinct from [`Self::set_editor_content_scale`], which states a scale for
+    /// an editor that does not exist yet. A window that reaches a display of a
+    /// different scale holds an editor laid out for the old one, and both halves
+    /// of the answer have to move together: the plugin is told the new scale, and
+    /// the size is renegotiated in the units that scale defines. Applying one
+    /// without the other leaves the editor drawing at one density inside a window
+    /// sized for another.
+    ///
+    /// The default refuses, for the same reason the resize does.
+    fn apply_editor_content_scale(&mut self, _scale: f64) -> Result<(u32, u32), String> {
+        Err("Plugin does not support GUI".to_string())
+    }
+
     /// Carry out an editor resize the plugin asked for, reporting the size that
     /// was applied. **Control path only.**
     ///

@@ -1255,6 +1255,180 @@ impl ClapWrapper {
         self.host_state.set_editor_resize_available(false);
     }
 
+    /// Resize the window this editor is drawn into, where the host gave one.
+    ///
+    /// Absent for a caller that opened the editor with no window — the scan
+    /// worker and the tests both do — in which case there is nothing to move.
+    fn resize_host_window(&self, width: u32, height: u32) {
+        if let Some(resize) = self.editor_resizer.as_ref() {
+            resize(width, height);
+        }
+    }
+
+    /// The `gui` extension of an editor that is open, or nothing.
+    ///
+    /// Every host-initiated editor operation asks for this first: `can_resize`,
+    /// `adjust_size` and `set_size` are all `[main-thread]` calls against a GUI
+    /// that exists, and asking a plugin whose editor was never created is a call
+    /// into a plugin state the format does not define.
+    ///
+    /// # Safety
+    /// The returned reference borrows the plugin's own extension struct, which
+    /// lives as long as the plugin does. Control path only.
+    unsafe fn open_gui_extension(&self) -> Option<&clap_plugin_gui> {
+        if self.gui_ext.is_null() || self.plugin.is_null() || !self.gui_open {
+            return None;
+        }
+        Some(&*self.gui_ext)
+    }
+
+    /// Whether the plugin accepts a size the host chose.
+    ///
+    /// `clap_plugin_gui.can_resize` is the plugin's own answer, and a plugin
+    /// that does not implement it has not said yes: gui.h defines the whole
+    /// host-driven resize sequence as reachable only when it returns true.
+    pub fn editor_can_resize(&self) -> bool {
+        #[cfg(feature = "engine-owned-command-fixture")]
+        if let Some(fixture) = self.command_fixture.as_ref() {
+            return fixture.has_gui && self.gui_open;
+        }
+
+        // SAFETY: control path only; the extension outlives this borrow.
+        unsafe {
+            let Some(gui) = self.open_gui_extension() else {
+                return false;
+            };
+            match gui.can_resize {
+                Some(can_resize) => can_resize(self.plugin),
+                None => false,
+            }
+        }
+    }
+
+    /// Resize the editor because the host's window was resized, reporting the
+    /// size the plugin adjusted the request to. **Control path only.**
+    ///
+    /// gui.h's own host-driven sequence: ask `adjust_size` for a size the plugin
+    /// will run at, then hand it that size through `set_size`. The host window
+    /// moves between the two — the order VST3 states outright, and the one every
+    /// embedded editor depends on, because a plugin told to lay out at a size
+    /// its window has not taken yet lays out against the window it is still in.
+    ///
+    /// A plugin that refuses the adjusted size leaves the host holding a window
+    /// it moved for nothing, so the refusal puts the window back before it is
+    /// reported.
+    pub fn request_editor_size(&mut self, width: u32, height: u32) -> Result<(u32, u32), String> {
+        #[cfg(feature = "engine-owned-command-fixture")]
+        if let Some(fixture) = self.command_fixture.as_ref() {
+            record_gui_lifecycle_thread(fixture);
+            if !self.gui_open {
+                return Err("Plugin has no open editor to resize".to_string());
+            }
+            self.resize_host_window(width, height);
+            return Ok((width, height));
+        }
+
+        if !self.editor_can_resize() {
+            return Err(format!(
+                "Plugin '{}' has no resizable open editor",
+                self.name
+            ));
+        }
+
+        let previous = self.get_gui_size();
+        let (mut granted_width, mut granted_height) = (width, height);
+        // SAFETY: control path only, with the editor open; every call below is
+        // one this platform's `gui` extension declared.
+        unsafe {
+            let Some(gui) = self.open_gui_extension() else {
+                return Err(format!(
+                    "Plugin '{}' has no open editor to resize",
+                    self.name
+                ));
+            };
+
+            if let Some(adjust_size) = gui.adjust_size {
+                if !adjust_size(self.plugin, &mut granted_width, &mut granted_height) {
+                    return Err(format!(
+                        "Plugin '{}' refused the requested editor size",
+                        self.name
+                    ));
+                }
+            }
+
+            self.resize_host_window(granted_width, granted_height);
+
+            if let Some(set_size) = gui.set_size {
+                if !set_size(self.plugin, granted_width, granted_height) {
+                    if let Some((width, height)) = previous {
+                        self.resize_host_window(width, height);
+                    }
+                    return Err(format!(
+                        "Plugin '{}' refused to move to the adjusted editor size",
+                        self.name
+                    ));
+                }
+            }
+        }
+
+        Ok((granted_width, granted_height))
+    }
+
+    /// Restate the display scale for an editor that is already open, reporting
+    /// the size its host window must take now. **Control path only.**
+    ///
+    /// The scale is kept as well as applied, so an editor closed and reopened on
+    /// the display it was moved to opens at the scale it is on. The size is
+    /// re-read rather than assumed: `set_scale` is what makes a plugin lay itself
+    /// out at the new density, and `get_size` is the only way to learn what that
+    /// came to.
+    pub fn apply_editor_content_scale(&mut self, scale: f64) -> Result<(u32, u32), String> {
+        #[cfg(feature = "engine-owned-command-fixture")]
+        if let Some(fixture) = self.command_fixture.as_ref() {
+            record_gui_lifecycle_thread(fixture);
+            let Some((width, height)) = self.get_gui_size().filter(|_| self.gui_open) else {
+                return Err("Plugin has no open editor to re-scale".to_string());
+            };
+            self.editor_content_scale = scale;
+            self.resize_host_window(width, height);
+            return Ok((width, height));
+        }
+
+        if !(scale.is_finite() && scale > 0.0) {
+            return Err(format!(
+                "Plugin '{}' cannot be told a display scale of {scale}",
+                self.name
+            ));
+        }
+        self.editor_content_scale = scale;
+
+        // SAFETY: control path only, with the editor open.
+        unsafe {
+            let Some(gui) = self.open_gui_extension() else {
+                return Err(format!(
+                    "Plugin '{}' has no open editor to re-scale",
+                    self.name
+                ));
+            };
+            // Skipped for cocoa for the same reason the open path skips it:
+            // its logical sizes already carry the OS scale.
+            if Self::scale_applies_to(Self::platform_api()) {
+                if let Some(set_scale) = gui.set_scale {
+                    set_scale(self.plugin, scale);
+                }
+            }
+        }
+
+        let (width, height) = self.get_gui_size().ok_or_else(|| {
+            format!(
+                "Plugin '{}' states no editor size at the new display scale",
+                self.name
+            )
+        })?;
+        self.resize_host_window(width, height);
+        Ok((width, height))
+    }
+
     /// Apply a size the plugin asked for through `clap_host_gui.request_resize`,
     /// reporting what was applied. Control path only — it reaches the shell's
     /// window server.
@@ -2413,6 +2587,18 @@ impl AudioPlugin for ClapWrapper {
         if scale.is_finite() && scale > 0.0 {
             self.editor_content_scale = scale;
         }
+    }
+
+    fn editor_can_resize(&self) -> bool {
+        ClapWrapper::editor_can_resize(self)
+    }
+
+    fn request_editor_size(&mut self, width: u32, height: u32) -> Result<(u32, u32), String> {
+        ClapWrapper::request_editor_size(self, width, height)
+    }
+
+    fn apply_editor_content_scale(&mut self, scale: f64) -> Result<(u32, u32), String> {
+        ClapWrapper::apply_editor_content_scale(self, scale)
     }
 }
 

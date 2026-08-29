@@ -1234,6 +1234,20 @@ impl Vst3Wrapper {
         self.editor.as_ref()
     }
 
+    /// The open editor, or why there is nothing to address.
+    ///
+    /// Every host-initiated editor operation starts here, and names the plugin
+    /// in its refusal: the caller reaches this from a window event, where "no
+    /// editor" is a report about one instance among several.
+    fn open_editor_or_refuse(&self) -> Result<&Vst3Editor, String> {
+        self.editor.as_ref().ok_or_else(|| {
+            format!(
+                "[VST3] '{}' has no open editor to address",
+                self.instance.name()
+            )
+        })
+    }
+
     /// The class CID this instance was created from, as the scanner spells it.
     pub fn descriptor_id(&self) -> &str {
         &self.descriptor_id
@@ -1749,6 +1763,26 @@ impl AudioPlugin for Vst3Wrapper {
 
     fn set_editor_content_scale(&mut self, scale: f64) {
         self.editor_scale = scale;
+    }
+
+    fn editor_can_resize(&self) -> bool {
+        self.editor.as_ref().is_some_and(Vst3Editor::can_resize)
+    }
+
+    fn request_editor_size(&mut self, width: u32, height: u32) -> Result<(u32, u32), String> {
+        self.open_editor_or_refuse()?
+            .request_size(EditorSize { width, height })
+            .map(|granted| (granted.width, granted.height))
+    }
+
+    /// The stated scale is kept as well as applied: an editor closed and
+    /// reopened on the display it was moved to must open at the scale it is on,
+    /// not at the one it was created under.
+    fn apply_editor_content_scale(&mut self, scale: f64) -> Result<(u32, u32), String> {
+        self.editor_scale = scale;
+        self.open_editor_or_refuse()?
+            .apply_content_scale(scale)
+            .map(|granted| (granted.width, granted.height))
     }
 
     fn parameter_event_queue(&self) -> Option<Arc<PluginParameterEventQueue>> {
