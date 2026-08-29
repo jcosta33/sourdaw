@@ -613,7 +613,9 @@ function validatePostMergeSnapshot(
 ): void {
     validateAuthorAppMerger(merged);
     validateBaseBranch(merged);
-    validateStableTrackerTarget(number, expected.trackerTarget ?? undefined, trackerCompletionTarget(merged));
+    if (expected.bodySha256 !== bodySha256(merged.body)) {
+        fail(`PR #${number} body changed during delivery`);
+    }
     if (expected.headRefOid !== merged.headRefOid) {
         fail(`PR #${number} headRefOid changed during delivery`);
     }
@@ -622,9 +624,6 @@ function validatePostMergeSnapshot(
     }
     if (expected.baseRefName !== merged.baseRefName) {
         fail(`PR #${number} baseRefName changed during delivery`);
-    }
-    if (expected.bodySha256 !== bodySha256(merged.body)) {
-        fail(`PR #${number} body changed during delivery`);
     }
 }
 
@@ -701,6 +700,18 @@ function sameDeliveryReceiptMode(left: DeliveryReceiptPayload, right: DeliveryRe
         return true;
     }
     return left.ciAdmissionMode === right.ciAdmissionMode;
+}
+
+function frozenCurrentDeliveryReceiptPayload(
+    number: number,
+    receiptBody: string,
+    expected: DeliveryReceiptPayload
+): DeliveryReceiptPayload {
+    const payload = parseDeliveryReceipt(receiptBody);
+    if (payload === undefined || payload.schemaVersion === 1 || !sameDeliveryReceiptMode(payload, expected)) {
+        fail(`PR #${number} delivery receipt changed during delivery`);
+    }
+    return payload;
 }
 
 function deliveryReceiptKey(payload: DeliveryReceiptPayload): string {
@@ -990,6 +1001,25 @@ function readExactDeliveryReceipt(
     return receipt;
 }
 
+function readStableExactDeliveryReceipt(
+    pullRequest: PullRequestSnapshot,
+    port: DeliveryPort,
+    expectedReceiptId: string
+): DeliveryReceiptComment {
+    const firstLineage = orderedDeliveryReceiptLineage(provenDeliveryReceiptComments(pullRequest, port), pullRequest);
+    const first = firstLineage.find((comment) => comment.id === expectedReceiptId);
+    const secondLineage = orderedDeliveryReceiptLineage(provenDeliveryReceiptComments(pullRequest, port), pullRequest);
+    const second = secondLineage.find((comment) => comment.id === expectedReceiptId);
+    if (first === undefined || second === undefined) {
+        fail(`PR #${pullRequest.number} delivery receipt changed during delivery`);
+    }
+    if (first.id !== second.id) {
+        fail(`PR #${pullRequest.number} delivery receipt changed during delivery`);
+    }
+    assertDeliveryReceiptForHead(second, pullRequest);
+    return second;
+}
+
 function assertCompleteDeliveryReceiptProof(
     number: number,
     comments: DeliveryReceiptComment[],
@@ -1106,6 +1136,45 @@ function tryStableHistoricalDeliveryReceipt(
     }
 }
 
+function compatibleBodylessPersistedMergedRecoveryReceipt(
+    lineage: DeliveryReceiptComment[],
+    authority: CurrentPersistedDeliveryReceiptAuthority,
+    pullRequest: Pick<PullRequestSnapshot, 'number' | 'headRefOid'>
+): DeliveryReceiptComment {
+    const stored = lineage.find((receipt) => receipt.id === authority.receiptId);
+    if (stored === undefined) {
+        fail(`PR #${pullRequest.number} delivery receipt changed during recovery`);
+    }
+    const storedPayload = assertDeliveryReceiptForHead(stored, pullRequest);
+    if (storedPayload.schemaVersion === 1) {
+        fail(`PR #${pullRequest.number} delivery receipt changed during recovery`);
+    }
+    const authoritative = newestLogicalDeliveryReceiptAuthority(lineage, pullRequest);
+    const authoritativePayload = assertDeliveryReceiptForHead(authoritative, pullRequest);
+    if (
+        !sameDeliveryReceiptKey(storedPayload, authoritativePayload) ||
+        !sameDeliveryReceiptMode(storedPayload, authoritativePayload)
+    ) {
+        fail(`PR #${pullRequest.number} delivery receipt changed during recovery`);
+    }
+    return authoritative;
+}
+
+function readCompatibleBodylessPersistedMergedRecoveryReceipt(
+    pullRequest: PullRequestSnapshot,
+    port: DeliveryPort,
+    authority: CurrentPersistedDeliveryReceiptAuthority
+): DeliveryReceiptComment {
+    const firstLineage = orderedDeliveryReceiptLineage(provenDeliveryReceiptComments(pullRequest, port), pullRequest);
+    const first = compatibleBodylessPersistedMergedRecoveryReceipt(firstLineage, authority, pullRequest);
+    const secondLineage = orderedDeliveryReceiptLineage(provenDeliveryReceiptComments(pullRequest, port), pullRequest);
+    const second = compatibleBodylessPersistedMergedRecoveryReceipt(secondLineage, authority, pullRequest);
+    if (first.id !== second.id) {
+        fail(`PR #${pullRequest.number} delivery receipt changed during recovery`);
+    }
+    return second;
+}
+
 function readStableMergedRecoveryReceipt(pullRequest: PullRequestSnapshot, port: DeliveryPort): DeliveryReceiptComment {
     const firstLineage = orderedDeliveryReceiptLineage(provenDeliveryReceiptComments(pullRequest, port), pullRequest);
     const first = newestLogicalDeliveryReceiptAuthority(firstLineage, pullRequest);
@@ -1132,8 +1201,11 @@ function readPersistedMergedRecoveryReceipt(
         }
         validatePostMergeSnapshot(authority.postMergeValidation, pullRequest, pullRequest.number);
     }
+    if (authority.receiptBody === undefined) {
+        return readCompatibleBodylessPersistedMergedRecoveryReceipt(pullRequest, port, authority);
+    }
     const receipt = readExactDeliveryReceipt(pullRequest, port, authority.receiptId);
-    if (authority.receiptBody !== undefined && receipt.body !== authority.receiptBody) {
+    if (receipt.body !== authority.receiptBody) {
         fail(`PR #${pullRequest.number} delivery receipt changed during recovery`);
     }
     return receipt;
@@ -1162,19 +1234,25 @@ function ensureDeliveryReceipt(
         ? persistedAuthority
         : undefined;
     let receipt: DeliveryReceiptComment | undefined;
+    let expectedReceipt = expected;
     if (frozenAuthority !== undefined) {
-        if (frozenAuthority.receiptBody !== undefined && frozenAuthority.receiptBody !== expectedBody) {
-            fail(`PR #${pullRequest.number} delivery receipt changed during delivery`);
+        if (frozenAuthority.receiptBody === undefined) {
+            fail(`PR #${pullRequest.number} delivery receipt authority cannot be proven`);
         }
+        expectedReceipt = frozenCurrentDeliveryReceiptPayload(
+            pullRequest.number,
+            frozenAuthority.receiptBody,
+            expected
+        );
         try {
-            receipt = readExactDeliveryReceipt(pullRequest, port, frozenAuthority.receiptId);
+            receipt = readStableExactDeliveryReceipt(pullRequest, port, frozenAuthority.receiptId);
         } catch {
             fail(`PR #${pullRequest.number} delivery receipt changed during delivery`);
         }
-        if (frozenAuthority.receiptBody !== undefined && receipt.body !== frozenAuthority.receiptBody) {
+        if (receipt.body !== frozenAuthority.receiptBody) {
             fail(`PR #${pullRequest.number} delivery receipt changed during delivery`);
         }
-        assertCanonicalDeliveryReceipt(receipt, pullRequest, expected);
+        assertCanonicalDeliveryReceipt(receipt, pullRequest, expectedReceipt);
     }
     const existing =
         receipt === undefined
@@ -1212,22 +1290,26 @@ function ensureDeliveryReceipt(
     if (receipt === undefined) {
         fail(`PR #${pullRequest.number} delivery receipt was not durably verified`);
     }
-    assertCanonicalDeliveryReceipt(receipt, pullRequest, expected);
+    const receiptPayload = assertCanonicalDeliveryReceipt(receipt, pullRequest, expectedReceipt);
     persistPreparedDeliveryReceiptAuthority(pullRequest.number, receipt, port);
     let verified: DeliveryReceiptComment | undefined;
     try {
-        verified = readStrictStableEquivalentDeliveryReceipt(pullRequest, port, expected);
+        verified =
+            frozenAuthority === undefined
+                ? readStrictStableEquivalentDeliveryReceipt(pullRequest, port, expectedReceipt)
+                : readStableExactDeliveryReceipt(pullRequest, port, receipt.id);
     } catch {
         fail(`PR #${pullRequest.number} delivery receipt was not durably verified`);
     }
     if (
         verified === undefined ||
         verified.id !== receipt.id ||
-        !sameExactDeliveryReceipt(assertDeliveryReceiptForHead(verified, pullRequest), expected)
+        verified.body !== receipt.body ||
+        !sameExactDeliveryReceipt(assertDeliveryReceiptForHead(verified, pullRequest), expectedReceipt)
     ) {
         fail(`PR #${pullRequest.number} delivery receipt was not durably verified`);
     }
-    assertCanonicalDeliveryReceipt(verified, pullRequest, expected);
+    assertCanonicalDeliveryReceipt(verified, pullRequest, receiptPayload);
     return verified;
 }
 
@@ -2233,7 +2315,8 @@ function readOptionalDeliveryRefOid(
         }
         return undefined;
     }
-    if (!lstatSync(exactRefPath).isFile()) {
+    const refStats = lstatSync(exactRefPath);
+    if (refStats.isDirectory()) {
         return undefined;
     }
     fail(`PR #${number} ${label} cannot be verified`);
