@@ -1,5 +1,6 @@
 import { serializeMidiStateForClips } from '#/modules/MIDI/useCases';
 import { createHandler } from '#/utils/createHandler';
+import { type GeneratedMidiStateGuard } from '#/utils/handlerContract';
 
 import { collectTrackClipIds } from '../../services/collectTrackClipIds';
 import { serializeClipScopedAutomationLanes } from '../../useCases/clip/serializeClipScopedAutomationLanes';
@@ -22,7 +23,7 @@ function ensureTargetTrackId(action: DuplicateTrackAction): string {
 // Guards for duplicates this handler creates, keyed by action so the
 // describe-time inverse is finalized with the created entity once execute
 // lands — the handleAddTrack/handleCreateBus pattern.
-const pendingDuplicateGuards = new WeakMap<object, { entityJson: string; midiByClipIdJson: string }>();
+const pendingDuplicateGuards = new WeakMap<object, GeneratedMidiStateGuard>();
 
 export const handleDuplicateTrack = createHandler<'duplicateTrack'>({
     materializeCommandArguments: (action) => {
