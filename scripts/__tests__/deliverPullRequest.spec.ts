@@ -1326,13 +1326,14 @@ describe('pull-request delivery', () => {
         expect(calls).toContain('PR #42 was already merged; repaired 0 remaining dependent(s)');
     });
 
-    it('does not let a pre-validation X receipt authorize later merged recovery after the body changes to Y', () => {
+    it('re-runs prepared merged validation and keeps rejecting body drift after merge succeeded', () => {
         const bodyX = relationshipBody('Closes #2372');
         const bodyY = relationshipBody('Closes #2373');
         const { port, calls, tracker } = fakePort({
             primary: [
                 pullRequest({ body: bodyX }),
-                pullRequest({ body: bodyY }),
+                pullRequest({ body: bodyX }),
+                pullRequest({ state: 'MERGED', body: bodyY }),
                 pullRequest({ state: 'MERGED', body: bodyY }),
             ],
             dependentSets: [[], []],
@@ -1340,13 +1341,11 @@ describe('pull-request delivery', () => {
 
         expect(() => deliverPullRequest(42, port, tracker)).toThrow(/closing target changed during delivery/i);
         expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(1);
-        expect(calls.filter((call) => call === 'merge:42:head')).toHaveLength(0);
+        expect(calls.filter((call) => call === 'merge:42:head')).toHaveLength(1);
         expect(calls.filter((call) => call === 'complete:2372')).toHaveLength(0);
         expect(calls.filter((call) => call === 'complete:2373')).toHaveLength(0);
 
-        expect(() => deliverPullRequest(42, port, tracker)).toThrow(
-            /delivery receipt authority is not merge-authorized/i
-        );
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/closing target changed during delivery/i);
         expect(calls.filter((call) => call === 'complete:2372')).toHaveLength(0);
         expect(calls.filter((call) => call === 'complete:2373')).toHaveLength(0);
     });
@@ -1561,10 +1560,13 @@ describe('pull-request delivery', () => {
         expect(calls).toContain('merge:42:head');
         expect(calls.indexOf('add-receipt:42')).toBeLessThan(calls.indexOf('merge:42:head'));
         expect(calls.indexOf('receipt-authority:write:prepared:IC_delivery_42_1')).toBeLessThan(
+            calls.indexOf('merge:42:head')
+        );
+        expect(calls.indexOf('merge:42:head')).toBeLessThan(
             calls.indexOf('receipt-authority:write:merge-authorized:IC_delivery_42_1')
         );
         expect(calls.indexOf('receipt-authority:write:merge-authorized:IC_delivery_42_1')).toBeLessThan(
-            calls.indexOf('merge:42:head')
+            calls.indexOf('complete:2372')
         );
         expect(calls).not.toContainEqual(expect.stringMatching(/delivered|success/i));
 
@@ -1575,6 +1577,48 @@ describe('pull-request delivery', () => {
         expect(calls).toContain('PR #42 was already merged; repaired 0 remaining dependent(s)');
         expect(calls).toContain('receipt-authority:read:merge-authorized:IC_delivery_42_1');
         expect(calls.filter((call) => call === 'receipt-authority:write:terminal:IC_delivery_42_1')).toHaveLength(1);
+    });
+
+    it('does not downgrade merge-authorized authority during a same-receipt open retry before late merged recovery', () => {
+        const closes = relationshipBody('Closes #2372');
+        const { port, calls, tracker } = fakePort({
+            primary: [
+                pullRequest({ body: closes }),
+                pullRequest({ body: closes }),
+                pullRequest({ state: 'MERGED', body: closes }),
+                pullRequest({ body: closes }),
+                pullRequest({ body: closes }),
+                pullRequest({ state: 'MERGED', body: closes }),
+            ],
+            reviewStates: [
+                { latestReviewerStateOnHead: 'APPROVED', unresolvedThreads: 0 },
+                { latestReviewerStateOnHead: 'APPROVED', unresolvedThreads: 0 },
+                { latestReviewerStateOnHead: 'APPROVED', unresolvedThreads: 0 },
+                { latestReviewerStateOnHead: 'CHANGES_REQUESTED', unresolvedThreads: 0 },
+            ],
+            dependentSets: [[], [], [], []],
+        });
+        let failTrackerOnce = true;
+        tracker.complete = (issueNumber) => {
+            calls.push(`complete:${issueNumber}`);
+            if (failTrackerOnce) {
+                failTrackerOnce = false;
+                throw new Error('tracker unavailable');
+            }
+        };
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/tracker unavailable/i);
+        expect(calls).toContain('receipt-authority:write:merge-authorized:IC_delivery_42_1');
+        expect(calls).not.toContain('receipt-authority:write:terminal:IC_delivery_42_1');
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/not approved/i);
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(1);
+        expect(calls).toContain('receipt-authority:read:merge-authorized:IC_delivery_42_1');
+        expect(calls.filter((call) => call === 'complete:2372')).toHaveLength(2);
+        expect(calls).toContain('PR #42 was already merged; repaired 0 remaining dependent(s)');
     });
 
     it('publishes one current v2 receipt, then reuses it on retry instead of publishing a third same-head receipt', () => {
@@ -1713,6 +1757,30 @@ describe('pull-request delivery', () => {
 
         expect(() => deliverPullRequest(42, port, tracker)).toThrow(/delivery receipt was not durably verified/i);
         expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(1);
+        expect(calls).not.toContain('merge:42:head');
+        expect(calls.filter((call) => call.startsWith('complete:'))).toHaveLength(0);
+    });
+
+    it('keeps a returned receipt id across repeated proof failures so retries never post a second copy', () => {
+        const closes = relationshipBody('Closes #2372');
+        const { port, calls, receipts, tracker } = fakePort({
+            primary: [
+                pullRequest({ body: closes }),
+                pullRequest({ body: closes }),
+                pullRequest({ body: closes }),
+                pullRequest({ body: closes }),
+            ],
+            dependentSets: [[], []],
+            deliveryReceiptProof: { totalCount: 2, latestCommentId: 'IC_hidden_newer' },
+        });
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/delivery receipt was not durably verified/i);
+        expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(1);
+        expect(receipts.map((entry) => entry.id)).toEqual(['IC_delivery_42_1']);
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/delivery receipt was not durably verified/i);
+        expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(1);
+        expect(receipts.map((entry) => entry.id)).toEqual(['IC_delivery_42_1']);
         expect(calls).not.toContain('merge:42:head');
         expect(calls.filter((call) => call.startsWith('complete:'))).toHaveLength(0);
     });
