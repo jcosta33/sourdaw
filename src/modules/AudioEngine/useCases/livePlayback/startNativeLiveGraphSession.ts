@@ -102,6 +102,32 @@ function readSessionTopology(): Readonly<{
     };
 }
 
+/**
+ * Set the engine rolling, once its maps and loop region are installed.
+ *
+ * Its own admission rather than part of the topology batch: that batch is an
+ * all-or-nothing fence, so a roll folded into it would have to be applied
+ * before the region it is bounded by.
+ *
+ * A refused roll leaves the session standing and the handle open — the topology
+ * is mirrored and plugin hosting is live, which is what a session is for while
+ * Web Audio remains the audible path. What the engine does not do is roll, so
+ * the playhead feed reports a parked transport and the cursor keeps the
+ * scheduler's own clock.
+ */
+async function rollNativeTransport(
+    backend: ReturnType<typeof createNativeLiveGraphBackend>,
+    positionSeconds: number
+): Promise<void> {
+    const rolling = await backend.apply({
+        schemaVersion: 1,
+        commands: [{ kind: 'set-transport', playing: true, positionSeconds }],
+    });
+    if (rolling.application !== 'applied') {
+        logger.warn(`[AudioEngine] native transport did not start rolling: ${rolling.reason}`);
+    }
+}
+
 export function startNativeLiveGraphSession(
     input: StartNativeLiveGraphSessionInput
 ): Promise<NativeLiveGraphSessionResult> {
@@ -158,26 +184,19 @@ export function startNativeLiveGraphSession(
         // default tempo rather than the arrangement's.
         const maps = await setEngineTransportMaps(input.transportMaps);
         if (maps.outcome === 'declined') {
-            // The session stands: an engine without the arrangement's maps
-            // still renders, it just counts beats at its own tempo and honours
-            // no loop, and the next play sends them again.
-            logger.warn(`[AudioEngine] native transport maps declined: ${maps.reason}`);
-        }
-
-        // Now the engine may roll. Its own admission, not the topology's: the
-        // fenced topology batch is all-or-nothing, and a roll folded into it
-        // would have to be applied before the region it is bounded by.
-        const rolling = await backend.apply({
-            schemaVersion: 1,
-            commands: [{ kind: 'set-transport', playing: true, positionSeconds: input.positionSeconds }],
-        });
-        if (rolling.application !== 'applied') {
-            // The session stands and the handle stays open — the topology is
-            // mirrored and plugin hosting is live, which is what a session is
-            // for while Web Audio remains the audible path. What the engine
-            // does not do is roll, so the feed below reports a parked
-            // transport and the cursor keeps the scheduler's own clock.
-            logger.warn(`[AudioEngine] native transport did not start rolling: ${rolling.reason}`);
+            // The engine keeps whatever pair the *previous* session installed:
+            // nothing between sessions clears its maps or its loop region, and
+            // the install that would have replaced them is the one that just
+            // failed. Rolling now would run this take under the last take's
+            // tempo map and wrap at a loop seam this arrangement no longer has,
+            // while the Web Audio transport the musician hears plays straight
+            // through it. So the engine stays parked, and a parked transport
+            // renders no frame at all (`advance_playhead` returns on
+            // `!is_playing`), which is what makes the stale pair unreachable
+            // rather than merely unlikely.
+            logger.warn(`[AudioEngine] native transport left parked: maps declined: ${maps.reason}`);
+        } else {
+            await rollNativeTransport(backend, input.positionSeconds);
         }
         startNativeEnginePlayheadFeed();
         return { outcome: 'started', runtimeRevision: result.runtimeRevision, reports: result.reports };

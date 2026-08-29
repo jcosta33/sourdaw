@@ -58,25 +58,38 @@ const byBeat = <TChange extends { beat: number }>(changes: readonly TChange[]): 
     [...changes].sort((left, right) => left.beat - right.beat);
 
 /**
- * Reduce a list to at most `cap` entries, spread evenly, always keeping the
- * first.
+ * Reduce a list to at most `cap` entries, spread evenly across both endpoints.
  *
  * Truncation is the wrong degradation here. The engine refuses an over-capacity
  * map whole, so the choice is never "keep the tail or drop it" — it is "install
  * a thinner map or install nothing". Dropping everything past the cap would
  * leave the end of a long arrangement playing at whatever tempo the cap
  * happened to land on; thinning evenly keeps the map's shape everywhere and
- * loses only resolution. The first entry is kept unconditionally because it is
- * what opens the map, and the engine refuses a map that does not open at zero.
+ * loses only resolution.
+ *
+ * Both ends are kept, and neither is an aesthetic choice. The first opens the
+ * map, and the engine refuses a map that does not open at zero. The last is
+ * the one every dropped entry is *not* corrected by: an interior entry that
+ * goes missing is corrected at the next kept one a few beats later, but the
+ * final change has nothing after it, so losing it plays the whole tail of the
+ * arrangement at the previous kept tempo — permanently, and further off the
+ * longer the arrangement runs. Spreading `cap` slots across `length - 1`
+ * intervals is what lands the last slot exactly on the last entry.
  */
 function thinUniformly<TItem>(items: readonly TItem[], cap: number): TItem[] {
     if (items.length <= cap) {
         return [...items];
     }
-    const stride = items.length / cap;
+    const first = items[0];
+    if (cap <= 1 || first === undefined) {
+        // One slot cannot hold both ends. The opening wins, because a map that
+        // does not start at zero is refused outright rather than degraded.
+        return first === undefined ? [] : [first];
+    }
+    const step = (items.length - 1) / (cap - 1);
     const kept: TItem[] = [];
     for (let slot = 0; slot < cap; slot += 1) {
-        const item = items[Math.floor(slot * stride)];
+        const item = items[Math.round(slot * step)];
         if (item !== undefined) {
             kept.push(item);
         }

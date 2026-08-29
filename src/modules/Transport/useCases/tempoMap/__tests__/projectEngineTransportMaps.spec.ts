@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { secondsBetweenBeats } from '../../../models/TempoMap';
 import { defaultTransportState } from '../../../models/TransportState';
 import { getTransportState } from '../../../repositories/transport/getTransportState';
 import { tempoMapStore } from '../../../stores/tempoMapStore';
@@ -114,6 +115,26 @@ describe('projectEngineTransportMaps', () => {
         // thinning keeps a segment near the end of the timeline.
         const lastSecond = maps.tempo.at(-1)?.startSeconds ?? 0;
         expect(lastSecond).toBeGreaterThan((lastBeat / 2) * (60 / 150));
+    });
+
+    it('ends a thinned map on the arrangement’s own last tempo change', () => {
+        // Every interior entry the thinning drops is corrected a few beats
+        // later by the next one it kept. The final change has nothing after it,
+        // so dropping *that* one is permanent: the whole tail of the
+        // arrangement renders at the previous kept tempo, for as long as the
+        // arrangement runs. An even spread that stops short of the last index
+        // does exactly that, on every over-capacity map.
+        const changes = Array.from({ length: 9000 }, (_, index) => tempoChange(index + 1, 100 + (index % 40)));
+        const authoredLast = changes.at(-1)!;
+        tempoMapStore.set({ changes });
+
+        const maps = projectEngineTransportMaps();
+        const projectedLast = maps.tempo.at(-1);
+
+        expect(projectedLast?.beatsPerMinute).toBe(authoredLast.tempo);
+        // And at the second the arrangement actually reaches that beat, not
+        // wherever the thinning happened to stop.
+        expect(projectedLast?.startSeconds).toBeCloseTo(secondsBetweenBeats(changes, 0, authoredLast.beat, 120), 6);
     });
 
     it('reports the loop in seconds, and disabled when the transport is not looping', () => {

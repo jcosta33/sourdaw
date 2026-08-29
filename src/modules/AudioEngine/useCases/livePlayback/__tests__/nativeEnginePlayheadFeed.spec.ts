@@ -110,6 +110,47 @@ describe('the native engine playhead feed', () => {
         expect(readNativeEnginePlayheadSeconds()).toBe(1.5);
     });
 
+    it('does not let a stale settlement release the claim a newer run already holds', async () => {
+        const deferred = () => {
+            let settle = (_reading: ReturnType<typeof rollingAt>): void => undefined;
+            const promise = new Promise<ReturnType<typeof rollingAt>>((resolve) => {
+                settle = resolve;
+            });
+            return { promise, settle: (reading: ReturnType<typeof rollingAt>) => settle(reading) };
+        };
+        const stale = deferred();
+        const current = deferred();
+        vi.mocked(getEngineTransportPosition)
+            .mockReturnValueOnce(stale.promise)
+            .mockReturnValueOnce(current.promise)
+            // Any further request is a real promise, so a third poll shows up
+            // as a call count rather than as a crash on an undefined result.
+            .mockResolvedValue(rollingAt(99));
+
+        startNativeEnginePlayheadFeed();
+        pollNativeEnginePlayheadOnce();
+        stopNativeEnginePlayheadFeed();
+        startNativeEnginePlayheadFeed();
+        // The new run's request is already out when the old one answers, which
+        // is the ordering an unconditional release gets wrong.
+        pollNativeEnginePlayheadOnce();
+
+        stale.settle(rollingAt(9));
+        // A macrotask, not `await stale.promise`: the stale chain's own
+        // `finally` is queued behind its `then`, so a microtask that only
+        // awaits the base promise runs before the release this asserts about.
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        // Releasing the slot here would release a claim this run still holds,
+        // and the next frame would stack a second request behind its own.
+        pollNativeEnginePlayheadOnce();
+        expect(getEngineTransportPosition).toHaveBeenCalledTimes(2);
+
+        current.settle(rollingAt(1.5));
+        await vi.waitFor(() => expect(nativeEnginePlayheadFeed.reading).not.toBeNull());
+        expect(readNativeEnginePlayheadSeconds()).toBe(1.5);
+    });
+
     it('refuses to answer while the session topology carries no audio', async () => {
         vi.mocked(getEngineTransportPosition).mockResolvedValue(rollingAt(3.25));
         startNativeEnginePlayheadFeed();

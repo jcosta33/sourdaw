@@ -33,7 +33,10 @@ const mocks = vi.hoisted(() => ({
     /** Runs when the probe is awaited, which is before the project is read. */
     onProbe: vi.fn(),
     applyGraphCommands: vi.fn<(input: { batch: unknown }) => Promise<unknown>>(),
-    setEngineTransportMaps: vi.fn((_maps: unknown) => Promise.resolve({ outcome: 'applied' as const })),
+    setEngineTransportMaps: vi.fn(
+        (_maps: unknown): Promise<{ outcome: 'applied' } | { outcome: 'declined'; reason: string }> =>
+            Promise.resolve({ outcome: 'applied' })
+    ),
     startPlayheadFeed: vi.fn(),
     stopPlayheadFeed: vi.fn(),
     /**
@@ -239,6 +242,28 @@ describe('startNativeLiveGraphSession', () => {
         expect(mocks.setEngineTransportMaps.mock.invocationCallOrder[0]).toBeGreaterThan(
             mocks.applyGraphCommands.mock.invocationCallOrder[0]!
         );
+    });
+
+    it('leaves the engine parked when the maps are declined, rather than rolling under a stale pair', async () => {
+        mocks.setEngineTransportMaps.mockResolvedValueOnce({ outcome: 'declined', reason: 'malformed maps' });
+
+        const result = await startNativeLiveGraphSession({ positionSeconds: 2.5, transportMaps: FLAT_MAPS });
+
+        // Nothing between sessions clears the engine's maps or its loop region,
+        // so a roll here would run this take under the previous take's tempo
+        // map and wrap at a seam this arrangement no longer has — while the Web
+        // Audio transport the musician actually hears plays straight through.
+        expect(appliedBatches()).toHaveLength(1);
+        expect(appliedBatches()[0]?.commands.at(-1)).toEqual({
+            kind: 'set-transport',
+            playing: false,
+            positionSeconds: 2.5,
+        });
+        // The session still stands: the topology is mirrored and the plugins
+        // host, which is what a session is for while Web Audio is audible.
+        expect(result).toMatchObject({ outcome: 'started' });
+        expect(nativeLiveGraphSession.backend).not.toBeNull();
+        expect(mocks.startPlayheadFeed).toHaveBeenCalled();
     });
 
     it('does not install maps or open the playhead feed for a session that never started', async () => {
