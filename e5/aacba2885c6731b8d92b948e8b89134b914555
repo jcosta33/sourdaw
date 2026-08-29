@@ -1,0 +1,64 @@
+crates/daw-engine/src/transport_map.rs
+  s_4f908a5afb6b58::t_0a3cef4d19837d 1-276,285-452
+  s_4f908a5afb6b58::t_a904afe8a75996 277-284
+crates/daw-engine/src/lib.rs
+  s_4f908a5afb6b58::t_1221550790de65 832
+  s_4f908a5afb6b58::t_fdb642157f3289 856-857
+  s_4f908a5afb6b58::t_6979bcc8cc66c8 119
+  s_4f908a5afb6b58::t_22c07cc3a09172 389-403
+  s_4f908a5afb6b58::t_bb3cd6805840a6 1529
+  s_4f908a5afb6b58::t_110215943362da 22-24
+  s_4f908a5afb6b58::t_07df4330a231d1 11
+  s_4f908a5afb6b58::t_814a9b91f50076 1544
+  s_4f908a5afb6b58::t_d5d8ad7ec5ab5c 181
+  s_4f908a5afb6b58::t_5c52b37ce74238 155,163
+  s_4f908a5afb6b58::t_faeede8bb550fa 817
+crates/daw-engine/src/audio_thread.rs
+  s_4f908a5afb6b58::t_9adc454c1debe1 212,219
+  s_4f908a5afb6b58::t_a689d258884178 266
+  s_4f908a5afb6b58::t_ed1b80ccb884e0 527-530
+  s_4f908a5afb6b58::t_8b57f904ebf81f 234,240
+  s_4f908a5afb6b58::t_bc20dd6e517799 17-19
+  s_4f908a5afb6b58::t_8d96fe239f3f5e 435
+  s_4f908a5afb6b58::t_5b6ada3510fe74 464
+crates/daw-engine/src/scheduler.rs
+  s_4f908a5afb6b58::t_7ed6f868077d5f 2408-2530,2536,2540-2546
+  s_4f908a5afb6b58::t_5c9e2f921a2d4f 4808-4881
+  s_4f908a5afb6b58::t_162831cb9b9394 119-126
+  s_4f908a5afb6b58::t_b9c8f1788c358f 23
+  s_4f908a5afb6b58::t_c9c885d019ae02 278-293
+  s_4f908a5afb6b58::t_7eed62beaaa322 1359
+  s_4f908a5afb6b58::t_ce27ed5a14352b 1401-1419
+  s_4f908a5afb6b58::t_bc7b0a0eec91f8 1702-1712
+  s_4f908a5afb6b58::t_815fb05cce7622 2685-2693
+  s_4f908a5afb6b58::t_91620818b2441f 6510,6517
+  s_4f908a5afb6b58::t_2dcbca9e5b5ba4 1126-1129
+  s_4f908a5afb6b58::t_fbed76ae32a6e1 6551-6553,6559,6565
+  s_4f908a5afb6b58::t_5b76a1d38322a5 1124,1399,2406,6404-6445,6464-6509,6511-6516,6518-6534,6536-6550,6554-6558,6560-6564,6566-6746
+  s_4f908a5afb6b58::t_27f8391ae1203e 6535
+  s_4f908a5afb6b58::t_897df4f271e29b 71-118,127-136,6747
+  s_4f908a5afb6b58::t_8c84cac7bfdbfb 1269-1275
+  s_4f908a5afb6b58::t_baf73caebda2d5 2683,4806,6446-6463
+  s_4f908a5afb6b58::t_f2c9b78c7c3624 1071
+  s_4f908a5afb6b58::t_94717bb067a694 276-277,532-533,1069-1070,1090,1125,1154,1267-1268,1282,1315,1323,1334,1357-1358,1365,1400,1701,2407,2554,2684,4807,5055,6748-6751
+crates/daw-engine/src/offline.rs
+  s_4f908a5afb6b58::t_e6502f8e4b7e09 118-123
+  s_4f908a5afb6b58::t_f121ba4e3ad649 67,75
+  s_4f908a5afb6b58::t_ed0256545f2cdb 18-19
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "e5aacba2885c6731b8d92b948e8b89134b914555",
+  "prompts": {},
+  "sessions": {
+    "s_4f908a5afb6b58": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fcb92ba4-bf56-47a4-8b57-803f335a449e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
