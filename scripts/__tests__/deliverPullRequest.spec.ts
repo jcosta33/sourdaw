@@ -1160,6 +1160,40 @@ describe('pull-request delivery', () => {
         expect(calls).toContain('receipt-authority:write:terminal:IC_v2_visible');
     });
 
+    it('recovers the newest stable raw v1 authority across two complete keys during merged legacy recovery', () => {
+        const bodyX = relationshipBody('Closes #2372');
+        const bodyY = relationshipBody('Closes #2373');
+        const receipt = (
+            id: string,
+            body: string,
+            closingIssue: number,
+            createdAt: string
+        ): DeliveryReceiptComment => ({
+            id,
+            body: deliveryReceiptBody(42, 'head', body, closingIssue),
+            authorNodeId: AUTHOR_BOT_NODE_ID,
+            authorLogin: 'renamed-author[bot]',
+            authorType: 'Bot',
+            createdAt,
+            updatedAt: createdAt,
+        });
+        const { port, calls, tracker } = fakePort({
+            primary: [pullRequest({ state: 'MERGED', body: relationshipBody('None.') })],
+            dependentSets: [[]],
+            receipts: [
+                receipt('IC_historical_x', bodyX, 2372, '2026-08-21T00:00:00Z'),
+                receipt('IC_historical_y', bodyY, 2373, '2026-08-21T00:00:01Z'),
+            ],
+            deliveryReceiptProof: { totalCount: 2, latestCommentId: 'IC_historical_y' },
+        });
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls.filter((call) => call.startsWith('complete:'))).toEqual(['complete:2373']);
+        expect(calls).toContain('receipt-authority:write:merge-authorized:IC_historical_y');
+        expect(calls).toContain('receipt-authority:write:terminal:IC_historical_y');
+    });
+
     it('recovers a single legacy v1 receipt after the merged pull-request body drifts to None when completeness is proven', () => {
         const closes = relationshipBody('Closes #2372');
         const { port, calls, tracker } = fakePort({
@@ -1835,6 +1869,43 @@ describe('pull-request delivery', () => {
         expect(calls).toContain('merge:42:head');
         expect(calls).toContain('complete:2372');
         expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(0);
+    });
+
+    it('posts a fresh current v2 receipt when the newest same-key v2 state no longer exactly matches the expected state', () => {
+        const closes = relationshipBody('Closes #2372');
+        const receipt = (
+            id: string,
+            observedCiState: 'successful' | 'failed',
+            createdAt: string
+        ): DeliveryReceiptComment => ({
+            id,
+            body: visibleDeliveryReceiptBody(42, 'head', closes, 2372, observedCiState),
+            authorNodeId: AUTHOR_BOT_NODE_ID,
+            authorLogin: 'renamed-author[bot]',
+            authorType: 'Bot',
+            createdAt,
+            updatedAt: createdAt,
+        });
+        const { port, calls, receipts, tracker } = fakePort({
+            primary: [pullRequest({ body: closes }), pullRequest({ body: closes })],
+            dependentSets: [[]],
+            receipts: [
+                receipt('IC_delivery_42_v2_success', 'successful', '2026-08-21T00:00:00Z'),
+                receipt('IC_delivery_42_v2_failed', 'failed', '2026-08-21T00:00:01Z'),
+            ],
+        });
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(1);
+        expect(receipts.map(({ id }) => id)).toEqual([
+            'IC_delivery_42_v2_success',
+            'IC_delivery_42_v2_failed',
+            'IC_delivery_42_3',
+        ]);
+        expect(receipts[2]?.body).toBe(visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'));
+        expect(calls).toContain('merge:42:head');
+        expect(calls).toContain('complete:2372');
     });
 
     it('appends current v2 authority after mixed failed v2 and trailing v1 lineage', () => {
@@ -3571,14 +3642,12 @@ describe('delivery shell boundary', () => {
         expect(effects).toEqual(['complete:2373']);
     });
 
-    it('fails shellPort merged recovery when comment count or latest-id proof does not match the REST lineage', () => {
+    it('fails shellPort merged recovery when proof count exceeds the complete REST lineage even if the latest id matches', () => {
         const bodyX = relationshipBody('Closes #2372');
         const effects: string[] = [];
-        const captures: string[] = [];
         const port = shellPort('jcosta33/sourdaw', {
             capture: (_command, args) => {
                 const joined = args.join(' ');
-                captures.push(joined);
                 if (joined.includes('pr view')) {
                     return JSON.stringify(
                         shellPullRequest(pullRequest({ state: 'MERGED', body: relationshipBody('None.') }))
@@ -3607,6 +3676,61 @@ describe('delivery shell boundary', () => {
                                 pullRequest: {
                                     comments: {
                                         totalCount: 2,
+                                        nodes: [{ id: 'IC_x' }],
+                                    },
+                                },
+                            },
+                        },
+                    });
+                }
+                effects.push(`capture:${joined}`);
+                throw new Error(`unexpected capture: ${joined}`);
+            },
+            run: () => undefined,
+        });
+
+        expect(() =>
+            deliverPullRequest(42, port, {
+                complete: (issue) => effects.push(`complete:${issue}`),
+            })
+        ).toThrow(/delivery receipt authority cannot be proven|delivery receipt changed during recovery/i);
+        expect(effects).toEqual([]);
+    });
+
+    it('fails shellPort merged recovery when proof latest id differs despite an equal comment count', () => {
+        const bodyX = relationshipBody('Closes #2372');
+        const effects: string[] = [];
+        const port = shellPort('jcosta33/sourdaw', {
+            capture: (_command, args) => {
+                const joined = args.join(' ');
+                if (joined.includes('pr view')) {
+                    return JSON.stringify(
+                        shellPullRequest(pullRequest({ state: 'MERGED', body: relationshipBody('None.') }))
+                    );
+                }
+                if (joined.includes('mergedBy{__typename')) {
+                    return shellMergedByGraphql({ __typename: 'Bot', id: AUTHOR_BOT_NODE_ID });
+                }
+                if (joined.includes('issues/42/comments?per_page=100')) {
+                    return JSON.stringify([
+                        [
+                            {
+                                node_id: 'IC_x',
+                                body: deliveryReceiptBody(42, 'head', bodyX, 2372),
+                                user: { node_id: AUTHOR_BOT_NODE_ID, login: 'renamed-author[bot]', type: 'Bot' },
+                                created_at: '2026-08-21T00:00:00Z',
+                                updated_at: '2026-08-21T00:00:00Z',
+                            },
+                        ],
+                    ]);
+                }
+                if (joined.includes('comments(last:1){totalCount nodes{id}}')) {
+                    return JSON.stringify({
+                        data: {
+                            repository: {
+                                pullRequest: {
+                                    comments: {
+                                        totalCount: 1,
                                         nodes: [{ id: 'IC_hidden_y' }],
                                     },
                                 },

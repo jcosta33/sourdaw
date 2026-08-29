@@ -614,20 +614,6 @@ function assertCompatibleDeliveryReceiptLineage(
     }
 }
 
-function hasSameKeyV2Evidence(
-    lineage: DeliveryReceiptComment[],
-    target: DeliveryReceiptPayload,
-    pullRequest: Pick<PullRequestSnapshot, 'number' | 'headRefOid'>
-): boolean {
-    for (const comment of lineage) {
-        const payload = assertDeliveryReceiptForHead(comment, pullRequest);
-        if (payload.schemaVersion !== 1 && sameDeliveryReceiptKey(payload, target)) {
-            return true;
-        }
-    }
-    return false;
-}
-
 function assertExpectedDeliveryReceiptAuthority(
     lineage: DeliveryReceiptComment[],
     expected: DeliveryReceiptPayload,
@@ -653,25 +639,14 @@ function authoritativeEquivalentDeliveryReceipt(
     pullRequest: Pick<PullRequestSnapshot, 'number' | 'headRefOid'>
 ): DeliveryReceiptComment | undefined {
     assertExpectedDeliveryReceiptAuthority(lineage, expected, pullRequest);
-    const preferV2 = hasSameKeyV2Evidence(lineage, expected, pullRequest);
-    for (let index = lineage.length - 1; index >= 0; index -= 1) {
-        const receipt = lineage[index];
-        if (receipt === undefined) {
-            continue;
-        }
-        const payload = assertDeliveryReceiptForHead(receipt, pullRequest);
-        if (!sameDeliveryReceiptKey(payload, expected)) {
-            continue;
-        }
-        if (payload.schemaVersion === 1) {
-            if (!preferV2 && expected.schemaVersion === 1) {
-                return receipt;
-            }
-            continue;
-        }
-        if (sameExactDeliveryReceipt(payload, expected)) {
-            return receipt;
-        }
+    if (
+        !lineage.some((receipt) => sameDeliveryReceiptKey(assertDeliveryReceiptForHead(receipt, pullRequest), expected))
+    ) {
+        return undefined;
+    }
+    const canonical = newestCanonicalDeliveryReceiptForKey(lineage, deliveryReceiptKey(expected), pullRequest);
+    if (sameExactDeliveryReceipt(assertDeliveryReceiptForHead(canonical, pullRequest), expected)) {
+        return canonical;
     }
     return undefined;
 }
@@ -841,26 +816,16 @@ function newestCanonicalDeliveryReceiptForKey(
     throw new Error('unreachable');
 }
 
-function uniqueLogicalDeliveryReceiptAuthorities(
+function newestLogicalDeliveryReceiptAuthority(
     lineage: DeliveryReceiptComment[],
     pullRequest: Pick<PullRequestSnapshot, 'number' | 'headRefOid'>
-): DeliveryReceiptComment[] {
-    const unique: DeliveryReceiptComment[] = [];
-    const seenKeys = new Set<string>();
-    for (let index = lineage.length - 1; index >= 0; index -= 1) {
-        const comment = lineage[index];
-        if (comment === undefined) {
-            continue;
-        }
-        const payload = assertDeliveryReceiptForHead(comment, pullRequest);
-        const key = deliveryReceiptKey(payload);
-        if (seenKeys.has(key)) {
-            continue;
-        }
-        seenKeys.add(key);
-        unique.push(newestCanonicalDeliveryReceiptForKey(lineage, key, pullRequest));
+): DeliveryReceiptComment {
+    const newest = lineage.at(-1);
+    if (newest === undefined) {
+        fail(`PR #${pullRequest.number} delivery receipt authority cannot be proven`);
     }
-    return unique;
+    const payload = assertDeliveryReceiptForHead(newest, pullRequest);
+    return newestCanonicalDeliveryReceiptForKey(lineage, deliveryReceiptKey(payload), pullRequest);
 }
 
 function readStrictStableEquivalentDeliveryReceipt(
@@ -905,17 +870,9 @@ function tryStableHistoricalDeliveryReceipt(
 
 function readStableMergedRecoveryReceipt(pullRequest: PullRequestSnapshot, port: DeliveryPort): DeliveryReceiptComment {
     const firstLineage = orderedDeliveryReceiptLineage(provenDeliveryReceiptComments(pullRequest, port), pullRequest);
-    const firstAuthorities = uniqueLogicalDeliveryReceiptAuthorities(firstLineage, pullRequest);
-    if (firstAuthorities.length !== 1) {
-        fail(`PR #${pullRequest.number} delivery receipt authority cannot be proven`);
-    }
-    const first = firstAuthorities[0];
+    const first = newestLogicalDeliveryReceiptAuthority(firstLineage, pullRequest);
     const secondLineage = orderedDeliveryReceiptLineage(provenDeliveryReceiptComments(pullRequest, port), pullRequest);
-    const secondAuthorities = uniqueLogicalDeliveryReceiptAuthorities(secondLineage, pullRequest);
-    if (secondAuthorities.length !== 1) {
-        fail(`PR #${pullRequest.number} delivery receipt authority cannot be proven`);
-    }
-    const second = secondAuthorities[0];
+    const second = newestLogicalDeliveryReceiptAuthority(secondLineage, pullRequest);
     if (first.id !== second.id) {
         fail(`PR #${pullRequest.number} delivery receipt changed during recovery`);
     }
