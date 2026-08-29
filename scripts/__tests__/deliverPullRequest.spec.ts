@@ -27,6 +27,7 @@ import {
     REQUIRED_BASE_BRANCH,
     REVIEWER_BOT_NODE_ID,
 } from '../githubAppIdentity.ts';
+import { composeDeliveryReceipt } from '../prContract.ts';
 import { summarizeGateWorkflow } from '../trustedGithubWriteBootstrap.ts';
 
 const WORKFLOW_PATH = '.github/workflows/health-gates.yml';
@@ -414,6 +415,23 @@ function deliveryReceiptBody(
     ].join('\n');
 }
 
+function visibleDeliveryReceiptBody(
+    pullRequestNumber: number,
+    head: string,
+    pullRequestBody: string,
+    closingIssue: number | undefined,
+    observedCiState: 'successful' | 'failed' | 'pending' | 'absent' | 'cancelled' | 'malformed' | 'unavailable'
+): string {
+    return composeDeliveryReceipt({
+        pullRequest: pullRequestNumber,
+        head,
+        bodySha256: createHash('sha256').update(pullRequestBody).digest('hex'),
+        closingIssue,
+        ciAdmissionMode: 'advisory',
+        observedCiState,
+    });
+}
+
 function fakePort(input: FakeInput = {}) {
     const calls: string[] = [];
     const primary = [...(input.primary ?? [pullRequest(), pullRequest()])];
@@ -656,7 +674,9 @@ describe('pull-request delivery', () => {
         });
 
         expect(() => deliverPullRequest(42, port, tracker)).toThrow(/not merged by the author App/);
-        expect(receipts.map((receipt) => receipt.body)).toEqual([deliveryReceiptBody(42, 'head', bodyY, 2373)]);
+        expect(receipts.map((receipt) => receipt.body)).toEqual([
+            visibleDeliveryReceiptBody(42, 'head', bodyY, 2373, 'successful'),
+        ]);
         expect(calls.some((call) => call.startsWith('complete:'))).toBe(false);
 
         expect(() => deliverPullRequest(42, port, tracker)).toThrow(/not merged by the author App/);
@@ -837,7 +857,7 @@ describe('pull-request delivery', () => {
         expect(calls).not.toContain('merge:42:head');
         expect(receipts.map((receipt) => receipt.body)).toEqual([
             deliveryReceiptBody(42, 'head', bodyX, 2372),
-            deliveryReceiptBody(42, 'head', bodyY, 2373),
+            visibleDeliveryReceiptBody(42, 'head', bodyY, 2373, 'successful'),
         ]);
 
         deliverPullRequest(42, port, tracker);
@@ -846,8 +866,8 @@ describe('pull-request delivery', () => {
         expect(calls.filter((call) => call === 'merge:42:head')).toHaveLength(1);
         expect(receipts.map((receipt) => receipt.body)).toEqual([
             deliveryReceiptBody(42, 'head', bodyX, 2372),
-            deliveryReceiptBody(42, 'head', bodyY, 2373),
-            deliveryReceiptBody(42, 'head', bodyX, 2372),
+            visibleDeliveryReceiptBody(42, 'head', bodyY, 2373, 'successful'),
+            visibleDeliveryReceiptBody(42, 'head', bodyX, 2372, 'successful'),
         ]);
         expect(receipts.map((receipt) => Date.parse(receipt.createdAt))).toEqual([
             Date.parse('2026-08-21T00:00:00.000Z'),
@@ -1006,6 +1026,48 @@ describe('pull-request delivery', () => {
         expect(calls).toContain('PR #42 was already merged; repaired 0 remaining dependent(s)');
     });
 
+    it('reuses one legacy v1 receipt on retry instead of publishing a second same-head receipt', () => {
+        const closes = relationshipBody('Closes #2372');
+        const { port, calls, tracker } = fakePort({
+            primary: [
+                pullRequest({ body: closes }),
+                pullRequest({ body: closes }),
+                pullRequest({ state: 'MERGED', body: closes }),
+                pullRequest({ state: 'MERGED', body: relationshipBody('None.') }),
+            ],
+            dependentSets: [[], []],
+            receipts: [
+                {
+                    id: 'IC_legacy_v1',
+                    body: deliveryReceiptBody(42, 'head', closes, 2372),
+                    authorNodeId: AUTHOR_BOT_NODE_ID,
+                    authorLogin: 'renamed-author[bot]',
+                    authorType: 'Bot',
+                    createdAt: '2026-08-21T00:00:00Z',
+                    updatedAt: '2026-08-21T00:00:00Z',
+                },
+            ],
+        });
+        let failOnce = true;
+        tracker.complete = (issueNumber) => {
+            calls.push(`complete:${issueNumber}`);
+            if (failOnce) {
+                failOnce = false;
+                throw new Error('tracker unavailable');
+            }
+        };
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(
+            /PR #42.*merged.*issue #2372.*tracker unavailable/i
+        );
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(0);
+        expect(calls.filter((call) => call === 'complete:2372')).toHaveLength(2);
+        expect(calls).toContain('PR #42 was already merged; repaired 0 remaining dependent(s)');
+    });
+
     it('ignores foreign comments before parsing delivery receipts', () => {
         const closes = relationshipBody('Closes #2372');
         const { port, calls, tracker } = fakePort({
@@ -1114,6 +1176,40 @@ describe('pull-request delivery', () => {
                     updatedAt: '2026-08-21T00:00:01Z',
                 },
             ],
+        });
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/duplicate delivery receipts/);
+        expect(calls).not.toContain('merge:42:head');
+    });
+
+    it('rejects adjacent legacy and visible receipts carrying the same immutable delivery identity', () => {
+        const closes = relationshipBody('Closes #2372');
+        const legacyReceipt = {
+            id: 'IC_delivery_42_v1',
+            body: deliveryReceiptBody(42, 'head', closes, 2372),
+            authorNodeId: AUTHOR_BOT_NODE_ID,
+            authorLogin: 'renamed-author[bot]',
+            authorType: 'Bot',
+            createdAt: '2026-08-21T00:00:00Z',
+            updatedAt: '2026-08-21T00:00:00Z',
+        };
+        const visibleReceipt = {
+            ...legacyReceipt,
+            id: 'IC_delivery_42_v2',
+            body: composeDeliveryReceipt({
+                pullRequest: 42,
+                head: 'head',
+                bodySha256: createHash('sha256').update(closes).digest('hex'),
+                closingIssue: 2372,
+                ciAdmissionMode: 'advisory',
+                observedCiState: 'failed',
+            }),
+            createdAt: '2026-08-21T00:00:01Z',
+            updatedAt: '2026-08-21T00:00:01Z',
+        };
+        const { port, calls, tracker } = fakePort({
+            primary: [pullRequest({ body: closes }), pullRequest({ body: closes })],
+            receipts: [legacyReceipt, visibleReceipt],
         });
 
         expect(() => deliverPullRequest(42, port, tracker)).toThrow(/duplicate delivery receipts/);
@@ -1395,6 +1491,27 @@ describe('pull-request delivery', () => {
         expect(calls).toContain('merge:42:head');
         expect(calls).not.toContain('gate-required-check-names');
         expect(calls.filter((call) => call.startsWith('checks:'))).toEqual([]);
+    });
+
+    it.each([
+        { ciState: 'successful', mergeStateStatus: 'CLEAN' },
+        { ciState: 'failed', mergeStateStatus: 'BLOCKED' },
+        { ciState: 'pending', mergeStateStatus: 'UNKNOWN' },
+        { ciState: 'absent', mergeStateStatus: '' },
+        { ciState: 'cancelled', mergeStateStatus: 'UNSTABLE' },
+        { ciState: 'malformed', mergeStateStatus: 'not-a-github-state' },
+        { ciState: 'unavailable', mergeStateStatus: 'UNAVAILABLE' },
+    ])('writes advisory delivery receipts with the normalized $ciState CI state', ({ ciState, mergeStateStatus }) => {
+        const { port, receipts } = fakePort({
+            primary: [pullRequest({ mergeStateStatus }), pullRequest({ mergeStateStatus })],
+        });
+
+        deliverPullRequest(42, port);
+
+        expect(receipts).toHaveLength(1);
+        expect(receipts[0]?.body).toContain('Delivery receipt for PR #42.');
+        expect(receipts[0]?.body).toContain('- CI admission: advisory');
+        expect(receipts[0]?.body).toContain(`- Observed CI state: ${ciState}`);
     });
 
     it.each(['BLOCKED', 'BEHIND', 'DIRTY', 'DRAFT', 'UNKNOWN'])(

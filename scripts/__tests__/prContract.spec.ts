@@ -163,7 +163,21 @@ describe('pull-request contract', () => {
         };
         const receipt = composeDeliveryReceipt(payload);
 
-        expect(parseDeliveryReceipt(receipt)).toEqual(payload);
+        expect(receipt).toMatchInlineSnapshot(`
+          "Delivery receipt for PR #2495.
+
+          - Head: \`3fc61d12acb110faba1a15e251268a1a7d09be9d\`
+          - Pull request body SHA-256: \`aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\`
+          - Closing issue: #2406
+
+          <!-- sourdaw-delivery-receipt:v2
+          pull-request: 2495
+          head: 3fc61d12acb110faba1a15e251268a1a7d09be9d
+          body-sha256: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+          closing-issue: 2406
+          -->"
+        `);
+        expect(parseDeliveryReceipt(receipt)).toEqual({ ...payload, schemaVersion: 2 });
         expect(parseDeliveryReceipt('ordinary PR comment')).toBeUndefined();
         expect(() =>
             parseDeliveryReceipt(receipt.replace('closing-issue: 2406', 'closing-issue: 90071992547409930'))
@@ -171,6 +185,25 @@ describe('pull-request contract', () => {
         expect(() => parseDeliveryReceipt(receipt.replace('body-sha256:', 'body-digest:'))).toThrow(
             /invalid delivery receipt/
         );
+    });
+
+    it('keeps parsing legacy v1 delivery receipts byte-for-byte', () => {
+        const legacy = [
+            '<!-- sourdaw-delivery-receipt:v1',
+            'pull-request: 2495',
+            'head: 3fc61d12acb110faba1a15e251268a1a7d09be9d',
+            `body-sha256: ${'a'.repeat(64)}`,
+            'closing-issue: 2406',
+            '-->',
+        ].join('\n');
+
+        expect(parseDeliveryReceipt(legacy)).toEqual({
+            schemaVersion: 1,
+            pullRequest: 2495,
+            head: '3fc61d12acb110faba1a15e251268a1a7d09be9d',
+            bodySha256: 'a'.repeat(64),
+            closingIssue: 2406,
+        });
     });
 
     it('rejects hidden GitHub closing references', () => {
