@@ -27,6 +27,7 @@ import { type LiveGraphTopologyInput } from '../projectLiveGraphTopology';
 import { repositionNativeLiveGraphSession } from '../repositionNativeLiveGraphSession';
 import { startNativeLiveGraphSession } from '../startNativeLiveGraphSession';
 import { stopNativeLiveGraphSession } from '../stopNativeLiveGraphSession';
+import { updateNativeLiveGraphSessionTransportMaps } from '../updateNativeLiveGraphSessionTransportMaps';
 
 const mocks = vi.hoisted(() => ({
     /** What `probeNativeGraphTransport` answers. The whole of the runtime gate. */
@@ -95,6 +96,12 @@ const FLAT_MAPS = {
     tempo: [{ startSeconds: 0, beatsPerMinute: 120 }],
     timeSignature: [{ startSeconds: 0, numerator: 4, denominator: 4 }],
     loopRegion: { enabled: false, startSeconds: 0, endSeconds: 0 },
+};
+
+/** The same arrangement once a loop gesture has engaged a region in it. */
+const LOOPED_MAPS = {
+    ...FLAT_MAPS,
+    loopRegion: { enabled: true, startSeconds: 2, endSeconds: 4 },
 };
 
 const APPLIED = { acceptance: 'accepted', application: 'applied', runtimeRevision: 1, reports: [] };
@@ -341,6 +348,125 @@ describe('startNativeLiveGraphSession', () => {
         expect(appliedBatches()[0]?.commands.filter((command) => command.kind === 'create-track-strip')).toHaveLength(
             2
         );
+    });
+});
+
+describe('updateNativeLiveGraphSessionTransportMaps', () => {
+    it('declines when no session ever started, which is the browser-build answer', async () => {
+        const result = await updateNativeLiveGraphSessionTransportMaps({ transportMaps: LOOPED_MAPS });
+
+        expect(result).toEqual({ outcome: 'declined', reason: 'no live native graph session' });
+        expect(mocks.setEngineTransportMaps).not.toHaveBeenCalled();
+    });
+
+    it('installs the edited region on a rolling session without touching its topology or its transport', async () => {
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS });
+        mocks.setEngineTransportMaps.mockClear();
+        const batchesBefore = appliedBatches().length;
+
+        const result = await updateNativeLiveGraphSessionTransportMaps({ transportMaps: LOOPED_MAPS });
+
+        expect(result).toEqual({ outcome: 'updated' });
+        expect(mocks.setEngineTransportMaps).toHaveBeenCalledExactlyOnceWith(LOOPED_MAPS);
+        // No graph batch at all. A batch would have to carry `set-transport`,
+        // which is the one thing this must not state: the region changed, where
+        // the playhead stands and whether it is moving did not.
+        expect(appliedBatches()).toHaveLength(batchesBefore);
+    });
+
+    it('replaces the stale pair on a session parked by declined maps, and still does not roll it', async () => {
+        mocks.setEngineTransportMaps.mockResolvedValueOnce({ outcome: 'declined', reason: 'malformed maps' });
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS });
+        const batchesBefore = appliedBatches().length;
+
+        const result = await updateNativeLiveGraphSessionTransportMaps({ transportMaps: LOOPED_MAPS });
+
+        // The park exists to keep the *previous* take's tempo map and loop seam
+        // unreachable, and this write is what replaces them — so it is welcome
+        // here. What would not be is a transport command: `playing: true` would
+        // set that engine rendering, which is the whole thing the park prevents.
+        expect(result).toEqual({ outcome: 'updated' });
+        expect(mocks.setEngineTransportMaps).toHaveBeenLastCalledWith(LOOPED_MAPS);
+        expect(appliedBatches()).toHaveLength(batchesBefore);
+    });
+
+    it('keeps the session when the engine refuses the maps', async () => {
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS });
+        mocks.setEngineTransportMaps.mockResolvedValueOnce({
+            outcome: 'declined',
+            reason: 'no native engine is running',
+        });
+
+        const result = await updateNativeLiveGraphSessionTransportMaps({ transportMaps: LOOPED_MAPS });
+
+        // A refused maps write says nothing about the topology or the handle it
+        // was sent through; the engine simply keeps the pair it already held.
+        expect(result).toEqual({ outcome: 'declined', reason: 'no native engine is running' });
+        expect(nativeLiveGraphSession.backend).not.toBeNull();
+    });
+
+    it('never overtakes a start that is still in flight', async () => {
+        let releaseStart = (): void => undefined;
+        const startApplied = new Promise<void>((resolve) => {
+            releaseStart = () => {
+                resolve();
+            };
+        });
+        mocks.applyGraphCommands.mockImplementationOnce(() => startApplied.then(() => APPLIED));
+
+        const start = startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS });
+        const update = updateNativeLiveGraphSessionTransportMaps({ transportMaps: LOOPED_MAPS });
+        releaseStart();
+        await start;
+
+        // Admitted ahead of the start, this would find no session to update and
+        // decline — and then the start would install the region the musician had
+        // already changed, leaving the engine looping at the old seam.
+        expect(await update).toEqual({ outcome: 'updated' });
+        expect(mocks.setEngineTransportMaps.mock.calls).toEqual([[FLAT_MAPS], [LOOPED_MAPS]]);
+    });
+
+    it('leaves a burst of loop edits settled on the region issued last, not the one that resolved last', async () => {
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS });
+
+        // Dragging a loop brace commits a region per gesture, and the engine
+        // keeps whichever pair reached it *last*. Round trips that resolve out
+        // of order are the hazard: here the earliest edit is the slowest, so
+        // issuing all three at once without the session chain would land the
+        // 4-second region last and leave the engine wrapping two seconds before
+        // the brace the musician let go of.
+        const settleMs = new Map([
+            [4, 30],
+            [8, 10],
+            [12, 0],
+        ]);
+        const reached: number[] = [];
+        const settleByRegion = (maps: unknown): Promise<{ outcome: 'applied' }> => {
+            const endSeconds = (maps as typeof LOOPED_MAPS).loopRegion.endSeconds;
+            return new Promise((resolve) => {
+                setTimeout(
+                    () => {
+                        reached.push(endSeconds);
+                        resolve({ outcome: 'applied' });
+                    },
+                    settleMs.get(endSeconds) ?? 0
+                );
+            });
+        };
+        mocks.setEngineTransportMaps
+            .mockImplementationOnce(settleByRegion)
+            .mockImplementationOnce(settleByRegion)
+            .mockImplementationOnce(settleByRegion);
+
+        await Promise.all(
+            [4, 8, 12].map((endSeconds) =>
+                updateNativeLiveGraphSessionTransportMaps({
+                    transportMaps: { ...LOOPED_MAPS, loopRegion: { enabled: true, startSeconds: 0, endSeconds } },
+                })
+            )
+        );
+
+        expect(reached).toEqual([4, 8, 12]);
     });
 });
 

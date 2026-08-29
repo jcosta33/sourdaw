@@ -110,6 +110,7 @@ export { readNativeEnginePlayheadSeconds } from './livePlayback/readNativeEngine
 export { repositionNativeLiveGraphSession } from './livePlayback/repositionNativeLiveGraphSession';
 export { startNativeLiveGraphSession } from './livePlayback/startNativeLiveGraphSession';
 export { stopNativeLiveGraphSession } from './livePlayback/stopNativeLiveGraphSession';
+export { updateNativeLiveGraphSessionTransportMaps } from './livePlayback/updateNativeLiveGraphSessionTransportMaps';
 
 export { getTrackLatency } from './latencyCompensation/compensation/getTrackLatency';
 export { getCompensationDelay } from './latencyCompensation/compensation/getCompensationDelay';
