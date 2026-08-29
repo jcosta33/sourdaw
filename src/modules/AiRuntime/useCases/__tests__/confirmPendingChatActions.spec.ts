@@ -379,6 +379,43 @@ function createPendingExternalEffectBatchResult(
     };
 }
 
+function createPendingRuntimeGraphBatchResult(
+    commandBatch: ReturnType<typeof compileVersionedCommandBatchEnvelope>
+): ConfirmedActionBatchResult {
+    const parsed = parseVersionedCommandBatchEnvelope(commandBatch.serialized, commandBatch.authority);
+    if (parsed.status !== 'valid') {
+        throw new Error('Expected the pending runtime-graph command batch fixture to remain valid.');
+    }
+    const commandId = parsed.envelope.commands[0]?.commandId;
+    if (!commandId) {
+        throw new Error('Expected the pending runtime-graph fixture command.');
+    }
+    const pendingEffect = {
+        commandId,
+        kind: 'runtime-graph' as const,
+        operation: 'addDevice',
+        reason: 'runtime graph revision is stale',
+        remediation: 'retry' as const,
+        state: 'pending' as const,
+    };
+    const result = {
+        status: 'committed-with-warning' as const,
+        actions: [],
+        warning: pendingEffect.reason,
+        warningDetails: [{ kind: 'external-effect' as const, message: pendingEffect.reason, pendingEffect }],
+    };
+    return {
+        ...result,
+        receipt: createVerifiedBatchReceipt({
+            contentHash: 'pending-runtime-graph-finalization-failure',
+            envelope: parsed.envelope,
+            observedBaseRevision: 'revision-fixture',
+            resultingRevision: null,
+            result,
+        }),
+    };
+}
+
 function createIdempotentReplayBatchResult(
     commandBatch: ReturnType<typeof compileVersionedCommandBatchEnvelope>
 ): ConfirmedActionBatchResult {
@@ -1202,7 +1239,58 @@ describe('confirmPendingChatActions transaction admission', () => {
         const runId = 'confirmation-non-render-finalization-unavailable';
         const confirmationId = 'confirmation-non-render-finalization-unavailable';
         const batchId = 'group-non-render-finalization-unavailable';
-        const commandBatch = configureLateSettlementConfirmation({ runId, confirmationId, batchId });
+        configureAiWorkflowCommandPreflightFixture('project-runtime-finalization');
+        configureCommandBatchIdempotency({ canExecute: () => true });
+        registerHandlerMap(getArrangementHandlers());
+        trackStore.set({ tracks: [createRuntimeTestTrack()], selectedTrackId: null, ghostClips: [] });
+        const action = {
+            type: 'addDevice',
+            payload: {
+                trackId: 'track-bass',
+                deviceType: 'builtin-compressor',
+                deviceId: 'device-compressor',
+                afterDeviceId: 'device-eq',
+                expectedDeviceIds: ['device-eq'],
+                expectedFrozen: false,
+            },
+        } satisfies AddDeviceAction;
+        const projectRevision = captureProjectRevision();
+        const envelope = migrateLegacyAppActionToVersionedCommandEnvelope({
+            action,
+            expectedEffect: 'Insert the compressor after EQ on Bass.',
+            normalizedProjectRevision: projectRevision,
+            options: { groupId: batchId, groupLabel: 'Insert compressor', source: 'prompt' },
+        });
+        const commandBatch = compileVersionedCommandBatchEnvelope({
+            runId,
+            batchId,
+            projectId: 'project-runtime-finalization',
+            baseRevision: projectRevision,
+            intent: 'Insert the compressor after EQ on Bass.',
+            commands: [serializeVersionedCommandEnvelope(envelope)],
+        });
+        agentRunLifecycle.create({
+            runId,
+            request: 'Insert the compressor.',
+            mode: 'apply',
+            createdRevision: projectRevision,
+        });
+        agentRunLifecycle.transitionPhase({ runId, phase: 'planning' });
+        agentRunLifecycle.transitionPhase({ runId, phase: 'waiting-for-approval' });
+        proposePendingActionConfirmation({
+            id: confirmationId,
+            runId,
+            prompt: 'Insert the compressor.',
+            assistantMessageId: 'assistant-1',
+            actions: [action],
+            actionLabels: ['Insert compressor after EQ on Bass'],
+            commandBatch,
+            agentApproval: compileAgentRiskApproval({ commandBatch }),
+            executionMode: 'atomic',
+            groupId: batchId,
+            groupLabel: 'Insert compressor',
+            projectRevision,
+        });
         const commandUseCases = await import('#/modules/Command/useCases');
         const crdtUseCases = await import('#/modules/CrdtDocument/useCases');
         const captureMutationAuthorization = vi
@@ -1214,14 +1302,16 @@ describe('confirmPendingChatActions transaction admission', () => {
                 input.options?.onProjectCommitFinalizationUnavailable?.({
                     reason: 'The final project revision is unavailable.',
                 });
-                return createPendingExternalEffectBatchResult(commandBatch, 'setTempo');
+                return createPendingRuntimeGraphBatchResult(commandBatch);
             });
 
         try {
             await expect(confirmPendingChatActions({ confirmationId })).resolves.toMatchObject({
                 status: 'failed',
                 durableCommit: true,
-                effects: [expect.objectContaining({ operation: 'setTempo', remediation: 'reconcile' })],
+                effects: [
+                    expect.objectContaining({ kind: 'runtime-graph', operation: 'addDevice', remediation: 'retry' }),
+                ],
                 continuation: { kind: 'reconcile-exact-batch' },
             });
         } finally {
