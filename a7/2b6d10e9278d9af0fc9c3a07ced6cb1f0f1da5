@@ -1,0 +1,35 @@
+src/modules/AiRuntime/useCases/recordAgentRunPendingEffectContinuation.ts
+  s_a40848e8f8cca9::t_23893b8cdb99bf 14,23-26
+src/modules/AiRuntime/stores/__tests__/retainedSectionRenderReviewHydration.spec.ts
+  s_a40848e8f8cca9::t_a74fc3128dff0c 30-31,258
+  s_a40848e8f8cca9::t_7a7eff11a55a13 302,307,310-312,315-316
+  s_a40848e8f8cca9::t_130fd212d40e56 313-314
+  s_a40848e8f8cca9::t_7d558023737cb5 18,225,303-306,308-309,317-323
+src/modules/AiRuntime/useCases/executePlannedActions.ts
+  s_a40848e8f8cca9::t_23893b8cdb99bf 79,97,100-101
+  s_a40848e8f8cca9::t_1ea015f54b8854 102
+src/modules/AiRuntime/presentations/views/__tests__/RetainedSectionRenderManualReview.spec.tsx
+  s_a40848e8f8cca9::t_bbda73087edada 15,30,134-136,272-284
+  s_a40848e8f8cca9::t_8e25964a332d70 285-286
+src/modules/AiRuntime/presentations/views/RetainedSectionRenderManualReview.tsx
+  s_a40848e8f8cca9::t_23893b8cdb99bf 12-15,121-128,131
+src/modules/AiRuntime/useCases/prepareAgentRunPendingEffectContinuation.ts
+  s_a40848e8f8cca9::t_7a7eff11a55a13 29-35,40
+  s_a40848e8f8cca9::t_23893b8cdb99bf 14
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "a72b6d10e9278d9af0fc9c3a07ced6cb1f0f1da5",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
