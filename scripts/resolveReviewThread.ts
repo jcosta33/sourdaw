@@ -102,6 +102,11 @@ type ResolutionReviewContext = {
     threadId: string;
     expectedHead: string;
 };
+type ManagedReplyMarker = {
+    marker: ReviewComment;
+    review: PullRequestReview;
+    currentHead: boolean;
+};
 
 export function parseResolveReviewThreadArgs(args: string[]): ResolveReviewThreadArgs {
     if (args[0] === '--help') {
@@ -162,7 +167,7 @@ export function resolveReviewThread(
     let resolutionReceipt: ReviewResolutionReceipt | undefined;
     try {
         let working = before;
-        const existingReply = findReusableReply(before.thread);
+        const existingReply = findReusableReply(before.thread, context);
         if (existingReply === undefined) {
             let pendingReview = convergePendingReviews(working.pendingReviews, context, port);
             if (pendingReview === undefined) {
@@ -204,9 +209,11 @@ export function resolveReviewThread(
         assertExpectedHeadAfterMutation(afterReply.head, expectedHead);
         assertResolvableThread(afterReply.thread, threadId);
         reviewUpdateAttempted =
-            repairDuplicateSubmittedReviewEnvelopes(threadId, afterReply.thread, port, context) ||
+            repairManagedCommentedReviewEnvelopes(threadId, afterReply.thread, port, context) || reviewUpdateAttempted;
+        reviewUpdateAttempted =
+            reconcilePendingReviewsForReply(afterReply.pendingReviews, afterReply.thread, context, port) ||
             reviewUpdateAttempted;
-        replyId = convergeReplyMarkers(threadId, afterReply.thread, port);
+        replyId = convergeReplyMarkers(threadId, afterReply.thread, port, context, ['PENDING', 'COMMENTED']);
         const converged = port.inspect(number, threadId);
         assertExpectedHeadAfterMutation(converged.head, expectedHead);
         assertResolvableThread(converged.thread, threadId);
@@ -572,6 +579,34 @@ function toRequiredReview(
         authorType: value.reviewAuthorType ?? null,
     };
 }
+function toReplyReviewOrNull(value: {
+    reviewId?: string | null;
+    reviewState?: string | null;
+    reviewBody?: string | null;
+    reviewCommitOid?: string | null;
+    reviewAuthorNodeId?: string | null;
+    reviewAuthorLogin?: string | null;
+    reviewAuthorType?: string | null;
+}): PullRequestReview | null {
+    if (
+        typeof value.reviewId !== 'string' ||
+        value.reviewId === '' ||
+        typeof value.reviewState !== 'string' ||
+        typeof value.reviewBody !== 'string' ||
+        typeof value.reviewCommitOid !== 'string'
+    ) {
+        return null;
+    }
+    return {
+        id: value.reviewId,
+        state: value.reviewState,
+        body: value.reviewBody,
+        commitOid: value.reviewCommitOid,
+        authorNodeId: value.reviewAuthorNodeId ?? null,
+        authorLogin: value.reviewAuthorLogin ?? null,
+        authorType: value.reviewAuthorType ?? null,
+    };
+}
 function requireReplyReview(
     value: {
         id?: string;
@@ -609,6 +644,47 @@ function requireReplyReview(
         fail(`Done reply ${value.id ?? 'unknown'} is attached to a noncanonical author review`);
     }
     return review;
+}
+function managedReplyMarkers(
+    thread: ReviewThread,
+    context: ResolutionReviewContext,
+    allowedStates: string[],
+    allowEmptyBody: boolean
+): ManagedReplyMarker[] {
+    const managed: ManagedReplyMarker[] = [];
+    for (const marker of validatedReplyMarkers(thread)) {
+        const review = toReplyReviewOrNull(marker);
+        if (review === null || !isAuthorBotActor(review.authorNodeId, review.authorType)) {
+            continue;
+        }
+        if (!allowedStates.includes(review.state)) {
+            continue;
+        }
+        const expectedBody = resolutionReviewBody(context, review.commitOid);
+        if (review.body !== expectedBody && (!allowEmptyBody || review.body.trim() !== '')) {
+            continue;
+        }
+        managed.push({
+            marker,
+            review,
+            currentHead: review.commitOid === context.expectedHead,
+        });
+    }
+    return managed.sort((left, right) => compareMarkers(left.marker, right.marker));
+}
+function requireCanonicalManagedReplyMarker(
+    thread: ReviewThread,
+    threadId: string,
+    context: ResolutionReviewContext,
+    allowedStates: string[],
+    allowEmptyBody: boolean
+): ManagedReplyMarker {
+    const managed = managedReplyMarkers(thread, context, allowedStates, allowEmptyBody);
+    const canonical = managed.find((candidate) => candidate.currentHead) ?? managed[0];
+    if (canonical === undefined) {
+        fail(`review thread ${threadId} has no valid Done reply marker`);
+    }
+    return canonical;
 }
 function hasExpectedReply(thread: ReviewThread, replyId: string): boolean {
     return thread.comments.some(
@@ -658,20 +734,25 @@ function requireOneReplyMarker(thread: ReviewThread | null, threadId: string): R
     }
     return marker;
 }
-function convergeReplyMarkers(threadId: string, thread: ReviewThread | null, port: ResolveReviewThreadPort): string {
+function convergeReplyMarkers(
+    threadId: string,
+    thread: ReviewThread | null,
+    port: ResolveReviewThreadPort,
+    context: ResolutionReviewContext,
+    allowedStates: string[]
+): string {
     if (thread === null) {
         fail(`review thread ${threadId} was not found on this pull request`);
     }
-    const canonical = requireOneOrMoreReplyMarker(thread, threadId);
-    const markers = validatedReplyMarkers(thread);
-    for (const marker of markers) {
-        if (marker.id !== canonical.id) {
-            port.deleteReply(marker.id);
+    const canonical = requireCanonicalManagedReplyMarker(thread, threadId, context, allowedStates, true);
+    for (const candidate of managedReplyMarkers(thread, context, allowedStates, true)) {
+        if (candidate.marker.id !== canonical.marker.id) {
+            port.deleteReply(candidate.marker.id);
         }
     }
-    return canonical.id;
+    return canonical.marker.id;
 }
-function repairDuplicateSubmittedReviewEnvelopes(
+function repairManagedCommentedReviewEnvelopes(
     threadId: string,
     thread: ReviewThread | null,
     port: ResolveReviewThreadPort,
@@ -680,26 +761,24 @@ function repairDuplicateSubmittedReviewEnvelopes(
     if (thread === null) {
         fail(`review thread ${threadId} was not found on this pull request`);
     }
-    const canonical = requireOneOrMoreReplyMarker(thread, threadId);
+    const repairedReviewIds = new Set<string>();
     let updated = false;
-    for (const marker of validatedReplyMarkers(thread)) {
-        if (marker.id === canonical.id) {
+    for (const candidate of managedReplyMarkers(thread, context, ['COMMENTED'], true)) {
+        if (repairedReviewIds.has(candidate.review.id) || candidate.review.body.trim() !== '') {
             continue;
         }
-        const review = requireReplyReview(marker, context, ['COMMENTED'], true, null);
-        if (review.body.trim() === '') {
-            const expectedBody = resolutionReviewBody(context, review.commitOid);
-            const updatedReview = port.updateReviewBody(review.id, expectedBody);
-            assertReviewEnvelopeReceipt(
-                updatedReview,
-                updateReviewClientMutationId(review.id),
-                'COMMENTED',
-                expectedBody,
-                review.commitOid,
-                'update review body'
-            );
-            updated = true;
-        }
+        const expectedBody = resolutionReviewBody(context, candidate.review.commitOid);
+        const updatedReview = port.updateReviewBody(candidate.review.id, expectedBody);
+        assertReviewEnvelopeReceipt(
+            updatedReview,
+            updateReviewClientMutationId(candidate.review.id),
+            'COMMENTED',
+            expectedBody,
+            candidate.review.commitOid,
+            'update review body'
+        );
+        repairedReviewIds.add(candidate.review.id);
+        updated = true;
     }
     return updated;
 }
@@ -714,10 +793,11 @@ function isExactPendingReview(review: PullRequestReview, context: ResolutionRevi
 function convergePendingReviews(
     pendingReviews: PullRequestReview[],
     context: ResolutionReviewContext,
-    port: ResolveReviewThreadPort
+    port: ResolveReviewThreadPort,
+    preferredReviewId?: string
 ): PullRequestReview | undefined {
     const exact = pendingReviews.filter((review) => isExactPendingReview(review, context));
-    const canonical = exact[0];
+    const canonical = exact.find((review) => review.id === preferredReviewId) ?? exact[0];
     if (canonical === undefined) {
         return undefined;
     }
@@ -727,6 +807,33 @@ function convergePendingReviews(
         }
     }
     return canonical;
+}
+function reconcilePendingReviewsForReply(
+    pendingReviews: PullRequestReview[],
+    thread: ReviewThread | null,
+    context: ResolutionReviewContext,
+    port: ResolveReviewThreadPort
+): boolean {
+    if (thread === null) {
+        fail(`review thread ${context.threadId} was not found on this pull request`);
+    }
+    const canonical = managedReplyMarkers(thread, context, ['PENDING', 'COMMENTED'], true).find(
+        (candidate) => candidate.currentHead
+    );
+    const keepReviewId =
+        canonical?.review.state === 'PENDING' &&
+        canonical.review.body === resolutionReviewBody(context, canonical.review.commitOid)
+            ? canonical.review.id
+            : undefined;
+    let deleted = false;
+    for (const review of pendingReviews) {
+        if (!isExactPendingReview(review, context) || review.id === keepReviewId) {
+            continue;
+        }
+        port.deletePendingReview(review.id);
+        deleted = true;
+    }
+    return deleted;
 }
 function requireOneOrMoreReplyMarker(thread: ReviewThread | null, threadId: string): ReviewComment {
     if (thread === null) {
@@ -798,12 +905,11 @@ function deleteAmbiguousCreatedPendingReview(
     }
     attempt(failures, 'delete pending review', () => port.deletePendingReview(review.id));
 }
-function assertCompletedResolution(thread: ReviewThread, threadId: string): ReviewComment {
+function assertCompletedResolution(thread: ReviewThread, threadId: string): void {
     assertRootReviewer(thread, threadId);
     if (!isAuthorResolutionActor(thread.resolvedByNodeId, thread.resolvedByType)) {
         fail(`review thread ${threadId} was not resolved by ${AUTHOR_BOT_NODE_ID}`);
     }
-    return requireOneReplyMarker(thread, threadId);
 }
 function assertCommentedResolutionReply(reply: ReviewComment, context: ResolutionReviewContext): void {
     requireReplyReview(reply, context, ['COMMENTED'], false, null);
@@ -818,30 +924,20 @@ function repairCompletedResolution(
     if (thread === null) {
         fail(`review thread ${context.threadId} was not found on this pull request`);
     }
-    const reply = assertCompletedResolution(thread, context.threadId);
-    const review = requireReplyReview(reply, context, ['COMMENTED'], true, null);
-    const expectedBody = resolutionReviewBody(context, review.commitOid);
-    if (review.body === expectedBody) {
+    assertCompletedResolution(thread, context.threadId);
+    const updated = repairManagedCommentedReviewEnvelopes(context.threadId, thread, port, context);
+    const duplicateMarkers = managedReplyMarkers(thread, context, ['COMMENTED'], true);
+    if (!updated && duplicateMarkers.length <= 1) {
         return;
     }
-    if (review.body.trim() !== '') {
-        fail(`Done reply ${reply.id} is attached to a noncanonical author review`);
-    }
-    const updated = port.updateReviewBody(review.id, expectedBody);
-    assertReviewEnvelopeReceipt(
-        updated,
-        updateReviewClientMutationId(review.id),
-        'COMMENTED',
-        expectedBody,
-        review.commitOid,
-        'update review body'
-    );
+    convergeReplyMarkers(context.threadId, thread, port, context, ['COMMENTED']);
     const verified = port.inspect(number, context.threadId);
     assertExpectedHeadAfterMutation(verified.head, context.expectedHead);
     if (verified.thread === null) {
         fail(`review thread ${context.threadId} was not found on this pull request`);
     }
-    assertCommentedResolutionReply(assertCompletedResolution(verified.thread, context.threadId), context);
+    assertCompletedResolution(verified.thread, context.threadId);
+    assertCommentedResolutionReply(requireOneReplyMarker(verified.thread, context.threadId), context);
 }
 function assertFinalResolution(
     thread: ReviewThread | null,
@@ -882,15 +978,13 @@ function assertRootReviewer(thread: ReviewThread, threadId: string): void {
         fail(`review thread ${threadId} root comment has no decimal fullDatabaseId`);
     }
 }
-function findReusableReply(thread: ReviewThread | null): ReviewComment | undefined {
+function findReusableReply(thread: ReviewThread | null, context: ResolutionReviewContext): ReviewComment | undefined {
     if (thread === null) {
         return undefined;
     }
-    const markers = validatedReplyMarkers(thread);
-    if (markers.length === 0) {
-        return undefined;
-    }
-    return markers[0];
+    return managedReplyMarkers(thread, context, ['PENDING', 'COMMENTED'], true).find(
+        (candidate) => candidate.currentHead
+    )?.marker;
 }
 
 export function shellPort(session: GhSession, cwd: string = process.cwd()): ResolveReviewThreadPort {
