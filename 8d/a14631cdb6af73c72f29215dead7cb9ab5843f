@@ -1,0 +1,23 @@
+src/modules/AiRuntime/useCases/__tests__/agentRunLifecycle.spec.ts
+  s_a40848e8f8cca9::t_aa89f3fe7f9cc3 8,553-650
+  s_a40848e8f8cca9::t_afd9594d3fab46 651
+src/modules/AiRuntime/useCases/agentRequestOrchestration/requireSectionRenderManualRepair.ts
+  s_a40848e8f8cca9::t_6e7637d891391c 49-50,52-53,64
+  s_a40848e8f8cca9::t_566caea6bbf045 21-34,51
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "8da14631cdb6af73c72f29215dead7cb9ab5843f",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
