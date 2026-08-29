@@ -1,13 +1,25 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 
-import { registry } from '../../wamPluginHost/hostOperations/helpers';
+import { type FaustParamDescriptor } from '../../../models/FaustEngineTypes';
 import { faustEngineState } from '../faustEngineState';
 import { registerFaustDSP } from '../registerFaustDSP';
+
+function descriptor(overrides: Partial<FaustParamDescriptor> = {}): FaustParamDescriptor {
+    return {
+        address: '/gain',
+        label: 'Gain',
+        min: 0,
+        max: 1,
+        defaultValue: 0.5,
+        step: 0.01,
+        type: 'hslider',
+        ...overrides,
+    };
+}
 
 describe('registerFaustDSP', () => {
     beforeEach(() => {
         faustEngineState.modules.clear();
-        registry.clear();
     });
 
     it('should derive a lowercase, dash-joined wire id from the display name', () => {
@@ -47,22 +59,38 @@ describe('registerFaustDSP', () => {
         expect(faustEngineState.modules.get('faust-reverb')).toBe(module);
     });
 
-    it('should register a matching WAM descriptor as an effect by default', () => {
-        registerFaustDSP('Reverb', 'process = _;', [], false);
-
-        expect(registry.get('faust.faust-reverb')).toEqual({
-            id: 'faust.faust-reverb',
-            name: '[Faust] Reverb',
-            vendor: 'Faust/Sourdaw',
-            version: '1.0',
-            category: 'effect',
-            sdkVersion: '2.0',
-            keywords: ['faust', 'dsp'],
-        });
+    it('should refuse a descriptor whose address is not rooted at a slash', () => {
+        expect(() => registerFaustDSP('Gain', 'process = _;', [descriptor({ address: 'gain' })])).toThrow(
+            /address must be rooted/
+        );
     });
 
-    it('should register the WAM descriptor as an instrument when isInstrument is true', () => {
-        registerFaustDSP('Poly Synth', 'process = _;', [], true);
-        expect(registry.get('faust.faust-poly-synth')?.category).toBe('instrument');
+    it('should refuse one address declared twice in a module', () => {
+        expect(() =>
+            registerFaustDSP('Gain', 'process = _;', [descriptor(), descriptor({ label: 'Gain again' })])
+        ).toThrow(/declared twice/);
+    });
+
+    it('should refuse a range where min is not below max', () => {
+        expect(() => registerFaustDSP('Gain', 'process = _;', [descriptor({ min: 1, max: 1 })])).toThrow(
+            /must be below max/
+        );
+    });
+
+    it('should refuse a default outside the declared range', () => {
+        expect(() => registerFaustDSP('Gain', 'process = _;', [descriptor({ defaultValue: 2 })])).toThrow(
+            /lies outside/
+        );
+    });
+
+    it('should refuse a non-positive step', () => {
+        expect(() => registerFaustDSP('Gain', 'process = _;', [descriptor({ step: 0 })])).toThrow(
+            /step 0 must be positive/
+        );
+    });
+
+    it('should store no module when validation refuses the table', () => {
+        expect(() => registerFaustDSP('Gain', 'process = _;', [descriptor({ step: 0 })])).toThrow();
+        expect(faustEngineState.modules.has('faust-gain')).toBe(false);
     });
 });

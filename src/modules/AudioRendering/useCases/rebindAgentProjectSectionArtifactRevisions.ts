@@ -2,6 +2,8 @@ import { type RenderProjectSectionJobSnapshot } from '#/utils/handlerContract';
 
 import { agentSectionRenderArtifactStore } from '../stores/agentSectionRenderArtifactStore';
 
+import { scheduleAgentSectionRenderArtifactExpiry } from './scheduleAgentSectionRenderArtifactExpiry';
+
 type ArtifactRevisionBinding = {
     job: RenderProjectSectionJobSnapshot;
     renderedAt: number;
@@ -54,4 +56,5 @@ export function rebindAgentProjectSectionArtifactRevisions(
                 : artifact
         ),
     });
+    scheduleAgentSectionRenderArtifactExpiry();
 }

@@ -60,4 +60,51 @@ describe('getDeviceTypesForCommandDeviceIds', () => {
             })
         ).toEqual({ 'device-external': 'com.vendor.plugin' });
     });
+
+    it('resolves a restore snapshot operand that is already gone from the track store', () => {
+        const host = createTrack({
+            id: 'track-host',
+            initialAlternativeId: 'alternative-host',
+            kind: 'audio',
+            name: 'Host',
+        });
+        trackStore.set({ selectedTrackId: null, tracks: [host] });
+
+        expect(
+            getDeviceTypesForCommandDeviceIds({
+                argumentsValue: {
+                    deviceIndex: 0,
+                    deviceSnapshot: {
+                        bypassed: false,
+                        id: 'device-restored',
+                        name: 'Supersaw Pad',
+                        parameterValues: {},
+                        type: 'factory-faust-supersaw-pad',
+                    },
+                    expectedDeviceIds: ['device-neighbour'],
+                    trackId: 'track-host',
+                },
+                deviceIds: ['device-restored'],
+                operation: 'restoreDevice',
+            })
+        ).toEqual({ 'device-restored': 'factory-faust-supersaw-pad' });
+        expect(
+            getDeviceTypesForCommandDeviceIds({
+                argumentsValue: {
+                    deviceIndex: 0,
+                    deviceSnapshot: {
+                        bypassed: false,
+                        externalPluginId: 'com.vendor.plugin',
+                        id: 'device-restored-external',
+                        name: 'Vendor Plugin',
+                        parameterValues: {},
+                        type: 'external-plugin',
+                    },
+                    trackId: 'track-host',
+                },
+                deviceIds: ['device-restored-external'],
+                operation: 'restoreDevice',
+            })
+        ).toEqual({ 'device-restored-external': 'com.vendor.plugin' });
+    });
 });

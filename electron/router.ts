@@ -147,6 +147,8 @@ export type RegisterCommandRouterInput = {
     readonly createStream: (streamId: string) => CommandStream;
     /** Defaults to the full exposed surface; narrowed only by specs. */
     readonly commands?: readonly string[];
+    /** Optional admission gate; quit closes plugin runtime commands before shutdown. */
+    readonly acceptsCommand?: (command: string) => boolean;
 };
 
 export const registerCommandRouter = ({
@@ -155,6 +157,7 @@ export const registerCommandRouter = ({
     isTrustedFrameUrl,
     createStream,
     commands = EXPOSED_COMMANDS,
+    acceptsCommand,
 }: RegisterCommandRouterInput): void => {
     for (const command of commands) {
         const method = addonMethodName(command);
@@ -163,6 +166,9 @@ export const registerCommandRouter = ({
         // frame that is not the app has no business reaching a native command,
         // whichever command it named.
         const handler = withTrustedSender(command, isTrustedFrameUrl, async (args, streamId) => {
+            if (acceptsCommand !== undefined && !acceptsCommand(command)) {
+                throw new Error(`${command} rejected: the application is shutting down`);
+            }
             const host = native();
             if (host === undefined) {
                 throw new Error(`${command} rejected: the native host is not available`);

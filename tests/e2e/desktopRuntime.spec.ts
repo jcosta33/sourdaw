@@ -71,6 +71,9 @@ test('launches a project through the window.sourdaw desktop-runtime contract', a
             // its own window controls against this stub. They resolve benignly
             // rather than refuse, because mounting already probes isMaximized.
             platform: 'linux',
+            display: {
+                setZoomFactor: () => undefined,
+            },
             invoke: (command, args = []) => {
                 calls.push({ command, args });
                 if (command === 'load_cached_whisper_model') {

@@ -1,5 +1,6 @@
 pub mod clap_host;
 pub mod clap_wrapper;
+pub mod parameter_events;
 pub mod params;
 pub mod runtime;
 pub mod scanner;
@@ -18,12 +19,20 @@ pub mod vst3_run_loop;
 pub mod vst3_scanner;
 pub mod vst3_wrapper;
 
+pub use clap_host::{signal_pending_tail_change, take_pending_tail_change_signal};
 pub use clap_wrapper::ClapWrapper;
+pub use parameter_events::{
+    is_empty_batch, pair_gestures, signal_pending_parameter_flush,
+    take_pending_parameter_events_signal, take_pending_parameter_flush_signal,
+    PairedParameterEvents, PluginParameterEvent, PluginParameterEventKind,
+    PluginParameterEventQueue, PARAMETER_EVENT_CAPACITY,
+};
 pub use params::PluginParameter;
 pub use runtime::HostedRuntime;
 pub use scanner::{PluginFormat, ScanResult, ScannedDescriptor, ScannedPlugin};
 pub use traits::{
-    AudioPlugin, EditorWindowResizer, HostParameterUpdate, HostTransport, HostedPluginRuntime,
+    signal_pending_process_refusal, take_pending_process_refusal_signal, AudioPlugin,
+    EditorWindowResizer, HostParameterUpdate, HostTransport, HostedPluginRuntime,
     LatencyChangeNotifier, PluginHostRequest, PluginHostRequestNotifier, ProcessingGate,
     DEFAULT_EDITOR_CONTENT_SCALE,
 };

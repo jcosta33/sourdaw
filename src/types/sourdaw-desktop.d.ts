@@ -35,6 +35,10 @@ type SourdawMessageDialogOptions = {
 type SourdawDesktopBridge = {
     /** The platform the shell runs on (`process.platform`), published synchronously. */
     readonly platform: string;
+    /** Renderer display controls backed by Electron's viewport-aware webFrame APIs. */
+    display: {
+        readonly setZoomFactor: (factor: number) => void;
+    };
     /** Invoke a command whose arguments and result are JSON. Arguments are positional. */
     invoke: (command: string, args?: readonly unknown[]) => Promise<unknown>;
     /** Invoke a command whose final argument is a byte payload. Resolves with the command's own result. */

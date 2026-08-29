@@ -153,9 +153,76 @@ function bindTrackedRun(input: ReturnType<typeof createFixture>): void {
                 recovery: 'reconcile-batch',
                 serializedBatch: input.commandBatch.serialized,
                 authority: input.commandBatch.authority,
+                effects: structuredClone(input.receipt.pendingEffects),
             },
         ],
     });
+}
+
+function bindFinalizedCrashWindow(input: ReturnType<typeof createFixture>) {
+    const pendingReceiptIdentity = `${String(input.receipt.schemaVersion)}:${RUN_ID}:${BATCH_ID}:partially-committed`;
+    const renderCommandId = input.receipt.commandOutcomes[0]!.commandId;
+    const trackedRun = {
+        revisions: { committed: COMMITTED_REVISION },
+        receipts: [{ workId: BATCH_ID, receiptIdentity: pendingReceiptIdentity }],
+        committedWork: [{ workId: BATCH_ID, receiptIdentity: pendingReceiptIdentity }],
+        batches: [
+            {
+                batchId: BATCH_ID,
+                commandIds: [renderCommandId],
+                status: 'committed',
+                receiptIdentity: pendingReceiptIdentity,
+            },
+        ],
+        pendingEffectContinuations: [
+            {
+                batchId: BATCH_ID,
+                receiptIdentity: pendingReceiptIdentity,
+                recovery: 'reconcile-batch',
+                serializedBatch: input.commandBatch.serialized,
+                authority: input.commandBatch.authority,
+                effects: structuredClone(input.receipt.pendingEffects),
+            },
+        ],
+        saga: {
+            steps: [
+                {
+                    stepId: `effect:${BATCH_ID}:${renderCommandId}`,
+                    owner: 'external-effect',
+                    workId: BATCH_ID,
+                    state: 'external-pending',
+                    receiptIdentity: pendingReceiptIdentity,
+                },
+            ],
+        },
+    };
+    mocks.getRun.mockReturnValue(trackedRun);
+    return trackedRun;
+}
+
+function bindFinalizedSettled(input: ReturnType<typeof createFixture>) {
+    const receiptIdentity = `${String(input.receipt.schemaVersion)}:${RUN_ID}:${BATCH_ID}:committed`;
+    const renderCommandId = input.receipt.commandOutcomes[0]!.commandId;
+    const trackedRun = {
+        revisions: { committed: COMMITTED_REVISION },
+        receipts: [{ workId: BATCH_ID, receiptIdentity }],
+        committedWork: [{ workId: BATCH_ID, receiptIdentity }],
+        batches: [{ batchId: BATCH_ID, commandIds: [renderCommandId], status: 'committed', receiptIdentity }],
+        pendingEffectContinuations: [],
+        saga: {
+            steps: [
+                {
+                    stepId: `effect:${BATCH_ID}:${renderCommandId}`,
+                    owner: 'external-effect',
+                    workId: BATCH_ID,
+                    state: 'committed',
+                    receiptIdentity,
+                },
+            ],
+        },
+    };
+    mocks.getRun.mockReturnValue(trackedRun);
+    return trackedRun;
 }
 
 describe('admitCommittedSectionRenderRetry', () => {
@@ -165,7 +232,7 @@ describe('admitCommittedSectionRenderRetry', () => {
         registerHandlerMap(getAudioRenderingHandlers());
     });
 
-    it('admits only the canonical warned render command with exact durable and tracked proof', () => {
+    it('arms canonical evidence without a tracked run but requires that run for retry proof', () => {
         const fixture = createFixture();
         mocks.getRun.mockReturnValue(undefined);
 
@@ -176,6 +243,7 @@ describe('admitCommittedSectionRenderRetry', () => {
                 phase: 'arming',
             })
         ).toEqual({ durableReceipt: fixture.receipt, status: 'admitted' });
+        expect(mocks.getRun).not.toHaveBeenCalled();
 
         expect(
             admitCommittedSectionRenderRetry({
@@ -183,6 +251,34 @@ describe('admitCommittedSectionRenderRetry', () => {
                 durableReceipt: fixture.receipt,
                 expectedCommandBatch: fixture.commandBatch,
                 phase: 'proof',
+            })
+        ).toEqual({ status: 'proof-mismatch' });
+        expect(mocks.getRun).toHaveBeenCalledOnce();
+
+        bindTrackedRun(fixture);
+        expect(
+            admitCommittedSectionRenderRetry({
+                confirmation: fixture.confirmation,
+                durableReceipt: fixture.receipt,
+                expectedCommandBatch: fixture.commandBatch,
+                phase: 'proof',
+            })
+        ).toEqual({ durableReceipt: fixture.receipt, status: 'admitted' });
+    });
+
+    it('rejects manual-review evidence during arming and proof', () => {
+        const fixture = createFixture();
+        const pendingEffect = fixture.receipt.pendingEffects[0];
+        if (!pendingEffect || pendingEffect.kind !== 'external-effect') {
+            throw new Error('Expected external render pending effect');
+        }
+        pendingEffect.remediation = 'manual-repair';
+
+        expect(
+            admitCommittedSectionRenderRetry({
+                confirmation: fixture.confirmation,
+                durableReceipt: fixture.receipt,
+                phase: 'arming',
             })
         ).toEqual({ status: 'proof-mismatch' });
 
@@ -194,7 +290,7 @@ describe('admitCommittedSectionRenderRetry', () => {
                 expectedCommandBatch: fixture.commandBatch,
                 phase: 'proof',
             })
-        ).toEqual({ durableReceipt: fixture.receipt, status: 'admitted' });
+        ).toEqual({ status: 'proof-mismatch' });
     });
 
     it.each([
@@ -340,6 +436,342 @@ describe('admitCommittedSectionRenderRetry', () => {
         ).toEqual({ status: 'proof-mismatch' });
     });
 
+    it('admits an exact live finalized continuation settlement without replay proof', () => {
+        const fixture = createFixture();
+        const finalizedReceipt = structuredClone(fixture.receipt);
+        finalizedReceipt.outcome = 'committed';
+        finalizedReceipt.atomicity = 'atomic';
+        finalizedReceipt.pendingEffects = [];
+        bindFinalizedSettled(fixture);
+
+        expect(
+            admitCommittedSectionRenderRetry({
+                confirmation: fixture.confirmation,
+                durableReceipt: finalizedReceipt,
+                expectedCommandBatch: fixture.commandBatch,
+                phase: 'proof',
+            })
+        ).toEqual({ durableReceipt: finalizedReceipt, status: 'admitted' });
+
+        finalizedReceipt.atomicity = 'durable-atomic-with-non-atomic-effects';
+        expect(
+            admitCommittedSectionRenderRetry({
+                confirmation: fixture.confirmation,
+                durableReceipt: finalizedReceipt,
+                expectedCommandBatch: fixture.commandBatch,
+                phase: 'proof',
+            })
+        ).toEqual({ status: 'proof-mismatch' });
+    });
+
+    it.each([
+        [
+            'wrong receipt identity',
+            (run: ReturnType<typeof bindFinalizedSettled>) => (run.receipts[0]!.receiptIdentity = 'wrong'),
+        ],
+        ['missing receipt', (run: ReturnType<typeof bindFinalizedSettled>) => (run.receipts = [])],
+        [
+            'duplicate receipt',
+            (run: ReturnType<typeof bindFinalizedSettled>) => run.receipts.push({ ...run.receipts[0]! }),
+        ],
+        [
+            'wrong committed work identity',
+            (run: ReturnType<typeof bindFinalizedSettled>) => (run.committedWork[0]!.receiptIdentity = 'wrong'),
+        ],
+        ['missing committed work', (run: ReturnType<typeof bindFinalizedSettled>) => (run.committedWork = [])],
+        [
+            'duplicate committed work',
+            (run: ReturnType<typeof bindFinalizedSettled>) => run.committedWork.push({ ...run.committedWork[0]! }),
+        ],
+        ['wrong batch status', (run: ReturnType<typeof bindFinalizedSettled>) => (run.batches[0]!.status = 'failed')],
+        [
+            'wrong batch receipt',
+            (run: ReturnType<typeof bindFinalizedSettled>) => (run.batches[0]!.receiptIdentity = 'wrong'),
+        ],
+        [
+            'wrong batch command',
+            (run: ReturnType<typeof bindFinalizedSettled>) => (run.batches[0]!.commandIds = ['wrong']),
+        ],
+        ['missing batch command', (run: ReturnType<typeof bindFinalizedSettled>) => (run.batches[0]!.commandIds = [])],
+        [
+            'duplicate batch command',
+            (run: ReturnType<typeof bindFinalizedSettled>) =>
+                run.batches[0]!.commandIds.push(run.batches[0]!.commandIds[0]!),
+        ],
+        ['missing batch', (run: ReturnType<typeof bindFinalizedSettled>) => (run.batches = [])],
+        ['duplicate batch', (run: ReturnType<typeof bindFinalizedSettled>) => run.batches.push({ ...run.batches[0]! })],
+        [
+            'wrong external step id',
+            (run: ReturnType<typeof bindFinalizedSettled>) => (run.saga.steps[0]!.stepId = 'wrong'),
+        ],
+        [
+            'wrong external step state',
+            (run: ReturnType<typeof bindFinalizedSettled>) => (run.saga.steps[0]!.state = 'failed'),
+        ],
+        [
+            'wrong external step receipt',
+            (run: ReturnType<typeof bindFinalizedSettled>) => (run.saga.steps[0]!.receiptIdentity = 'wrong'),
+        ],
+        ['missing external step', (run: ReturnType<typeof bindFinalizedSettled>) => (run.saga.steps = [])],
+        [
+            'duplicate external step',
+            (run: ReturnType<typeof bindFinalizedSettled>) => run.saga.steps.push({ ...run.saga.steps[0]! }),
+        ],
+    ])('rejects settled finalized truth with %s', (_label, mutate) => {
+        const fixture = createFixture();
+        const finalizedReceipt = structuredClone(fixture.receipt);
+        finalizedReceipt.outcome = 'committed';
+        finalizedReceipt.atomicity = 'atomic';
+        finalizedReceipt.pendingEffects = [];
+        mutate(bindFinalizedSettled(fixture));
+
+        expect(
+            admitCommittedSectionRenderRetry({
+                confirmation: fixture.confirmation,
+                durableReceipt: finalizedReceipt,
+                expectedCommandBatch: fixture.commandBatch,
+                phase: 'proof',
+            })
+        ).toEqual({ status: 'proof-mismatch' });
+    });
+
+    it('admits a finalized receipt only against the exact pre-finalization crash window', () => {
+        const fixture = createFixture();
+        const finalizedReceipt = structuredClone(fixture.receipt);
+        finalizedReceipt.outcome = 'committed';
+        finalizedReceipt.atomicity = 'atomic';
+        finalizedReceipt.pendingEffects = [];
+        bindFinalizedCrashWindow(fixture);
+
+        expect(
+            admitCommittedSectionRenderRetry({
+                confirmation: fixture.confirmation,
+                durableReceipt: finalizedReceipt,
+                expectedCommandBatch: fixture.commandBatch,
+                phase: 'proof',
+            })
+        ).toEqual({ durableReceipt: finalizedReceipt, status: 'admitted' });
+    });
+
+    it.each([
+        [
+            'wrong receipt identity',
+            (run: ReturnType<typeof bindFinalizedCrashWindow>) => (run.receipts[0]!.receiptIdentity = 'wrong'),
+        ],
+        ['missing receipt', (run: ReturnType<typeof bindFinalizedCrashWindow>) => (run.receipts = [])],
+        [
+            'duplicate receipt',
+            (run: ReturnType<typeof bindFinalizedCrashWindow>) => run.receipts.push({ ...run.receipts[0]! }),
+        ],
+        [
+            'wrong committed work identity',
+            (run: ReturnType<typeof bindFinalizedCrashWindow>) => (run.committedWork[0]!.receiptIdentity = 'wrong'),
+        ],
+        ['missing committed work', (run: ReturnType<typeof bindFinalizedCrashWindow>) => (run.committedWork = [])],
+        [
+            'duplicate committed work',
+            (run: ReturnType<typeof bindFinalizedCrashWindow>) => run.committedWork.push({ ...run.committedWork[0]! }),
+        ],
+        [
+            'wrong batch status',
+            (run: ReturnType<typeof bindFinalizedCrashWindow>) => (run.batches[0]!.status = 'failed'),
+        ],
+        [
+            'wrong external step id',
+            (run: ReturnType<typeof bindFinalizedCrashWindow>) => (run.saga.steps[0]!.stepId = 'effect:wrong'),
+        ],
+        [
+            'wrong external step state',
+            (run: ReturnType<typeof bindFinalizedCrashWindow>) => (run.saga.steps[0]!.state = 'committed'),
+        ],
+        [
+            'duplicate external step',
+            (run: ReturnType<typeof bindFinalizedCrashWindow>) =>
+                run.saga.steps.push({ ...run.saga.steps[0]!, stepId: 'effect:duplicate' }),
+        ],
+        [
+            'wrong committed work identity',
+            (run: ReturnType<typeof bindFinalizedCrashWindow>) =>
+                (run.committedWork[0]!.receiptIdentity = 'wrong-receipt'),
+        ],
+        [
+            'wrong batch identity',
+            (run: ReturnType<typeof bindFinalizedCrashWindow>) => (run.batches[0]!.receiptIdentity = 'wrong-receipt'),
+        ],
+        [
+            'wrong batch command',
+            (run: ReturnType<typeof bindFinalizedCrashWindow>) => (run.batches[0]!.commandIds = ['foreign-command']),
+        ],
+        [
+            'duplicate batch command',
+            (run: ReturnType<typeof bindFinalizedCrashWindow>) =>
+                run.batches[0]!.commandIds.push(run.batches[0]!.commandIds[0]!),
+        ],
+        ['missing batch', (run: ReturnType<typeof bindFinalizedCrashWindow>) => (run.batches = [])],
+        [
+            'duplicate batch',
+            (run: ReturnType<typeof bindFinalizedCrashWindow>) => run.batches.push({ ...run.batches[0]! }),
+        ],
+        [
+            'wrong external step receipt',
+            (run: ReturnType<typeof bindFinalizedCrashWindow>) => (run.saga.steps[0]!.receiptIdentity = 'wrong'),
+        ],
+        ['missing external step', (run: ReturnType<typeof bindFinalizedCrashWindow>) => (run.saga.steps = [])],
+        [
+            'wrong continuation receipt',
+            (run: ReturnType<typeof bindFinalizedCrashWindow>) =>
+                (run.pendingEffectContinuations[0]!.receiptIdentity = 'wrong'),
+        ],
+        [
+            'wrong continuation recovery',
+            (run: ReturnType<typeof bindFinalizedCrashWindow>) =>
+                (run.pendingEffectContinuations[0]!.recovery = 'manual-repair'),
+        ],
+        [
+            'wrong continuation batch',
+            (run: ReturnType<typeof bindFinalizedCrashWindow>) =>
+                (run.pendingEffectContinuations[0]!.batchId = 'wrong'),
+        ],
+        [
+            'wrong continuation serialization',
+            (run: ReturnType<typeof bindFinalizedCrashWindow>) =>
+                (run.pendingEffectContinuations[0]!.serializedBatch = 'wrong'),
+        ],
+        [
+            'wrong continuation authority',
+            (run: ReturnType<typeof bindFinalizedCrashWindow>) =>
+                (run.pendingEffectContinuations[0]!.authority = {
+                    ...run.pendingEffectContinuations[0]!.authority,
+                    projectId: 'wrong',
+                }),
+        ],
+        [
+            'missing continuation',
+            (run: ReturnType<typeof bindFinalizedCrashWindow>) => (run.pendingEffectContinuations = []),
+        ],
+        [
+            'duplicate continuation',
+            (run: ReturnType<typeof bindFinalizedCrashWindow>) =>
+                run.pendingEffectContinuations.push({ ...run.pendingEffectContinuations[0]! }),
+        ],
+        [
+            'missing continuation effect',
+            (run: ReturnType<typeof bindFinalizedCrashWindow>) => (run.pendingEffectContinuations[0]!.effects = []),
+        ],
+        [
+            'duplicate continuation effect',
+            (run: ReturnType<typeof bindFinalizedCrashWindow>) =>
+                run.pendingEffectContinuations[0]!.effects.push({ ...run.pendingEffectContinuations[0]!.effects[0]! }),
+        ],
+        [
+            'wrong effect command',
+            (run: ReturnType<typeof bindFinalizedCrashWindow>) =>
+                (run.pendingEffectContinuations[0]!.effects[0]!.commandId = 'wrong'),
+        ],
+        [
+            'wrong effect operation',
+            (run: ReturnType<typeof bindFinalizedCrashWindow>) =>
+                (run.pendingEffectContinuations[0]!.effects[0]!.operation = 'setTempo'),
+        ],
+        [
+            'wrong effect kind',
+            (run: ReturnType<typeof bindFinalizedCrashWindow>) =>
+                (run.pendingEffectContinuations[0]!.effects[0]!.kind = 'runtime-graph'),
+        ],
+        [
+            'wrong effect remediation',
+            (run: ReturnType<typeof bindFinalizedCrashWindow>) =>
+                (run.pendingEffectContinuations[0]!.effects[0]!.remediation = 'manual-repair'),
+        ],
+    ])('rejects a finalized crash window with %s', (_label, mutate) => {
+        const fixture = createFixture();
+        const finalizedReceipt = structuredClone(fixture.receipt);
+        finalizedReceipt.outcome = 'committed';
+        finalizedReceipt.atomicity = 'atomic';
+        finalizedReceipt.pendingEffects = [];
+        mutate(bindFinalizedCrashWindow(fixture));
+
+        expect(
+            admitCommittedSectionRenderRetry({
+                confirmation: fixture.confirmation,
+                durableReceipt: finalizedReceipt,
+                expectedCommandBatch: fixture.commandBatch,
+                phase: 'proof',
+            })
+        ).toEqual({ status: 'proof-mismatch' });
+    });
+
+    it.each([
+        [
+            'malformed serialized batch',
+            (fixture: ReturnType<typeof createFixture>) => {
+                fixture.confirmation.approvalSnapshot.commandBatch!.serialized = '{not-json';
+            },
+        ],
+        [
+            'invalid authority',
+            (fixture: ReturnType<typeof createFixture>) => {
+                fixture.confirmation.approvalSnapshot.commandBatch!.authority.budgets.maxRenderJobs = -1;
+            },
+        ],
+    ])('rejects %s during arming and proof', (_name, mutate) => {
+        const fixture = createFixture();
+        mutate(fixture);
+
+        expect(
+            admitCommittedSectionRenderRetry({
+                confirmation: fixture.confirmation,
+                durableReceipt: fixture.receipt,
+                phase: 'arming',
+            })
+        ).toEqual({ status: 'proof-mismatch' });
+        expect(
+            admitCommittedSectionRenderRetry({
+                confirmation: fixture.confirmation,
+                durableReceipt: fixture.receipt,
+                expectedCommandBatch: fixture.commandBatch,
+                phase: 'proof',
+            })
+        ).toEqual({ status: 'proof-mismatch' });
+    });
+
+    it('rejects an otherwise exact receipt carrying a second pending effect', () => {
+        const fixture = createFixture();
+        const renderPendingEffect = fixture.receipt.pendingEffects[0];
+        if (!renderPendingEffect) {
+            throw new Error('Expected render pending effect');
+        }
+        const receipt = {
+            ...fixture.receipt,
+            pendingEffects: [
+                renderPendingEffect,
+                {
+                    ...renderPendingEffect,
+                    commandId: 'unrelated-pending-effect',
+                    reason: 'An unrelated external effect remains pending.',
+                },
+            ],
+        } satisfies ReturnType<typeof createVerifiedBatchReceipt>;
+
+        expect(
+            admitCommittedSectionRenderRetry({
+                confirmation: fixture.confirmation,
+                durableReceipt: receipt,
+                phase: 'arming',
+            })
+        ).toEqual({ status: 'proof-mismatch' });
+
+        bindTrackedRun(fixture);
+        expect(
+            admitCommittedSectionRenderRetry({
+                confirmation: fixture.confirmation,
+                durableReceipt: receipt,
+                expectedCommandBatch: fixture.commandBatch,
+                phase: 'proof',
+            })
+        ).toEqual({ status: 'proof-mismatch' });
+    });
+
     it('rejects duplicate approved render actions', () => {
         const fixture = createFixture();
         const renderAction = fixture.confirmation.approvalSnapshot.actions[0];
@@ -357,7 +789,7 @@ describe('admitCommittedSectionRenderRetry', () => {
         ).toEqual({ status: 'proof-mismatch' });
     });
 
-    it('rejects a canonical batch containing two render commands', () => {
+    it('rejects ambiguous cardinality from two approved render actions and commands', () => {
         const fixture = createFixture();
         const secondAction = {
             type: 'renderProjectSections',
@@ -399,6 +831,8 @@ describe('admitCommittedSectionRenderRetry', () => {
             firstSerializedCommand,
             serializeVersionedCommandEnvelope(secondCommand),
         ];
+        fixture.confirmation.actions.push(secondAction);
+        fixture.confirmation.approvalSnapshot.actions.push(secondAction);
         fixture.confirmation.executedActions.push({
             actionType: 'renderProjectSections',
             commandId: secondCommand.commandId,
@@ -414,6 +848,17 @@ describe('admitCommittedSectionRenderRetry', () => {
                 confirmation: fixture.confirmation,
                 durableReceipt: fixture.receipt,
                 phase: 'arming',
+            })
+        ).toEqual({ status: 'proof-mismatch' });
+
+        fixture.commandBatch = commandBatch;
+        bindTrackedRun(fixture);
+        expect(
+            admitCommittedSectionRenderRetry({
+                confirmation: fixture.confirmation,
+                durableReceipt: fixture.receipt,
+                expectedCommandBatch: commandBatch,
+                phase: 'proof',
             })
         ).toEqual({ status: 'proof-mismatch' });
     });
@@ -454,6 +899,49 @@ describe('admitCommittedSectionRenderRetry', () => {
                     ...mocks.getRun(),
                     pendingEffectContinuations: [
                         { ...mocks.getRun().pendingEffectContinuations[0], recovery: 'manual-repair' },
+                    ],
+                });
+            },
+        ],
+        [
+            'extra continuation effect',
+            (fixture: ReturnType<typeof createFixture>) => {
+                bindTrackedRun(fixture);
+                mocks.getRun.mockReturnValue({
+                    ...mocks.getRun(),
+                    pendingEffectContinuations: [
+                        {
+                            ...mocks.getRun().pendingEffectContinuations[0],
+                            effects: [
+                                ...mocks.getRun().pendingEffectContinuations[0].effects,
+                                { ...fixture.receipt.pendingEffects[0]!, commandId: 'extra-render-command' },
+                            ],
+                        },
+                    ],
+                });
+            },
+        ],
+        [
+            'missing continuation effect',
+            (fixture: ReturnType<typeof createFixture>) => {
+                bindTrackedRun(fixture);
+                mocks.getRun.mockReturnValue({
+                    ...mocks.getRun(),
+                    pendingEffectContinuations: [{ ...mocks.getRun().pendingEffectContinuations[0], effects: [] }],
+                });
+            },
+        ],
+        [
+            'mismatched continuation effect',
+            (fixture: ReturnType<typeof createFixture>) => {
+                bindTrackedRun(fixture);
+                mocks.getRun.mockReturnValue({
+                    ...mocks.getRun(),
+                    pendingEffectContinuations: [
+                        {
+                            ...mocks.getRun().pendingEffectContinuations[0],
+                            effects: [{ ...fixture.receipt.pendingEffects[0]!, commandId: 'wrong-render-command' }],
+                        },
                     ],
                 });
             },

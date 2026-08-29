@@ -17,6 +17,9 @@ export { unloadPlugin } from './pluginLifecycle/unloadPlugin';
 export { openPluginGui } from './pluginLifecycle/openPluginGui';
 export { closePluginGui } from './pluginLifecycle/closePluginGui';
 export { watchPluginStateDirty } from './pluginLifecycle/watchPluginStateDirty';
+// The edit shape stays private: a foreign module derives it from this callable,
+// which is the module contract, rather than from a type the use case owns.
+export { observeExternalPluginParameterEdits } from './pluginLifecycle/observeExternalPluginParameterEdits';
 export { processAudioIPC } from './pluginLifecycle/processAudioIPC';
 export { setPluginParameter } from './pluginLifecycle/setPluginParameter';
 export { refreshExternalPluginParameters } from './pluginLifecycle/refreshExternalPluginParameters';
@@ -37,15 +40,3 @@ export { getAgentDeviceFactoryManifest } from './getAgentDeviceFactoryManifest';
 export { startPluginScan } from './pluginScan/scanning/startPluginScan';
 export { addScanPath } from './pluginScan/scanning/addScanPath';
 export { removeScanPath } from './pluginScan/scanning/removeScanPath';
-
-export { registerProModulationEffects } from './proModulationEffects';
-
-export { registerBuiltinPlugins } from './wamPluginHost/builtinDescriptors';
-
-export { initWAMEnvironment } from './wamPluginHost/hostOperations/initWAMEnvironment';
-export { registerWAMPlugin } from './wamPluginHost/hostOperations/registerWAMPlugin';
-export { getRegisteredPlugins } from './wamPluginHost/hostOperations/getRegisteredPlugins';
-export { getPluginsByCategory } from './wamPluginHost/hostOperations/getPluginsByCategory';
-export { loadWAMPlugin } from './wamPluginHost/hostOperations/loadWAMPlugin';
-export { unloadWAMPlugin } from './wamPluginHost/hostOperations/unloadWAMPlugin';
-export { getActiveInstances } from './wamPluginHost/hostOperations/getActiveInstances';

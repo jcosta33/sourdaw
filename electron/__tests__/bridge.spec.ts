@@ -65,6 +65,7 @@ describe('the published surface', () => {
 
         expect(Object.keys(bridge).sort()).toEqual([
             'dialog',
+            'display',
             'invoke',
             'invokeBinary',
             'invokeBinaryResponse',
@@ -77,6 +78,7 @@ describe('the published surface', () => {
         ]);
         expect(Object.keys(bridge.dialog).sort()).toEqual(['message', 'open', 'save']);
         expect(Object.keys(bridge.paths).sort()).toEqual(['join', 'samplesBase']);
+        expect(Object.keys(bridge.display)).toEqual(['setZoomFactor']);
         expect(Object.keys(bridge.windowControls).sort()).toEqual([
             'close',
             'isMaximized',
@@ -88,6 +90,15 @@ describe('the published surface', () => {
 
     it('publishes the platform synchronously, so chrome gating needs no round trip', () => {
         expect(createSourdawBridge(fakeIpc().ipc, 'epoch', undefined, 'linux').platform).toBe('linux');
+    });
+
+    it('routes display scaling through the preload-owned zoom capability', () => {
+        const setZoomFactor = vi.fn();
+        const bridge = createSourdawBridge(fakeIpc().ipc, 'epoch', undefined, 'linux', setZoomFactor);
+
+        bridge.display.setZoomFactor(1.25);
+
+        expect(setZoomFactor).toHaveBeenCalledWith(1.25);
     });
 
     it('registers one process-wide listener per push channel, not one per subscription', () => {

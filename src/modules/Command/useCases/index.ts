@@ -10,6 +10,7 @@ export { commandBatchPreflightPort } from './commandBatchPreflightPort';
 export { commandBatchPreviewPort } from './commandBatchPreviewPort';
 export { commandRuntimeRepairPort } from './commandRuntimeRepairPort';
 export { configureCommandBatchIdempotency } from './configureCommandBatchIdempotency';
+export { canExecuteCommandBatchEffects } from './canExecuteCommandBatchEffects';
 export { buildSemanticProjectDiff } from './buildSemanticProjectDiff';
 export { compilePartialCommandBatchAcceptance } from './compilePartialCommandBatchAcceptance';
 export { commandDeviceVersionsPort } from './commandDeviceVersionsPort';
@@ -53,6 +54,7 @@ export { executeVersionedCommandEnvelope } from './executeVersionedCommandEnvelo
 export { executeVersionedCommandBatch } from './executeVersionedCommandBatch';
 export { executeVersionedCommandBatchEnvelope } from './executeVersionedCommandBatchEnvelope';
 export { getVersionedCommandBatchIdempotentReplay } from './getVersionedCommandBatchIdempotentReplay';
+export { finalizeRecoveredCommandBatchEffects } from './finalizeRecoveredCommandBatchEffects';
 export { getVersionedCommandBatchCommitProof } from './getVersionedCommandBatchCommitProof';
 export { getVersionedCommandBatchCommitDisposition } from './getVersionedCommandBatchCommitDisposition';
 export { getVersionedCommandBatchEffects } from './getVersionedCommandBatchEffects';

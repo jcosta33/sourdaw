@@ -11,6 +11,7 @@
 //! Adding a format adds an arm. Nothing outside this file matches on one.
 
 use crate::clap_wrapper::ClapWrapper;
+use crate::parameter_events::PluginParameterEventQueue;
 use crate::params::PluginParameter;
 use crate::traits::{
     AudioPlugin, EditorWindowResizer, HostParameterUpdate, HostTransport, HostedPluginRuntime,
@@ -96,12 +97,39 @@ impl AudioPlugin for HostedRuntime {
         delegate!(self, backend => backend.set_editor_content_scale(scale))
     }
 
+    fn editor_can_resize(&self) -> bool {
+        delegate!(self, backend => backend.editor_can_resize())
+    }
+
+    fn request_editor_size(&mut self, width: u32, height: u32) -> Result<(u32, u32), String> {
+        delegate!(self, backend => backend.request_editor_size(width, height))
+    }
+
+    fn apply_editor_content_scale(&mut self, scale: f64) -> Result<(u32, u32), String> {
+        delegate!(self, backend => backend.apply_editor_content_scale(scale))
+    }
+
     fn apply_pending_editor_resize(&mut self) -> Option<(u32, u32)> {
         delegate!(self, backend => backend.apply_pending_editor_resize())
     }
 
     fn take_state_dirty(&mut self) -> bool {
         delegate!(self, backend => backend.take_state_dirty())
+    }
+
+    fn take_parameters_rescan(&mut self) -> bool {
+        delegate!(self, backend => backend.take_parameters_rescan())
+    }
+
+    fn flush_parameters_off_audio_thread(&mut self) -> bool {
+        delegate!(self, backend => backend.flush_parameters_off_audio_thread())
+    }
+
+    /// Reached through an explicit `AudioPlugin::` path: both backends carry an
+    /// inherent method of this name that answers the queue itself, and an
+    /// inherent item shadows a trait one.
+    fn parameter_event_queue(&self) -> Option<Arc<PluginParameterEventQueue>> {
+        delegate!(self, backend => AudioPlugin::parameter_event_queue(backend))
     }
 
     fn accepts_midi(&self) -> bool {
@@ -172,6 +200,18 @@ impl HostedPluginRuntime for HostedRuntime {
 
     fn latency_samples(&self) -> u32 {
         delegate!(self, backend => backend.latency_samples())
+    }
+
+    fn tail_samples(&self) -> u32 {
+        delegate!(self, backend => backend.tail_samples())
+    }
+
+    fn take_tail_change(&mut self) -> Option<u32> {
+        delegate!(self, backend => backend.take_tail_change())
+    }
+
+    fn report_plugin_observations(&mut self) {
+        delegate!(self, backend => backend.report_plugin_observations())
     }
 }
 

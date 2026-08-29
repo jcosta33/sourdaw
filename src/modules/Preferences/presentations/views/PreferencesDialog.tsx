@@ -79,11 +79,11 @@ export const PreferencesDialog = ({ open, onClose }: PreferencesDialogProps): Re
                 }
             }}
         >
-            <DialogContent className="w-[720px] max-w-[90vw] max-h-[80vh] p-0 bg-surface-raised overflow-hidden">
-                <Row align="stretch" className="h-[520px]">
+            <DialogContent className="h-[520px] max-h-[80%] w-[720px] max-w-[90%] overflow-hidden bg-surface-raised p-0 sm:max-w-[90%]">
+                <Row align="stretch" className="h-full min-h-0 overflow-hidden">
                     {/* ── Sidebar navigation ── */}
-                    <DawSideRail className="w-[180px] p-3">
-                        <Stack as="nav" gap={0.5} className="h-full">
+                    <DawSideRail className="w-[180px] overflow-y-auto p-3">
+                        <Stack as="nav" gap={0.5} className="h-max min-h-full">
                             <DialogHeader className="mb-3">
                                 <DialogTitle className="text-sm font-semibold">Preferences</DialogTitle>
                             </DialogHeader>
@@ -94,7 +94,7 @@ export const PreferencesDialog = ({ open, onClose }: PreferencesDialogProps): Re
                                     type="button"
                                     key={item.id}
                                     className={cn(
-                                        'flex items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-xs transition-colors',
+                                        'flex items-center justify-start gap-2 rounded-md px-2.5 py-1.5 text-left text-xs transition-colors',
                                         section === item.id
                                             ? 'bg-primary/10 font-medium text-primary'
                                             : 'text-muted-foreground hover:bg-muted/40 hover:text-foreground'
@@ -127,7 +127,7 @@ export const PreferencesDialog = ({ open, onClose }: PreferencesDialogProps): Re
                     </DawSideRail>
 
                     {/* ── Content area ── */}
-                    <DawDialogBody scrollable className="flex-1 gap-5 bg-surface-base/60 p-5">
+                    <DawDialogBody scrollable className="flex-1 gap-5 bg-surface-base/60 p-5 [&>*]:shrink-0">
                         {section === 'general' ? <GeneralSection prefs={prefs} update={update} /> : null}
                         {section === 'appearance' ? <AppearanceSection prefs={prefs} update={update} /> : null}
                         {section === 'layout' ? <LayoutSection prefs={prefs} update={update} /> : null}

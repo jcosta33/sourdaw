@@ -272,6 +272,108 @@ describe('migrateActiveProjectIdentity', () => {
         expect(secondReplicaIdentity).toBe(firstReplicaIdentity);
     });
 
+    it('resolves both attempts when an aborted transaction lets a second migration settle the same identity', async () => {
+        const firstPersistence = Promise.withResolvers<void>();
+        const secondPersistence = Promise.withResolvers<void>();
+        mocks.persistCrdtProject
+            .mockReturnValueOnce(firstPersistence.promise)
+            .mockReturnValueOnce(secondPersistence.promise);
+        mocks.project.value = legacyProject();
+
+        const first = migrateActiveProjectIdentity();
+        const candidate = mocks.project.value?.projectId;
+
+        // The action transaction that owned the first attempt's store write
+        // aborts: the scoped write is discarded and the projection reverts to
+        // the legacy identity, so the pending-migration dedupe no longer sees
+        // the attempt still in flight.
+        mocks.project.value = legacyProject();
+        const second = migrateActiveProjectIdentity();
+
+        // `createdAt` never changes, so the second attempt derives the SAME
+        // deterministic candidate — and its write is unscoped, so it lands.
+        expect(isCanonicalProjectId(candidate)).toBe(true);
+        expect(mocks.project.value).toMatchObject({ projectId: candidate, identityMigrationPending: true });
+
+        firstPersistence.resolve();
+        await expect(first).resolves.toBe(true);
+
+        secondPersistence.resolve();
+        await expect(second).resolves.toBe(true);
+        expect(mocks.project.value).toMatchObject({ projectId: candidate, identityMigrationPending: false });
+    });
+
+    it('settles a canonical identity another writer published into the projection', async () => {
+        const hostProjectId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+        const persistence = Promise.withResolvers<void>();
+        mocks.persistCrdtProject.mockReturnValueOnce(persistence.promise);
+        mocks.project.value = legacyProject();
+
+        const migrating = migrateActiveProjectIdentity();
+        // A collaboration host forces its own canonical identity into
+        // `projectMeta` while this persistence is in flight; the document-origin
+        // projection carries it into the store and preserves the transient
+        // pending flag this migration set.
+        mocks.project.value = {
+            ...legacyProject(),
+            projectId: hostProjectId,
+            identityMigrationPending: true,
+        };
+
+        persistence.resolve();
+        await expect(migrating).resolves.toBe(true);
+        expect(mocks.project.value).toMatchObject({
+            projectId: hostProjectId,
+            identityMigrationPending: false,
+        });
+    });
+
+    it('reports a superseded attempt as spent when its own write was discarded', async () => {
+        const firstPersistence = Promise.withResolvers<void>();
+        const secondPersistence = Promise.withResolvers<void>();
+        mocks.persistCrdtProject
+            .mockReturnValueOnce(firstPersistence.promise)
+            .mockReturnValueOnce(secondPersistence.promise);
+        mocks.project.value = legacyProject();
+
+        const first = migrateActiveProjectIdentity();
+        // The action transaction owning the first attempt's store write aborts,
+        // so the projection reverts to the legacy identity and a successor
+        // migration takes ownership of the seam.
+        mocks.project.value = legacyProject();
+        const second = migrateActiveProjectIdentity();
+        // The successor's write is discarded the same way, so when the first
+        // persistence resolves the projection carries no canonical identity at
+        // all — and the successor, not this spent attempt, owes its publication.
+        mocks.project.value = legacyProject();
+
+        firstPersistence.resolve();
+        await expect(first).resolves.toBe(true);
+
+        // The successor is the one that must report the discarded write.
+        secondPersistence.resolve();
+        await expect(second).rejects.toThrow('Minted project identity did not survive persistence');
+    });
+
+    it('reports failure when a discarded write leaves a malformed legacy identity in the projection', async () => {
+        const persistence = Promise.withResolvers<void>();
+        mocks.persistCrdtProject.mockReturnValueOnce(persistence.promise);
+        mocks.project.value = legacyProject('not-a-uuid');
+
+        const migrating = migrateActiveProjectIdentity();
+        expect(isCanonicalProjectId(mocks.project.value?.projectId)).toBe(true);
+        // The minted write is discarded while persistence is in flight. The
+        // projection is not empty — it carries the malformed version-1 id it
+        // always had — so presence alone cannot tell a migrated projection from
+        // this one, and reporting success hands `saveProject` a projection
+        // `buildProjectData` refuses.
+        mocks.project.value = legacyProject('not-a-uuid');
+
+        persistence.resolve();
+        await expect(migrating).rejects.toThrow('Minted project identity did not survive persistence');
+        expect(mocks.project.value).toMatchObject({ projectId: 'not-a-uuid' });
+    });
+
     it('is idempotent once the active project has a canonical identity', async () => {
         mocks.project.value = legacyProject('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');
 

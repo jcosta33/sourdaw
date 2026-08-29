@@ -6,7 +6,8 @@ use crate::host::plugin_registry_store::{
 };
 use crate::host::plugin_scan_policy::PluginScanPolicy;
 use crate::host::plugin_scan_worker;
-use crate::host::plugin_window::PluginWindowHost;
+use crate::host::plugin_window::{NoWindowHost, PluginWindowHost};
+use crate::host::ui_thread::lend_on_ui_thread;
 use crate::state::{AppState, PluginInstanceData, PluginRegistryEntry};
 use cpal::traits::{DeviceTrait, HostTrait};
 use daw_engine::audio_bridge::{create_audio_bridge, MAX_BLOCK_FRAMES};
@@ -45,6 +46,18 @@ pub struct PluginInstance {
     /// Latency in milliseconds, converted host-side at the activation sample rate.
     /// This is the value the frontend feeds into latency compensation.
     pub latency_ms: f64,
+    /// How long the plugin keeps sounding after its input stops — a reverb's
+    /// decay, a delay's repeats — in frames of that same activation rate.
+    ///
+    /// Frames rather than milliseconds, unlike the latency beside it: both
+    /// formats reserve the top of the range for a tail that never ends, and a
+    /// converted sentinel is an ordinary duration nothing downstream can tell
+    /// apart from a real one.
+    ///
+    /// Read at load like the latency, and revised the same way when the plugin
+    /// announces a new one — over `plugin-tail-changed` rather than in this
+    /// value, which is the reading at load and nothing later.
+    pub tail_samples: u32,
     /// Frames the worklet↔plugin audio bridge adds on top of the plugin's own
     /// latency, at the engine rate this instance was activated with. Zero when
     /// no engine took the instance — nothing crosses a bridge that does not
@@ -1096,6 +1109,9 @@ pub async fn load_plugin(
     // divided.
     let latency_samples = wrapper.latency_samples();
     let latency_ms = wrapper.latency_ms();
+    // Read on the same control-thread visit, and left in frames: see
+    // `PluginInstance::tail_samples` for why this one does not convert.
+    let tail_samples = wrapper.tail_samples();
 
     // Wake the latency watcher when this instance flags a runtime latency
     // change, so the plugin's own notification — CLAP's `latency.changed()`
@@ -1170,6 +1186,11 @@ pub async fn load_plugin(
                 );
             }));
 
+            // Take the parameter-event queue before the wrapper is handed to
+            // the audio thread. Held on the record so the drain reaches it
+            // without the control seam — see `EnginePluginInstanceData`.
+            let parameter_events = AudioPlugin::parameter_event_queue(&wrapper);
+
             let shared_plugin = Arc::new(SharedHostedPlugin::new(wrapper));
 
             // The record insert re-decides the session ceiling
@@ -1189,6 +1210,7 @@ pub async fn load_plugin(
                     has_gui,
                     bridge: Some(bridge_handle),
                     relay_scratch: crate::state::PluginRelayScratch::default(),
+                    parameter_events,
                 },
             )?;
 
@@ -1243,6 +1265,7 @@ pub async fn load_plugin(
         is_active: true,
         latency_samples,
         latency_ms,
+        tail_samples,
         bridge_round_trip_frames: bridge_frames,
         engine_plugin_id,
     };
@@ -1388,6 +1411,15 @@ async fn unload_all_plugin_runtimes(
     Ok(result)
 }
 
+/// The thread this unload's editor teardown must run on.
+///
+/// An unload can run with no window host at all — a shell may lose its windows
+/// before its last instance — and [`NoWindowHost`] says so: the editor calls then
+/// run on this thread, which is the only one left to run them on.
+fn editor_thread(windows_host: Option<&dyn PluginWindowHost>) -> &dyn PluginWindowHost {
+    windows_host.unwrap_or(&NoWindowHost)
+}
+
 async fn unload_plugin_runtime(
     instance_id: &str,
     windows_host: Option<&dyn PluginWindowHost>,
@@ -1402,7 +1434,13 @@ async fn unload_plugin_runtime(
         plugins.remove(instance_id)
     };
     if let Some(mut instance) = command_plugin {
-        instance.close_gui();
+        // Removing a device closes its editor, and closing an editor is the same
+        // thread-affine lifecycle a GUI command runs: `close_gui` reaches VST3
+        // `removed` and CLAP `gui.destroy`, and running them on this worker
+        // un-parents an NSView off the main thread.
+        let _ = lend_on_ui_thread(editor_thread(windows_host), &mut instance, |instance| {
+            instance.close_gui()
+        });
         remove_plugin_window(instance_id, windows_host, state);
         return Ok(());
     }
@@ -1442,8 +1480,9 @@ async fn unload_plugin_runtime(
 
         if let Err(error) =
             runtime.with_unload_control(std::time::Duration::from_secs(2), |plugin| {
-                plugin.close_gui();
-                Ok(())
+                lend_on_ui_thread(editor_thread(windows_host), plugin, |plugin| {
+                    plugin.close_gui()
+                })
             })
         {
             eprintln!("[Plugin] GUI cleanup failed during unload: {error}");
@@ -1860,7 +1899,7 @@ pub async fn set_plugin_bypass(
 /// this command can pool away.
 pub async fn process_plugin_audio(
     instance_id: String,
-    audio_bytes: Vec<u8>,
+    mut audio_bytes: Vec<u8>,
     state: &AppState,
 ) -> Result<Vec<u8>, String> {
     let mut engine_plugins = state
@@ -1929,7 +1968,26 @@ pub async fn process_plugin_audio(
         }
         Ok(result)
     } else {
-        // No output yet (first block) — return the dry input
+        // Nothing came back this quantum: the ring is still priming on the first
+        // block, or the engine fell behind and has none ready.
+        //
+        // Silence, not the dry input. Passing dry makes an under-run audible as
+        // the unprocessed source — a chain the user is hearing as a filter or a
+        // distortion briefly plays the raw signal at full level, and a bridged
+        // instrument plays whatever the worklet happened to send it. That is
+        // both louder and less honest than a gap, and
+        // `.agents/decisions/0021-plugin-isolation-by-binary-with-per-plugin-override.md`
+        // records under-run output as zero independently of the failure policy
+        // it decides.
+        //
+        // No ramp: an f32 sample is four zero bytes, and a quantum this command
+        // never processed has no ramp state to carry — the ramped hand-over
+        // belongs to the failure path that knows a plugin stopped.
+        //
+        // Zeroed in place rather than allocated: the input block is owned here
+        // and already the right length, and this path runs once per quantum per
+        // bridged plugin.
+        audio_bytes.fill(0);
         Ok(audio_bytes)
     }
 }
@@ -1937,6 +1995,7 @@ pub async fn process_plugin_audio(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::host::plugin_window::testing::DedicatedUiWindowHost;
     use crate::state::EnginePluginInstanceData;
     use daw_core::PluginInstanceId;
     use std::path::Path;
@@ -1990,6 +2049,7 @@ mod tests {
                 has_gui: true,
                 bridge,
                 relay_scratch: crate::state::PluginRelayScratch::default(),
+                parameter_events: None,
             },
         );
     }
@@ -2140,6 +2200,53 @@ mod tests {
                 .load(AtomicOrdering::Relaxed),
             2,
             "every refused block must add to the count, not overwrite it"
+        );
+    }
+
+    /// One quantum of interleaved stereo at full scale, so a block that came
+    /// back unchanged is unmistakable from one the host zeroed.
+    fn loud_block(frames: usize) -> Vec<u8> {
+        let mut block = Vec::with_capacity(frames * 2 * 4);
+        for _ in 0..frames * 2 {
+            block.extend_from_slice(&1.0_f32.to_le_bytes());
+        }
+        block
+    }
+
+    /// Nothing is processed on the first block — and nothing is processed for as
+    /// long as the engine is behind. Handing the dry input back makes an
+    /// under-run audible as the unprocessed source at full level, which ADR 0021
+    /// records as wrong independently of the failure policy it decides.
+    #[test]
+    fn an_underrun_answers_silence_rather_than_the_dry_input() {
+        let state = AppState::default();
+        // The RT side stays alive and never processes, so `pop_output` has
+        // nothing for the whole test — exactly the under-run this covers.
+        let (_bridge, bridge_handle) = create_audio_bridge(17);
+        insert_engine_owned_fixture_with_bridge(
+            &state,
+            "instance-underrun",
+            Vec::new(),
+            Some(bridge_handle),
+        );
+
+        let block = loud_block(128);
+        let answer = crate::block_on_test(process_plugin_audio(
+            "instance-underrun".to_string(),
+            block.clone(),
+            &state,
+        ))
+        .expect("an under-run must not fail the round trip");
+
+        assert_eq!(
+            answer.len(),
+            block.len(),
+            "the quantum the caller asked for must come back whole"
+        );
+        assert_eq!(
+            answer,
+            vec![0u8; block.len()],
+            "an under-run must answer silence, not the signal the plugin never processed"
         );
     }
 
@@ -2384,6 +2491,7 @@ mod tests {
                     has_gui: true,
                     bridge: None,
                     relay_scratch: crate::state::PluginRelayScratch::default(),
+                    parameter_events: None,
                 },
             );
     }
@@ -2775,6 +2883,7 @@ mod tests {
                 has_gui: false,
                 bridge: None,
                 relay_scratch: crate::state::PluginRelayScratch::default(),
+                parameter_events: None,
             }
         }
 
@@ -3649,6 +3758,47 @@ mod tests {
         assert_eq!(unload_all.1, ["Native engine not running"]);
         let windows = state.plugin_windows.lock().expect("plugin_windows lock");
         assert!(windows.is_empty());
+    }
+
+    /// Removing a device while its editor is open closes that editor, and the
+    /// close is the same thread-affine lifecycle a GUI command runs: it reaches
+    /// VST3 `removed` and CLAP `gui.destroy`. An unload that ran it on the
+    /// executor's worker un-parents an `NSView` off the main thread, which on
+    /// macOS is a crash rather than a mistake — and no GUI command is involved,
+    /// so nothing in `plugin_gui` covers this path.
+    #[test]
+    fn unloading_an_instance_closes_its_editor_on_the_shell_thread() {
+        let state = AppState::default();
+        let wrapper =
+            ClapWrapper::new_engine_owned_command_fixture("Command Fixture", vec![], true);
+        let gui_threads = wrapper
+            .engine_owned_command_fixture_gui_threads()
+            .expect("the command fixture records its editor lifecycle threads");
+        state.plugins.lock().expect("plugins lock").insert(
+            "command-instance".into(),
+            PluginInstanceData {
+                plugin: Box::new(wrapper),
+            },
+        );
+        let windows = DedicatedUiWindowHost::start();
+
+        crate::block_on_test(unload_plugin(
+            Some(PluginInstanceId("command-instance".to_string())),
+            &windows,
+            &state,
+        ))
+        .expect("the instance should unload");
+
+        assert_eq!(
+            gui_threads.lock().expect("gui thread log").clone(),
+            [windows.thread_id],
+            "the editor close an unload performs must run on the shell's thread"
+        );
+        assert_ne!(
+            windows.thread_id,
+            std::thread::current().id(),
+            "the fake shell thread must not be this one, or this test proves nothing"
+        );
     }
 
     #[test]

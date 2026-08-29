@@ -105,6 +105,25 @@ type AutomergeStorageOptions<TData> = {
         value: TData;
     }) => void;
     /**
+     * Whether an exact raw slot value is written in this adapter's own wire
+     * encoding rather than the store's shape.
+     *
+     * `findAutomergeStorageRawProjectionLosses` asks whether the projection
+     * still contains everything the raw slot held, which presumes the document
+     * carries the store's own shape. An adapter owning its encoding writes a
+     * form the store never has — entity maps keyed by id, tombstones, a schema
+     * version — and `fromCrdt` decodes back out of it. Containment then fails on
+     * every such value, and a permanent false loss holds the project in
+     * repair-required. Detecting real loss there needs the inverse encoding,
+     * which only the adapter has; until it offers one, such a value opts out.
+     *
+     * The opt-out is per value, not per adapter: an encoding is adopted when the
+     * slot is next written, so a document saved by an older build still carries
+     * the store's shape in that slot, where containment is a real question and
+     * a real loss is observable.
+     */
+    ownsCrdtEncoding?: (raw: unknown) => boolean;
+    /**
      * Identity overrides for collections whose rows carry no `id`, keyed by the
      * field name holding the collection. Without an entry a collection of
      * id-less rows is written as one opaque value.
@@ -236,7 +255,11 @@ type AutomergeStorageMutationProvenance = {
 };
 let activeAutomergeStorageMutationProvenance: AutomergeStorageMutationProvenance | undefined;
 let activeAutomergeStoragePreview: AutomergeStoragePreviewContext | null = null;
-const inboundSanitizersBySlot = new Map<string, (value: unknown) => unknown>();
+type InboundSanitizerEntry = {
+    ownsCrdtEncoding: (raw: unknown) => boolean;
+    sanitize: (value: unknown) => unknown;
+};
+const inboundSanitizersBySlot = new Map<string, InboundSanitizerEntry>();
 
 /**
  * Exact storage transaction owner of the mutation currently reaching the
@@ -301,12 +324,14 @@ export function findAutomergeStorageRawProjectionLosses(input: {
 }): string[] {
     const losses: string[] = [];
     for (const [slot, rawValue] of Object.entries(input.document)) {
-        const sanitize = inboundSanitizersBySlot.get(getInboundSanitizerKey(input.docId, slot));
-        if (!sanitize) {
+        const entry = inboundSanitizersBySlot.get(getInboundSanitizerKey(input.docId, slot));
+        // Containment is only well posed against a raw value in the store's own
+        // shape; see `ownsCrdtEncoding`.
+        if (!entry || entry.ownsCrdtEncoding(rawValue)) {
             continue;
         }
         try {
-            if (!projectionPreservesRawValue(rawValue, sanitize(rawValue))) {
+            if (!projectionPreservesRawValue(rawValue, entry.sanitize(rawValue))) {
                 losses.push(slot);
             }
         } catch {
@@ -845,6 +870,7 @@ export const createAutomergeStorage = <TData>(
     const resolveConflicts = options?.resolveConflicts;
     const resolveCrdtConflicts = options?.resolveCrdtConflicts;
     const mutateCrdt = options?.mutateCrdt;
+    const ownsCrdtEncoding = options?.ownsCrdtEncoding;
     const crdtEntityIdentity = options?.crdtEntityIdentity;
     const rebasePending = options?.rebasePending;
     type AdapterPendingWrite = {
@@ -1241,9 +1267,10 @@ export const createAutomergeStorage = <TData>(
         },
 
         registerInboundSanitizer(sanitize): void {
-            inboundSanitizersBySlot.set(getInboundSanitizerKey(docId, key), (value) =>
-                sanitize(fromCrdt ? fromCrdt(value as TData) : value)
-            );
+            inboundSanitizersBySlot.set(getInboundSanitizerKey(docId, key), {
+                ownsCrdtEncoding: ownsCrdtEncoding ?? (() => false),
+                sanitize: (value) => sanitize(fromCrdt ? fromCrdt(value as TData) : value),
+            });
         },
 
         get(): TData | null {

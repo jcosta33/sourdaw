@@ -1,5 +1,5 @@
 import { logger } from '#/infra/logger/appLogger';
-import { watchPluginStateDirty } from '#/modules/PluginHost/useCases';
+import { observeExternalPluginParameterEdits, watchPluginStateDirty } from '#/modules/PluginHost/useCases';
 
 import { markDirty } from './markDirty';
 
@@ -11,6 +11,12 @@ import { markDirty } from './markDirty';
  * passes through this app, so no store changes and the arrangement subscription
  * sees nothing. The work is real and it is saved with the project, so without
  * this the project closes clean over edits the user made and watched happen.
+ *
+ * Two reports, because a plugin makes both and neither implies the other: a
+ * plugin may declare its whole state dirty without naming a parameter, and it
+ * may report a parameter it changed without ever declaring its state dirty. A
+ * project that watched only the first would close clean over a knob ride in a
+ * plugin that reports its edits precisely.
  *
  * Shaped like `initProjectDirtyTracking`: the subscription is owned by a use
  * case rather than written inline in the composition root, so the wiring a
@@ -24,7 +30,18 @@ export function initPluginStateDirtyTracking(): () => void {
         return () => {};
     });
 
+    // A gesture boundary changes nothing on its own — the user taking hold of a
+    // control is not an edit, and marking dirty on one would have a project ask
+    // to be saved over a knob that was touched and released.
+    const stopObservingEdits = observeExternalPluginParameterEdits((edit) => {
+        if (edit.kind !== 'value') {
+            return;
+        }
+        markDirty();
+    });
+
     return () => {
+        stopObservingEdits();
         void subscription.then((unlisten) => {
             unlisten();
         });

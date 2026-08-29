@@ -96,6 +96,33 @@ describe('RecentProjectsMenu', () => {
         expect(screen.getByRole('menu')).toBeInTheDocument();
     });
 
+    it('keeps the project menu scrollable within the renderer height', () => {
+        render(<RecentProjectsMenu />);
+        fireEvent.click(screen.getByLabelText(/Project menu/i));
+
+        expect(screen.getByRole('menu')).toHaveClass(
+            'max-h-[calc(100vh-3rem)]',
+            'overflow-y-auto',
+            'overscroll-contain'
+        );
+    });
+
+    it('left-aligns menu rows that do not carry a trailing shortcut', () => {
+        render(<RecentProjectsMenu />);
+        fireEvent.click(screen.getByLabelText(/Project menu/i));
+
+        const labels = [
+            'New Project',
+            'New from Template…',
+            'Load Demo Project…',
+            'Export Project File…',
+            'Import Project File…',
+        ];
+        for (const label of labels) {
+            expect(screen.getByRole('menuitem', { name: label })).toHaveClass('justify-start');
+        }
+    });
+
     it('should render New Project option', () => {
         render(<RecentProjectsMenu />);
         const button = screen.getByLabelText(/Project menu/i);

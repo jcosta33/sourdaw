@@ -8,11 +8,13 @@ import { trackStore } from '#/modules/Arrangement/stores';
 import { RecentProjectsMenu, ArrangementSelector, MissingMediaPanel } from '#/modules/Project/presentations/views';
 import { PunchRecordingControls } from '#/modules/PunchRecording/presentations/views';
 import { TempoEditor } from '#/modules/TimelineEditor/presentations/views';
+import { cn } from '#/utils/Styles/cn';
 
 import { type Track } from '../../models/TrackViewTypes';
 import { toggleRippleEditing } from '../../useCases/rippleEditing';
 import { windowChromeControls } from '../../useCases/windowChrome';
 import { VoiceButton } from '../components/Transport/VoiceButton';
+import { TITLEBAR_NO_DRAG_SELECTOR } from '../helpers/titlebarDragRegion';
 import { useAudioRecordingState } from '../hooks/useAudioRecordingState';
 import { useProjectState } from '../hooks/useProjectState';
 import { useTransportState } from '../hooks/useTransportState';
@@ -65,17 +67,17 @@ export const TransportBar = (): ReactElement => {
 
     // Frameless chrome (Linux): the title row is the drag region, so a
     // double-click on its empty stretches toggles maximize — unless it landed
-    // on an interactive element, which keeps its own double-click meaning.
-    const framelessChrome = windowChromeControls().frameless;
+    // on something the row hands its clicks back to, which keeps its own
+    // double-click meaning. Overlay chrome (macOS): the native traffic lights
+    // sit over the same band, so the row is inset past them by the modifier
+    // class, and the OS itself answers a double-click on what remains.
+    const { frameless: framelessChrome, windowControlsOverlay: overlayChrome } = windowChromeControls();
     const toggleMaximizeOnTitlebarDoubleClick = (event: MouseEvent<HTMLElement>): void => {
         if (!framelessChrome) {
             return;
         }
         const target = event.target;
-        if (
-            target instanceof HTMLElement &&
-            target.closest('button, input, a, select, textarea, [role="button"]') !== null
-        ) {
+        if (target instanceof HTMLElement && target.closest(TITLEBAR_NO_DRAG_SELECTOR) !== null) {
             return;
         }
         void windowChromeControls().toggleMaximize();
@@ -101,7 +103,11 @@ export const TransportBar = (): ReactElement => {
             {/* ── ROW 1: Meta Layer (Project, AI Copilot, Layout) ── */}
             <Row
                 grow
-                className={`desktop-titlebar-region${framelessChrome ? ' desktop-titlebar-region--frameless' : ''} w-full min-h-[40px] px-2`}
+                className={cn(
+                    'desktop-titlebar-region w-full min-h-[40px] px-2',
+                    framelessChrome && 'desktop-titlebar-region--frameless',
+                    overlayChrome && 'desktop-titlebar-region--overlay'
+                )}
                 data-testid="window-titlebar-region"
                 onDoubleClick={toggleMaximizeOnTitlebarDoubleClick}
             >

@@ -15,7 +15,7 @@ const mocks = vi.hoisted(() => ({
     getCachedAudioBuffer: vi.fn(),
     resolveDroppedSampleFile: vi.fn(),
     addClip: vi.fn(),
-    compileAddDeviceAction: vi.fn(),
+    executeAddDeviceAction: vi.fn(),
     executeAppAction: vi.fn(),
     addTrack: vi.fn(),
     importMidiFile: vi.fn(),
@@ -62,8 +62,8 @@ vi.mock('../../../useCases/clip/addClip', () => ({
     addClip: mocks.addClip,
 }));
 
-vi.mock('../../../useCases/device/compileAddDeviceAction', () => ({
-    compileAddDeviceAction: mocks.compileAddDeviceAction,
+vi.mock('../../../useCases/device/executeAddDeviceAction', () => ({
+    executeAddDeviceAction: mocks.executeAddDeviceAction,
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
@@ -95,10 +95,7 @@ describe('useTimelineFileDrop', () => {
         // Default: nothing in the buffer cache → drops take the file-read/decode path.
         mocks.getCachedAudioBuffer.mockReturnValue(null);
         mocks.resolveDroppedSampleFile.mockResolvedValue({ status: 'unresolved' });
-        mocks.compileAddDeviceAction.mockImplementation((trackId: string, deviceType: string) => ({
-            type: 'addDevice',
-            payload: { trackId, deviceType, deviceId: 'device-1', expectedDeviceIds: [] },
-        }));
+        mocks.executeAddDeviceAction.mockResolvedValue({ status: 'applied', deviceId: 'device-1' });
         mocks.executeAppAction.mockResolvedValue(undefined);
     });
 
@@ -125,11 +122,7 @@ describe('useTimelineFileDrop', () => {
         });
 
         await waitFor(() => {
-            expect(mocks.compileAddDeviceAction).toHaveBeenCalledWith('t1', 'p1');
-            expect(mocks.executeAppAction).toHaveBeenCalledWith({
-                type: 'addDevice',
-                payload: { trackId: 't1', deviceType: 'p1', deviceId: 'device-1', expectedDeviceIds: [] },
-            });
+            expect(mocks.executeAddDeviceAction).toHaveBeenCalledWith('t1', 'p1');
         });
     });
 
@@ -160,11 +153,7 @@ describe('useTimelineFileDrop', () => {
         });
 
         await waitFor(() => {
-            expect(mocks.compileAddDeviceAction).toHaveBeenCalledWith('t1', 'faust-de-esser');
-            expect(mocks.executeAppAction).toHaveBeenCalledWith({
-                type: 'addDevice',
-                payload: { trackId: 't1', deviceType: 'faust-de-esser', deviceId: 'device-1', expectedDeviceIds: [] },
-            });
+            expect(mocks.executeAddDeviceAction).toHaveBeenCalledWith('t1', 'faust-de-esser');
         });
     });
 

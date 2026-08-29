@@ -51,6 +51,7 @@ import {
 } from '#/modules/CrdtDocument/useCases';
 import { type ActionHandler, type AppAction } from '#/utils/handlerContract';
 
+import { readAgentRunState } from '../../stores/agentRunStore';
 import { aiActionHistoryStore, clearAiHistory } from '../../stores/aiActionHistoryStore';
 import { chatStore, stopGenerating } from '../../stores/chatStore';
 import {
@@ -59,6 +60,7 @@ import {
     proposePendingActionConfirmation,
     settlePendingActionResourceLease,
 } from '../../stores/pendingActionConfirmationStore';
+import { selectAgentRunPendingEffectRecoveries } from '../../stores/selectAgentRunPendingEffectRecoveries';
 import { createStemImportConfirmationResourceLease } from '../agentReference/createStemImportConfirmationResourceLease';
 import { preparedStemImportResources } from '../agentReference/registerPreparedStemImportResources';
 import { AGENT_RUN_STALE_COMPLETION_WARNING } from '../agentRequestOrchestration/settleAgentRunWorkLeaseSafely';
@@ -591,6 +593,201 @@ describe('confirmPendingChatActions transaction admission', () => {
             pendingActionConfirmationStatus: 'invalidated',
             content: expect.stringContaining('project changed'),
         });
+    });
+
+    it('keeps the winning same-turn confirmation authoritative when the losing receipt lookup rejects later', async () => {
+        configureAiWorkflowCommandPreflightFixture('project-1');
+        configureCommandBatchIdempotency({ canExecute: () => true });
+        const ownedStorage = createAutomergeStorage<{ bpm: number }>('owned', 'transport');
+        const execute = vi.fn<ActionHandler<SetTempoAction>['execute']>((action) => {
+            ownedStorage.set({ bpm: action.payload.bpm });
+        });
+        registerHandlerMap({
+            setTempo: {
+                canReapplyAfterDivergence: () => true,
+                execute,
+                describe: (action) => ({
+                    label: 'Set tempo',
+                    inverseAction: {
+                        type: 'setTempo',
+                        payload: { bpm: 120, expectedBpm: action.payload.bpm },
+                    },
+                }),
+                undoable: true,
+                validate: () => true,
+            },
+        });
+        const action = { type: 'setTempo', payload: { bpm: 132 } } satisfies SetTempoAction;
+        const projectRevision = captureProjectRevision();
+        const command = migrateLegacyAppActionToVersionedCommandEnvelope({
+            action,
+            expectedEffect: 'Tempo changes to 132 BPM.',
+            normalizedProjectRevision: projectRevision,
+            options: { groupId: 'group-double-confirm', groupLabel: 'Set tempo', source: 'prompt' },
+        });
+        const commandBatch = compileVersionedCommandBatchEnvelope({
+            runId: 'run-double-confirm',
+            batchId: 'group-double-confirm',
+            projectId: 'project-1',
+            baseRevision: projectRevision,
+            intent: 'set tempo to 132',
+            commands: [serializeVersionedCommandEnvelope(command)],
+        });
+        agentRunLifecycle.create({
+            runId: 'run-double-confirm',
+            request: 'set tempo to 132',
+            mode: 'macro',
+            createdRevision: projectRevision,
+        });
+        agentRunLifecycle.transitionPhase({ runId: 'run-double-confirm', phase: 'planning' });
+        agentRunLifecycle.transitionPhase({ runId: 'run-double-confirm', phase: 'waiting-for-approval' });
+        const release = vi.fn().mockResolvedValue(undefined);
+        proposePendingActionConfirmation({
+            id: 'confirmation-double-confirm',
+            runId: 'run-double-confirm',
+            prompt: 'set tempo to 132',
+            assistantMessageId: 'assistant-1',
+            actions: [action],
+            actionLabels: ['Set tempo to 132 BPM'],
+            commandBatch,
+            agentApproval: compileAgentRiskApproval({ commandBatch }),
+            executionMode: 'atomic',
+            groupId: 'group-double-confirm',
+            groupLabel: 'Set tempo',
+            projectRevision,
+            resourceLease: {
+                bytes: 1,
+                prepareForCommit: vi.fn().mockResolvedValue(undefined),
+                commit: vi.fn().mockResolvedValue(undefined),
+                release,
+                transfer: vi.fn().mockResolvedValue(undefined),
+            },
+        });
+        let resolveWinningEvidence!: (receipt: null) => void;
+        let rejectLosingEvidence!: (reason: Error) => void;
+        const winningEvidence = new Promise<null>((resolve) => {
+            resolveWinningEvidence = resolve;
+        });
+        const losingEvidence = new Promise<null>((_resolve, reject) => {
+            rejectLosingEvidence = reject;
+        });
+        const commandUseCases = await import('#/modules/Command/useCases');
+        const replay = vi
+            .spyOn(commandUseCases, 'getVersionedCommandBatchIdempotentReplay')
+            .mockImplementationOnce(() => winningEvidence)
+            .mockImplementationOnce(() => losingEvidence);
+
+        try {
+            const first = confirmPendingChatActions({ confirmationId: 'confirmation-double-confirm' });
+            const second = confirmPendingChatActions({ confirmationId: 'confirmation-double-confirm' });
+            await vi.waitFor(() => expect(replay).toHaveBeenCalledTimes(2));
+            resolveWinningEvidence(null);
+            await expect(first).resolves.toEqual({ status: 'executed' });
+            rejectLosingEvidence(new Error('losing receipt read failed after the winning commit'));
+
+            await expect(second).resolves.toEqual({ status: 'not_pending', currentStatus: 'executed' });
+        } finally {
+            replay.mockRestore();
+        }
+
+        expect(execute).toHaveBeenCalledOnce();
+        expect(release).not.toHaveBeenCalled();
+        expect(getPendingActionConfirmation('confirmation-double-confirm')).toMatchObject({ status: 'executed' });
+        expect(agentRunLifecycle.get('run-double-confirm')).toMatchObject({ phase: 'completed', errors: [] });
+        expect(getCrdtDoc<Record<string, unknown>>('owned')).toMatchObject({ transport: { bpm: 132 } });
+        expect(chatStore.value?.messages[0]).toMatchObject({
+            pendingActionConfirmationStatus: 'executed',
+            error: undefined,
+        });
+    });
+
+    it('keeps an unreadable proposed receipt pending without executing its command batch', async () => {
+        configureAiWorkflowCommandPreflightFixture('project-1');
+        configureCommandBatchIdempotency({ canExecute: () => true });
+        const ownedStorage = createAutomergeStorage<{ bpm: number }>('owned', 'transport');
+        const execute = vi.fn<ActionHandler<SetTempoAction>['execute']>((action) => {
+            ownedStorage.set({ bpm: action.payload.bpm });
+        });
+        registerHandlerMap({
+            setTempo: {
+                canReapplyAfterDivergence: () => true,
+                execute,
+                describe: (action) => ({
+                    label: 'Set tempo',
+                    inverseAction: {
+                        type: 'setTempo',
+                        payload: { bpm: 120, expectedBpm: action.payload.bpm },
+                    },
+                }),
+                undoable: true,
+                validate: () => true,
+            },
+        });
+        const action = { type: 'setTempo', payload: { bpm: 132 } } satisfies SetTempoAction;
+        const projectRevision = captureProjectRevision();
+        const command = migrateLegacyAppActionToVersionedCommandEnvelope({
+            action,
+            expectedEffect: 'Tempo changes to 132 BPM.',
+            normalizedProjectRevision: projectRevision,
+            options: { groupId: 'group-unreadable-receipt', groupLabel: 'Set tempo', source: 'prompt' },
+        });
+        const commandBatch = compileVersionedCommandBatchEnvelope({
+            runId: 'run-unreadable-receipt',
+            batchId: 'group-unreadable-receipt',
+            projectId: 'project-1',
+            baseRevision: projectRevision,
+            intent: 'set tempo to 132',
+            commands: [serializeVersionedCommandEnvelope(command)],
+        });
+        const chat = chatStore.value;
+        if (!chat) {
+            throw new Error('Expected the confirmation chat fixture');
+        }
+        chatStore.set({
+            ...chat,
+            messages: chat.messages.map((message) =>
+                message.id === 'assistant-1' ? { ...message, pendingActionConfirmationStatus: 'proposed' } : message
+            ),
+        });
+        proposePendingActionConfirmation({
+            id: 'confirmation-unreadable-receipt',
+            runId: 'run-unreadable-receipt',
+            prompt: 'set tempo to 132',
+            assistantMessageId: 'assistant-1',
+            actions: [action],
+            actionLabels: ['Set tempo to 132 BPM'],
+            commandBatch,
+            agentApproval: compileAgentRiskApproval({ commandBatch }),
+            executionMode: 'atomic',
+            groupId: 'group-unreadable-receipt',
+            groupLabel: 'Set tempo',
+            projectRevision,
+        });
+        const commandUseCases = await import('#/modules/Command/useCases');
+        const replay = vi
+            .spyOn(commandUseCases, 'getVersionedCommandBatchIdempotentReplay')
+            .mockRejectedValue(new Error('receipt store unavailable'));
+
+        try {
+            await expect(
+                confirmPendingChatActions({ confirmationId: 'confirmation-unreadable-receipt' })
+            ).resolves.toEqual({
+                status: 'failed',
+                reason: 'The durable commit evidence for the confirmed actions could not be read: receipt store unavailable. The proposal remains pending.',
+            });
+        } finally {
+            replay.mockRestore();
+        }
+
+        expect(execute).not.toHaveBeenCalled();
+        expect(getPendingActionConfirmation('confirmation-unreadable-receipt')).toMatchObject({ status: 'proposed' });
+        expect(chatStore.value?.messages[0]).toMatchObject({
+            pendingActionConfirmationStatus: 'proposed',
+            content: expect.stringContaining('The confirmed actions were not executed'),
+        });
+        expect(chatStore.value?.messages[0]?.content).toContain('Project actions were not replayed');
+        expect(chatStore.value?.messages[0]?.content).toContain('proposal remains pending');
+        expect(getCrdtDoc<Record<string, unknown>>('owned')).not.toHaveProperty('transport');
     });
 
     it('rejects a legacy command-envelope confirmation without an approved outer batch', async () => {
@@ -2746,31 +2943,480 @@ describe('confirmPendingChatActions transaction admission', () => {
 
         expect(foreignWriteInjected).toBe(true);
         const committedConfirmation = getPendingActionConfirmation('confirmation-render-rebind');
-        if (!committedConfirmation?.followUpProjectRevision || renderTimeRevision === null) {
-            throw new Error('Expected an armed render retry and a captured render-time revision');
+        if (renderTimeRevision === null) {
+            throw new Error('Expected a captured render-time revision');
         }
-        expect(committedConfirmation).toMatchObject({ status: 'failed', followUpStatus: 'retryable' });
-        expect(committedConfirmation.followUpProjectRevision).not.toBe(renderTimeRevision);
+        expect(committedConfirmation).toMatchObject({
+            status: 'executed',
+            followUpProjectRevision: null,
+            followUpStatus: 'failed',
+        });
         const artifacts = getAgentSectionRenderArtifacts();
         expect(artifacts).toHaveLength(1);
         // The relabel was refused: the fresh artifact keeps its render-time
         // revision instead of the polluted committed revision.
         expect(artifacts[0]).toMatchObject({ jobId: verseJob.jobId, sourceRevision: renderTimeRevision });
 
-        // A further foreign change makes the pinned follow-up revision stale, so
-        // the armed retry must refuse without rendering against the edited project.
-        mutateCrdtDoc<Record<string, unknown>>({
-            id: 'independent',
-            changeFn: (doc) => {
-                doc.anotherForeignWrite = true;
-            },
-        });
+        // The same foreign write that prevented the artifact rebind must also
+        // prevent the retry from being armed against the polluted revision.
         const renderCallsBeforeRetry = runtimeMocks.renderOffline.mock.calls.length;
         await expect(confirmPendingChatActions({ confirmationId: 'confirmation-render-rebind' })).resolves.toEqual({
-            status: 'failed',
-            reason: 'Project changed after the committed render receipt; the missing original artifacts cannot be recreated safely.',
+            status: 'not_pending',
+            currentStatus: 'executed',
         });
         expect(runtimeMocks.renderOffline).toHaveBeenCalledTimes(renderCallsBeforeRetry);
+    });
+
+    it.each([false, true])(
+        'retains a warned render artifact without replaying project commands (manual persistence fails: %s)',
+        async (manualPersistenceFails) => {
+            configureAiWorkflowCommandPreflightFixture('project-1');
+            configureCommandBatchIdempotency({ canExecute: () => true });
+            const ownedStorage = createAutomergeStorage<{ bpm: number }>('owned', 'transport');
+            const executeTempo = vi.fn((action: SetTempoAction) => {
+                ownedStorage.set({ bpm: action.payload.bpm });
+            });
+            registerHandlerMap({
+                setTempo: {
+                    canReapplyAfterDivergence: (action) => action.payload.expectedBpm !== undefined,
+                    execute: executeTempo,
+                    describe: (action) => ({
+                        label: 'Set tempo',
+                        inverseAction: {
+                            type: 'setTempo',
+                            payload: { bpm: 120, expectedBpm: action.payload.bpm },
+                        },
+                    }),
+                    undoable: true,
+                    validate: () => true,
+                },
+            });
+            registerHandlerMap(getAudioRenderingHandlers());
+            const renderJob = {
+                jobId: 'render-warned-verse',
+                sectionId: 'section-warned-verse',
+                sectionName: 'Warned Verse',
+                startBeat: 0,
+                endBeat: 16,
+                sampleRate: 44_100,
+                tailSeconds: 0,
+            };
+            const tempoAction = { type: 'setTempo', payload: { bpm: 132 } } satisfies SetTempoAction;
+            const renderAction = {
+                type: 'renderProjectSections',
+                payload: { sectionIds: [renderJob.sectionId], jobs: [renderJob] },
+            } satisfies RenderSectionsAction;
+            runtimeMocks.renderOffline.mockReset();
+            runtimeMocks.renderOffline.mockImplementation(
+                (options: { onWarning?: (warning: string) => void; sampleRate?: number }) => {
+                    options.onWarning?.('tail truncated');
+                    options.onWarning?.('peak clipped');
+                    return Promise.resolve({
+                        sampleRate: options.sampleRate ?? renderJob.sampleRate,
+                        length: 88_200,
+                        numberOfChannels: 2,
+                        duration: 2,
+                    });
+                }
+            );
+            const projectRevision = captureProjectRevision();
+            const serializeCommand = (action: SetTempoAction | RenderSectionsAction, expectedEffect: string) =>
+                serializeVersionedCommandEnvelope(
+                    migrateLegacyAppActionToVersionedCommandEnvelope({
+                        action,
+                        expectedEffect,
+                        normalizedProjectRevision: projectRevision,
+                        options: {
+                            groupId: 'group-warned-render',
+                            groupLabel: 'Tempo and warned render',
+                            source: 'prompt',
+                        },
+                    })
+                );
+            const commandBatch = compileVersionedCommandBatchEnvelope({
+                runId: 'confirmation-warned-render',
+                batchId: 'group-warned-render',
+                projectId: 'project-1',
+                baseRevision: projectRevision,
+                intent: 'set tempo and render a comparison',
+                commands: [
+                    serializeCommand(tempoAction, 'Tempo changes to 132 BPM.'),
+                    serializeCommand(renderAction, 'Render the warned verse for comparison.'),
+                ],
+            });
+            agentRunLifecycle.create({
+                runId: 'confirmation-warned-render',
+                request: 'set tempo and render a comparison',
+                mode: 'macro',
+                createdRevision: projectRevision,
+            });
+            agentRunLifecycle.transitionPhase({ runId: 'confirmation-warned-render', phase: 'planning' });
+            agentRunLifecycle.transitionPhase({ runId: 'confirmation-warned-render', phase: 'waiting-for-approval' });
+            const manualRepairSpy = manualPersistenceFails
+                ? vi.spyOn(agentRunLifecycle, 'requirePendingEffectManualRepair').mockImplementation(() => {
+                      throw new Error('manual repair persistence unavailable');
+                  })
+                : null;
+            proposePendingActionConfirmation({
+                id: 'confirmation-warned-render',
+                runId: 'confirmation-warned-render',
+                prompt: 'set tempo and render a comparison',
+                assistantMessageId: 'assistant-1',
+                actions: [tempoAction, renderAction],
+                actionLabels: ['Set tempo to 132 BPM', 'Render Warned Verse'],
+                commandBatch,
+                agentApproval: compileAgentRiskApproval({ commandBatch }),
+                executionMode: 'atomic',
+                groupId: 'group-warned-render',
+                groupLabel: 'Tempo and warned render',
+                projectRevision,
+            });
+
+            await expect(
+                confirmPendingChatActions({ confirmationId: 'confirmation-warned-render' })
+            ).resolves.toMatchObject({ status: 'failed', durableCommit: true });
+
+            expect(runtimeMocks.renderOffline).toHaveBeenCalledOnce();
+            expect(executeTempo).toHaveBeenCalledOnce();
+            if (manualPersistenceFails) {
+                expect(getPendingActionConfirmation('confirmation-warned-render')).toMatchObject({
+                    status: 'failed',
+                    followUpStatus: 'failed',
+                    error: expect.stringContaining('manual-repair state could not be persisted'),
+                });
+                expect(chatStore.value?.messages.find((message) => message.id === 'assistant-1')).toMatchObject({
+                    pendingActionConfirmationStatus: 'failed',
+                    pendingActionFollowUpStatus: 'failed',
+                    content: expect.stringContaining('Do not reconcile or replay this committed batch'),
+                });
+                await expect(
+                    recoverAgentRunPendingEffects({
+                        runId: 'confirmation-warned-render',
+                        batchId: 'group-warned-render',
+                    })
+                ).resolves.toMatchObject({ status: 'failed' });
+                expect(runtimeMocks.renderOffline).toHaveBeenCalledOnce();
+                expect(executeTempo).toHaveBeenCalledOnce();
+                manualRepairSpy?.mockRestore();
+                return;
+            }
+            const verifiedReceipt = await getVersionedCommandBatchIdempotentReplay({
+                authority: commandBatch.authority,
+                serialized: commandBatch.serialized,
+            });
+            expect(verifiedReceipt?.pendingEffects).toEqual([
+                expect.objectContaining({
+                    kind: 'external-effect',
+                    remediation: 'manual-repair',
+                    reason: expect.stringContaining('tail truncated; peak clipped'),
+                }),
+            ]);
+            expect(getAgentSectionRenderArtifacts()).toContainEqual(
+                expect.objectContaining({ jobId: renderJob.jobId, warnings: ['tail truncated', 'peak clipped'] })
+            );
+            expect(getPendingActionConfirmation('confirmation-warned-render')).toMatchObject({
+                status: 'executed',
+                followUpStatus: 'failed',
+                error: 'Section render artifacts require manual review: render-warned-verse (tail truncated; peak clipped).',
+            });
+            expect(chatStore.value?.messages.find((message) => message.id === 'assistant-1')).toMatchObject({
+                pendingActionConfirmationStatus: 'executed',
+                pendingActionFollowUpStatus: 'failed',
+                error: 'Section render artifacts require manual review: render-warned-verse (tail truncated; peak clipped).',
+                content: expect.stringContaining(
+                    'The project commands were not replayed. Section render artifacts require manual review: render-warned-verse (tail truncated; peak clipped).'
+                ),
+            });
+            expect(
+                agentRunLifecycle
+                    .get('confirmation-warned-render')
+                    ?.pendingEffectContinuations.filter(({ batchId }) => batchId === 'group-warned-render')
+            ).toEqual([
+                expect.objectContaining({
+                    batchId: 'group-warned-render',
+                    recovery: 'manual-repair',
+                    lastError:
+                        'Section render artifacts require manual review: render-warned-verse (tail truncated; peak clipped).',
+                }),
+            ]);
+            expect(
+                (readAgentRunState().pendingEffectRecoveryLedger ?? []).filter(
+                    ({ runId, batchId }) => runId === 'confirmation-warned-render' && batchId === 'group-warned-render'
+                )
+            ).toEqual([
+                expect.objectContaining({
+                    checkpoint: 'durable',
+                    recovery: 'manual-repair',
+                    lastError:
+                        'Section render artifacts require manual review: render-warned-verse (tail truncated; peak clipped).',
+                }),
+            ]);
+            expect(
+                selectAgentRunPendingEffectRecoveries(readAgentRunState()).find(
+                    ({ runId, batchId }) => runId === 'confirmation-warned-render' && batchId === 'group-warned-render'
+                )
+            ).toMatchObject({ recovery: 'manual-repair' });
+            await expect(confirmPendingChatActions({ confirmationId: 'confirmation-warned-render' })).resolves.toEqual({
+                status: 'not_pending',
+                currentStatus: 'executed',
+            });
+            expect(runtimeMocks.renderOffline).toHaveBeenCalledOnce();
+            expect(executeTempo).toHaveBeenCalledOnce();
+            const manualContinuation = agentRunLifecycle
+                .get('confirmation-warned-render')
+                ?.pendingEffectContinuations.find(({ batchId }) => batchId === 'group-warned-render');
+            if (!manualContinuation) {
+                throw new Error('Expected retained render continuation');
+            }
+            agentRunLifecycle.recordPendingEffectContinuation({
+                runId: 'confirmation-warned-render',
+                continuation: {
+                    ...manualContinuation,
+                    effects: manualContinuation.effects.map((effect) =>
+                        effect.kind === 'external-effect' ? { ...effect, remediation: 'reconcile' } : effect
+                    ),
+                    recovery: 'reconcile-batch',
+                },
+            });
+            clearAgentSectionRenderArtifacts();
+            mutateCrdtDoc<Record<string, unknown>>({
+                id: 'independent',
+                changeFn: (doc) => {
+                    doc.changedAfterManualReview = true;
+                },
+            });
+            await expect(
+                recoverAgentRunPendingEffects({
+                    runId: 'confirmation-warned-render',
+                    batchId: 'group-warned-render',
+                })
+            ).resolves.toEqual({
+                status: 'failed',
+                reason: 'The durable project checkpoint does not match the retained pending-effect proof.',
+            });
+            expect(runtimeMocks.renderOffline).toHaveBeenCalledOnce();
+            expect(
+                agentRunLifecycle
+                    .get('confirmation-warned-render')
+                    ?.pendingEffectContinuations.some(({ batchId }) => batchId === 'group-warned-render')
+            ).toBe(true);
+            manualRepairSpy?.mockRestore();
+        }
+    );
+
+    it('keeps an incomplete retention-capacity render in manual recovery without arming replay', async () => {
+        configureAiWorkflowCommandPreflightFixture('project-1');
+        configureCommandBatchIdempotency({ canExecute: () => true });
+        runtimeMocks.renderOffline.mockReset();
+        const ownedStorage = createAutomergeStorage<{ bpm: number }>('owned', 'transport');
+        const executeTempo = vi.fn((action: SetTempoAction) => ownedStorage.set({ bpm: action.payload.bpm }));
+        registerHandlerMap({
+            setTempo: {
+                canReapplyAfterDivergence: (action) => action.payload.expectedBpm !== undefined,
+                execute: executeTempo,
+                describe: (action) => ({
+                    label: 'Set tempo',
+                    inverseAction: { type: 'setTempo', payload: { bpm: 120, expectedBpm: action.payload.bpm } },
+                }),
+                undoable: true,
+                validate: () => true,
+            },
+        });
+        registerHandlerMap(getAudioRenderingHandlers());
+        const jobs = Array.from({ length: 17 }, (_, index) => ({
+            jobId: `render-capacity-${String(index)}`,
+            sectionId: `section-capacity-${String(index)}`,
+            sectionName: `Capacity ${String(index)}`,
+            startBeat: index * 16,
+            endBeat: index * 16 + 16,
+            sampleRate: 44_100,
+            tailSeconds: 0,
+        }));
+        const tempoAction = { type: 'setTempo', payload: { bpm: 132 } } satisfies SetTempoAction;
+        const renderAction = {
+            type: 'renderProjectSections',
+            payload: { sectionIds: jobs.map((job) => job.sectionId), jobs },
+        } satisfies RenderSectionsAction;
+        const projectRevision = captureProjectRevision();
+        const serializeCommand = (action: SetTempoAction | RenderSectionsAction, expectedEffect: string) =>
+            serializeVersionedCommandEnvelope(
+                migrateLegacyAppActionToVersionedCommandEnvelope({
+                    action,
+                    expectedEffect,
+                    normalizedProjectRevision: projectRevision,
+                    options: {
+                        groupId: 'group-capacity-render',
+                        groupLabel: 'Tempo and capacity render',
+                        source: 'prompt',
+                    },
+                })
+            );
+        const commandBatch = compileVersionedCommandBatchEnvelope({
+            runId: 'confirmation-capacity-render',
+            batchId: 'group-capacity-render',
+            projectId: 'project-1',
+            baseRevision: projectRevision,
+            intent: 'set tempo and render too many sections',
+            commands: [
+                serializeCommand(tempoAction, 'Tempo changes to 132 BPM.'),
+                serializeCommand(renderAction, 'Render every requested section.'),
+            ],
+        });
+        agentRunLifecycle.create({
+            runId: 'confirmation-capacity-render',
+            request: 'set tempo and render too many sections',
+            mode: 'macro',
+            createdRevision: projectRevision,
+        });
+        agentRunLifecycle.transitionPhase({ runId: 'confirmation-capacity-render', phase: 'planning' });
+        agentRunLifecycle.transitionPhase({ runId: 'confirmation-capacity-render', phase: 'waiting-for-approval' });
+        proposePendingActionConfirmation({
+            id: 'confirmation-capacity-render',
+            runId: 'confirmation-capacity-render',
+            prompt: 'set tempo and render too many sections',
+            assistantMessageId: 'assistant-1',
+            actions: [tempoAction, renderAction],
+            actionLabels: ['Set tempo to 132 BPM', 'Render sections'],
+            commandBatch,
+            agentApproval: compileAgentRiskApproval({ commandBatch }),
+            executionMode: 'atomic',
+            groupId: 'group-capacity-render',
+            groupLabel: 'Tempo and capacity render',
+            projectRevision,
+        });
+
+        await expect(
+            confirmPendingChatActions({ confirmationId: 'confirmation-capacity-render' })
+        ).resolves.toMatchObject({ status: 'failed', durableCommit: true });
+
+        expect(executeTempo).toHaveBeenCalledOnce();
+        expect(runtimeMocks.renderOffline).not.toHaveBeenCalled();
+        expect(getPendingActionConfirmation('confirmation-capacity-render')).toMatchObject({
+            status: 'executed',
+            followUpProjectRevision: null,
+            followUpStatus: 'failed',
+            error: expect.stringContaining('artifact capacity exceeded'),
+        });
+        expect(chatStore.value?.messages.find((message) => message.id === 'assistant-1')).toMatchObject({
+            pendingActionFollowUpStatus: 'failed',
+            content: expect.stringContaining('The project commands were not replayed'),
+        });
+        expect(
+            selectAgentRunPendingEffectRecoveries(readAgentRunState()).find(
+                ({ runId, batchId }) => runId === 'confirmation-capacity-render' && batchId === 'group-capacity-render'
+            )
+        ).toMatchObject({ recovery: 'manual-repair' });
+
+        await expect(confirmPendingChatActions({ confirmationId: 'confirmation-capacity-render' })).resolves.toEqual({
+            status: 'not_pending',
+            currentStatus: 'executed',
+        });
+        expect(executeTempo).toHaveBeenCalledOnce();
+        expect(runtimeMocks.renderOffline).not.toHaveBeenCalled();
+    });
+
+    it('charges every failed render start and blocks a retained retry from exceeding its budget', async () => {
+        configureAiWorkflowCommandPreflightFixture('project-1');
+        configureCommandBatchIdempotency({ canExecute: () => true });
+        const ownedStorage = createAutomergeStorage<{ bpm: number }>('owned', 'transport');
+        const executeTempo = vi.fn((action: SetTempoAction) => ownedStorage.set({ bpm: action.payload.bpm }));
+        registerHandlerMap({
+            setTempo: {
+                canReapplyAfterDivergence: (action) => action.payload.expectedBpm !== undefined,
+                execute: executeTempo,
+                describe: (action) => ({
+                    label: 'Set tempo',
+                    inverseAction: { type: 'setTempo', payload: { bpm: 120, expectedBpm: action.payload.bpm } },
+                }),
+                undoable: true,
+                validate: () => true,
+            },
+        });
+        registerHandlerMap(getAudioRenderingHandlers());
+        const jobs = ['verse', 'chorus'].map((name, index) => ({
+            jobId: `render-failed-${name}`,
+            sectionId: `section-failed-${name}`,
+            sectionName: name,
+            startBeat: index * 16,
+            endBeat: index * 16 + 16,
+            sampleRate: 44_100,
+            tailSeconds: 0,
+        }));
+        const tempoAction = { type: 'setTempo', payload: { bpm: 132 } } satisfies SetTempoAction;
+        const renderAction = {
+            type: 'renderProjectSections',
+            payload: { sectionIds: jobs.map((job) => job.sectionId), jobs },
+        } satisfies RenderSectionsAction;
+        runtimeMocks.renderOffline.mockReset();
+        runtimeMocks.renderOffline.mockRejectedValue(new Error('offline renderer unavailable'));
+        const projectRevision = captureProjectRevision();
+        const serializeCommand = (action: SetTempoAction | RenderSectionsAction, expectedEffect: string) =>
+            serializeVersionedCommandEnvelope(
+                migrateLegacyAppActionToVersionedCommandEnvelope({
+                    action,
+                    expectedEffect,
+                    normalizedProjectRevision: projectRevision,
+                    options: {
+                        groupId: 'group-failed-renders',
+                        groupLabel: 'Tempo and failed renders',
+                        source: 'prompt',
+                    },
+                })
+            );
+        const commandBatch = compileVersionedCommandBatchEnvelope({
+            runId: 'confirmation-failed-renders',
+            batchId: 'group-failed-renders',
+            projectId: 'project-1',
+            baseRevision: projectRevision,
+            intent: 'set tempo and render two sections',
+            commands: [
+                serializeCommand(tempoAction, 'Tempo changes to 132 BPM.'),
+                serializeCommand(renderAction, 'Render Verse and Chorus.'),
+            ],
+        });
+        agentRunLifecycle.create({
+            runId: 'confirmation-failed-renders',
+            request: 'set tempo and render two sections',
+            mode: 'macro',
+            createdRevision: projectRevision,
+            budgets: { limits: { maxCommands: 2, maxRenderJobs: 2 }, consumed: {} },
+        });
+        agentRunLifecycle.transitionPhase({ runId: 'confirmation-failed-renders', phase: 'planning' });
+        agentRunLifecycle.transitionPhase({ runId: 'confirmation-failed-renders', phase: 'waiting-for-approval' });
+        proposePendingActionConfirmation({
+            id: 'confirmation-failed-renders',
+            runId: 'confirmation-failed-renders',
+            prompt: 'set tempo and render two sections',
+            assistantMessageId: 'assistant-1',
+            actions: [tempoAction, renderAction],
+            actionLabels: ['Set tempo to 132 BPM', 'Render Verse and Chorus'],
+            commandBatch,
+            agentApproval: compileAgentRiskApproval({ commandBatch }),
+            executionMode: 'atomic',
+            groupId: 'group-failed-renders',
+            groupLabel: 'Tempo and failed renders',
+            projectRevision,
+        });
+
+        await expect(
+            confirmPendingChatActions({ confirmationId: 'confirmation-failed-renders' })
+        ).resolves.toMatchObject({ status: 'failed', durableCommit: true });
+
+        expect(runtimeMocks.renderOffline).toHaveBeenCalledTimes(2);
+        expect(agentRunLifecycle.get('confirmation-failed-renders')?.budgets.consumed).toMatchObject({
+            maxCommands: 2,
+            maxRenderJobs: 2,
+        });
+        expect(getPendingActionConfirmation('confirmation-failed-renders')).toMatchObject({
+            status: 'failed',
+            followUpStatus: 'retryable',
+        });
+
+        await expect(
+            confirmPendingChatActions({ confirmationId: 'confirmation-failed-renders' })
+        ).resolves.toMatchObject({ status: 'failed', reason: expect.stringContaining('maxRenderJobs') });
+        expect(runtimeMocks.renderOffline).toHaveBeenCalledTimes(2);
+        expect(executeTempo).toHaveBeenCalledOnce();
     });
 
     it('invalidates a confirmed batch when another app action commits while its first handler is paused', async () => {

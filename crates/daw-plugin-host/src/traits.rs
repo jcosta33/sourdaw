@@ -11,6 +11,7 @@
 //! and a second format's backend has to speak them without depending on the
 //! CLAP backend module.
 
+use crate::parameter_events::PluginParameterEventQueue;
 use crate::params::PluginParameter;
 use std::ffi::c_void;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
@@ -29,11 +30,17 @@ pub type LatencyChangeNotifier = Box<dyn Fn() + Send + Sync>;
 
 /// Something a plugin asked its host for from inside its own callback.
 ///
-/// The two arrivals share one shape, which is why they share one wake: the
-/// plugin calls a host callback on a thread that may do no real work, the
-/// backend records the fact lock-free, and the wake carries the follow-up onto
-/// the host's control path. What the follow-up is differs; where it may run does
-/// not.
+/// These arrivals share one shape, which is why they share one wake: the plugin
+/// calls a host callback on a thread that may do no real work, the backend
+/// records the fact lock-free, and the wake carries the follow-up onto the
+/// host's control path. What the follow-up is differs; where it may run does not.
+///
+/// Every variant here is raised from a callback its format marks `[main-thread]`,
+/// and the wake behind them allocates. An ask a plugin may raise from the audio
+/// thread — `clap_host_params.request_flush`, which CLAP marks `[thread-safe]` —
+/// therefore has no variant here at all: it is recorded as a flag and read by the
+/// parameter drain, because a channel send on the render thread is a missed
+/// device period.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PluginHostRequest {
     /// The plugin wants the window its editor is drawn into resized. The size
@@ -43,6 +50,10 @@ pub enum PluginHostRequest {
     /// The plugin's own state changed — a knob moved in its editor, a preset
     /// loaded inside it — so the project holding it has unsaved changes.
     StateDirty,
+    /// The plugin's parameter list changed and the host's copy of it describes a
+    /// plugin that no longer exists. Re-enumerating means calling the plugin
+    /// back, which the callback's own thread may not do.
+    ParametersRescan,
 }
 
 /// Host-supplied wake fired when a plugin raises a [`PluginHostRequest`].
@@ -269,6 +280,62 @@ pub trait AudioPlugin: Send + Sync {
     /// [`DEFAULT_EDITOR_CONTENT_SCALE`].
     fn set_editor_content_scale(&mut self, _scale: f64) {}
 
+    /// Whether the plugin's editor accepts a size the *host* chose.
+    /// **Control path only.**
+    ///
+    /// Asked once the editor is open, because it is the open view that answers
+    /// it — VST3 through `canResize`, CLAP through `gui.can_resize`. The host
+    /// window follows: a fixed-size editor gets a window the user cannot drag,
+    /// because a frame that moves around an editor that cannot follow it leaves
+    /// the editor drawing outside its window.
+    ///
+    /// The default is `false`, which is the truthful answer for a backend with
+    /// no editor to resize.
+    fn editor_can_resize(&self) -> bool {
+        false
+    }
+
+    /// Resize the editor because the host's window was resized, reporting the
+    /// size the plugin constrained the request to. **Control path only.**
+    ///
+    /// The answer is the size the window must end at, and it is often not the
+    /// size that was asked for: every format lets the plugin rewrite a host
+    /// request into one its layout will actually run at — VST3 through
+    /// `checkSizeConstraint`, CLAP through `gui.adjust_size` — and a host that
+    /// kept its own number would leave the editor drawing outside its window.
+    ///
+    /// The window is resized before the plugin is told to move into it, on
+    /// every backend. VST3 states that order outright and CLAP's editors depend
+    /// on it just as much: a view told to lay out at a size its window has not
+    /// taken yet lays out against the window it is still in.
+    ///
+    /// Every size crossing this seam — in and out, here and on every editor
+    /// method beside it — is in the logical units the host's window seam sizes
+    /// in. Both formats state editor sizes in physical pixels on Windows and
+    /// X11, and converting to and from that is the backend's own business.
+    ///
+    /// The default refuses, because a backend with no editor has no size to
+    /// negotiate.
+    fn request_editor_size(&mut self, _width: u32, _height: u32) -> Result<(u32, u32), String> {
+        Err("Plugin does not support GUI".to_string())
+    }
+
+    /// Restate the display scale for an editor that is already open, reporting
+    /// the size its host window must take now. **Control path only.**
+    ///
+    /// Distinct from [`Self::set_editor_content_scale`], which states a scale for
+    /// an editor that does not exist yet. A window that reaches a display of a
+    /// different scale holds an editor laid out for the old one, and both halves
+    /// of the answer have to move together: the plugin is told the new scale, and
+    /// the size is renegotiated in the units that scale defines. Applying one
+    /// without the other leaves the editor drawing at one density inside a window
+    /// sized for another.
+    ///
+    /// The default refuses, for the same reason the resize does.
+    fn apply_editor_content_scale(&mut self, _scale: f64) -> Result<(u32, u32), String> {
+        Err("Plugin does not support GUI".to_string())
+    }
+
     /// Carry out an editor resize the plugin asked for, reporting the size that
     /// was applied. **Control path only.**
     ///
@@ -293,6 +360,44 @@ pub trait AudioPlugin: Send + Sync {
     /// would re-mark on every later wake.
     fn take_state_dirty(&mut self) -> bool {
         false
+    }
+
+    /// Read and clear the "my parameter list changed" signal the plugin raised.
+    /// **Control path only.**
+    ///
+    /// Read-and-clear for the same reason as `take_state_dirty`: one rescan is
+    /// answered once, and a flag left standing re-enumerates on every later wake.
+    /// The default is `false` because a format that never raises the ask has
+    /// nothing pending, which is an answer rather than a gap.
+    fn take_parameters_rescan(&mut self) -> bool {
+        false
+    }
+
+    /// Read and clear the plugin's request that the host call `flush()`, then
+    /// make that call if it is legal right now. **Control path only.**
+    ///
+    /// One method rather than a take and a call, because whether the call is
+    /// legal is a fact only the backend holds: every format forbids the flush
+    /// while the plugin is being handed blocks, and a caller outside the backend
+    /// would have to reach into the processing state to find out.
+    ///
+    /// Reports whether the flush actually ran. `false` covers both "nothing was
+    /// asked for" and "the plugin is processing, so its output comes back
+    /// through `process()` instead" — neither is a failure, and the caller's
+    /// next move is the same for both: drain whatever the queue holds.
+    fn flush_parameters_off_audio_thread(&mut self) -> bool {
+        false
+    }
+
+    /// The queue this plugin's own parameter events are captured into, or `None`
+    /// for a backend that captures none.
+    ///
+    /// Handed out rather than drained through this trait because the drain must
+    /// never wait on the plugin: a control path held by a long operation would
+    /// otherwise stall every event behind it, and the queue exists precisely so
+    /// the two are independent.
+    fn parameter_event_queue(&self) -> Option<Arc<PluginParameterEventQueue>> {
+        None
     }
 
     /// Whether the plugin accepts note events.
@@ -372,4 +477,65 @@ pub trait HostedPluginRuntime: AudioPlugin {
 
     /// Reported latency in frames of the plugin's own activation rate.
     fn latency_samples(&self) -> u32;
+
+    /// Reported processing tail in frames of the plugin's own activation rate —
+    /// how long the plugin keeps sounding after its input goes quiet.
+    ///
+    /// Frames rather than the milliseconds latency is reported in, because both
+    /// formats define a sentinel at the top of the range for an infinite tail —
+    /// CLAP's "any value greater or equal to `INT32_MAX`", VST3's
+    /// `kInfiniteTail` — and a sentinel does not survive a conversion.
+    ///
+    /// Zero means no tail, which is also what a plugin that declares nothing
+    /// reports. Control path only.
+    fn tail_samples(&self) -> u32;
+
+    /// Take a tail change the plugin flagged, answering the tail it reports now,
+    /// or `None` when nothing was pending. Control path only.
+    ///
+    /// Defaults to `None` for a format that has no way for a plugin to announce
+    /// one: VST3 defines `getTailSamples` as a question the host asks and
+    /// carries no tail-changed callback, so nothing there is ever pending.
+    fn take_tail_change(&mut self) -> Option<u32> {
+        None
+    }
+
+    /// Say out loud what the audio thread recorded about this plugin.
+    ///
+    /// The audio thread may not allocate or take the I/O lock, so a plugin that
+    /// failed a process call is latched as a flag and reported from here.
+    /// Latched, so a plugin failing every block still produces one line. Control
+    /// path only, and cheap for a plugin that recorded nothing: the recurring
+    /// visit driven by [`take_pending_process_refusal_signal`] calls it on every
+    /// instance, and only the one that failed has anything to say.
+    fn report_plugin_observations(&mut self) {}
 }
+
+/// Process-wide hint that some plugin latched a process failure.
+///
+/// The same shape as the parameter-event hint and for the same reason: the
+/// failure is recorded on the audio thread, which cannot name the instance
+/// without allocating. A coalescing hint, never the record — each wrapper's own
+/// latch is the record — so a lost signal costs nothing a later failure does not
+/// raise again.
+static PROCESS_REFUSAL_PENDING: AtomicBool = AtomicBool::new(false);
+
+/// Raise the failure hint. **Called from the audio thread**, so it is one
+/// release store and nothing else — and only on the first block that fails,
+/// because the wrapper's own latch is what decides there is news.
+pub fn signal_pending_process_refusal() {
+    PROCESS_REFUSAL_PENDING.store(true, Ordering::Release);
+}
+
+/// Read and clear the failure hint.
+pub fn take_pending_process_refusal_signal() -> bool {
+    PROCESS_REFUSAL_PENDING.swap(false, Ordering::AcqRel)
+}
+
+/// Serialises every test that reads or clears the failure hint.
+///
+/// The hint is one process-wide flag shared by both backends, so two such tests
+/// running side by side in the same binary would each consume the other's
+/// signal.
+#[cfg(test)]
+pub(crate) static PROCESS_REFUSAL_HINT_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());

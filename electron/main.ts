@@ -38,12 +38,13 @@ import { EXPOSED_COMMANDS } from './commands.js';
 import { createCommandStream, createEventForwarder } from './events.js';
 import { loadNativeAddon, NATIVE_ADDON_PATH_ENV, resolveNativeAddonPath, type NativeHost } from './native.js';
 import { forwardNativeEvent } from './nativeEventRouter.js';
+import { createPluginCommandAdmission } from './pluginCommandAdmission.js';
 import { registerPluginWindowHost, type EditorWindowOptions, type EditorWindow } from './pluginGui.js';
 import { APP_ENTRY_URL, APP_ORIGIN, handleAppProtocol, registerAppScheme, resolveContentRoots } from './protocol.js';
 import { registerCommandRouter } from './router.js';
 import { createScanSupervisor, type ScanSupervisor } from './scan.js';
 import { applyPermissionPolicy, decideWindowOpen, isNavigationAllowed, trustedFrameGuard } from './security.js';
-import { createQuitHandler, runShutdownWithDeadline, type ShutdownOutcome } from './shutdown.js';
+import { createQuitHandler, runBeforeQuitCascade, type ShutdownOutcome } from './shutdown.js';
 import { systemTimers } from './timers.js';
 import { registerVoiceDictation } from './voiceDictation.js';
 import { getWindowChromeOptions } from './windowChrome.js';
@@ -289,6 +290,7 @@ const rendererTarget = (): BrowserWindow['webContents'] | undefined =>
 
 let nativeHost: NativeHost | undefined;
 let scanSupervisor: ScanSupervisor | undefined;
+const pluginCommandAdmission = createPluginCommandAdmission();
 
 /**
  * The plugin-scan supervisor, over a real `utilityProcess`.
@@ -325,25 +327,29 @@ const createUtilityScanSupervisor = (addonPath: string): ScanSupervisor =>
     });
 
 /**
- * A bare native window for one CLAP editor: no webcontents, hidden until the
- * addon has run the GUI lifecycle and knows the plugin's preferred size,
- * `resizable: false` because that size is the plugin's to choose. 800×600 is
- * only the pre-lifecycle placeholder the addon immediately resizes.
- */
-/**
- * The scale of the display a new plugin editor window lands on.
+ * The scale of the display a plugin editor window is on.
  *
- * Matched against the DAW window, because that is where the editor opens: an
- * editor sized against the primary display's scale is the wrong size on every
- * other one. Read once per create — an editor dragged to a display of a
- * different scale is not re-scaled, which is tracked separately.
+ * The editor's own window when there is one, because an editor dragged to a
+ * display of a different density has to be told; the DAW window otherwise,
+ * which is where an editor is about to open, since an editor sized against the
+ * primary display's scale is the wrong size on every other one.
  */
-const editorWindowScaleFactor = (): number => {
+const editorWindowScaleFactor = (editor?: EditorWindow): number => {
     const daw = mainWindow !== undefined && !mainWindow.isDestroyed() ? mainWindow : undefined;
-    const display = daw === undefined ? screen.getPrimaryDisplay() : screen.getDisplayMatching(daw.getBounds());
-    return display.scaleFactor;
+    const bounds = editor?.getBounds() ?? daw?.getBounds();
+    return bounds === undefined
+        ? screen.getPrimaryDisplay().scaleFactor
+        : screen.getDisplayMatching(bounds).scaleFactor;
 };
 
+/**
+ * A bare native window for one plugin editor: no webcontents, hidden until the
+ * addon has run the GUI lifecycle and knows the plugin's preferred size, and
+ * `resizable: false` until the plugin has said whether its editor accepts a
+ * size the host chose — an answer that does not exist until that lifecycle has
+ * run. 800×600 is only the pre-lifecycle placeholder the addon immediately
+ * resizes.
+ */
 const createEditorWindow = (options: EditorWindowOptions): EditorWindow =>
     new BaseWindow({
         width: 800,
@@ -392,6 +398,7 @@ const startNativeSurface = (): void => {
         native: () => nativeHost,
         isTrustedFrameUrl: isAllowedFrameUrl,
         createStream: (streamId) => createCommandStream({ streamId, target: rendererTarget, channel: STREAM_CHANNEL }),
+        acceptsCommand: pluginCommandAdmission.acceptsCommand,
         // Every exposed command except the one whose backend is another
         // process. Its channel is registered by `registerScanCommand`, so the
         // renderer-visible surface is identical either way.
@@ -401,13 +408,23 @@ const startNativeSurface = (): void => {
     registerVoiceDictation({ ipcMain, native: () => nativeHost, isTrustedFrameUrl: isAllowedFrameUrl });
 
     scanSupervisor = createUtilityScanSupervisor(addonPath);
-    registerScanCommand({ ipcMain, isTrustedFrameUrl: isAllowedFrameUrl, supervisor: scanSupervisor });
+    registerScanCommand({
+        ipcMain,
+        isTrustedFrameUrl: isAllowedFrameUrl,
+        supervisor: scanSupervisor,
+        acceptsCommand: pluginCommandAdmission.acceptsCommand,
+    });
 
     if (nativeHost !== undefined) {
         registerPluginWindowHost(nativeHost, {
             createWindow: createEditorWindow,
             getParentWindow: () => (mainWindow !== undefined && !mainWindow.isDestroyed() ? mainWindow : undefined),
             getScaleFactor: editorWindowScaleFactor,
+            // A display added, removed, or rescaled changes the density under
+            // every open editor at once, and none of them moved.
+            watchDisplayChanges: (onChanged) => {
+                screen.on('display-metrics-changed', onChanged);
+            },
         });
     }
 };
@@ -462,19 +479,16 @@ void app.whenReady().then(() => {
 app.on(
     'before-quit',
     createQuitHandler(
-        async (): Promise<ShutdownOutcome> => {
-            // The scan worker first. It holds its own addon instance and its
-            // own tree of per-plugin child processes, and it is the one part of
-            // the shell that a hostile plugin can already have wedged — waiting
-            // on the host's cascade with a scan still running would spend the
-            // deadline on a process that only needs killing.
-            scanSupervisor?.dispose();
-            const host = nativeHost;
-            if (host === undefined) {
-                return { status: 'completed', report: undefined };
-            }
-            return runShutdownWithDeadline({ shutdown: () => host.shutdown(), timers: systemTimers });
-        },
+        (): Promise<ShutdownOutcome> =>
+            runBeforeQuitCascade({
+                refusePluginCommands: () => pluginCommandAdmission.refusePluginCommands(),
+                // The scan worker holds its own addon instance and its own tree
+                // of per-plugin child processes; a hostile plugin can already
+                // have wedged it, so dispose before waiting on the host cascade.
+                disposeScanSupervisor: () => scanSupervisor?.dispose(),
+                host: nativeHost,
+                timers: systemTimers,
+            }),
         {
             exit: (code) => app.exit(code),
             report: (outcome) => {

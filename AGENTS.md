@@ -60,7 +60,8 @@ and overlapping files.
 
 Reviewers are blind. Each one gets the head, the diff, and exactly one stance — never another
 reviewer's prose, the author's transcript, or the orchestrator's reasoning. Independence is the
-entire value, and a reviewer shown prior findings anchors to them.
+entire value, and a reviewer shown prior findings anchors to them. Reviewers never confer: findings
+meet only in the orchestrator.
 
 Assign one independent stance per material risk. Expect about three on a typical PR; never add a
 stance to meet that number or omit one to stay near it. The recurring surfaces are correctness,
@@ -70,10 +71,19 @@ semantic clarity, conformance to `docs/07-conventions.md`), and test validity.
 
 Tier each reviewer by the criticality of its stance, not the size of the diff: economy for narrow
 low-risk checks, standard for behavioral and integration risk, the strongest tier for real-time
-audio, security, data loss, irreversible change, or a disputed severe finding.
+audio, security, data loss, irreversible change, or a disputed severe finding. The shape of the
+change escalates too: wide diffusion across modules, heavy churn on a defect-prone surface, or a
+surface many recent lanes have touched raises the tier whatever the diff is about. A stance at the
+strongest tier may be drawn twice, from different models, and merged by the orchestrator, because
+independent draws surface different findings; that extends the model-diversity rule and licenses no
+extra stance to reach a number.
 
 Review test validity as its own stance. A passing check is not evidence. Ask what would have to
-break for this check to fail, and whether it observes the thing its name claims.
+break for this check to fail, and whether it observes the thing its name claims. The standard probe
+is mechanical — revert the behavioural hunk, or apply one targeted mutation, and run the named
+spec; a spec that stays green has failed the stance. The reviewer names that probe; performing it
+belongs to the orchestrator's validation or the author's repair, inside a lane that exists for the
+change, because a reviewer holds no writable tree.
 
 Each reviewer's stance names a posture, not only a surface. A reviewer's job is to try to break the
 change and report the strongest thing it found — with a concrete failure scenario, the inputs or
@@ -91,8 +101,9 @@ did not.
 
 The orchestrator owns every finding. Validate each one against the live code before acting on it:
 discard what is wrong, out of scope, or personal style, and never forward it. Send the survivors to
-the implementing agent as a precise repair task. An implementing agent never judges a finding
-against its own work, never accepts that work, and never merges it. The orchestrator writes a
+the implementing agent as a precise repair task, in the orchestrator's own words: reviewer prose
+anchors the author exactly as it anchors another reviewer. An implementing agent never judges a
+finding against its own work, never accepts that work, and never merges it. The orchestrator writes a
 discarded finding, with its one-line reason, into the review bundle as `discarded.json`, beside
 `review.json` — the same way the caller writes `review.json` itself; no script produces either file.
 Discarding is the orchestrator's own judgement about a blind reviewer's work, and an unrecorded
@@ -105,6 +116,26 @@ reaches the pull request. Getting this backwards traps the merge: `deliver` refu
 that carries `CHANGES_REQUESTED` or an unresolved thread, and a conversation may only be resolved
 when the head actually addresses it — so a finding posted and then judged wrong blocks delivery
 with nothing left to fix.
+
+Validation is a filter, not a substitute for the record. A validated blocking finding is posted
+before it is repaired: the orchestrator composes the survivors into a `REQUEST_CHANGES` review and
+posts it through `review:publish` on the head they were found against, then dispatches the repair.
+The author answers each thread with a fixed head and `review:resolve`, and the repaired head gets a
+fresh round. Repairing a validated blocker first and approving the repaired head in one motion is
+forbidden, however much faster it is: it erases the review from the public record, and a pull
+request that merges with no visible finding is indistinguishable from one nobody attacked. Every
+pull request that drew a validated blocker therefore carries the exchange on its public record —
+the reviewer identity's findings standing against the head that earned them, and the author
+identity's answering pushes and `Done` replies — while the orchestrator's judgement is evidenced by
+the scripts only it runs and by `review.json` and `discarded.json` in the bundle, never by a
+persona on the pull request.
+
+A defect that reaches `main` is fixed under Ownership, but never only fixed. The orchestrator
+traces it to the pull request that introduced it and the stance that should have caught it —
+missing, mis-tiered, or mis-prompted. The lesson has a durable home: a stance's dispatch guidance
+lives as a tracked file under `.agents/skills/`, and an escape lesson is an edit to that stance's
+file, so a cold orchestrator inherits every prior escape. Escapes are the only measure a review
+architecture has; one that never learns from them is unmeasured, not proven.
 
 ## Docs
 
@@ -165,6 +196,16 @@ and returns an answer the pipeline was going to give anyway.
 | Prove wasm freshness  | `pnpm wasm:verify`                           |
 
 Tests use at most two workers. Playwright uses one. See [testing](./docs/06-testing.md).
+
+Rerun-to-green is forbidden as a response to failure: never re-run a failed check to make it pass,
+never bump a head to reroll one, and never read a pass produced by a retry as clean. Committed test
+infrastructure may retry on its own and report the run green; that reporting discharges nothing — a
+result that needed a retry is a flaky result, and it creates the same duty a failure does. A
+failure that vanishes on retry with no relevant change is a defect with a name — a race, an
+ordering or isolation dependency, leaked state, or environment — and it gets a fix, a lane, or an
+issue; green-by-retry launders a failure exactly as a weakened test does. In a DAW the retried
+"flake" is disproportionately likely to be a real timing defect, because concurrency and scheduling
+are where flakiness and product risk coincide.
 
 ## Map
 
@@ -228,15 +269,11 @@ paths are the exception the delivery scripts require: `review:prepare` writes bu
 `.env.sourdaw-*` credentials live there.
 
 `pnpm lane:open [issue] [slug]` fetches `origin/main`, branches from it, and locks the lane
-`active:sourdaw-author`. Its last stdout line is the lane path. It stays offline past that fetch and
-never mints or spawns `gh`. The slug is `work` if omitted, and never purely numeric, because a bare
-number is read as the issue. Supply the issue number when the work has a ticket; the branch is then
-`agent/<issue>/<slug>`. The pull request closes that issue by default; campaign slices use
-`lane:publish --relates` to keep the umbrella open. Without an issue the branch is `agent/<slug>`.
-`lane:publish --lane <absolute-path>` selects an exact author lane; for a conforming issue lane it
-derives and validates the issue from the branch, which disambiguates write-disjoint lanes that share
-an issue. Run publishing from the protected primary checkout, never through a lane's package route.
-Touch only your own lane.
+`active:sourdaw-author`. It stays offline past that fetch and never mints or spawns `gh`. A slug is
+never purely numeric, because a bare number is read as the issue. Supply the issue number when the
+work has a ticket; the branch is then `agent/<issue>/<slug>`, and without an issue `agent/<slug>`.
+The pull request closes that issue by default; campaign slices use `lane:publish --relates` to keep
+the umbrella open. Touch only your own lane.
 
 A lane isolates the working tree and nothing else. The stash, the process table, the disk, and the
 author lock are shared across every lane, so a global or destructive operation run inside one lane
@@ -249,10 +286,9 @@ request unmerged but leaves a receipt naming the replacement, and removal reads 
 requires the replacement to be merged. Any other closed pull request is an abandonment, and removing
 it would discard work that never landed — so an abandonment leaves through `lane:strand`, a receipted
 exit rather than a weakened gate. `lane:strand` refuses a lane holding an open pull request or
-uncommitted work, records the reason, date, branch, and head in `.agents/lane-strands/` under the
-primary checkout (the head keeps the abandoned tip recoverable), then removes the worktree and
-force-deletes the branch; a receipt already naming the same lane with a different head is refused,
-never overwritten. Delete a leftover local branch after a `lane:remove`.
+uncommitted work, and writes a receipt under the primary checkout recording the abandoned tip so it
+stays recoverable; a receipt already naming the same lane with a different head is refused, never
+overwritten. Delete a leftover local branch after a `lane:remove`.
 
 ## Artifacts
 
@@ -271,15 +307,14 @@ pnpm issue:file <template> --title "…" --fields <json> [--milestone <m>] [--pr
 After create, attach parent/child issues as GitHub sub-issues.
 
 An unlabelled issue is invisible. Every issue carries a priority label and a status label, plus the
-labels naming what it is. Set the milestone when the work belongs to one — by title, matched
-case-insensitively against **open** milestones only, so the number the tracker UI shows is rejected
-and nothing is filed — and add the issue to the roadmap project when it is on the roadmap, leaving
-either empty rather than forcing a fit. Do all of it on the `issue:file` command: that command
-applies the template's labels and the derived priority label, and takes the milestone and the
-project. Get the metadata right there, because no sanctioned script edits an issue once it exists
-and a correction afterwards is `gh` by hand. Read the live sets with `gh label list`,
-`gh api repos/:owner/:repo/milestones`, and `gh project list --owner <owner>`; never from a list
-written down here, which drifts the day it is written.
+labels naming what it is. Set the milestone when the work belongs to one — by title, never the
+number the tracker UI shows, which is rejected against **open** milestones so nothing is filed — and
+add the issue to the roadmap project when it is on the roadmap, leaving either empty rather than
+forcing a fit. Do all of it on the `issue:file` command, and get the metadata right there, because
+no sanctioned script edits an issue once it exists and a correction afterwards is `gh` by hand. Read
+the live sets with `gh label list`, `gh api repos/:owner/:repo/milestones`, and
+`gh project list --owner <owner>`; never from a list written down here, which drifts the day it is
+written.
 
 ## Delivery
 
@@ -290,10 +325,10 @@ closed by list: an issue's own state, labels, milestone, project membership, and
 be corrected by hand with `gh`. Nothing else may. A pull request is not an issue, so no `gh pr`
 write ever falls inside, whatever flag or field it names. A by-hand write is attributed to the
 operator's own account rather than to a mint, and so reads as the operator acting personally; that
-is why the exception stops at issue metadata one later command puts back. `git push` has no
-exception at all: lane tooling owns every push, because a push from anywhere else destroys the
-review anchor and can strand a lane. Read-only `gh` stays unrestricted and is how you check live
-tracker state. Identity for a script-covered write is the App that script mints, not a persona.
+is why the exception stops at issue metadata one later command puts back: identity for a
+script-covered write is the App that script mints, never a persona. `git push` has no exception at
+all: lane tooling owns every push, because a push from anywhere else destroys the review anchor and
+can strand a lane. Read-only `gh` stays unrestricted and is how you check live tracker state.
 
 | Need                        | Command                                                                                                          |
 | --------------------------- | ---------------------------------------------------------------------------------------------------------------- |
@@ -308,12 +343,12 @@ tracker state. Identity for a script-covered write is the App that script mints,
 | Strand an abandoned lane    | `pnpm lane:strand <path> --reason "<text>"`                                                                      |
 | Prune lane artifacts        | `pnpm lane:prune <path> \| --all \| --stale-days <days>`                                                         |
 
-Credentials sit at the primary root (parent of `git rev-parse --git-common-dir`), gitignored:
-`.env.sourdaw-author` for `lane:publish`, `review:resolve`, `deliver`, and `pr:supersede`;
-`.env.sourdaw-reviewer` for `review:prepare` and `review:publish`. Do not commit them. Do not load
-the other role's file. Delivery authenticates the author and reviewer roles by their immutable bot
-actor node IDs in `scripts/githubAppIdentity.ts`; mutable App slugs and bot logins are display only.
-The two role IDs are never interchangeable. `deliver` does not mint the reviewer.
+Two gitignored credential files sit at the primary root (parent of `git rev-parse --git-common-dir`):
+`.env.sourdaw-author` and `.env.sourdaw-reviewer`. Each script loads its own role's file. Do not
+commit them. Do not load the other role's file. Delivery authenticates the author and reviewer roles
+by their immutable bot actor node IDs in `scripts/githubAppIdentity.ts`; mutable App slugs and bot
+logins are display only. The two role IDs are never interchangeable. `deliver` does not mint the
+reviewer.
 
 `deliver` serializes each pull request through a per-PR Git ref in the protected primary checkout.
 The ref points to a strict owner blob; acquisition is a zero-ref Git compare-and-swap and release
@@ -336,72 +371,48 @@ launcher contract or merely trails `main` therefore publishes or delivers withou
 
 This boundary isolates lane-controlled files, not arbitrary code already running as the operator.
 The operator environment before the primary launcher starts is trusted, and processes under that
-same account can read its credential files. Snapshot and token-bearing children discard Node
-loader/preload settings and Git, GitHub CLI, GitHub Actions, and App overrides, then use the launcher
-resolved `git` and `gh` executables.
+same account can read its credential files. Snapshot and token-bearing children discard the
+environment overrides that could redirect them — Node loader and preload settings, and Git, GitHub
+CLI, GitHub Actions, and App configuration — and use the launcher-resolved `git` and `gh`.
 
-Hosted checks run. `.github/workflows/health-gates.yml` has two lanes: a fast one on every push to
-a pull request, and a heavy one on an approving review, on a nightly schedule, and on dispatch.
-`gate` is the stable workflow summary: it depends on every job whose result currently decides the
-summary, and passes when each either succeeded or was skipped, so a pull request that skips a
-conditional leg still reports a conclusion. It is informational today: the live ruleset requires no
-status checks. GitHub can require workflow job checks, but Sourdaw deliberately keeps
+Hosted checks run. `.github/workflows/health-gates.yml` is authoritative about which lanes it runs,
+when, and what each covers; `gate` is its stable summary, and other tooling reads that name, so do
+not rename it. GitHub can require workflow job checks, but Sourdaw deliberately keeps
 pull-request-editable workflows out of merge authority; that is a Sourdaw trust policy, not a GitHub
-platform restriction. A required check from a workflow skipped by trigger-level path, branch, or
-commit-message filters remains pending. Do not rename `gate`.
+platform restriction.
 
-Hosted checks exist so that nobody runs those checks on this machine. Lanes share one machine, and
-several agents each running a repository-wide typecheck, lint, or suite exhaust it and stall each
-other — which is the cost the resource guard was invented to ration and CI removes outright.
+Those checks exist so that nobody runs them on this machine. Never run a repository-wide check
+locally to satisfy a gate the pipeline already runs on every push; Resource Safety governs what
+stays local.
 
-So run locally only what is genuinely cheap and genuinely yours: the spec you just wrote or changed,
-lint on the files you touched. Push, and let the pipeline run the rest. Do not run `lint:full`,
-`typecheck`, `deps:validate`, the unit suite, cargo, wasm, or end-to-end locally to satisfy a gate —
-the pipeline runs all of them on every push, and a second copy on this machine buys nothing but
-contention.
-
-`main` is covered by a ruleset. Read what it actually does: it blocks deletion and non-fast-forward,
-forces a squashed pull request, and demands resolved threads. The exact live enforcement remains
-repository configuration, not something this file can promise; Sourdaw's policy separately keeps
-pull-request-editable workflows out of merge authority.
+`main` is covered by a ruleset. Read the live one rather than trusting a copy here — it blocks
+deletion and non-fast-forward, forces a squashed pull request, and demands resolved threads, but the
+enforcement that actually holds is repository configuration, not something this file can promise.
 
 Some crates compile to wasm packages that ship as committed artifacts. `scripts/wasm-artifacts.ts`
-is the list, and it carries each package's build script because that name is not derivable from the
+is the list, and it names each package's build script because that name is not derivable from the
 crate — guess it and you run a script that does not exist. A non-test edit anywhere in such a
-package's path-dependency closure, a comment included, changes its hash: run that package's own
-build script, then `pnpm wasm:manifest`, then stage the rebuilt artifacts and verify after staging
-rather than after building. Rebuilding the wrong package is worse than rebuilding nothing, because
-`wasm:manifest` preserves the recorded hash of every package the run has no evidence it rebuilt —
-the manifest agrees and the artifact is stale. `pnpm wasm:all` covers all of them when in doubt. A
-rebase can merge cleanly and still leave wasm stale; `pnpm wasm:verify` is the only proof of
-freshness.
+package's path-dependency closure, a comment included, changes its hash: rebuild that package,
+rewrite the manifest, stage the artifacts, and verify after staging rather than after building.
+Rebuilding the wrong package is worse than rebuilding nothing, because `wasm:manifest` preserves the
+recorded hash of every package the run has no evidence it rebuilt — the manifest agrees and the
+artifact is stale; `pnpm wasm:all` covers all of them when in doubt. A rebase can merge cleanly and
+still leave wasm stale, so `pnpm wasm:verify` is the only proof of freshness.
 
-`lane:publish` names the lane it resolved, then prints the PR number last. Invoke it from the
-protected primary checkout. An issue number resolves an issue lane by branch prefix; `--lane` takes
-an exact absolute author-worktree root, including a conforming issue lane when its issue has multiple
-lanes. A conforming lane's branch supplies the issue identity; the existing issue, pull-request
-content, and relationship gates still apply. It pushes without `--force`, and refuses any lane with
-uncommitted changes: commit the work yourself with a conventional subject first.
+`lane:publish` pushes without `--force`, and refuses any lane with uncommitted changes: commit the
+work yourself with a conventional subject first. An issue number resolves its lane by branch prefix;
+`--lane` names an exact absolute lane root, which is what disambiguates write-disjoint lanes sharing
+one issue.
 
-A conforming `agent/` lane also gets a written pull request: `lane:publish` titles it, when opening,
-with the newest non-merge commit the lane holds above `origin/main` (`type(scope): subject`). Later
-publishes rewrite the body and leave the title, so a follow-up commit and a merge of `origin/main`
-never retitle it. It keeps the required headings in
-[`.github/pull_request_template.md`](./.github/pull_request_template.md) nonempty and within 4000
-bytes. A new pull request requires explicit `--summary` and `--test` instructions. What must say what
-changed and why, and must not repeat the title or the title with `type(scope):` stripped. Later
-publishes preserve a valid existing What section when `--summary` is omitted and replace it when
-`--summary` is supplied. For product changes, How to test states user- or reviewer-observable steps
-and the expected result; automated author or CI checks are not a substitute. Developer-facing or
-internal changes may name their actual validation interface. Later publishes preserve a valid
-existing How-to-test section when `--test` is omitted and replace it when `--test` is supplied.
-Screenshots is offered rather than required: it is written, and the
-template keeps it, but a body without it still merges, because a section whose canonical content is
-`None.` gates nothing. Issue lanes use `Closes #<issue>` by default; campaign slices use `--relates`
-to write `Related #<issue>` without closing the campaign. Later publishes preserve that relationship.
-Related tickets reads `None.` only for a lane whose branch carries no issue. It refuses a
-conforming lane carrying no non-merge commit above `origin/main`, for the same reason it needs one
-to title the pull request. It does not enable auto-merge or post a review.
+A conforming `agent/` lane also gets a written pull request. `lane:publish` titles it, when opening,
+from the newest non-merge commit the lane holds above `origin/main`, and never retitles it
+afterwards, so a follow-up commit or a merge of `origin/main` cannot rewrite the title. The body
+follows [`.github/pull_request_template.md`](./.github/pull_request_template.md), and the script is
+authoritative about that format: it refuses a malformed body, a new pull request requires explicit
+`--summary` and `--test`, and supplying either later replaces that section while omitting it
+preserves what is already there. It refuses a conforming lane carrying no non-merge commit above
+`origin/main`, for the same reason it needs one to title the pull request. It does not enable
+auto-merge or post a review.
 
 An author-locked, off-convention branch may also publish through `--lane <absolute-path>`, but only
 once the repository already has an open pull request for that exact branch, which is what proves the
@@ -410,17 +421,17 @@ never writes a title or body: pushing is the whole of what publishing it means, 
 pull request exactly as its owner wrote it, and it refuses outright if that pull request is no longer
 open by the time the push lands.
 
-Write the pull request for a teammate who was not in the session. Under the template headings,
-say what changed, why, and how to test. Leave session diaries, unpublished rounds, and mutation
-tables off the pull request.
+Write the pull request for a teammate who was not in the session. Under the template headings, say
+what changed and why — not the title again — and how to test it: for a product change, user- or
+reviewer-observable steps and the expected result, never an automated author or CI check standing in
+for them; developer-facing or internal work may name its actual validation interface. Leave session
+diaries, unpublished rounds, and mutation tables off the pull request.
 
 `review:prepare` prints a bundle path on the primary root: `manifest.json`, `diff.patch`, `pr.md`,
 and base-commit `contracts/`. The caller writes `review.json` for **this** head, and later
-`discarded.json` beside it. Re-preparing a bundle for that same head — for instance to refresh
-`pr.md` after `lane:publish` rewrites the pull-request body — does not discard what the caller
-already wrote there: the bundle path is keyed by head sha, so an existing bundle directory always
-describes the head the new one describes, and only the generated files are replaced. A reviewer
-agent gets that bundle, not the author transcript. `review:publish` prints the review id and posts
+`discarded.json` beside it. The bundle path is keyed by head sha, so re-preparing for that same head
+replaces only the generated files and never discards what the caller wrote there. A reviewer agent
+gets that bundle, not the author transcript. `review:publish` prints the review id and posts
 through the reviewer App only while GitHub's head still matches the bundle.
 
 Review the diff as that teammate. Read every changed line. If a hunk is not enough to judge, read
@@ -457,15 +468,15 @@ the thread. File out-of-scope feedback; do not grow the PR. Resolve a conversati
 current head actually addresses it. A new head needs a new review.
 
 Before merge the orchestrator does its own final check on the current head: read the diff, confirm
-the change does what it was specified to do, confirm every finding it accepted is actually addressed
-there, and inspect the pipeline's result for that head. CI is advisory, so its result is diagnostic
-rather than merge authority. The checks are the pipeline's job, not a second local run of the same
-commands. Formatting is the exception worth doing locally, because it rewrites rather than reports:
+the change does what it was specified to do, that a test observes what its name claims, and that
+every accepted finding is actually addressed there rather than silenced. Inspect the pipeline's
+result for that head past the summary, because a softened leg can report a caused regression only as
+a warning annotation. CI is advisory, so its result is diagnostic rather than merge authority, but
+an unexplained failure or warning is still attributed to the change, or to a named pre-existing
+defect and filed, or it blocks. The checks are the pipeline's job, not a second local run of the
+same commands. Formatting is the exception worth doing locally, because it rewrites rather than
+reports:
 run it on the changed files and stage what it rewrote.
-
-What the orchestrator still owns is the judgement no check makes. A green pipeline says the gates
-passed, not that the change does what it was specified to do, that a test observes what its name
-claims, or that a finding was addressed rather than silenced. Read the diff for those.
 
 Unrelated `origin/main` movement does not by itself stale a review. Re-review when the feature head
 changes in a way that touches the reviewed surface, and when you resolve conflicts. Base
@@ -483,14 +494,17 @@ thread is resolved at both points. Head, head branch, base branch, body, canonic
 and stacked dependents must remain stable between those reads. CI admission is snapshot-backed and
 currently advisory: successful, failed, pending, absent, cancelled, malformed, and unavailable CI
 evidence do not block an otherwise valid delivery. The dormant required-CI path retains the pinned
-workflow-derived gate and complete-rollup rules for a future authority change; a lane cannot select
-it or reshape it. Delivery merges into `main` and nothing else: `lane:publish` opens every pull
-request there, so any other base is a retarget the delivery scripts did not make, and `deliver`
-refuses it rather than squashing onto a branch the change was never reviewed against. Do not merge
-any other way.
+workflow-derived gate and complete-rollup rules the trusted launcher reads from the pinned
+`origin/main` workflow copy for a future authority change; a lane cannot select it or reshape it.
+Delivery merges into `main` and nothing else: `lane:publish` opens every pull request there, so any
+other base is a retarget the delivery scripts did not make, and `deliver` refuses it rather than
+squashing onto a branch the change was never reviewed against. Do not merge any other way.
 
-Keep batches small, live lanes few, merges prompt. A finished change waits only on that GitHub
-review. Enable hooks: `git config core.hooksPath .githooks`.
+Keep batches small, live lanes few, merges prompt. A diff too large for its reviewers to attack
+whole is too large to merge whole, and splitting it is the author's obligation, not the reviewer's
+burden. Drain before filling: open no new lane while a finished head waits only on review or merge.
+A finished change waits only on that GitHub review. Enable hooks:
+`git config core.hooksPath .githooks`.
 
 ## Safety
 

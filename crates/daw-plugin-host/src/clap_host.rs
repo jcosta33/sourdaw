@@ -2,6 +2,7 @@ use clap_sys::ext::gui::{clap_host_gui, CLAP_EXT_GUI};
 use clap_sys::ext::latency::{clap_host_latency, CLAP_EXT_LATENCY};
 use clap_sys::ext::params::{clap_host_params, CLAP_EXT_PARAMS};
 use clap_sys::ext::state::{clap_host_state, CLAP_EXT_STATE};
+use clap_sys::ext::tail::{clap_host_tail, CLAP_EXT_TAIL};
 /// CLAP Host implementation — provides the `clap_host_t` and host extensions.
 ///
 /// The CLAP spec requires the host to provide callback function pointers
@@ -12,6 +13,8 @@ use std::ffi::CStr;
 use std::os::raw::c_void;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::OnceLock;
+
+use crate::parameter_events::signal_pending_parameter_flush;
 
 /// Re-exported so every existing `clap_host::LatencyChangeNotifier` path still
 /// resolves. The type itself is seam vocabulary — see [`crate::traits`].
@@ -63,6 +66,16 @@ pub struct HostCallbackState {
     /// Whether the plugin has reported a state change that has not been
     /// consumed. Set from the plugin's own thread; cleared on the control path.
     state_dirty: AtomicBool,
+    /// Whether the plugin has reported that its parameter list changed and the
+    /// host has not re-enumerated since.
+    parameters_rescan: AtomicBool,
+    /// Whether the plugin has asked the host to call `params.flush()` and the
+    /// host has not done so since.
+    parameters_flush: AtomicBool,
+    /// Whether the plugin has reported a new processing tail the host has not
+    /// re-read. Set from `clap_host_tail.changed`, which CLAP marks
+    /// `[audio-thread]`; cleared on the control path.
+    tail_dirty: AtomicBool,
     /// The wake shared by every plugin-initiated ask that the host may only
     /// answer off the calling thread.
     request_notifier: OnceLock<PluginHostRequestNotifier>,
@@ -86,6 +99,15 @@ impl std::fmt::Debug for HostCallbackState {
                 &self.editor_resize_available.load(Ordering::Relaxed),
             )
             .field("state_dirty", &self.state_dirty.load(Ordering::Relaxed))
+            .field(
+                "parameters_rescan",
+                &self.parameters_rescan.load(Ordering::Relaxed),
+            )
+            .field(
+                "parameters_flush",
+                &self.parameters_flush.load(Ordering::Relaxed),
+            )
+            .field("tail_dirty", &self.tail_dirty.load(Ordering::Relaxed))
             .field(
                 "has_request_notifier",
                 &self.request_notifier.get().is_some(),
@@ -207,6 +229,80 @@ impl HostCallbackState {
     pub fn take_state_dirty(&self) -> bool {
         self.state_dirty.swap(false, Ordering::AcqRel)
     }
+
+    /// Record that the plugin's parameter list changed, then wake the observer.
+    ///
+    /// The flags CLAP passes are not kept. Every one of them — values, text,
+    /// info, all — is answered by the same act here, a full re-enumeration on
+    /// the control thread, because this host holds no partial parameter model it
+    /// could refresh a slice of. Storing a discriminator nothing reads would be
+    /// a claim that the answer varies with it.
+    pub fn mark_parameters_rescan(&self) {
+        self.parameters_rescan.store(true, Ordering::Release);
+        if let Some(notify) = self.request_notifier.get() {
+            notify(PluginHostRequest::ParametersRescan);
+        }
+    }
+
+    /// Atomically read-and-clear the parameter-rescan flag.
+    pub fn take_parameters_rescan(&self) -> bool {
+        self.parameters_rescan.swap(false, Ordering::AcqRel)
+    }
+
+    /// Record that the plugin wants `params.flush()` called.
+    ///
+    /// Two release stores and nothing else — deliberately, and unlike every
+    /// other ask on this type. CLAP marks `request_flush` `[thread-safe]`, so a
+    /// plugin may call it from inside `process()`; the request-notifier channel
+    /// the other asks wake copies the instance id onto the heap and takes an
+    /// allocator lock, which on the render thread is a missed device period. So
+    /// this ask has no channel: the flag is the record, the process-wide hint is
+    /// the wake, and the drain thread answers both.
+    pub fn request_parameters_flush(&self) {
+        self.parameters_flush.store(true, Ordering::Release);
+        signal_pending_parameter_flush();
+    }
+
+    /// Atomically read-and-clear the flush request.
+    pub fn take_parameters_flush(&self) -> bool {
+        self.parameters_flush.swap(false, Ordering::AcqRel)
+    }
+
+    /// Record that the plugin's processing tail changed.
+    ///
+    /// Two release stores and nothing else, for the same reason
+    /// [`Self::request_parameters_flush`] has none: CLAP marks
+    /// `clap_host_tail.changed` `[audio-thread]`, so a plugin raises it from
+    /// inside `process()`, where copying an instance id onto the heap to wake a
+    /// channel is a missed device period. The flag is the record and the
+    /// process-wide hint is the wake.
+    pub fn mark_tail_dirty(&self) {
+        self.tail_dirty.store(true, Ordering::Release);
+        signal_pending_tail_change();
+    }
+
+    /// Atomically read-and-clear the tail-dirty flag.
+    pub fn take_tail_dirty(&self) -> bool {
+        self.tail_dirty.swap(false, Ordering::AcqRel)
+    }
+}
+
+/// Process-wide hint that some plugin reported a new processing tail.
+///
+/// A hint, never the record — each instance's own flag is that. A lost signal
+/// costs at most one drain interval, because the flag stays set until a control
+/// pass takes it.
+static TAIL_CHANGE_PENDING: AtomicBool = AtomicBool::new(false);
+
+/// Raise the tail hint. **Called from the plugin's own audio thread**, so it is
+/// one release store and nothing else.
+pub fn signal_pending_tail_change() {
+    TAIL_CHANGE_PENDING.store(true, Ordering::Release);
+}
+
+/// Read and clear the tail hint.
+pub fn take_pending_tail_change_signal() -> bool {
+    TAIL_CHANGE_PENDING.swap(false, Ordering::AcqRel)
 }
 
 /// Borrow the host callback state pinned into a `clap_host`'s `host_data`.
@@ -269,6 +365,9 @@ unsafe extern "C" fn host_get_extension(
     if id == CLAP_EXT_LATENCY {
         return &HOST_LATENCY as *const clap_host_latency as *const c_void;
     }
+    if id == CLAP_EXT_TAIL {
+        return &HOST_TAIL as *const clap_host_tail as *const c_void;
+    }
 
     std::ptr::null()
 }
@@ -306,19 +405,45 @@ static HOST_PARAMS: clap_host_params = clap_host_params {
     request_flush: Some(host_params_request_flush),
 };
 
-unsafe extern "C" fn host_params_rescan(_host: *const clap_host, _flags: u32) {
-    // Plugin is telling us its parameter list changed.
-    // Not yet acted on: re-enumerating parameters belongs on the control thread.
-    // No logging here — this callback can arrive from a plugin's own thread.
+/// The plugin's parameter list changed.
+///
+/// Flag and wake, nothing else. Re-enumerating means calling `count`,
+/// `get_info` and `get_value` back into the plugin, all of which CLAP annotates
+/// `[main-thread]` — so the work belongs to the control path, and this callback
+/// only says that there is work. Deliberately unlogged: it can arrive from a
+/// plugin's own thread, where stderr I/O is not acceptable.
+unsafe extern "C" fn host_params_rescan(host: *const clap_host, _flags: u32) {
+    if let Some(state) = host_state(host) {
+        state.mark_parameters_rescan();
+    }
 }
 
-unsafe extern "C" fn host_params_clear(_host: *const clap_host, _param_id: u32, _flags: u32) {
-    // Plugin is telling us to clear automation for a parameter.
-}
+/// The plugin asks the host to clear the automation or modulation it holds for
+/// one parameter.
+///
+/// **Deliberately deferred, and the bound is this**: the only thing Sourdaw
+/// holds for a parameter is automation lane points in the project document, so
+/// honouring this call means deleting a user's recorded automation. That write
+/// has to go through the project's own action path to be undoable and to reach
+/// collaborators, and this host has no route to it — the backend cannot reach
+/// the renderer, and a destructive project edit a plugin initiated and the user
+/// cannot undo is worse than one that never happened.
+///
+/// Nothing is recorded either: a flag nobody drains is a leak, and answering the
+/// plugin with silence is the same outcome as answering it with a flag no
+/// control path reads. It is reinstated when the host has a project-side "clear
+/// automation for this parameter" command with undo behind it.
+unsafe extern "C" fn host_params_clear(_host: *const clap_host, _param_id: u32, _flags: u32) {}
 
-unsafe extern "C" fn host_params_request_flush(_host: *const clap_host) {
-    // Plugin wants us to call params.flush() outside of process().
-    // We'll handle this in the next audio callback via a flag.
+/// The plugin has parameter output waiting and is not being handed blocks.
+///
+/// Flag and wake. `flush()` is legal only while the plugin is not processing,
+/// and deciding that plus making the call is the control path's job; this
+/// callback is `[thread-safe]` and may be the audio thread.
+unsafe extern "C" fn host_params_request_flush(host: *const clap_host) {
+    if let Some(state) = host_state(host) {
+        state.request_parameters_flush();
+    }
 }
 
 // ── clap_host_gui extension ────────────────────────────────────────────
@@ -404,6 +529,24 @@ unsafe extern "C" fn host_latency_changed(host: *const clap_host) {
         state.mark_latency_dirty();
     }
     eprintln!("[CLAP Host] Plugin reported a latency change");
+}
+
+// ── clap_host_tail extension ───────────────────────────────────────────
+
+static HOST_TAIL: clap_host_tail = clap_host_tail {
+    changed: Some(host_tail_changed),
+};
+
+/// The plugin reports that its processing tail changed.
+///
+/// Flag and hint, nothing else — and deliberately unlogged. CLAP marks this
+/// callback `[audio-thread]`, so it can be the render thread, where locking
+/// stderr and making a write syscall is a dropout. Re-reading `clap.tail` is the
+/// control path's job.
+unsafe extern "C" fn host_tail_changed(host: *const clap_host) {
+    if let Some(state) = host_state(host) {
+        state.mark_tail_dirty();
+    }
 }
 
 #[cfg(test)]
@@ -512,6 +655,14 @@ mod tests {
             host_request_restart(&host as *const clap_host);
         }
     }
+
+    /// Serialises every test that raises the process-wide flush hint, so one
+    /// test's raise cannot stand in for another's deleted one.
+    static FLUSH_SIGNAL_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    /// Serialises every test that raises the process-wide tail hint, for the
+    /// same reason.
+    static TAIL_SIGNAL_TEST_LOCK: Mutex<()> = Mutex::new(());
 
     /// Arm a state so a resize request can be accepted: an open editor window
     /// and an installed wake, recording what the wake was told.
@@ -720,6 +871,174 @@ mod tests {
         }
     }
 
+    /// The whole of AC-002's first half: the callback used to be a comment. The
+    /// control path can only re-enumerate if the callback records that it must.
+    #[test]
+    fn a_rescan_callback_records_the_ask_and_wakes_the_control_path() {
+        let (state, requests) = state_with_open_editor();
+        let host = host_with_state(&state);
+
+        assert!(!state.take_parameters_rescan(), "flag starts clear");
+        unsafe { host_params_rescan(&host as *const clap_host, 0) };
+
+        assert_eq!(
+            requests.lock().expect("request log").as_slice(),
+            [PluginHostRequest::ParametersRescan]
+        );
+        assert!(state.take_parameters_rescan());
+        assert!(
+            !state.take_parameters_rescan(),
+            "taking the flag clears it, so one ask re-enumerates once"
+        );
+    }
+
+    /// Every CLAP rescan flag is answered by the same full re-enumeration, so a
+    /// plugin that reports only values must arm the control path exactly as one
+    /// that reports everything.
+    #[test]
+    fn a_rescan_is_recorded_whatever_flags_it_carries() {
+        for flags in [0u32, 1, 1 << 3, u32::MAX] {
+            let state = HostCallbackState::default();
+            let host = host_with_state(&state);
+
+            unsafe { host_params_rescan(&host as *const clap_host, flags) };
+
+            assert!(state.take_parameters_rescan(), "flags {flags} were ignored");
+        }
+    }
+
+    /// CLAP marks `request_flush` `[thread-safe]`, so a plugin may raise it from
+    /// inside `process()`. The request-notifier channel every other ask wakes
+    /// copies the instance id onto the heap and takes an allocator lock, which
+    /// on the render thread is a missed device period — so this ask must record
+    /// its flag and raise the wait-free hint, and touch the channel not at all.
+    #[test]
+    fn a_flush_request_records_the_ask_without_waking_the_allocating_channel() {
+        // The flush hint is process-wide, and every other test here that raises
+        // one would otherwise mask a deleted raise in this one.
+        let _guard = FLUSH_SIGNAL_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let (state, requests) = state_with_open_editor();
+        let host = host_with_state(&state);
+        crate::parameter_events::take_pending_parameter_flush_signal();
+
+        assert!(!state.take_parameters_flush(), "flag starts clear");
+        unsafe { host_params_request_flush(&host as *const clap_host) };
+
+        assert!(
+            requests.lock().expect("request log").is_empty(),
+            "a flush request must not send on the channel, which allocates"
+        );
+        assert!(
+            crate::parameter_events::take_pending_parameter_flush_signal(),
+            "the drain thread's wake is the process-wide hint, and nothing else raises it here"
+        );
+        assert!(state.take_parameters_flush());
+        assert!(!state.take_parameters_flush());
+    }
+
+    /// The other asks keep their channel: their callbacks are `[main-thread]` in
+    /// CLAP, where an allocation is ordinary, and the follow-up needs to name
+    /// the instance that made it.
+    #[test]
+    fn the_main_thread_asks_still_wake_the_channel() {
+        let (state, requests) = state_with_open_editor();
+        let host = host_with_state(&state);
+
+        unsafe { host_params_rescan(&host as *const clap_host, 0) };
+
+        assert_eq!(
+            requests.lock().expect("request log").as_slice(),
+            [PluginHostRequest::ParametersRescan]
+        );
+    }
+
+    /// The two asks are separate flags: a rescan must not be consumed by the
+    /// flush follow-up, or a parameter list change would be answered by a flush
+    /// and never re-enumerated.
+    #[test]
+    fn the_rescan_and_flush_flags_do_not_consume_each_other() {
+        let _guard = FLUSH_SIGNAL_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let state = HostCallbackState::default();
+        let host = host_with_state(&state);
+
+        unsafe {
+            host_params_rescan(&host as *const clap_host, 0);
+            host_params_request_flush(&host as *const clap_host);
+        }
+
+        assert!(state.take_parameters_flush());
+        assert!(
+            state.take_parameters_rescan(),
+            "the rescan survives the flush being answered"
+        );
+    }
+
+    /// The flag is the record and the wake is a nudge, so a plugin whose
+    /// instance never got one must still record its ask.
+    #[test]
+    fn the_params_callbacks_record_with_no_wake_installed() {
+        let _guard = FLUSH_SIGNAL_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let state = HostCallbackState::default();
+        let host = host_with_state(&state);
+
+        unsafe {
+            host_params_rescan(&host as *const clap_host, 0);
+            host_params_request_flush(&host as *const clap_host);
+        }
+
+        assert!(state.take_parameters_rescan());
+        assert!(state.take_parameters_flush());
+    }
+
+    #[test]
+    fn the_params_callbacks_tolerate_a_null_host_state() {
+        let _guard = FLUSH_SIGNAL_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let host = create_host_descriptor();
+        assert!(host.host_data.is_null());
+
+        unsafe {
+            host_params_rescan(&host as *const clap_host, 0);
+            host_params_request_flush(&host as *const clap_host);
+            host_params_clear(&host as *const clap_host, 3, 0);
+        }
+    }
+
+    /// `clear` is deliberately deferred, and "deferred" has to mean it records
+    /// nothing: a flag no control path drains is a leak that reads, to the next
+    /// author, like an implemented callback.
+    #[test]
+    fn clear_records_nothing_because_it_is_deferred_rather_than_queued() {
+        let (state, requests) = state_with_open_editor();
+        let host = host_with_state(&state);
+
+        unsafe { host_params_clear(&host as *const clap_host, 3, u32::MAX) };
+
+        assert!(requests.lock().expect("request log").is_empty());
+        assert!(!state.take_parameters_rescan());
+        assert!(!state.take_parameters_flush());
+        assert!(!state.take_state_dirty());
+    }
+
+    #[test]
+    fn get_extension_exposes_the_params_extension_with_every_callback_bound() {
+        unsafe {
+            let ptr = host_get_extension(std::ptr::null(), CLAP_EXT_PARAMS.as_ptr());
+            assert!(!ptr.is_null(), "host advertises clap.params");
+            let ext = &*(ptr as *const clap_host_params);
+            assert!(ext.rescan.is_some());
+            assert!(ext.clear.is_some());
+            assert!(ext.request_flush.is_some());
+        }
+    }
+
     #[test]
     fn get_extension_exposes_the_latency_extension() {
         unsafe {
@@ -728,5 +1047,63 @@ mod tests {
             let ext = &*(ptr as *const clap_host_latency);
             assert!(ext.changed.is_some());
         }
+    }
+
+    /// A plugin only calls `clap_host_tail.changed` if the host answers the
+    /// query for `clap.tail`. Without this the tail flag can never be raised, so
+    /// every tail the host reports is the one read at load and nothing else.
+    #[test]
+    fn get_extension_exposes_the_tail_extension() {
+        unsafe {
+            let ptr = host_get_extension(std::ptr::null(), CLAP_EXT_TAIL.as_ptr());
+            assert!(!ptr.is_null(), "host advertises clap.tail");
+            let ext = &*(ptr as *const clap_host_tail);
+            assert!(ext.changed.is_some());
+        }
+    }
+
+    #[test]
+    fn a_tail_change_callback_raises_the_flag_the_control_path_reads() {
+        let _guard = TAIL_SIGNAL_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let state = HostCallbackState::default();
+        let host = host_with_state(&state);
+
+        assert!(
+            !state.take_tail_dirty(),
+            "nothing is pending before the call"
+        );
+
+        unsafe { host_tail_changed(&host as *const clap_host) };
+
+        assert!(state.take_tail_dirty(), "the callback records the change");
+        assert!(
+            !state.take_tail_dirty(),
+            "the flag is read-and-clear, so one change is answered once"
+        );
+    }
+
+    /// The callback is `[audio-thread]`, so the wake it raises has to be the
+    /// process-wide hint rather than a channel send: a control thread that never
+    /// learns a tail moved re-reads it only by polling every instance.
+    #[test]
+    fn a_tail_change_raises_the_process_wide_hint() {
+        // The tail hint is process-wide, and the callback test above raises one
+        // too; without this its raise would mask a deleted raise here.
+        let _guard = TAIL_SIGNAL_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let state = HostCallbackState::default();
+        let host = host_with_state(&state);
+        take_pending_tail_change_signal();
+
+        unsafe { host_tail_changed(&host as *const clap_host) };
+
+        assert!(take_pending_tail_change_signal(), "the hint is raised");
+        assert!(
+            !take_pending_tail_change_signal(),
+            "the hint is read-and-clear"
+        );
     }
 }

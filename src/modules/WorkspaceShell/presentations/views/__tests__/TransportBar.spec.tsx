@@ -8,6 +8,7 @@ import { useStore } from '#/infra/store/useStore';
 import { voiceInputAvailabilityStore, voiceStatusStore } from '#/modules/AiRuntime/stores';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { togglePlayback } from '#/modules/Transport/useCases';
+import { selectorDeclaring } from '#/styles/testing/mainStylesheetRules';
 
 import { TransportBar } from '../TransportBar';
 
@@ -93,6 +94,7 @@ vi.mock('../Transport/WindowControls', () => ({
 
 const windowChromeMocks = vi.hoisted(() => ({
     frameless: false,
+    windowControlsOverlay: false,
     minimize: vi.fn<() => Promise<void>>(),
     toggleMaximize: vi.fn<() => Promise<boolean>>(),
     close: vi.fn<() => Promise<void>>(),
@@ -103,6 +105,7 @@ const windowChromeMocks = vi.hoisted(() => ({
 vi.mock('#/modules/WorkspaceShell/useCases/windowChrome', () => ({
     windowChromeControls: () => ({
         frameless: windowChromeMocks.frameless,
+        windowControlsOverlay: windowChromeMocks.windowControlsOverlay,
         minimize: windowChromeMocks.minimize,
         toggleMaximize: windowChromeMocks.toggleMaximize,
         close: windowChromeMocks.close,
@@ -122,7 +125,16 @@ vi.mock('#/modules/TimelineEditor/presentations/views', () => ({
 vi.mock('#/modules/Project/presentations/views', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Project/presentations/views')>()),
     RecentProjectsMenu: () => <div data-testid="recent-projects" />,
-    ArrangementSelector: () => <div data-testid="arrangement-selector" />,
+    // Shaped like the inline popups this row really hosts: an open surface that
+    // announces itself by ARIA role, whose rows and labels are plain divs. That
+    // shape is what the row's drag region has to leave clickable.
+    ArrangementSelector: () => (
+        <div data-testid="arrangement-selector">
+            <div role="menu" aria-label="Arrangement menu">
+                <div data-testid="arrangement-menu-label">Arrangements</div>
+            </div>
+        </div>
+    ),
     MissingMediaPanel: () => <div data-testid="missing-media-panel" />,
 }));
 
@@ -142,6 +154,15 @@ vi.mock('#/components/daw/DawInlineHint', () => ({
 let voiceStatus = { isListening: false, transcribing: false };
 let voiceInputAvailable = false;
 
+/*
+ * Taken from `main.css` rather than written out here: the modifier class the row
+ * renders is inert in jsdom, so only the shipped selector can say whether the
+ * window still hands that row to the drag region and insets it past the
+ * platform's own controls.
+ */
+const DRAG_REGION_SELECTOR = selectorDeclaring('app-region', 'drag');
+const TITLEBAR_INSET_SELECTOR = selectorDeclaring('margin-left', 'env(titlebar-area-x, 0px)');
+
 describe('TransportBar', () => {
     beforeEach(() => {
         voiceStatus = { isListening: false, transcribing: false };
@@ -150,6 +171,7 @@ describe('TransportBar', () => {
         voiceRuntimeMocks.toggleVoiceInput.mockClear();
         voiceRuntimeMocks.isVoiceInputAvailable.mockReturnValue(false);
         windowChromeMocks.frameless = false;
+        windowChromeMocks.windowControlsOverlay = false;
         windowChromeMocks.toggleMaximize.mockClear();
         windowChromeMocks.toggleMaximize.mockResolvedValue(true);
         // Reset the hoisted hook return-values to defaults after clearAllMocks.
@@ -190,12 +212,44 @@ describe('TransportBar', () => {
         expect(screen.getByTestId('window-titlebar-region')).toHaveClass('desktop-titlebar-region');
     });
 
+    it('leaves the titlebar row draggable by nothing when the shell runs neither desktop chrome', () => {
+        renderTransportBar();
+
+        const region = screen.getByTestId('window-titlebar-region');
+        expect(region.matches(DRAG_REGION_SELECTOR)).toBe(false);
+        expect(region.matches(TITLEBAR_INSET_SELECTOR)).toBe(false);
+    });
+
     it('marks the titlebar row as the frameless drag region and mounts the window controls', () => {
         windowChromeMocks.frameless = true;
         renderTransportBar();
 
-        expect(screen.getByTestId('window-titlebar-region')).toHaveClass('desktop-titlebar-region--frameless');
+        const region = screen.getByTestId('window-titlebar-region');
+        expect(region).toHaveClass('desktop-titlebar-region--frameless');
+        expect(region.matches(DRAG_REGION_SELECTOR)).toBe(true);
+        // Linux draws its own controls inside the row, so nothing insets it.
+        expect(region.matches(TITLEBAR_INSET_SELECTOR)).toBe(false);
         expect(screen.getByTestId('window-controls')).toBeInTheDocument();
+    });
+
+    it('insets the titlebar row past the overlaid native controls and mounts none of its own', () => {
+        windowChromeMocks.windowControlsOverlay = true;
+        renderTransportBar();
+
+        const region = screen.getByTestId('window-titlebar-region');
+        expect(region.matches(TITLEBAR_INSET_SELECTOR)).toBe(true);
+        expect(region.matches(DRAG_REGION_SELECTOR)).toBe(true);
+        // The traffic lights are the platform's own; the app draws none.
+        expect(screen.queryByTestId('window-controls')).not.toBeInTheDocument();
+    });
+
+    it('leaves a double-click on the overlaid titlebar row to the operating system', () => {
+        windowChromeMocks.windowControlsOverlay = true;
+        renderTransportBar();
+
+        fireEvent.doubleClick(screen.getByTestId('window-titlebar-region'));
+
+        expect(windowChromeMocks.toggleMaximize).not.toHaveBeenCalled();
     });
 
     it('toggles maximize on a double-click on the titlebar row itself', () => {
@@ -212,6 +266,18 @@ describe('TransportBar', () => {
         renderTransportBar();
 
         fireEvent.doubleClick(screen.getByTestId('panel-toggle-button'));
+
+        expect(windowChromeMocks.toggleMaximize).not.toHaveBeenCalled();
+    });
+
+    it('does not toggle maximize when the double-click lands inside an open popup in the row', () => {
+        windowChromeMocks.frameless = true;
+        renderTransportBar();
+
+        // A menu label is a plain div: only the surface around it marks the
+        // click as the menu's rather than the window's, so resizing the window
+        // out from under an open menu is the regression this pins.
+        fireEvent.doubleClick(screen.getByTestId('arrangement-menu-label'));
 
         expect(windowChromeMocks.toggleMaximize).not.toHaveBeenCalled();
     });

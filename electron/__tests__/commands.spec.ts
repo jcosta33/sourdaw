@@ -46,15 +46,20 @@ const addonMethods = (): string[] =>
 /**
  * `#[napi]` items that are shell plumbing, not renderer-invokable commands:
  * the scan-worker process entry point, the engine's constructor and shutdown,
- * and the plugin-window host registration the shell itself performs. Pinned
+ * and the plugin-window host seam the shell itself drives — its registration,
+ * and the answers it needs when the user or the display resizes an editor
+ * window, neither of which the renderer can ask for. Pinned
  * by name so a new addon method lands in the registered set by default and
  * must be triaged here explicitly to escape the exposed/denied partition.
  */
 const ADDON_PLUMBING: ReadonlySet<string> = new Set([
+    'apply_plugin_gui_scale',
     'new',
     'notify_plugin_window_closed',
     'register_plugin_window_host',
+    'resize_plugin_gui',
     'run_plugin_scan_worker',
+    'service_plugin_editor_run_loops',
     'shutdown',
 ]);
 
@@ -152,6 +157,14 @@ describe('the Electron command surface', () => {
         expect(isExposedCommand('__proto__')).toBe(false);
     });
 
+    it('keeps close_all_plugin_guis denied as an exit-cascade command', () => {
+        // Bulk GUI close belongs to the exit cascade's in-process path
+        // (`close_every_plugin_gui`), not the renderer. Pinning by name so a
+        // move onto EXPOSED_COMMANDS fails without updating this assertion.
+        expect(DENIED_COMMANDS).toContain('close_all_plugin_guis');
+        expect(isExposedCommand('close_all_plugin_guis')).toBe(false);
+    });
+
     it('gives a denied command no channel that collides with an exposed one', () => {
         const exposedChannels = new Set(EXPOSED_COMMANDS.map(commandChannel));
 
@@ -220,8 +233,14 @@ describe('addon method naming', () => {
 
         expect(published.has('register_plugin_window_host')).toBe(true);
         expect(published.has('notify_plugin_window_closed')).toBe(true);
+        expect(published.has('service_plugin_editor_run_loops')).toBe(true);
+        expect(published.has('resize_plugin_gui')).toBe(true);
+        expect(published.has('apply_plugin_gui_scale')).toBe(true);
         expect(addonMethodName('register_plugin_window_host')).toBe('registerPluginWindowHost');
         expect(addonMethodName('notify_plugin_window_closed')).toBe('notifyPluginWindowClosed');
+        expect(addonMethodName('service_plugin_editor_run_loops')).toBe('servicePluginEditorRunLoops');
+        expect(addonMethodName('resize_plugin_gui')).toBe('resizePluginGui');
+        expect(addonMethodName('apply_plugin_gui_scale')).toBe('applyPluginGuiScale');
     });
 
     it('translates the shapes the surface actually contains', () => {
@@ -335,7 +354,7 @@ const COMMAND_ARGUMENTS: ReadonlyMap<string, readonly string[]> = new Map([
     ['crumbs_all_sound_off', ['instance_id']],
     ['crumbs_note_off', ['instance_id', 'note']],
     ['crumbs_note_on', ['instance_id', 'note', 'velocity']],
-    ['denoise_audio', ['request']],
+    ['denoise_audio', ['request', 'samples']],
     ['destroy_crumbs', ['instance_id']],
     ['detect_onsets', ['instance_id', 'sample_id', 'algorithm']],
     ['detect_smart_loop_points', ['instance_id', 'sample_id']],
@@ -346,7 +365,6 @@ const COMMAND_ARGUMENTS: ReadonlyMap<string, readonly string[]> = new Map([
     ['get_plugin_parameters', ['instance_id']],
     ['get_plugin_state_bytes', ['instance_id']],
     ['get_waveform_peaks', ['instance_id', 'sample_id', 'level', 'channel']],
-    ['is_plugin_gui_supported', ['instance_id']],
     ['is_scan_path_authorized', ['path']],
     ['list_directory', ['path']],
     ['list_midi_inputs', []],

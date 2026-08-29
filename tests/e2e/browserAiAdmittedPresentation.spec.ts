@@ -36,7 +36,8 @@ test('offers browser model onboarding once a WebGPU device is admitted', async (
     // Vite's cold transform before the launch screen can be observed.
     test.setTimeout(180_000);
     await setupWorkspace(page);
-    await launch_new_project(page);
+    // This leg owns the first hardware/Vite cold compilation.
+    await launch_new_project(page, { firstPaintTimeoutMs: 90_000 });
 
     if (!(await admitsHardwareWebGpu(page, testInfo))) {
         return;
