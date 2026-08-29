@@ -1,4 +1,4 @@
-import { execFileSync, spawn, spawnSync } from 'node:child_process';
+import { execFileSync, spawn, spawnSync, type ChildProcessByStdio } from 'node:child_process';
 import { once } from 'node:events';
 import {
     chmodSync,
@@ -13,6 +13,7 @@ import {
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { createInterface } from 'node:readline';
+import type { Readable, Writable } from 'node:stream';
 
 import { describe, expect, it } from 'vitest';
 import { parseDocument } from 'yaml';
@@ -148,7 +149,7 @@ function deliveryReceiptComment(body: string, id = 'comment-1'): DeliveryReceipt
 }
 
 type LockContender = {
-    child: ReturnType<typeof spawn>;
+    child: ChildProcessByStdio<Writable, Readable, Readable>;
     lines: AsyncIterableIterator<string>;
     stderr: string[];
     closed: Promise<[number | null, NodeJS.Signals | null]>;
@@ -228,7 +229,7 @@ try {
             ['--no-warnings', '--import', tsxImport, '--input-type=module', '--eval', childSource],
             {
                 cwd: repositoryRoot,
-                stdio: ['pipe', 'pipe', 'pipe'],
+                stdio: ['pipe', 'pipe', 'pipe'] as const,
             }
         );
         const stderr: string[] = [];
