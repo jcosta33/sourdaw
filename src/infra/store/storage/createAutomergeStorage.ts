@@ -1241,6 +1241,20 @@ export const createAutomergeStorage = <TData>(
         },
 
         registerInboundSanitizer(sanitize): void {
+            if (mutateCrdt) {
+                // `findAutomergeStorageRawProjectionLosses` asks whether the
+                // projection still contains everything the raw slot held, which
+                // presumes the document carries the store's own shape. An
+                // adapter with `mutateCrdt` owns its wire encoding instead: it
+                // writes a form the store never has — entity maps keyed by id,
+                // tombstones, a schema version — and `fromCrdt` decodes back
+                // out of it. Containment then fails on every such document, and
+                // a permanent false loss holds the project in repair-required.
+                // Detecting real loss here needs the inverse encoding, which
+                // only the adapter has; until it offers one, this slot opts out
+                // rather than reporting a loss it cannot actually observe.
+                return;
+            }
             inboundSanitizersBySlot.set(getInboundSanitizerKey(docId, key), (value) =>
                 sanitize(fromCrdt ? fromCrdt(value as TData) : value)
             );

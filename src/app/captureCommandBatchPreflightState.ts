@@ -430,10 +430,35 @@ function inspectStagedProjectDocument(document: Readonly<Record<string, unknown>
     };
 }
 
-function captureProjectDocumentInspectionState(input: CaptureAgentProjectInspectionStateInput) {
-    const allIds = new Set<string>();
+/**
+ * Duplicate ids across the project, counting each arrangement as its own id
+ * namespace.
+ *
+ * An arrangement snapshot holds a copy of the track state it arranges, so it
+ * repeats the live `tracks` slot's track, clip, alternative and device ids by
+ * design — that shared identity is what makes it an arrangement *of* those
+ * tracks rather than an unrelated set. Scanning the whole document into one
+ * namespace reports every one of those as a duplicate, so any project carrying
+ * an arrangement fails `projectInvariantsValid` permanently, and
+ * `inspectCurrentAgentProjectRepairState` then holds the project in
+ * repair-required: every mutation is refused and every save fails.
+ *
+ * A collision within the live project, or within one snapshot, is still a real
+ * defect and is still reported.
+ */
+function findProjectDuplicateIds(document: Readonly<Record<string, unknown>>): Set<string> {
     const duplicateIds = new Set<string>();
-    findDuplicateIds(input.projectDocument, allIds, duplicateIds, new WeakSet<object>());
+    const { arrangements, ...liveDocument } = document;
+    findDuplicateIds(liveDocument, new Set<string>(), duplicateIds, new WeakSet<object>());
+    const snapshots = asRecord(arrangements)?.arrangements;
+    for (const snapshot of Array.isArray(snapshots) ? snapshots : []) {
+        findDuplicateIds(snapshot, new Set<string>(), duplicateIds, new WeakSet<object>());
+    }
+    return duplicateIds;
+}
+
+function captureProjectDocumentInspectionState(input: CaptureAgentProjectInspectionStateInput) {
+    const duplicateIds = findProjectDuplicateIds(input.projectDocument);
     const inspection = inspectStagedProjectDocument(input.projectDocument);
     return {
         audioGraphValid: inspection.audioGraphValid,
