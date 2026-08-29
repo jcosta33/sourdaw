@@ -1726,7 +1726,10 @@ impl TimelineGraph {
     /// send into a bus that feeds this track is the same loop as routing the
     /// output there. The ready queue is FIFO and sources are enqueued in
     /// insertion order (tracks, then buses), so an acyclic graph without a
-    /// bus → track edge keeps the previous two-phase sequence.
+    /// bus → track edge keeps the previous two-phase sequence. A bus → track
+    /// edge breaks that guarantee: the destination strip must still accept
+    /// input when the bus renders, which an insertion-ordered tracks-then-buses
+    /// walk cannot provide because every track has already run its chain.
     fn rebuild_mix_order(&mut self) -> bool {
         let mut order = std::mem::take(&mut self.mix_order);
         let mut in_degree = std::mem::take(&mut self.mix_in_degree);
