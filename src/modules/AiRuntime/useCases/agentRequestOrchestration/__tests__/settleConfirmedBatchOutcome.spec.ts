@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { createVerifiedBatchReceipt } from '#/modules/Command/useCases';
+
+import { type PendingAppActionConfirmation } from '../../../stores/pendingActionConfirmationStore';
 import { settleConfirmedBatchOutcome } from '../settleConfirmedBatchOutcome';
 
 const mocks = vi.hoisted(() => ({
@@ -51,34 +54,171 @@ vi.mock('../requireSectionRenderManualRepair', () => ({ requireSectionRenderManu
 
 type Input = Parameters<typeof settleConfirmedBatchOutcome>[0];
 
-function createInput(status: Input['batchResult']['status']): Input {
-    return {
-        confirmation: {
-            id: 'confirmation-1',
-            runId: 'run-1',
-            prompt: 'Add an effect',
-            assistantMessageId: 'assistant-1',
-            approvalSnapshot: { actionLabels: ['Approved effect'] },
+type AddDeviceAction = Extract<PendingAppActionConfirmation['actions'][number], { type: 'addDevice' }>;
+
+const addDeviceAction = {
+    type: 'addDevice',
+    payload: {
+        trackId: 'track-a',
+        deviceType: 'builtin-compressor',
+        deviceId: 'device-compressor',
+        expectedDeviceIds: ['device-eq'],
+        expectedFrozen: false,
+    },
+} satisfies AddDeviceAction;
+
+const commandReceipt = {
+    commandId: 'command-1',
+    schemaVersion: 1,
+    applicationAssigned: { ids: [], timestamps: [] },
+} as const;
+
+const batchEnvelope = {
+    schemaVersion: 1,
+    runId: 'run-1',
+    batchId: 'batch-1',
+    projectId: 'project-1',
+    baseRevision: 'revision-1',
+    idempotencyKey: 'idempotency-1',
+    intent: 'Add an effect',
+    mode: 'commit',
+    scope: { targetIds: ['track-a'], targetRanges: [], protectedTargetIds: [], protectedRanges: [] },
+    preconditions: [],
+    commands: [
+        {
+            schemaVersion: 1,
+            commandId: 'command-1',
+            issuedAt: 0,
+            operation: 'addDevice',
+            arguments: addDeviceAction.payload,
+            argumentsDigest: 'digest-1',
+            groupId: 'group-1',
+            dependencyIds: [],
+            reason: 'Add an effect',
+            expectedEffect: 'A compressor is added.',
+            objectReferences: [{ argument: 'trackId', id: 'track-a', scope: 'stable' }],
+            time: [],
+            parameterUnits: [],
+            seed: null,
+            normalizedProjectRevision: 'revision-1',
+            availableDeviceVersions: {},
+            applicationAssignedIds: [],
         },
-        batchResult: {
+    ],
+    postconditions: [],
+    dependencies: [],
+    batchLocalBindings: [],
+    grants: {
+        allowedOperationPrefixes: ['addDevice'],
+        create: false,
+        delete: false,
+        routing: false,
+        tempo: false,
+        master: false,
+        file: false,
+        audioUpload: false,
+        remoteGeneration: false,
+        autoCommit: false,
+    },
+    budgets: {
+        maxCommands: 1,
+        maxCreatedTracks: 0,
+        maxDeletedObjects: 0,
+        maxAffectedTracks: 1,
+        maxAffectedClips: 0,
+        maxAutomationPoints: 0,
+        maxImportedAssets: 0,
+        maxRenderJobs: 0,
+    },
+} satisfies Parameters<typeof createVerifiedBatchReceipt>[0]['envelope'];
+
+function createInput(status: Input['batchResult']['status'], options: { pendingEffect?: boolean } = {}): Input {
+    const warning = status.endsWith('warning') ? 'follow-up warning' : undefined;
+    const receiptWarning = options.pendingEffect ? 'render still pending' : warning;
+    const pendingEffect = options.pendingEffect
+        ? {
+              commandId: 'command-1',
+              kind: 'external-effect' as const,
+              operation: 'addDevice' as const,
+              reason: 'render still pending',
+              remediation: 'manual-repair' as const,
+              state: 'pending' as const,
+          }
+        : undefined;
+    const receipt = createVerifiedBatchReceipt({
+        contentHash: 'content-hash',
+        envelope: batchEnvelope,
+        observedBaseRevision: 'revision-1',
+        resultingRevision: 'revision-1',
+        result: {
             status,
-            warning: status.endsWith('warning') ? 'follow-up warning' : undefined,
-            actions: [{ action: { type: 'addDevice' }, label: 'Generated effect' }],
-            receipt: {
-                batchId: 'batch-1',
-                outcome: 'committed',
-                warnings: [],
-                modelSummary: 'Committed.',
-                pendingEffects: [],
-            },
+            actions: [{ action: addDeviceAction, receipt: commandReceipt }],
+            ...(receiptWarning ? { warning: receiptWarning } : {}),
+            ...(pendingEffect
+                ? {
+                      warningDetails: [
+                          {
+                              kind: 'external-effect' as const,
+                              message: 'render still pending',
+                              commandId: 'command-1',
+                              pendingEffect,
+                          },
+                      ],
+                  }
+                : {}),
         },
+    });
+    const confirmation = {
+        id: 'confirmation-1',
+        runId: 'run-1',
+        prompt: 'Add an effect',
+        assistantMessageId: 'assistant-1',
+        actionLabels: ['Approved effect'],
+        affectedIds: ['track-a'],
+        protectedUnchanged: [],
+        risk: null,
+        executedActions: [],
+        status: 'proposed',
+        error: null,
+        followUpProjectRevision: null,
+        followUpStatus: null,
+        createdAt: 0,
+        resolvedAt: null,
+        kind: 'app_actions',
+        projectRevision: 'revision-1',
+        actions: [addDeviceAction],
+        approvalSnapshot: {
+            actions: [addDeviceAction],
+            actionLabels: ['Approved effect'],
+            protectedUnchanged: [],
+        },
+        executionMode: 'atomic',
+        groupId: 'group-1',
+        groupLabel: 'Effect',
+    } satisfies PendingAppActionConfirmation;
+    const batchResult =
+        status === 'committed-with-warning' || status === 'executed-with-warning'
+            ? {
+                  status,
+                  actions: [{ action: addDeviceAction, label: 'Generated effect', receipt: commandReceipt }],
+                  warning: 'follow-up warning',
+                  receipt,
+              }
+            : {
+                  status,
+                  actions: [{ action: addDeviceAction, label: 'Generated effect', receipt: commandReceipt }],
+                  receipt,
+              };
+    return {
+        confirmation,
+        batchResult,
         groupId: 'group-1',
         committedProjectRevision: 'revision-1',
         trackedLeaseSettlement: { accepted: true, warning: null },
         budgetPersistenceWarning: null,
         canRebindSectionRenderArtifacts: true,
         retainCommittedPendingActionResources: vi.fn(),
-    } as Input;
+    } satisfies Input;
 }
 
 beforeEach(() => {
@@ -145,19 +285,16 @@ describe('settleConfirmedBatchOutcome', () => {
             'assistant-1',
             expect.objectContaining({ ...(warning ? { error: warning } : {}) })
         );
-        expect(mocks.recordReceipt.mock.invocationCallOrder[0]).toBeLessThan(
-            retainResources.mock.invocationCallOrder[0]
-        );
+        const receiptRecordOrder = mocks.recordReceipt.mock.invocationCallOrder[0];
+        const resourceRetainOrder = retainResources.mock.invocationCallOrder[0];
+        if (receiptRecordOrder === undefined || resourceRetainOrder === undefined) {
+            throw new Error('Expected receipt recording and resource transfer to run.');
+        }
+        expect(receiptRecordOrder).toBeLessThan(resourceRetainOrder);
     });
 
     it('returns a durable failure while retaining a committed pending effect', async () => {
-        const input = createInput('committed-with-warning');
-        input.batchResult.receipt = {
-            ...input.batchResult.receipt,
-            outcome: 'partially-committed',
-            warnings: ['render still pending'],
-            pendingEffects: [{ remediation: 'manual-repair' }],
-        };
+        const input = createInput('committed-with-warning', { pendingEffect: true });
         mocks.recordReceipt.mockReturnValue({ warning: null, effectsPending: true });
 
         await expect(settleConfirmedBatchOutcome(input)).resolves.toMatchObject({
