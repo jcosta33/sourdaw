@@ -234,10 +234,8 @@ describe('freezeTrack', () => {
             ],
             selectedTrackId: null,
         });
-        // FX-4 residual — the buffer bakes the chain's latency as it stands now,
-        // so playback must compensate against this value rather than re-reading
-        // a chain that a later plugin-latency change can move underneath it.
-        // Empty withheld list ⇒ identical to today's live figure.
+        // Print already bakes live PDC into clip placement. With nothing to omit,
+        // live and omitted are equal, so the pin is zero — not the live figure.
         vi.mocked(getCompensationDelay).mockReturnValue(0.032);
         vi.mocked(renderTrackOffline).mockResolvedValue({
             sampleRate: 44100,
@@ -251,15 +249,21 @@ describe('freezeTrack', () => {
             throw new Error('expected second updateTrack call');
         }
         const storedTrack = trackStore.value!.tracks[0]!;
-        expect(frozenCall[1](storedTrack).freezeState.compensationSeconds).toBe(0.032);
-        expect(getCompensationDelay).toHaveBeenCalledWith('t1', []);
+        expect(frozenCall[1](storedTrack).freezeState.compensationSeconds).toBe(0);
+        expect(getCompensationDelay).toHaveBeenCalled();
+        expect(
+            vi.mocked(getCompensationDelay).mock.calls.some((call) => {
+                const omitArg = call[1];
+                return omitArg === undefined || (Array.isArray(omitArg) && omitArg.length === 0);
+            })
+        ).toBe(true);
     });
 
     it('pins compensation omitting a non-bypassed external-plugin even when the print withholds nothing', async () => {
         // Live `buildDeviceChain` degrades `external-plugin` with `continue` and an
         // empty entries list — it never sets `releaseWithheld`, so the offline
-        // tally's withheld list stays empty. Freeze must still omit that type
-        // from the pinned compensation figure; otherwise the dry take leads.
+        // tally's withheld list stays empty. When this track is session max,
+        // live is 0 and omitted is L — pin L (issue #2908).
         trackStore.set({
             tracks: [
                 {
@@ -305,8 +309,61 @@ describe('freezeTrack', () => {
         }
         const storedTrack = trackStore.value!.tracks[0]!;
         expect(frozenCall[1](storedTrack).freezeState.compensationSeconds).toBe(0.048);
-        const omitArg = vi.mocked(getCompensationDelay).mock.calls.at(-1)?.[1] ?? [];
-        expect(omitArg).toContain('external-plugin');
+        const omitCall = vi.mocked(getCompensationDelay).mock.calls.find((call) => {
+            const omitArg = call[1];
+            return Array.isArray(omitArg) && omitArg.includes('external-plugin');
+        });
+        expect(omitCall).toBeDefined();
+    });
+
+    it('pins only the unprinted residual when another track owns session max PDC', async () => {
+        // Guitar external-plugin 10ms beside a 50ms linear-phase neighbour.
+        // Live both arrive at 50ms (guitar live C=40ms). Print bakes live C.
+        // Pin must be omitted(50ms) − live(40ms) = 10ms, not the full 50ms.
+        trackStore.set({
+            tracks: [
+                {
+                    id: 't1',
+                    kind: 'audio',
+                    clips: [{ startBeat: 0, endBeat: 4 }],
+                    devices: [
+                        {
+                            id: 'dev-native',
+                            name: 'Plugin',
+                            type: 'external-plugin',
+                            bypassed: false,
+                            parameterValues: {},
+                        },
+                    ],
+                    freezeState: { status: 'unfrozen' },
+                } as any,
+            ],
+            selectedTrackId: null,
+        });
+        vi.mocked(getCompensationDelay).mockImplementation((_trackId, omitDeviceTypes) => {
+            if (omitDeviceTypes?.includes('external-plugin')) {
+                return 0.05;
+            }
+            return 0.04;
+        });
+        vi.mocked(renderTrackOffline).mockResolvedValue({
+            sampleRate: 44100,
+            numberOfChannels: 2,
+            getChannelData: () => new Float32Array([0.5]),
+            length: 1,
+            duration: 1 / 44100,
+            copyFromChannel: vi.fn(),
+            copyToChannel: vi.fn(),
+        });
+
+        await freezeTrack('t1');
+
+        const frozenCall = vi.mocked(updateTrack).mock.calls[1];
+        if (!frozenCall) {
+            throw new Error('expected second updateTrack call');
+        }
+        const storedTrack = trackStore.value!.tracks[0]!;
+        expect(frozenCall[1](storedTrack).freezeState.compensationSeconds).toBeCloseTo(0.01);
     });
 
     it('does not omit a bypassed external-plugin from freeze compensation', async () => {
@@ -330,6 +387,7 @@ describe('freezeTrack', () => {
             ],
             selectedTrackId: null,
         });
+        // Bypassed plugin is not omitted; live and omitted match ⇒ pin 0.
         vi.mocked(getCompensationDelay).mockReturnValue(0.016);
         vi.mocked(renderTrackOffline).mockResolvedValue({
             sampleRate: 44100,
@@ -348,8 +406,8 @@ describe('freezeTrack', () => {
             throw new Error('expected second updateTrack call');
         }
         const storedTrack = trackStore.value!.tracks[0]!;
-        expect(frozenCall[1](storedTrack).freezeState.compensationSeconds).toBe(0.016);
-        expect(getCompensationDelay).toHaveBeenCalledWith('t1', []);
+        expect(frozenCall[1](storedTrack).freezeState.compensationSeconds).toBe(0);
+        expect(getCompensationDelay).toHaveBeenCalled();
     });
 
     it('handles render failure gracefully', async () => {
