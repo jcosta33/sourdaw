@@ -155,6 +155,7 @@ import {
     reconcileVcaRuntimeGain,
     stopPlayback,
     repairRuntimeGraphFromProject,
+    initNativeLiveGraphTransportMapsSync,
 } from '#/modules/Transport/useCases';
 import { updateTunerTelemetry } from '#/modules/Tuner/stores';
 import { setWorkspaceEventBus } from '#/modules/WorkspaceShell/useCases';
@@ -331,8 +332,10 @@ window.addEventListener('beforeunload', handleBeforeUnload);
 // Funnel otherwise-silent fire-and-forget promise rejections into the logger.
 // Disposer is wired to HMR so a hot reload does not stack duplicate handlers.
 const disposeGlobalErrorHandlers = registerGlobalErrorHandlers({ logger });
+const disposeNativeLiveGraphTransportMapsSync = initNativeLiveGraphTransportMapsSync();
 import.meta.hot?.dispose(() => {
     disposeGlobalErrorHandlers();
+    disposeNativeLiveGraphTransportMapsSync();
     window.removeEventListener('beforeunload', handleBeforeUnload);
     disposeYeastRealtimeBridge();
 });

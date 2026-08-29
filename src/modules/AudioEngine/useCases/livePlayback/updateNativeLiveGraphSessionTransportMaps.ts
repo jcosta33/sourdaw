@@ -1,16 +1,18 @@
 /**
- * Replace the transport maps a live native session is following (#3105,
- * D3.c.4a).
+ * Install the arrangement's current projected transport maps on a live native
+ * session (#3105, #3109).
  *
- * The loop region is why this exists, and it is not addressable on its own from
- * here. The graph batch's `set-transport` owns playing and position and nothing
- * else — the transport ownership law in
- * `crates/sourdaw-native/src/commands/graph.rs` — so the region has no command
- * in that batch at all. Its only route is `engine_transport_set_maps`, which
- * emits `SetTransportMaps` and `SetLoopRegion` together in one
+ * The graph batch's `set-transport` owns playing and position and nothing else
+ * — the transport ownership law in
+ * `crates/sourdaw-native/src/commands/graph.rs` — so the loop region has no
+ * command in that batch at all. Its only route is `engine_transport_set_maps`,
+ * which emits `SetTransportMaps` and `SetLoopRegion` together in one
  * `send_graph_batch` (`crates/sourdaw-native/src/commands/engine_transport.rs`).
- * A loop edit therefore re-installs the whole pair, and the tempo and meter
- * halves of it are simply re-stated at the values they already held.
+ * Callers therefore install the whole projected pair: tempo map, meter map, and
+ * loop region as `projectEngineTransportMaps` reads them now. That pair can
+ * change mid-take — a tempo edit, a meter change, a loop gesture, or a CRDT
+ * hydrate — so this write is how the rolling session learns the current maps,
+ * not a restatement of what play already installed.
  *
  * That is affordable exactly where it has to be. Both maps are built on the
  * control thread, and the audio thread only swaps the box in: the one it
@@ -26,14 +28,15 @@
  * because its maps declined. That park exists to keep the *previous* take's
  * tempo map and loop seam unreachable, and this write is precisely what
  * replaces that stale pair — so a parked engine gains correct maps and stays
- * parked, while a rolling one keeps rolling under the region the musician just
- * set. Locating the transport is a different gesture with a different command.
+ * parked, while a rolling one keeps rolling under the maps the arrangement now
+ * holds. Locating the transport is a different gesture with a different
+ * command.
  *
  * ── Ordering ──────────────────────────────────────────────────────────────
  *
  * Queued on the session chain, like every other command that shares this
  * engine. The chain is what orders a maps write against a start's own install
- * and against the next loop edit: a burst of edits must leave the engine
+ * and against the next maps edit: a burst of edits must leave the engine
  * holding the last one *issued*, not the last one whose round trip happened to
  * resolve.
  */

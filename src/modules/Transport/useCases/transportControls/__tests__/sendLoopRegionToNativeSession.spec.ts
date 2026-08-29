@@ -1,24 +1,27 @@
 /**
- * Every loop gesture, against a live native session (#3105).
+ * Loop gestures during playback reach a live native session through the store
+ * observer (#3105, #3109).
  *
  * Driven through the gestures rather than through the helper they share,
  * because the defect this covers was never in a helper — it was in which
- * gestures had one. The live `transportStore` is the subject too, not a double:
- * the region the engine receives is projected from what the gesture committed,
- * so a spec that stubbed the commit would only prove the projection agrees with
- * itself.
+ * writers reached the engine. The live `transportStore` is the subject too, not
+ * a double: the region the engine receives is projected from what the gesture
+ * committed, so a spec that stubbed the commit would only prove the projection
+ * agrees with itself. The observer must be running; without it a store write
+ * alone never sends.
  *
  * `updateNativeLiveGraphSessionTransportMaps` is the double, because it is the
  * boundary the Transport module is allowed to know about. What the session then
  * does with the maps is proven where the session lives.
  */
 
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { defaultTransportState, type TransportState } from '../../../models/TransportState';
 import { tempoMapStore } from '../../../stores/tempoMapStore';
 import { timeSignatureMapStore } from '../../../stores/timeSignatureMapStore';
 import { transportStore } from '../../../stores/transportStore';
+import { initNativeLiveGraphTransportMapsSync } from '../../initNativeLiveGraphTransportMapsSync';
 import { disableLooping } from '../../setLooping';
 import { restoreLoopRegion } from '../restoreLoopRegion';
 import { setLoopEnabled } from '../setLoopEnabled';
@@ -48,6 +51,10 @@ function sentLoopRegion(): unknown {
 /**
  * A transport playing a 120 BPM arrangement with a loop over beats 4 to 8 —
  * two seconds to four on the engine's clock.
+ *
+ * Clears the maps update mock afterwards: installing the fixture itself is a
+ * maps-relevant store write while playing, and the observer fires for that —
+ * the cases below assert only what the gesture under test sent.
  */
 function playingWithLoop(overrides?: Partial<TransportState>): void {
     transportStore.set({
@@ -59,15 +66,27 @@ function playingWithLoop(overrides?: Partial<TransportState>): void {
         loopEnd: 8,
         ...overrides,
     });
+    mocks.updateTransportMaps.mockClear();
+    mocks.logger.debug.mockClear();
+    mocks.logger.warn.mockClear();
 }
 
+let unsubscribe: () => void;
+
 beforeEach(() => {
+    unsubscribe?.();
     mocks.updateTransportMaps.mockReset();
     mocks.updateTransportMaps.mockResolvedValue({ outcome: 'updated' });
     mocks.logger.debug.mockClear();
     mocks.logger.warn.mockClear();
+    transportStore.set({ ...defaultTransportState });
     tempoMapStore.set({ changes: [] });
     timeSignatureMapStore.set({ changes: [] });
+    unsubscribe = initNativeLiveGraphTransportMapsSync();
+});
+
+afterEach(() => {
+    unsubscribe();
 });
 
 describe('loop gestures during playback', () => {
@@ -102,6 +121,7 @@ describe('loop gestures during playback', () => {
                 { id: 'tempo-8', beat: 8, tempo: 60, curve: 'instant' },
             ],
         });
+        mocks.updateTransportMaps.mockClear();
 
         setLoopRegion(8, 12);
 

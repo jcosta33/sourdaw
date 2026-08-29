@@ -466,6 +466,7 @@ vi.mock('#/modules/Transport/useCases', () => ({
     reconcileVcaRuntimeGain: reconcileVcaRuntimeGainMock,
     stopPlayback: noop,
     repairRuntimeGraphFromProject: repairRuntimeGraphFromProjectMock,
+    initNativeLiveGraphTransportMapsSync: vi.fn(() => vi.fn()),
 }));
 
 vi.mock('#/modules/Tuner/stores', () => ({ updateTunerTelemetry: noop }));
@@ -860,10 +861,14 @@ describe('bootstrap', () => {
         );
     });
 
-    it('probes OPFS for RAVE model weights exactly once as a non-blocking boot step', () => {
+    it('probes OPFS for RAVE model weights exactly once as a non-blocking boot step', async () => {
         // Without this call raveStore.models stays empty forever, which would
         // withhold the RAVE palette entries permanently rather than gating them
-        // on real model presence.
+        // on real model presence. Earlier cases re-import bootstrap via
+        // `vi.resetModules`, so count only a fresh boot.
+        initRaveModelsMock.mockClear();
+        vi.resetModules();
+        await import('../bootstrap');
         expect(initRaveModelsMock).toHaveBeenCalledExactlyOnceWith();
     });
 });

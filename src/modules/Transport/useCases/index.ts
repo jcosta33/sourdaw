@@ -8,6 +8,8 @@ export { reconcileVcaGroupRuntimeGain } from './scheduling/applyAutomation/recon
 export { reconcileVcaRuntimeGain } from './scheduling/applyAutomation/reconcileVcaRuntimeGain';
 export { setStopPlaybackCallback } from './playheadScheduler/setStopPlaybackCallback';
 
+export { initNativeLiveGraphTransportMapsSync } from './initNativeLiveGraphTransportMapsSync';
+
 export { disableLooping } from './setLooping';
 
 export { setMasterGain } from './setMasterGain';

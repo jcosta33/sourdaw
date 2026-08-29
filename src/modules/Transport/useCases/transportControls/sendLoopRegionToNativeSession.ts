@@ -1,16 +1,13 @@
 /**
- * Give the rolling native engine the loop region a gesture just committed
- * (#3105, D3.c.4a).
+ * Give a live native session the arrangement's current projected transport maps
+ * (#3105, #3109).
  *
- * Until this existed the region reached the engine only at
- * `startNativeLiveGraphSession`, so an engine that was already rolling kept
- * wrapping at the seam play was pressed with: engage the loop mid-take and it
- * played straight through, drag the brace and it wrapped where the brace used
- * to be, while the Web Audio transport the musician hears honoured the new
- * region immediately. Every loop gesture calls this after its own commit,
- * because the region it sends is read back out of the transport store rather
- * than passed down — one projection of what the transport now says, not a
- * second derivation of what each gesture meant.
+ * Called from `initNativeLiveGraphTransportMapsSync` whenever a maps-relevant
+ * store write lands while the transport is playing — loop fields on
+ * `transportStore`, or a change to `tempoMapStore` / `timeSignatureMapStore`.
+ * The region and maps are read back out of those stores rather than passed
+ * down, so every writer (gesture, tempo use case, CRDT hydrate) shares one
+ * projection of what the transport now says.
  *
  * `projectEngineTransportMaps` is that projection, and reusing it is the point:
  * loop bounds are authored in beats and the engine is addressed in seconds, so
@@ -23,15 +20,15 @@
  * A parked engine renders no frame at all, so its loop seam is unobservable and
  * a write to it buys nothing; the next play re-sends the region with the maps
  * anyway (`startPlayback`). The gate is the transport's own `isPlaying` rather
- * than anything about the engine, because that is the state the gesture just
+ * than anything about the engine, because that is the state the write just
  * happened under.
  *
  * ── Fired, never awaited ──────────────────────────────────────────────────
  *
- * Web Audio is the audible path, so no loop gesture waits on a bridge round
- * trip, exactly as pause and seek do not. A decline is the ordinary answer in a
- * browser build — there is no session to update — and it leaves the transport
- * precisely where it already was.
+ * Web Audio is the audible path, so no store-driven sync waits on a bridge
+ * round trip, exactly as pause and seek do not. A decline is the ordinary
+ * answer in a browser build — there is no session to update — and it leaves
+ * the transport precisely where it already was.
  */
 
 import { logger } from '#/infra/logger/appLogger';
