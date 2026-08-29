@@ -4,6 +4,7 @@ import { type AgentRunScope } from '../../models/AgentRun';
 import { type ProjectContext } from '../../models/ProjectContext';
 import { type WorkflowCapabilityId } from '../../models/WorkflowCapability';
 import { type ArbitraryCommandListEvidence } from '../compileArbitraryCommandList';
+import { getPlannedActionTargetRanges } from '../getPlannedActionTargetRanges';
 
 import { getApplicationProtectedObjects } from './getApplicationProtectedObjects';
 import { getApplicationWorkflowScope } from './getApplicationWorkflowScope';
@@ -19,7 +20,11 @@ function addProtectedTargetIds(scope: AgentRunScope, protectedTargetIds: readonl
     scope.protectedTargetIds = uniqueIds([...scope.protectedTargetIds, ...protectedTargetIds]);
 }
 
-/** Builds scope only from application-resolved command and workflow evidence. */
+/**
+ * Builds scope only from application-resolved command and workflow evidence. Target ranges always
+ * come from the commands this batch compiles, never from a capability restating them, so this scope
+ * and the compiled batch authority cannot describe different beat spans for the same run.
+ */
 export function composeVerifiedProviderProposalScope(input: {
     actions: readonly AppAction[];
     compilerEvidence: ArbitraryCommandListEvidence | undefined;
@@ -27,7 +32,8 @@ export function composeVerifiedProviderProposalScope(input: {
     prompt: string;
     workflowCapabilityId: WorkflowCapabilityId | undefined;
 }): AgentRunScope | undefined {
-    const workflowScope = getApplicationWorkflowScope(input);
+    const targetRanges = getPlannedActionTargetRanges(input.actions);
+    const workflowScope = getApplicationWorkflowScope({ ...input, targetRanges });
     if (workflowScope !== undefined) {
         return workflowScope;
     }
@@ -44,7 +50,7 @@ export function composeVerifiedProviderProposalScope(input: {
 
     const scope: AgentRunScope = {
         targetIds: [...resolvedTargetIds],
-        targetRanges: [],
+        targetRanges,
         protectedTargetIds: applicationProtectedTargetIds,
         protectedRanges: [],
     };
