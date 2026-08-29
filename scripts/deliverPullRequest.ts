@@ -149,17 +149,53 @@ export type PersistedPreparedPostMergeValidation = {
 
 type PersistedDeliveryReceiptAuthorityBase = {
     receiptId: string;
+};
+
+type CurrentPersistedDeliveryReceiptAuthorityBase = PersistedDeliveryReceiptAuthorityBase & {
     receiptBody?: string;
 };
 
+type LegacyPersistedDeliveryReceiptAuthority = PersistedDeliveryReceiptAuthorityBase & {
+    phase: 'legacy';
+};
+
+type CurrentPersistedPreparedDeliveryReceiptAuthority = CurrentPersistedDeliveryReceiptAuthorityBase & {
+    phase: 'prepared';
+    postMergeValidation?: PersistedPreparedPostMergeValidation;
+};
+
+type CurrentPersistedTerminalDeliveryReceiptAuthority = CurrentPersistedDeliveryReceiptAuthorityBase & {
+    phase: 'merge-authorized' | 'terminal';
+};
+
+type CurrentPersistedDeliveryReceiptAuthority =
+    CurrentPersistedPreparedDeliveryReceiptAuthority | CurrentPersistedTerminalDeliveryReceiptAuthority;
+
 export type PersistedDeliveryReceiptAuthority =
-    | (PersistedDeliveryReceiptAuthorityBase & {
-          phase: 'prepared';
-          postMergeValidation?: PersistedPreparedPostMergeValidation;
-      })
-    | (PersistedDeliveryReceiptAuthorityBase & {
-          phase: 'merge-authorized' | 'terminal';
-      });
+    | LegacyPersistedDeliveryReceiptAuthority
+    | CurrentPersistedPreparedDeliveryReceiptAuthority
+    | CurrentPersistedTerminalDeliveryReceiptAuthority;
+
+type StoredLegacyDeliveryReceiptAuthority = {
+    version: 1;
+    receiptId: string;
+};
+
+type StoredCurrentDeliveryReceiptAuthority =
+    | ({ version: 2 } & CurrentPersistedPreparedDeliveryReceiptAuthority)
+    | ({ version: 2 } & CurrentPersistedTerminalDeliveryReceiptAuthority);
+
+type StoredDeliveryReceiptAuthority = StoredLegacyDeliveryReceiptAuthority | StoredCurrentDeliveryReceiptAuthority;
+
+function isCurrentPersistedDeliveryReceiptAuthority(
+    authority: PersistedDeliveryReceiptAuthority
+): authority is CurrentPersistedDeliveryReceiptAuthority {
+    return authority.phase !== 'legacy';
+}
+
+function isMergeCommittedReceiptAuthority(authority: PersistedDeliveryReceiptAuthority): boolean {
+    return authority.phase === 'merge-authorized' || authority.phase === 'terminal';
+}
 
 function validatePullRequest(
     pullRequest: PullRequestSnapshot,
@@ -797,6 +833,9 @@ function samePersistedDeliveryReceiptAuthority(
     left: PersistedDeliveryReceiptAuthority | undefined,
     right: PersistedDeliveryReceiptAuthority
 ): boolean {
+    if (left?.phase === 'legacy' || right.phase === 'legacy') {
+        return left?.phase === right.phase && left?.receiptId === right.receiptId;
+    }
     return (
         left?.phase === right.phase &&
         left?.receiptId === right.receiptId &&
@@ -810,8 +849,11 @@ function samePersistedDeliveryReceiptAuthority(
 
 function mergePersistedDeliveryReceiptAuthority(
     current: PersistedDeliveryReceiptAuthority,
-    next: PersistedDeliveryReceiptAuthority
+    next: CurrentPersistedDeliveryReceiptAuthority
 ): PersistedDeliveryReceiptAuthority {
+    if (current.phase === 'legacy') {
+        return next;
+    }
     if (current.receiptId !== next.receiptId) {
         return next;
     }
@@ -823,13 +865,12 @@ function mergePersistedDeliveryReceiptAuthority(
     if (nextRank > currentRank) {
         return next;
     }
+    const receiptBody = next.receiptBody ?? current.receiptBody;
     if (current.phase === 'prepared' && next.phase === 'prepared') {
         return {
             phase: 'prepared',
             receiptId: current.receiptId,
-            ...(next.receiptBody === undefined && current.receiptBody === undefined
-                ? {}
-                : { receiptBody: next.receiptBody ?? current.receiptBody }),
+            ...(receiptBody === undefined ? {} : { receiptBody }),
             ...(next.postMergeValidation === undefined && current.postMergeValidation === undefined
                 ? {}
                 : { postMergeValidation: next.postMergeValidation ?? current.postMergeValidation }),
@@ -838,9 +879,7 @@ function mergePersistedDeliveryReceiptAuthority(
     return {
         phase: current.phase,
         receiptId: current.receiptId,
-        ...(next.receiptBody === undefined && current.receiptBody === undefined
-            ? {}
-            : { receiptBody: next.receiptBody ?? current.receiptBody }),
+        ...(receiptBody === undefined ? {} : { receiptBody }),
     };
 }
 
@@ -849,7 +888,17 @@ function persistDeliveryReceiptAuthority(
     authority: PersistedDeliveryReceiptAuthority,
     port: DeliveryPort
 ): void {
+    if (!isCurrentPersistedDeliveryReceiptAuthority(authority)) {
+        fail(`PR #${number} delivery receipt authority is malformed`);
+    }
     const current = port.readDeliveryReceiptAuthority(number);
+    if (
+        current !== undefined &&
+        isMergeCommittedReceiptAuthority(current) &&
+        current.receiptId !== authority.receiptId
+    ) {
+        fail(`PR #${number} delivery receipt changed during delivery`);
+    }
     const next = current === undefined ? authority : mergePersistedDeliveryReceiptAuthority(current, authority);
     if (samePersistedDeliveryReceiptAuthority(current, next)) {
         return;
@@ -1046,15 +1095,18 @@ function readPersistedMergedRecoveryReceipt(
     port: DeliveryPort,
     authority: PersistedDeliveryReceiptAuthority
 ): DeliveryReceiptComment {
-    const receipt = readExactDeliveryReceipt(pullRequest, port, authority.receiptId);
-    if (authority.receiptBody !== undefined && receipt.body !== authority.receiptBody) {
-        fail(`PR #${pullRequest.number} delivery receipt changed during recovery`);
+    if (authority.phase === 'legacy') {
+        return readStableMergedRecoveryReceipt(pullRequest, port);
     }
     if (authority.phase === 'prepared') {
         if (authority.postMergeValidation === undefined) {
             fail(`PR #${pullRequest.number} delivery receipt authority is not merge-authorized`);
         }
         validatePostMergeSnapshot(authority.postMergeValidation, pullRequest, pullRequest.number);
+    }
+    const receipt = readExactDeliveryReceipt(pullRequest, port, authority.receiptId);
+    if (authority.receiptBody !== undefined && receipt.body !== authority.receiptBody) {
+        fail(`PR #${pullRequest.number} delivery receipt changed during recovery`);
     }
     return receipt;
 }
@@ -1249,6 +1301,12 @@ function deliverPullRequestWithCiAdmission(
     validateStablePullRequest(initial, finalSnapshot);
     if (finalSnapshot.state === 'MERGED') {
         validateBaseBranch(finalSnapshot);
+        persistPreparedDeliveryReceiptAuthority(
+            number,
+            receipt,
+            port,
+            persistedPreparedPostMergeValidation(finalSnapshot, finalTrackerTarget)
+        );
         const recoveredReceipt = readExactDeliveryReceipt(finalSnapshot, port, receipt.id);
         const recoveredPayload = assertCanonicalDeliveryReceipt(recoveredReceipt, finalSnapshot, receiptPayload);
         validateStableDeliveryReceipt(number, receiptPayload, recoveredPayload);
@@ -1893,7 +1951,7 @@ type DeliveryLockOwner = {
     token: string;
 };
 
-type DeliveryReceiptAuthority = { version: 2 } & PersistedDeliveryReceiptAuthority;
+type DeliveryReceiptAuthority = StoredDeliveryReceiptAuthority;
 
 export type DeliverySerialization = <Value>(
     primaryRoot: string,
@@ -2006,7 +2064,7 @@ function parseDeliveryReceiptAuthority(contents: string, number: number): Delive
         typeof authority.receiptId === 'string' &&
         authority.receiptId !== ''
     ) {
-        return { version: 2, phase: 'prepared', receiptId: authority.receiptId };
+        return { version: 1, receiptId: authority.receiptId };
     }
     const keys = Object.keys(authority);
     if (
@@ -2165,6 +2223,9 @@ function updateDeliveryLockRef(primaryRoot: string, args: string[]): boolean {
 }
 
 function toPersistedDeliveryReceiptAuthority(authority: DeliveryReceiptAuthority): PersistedDeliveryReceiptAuthority {
+    if (authority.version === 1) {
+        return { phase: 'legacy', receiptId: authority.receiptId };
+    }
     return {
         phase: authority.phase,
         receiptId: authority.receiptId,
@@ -2196,13 +2257,16 @@ function writeDeliveryReceiptAuthority(
     number: number,
     authority: PersistedDeliveryReceiptAuthority
 ): void {
+    if (!isCurrentPersistedDeliveryReceiptAuthority(authority)) {
+        fail(`PR #${number} delivery receipt authority is malformed`);
+    }
     if (authority.receiptId === '') {
         fail(`PR #${number} delivery receipt authority is malformed`);
     }
     if (authority.receiptBody !== undefined && authority.receiptBody === '') {
         fail(`PR #${number} delivery receipt authority is malformed`);
     }
-    const stored: DeliveryReceiptAuthority = {
+    const stored: StoredCurrentDeliveryReceiptAuthority = {
         version: 2,
         phase: authority.phase,
         receiptId: authority.receiptId,
