@@ -7,9 +7,9 @@
  * a transport stop would retire instances the transport never owned.
  *
  * The topology is deliberately not torn down either. A stop is not a project
- * close, and rebuilding every strip on the next play would make the play
- * gesture pay for a graph that did not change; the next start applies the
- * current topology over it.
+ * close, and a graph left standing is what the engine holds while the plugin
+ * runtimes on it stay loaded. The next start replaces it whole, so nothing here
+ * has to know what changed while the transport was stopped.
  */
 
 import { nativeLiveGraphSession, queueOnNativeLiveGraphSession } from './nativeLiveGraphSessionState';

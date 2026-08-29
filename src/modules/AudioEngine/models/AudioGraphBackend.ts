@@ -506,6 +506,21 @@ export type AudioGraphCorrelation = RuntimeGraphCorrelation;
 export type AudioGraphCommandBatch = Readonly<{
     schemaVersion: 1;
     correlation?: AudioGraphCorrelation;
+    /**
+     * Whether this batch replaces the backend's graph rather than adding to
+     * it.
+     *
+     * A stateful backend keeps its strips between batches and there is no
+     * remove-strip command, so a producer that rebuilds a whole topology — the
+     * live one rebuilds it every play, because the session drifts between
+     * plays — would otherwise collide with the strip ids it created last time.
+     * Marking the batch makes the replacement the backend's job, and therefore
+     * atomic: nothing is ever observable holding half of each topology.
+     *
+     * A backend that builds a fresh graph for every batch has nothing to
+     * replace and satisfies this by construction.
+     */
+    replaceTopology?: boolean;
     commands: readonly AudioGraphCommand[];
 }>;
 

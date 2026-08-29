@@ -133,6 +133,7 @@ use daw_engine::GraphBatchError;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
+use std::sync::Mutex;
 
 /// Headroom the fader allows above unity, in decibels — the mirror of
 /// `FADER_HEADROOM_DB` in `src/utils/audioLevelLaw.ts`, the definition of
@@ -169,6 +170,18 @@ const FIRST_GRAPH_EFFECT_ID: usize = 2_000_000;
 /// twice over.
 const MAX_OFFLINE_RENDER_FRAMES: usize = 48_000 * 600;
 
+/// The most commands one batch may carry.
+///
+/// The batch arrives from the renderer and sizes two rings that live as long
+/// as the process: `EngineHandle::send_graph_batch` provisions the command
+/// ring from the batch it is handed, and the retirement ring with it. Neither
+/// shrinks again, so an unbounded array is an unbounded resident allocation
+/// bought by one message. The ceiling is what a maximal project genuinely
+/// needs — every strip created, routed, sent, filled with devices and clips —
+/// so it can refuse a hostile batch without ever meeting an honest one.
+const MAX_BATCH_COMMANDS: usize = (MAX_TIMELINE_TRACKS + MAX_TIMELINE_BUSES)
+    * (2 + MAX_TRACK_SENDS + MAX_TRACK_DEVICES + MAX_TRACK_CLIPS);
+
 // ── Wire payloads (hand-maintained mirror of AudioGraphBackend.ts) ─────────
 
 #[derive(Debug, Deserialize)]
@@ -177,6 +190,17 @@ pub struct GraphBatchPayload {
     pub schema_version: u32,
     #[serde(default)]
     pub correlation: Option<Value>,
+    /// Whether this batch **replaces** the graph rather than adding to it.
+    ///
+    /// The live registry lives as long as the process and this surface has no
+    /// remove-strip vocabulary, so a second batch naming the strip ids the
+    /// first one built refuses on every one of them. A producer that rebuilds
+    /// a session's topology per play — the live one does, because topology
+    /// drifts between plays — marks the batch instead: the mapper tears the
+    /// previous topology down inside the same fence, and the batch's own
+    /// commands build against an empty graph.
+    #[serde(default)]
+    pub replace_topology: bool,
     pub commands: Vec<GraphCommandPayload>,
 }
 
@@ -253,8 +277,9 @@ pub struct StripStatePayload {
 }
 
 /// Project truth's `Device`, mirrored. `deviceState` is opaque to this
-/// backend and ignored; a device bound to an externally hosted plugin refuses
-/// in this slice — plugin chain binding is a later D3 slice.
+/// backend and ignored; a device bound to an externally hosted plugin has no
+/// native body in this slice and follows the degradation law in
+/// [`no_native_body`] — plugin chain binding is a later D3 slice.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DevicePayload {
@@ -623,6 +648,66 @@ impl GraphRegistry {
         true
     }
 
+    /// Retire everything this registry built, returning the engine ops that do
+    /// it and leaving the registry holding no strip and no device.
+    ///
+    /// A strip's chain devices are retired before the strip itself:
+    /// [`GraphCommand::RemoveTrack`] leaves a track's effects registered but
+    /// detached, so a topology replaced without this would strand one entry of
+    /// the scheduler's shared effect table per device per play until the table
+    /// is full.
+    ///
+    /// Three things deliberately survive the teardown. The node and effect id
+    /// allocators keep counting, so a rebuilt strip never reuses an id the
+    /// engine has not finished with — `AddTrack` answers a colliding id by
+    /// silently retiring the track it was handed, which would lose a strip with
+    /// no refusal anywhere. `runtime_revision` keeps counting because the
+    /// correlation law is about this registry's history, not its contents. And
+    /// `batches_sent` keeps counting because it numbers fences against the
+    /// engine's own applied count: that stream is not restarting here, only the
+    /// graph it carries.
+    ///
+    /// The queue ledgers do go, with the strips they describe: every stamp they
+    /// hold addresses a node or an effect this teardown removes, and a removed
+    /// node's queue is removed with it.
+    fn take_topology_down(&mut self) -> Vec<GraphCommand> {
+        let mut strips: Vec<&StripEntry> = self.strips.values().collect();
+        // Registry order is a `HashMap`'s, which is not an order at all. Native
+        // id is creation order, so the teardown reads the way the build did.
+        strips.sort_by_key(|entry| entry.native_id);
+
+        let mut ops = Vec::new();
+        for strip in strips {
+            for device_id in &strip.device_ids {
+                let Some(device) = self.devices.get(device_id) else {
+                    continue;
+                };
+                ops.push(match strip.kind {
+                    StripKind::Track => GraphCommand::RemoveTrackDeviceRetired {
+                        track_id: strip.native_id,
+                        effect_id: device.native_effect_id,
+                    },
+                    StripKind::Bus => GraphCommand::RemoveBusDeviceRetired {
+                        bus_id: strip.native_id,
+                        effect_id: device.native_effect_id,
+                    },
+                });
+            }
+            ops.push(match strip.kind {
+                StripKind::Track => GraphCommand::RemoveTrack(strip.native_id),
+                StripKind::Bus => GraphCommand::RemoveBus(strip.native_id),
+            });
+        }
+
+        self.strips.clear();
+        self.devices.clear();
+        self.track_count = 0;
+        self.bus_count = 0;
+        self.automation_pending.clear();
+        self.device_param_pending.clear();
+        ops
+    }
+
     /// Subtract from the ledger exactly what the engine's progress echo
     /// proves has left its fixed queue — never a count, always a per-stamp
     /// proof, because a stamp the ledger's own mirrored cancellations already
@@ -881,6 +966,34 @@ fn push_automation(
     Ok(())
 }
 
+/// Why this device has no body the scheduler can build, or `None` when it has
+/// one.
+///
+/// Both answers are the same fact — nothing native to install — and they are
+/// stated together so they reach the one degradation law that governs it. An
+/// externally hosted plugin belongs here rather than in a refusal of its own:
+/// until chain binding lands it sounds where it already sounds, on the web
+/// path, and a strip mirroring the session's routing has no more to add for it
+/// than it does for a WASM device. Refusing it instead would refuse the whole
+/// batch, which in practice means every project that holds a plugin — most of
+/// them.
+fn no_native_body(device: &DevicePayload) -> Option<String> {
+    if device.external_instance_id.is_some() || device.external_plugin_id.is_some() {
+        return Some(format!(
+            "device '{}' is an externally hosted plugin; plugin chain binding is not part of this \
+             slice",
+            device.id
+        ));
+    }
+    if !device.device_type.eq_ignore_ascii_case("knead") {
+        return Some(format!(
+            "device '{}' of type '{}' has no native realisation",
+            device.id, device.device_type
+        ));
+    }
+    None
+}
+
 /// What one device maps onto natively. The scheduler's only built-in is the
 /// Knead engine; everything else in the project's native-DSP vocabulary is a
 /// WASM device the web runtime realises, with no `daw-engine` body yet.
@@ -895,22 +1008,12 @@ fn map_device(
     sample_rate: f32,
     ops: &mut Vec<GraphCommand>,
 ) -> Result<Option<usize>, String> {
-    if device.external_instance_id.is_some() || device.external_plugin_id.is_some() {
-        return Err(format!(
-            "device '{}' is an externally hosted plugin; plugin chain binding is not part of this \
-             slice",
-            device.id
-        ));
-    }
     if registry.devices.contains_key(&device.id) {
         return Err(format!("device id '{}' is already in a chain", device.id));
     }
-    if !device.device_type.eq_ignore_ascii_case("knead") {
+    if let Some(reason) = no_native_body(device) {
         if contributes_audio {
-            return Err(format!(
-                "device '{}' of type '{}' has no native realisation",
-                device.id, device.device_type
-            ));
+            return Err(reason);
         }
         // A strip built only to keep the routing graph faithful contributes
         // silence by construction, so a device it cannot build degrades:
@@ -1031,8 +1134,21 @@ fn map_batch(
             batch.schema_version
         ));
     }
+    if batch.commands.len() > MAX_BATCH_COMMANDS {
+        return Err(format!(
+            "batch carries {} commands, past the ceiling of {MAX_BATCH_COMMANDS}",
+            batch.commands.len()
+        ));
+    }
 
     let mut ops = Vec::new();
+    // A replacing batch tears the previous topology down inside its own fence,
+    // so the swap is one step for the audio thread: no block renders the old
+    // graph beside the new one, and none renders neither. The ledger is seeded
+    // after the teardown because the teardown clears it.
+    if batch.replace_topology {
+        ops.extend(registry.take_topology_down());
+    }
     let mut touched: Vec<String> = Vec::new();
     let mut refusals: Vec<String> = Vec::new();
     let mut budgets = QueueBudgets::seeded_from(registry);
@@ -2033,12 +2149,64 @@ pub async fn register_timeline_sample(
     Ok(serde_json::json!({ "frames": frames }))
 }
 
+/// Why a slot could not be filled: the mutex guarding it failed (a transport
+/// fault the caller reports as an error), or the constructor refused (a result
+/// the caller reports in its own vocabulary).
+enum SlotStartFailure<E> {
+    Lock(String),
+    Start(E),
+}
+
+/// Fill `slot` if it is empty, running `start` with **no lock held**.
+///
+/// `start` here is `EngineHandle::new`, which spawns a device output stream
+/// and waits on it — up to two five-second startup timeouts on a wedged
+/// device. A mutex held across that wait parks every other claim on the engine
+/// behind it, and the quit cascade claims the engine on the JS thread
+/// (`shutdown.rs`), where parking also stops the shell's force-exit timer from
+/// ever firing: a quit landing inside a slow bootstrap would hang the app for
+/// as long as the bootstrap takes. So the lock is taken twice and briefly —
+/// once to see whether anything is needed, once to install — and never across
+/// the construction.
+///
+/// The window between the two is why the install re-checks rather than
+/// assigning: single-boot is the property that matters, and it must not depend
+/// on a caller's own serialization. A value that lost the race is dropped only
+/// after the guard is released, because releasing a stream blocks exactly like
+/// starting one.
+fn start_into_empty_slot<T, E>(
+    slot: &Mutex<Option<T>>,
+    start: impl FnOnce() -> Result<T, E>,
+) -> Result<(), SlotStartFailure<E>> {
+    let lock_failure = |error: std::sync::PoisonError<_>| {
+        SlotStartFailure::Lock(format!("Failed to lock: {error}"))
+    };
+
+    if slot.lock().map_err(lock_failure)?.is_some() {
+        return Ok(());
+    }
+    let started = start().map_err(SlotStartFailure::Start)?;
+
+    let mut guard = slot.lock().map_err(lock_failure)?;
+    if guard.is_some() {
+        drop(guard);
+        return Ok(());
+    }
+    *guard = Some(started);
+    Ok(())
+}
+
 /// Apply one `AudioGraphCommandBatch` to the live native engine.
 ///
 /// Lazy bootstrap (#1984): the engine starts here, on the first batch, and a
 /// machine where it cannot start gets a `rejected` result whose reason says
 /// so — never a crash and never a silent no-op. The batch is validated whole
 /// against the registry before anything is pushed.
+///
+/// The registry it is validated against outlives every batch, so a caller that
+/// rebuilds a whole topology — every play does — sends a batch marked
+/// `replaceTopology` and the previous one is torn down inside the same fence
+/// ([`GraphRegistry::take_topology_down`]).
 pub async fn apply_graph_commands(batch: Value, state: &AppState) -> Result<Value, String> {
     // A batch that does not even deserialize is a refusal, not a transport
     // error: the contract's one failure vocabulary is the `rejected` result,
@@ -2063,21 +2231,26 @@ pub async fn apply_graph_commands(batch: Value, state: &AppState) -> Result<Valu
         return result_json(&GraphApplyResultPayload::rejected(reason));
     }
 
+    if let Err(failure) = start_into_empty_slot(&state.engine, daw_engine::EngineHandle::new) {
+        return match failure {
+            SlotStartFailure::Lock(error) => Err(format!("Failed to lock engine: {error}")),
+            SlotStartFailure::Start(error) => result_json(&GraphApplyResultPayload::rejected(
+                format!("engine-not-running: {error}"),
+            )),
+        };
+    }
+
     let mut engine_guard = state
         .engine
         .lock()
         .map_err(|error| format!("Failed to lock engine: {error}"))?;
-    if engine_guard.is_none() {
-        match daw_engine::EngineHandle::new() {
-            Ok(handle) => *engine_guard = Some(handle),
-            Err(error) => {
-                return result_json(&GraphApplyResultPayload::rejected(format!(
-                    "engine-not-running: {error}"
-                )))
-            }
-        }
-    }
-    let engine = engine_guard.as_mut().expect("engine started above");
+    // The engine is installed above and only the quit cascade releases one, so
+    // an empty slot here means the process is shutting down under this batch.
+    let Some(engine) = engine_guard.as_mut() else {
+        return result_json(&GraphApplyResultPayload::rejected(
+            "engine-not-running: the engine was released while this batch was admitted".to_string(),
+        ));
+    };
 
     // Admission opens by subtracting what the engine has proven landed since
     // the last batch: the queue ledger releases exactly the stamps the
@@ -2346,6 +2519,7 @@ pub async fn map_graph_batch(
                 let replay = GraphBatchPayload {
                     schema_version: 1,
                     correlation: None,
+                    replace_topology: false,
                     commands: prior_commands,
                 };
                 map_batch(&replay, &mut registry, &samples, sample_rate as f32)
@@ -4057,6 +4231,7 @@ mod tests {
             let batch = GraphBatchPayload {
                 schema_version: 1,
                 correlation: None,
+                replace_topology: false,
                 commands: vec![GraphCommandPayload::WriteDeviceParameter {
                     target: DeviceParameterTargetPayload::DeviceParameter {
                         track_id: track_id.clone(),
@@ -4084,6 +4259,7 @@ mod tests {
         let unknown_batch = GraphBatchPayload {
             schema_version: 1,
             correlation: None,
+            replace_topology: false,
             commands: vec![GraphCommandPayload::WriteDeviceParameter {
                 target: DeviceParameterTargetPayload::DeviceParameter {
                     track_id: track_id.clone(),
@@ -4105,6 +4281,270 @@ mod tests {
         assert!(
             res.unwrap_err().contains("has no native address"),
             "refusal must mention missing native address"
+        );
+    }
+
+    // ── The live producer's batch, against the real mapper ─────────────────
+
+    fn replacing_batch(commands: Value) -> GraphBatchPayload {
+        serde_json::from_value(
+            json!({ "schemaVersion": 1, "replaceTopology": true, "commands": commands }),
+        )
+        .expect("the test batch should deserialize")
+    }
+
+    /// What `projectLiveGraphTopology` builds for a session holding one soloed
+    /// track — carrying a hosted plugin and a built-in — one send bus, and one
+    /// track the solo is gating.
+    fn live_topology_commands() -> Value {
+        json!([
+            {
+                "kind": "create-track-strip",
+                "trackId": "lead",
+                "name": "Lead",
+                "state": { "gain": 0.8, "pan": 0, "muted": false, "soloGated": false, "vcaMultiplier": 1 },
+                "devices": [
+                    { "id": "d-plugin", "name": "Pro-Q", "type": "plugin", "bypassed": false,
+                      "parameterValues": {},
+                      "externalPluginId": "com.fabfilter.proq", "externalInstanceId": "inst-1" },
+                    { "id": "d-knead", "name": "Knead", "type": "knead", "bypassed": false,
+                      "parameterValues": {} }
+                ],
+                "honorMuted": true,
+                "contributesAudio": false
+            },
+            {
+                "kind": "create-track-strip",
+                "trackId": "gated",
+                "name": "Pads",
+                "state": { "gain": 0.7, "pan": 10, "muted": false, "soloGated": true, "vcaMultiplier": 1 },
+                "devices": [],
+                "honorMuted": true,
+                "contributesAudio": false
+            },
+            {
+                "kind": "create-bus-strip",
+                "busId": "verb",
+                "name": "Reverb",
+                "state": { "gain": 0.9, "pan": 0, "muted": false, "soloGated": false, "vcaMultiplier": 1 },
+                "devices": [
+                    { "id": "d-bus-plugin", "name": "Valhalla", "type": "plugin", "bypassed": false,
+                      "parameterValues": {},
+                      "externalPluginId": "com.valhalla.room", "externalInstanceId": "inst-2" }
+                ],
+                "honorMuted": false,
+                "contributesAudio": false
+            },
+            { "kind": "set-track-output", "trackId": "lead", "target": { "kind": "master" } },
+            { "kind": "set-track-output", "trackId": "gated", "target": { "kind": "master" } },
+            { "kind": "set-track-output", "trackId": "verb", "target": { "kind": "master" } },
+            { "kind": "add-send", "trackId": "lead", "busId": "verb", "tap": "post-fader", "level": 0.4 },
+            { "kind": "set-transport", "playing": true, "positionSeconds": 0 }
+        ])
+    }
+
+    /// The acceptance the live producer needs and could not get from its own
+    /// output shape: the batch a play gesture sends must map, and the batch the
+    /// *next* play sends must map against the registry the first one left.
+    ///
+    /// Each of the three refusals this covers was reachable from an ordinary
+    /// session: a hosted plugin anywhere in a chain, a bus built while anything
+    /// is soloed, and simply pressing play twice.
+    #[test]
+    fn a_live_topology_batch_maps_and_maps_again_over_itself() {
+        let samples = sample_pool();
+        let mut registry = GraphRegistry::default();
+
+        let first = map_batch(
+            &replacing_batch(live_topology_commands()),
+            &mut registry,
+            &samples,
+            48_000.0,
+        )
+        .expect("the first play's topology should map");
+        assert_eq!(
+            first
+                .reports
+                .iter()
+                .map(|report| report.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["lead", "gated", "verb"],
+            "every strip the batch created owes a report"
+        );
+        // The hosted plugins degraded; the built-in is the only realized device.
+        assert_eq!(first.reports[0].device_ids, vec!["d-knead".to_string()]);
+        assert_eq!(first.reports[2].device_ids, Vec::<String>::new());
+
+        let second = map_batch(
+            &replacing_batch(live_topology_commands()),
+            &mut registry,
+            &samples,
+            48_000.0,
+        )
+        .expect("a second play must not collide with the first play's strips");
+        assert!(
+            second
+                .ops
+                .iter()
+                .any(|op| matches!(op, GraphCommand::RemoveTrack(_))),
+            "a replacing batch tears the previous topology down"
+        );
+        assert_eq!(registry.track_count, 2);
+        assert_eq!(registry.bus_count, 1);
+    }
+
+    /// A replaced topology must not strand what it built: an effect whose strip
+    /// is removed without it stays registered in the scheduler's shared table,
+    /// detached, for the rest of the process.
+    #[test]
+    fn replacing_a_topology_retires_each_chain_device_before_its_strip() {
+        let samples = sample_pool();
+        let mut registry = GraphRegistry::default();
+        map_batch(
+            &replacing_batch(live_topology_commands()),
+            &mut registry,
+            &samples,
+            48_000.0,
+        )
+        .expect("the first play's topology should map");
+
+        let teardown = registry.take_topology_down();
+
+        let retire_index = teardown
+            .iter()
+            .position(|op| matches!(op, GraphCommand::RemoveTrackDeviceRetired { .. }))
+            .expect("the built device must be retired");
+        let remove_index = teardown
+            .iter()
+            .position(|op| matches!(op, GraphCommand::RemoveTrack(_)))
+            .expect("the strip that held it must be removed");
+        assert!(
+            retire_index < remove_index,
+            "a device is retired while its strip still holds it, not after"
+        );
+        assert!(teardown
+            .iter()
+            .any(|op| matches!(op, GraphCommand::RemoveBus(_))));
+        assert_eq!(registry.track_count, 0);
+        assert_eq!(registry.bus_count, 0);
+        assert!(registry.devices.is_empty());
+    }
+
+    /// The degradation law is about whether the strip can be heard, not about
+    /// what kind of body the device is missing: a strip that contributes audio
+    /// still refuses, because there the missing device is a missing sound.
+    #[test]
+    fn a_hosted_plugin_degrades_on_a_silent_strip_and_refuses_on_a_sounding_one() {
+        let samples = sample_pool();
+        let plugin_strip = |contributes_audio: bool| {
+            json!([{
+                "kind": "create-track-strip",
+                "trackId": "lead",
+                "name": "Lead",
+                "state": strip_state(0.8),
+                "devices": [
+                    { "id": "d-plugin", "name": "Pro-Q", "type": "plugin", "bypassed": false,
+                      "parameterValues": {},
+                      "externalPluginId": "com.fabfilter.proq", "externalInstanceId": "inst-1" }
+                ],
+                "honorMuted": true,
+                "contributesAudio": contributes_audio
+            }])
+        };
+
+        let mut silent_registry = GraphRegistry::default();
+        let degraded = map_batch(
+            &batch(plugin_strip(false)),
+            &mut silent_registry,
+            &samples,
+            48_000.0,
+        )
+        .expect("a strip that contributes no audio degrades what it cannot build");
+        assert_eq!(degraded.reports[0].device_ids, Vec::<String>::new());
+
+        let mut sounding_registry = GraphRegistry::default();
+        let refusal = map_batch(
+            &batch(plugin_strip(true)),
+            &mut sounding_registry,
+            &samples,
+            48_000.0,
+        )
+        .expect_err("a strip that contributes audio must refuse a device it cannot build");
+        assert!(
+            refusal.contains("externally hosted plugin"),
+            "the refusal names why the device has no body, got: {refusal}"
+        );
+    }
+
+    /// The batch sizes rings that live as long as the process, so its length is
+    /// bounded by what a project can hold rather than by what a caller sends.
+    #[test]
+    fn a_batch_past_the_command_ceiling_refuses_whole() {
+        let samples = sample_pool();
+        let commands: Vec<Value> = (0..=MAX_BATCH_COMMANDS)
+            .map(|_| json!({ "kind": "set-transport", "playing": false, "positionSeconds": 0 }))
+            .collect();
+
+        let refusal = map_batch(
+            &batch(json!(commands)),
+            &mut GraphRegistry::default(),
+            &samples,
+            48_000.0,
+        )
+        .expect_err("a batch past the ceiling must refuse");
+        assert!(
+            refusal.contains("past the ceiling"),
+            "the refusal names the ceiling, got: {refusal}"
+        );
+    }
+
+    /// The engine bootstrap must not run under the engine mutex: it waits on a
+    /// device stream, and the quit cascade claims that same mutex on the JS
+    /// thread, where waiting stops the force-exit timer from ever firing.
+    #[test]
+    fn a_slot_is_filled_without_holding_its_lock_across_the_construction() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        let slot: Mutex<Option<&'static str>> = Mutex::new(None);
+        let free_during_construction = AtomicBool::new(false);
+
+        let filled = start_into_empty_slot(&slot, || -> Result<&'static str, String> {
+            // From another thread, because a same-thread `try_lock` against a
+            // lock this thread holds has no defined answer. A held lock fails
+            // this claim, which is the whole assertion.
+            std::thread::scope(|scope| {
+                scope.spawn(|| {
+                    free_during_construction.store(slot.try_lock().is_ok(), Ordering::SeqCst);
+                });
+            });
+            Ok("engine")
+        });
+
+        assert!(filled.is_ok(), "an empty slot should fill");
+        assert!(
+            free_during_construction.load(Ordering::SeqCst),
+            "the slot's lock must be free while its value is being constructed"
+        );
+        assert_eq!(
+            *slot.lock().expect("the slot is not poisoned"),
+            Some("engine")
+        );
+    }
+
+    /// Single boot is a property of the install, not of a caller's own
+    /// serialization: a full slot never constructs a second value.
+    #[test]
+    fn a_full_slot_is_never_constructed_into() {
+        let slot: Mutex<Option<&'static str>> = Mutex::new(Some("already running"));
+
+        let filled = start_into_empty_slot(&slot, || -> Result<&'static str, String> {
+            panic!("a full slot must not construct a second value")
+        });
+
+        assert!(filled.is_ok());
+        assert_eq!(
+            *slot.lock().expect("the slot is not poisoned"),
+            Some("already running")
         );
     }
 }

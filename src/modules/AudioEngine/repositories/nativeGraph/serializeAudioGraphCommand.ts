@@ -116,6 +116,7 @@ export type NativeGraphWireCommand =
 export type NativeGraphWireBatch = Readonly<{
     schemaVersion: 1;
     correlation?: AudioGraphCorrelation;
+    replaceTopology?: boolean;
     commands: readonly NativeGraphWireCommand[];
 }>;
 

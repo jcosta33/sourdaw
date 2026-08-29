@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { logger } from '#/infra/logger/appLogger';
 import { stopAllScheduled, stopNativeLiveGraphSession } from '#/modules/AudioEngine/useCases';
 import { resetMidiState } from '#/modules/MIDI/useCases';
 import { yeastPanic } from '#/modules/Yeast/useCases';
@@ -66,6 +67,30 @@ describe('stopPlayback', () => {
         void stopPlayback();
 
         expect(stopNativeLiveGraphSession).toHaveBeenCalledWith({ positionSeconds: 2 });
+    });
+
+    it('stops the transport whatever the native engine answers, because it is not the audible path', async () => {
+        vi.mocked(getTransportState).mockReturnValue({
+            ...defaultTransportState,
+            isPlaying: true,
+            loopStart: 0,
+            loopEnd: 0,
+            playheadPosition: 5,
+        });
+        vi.mocked(stopNativeLiveGraphSession).mockRejectedValue(new Error('addon crashed'));
+        const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+
+        await stopPlayback();
+
+        expect(stopPlayheadScheduler).toHaveBeenCalled();
+        // The rejection is caught and reported rather than left unhandled: an
+        // addon that cannot answer must not take the transport down with it.
+        await vi.waitFor(() => {
+            expect(warn).toHaveBeenCalledWith(
+                expect.objectContaining({ message: expect.stringContaining('failed to stop') })
+            );
+        });
+        warn.mockRestore();
     });
 
     it('should stop playback and reset playhead when no loop region', () => {

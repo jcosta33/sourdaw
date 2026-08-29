@@ -107,7 +107,13 @@ export function startNativeLiveGraphSession(
         });
 
         const backend = createNativeLiveGraphBackend({ transport: availability.transport });
-        const result = await backend.apply({ schemaVersion: 1, commands });
+        // Every play sends the session's whole topology, so every play replaces
+        // the one before it. The native registry lives as long as the process
+        // and has no remove-strip command, so an additive batch would collide
+        // with its own strip ids the second time; replacing also means topology
+        // the engineer changed between plays actually reaches the engine, rather
+        // than only the transport doing so.
+        const result = await backend.apply({ schemaVersion: 1, replaceTopology: true, commands });
         if (result.application !== 'applied') {
             backend.dispose();
             // Both non-applied outcomes carry a reason: a refusal names the

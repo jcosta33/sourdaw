@@ -34,9 +34,17 @@
  * `contributesAudio` asks whether anything a strip produces can reach the
  * output ({@link AudioGraphCreateTrackStripCommand}). Nothing is scheduled on
  * any strip in this batch, so `false` is literally what is true, and it is the
- * flag that keeps a device the native side cannot build from refusing a batch
- * whose whole purpose is to mirror a topology. The producer that starts
- * scheduling clips is the producer that has to raise it.
+ * flag that keeps a device the native side cannot build — a WASM device, or a
+ * plugin the host still owns — from refusing a batch whose whole purpose is to
+ * mirror a topology. The value is stored per strip and no command edits it, so
+ * the slice that starts scheduling clips raises it the only way it can be
+ * raised: by building the strip again in a replacing batch, which is what every
+ * play already does.
+ *
+ * ── Bus fidelity ──────────────────────────────────────────────────────────
+ *
+ * A native bus strip is a fader over a summing point, so the pan, mute and
+ * solo gate a project bus carries have nowhere to land; see `stripState`.
  */
 
 import { type Track } from '#/modules/Arrangement/stores';
@@ -77,12 +85,24 @@ function stripState(input: {
     vcaMultiplierByTrackId: ReadonlyMap<string, number>;
 }): AudioGraphStripState {
     const { track, soloGatedTrackIds, vcaMultiplierByTrackId } = input;
+    const vcaMultiplier = vcaMultiplierByTrackId.get(track.id) ?? 1;
+    if (track.kind === 'bus') {
+        // A native bus strip is a summing point with a fader: no panner, no
+        // mute gate, no solo gate. Sending it any of the three refuses the
+        // whole batch by name (`bus-pan-unsupported`, `bus-mute-unsupported`,
+        // `bus-solo-gate-unsupported`), which in practice means every session
+        // that has anything soloed. So the state carries what a bus can hold,
+        // and `honorMuted` says outright that this strip does not honour one.
+        // Raising that fidelity is engine work — a bus strip that grows the
+        // gates — never a producer that pretends the state crossed.
+        return { gain: track.gain, pan: 0, muted: track.muted, soloGated: false, vcaMultiplier };
+    }
     return {
         gain: track.gain,
         pan: track.pan,
         muted: track.muted,
         soloGated: soloGatedTrackIds.has(track.id),
-        vcaMultiplier: vcaMultiplierByTrackId.get(track.id) ?? 1,
+        vcaMultiplier,
     };
 }
 
@@ -92,14 +112,13 @@ function createStripCommand(input: { track: Track; state: AudioGraphStripState }
         name: track.name,
         state,
         devices: track.devices,
-        // Live playback always honours a mute the engineer pressed; only an
-        // export chooses otherwise, and only for stems.
-        honorMuted: true,
         contributesAudio: NOTHING_IS_SCHEDULED_YET,
     } as const;
     return track.kind === 'bus'
-        ? { kind: 'create-bus-strip', busId: track.id, ...shared }
-        : { kind: 'create-track-strip', trackId: track.id, ...shared };
+        ? { kind: 'create-bus-strip', busId: track.id, ...shared, honorMuted: false }
+        : // Live playback always honours a mute the engineer pressed; only an
+          // export chooses otherwise, and only for stems.
+          { kind: 'create-track-strip', trackId: track.id, ...shared, honorMuted: true };
 }
 
 function routingCommands(input: {

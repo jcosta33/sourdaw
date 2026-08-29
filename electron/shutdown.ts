@@ -1,12 +1,17 @@
 /**
  * The quit path (REQ-012).
  *
- * Rust drop order is load bearing — the engine's CPAL stream has to be released
- * before the CLAP runtimes it reads — and Node does not reliably run
- * destructors at process exit. So shutdown is explicit: `before-quit` calls the
- * addon's `shutdown()`, which retires discovery, closes every plugin editor and
- * sweeps the retirement vec in that one correct order, and only then does the
- * process end.
+ * Node does not reliably run destructors at process exit, so shutdown is
+ * explicit: `before-quit` calls the addon's `shutdown()`, which retires
+ * discovery, closes every plugin editor, takes engine-owned runtimes out of the
+ * audio graph and sweeps the retirement vec, in that one correct order, and
+ * only then does the process end.
+ *
+ * The cascade does not release the engine's audio stream, and cannot: taking
+ * runtimes out of the graph is something it asks the running engine to do. What
+ * keeps the stream from outliving the CLAP runtimes it reads is Rust drop order
+ * — `AppState` declares the engine before those runtime maps, so the stream is
+ * released first — which the cascade leaves intact rather than performing.
  *
  * The deadline is the other half. A third-party plugin editor that refuses to
  * die must not wedge quit: a musician who asked the app to close and watched

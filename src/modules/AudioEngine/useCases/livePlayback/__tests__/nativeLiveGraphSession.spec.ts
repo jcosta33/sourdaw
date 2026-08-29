@@ -138,6 +138,10 @@ describe('startNativeLiveGraphSession', () => {
 
         expect(result).toMatchObject({ outcome: 'started', runtimeRevision: 1 });
         expect(appliedBatches()).toHaveLength(1);
+        // The native registry outlives every batch and has no remove-strip
+        // command, so a start that did not say it replaces would collide with
+        // its own strip ids on the second play and refuse forever after.
+        expect(appliedBatches()[0]?.replaceTopology).toBe(true);
         expect(appliedBatches()[0]?.commands).toEqual([
             expect.objectContaining({ kind: 'create-track-strip', trackId: 'audio-1' }),
             expect.objectContaining({ kind: 'create-bus-strip', busId: 'bus-1' }),
@@ -213,6 +217,9 @@ describe('stopNativeLiveGraphSession', () => {
         expect(appliedBatches().at(-1)?.commands).toEqual([
             { kind: 'set-transport', playing: false, positionSeconds: 8 },
         ]);
+        // A stop that replaced would tear the graph down and take the plugin
+        // runtimes standing on it with it; a stop is not a project close.
+        expect(appliedBatches().at(-1)?.replaceTopology).toBeUndefined();
     });
 
     it('keeps the session when the engine refuses the stop, so a playing engine stays reachable', async () => {
