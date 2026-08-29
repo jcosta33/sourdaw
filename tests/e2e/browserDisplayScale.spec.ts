@@ -43,13 +43,14 @@ async function setDisplayScale(app: FrameLocator, frame: Frame, scale: number): 
     const slider = dialog.getByRole('slider', { name: 'UI Scale' });
     if (scale === 0.5) {
         await slider.press('Home');
-    } else if (scale === 1) {
+    } else if (scale === 2) {
+        await slider.press('End');
+    } else {
         await slider.press('Home');
-        for (let step = 0; step < 10; step += 1) {
+        const steps = Math.round((scale - 0.5) / 0.05);
+        for (let step = 0; step < steps; step += 1) {
             await slider.press('ArrowRight');
         }
-    } else {
-        await slider.press('End');
     }
     await expect(slider).toHaveAttribute('aria-valuenow', String(scale * 100));
     await expect.poll(async () => frame.evaluate(() => window.innerWidth)).toBe(Math.round(VIEWPORT.width / scale));
@@ -291,8 +292,10 @@ async function expectExportUsable(page: Page, app: FrameLocator): Promise<void> 
     await expect(dialog).toHaveCount(0);
 }
 
-test('browser display scale preserves viewport geometry and interactions at 50%, 100%, and 200%', async ({ page }) => {
-    test.setTimeout(120_000);
+test('browser display scale preserves viewport geometry and interactions at 50%, 100%, 125%, and 200%', async ({
+    page,
+}) => {
+    test.setTimeout(160_000);
     await page.setViewportSize(VIEWPORT);
     const alphaDismissed = superjsonStringify(true);
     await page.addInitScript((dismissed) => {
@@ -319,7 +322,7 @@ test('browser display scale preserves viewport geometry and interactions at 50%,
     await expect(page.getByTestId('app-shell')).toHaveCount(0);
     await expect(app.getByTestId('app-shell')).toHaveCount(1);
 
-    for (const scale of [0.5, 1, 2]) {
+    for (const scale of [0.5, 1, 1.25, 2]) {
         const preferences = await setDisplayScale(app, frame, scale);
         await expectPreferencesUsable(app, preferences, scale);
         await expectFrameGeometry(page, frame, scale);

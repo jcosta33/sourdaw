@@ -3,7 +3,29 @@ import { useEffect, useState, type ReactElement } from 'react';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+import { applyDisplayScale } from '../../../useCases/applyDisplayScale';
 import { WorkspaceMobileGate } from '../WorkspaceMobileGate';
+
+const displayScaleMocks = vi.hoisted(() => ({
+    listeners: new Set<() => void>(),
+    preferences: { current: { uiScale: 1 } },
+}));
+
+vi.mock('#/modules/Preferences/stores', () => ({
+    preferencesStore: {
+        get value() {
+            return displayScaleMocks.preferences.current;
+        },
+        subscribe(listener: () => void) {
+            displayScaleMocks.listeners.add(listener);
+            return () => {
+                displayScaleMocks.listeners.delete(listener);
+            };
+        },
+    },
+}));
+
+vi.mock('../../../useCases/applyDisplayScale', () => ({ applyDisplayScale: vi.fn() }));
 
 const MOBILE_BREAKPOINT = 768;
 
@@ -81,6 +103,9 @@ describe('WorkspaceMobileGate', () => {
     beforeEach(() => {
         mediaSubscriptions = [];
         childMounted.mockClear();
+        displayScaleMocks.listeners.clear();
+        displayScaleMocks.preferences.current = { uiScale: 1 };
+        vi.mocked(applyDisplayScale).mockReset();
     });
 
     afterEach(() => {
@@ -96,6 +121,29 @@ describe('WorkspaceMobileGate', () => {
                 <ShellProbe />
             </WorkspaceMobileGate>
         );
+
+        expect(screen.getByTestId('shell-probe')).toBeInTheDocument();
+        expect(childMounted).toHaveBeenCalledTimes(1);
+    });
+
+    it('latches the unscaled desktop viewport before reapplying a stored 200% scale', () => {
+        setViewportWidth(1440);
+        displayScaleMocks.preferences.current = { uiScale: 2 };
+        vi.mocked(applyDisplayScale).mockImplementation((scale) => {
+            setViewportWidth(1440 / scale);
+        });
+
+        render(
+            <WorkspaceMobileGate>
+                <ShellProbe />
+            </WorkspaceMobileGate>
+        );
+
+        expect(applyDisplayScale).toHaveBeenCalledWith(2);
+        expect(window.innerWidth).toBe(720);
+        expect(screen.getByTestId('shell-probe')).toBeInTheDocument();
+
+        resizeViewportTo(720);
 
         expect(screen.getByTestId('shell-probe')).toBeInTheDocument();
         expect(childMounted).toHaveBeenCalledTimes(1);

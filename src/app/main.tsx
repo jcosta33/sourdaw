@@ -3,8 +3,9 @@ import { reloadApplication } from './reloadApplication';
 import { resolveAppComposition } from './resolveAppComposition';
 
 const root = document.getElementById('root')!;
+const hasDesktopBridge = 'sourdaw' in window;
 const composition = resolveAppComposition({
-    hasDesktopBridge: 'sourdaw' in window,
+    hasDesktopBridge,
     isDevelopment: import.meta.env.DEV,
     isTopLevel: window.parent === window,
     protocol: window.location.protocol,
@@ -13,6 +14,11 @@ const composition = resolveAppComposition({
 });
 
 async function renderApplication(): Promise<void> {
+    if (hasDesktopBridge) {
+        const { resetDisplayScaleForStartup } = await import('#/modules/WorkspaceShell/useCases');
+        await resetDisplayScaleForStartup();
+    }
+
     const [, , { createRoot }, { App }] = await Promise.all([
         import('./bootstrap'),
         import('#/styles/main.css'),

@@ -1,6 +1,7 @@
 import { type ReactElement, type ReactNode } from 'react';
 
 import { MobileGate } from '../components/MobileGate';
+import { useDisplayScaleSynchronization } from '../hooks/useDisplayScaleSynchronization';
 
 type WorkspaceMobileGateProps = {
     children: ReactNode;
@@ -17,7 +18,13 @@ type WorkspaceMobileGateProps = {
  * unsupported. Widening past the breakpoint mounts the shell and boots normally; because
  * the gate now owns the shell's mount rather than just its output, `MobileGate`'s
  * viewport check is one-way — see the note on `useIsMobile`.
+ *
+ * Display-scale synchronization also belongs here, outside the gated child. Its effect
+ * runs after `MobileGate`'s first render has classified the reset, unscaled desktop
+ * viewport, then reapplies the stored preference without making AppShell responsible
+ * for the capability that determines whether AppShell can mount.
  */
 export const WorkspaceMobileGate = ({ children }: WorkspaceMobileGateProps): ReactElement => {
+    useDisplayScaleSynchronization();
     return <MobileGate>{children}</MobileGate>;
 };

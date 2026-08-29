@@ -53,7 +53,7 @@ describe('updatePreferences', () => {
         expect(setSoloMode).toHaveBeenCalledWith('pfl');
     });
 
-    it.each([0.5, 2])('should preserve a supported UI scale of %s', (uiScale) => {
+    it.each([0.5, 1.25, 2])('should preserve a supported UI scale of %s', (uiScale) => {
         updatePreferences({ patch: { uiScale } });
 
         expect(preferencesStore.trySet).toHaveBeenCalledWith({

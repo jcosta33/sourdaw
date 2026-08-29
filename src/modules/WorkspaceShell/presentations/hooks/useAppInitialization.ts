@@ -17,8 +17,6 @@ import { registerProSynthInstruments } from '#/modules/Synth/useCases';
 import { ensureTrackStrips, getTransportState } from '#/modules/Transport/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
-import { applyDisplayScale } from '../../useCases/applyDisplayScale';
-
 const FIRST_LOAD_HINT_KEY = 'wd:first-load-hint-shown';
 const FIRST_LOAD_HINT_DELAY_MS = 3000;
 
@@ -185,16 +183,6 @@ export const useAppInitialization = (): void => {
             }
             unsubscribe();
         };
-    }, []);
-
-    useEffect(() => {
-        const syncDisplayScale = (): void => {
-            const scale = preferencesStore.value?.uiScale ?? 1.0;
-            applyDisplayScale(scale);
-        };
-
-        syncDisplayScale();
-        return preferencesStore.subscribe(syncDisplayScale);
     }, []);
 
     useEffect(() => {

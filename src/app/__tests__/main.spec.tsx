@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
     mountBrowserDisplayScaleHost: vi.fn(),
     reloadApplication: vi.fn(),
     render: vi.fn(),
+    resetDisplayScaleForStartup: vi.fn(),
     resolveAppComposition: vi.fn(),
 }));
 
@@ -28,6 +29,10 @@ vi.mock('../resolveAppComposition', () => ({
 
 vi.mock('../reloadApplication', () => ({ reloadApplication: mocks.reloadApplication }));
 
+vi.mock('#/modules/WorkspaceShell/useCases', () => ({
+    resetDisplayScaleForStartup: mocks.resetDisplayScaleForStartup,
+}));
+
 vi.mock('../App', () => ({ App: () => null }));
 
 vi.mock('react-dom/client', () => ({
@@ -47,21 +52,60 @@ describe('app main composition', () => {
     it('mounts only the browser viewport host in the top-level browser document', async () => {
         await import('../main');
 
-        expect(mocks.resolveAppComposition).toHaveBeenCalledWith(
-            expect.objectContaining({ protocol: window.location.protocol, userAgent: navigator.userAgent })
-        );
+        expect(mocks.resolveAppComposition).toHaveBeenCalledWith({
+            hasDesktopBridge: false,
+            isDevelopment: import.meta.env.DEV,
+            isTopLevel: window.parent === window,
+            protocol: window.location.protocol,
+            userAgent: navigator.userAgent,
+            windowName: '',
+        });
         expect(mocks.mountBrowserDisplayScaleHost).toHaveBeenCalledWith(document.getElementById('root'));
         expect(mocks.bootstrap).not.toHaveBeenCalled();
         expect(mocks.render).not.toHaveBeenCalled();
     });
 
     it('initializes the application directly in a desktop renderer', async () => {
+        Reflect.set(window, 'sourdaw', {});
+        mocks.resolveAppComposition.mockReturnValue('application');
+        let finishReset: (() => void) | undefined;
+        mocks.resetDisplayScaleForStartup.mockReturnValueOnce(
+            new Promise<void>((resolve) => {
+                finishReset = resolve;
+            })
+        );
+
+        const mainImport = import('../main');
+
+        await vi.waitFor(() => expect(mocks.resetDisplayScaleForStartup).toHaveBeenCalledOnce());
+        expect(mocks.bootstrap).not.toHaveBeenCalled();
+        expect(mocks.render).not.toHaveBeenCalled();
+        if (finishReset === undefined) {
+            throw new Error('Display scale reset did not expose its completion');
+        }
+        finishReset();
+        await mainImport;
+
+        await vi.waitFor(() => expect(mocks.bootstrap).toHaveBeenCalledOnce());
+        await vi.waitFor(() => expect(mocks.render).toHaveBeenCalledOnce());
+        const resetCallOrder = mocks.resetDisplayScaleForStartup.mock.invocationCallOrder[0];
+        const renderCallOrder = mocks.render.mock.invocationCallOrder[0];
+        expect(resetCallOrder).toBeDefined();
+        expect(renderCallOrder).toBeDefined();
+        if (resetCallOrder === undefined || renderCallOrder === undefined) {
+            throw new Error('Display scale reset or application render did not run');
+        }
+        expect(resetCallOrder).toBeLessThan(renderCallOrder);
+        expect(mocks.mountBrowserDisplayScaleHost).not.toHaveBeenCalled();
+    });
+
+    it('does not run the native startup reset for a browser child application', async () => {
         mocks.resolveAppComposition.mockReturnValue('application');
 
         await import('../main');
 
-        await vi.waitFor(() => expect(mocks.bootstrap).toHaveBeenCalledOnce());
         await vi.waitFor(() => expect(mocks.render).toHaveBeenCalledOnce());
+        expect(mocks.resetDisplayScaleForStartup).not.toHaveBeenCalled();
         expect(mocks.mountBrowserDisplayScaleHost).not.toHaveBeenCalled();
     });
 
@@ -81,6 +125,7 @@ describe('app main composition', () => {
         startupError.props.onReload();
 
         expect(mocks.reloadApplication).toHaveBeenCalledWith(window.location);
+        expect(mocks.resetDisplayScaleForStartup).not.toHaveBeenCalled();
         expect(mocks.bootstrap).not.toHaveBeenCalled();
         expect(mocks.mountBrowserDisplayScaleHost).not.toHaveBeenCalled();
     });
