@@ -1,0 +1,24 @@
+src/styles/base.css
+  s_ae074277795b45::t_a4b22d4aae9e25 21,35,41
+src/styles/testing/__tests__/mainStylesheetRules.spec.ts
+  s_ae074277795b45::t_55ffb6f989439c 8-9,13-27
+  s_ae074277795b45::t_30ce4ab9726261 10-12
+src/styles/main.css
+  s_ae074277795b45::t_bf0284d9cd8199 686,700,706
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "0b7630f88bb33a98cbea828ea62a63b857894a68",
+  "prompts": {},
+  "sessions": {
+    "s_ae074277795b45": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04ab5-5234-7100-be1c-76ebfaba88d3",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
