@@ -11,6 +11,7 @@ import {
     refreshPendingActionConfirmationApproval,
     type PendingAppActionConfirmation,
 } from '../../stores/pendingActionConfirmationStore';
+import { hasExactAgentCommandBatchAuthority } from '../../validators/hasExactAgentCommandBatchAuthority';
 import { compileAgentRiskApproval } from '../compileAgentRiskApproval';
 
 import { admitCommittedSectionRenderRetry } from './admitCommittedSectionRenderRetry';
@@ -60,7 +61,9 @@ function hasSameAdmissionBinding(
         current.status === admitted.status &&
         current.projectRevision === admitted.projectRevision &&
         currentBatch?.serialized === admittedBatch?.serialized &&
-        JSON.stringify(currentBatch?.authority) === JSON.stringify(admittedBatch?.authority)
+        (currentBatch === undefined ||
+            admittedBatch === undefined ||
+            hasExactAgentCommandBatchAuthority(currentBatch.authority, admittedBatch.authority))
     );
 }
 
