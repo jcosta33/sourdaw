@@ -322,6 +322,10 @@ mod tests {
         destroyed: Mutex<Vec<String>>,
     }
 
+    /// The default: this fake has no thread of its own, so editor calls run on
+    /// whichever thread the cascade is already on.
+    impl crate::host::ui_thread::UiThread for OrderRecordingHost {}
+
     impl PluginWindowHost for OrderRecordingHost {
         fn window_exists(&self, _label: &str) -> bool {
             true

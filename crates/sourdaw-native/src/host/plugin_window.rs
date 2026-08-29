@@ -7,6 +7,11 @@
 //! bookkeeping and the close/hide/show decisions belong to the command body and
 //! stay in this crate.
 //!
+//! The seam carries the shell's UI thread as well as its windows
+//! ([`crate::host::ui_thread::UiThread`]), because they are the same thing: a
+//! window may only be touched from the thread that made it, and so may the
+//! plugin editor drawn into it.
+//!
 //! No method here may be called from the audio thread — every one of them
 //! reaches the platform's window server.
 
@@ -14,6 +19,8 @@ use std::ffi::c_void;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use raw_window_handle::RawWindowHandle;
+
+use crate::host::ui_thread::UiThread;
 
 /// Label the shell gives the DAW's own window.
 ///
@@ -183,6 +190,12 @@ pub trait PluginEditorWindow: Send + Sync {
     fn native_handle_ptr(&self) -> Result<*mut c_void, String>;
 
     /// Resize to the plugin's preferred editor size, in logical units.
+    ///
+    /// Returns only once the window has taken the size. A plugin mid-handshake
+    /// is told the size it was granted the instant this returns — VST3 states
+    /// that order outright, and an editor told it before its window changed
+    /// lays itself out against the old one — so an implementation that queued
+    /// the resize would have to answer for a size the window has not taken yet.
     fn set_size(&self, width: u32, height: u32);
 
     /// The display scale this window was created at.
@@ -206,8 +219,9 @@ pub trait PluginEditorWindow: Send + Sync {
     fn destroy(&self);
 }
 
-/// Creates and addresses the native windows plugin editors are drawn into.
-pub trait PluginWindowHost: Send + Sync {
+/// Creates and addresses the native windows plugin editors are drawn into, and
+/// is the thread they live on.
+pub trait PluginWindowHost: UiThread {
     /// Whether a window with this label already exists.
     fn window_exists(&self, label: &str) -> bool;
 
@@ -253,6 +267,10 @@ pub trait PluginWindowHost: Send + Sync {
 /// Creation fails rather than silently succeeding — an editor that reports
 /// itself open with no window behind it is worse than one that refuses.
 pub struct NoWindowHost;
+
+/// No shell, so no thread of its own: the defaults run editor calls where the
+/// caller stands, which is the only thread there is.
+impl UiThread for NoWindowHost {}
 
 impl PluginWindowHost for NoWindowHost {
     fn window_exists(&self, _label: &str) -> bool {

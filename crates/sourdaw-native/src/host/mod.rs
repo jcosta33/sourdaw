@@ -8,6 +8,7 @@ pub mod plugin_scan_worker;
 pub mod plugin_window;
 pub mod process_refusal_reporter;
 pub mod tail_watcher;
+pub mod ui_thread;
 
 use crate::host::native_bridge::SharedHostedPlugin;
 use crate::state::EnginePluginInstanceData;
