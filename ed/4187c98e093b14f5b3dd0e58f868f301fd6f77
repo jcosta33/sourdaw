@@ -1,0 +1,19 @@
+src/components/daw/__tests__/LatchButton.spec.tsx
+  s_ae074277795b45::t_341e46fe88e362 6-40,63-67,78-82
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "ed4187c98e093b14f5b3dd0e58f868f301fd6f77",
+  "prompts": {},
+  "sessions": {
+    "s_ae074277795b45": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04ab5-5234-7100-be1c-76ebfaba88d3",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
