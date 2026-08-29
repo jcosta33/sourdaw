@@ -802,26 +802,105 @@ function provenDeliveryReceiptComments(
 ): DeliveryReceiptComment[] {
     const comments = port.deliveryReceipts(pullRequest.number);
     assertCompleteDeliveryReceiptProof(pullRequest.number, comments, port.deliveryReceiptProof(pullRequest.number));
+    for (const comment of comments) {
+        if (
+            isAuthorBotNodeId(comment.authorNodeId) &&
+            comment.authorType === 'Bot' &&
+            comment.createdAt !== comment.updatedAt
+        ) {
+            fail(`PR #${pullRequest.number} delivery receipt authority cannot be proven`);
+        }
+    }
     return comments;
 }
 
-function uniqueLogicalDeliveryReceiptAuthorities(
+function newestCanonicalDeliveryReceiptForKey(
     lineage: DeliveryReceiptComment[],
+    key: string,
     pullRequest: Pick<PullRequestSnapshot, 'number' | 'headRefOid'>
-): DeliveryReceiptComment[] {
-    const unique: Array<{ comment: DeliveryReceiptComment; payload: DeliveryReceiptPayload }> = [];
+): DeliveryReceiptComment {
+    let newestLegacyReceipt: DeliveryReceiptComment | undefined;
     for (let index = lineage.length - 1; index >= 0; index -= 1) {
         const comment = lineage[index];
         if (comment === undefined) {
             continue;
         }
         const payload = assertDeliveryReceiptForHead(comment, pullRequest);
-        if (unique.some((entry) => sameExactDeliveryReceipt(entry.payload, payload))) {
+        if (deliveryReceiptKey(payload) !== key) {
             continue;
         }
-        unique.push({ comment, payload });
+        if (payload.schemaVersion !== 1) {
+            return comment;
+        }
+        newestLegacyReceipt ??= comment;
     }
-    return unique.map((entry) => entry.comment);
+    if (newestLegacyReceipt !== undefined) {
+        return newestLegacyReceipt;
+    }
+    fail(`PR #${pullRequest.number} delivery receipt authority cannot be proven`);
+    throw new Error('unreachable');
+}
+
+function uniqueLogicalDeliveryReceiptAuthorities(
+    lineage: DeliveryReceiptComment[],
+    pullRequest: Pick<PullRequestSnapshot, 'number' | 'headRefOid'>
+): DeliveryReceiptComment[] {
+    const unique: DeliveryReceiptComment[] = [];
+    const seenKeys = new Set<string>();
+    for (let index = lineage.length - 1; index >= 0; index -= 1) {
+        const comment = lineage[index];
+        if (comment === undefined) {
+            continue;
+        }
+        const payload = assertDeliveryReceiptForHead(comment, pullRequest);
+        const key = deliveryReceiptKey(payload);
+        if (seenKeys.has(key)) {
+            continue;
+        }
+        seenKeys.add(key);
+        unique.push(newestCanonicalDeliveryReceiptForKey(lineage, key, pullRequest));
+    }
+    return unique;
+}
+
+function readStrictStableEquivalentDeliveryReceipt(
+    pullRequest: PullRequestSnapshot,
+    port: DeliveryPort,
+    expected: DeliveryReceiptPayload
+): DeliveryReceiptComment | undefined {
+    const firstLineage = orderedDeliveryReceiptLineage(provenDeliveryReceiptComments(pullRequest, port), pullRequest);
+    const first = authoritativeEquivalentDeliveryReceipt(firstLineage, expected, pullRequest);
+    const secondLineage = orderedDeliveryReceiptLineage(provenDeliveryReceiptComments(pullRequest, port), pullRequest);
+    const second = authoritativeEquivalentDeliveryReceipt(secondLineage, expected, pullRequest);
+    if (first === undefined || second === undefined) {
+        if (first === undefined && second === undefined) {
+            return undefined;
+        }
+        fail(`PR #${pullRequest.number} delivery receipt changed during delivery`);
+    }
+    if (first.id !== second.id) {
+        fail(`PR #${pullRequest.number} delivery receipt changed during delivery`);
+    }
+    return second;
+}
+
+function tryStableHistoricalDeliveryReceipt(
+    pullRequest: PullRequestSnapshot,
+    port: DeliveryPort,
+    expected: DeliveryReceiptPayload
+): DeliveryReceiptComment | undefined {
+    try {
+        return readStrictStableEquivalentDeliveryReceipt(pullRequest, port, expected);
+    } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        if (
+            /delivery receipt authority cannot be proven/u.test(detail) ||
+            /delivery receipt changed during delivery/u.test(detail)
+        ) {
+            return undefined;
+        }
+        throw error;
+    }
 }
 
 function readStableMergedRecoveryReceipt(pullRequest: PullRequestSnapshot, port: DeliveryPort): DeliveryReceiptComment {
@@ -876,28 +955,18 @@ function ensureDeliveryReceipt(
     const existing = orderedDeliveryReceiptLineage(port.deliveryReceipts(pullRequest.number), pullRequest);
     const knownReceiptIds = new Set(existing.map((receipt) => receipt.id));
     const historical = authoritativeEquivalentDeliveryReceipt(existing, expected, pullRequest);
-    const refreshedLineage =
-        historical === undefined
-            ? undefined
-            : orderedDeliveryReceiptLineage(port.deliveryReceipts(pullRequest.number), pullRequest);
-    for (const receipt of refreshedLineage ?? []) {
-        knownReceiptIds.add(receipt.id);
-    }
-    const refreshed =
-        refreshedLineage === undefined
-            ? undefined
-            : authoritativeEquivalentDeliveryReceipt(refreshedLineage, expected, pullRequest);
     let receipt =
-        historical !== undefined && refreshed !== undefined && refreshed.id !== historical.id ? refreshed : undefined;
+        historical === undefined ? undefined : tryStableHistoricalDeliveryReceipt(pullRequest, port, expected);
     if (receipt === undefined) {
         try {
             receipt = port.addDeliveryReceipt(pullRequest.number, expectedBody);
         } catch (error) {
-            const recovered = authoritativeEquivalentDeliveryReceipt(
-                orderedDeliveryReceiptLineage(port.deliveryReceipts(pullRequest.number), pullRequest),
-                expected,
-                pullRequest
-            );
+            let recovered: DeliveryReceiptComment | undefined;
+            try {
+                recovered = readStrictStableEquivalentDeliveryReceipt(pullRequest, port, expected);
+            } catch {
+                throw error;
+            }
             if (recovered === undefined || knownReceiptIds.has(recovered.id)) {
                 throw error;
             }
@@ -908,11 +977,12 @@ function ensureDeliveryReceipt(
         fail(`PR #${pullRequest.number} delivery receipt was not durably verified`);
     }
     assertCanonicalDeliveryReceipt(receipt, pullRequest, expected);
-    const verified = authoritativeEquivalentDeliveryReceipt(
-        orderedDeliveryReceiptLineage(port.deliveryReceipts(pullRequest.number), pullRequest),
-        expected,
-        pullRequest
-    );
+    let verified: DeliveryReceiptComment | undefined;
+    try {
+        verified = readStrictStableEquivalentDeliveryReceipt(pullRequest, port, expected);
+    } catch {
+        fail(`PR #${pullRequest.number} delivery receipt was not durably verified`);
+    }
     if (
         verified === undefined ||
         verified.id !== receipt.id ||

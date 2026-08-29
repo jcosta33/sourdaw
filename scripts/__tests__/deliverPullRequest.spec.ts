@@ -146,6 +146,20 @@ function stackedDeliveryPort(finalSettings: MergeSettings) {
             if (joined.includes('mergedBy{__typename')) {
                 return shellMergedByGraphql({ __typename: 'Bot', id: AUTHOR_BOT_NODE_ID });
             }
+            if (joined.includes('comments(last:1){totalCount nodes{id}}')) {
+                return JSON.stringify({
+                    data: {
+                        repository: {
+                            pullRequest: {
+                                comments: {
+                                    totalCount: deliveryReceipt === undefined ? 0 : 1,
+                                    nodes: deliveryReceipt === undefined ? [] : [{ id: deliveryReceipt.id }],
+                                },
+                            },
+                        },
+                    },
+                });
+            }
             if (joined.includes('query=')) {
                 return JSON.stringify({
                     data: {
@@ -730,7 +744,7 @@ describe('pull-request delivery', () => {
 
         deliverPullRequest(42, port, tracker);
 
-        expect(calls.filter((call) => call === 'receipts:42')).toHaveLength(3);
+        expect(calls.filter((call) => call === 'receipts:42')).toHaveLength(4);
         expect(calls.filter((call) => call === 'review:42:head')).toHaveLength(1);
         expect(calls).not.toContain('merge:42:head');
         expect(calls).toContain('retarget:43:main');
@@ -840,7 +854,7 @@ describe('pull-request delivery', () => {
         deliverPullRequest(42, port, tracker);
 
         expect(calls.filter((call) => call === 'review:42:head')).toHaveLength(1);
-        expect(calls.filter((call) => call === 'receipts:42')).toHaveLength(3);
+        expect(calls.filter((call) => call === 'receipts:42')).toHaveLength(4);
         expect(calls).not.toContain('merge:42:head');
         expect(calls).toContain('retarget:43:main');
         expect(calls).toContain('complete:2372');
@@ -1041,7 +1055,9 @@ describe('pull-request delivery', () => {
             return structuredClone(receipts.slice(0, 1));
         };
 
-        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/delivery receipt authority cannot be proven/i);
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(
+            /delivery receipt authority cannot be proven|delivery receipt changed during recovery/i
+        );
         expect(calls).not.toContain('retarget:43:main');
         expect(calls.filter((call) => call.startsWith('complete:'))).toHaveLength(0);
         expect(calls).not.toContain('receipt-authority:write:terminal:IC_historical_x');
@@ -1110,6 +1126,40 @@ describe('pull-request delivery', () => {
         expect(calls).toContain('receipt-authority:write:terminal:IC_v1_b');
     });
 
+    it('recovers one logical authority from compatible legacy v1 then visible v2 receipts when the complete lineage is proven', () => {
+        const closes = relationshipBody('Closes #2372');
+        const legacyReceipt = {
+            id: 'IC_v1_legacy',
+            body: deliveryReceiptBody(42, 'head', closes, 2372),
+            authorNodeId: AUTHOR_BOT_NODE_ID,
+            authorLogin: 'renamed-author[bot]',
+            authorType: 'Bot',
+            createdAt: '2026-08-21T00:00:00Z',
+            updatedAt: '2026-08-21T00:00:00Z',
+        };
+        const visibleReceipt = {
+            id: 'IC_v2_visible',
+            body: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'),
+            authorNodeId: AUTHOR_BOT_NODE_ID,
+            authorLogin: 'renamed-author[bot]',
+            authorType: 'Bot',
+            createdAt: '2026-08-21T00:00:01Z',
+            updatedAt: '2026-08-21T00:00:01Z',
+        };
+        const { port, calls, tracker } = fakePort({
+            primary: [pullRequest({ state: 'MERGED', body: relationshipBody('None.') })],
+            dependentSets: [[]],
+            receipts: [legacyReceipt, visibleReceipt],
+            deliveryReceiptProof: { totalCount: 2, latestCommentId: 'IC_v2_visible' },
+        });
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls.filter((call) => call.startsWith('complete:'))).toEqual(['complete:2372']);
+        expect(calls).toContain('receipt-authority:write:merge-authorized:IC_v2_visible');
+        expect(calls).toContain('receipt-authority:write:terminal:IC_v2_visible');
+    });
+
     it('recovers a single legacy v1 receipt after the merged pull-request body drifts to None when completeness is proven', () => {
         const closes = relationshipBody('Closes #2372');
         const { port, calls, tracker } = fakePort({
@@ -1133,6 +1183,39 @@ describe('pull-request delivery', () => {
 
         expect(calls.filter((call) => call.startsWith('complete:'))).toEqual(['complete:2372']);
         expect(calls).toContain('receipt-authority:write:terminal:IC_v1_only');
+    });
+
+    it('fails closed when a proven merged lineage contains an edited author-App comment whose receipt marker was erased', () => {
+        const closes = relationshipBody('Closes #2372');
+        const validReceipt = {
+            id: 'IC_valid_receipt',
+            body: deliveryReceiptBody(42, 'head', closes, 2372),
+            authorNodeId: AUTHOR_BOT_NODE_ID,
+            authorLogin: 'renamed-author[bot]',
+            authorType: 'Bot',
+            createdAt: '2026-08-21T00:00:00Z',
+            updatedAt: '2026-08-21T00:00:00Z',
+        };
+        const editedErasedReceipt = {
+            id: 'IC_edited_erased_receipt',
+            body: 'ordinary follow-up text after an edit',
+            authorNodeId: AUTHOR_BOT_NODE_ID,
+            authorLogin: 'renamed-author[bot]',
+            authorType: 'Bot',
+            createdAt: '2026-08-21T00:00:01Z',
+            updatedAt: '2026-08-21T00:00:02Z',
+        };
+        const { port, calls, tracker } = fakePort({
+            primary: [pullRequest({ state: 'MERGED', body: relationshipBody('None.') })],
+            dependentSets: [[]],
+            receipts: [validReceipt, editedErasedReceipt],
+            deliveryReceiptProof: { totalCount: 2, latestCommentId: 'IC_edited_erased_receipt' },
+        });
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/delivery receipt authority cannot be proven/i);
+        expect(calls.filter((call) => call.startsWith('complete:'))).toHaveLength(0);
+        expect(calls.filter((call) => call.startsWith('retarget:'))).toHaveLength(0);
+        expect(calls.filter((call) => call.startsWith('receipt-authority:write:'))).toHaveLength(0);
     });
 
     it('publishes and verifies a fresh X when two pre-merge stale listings both hide newer Y', () => {
@@ -1502,6 +1585,104 @@ describe('pull-request delivery', () => {
         expect(calls).toContain('PR #42 was already merged; repaired 0 remaining dependent(s)');
     });
 
+    it('reuses a stable current visible v2 receipt when proof shows the historical authority is complete and current', () => {
+        const closes = relationshipBody('Closes #2372');
+        const currentReceipt = {
+            id: 'IC_current_visible_v2',
+            body: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'),
+            authorNodeId: AUTHOR_BOT_NODE_ID,
+            authorLogin: 'renamed-author[bot]',
+            authorType: 'Bot',
+            createdAt: '2026-08-21T00:00:00Z',
+            updatedAt: '2026-08-21T00:00:00Z',
+        };
+        const { port, calls, tracker } = fakePort({
+            primary: [pullRequest({ body: closes }), pullRequest({ body: closes })],
+            dependentSets: [[]],
+            receipts: [currentReceipt],
+            deliveryReceiptProof: { totalCount: 1, latestCommentId: 'IC_current_visible_v2' },
+        });
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(0);
+        expect(calls).toContain('merge:42:head');
+        expect(calls).toContain('complete:2372');
+    });
+
+    it('appends a new current receipt instead of reusing a stale X when proof shows a hidden newer Y', () => {
+        const bodyX = relationshipBody('Closes #2372');
+        const bodyY = relationshipBody('Closes #2373');
+        const receipt = (
+            id: string,
+            body: string,
+            closingIssue: number,
+            createdAt: string
+        ): DeliveryReceiptComment => ({
+            id,
+            body: deliveryReceiptBody(42, 'head', body, closingIssue),
+            authorNodeId: AUTHOR_BOT_NODE_ID,
+            authorLogin: 'renamed-author[bot]',
+            authorType: 'Bot',
+            createdAt,
+            updatedAt: createdAt,
+        });
+        const { port, calls, receipts, tracker } = fakePort({
+            primary: [pullRequest({ body: bodyX }), pullRequest({ body: bodyX })],
+            dependentSets: [[]],
+            receipts: [
+                receipt('IC_historical_x', bodyX, 2372, '2026-08-21T00:00:00.000Z'),
+                receipt('IC_hidden_y', bodyY, 2373, '2026-08-21T00:00:01.000Z'),
+            ],
+        });
+        let receiptReads = 0;
+        const originalDeliveryReceipts = port.deliveryReceipts;
+        port.deliveryReceipts = (number) => {
+            receiptReads += 1;
+            calls.push(`receipts:${number}`);
+            if (receiptReads <= 2) {
+                return structuredClone(receipts.slice(0, 1));
+            }
+            return originalDeliveryReceipts(number);
+        };
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/delivery receipt was not durably verified/i);
+        expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(1);
+        expect(receipts.at(-1)?.id).toBe('IC_delivery_42_3');
+        expect(receipts.at(-1)?.body).toBe(visibleDeliveryReceiptBody(42, 'head', bodyX, 2372, 'successful'));
+        expect(calls).not.toContain('merge:42:head');
+        expect(calls).not.toContain('complete:2372');
+        expect(calls.filter((call) => call === 'complete:2373')).toHaveLength(0);
+    });
+
+    it('fails safely when proof never establishes a complete current authority for an open historical receipt', () => {
+        const closes = relationshipBody('Closes #2372');
+        const currentReceipt = {
+            id: 'IC_current_visible_v2',
+            body: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'),
+            authorNodeId: AUTHOR_BOT_NODE_ID,
+            authorLogin: 'renamed-author[bot]',
+            authorType: 'Bot',
+            createdAt: '2026-08-21T00:00:00Z',
+            updatedAt: '2026-08-21T00:00:00Z',
+        };
+        const { port, calls, receipts, tracker } = fakePort({
+            primary: [pullRequest({ body: closes }), pullRequest({ body: closes })],
+            dependentSets: [[]],
+            receipts: [currentReceipt],
+            deliveryReceiptProof: { totalCount: 2, latestCommentId: 'IC_hidden_newer' },
+        });
+        port.deliveryReceipts = (number) => {
+            calls.push(`receipts:${number}`);
+            return structuredClone(receipts.slice(0, 1));
+        };
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/delivery receipt was not durably verified/i);
+        expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(1);
+        expect(calls).not.toContain('merge:42:head');
+        expect(calls.filter((call) => call.startsWith('complete:'))).toHaveLength(0);
+    });
+
     it('ignores foreign comments before parsing delivery receipts', () => {
         const closes = relationshipBody('Closes #2372');
         const { port, calls, tracker } = fakePort({
@@ -1653,7 +1834,7 @@ describe('pull-request delivery', () => {
 
         expect(calls).toContain('merge:42:head');
         expect(calls).toContain('complete:2372');
-        expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(1);
+        expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(0);
     });
 
     it('appends current v2 authority after mixed failed v2 and trailing v1 lineage', () => {
@@ -3170,6 +3351,108 @@ describe('delivery shell boundary', () => {
         ]);
     });
 
+    it('reads complete shellPort receipt comments and proof exactly, while leaving ordinary and foreign comments non-authoritative', () => {
+        const captures: Array<{ command: string; args: string[] }> = [];
+        const comment = (
+            id: string,
+            receiptBody: string,
+            author: { nodeId: string | null; login: string; type: string }
+        ) => ({
+            node_id: id,
+            body: receiptBody,
+            user: { node_id: author.nodeId, login: author.login, type: author.type },
+            created_at: '2026-08-21T00:00:00Z',
+            updated_at: '2026-08-21T00:00:00Z',
+        });
+        const port = shellPort('jcosta33/sourdaw', {
+            capture: (_command, args) => {
+                captures.push({ command: 'gh', args });
+                const joined = args.join(' ');
+                if (joined.includes('issues/42/comments?per_page=100')) {
+                    return JSON.stringify([
+                        [
+                            comment('IC_author_note', 'ordinary note', {
+                                nodeId: AUTHOR_BOT_NODE_ID,
+                                login: 'renamed-author[bot]',
+                                type: 'Bot',
+                            }),
+                            comment(
+                                'IC_foreign_copy',
+                                deliveryReceiptBody(42, 'head', relationshipBody('Closes #2372'), 2372),
+                                {
+                                    nodeId: null,
+                                    login: 'jcosta33',
+                                    type: 'User',
+                                }
+                            ),
+                        ],
+                        [
+                            comment(
+                                'IC_receipt',
+                                visibleDeliveryReceiptBody(
+                                    42,
+                                    'head',
+                                    relationshipBody('Closes #2372'),
+                                    2372,
+                                    'successful'
+                                ),
+                                {
+                                    nodeId: AUTHOR_BOT_NODE_ID,
+                                    login: 'renamed-author[bot]',
+                                    type: 'Bot',
+                                }
+                            ),
+                        ],
+                    ]);
+                }
+                if (joined.includes('comments(last:1){totalCount nodes{id}}')) {
+                    return JSON.stringify({
+                        data: {
+                            repository: {
+                                pullRequest: {
+                                    comments: {
+                                        totalCount: 3,
+                                        nodes: [{ id: 'IC_receipt' }],
+                                    },
+                                },
+                            },
+                        },
+                    });
+                }
+                throw new Error(`unexpected capture: ${joined}`);
+            },
+            run: () => undefined,
+        });
+
+        expect(port.deliveryReceipts(42).map(({ id }) => id)).toEqual([
+            'IC_author_note',
+            'IC_foreign_copy',
+            'IC_receipt',
+        ]);
+        expect(port.deliveryReceiptProof(42)).toEqual({ totalCount: 3, latestCommentId: 'IC_receipt' });
+        expect(captures).toEqual([
+            {
+                command: 'gh',
+                args: ['api', '--paginate', '--slurp', 'repos/jcosta33/sourdaw/issues/42/comments?per_page=100'],
+            },
+            {
+                command: 'gh',
+                args: [
+                    'api',
+                    'graphql',
+                    '-f',
+                    'query=query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){comments(last:1){totalCount nodes{id}}}}}',
+                    '-f',
+                    'owner=jcosta33',
+                    '-f',
+                    'name=sourdaw',
+                    '-F',
+                    'number=42',
+                ],
+            },
+        ]);
+    });
+
     it.each([
         {
             merger: 'foreign',
@@ -3286,6 +3569,63 @@ describe('delivery shell boundary', () => {
             'api --paginate --slurp repos/jcosta33/sourdaw/issues/42/comments?per_page=100',
         ]);
         expect(effects).toEqual(['complete:2373']);
+    });
+
+    it('fails shellPort merged recovery when comment count or latest-id proof does not match the REST lineage', () => {
+        const bodyX = relationshipBody('Closes #2372');
+        const effects: string[] = [];
+        const captures: string[] = [];
+        const port = shellPort('jcosta33/sourdaw', {
+            capture: (_command, args) => {
+                const joined = args.join(' ');
+                captures.push(joined);
+                if (joined.includes('pr view')) {
+                    return JSON.stringify(
+                        shellPullRequest(pullRequest({ state: 'MERGED', body: relationshipBody('None.') }))
+                    );
+                }
+                if (joined.includes('mergedBy{__typename')) {
+                    return shellMergedByGraphql({ __typename: 'Bot', id: AUTHOR_BOT_NODE_ID });
+                }
+                if (joined.includes('issues/42/comments?per_page=100')) {
+                    return JSON.stringify([
+                        [
+                            {
+                                node_id: 'IC_x',
+                                body: deliveryReceiptBody(42, 'head', bodyX, 2372),
+                                user: { node_id: AUTHOR_BOT_NODE_ID, login: 'renamed-author[bot]', type: 'Bot' },
+                                created_at: '2026-08-21T00:00:00Z',
+                                updated_at: '2026-08-21T00:00:00Z',
+                            },
+                        ],
+                    ]);
+                }
+                if (joined.includes('comments(last:1){totalCount nodes{id}}')) {
+                    return JSON.stringify({
+                        data: {
+                            repository: {
+                                pullRequest: {
+                                    comments: {
+                                        totalCount: 2,
+                                        nodes: [{ id: 'IC_hidden_y' }],
+                                    },
+                                },
+                            },
+                        },
+                    });
+                }
+                effects.push(`capture:${joined}`);
+                throw new Error(`unexpected capture: ${joined}`);
+            },
+            run: () => undefined,
+        });
+
+        expect(() =>
+            deliverPullRequest(42, port, {
+                complete: (issue) => effects.push(`complete:${issue}`),
+            })
+        ).toThrow(/delivery receipt authority cannot be proven|delivery receipt changed during recovery/i);
+        expect(effects).toEqual([]);
     });
 
     /**
