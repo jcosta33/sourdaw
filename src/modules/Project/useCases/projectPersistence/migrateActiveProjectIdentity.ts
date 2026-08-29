@@ -53,8 +53,25 @@ async function persistIdentityMigration({
     }
 
     const current = projectStore.value;
-    if (current?.identityMigrationPending && current.projectId === candidateProjectId) {
-        projectStore.set({ ...current, identityMigrationPending: false });
+
+    // What this seam owes its caller is a canonical identity in the projection,
+    // not this attempt's authorship of it. A concurrent migration deriving the
+    // same deterministic candidate, or a collaboration host forcing its own
+    // identity into `projectMeta`, reaches the same destination; asking whether
+    // *this* write is still the visible one reports a fatal save failure over a
+    // project that is fully migrated.
+    //
+    // `readSettledProjectId` is the same contract for a persisted snapshot, but
+    // it also demands `initialized: true`. This seam runs inside `loadProject`
+    // and inside a save that precedes it, while the project is still loading, so
+    // the condition is stated directly here: canonical, and not left pending.
+    if (current && isCanonicalProjectId(current.projectId)) {
+        if (current.identityMigrationPending && !isSuperseded()) {
+            // Nothing else is in flight to publish the identity now standing in
+            // the projection, so settling it is this attempt's job whether or
+            // not the id is the one it minted.
+            projectStore.set({ ...current, identityMigrationPending: false });
+        }
         return true;
     }
 
@@ -64,13 +81,13 @@ async function persistIdentityMigration({
         return true;
     }
 
-    // Nothing superseded this migration, yet the candidate is gone from the
-    // projection: the store write was discarded while persistence was in
-    // flight — an ambient action transaction aborted it, or a document-origin
-    // projection rebased over it. The project still carries its legacy
-    // identity, so reporting success here hands `saveProject` a projection
-    // `buildProjectData` refuses, and the user sees a save fail against a
-    // snapshot error that never names identity.
+    // Nothing superseded this migration, and the projection carries no
+    // canonical identity at all: the store write was discarded while
+    // persistence was in flight — an ambient action transaction aborted it, or
+    // a document-origin projection rebased over it. The project still carries
+    // its legacy identity, so reporting success here hands `saveProject` a
+    // projection `buildProjectData` refuses, and the user sees a save fail
+    // against a snapshot error that never names identity.
     throw new Error('[migrateActiveProjectIdentity] Minted project identity did not survive persistence');
 }
 
