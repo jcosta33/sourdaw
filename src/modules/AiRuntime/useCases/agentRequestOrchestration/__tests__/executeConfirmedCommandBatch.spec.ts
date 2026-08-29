@@ -125,6 +125,20 @@ const receipt = createVerifiedBatchReceipt({
 });
 const completedBatchResult = { status: 'committed' as const, actions: [], receipt };
 
+function createNonDurableReceipt(status: 'no-op' | 'cancelled' | 'ambiguous' | 'failed') {
+    return createVerifiedBatchReceipt({
+        contentHash: `receipt-${status}`,
+        envelope: parsedBatch.envelope,
+        observedBaseRevision: 'revision-1',
+        resultingRevision: 'revision-2',
+        result: {
+            status,
+            actions: [],
+            reason: `The prior batch was ${status}.`,
+        },
+    });
+}
+
 const confirmation = {
     id: 'confirmation-1',
     runId: 'run-1',
@@ -380,10 +394,24 @@ describe('executeConfirmedCommandBatch', () => {
         expect(mocks.retainCommitted).not.toHaveBeenCalled();
     });
 
-    it('should retain committed resources when verified receipt recovery throws', async () => {
-        mocks.executeBatch.mockRejectedValue(new Error('pending-effect continuation failed'));
+    it.each([
+        {
+            name: 'resource preparation rejects before replay completes',
+            configure: () =>
+                mocks.prepareResourceLease.mockRejectedValue(new Error('pending-effect continuation failed')),
+            recoveringPendingEffects: false,
+        },
+        {
+            name: 'the command executor rejects during pending-effect recovery',
+            configure: () => mocks.executeBatch.mockRejectedValue(new Error('pending-effect continuation failed')),
+            recoveringPendingEffects: true,
+        },
+    ])('should retain durable receipt resources when $name', async ({ configure, recoveringPendingEffects }) => {
+        const releaseCancellation = vi.fn();
+        mocks.bindCancellation.mockReturnValue(releaseCancellation);
+        configure();
 
-        const result = await execute({ priorVerifiedBatchReceipt: receipt, recoveringPendingEffects: true });
+        const result = await execute({ priorVerifiedBatchReceipt: receipt, recoveringPendingEffects });
 
         expect(result).toMatchObject({ status: 'recovery-failed' });
         expect(mocks.retainCommitted).toHaveBeenCalledWith('confirmation-1');
@@ -398,5 +426,40 @@ describe('executeConfirmedCommandBatch', () => {
             content:
                 'The project change remains durably committed, but pending-effect reconciliation could not continue: pending-effect continuation failed',
         });
+        expect(releaseCancellation).toHaveBeenCalledOnce();
+        expect(mocks.setActiveAborter).toHaveBeenLastCalledWith(null);
+        expect(mocks.setChatGenerating).toHaveBeenLastCalledWith(false);
+    });
+
+    it.each(['no-op', 'cancelled', 'ambiguous', 'failed'] as const)(
+        'should return ordinary failure for a non-durable prior $status receipt',
+        async (status) => {
+            mocks.prepareResourceLease.mockRejectedValue(new Error('resource preparation failed'));
+
+            const result = await execute({
+                priorVerifiedBatchReceipt: createNonDurableReceipt(status),
+                recoveringPendingEffects: true,
+            });
+
+            expect(result).toMatchObject({ status: 'failed' });
+            expect(mocks.retainCommitted).not.toHaveBeenCalled();
+            expect(mocks.updateConfirmation).not.toHaveBeenCalled();
+            expect(mocks.updateMessage).not.toHaveBeenCalled();
+        }
+    );
+
+    it('should release preview resources and return the exact preview-mode failure', async () => {
+        const resource = { release: vi.fn() };
+        mocks.executeBatch.mockResolvedValue({ status: 'previewed', resource });
+
+        const result = await execute();
+
+        expect(resource.release).toHaveBeenCalledOnce();
+        expect(result).toEqual({
+            status: 'failed',
+            error: new Error('A confirmed command batch cannot execute in preview mode'),
+        });
+        expect(mocks.setActiveAborter).toHaveBeenLastCalledWith(null);
+        expect(mocks.setChatGenerating).toHaveBeenLastCalledWith(false);
     });
 });

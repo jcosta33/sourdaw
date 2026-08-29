@@ -13,6 +13,7 @@ import {
     updatePendingActionConfirmationStatus,
 } from '../../stores/pendingActionConfirmationStore';
 import { agentRunCancellation } from '../cancelAgentRun';
+import { getVerifiedBatchReplayDisposition } from '../getVerifiedBatchReplayDisposition';
 import { issueAgentCommandApprovalBinding } from '../issueAgentCommandApprovalBinding';
 import { prepareAgentRunPendingEffectContinuation } from '../prepareAgentRunPendingEffectContinuation';
 
@@ -54,6 +55,14 @@ function isConfirmationExecutionAuthorized(isProjectMutationAuthorized: () => bo
         return false;
     }
     return isProjectMutationAuthorized();
+}
+
+function hasDurablePriorReceipt(receipt: CommandVerifiedBatchReceipt | null): receipt is CommandVerifiedBatchReceipt {
+    if (!receipt) {
+        return false;
+    }
+    const disposition = getVerifiedBatchReplayDisposition(receipt);
+    return disposition.status === 'committed' || disposition.status === 'executed';
 }
 
 export async function executeConfirmedCommandBatch(
@@ -169,7 +178,7 @@ export async function executeConfirmedCommandBatch(
         };
     } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);
-        if (recoveringPendingEffects && priorVerifiedBatchReceipt) {
+        if (hasDurablePriorReceipt(priorVerifiedBatchReceipt)) {
             updatePendingActionConfirmationStatus({
                 confirmationId: confirmation.id,
                 status: 'failed',
