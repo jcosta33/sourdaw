@@ -106,6 +106,19 @@ that carries `CHANGES_REQUESTED` or an unresolved thread, and a conversation may
 when the head actually addresses it — so a finding posted and then judged wrong blocks delivery
 with nothing left to fix.
 
+Validation is a filter, not a substitute for the record. A validated blocking finding is posted
+before it is repaired: the orchestrator composes the survivors into a `REQUEST_CHANGES` review and
+posts it through `review:publish` on the head they were found against, then dispatches the repair.
+The author answers each thread with a fixed head and `review:resolve`, and the repaired head gets a
+fresh round. Repairing a validated blocker first and approving the repaired head in one motion is
+forbidden, however much faster it is: it erases the review from the public record, and a pull
+request that merges with no visible finding is indistinguishable from one nobody attacked. Every
+pull request that drew a validated blocker therefore carries the exchange on its public record —
+the reviewer identity's findings standing against the head that earned them, and the author
+identity's answering pushes and `Done` replies — while the orchestrator's judgement is evidenced by
+the scripts only it runs and by `review.json` and `discarded.json` in the bundle, never by a
+persona on the pull request.
+
 ## Docs
 
 Docs state contracts that hold under change: rules, invariants, and the reasons behind them. No
