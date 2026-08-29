@@ -41,16 +41,31 @@ export async function configureCloudProvider(configuration: HostedLlmConfigurati
         throw createAiRuntimeError('Model cannot be empty');
     }
     const apiKey = configuration.apiKey;
-    if ((configuration.provider === 'anthropic' || configuration.provider === 'openai') && !apiKey.trim()) {
+    const requiresApiKey = configuration.provider !== 'openai-compatible' || configuration.authentication === 'api-key';
+    if (requiresApiKey && !apiKey.trim()) {
         throw createAiRuntimeError(
             `${configuration.provider === 'anthropic' ? 'Anthropic' : 'OpenAI'} API key is required`
         );
     }
 
+    if (configuration.authentication === 'none' && apiKey !== '') {
+        throw createAiRuntimeError('Remove the API key before connecting without authentication');
+    }
+
+    const normalizedBaseUrl = normalizeBaseUrl(configuration.provider, configuration.baseUrl);
+    if (
+        configuration.provider === 'openai-compatible' &&
+        configuration.authentication === 'api-key' &&
+        normalizedBaseUrl?.startsWith('http:')
+    ) {
+        throw createAiRuntimeError('Authenticated OpenAI-compatible providers require HTTPS');
+    }
+
     await setCloudProviderConfig({
         provider: configuration.provider,
         model,
-        baseUrl: normalizeBaseUrl(configuration.provider, configuration.baseUrl),
+        baseUrl: normalizedBaseUrl,
+        authentication: configuration.authentication,
         apiKey,
     });
 

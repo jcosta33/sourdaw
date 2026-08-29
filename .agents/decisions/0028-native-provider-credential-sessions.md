@@ -48,8 +48,9 @@ secret. Restarting Sourdaw destroys every session, so credentialed providers req
 ## Consequences
 
 - Desktop users enter a first-party key in Preferences when creating the session. The draft clears
-  after success and when its provider changes or is removed. OpenAI-compatible endpoints may omit a
-  credential only when that endpoint explicitly permits unauthenticated requests.
+  after success and when its provider changes or is removed. OpenAI-compatible authentication is an
+  explicit nonsecret choice: an API-key endpoint uses HTTPS and a native session, while an
+  unauthenticated loopback endpoint uses no key.
 - Adding a provider protocol requires compiled native and repository adapters.
 - Browser WebLLM remains available without credentials or remote fallback.
 - The renderer may carry a credential only in the local password draft and the one session-opening

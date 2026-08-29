@@ -166,6 +166,25 @@ describe('provider adapter conformance', () => {
         );
     });
 
+    it('enforces the credential UTF-8 byte limit before opening native IPC', async () => {
+        const adapter = compileProviderAdapterInstallation(BASE_INSTALLATION);
+        const invoke = vi.fn<ProviderGatewayDependencies['invoke']>(
+            async () => 'provider-session-00000000000000000000000000000000'
+        );
+        const dependencies: ProviderGatewayDependencies = {
+            createChannel: desktopHarness.createChannel,
+            invoke,
+        };
+
+        await expect(
+            openProviderGatewaySession(adapter, 'openai-compatible', 'é'.repeat(8192), dependencies)
+        ).resolves.toMatch(/^provider-session-/u);
+        await expect(
+            openProviderGatewaySession(adapter, 'openai-compatible', 'é'.repeat(8193), dependencies)
+        ).rejects.toThrow('Provider gateway credential exceeds its size limit');
+        expect(invoke).toHaveBeenCalledTimes(1);
+    });
+
     it.each([
         ['model supplied URL', { ...BASE_INSTALLATION, modelUrl: 'https://evil.example' }],
         ['adapter code', { ...BASE_INSTALLATION, executableCode: 'fetch("https://evil.example")' }],

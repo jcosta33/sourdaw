@@ -104,7 +104,7 @@ fn validate_adapter(adapter_id: &str, origin: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn validate_credential(source: &str, credential: &str) -> Result<(), String> {
+fn validate_credential(source: &str, credential: &Zeroizing<String>) -> Result<(), String> {
     let required = match source {
         "anthropic" | "openai" => true,
         "openai-compatible" => false,
@@ -343,7 +343,7 @@ pub async fn open_provider_gateway_session(
     adapter_id: String,
     origin: String,
     credential_source: String,
-    credential: String,
+    credential: Zeroizing<String>,
     state: &ProviderGatewayState,
 ) -> Result<String, String> {
     validate_adapter(&adapter_id, &origin)?;
@@ -355,7 +355,7 @@ pub async fn open_provider_gateway_session(
 async fn open_provider_gateway_session_with_credential(
     adapter_id: String,
     origin: String,
-    api_key: String,
+    api_key: Zeroizing<String>,
     state: &ProviderGatewayState,
 ) -> Result<String, String> {
     validate_adapter(&adapter_id, &origin)?;
@@ -374,7 +374,7 @@ async fn open_provider_gateway_session_with_credential(
         ProviderCredentialSession {
             adapter_id,
             origin,
-            api_key: Zeroizing::new(api_key),
+            api_key,
         },
     );
     Ok(session_id)
@@ -562,11 +562,12 @@ mod tests {
         open_provider_gateway_session_with_credential, parse_canonical_origin,
         register_cancellation, request_cancellation, validate_credential_binding,
         validate_resolved_addresses, ProviderGatewayEvent, ProviderGatewayState,
-        ANTHROPIC_ADAPTER_ID, ANTHROPIC_ORIGIN, CANCELLATION_TOMBSTONE_TTL,
+        ANTHROPIC_ADAPTER_ID, ANTHROPIC_ORIGIN, CANCELLATION_TOMBSTONE_TTL, MAX_API_KEY_BYTES,
         MAX_CANCELLATION_ENTRIES, MAX_CREDENTIAL_SESSIONS, OPENAI_ADAPTER_ID, OPENAI_ORIGIN,
     };
     use std::net::SocketAddr;
     use std::time::{Duration, Instant};
+    use zeroize::Zeroizing;
 
     #[test]
     fn provider_gateway_serializes_correlated_stream_events() {
@@ -724,7 +725,7 @@ mod tests {
         let session_id = open_provider_gateway_session_with_credential(
             OPENAI_ADAPTER_ID.to_string(),
             "https://api.example.com".to_string(),
-            "secret".to_string(),
+            Zeroizing::new("secret".to_string()),
             &state,
         )
         .await
@@ -751,7 +752,7 @@ mod tests {
         let session_id = open_provider_gateway_session_with_credential(
             OPENAI_ADAPTER_ID.to_string(),
             OPENAI_ORIGIN.to_string(),
-            "secret".to_string(),
+            Zeroizing::new("secret".to_string()),
             &state,
         )
         .await
@@ -774,7 +775,7 @@ mod tests {
         assert!(open_provider_gateway_session_with_credential(
             ANTHROPIC_ADAPTER_ID.to_string(),
             ANTHROPIC_ORIGIN.to_string(),
-            "secret".to_string(),
+            Zeroizing::new("secret".to_string()),
             &state,
         )
         .await
@@ -782,7 +783,7 @@ mod tests {
         assert!(open_provider_gateway_session_with_credential(
             ANTHROPIC_ADAPTER_ID.to_string(),
             "https://proxy.example.com".to_string(),
-            "secret".to_string(),
+            Zeroizing::new("secret".to_string()),
             &state,
         )
         .await
@@ -790,7 +791,7 @@ mod tests {
         assert!(open_provider_gateway_session_with_credential(
             ANTHROPIC_ADAPTER_ID.to_string(),
             ANTHROPIC_ORIGIN.to_string(),
-            String::new(),
+            Zeroizing::new(String::new()),
             &state,
         )
         .await
@@ -804,7 +805,7 @@ mod tests {
             open_provider_gateway_session_with_credential(
                 OPENAI_ADAPTER_ID.to_string(),
                 OPENAI_ORIGIN.to_string(),
-                "secret".to_string(),
+                Zeroizing::new("secret".to_string()),
                 &state,
             )
             .await
@@ -814,7 +815,7 @@ mod tests {
         assert!(open_provider_gateway_session_with_credential(
             OPENAI_ADAPTER_ID.to_string(),
             OPENAI_ORIGIN.to_string(),
-            "secret".to_string(),
+            Zeroizing::new("secret".to_string()),
             &state,
         )
         .await
@@ -853,7 +854,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn session_opening_requires_first_party_credentials_but_allows_unauthenticated_compatible_endpoints(
+    async fn session_opening_rejects_blank_first_party_credentials_but_allows_unauthenticated_compatible_endpoints(
     ) {
         let state = ProviderGatewayState::default();
 
@@ -861,7 +862,16 @@ mod tests {
             ANTHROPIC_ADAPTER_ID.to_string(),
             ANTHROPIC_ORIGIN.to_string(),
             "anthropic".to_string(),
-            String::new(),
+            Zeroizing::new(String::new()),
+            &state,
+        )
+        .await
+        .is_err());
+        assert!(open_provider_gateway_session(
+            OPENAI_ADAPTER_ID.to_string(),
+            OPENAI_ORIGIN.to_string(),
+            "openai".to_string(),
+            Zeroizing::new(String::new()),
             &state,
         )
         .await
@@ -870,10 +880,39 @@ mod tests {
             OPENAI_ADAPTER_ID.to_string(),
             "https://provider.example".to_string(),
             "openai-compatible".to_string(),
-            String::new(),
+            Zeroizing::new(String::new()),
             &state,
         )
         .await
         .is_ok());
+    }
+
+    #[tokio::test]
+    async fn session_opening_limits_credential_utf8_bytes() {
+        let state = ProviderGatewayState::default();
+        let exact_limit = Zeroizing::new("é".repeat(MAX_API_KEY_BYTES / 2));
+        assert!(open_provider_gateway_session(
+            OPENAI_ADAPTER_ID.to_string(),
+            OPENAI_ORIGIN.to_string(),
+            "openai".to_string(),
+            exact_limit,
+            &state,
+        )
+        .await
+        .is_ok());
+
+        let oversized = Zeroizing::new("é".repeat((MAX_API_KEY_BYTES / 2) + 1));
+        assert_eq!(
+            open_provider_gateway_session(
+                OPENAI_ADAPTER_ID.to_string(),
+                OPENAI_ORIGIN.to_string(),
+                "openai".to_string(),
+                oversized,
+                &state,
+            )
+            .await
+            .expect_err("credential over the byte limit must be rejected"),
+            "Provider gateway credential exceeds its size limit"
+        );
     }
 }

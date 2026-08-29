@@ -93,11 +93,76 @@ describe('AiSection', () => {
                 provider: 'anthropic',
                 model: 'claude-sonnet-5',
                 baseUrl: undefined,
+                authentication: 'api-key',
                 apiKey: 'sk-test-key',
             });
         });
         expect(apiKey).toHaveValue('');
         expect(screen.queryByRole('option', { name: /native/i })).not.toBeInTheDocument();
+    });
+
+    it('preserves an API-key draft when connecting fails', async () => {
+        mocks.configureCloudProvider.mockRejectedValueOnce(new Error('Credential was rejected'));
+        render(<AiSection />);
+
+        const apiKey = screen.getByLabelText('Hosted AI API key');
+        fireEvent.change(apiKey, { target: { value: 'sk-retry-key' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
+
+        expect(await screen.findByRole('alert')).toHaveTextContent('Credential was rejected');
+        expect(apiKey).toHaveValue('sk-retry-key');
+    });
+
+    it('clears the API-key draft when changing provider or removing a configured provider', async () => {
+        mocks.hostedProvider.value = {
+            provider: 'anthropic',
+            model: 'claude-sonnet-5',
+            baseUrl: null,
+            authentication: 'api-key',
+        };
+        render(<AiSection />);
+
+        const apiKey = screen.getByLabelText('Hosted AI API key');
+        fireEvent.change(apiKey, { target: { value: 'sk-provider-change' } });
+        fireEvent.change(screen.getByLabelText('Hosted AI provider'), { target: { value: 'openai' } });
+        expect(apiKey).toHaveValue('');
+
+        fireEvent.change(apiKey, { target: { value: 'sk-remove' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
+
+        await waitFor(() => {
+            expect(mocks.removeCloudProvider).toHaveBeenCalledOnce();
+        });
+        expect(apiKey).toHaveValue('');
+    });
+
+    it('requires explicit unauthenticated intent for compatible endpoints and enforces the byte limit', async () => {
+        render(<AiSection />);
+
+        fireEvent.change(screen.getByLabelText('Hosted AI provider'), { target: { value: 'openai-compatible' } });
+        fireEvent.change(screen.getByLabelText('Hosted AI model'), { target: { value: 'local-model' } });
+        fireEvent.change(screen.getByLabelText('OpenAI-compatible base URL'), {
+            target: { value: 'http://localhost:1234/v1' },
+        });
+        const apiKey = screen.getByLabelText('Hosted AI API key');
+        expect(apiKey).toHaveAttribute('maxlength', '16384');
+        fireEvent.change(apiKey, { target: { value: '😀'.repeat(4097) } });
+        expect(apiKey).toHaveValue('');
+        expect(screen.getByRole('button', { name: 'Connect' })).toBeDisabled();
+
+        fireEvent.change(screen.getByLabelText('OpenAI-compatible authentication'), { target: { value: 'none' } });
+        expect(apiKey).toBeDisabled();
+        fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
+
+        await waitFor(() => {
+            expect(mocks.configureCloudProvider).toHaveBeenCalledWith({
+                provider: 'openai-compatible',
+                model: 'local-model',
+                baseUrl: 'http://localhost:1234/v1',
+                authentication: 'none',
+                apiKey: '',
+            });
+        });
     });
 
     it('exposes no hosted credential surface in web builds', () => {

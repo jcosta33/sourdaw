@@ -1,5 +1,5 @@
 import { AiRuntimeConfigurationChangedError } from '../../errors/AiRuntimeConfigurationChangedError';
-import { type HostedLlmProviderInfo } from '../../models/HostedLlmProvider';
+import { type HostedLlmAuthentication, type HostedLlmProviderInfo } from '../../models/HostedLlmProvider';
 import { hostedLlmProviderStatusStore } from '../../stores/hostedLlmProviderStatusStore';
 import { closeProviderGatewaySession } from '../closeProviderGatewaySession';
 import { type CompiledProviderAdapter } from '../providerAdapterRegistry';
@@ -7,6 +7,7 @@ import { type CompiledProviderAdapter } from '../providerAdapterRegistry';
 export type AnthropicCloudRuntime = Readonly<{
     provider: 'anthropic';
     model: string;
+    authentication?: HostedLlmAuthentication;
     session_id: string;
 }>;
 
@@ -14,6 +15,7 @@ export type OpenAiCompatibleCloudRuntime = Readonly<{
     provider: 'openai' | 'openai-compatible';
     model: string;
     base_url: string;
+    authentication?: HostedLlmAuthentication;
     adapter?: CompiledProviderAdapter | null;
     session_id: string | null;
 }>;
@@ -93,6 +95,7 @@ class CloudSession {
             provider: runtime.provider,
             model: runtime.model,
             baseUrl: runtime.provider === 'anthropic' ? null : runtime.base_url,
+            authentication: runtime.authentication,
         };
         hostedLlmProviderStatusStore.set(providerInfo);
     }

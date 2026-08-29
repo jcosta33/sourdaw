@@ -37,6 +37,7 @@ describe('setCloudProviderConfig', () => {
             provider: 'openai-compatible',
             model: 'qwen-local',
             baseUrl: 'http://localhost:1234/v1',
+            authentication: 'none',
             apiKey: '',
         });
 
@@ -44,6 +45,7 @@ describe('setCloudProviderConfig', () => {
             provider: 'openai-compatible',
             model: 'qwen-local',
             base_url: 'http://localhost:1234/v1',
+            authentication: 'none',
             adapter: null,
             session_id: null,
         });
@@ -52,6 +54,7 @@ describe('setCloudProviderConfig', () => {
             provider: 'openai-compatible',
             model: 'qwen-local',
             baseUrl: 'http://localhost:1234/v1',
+            authentication: 'none',
         });
     });
 
@@ -60,6 +63,7 @@ describe('setCloudProviderConfig', () => {
             provider: 'openai',
             model: 'gpt-test',
             baseUrl: 'https://api.openai.com/v1',
+            authentication: 'api-key',
             apiKey: 'sk-test-key',
         });
 
@@ -81,6 +85,7 @@ describe('setCloudProviderConfig', () => {
         await setCloudProviderConfig({
             provider: 'anthropic',
             model: 'claude-test',
+            authentication: 'api-key',
             apiKey: 'sk-anthropic-test',
         });
         const activeRequest = registerCloudStreamController(new AbortController());
@@ -89,6 +94,7 @@ describe('setCloudProviderConfig', () => {
             provider: 'openai-compatible',
             model: 'local',
             baseUrl: 'http://localhost:1234/v1',
+            authentication: 'none',
             apiKey: '',
         });
 
@@ -101,7 +107,12 @@ describe('setCloudProviderConfig', () => {
     it('closes a candidate session when replacing the active session fails', async () => {
         const previousSessionId = 'provider-session-00000000000000000000000000000000';
         const candidateSessionId = 'provider-session-11111111111111111111111111111111';
-        await setCloudProviderConfig({ provider: 'anthropic', model: 'claude-test', apiKey: 'sk-anthropic-test' });
+        await setCloudProviderConfig({
+            provider: 'anthropic',
+            model: 'claude-test',
+            authentication: 'api-key',
+            apiKey: 'sk-anthropic-test',
+        });
         mocks.invoke.mockImplementation(async (command, args) => {
             if (command === 'open_provider_gateway_session') {
                 return candidateSessionId;
@@ -118,6 +129,7 @@ describe('setCloudProviderConfig', () => {
                     provider: 'openai',
                     model: 'gpt-test',
                     baseUrl: 'https://api.openai.com/v1',
+                    authentication: 'api-key',
                     apiKey: 'sk-openai-test',
                 })
             ).rejects.toThrow('close failed');
@@ -135,8 +147,49 @@ describe('setCloudProviderConfig', () => {
     it('rejects hosted configuration outside the desktop shell', async () => {
         mocks.isDesktopRuntime.mockReturnValue(false);
         await expect(
-            setCloudProviderConfig({ provider: 'anthropic', model: 'claude-test', apiKey: 'sk-anthropic-test' })
+            setCloudProviderConfig({
+                provider: 'anthropic',
+                model: 'claude-test',
+                authentication: 'api-key',
+                apiKey: 'sk-anthropic-test',
+            })
         ).rejects.toThrow('desktop builds only');
+        expect(mocks.invoke).not.toHaveBeenCalled();
+    });
+
+    it('opens a native session with the exact key for HTTPS compatible providers', async () => {
+        await setCloudProviderConfig({
+            provider: 'openai-compatible',
+            model: 'custom-model',
+            baseUrl: 'https://models.example.test/v1',
+            authentication: 'api-key',
+            apiKey: '  compatible-key  ',
+        });
+
+        expect(mocks.invoke).toHaveBeenCalledWith('open_provider_gateway_session', {
+            adapterId: 'builtin.openai-compatible.chat-completions.v1',
+            origin: 'https://models.example.test',
+            credentialSource: 'openai-compatible',
+            credential: '  compatible-key  ',
+        });
+        expect(hostedLlmProviderStatusStore.value).toEqual({
+            provider: 'openai-compatible',
+            model: 'custom-model',
+            baseUrl: 'https://models.example.test/v1',
+            authentication: 'api-key',
+        });
+    });
+
+    it('rejects credentialed loopback configuration without opening a session', async () => {
+        await expect(
+            setCloudProviderConfig({
+                provider: 'openai-compatible',
+                model: 'qwen-local',
+                baseUrl: 'http://localhost:1234/v1',
+                authentication: 'api-key',
+                apiKey: 'local-key',
+            })
+        ).rejects.toThrow('Authenticated OpenAI-compatible providers require HTTPS');
         expect(mocks.invoke).not.toHaveBeenCalled();
     });
 });
