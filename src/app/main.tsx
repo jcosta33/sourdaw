@@ -1,11 +1,12 @@
 import { mountBrowserDisplayScaleHost } from './browserDisplayScaleHost';
-import { shouldHostBrowserViewport } from './shouldHostBrowserViewport';
+import { resolveAppComposition } from './resolveAppComposition';
 
 const root = document.getElementById('root')!;
-const hostsBrowserViewport = shouldHostBrowserViewport({
+const composition = resolveAppComposition({
+    hasDesktopBridge: 'sourdaw' in window,
     isDevelopment: import.meta.env.DEV,
-    isDesktopRuntime: 'sourdaw' in window,
     isTopLevel: window.parent === window,
+    protocol: window.location.protocol,
     windowName: window.name,
 });
 
@@ -19,8 +20,19 @@ async function renderApplication(): Promise<void> {
     createRoot(root).render(<App />);
 }
 
-if (hostsBrowserViewport) {
+async function renderDesktopStartupError(): Promise<void> {
+    const [, { createRoot }, { DesktopStartupError }] = await Promise.all([
+        import('#/styles/main.css'),
+        import('react-dom/client'),
+        import('./DesktopStartupError'),
+    ]);
+    createRoot(root).render(<DesktopStartupError onReload={() => window.location.reload()} />);
+}
+
+if (composition === 'browser-host') {
     mountBrowserDisplayScaleHost(root);
+} else if (composition === 'desktop-startup-error') {
+    void renderDesktopStartupError();
 } else {
     void renderApplication();
 }
