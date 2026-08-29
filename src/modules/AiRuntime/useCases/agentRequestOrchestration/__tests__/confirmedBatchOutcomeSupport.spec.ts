@@ -105,7 +105,7 @@ describe('confirmedBatchOutcomeSupport', () => {
         agentRunLifecycle.clear();
     });
 
-    it('reports no committed work when the receipt writer fails before its first lifecycle write', () => {
+    it('records committed work in live state after the first receipt persistence write fails', () => {
         const { confirmation, receipt } = createConfirmationAndReceipt();
         createExecutingRun(confirmation);
         const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementationOnce(() => {
@@ -121,30 +121,42 @@ describe('confirmedBatchOutcomeSupport', () => {
             ).toEqual({
                 warning: AGENT_RUN_PERSISTENCE_WARNING,
                 effectsPending: false,
-                committedWorkPersisted: false,
+                committedWorkRecorded: true,
             });
         } finally {
             setItem.mockRestore();
         }
 
+        const receiptIdentity = confirmedBatchOutcomeSupport.getVerifiedReceiptIdentity(receipt);
         expect(agentRunLifecycle.get(confirmation.runId)).toMatchObject({
             phase: 'executing',
+            committedWork: [{ workId: 'batch-1', receiptIdentity }],
             errors: [],
         });
+
+        const recordError = vi.spyOn(agentRunLifecycle, 'recordError');
+        agentRunExecutionSettlement.recordPostCommitRecoveryFailure(confirmation, {
+            category: 'internal',
+            retriable: false,
+            receiptIdentity,
+        });
+
+        expect(recordError).toHaveBeenCalledOnce();
+        expect(agentRunLifecycle.get(confirmation.runId)).toMatchObject({
+            phase: 'partially-completed',
+            committedWork: [{ workId: 'batch-1', receiptIdentity }],
+            errors: [expect.objectContaining({ workId: null })],
+        });
+        expect(window.localStorage.getItem('sourdaw-agent-runs')).toContain('partially-completed');
+        expect(window.localStorage.getItem('sourdaw-agent-runs')).toContain(receiptIdentity);
     });
 
-    it('reports committed work when a later saga write fails and permits terminal post-commit settlement', () => {
+    it('reports no committed work when the receipt writer rejects before recording it', () => {
         const { confirmation, receipt } = createConfirmationAndReceipt();
         createExecutingRun(confirmation);
-        const writeStorageItem = Storage.prototype.setItem;
-        const setItem = vi
-            .spyOn(Storage.prototype, 'setItem')
-            .mockImplementationOnce(function (this: Storage, key: string, value: string): void {
-                writeStorageItem.call(this, key, value);
-            })
-            .mockImplementationOnce(() => {
-                throw new DOMException('The quota has been exceeded.', 'QuotaExceededError');
-            });
+        const recordCommittedWork = vi.spyOn(agentRunLifecycle, 'recordCommittedWork').mockImplementationOnce(() => {
+            throw new Error('The receipt writer rejected the committed work.');
+        });
 
         let receiptPersistence;
         try {
@@ -153,31 +165,18 @@ describe('confirmedBatchOutcomeSupport', () => {
                 completesRun: false,
             });
         } finally {
-            setItem.mockRestore();
+            recordCommittedWork.mockRestore();
         }
 
         expect(receiptPersistence).toEqual({
             warning: AGENT_RUN_PERSISTENCE_WARNING,
             effectsPending: false,
-            committedWorkPersisted: true,
+            committedWorkRecorded: false,
         });
-        const receiptIdentity = confirmedBatchOutcomeSupport.getVerifiedReceiptIdentity(receipt);
         expect(agentRunLifecycle.get(confirmation.runId)).toMatchObject({
             phase: 'executing',
-            committedWork: [{ workId: 'batch-1', receiptIdentity }],
+            committedWork: [],
             errors: [],
-        });
-
-        agentRunExecutionSettlement.recordPostCommitRecoveryFailure(confirmation, {
-            category: 'internal',
-            retriable: false,
-            receiptIdentity,
-        });
-
-        expect(agentRunLifecycle.get(confirmation.runId)).toMatchObject({
-            phase: 'partially-completed',
-            committedWork: [{ workId: 'batch-1', receiptIdentity }],
-            errors: [expect.objectContaining({ workId: null })],
         });
     });
 });

@@ -18,7 +18,12 @@ import { executeConfirmedCommandBatch } from '../executeConfirmedCommandBatch';
 type ExecuteBatch = typeof executeVersionedCommandBatchEnvelope;
 type ExecuteBatchResult = Awaited<ReturnType<ExecuteBatch>>;
 type CommittedBatchResult = Extract<ExecuteBatchResult, { status: 'committed' }>;
-type CancelledBatchResult = Extract<ExecuteBatchResult, { status: 'cancelled' }>;
+type NarrowBatchResult<Result, Status> = Result extends { status: infer CandidateStatus }
+    ? Status extends CandidateStatus
+        ? Omit<Result, 'status'> & { status: Status }
+        : never
+    : never;
+type CancelledBatchResult = NarrowBatchResult<ExecuteBatchResult, 'cancelled'>;
 type PreviewedBatchResult = Pick<Extract<ExecuteBatchResult, { status: 'previewed' }>, 'status' | 'resource'>;
 type TestBatchExecutorResultByStatus = {
     committed: CommittedBatchResult;
@@ -40,6 +45,8 @@ type BindCancellation = typeof import('../../cancelAgentRun').agentRunCancellati
 type CancelRun = typeof import('../../cancelAgentRun').agentRunCancellation.cancel;
 type CaptureAuthorization = typeof import('#/modules/CrdtDocument/useCases').captureProjectMutationAuthorization;
 type CaptureUnownedMutations = typeof import('#/modules/CrdtDocument/useCases').captureUnownedProjectMutations;
+type RecordPostCommitRecoveryFailure =
+    typeof import('../agentRunExecutionSettlement').agentRunExecutionSettlement.recordPostCommitRecoveryFailure;
 
 const mocks = vi.hoisted(() => ({
     bindCancellation: vi.fn<BindCancellation>(),
@@ -52,7 +59,7 @@ const mocks = vi.hoisted(() => ({
     prepareContinuation: vi.fn<PrepareContinuation>(),
     prepareResourceLease: vi.fn<PrepareResourceLease>(),
     protectResourceLease: vi.fn<ProtectResourceLease>(),
-    recordPostCommitRecoveryFailure: vi.fn(),
+    recordPostCommitRecoveryFailure: vi.fn<RecordPostCommitRecoveryFailure>(),
     recordReceipt: vi.fn<RecordTrackedAgentRunReceipt>(),
     retainCommitted: vi.fn(),
     setActiveAborter: vi.fn(),
@@ -277,7 +284,7 @@ beforeEach(() => {
     mocks.prepareResourceLease.mockResolvedValue(undefined);
     mocks.protectResourceLease.mockReturnValue(undefined);
     mocks.prepareContinuation.mockReturnValue({ promote: () => undefined, discard: () => undefined });
-    mocks.recordReceipt.mockReturnValue({ warning: null, effectsPending: false, committedWorkPersisted: true });
+    mocks.recordReceipt.mockReturnValue({ warning: null, effectsPending: false, committedWorkRecorded: true });
     mocks.issueApprovalBinding.mockImplementation(({ commandBatch: approvedBatch }) =>
         issueCommandApprovalBinding({
             authority: approvedBatch.authority,
@@ -570,7 +577,7 @@ describe('executeConfirmedCommandBatch', () => {
         mocks.recordReceipt.mockReturnValue({
             warning: 'Agent run persistence warning.',
             effectsPending: false,
-            committedWorkPersisted: false,
+            committedWorkRecorded: false,
         });
 
         const result = await execute({ priorVerifiedBatchReceipt: receipt, recoveringPendingEffects: true });
@@ -595,7 +602,7 @@ describe('executeConfirmedCommandBatch', () => {
         mocks.recordReceipt.mockReturnValue({
             warning: 'Agent run persistence warning.',
             effectsPending: false,
-            committedWorkPersisted: true,
+            committedWorkRecorded: true,
         });
 
         await execute({ priorVerifiedBatchReceipt: receipt, recoveringPendingEffects: true });

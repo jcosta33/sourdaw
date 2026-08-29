@@ -200,7 +200,7 @@ export async function executeConfirmedCommandBatch(
                 }
             );
             const runPersistenceWarning =
-                receiptPersistence.warning && !receiptPersistence.committedWorkPersisted
+                receiptPersistence.warning && !receiptPersistence.committedWorkRecorded
                     ? null
                     : agentRunExecutionSettlement.recordPostCommitRecoveryFailure(confirmation, {
                           category: 'internal',

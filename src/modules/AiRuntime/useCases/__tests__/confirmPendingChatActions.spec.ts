@@ -35,6 +35,7 @@ import {
     commandProjectRevisionPort,
     type executeVersionedCommandBatchEnvelope,
 } from '#/modules/Command/useCases';
+import * as commandUseCases from '#/modules/Command/useCases';
 import {
     captureProjectRevision,
     captureUnownedProjectMutations,
@@ -2154,9 +2155,10 @@ describe('confirmPendingChatActions transaction admission', () => {
         expect(stemResourceMocks.releaseStagedAsset).toHaveBeenCalledExactlyOnceWith('lease-confirmed-1');
     });
 
-    it('routes a partially committed confirmation retry through external-effect recovery', async () => {
+    it('uses the approved batch identity through execution and recovery when confirmation group ID differs', async () => {
         configureAiWorkflowCommandPreflightFixture('project-1');
         configureCommandBatchIdempotency({ canExecute: () => true });
+        const executeBatch = vi.spyOn(commandUseCases, 'executeVersionedCommandBatchEnvelope');
         const ownedStorage = createAutomergeStorage<{ bpm: number }>('owned', 'transport');
         let effectAttempts = 0;
         registerHandlerMap({
@@ -2206,6 +2208,7 @@ describe('confirmPendingChatActions transaction admission', () => {
             commands: [serializeVersionedCommandEnvelope(envelope)],
         });
         const proposal = {
+            runId: 'confirmation-recovery-batch',
             prompt: 'set tempo to 132',
             assistantMessageId: 'assistant-1',
             actions: [action],
@@ -2213,10 +2216,18 @@ describe('confirmPendingChatActions transaction admission', () => {
             commandBatch,
             agentApproval: compileAgentRiskApproval({ commandBatch }),
             executionMode: 'atomic' as const,
-            groupId: 'group-recovery-batch',
+            groupId: 'untrusted-confirmation-group',
             groupLabel: 'Set tempo batch',
             projectRevision,
         };
+        agentRunLifecycle.create({
+            runId: 'confirmation-recovery-batch',
+            request: proposal.prompt,
+            mode: 'macro',
+            createdRevision: projectRevision,
+        });
+        agentRunLifecycle.transitionPhase({ runId: 'confirmation-recovery-batch', phase: 'planning' });
+        agentRunLifecycle.transitionPhase({ runId: 'confirmation-recovery-batch', phase: 'waiting-for-approval' });
         const prepareForCommit = vi.fn().mockResolvedValue(undefined);
         const commit = vi.fn().mockResolvedValue(undefined);
         const release = vi.fn().mockResolvedValue(undefined);
@@ -2242,6 +2253,11 @@ describe('confirmPendingChatActions transaction admission', () => {
         expect(release).not.toHaveBeenCalled();
         expect(prepareForCommit.mock.invocationCallOrder[0]).toBeLessThan(commit.mock.invocationCallOrder[0]!);
         expect(commit.mock.invocationCallOrder[0]).toBeLessThan(retain.mock.invocationCallOrder[0]!);
+        expect(executeBatch).toHaveBeenCalledWith(
+            expect.objectContaining({
+                options: expect.objectContaining({ groupId: 'group-recovery-batch' }),
+            })
+        );
 
         const priorReceipt = await getVersionedCommandBatchIdempotentReplay({
             authority: commandBatch.authority,
@@ -2250,6 +2266,7 @@ describe('confirmPendingChatActions transaction admission', () => {
         if (!priorReceipt) {
             throw new Error('Expected the partially committed command receipt to remain available for recovery.');
         }
+        expect(priorReceipt.batchId).toBe('group-recovery-batch');
         const recoveryReason = 'Recovery resource preparation failed.';
         const recoveryPrepareForCommit = vi.fn().mockRejectedValue(new Error(recoveryReason));
         proposePendingActionConfirmation({
@@ -2287,6 +2304,20 @@ describe('confirmPendingChatActions transaction admission', () => {
             error: recoveryReason,
             content: `The project change remains durably committed, but pending-effect reconciliation could not continue: ${recoveryReason}`,
         });
+        expect(agentRunLifecycle.get('confirmation-recovery-batch')).toMatchObject({
+            committedWork: [
+                expect.objectContaining({
+                    workId: 'group-recovery-batch',
+                    revertGroupId: 'group-recovery-batch',
+                }),
+            ],
+            receipts: [
+                expect.objectContaining({
+                    workId: 'group-recovery-batch',
+                    receiptIdentity: expect.stringContaining('confirmation-recovery-batch:group-recovery-batch'),
+                }),
+            ],
+        });
 
         proposePendingActionConfirmation({ ...proposal, id: 'confirmation-recovery-batch-retry' });
         await expect(
@@ -2300,6 +2331,7 @@ describe('confirmPendingChatActions transaction admission', () => {
         );
         expect(chatStore.value?.messages[0]?.content).not.toContain('without replaying project or runtime effects');
         expect(chatStore.value?.messages[0]?.content).not.toContain('tempo runtime unavailable');
+        executeBatch.mockRestore();
     });
 
     it('preserves a failed verified receipt on retry instead of reporting the batch already applied', async () => {
