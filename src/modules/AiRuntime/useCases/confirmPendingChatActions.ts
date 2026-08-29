@@ -7,9 +7,8 @@ import { collaborationStore } from '#/modules/Collaboration/stores';
 import {
     executeVersionedCommandBatchEnvelope,
     generateGroupId,
-    getVersionedCommandBatchIdempotentReplay,
     parseVersionedCommandBatchEnvelope,
-    refreshVersionedCommandBatchForApproval,
+    type refreshVersionedCommandBatchForApproval,
 } from '#/modules/Command/useCases';
 import {
     captureProjectMutationAuthorization,
@@ -21,17 +20,14 @@ import { type HandlerDeferredEffectAttempt } from '#/utils/handlerContract';
 import { AiProposalInvalidatedError } from '../errors/AiProposalInvalidatedError';
 import { type AgentRunErrorCategory, type AgentRunWorkLease } from '../models/AgentRun';
 import { type ChatActionConfirmationStatus } from '../models/Chat';
-import { chatStore, setActiveAborter, setChatGenerating, updateChatMessage } from '../stores/chatStore';
+import { setActiveAborter, setChatGenerating, updateChatMessage } from '../stores/chatStore';
 import {
-    getPendingActionConfirmation,
     preparePendingActionResourceLeaseForCommit,
     protectPendingActionResourceLease,
-    refreshPendingActionConfirmationApproval,
     type PendingAppActionConfirmation,
     updatePendingActionConfirmationStatus,
 } from '../stores/pendingActionConfirmationStore';
 
-import { admitCommittedSectionRenderRetry } from './agentRequestOrchestration/admitCommittedSectionRenderRetry';
 import { agentRunExecutionSettlement } from './agentRequestOrchestration/agentRunExecutionSettlement';
 import { confirmationTerminalSettlement } from './agentRequestOrchestration/confirmationTerminalSettlement';
 import {
@@ -41,6 +37,7 @@ import {
 } from './agentRequestOrchestration/confirmedBatchOutcomeSupport';
 import { executeCommittedSectionRenderRetry } from './agentRequestOrchestration/executeCommittedSectionRenderRetry';
 import { pendingActionResourceSettlement } from './agentRequestOrchestration/pendingActionResourceSettlement';
+import { confirmationAdmission } from './agentRequestOrchestration/resolveConfirmationAdmission';
 import {
     AGENT_RUN_PERSISTENCE_WARNING,
     settleAgentRunWorkLeaseSafely,
@@ -51,7 +48,6 @@ import { agentRunLifecycle } from './agentRunLifecycle';
 import { agentRunWorkLease } from './agentRunWorkLease';
 import { agentWorkBudget, type AgentWorkBudgetEstimate } from './agentWorkBudget';
 import { agentRunCancellation } from './cancelAgentRun';
-import { compileAgentRiskApproval } from './compileAgentRiskApproval';
 import { getPlannedActionAffectedIds } from './getPlannedActionAffectedIds';
 import { getVerifiedBatchReplayDisposition } from './getVerifiedBatchReplayDisposition';
 import { issueAgentCommandApprovalBinding } from './issueAgentCommandApprovalBinding';
@@ -221,120 +217,21 @@ function rebindFreshSectionRenderArtifactsToCommittedRevision(
 export async function confirmPendingChatActions(
     input: ConfirmPendingChatActionsInput
 ): ConfirmPendingChatActionsOutput {
-    let confirmation = getPendingActionConfirmation(input.confirmationId);
-    if (!confirmation) {
-        return { status: 'missing' };
+    const admission = confirmationAdmission.consumeConfirmationAdmission(
+        await confirmationAdmission.resolveConfirmationAdmission(input)
+    );
+    if (admission.status === 'handled') {
+        return admission.result;
     }
-    const approvedCommandBatch = confirmation.approvalSnapshot.commandBatch;
-    const wasProposed = confirmation.status === 'proposed';
-    const initialRetryAdmission = admitCommittedSectionRenderRetry({
-        confirmation,
-        phase: 'eligibility',
-    });
-    const wasRetryEligible = initialRetryAdmission.status === 'requires-proof';
-    const shouldInspectDurableReceipt = wasProposed || wasRetryEligible;
-    let priorVerifiedBatchReceipt: CommandVerifiedBatchReceipt | null = null;
-    if (approvedCommandBatch && shouldInspectDurableReceipt) {
-        try {
-            priorVerifiedBatchReceipt = await getVersionedCommandBatchIdempotentReplay({
-                authority: approvedCommandBatch.authority,
-                serialized: approvedCommandBatch.serialized,
-            });
-        } catch (error) {
-            // Unreadable commit evidence is not absence: never fail the retry
-            // proof or re-execute against evidence that could not be read.
-            return confirmationTerminalSettlement.failUnreadableCommitEvidence(confirmation, error, wasRetryEligible);
-        }
-        const refreshedConfirmation = getPendingActionConfirmation(input.confirmationId);
-        if (!refreshedConfirmation) {
-            return { status: 'missing' };
-        }
-        const refreshedRetryAdmission = admitCommittedSectionRenderRetry({
-            confirmation: refreshedConfirmation,
-            expectedCommandBatch: approvedCommandBatch,
-            phase: 'eligibility',
+    if (admission.status === 'render-retry') {
+        return executeCommittedSectionRenderRetry({
+            confirmation: admission.confirmation,
+            durableReceipt: admission.durableReceipt,
+            commandBatch: admission.commandBatch,
         });
-        const retryAdmissionChanged = wasRetryEligible && refreshedRetryAdmission.status !== 'requires-proof';
-        if (
-            refreshedRetryAdmission.status === 'stale' ||
-            retryAdmissionChanged ||
-            (wasProposed && refreshedConfirmation.status !== 'proposed')
-        ) {
-            return { status: 'not_pending', currentStatus: refreshedConfirmation.status };
-        }
-        confirmation = refreshedConfirmation;
     }
-    if (wasRetryEligible) {
-        const retryAdmission = admitCommittedSectionRenderRetry({
-            confirmation,
-            durableReceipt: priorVerifiedBatchReceipt,
-            expectedCommandBatch: approvedCommandBatch,
-            phase: 'proof',
-        });
-        if (retryAdmission.status === 'admitted') {
-            const admittedCommandBatch = confirmation.approvalSnapshot.commandBatch;
-            if (!admittedCommandBatch) {
-                return confirmationTerminalSettlement.failSectionRenderRetryProof(confirmation);
-            }
-            return executeCommittedSectionRenderRetry({
-                confirmation,
-                durableReceipt: retryAdmission.durableReceipt,
-                commandBatch: admittedCommandBatch,
-            });
-        }
-        if (retryAdmission.status === 'proof-mismatch') {
-            return confirmationTerminalSettlement.failSectionRenderRetryProof(confirmation);
-        }
-    }
-    if (confirmation.status !== 'proposed') {
-        return { status: 'not_pending', currentStatus: confirmation.status };
-    }
-
+    const { confirmation, priorVerifiedBatchReceipt, recoveringPendingEffects } = admission;
     const hasPriorVerifiedBatchReceipt = priorVerifiedBatchReceipt !== null;
-    const recoveringPendingEffects =
-        priorVerifiedBatchReceipt?.outcome === 'partially-committed' &&
-        priorVerifiedBatchReceipt.pendingEffects.length > 0;
-
-    if (!hasPriorVerifiedBatchReceipt && captureProjectRevision() !== confirmation.projectRevision) {
-        const commandBatch = confirmation.approvalSnapshot.commandBatch;
-        if (!commandBatch) {
-            return confirmationTerminalSettlement.invalidateForProjectChange(confirmation);
-        }
-        const refreshed = refreshVersionedCommandBatchForApproval({
-            authority: commandBatch.authority,
-            serialized: commandBatch.serialized,
-        });
-        if (refreshed.status !== 'ready') {
-            if (refreshed.status === 'conflicted') {
-                return confirmationTerminalSettlement.invalidateForDivergence(confirmation, refreshed.divergence);
-            }
-            return confirmationTerminalSettlement.invalidateForProjectChange(confirmation);
-        }
-        const agentApproval = compileAgentRiskApproval({ commandBatch: refreshed.commandBatch });
-        const rebound = refreshPendingActionConfirmationApproval({
-            agentApproval,
-            commandBatch: refreshed.commandBatch,
-            commandEnvelopes: refreshed.commandEnvelopes,
-            confirmationId: confirmation.id,
-            projectRevision: refreshed.currentRevision,
-        });
-        if (!rebound) {
-            return confirmationTerminalSettlement.invalidateForProjectChange(confirmation);
-        }
-        updateChatMessage(confirmation.assistantMessageId, {
-            pendingActionConfirmationStatus: 'proposed',
-            content: `The project changed after the prior approval. Divergence was classified as ${refreshed.divergence.kind}; the unchanged command plan was revalidated and rebound to the current project revision. Review and confirm again:\n\n${rebound.actionLabels.map((label) => `- ${label}`).join('\n')}`,
-        });
-        return { status: 'reapproval_required', divergence: refreshed.divergence };
-    }
-
-    if (chatStore.value?.isGenerating === true) {
-        updateChatMessage(confirmation.assistantMessageId, {
-            pendingActionConfirmationStatus: 'proposed',
-            content: `Another AI command is still running. This proposal remains pending:\n\n${confirmation.actionLabels.map((label) => `- ${label}`).join('\n')}`,
-        });
-        return { status: 'busy' };
-    }
 
     const approvalPreflightFailure = hasPriorVerifiedBatchReceipt ? null : getApprovalPreflightFailure(confirmation);
     if (approvalPreflightFailure) {

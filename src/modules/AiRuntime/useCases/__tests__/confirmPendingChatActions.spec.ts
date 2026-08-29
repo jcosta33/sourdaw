@@ -595,6 +595,201 @@ describe('confirmPendingChatActions transaction admission', () => {
         });
     });
 
+    it('keeps the winning same-turn confirmation authoritative when the losing receipt lookup rejects later', async () => {
+        configureAiWorkflowCommandPreflightFixture('project-1');
+        configureCommandBatchIdempotency({ canExecute: () => true });
+        const ownedStorage = createAutomergeStorage<{ bpm: number }>('owned', 'transport');
+        const execute = vi.fn<ActionHandler<SetTempoAction>['execute']>((action) => {
+            ownedStorage.set({ bpm: action.payload.bpm });
+        });
+        registerHandlerMap({
+            setTempo: {
+                canReapplyAfterDivergence: () => true,
+                execute,
+                describe: (action) => ({
+                    label: 'Set tempo',
+                    inverseAction: {
+                        type: 'setTempo',
+                        payload: { bpm: 120, expectedBpm: action.payload.bpm },
+                    },
+                }),
+                undoable: true,
+                validate: () => true,
+            },
+        });
+        const action = { type: 'setTempo', payload: { bpm: 132 } } satisfies SetTempoAction;
+        const projectRevision = captureProjectRevision();
+        const command = migrateLegacyAppActionToVersionedCommandEnvelope({
+            action,
+            expectedEffect: 'Tempo changes to 132 BPM.',
+            normalizedProjectRevision: projectRevision,
+            options: { groupId: 'group-double-confirm', groupLabel: 'Set tempo', source: 'prompt' },
+        });
+        const commandBatch = compileVersionedCommandBatchEnvelope({
+            runId: 'run-double-confirm',
+            batchId: 'group-double-confirm',
+            projectId: 'project-1',
+            baseRevision: projectRevision,
+            intent: 'set tempo to 132',
+            commands: [serializeVersionedCommandEnvelope(command)],
+        });
+        agentRunLifecycle.create({
+            runId: 'run-double-confirm',
+            request: 'set tempo to 132',
+            mode: 'macro',
+            createdRevision: projectRevision,
+        });
+        agentRunLifecycle.transitionPhase({ runId: 'run-double-confirm', phase: 'planning' });
+        agentRunLifecycle.transitionPhase({ runId: 'run-double-confirm', phase: 'waiting-for-approval' });
+        const release = vi.fn().mockResolvedValue(undefined);
+        proposePendingActionConfirmation({
+            id: 'confirmation-double-confirm',
+            runId: 'run-double-confirm',
+            prompt: 'set tempo to 132',
+            assistantMessageId: 'assistant-1',
+            actions: [action],
+            actionLabels: ['Set tempo to 132 BPM'],
+            commandBatch,
+            agentApproval: compileAgentRiskApproval({ commandBatch }),
+            executionMode: 'atomic',
+            groupId: 'group-double-confirm',
+            groupLabel: 'Set tempo',
+            projectRevision,
+            resourceLease: {
+                bytes: 1,
+                prepareForCommit: vi.fn().mockResolvedValue(undefined),
+                commit: vi.fn().mockResolvedValue(undefined),
+                release,
+                transfer: vi.fn().mockResolvedValue(undefined),
+            },
+        });
+        let resolveWinningEvidence!: (receipt: null) => void;
+        let rejectLosingEvidence!: (reason: Error) => void;
+        const winningEvidence = new Promise<null>((resolve) => {
+            resolveWinningEvidence = resolve;
+        });
+        const losingEvidence = new Promise<null>((_resolve, reject) => {
+            rejectLosingEvidence = reject;
+        });
+        const commandUseCases = await import('#/modules/Command/useCases');
+        const replay = vi
+            .spyOn(commandUseCases, 'getVersionedCommandBatchIdempotentReplay')
+            .mockImplementationOnce(() => winningEvidence)
+            .mockImplementationOnce(() => losingEvidence);
+
+        try {
+            const first = confirmPendingChatActions({ confirmationId: 'confirmation-double-confirm' });
+            const second = confirmPendingChatActions({ confirmationId: 'confirmation-double-confirm' });
+            await vi.waitFor(() => expect(replay).toHaveBeenCalledTimes(2));
+            resolveWinningEvidence(null);
+            await expect(first).resolves.toEqual({ status: 'executed' });
+            rejectLosingEvidence(new Error('losing receipt read failed after the winning commit'));
+
+            await expect(second).resolves.toEqual({ status: 'not_pending', currentStatus: 'executed' });
+        } finally {
+            replay.mockRestore();
+        }
+
+        expect(execute).toHaveBeenCalledOnce();
+        expect(release).not.toHaveBeenCalled();
+        expect(getPendingActionConfirmation('confirmation-double-confirm')).toMatchObject({ status: 'executed' });
+        expect(agentRunLifecycle.get('run-double-confirm')).toMatchObject({ phase: 'completed', errors: [] });
+        expect(getCrdtDoc<Record<string, unknown>>('owned')).toMatchObject({ transport: { bpm: 132 } });
+        expect(chatStore.value?.messages[0]).toMatchObject({
+            pendingActionConfirmationStatus: 'executed',
+            error: undefined,
+        });
+    });
+
+    it('keeps an unreadable proposed receipt pending without executing its command batch', async () => {
+        configureAiWorkflowCommandPreflightFixture('project-1');
+        configureCommandBatchIdempotency({ canExecute: () => true });
+        const ownedStorage = createAutomergeStorage<{ bpm: number }>('owned', 'transport');
+        const execute = vi.fn<ActionHandler<SetTempoAction>['execute']>((action) => {
+            ownedStorage.set({ bpm: action.payload.bpm });
+        });
+        registerHandlerMap({
+            setTempo: {
+                canReapplyAfterDivergence: () => true,
+                execute,
+                describe: (action) => ({
+                    label: 'Set tempo',
+                    inverseAction: {
+                        type: 'setTempo',
+                        payload: { bpm: 120, expectedBpm: action.payload.bpm },
+                    },
+                }),
+                undoable: true,
+                validate: () => true,
+            },
+        });
+        const action = { type: 'setTempo', payload: { bpm: 132 } } satisfies SetTempoAction;
+        const projectRevision = captureProjectRevision();
+        const command = migrateLegacyAppActionToVersionedCommandEnvelope({
+            action,
+            expectedEffect: 'Tempo changes to 132 BPM.',
+            normalizedProjectRevision: projectRevision,
+            options: { groupId: 'group-unreadable-receipt', groupLabel: 'Set tempo', source: 'prompt' },
+        });
+        const commandBatch = compileVersionedCommandBatchEnvelope({
+            runId: 'run-unreadable-receipt',
+            batchId: 'group-unreadable-receipt',
+            projectId: 'project-1',
+            baseRevision: projectRevision,
+            intent: 'set tempo to 132',
+            commands: [serializeVersionedCommandEnvelope(command)],
+        });
+        const chat = chatStore.value;
+        if (!chat) {
+            throw new Error('Expected the confirmation chat fixture');
+        }
+        chatStore.set({
+            ...chat,
+            messages: chat.messages.map((message) =>
+                message.id === 'assistant-1' ? { ...message, pendingActionConfirmationStatus: 'proposed' } : message
+            ),
+        });
+        proposePendingActionConfirmation({
+            id: 'confirmation-unreadable-receipt',
+            runId: 'run-unreadable-receipt',
+            prompt: 'set tempo to 132',
+            assistantMessageId: 'assistant-1',
+            actions: [action],
+            actionLabels: ['Set tempo to 132 BPM'],
+            commandBatch,
+            agentApproval: compileAgentRiskApproval({ commandBatch }),
+            executionMode: 'atomic',
+            groupId: 'group-unreadable-receipt',
+            groupLabel: 'Set tempo',
+            projectRevision,
+        });
+        const commandUseCases = await import('#/modules/Command/useCases');
+        const replay = vi
+            .spyOn(commandUseCases, 'getVersionedCommandBatchIdempotentReplay')
+            .mockRejectedValue(new Error('receipt store unavailable'));
+
+        try {
+            await expect(
+                confirmPendingChatActions({ confirmationId: 'confirmation-unreadable-receipt' })
+            ).resolves.toEqual({
+                status: 'failed',
+                reason: 'The durable commit evidence for the confirmed actions could not be read: receipt store unavailable. The proposal remains pending.',
+            });
+        } finally {
+            replay.mockRestore();
+        }
+
+        expect(execute).not.toHaveBeenCalled();
+        expect(getPendingActionConfirmation('confirmation-unreadable-receipt')).toMatchObject({ status: 'proposed' });
+        expect(chatStore.value?.messages[0]).toMatchObject({
+            pendingActionConfirmationStatus: 'proposed',
+            content: expect.stringContaining('The confirmed actions were not executed'),
+        });
+        expect(chatStore.value?.messages[0]?.content).toContain('Project actions were not replayed');
+        expect(chatStore.value?.messages[0]?.content).toContain('proposal remains pending');
+        expect(getCrdtDoc<Record<string, unknown>>('owned')).not.toHaveProperty('transport');
+    });
+
     it('rejects a legacy command-envelope confirmation without an approved outer batch', async () => {
         const ownedStorage = createAutomergeStorage<{ bpm: number }>('owned', 'transport');
         registerHandlerMap({
