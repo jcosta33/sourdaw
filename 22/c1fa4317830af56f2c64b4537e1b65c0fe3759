@@ -1,0 +1,43 @@
+src/modules/Transport/useCases/transportControls/sendLoopRegionToNativeSession.ts
+  s_4f908a5afb6b58::t_d50bfe8b8fb532 1-57
+src/modules/Transport/useCases/transportControls/setLoopRegion.ts
+  s_4f908a5afb6b58::t_bd57f46f5e18e9 31
+  s_4f908a5afb6b58::t_cd04a8ac80a173 4-5
+  s_4f908a5afb6b58::t_1cbcfafeee5b8e 22
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeLiveGraphSession.spec.ts
+  s_4f908a5afb6b58::t_5b18c861474432 100-105
+  s_4f908a5afb6b58::t_742252c3e10c58 29
+  s_4f908a5afb6b58::t_736ee20037b2b2 352-464,466,469
+  s_4f908a5afb6b58::t_b704fb096673f1 465,467-468,470
+src/modules/Transport/useCases/transportControls/__tests__/sendLoopRegionToNativeSession.spec.ts
+  s_4f908a5afb6b58::t_f871c2c0807265 1-7,9-11,14-17,19-27,32,34-38,40-44,46-51,53-64,67-79,82-92,94,97-107,109-110,112-139,142-154,156-163,167-171,177-178,183,188-191,193-195,199-202
+  s_4f908a5afb6b58::t_50b220c1f60148 8,12-13,18,28-31,33,39,45,52,65-66,80-81,93,95-96,108,111,140-141,155,164-166,172-176,179-182,184-187,192,196-198
+src/modules/Transport/useCases/setLooping.ts
+  s_4f908a5afb6b58::t_e17dcc0ec22f16 4-5,12
+src/modules/AudioEngine/useCases/livePlayback/updateNativeLiveGraphSessionTransportMaps.ts
+  s_4f908a5afb6b58::t_59dd60451147c6 1-76
+src/modules/Transport/useCases/transportControls/setLoopEnabled.ts
+  s_4f908a5afb6b58::t_e59fb08c50a049 4-5,15
+src/modules/Transport/useCases/transportControls/restoreLoopRegion.ts
+  s_4f908a5afb6b58::t_ad291e84fd469c 4-5,18
+src/modules/Transport/useCases/transportControls/toggleLoop.ts
+  s_4f908a5afb6b58::t_82af855728e4e5 4-5,12
+src/modules/AudioEngine/useCases/index.ts
+  s_4f908a5afb6b58::t_b18d648e9b0f97 112
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "22c1fa4317830af56f2c64b4537e1b65c0fe3759",
+  "prompts": {},
+  "sessions": {
+    "s_4f908a5afb6b58": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fcb92ba4-bf56-47a4-8b57-803f335a449e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
