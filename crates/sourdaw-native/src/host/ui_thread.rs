@@ -21,6 +21,14 @@
 //! resizes the host window from inside `attached`), and posting that re-entry
 //! to the thread it is already on would wait for a turn that cannot come until
 //! it returns.
+//!
+//! Those two keep the ordinary path acyclic. What keeps the reverse one
+//! survivable is that this wait is the bounded side of the pair: the shell's
+//! own quit cascade runs on the UI thread and does claim control gates there,
+//! so a worker holding a gate while waiting here is a cycle the ordering rules
+//! alone cannot rule out. An implementation therefore gives up after a
+//! deadline, which releases the claim and lets the UI thread through. The
+//! control gate is an unbounded wait and cannot be the one to yield.
 
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -87,6 +95,11 @@ pub trait UiThread: Send + Sync {
     ///
     /// Returning `Ok` means the task ran; returning `Err` means it did not and
     /// never will. Neither answer may be given while the task is still running.
+    ///
+    /// An implementation with a real thread bounds this wait — see the module
+    /// note on why the deadline is what breaks the reverse cycle — and
+    /// [`UiThreadTask::withdraw`] is how it gives up without racing a task that
+    /// started in the same instant.
     fn run_on_ui_thread(&self, task: &Arc<UiThreadTask>) -> Result<(), String> {
         task.run();
         Ok(())
