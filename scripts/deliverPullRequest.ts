@@ -87,6 +87,7 @@ export type DeliveryPort = CheckEvidencePort & {
     merge: (number: number, expectedHead: string, hasDependents: boolean) => void;
     retarget: (number: number, baseBranch: string) => void;
     deliveryReceipts: (number: number) => DeliveryReceiptComment[];
+    deliveryReceiptProof: (number: number) => DeliveryReceiptProof;
     addDeliveryReceipt: (number: number, body: string) => DeliveryReceiptComment;
     readDeliveryReceiptAuthority: (number: number) => PersistedDeliveryReceiptAuthority | undefined;
     writeDeliveryReceiptAuthority: (number: number, authority: PersistedDeliveryReceiptAuthority) => void;
@@ -106,6 +107,11 @@ export type DeliveryReceiptComment = {
 
 export type TrackerCompletionPort = {
     complete: (issueNumber: number) => void;
+};
+
+export type DeliveryReceiptProof = {
+    totalCount: number;
+    latestCommentId: string | undefined;
 };
 
 export type ShellRunner = {
@@ -585,25 +591,6 @@ function sameDeliveryReceiptMode(left: DeliveryReceiptPayload, right: DeliveryRe
     return left.ciAdmissionMode === right.ciAdmissionMode;
 }
 
-function authoritativeDeliveryReceipt(
-    lineage: DeliveryReceiptComment[],
-    pullRequest: Pick<PullRequestSnapshot, 'number' | 'headRefOid'>
-): DeliveryReceiptComment {
-    for (let index = lineage.length - 1; index >= 0; index -= 1) {
-        const receipt = lineage[index];
-        if (receipt === undefined) {
-            continue;
-        }
-        const payload = assertDeliveryReceiptForHead(receipt, pullRequest);
-        if (payload.schemaVersion === 1 && hasSameKeyV2Evidence(lineage, payload, pullRequest)) {
-            continue;
-        }
-        return receipt;
-    }
-    fail(`PR #${pullRequest.number} has no delivery receipt for its current head`);
-    throw new Error('unreachable');
-}
-
 function deliveryReceiptKey(payload: DeliveryReceiptPayload): string {
     return [payload.pullRequest, payload.head, payload.bodySha256, payload.closingIssue ?? 'none'].join(':');
 }
@@ -790,24 +777,70 @@ function readExactDeliveryReceipt(
     return receipt;
 }
 
+function assertCompleteDeliveryReceiptProof(
+    number: number,
+    comments: DeliveryReceiptComment[],
+    proof: DeliveryReceiptProof
+): void {
+    if (comments.length !== proof.totalCount) {
+        fail(`PR #${number} delivery receipt authority cannot be proven`);
+    }
+    if (proof.totalCount === 0) {
+        if (proof.latestCommentId !== undefined) {
+            fail(`PR #${number} delivery receipt authority cannot be proven`);
+        }
+        return;
+    }
+    if (proof.latestCommentId === undefined || comments.at(-1)?.id !== proof.latestCommentId) {
+        fail(`PR #${number} delivery receipt authority cannot be proven`);
+    }
+}
+
+function provenDeliveryReceiptComments(
+    pullRequest: Pick<PullRequestSnapshot, 'number'>,
+    port: DeliveryPort
+): DeliveryReceiptComment[] {
+    const comments = port.deliveryReceipts(pullRequest.number);
+    assertCompleteDeliveryReceiptProof(pullRequest.number, comments, port.deliveryReceiptProof(pullRequest.number));
+    return comments;
+}
+
+function uniqueLogicalDeliveryReceiptAuthorities(
+    lineage: DeliveryReceiptComment[],
+    pullRequest: Pick<PullRequestSnapshot, 'number' | 'headRefOid'>
+): DeliveryReceiptComment[] {
+    const unique: Array<{ comment: DeliveryReceiptComment; payload: DeliveryReceiptPayload }> = [];
+    for (let index = lineage.length - 1; index >= 0; index -= 1) {
+        const comment = lineage[index];
+        if (comment === undefined) {
+            continue;
+        }
+        const payload = assertDeliveryReceiptForHead(comment, pullRequest);
+        if (unique.some((entry) => sameExactDeliveryReceipt(entry.payload, payload))) {
+            continue;
+        }
+        unique.push({ comment, payload });
+    }
+    return unique.map((entry) => entry.comment);
+}
+
 function readStableMergedRecoveryReceipt(pullRequest: PullRequestSnapshot, port: DeliveryPort): DeliveryReceiptComment {
-    const firstLineage = orderedDeliveryReceiptLineage(port.deliveryReceipts(pullRequest.number), pullRequest);
-    if (firstLineage.length !== 1) {
+    const firstLineage = orderedDeliveryReceiptLineage(provenDeliveryReceiptComments(pullRequest, port), pullRequest);
+    const firstAuthorities = uniqueLogicalDeliveryReceiptAuthorities(firstLineage, pullRequest);
+    if (firstAuthorities.length !== 1) {
         fail(`PR #${pullRequest.number} delivery receipt authority cannot be proven`);
     }
-    const first = authoritativeDeliveryReceipt(firstLineage, pullRequest);
-    const secondLineage = orderedDeliveryReceiptLineage(port.deliveryReceipts(pullRequest.number), pullRequest);
-    if (secondLineage.length !== 1) {
+    const first = firstAuthorities[0];
+    const secondLineage = orderedDeliveryReceiptLineage(provenDeliveryReceiptComments(pullRequest, port), pullRequest);
+    const secondAuthorities = uniqueLogicalDeliveryReceiptAuthorities(secondLineage, pullRequest);
+    if (secondAuthorities.length !== 1) {
         fail(`PR #${pullRequest.number} delivery receipt authority cannot be proven`);
     }
-    const second = authoritativeDeliveryReceipt(secondLineage, pullRequest);
+    const second = secondAuthorities[0];
     if (first.id !== second.id) {
         fail(`PR #${pullRequest.number} delivery receipt changed during recovery`);
     }
-    const payload = assertDeliveryReceiptForHead(second, pullRequest);
-    if (trackerCompletionTarget(pullRequest) !== payload.closingIssue) {
-        fail(`PR #${pullRequest.number} delivery receipt authority cannot be proven`);
-    }
+    assertDeliveryReceiptForHead(second, pullRequest);
     return second;
 }
 
@@ -1150,6 +1183,19 @@ type RawRollupEntry = {
     state?: unknown;
 };
 
+type DeliveryReceiptProofResponse = {
+    data?: {
+        repository?: {
+            pullRequest?: {
+                comments?: {
+                    totalCount?: unknown;
+                    nodes?: Array<{ id?: unknown } | null> | null;
+                } | null;
+            } | null;
+        };
+    };
+};
+
 const UNSETTLED_STATUS_CONTEXT_STATES = new Set(['PENDING', 'EXPECTED']);
 
 const ROLLUP_PAGE_SIZE = 100;
@@ -1324,6 +1370,42 @@ function readMergedByActorNodeId(
         fail(`PR #${number} merger cannot be verified`);
     }
     return mergedBy.id;
+}
+
+function readDeliveryReceiptProofFromGithub(
+    number: number,
+    repository: { owner: string; name: string },
+    shell: Pick<ShellRunner, 'capture'>
+): DeliveryReceiptProof {
+    const query =
+        'query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){comments(last:1){totalCount nodes{id}}}}}';
+    const response = parseJson<DeliveryReceiptProofResponse>(
+        shell.capture('gh', [
+            'api',
+            'graphql',
+            '-f',
+            `query=${query}`,
+            '-f',
+            `owner=${repository.owner}`,
+            '-f',
+            `name=${repository.name}`,
+            '-F',
+            `number=${number}`,
+        ]),
+        `PR #${number} delivery receipt proof`
+    );
+    const comments = response.data?.repository?.pullRequest?.comments;
+    if (typeof comments?.totalCount !== 'number' || !Array.isArray(comments.nodes) || comments.nodes.length > 1) {
+        fail(`cannot inspect delivery receipts for PR #${number}`);
+    }
+    const latest = comments.nodes[0];
+    if (latest !== null && latest !== undefined && typeof latest.id !== 'string') {
+        fail(`cannot inspect delivery receipts for PR #${number}`);
+    }
+    return {
+        totalCount: comments.totalCount,
+        latestCommentId: typeof latest?.id === 'string' ? latest.id : undefined,
+    };
 }
 
 export function shellPort(
@@ -1547,6 +1629,7 @@ export function shellPort(
             }
             return comments;
         },
+        deliveryReceiptProof: (number) => readDeliveryReceiptProofFromGithub(number, { owner, name }, shell),
         addDeliveryReceipt: (number, body) =>
             toDeliveryReceiptComment(
                 parseJson<unknown>(
@@ -1760,6 +1843,9 @@ function readOptionalDeliveryRefOid(
     if (symbolic.status === 0) {
         fail(`PR #${number} ${label} cannot be verified`);
     }
+    if (symbolic.status !== 1) {
+        fail(`PR #${number} ${label} cannot be verified`);
+    }
     const result = deliveryLockGit(primaryRoot, ['show-ref', '--verify', '--hash', '--', ref]);
     if (result.error !== undefined) {
         throw result.error;
@@ -1776,6 +1862,9 @@ function readOptionalDeliveryRefOid(
     }
     const exactRefPath = resolve(primaryRoot, refPath.stdout.trim());
     if (!existsSync(exactRefPath)) {
+        if (!/not a valid ref/u.test(result.stderr)) {
+            fail(`PR #${number} ${label} cannot be verified`);
+        }
         return undefined;
     }
     if (!lstatSync(exactRefPath).isFile()) {

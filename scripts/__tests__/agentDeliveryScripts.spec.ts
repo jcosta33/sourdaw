@@ -41,6 +41,7 @@ import type {
     DeliveryAuthentication,
     DeliveryCoordinatorDependencies,
     DeliveryReceiptComment,
+    DeliveryReceiptProof,
     DeliveryPort,
     PersistedDeliveryReceiptAuthority,
     PullRequestSnapshot,
@@ -113,6 +114,10 @@ function writeRawRef(root: string, ref: string, contents: string): void {
     const path = join(root, gitDir, ref);
     mkdirSync(dirname(path), { recursive: true });
     writeFileSync(path, contents);
+}
+
+function deliveryReceiptProof(totalCount: number, latestCommentId: string | undefined): DeliveryReceiptProof {
+    return { totalCount, latestCommentId };
 }
 
 function pullRequestSnapshot(overrides: Partial<PullRequestSnapshot> = {}): PullRequestSnapshot {
@@ -613,6 +618,7 @@ describe('package scripts and gitignore', () => {
                 dependentAfter = { ...dependentAfter, baseRefName: baseBranch };
             },
             deliveryReceipts: () => (receipt === undefined ? [] : [receipt]),
+            deliveryReceiptProof: () => deliveryReceiptProof(receipt === undefined ? 0 : 1, receipt?.id),
             addDeliveryReceipt: (_number, body) => {
                 receiptBody = body;
                 receipt = deliveryReceiptComment(body);
@@ -1441,12 +1447,12 @@ describe('package scripts and gitignore', () => {
         }
     }, 10_000);
 
-    it('reads retained delivery receipt authority from an exact temp-repository ref until explicitly cleared', () => {
+    it('round-trips prepared, merge-authorized, and terminal receipt authority across fresh shellPort instances', () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-authority-'));
         initializeDeliveryLockRepository(root);
 
         try {
-            const port = shellPort(
+            const writePrepared = shellPort(
                 'jcosta33/sourdaw',
                 {
                     capture: () => expect.fail('receipt authority reads should not query GitHub'),
@@ -1454,25 +1460,109 @@ describe('package scripts and gitignore', () => {
                 },
                 { primaryRoot: root }
             );
+            writePrepared.writeDeliveryReceiptAuthority(2495, {
+                phase: 'prepared',
+                receiptId: 'IC_exact_authority',
+            });
 
-            port.writeDeliveryReceiptAuthority(2495, {
+            const readPrepared = shellPort(
+                'jcosta33/sourdaw',
+                {
+                    capture: () => expect.fail('receipt authority reads should not query GitHub'),
+                    run: () => expect.fail('receipt authority reads should not run shell commands'),
+                },
+                { primaryRoot: root }
+            );
+            expect(readPrepared.readDeliveryReceiptAuthority(2495)).toEqual({
+                phase: 'prepared',
+                receiptId: 'IC_exact_authority',
+            });
+
+            const writeMergeAuthorized = shellPort(
+                'jcosta33/sourdaw',
+                {
+                    capture: () => expect.fail('receipt authority reads should not query GitHub'),
+                    run: () => expect.fail('receipt authority reads should not run shell commands'),
+                },
+                { primaryRoot: root }
+            );
+            writeMergeAuthorized.writeDeliveryReceiptAuthority(2495, {
+                phase: 'merge-authorized',
+                receiptId: 'IC_exact_authority',
+            });
+
+            const readMergeAuthorized = shellPort(
+                'jcosta33/sourdaw',
+                {
+                    capture: () => expect.fail('receipt authority reads should not query GitHub'),
+                    run: () => expect.fail('receipt authority reads should not run shell commands'),
+                },
+                { primaryRoot: root }
+            );
+            expect(readMergeAuthorized.readDeliveryReceiptAuthority(2495)).toEqual({
+                phase: 'merge-authorized',
+                receiptId: 'IC_exact_authority',
+            });
+
+            const writeTerminal = shellPort(
+                'jcosta33/sourdaw',
+                {
+                    capture: () => expect.fail('receipt authority reads should not query GitHub'),
+                    run: () => expect.fail('receipt authority reads should not run shell commands'),
+                },
+                { primaryRoot: root }
+            );
+            writeTerminal.writeDeliveryReceiptAuthority(2495, {
                 phase: 'terminal',
                 receiptId: 'IC_exact_authority',
             });
 
-            expect(port.readDeliveryReceiptAuthority(2495)).toEqual({
+            const readTerminal = shellPort(
+                'jcosta33/sourdaw',
+                {
+                    capture: () => expect.fail('receipt authority reads should not query GitHub'),
+                    run: () => expect.fail('receipt authority reads should not run shell commands'),
+                },
+                { primaryRoot: root }
+            );
+            expect(readTerminal.readDeliveryReceiptAuthority(2495)).toEqual({
                 phase: 'terminal',
                 receiptId: 'IC_exact_authority',
             });
-            expect(port.readDeliveryReceiptAuthority(2495)).toEqual({
+            expect(
+                shellPort(
+                    'jcosta33/sourdaw',
+                    {
+                        capture: () => expect.fail('receipt authority reads should not query GitHub'),
+                        run: () => expect.fail('receipt authority reads should not run shell commands'),
+                    },
+                    { primaryRoot: root }
+                ).readDeliveryReceiptAuthority(2495)
+            ).toEqual({
                 phase: 'terminal',
                 receiptId: 'IC_exact_authority',
             });
             expect(readDeliveryReceiptAuthorityOid(root, 2495)).toMatch(/^[0-9a-f]{40,64}$/u);
 
-            port.clearDeliveryReceiptAuthority(2495);
+            shellPort(
+                'jcosta33/sourdaw',
+                {
+                    capture: () => expect.fail('receipt authority reads should not query GitHub'),
+                    run: () => expect.fail('receipt authority reads should not run shell commands'),
+                },
+                { primaryRoot: root }
+            ).clearDeliveryReceiptAuthority(2495);
 
-            expect(port.readDeliveryReceiptAuthority(2495)).toBeUndefined();
+            expect(
+                shellPort(
+                    'jcosta33/sourdaw',
+                    {
+                        capture: () => expect.fail('receipt authority reads should not query GitHub'),
+                        run: () => expect.fail('receipt authority reads should not run shell commands'),
+                    },
+                    { primaryRoot: root }
+                ).readDeliveryReceiptAuthority(2495)
+            ).toBeUndefined();
         } finally {
             rmSync(root, { recursive: true, force: true });
         }
@@ -1498,6 +1588,27 @@ describe('package scripts and gitignore', () => {
             rmSync(join(root, '.git', 'refs', 'sourdaw'), { recursive: true, force: true });
             writeDeliveryReceiptAuthority(root, 2495, JSON.stringify({ version: 1, receiptId: '' }));
             expect(() => port.readDeliveryReceiptAuthority(2495)).toThrow(/delivery receipt authority is malformed/i);
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('fails closed on corrupt packed delivery receipt refs instead of treating them as absent', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-authority-'));
+        initializeDeliveryLockRepository(root);
+
+        try {
+            writeFileSync(join(root, '.git', 'packed-refs'), '# pack-refs with: peeled fully-peeled\n^broken\n');
+            const port = shellPort(
+                'jcosta33/sourdaw',
+                {
+                    capture: () => expect.fail('receipt authority reads should not query GitHub'),
+                    run: () => expect.fail('receipt authority reads should not run shell commands'),
+                },
+                { primaryRoot: root }
+            );
+
+            expect(() => port.readDeliveryReceiptAuthority(2495)).toThrow(/cannot be verified/i);
         } finally {
             rmSync(root, { recursive: true, force: true });
         }
@@ -1643,6 +1754,7 @@ describe('package scripts and gitignore', () => {
             merge: () => undefined,
             retarget: () => undefined,
             deliveryReceipts: () => [],
+            deliveryReceiptProof: () => deliveryReceiptProof(0, undefined),
             addDeliveryReceipt: () => expect.fail('delivery domain should be injected in this coordinator test'),
             readDeliveryReceiptAuthority: () => undefined,
             writeDeliveryReceiptAuthority: () => undefined,

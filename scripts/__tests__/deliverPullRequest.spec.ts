@@ -14,6 +14,7 @@ import {
     parseCliArgs,
     readGateRequiredCheckNames,
     shellPort,
+    type DeliveryReceiptProof,
     type DeliveryPort,
     type HeadCheckRun,
     type PersistedDeliveryReceiptAuthority,
@@ -388,6 +389,7 @@ type FakeInput = {
     reviewStateOnReceiptRead?: ReviewState;
     receipts?: DeliveryReceiptComment[];
     persistedReceiptAuthority?: PersistedDeliveryReceiptAuthority;
+    deliveryReceiptProof?: DeliveryReceiptProof;
     mergedPrimaryAfterMerge?: Partial<PullRequestSnapshot>;
 };
 
@@ -567,6 +569,14 @@ function fakePort(input: FakeInput = {}) {
             primaryBody = input.primaryBodyOnReceiptRead ?? primaryBody;
             reviewStateAfterReceipt = input.reviewStateOnReceiptRead ?? reviewStateAfterReceipt;
             return structuredClone(receipts);
+        },
+        deliveryReceiptProof: (number) => {
+            const proof = input.deliveryReceiptProof ?? {
+                totalCount: receipts.length,
+                latestCommentId: receipts.at(-1)?.id,
+            };
+            calls.push(`receipt-proof:${number}:${proof.totalCount}:${proof.latestCommentId ?? 'none'}`);
+            return proof;
         },
         addDeliveryReceipt: (number, receiptBody) => {
             calls.push(`add-receipt:${number}`);
@@ -1073,6 +1083,56 @@ describe('pull-request delivery', () => {
         expect(calls).not.toContain('retarget:43:main');
         expect(calls.filter((call) => call.startsWith('complete:'))).toHaveLength(0);
         expect(calls.filter((call) => call.startsWith('receipt-authority:write:terminal:'))).toHaveLength(0);
+    });
+
+    it('recovers one logical authority from duplicate legacy v1 receipts when the complete lineage is proven', () => {
+        const closes = relationshipBody('Closes #2372');
+        const duplicate = (id: string, createdAt: string): DeliveryReceiptComment => ({
+            id,
+            body: deliveryReceiptBody(42, 'head', closes, 2372),
+            authorNodeId: AUTHOR_BOT_NODE_ID,
+            authorLogin: 'renamed-author[bot]',
+            authorType: 'Bot',
+            createdAt,
+            updatedAt: createdAt,
+        });
+        const { port, calls, tracker } = fakePort({
+            primary: [pullRequest({ state: 'MERGED', body: relationshipBody('None.') })],
+            dependentSets: [[]],
+            receipts: [duplicate('IC_v1_a', '2026-08-21T00:00:00Z'), duplicate('IC_v1_b', '2026-08-21T00:00:01Z')],
+            deliveryReceiptProof: { totalCount: 2, latestCommentId: 'IC_v1_b' },
+        });
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls.filter((call) => call.startsWith('complete:'))).toEqual(['complete:2372']);
+        expect(calls).toContain('receipt-authority:write:merge-authorized:IC_v1_b');
+        expect(calls).toContain('receipt-authority:write:terminal:IC_v1_b');
+    });
+
+    it('recovers a single legacy v1 receipt after the merged pull-request body drifts to None when completeness is proven', () => {
+        const closes = relationshipBody('Closes #2372');
+        const { port, calls, tracker } = fakePort({
+            primary: [pullRequest({ state: 'MERGED', body: relationshipBody('None.') })],
+            dependentSets: [[]],
+            receipts: [
+                {
+                    id: 'IC_v1_only',
+                    body: deliveryReceiptBody(42, 'head', closes, 2372),
+                    authorNodeId: AUTHOR_BOT_NODE_ID,
+                    authorLogin: 'renamed-author[bot]',
+                    authorType: 'Bot',
+                    createdAt: '2026-08-21T00:00:00Z',
+                    updatedAt: '2026-08-21T00:00:00Z',
+                },
+            ],
+            deliveryReceiptProof: { totalCount: 1, latestCommentId: 'IC_v1_only' },
+        });
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls.filter((call) => call.startsWith('complete:'))).toEqual(['complete:2372']);
+        expect(calls).toContain('receipt-authority:write:terminal:IC_v1_only');
     });
 
     it('publishes and verifies a fresh X when two pre-merge stale listings both hide newer Y', () => {
@@ -1790,6 +1850,39 @@ describe('pull-request delivery', () => {
         expect(receipts[0]?.body).toBe(receipts[1]?.body);
         expect(calls.filter((call) => call === 'complete:2372')).toHaveLength(2);
         expect(calls).toContain('PR #42 was already merged; repaired 0 remaining dependent(s)');
+    });
+
+    it('posts and persists a current-body v2 receipt instead of reusing a stale body-digest receipt on the same head and issue', () => {
+        const staleBody = relationshipBody('Closes #2372\nOld note.');
+        const currentBody = relationshipBody('Closes #2372\nCurrent note.');
+        const staleDigestReceipt = {
+            id: 'IC_stale_digest',
+            body: composeDeliveryReceipt({
+                pullRequest: 42,
+                head: 'head',
+                bodySha256: createHash('sha256').update(staleBody).digest('hex'),
+                closingIssue: 2372,
+                ciAdmissionMode: 'advisory',
+                observedCiState: 'successful',
+            }),
+            authorNodeId: AUTHOR_BOT_NODE_ID,
+            authorLogin: 'renamed-author[bot]',
+            authorType: 'Bot',
+            createdAt: '2026-08-21T00:00:00Z',
+            updatedAt: '2026-08-21T00:00:00Z',
+        };
+        const { port, calls, receipts, tracker } = fakePort({
+            primary: [pullRequest({ body: currentBody }), pullRequest({ body: currentBody })],
+            dependentSets: [[]],
+            receipts: [staleDigestReceipt],
+        });
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(1);
+        expect(calls).toContain('receipt-authority:write:prepared:IC_delivery_42_2');
+        expect(calls).toContain('receipt-authority:write:terminal:IC_delivery_42_2');
+        expect(receipts[1]?.body).toBe(visibleDeliveryReceiptBody(42, 'head', currentBody, 2372, 'successful'));
     });
 
     it('recovers a lost add-comment response from the unique newest canonical receipt', () => {
