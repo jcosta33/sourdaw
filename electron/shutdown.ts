@@ -8,10 +8,19 @@
  * only then does the process end.
  *
  * The cascade does not release the engine's audio stream, and cannot: taking
- * runtimes out of the graph is something it asks the running engine to do. What
- * keeps the stream from outliving the CLAP runtimes it reads is Rust drop order
- * — `AppState` declares the engine before those runtime maps, so the stream is
- * released first — which the cascade leaves intact rather than performing.
+ * runtimes out of the graph is something it asks the running engine to do. No
+ * destructor releases it afterwards either — quit ends at `app.exit()`, so no
+ * Rust `Drop` on the host state runs on this path, whatever `AppState`'s field
+ * order guarantees on the paths where it does. What keeps the still-open stream
+ * off a freed CLAP
+ * runtime is the cascade's own `Arc` discipline
+ * (`crates/sourdaw-native/src/shutdown.rs`): a runtime's removal from the
+ * scheduler is queued first, the runtime is retired, and it is freed only once
+ * every other holder — the scheduler included — has let go of its reference.
+ * One the scheduler never releases inside the waiting budget is retained rather
+ * than freed, and reported as an unreclaimed retirement. Leaking it past exit is
+ * the deliberate trade: the process is ending regardless, and freeing memory a
+ * live audio callback may still read is the worse outcome.
  *
  * The deadline is the other half. A third-party plugin editor that refuses to
  * die must not wedge quit: a musician who asked the app to close and watched

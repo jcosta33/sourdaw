@@ -4296,8 +4296,25 @@ mod tests {
     /// What `projectLiveGraphTopology` builds for a session holding one soloed
     /// track — carrying a hosted plugin and a built-in — one send bus, and one
     /// track the solo is gating.
+    ///
+    /// The routes are the ones a default session really produces, not the
+    /// simplest ones that map: every added track's stored output is the master
+    /// track, so an ordinary track routes at that *track* strip and runs through
+    /// its device chain. A bus's stored output is the master track too, but the
+    /// engine has no bus -> track edge, so the producer sends it to the master
+    /// sum instead; the refusal it would otherwise hit is pinned by
+    /// `a_bus_routed_at_a_track_refuses_the_batch_with_the_distinct_reason`.
     fn live_topology_commands() -> Value {
         json!([
+            {
+                "kind": "create-track-strip",
+                "trackId": "master",
+                "name": "Master",
+                "state": { "gain": 0.8, "pan": 0, "muted": false, "soloGated": false, "vcaMultiplier": 1 },
+                "devices": [],
+                "honorMuted": true,
+                "contributesAudio": false
+            },
             {
                 "kind": "create-track-strip",
                 "trackId": "lead",
@@ -4335,8 +4352,9 @@ mod tests {
                 "honorMuted": false,
                 "contributesAudio": false
             },
-            { "kind": "set-track-output", "trackId": "lead", "target": { "kind": "master" } },
-            { "kind": "set-track-output", "trackId": "gated", "target": { "kind": "master" } },
+            { "kind": "set-track-output", "trackId": "master", "target": { "kind": "master" } },
+            { "kind": "set-track-output", "trackId": "lead", "target": { "kind": "track", "trackId": "master" } },
+            { "kind": "set-track-output", "trackId": "gated", "target": { "kind": "track", "trackId": "master" } },
             { "kind": "set-track-output", "trackId": "verb", "target": { "kind": "master" } },
             { "kind": "add-send", "trackId": "lead", "busId": "verb", "tap": "post-fader", "level": 0.4 },
             { "kind": "set-transport", "playing": true, "positionSeconds": 0 }
@@ -4347,9 +4365,14 @@ mod tests {
     /// output shape: the batch a play gesture sends must map, and the batch the
     /// *next* play sends must map against the registry the first one left.
     ///
-    /// Each of the three refusals this covers was reachable from an ordinary
-    /// session: a hosted plugin anywhere in a chain, a bus built while anything
-    /// is soloed, and simply pressing play twice.
+    /// Two shapes are guarded structurally here, and each was reachable from an
+    /// ordinary session: a hosted plugin anywhere in a chain, and simply
+    /// pressing play twice. The third refusal an ordinary session could reach —
+    /// a bus built while anything is soloed — is not this test's to guard,
+    /// because the gate never reaches a bus strip in the first place: the
+    /// producer drops it, and `projectLiveGraphTopology.spec.ts` pins that in
+    /// "builds a bus the native strip can actually hold". The fixture below
+    /// only reflects what the producer emits.
     #[test]
     fn a_live_topology_batch_maps_and_maps_again_over_itself() {
         let samples = sample_pool();
@@ -4368,12 +4391,12 @@ mod tests {
                 .iter()
                 .map(|report| report.id.as_str())
                 .collect::<Vec<_>>(),
-            vec!["lead", "gated", "verb"],
+            vec!["master", "lead", "gated", "verb"],
             "every strip the batch created owes a report"
         );
         // The hosted plugins degraded; the built-in is the only realized device.
-        assert_eq!(first.reports[0].device_ids, vec!["d-knead".to_string()]);
-        assert_eq!(first.reports[2].device_ids, Vec::<String>::new());
+        assert_eq!(first.reports[1].device_ids, vec!["d-knead".to_string()]);
+        assert_eq!(first.reports[3].device_ids, Vec::<String>::new());
 
         let second = map_batch(
             &replacing_batch(live_topology_commands()),
@@ -4389,7 +4412,7 @@ mod tests {
                 .any(|op| matches!(op, GraphCommand::RemoveTrack(_))),
             "a replacing batch tears the previous topology down"
         );
-        assert_eq!(registry.track_count, 2);
+        assert_eq!(registry.track_count, 3);
         assert_eq!(registry.bus_count, 1);
     }
 
@@ -4410,13 +4433,20 @@ mod tests {
 
         let teardown = registry.take_topology_down();
 
-        let retire_index = teardown
+        // Per strip, not across the teardown: a strip carrying no device is
+        // removed before another strip's devices are retired, and reading the
+        // first index of each kind would call that an ordering violation.
+        let (retire_index, holder) = teardown
             .iter()
-            .position(|op| matches!(op, GraphCommand::RemoveTrackDeviceRetired { .. }))
+            .enumerate()
+            .find_map(|(index, op)| match op {
+                GraphCommand::RemoveTrackDeviceRetired { track_id, .. } => Some((index, *track_id)),
+                _ => None,
+            })
             .expect("the built device must be retired");
         let remove_index = teardown
             .iter()
-            .position(|op| matches!(op, GraphCommand::RemoveTrack(_)))
+            .position(|op| matches!(op, GraphCommand::RemoveTrack(id) if *id == holder))
             .expect("the strip that held it must be removed");
         assert!(
             retire_index < remove_index,
@@ -4495,6 +4525,31 @@ mod tests {
         assert!(
             refusal.contains("past the ceiling"),
             "the refusal names the ceiling, got: {refusal}"
+        );
+    }
+
+    /// The ceiling is a ceiling, not a limit one command below it. The refusal
+    /// above holds identically whether the guard reads `>` or `>=`, so without
+    /// this the bound could silently tighten and reject the largest batch a
+    /// full project is entitled to send.
+    #[test]
+    fn a_batch_exactly_at_the_command_ceiling_maps() {
+        let samples = sample_pool();
+        let commands: Vec<Value> = (0..MAX_BATCH_COMMANDS)
+            .map(|_| json!({ "kind": "set-transport", "playing": false, "positionSeconds": 0 }))
+            .collect();
+
+        let mapped = map_batch(
+            &batch(json!(commands)),
+            &mut GraphRegistry::default(),
+            &samples,
+            48_000.0,
+        )
+        .expect("a batch exactly at the ceiling must map");
+        assert!(
+            mapped.ops.len() >= MAX_BATCH_COMMANDS,
+            "every admitted command owes at least its own op, got {}",
+            mapped.ops.len()
         );
     }
 

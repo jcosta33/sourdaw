@@ -15,6 +15,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { type Device, type Track } from '#/modules/Arrangement/stores';
+import { createTrack as createTrackFromProjectDefaults } from '#/modules/Arrangement/useCases';
 
 import { type AudioGraphCommand } from '../../../models/AudioGraphBackend';
 import { projectLiveGraphTopology, type LiveGraphTopologyInput } from '../projectLiveGraphTopology';
@@ -192,6 +193,31 @@ describe('projectLiveGraphTopology', () => {
         expect(commands.filter((command) => command.kind === 'set-track-output')).toEqual([
             { kind: 'set-track-output', trackId: 'audio-1', target: { kind: 'bus', busId: 'bus-1' } },
             { kind: 'set-track-output', trackId: 'audio-2', target: { kind: 'master' } },
+            { kind: 'set-track-output', trackId: 'bus-1', target: { kind: 'master' } },
+        ]);
+    });
+
+    it('routes a session built from project defaults to a batch the engine accepts', () => {
+        // Nothing here is chosen: `createTrack` is the production route every
+        // added track and bus takes, so a plain new session has a master track
+        // called `master` and every other strip pointed at it. The native
+        // engine has no bus -> track edge — it sums buses after every track —
+        // so a bus carrying that default route refuses the whole batch by name
+        // (`bus-to-track-routing-unsupported`), which is every session there
+        // is. The track leg keeps its track target: track -> track is an edge
+        // the engine has, and it is what runs the mix through the master
+        // strip's device chain.
+        const commands = project({
+            stripTracks: [
+                createTrackFromProjectDefaults({ name: 'Master', kind: 'master' }),
+                createTrackFromProjectDefaults({ id: 'audio-1', name: 'Audio 1', kind: 'audio' }),
+                createTrackFromProjectDefaults({ id: 'bus-1', name: 'Bus 1', kind: 'bus' }),
+            ],
+        });
+
+        expect(commands.filter((command) => command.kind === 'set-track-output')).toEqual([
+            { kind: 'set-track-output', trackId: 'master', target: { kind: 'master' } },
+            { kind: 'set-track-output', trackId: 'audio-1', target: { kind: 'track', trackId: 'master' } },
             { kind: 'set-track-output', trackId: 'bus-1', target: { kind: 'master' } },
         ]);
     });
