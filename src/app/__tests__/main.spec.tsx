@@ -2,6 +2,12 @@ import { isValidElement } from 'react';
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { injectDependencies } from '#/infra/di/testing/injectDependencies';
+
+const { emit } = vi.hoisted(() => ({
+    emit: vi.fn(),
+}));
+
 const mocks = vi.hoisted(() => ({
     bootstrap: vi.fn(),
     desktopStartupError: vi.fn(() => null),
@@ -42,9 +48,12 @@ vi.mock('react-dom/client', () => ({
 }));
 
 describe('app main composition', () => {
-    beforeEach(() => {
+    beforeEach(async () => {
         vi.clearAllMocks();
         vi.resetModules();
+        const { notifyUser } = await import('#/utils/Notification/notifyUser');
+        injectDependencies(notifyUser, { eventBus: { emit } });
+        emit.mockClear();
         Reflect.deleteProperty(window, 'sourdaw');
         window.name = '';
         document.body.innerHTML = '<div id="root"></div>';
