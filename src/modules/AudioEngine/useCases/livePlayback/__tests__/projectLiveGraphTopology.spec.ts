@@ -200,13 +200,11 @@ describe('projectLiveGraphTopology', () => {
     it('routes a session built from project defaults to a batch the engine accepts', () => {
         // Nothing here is chosen: `createTrack` is the production route every
         // added track and bus takes, so a plain new session has a master track
-        // called `master` and every other strip pointed at it. The native
-        // engine has no bus -> track edge — it sums buses after every track —
-        // so a bus carrying that default route refuses the whole batch by name
-        // (`bus-to-track-routing-unsupported`), which is every session there
-        // is. The track leg keeps its track target: track -> track is an edge
-        // the engine has, and it is what runs the mix through the master
-        // strip's device chain.
+        // called `master` and every other strip pointed at it. The engine takes
+        // a bus → track edge, so the bus keeps that default and its audio runs
+        // through the master strip's device chain — the same mix Web Audio
+        // builds. Rewriting the bus onto the engine sum would bypass those
+        // inserts.
         const commands = project({
             stripTracks: [
                 createTrackFromProjectDefaults({ name: 'Master', kind: 'master' }),
@@ -218,7 +216,21 @@ describe('projectLiveGraphTopology', () => {
         expect(commands.filter((command) => command.kind === 'set-track-output')).toEqual([
             { kind: 'set-track-output', trackId: 'master', target: { kind: 'master' } },
             { kind: 'set-track-output', trackId: 'audio-1', target: { kind: 'track', trackId: 'master' } },
-            { kind: 'set-track-output', trackId: 'bus-1', target: { kind: 'master' } },
+            { kind: 'set-track-output', trackId: 'bus-1', target: { kind: 'track', trackId: 'master' } },
+        ]);
+    });
+
+    it('routes a bus at an ordinary track the same way it routes a track there', () => {
+        const commands = project({
+            stripTracks: [
+                createTrack({ id: 'audio-1', outputId: 'hw_out' }),
+                createTrack({ id: 'bus-1', kind: 'bus', outputId: 'audio-1' }),
+            ],
+        });
+
+        expect(commands.filter((command) => command.kind === 'set-track-output')).toEqual([
+            { kind: 'set-track-output', trackId: 'audio-1', target: { kind: 'master' } },
+            { kind: 'set-track-output', trackId: 'bus-1', target: { kind: 'track', trackId: 'audio-1' } },
         ]);
     });
 

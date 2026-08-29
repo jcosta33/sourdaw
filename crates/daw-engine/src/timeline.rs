@@ -32,10 +32,8 @@ pub const MAX_TRACK_CLIPS: usize = 1024;
 /// unlanded event is refused.
 pub const AUTOMATION_QUEUE_CAPACITY: usize = 8;
 
-/// Hops the routing walk follows before it calls a chain cyclic. Every node
-/// routes to a node closer to the master, so a chain longer than the node
-/// count cannot be acyclic.
-const MAX_ROUTE_HOPS: usize = MAX_TIMELINE_TRACKS + MAX_TIMELINE_BUSES;
+/// Nodes a mix-order rebuild visits: every track and every bus.
+const MIX_NODE_CAPACITY: usize = MAX_TIMELINE_TRACKS + MAX_TIMELINE_BUSES;
 
 /// Where a track or bus sends its output.
 ///
@@ -174,8 +172,9 @@ pub struct TimelineRtDiagnosticsSnapshot {
     /// A routing change refused because it would have fed a node's output back
     /// into itself. The node keeps its previous output.
     pub routing_cycles_refused: u64,
-    /// A bus asked to route into a track. Buses are summed after every track
-    /// has been rendered, so that edge could never carry audio.
+    /// Retained at zero. Bus → track is a live edge; the former refusal
+    /// counter stays on the snapshot so a reader that matches the whole
+    /// struct does not see a shape change.
     pub invalid_bus_routings: u64,
     /// An exponential ramp requested through or across zero, run as a linear
     /// ramp instead.
@@ -257,10 +256,6 @@ impl TimelineRtDiagnostics {
     fn record_routing_cycle_refused(&mut self) {
         self.snapshot.routing_cycles_refused =
             self.snapshot.routing_cycles_refused.saturating_add(1);
-    }
-
-    fn record_invalid_bus_routing(&mut self) {
-        self.snapshot.invalid_bus_routings = self.snapshot.invalid_bus_routings.saturating_add(1);
     }
 
     fn record_exponential_ramp_fallback(&mut self) {
@@ -1086,9 +1081,11 @@ impl TimelineTrack {
     }
 }
 
-/// One bus: an input sum, a device chain, a gain, and an output. Buses are
-/// summed after every track, so a bus may feed the master or another bus but
-/// never a track.
+/// One bus: an input sum, a device chain, a gain, and an output. A bus may
+/// feed the master, another bus, or a track — the last of those is how a
+/// return reaches the master strip's insert chain, which is the professional
+/// convention (Pro Tools aux into the master, Ableton return into Master,
+/// Logic aux into Stereo Out).
 ///
 /// The chain is the point of a send bus. A bus without one is a gain and a
 /// routing hop, which cannot host the reverb or the delay every send in a mix
@@ -1158,20 +1155,28 @@ pub(crate) enum RetiredTimelineObject {
     Clip(Box<TimelineClip>),
 }
 
+/// One strip in the render sequence. Tracks and buses share an order so a
+/// bus that feeds a track is rendered before that track, and a track that
+/// sends into a bus is rendered before that bus.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum MixNode {
+    Track(usize),
+    Bus(usize),
+}
+
 /// The routed graph.
 pub struct TimelineGraph {
     tracks: Vec<Box<TimelineTrack>>,
     buses: Vec<Box<TimelineBus>>,
-    /// Track indices, deepest first, so a track feeding another track is
-    /// always rendered before the track it feeds.
-    track_order: Vec<usize>,
-    /// Bus indices, on the same contract.
-    bus_order: Vec<usize>,
-    /// Scratch for an order rebuild, sized once on the control thread. The
-    /// route walk is resolved into it exactly once per node, because a
-    /// comparison key that walked the route itself would repeat that walk for
-    /// every comparison the sort makes, on the callback.
-    route_depths: Vec<usize>,
+    /// Strip indices in render order, sources before destinations. Rebuilt on
+    /// the slow path (add/remove/rewire) into a buffer sized on the control
+    /// thread, so the callback never allocates to walk the graph.
+    mix_order: Vec<MixNode>,
+    /// Kahn in-degree scratch for a mix-order rebuild. Same capacity contract
+    /// as [`Self::mix_order`].
+    mix_in_degree: Vec<usize>,
+    /// Kahn ready-queue scratch for a mix-order rebuild.
+    mix_ready: Vec<usize>,
     master_gain: RampedParam,
     scratch_left: Vec<f32>,
     scratch_right: Vec<f32>,
@@ -1188,9 +1193,9 @@ impl TimelineGraph {
         Self {
             tracks: Vec::with_capacity(MAX_TIMELINE_TRACKS),
             buses: Vec::with_capacity(MAX_TIMELINE_BUSES),
-            track_order: Vec::with_capacity(MAX_TIMELINE_TRACKS),
-            bus_order: Vec::with_capacity(MAX_TIMELINE_BUSES),
-            route_depths: Vec::with_capacity(MAX_TIMELINE_TRACKS.max(MAX_TIMELINE_BUSES)),
+            mix_order: Vec::with_capacity(MIX_NODE_CAPACITY),
+            mix_in_degree: Vec::with_capacity(MIX_NODE_CAPACITY),
+            mix_ready: Vec::with_capacity(MIX_NODE_CAPACITY),
             master_gain: RampedParam::new(1.0),
             scratch_left: vec![0.0; MAX_CALLBACK_FRAMES],
             scratch_right: vec![0.0; MAX_CALLBACK_FRAMES],
@@ -1209,9 +1214,9 @@ impl TimelineGraph {
         Self {
             tracks: Vec::new(),
             buses: Vec::new(),
-            track_order: Vec::new(),
-            bus_order: Vec::new(),
-            route_depths: Vec::new(),
+            mix_order: Vec::new(),
+            mix_in_degree: Vec::new(),
+            mix_ready: Vec::new(),
             master_gain: RampedParam::new(1.0),
             scratch_left: Vec::new(),
             scratch_right: Vec::new(),
@@ -1297,7 +1302,7 @@ impl TimelineGraph {
         }
 
         self.tracks.push(track);
-        self.rebuild_track_order();
+        let _ = self.rebuild_mix_order();
         None
     }
 
@@ -1308,7 +1313,7 @@ impl TimelineGraph {
         };
 
         let track = self.tracks.remove(index);
-        self.rebuild_track_order();
+        let _ = self.rebuild_mix_order();
         Some(track)
     }
 
@@ -1323,7 +1328,7 @@ impl TimelineGraph {
         }
 
         self.buses.push(bus);
-        self.rebuild_bus_order();
+        let _ = self.rebuild_mix_order();
         None
     }
 
@@ -1334,7 +1339,7 @@ impl TimelineGraph {
         };
 
         let bus = self.buses.remove(index);
-        self.rebuild_bus_order();
+        let _ = self.rebuild_mix_order();
         Some(bus)
     }
 
@@ -1346,20 +1351,14 @@ impl TimelineGraph {
 
         let previous = self.tracks[index].output;
         self.tracks[index].output = target;
-        if self.track_route_depth(index).is_none() {
+        if !self.rebuild_mix_order() {
             self.tracks[index].output = previous;
             self.diagnostics.record_routing_cycle_refused();
-            return;
+            let _ = self.rebuild_mix_order();
         }
-
-        self.rebuild_track_order();
     }
 
     pub(crate) fn set_bus_output(&mut self, id: usize, target: RouteTarget) {
-        if matches!(target, RouteTarget::Track(_)) {
-            self.diagnostics.record_invalid_bus_routing();
-            return;
-        }
         let Some(index) = self.buses.iter().position(|bus| bus.id == id) else {
             self.diagnostics.record_unknown_target();
             return;
@@ -1367,13 +1366,11 @@ impl TimelineGraph {
 
         let previous = self.buses[index].output;
         self.buses[index].output = target;
-        if self.bus_route_depth(index).is_none() {
+        if !self.rebuild_mix_order() {
             self.buses[index].output = previous;
             self.diagnostics.record_routing_cycle_refused();
-            return;
+            let _ = self.rebuild_mix_order();
         }
-
-        self.rebuild_bus_order();
     }
 
     pub(crate) fn set_track_mute(&mut self, id: usize, muted: bool) {
@@ -1518,6 +1515,13 @@ impl TimelineGraph {
             level: RampedParam::new(level),
             bus_missing: false,
         });
+        if !self.rebuild_mix_order() {
+            if let Some(track) = self.track_mut(track_id) {
+                track.sends.pop();
+            }
+            self.diagnostics.record_routing_cycle_refused();
+            let _ = self.rebuild_mix_order();
+        }
     }
 
     pub(crate) fn remove_send(&mut self, track_id: usize, bus_id: usize) {
@@ -1531,6 +1535,7 @@ impl TimelineGraph {
         };
 
         track.sends.remove(index);
+        let _ = self.rebuild_mix_order();
     }
 
     /// The tap a send takes its signal from, for callers proving the strip
@@ -1716,74 +1721,89 @@ impl TimelineGraph {
             .map(|track| &mut **track)
     }
 
-    /// Hops from this track to the master, or `None` when the chain loops.
-    fn track_route_depth(&self, index: usize) -> Option<usize> {
-        let mut current = index;
-        for hops in 0..=MAX_ROUTE_HOPS {
-            let RouteTarget::Track(next_id) = self.tracks[current].output else {
-                return Some(hops);
-            };
-            let Some(next) = self.tracks.iter().position(|track| track.id == next_id) else {
-                // A target that names no live track falls back to the master.
-                return Some(hops);
-            };
-            if next == index {
-                return None;
-            }
-            current = next;
-        }
-        None
-    }
-
-    fn bus_route_depth(&self, index: usize) -> Option<usize> {
-        let mut current = index;
-        for hops in 0..=MAX_ROUTE_HOPS {
-            let RouteTarget::Bus(next_id) = self.buses[current].output else {
-                return Some(hops);
-            };
-            let Some(next) = self.buses.iter().position(|bus| bus.id == next_id) else {
-                return Some(hops);
-            };
-            if next == index {
-                return None;
-            }
-            current = next;
-        }
-        None
-    }
-
-    /// Deepest first, ties broken by insertion order so the render sequence is
-    /// a function of the command stream alone.
-    ///
-    /// Each node's depth is resolved once into the graph's scratch buffer and
-    /// the sort then reads it, because the route walk is far more expensive
-    /// than the comparison and a sort makes many comparisons per element.
-    fn rebuild_track_order(&mut self) {
-        let mut order = std::mem::take(&mut self.track_order);
-        let mut depths = std::mem::take(&mut self.route_depths);
+    /// Rebuild the shared render order. Returns `false` when the routing graph
+    /// contains a cycle — output edges and send edges both count, because a
+    /// send into a bus that feeds this track is the same loop as routing the
+    /// output there. The ready queue is FIFO and sources are enqueued in
+    /// insertion order (tracks, then buses), so an acyclic graph without a
+    /// bus → track edge keeps the previous two-phase sequence. A bus → track
+    /// edge breaks that guarantee: the destination strip must still accept
+    /// input when the bus renders, which an insertion-ordered tracks-then-buses
+    /// walk cannot provide because every track has already run its chain.
+    fn rebuild_mix_order(&mut self) -> bool {
+        let mut order = std::mem::take(&mut self.mix_order);
+        let mut in_degree = std::mem::take(&mut self.mix_in_degree);
+        let mut ready = std::mem::take(&mut self.mix_ready);
         order.clear();
-        depths.clear();
-        for index in 0..self.tracks.len() {
-            depths.push(self.track_route_depth(index).unwrap_or(0));
-            order.push(index);
+        in_degree.clear();
+        ready.clear();
+
+        let track_count = self.tracks.len();
+        let count = track_count + self.buses.len();
+        in_degree.resize(count, 0);
+
+        for node in 0..count {
+            self.for_each_successor(node, track_count, |dest| {
+                in_degree[dest] += 1;
+            });
         }
-        order.sort_unstable_by_key(|&index| (std::cmp::Reverse(depths[index]), index));
-        self.track_order = order;
-        self.route_depths = depths;
+        for node in 0..count {
+            if in_degree[node] == 0 {
+                ready.push(node);
+            }
+        }
+
+        let mut head = 0usize;
+        while head < ready.len() {
+            let node = ready[head];
+            head += 1;
+            order.push(if node < track_count {
+                MixNode::Track(node)
+            } else {
+                MixNode::Bus(node - track_count)
+            });
+            self.for_each_successor(node, track_count, |dest| {
+                in_degree[dest] -= 1;
+                if in_degree[dest] == 0 {
+                    ready.push(dest);
+                }
+            });
+        }
+
+        let acyclic = order.len() == count;
+        self.mix_order = order;
+        self.mix_in_degree = in_degree;
+        self.mix_ready = ready;
+        acyclic
     }
 
-    fn rebuild_bus_order(&mut self) {
-        let mut order = std::mem::take(&mut self.bus_order);
-        let mut depths = std::mem::take(&mut self.route_depths);
-        order.clear();
-        depths.clear();
-        for index in 0..self.buses.len() {
-            depths.push(self.bus_route_depth(index).unwrap_or(0));
-            order.push(index);
+    fn for_each_successor(&self, node: usize, track_count: usize, mut visit: impl FnMut(usize)) {
+        if node < track_count {
+            visit_route_target(
+                self.tracks[node].output,
+                &self.tracks,
+                &self.buses,
+                track_count,
+                &mut visit,
+            );
+            for send in &self.tracks[node].sends {
+                visit_route_target(
+                    RouteTarget::Bus(send.bus_id),
+                    &self.tracks,
+                    &self.buses,
+                    track_count,
+                    &mut visit,
+                );
+            }
+            return;
         }
-        order.sort_unstable_by_key(|&index| (std::cmp::Reverse(depths[index]), index));
-        self.bus_order = order;
-        self.route_depths = depths;
+        visit_route_target(
+            self.buses[node - track_count].output,
+            &self.tracks,
+            &self.buses,
+            track_count,
+            &mut visit,
+        );
     }
 
     /// Render one block of the timeline, summing the master output into
@@ -1812,8 +1832,7 @@ impl TimelineGraph {
         let Self {
             tracks,
             buses,
-            track_order,
-            bus_order,
+            mix_order,
             scratch_left,
             scratch_right,
             generator_left,
@@ -1829,160 +1848,133 @@ impl TimelineGraph {
             bus.clear_input(frames);
         }
 
-        for order_index in 0..track_order.len() {
-            let index = track_order[order_index];
-            let left = &mut scratch_left[..frames];
-            let right = &mut scratch_right[..frames];
+        for order_index in 0..mix_order.len() {
+            match mix_order[order_index] {
+                MixNode::Track(index) => {
+                    let left = &mut scratch_left[..frames];
+                    let right = &mut scratch_right[..frames];
 
-            {
-                let track = &mut tracks[index];
-                left.copy_from_slice(&track.input_left[..frames]);
-                right.copy_from_slice(&track.input_right[..frames]);
-                if render_clips {
-                    for clip in &track.clips {
-                        clip.render_into(block_start, frames, left, right);
-                    }
-                }
-            }
-
-            run_device_chain(
-                &tracks[index].chain,
-                devices,
-                frames,
-                left,
-                right,
-                &mut generator_left[..frames],
-                &mut generator_right[..frames],
-            );
-
-            {
-                let track = &mut tracks[index];
-                // Solo-in-place, ahead of both send taps. Placed with the mute
-                // instead, every track the engineer is not listening to would
-                // go on feeding its pre-fader send into the return buses. See
-                // `TimelineTrack`.
-                if track.solo_gated {
-                    left.fill(0.0);
-                    right.fill(0.0);
-                }
-                run_sends(
-                    track,
-                    SendTap::PreFader,
-                    buses,
-                    block_start,
-                    frames,
-                    left,
-                    right,
-                    diagnostics,
-                );
-                apply_gain(
-                    &mut track.gain,
-                    block_start,
-                    frames,
-                    left,
-                    right,
-                    diagnostics,
-                );
-                if track.muted {
-                    left.fill(0.0);
-                    right.fill(0.0);
-                }
-                apply_pan(
-                    &mut track.pan,
-                    block_start,
-                    frames,
-                    left,
-                    right,
-                    diagnostics,
-                );
-                run_sends(
-                    track,
-                    SendTap::PostFader,
-                    buses,
-                    block_start,
-                    frames,
-                    left,
-                    right,
-                    diagnostics,
-                );
-            }
-
-            match tracks[index].output {
-                RouteTarget::Track(target_id) => {
-                    match tracks.iter_mut().find(|track| track.id == target_id) {
-                        Some(target) => {
-                            sum_into(&mut target.input_left[..frames], left);
-                            sum_into(&mut target.input_right[..frames], right);
-                        }
-                        None => {
-                            sum_into(&mut master_left[..frames], left);
-                            sum_into(&mut master_right[..frames], right);
+                    {
+                        let track = &mut tracks[index];
+                        left.copy_from_slice(&track.input_left[..frames]);
+                        right.copy_from_slice(&track.input_right[..frames]);
+                        if render_clips {
+                            for clip in &track.clips {
+                                clip.render_into(block_start, frames, left, right);
+                            }
                         }
                     }
-                }
-                RouteTarget::Bus(target_id) => {
-                    match buses.iter_mut().find(|bus| bus.id == target_id) {
-                        Some(target) => {
-                            sum_into(&mut target.input_left[..frames], left);
-                            sum_into(&mut target.input_right[..frames], right);
+
+                    run_device_chain(
+                        &tracks[index].chain,
+                        devices,
+                        frames,
+                        left,
+                        right,
+                        &mut generator_left[..frames],
+                        &mut generator_right[..frames],
+                    );
+
+                    {
+                        let track = &mut tracks[index];
+                        // Solo-in-place, ahead of both send taps. Placed with the mute
+                        // instead, every track the engineer is not listening to would
+                        // go on feeding its pre-fader send into the return buses. See
+                        // `TimelineTrack`.
+                        if track.solo_gated {
+                            left.fill(0.0);
+                            right.fill(0.0);
                         }
-                        None => {
-                            sum_into(&mut master_left[..frames], left);
-                            sum_into(&mut master_right[..frames], right);
+                        run_sends(
+                            track,
+                            SendTap::PreFader,
+                            buses,
+                            block_start,
+                            frames,
+                            left,
+                            right,
+                            diagnostics,
+                        );
+                        apply_gain(
+                            &mut track.gain,
+                            block_start,
+                            frames,
+                            left,
+                            right,
+                            diagnostics,
+                        );
+                        if track.muted {
+                            left.fill(0.0);
+                            right.fill(0.0);
                         }
+                        apply_pan(
+                            &mut track.pan,
+                            block_start,
+                            frames,
+                            left,
+                            right,
+                            diagnostics,
+                        );
+                        run_sends(
+                            track,
+                            SendTap::PostFader,
+                            buses,
+                            block_start,
+                            frames,
+                            left,
+                            right,
+                            diagnostics,
+                        );
                     }
+
+                    route_sum(
+                        tracks[index].output,
+                        tracks,
+                        buses,
+                        frames,
+                        left,
+                        right,
+                        master_left,
+                        master_right,
+                    );
                 }
-                RouteTarget::Master => {
-                    sum_into(&mut master_left[..frames], left);
-                    sum_into(&mut master_right[..frames], right);
-                }
-            }
-        }
+                MixNode::Bus(index) => {
+                    let left = &mut scratch_left[..frames];
+                    let right = &mut scratch_right[..frames];
 
-        for order_index in 0..bus_order.len() {
-            let index = bus_order[order_index];
-            let left = &mut scratch_left[..frames];
-            let right = &mut scratch_right[..frames];
-
-            {
-                let bus = &mut buses[index];
-                left.copy_from_slice(&bus.input_left[..frames]);
-                right.copy_from_slice(&bus.input_right[..frames]);
-            }
-
-            // The bus's inserts run over its summed input and ahead of its
-            // fader, which is where a track's chain sits on its own strip.
-            run_device_chain(
-                &buses[index].chain,
-                devices,
-                frames,
-                left,
-                right,
-                &mut generator_left[..frames],
-                &mut generator_right[..frames],
-            );
-
-            {
-                let bus = &mut buses[index];
-                apply_gain(&mut bus.gain, block_start, frames, left, right, diagnostics);
-            }
-
-            match buses[index].output {
-                RouteTarget::Bus(target_id) => {
-                    match buses.iter_mut().find(|bus| bus.id == target_id) {
-                        Some(target) => {
-                            sum_into(&mut target.input_left[..frames], left);
-                            sum_into(&mut target.input_right[..frames], right);
-                        }
-                        None => {
-                            sum_into(&mut master_left[..frames], left);
-                            sum_into(&mut master_right[..frames], right);
-                        }
+                    {
+                        let bus = &mut buses[index];
+                        left.copy_from_slice(&bus.input_left[..frames]);
+                        right.copy_from_slice(&bus.input_right[..frames]);
                     }
-                }
-                RouteTarget::Master | RouteTarget::Track(_) => {
-                    sum_into(&mut master_left[..frames], left);
-                    sum_into(&mut master_right[..frames], right);
+
+                    // The bus's inserts run over its summed input and ahead of its
+                    // fader, which is where a track's chain sits on its own strip.
+                    run_device_chain(
+                        &buses[index].chain,
+                        devices,
+                        frames,
+                        left,
+                        right,
+                        &mut generator_left[..frames],
+                        &mut generator_right[..frames],
+                    );
+
+                    {
+                        let bus = &mut buses[index];
+                        apply_gain(&mut bus.gain, block_start, frames, left, right, diagnostics);
+                    }
+
+                    route_sum(
+                        buses[index].output,
+                        tracks,
+                        buses,
+                        frames,
+                        left,
+                        right,
+                        master_left,
+                        master_right,
+                    );
                 }
             }
         }
@@ -2041,6 +2033,69 @@ fn run_device_chain(
 }
 
 #[inline]
+fn visit_route_target(
+    target: RouteTarget,
+    tracks: &[Box<TimelineTrack>],
+    buses: &[Box<TimelineBus>],
+    track_count: usize,
+    visit: &mut impl FnMut(usize),
+) {
+    match target {
+        RouteTarget::Master => {}
+        RouteTarget::Track(id) => {
+            if let Some(index) = tracks.iter().position(|track| track.id == id) {
+                visit(index);
+            }
+        }
+        RouteTarget::Bus(id) => {
+            if let Some(index) = buses.iter().position(|bus| bus.id == id) {
+                visit(track_count + index);
+            }
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn route_sum(
+    target: RouteTarget,
+    tracks: &mut [Box<TimelineTrack>],
+    buses: &mut [Box<TimelineBus>],
+    frames: usize,
+    left: &[f32],
+    right: &[f32],
+    master_left: &mut [f32],
+    master_right: &mut [f32],
+) {
+    match target {
+        RouteTarget::Track(target_id) => {
+            match tracks.iter_mut().find(|track| track.id == target_id) {
+                Some(destination) => {
+                    sum_into(&mut destination.input_left[..frames], left);
+                    sum_into(&mut destination.input_right[..frames], right);
+                }
+                None => {
+                    sum_into(&mut master_left[..frames], left);
+                    sum_into(&mut master_right[..frames], right);
+                }
+            }
+        }
+        RouteTarget::Bus(target_id) => match buses.iter_mut().find(|bus| bus.id == target_id) {
+            Some(destination) => {
+                sum_into(&mut destination.input_left[..frames], left);
+                sum_into(&mut destination.input_right[..frames], right);
+            }
+            None => {
+                sum_into(&mut master_left[..frames], left);
+                sum_into(&mut master_right[..frames], right);
+            }
+        },
+        RouteTarget::Master => {
+            sum_into(&mut master_left[..frames], left);
+            sum_into(&mut master_right[..frames], right);
+        }
+    }
+}
+
 fn sum_into(destination: &mut [f32], source: &[f32]) {
     for (out, sample) in destination.iter_mut().zip(source.iter()) {
         *out += *sample;
