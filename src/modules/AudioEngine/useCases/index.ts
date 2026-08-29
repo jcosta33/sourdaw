@@ -106,6 +106,9 @@ export { getFinalFeatureHandlers } from './getFinalFeatureHandlers';
 export { configureAudioDeviceRuntimeSink } from './configureAudioDeviceRuntimeSink';
 export { initializeAudioEngine } from './initializeAudioEngine';
 
+export { startNativeLiveGraphSession } from './livePlayback/startNativeLiveGraphSession';
+export { stopNativeLiveGraphSession } from './livePlayback/stopNativeLiveGraphSession';
+
 export { getTrackLatency } from './latencyCompensation/compensation/getTrackLatency';
 export { getCompensationDelay } from './latencyCompensation/compensation/getCompensationDelay';
 export { getSidechainKeyDelay } from './latencyCompensation/compensation/getSidechainKeyDelay';

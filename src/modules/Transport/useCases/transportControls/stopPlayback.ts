@@ -1,10 +1,13 @@
-import { stopAllScheduled } from '#/modules/AudioEngine/useCases';
+import { logger } from '#/infra/logger/appLogger';
+import { stopAllScheduled, stopNativeLiveGraphSession } from '#/modules/AudioEngine/useCases';
 import { resetMidiState } from '#/modules/MIDI/useCases';
 
 import { getTransportState } from '../../repositories/transport/getTransportState';
 import { updateTransportState } from '../../repositories/transport/updateTransportState';
 import { playheadPositionRef } from '../../stores/playheadPositionRef';
+import { tempoMapStore } from '../../stores/tempoMapStore';
 import { stopPlayheadScheduler } from '../playheadScheduler/stopPlayheadScheduler';
+import { secondsBetweenBeats } from '../secondsBetweenBeats';
 
 import { panicYeastRuntime } from './panicYeastRuntime';
 import { stopActiveRecording } from './stopActiveRecording';
@@ -46,6 +49,17 @@ export function stopPlayback(): Promise<void> {
             playheadPosition = 0;
         }
     }
+
+    // D3.c.4a (#3066): the native engine holds its own `is_playing`, so a stop
+    // it never hears leaves it running the topology forever. A session that
+    // never started declines, which is the ordinary browser-build answer.
+    Promise.resolve(
+        stopNativeLiveGraphSession({
+            positionSeconds: secondsBetweenBeats(tempoMapStore.value?.changes ?? [], 0, playheadPosition, state.tempo),
+        })
+    ).catch((error: unknown) => {
+        logger.warn(new Error('Native live graph session failed to stop', { cause: error }));
+    });
 
     updateTransportState({ isPlaying: false, isRecording: false, playheadPosition });
     playheadPositionRef.current = playheadPosition;
