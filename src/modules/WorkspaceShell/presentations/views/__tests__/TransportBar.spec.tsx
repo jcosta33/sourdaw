@@ -125,7 +125,16 @@ vi.mock('#/modules/TimelineEditor/presentations/views', () => ({
 vi.mock('#/modules/Project/presentations/views', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Project/presentations/views')>()),
     RecentProjectsMenu: () => <div data-testid="recent-projects" />,
-    ArrangementSelector: () => <div data-testid="arrangement-selector" />,
+    // Shaped like the inline popups this row really hosts: an open surface that
+    // announces itself by ARIA role, whose rows and labels are plain divs. That
+    // shape is what the row's drag region has to leave clickable.
+    ArrangementSelector: () => (
+        <div data-testid="arrangement-selector">
+            <div role="menu" aria-label="Arrangement menu">
+                <div data-testid="arrangement-menu-label">Arrangements</div>
+            </div>
+        </div>
+    ),
     MissingMediaPanel: () => <div data-testid="missing-media-panel" />,
 }));
 
@@ -151,8 +160,8 @@ let voiceInputAvailable = false;
  * window still hands that row to the drag region and insets it past the
  * platform's own controls.
  */
-const DRAG_REGION_SELECTOR = selectorDeclaring('app-region: drag');
-const TITLEBAR_INSET_SELECTOR = selectorDeclaring('margin-left: env(titlebar-area-x');
+const DRAG_REGION_SELECTOR = selectorDeclaring('app-region', 'drag');
+const TITLEBAR_INSET_SELECTOR = selectorDeclaring('margin-left', 'env(titlebar-area-x, 0px)');
 
 describe('TransportBar', () => {
     beforeEach(() => {
@@ -257,6 +266,18 @@ describe('TransportBar', () => {
         renderTransportBar();
 
         fireEvent.doubleClick(screen.getByTestId('panel-toggle-button'));
+
+        expect(windowChromeMocks.toggleMaximize).not.toHaveBeenCalled();
+    });
+
+    it('does not toggle maximize when the double-click lands inside an open popup in the row', () => {
+        windowChromeMocks.frameless = true;
+        renderTransportBar();
+
+        // A menu label is a plain div: only the surface around it marks the
+        // click as the menu's rather than the window's, so resizing the window
+        // out from under an open menu is the regression this pins.
+        fireEvent.doubleClick(screen.getByTestId('arrangement-menu-label'));
 
         expect(windowChromeMocks.toggleMaximize).not.toHaveBeenCalled();
     });

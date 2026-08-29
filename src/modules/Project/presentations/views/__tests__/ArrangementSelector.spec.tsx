@@ -195,7 +195,7 @@ describe('ArrangementSelector', () => {
             throw new Error('expected a second picker row');
         }
 
-        expect(arrangementRow.closest(selectorDeclaring('app-region: no-drag'))).not.toBeNull();
+        expect(arrangementRow.closest(selectorDeclaring('app-region', 'no-drag'))).not.toBeNull();
     });
 
     it('should have New Arrangement button', () => {

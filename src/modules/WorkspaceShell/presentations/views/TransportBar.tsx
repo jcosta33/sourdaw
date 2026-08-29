@@ -14,6 +14,7 @@ import { type Track } from '../../models/TrackViewTypes';
 import { toggleRippleEditing } from '../../useCases/rippleEditing';
 import { windowChromeControls } from '../../useCases/windowChrome';
 import { VoiceButton } from '../components/Transport/VoiceButton';
+import { TITLEBAR_NO_DRAG_SELECTOR } from '../helpers/titlebarDragRegion';
 import { useAudioRecordingState } from '../hooks/useAudioRecordingState';
 import { useProjectState } from '../hooks/useProjectState';
 import { useTransportState } from '../hooks/useTransportState';
@@ -66,19 +67,17 @@ export const TransportBar = (): ReactElement => {
 
     // Frameless chrome (Linux): the title row is the drag region, so a
     // double-click on its empty stretches toggles maximize — unless it landed
-    // on an interactive element, which keeps its own double-click meaning.
-    // Overlay chrome (macOS): the native traffic lights sit over the same band,
-    // so the row is inset past them by the modifier class.
+    // on something the row hands its clicks back to, which keeps its own
+    // double-click meaning. Overlay chrome (macOS): the native traffic lights
+    // sit over the same band, so the row is inset past them by the modifier
+    // class, and the OS itself answers a double-click on what remains.
     const { frameless: framelessChrome, windowControlsOverlay: overlayChrome } = windowChromeControls();
     const toggleMaximizeOnTitlebarDoubleClick = (event: MouseEvent<HTMLElement>): void => {
         if (!framelessChrome) {
             return;
         }
         const target = event.target;
-        if (
-            target instanceof HTMLElement &&
-            target.closest('button, input, a, select, textarea, [role="button"]') !== null
-        ) {
+        if (target instanceof HTMLElement && target.closest(TITLEBAR_NO_DRAG_SELECTOR) !== null) {
             return;
         }
         void windowChromeControls().toggleMaximize();

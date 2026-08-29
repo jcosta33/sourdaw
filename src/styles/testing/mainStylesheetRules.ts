@@ -14,19 +14,58 @@ import { resolve } from 'node:path';
 // imports to an empty string, `?raw` included.
 const mainStylesheet = readFileSync(resolve(process.cwd(), 'src/styles/main.css'), 'utf8');
 
-/** One rule: the selector list before its block, and the declarations inside. */
+/** One rule: the selector list before its block, and the block's own text. */
 const RULE = /([^{}/*]+)\{([^{}]*)\}/gu;
 
+type Declaration = {
+    readonly property: string;
+    readonly value: string;
+};
+
 /**
- * The selector list `main.css` attaches one declaration to, ready to pass to
- * `matches` or `closest`. Throws when no rule carries the declaration, so a
- * deleted or renamed rule fails its caller instead of quietly matching nothing.
+ * Split a block into declarations. A value may itself contain a colon — a `url()`
+ * scheme, say — so only the first one separates a declaration, and text carrying
+ * none at all (an at-rule body such as `@apply`) is not a declaration.
  */
-export function selectorDeclaring(declaration: string): string {
-    for (const [, selector, declarations] of mainStylesheet.matchAll(RULE)) {
-        if (selector !== undefined && declarations?.includes(declaration) === true) {
-            return selector.trim();
-        }
+function declarationsOf(block: string): Declaration[] {
+    return block
+        .split(';')
+        .map((text) => {
+            const separator = text.indexOf(':');
+            return separator === -1
+                ? undefined
+                : { property: text.slice(0, separator).trim(), value: text.slice(separator + 1).trim() };
+        })
+        .filter((declaration): declaration is Declaration => declaration !== undefined);
+}
+
+/**
+ * The selector list of the one rule in `main.css` setting a property to a value,
+ * ready to pass to `matches` or `closest`.
+ *
+ * The property and the value are matched as parsed declarations rather than as
+ * text, so `app-region` never answers for `-webkit-app-region`. Both an absent
+ * rule and a second matching one throw: a caller asserting against "the rule
+ * that opts elements out of the drag region" gets that rule or an error, never
+ * an unrelated selector that happens to sit earlier in the file.
+ */
+export function selectorDeclaring(property: string, value: string): string {
+    const selectors = [...mainStylesheet.matchAll(RULE)]
+        .filter(([, , block]) =>
+            declarationsOf(block ?? '').some(
+                (declaration) => declaration.property === property && declaration.value === value
+            )
+        )
+        .map(([, selector]) => (selector ?? '').trim());
+
+    const [only] = selectors;
+    if (only === undefined) {
+        throw new Error(`main.css carries no rule declaring ${property}: ${value}`);
     }
-    throw new Error(`main.css carries no rule declaring ${declaration}`);
+    if (selectors.length > 1) {
+        throw new Error(
+            `main.css declares ${property}: ${value} on ${String(selectors.length)} rules: ${selectors.join(' / ')}`
+        );
+    }
+    return only;
 }
