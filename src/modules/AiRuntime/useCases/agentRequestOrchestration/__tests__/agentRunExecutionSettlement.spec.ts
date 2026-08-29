@@ -1,13 +1,18 @@
+import { parse } from 'superjson';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
     compileVersionedCommandBatchEnvelope,
+    createVerifiedBatchReceipt,
     createVersionedCommandEnvelope,
+    parseVersionedCommandBatchEnvelope,
     serializeVersionedCommandEnvelope,
 } from '#/modules/Command/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
+import { readAgentRunState, sanitizeAgentRunState } from '../../../stores/agentRunStore';
 import { type PendingAppActionConfirmation } from '../../../stores/pendingActionConfirmationStore';
+import { selectAgentRunPendingEffectRecoveries } from '../../../stores/selectAgentRunPendingEffectRecoveries';
 import { agentRunLifecycle } from '../../agentRunLifecycle';
 import { agentRunExecutionSettlement } from '../agentRunExecutionSettlement';
 import { AGENT_RUN_PERSISTENCE_WARNING } from '../settleAgentRunWorkLeaseSafely';
@@ -60,6 +65,49 @@ function createConfirmation(): PendingAppActionConfirmation {
         },
         executionMode: 'atomic',
     };
+}
+
+function createReceipt(confirmation: PendingAppActionConfirmation, pendingEffects = false) {
+    const commandBatch = confirmation.approvalSnapshot.commandBatch;
+    if (!commandBatch) {
+        throw new Error('Expected confirmed receipt fixture to include its command batch.');
+    }
+    const parsedBatch = parseVersionedCommandBatchEnvelope(commandBatch.serialized, commandBatch.authority);
+    if (parsedBatch.status === 'invalid') {
+        throw new Error(parsedBatch.reason);
+    }
+    const commandId = parsedBatch.envelope.commands[0]?.commandId;
+    if (!commandId) {
+        throw new Error('Expected confirmed receipt fixture to include one command.');
+    }
+    return createVerifiedBatchReceipt({
+        contentHash: pendingEffects ? 'partial-receipt' : 'committed-receipt',
+        envelope: parsedBatch.envelope,
+        observedBaseRevision: 'revision-1',
+        resultingRevision: 'revision-2',
+        result: pendingEffects
+            ? {
+                  status: 'committed-with-warning',
+                  warning: 'Runtime follow-up remains pending.',
+                  actions: [],
+                  warningDetails: [
+                      {
+                          kind: 'external-effect',
+                          message: 'Runtime follow-up remains pending.',
+                          commandId,
+                          pendingEffect: {
+                              commandId,
+                              kind: 'runtime-graph',
+                              operation: 'setTempo',
+                              reason: 'Runtime follow-up remains pending.',
+                              remediation: 'repair',
+                              state: 'pending',
+                          },
+                      },
+                  ],
+              }
+            : { status: 'committed', actions: [] },
+    });
 }
 
 describe('agentRunExecutionSettlement', () => {
@@ -127,7 +175,8 @@ describe('agentRunExecutionSettlement', () => {
 
     it('atomically records committed recovery before terminalizing a pre-write receipt failure', () => {
         const confirmation = createConfirmation();
-        const receiptIdentity = '1:run-1:batch-1:committed';
+        const receipt = createReceipt(confirmation);
+        const receiptIdentity = `${receipt.schemaVersion}:${receipt.runId}:${receipt.batchId}:${receipt.outcome}`;
         agentRunLifecycle.create({
             runId: confirmation.runId,
             request: confirmation.prompt,
@@ -144,9 +193,11 @@ describe('agentRunExecutionSettlement', () => {
         agentRunExecutionSettlement.recordCommittedRecoveryFailure(confirmation, {
             category: 'internal',
             retriable: false,
-            workId: 'batch-1',
+            receipt,
+            actions: confirmation.actions,
+            commandBatch: confirmation.approvalSnapshot.commandBatch,
             revertGroupId: 'batch-1',
-            receiptIdentity,
+            committedRevision: 'revision-2',
         });
 
         expect(agentRunLifecycle.get(confirmation.runId)).toMatchObject({
@@ -172,7 +223,8 @@ describe('agentRunExecutionSettlement', () => {
 
     it('keeps atomic committed recovery terminal when local storage rejects its write', () => {
         const confirmation = createConfirmation();
-        const receiptIdentity = '1:run-1:batch-1:committed';
+        const receipt = createReceipt(confirmation);
+        const receiptIdentity = `${receipt.schemaVersion}:${receipt.runId}:${receipt.batchId}:${receipt.outcome}`;
         agentRunLifecycle.create({
             runId: confirmation.runId,
             request: confirmation.prompt,
@@ -194,9 +246,11 @@ describe('agentRunExecutionSettlement', () => {
                 agentRunExecutionSettlement.recordCommittedRecoveryFailure(confirmation, {
                     category: 'internal',
                     retriable: false,
-                    workId: 'batch-1',
+                    receipt,
+                    actions: confirmation.actions,
+                    commandBatch: confirmation.approvalSnapshot.commandBatch,
                     revertGroupId: 'batch-1',
-                    receiptIdentity,
+                    committedRevision: 'revision-2',
                 })
             ).toBe(AGENT_RUN_PERSISTENCE_WARNING);
         } finally {
@@ -210,6 +264,68 @@ describe('agentRunExecutionSettlement', () => {
             committedWork: [{ workId: 'batch-1', receiptIdentity, revertGroupId: 'batch-1' }],
             errors: [expect.objectContaining({ workId: null })],
         });
+    });
+
+    it('persists a partial receipt recovery in one write for reload discovery', () => {
+        const confirmation = createConfirmation();
+        const receipt = createReceipt(confirmation, true);
+        const receiptIdentity = `${receipt.schemaVersion}:${receipt.runId}:${receipt.batchId}:${receipt.outcome}`;
+        agentRunLifecycle.create({
+            runId: confirmation.runId,
+            request: confirmation.prompt,
+            mode: 'apply',
+            createdRevision: confirmation.projectRevision,
+        });
+        agentRunLifecycle.transitionPhase({ runId: confirmation.runId, phase: 'planning' });
+        agentRunLifecycle.transitionPhase({ runId: confirmation.runId, phase: 'executing' });
+        agentRunLifecycle.recordBatch({
+            runId: confirmation.runId,
+            batch: { batchId: 'batch-1', commandIds: [], status: 'executing', receiptIdentity: null },
+        });
+        const setItem = vi.spyOn(Storage.prototype, 'setItem');
+        setItem.mockClear();
+
+        agentRunExecutionSettlement.recordCommittedRecoveryFailure(confirmation, {
+            category: 'internal',
+            retriable: false,
+            receipt,
+            actions: confirmation.actions,
+            commandBatch: confirmation.approvalSnapshot.commandBatch,
+            revertGroupId: 'batch-1',
+            committedRevision: 'revision-2',
+        });
+
+        expect(setItem).toHaveBeenCalledOnce();
+        setItem.mockRestore();
+        expect(readAgentRunState().runs[0]).toMatchObject({
+            pendingEffectContinuations: [expect.objectContaining({ batchId: 'batch-1' })],
+        });
+        const persisted = window.localStorage.getItem('sourdaw-agent-runs');
+        if (!persisted) {
+            throw new Error('Expected atomic recovery settlement to persist the AgentRun state.');
+        }
+        const reloadedState = sanitizeAgentRunState(parse(persisted));
+        expect(selectAgentRunPendingEffectRecoveries(reloadedState)).toEqual([
+            expect.objectContaining({
+                runId: confirmation.runId,
+                batchId: 'batch-1',
+                effects: receipt.pendingEffects,
+            }),
+        ]);
+        expect(reloadedState.runs).toEqual([
+            expect.objectContaining({
+                phase: 'partially-completed',
+                revisions: expect.objectContaining({ committed: 'revision-2' }),
+                committedWork: [
+                    expect.objectContaining({
+                        workId: 'batch-1',
+                        receiptIdentity,
+                        revertGroupId: 'batch-1',
+                    }),
+                ],
+            }),
+        ]);
+        expect(readAgentRunState().runs[0]).toMatchObject({ phase: 'partially-completed' });
     });
 
     it('returns a persistence warning when terminal recovery settlement cannot be saved', () => {

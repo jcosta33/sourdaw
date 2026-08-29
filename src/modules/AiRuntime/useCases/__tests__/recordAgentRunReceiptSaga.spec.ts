@@ -342,7 +342,7 @@ describe('recordAgentRunReceiptSaga', () => {
             commandBatch: COMMAND_BATCH,
             recordedAt: 106,
         });
-        vi.spyOn(agentRunLifecycle, 'recordCommittedWork').mockImplementation(() => {
+        vi.spyOn(agentRunLifecycle, 'recordReceiptSaga').mockImplementation(() => {
             throw new Error('simulated crash before AgentRun receipt writes');
         });
 

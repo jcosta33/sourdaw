@@ -6,6 +6,7 @@ import { type PendingAppActionConfirmation } from '../../stores/pendingActionCon
 import { normalizeAgentFailure } from '../agentErrorAndSaga';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { agentWorkBudget, type AgentWorkBudgetEstimate } from '../agentWorkBudget';
+import { type AgentRunReceiptSagaInput } from '../projectAgentRunReceiptSaga';
 
 import { AGENT_RUN_PERSISTENCE_WARNING } from './settleAgentRunWorkLeaseSafely';
 
@@ -156,11 +157,10 @@ function recordPostCommitRecoveryFailure(
 
 function recordCommittedRecoveryFailure(
     confirmation: PendingAppActionConfirmation,
-    input: Omit<AgentRunFailureInput, 'compensation'> & {
-        workId: string;
-        revertGroupId: string;
-        receiptIdentity: string;
-    }
+    input: Omit<AgentRunFailureInput, 'compensation' | 'workId' | 'receiptIdentity'> &
+        Pick<AgentRunReceiptSagaInput, 'actions' | 'commandBatch' | 'committedRevision' | 'receipt'> & {
+            revertGroupId: string;
+        }
 ): string | null {
     const parsedBatch = confirmation.approvalSnapshot.commandBatch
         ? parseVersionedCommandBatchEnvelope(
@@ -170,15 +170,18 @@ function recordCommittedRecoveryFailure(
         : null;
     const commandIds =
         parsedBatch?.status === 'valid' ? parsedBatch.envelope.commands.map((command) => command.commandId) : [];
+    const receiptIdentity = `${input.receipt.schemaVersion}:${input.receipt.runId}:${input.receipt.batchId}:${input.receipt.outcome}`;
     if (!agentRunLifecycle.get(confirmation.runId)) {
         return null;
     }
     try {
         agentRunLifecycle.recordCommittedRecoveryFailure({
             runId: confirmation.runId,
-            workId: input.workId,
+            receipt: input.receipt,
+            actions: input.actions,
+            ...(input.commandBatch ? { commandBatch: input.commandBatch } : {}),
             revertGroupId: input.revertGroupId,
-            receiptIdentity: input.receiptIdentity,
+            ...(input.committedRevision ? { committedRevision: input.committedRevision } : {}),
             error: normalizeAgentFailure({
                 category: input.category,
                 source: 'command-execution',
@@ -186,7 +189,7 @@ function recordCommittedRecoveryFailure(
                     targetIds: confirmation.affectedIds,
                     commandIds,
                     workIds: [],
-                    receiptIdentities: [input.receiptIdentity],
+                    receiptIdentities: [receiptIdentity],
                 },
                 retry: input.retriable ? 'owner-proven-idempotent' : 'never',
                 knownDomain: input.knownDomain ?? true,

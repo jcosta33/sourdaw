@@ -44,6 +44,7 @@ type RecordTrackedAgentRunReceipt =
 type BindCancellation = typeof import('../../cancelAgentRun').agentRunCancellation.bindAbortController;
 type CancelRun = typeof import('../../cancelAgentRun').agentRunCancellation.cancel;
 type CaptureAuthorization = typeof import('#/modules/CrdtDocument/useCases').captureProjectMutationAuthorization;
+type CaptureRevision = typeof import('#/modules/CrdtDocument/useCases').captureProjectRevision;
 type CaptureUnownedMutations = typeof import('#/modules/CrdtDocument/useCases').captureUnownedProjectMutations;
 type RecordPostCommitRecoveryFailure =
     typeof import('../agentRunExecutionSettlement').agentRunExecutionSettlement.recordPostCommitRecoveryFailure;
@@ -54,6 +55,7 @@ const mocks = vi.hoisted(() => ({
     bindCancellation: vi.fn<BindCancellation>(),
     cancelRun: vi.fn<CancelRun>(),
     captureAuthorization: vi.fn<CaptureAuthorization>(),
+    captureRevision: vi.fn<CaptureRevision>(),
     captureUnownedMutations: vi.fn<CaptureUnownedMutations>(),
     executeBatch: vi.fn<TestBatchExecutor>(),
     getArtifacts: vi.fn(() => []),
@@ -81,6 +83,7 @@ vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
 }));
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     captureProjectMutationAuthorization: mocks.captureAuthorization,
+    captureProjectRevision: mocks.captureRevision,
     captureUnownedProjectMutations: mocks.captureUnownedMutations,
 }));
 vi.mock('../../../stores/chatStore', () => ({
@@ -286,6 +289,7 @@ beforeEach(() => {
     collaboration.value = { localPeerId: 'actor-1' };
     projectMutationAuthorized = true;
     mocks.captureAuthorization.mockReturnValue(() => projectMutationAuthorized);
+    mocks.captureRevision.mockReturnValue('revision-2');
     mocks.captureUnownedMutations.mockReturnValue(4);
     mocks.prepareResourceLease.mockResolvedValue(undefined);
     mocks.protectResourceLease.mockReturnValue(undefined);
@@ -603,9 +607,11 @@ describe('executeConfirmedCommandBatch', () => {
         expect(mocks.recordCommittedRecoveryFailure).toHaveBeenCalledWith(confirmation, {
             category: 'internal',
             retriable: false,
-            workId: 'batch-1',
+            receipt,
+            actions: confirmation.actions,
+            commandBatch,
             revertGroupId: 'batch-1',
-            receiptIdentity: 'receipt-identity',
+            committedRevision: 'revision-2',
         });
         expect(mocks.recordPostCommitRecoveryFailure).not.toHaveBeenCalled();
     });

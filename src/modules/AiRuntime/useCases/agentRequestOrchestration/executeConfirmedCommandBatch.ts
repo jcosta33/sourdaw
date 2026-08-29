@@ -1,7 +1,11 @@
 import { getAgentSectionRenderArtifacts } from '#/modules/AudioRendering/useCases';
 import { collaborationStore } from '#/modules/Collaboration/stores';
 import { executeVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
-import { captureProjectMutationAuthorization, captureUnownedProjectMutations } from '#/modules/CrdtDocument/useCases';
+import {
+    captureProjectMutationAuthorization,
+    captureProjectRevision,
+    captureUnownedProjectMutations,
+} from '#/modules/CrdtDocument/useCases';
 import { type HandlerDeferredEffectAttempt } from '#/utils/handlerContract';
 
 import { type AgentRunWorkLease } from '../../models/AgentRun';
@@ -204,10 +208,11 @@ export async function executeConfirmedCommandBatch(
                     ? agentRunExecutionSettlement.recordCommittedRecoveryFailure(confirmation, {
                           category: 'internal',
                           retriable: false,
-                          workId: priorVerifiedBatchReceipt.batchId,
+                          receipt: priorVerifiedBatchReceipt,
+                          actions: confirmation.actions,
+                          commandBatch,
                           revertGroupId: group.groupId,
-                          receiptIdentity:
-                              confirmedBatchOutcomeSupport.getVerifiedReceiptIdentity(priorVerifiedBatchReceipt),
+                          committedRevision: captureProjectRevision(),
                       })
                     : agentRunExecutionSettlement.recordPostCommitRecoveryFailure(confirmation, {
                           category: 'internal',

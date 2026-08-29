@@ -45,6 +45,7 @@ import {
     type SettleAgentRunWorkLeaseResult as SettleWorkLeaseResult,
     settleAgentRunWorkLease as settleWorkLease,
 } from './agentRequestOrchestration/settleAgentRunWorkLease';
+import { projectAgentRunReceiptSaga, type AgentRunReceiptSagaInput } from './projectAgentRunReceiptSaga';
 
 const DEFAULT_SCOPE: AgentRunScope = {
     targetIds: [],
@@ -653,42 +654,176 @@ function recordAgentRunError(input: {
     });
 }
 
-function recordAgentRunCommittedRecoveryFailure(input: {
-    runId: string;
-    workId: string;
-    receiptIdentity: string;
-    revertGroupId: string;
-    error: AgentRunError;
-    committedAt?: number;
-}): AgentRun {
+function applyAgentRunReceiptSagaProjection(
+    run: AgentRun,
+    pendingEffectRecoveryLedger: AgentRunPendingEffectRecovery[],
+    projection: ReturnType<typeof projectAgentRunReceiptSaga>
+): { run: AgentRun; pendingEffectRecoveryLedger: AgentRunPendingEffectRecovery[] } {
+    for (const step of projection.sagaSteps) {
+        const existing = run.saga.steps.find((candidate) => candidate.stepId === step.stepId);
+        if (existing && existing.order !== step.order) {
+            throw new Error(`Agent saga step order changed: ${step.stepId}`);
+        }
+    }
+    const sagaSteps = [
+        ...run.saga.steps.filter((step) => !projection.sagaSteps.some((next) => next.stepId === step.stepId)),
+        ...projection.sagaSteps.map((step) => structuredClone(step)),
+    ].sort((left, right) => left.order - right.order);
+    let pendingEffectContinuations = run.pendingEffectContinuations;
+    let nextPendingEffectRecoveryLedger = pendingEffectRecoveryLedger;
+    if (projection.pendingEffectContinuation) {
+        pendingEffectContinuations = [
+            ...run.pendingEffectContinuations.filter((continuation) => continuation.batchId !== projection.work.workId),
+            projection.pendingEffectContinuation,
+        ];
+        nextPendingEffectRecoveryLedger = [
+            ...pendingEffectRecoveryLedger.filter(
+                (recovery) => !isPendingEffectRecovery(recovery, { runId: run.runId, batchId: projection.work.workId })
+            ),
+            {
+                ...structuredClone(projection.pendingEffectContinuation),
+                runId: run.runId,
+                checkpoint: 'durable' as const,
+            },
+        ];
+    } else if (projection.completesPendingEffectContinuation) {
+        pendingEffectContinuations = run.pendingEffectContinuations.filter(
+            (continuation) => continuation.batchId !== projection.work.workId
+        );
+        nextPendingEffectRecoveryLedger = pendingEffectRecoveryLedger.filter(
+            (recovery) => !isPendingEffectRecovery(recovery, { runId: run.runId, batchId: projection.work.workId })
+        );
+    }
+    const hasUnsettledExternalSagaStep = sagaSteps.some(
+        (step) => step.state === 'pending' || step.state === 'external-pending' || step.state === 'uncompensated'
+    );
+    let phase = reduceAgentRunTransition(run.phase, {
+        type: 'work-committed',
+        completesRun: projection.work.completesRun !== false,
+        hasUnsettledExternalSagaStep: run.saga.steps.some(
+            (step) => step.state === 'pending' || step.state === 'external-pending' || step.state === 'uncompensated'
+        ),
+    });
+    phase = reduceAgentRunTransition(phase, {
+        type: 'saga-updated',
+        hasUnsettledExternalStep: hasUnsettledExternalSagaStep,
+        hasCommittedWork: true,
+    });
+    const hasRecoveryObligation =
+        hasUnsettledExternalSagaStep ||
+        pendingEffectContinuations.length > 0 ||
+        run.workLeases.some((lease) => lease.terminalState === null) ||
+        run.temporaryAssets.some((asset) => asset.status !== 'released') ||
+        (run.manualResume.required && run.manualResume.workIds.some((workId) => workId !== projection.work.workId));
+    if (projection.completesPendingEffectContinuation) {
+        phase = reduceAgentRunTransition(phase, { type: 'pending-effect-completed', hasRecoveryObligation });
+    }
+    const committedWork = {
+        workId: projection.work.workId,
+        receiptIdentity: projection.work.receiptIdentity,
+        revertGroupId: projection.work.revertGroupId,
+        committedAt: projection.recordedAt,
+    };
+    return {
+        run: {
+            ...run,
+            updatedAt: projection.recordedAt,
+            phase,
+            revisions: {
+                ...run.revisions,
+                committed: projection.work.committedRevision ?? run.revisions.committed,
+            },
+            receipts: [...run.receipts.filter((receipt) => receipt.workId !== projection.work.workId), committedWork],
+            renders: [
+                ...run.renders.filter((artifact) => !projection.work.renderJobIds.includes(artifact.artifactId)),
+                ...projection.work.renderJobIds.map((artifactId) => ({
+                    artifactId,
+                    workId: projection.work.workId,
+                    status: 'completed' as const,
+                    summary: null,
+                })),
+            ],
+            analyses: [
+                ...run.analyses.filter((artifact) => !projection.work.analysisIds.includes(artifact.artifactId)),
+                ...projection.work.analysisIds.map((artifactId) => ({
+                    artifactId,
+                    workId: projection.work.workId,
+                    status: 'completed' as const,
+                    summary: null,
+                })),
+            ],
+            batches: run.batches.map((batch) =>
+                batch.batchId === projection.work.workId
+                    ? { ...batch, status: 'committed', receiptIdentity: projection.work.receiptIdentity }
+                    : batch
+            ),
+            committedWork: [
+                ...run.committedWork.filter((work) => work.workId !== projection.work.workId),
+                committedWork,
+            ],
+            pendingEffectContinuations,
+            manualResume:
+                projection.completesPendingEffectContinuation && !hasRecoveryObligation
+                    ? { required: false, reason: null, workIds: [], requiredAt: null }
+                    : run.manualResume,
+            saga: { schemaVersion: 1, steps: sagaSteps },
+        },
+        pendingEffectRecoveryLedger: nextPendingEffectRecoveryLedger,
+    };
+}
+
+function recordAgentRunReceiptSaga(input: AgentRunReceiptSagaInput): { effectsPending: boolean } {
+    const state = readAgentRunState();
+    const runIndex = state.runs.findIndex((run) => run.runId === input.runId);
+    if (runIndex < 0) {
+        throw new Error(`Unknown agent run: ${input.runId}`);
+    }
+    const run = state.runs[runIndex]!;
+    const projection = projectAgentRunReceiptSaga({
+        ...input,
+        existingSagaSteps: run.saga.steps,
+        hasPendingEffectContinuation: run.pendingEffectContinuations.some(
+            (continuation) => continuation.batchId === input.receipt.batchId
+        ),
+    });
+    const applied = applyAgentRunReceiptSagaProjection(run, getPendingEffectRecoveryLedger(state), projection);
+    const runs = [...state.runs];
+    runs[runIndex] = applied.run;
+    persistAgentRunState(withPendingEffectRecoveryLedger({ ...state, runs }, applied.pendingEffectRecoveryLedger));
+    return { effectsPending: projection.effectsPending };
+}
+
+function recordAgentRunCommittedRecoveryFailure(input: AgentRunReceiptSagaInput & { error: AgentRunError }): AgentRun {
     if (input.error.workId !== null) {
         throw new Error('Committed recovery failures cannot target the committed command batch.');
     }
-    const committedAt = input.committedAt ?? input.error.occurredAt;
-    return updateAgentRun(input.runId, committedAt, (run) => {
-        const committedWork = {
-            workId: input.workId,
-            receiptIdentity: input.receiptIdentity,
-            revertGroupId: input.revertGroupId,
-            committedAt,
-        };
-        return {
-            ...run,
-            phase: reduceAgentRunTransition(run.phase, {
-                type: 'error-recorded',
-                terminal: true,
-                hasCommittedWork: true,
-            }),
-            receipts: [...run.receipts.filter((receipt) => receipt.workId !== input.workId), committedWork],
-            batches: run.batches.map((batch) =>
-                batch.batchId === input.workId
-                    ? { ...batch, status: 'committed', receiptIdentity: input.receiptIdentity }
-                    : batch
-            ),
-            committedWork: [...run.committedWork.filter((work) => work.workId !== input.workId), committedWork],
-            errors: [...run.errors, structuredClone(input.error)],
-        };
+    const state = readAgentRunState();
+    const runIndex = state.runs.findIndex((run) => run.runId === input.runId);
+    if (runIndex < 0) {
+        throw new Error(`Unknown agent run: ${input.runId}`);
+    }
+    const run = state.runs[runIndex]!;
+    const projection = projectAgentRunReceiptSaga({
+        ...input,
+        existingSagaSteps: run.saga.steps,
+        hasPendingEffectContinuation: run.pendingEffectContinuations.some(
+            (continuation) => continuation.batchId === input.receipt.batchId
+        ),
+        recordedAt: input.error.occurredAt,
     });
+    const applied = applyAgentRunReceiptSagaProjection(run, getPendingEffectRecoveryLedger(state), projection);
+    const runs = [...state.runs];
+    runs[runIndex] = {
+        ...applied.run,
+        phase: reduceAgentRunTransition(applied.run.phase, {
+            type: 'error-recorded',
+            terminal: true,
+            hasCommittedWork: true,
+        }),
+        errors: [...applied.run.errors, structuredClone(input.error)],
+    };
+    persistAgentRunState(withPendingEffectRecoveryLedger({ ...state, runs }, applied.pendingEffectRecoveryLedger));
+    return structuredClone(runs[runIndex]);
 }
 
 /** Records only application-owned saga facts; external owners still perform effects and compensation. */
@@ -1767,6 +1902,7 @@ export const agentRunLifecycle = {
     recordBatch: recordAgentRunBatch,
     recordCommittedWork: recordAgentRunCommittedWork,
     recordCommittedRecoveryFailure: recordAgentRunCommittedRecoveryFailure,
+    recordReceiptSaga: recordAgentRunReceiptSaga,
     recordContextEvidence: recordAgentRunContextEvidence,
     recordError: recordAgentRunError,
     recordPendingEffectContinuation: recordAgentRunPendingEffectContinuation,
