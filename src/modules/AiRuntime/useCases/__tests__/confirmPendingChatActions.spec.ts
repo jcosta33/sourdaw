@@ -2243,6 +2243,51 @@ describe('confirmPendingChatActions transaction admission', () => {
         expect(prepareForCommit.mock.invocationCallOrder[0]).toBeLessThan(commit.mock.invocationCallOrder[0]!);
         expect(commit.mock.invocationCallOrder[0]).toBeLessThan(retain.mock.invocationCallOrder[0]!);
 
+        const priorReceipt = await getVersionedCommandBatchIdempotentReplay({
+            authority: commandBatch.authority,
+            serialized: commandBatch.serialized,
+        });
+        if (!priorReceipt) {
+            throw new Error('Expected the partially committed command receipt to remain available for recovery.');
+        }
+        const recoveryReason = 'Recovery resource preparation failed.';
+        const recoveryPrepareForCommit = vi.fn().mockRejectedValue(new Error(recoveryReason));
+        proposePendingActionConfirmation({
+            ...proposal,
+            id: 'confirmation-recovery-batch-preparation-failure',
+            resourceLease: {
+                bytes: 1,
+                prepareForCommit: recoveryPrepareForCommit,
+                commit: vi.fn().mockResolvedValue(undefined),
+                release: vi.fn().mockResolvedValue(undefined),
+                retain: vi.fn().mockResolvedValue(undefined),
+            },
+        });
+
+        await expect(
+            confirmPendingChatActions({ confirmationId: 'confirmation-recovery-batch-preparation-failure' })
+        ).resolves.toEqual({
+            status: 'failed',
+            durableCommit: true,
+            reason: recoveryReason,
+            effects: [...priorReceipt.pendingEffects],
+            continuation: {
+                authority: 'authoritative-collaboration-host',
+                idempotency: 'project-checkpoint',
+                kind: 'reconcile-exact-batch',
+            },
+        });
+        expect(recoveryPrepareForCommit).toHaveBeenCalledOnce();
+        expect(getPendingActionConfirmation('confirmation-recovery-batch-preparation-failure')).toMatchObject({
+            status: 'failed',
+            error: recoveryReason,
+        });
+        expect(chatStore.value?.messages.find((message) => message.id === 'assistant-1')).toMatchObject({
+            pendingActionConfirmationStatus: 'failed',
+            error: recoveryReason,
+            content: `The project change remains durably committed, but pending-effect reconciliation could not continue: ${recoveryReason}`,
+        });
+
         proposePendingActionConfirmation({ ...proposal, id: 'confirmation-recovery-batch-retry' });
         await expect(
             confirmPendingChatActions({ confirmationId: 'confirmation-recovery-batch-retry' })

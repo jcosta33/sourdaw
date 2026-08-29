@@ -74,8 +74,8 @@ export async function executeConfirmedCommandBatch(
     const { confirmation, commandBatch, trackedWorkLease, priorVerifiedBatchReceipt, recoveringPendingEffects } = input;
     const hasPriorVerifiedBatchReceipt = priorVerifiedBatchReceipt !== null;
     const group =
-        confirmation.groupId !== undefined && confirmation.groupLabel !== undefined
-            ? { groupId: confirmation.groupId, groupLabel: confirmation.groupLabel }
+        confirmation.groupId !== undefined
+            ? { groupId: confirmation.groupId, groupLabel: confirmation.groupLabel ?? confirmation.prompt }
             : generateGroupId(confirmation.prompt);
     const sectionRenderArtifactsBeforeExecution = getAgentSectionRenderArtifacts();
     const aborter = new AbortController();
@@ -191,12 +191,14 @@ export async function executeConfirmedCommandBatch(
                     completesRun: false,
                 }
             );
-            const recoveryFailureReason = [reason, receiptPersistence.warning].filter(Boolean).join(' ');
-            agentRunExecutionSettlement.recordPostCommitRecoveryFailure(confirmation, {
+            const runPersistenceWarning = agentRunExecutionSettlement.recordPostCommitRecoveryFailure(confirmation, {
                 category: 'internal',
                 retriable: false,
                 receiptIdentity: confirmedBatchOutcomeSupport.getVerifiedReceiptIdentity(priorVerifiedBatchReceipt),
             });
+            const recoveryFailureReason = [reason, receiptPersistence.warning, runPersistenceWarning]
+                .filter(Boolean)
+                .join(' ');
             updatePendingActionConfirmationStatus({
                 confirmationId: confirmation.id,
                 status: 'failed',

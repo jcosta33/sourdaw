@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
     compileVersionedCommandBatchEnvelope,
@@ -10,6 +10,7 @@ import { type AppAction } from '#/utils/handlerContract';
 import { type PendingAppActionConfirmation } from '../../../stores/pendingActionConfirmationStore';
 import { agentRunLifecycle } from '../../agentRunLifecycle';
 import { agentRunExecutionSettlement } from '../agentRunExecutionSettlement';
+import { AGENT_RUN_PERSISTENCE_WARNING } from '../settleAgentRunWorkLeaseSafely';
 
 const action = { type: 'setTempo', payload: { bpm: 132 } } satisfies AppAction;
 
@@ -122,5 +123,51 @@ describe('agentRunExecutionSettlement', () => {
                 }),
             ],
         });
+    });
+
+    it('returns a persistence warning when terminal recovery settlement cannot be saved', () => {
+        const confirmation = createConfirmation();
+        const receiptIdentity = '1:run-1:batch-1:committed';
+        agentRunLifecycle.create({
+            runId: confirmation.runId,
+            request: confirmation.prompt,
+            mode: 'apply',
+            createdRevision: confirmation.projectRevision,
+        });
+        agentRunLifecycle.transitionPhase({
+            runId: confirmation.runId,
+            phase: 'planning',
+            revision: confirmation.projectRevision,
+        });
+        agentRunLifecycle.transitionPhase({
+            runId: confirmation.runId,
+            phase: 'executing',
+            revision: confirmation.projectRevision,
+        });
+        agentRunLifecycle.recordBatch({
+            runId: confirmation.runId,
+            batch: { batchId: 'batch-1', commandIds: [], status: 'executing', receiptIdentity: null },
+        });
+        agentRunLifecycle.recordCommittedWork({
+            runId: confirmation.runId,
+            workId: 'batch-1',
+            receiptIdentity,
+            completesRun: false,
+        });
+        const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementationOnce(() => {
+            throw new DOMException('The quota has been exceeded.', 'QuotaExceededError');
+        });
+
+        try {
+            expect(
+                agentRunExecutionSettlement.recordPostCommitRecoveryFailure(confirmation, {
+                    category: 'internal',
+                    retriable: false,
+                    receiptIdentity,
+                })
+            ).toBe(AGENT_RUN_PERSISTENCE_WARNING);
+        } finally {
+            setItem.mockRestore();
+        }
     });
 });

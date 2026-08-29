@@ -100,7 +100,7 @@ function recordTerminalFailure(
     confirmation: PendingAppActionConfirmation,
     input: AgentRunFailureInput,
     includeCommandBatchWorkId: boolean
-): void {
+): string | null {
     const parsedBatch = confirmation.approvalSnapshot.commandBatch
         ? parseVersionedCommandBatchEnvelope(
               confirmation.approvalSnapshot.commandBatch.serialized,
@@ -117,7 +117,7 @@ function recordTerminalFailure(
         workIds.push(batchWorkId);
     }
     if (!agentRunLifecycle.get(confirmation.runId)) {
-        return;
+        return null;
     }
     try {
         agentRunLifecycle.recordError({
@@ -137,20 +137,21 @@ function recordTerminalFailure(
             }),
             terminal: true,
         });
+        return null;
     } catch (error) {
-        lifecyclePersistenceWarning(error);
+        return lifecyclePersistenceWarning(error);
     }
 }
 
-function recordFailure(confirmation: PendingAppActionConfirmation, input: AgentRunFailureInput): void {
-    recordTerminalFailure(confirmation, input, true);
+function recordFailure(confirmation: PendingAppActionConfirmation, input: AgentRunFailureInput): string | null {
+    return recordTerminalFailure(confirmation, input, true);
 }
 
 function recordPostCommitRecoveryFailure(
     confirmation: PendingAppActionConfirmation,
     input: Omit<AgentRunFailureInput, 'workId' | 'compensation'>
-): void {
-    recordTerminalFailure(confirmation, input, false);
+): string | null {
+    return recordTerminalFailure(confirmation, input, false);
 }
 
 export const agentRunExecutionSettlement = {

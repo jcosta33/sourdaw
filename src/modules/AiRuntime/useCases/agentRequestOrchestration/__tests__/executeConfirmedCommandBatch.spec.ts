@@ -24,6 +24,8 @@ type ProtectResourceLease =
     typeof import('../../../stores/pendingActionConfirmationStore').protectPendingActionResourceLease;
 type PrepareContinuation =
     typeof import('../../prepareAgentRunPendingEffectContinuation').prepareAgentRunPendingEffectContinuation;
+type RecordTrackedAgentRunReceipt =
+    typeof import('../confirmedBatchOutcomeSupport').confirmedBatchOutcomeSupport.recordTrackedAgentRunReceipt;
 type BindCancellation = typeof import('../../cancelAgentRun').agentRunCancellation.bindAbortController;
 type CancelRun = typeof import('../../cancelAgentRun').agentRunCancellation.cancel;
 type CaptureAuthorization = typeof import('#/modules/CrdtDocument/useCases').captureProjectMutationAuthorization;
@@ -42,7 +44,7 @@ const mocks = vi.hoisted(() => ({
     prepareResourceLease: vi.fn<PrepareResourceLease>(),
     protectResourceLease: vi.fn<ProtectResourceLease>(),
     recordPostCommitRecoveryFailure: vi.fn(),
-    recordReceipt: vi.fn(() => ({ warning: null, effectsPending: false })),
+    recordReceipt: vi.fn<RecordTrackedAgentRunReceipt>(),
     retainCommitted: vi.fn(),
     setActiveAborter: vi.fn(),
     setChatGenerating: vi.fn(),
@@ -126,19 +128,25 @@ const parsedBatch = parseVersionedCommandBatchEnvelope(commandBatch.serialized, 
 if (parsedBatch.status === 'invalid') {
     throw new Error(parsedBatch.reason);
 }
+const parsedBatchEnvelope = parsedBatch.envelope;
 const receipt = createVerifiedBatchReceipt({
     contentHash: 'receipt-1',
-    envelope: parsedBatch.envelope,
+    envelope: parsedBatchEnvelope,
     observedBaseRevision: 'revision-1',
     resultingRevision: 'revision-2',
     result: { status: 'committed', actions: [] },
 });
 const completedBatchResult = { status: 'committed' as const, actions: [], receipt };
+const cancelledBatchResult = {
+    status: 'cancelled' as const,
+    reason: 'execution refused',
+    actions: [],
+} satisfies Awaited<ReturnType<ExecuteBatch>>;
 
 function createNonDurableReceipt(status: 'no-op' | 'cancelled' | 'ambiguous' | 'failed') {
     return createVerifiedBatchReceipt({
         contentHash: `receipt-${status}`,
-        envelope: parsedBatch.envelope,
+        envelope: parsedBatchEnvelope,
         observedBaseRevision: 'revision-1',
         resultingRevision: 'revision-2',
         result: {
@@ -152,7 +160,7 @@ function createNonDurableReceipt(status: 'no-op' | 'cancelled' | 'ambiguous' | '
 function createRuntimeReceipt() {
     return createVerifiedBatchReceipt({
         contentHash: 'receipt-executed',
-        envelope: parsedBatch.envelope,
+        envelope: parsedBatchEnvelope,
         observedBaseRevision: 'revision-1',
         resultingRevision: 'revision-2',
         result: { status: 'executed', actions: [] },
@@ -255,6 +263,7 @@ beforeEach(() => {
     mocks.prepareResourceLease.mockResolvedValue(undefined);
     mocks.protectResourceLease.mockReturnValue(undefined);
     mocks.prepareContinuation.mockReturnValue({ promote: () => undefined, discard: () => undefined });
+    mocks.recordReceipt.mockReturnValue({ warning: null, effectsPending: false });
     mocks.issueApprovalBinding.mockImplementation(({ commandBatch: approvedBatch }) =>
         issueCommandApprovalBinding({
             authority: approvedBatch.authority,
@@ -288,8 +297,16 @@ describe('executeConfirmedCommandBatch', () => {
         });
         mocks.executeBatch.mockImplementation(async (input) => {
             events.push('execute');
-            input.options?.onDeferredEffectAttempt?.({ operation: 'renderProjectSections' });
-            input.options?.onDeferredEffectAttempt?.({ operation: 'other' });
+            input.options?.onDeferredEffectAttempt?.({
+                kind: 'work-attempt',
+                operation: 'renderProjectSections',
+                workId: 'render-1',
+            });
+            input.options?.onDeferredEffectAttempt?.({
+                kind: 'work-attempt',
+                operation: 'setTempo',
+                workId: 'tempo-1',
+            });
             input.onProjectCommitPrepared?.();
             input.options?.onProjectCommitCheckpoint?.({ receipt });
             return completedBatchResult;
@@ -338,7 +355,7 @@ describe('executeConfirmedCommandBatch', () => {
         expect(mocks.setChatGenerating).toHaveBeenLastCalledWith(false);
     });
 
-    it('should generate a complete group when a persisted group is missing its label', async () => {
+    it('should retain the persisted group ID when its label is missing', async () => {
         const incompleteGroupConfirmation = {
             ...confirmation,
             groupLabel: undefined,
@@ -348,14 +365,29 @@ describe('executeConfirmedCommandBatch', () => {
 
         expect(result).toMatchObject({
             status: 'completed',
-            group: { groupId: 'generated-group-1', groupLabel: confirmation.prompt },
+            group: { groupId: 'group-1', groupLabel: confirmation.prompt },
         });
-        expect(mocks.generateGroup).toHaveBeenCalledWith(confirmation.prompt);
+        expect(mocks.generateGroup).not.toHaveBeenCalled();
         expect(mocks.executeBatch).toHaveBeenCalledWith(
             expect.objectContaining({
-                options: expect.objectContaining({ groupId: 'generated-group-1', groupLabel: confirmation.prompt }),
+                options: expect.objectContaining({ groupId: 'group-1', groupLabel: confirmation.prompt }),
             })
         );
+
+        mocks.prepareResourceLease.mockRejectedValueOnce(new Error('pending-effect continuation failed'));
+
+        await expect(
+            execute({
+                confirmation: incompleteGroupConfirmation,
+                priorVerifiedBatchReceipt: receipt,
+                recoveringPendingEffects: true,
+            })
+        ).resolves.toMatchObject({ status: 'recovery-failed' });
+
+        expect(mocks.recordReceipt).toHaveBeenLastCalledWith(incompleteGroupConfirmation, receipt, {
+            revertGroupId: 'group-1',
+            completesRun: false,
+        });
     });
 
     it.each([
@@ -385,7 +417,7 @@ describe('executeConfirmedCommandBatch', () => {
         mocks.executeBatch.mockImplementation(async (input) => {
             configure();
             expect(input.options?.shouldExecute?.()).toBe(false);
-            return { status: 'cancelled', reason: 'execution refused', actions: [] };
+            return cancelledBatchResult;
         });
 
         const result = await execute();
@@ -535,8 +567,28 @@ describe('executeConfirmedCommandBatch', () => {
         });
     });
 
+    it('should surface a terminal lifecycle persistence warning through committed-effect recovery failure', async () => {
+        mocks.prepareResourceLease.mockRejectedValue(new Error('pending-effect continuation failed'));
+        mocks.recordPostCommitRecoveryFailure.mockReturnValue('Terminal lifecycle persistence warning.');
+
+        const result = await execute({ priorVerifiedBatchReceipt: receipt, recoveringPendingEffects: true });
+
+        const reason = 'pending-effect continuation failed Terminal lifecycle persistence warning.';
+        expect(result).toMatchObject({ status: 'recovery-failed', result: { reason } });
+        expect(mocks.updateConfirmation).toHaveBeenCalledWith({
+            confirmationId: 'confirmation-1',
+            status: 'failed',
+            error: reason,
+        });
+        expect(mocks.updateMessage).toHaveBeenCalledWith('assistant-1', {
+            pendingActionConfirmationStatus: 'failed',
+            error: reason,
+            content: `The project change remains durably committed, but pending-effect reconciliation could not continue: ${reason}`,
+        });
+    });
+
     it('should release preview resources and return the exact preview-mode failure', async () => {
-        const resource = { release: vi.fn() };
+        const resource = { baseRevision: 'revision-1', release: vi.fn() };
         mocks.executeBatch.mockResolvedValue({ status: 'previewed', resource });
 
         const result = await execute();
