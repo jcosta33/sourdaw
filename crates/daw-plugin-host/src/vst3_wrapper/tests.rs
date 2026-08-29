@@ -3384,6 +3384,17 @@ fn a_timer_registered_through_the_frame_fires_until_it_is_unregistered() {
 
     let editor = FakeEditor::sized(800, 600);
     let state = state_with_editor(&editor);
+
+    // Drop order: the handler must outlive the run-loop registration owned by
+    // `wrapper`, because a panic unwinds locals in reverse declaration order
+    // while a sibling test may still be pumping the global registry —
+    // dropping the handler first would free it while still registered.
+    let timer = ComWrapper::new(CountingTimer::default());
+    let raw = timer
+        .as_com_ref::<ITimerHandler>()
+        .expect("the fake timer implements ITimerHandler")
+        .as_ptr();
+
     let mut wrapper = load(&state, COMBINED_CID);
     wrapper
         .open_gui(ptr::null_mut())
@@ -3397,11 +3408,6 @@ fn a_timer_registered_through_the_frame_fires_until_it_is_unregistered() {
         .cast::<IRunLoop>()
         .expect("a Linux editor must be able to get a run loop from its frame");
 
-    let timer = ComWrapper::new(CountingTimer::default());
-    let raw = timer
-        .as_com_ref::<ITimerHandler>()
-        .expect("the fake timer implements ITimerHandler")
-        .as_ptr();
     // SAFETY: `raw` borrows a live handler this test owns.
     assert_eq!(unsafe { run_loop.registerTimer(raw, 1) }, kResultOk);
 
@@ -3454,6 +3460,17 @@ fn an_event_handler_registered_through_the_frame_is_called_on_descriptor_readine
 
     let editor = FakeEditor::sized(800, 600);
     let state = state_with_editor(&editor);
+
+    // Drop order: the handler must outlive the run-loop registration owned by
+    // `wrapper`, because a panic unwinds locals in reverse declaration order
+    // while a sibling test may still be pumping the global registry —
+    // dropping the handler first would free it while still registered.
+    let handler = ComWrapper::new(DrainingEventHandler::default());
+    let raw = handler
+        .as_com_ref::<IEventHandler>()
+        .expect("the fake handler implements IEventHandler")
+        .as_ptr();
+
     let mut wrapper = load(&state, COMBINED_CID);
     wrapper
         .open_gui(ptr::null_mut())
@@ -3472,11 +3489,6 @@ fn an_event_handler_registered_through_the_frame_is_called_on_descriptor_readine
     assert_eq!(unsafe { libc::pipe(ends.as_mut_ptr()) }, 0);
     let (read_end, write_end) = (ends[0], ends[1]);
 
-    let handler = ComWrapper::new(DrainingEventHandler::default());
-    let raw = handler
-        .as_com_ref::<IEventHandler>()
-        .expect("the fake handler implements IEventHandler")
-        .as_ptr();
     // SAFETY: `raw` borrows a live handler this test owns.
     assert_eq!(
         unsafe { run_loop.registerEventHandler(raw, read_end) },
