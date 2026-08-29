@@ -1,0 +1,22 @@
+tests/e2e/e2eUtils.ts
+  s_ae074277795b45::t_218fa8d4d15a7c 15-18,103-106,110
+  s_ae074277795b45::t_9d0b623fe50e4f 107
+tests/e2e/browserAiAdmittedPresentation.spec.ts
+  s_ae074277795b45::t_218fa8d4d15a7c 39-40
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "3de6ecb700ae0c6382574dd17d410f68d55129dd",
+  "prompts": {},
+  "sessions": {
+    "s_ae074277795b45": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04ab5-5234-7100-be1c-76ebfaba88d3",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
