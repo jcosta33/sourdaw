@@ -1,0 +1,37 @@
+crates/sourdaw-native/src/commands/graph.rs
+  s_4f908a5afb6b58::t_7a6dbe2c572eb1 4355-4357
+  s_4f908a5afb6b58::t_f9dcbf9c4ae484 4394,4398-4399
+  s_4f908a5afb6b58::t_53f2cc0807f942 4415
+  s_4f908a5afb6b58::t_3b95ab12b09469 4299-4306,4309-4317
+  s_4f908a5afb6b58::t_8093ef75e05848 4368-4375
+  s_4f908a5afb6b58::t_7b3a8269006555 4549-4552
+  s_4f908a5afb6b58::t_1743c01638d1e1 4436-4439,4441-4445,4449
+  s_4f908a5afb6b58::t_bb4c34d4c3f5d3 4531-4548,4553
+  s_4f908a5afb6b58::t_83210492e91a15 4529-4530
+src/modules/AudioEngine/useCases/livePlayback/projectLiveGraphTopology.ts
+  s_4f908a5afb6b58::t_3061b01e9832f3 6-7,9-11
+  s_4f908a5afb6b58::t_2f84561b371706 130-159,170
+  s_4f908a5afb6b58::t_d04d0160648506 54-58
+src/modules/AudioEngine/useCases/livePlayback/__tests__/projectLiveGraphTopology.spec.ts
+  s_4f908a5afb6b58::t_49a3f4721c1b61 200-224
+  s_4f908a5afb6b58::t_f570f1aae16a38 18
+electron/shutdown.ts
+  s_4f908a5afb6b58::t_12fe2825dcd617 13-15
+  s_4f908a5afb6b58::t_3f47816a2e365c 11-12,16-23
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "609082e92778f62bdc3072d25838cd505c1508e5",
+  "prompts": {},
+  "sessions": {
+    "s_4f908a5afb6b58": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fcb92ba4-bf56-47a4-8b57-803f335a449e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
