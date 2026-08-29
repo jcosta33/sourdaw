@@ -106,7 +106,12 @@ describe('generateToolPlanningOutcome', () => {
         vi.clearAllMocks();
         mocks.backendChain.value = [];
         mocks.failRemoteDisclosure.value = false;
-        mocks.getCloudProviderInfo.mockReturnValue({ provider: 'openai', model: 'hosted-model' });
+        mocks.getCloudProviderInfo.mockReturnValue({
+            provider: 'openai',
+            model: 'hosted-model',
+            baseUrl: 'https://api.openai.com/v1',
+            authentication: 'api-key',
+        });
         mocks.isWebLlmLoaded.mockReturnValue(true);
         mocks.providerStartFailure.value = null;
     });
