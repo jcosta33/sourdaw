@@ -3,12 +3,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AiSection } from '../AiSection';
 
+import type { hostedLlmProviderStatusStore } from '#/modules/AiRuntime/stores';
+
+type HostedProviderStatus = typeof hostedLlmProviderStatusStore.value;
+
 const mocks = vi.hoisted(() => ({
     admission: { webLlm: true },
     backendPreference: { value: 'auto' },
     configureCloudProvider: vi.fn(),
     hostedProvider: {
-        value: null as import('#/modules/AiRuntime/models/HostedLlmProvider').HostedLlmProviderInfo | null,
+        value: null as HostedProviderStatus,
     },
     isDesktop: true,
     llmStatus: { value: { state: 'idle' } },
