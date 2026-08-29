@@ -132,6 +132,19 @@ describe('configureCloudProvider', () => {
         expect(mocks.setCloudProviderConfig).not.toHaveBeenCalled();
     });
 
+    it('rejects a key when compatible authentication is explicitly disabled', async () => {
+        await expect(
+            configureCloudProvider({
+                provider: 'openai-compatible',
+                model: 'qwen',
+                baseUrl: 'http://localhost:1234/v1',
+                authentication: 'none',
+                apiKey: 'must-not-be-forwarded',
+            })
+        ).rejects.toThrow('Remove the API key before connecting without authentication');
+        expect(mocks.setCloudProviderConfig).not.toHaveBeenCalled();
+    });
+
     it('rejects credentialed loopback providers while preserving unauthenticated loopback', async () => {
         await expect(
             configureCloudProvider({

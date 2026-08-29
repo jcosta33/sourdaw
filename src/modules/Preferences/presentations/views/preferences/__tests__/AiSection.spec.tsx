@@ -166,6 +166,22 @@ describe('AiSection', () => {
         });
     });
 
+    it('preserves explicit unauthenticated compatible configuration without a key draft', () => {
+        mocks.hostedProvider.value = {
+            provider: 'openai-compatible',
+            model: 'local-model',
+            baseUrl: 'http://localhost:1234/v1',
+            authentication: 'none',
+        };
+        render(<AiSection />);
+
+        expect(screen.getByLabelText('OpenAI-compatible authentication')).toHaveValue('none');
+        expect(screen.getByText(/no authentication/u)).toBeInTheDocument();
+        expect(screen.getByLabelText('Hosted AI API key')).toHaveValue('');
+        expect(screen.getByLabelText('Hosted AI API key')).toBeDisabled();
+        expect(screen.getByRole('button', { name: 'Connect' })).toBeEnabled();
+    });
+
     it('exposes no hosted credential surface in web builds', () => {
         mocks.isDesktop = false;
         render(<AiSection />);
