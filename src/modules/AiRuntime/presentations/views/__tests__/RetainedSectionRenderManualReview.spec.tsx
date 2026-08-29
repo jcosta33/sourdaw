@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
     playCachedAudioBufferPreview: vi.fn(),
     releasePreviewAudioBuffer: vi.fn(),
     exportWav: vi.fn(),
+    getExact: vi.fn(),
     settle: vi.fn(),
     stop: vi.fn(),
     stopOther: vi.fn(),
@@ -26,6 +27,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 }));
 vi.mock('#/modules/AudioRendering/useCases', () => ({
     exportExactAgentSectionRenderArtifactAsWav: mocks.exportWav,
+    getExactAgentSectionRenderArtifact: mocks.getExact,
 }));
 vi.mock('../../../useCases/settleRetainedSectionRenderManualReview', () => ({
     settleRetainedSectionRenderManualReview: mocks.settle,
@@ -129,6 +131,9 @@ describe('RetainedSectionRenderManualReview', () => {
         mocks.cacheAudioBuffer.mockImplementation(({ buffer }) => `cached-${String(buffer.id)}`);
         mocks.playCachedAudioBufferPreview.mockReturnValue({ stop: mocks.stop });
         mocks.exportWav.mockResolvedValue(true);
+        mocks.getExact.mockImplementation(({ job }: { job: typeof verse | typeof chorus }) =>
+            artifactFor(job, job.jobId === verse.jobId ? stereoVerseBuffer : stereoChorusBuffer, [])
+        );
     });
 
     it('offers per-job preview and export while keeping aggregate controls singular', async () => {
@@ -262,6 +267,21 @@ describe('RetainedSectionRenderManualReview', () => {
         expect(screen.getByText('Preview cache failed.')).toBeInTheDocument();
         expect(mocks.playCachedAudioBufferPreview).not.toHaveBeenCalled();
         expect(mocks.releasePreviewAudioBuffer).not.toHaveBeenCalled();
+    });
+
+    it('refuses to cache or play an artifact that expired after the review rendered', () => {
+        render(<Harness />);
+        mocks.getExact.mockReturnValueOnce(null);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Play Verse' }));
+
+        expect(mocks.getExact).toHaveBeenCalledExactlyOnceWith({
+            job: verse,
+            sourceRevision: 'revision-review',
+        });
+        expect(mocks.cacheAudioBuffer).not.toHaveBeenCalled();
+        expect(mocks.playCachedAudioBufferPreview).not.toHaveBeenCalled();
+        expect(screen.getByText('Preview audio for Verse is unavailable.')).toBeInTheDocument();
     });
 
     it('releases a newly cached buffer and shows the playback startup failure', () => {

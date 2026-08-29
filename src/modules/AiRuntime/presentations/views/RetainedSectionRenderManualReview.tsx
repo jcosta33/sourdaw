@@ -9,7 +9,10 @@ import {
     playCachedAudioBufferPreview,
     releasePreviewAudioBuffer,
 } from '#/modules/AudioEngine/useCases';
-import { exportExactAgentSectionRenderArtifactAsWav } from '#/modules/AudioRendering/useCases';
+import {
+    exportExactAgentSectionRenderArtifactAsWav,
+    getExactAgentSectionRenderArtifact,
+} from '#/modules/AudioRendering/useCases';
 
 import { settleRetainedSectionRenderManualReview } from '../../useCases/settleRetainedSectionRenderManualReview';
 
@@ -115,9 +118,17 @@ export const RetainedSectionRenderManualReview = ({
         }
         releaseAllPreviews();
         previewCoordinator.stopOther(previewOwnerId);
+        const artifact = getExactAgentSectionRenderArtifact({
+            job: job.job,
+            sourceRevision: review.binding.sourceRevision,
+        });
+        if (!artifact) {
+            onStatus(`Preview audio for ${job.job.sectionName} is unavailable.`);
+            return;
+        }
         let bufferId: string;
         try {
-            bufferId = cacheAudioBuffer({ buffer: job.artifact.buffer });
+            bufferId = cacheAudioBuffer({ buffer: artifact.buffer });
         } catch (error) {
             onStatus(getErrorMessage(error));
             return;

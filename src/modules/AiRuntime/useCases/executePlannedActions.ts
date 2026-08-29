@@ -76,6 +76,7 @@ export async function executePlannedActions(input: ExecutePlannedActionsInput): 
 
     const group = input.group ?? generateGroupId(input.prompt);
     let revisionInvalidated = false;
+    let finalizedProjectRevision: string | undefined;
 
     function shouldExecute(): boolean {
         revisionInvalidated = captureProjectRevision() !== input.projectRevision;
@@ -93,7 +94,11 @@ export async function executePlannedActions(input: ExecutePlannedActionsInput): 
                 runId: receipt.runId,
                 receipt,
                 commandBatch: input.commandBatch,
+                getFinalizedRevision: () => finalizedProjectRevision,
             });
+        },
+        onProjectCommitFinalized: ({ revision }: { revision: string }) => {
+            finalizedProjectRevision = revision;
         },
     };
     const batchResult = await executeVersionedCommandBatchEnvelope({

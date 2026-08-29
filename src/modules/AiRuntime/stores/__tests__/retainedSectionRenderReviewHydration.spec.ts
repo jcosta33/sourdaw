@@ -13,9 +13,9 @@ import {
 } from '#/modules/Command/useCases';
 import { type RenderProjectSectionJobSnapshot } from '#/utils/handlerContract';
 
-import { type AgentRunPendingEffect } from '../../models/AgentRun';
 import { agentRunLifecycle } from '../../useCases/agentRunLifecycle';
 import { createAgentSagaStep } from '../../useCases/createAgentSagaStep';
+import { prepareAgentRunPendingEffectContinuation } from '../../useCases/prepareAgentRunPendingEffectContinuation';
 import { selectRetainedSectionRenderManualReviews } from '../../useCases/selectRetainedSectionRenderManualReviews';
 import { settleRetainedSectionRenderManualReview } from '../../useCases/settleRetainedSectionRenderManualReview';
 import { agentRunStore, readAgentRunState, sanitizeAgentRunState } from '../agentRunStore';
@@ -26,6 +26,8 @@ vi.mock('#/modules/AudioRendering/useCases', async (importOriginal) => ({
     getExactAgentSectionRenderArtifact: mocks.getExact,
     disposeExactAgentSectionRenderArtifact: mocks.disposeExact,
 }));
+
+type ReceiptPendingEffect = ReturnType<typeof createVerifiedBatchReceipt>['pendingEffects'][number];
 
 const job: RenderProjectSectionJobSnapshot = {
     jobId: 'job-review',
@@ -220,7 +222,7 @@ describe('retained section render review hydration', () => {
         expect(selectRetainedSectionRenderManualReviews(readAgentRunState())).toHaveLength(1);
     });
 
-    it('binds an ordinary partial render receipt to its committed revision before hydration', async () => {
+    it('promotes a second partial render commit with its exact finalized revision before hydration', async () => {
         const action = {
             type: 'renderProjectSections' as const,
             payload: { sectionIds: [job.sectionId], jobs: [structuredClone(job)] },
@@ -253,7 +255,7 @@ describe('retained section render review hydration', () => {
             reason: 'The retained render requires review.',
             remediation: 'reconcile',
             state: 'pending',
-        } satisfies AgentRunPendingEffect;
+        } satisfies ReceiptPendingEffect;
         const proof = await getVersionedCommandBatchCommitProof(commandBatch);
         const receipt = createVerifiedBatchReceipt({
             contentHash: proof.contentHash,
@@ -297,6 +299,28 @@ describe('retained section render review hydration', () => {
             completesRun: false,
             committedAt: 1,
         });
+        let finalizedRevision: string | undefined;
+        const preparation = prepareAgentRunPendingEffectContinuation({
+            runId: 'run-receipt-review',
+            receipt,
+            commandBatch,
+            getFinalizedRevision: () => finalizedRevision,
+        });
+
+        preparation.promote({ receipt });
+
+        expect(agentRunLifecycle.get('run-receipt-review')?.pendingEffectContinuations).toEqual([]);
+        expect(readAgentRunState().pendingEffectRecoveryLedger?.[0]).toMatchObject({ checkpoint: 'prepared' });
+        expect(readAgentRunState().pendingEffectRecoveryLedger?.[0]).not.toHaveProperty('sourceRevision');
+
+        finalizedRevision = 'revision-receipt-commit';
+        preparation.promote({ receipt });
+
+        expect(agentRunLifecycle.get('run-receipt-review')?.revisions.committed).toBe('revision-prior-work');
+        expect(agentRunLifecycle.get('run-receipt-review')?.pendingEffectContinuations[0]?.sourceRevision).toBe(
+            'revision-receipt-commit'
+        );
+        expect(readAgentRunState().pendingEffectRecoveryLedger?.[0]?.sourceRevision).toBe('revision-receipt-commit');
 
         agentRunLifecycle.recordReceiptSaga({
             runId: 'run-receipt-review',
