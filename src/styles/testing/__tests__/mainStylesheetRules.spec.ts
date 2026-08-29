@@ -5,6 +5,26 @@ import { parseStylesheet, selectorDeclaring, selectorDeclaringIn, stylesheetRule
 const DRAG_RULE = '.desktop-titlebar-region { app-region: drag; }';
 
 describe('mainStylesheetRules', () => {
+    it('ships warm scrollbar highlights in the renderer stylesheet', () => {
+        const declarationsFor = (selector: string) =>
+            stylesheetRules()
+                .filter((rule) => rule.selector === selector)
+                .flatMap((rule) => rule.declarations);
+
+        expect(declarationsFor('*')).toContainEqual({
+            property: 'scrollbar-color',
+            value: 'rgba(255, 249, 242, 0.12) transparent',
+        });
+        expect(declarationsFor('::-webkit-scrollbar-thumb')).toContainEqual({
+            property: 'background',
+            value: 'rgba(255, 249, 242, 0.12)',
+        });
+        expect(declarationsFor('::-webkit-scrollbar-thumb:hover')).toContainEqual({
+            property: 'background',
+            value: 'rgba(255, 249, 242, 0.25)',
+        });
+    });
+
     it('reads the universal selector as itself rather than losing it', () => {
         // `main.css` resets every element twice over — the base layer and the
         // Firefox scrollbar rule. A parser that treats `*` as punctuation drops
