@@ -12,6 +12,10 @@ type LaunchFromTemplateInput = {
     template_name: string | RegExp;
 };
 
+type LaunchNewProjectOptions = {
+    firstPaintTimeoutMs?: number;
+};
+
 type SetupWorkspaceOptions = {
     localStorage?: Array<{ name: string; value: string }>;
 };
@@ -96,11 +100,14 @@ export async function wait_for_workspace_ready(page: Page): Promise<void> {
     await expect(page.getByRole('group', { name: PLAYBACK_CONTROLS_NAME })).toBeVisible();
 }
 
-export async function launch_new_project(page: Page): Promise<void> {
-    // Bounded independently of the 60s suite ceiling: the overlay is the app's
+export async function launch_new_project(
+    page: Page,
+    { firstPaintTimeoutMs = LAUNCH_SCREEN_FIRST_PAINT_TIMEOUT_MS }: LaunchNewProjectOptions = {}
+): Promise<void> {
+    // Bounded independently of the suite ceiling: the overlay is the app's
     // first paint. It admits a cold Vite transform while a genuine hang still
     // fails before the multi-step allowance.
-    await expect(page.getByLabel(LAUNCH_SCREEN_NAME)).toBeVisible({ timeout: LAUNCH_SCREEN_FIRST_PAINT_TIMEOUT_MS });
+    await expect(page.getByLabel(LAUNCH_SCREEN_NAME)).toBeVisible({ timeout: firstPaintTimeoutMs });
 
     await page.locator('#launch-new-project').click();
     await wait_for_workspace_ready(page);
