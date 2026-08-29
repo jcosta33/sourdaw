@@ -58,6 +58,7 @@ export { finalizeRecoveredCommandBatchEffects } from './finalizeRecoveredCommand
 export { getVersionedCommandBatchCommitProof } from './getVersionedCommandBatchCommitProof';
 export { getVersionedCommandBatchCommitDisposition } from './getVersionedCommandBatchCommitDisposition';
 export { getVersionedCommandBatchEffects } from './getVersionedCommandBatchEffects';
+export { getVersionedCommandTargetRanges } from './getVersionedCommandTargetRanges';
 export { getCommandProtocolContracts } from './getCommandProtocolContracts';
 export { productionBriefAdmissionPort } from './productionBriefAdmissionPort';
 export { createAppActionCommittedError } from './createAppActionCommittedError';
