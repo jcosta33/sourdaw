@@ -1,0 +1,25 @@
+src/modules/AiRuntime/useCases/agentRequestOrchestration/resolveConfirmationAdmission.ts
+  s_a40848e8f8cca9::t_6e7ec60d09e02e 52-70,74-75
+  s_a40848e8f8cca9::t_209e60d0f26bdd 51,71-73,76,220-221
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/resolveConfirmationAdmission.spec.ts
+  s_a40848e8f8cca9::t_5907eea29238cc 4,73
+  s_a40848e8f8cca9::t_aecb1f57d0094a 74-75,83-85,92-94,104-106
+src/modules/AiRuntime/useCases/confirmPendingChatActions.ts
+  s_a40848e8f8cca9::t_209e60d0f26bdd 40,220-222
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "f725600b79dc0047538c3a68df5e05ff697deb19",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
