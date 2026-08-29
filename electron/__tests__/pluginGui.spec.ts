@@ -380,6 +380,90 @@ describe('createPluginWindowHost', () => {
     });
 
     /**
+     * The stop must not be visible. The teardown's plugin call is carried back
+     * to this thread, so a window left on screen for it is a frozen editor for
+     * as long as the plugin takes — where the platform's own close made it
+     * vanish on the click.
+     */
+    it('hides the window as it stops the close, before the teardown is asked for', async () => {
+        const seen: { hidden: boolean; destroyed: boolean }[] = [];
+        const harness: Harness = createHarness({
+            notifyClosed: vi.fn((): Promise<void> => {
+                const window = onlyWindow(harness.windows);
+                seen.push({ hidden: window.hide.mock.calls.length > 0, destroyed: window.isDestroyed() });
+                return Promise.resolve();
+            }),
+        });
+        harness.host.create(request());
+        const window = onlyWindow(harness.windows);
+
+        window.emitClose();
+        const hiddenInsideTheEvent = window.hide.mock.calls.length;
+        await settled();
+
+        expect(hiddenInsideTheEvent).toBe(1);
+        // The teardown was asked for against a window that was already off
+        // screen and still very much alive.
+        expect(seen[0]).toEqual({ hidden: true, destroyed: false });
+        expect(window.destroy).toHaveBeenCalledTimes(1);
+    });
+
+    /**
+     * A window held open for its teardown still raises everything a window
+     * raises. Each of those would claim the engine control gate the teardown is
+     * waiting on, against a plugin that is already inside `close_gui`.
+     */
+    it('asks the plugin nothing while its window is held open for the teardown', async () => {
+        vi.useFakeTimers();
+        try {
+            let scale = 1;
+            const harness = createHarness({
+                getScaleFactor: () => scale,
+                notifyClosed: vi.fn(() => new Promise<void>(() => {})),
+            });
+            harness.host.create(request());
+            const window = onlyWindow(harness.windows);
+
+            window.emitClose();
+            window.setContentSize(1000, 900);
+            window.emitResize();
+            window.emitResized();
+            window.emitWillResize({ x: 0, y: 0, width: 1200, height: 1000 });
+            scale = 2;
+            window.emitMoved();
+            harness.changeDisplays();
+            await vi.advanceTimersByTimeAsync(200);
+
+            expect(harness.requestEditorSize).not.toHaveBeenCalled();
+            expect(harness.applyEditorScale).not.toHaveBeenCalled();
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    /**
+     * The deadline is armed on every stopped close and fires on almost none of
+     * them. One left behind per close is a five-second timer holding the Node
+     * loop open for a window that is already gone.
+     */
+    it('leaves no deadline timer behind when the plugin lets go inside it', async () => {
+        vi.useFakeTimers();
+        try {
+            const harness = createHarness();
+            harness.host.create(request());
+            const window = onlyWindow(harness.windows);
+
+            window.emitClose();
+            await vi.advanceTimersByTimeAsync(1);
+
+            expect(window.destroy).toHaveBeenCalledTimes(1);
+            expect(vi.getTimerCount()).toBe(0);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    /**
      * The destroy that ends a stopped close raises `closed`, and that path still
      * reports. The addon's reset is idempotent — the second report finds the
      * record already gone — and keeping it is what covers a window the platform
