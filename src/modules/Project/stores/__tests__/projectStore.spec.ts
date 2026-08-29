@@ -374,10 +374,11 @@ describe('projectStore', () => {
         };
 
         projectStore.set(clean);
+        expect(Object.is(projectStore.value?.productionBrief, clean.productionBrief)).toBe(true);
         projectStore.hydrate();
 
         // Marker survives only when sanitize accepts the rebased pending by reference.
-        expect(projectStore.value?.[accept_marker]).toBe(true);
+        expect(Object.getOwnPropertyDescriptor(projectStore.value, accept_marker)?.value).toBe(true);
     });
 
     it('preserves a pending projectMeta write across hydrate of an unchanged document snapshot', () => {
@@ -402,7 +403,7 @@ describe('projectStore', () => {
 
         expect(projectStore.value?.dirty).toBe(true);
         expect(projectStore.value?.initialized).toBe(true);
-        expect(projectStore.value?.[accept_marker]).toBe(true);
+        expect(Object.getOwnPropertyDescriptor(projectStore.value, accept_marker)?.value).toBe(true);
     });
 
     it('writes production brief revisions through the collaborative project document', async () => {
