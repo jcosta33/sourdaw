@@ -5211,7 +5211,6 @@ mod timeline_tests {
     }
 
     #[test]
-    #[test]
     fn a_bus_and_track_that_feed_each_other_are_refused_as_a_cycle() {
         let mut harness = Harness::new(16);
         harness.send(GraphCommand::AddTrack(TimelineTrack::new(1)));
@@ -5243,6 +5242,7 @@ mod timeline_tests {
         assert_eq!(harness.scheduler.timeline().send_tap(1, 50), None);
     }
 
+    #[test]
     fn a_track_feeding_another_track_is_rendered_ahead_of_it_and_enters_its_device_chain() {
         let mut harness = Harness::new(32);
         harness.playing();
