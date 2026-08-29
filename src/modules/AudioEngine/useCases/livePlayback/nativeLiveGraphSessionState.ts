@@ -27,7 +27,7 @@ export const nativeLiveGraphSession: NativeLiveGraphSession = {
 };
 
 /** Run `work` after everything already queued on the session, whatever it answered. */
-export function queueOnNativeLiveGraphSession<T>(work: () => Promise<T>): Promise<T> {
+export function queueOnNativeLiveGraphSession<TResult>(work: () => Promise<TResult>): Promise<TResult> {
     const next = nativeLiveGraphSession.pending.then(work, work);
     // Swallowed on the chain only: the returned promise still carries the
     // rejection to the caller, while the chain itself must stay usable so one
