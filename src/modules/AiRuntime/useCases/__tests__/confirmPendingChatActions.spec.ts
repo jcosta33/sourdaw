@@ -595,7 +595,7 @@ describe('confirmPendingChatActions transaction admission', () => {
         });
     });
 
-    it('lets only one same-turn confirmation consume a proposed batch after both durable receipt reads resolve', async () => {
+    it('keeps the winning same-turn confirmation authoritative when the losing receipt lookup rejects later', async () => {
         configureAiWorkflowCommandPreflightFixture('project-1');
         configureCommandBatchIdempotency({ canExecute: () => true });
         const ownedStorage = createAutomergeStorage<{ bpm: number }>('owned', 'transport');
@@ -663,26 +663,29 @@ describe('confirmPendingChatActions transaction admission', () => {
                 transfer: vi.fn().mockResolvedValue(undefined),
             },
         });
-        let resolveEvidence!: (receipt: null) => void;
-        const evidence = new Promise<null>((resolve) => {
-            resolveEvidence = resolve;
+        let resolveWinningEvidence!: (receipt: null) => void;
+        let rejectLosingEvidence!: (reason: Error) => void;
+        const winningEvidence = new Promise<null>((resolve) => {
+            resolveWinningEvidence = resolve;
+        });
+        const losingEvidence = new Promise<null>((_resolve, reject) => {
+            rejectLosingEvidence = reject;
         });
         const commandUseCases = await import('#/modules/Command/useCases');
         const replay = vi
             .spyOn(commandUseCases, 'getVersionedCommandBatchIdempotentReplay')
-            .mockImplementationOnce(() => evidence)
-            .mockImplementationOnce(() => evidence);
+            .mockImplementationOnce(() => winningEvidence)
+            .mockImplementationOnce(() => losingEvidence);
 
         try {
             const first = confirmPendingChatActions({ confirmationId: 'confirmation-double-confirm' });
             const second = confirmPendingChatActions({ confirmationId: 'confirmation-double-confirm' });
             await vi.waitFor(() => expect(replay).toHaveBeenCalledTimes(2));
-            resolveEvidence(null);
+            resolveWinningEvidence(null);
+            await expect(first).resolves.toEqual({ status: 'executed' });
+            rejectLosingEvidence(new Error('losing receipt read failed after the winning commit'));
 
-            await expect(Promise.all([first, second])).resolves.toEqual([
-                { status: 'executed' },
-                { status: 'not_pending', currentStatus: 'accepted' },
-            ]);
+            await expect(second).resolves.toEqual({ status: 'not_pending', currentStatus: 'executed' });
         } finally {
             replay.mockRestore();
         }
@@ -691,7 +694,11 @@ describe('confirmPendingChatActions transaction admission', () => {
         expect(release).not.toHaveBeenCalled();
         expect(getPendingActionConfirmation('confirmation-double-confirm')).toMatchObject({ status: 'executed' });
         expect(agentRunLifecycle.get('run-double-confirm')).toMatchObject({ phase: 'completed', errors: [] });
-        expect(chatStore.value?.messages[0]).toMatchObject({ pendingActionConfirmationStatus: 'executed' });
+        expect(getCrdtDoc<Record<string, unknown>>('owned')).toMatchObject({ transport: { bpm: 132 } });
+        expect(chatStore.value?.messages[0]).toMatchObject({
+            pendingActionConfirmationStatus: 'executed',
+            error: undefined,
+        });
     });
 
     it('rejects a legacy command-envelope confirmation without an approved outer batch', async () => {

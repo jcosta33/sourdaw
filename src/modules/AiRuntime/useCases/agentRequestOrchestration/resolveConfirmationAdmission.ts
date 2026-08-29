@@ -128,10 +128,33 @@ async function resolveConfirmationAdmission(input: {
                 serialized: approvedCommandBatch.serialized,
             });
         } catch (error) {
+            const liveConfirmation = getPendingActionConfirmation(input.confirmationId);
+            if (!liveConfirmation) {
+                return { status: 'handled', result: { status: 'missing' } };
+            }
+            if (!hasSameAdmissionBinding(liveConfirmation, confirmation)) {
+                return {
+                    status: 'handled',
+                    result: { status: 'not_pending', currentStatus: liveConfirmation.status },
+                };
+            }
+            if (wasRetryEligible) {
+                const liveRetryAdmission = admitCommittedSectionRenderRetry({
+                    confirmation: liveConfirmation,
+                    expectedCommandBatch: approvedCommandBatch,
+                    phase: 'eligibility',
+                });
+                if (liveRetryAdmission.status !== 'requires-proof') {
+                    return {
+                        status: 'handled',
+                        result: { status: 'not_pending', currentStatus: liveConfirmation.status },
+                    };
+                }
+            }
             return {
                 status: 'handled',
                 result: confirmationTerminalSettlement.failUnreadableCommitEvidence(
-                    confirmation,
+                    liveConfirmation,
                     error,
                     wasRetryEligible
                 ),

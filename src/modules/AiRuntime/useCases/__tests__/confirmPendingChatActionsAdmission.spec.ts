@@ -90,16 +90,41 @@ describe('confirmPendingChatActions retry admission', () => {
         vi.clearAllMocks();
     });
 
-    it('forwards only the consumed retry admission to the retry executor and returns its busy result', async () => {
-        const admission = { status: 'render-retry', confirmation, durableReceipt, commandBatch } as const;
-        mocks.resolveAdmission.mockResolvedValue(admission);
-        mocks.consumeAdmission.mockReturnValue(admission);
+    it('returns a changed handled admission without invoking the retry executor', async () => {
+        const resolvedAdmission = { status: 'render-retry', confirmation, durableReceipt, commandBatch } as const;
+        mocks.resolveAdmission.mockResolvedValue(resolvedAdmission);
+        mocks.consumeAdmission.mockReturnValue({ status: 'handled', result: { status: 'missing' } });
+
+        await expect(confirmPendingChatActions({ confirmationId: confirmation.id })).resolves.toEqual({
+            status: 'missing',
+        });
+        expect(mocks.consumeAdmission).toHaveBeenCalledWith(resolvedAdmission);
+        expect(mocks.executeRetry).not.toHaveBeenCalled();
+    });
+
+    it('forwards the distinct consumed retry payload rather than the resolved payload', async () => {
+        const resolvedAdmission = { status: 'render-retry', confirmation, durableReceipt, commandBatch } as const;
+        const consumedConfirmation = { ...confirmation, id: 'confirmation-retry-live' };
+        const consumedReceipt = { ...durableReceipt, batchId: 'batch-retry-live' };
+        const consumedCommandBatch = { ...commandBatch, serialized: 'approved-live-retry-batch' };
+        const consumedAdmission = {
+            status: 'render-retry',
+            confirmation: consumedConfirmation,
+            durableReceipt: consumedReceipt,
+            commandBatch: consumedCommandBatch,
+        } as const;
+        mocks.resolveAdmission.mockResolvedValue(resolvedAdmission);
+        mocks.consumeAdmission.mockReturnValue(consumedAdmission);
         mocks.executeRetry.mockResolvedValue({ status: 'busy' });
 
         await expect(confirmPendingChatActions({ confirmationId: confirmation.id })).resolves.toEqual({
             status: 'busy',
         });
-        expect(mocks.consumeAdmission).toHaveBeenCalledWith(admission);
-        expect(mocks.executeRetry).toHaveBeenCalledWith({ confirmation, durableReceipt, commandBatch });
+        expect(mocks.consumeAdmission).toHaveBeenCalledWith(resolvedAdmission);
+        expect(mocks.executeRetry).toHaveBeenCalledWith({
+            confirmation: consumedConfirmation,
+            durableReceipt: consumedReceipt,
+            commandBatch: consumedCommandBatch,
+        });
     });
 });

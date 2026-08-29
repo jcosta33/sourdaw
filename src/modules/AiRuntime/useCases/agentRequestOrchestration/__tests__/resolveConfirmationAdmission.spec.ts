@@ -227,6 +227,56 @@ describe('resolveConfirmationAdmission', () => {
 
     it.each([
         ['missing', null],
+        ['executed', createConfirmation({ commandBatch: createBatch(), status: 'executed' })],
+        [
+            'rebound batch',
+            {
+                ...createConfirmation({ commandBatch: createBatch() }),
+                approvalSnapshot: {
+                    ...createConfirmation({ commandBatch: createBatch() }).approvalSnapshot,
+                    commandBatch: { ...createBatch(), serialized: 'rebound-batch' },
+                },
+            },
+        ],
+    ] as const)(
+        'does not settle unreadable evidence when the live confirmation is %s',
+        async (_case, liveConfirmation) => {
+            const confirmation = createConfirmation({ commandBatch: createBatch() });
+            mocks.getConfirmation.mockReturnValueOnce(confirmation).mockReturnValue(liveConfirmation);
+            mocks.getReplay.mockRejectedValue(new Error('receipt store unavailable'));
+
+            await expect(
+                confirmationAdmission.resolveConfirmationAdmission({ confirmationId: confirmation.id })
+            ).resolves.toEqual(
+                liveConfirmation
+                    ? { status: 'handled', result: { status: 'not_pending', currentStatus: liveConfirmation.status } }
+                    : { status: 'handled', result: { status: 'missing' } }
+            );
+            expect(mocks.failUnreadableEvidence).not.toHaveBeenCalled();
+        }
+    );
+
+    it('does not retain retry settlement when its live eligibility changed during an unreadable lookup', async () => {
+        const commandBatch = createBatch();
+        const confirmation = {
+            ...createConfirmation({ commandBatch }),
+            status: 'executed' as const,
+            followUpStatus: 'retryable' as const,
+            followUpProjectRevision: 'revision-1',
+        };
+        const liveConfirmation = { ...confirmation, followUpStatus: 'failed' as const };
+        mocks.getConfirmation.mockReturnValueOnce(confirmation).mockReturnValue(liveConfirmation);
+        mocks.getReplay.mockRejectedValue(new Error('receipt store unavailable'));
+        mocks.admitRetry.mockReturnValueOnce({ status: 'requires-proof' }).mockReturnValue({ status: 'ineligible' });
+
+        await expect(
+            confirmationAdmission.resolveConfirmationAdmission({ confirmationId: confirmation.id })
+        ).resolves.toEqual({ status: 'handled', result: { status: 'not_pending', currentStatus: 'executed' } });
+        expect(mocks.failUnreadableEvidence).not.toHaveBeenCalled();
+    });
+
+    it.each([
+        ['missing', null],
         ['changed status', createConfirmation({ commandBatch: createBatch(), status: 'failed' })],
     ] as const)('rereads %s confirmation state after deferred durable receipt lookup', async (_case, refreshed) => {
         const confirmation = createConfirmation({ commandBatch: createBatch() });
@@ -355,7 +405,7 @@ describe('resolveConfirmationAdmission', () => {
         });
     });
 
-    it('fails a retry when proof changes before consumption instead of invoking the retry path', () => {
+    it('proves the live retry admission before treating a proof mismatch as terminal', () => {
         const commandBatch = createBatch();
         const durableReceipt = createReceipt(commandBatch);
         const confirmation = {
@@ -364,7 +414,11 @@ describe('resolveConfirmationAdmission', () => {
             followUpStatus: 'retryable' as const,
             followUpProjectRevision: 'revision-1',
         };
-        mocks.getConfirmation.mockReturnValue(confirmation);
+        const liveConfirmation = {
+            ...confirmation,
+            approvalSnapshot: { ...confirmation.approvalSnapshot },
+        };
+        mocks.getConfirmation.mockReturnValue(liveConfirmation);
         mocks.admitRetry.mockReturnValue({ status: 'proof-mismatch' });
 
         expect(
@@ -375,7 +429,14 @@ describe('resolveConfirmationAdmission', () => {
                 commandBatch,
             })
         ).toEqual({ status: 'handled', result: { status: 'failed', reason: 'retry proof mismatch' } });
-        expect(mocks.failRetryProof).toHaveBeenCalledWith(confirmation);
+        expect(mocks.admitRetry).toHaveBeenCalledWith({
+            confirmation: liveConfirmation,
+            durableReceipt,
+            expectedCommandBatch: commandBatch,
+            phase: 'proof',
+        });
+        expect(mocks.admitRetry.mock.calls[0]?.[0]?.confirmation).toBe(liveConfirmation);
+        expect(mocks.failRetryProof).toHaveBeenCalledWith(liveConfirmation);
     });
 
     it.each([
