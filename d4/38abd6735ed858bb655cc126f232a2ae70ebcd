@@ -1,0 +1,42 @@
+src/styles/main.css
+  s_ae074277795b45::t_5b668767383a5f 147,157-158,179,210
+src/modules/Bacteria/presentations/components/CrossoverDisplay.tsx
+  s_ae074277795b45::t_5b668767383a5f 142-143,157
+src/components/daw/LatchButton.tsx
+  s_ae074277795b45::t_f6736e71d4ce86 77,89
+  s_ae074277795b45::t_5b668767383a5f 76,83,88,91,94
+src/styles/tokens.css
+  s_ae074277795b45::t_5b668767383a5f 6,8-13,19-20,23,92-93,95,103
+src/components/daw/__tests__/LatchButton.spec.tsx
+  s_ae074277795b45::t_f6736e71d4ce86 28-31,42-45
+src/styles/utilities/daw-surfaces.css
+  s_ae074277795b45::t_5b668767383a5f 73,83-84,105,136
+src/styles/base.css
+  s_ae074277795b45::t_5b668767383a5f 21,35,41
+build/icons/android/values/ic_launcher_background.xml
+  s_ae074277795b45::t_a844907de61e83 3-4
+src/components/ui/button.tsx
+  s_ae074277795b45::t_5b668767383a5f 27
+src/components/daw/DawMeterFrame.tsx
+  s_ae074277795b45::t_5b668767383a5f 22
+src/components/daw/DawChannelStripShell.tsx
+  s_ae074277795b45::t_5b668767383a5f 23
+index.html
+  s_ae074277795b45::t_5e0dcb7d2a36ba 6
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "d438abd6735ed858bb655cc126f232a2ae70ebcd",
+  "prompts": {},
+  "sessions": {
+    "s_ae074277795b45": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04ab5-5234-7100-be1c-76ebfaba88d3",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
