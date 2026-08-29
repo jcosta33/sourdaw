@@ -14,12 +14,21 @@ import { resolve } from 'node:path';
 // imports to an empty string, `?raw` included.
 const mainStylesheet = readFileSync(resolve(process.cwd(), 'src/styles/main.css'), 'utf8');
 
-/** One rule: the selector list before its block, and the block's own text. */
-const RULE = /([^{}/*]+)\{([^{}]*)\}/gu;
+/**
+ * One rule: the selector list before its block, and the block's own text. Only
+ * a brace and the slash that closes a comment bound a selector, so the
+ * universal selector reads as `*` rather than dropping out of the match.
+ */
+const RULE = /([^{}/]+)\{([^{}]*)\}/gu;
 
 type Declaration = {
     readonly property: string;
     readonly value: string;
+};
+
+type StylesheetRule = {
+    readonly selector: string;
+    readonly declarations: readonly Declaration[];
 };
 
 /**
@@ -40,23 +49,40 @@ function declarationsOf(block: string): Declaration[] {
 }
 
 /**
+ * Every rule `main.css` ships, in file order. A nested block contributes the
+ * rules inside it rather than itself, so an `@layer` body reads as its members.
+ *
+ * A selector that came out empty means the parser lost it rather than that the
+ * stylesheet holds one, so it throws here — at the parse that went wrong, not
+ * later at a caller passing `''` to `matches` or `closest`.
+ */
+export function stylesheetRules(): readonly StylesheetRule[] {
+    return [...mainStylesheet.matchAll(RULE)].map(([rule, selector, block]) => {
+        const trimmed = (selector ?? '').trim();
+        if (trimmed === '') {
+            throw new Error(`main.css rule parsed with no selector: ${rule.trim()}`);
+        }
+        return { selector: trimmed, declarations: declarationsOf(block ?? '') };
+    });
+}
+
+/**
  * The selector list of the one rule in `main.css` setting a property to a value,
  * ready to pass to `matches` or `closest`.
  *
  * The property and the value are matched as parsed declarations rather than as
- * text, so `app-region` never answers for `-webkit-app-region`. Both an absent
- * rule and a second matching one throw: a caller asserting against "the rule
- * that opts elements out of the drag region" gets that rule or an error, never
- * an unrelated selector that happens to sit earlier in the file.
+ * text, so `app-region` never answers for `-webkit-app-region`. An absent rule,
+ * a second matching one, and a rule whose selector failed to parse all throw: a
+ * caller asserting against "the rule that opts elements out of the drag region"
+ * gets that rule or an error, never an unrelated selector that happens to sit
+ * earlier in the file and never a selector string the DOM will reject.
  */
 export function selectorDeclaring(property: string, value: string): string {
-    const selectors = [...mainStylesheet.matchAll(RULE)]
-        .filter(([, , block]) =>
-            declarationsOf(block ?? '').some(
-                (declaration) => declaration.property === property && declaration.value === value
-            )
+    const selectors = stylesheetRules()
+        .filter((rule) =>
+            rule.declarations.some((declaration) => declaration.property === property && declaration.value === value)
         )
-        .map(([, selector]) => (selector ?? '').trim());
+        .map((rule) => rule.selector);
 
     const [only] = selectors;
     if (only === undefined) {
