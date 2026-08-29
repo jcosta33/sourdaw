@@ -252,28 +252,34 @@ describe('beginConfirmedCommandExecution', () => {
                 ...confirmation,
                 approvalSnapshot: { ...confirmation.approvalSnapshot, commandBatch: undefined },
             }),
+            'The confirmation has no approved command batch.',
+            'authorization',
         ],
-        ['invalid batch', () => confirmation],
-    ])('settles %s before command execution admission continues', async (name, createConfirmation) => {
-        const currentConfirmation = createConfirmation();
-        if (name === 'invalid batch') {
-            mocks.parseBatch.mockReturnValueOnce({ status: 'invalid', reason: 'bad batch schema' });
-        }
+        ['invalid batch', () => confirmation, 'bad batch schema', 'schema'],
+    ])(
+        'settles %s before command execution admission continues',
+        async (name, createConfirmation, reason, category) => {
+            const currentConfirmation = createConfirmation();
+            if (name === 'invalid batch') {
+                mocks.parseBatch.mockReturnValueOnce({ status: 'invalid', reason: 'bad batch schema' });
+            }
 
-        const result = beginConfirmedCommandExecution({
-            confirmation: currentConfirmation,
-            priorVerifiedBatchReceipt: null,
-            recoveringPendingEffects: false,
-        });
+            const result = beginConfirmedCommandExecution({
+                confirmation: currentConfirmation,
+                priorVerifiedBatchReceipt: null,
+                recoveringPendingEffects: false,
+            });
 
-        expect(result.status).toBe('settled');
-        if (result.status !== 'settled') {
-            throw new Error('Expected batch rejection to settle.');
+            expect(result.status).toBe('settled');
+            if (result.status !== 'settled') {
+                throw new Error('Expected batch rejection to settle.');
+            }
+            await result.result;
+            expect(mocks.failPreflight).toHaveBeenCalledWith(currentConfirmation, reason, category);
+            expect(mocks.claimLease).not.toHaveBeenCalled();
+            expect(mocks.updateConfirmation).not.toHaveBeenCalled();
         }
-        await result.result;
-        expect(mocks.claimLease).not.toHaveBeenCalled();
-        expect(mocks.updateConfirmation).not.toHaveBeenCalled();
-    });
+    );
 
     it('settles a hard command budget limit without claiming work or accepting the confirmation', async () => {
         mocks.reserveBudget.mockReturnValueOnce({ status: 'hard-limit-reached', reason: 'maxCommands', estimates: [] });
