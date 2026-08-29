@@ -587,7 +587,9 @@ pub struct GraphRegistry {
     /// The automation this registry has pushed, kept past the ledger's release
     /// so a loop pass can be armed with what the previous one consumed. See
     /// [`ArmedWrite`] and [`Self::rearm_loop_pass`].
-    loop_window: HashMap<AutomationTarget, Vec<ArmedWrite>>,
+    loop_window: HashMap<AutomationTarget, ArmedRecord<ArmedWrite>>,
+    /// The same record for device parameters, keyed by native effect id.
+    device_loop_window: HashMap<usize, ArmedRecord<ArmedDeviceWrite>>,
     /// The wrap count this registry has already armed for. Like `batches_sent`
     /// it numbers a stream the engine owns, so it survives a topology
     /// replacement: the graph restarts, the engine's seams do not.
@@ -608,6 +610,7 @@ impl Default for GraphRegistry {
             automation_pending: HashMap::new(),
             device_param_pending: HashMap::new(),
             loop_window: HashMap::new(),
+            device_loop_window: HashMap::new(),
             armed_loop_wraps: 0,
         }
     }
@@ -727,6 +730,7 @@ impl GraphRegistry {
         self.automation_pending.clear();
         self.device_param_pending.clear();
         self.loop_window.clear();
+        self.device_loop_window.clear();
         ops
     }
 
@@ -777,46 +781,73 @@ impl GraphRegistry {
     /// it consumed.
     ///
     /// The arm rides the fence of the batch being admitted, ahead of the
-    /// caller's own commands, so the engine takes both as one unit and a write
-    /// the caller stamps later in the pass still supersedes the armed one.
+    /// caller's own commands, so the engine takes both as one unit.
     ///
-    /// A target whose ledger has no room keeps the pass it has: that write is
-    /// left out rather than refusing the caller's batch, because an arm is this
-    /// module's own replay and must not turn into a refusal the caller cannot
-    /// act on.
-    fn rearm_loop_pass(&mut self, progress: GraphProgressSnapshot) -> Vec<GraphCommand> {
+    /// It runs on what the caller's batch left, and never on a parameter that
+    /// batch writes itself. The caller owns the curve, and its word for this
+    /// pass is both fresher than the record's and the thing the record is about
+    /// to become; charging a replay before it would spend the caller's own
+    /// queue slots on stale copies and refuse the batch. A target whose ledger
+    /// has no room left keeps the pass it has, for the same reason: an arm is
+    /// this module's own replay and must never turn into a refusal the caller
+    /// cannot act on.
+    fn rearm_loop_pass(
+        &mut self,
+        progress: GraphProgressSnapshot,
+        caller: &CallerWrites,
+    ) -> Vec<GraphCommand> {
         if progress.loop_wraps == self.armed_loop_wraps {
             return Vec::new();
         }
         self.armed_loop_wraps = progress.loop_wraps;
 
-        let mut consumed: Vec<(AutomationTarget, AutomationWrite, u64)> = self
-            .loop_window
-            .iter()
-            .flat_map(|(target, armed)| {
-                armed
-                    .iter()
-                    .map(move |entry| (*target, entry.write, entry.at_frame))
-            })
-            .filter(|(_, _, at_frame)| *at_frame < progress.last_wrap_frame)
-            .collect();
-        // Ascending stamps, because a replace or a hold cancels everything
-        // landing at or after its own frame: re-sent out of order, a later
-        // write would drop an earlier one on the way in.
-        consumed.sort_by_key(|(_, _, at_frame)| *at_frame);
-
-        let mut budgets = QueueBudgets::seeded_from(self);
+        let mut budgets = QueueBudgets::charging(self, self.batches_sent);
         let mut ops = Vec::new();
-        for (target, write, _) in consumed {
-            let _ = push_automation(target, write, &mut budgets, &mut ops);
+
+        for (target, record) in &self.loop_window {
+            if caller.automation.contains(target) {
+                continue;
+            }
+            for entry in &record.writes {
+                if entry.at_frame >= progress.last_wrap_frame {
+                    continue;
+                }
+                let _ = push_automation(*target, entry.write, &mut budgets, &mut ops);
+            }
         }
+
+        for (effect_id, record) in &self.device_loop_window {
+            if caller.devices.contains(effect_id) {
+                continue;
+            }
+            for entry in &record.writes {
+                if entry.at_frame >= progress.last_wrap_frame {
+                    continue;
+                }
+                if budgets
+                    .charge_device_param(*effect_id, entry.at_frame)
+                    .is_err()
+                {
+                    break;
+                }
+                ops.push(GraphCommand::AutomateDeviceParam {
+                    effect_id: *effect_id,
+                    param: entry.param,
+                    value: entry.value,
+                    at_frame: entry.at_frame,
+                });
+            }
+        }
+
         self.automation_pending = budgets.automation;
+        self.device_param_pending = budgets.device_params;
         ops
     }
 
     /// One live batch's control-side admission, in the order the laws require:
-    /// release what the echo proves landed, arm the loop pass the same echo
-    /// says closed, then map the caller's commands over what is left.
+    /// release what the echo proves landed, map the caller's commands over what
+    /// is left, then arm the loop pass the same echo says closed with the
+    /// remainder.
     ///
     /// Returns the registry to commit once the ops are sent, and the ops
     /// themselves as one fence. The working registry is a clone so a batch that
@@ -824,7 +855,7 @@ impl GraphRegistry {
     /// the engine rather than a consequence of this batch.
     ///
     /// A replacing batch is not armed: its teardown removes the very strips the
-    /// armed writes address, so an arm ahead of it would automate nodes the
+    /// armed writes address, so an arm on that fence would automate nodes the
     /// same fence retires.
     fn admit(
         &mut self,
@@ -836,18 +867,45 @@ impl GraphRegistry {
         self.release_landed(progress);
 
         let mut working = self.clone();
-        let mut ops = if batch.replace_topology {
-            working.armed_loop_wraps = progress.loop_wraps;
-            Vec::new()
-        } else {
-            working.rearm_loop_pass(progress)
-        };
-
         let mut mapped = map_batch(batch, &mut working, samples, sample_rate)?;
+
+        if batch.replace_topology {
+            working.armed_loop_wraps = progress.loop_wraps;
+            return Ok((working, mapped));
+        }
+
+        let mut ops = working.rearm_loop_pass(progress, &caller_writes(&mapped.ops));
         ops.append(&mut mapped.ops);
         mapped.ops = ops;
         Ok((working, mapped))
     }
+}
+
+/// The parameters a caller's own commands write in one batch.
+#[derive(Default)]
+struct CallerWrites {
+    automation: HashSet<AutomationTarget>,
+    devices: HashSet<usize>,
+}
+
+/// Read those parameters off the mapped commands rather than the payload, so
+/// every route that reaches a parameter counts — a strip's creation state
+/// writes gain and pan without being a `write-parameter`, and it lands as a
+/// replace at frame zero that would cancel anything armed behind it.
+fn caller_writes(ops: &[GraphCommand]) -> CallerWrites {
+    let mut writes = CallerWrites::default();
+    for op in ops {
+        match op {
+            GraphCommand::AutomateParam { target, .. } => {
+                writes.automation.insert(*target);
+            }
+            GraphCommand::AutomateDeviceParam { effect_id, .. } => {
+                writes.devices.insert(*effect_id);
+            }
+            _ => {}
+        }
+    }
+    writes
 }
 
 /// How many seams must close after a stamp is known queued before a *whole*
@@ -966,8 +1024,65 @@ struct DeviceParamStamp {
 struct ArmedWrite {
     write: AutomationWrite,
     /// The write's start frame — what the closed pass's walk is compared
-    /// against, and the order the arm must re-send in.
+    /// against.
     at_frame: u64,
+}
+
+/// One device-parameter change kept for the same reason, in the shape
+/// [`GraphCommand::AutomateDeviceParam`] needs to be rebuilt from.
+#[derive(Clone, Copy, Debug)]
+struct ArmedDeviceWrite {
+    param: DeviceParam,
+    value: f32,
+    at_frame: u64,
+}
+
+/// How many writes one target's replay record holds before the record is
+/// dropped whole.
+///
+/// This is a memory bound on a control-side record, and deliberately *not* the
+/// engine queue's capacity: the queue bounds how many writes are pending at
+/// once, while the record accumulates every write a whole pass landed, and a
+/// pass frees queue slots as it walks. A lane dense enough to cross this is
+/// past what re-arming can usefully reproduce, and the record is worth roughly
+/// forty bytes an entry.
+const MAX_ARMED_WRITES_PER_TARGET: usize = 512;
+
+/// One target's record of what the current pass wrote to it.
+///
+/// Overflow drops the record whole rather than evicting its oldest entries: a
+/// partially replayed curve is a *different* curve — the parameter enters the
+/// next pass on whatever value the surviving tail happens to set, and steps
+/// where the caller drew a ramp — so a truncated record would diverge silently
+/// on every pass. Arming nothing leaves the parameter holding its last value,
+/// which is exactly the behaviour of a pass that was never armed.
+#[derive(Clone, Debug)]
+struct ArmedRecord<T> {
+    writes: Vec<T>,
+    overflowed: bool,
+}
+
+impl<T> Default for ArmedRecord<T> {
+    fn default() -> Self {
+        Self {
+            writes: Vec::new(),
+            overflowed: false,
+        }
+    }
+}
+
+impl<T> ArmedRecord<T> {
+    fn record(&mut self, entry: T) {
+        if self.overflowed {
+            return;
+        }
+        if self.writes.len() == MAX_ARMED_WRITES_PER_TARGET {
+            self.writes = Vec::new();
+            self.overflowed = true;
+            return;
+        }
+        self.writes.push(entry);
+    }
 }
 
 /// Control-side ledger of what accepted batches queue on the engine's fixed
@@ -1001,7 +1116,9 @@ struct QueueBudgets {
     /// Per native effect id, the stamps of every pending device change.
     device_params: HashMap<usize, Vec<DeviceParamStamp>>,
     /// Per target, the automation a later loop pass can be armed with.
-    loop_window: HashMap<AutomationTarget, Vec<ArmedWrite>>,
+    loop_window: HashMap<AutomationTarget, ArmedRecord<ArmedWrite>>,
+    /// Per native effect id, the same record for device parameters.
+    device_loop_window: HashMap<usize, ArmedRecord<ArmedDeviceWrite>>,
     /// The fence number the batch being charged will carry when the engine
     /// drains it — what [`GraphRegistry::release_landed`] later holds each
     /// stamp's proof against.
@@ -1010,11 +1127,19 @@ struct QueueBudgets {
 
 impl QueueBudgets {
     fn seeded_from(registry: &GraphRegistry) -> Self {
+        Self::charging(registry, registry.batches_sent + 1)
+    }
+
+    /// As [`Self::seeded_from`], for commands that join a fence already
+    /// counted — the arm rides the caller's batch, so it charges that batch's
+    /// number rather than opening a new one.
+    fn charging(registry: &GraphRegistry, charging_batch: u64) -> Self {
         Self {
             automation: registry.automation_pending.clone(),
             device_params: registry.device_param_pending.clone(),
             loop_window: registry.loop_window.clone(),
-            charging_batch: registry.batches_sent + 1,
+            device_loop_window: registry.device_loop_window.clone(),
+            charging_batch,
         }
     }
 
@@ -1073,28 +1198,54 @@ impl QueueBudgets {
     /// stamped at or past the target frame, so the ledger releases the same
     /// slots. Device-param queues have no cancellation law to mirror, so
     /// their depths deliberately stay.
+    ///
+    /// The replay records are untouched. They are not queue depth but the
+    /// control side's copy of the curve the pass is playing, and a locate
+    /// moves the playhead without redrawing it — pruning them here would
+    /// disarm the tail of every lane on one ruler click.
     fn apply_seek(&mut self, frame: u64) {
         for queued in self.automation.values_mut() {
             queued.retain(|pending| pending.at_frame < frame);
-        }
-        for armed in self.loop_window.values_mut() {
-            armed.retain(|entry| entry.at_frame < frame);
         }
     }
 
     /// Remember one write so a later loop pass can be armed with it
     /// ([`GraphRegistry::rearm_loop_pass`]).
     ///
-    /// Bounded per target by the engine queue's own capacity, because a history
-    /// longer than the queue could not be armed in one pass anyway, and the
-    /// oldest write is the one a later pass is least likely to still want.
+    /// A replace or a hold reduces the record by the queue's own stale law
+    /// before joining it, exactly as [`Self::charge_automation`] reduces the
+    /// pending stamps. That keeps the record a curve rather than a transcript:
+    /// no entry in it can cancel another, so the arm may re-send it in record
+    /// order and know it re-sends the whole of it.
     fn record_armed(&mut self, target: AutomationTarget, write: AutomationWrite) {
         let (at_frame, _) = write_frames(&write);
-        let armed = self.loop_window.entry(target).or_default();
-        if armed.len() == AUTOMATION_QUEUE_CAPACITY {
-            armed.remove(0);
+        let record = self.loop_window.entry(target).or_default();
+        if !matches!(write, AutomationWrite::Append(_)) {
+            record
+                .writes
+                .retain(|entry| write_frames(&entry.write).1 < at_frame);
         }
-        armed.push(ArmedWrite { write, at_frame });
+        record.record(ArmedWrite { write, at_frame });
+    }
+
+    /// As [`Self::record_armed`], for a device parameter. `DeviceParamQueue`
+    /// has no cancellation law, so nothing reduces this record; it is bounded
+    /// only by [`MAX_ARMED_WRITES_PER_TARGET`].
+    fn record_armed_device(
+        &mut self,
+        effect_id: usize,
+        param: DeviceParam,
+        value: f32,
+        at_frame: u64,
+    ) {
+        self.device_loop_window
+            .entry(effect_id)
+            .or_default()
+            .record(ArmedDeviceWrite {
+                param,
+                value,
+                at_frame,
+            });
     }
 }
 
@@ -1393,6 +1544,7 @@ fn map_batch(
     registry.automation_pending = budgets.automation;
     registry.device_param_pending = budgets.device_params;
     registry.loop_window = budgets.loop_window;
+    registry.device_loop_window = budgets.device_loop_window;
     // The fence horizon advances with the ledger it numbers. `registry` is
     // the caller's working clone: a batch that maps but is never sent (a
     // refused push, an offline mapping) discards the clone and the count
@@ -1863,6 +2015,7 @@ fn map_command(
             // (the allocator is monotonic) — so the ledger's window for this
             // effect is exactly gone, not guessed gone.
             budgets.device_params.remove(&device.native_effect_id);
+            budgets.device_loop_window.remove(&device.native_effect_id);
             registry
                 .strips
                 .get_mut(track_id)
@@ -1897,15 +2050,18 @@ fn map_command(
             })?;
             let StepWritePayload::Step { value, time } = write;
             let at_frame = seconds_to_frames(*time, sample_rate, "write-device-parameter time")?;
+            let value = finite(*value, "write-device-parameter value")? as f32;
+            let effect_id = device.native_effect_id;
             budgets
-                .charge_device_param(device.native_effect_id, at_frame)
+                .charge_device_param(effect_id, at_frame)
                 .map_err(|reason| format!("write-device-parameter: {reason}"))?;
             ops.push(GraphCommand::AutomateDeviceParam {
-                effect_id: device.native_effect_id,
+                effect_id,
                 param,
-                value: finite(*value, "write-device-parameter value")? as f32,
+                value,
                 at_frame,
             });
+            budgets.record_armed_device(effect_id, param, value, at_frame);
             Ok(())
         }
 
@@ -4021,16 +4177,107 @@ mod tests {
         renderer: &mut OfflineRenderer,
         commands: Value,
         samples: &HashMap<String, TimelineSample>,
-    ) -> Result<(), String> {
+    ) -> Result<Vec<SentWrite>, String> {
         let (working, mapped) = registry.admit(
             renderer.graph_progress(),
             &batch(commands),
             samples,
             48_000.0,
         )?;
+        let sent = sent_writes(&mapped.ops);
         send_mapped(renderer, mapped.ops);
         *registry = working;
-        Ok(())
+        Ok(sent)
+    }
+
+    /// One parameter change a fence carries. `GraphCommand` is not cloneable
+    /// and the ops are consumed by the send, so a test reads this instead.
+    #[derive(Debug, PartialEq)]
+    enum SentWrite {
+        Param(AutomationTarget, AutomationWrite),
+        DeviceParam(DeviceParam, f32, u64),
+    }
+
+    fn sent_writes(ops: &[GraphCommand]) -> Vec<SentWrite> {
+        ops.iter()
+            .filter_map(|op| match op {
+                GraphCommand::AutomateParam { target, write } => {
+                    Some(SentWrite::Param(*target, *write))
+                }
+                GraphCommand::AutomateDeviceParam {
+                    param,
+                    value,
+                    at_frame,
+                    ..
+                } => Some(SentWrite::DeviceParam(*param, *value, *at_frame)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// The automation a fence carries for one kind of target, as
+    /// `(start frame, write)`.
+    fn automation_ops(
+        sent: &[SentWrite],
+        wanted: fn(&AutomationTarget) -> bool,
+    ) -> Vec<(u64, AutomationWrite)> {
+        sent.iter()
+            .filter_map(|op| match op {
+                SentWrite::Param(target, write) if wanted(target) => {
+                    Some((write_frames(write).0, *write))
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// A looping session with one clip and a gain lane on `t1`, at the top of
+    /// its first pass.
+    ///
+    /// The lane's third write is a ramp whose start makes the second stale, so
+    /// the replay record has to reduce it exactly as the engine's queue does,
+    /// and the pass ends on the gain the strip was created with — the curve is
+    /// therefore seamless, and a pass that replays it is sample-identical to
+    /// the one before.
+    fn a_looping_gain_lane() -> (
+        GraphRegistry,
+        OfflineRenderer,
+        HashMap<String, TimelineSample>,
+    ) {
+        let samples = sample_pool();
+        let mut registry = GraphRegistry::default();
+        let mut renderer = OfflineRenderer::new(48_000.0, 64);
+        install_loop(&mut renderer);
+
+        admit_live(
+            &mut registry,
+            &mut renderer,
+            json!([
+                track_strip("t1"),
+                clip_playback("t1"),
+                { "kind": "set-transport", "playing": true, "positionSeconds": 0.0 },
+                gain_step("t1", 0.5, 256),
+                gain_step("t1", 0.25, 768),
+                { "kind": "write-parameter",
+                  "target": { "kind": "track-fader", "trackId": "t1" },
+                  "write": { "shape": "ramp-to", "value": 1.0,
+                             "startTime": 512.0 / 48_000.0, "landTime": 640.0 / 48_000.0 } },
+            ]),
+            &samples,
+        )
+        .expect("the setup batch maps");
+
+        (registry, renderer, samples)
+    }
+
+    /// Every stamp this registry holds against a track's fader.
+    fn gain_stamps(registry: &GraphRegistry) -> usize {
+        registry
+            .automation_pending
+            .iter()
+            .filter(|(target, _)| matches!(target, AutomationTarget::TrackGain(_)))
+            .map(|(_, queued)| queued.len())
+            .sum()
     }
 
     /// The release proof's loop half. A stamp inside the loop region is
@@ -4041,6 +4288,13 @@ mod tests {
     /// only a *whole* pass does: one seam after the stamp is known queued ends
     /// the pass it arrived in, which says nothing about a stamp the playhead
     /// was already past.
+    ///
+    /// Both of the proof's bounds are strict, and the region's own end is where
+    /// that matters: the closing pass walks *to* `last_wrap_frame` without
+    /// rendering it, so a stamp sitting exactly there is one the engine has
+    /// never popped and never will while the region holds. It stays charged
+    /// forever, and that is the correct answer — the ledger over-refuses rather
+    /// than freeing a slot the engine still owes.
     #[test]
     fn a_stamp_a_whole_loop_pass_walked_past_releases_on_the_seam() {
         const STAMP: u64 = 768;
@@ -4064,10 +4318,13 @@ mod tests {
         admit_and_send(
             &mut registry,
             &mut renderer,
-            json!([pan_step("t1", 0.1, STAMP as f64 / 48_000.0)]),
+            json!([
+                pan_step("t1", 0.1, STAMP as f64 / 48_000.0),
+                pan_step("t1", 0.2, LOOP_END_FRAME as f64 / 48_000.0),
+            ]),
             &samples,
         )
-        .expect("the write admits");
+        .expect("the writes admit");
 
         // The block that drains it is the one that closes the seam, so the
         // engine walks past the stamp and reports a playhead below it.
@@ -4086,7 +4343,7 @@ mod tests {
         registry.release_landed(closed);
         assert_eq!(
             charged(&registry),
-            1,
+            2,
             "the first echo proving the batch drained only anchors the seam count"
         );
 
@@ -4095,16 +4352,28 @@ mod tests {
         registry.release_landed(renderer.graph_progress());
         assert_eq!(
             charged(&registry),
-            1,
+            2,
             "one seam after the anchor only ends the pass the stamp arrived in"
         );
 
         renderer.render(LOOP_END_FRAME as usize);
-        assert_eq!(renderer.graph_progress().loop_wraps, 3);
-        registry.release_landed(renderer.graph_progress());
-        assert!(
-            registry.automation_pending.is_empty(),
-            "a whole pass has now run with the stamp queued: the engine popped it"
+        let walked = renderer.graph_progress();
+        assert_eq!(walked.loop_wraps, 3);
+        assert_eq!(
+            walked.last_wrap_frame, LOOP_END_FRAME,
+            "the pass walked to the region's end, so a stamp there is the boundary case"
+        );
+        registry.release_landed(walked);
+        let left: Vec<u64> = registry
+            .automation_pending
+            .values()
+            .flatten()
+            .map(|stamp| stamp.at_frame)
+            .collect();
+        assert_eq!(
+            left,
+            vec![LOOP_END_FRAME],
+            "a whole pass ran with both stamps queued, but it only popped the one below its walk"
         );
     }
 
@@ -4115,6 +4384,185 @@ mod tests {
     /// pass with the writes the seam consumed.
     #[test]
     fn a_closed_loop_pass_arms_the_next_one_with_the_automation_it_consumed() {
+        let (mut registry, mut renderer, samples) = a_looping_gain_lane();
+
+        let (first, _) = renderer.render(LOOP_END_FRAME as usize);
+        assert!(
+            first.iter().any(|sample| *sample != first[0]),
+            "the pass has to hear its own automation for the next one to be worth arming"
+        );
+        assert_eq!(renderer.graph_progress().loop_wraps, 1);
+
+        // The next batch carries the arm on its own fence.
+        let armed = admit_live(&mut registry, &mut renderer, json!([]), &samples)
+            .expect("the arming batch admits");
+        assert_eq!(
+            automation_ops(&armed, |target| matches!(
+                target,
+                AutomationTarget::TrackGain(_)
+            ))
+            .into_iter()
+            .map(|(at_frame, _)| at_frame)
+            .collect::<Vec<_>>(),
+            vec![256, 512],
+            "the ramp made the middle step stale, so the record replays the curve, not the log"
+        );
+
+        let (second, _) = renderer.render(LOOP_END_FRAME as usize);
+        assert_eq!(
+            second, first,
+            "a loop pass runs the automation the pass before it consumed"
+        );
+    }
+
+    /// The arm is not free: what it re-sends occupies the same engine queue
+    /// slots the caller's writes do, so it charges the ledger like any other
+    /// write and releases on the same proof. A replay that skipped the ledger
+    /// would let the queue overflow render-side, silently, every pass.
+    #[test]
+    fn an_arms_replay_is_charged_to_the_ledger_and_released_by_the_seam() {
+        let (mut registry, mut renderer, samples) = a_looping_gain_lane();
+        renderer.render(LOOP_END_FRAME as usize);
+
+        admit_live(&mut registry, &mut renderer, json!([]), &samples)
+            .expect("the arming batch admits");
+        let arming_fence = registry.batches_sent;
+        let charged_by_the_arm = registry
+            .automation_pending
+            .iter()
+            .filter(|(target, _)| matches!(target, AutomationTarget::TrackGain(_)))
+            .flat_map(|(_, queued)| queued.iter())
+            .filter(|stamp| stamp.admitted_batch == arming_fence)
+            .count();
+        assert_eq!(
+            charged_by_the_arm, 2,
+            "the two replayed writes are charged like the caller's own, on the fence they ride"
+        );
+
+        // Three seams: the first anchors the arm's stamps, and a whole pass
+        // has to run with them queued before the engine is proven past them.
+        for _ in 0..3 {
+            renderer.render(LOOP_END_FRAME as usize);
+            registry.release_landed(renderer.graph_progress());
+        }
+        assert_eq!(
+            gain_stamps(&registry),
+            0,
+            "armed stamps leave the ledger on the seam proof, like every other stamp"
+        );
+    }
+
+    /// The arm runs on what the caller's batch left, and never on a parameter
+    /// that batch writes itself. Charged the other way round, a lane holding a
+    /// full pass would spend every slot on stale copies and refuse the caller's
+    /// own edit — the exact starvation this change exists to remove, moved one
+    /// step along.
+    #[test]
+    fn an_arm_never_spends_the_queue_slots_the_callers_own_batch_needs() {
+        let samples = sample_pool();
+        let mut registry = GraphRegistry::default();
+        let mut renderer = OfflineRenderer::new(48_000.0, 64);
+        install_loop(&mut renderer);
+
+        let mut lane = vec![
+            track_strip("t1"),
+            json!({ "kind": "set-transport", "playing": true, "positionSeconds": 0.0 }),
+        ];
+        for slot in 1..=AUTOMATION_QUEUE_CAPACITY {
+            let frame = (slot as u64) * 64;
+            lane.push(pan_step("t1", 0.1, frame as f64 / 48_000.0));
+        }
+        admit_live(&mut registry, &mut renderer, json!(lane), &samples)
+            .expect("a lane exactly as deep as the queue admits");
+
+        // Drain the ledger: the playhead proves the writes below it, and the
+        // seam proves the one sitting on the block boundary.
+        for _ in 0..4 {
+            renderer.render(LOOP_END_FRAME as usize);
+            registry.release_landed(renderer.graph_progress());
+        }
+        assert!(
+            registry.automation_pending.is_empty(),
+            "the pass consumed the lane, so the caller's next edit has room"
+        );
+
+        let sent = admit_live(
+            &mut registry,
+            &mut renderer,
+            json!([pan_step("t1", 0.9, 100.0 / 48_000.0)]),
+            &samples,
+        )
+        .expect("a batch writing a parameter the arm holds a full pass of must admit");
+
+        assert_eq!(
+            automation_ops(&sent, |target| matches!(
+                target,
+                AutomationTarget::TrackPan(_)
+            )),
+            vec![(
+                100,
+                AutomationWrite::Append(AutomationEvent {
+                    at_frame: 100,
+                    duration_frames: 0,
+                    value: pan_position(0.9).expect("a pan position inside the law"),
+                    shape: RampShape::Step,
+                })
+            )],
+            "the caller's write is the only thing the fence carries for that parameter"
+        );
+    }
+
+    /// A locate moves the playhead; it does not redraw the curve. The pending
+    /// ledger mirrors the engine's own `cancel_from`, but the replay record is
+    /// the control side's copy of what the lane holds — pruning it on a seek
+    /// would disarm the tail of every lane on one ruler click, and a locate to
+    /// the region's start would disarm all of it.
+    #[test]
+    fn a_locate_trims_the_pending_ledger_without_disarming_the_pass() {
+        let (mut registry, mut renderer, samples) = a_looping_gain_lane();
+        renderer.render(512);
+
+        admit_live(
+            &mut registry,
+            &mut renderer,
+            json!([
+                { "kind": "set-transport", "playing": true,
+                  "positionSeconds": 256.0 / 48_000.0 },
+            ]),
+            &samples,
+        )
+        .expect("the locate admits");
+        assert_eq!(
+            gain_stamps(&registry),
+            0,
+            "the ledger mirrors the engine's locate: nothing at or past 256 is still queued"
+        );
+
+        renderer.render(LOOP_END_FRAME as usize);
+        assert_eq!(renderer.graph_progress().loop_wraps, 1);
+
+        let armed = admit_live(&mut registry, &mut renderer, json!([]), &samples)
+            .expect("the arming batch admits");
+        assert_eq!(
+            automation_ops(&armed, |target| matches!(
+                target,
+                AutomationTarget::TrackGain(_)
+            ))
+            .into_iter()
+            .map(|(at_frame, _)| at_frame)
+            .collect::<Vec<_>>(),
+            vec![256, 512],
+            "the seam after a locate still arms the whole lane"
+        );
+    }
+
+    /// A device parameter is automation too. Its queue has no cancellation law,
+    /// so nothing but the pass empties it — which makes the seam the *only*
+    /// thing that can put a device sweep back, and a device lane left unarmed
+    /// freezes on the value pass one ended with while a fader lane beside it
+    /// replays.
+    #[test]
+    fn a_closed_loop_pass_arms_the_next_one_with_the_device_automation_it_consumed() {
         let samples = sample_pool();
         let mut registry = GraphRegistry::default();
         let mut renderer = OfflineRenderer::new(48_000.0, 64);
@@ -4125,30 +4573,114 @@ mod tests {
             &mut renderer,
             json!([
                 track_strip("t1"),
+                knead_insert("t1", "d1"),
                 clip_playback("t1"),
                 { "kind": "set-transport", "playing": true, "positionSeconds": 0.0 },
-                gain_step("t1", 0.5, 256),
-                gain_step("t1", 1.0, 768),
+                device_step("t1", "d1", -2.0, 256.0 / 48_000.0),
+                device_step("t1", "d1", 5.0, 768.0 / 48_000.0),
             ]),
             &samples,
         )
-        .expect("the setup batch maps");
+        .expect("the sweep admits");
 
-        let (first, _) = renderer.render(LOOP_END_FRAME as usize);
-        assert!(
-            first.iter().any(|sample| *sample != first[0]),
-            "the pass has to hear its own automation for the next one to be worth arming"
-        );
+        renderer.render(LOOP_END_FRAME as usize);
         assert_eq!(renderer.graph_progress().loop_wraps, 1);
 
-        // The next batch carries the arm on its own fence.
-        admit_live(&mut registry, &mut renderer, json!([]), &samples)
+        let armed = admit_live(&mut registry, &mut renderer, json!([]), &samples)
             .expect("the arming batch admits");
-
-        let (second, _) = renderer.render(LOOP_END_FRAME as usize);
+        let replayed: Vec<&SentWrite> = armed
+            .iter()
+            .filter(|op| matches!(op, SentWrite::DeviceParam(..)))
+            .collect();
         assert_eq!(
-            second, first,
-            "a loop pass runs the automation the pass before it consumed"
+            replayed,
+            vec![
+                &SentWrite::DeviceParam(DeviceParam::ShiftSemitones, -2.0, 256),
+                &SentWrite::DeviceParam(DeviceParam::ShiftSemitones, 5.0, 768),
+            ],
+            "the seam re-arms the sweep the pass consumed, in the order it was written"
+        );
+    }
+
+    /// The replay record's two bounds. A replace reduces it by the queue's own
+    /// stale law, so an interactive fader — every gesture tick a replace —
+    /// leaves one entry rather than thousands; and a lane dense enough to cross
+    /// the record's size bound anyway disarms whole rather than replaying a
+    /// truncated curve, which would enter the next pass on the wrong value and
+    /// step where the caller drew a ramp.
+    #[test]
+    fn the_replay_record_reduces_stale_writes_and_disarms_a_lane_it_cannot_hold() {
+        // A gesture tick: start now, land a smoothing window out — so each tick
+        // is still in flight when the next one starts, and makes it stale.
+        let ramp_at = |at_frame: u64| {
+            AutomationWrite::Replace(AutomationEvent {
+                at_frame,
+                duration_frames: 4,
+                value: 0.5,
+                shape: RampShape::Linear,
+            })
+        };
+        let step_at = |at_frame: u64| {
+            AutomationWrite::Append(AutomationEvent {
+                at_frame,
+                duration_frames: 0,
+                value: 0.5,
+                shape: RampShape::Step,
+            })
+        };
+
+        let gesture = AutomationTarget::TrackGain(1);
+        let mut budgets = QueueBudgets::default();
+        for tick in 0..MAX_ARMED_WRITES_PER_TARGET * 2 {
+            budgets.record_armed(gesture, ramp_at(tick as u64));
+        }
+        let record = &budgets.loop_window[&gesture];
+        assert!(!record.overflowed);
+        assert_eq!(
+            record.writes.len(),
+            1,
+            "each replace makes its predecessor stale, so the record stays one curve deep"
+        );
+
+        let dense = AutomationTarget::TrackPan(2);
+        for slot in 0..=MAX_ARMED_WRITES_PER_TARGET {
+            budgets.record_armed(dense, step_at(slot as u64));
+        }
+        let record = &budgets.loop_window[&dense];
+        assert!(record.overflowed, "the bound is crossed");
+        assert!(
+            record.writes.is_empty(),
+            "an unreplayable record is dropped whole: a partial curve is a different curve"
+        );
+
+        let mut registry = GraphRegistry::default();
+        registry.loop_window = budgets.loop_window;
+        let armed = registry.rearm_loop_pass(
+            GraphProgressSnapshot {
+                batches_applied: 0,
+                playhead_frame: 0,
+                loop_wraps: 1,
+                last_wrap_frame: LOOP_END_FRAME,
+            },
+            &CallerWrites::default(),
+        );
+        let armed = sent_writes(&armed);
+        assert_eq!(
+            automation_ops(&armed, |target| matches!(
+                target,
+                AutomationTarget::TrackPan(_)
+            )),
+            vec![],
+            "the overflowed lane arms nothing, so it holds its last value rather than a fragment"
+        );
+        assert_eq!(
+            automation_ops(&armed, |target| matches!(
+                target,
+                AutomationTarget::TrackGain(_)
+            ))
+            .len(),
+            1,
+            "one lane's overflow does not disarm its neighbours"
         );
     }
 
