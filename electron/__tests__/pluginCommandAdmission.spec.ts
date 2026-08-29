@@ -42,6 +42,7 @@ describe('plugin command admission during quit', () => {
         const admission = createPluginCommandAdmission();
 
         expect(admission.acceptsCommand('load_plugin')).toBe(true);
+        expect(admission.acceptsCommand('close_plugin_gui')).toBe(true);
     });
 
     it('refuses runtime commands once quit has begun', () => {
@@ -52,6 +53,7 @@ describe('plugin command admission during quit', () => {
         expect(admission.acceptsCommand('load_plugin')).toBe(false);
         expect(admission.acceptsCommand('unload_plugin')).toBe(false);
         expect(admission.acceptsCommand('scan_plugins')).toBe(false);
+        expect(admission.acceptsCommand('close_plugin_gui')).toBe(false);
     });
 
     it('still accepts non-runtime commands after quit has begun', () => {

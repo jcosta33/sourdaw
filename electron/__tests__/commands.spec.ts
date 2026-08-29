@@ -153,6 +153,14 @@ describe('the Electron command surface', () => {
         expect(isExposedCommand('__proto__')).toBe(false);
     });
 
+    it('keeps close_all_plugin_guis denied as an exit-cascade command', () => {
+        // Bulk GUI close belongs to the exit cascade's in-process path
+        // (`close_every_plugin_gui`), not the renderer. Pinning by name so a
+        // move onto EXPOSED_COMMANDS fails without updating this assertion.
+        expect(DENIED_COMMANDS).toContain('close_all_plugin_guis');
+        expect(isExposedCommand('close_all_plugin_guis')).toBe(false);
+    });
+
     it('gives a denied command no channel that collides with an exposed one', () => {
         const exposedChannels = new Set(EXPOSED_COMMANDS.map(commandChannel));
 
