@@ -9,6 +9,7 @@ import type { PendingAppActionConfirmation } from '../../../stores/pendingAction
 type CommandVerifiedBatchReceipt = ReturnType<typeof createVerifiedBatchReceipt>;
 type FailApprovalPreflight =
     typeof import('../confirmationTerminalSettlement').confirmationTerminalSettlement.failApprovalPreflight;
+type ValidateAgentRiskApproval = typeof import('../../validateAgentRiskApproval').validateAgentRiskApproval;
 
 const mocks = vi.hoisted(() => ({
     captureRevision: vi.fn(() => 'revision-1'),
@@ -21,7 +22,7 @@ const mocks = vi.hoisted(() => ({
     transitionToExecuting: vi.fn(),
     updateConfirmation: vi.fn(),
     updateMessage: vi.fn(),
-    validateApproval: vi.fn(() => ({ status: 'valid' })),
+    validateApproval: vi.fn<ValidateAgentRiskApproval>(() => ({ status: 'valid' })),
 }));
 
 vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
