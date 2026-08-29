@@ -84,6 +84,8 @@ use std::ffi::{c_void, CStr, CString};
 use std::mem;
 use std::ptr;
 use std::sync::Arc;
+#[cfg(feature = "engine-owned-command-fixture")]
+use std::sync::Mutex;
 
 /// Holds a loaded CLAP plugin instance and its associated resources.
 pub struct ClapWrapper {
@@ -187,6 +189,21 @@ struct EngineOwnedCommandFixture {
     /// stage a change the host never made — the plugin-side edit a user performs
     /// in the plugin's own editor.
     parameters: Vec<PluginParameter>,
+    /// Every thread the fixture's editor lifecycle was called on, in order.
+    ///
+    /// The `gui` extension is `[main-thread]`, so which thread reached the
+    /// plugin is the contract — not an implementation detail — and a host that
+    /// gets it wrong is unobservable from anything else the fixture answers.
+    gui_lifecycle_threads: Arc<Mutex<Vec<std::thread::ThreadId>>>,
+}
+
+#[cfg(feature = "engine-owned-command-fixture")]
+fn record_gui_lifecycle_thread(fixture: &EngineOwnedCommandFixture) {
+    fixture
+        .gui_lifecycle_threads
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .push(std::thread::current().id());
 }
 
 // SAFETY: The clap_plugin is required to be thread-safe by the CLAP spec.
@@ -858,8 +875,24 @@ impl ClapWrapper {
                 state,
                 has_gui,
                 parameters: Vec::new(),
+                gui_lifecycle_threads: Arc::new(Mutex::new(Vec::new())),
             }),
         }
+    }
+
+    /// The log every editor lifecycle call on this fixture writes its thread to.
+    ///
+    /// Handed out as a handle rather than read back through the runtime,
+    /// because by the time a host has one the plugin is behind an access seam a
+    /// test cannot reach around.
+    #[cfg(feature = "engine-owned-command-fixture")]
+    #[doc(hidden)]
+    pub fn engine_owned_command_fixture_gui_threads(
+        &self,
+    ) -> Option<Arc<Mutex<Vec<std::thread::ThreadId>>>> {
+        self.command_fixture
+            .as_ref()
+            .map(|fixture| Arc::clone(&fixture.gui_lifecycle_threads))
     }
 
     /// Stage the values the fixture reports from `get_parameters`.
@@ -1100,6 +1133,7 @@ impl ClapWrapper {
     pub fn open_gui(&mut self, handle_ptr: *mut c_void) -> Result<(u32, u32), String> {
         #[cfg(feature = "engine-owned-command-fixture")]
         if let Some(fixture) = self.command_fixture.as_ref() {
+            record_gui_lifecycle_thread(fixture);
             if !fixture.has_gui {
                 return Err("Plugin does not support GUI".to_string());
             }
@@ -1286,7 +1320,8 @@ impl ClapWrapper {
         self.release_editor_window_resizer();
 
         #[cfg(feature = "engine-owned-command-fixture")]
-        if self.command_fixture.is_some() {
+        if let Some(fixture) = self.command_fixture.as_ref() {
+            record_gui_lifecycle_thread(fixture);
             self.gui_open = false;
             return;
         }

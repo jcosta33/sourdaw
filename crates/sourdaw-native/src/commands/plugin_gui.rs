@@ -5,6 +5,14 @@
 //! ([`PluginWindowHost`]); the lifecycle around it — open, publish, resize,
 //! close, and the bookkeeping that decides whether an editor is open at all —
 //! is this module's, and it reaches every format through `AudioPlugin`.
+//!
+//! Both formats make that lifecycle thread-affine, so every call into a plugin's
+//! editor leaves here through [`call_on_ui_thread`]. The order is the same
+//! everywhere and it is what keeps the shell answering: the runtime owner's
+//! control claim is taken on this worker, and only the plugin call itself
+//! crosses to the shell's thread. A claim taken on that thread instead would
+//! park it behind whatever holds the gate, and whatever holds the gate is
+//! waiting for that same thread.
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -13,8 +21,10 @@ use std::sync::Arc;
 use crate::commands::plugins::PluginUnloadResult;
 use crate::events::{EventSink, EventSinkExt};
 use crate::host::plugin_window::{
-    next_editor_open_sequence, plugin_editor_window_label, PluginEditorWindow, PluginWindowHost,
+    next_editor_open_sequence, plugin_editor_window_label, NoWindowHost, PluginEditorWindow,
+    PluginWindowHost,
 };
+use crate::host::ui_thread::{call_on_ui_thread, LentMut};
 use crate::state::AppState;
 use daw_plugin_host::{AudioPlugin, EditorWindowResizer};
 
@@ -106,6 +116,26 @@ fn open_editor_or_release_host_window<Plugin: AudioPlugin + ?Sized>(
         plugin.close_gui();
     }
     opened
+}
+
+/// Make one editor lifecycle call on the shell's UI thread, and wait for it.
+///
+/// The caller keeps its control claim on its own thread; only the call crosses.
+/// The borrow crosses with it as a lend rather than as a reference, because a
+/// plugin runtime is reachable across threads only through the access seam that
+/// produced this `&mut` — and what makes the lend sound is that this does not
+/// return until the call has run.
+fn on_editor_thread<Target: ?Sized + 'static, Produced: Send + 'static>(
+    windows_host: &dyn PluginWindowHost,
+    target: &mut Target,
+    call: impl FnOnce(&mut Target) -> Produced + Send + 'static,
+) -> Result<Produced, String> {
+    let lent = LentMut::new(target);
+    call_on_ui_thread(windows_host, move || {
+        // SAFETY: the borrow is lent for exactly this call, and `call_on_ui_thread`
+        // parks the lender for every instant it is readable here.
+        unsafe { lent.with(call) }
+    })
 }
 
 /// Open the plugin GUI in a floating native window.
@@ -204,17 +234,26 @@ pub async fn open_plugin_gui(
     //    runs at — then open its GUI.
     let resize_window = editor_window_resizer(&plugin_window);
     let scale_factor = plugin_window.scale_factor();
+    // Carried as an integer because a raw pointer cannot cross a thread, and
+    // cast back on the far side — the same representation `JsEditorWindow` holds
+    // it in for the same reason.
+    let handle = handle_ptr as usize;
+    let open_editor = move |plugin: &mut dyn AudioPlugin| {
+        open_editor_or_release_host_window(
+            plugin,
+            |plugin| {
+                plugin.set_editor_window_resizer(resize_window);
+                plugin.set_editor_content_scale(scale_factor);
+            },
+            |plugin| plugin.open_gui(handle as *mut std::ffi::c_void),
+        )
+    };
     let gui_size_result = if let Some(runtime) = engine_runtime.as_ref() {
-        runtime.with_control(std::time::Duration::from_secs(2), |plugin| {
-            open_editor_or_release_host_window(
-                plugin,
-                |plugin| {
-                    plugin.set_editor_window_resizer(resize_window);
-                    plugin.set_editor_content_scale(scale_factor);
-                },
-                |plugin| plugin.open_gui(handle_ptr),
-            )
-        })
+        runtime
+            .with_control(std::time::Duration::from_secs(2), |plugin| {
+                on_editor_thread(windows_host, plugin, move |plugin| open_editor(plugin))
+            })
+            .and_then(|opened| opened)
     } else {
         let mut plugins = state
             .plugins
@@ -224,14 +263,10 @@ pub async fn open_plugin_gui(
             .get_mut(&instance_id)
             .ok_or_else(|| format!("No plugin instance: {}", instance_id))?;
 
-        open_editor_or_release_host_window(
-            instance.plugin.as_mut(),
-            |plugin| {
-                plugin.set_editor_window_resizer(resize_window);
-                plugin.set_editor_content_scale(scale_factor);
-            },
-            |plugin| plugin.open_gui(handle_ptr),
-        )
+        on_editor_thread(windows_host, instance.plugin.as_mut(), move |plugin| {
+            open_editor(plugin)
+        })
+        .and_then(|opened| opened)
     };
 
     let (width, height) = match gui_size_result {
@@ -272,8 +307,7 @@ pub async fn open_plugin_gui(
             publish_result,
             || {
                 let _ = runtime.with_unload_control(std::time::Duration::from_secs(2), |plugin| {
-                    plugin.close_gui();
-                    Ok(())
+                    on_editor_thread(windows_host, plugin, |plugin| plugin.close_gui())
                 });
             },
             || {
@@ -298,7 +332,7 @@ pub async fn open_plugin_gui(
         // open is refused for.
         if let Ok(mut plugins) = state.plugins.lock() {
             if let Some(instance) = plugins.get_mut(&instance_id) {
-                instance.close_gui();
+                let _ = on_editor_thread(windows_host, instance, |instance| instance.close_gui());
             }
         }
         plugin_window.destroy();
@@ -402,6 +436,7 @@ fn publish_plugin_gui_window_in_label_order(
 pub fn reset_plugin_gui_state_after_os_close(
     instance_id: &str,
     window_label: &str,
+    windows_host: &dyn PluginWindowHost,
     state: &AppState,
     events: &dyn EventSink,
 ) {
@@ -427,7 +462,7 @@ pub fn reset_plugin_gui_state_after_os_close(
         return;
     }
 
-    close_owning_plugin_gui(instance_id, state);
+    close_owning_plugin_gui(instance_id, windows_host, state);
 
     events.emit(
         PLUGIN_GUI_CLOSED_EVENT,
@@ -442,11 +477,15 @@ pub fn reset_plugin_gui_state_after_os_close(
 /// Command-owned first, then engine-owned: an instance lives in exactly one of
 /// them, and reaching the engine's runtime costs a control-lock wait that a
 /// command-owned instance must not pay.
-fn close_owning_plugin_gui(instance_id: &str, state: &AppState) {
+fn close_owning_plugin_gui(
+    instance_id: &str,
+    windows_host: &dyn PluginWindowHost,
+    state: &AppState,
+) {
     let closed_command_owned = match state.plugins.lock() {
         Ok(mut plugins) => match plugins.get_mut(instance_id) {
             Some(instance) => {
-                instance.close_gui();
+                let _ = on_editor_thread(windows_host, instance, |instance| instance.close_gui());
                 true
             }
             None => false,
@@ -466,8 +505,7 @@ fn close_owning_plugin_gui(instance_id: &str, state: &AppState) {
 
     if is_engine_owned {
         let _ = state.with_engine_plugin_control(instance_id, |plugin| {
-            plugin.close_gui();
-            Ok(())
+            on_editor_thread(windows_host, plugin, |plugin| plugin.close_gui())
         });
     }
 }
@@ -500,7 +538,7 @@ pub async fn close_plugin_gui(
             .lock()
             .map_err(|e| format!("Failed to lock plugins: {}", e))?;
         if let Some(instance) = plugins.get_mut(&instance_id) {
-            instance.close_gui();
+            on_editor_thread(windows_host, instance, |instance| instance.close_gui())?;
             true
         } else {
             false
@@ -518,8 +556,7 @@ pub async fn close_plugin_gui(
 
         if is_engine_owned {
             state.with_engine_plugin_control(&instance_id, |plugin| {
-                plugin.close_gui();
-                Ok(())
+                on_editor_thread(windows_host, plugin, |plugin| plugin.close_gui())
             })?;
         }
     }
@@ -585,6 +622,10 @@ pub fn close_every_plugin_gui(
     state: &AppState,
 ) -> Result<PluginUnloadResult, String> {
     let mut report = PluginUnloadResult::default();
+    // An exit that has already lost its windows has also lost the shell thread
+    // they lived on, and `NoWindowHost` says so: the editor calls run here,
+    // which is the only thread left to run them on.
+    let editor_thread = windows_host.unwrap_or(&NoWindowHost);
 
     // Membership in `plugin_windows` is what "has an editor" means. Reporting an
     // instance with no editor as closed, or as failing to close, describes work
@@ -608,7 +649,7 @@ pub fn close_every_plugin_gui(
             if !instances_with_editors.contains(instance_id) {
                 continue;
             }
-            instance.close_gui();
+            let _ = on_editor_thread(editor_thread, instance, |instance| instance.close_gui());
             report.0.push(instance_id.clone());
         }
     }
@@ -627,8 +668,7 @@ pub fn close_every_plugin_gui(
 
     for instance_id in engine_instance_ids {
         let close_result = state.with_engine_plugin_control(&instance_id, |plugin| {
-            plugin.close_gui();
-            Ok(())
+            on_editor_thread(editor_thread, plugin, |plugin| plugin.close_gui())
         });
         record_plugin_gui_close_outcome(&mut report, &instance_id, close_result);
     }
@@ -693,7 +733,6 @@ mod tests {
     use super::*;
     use crate::events::NoopEventSink;
     use crate::host::native_bridge::SharedHostedPlugin;
-    use crate::host::plugin_window::NoWindowHost;
     use crate::state::{AppState, EnginePluginInstanceData};
     use daw_plugin_host::ClapWrapper;
     use std::cell::Cell;
@@ -719,9 +758,23 @@ mod tests {
         }
     }
 
+    /// Every thread the fixture's editor lifecycle ran on, newest last.
+    type GuiLifecycleThreads = Arc<Mutex<Vec<std::thread::ThreadId>>>;
+
     fn insert_engine_owned_fixture(state: &AppState, instance_id: &str, has_gui: bool) {
+        insert_engine_owned_fixture_watching_gui_threads(state, instance_id, has_gui);
+    }
+
+    fn insert_engine_owned_fixture_watching_gui_threads(
+        state: &AppState,
+        instance_id: &str,
+        has_gui: bool,
+    ) -> GuiLifecycleThreads {
         let wrapper =
             ClapWrapper::new_engine_owned_command_fixture("Engine Owned Fixture", vec![], has_gui);
+        let gui_threads = wrapper
+            .engine_owned_command_fixture_gui_threads()
+            .expect("the command fixture records its editor lifecycle threads");
         let runtime = Arc::new(SharedHostedPlugin::new(wrapper.into()));
         let mut engine_plugins = state
             .engine_plugins
@@ -740,6 +793,7 @@ mod tests {
                 parameter_events: None,
             },
         );
+        gui_threads
     }
 
     fn engine_fixture_runtime(state: &AppState, instance_id: &str) -> Arc<SharedHostedPlugin> {
@@ -750,6 +804,211 @@ mod tests {
                 .expect("engine fixture should exist")
                 .runtime,
         )
+    }
+
+    /// A window host with a thread of its own, the way a shell's main loop has
+    /// one, and a bare window to hand back.
+    ///
+    /// Its thread does nothing but drain the editor work posted to it, which is
+    /// what makes "which thread reached the plugin" answerable: the id it
+    /// records can only appear in the fixture's log if the call was carried
+    /// here.
+    struct DedicatedUiWindowHost {
+        work: std::sync::mpsc::Sender<Arc<crate::host::ui_thread::UiThreadTask>>,
+        thread_id: std::thread::ThreadId,
+        thread: Mutex<Option<std::thread::JoinHandle<()>>>,
+    }
+
+    impl DedicatedUiWindowHost {
+        fn start() -> Self {
+            let (work, queued) =
+                std::sync::mpsc::channel::<Arc<crate::host::ui_thread::UiThreadTask>>();
+            let (announce, announced) = std::sync::mpsc::channel();
+            let thread = std::thread::spawn(move || {
+                announce
+                    .send(std::thread::current().id())
+                    .expect("the fake UI thread must announce itself");
+                while let Ok(task) = queued.recv() {
+                    task.run();
+                }
+            });
+            let thread_id = announced.recv().expect("the fake UI thread must start");
+            Self {
+                work,
+                thread_id,
+                thread: Mutex::new(Some(thread)),
+            }
+        }
+    }
+
+    impl Drop for DedicatedUiWindowHost {
+        fn drop(&mut self) {
+            let (closed, _) = std::sync::mpsc::channel();
+            drop(std::mem::replace(&mut self.work, closed));
+            if let Some(thread) = self.thread.lock().expect("ui thread handle").take() {
+                let _ = thread.join();
+            }
+        }
+    }
+
+    impl crate::host::ui_thread::UiThread for DedicatedUiWindowHost {
+        fn is_ui_thread(&self) -> bool {
+            std::thread::current().id() == self.thread_id
+        }
+
+        fn run_on_ui_thread(
+            &self,
+            task: &Arc<crate::host::ui_thread::UiThreadTask>,
+        ) -> Result<(), String> {
+            let (done, waited) = std::sync::mpsc::sync_channel(1);
+            let queued = Arc::clone(task);
+            self.work
+                .send(crate::host::ui_thread::UiThreadTask::new(move || {
+                    queued.run();
+                    let _ = done.send(());
+                }))
+                .map_err(|_| "the fake UI thread is gone".to_string())?;
+            waited
+                .recv()
+                .map_err(|_| "the fake UI thread never answered".to_string())
+        }
+    }
+
+    struct BareEditorWindow;
+
+    impl PluginEditorWindow for BareEditorWindow {
+        fn native_handle_ptr(&self) -> Result<*mut std::ffi::c_void, String> {
+            Ok(std::ptr::null_mut())
+        }
+
+        fn set_size(&self, _width: u32, _height: u32) {}
+
+        fn show_and_focus(&self) {}
+
+        fn destroy(&self) {}
+    }
+
+    impl PluginWindowHost for DedicatedUiWindowHost {
+        fn window_exists(&self, _label: &str) -> bool {
+            false
+        }
+
+        fn create_editor_window(
+            &self,
+            _label: &str,
+            _title: &str,
+            _instance_id: &str,
+        ) -> Result<Box<dyn PluginEditorWindow>, String> {
+            Ok(Box::new(BareEditorWindow))
+        }
+
+        fn destroy_window(&self, _label: &str) {}
+
+        fn hide_window(&self, _label: &str) {}
+
+        fn show_window(&self, _label: &str) {}
+    }
+
+    fn recorded_threads(threads: &GuiLifecycleThreads) -> Vec<std::thread::ThreadId> {
+        threads.lock().expect("gui thread log").clone()
+    }
+
+    /// The whole point of the change. CLAP marks the `gui` extension
+    /// `[main-thread]` and VST3 binds `IPlugView` to the thread that owns the
+    /// parent window, and the command runs on a worker — so the open has to
+    /// land on the shell's thread, not on the one that took the control claim.
+    #[test]
+    fn opening_an_editor_runs_the_plugins_gui_lifecycle_on_the_shell_thread() {
+        let state = AppState::default();
+        let gui_threads =
+            insert_engine_owned_fixture_watching_gui_threads(&state, "engine-owned-fixture", true);
+        let windows = DedicatedUiWindowHost::start();
+
+        crate::block_on_test(open_plugin_gui(
+            "engine-owned-fixture".to_string(),
+            &windows,
+            &state,
+        ))
+        .expect("the fixture editor should open");
+
+        assert_eq!(
+            recorded_threads(&gui_threads),
+            [windows.thread_id],
+            "the editor lifecycle must run on the shell's thread and nowhere else"
+        );
+        assert_ne!(
+            windows.thread_id,
+            std::thread::current().id(),
+            "the fake shell thread must not be this one, or this test proves nothing"
+        );
+    }
+
+    /// The close half. `close_gui` is what reaches VST3 `removed` and CLAP
+    /// `gui.destroy`, both as thread-affine as the open, and it runs from a
+    /// different command with a different control claim.
+    #[test]
+    fn closing_an_editor_runs_the_plugins_gui_lifecycle_on_the_shell_thread() {
+        let state = AppState::default();
+        let gui_threads =
+            insert_engine_owned_fixture_watching_gui_threads(&state, "engine-owned-fixture", true);
+        let windows = DedicatedUiWindowHost::start();
+        crate::block_on_test(open_plugin_gui(
+            "engine-owned-fixture".to_string(),
+            &windows,
+            &state,
+        ))
+        .expect("the fixture editor should open");
+
+        crate::block_on_test(close_plugin_gui(
+            "engine-owned-fixture".to_string(),
+            &windows,
+            &state,
+        ))
+        .expect("the fixture editor should close");
+
+        assert_eq!(
+            recorded_threads(&gui_threads),
+            [windows.thread_id, windows.thread_id],
+            "the close must reach the plugin on the shell's thread, like the open"
+        );
+    }
+
+    /// The OS-close path reaches the same lifecycle from the shell's own report
+    /// rather than from a command, and it is the path a title-bar click takes.
+    #[test]
+    fn an_os_close_runs_the_plugins_gui_lifecycle_on_the_shell_thread() {
+        let state = AppState::default();
+        let gui_threads =
+            insert_engine_owned_fixture_watching_gui_threads(&state, "engine-owned-fixture", true);
+        let windows = DedicatedUiWindowHost::start();
+        let opened = crate::block_on_test(open_plugin_gui(
+            "engine-owned-fixture".to_string(),
+            &windows,
+            &state,
+        ))
+        .expect("the fixture editor should open");
+        assert!(opened.is_open);
+        let label = state
+            .plugin_windows
+            .lock()
+            .expect("plugin_windows lock")
+            .get("engine-owned-fixture")
+            .cloned()
+            .expect("the open must have recorded a window");
+
+        reset_plugin_gui_state_after_os_close(
+            "engine-owned-fixture",
+            &label,
+            &windows,
+            &state,
+            &NoopEventSink,
+        );
+
+        assert_eq!(
+            recorded_threads(&gui_threads),
+            [windows.thread_id, windows.thread_id],
+            "an OS close must reach the plugin on the shell's thread too"
+        );
     }
 
     /// One instance failing to close its editor used to abandon every instance
@@ -862,12 +1121,14 @@ mod tests {
         reset_plugin_gui_state_after_os_close(
             "engine-owned-fixture",
             "plugin-engine-owned-fixture",
+            &NoWindowHost,
             &state,
             &events,
         );
         reset_plugin_gui_state_after_os_close(
             "engine-owned-fixture",
             "plugin-engine-owned-fixture",
+            &NoWindowHost,
             &state,
             &events,
         );
@@ -1031,6 +1292,7 @@ mod tests {
         reset_plugin_gui_state_after_os_close(
             "engine-owned-fixture",
             "plugin-engine-owned-fixture",
+            &NoWindowHost,
             &state,
             &events,
         );
@@ -1096,6 +1358,7 @@ mod tests {
         reset_plugin_gui_state_after_os_close(
             "engine-owned-fixture",
             &closed_label,
+            &NoWindowHost,
             &state,
             &events,
         );
@@ -1136,7 +1399,13 @@ mod tests {
             .expect("plugin_windows lock")
             .insert("ghost".to_string(), "plugin-ghost".to_string());
 
-        reset_plugin_gui_state_after_os_close("ghost", "plugin-ghost", &state, &NoopEventSink);
+        reset_plugin_gui_state_after_os_close(
+            "ghost",
+            "plugin-ghost",
+            &NoWindowHost,
+            &state,
+            &NoopEventSink,
+        );
 
         assert!(state
             .plugin_windows
