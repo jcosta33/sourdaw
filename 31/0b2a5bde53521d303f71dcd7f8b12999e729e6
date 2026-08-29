@@ -1,0 +1,59 @@
+electron/pluginGui.ts
+  s_4f908a5afb6b58::t_5ce2d40c7cd2d8 255-293
+  s_4f908a5afb6b58::t_65d20a568cb89a 331-335,339-343
+  s_4f908a5afb6b58::t_6776fc72c46e3a 178,183,194
+  s_4f908a5afb6b58::t_909ee45c98dbe4 133-143
+  s_4f908a5afb6b58::t_29d707d07056f4 321-324
+  s_4f908a5afb6b58::t_4343b9d5b3f9d6 311-312
+  s_4f908a5afb6b58::t_b722a6e767a196 21-23
+  s_4f908a5afb6b58::t_7e39e39ef46972 76-88,97-98
+crates/daw-plugin-host/src/vst3_run_loop.rs
+  s_4f908a5afb6b58::t_b8504322566401 427,429-441,444-448,450-455,458-463,465-470,474-488
+  s_4f908a5afb6b58::t_a7dc1076555df7 10-14,16-20,25
+  s_4f908a5afb6b58::t_88e144aca1ad9e 687,766,851-853,855,869,887-889,891-892,899-903,906-907,909,912-913,915-916,923-929,932-934
+  s_4f908a5afb6b58::t_1117c355e03ce4 102-110
+  s_4f908a5afb6b58::t_18f2c94cc33e6f 392-393,396
+  s_4f908a5afb6b58::t_e16824b050f7cd 239-241,243-250,253-254,256-260,266
+  s_4f908a5afb6b58::t_b85dfc7c9cbd92 380-382
+  s_4f908a5afb6b58::t_ea27db3e1cf9f8 489-490
+  s_dc1b5e7ebfa01b::t_44556b9c53ff3e 660,663,692,730,776
+electron/__tests__/pluginGui.spec.ts
+  s_4f908a5afb6b58::t_583c88df170380 13
+  s_4f908a5afb6b58::t_25fd1feb05af66 276-324,433
+  s_4f908a5afb6b58::t_f32a7b30997b90 391-395
+  s_4f908a5afb6b58::t_b4fe24f1eb0556 422-432
+  s_4f908a5afb6b58::t_5e5e668990eb45 336-339
+  s_a965280ab2852d::t_2b9ed2d993d16d 335
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "310b2a5bde53521d303f71dcd7f8b12999e729e6",
+  "prompts": {},
+  "sessions": {
+    "s_4f908a5afb6b58": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fcb92ba4-bf56-47a4-8b57-803f335a449e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_a965280ab2852d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "841ddf43-6056-4aac-ad0f-c09b754df0ba",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_dc1b5e7ebfa01b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04b10-6746-76c3-9b70-b4518f71fd4d",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
