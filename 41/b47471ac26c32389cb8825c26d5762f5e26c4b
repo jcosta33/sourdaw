@@ -1,0 +1,22 @@
+src/modules/Transport/useCases/transportControls/__tests__/stopPlayback.spec.ts
+  s_4f908a5afb6b58::t_d702ed63d8da42 50,54-68
+  s_4f908a5afb6b58::t_4cd1343857cf8f 3
+  s_4f908a5afb6b58::t_f03f9bd80d294b 22
+  s_4f908a5afb6b58::t_4cb1403467aa4e 69-70
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "41b47471ac26c32389cb8825c26d5762f5e26c4b",
+  "prompts": {},
+  "sessions": {
+    "s_4f908a5afb6b58": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fcb92ba4-bf56-47a4-8b57-803f335a449e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
