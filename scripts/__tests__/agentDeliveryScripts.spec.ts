@@ -1242,7 +1242,8 @@ describe('package scripts and gitignore', () => {
         initializeDeliveryLockRepository(root);
 
         try {
-            await withPullRequestDeliveryLock(root, 2495, async () => undefined);
+            const sentinel = Symbol('delivery-result');
+            await expect(withPullRequestDeliveryLock(root, 2495, async () => sentinel)).resolves.toBe(sentinel);
             expect(deliveryLockExists(root, 2495)).toBe(false);
 
             await expect(
