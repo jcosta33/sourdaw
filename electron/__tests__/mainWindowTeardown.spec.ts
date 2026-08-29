@@ -103,7 +103,13 @@ describe('main window owner teardown wiring', () => {
 
     it('destroys a crashed main window through the captured detach-first path after recovery rebinding', async () => {
         const crashedOwner = createOwnerStub();
-        const detachOpenEditors = vi.fn((): Promise<void> => Promise.resolve());
+        let releaseDetach!: () => void;
+        const detachOpenEditors = vi.fn(
+            (): Promise<void> =>
+                new Promise<void>((resolve) => {
+                    releaseDetach = resolve;
+                })
+        );
         const host = createHostStub(detachOpenEditors);
 
         const destroyAfterEditorsDetach = bindMainWindowOwnerTeardown(crashedOwner, host);
@@ -117,6 +123,12 @@ describe('main window owner teardown wiring', () => {
 
         expect(detachOpenEditors).toHaveBeenCalledTimes(1);
         expect(crashedOwner.hide).toHaveBeenCalled();
+        expect(crashedOwner.destroy).not.toHaveBeenCalled();
+        expect(crashedOwner.isDestroyed()).toBe(false);
+
+        releaseDetach();
+        await settled();
+
         expect(crashedOwner.destroy).toHaveBeenCalledTimes(1);
         expect(crashedOwner.isDestroyed()).toBe(true);
     });
