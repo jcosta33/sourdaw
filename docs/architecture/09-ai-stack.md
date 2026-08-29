@@ -5,10 +5,9 @@ source build. Model weights are separate artifacts with separate terms.
 
 ## Language models
 
-- Hosted Anthropic, OpenAI, and OpenAI-compatible providers are available through
-  the desktop native gateway. Configure them with
-  `SOURDAW_ANTHROPIC_API_KEY`, `SOURDAW_OPENAI_API_KEY`, or
-  `SOURDAW_OPENAI_COMPATIBLE_API_KEY`, respectively.
+- Hosted Anthropic, OpenAI, and OpenAI-compatible providers are available through the desktop
+  native gateway. Configure them from Preferences; the password draft is sent once to native to
+  create a volatile session, then cleared. Only the opaque session ID is retained for requests.
 - The exact pinned WebLLM Qwen conversions admitted by
   [ADR 0037](../../.agents/decisions/0037-admit-webllm-qwen-conversions-under-apache-2.0.md) are available on
   browser and desktop release surfaces. WebLLM may be selected on any platform,

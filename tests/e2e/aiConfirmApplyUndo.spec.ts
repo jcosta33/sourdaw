@@ -17,7 +17,7 @@ async function admitLoopbackProvider(page: Page, provider: LoopbackOpenAiProvide
                 await import('/src/modules/AiRuntime/useCases/cloudApiManagement/configureCloudProvider.ts');
             const { setAiBackendPreference } =
                 await import('/src/modules/AiRuntime/useCases/llmOrchestration/backendResolution/setAiBackendPreference.ts');
-            await configureCloudProvider({ provider: 'openai-compatible', model, baseUrl });
+            await configureCloudProvider({ provider: 'openai-compatible', model, baseUrl, apiKey: '' });
             setAiBackendPreference('cloud');
         },
         { baseUrl: provider.baseUrl, model: provider.model }

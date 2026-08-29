@@ -268,12 +268,14 @@ impl SourdawNative {
         adapter_id: String,
         origin: String,
         credential_source: String,
+        credential: String,
     ) -> Result<String> {
         reason(
             commands::provider_gateway::open_provider_gateway_session(
                 adapter_id,
                 origin,
                 credential_source,
+                credential,
                 &self.singletons.provider_gateway,
             )
             .await,

@@ -24,7 +24,7 @@ describe('clearCloudProviderConfig', () => {
     });
 
     it('closes the native session and aborts every active request', async () => {
-        await setCloudProviderConfig({ provider: 'anthropic', model: 'claude-test' });
+        await setCloudProviderConfig({ provider: 'anthropic', model: 'claude-test', apiKey: 'sk-anthropic-test' });
         const first = registerCloudStreamController(new AbortController());
         const second = registerCloudStreamController(new AbortController());
 

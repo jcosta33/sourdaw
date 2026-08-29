@@ -77,9 +77,14 @@ describe('AiSection', () => {
         expect(mocks.setAiBackendPreference).toHaveBeenCalledWith('webllm');
     });
 
-    it('configures an explicitly selected hosted provider without exposing a retired option', async () => {
+    it('passes a desktop API-key draft only to hosted-provider configuration and clears it after saving', async () => {
         render(<AiSection />);
 
+        const apiKey = screen.getByLabelText('Hosted AI API key');
+        expect(apiKey).toHaveAttribute('type', 'password');
+        expect(apiKey).toHaveAttribute('autocomplete', 'new-password');
+        expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
+        fireEvent.change(apiKey, { target: { value: 'sk-test-key' } });
         fireEvent.click(screen.getByRole('button', { name: 'Save' }));
 
         await waitFor(() => {
@@ -87,8 +92,10 @@ describe('AiSection', () => {
                 provider: 'anthropic',
                 model: 'claude-sonnet-5',
                 baseUrl: undefined,
+                apiKey: 'sk-test-key',
             });
         });
+        expect(apiKey).toHaveValue('');
         expect(screen.queryByRole('option', { name: /native/i })).not.toBeInTheDocument();
     });
 

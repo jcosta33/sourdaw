@@ -37,6 +37,7 @@ describe('setCloudProviderConfig', () => {
             provider: 'openai-compatible',
             model: 'qwen-local',
             baseUrl: 'http://localhost:1234/v1',
+            apiKey: '',
         });
 
         expect(getCloudProviderRuntime()).toEqual({
@@ -59,12 +60,14 @@ describe('setCloudProviderConfig', () => {
             provider: 'openai',
             model: 'gpt-test',
             baseUrl: 'https://api.openai.com/v1',
+            apiKey: 'sk-test-key',
         });
 
         expect(mocks.invoke).toHaveBeenCalledWith('open_provider_gateway_session', {
             adapterId: 'builtin.openai-compatible.chat-completions.v1',
             origin: 'https://api.openai.com',
             credentialSource: 'openai',
+            credential: 'sk-test-key',
         });
         expect(getCloudProviderRuntime()).toMatchObject({
             provider: 'openai',
@@ -78,6 +81,7 @@ describe('setCloudProviderConfig', () => {
         await setCloudProviderConfig({
             provider: 'anthropic',
             model: 'claude-test',
+            apiKey: 'sk-anthropic-test',
         });
         const activeRequest = registerCloudStreamController(new AbortController());
 
@@ -85,6 +89,7 @@ describe('setCloudProviderConfig', () => {
             provider: 'openai-compatible',
             model: 'local',
             baseUrl: 'http://localhost:1234/v1',
+            apiKey: '',
         });
 
         expect(activeRequest.signal.aborted).toBe(true);
@@ -96,7 +101,7 @@ describe('setCloudProviderConfig', () => {
     it('closes a candidate session when replacing the active session fails', async () => {
         const previousSessionId = 'provider-session-00000000000000000000000000000000';
         const candidateSessionId = 'provider-session-11111111111111111111111111111111';
-        await setCloudProviderConfig({ provider: 'anthropic', model: 'claude-test' });
+        await setCloudProviderConfig({ provider: 'anthropic', model: 'claude-test', apiKey: 'sk-anthropic-test' });
         mocks.invoke.mockImplementation(async (command, args) => {
             if (command === 'open_provider_gateway_session') {
                 return candidateSessionId;
@@ -113,6 +118,7 @@ describe('setCloudProviderConfig', () => {
                     provider: 'openai',
                     model: 'gpt-test',
                     baseUrl: 'https://api.openai.com/v1',
+                    apiKey: 'sk-openai-test',
                 })
             ).rejects.toThrow('close failed');
             expect(mocks.invoke).toHaveBeenCalledWith('close_provider_gateway_session', {
@@ -128,9 +134,9 @@ describe('setCloudProviderConfig', () => {
 
     it('rejects hosted configuration outside the desktop shell', async () => {
         mocks.isDesktopRuntime.mockReturnValue(false);
-        await expect(setCloudProviderConfig({ provider: 'anthropic', model: 'claude-test' })).rejects.toThrow(
-            'desktop builds only'
-        );
+        await expect(
+            setCloudProviderConfig({ provider: 'anthropic', model: 'claude-test', apiKey: 'sk-anthropic-test' })
+        ).rejects.toThrow('desktop builds only');
         expect(mocks.invoke).not.toHaveBeenCalled();
     });
 });

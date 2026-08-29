@@ -30,12 +30,13 @@ describe('configureCloudProvider', () => {
     });
 
     it('normalizes models and fixed provider origins', async () => {
-        await configureCloudProvider({ provider: 'openai', model: '  gpt-test  ' });
+        await configureCloudProvider({ provider: 'openai', model: '  gpt-test  ', apiKey: '  sk-test-key  ' });
 
         expect(mocks.setCloudProviderConfig).toHaveBeenCalledWith({
             provider: 'openai',
             model: 'gpt-test',
             baseUrl: 'https://api.openai.com/v1',
+            apiKey: 'sk-test-key',
         });
     });
 
@@ -44,6 +45,7 @@ describe('configureCloudProvider', () => {
             provider: 'openai-compatible',
             model: 'qwen',
             baseUrl: 'http://localhost:1234/v1/',
+            apiKey: '',
         });
 
         expect(mocks.setCloudProviderConfig).toHaveBeenCalledWith(
@@ -54,20 +56,21 @@ describe('configureCloudProvider', () => {
     it('invalidates cloud readiness after reconfiguration', async () => {
         mocks.llmStatusValue.value = { state: 'ready', backend: 'cloud', modelId: 'old-model' };
 
-        await configureCloudProvider({ provider: 'anthropic', model: 'claude-test' });
+        await configureCloudProvider({ provider: 'anthropic', model: 'claude-test', apiKey: 'sk-anthropic-test' });
 
         expect(mocks.llmStatusSet).toHaveBeenCalledWith({ state: 'idle' });
     });
 
     it('rejects empty models and insecure remote endpoints', async () => {
-        await expect(configureCloudProvider({ provider: 'openai', model: ' ' })).rejects.toThrow(
-            'Model cannot be empty'
-        );
+        await expect(
+            configureCloudProvider({ provider: 'openai', model: ' ', apiKey: 'sk-openai-test' })
+        ).rejects.toThrow('Model cannot be empty');
         await expect(
             configureCloudProvider({
                 provider: 'openai-compatible',
                 model: 'model',
                 baseUrl: 'http://example.com/v1',
+                apiKey: '',
             })
         ).rejects.toThrow('Provider base URL must use HTTPS or loopback HTTP');
         expect(mocks.setCloudProviderConfig).not.toHaveBeenCalled();
@@ -80,9 +83,16 @@ describe('configureCloudProvider', () => {
             'https://example.com/v1#provider',
         ]) {
             await expect(
-                configureCloudProvider({ provider: 'openai-compatible', model: 'model', baseUrl })
+                configureCloudProvider({ provider: 'openai-compatible', model: 'model', baseUrl, apiKey: '' })
             ).rejects.toThrow('Provider base URL cannot include credentials, a query, or a fragment');
         }
+        expect(mocks.setCloudProviderConfig).not.toHaveBeenCalled();
+    });
+
+    it('requires a nonblank first-party API key without persisting it', async () => {
+        await expect(
+            configureCloudProvider({ provider: 'anthropic', model: 'claude-test', apiKey: '  ' })
+        ).rejects.toThrow('Anthropic API key is required');
         expect(mocks.setCloudProviderConfig).not.toHaveBeenCalled();
     });
 });

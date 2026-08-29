@@ -142,13 +142,14 @@ describe('provider adapter conformance', () => {
             invoke,
         };
 
-        const sessionId = await openProviderGatewaySession(adapter, 'openai-compatible', dependencies);
+        const sessionId = await openProviderGatewaySession(adapter, 'openai-compatible', 'sk-test-key', dependencies);
         await closeProviderGatewaySession(sessionId, dependencies);
 
         expect(invoke).toHaveBeenNthCalledWith(1, 'open_provider_gateway_session', {
             adapterId: adapter.adapterId,
             origin: adapter.origin,
             credentialSource: 'openai-compatible',
+            credential: 'sk-test-key',
         });
         expect(invoke).toHaveBeenNthCalledWith(2, 'close_provider_gateway_session', { sessionId });
     });
@@ -160,7 +161,7 @@ describe('provider adapter conformance', () => {
             invoke: async () => 'secret-or-untrusted-value',
         };
 
-        await expect(openProviderGatewaySession(adapter, 'openai-compatible', dependencies)).rejects.toThrow(
+        await expect(openProviderGatewaySession(adapter, 'openai-compatible', '', dependencies)).rejects.toThrow(
             'invalid credential session'
         );
     });

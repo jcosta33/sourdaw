@@ -24,7 +24,11 @@ export const setCloudProviderConfig = inject({ logger })(
                 runtime = {
                     provider: 'anthropic',
                     model: configuration.model,
-                    session_id: await openProviderGatewaySession(ANTHROPIC_PROVIDER_ADAPTER, 'anthropic'),
+                    session_id: await openProviderGatewaySession(
+                        ANTHROPIC_PROVIDER_ADAPTER,
+                        'anthropic',
+                        configuration.apiKey
+                    ),
                 };
             } else {
                 if (!configuration.baseUrl) {
@@ -53,7 +57,9 @@ export const setCloudProviderConfig = inject({ logger })(
                     base_url: configuration.baseUrl,
                     adapter,
                     session_id:
-                        adapter === null ? null : await openProviderGatewaySession(adapter, configuration.provider),
+                        adapter === null
+                            ? null
+                            : await openProviderGatewaySession(adapter, configuration.provider, configuration.apiKey),
                 };
             }
 

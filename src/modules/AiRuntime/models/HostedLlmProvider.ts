@@ -7,6 +7,8 @@ export type HostedLlmConfiguration = {
     provider: HostedLlmProvider;
     model: string;
     baseUrl?: string;
+    /** Ephemeral password-input value; never write this to a store or preference. */
+    apiKey: string;
 };
 
 export type HostedLlmProviderInfo = {
