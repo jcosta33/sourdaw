@@ -1,0 +1,43 @@
+src/modules/AiRuntime/useCases/agentRunLifecycle.ts
+  s_a40848e8f8cca9::t_b8f39b73abf15e 48,657-666,668-671,697-728,730-754,756-757,764-787,789-825
+  s_a40848e8f8cca9::t_49f0e1d770e3ee 672-696,760-763,826
+  s_a40848e8f8cca9::t_56f91478770e1a 1905
+src/modules/AiRuntime/useCases/recordAgentRunReceiptSaga.ts
+  s_a40848e8f8cca9::t_fc7dd4abf1d1ec 2,5-6
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/executeConfirmedCommandBatch.spec.ts
+  s_a40848e8f8cca9::t_f7391c0872bb72 47,58,86,292
+  s_a40848e8f8cca9::t_b3948298659814 610-612,614
+src/modules/AiRuntime/useCases/agentRequestOrchestration/agentRunExecutionSettlement.ts
+  s_a40848e8f8cca9::t_0f21c6e3d7e8a8 9,160-163,173,180-182,184,192
+src/modules/AiRuntime/useCases/projectAgentRunReceiptSaga.ts
+  s_a40848e8f8cca9::t_752fe6deb8a8de 1-198
+src/modules/AiRuntime/useCases/__tests__/recordAgentRunReceiptSaga.spec.ts
+  s_a40848e8f8cca9::t_0a8d88e82a6a7a 345
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/agentRunExecutionSettlement.spec.ts
+  s_a40848e8f8cca9::t_f0f27015a92e56 15
+  s_a40848e8f8cca9::t_b34f20526e3be4 200,253,295
+  s_a40848e8f8cca9::t_5d76064030a696 300-302
+  s_a40848e8f8cca9::t_c90d07786b7868 6,8,13,70-99,102,104-112,178-179,196-198,226-227,249-251,269-294,296-299,303-306,308-329
+  s_a40848e8f8cca9::t_2d3dea17b70339 100-101,103
+  s_a40848e8f8cca9::t_1f149cd47c780d 1,307
+  s_a40848e8f8cca9::t_27f853d46bc2a4 330
+src/modules/AiRuntime/useCases/agentRequestOrchestration/executeConfirmedCommandBatch.ts
+  s_a40848e8f8cca9::t_7df821c70826a9 4-8,215
+  s_a40848e8f8cca9::t_0f21c6e3d7e8a8 211-213
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "0df37ad86ef2d570fe671b5e14560a5aae73302e",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
