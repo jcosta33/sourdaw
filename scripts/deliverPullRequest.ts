@@ -552,7 +552,7 @@ function sameDeliveryReceiptIdentity(left: DeliveryReceiptPayload, right: Delive
         return false;
     }
     if (left.schemaVersion === 1 || right.schemaVersion === 1) {
-        return true;
+        return left.schemaVersion === 1 && right.schemaVersion === 1;
     }
     if (left.ciAdmissionMode !== right.ciAdmissionMode) {
         return false;
@@ -567,11 +567,19 @@ function authoritativeDeliveryReceipt(
     lineage: DeliveryReceiptComment[],
     pullRequest: Pick<PullRequestSnapshot, 'number' | 'headRefOid'>
 ): DeliveryReceiptComment {
-    const receipt = lineage.at(-1);
-    if (receipt === undefined) {
-        fail(`PR #${pullRequest.number} has no delivery receipt for its current head`);
+    for (let index = lineage.length - 1; index >= 0; index -= 1) {
+        const receipt = lineage[index];
+        if (receipt === undefined) {
+            continue;
+        }
+        const payload = assertDeliveryReceiptForHead(receipt, pullRequest);
+        if (payload.schemaVersion === 1 && hasSameKeyV2Evidence(lineage, payload, pullRequest)) {
+            continue;
+        }
+        return receipt;
     }
-    return receipt;
+    fail(`PR #${pullRequest.number} has no delivery receipt for its current head`);
+    throw new Error('unreachable');
 }
 
 function deliveryReceiptKey(payload: DeliveryReceiptPayload): string {
@@ -582,18 +590,51 @@ function assertCompatibleDeliveryReceiptLineage(
     lineage: DeliveryReceiptComment[],
     pullRequest: Pick<PullRequestSnapshot, 'number' | 'headRefOid'>
 ): void {
-    const seenByKey = new Map<string, DeliveryReceiptPayload[]>();
+    const seenV2ByKey = new Map<string, DeliveryReceiptPayload>();
     for (const comment of lineage) {
         const payload = assertDeliveryReceiptForHead(comment, pullRequest);
-        const key = deliveryReceiptKey(payload);
-        const seen = seenByKey.get(key) ?? [];
-        for (const previous of seen) {
-            if (!sameDeliveryReceiptIdentity(previous, payload)) {
-                fail(`PR #${pullRequest.number} has an invalid delivery receipt lineage`);
-            }
+        if (payload.schemaVersion === 1) {
+            continue;
         }
-        seen.push(payload);
-        seenByKey.set(key, seen);
+        const key = deliveryReceiptKey(payload);
+        const previous = seenV2ByKey.get(key);
+        if (previous !== undefined && !sameDeliveryReceiptIdentity(previous, payload)) {
+            fail(`PR #${pullRequest.number} has an invalid delivery receipt lineage`);
+        }
+        seenV2ByKey.set(key, payload);
+    }
+}
+
+function hasSameKeyV2Evidence(
+    lineage: DeliveryReceiptComment[],
+    target: DeliveryReceiptPayload,
+    pullRequest: Pick<PullRequestSnapshot, 'number' | 'headRefOid'>
+): boolean {
+    for (const comment of lineage) {
+        const payload = assertDeliveryReceiptForHead(comment, pullRequest);
+        if (payload.schemaVersion !== 1 && sameDeliveryReceiptKey(payload, target)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function assertExpectedDeliveryReceiptAuthority(
+    lineage: DeliveryReceiptComment[],
+    expected: DeliveryReceiptPayload,
+    pullRequest: Pick<PullRequestSnapshot, 'number' | 'headRefOid'>
+): void {
+    if (expected.schemaVersion === 1) {
+        return;
+    }
+    for (const comment of lineage) {
+        const payload = assertDeliveryReceiptForHead(comment, pullRequest);
+        if (!sameDeliveryReceiptKey(payload, expected) || payload.schemaVersion === 1) {
+            continue;
+        }
+        if (!sameDeliveryReceiptIdentity(payload, expected)) {
+            fail(`PR #${pullRequest.number} has an invalid delivery receipt lineage`);
+        }
     }
 }
 
@@ -602,12 +643,28 @@ function authoritativeEquivalentDeliveryReceipt(
     expected: DeliveryReceiptPayload,
     pullRequest: Pick<PullRequestSnapshot, 'number' | 'headRefOid'>
 ): DeliveryReceiptComment | undefined {
-    const receipt = lineage.at(-1);
-    if (receipt === undefined) {
-        return undefined;
+    assertExpectedDeliveryReceiptAuthority(lineage, expected, pullRequest);
+    const preferV2 = hasSameKeyV2Evidence(lineage, expected, pullRequest);
+    for (let index = lineage.length - 1; index >= 0; index -= 1) {
+        const receipt = lineage[index];
+        if (receipt === undefined) {
+            continue;
+        }
+        const payload = assertDeliveryReceiptForHead(receipt, pullRequest);
+        if (!sameDeliveryReceiptKey(payload, expected)) {
+            continue;
+        }
+        if (payload.schemaVersion === 1) {
+            if (!preferV2 && expected.schemaVersion === 1) {
+                return receipt;
+            }
+            continue;
+        }
+        if (sameDeliveryReceiptIdentity(payload, expected)) {
+            return receipt;
+        }
     }
-    const payload = assertDeliveryReceiptForHead(receipt, pullRequest);
-    return sameDeliveryReceiptIdentity(payload, expected) ? receipt : undefined;
+    return undefined;
 }
 
 function deliveryReceiptsForHead(
@@ -732,7 +789,17 @@ function ensureDeliveryReceipt(
     const expected = expectedDeliveryReceipt(pullRequest, closingIssue, ciAdmissionMode);
     const expectedBody = composeDeliveryReceipt(expected);
     const existing = orderedDeliveryReceiptLineage(port.deliveryReceipts(pullRequest.number), pullRequest);
-    let receipt = authoritativeEquivalentDeliveryReceipt(existing, expected, pullRequest);
+    const historical = authoritativeEquivalentDeliveryReceipt(existing, expected, pullRequest);
+    const refreshed =
+        historical === undefined
+            ? undefined
+            : authoritativeEquivalentDeliveryReceipt(
+                  orderedDeliveryReceiptLineage(port.deliveryReceipts(pullRequest.number), pullRequest),
+                  expected,
+                  pullRequest
+              );
+    let receipt =
+        historical !== undefined && refreshed !== undefined && refreshed.id !== historical.id ? refreshed : undefined;
     if (receipt === undefined) {
         try {
             receipt = port.addDeliveryReceipt(pullRequest.number, expectedBody);
