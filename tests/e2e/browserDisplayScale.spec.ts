@@ -140,6 +140,23 @@ async function expectFrameGeometry(page: Page, frame: Frame, scale: number): Pro
     });
 }
 
+async function expectRestoredFrameReceivesGlobalShortcut(page: Page, app: FrameLocator): Promise<void> {
+    await page.evaluate(() => {
+        document.body.tabIndex = -1;
+        document.body.focus();
+        window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true }));
+    });
+    await expect.poll(() => page.evaluate(() => document.activeElement instanceof HTMLIFrameElement)).toBe(true);
+
+    const isMac = await page.evaluate(() => navigator.platform.toUpperCase().includes('MAC'));
+    await page.keyboard.press(isMac ? 'Meta+K' : 'Control+K');
+    const palette = app.getByRole('dialog', { name: /Command Palette/i });
+    await expect(palette).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(palette).toHaveCount(0);
+    await page.evaluate(() => document.body.removeAttribute('tabindex'));
+}
+
 async function expectContextMenuUsable(app: FrameLocator, scale: number): Promise<void> {
     const trackRow = app
         .getByRole('grid', { name: /Track list/i })
@@ -303,6 +320,7 @@ test('browser display scale preserves viewport geometry and interactions at 50%,
         const preferences = await setDisplayScale(app, frame, scale);
         await expectPreferencesUsable(app, preferences, scale);
         await expectFrameGeometry(page, frame, scale);
+        await expectRestoredFrameReceivesGlobalShortcut(page, app);
         await expectRecentProjectsMenuUsable(frame, app, scale);
         await expectContextMenuUsable(app, scale);
         await expectRightEdgeContextMenuClamped(page, app);

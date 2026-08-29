@@ -47,6 +47,11 @@ export function mountBrowserDisplayScaleHost(root: HTMLElement): void {
     frame.style.top = '0';
     frame.style.transformOrigin = 'top left';
     sizeViewport(frame, 1);
+
+    const focusApplication = (): void => {
+        frame.contentWindow?.focus();
+    };
+    frame.addEventListener('load', focusApplication);
     root.replaceChildren(frame);
 
     const handleDisplayScale = (event: MessageEvent): void => {
@@ -59,12 +64,20 @@ export function mountBrowserDisplayScaleHost(root: HTMLElement): void {
         }
         sizeViewport(frame, scale);
     };
+    const handlePageShow = (event: PageTransitionEvent): void => {
+        if (event.persisted) {
+            focusApplication();
+        }
+    };
     const handlePageHide = (event: PageTransitionEvent): void => {
         if (!event.persisted) {
+            frame.removeEventListener('load', focusApplication);
             window.removeEventListener('message', handleDisplayScale);
             window.removeEventListener('pagehide', handlePageHide);
+            window.removeEventListener('pageshow', handlePageShow);
         }
     };
     window.addEventListener('message', handleDisplayScale);
     window.addEventListener('pagehide', handlePageHide);
+    window.addEventListener('pageshow', handlePageShow);
 }

@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { mountBrowserDisplayScaleHost } from '../browserDisplayScaleHost';
 
@@ -106,6 +106,25 @@ describe('mountBrowserDisplayScaleHost', () => {
         );
 
         expect(frame.style.transform).toBe('scale(2)');
+    });
+
+    it('focuses the application on load and persisted restore until the host is permanently unloaded', () => {
+        const root = document.getElementById('root')!;
+        mountBrowserDisplayScaleHost(root);
+        const frame = document.querySelector('iframe')!;
+        const focusApplication = vi.spyOn(frame.contentWindow!, 'focus').mockImplementation(() => undefined);
+
+        frame.dispatchEvent(new Event('load'));
+        window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: false }));
+        window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true }));
+
+        expect(focusApplication).toHaveBeenCalledTimes(2);
+
+        window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: false }));
+        frame.dispatchEvent(new Event('load'));
+        window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true }));
+
+        expect(focusApplication).toHaveBeenCalledTimes(2);
     });
 
     it('removes display-scale messages when the host is permanently unloaded', () => {
