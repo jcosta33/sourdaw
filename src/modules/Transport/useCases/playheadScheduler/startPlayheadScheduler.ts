@@ -31,6 +31,7 @@ import { panicYeastRuntime } from '../transportControls/panicYeastRuntime';
 
 import { advanceSchedulerDiscontinuityEpoch } from './advanceSchedulerDiscontinuityEpoch';
 import { disposePlayheadScheduler } from './disposePlayheadScheduler';
+import { readNativeEngineCursorBeats } from './readNativeEngineCursorBeats';
 import { schedulerSession, stopActiveSources } from './schedulerSession';
 import { schedulerTimingDiagnostics } from './schedulerTimingDiagnostics';
 
@@ -338,7 +339,16 @@ export function startPlayheadScheduler(): void {
         }
 
         schedulerSession.accumulatedPosition = newPosition;
-        playheadPositionRef.current = newPosition;
+        // The cursor follows the transport that is producing the sound. While
+        // the native engine is that transport it reports where it actually
+        // rendered to — loop wraps included — and this integration is only the
+        // scheduling clock; the rest of the time there is no engine reading and
+        // the two are the same number.
+        //
+        // Punch and follow actions below, and the metronome, count-in and
+        // pre-roll elsewhere in this module, all evaluate against this position
+        // rather than moving into the engine — ADR 0039.
+        playheadPositionRef.current = readNativeEngineCursorBeats() ?? newPosition;
 
         // Sync to AudioEngine for real-time DSP (SAB-backed)
         audioEngine.setTransportInfo(

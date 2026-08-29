@@ -21,6 +21,7 @@
  * was already in.
  */
 
+import { logger } from '#/infra/logger/appLogger';
 import {
     deriveEffectiveAudibility,
     deriveVcaMultiplier,
@@ -32,15 +33,26 @@ import {
 import { workspaceStore } from '#/modules/WorkspaceShell/stores';
 
 import { type AudioGraphStripReport } from '../../models/AudioGraphBackend';
+import { type EngineTransportMaps } from '../../models/EngineTransportPosition';
+import { setEngineTransportMaps } from '../../repositories/engineTransport/setEngineTransportMaps';
 import { createNativeLiveGraphBackend } from '../../repositories/nativeGraph/createNativeLiveGraphBackend';
 import { probeNativeGraphTransport } from '../../repositories/nativeGraph/probeNativeGraphTransport';
 
 import { nativeLiveGraphSession, queueOnNativeLiveGraphSession } from './nativeLiveGraphSessionState';
 import { projectLiveGraphTopology } from './projectLiveGraphTopology';
+import { startNativeEnginePlayheadFeed } from './startNativeEnginePlayheadFeed';
 
 export type StartNativeLiveGraphSessionInput = Readonly<{
     /** Where playback begins, on the engine's clock. */
     positionSeconds: number;
+    /**
+     * The arrangement's tempo map, meter map and loop region, already projected
+     * into engine coordinates.
+     *
+     * Passed in rather than read here because the arrangement owns them: this
+     * module owns the shape the engine reads, not what the timeline says.
+     */
+    transportMaps: EngineTransportMaps;
 }>;
 
 export type NativeLiveGraphSessionResult =
@@ -126,6 +138,20 @@ export function startNativeLiveGraphSession(
         // that was already working.
         nativeLiveGraphSession.backend?.dispose();
         nativeLiveGraphSession.backend = backend;
+        nativeLiveGraphSession.carriesAudio = commands.some((command) => command.kind === 'schedule-clip');
+
+        // After the topology, never with it: the maps have their own owner and
+        // their own command (the transport ownership law in `graph.rs`). Before
+        // the feed, because a position read against no maps reports the
+        // engine's default tempo rather than the arrangement's.
+        const maps = await setEngineTransportMaps(input.transportMaps);
+        if (maps.outcome === 'declined') {
+            // The session stands: an engine without the arrangement's maps
+            // still renders, it just counts beats at its own tempo, and the
+            // next play sends them again.
+            logger.warn(`[AudioEngine] native transport maps declined: ${maps.reason}`);
+        }
+        startNativeEnginePlayheadFeed();
         return { outcome: 'started', runtimeRevision: result.runtimeRevision, reports: result.reports };
     });
 }

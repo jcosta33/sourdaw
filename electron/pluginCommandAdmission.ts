@@ -16,6 +16,12 @@
  * when quit begins would spawn an audio stream *after* the cascade drained the
  * runtimes it feeds, which is the same insertion-after-the-drain hazard a late
  * `load_plugin` is closed for.
+ *
+ * The engine transport commands are deliberately absent. `engine_transport_position`
+ * only reads a published snapshot, and `engine_transport_set_maps` refuses outright
+ * when no engine is running rather than bootstrapping one — so neither can insert
+ * anything after the drain, and closing them would make the cursor freeze mid-quit
+ * for no gain.
  */
 export const PLUGIN_RUNTIME_COMMANDS = [
     'apply_graph_commands',

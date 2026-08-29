@@ -32,6 +32,9 @@ const mocks = vi.hoisted(() => ({
     /** Runs when the probe is awaited, which is before the project is read. */
     onProbe: vi.fn(),
     applyGraphCommands: vi.fn<(input: { batch: unknown }) => Promise<unknown>>(),
+    setEngineTransportMaps: vi.fn((_maps: unknown) => Promise.resolve({ outcome: 'applied' as const })),
+    startPlayheadFeed: vi.fn(),
+    stopPlayheadFeed: vi.fn(),
 }));
 
 vi.mock('../../../repositories/nativeGraph/probeNativeGraphTransport', () => ({
@@ -40,6 +43,25 @@ vi.mock('../../../repositories/nativeGraph/probeNativeGraphTransport', () => ({
         return Promise.resolve(mocks.availability as NativeGraphAvailability);
     },
 }));
+vi.mock('../../../repositories/engineTransport/setEngineTransportMaps', () => ({
+    setEngineTransportMaps: (maps: unknown) => mocks.setEngineTransportMaps(maps),
+}));
+vi.mock('../startNativeEnginePlayheadFeed', () => ({
+    startNativeEnginePlayheadFeed: () => mocks.startPlayheadFeed(),
+}));
+vi.mock('../stopNativeEnginePlayheadFeed', () => ({
+    stopNativeEnginePlayheadFeed: () => mocks.stopPlayheadFeed(),
+}));
+
+/**
+ * The arrangement's transport maps as this module receives them: already
+ * projected into engine seconds by the Transport module, never re-derived here.
+ */
+const FLAT_MAPS = {
+    tempo: [{ startSeconds: 0, beatsPerMinute: 120 }],
+    timeSignature: [{ startSeconds: 0, numerator: 4, denominator: 4 }],
+    loopRegion: { enabled: false, startSeconds: 0, endSeconds: 0 },
+};
 
 const APPLIED = { acceptance: 'accepted', application: 'applied', runtimeRevision: 1, reports: [] };
 
@@ -104,6 +126,9 @@ beforeEach(() => {
     mocks.onProbe.mockReset();
     mocks.applyGraphCommands.mockReset();
     mocks.applyGraphCommands.mockResolvedValue(APPLIED);
+    mocks.setEngineTransportMaps.mockClear();
+    mocks.startPlayheadFeed.mockClear();
+    mocks.stopPlayheadFeed.mockClear();
     nativeLiveGraphSession.backend = null;
     nativeLiveGraphSession.pending = Promise.resolve();
     trackStore.set({ tracks: [createTrack({ id: 'audio-1' })], selectedTrackId: null, ghostClips: [] });
@@ -121,7 +146,7 @@ describe('startNativeLiveGraphSession', () => {
             runtime: 'browser',
         };
 
-        const result = await startNativeLiveGraphSession({ positionSeconds: 0 });
+        const result = await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS });
 
         expect(result).toEqual({ outcome: 'declined', reason: 'no desktop bridge (browser runtime)' });
         expect(mocks.applyGraphCommands).not.toHaveBeenCalled();
@@ -134,7 +159,7 @@ describe('startNativeLiveGraphSession', () => {
             ghostClips: [],
         });
 
-        const result = await startNativeLiveGraphSession({ positionSeconds: 2.5 });
+        const result = await startNativeLiveGraphSession({ positionSeconds: 2.5, transportMaps: FLAT_MAPS });
 
         expect(result).toMatchObject({ outcome: 'started', runtimeRevision: 1 });
         expect(appliedBatches()).toHaveLength(1);
@@ -151,6 +176,28 @@ describe('startNativeLiveGraphSession', () => {
         ]);
     });
 
+    it('installs the transport maps outside the topology batch, and only once it is applied', async () => {
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS });
+
+        // Tempo and meter have a different producer from the live topology, so
+        // they travel as their own command. A batch carrying them would make
+        // the graph's all-or-nothing fence decide whether the tempo applied.
+        expect(appliedBatches()).toHaveLength(1);
+        expect(mocks.setEngineTransportMaps).toHaveBeenCalledWith(FLAT_MAPS);
+        expect(mocks.setEngineTransportMaps.mock.invocationCallOrder[0]).toBeGreaterThan(
+            mocks.applyGraphCommands.mock.invocationCallOrder[0]!
+        );
+    });
+
+    it('does not install maps or open the playhead feed for a session that never started', async () => {
+        mocks.availability = { available: false, reason: 'no desktop bridge (browser runtime)', runtime: 'browser' };
+
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS });
+
+        expect(mocks.setEngineTransportMaps).not.toHaveBeenCalled();
+        expect(mocks.startPlayheadFeed).not.toHaveBeenCalled();
+    });
+
     it('declines on desktop when the addon cannot answer the graph surface', async () => {
         mocks.availability = {
             available: false,
@@ -158,7 +205,7 @@ describe('startNativeLiveGraphSession', () => {
             runtime: 'desktop',
         };
 
-        const result = await startNativeLiveGraphSession({ positionSeconds: 0 });
+        const result = await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS });
 
         expect(result).toEqual({
             outcome: 'declined',
@@ -174,7 +221,7 @@ describe('startNativeLiveGraphSession', () => {
             reason: 'engine-not-running: no default output device',
         });
 
-        const result = await startNativeLiveGraphSession({ positionSeconds: 0 });
+        const result = await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS });
 
         expect(result).toEqual({
             outcome: 'declined',
@@ -192,7 +239,7 @@ describe('startNativeLiveGraphSession', () => {
             });
         });
 
-        await startNativeLiveGraphSession({ positionSeconds: 0 });
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS });
 
         expect(appliedBatches()[0]?.commands.filter((command) => command.kind === 'create-track-strip')).toHaveLength(
             2
@@ -209,7 +256,7 @@ describe('stopNativeLiveGraphSession', () => {
     });
 
     it('tells a started engine that playback stopped, and where the playhead came to rest', async () => {
-        await startNativeLiveGraphSession({ positionSeconds: 0 });
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS });
 
         const result = await stopNativeLiveGraphSession({ positionSeconds: 8 });
 
@@ -223,7 +270,7 @@ describe('stopNativeLiveGraphSession', () => {
     });
 
     it('keeps the session when the engine refuses the stop, so a playing engine stays reachable', async () => {
-        await startNativeLiveGraphSession({ positionSeconds: 0 });
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS });
         mocks.applyGraphCommands.mockResolvedValue({
             acceptance: 'rejected',
             application: 'not-applied',
@@ -234,6 +281,10 @@ describe('stopNativeLiveGraphSession', () => {
 
         expect(result).toEqual({ outcome: 'declined', reason: 'command-queue-full' });
         expect(nativeLiveGraphSession.backend).not.toBeNull();
+        // The feed polls the engine every animation frame. A refused stop must
+        // still close it, or a stopped transport keeps a request in flight for
+        // the rest of the session.
+        expect(mocks.stopPlayheadFeed).toHaveBeenCalled();
     });
 
     it('never overtakes a start that is still in flight', async () => {
@@ -245,7 +296,7 @@ describe('stopNativeLiveGraphSession', () => {
         });
         mocks.applyGraphCommands.mockImplementationOnce(() => startApplied.then(() => APPLIED));
 
-        const start = startNativeLiveGraphSession({ positionSeconds: 0 });
+        const start = startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS });
         const stop = stopNativeLiveGraphSession({ positionSeconds: 4 });
         releaseStart();
         await start;

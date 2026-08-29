@@ -13,6 +13,7 @@
  */
 
 import { nativeLiveGraphSession, queueOnNativeLiveGraphSession } from './nativeLiveGraphSessionState';
+import { stopNativeEnginePlayheadFeed } from './stopNativeEnginePlayheadFeed';
 
 export type StopNativeLiveGraphSessionInput = Readonly<{
     /** Where the playhead came to rest, on the engine's clock. */
@@ -26,6 +27,10 @@ export function stopNativeLiveGraphSession(
     input: StopNativeLiveGraphSessionInput
 ): Promise<StopNativeLiveGraphSessionResult> {
     return queueOnNativeLiveGraphSession(async (): Promise<StopNativeLiveGraphSessionResult> => {
+        // Stopped before the command, and whatever the command answers: the
+        // feed exists to draw a rolling playhead, and one that keeps polling a
+        // transport nobody is watching only burns bridge round trips.
+        stopNativeEnginePlayheadFeed();
         const backend = nativeLiveGraphSession.backend;
         if (!backend) {
             return { outcome: 'declined', reason: 'no live native graph session' };

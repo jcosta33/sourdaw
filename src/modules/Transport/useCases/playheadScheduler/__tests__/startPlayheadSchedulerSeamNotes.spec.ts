@@ -125,6 +125,9 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     cacheAudioBuffer: vi.fn(),
     refreshSidechainAlignment: vi.fn(),
     scheduleAdjustmentLayers: vi.fn(),
+    // No native engine here: the cursor these seams are about follows the
+    // scheduler's own integration.
+    readNativeEnginePlayheadSeconds: (): number | null => null,
 }));
 /**
  * The observation point. Typed to the four arguments the assertions read, so

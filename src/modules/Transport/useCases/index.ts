@@ -26,6 +26,7 @@ export { deleteTimelineMapsTimeRange } from './tempoMap/deleteTimelineMapsTimeRa
 export { prepareTimelineMapStateRestore } from './tempoMap/prepareTimelineMapStateRestore';
 export { prepareTimelineMapTimeOperation } from './tempoMap/prepareTimelineMapTimeOperation';
 export { removeTempoChange } from './tempoMap/removeTempoChange';
+export { projectEngineTransportMaps } from './tempoMap/projectEngineTransportMaps';
 export { replaceTempoMap } from './tempoMap/replaceTempoMap';
 export { resolveTempoAtBeat } from './tempoMap/resolveTempoAtBeat';
 export { shiftTimelineMapsAfterBeat } from './tempoMap/shiftTimelineMapsAfterBeat';
