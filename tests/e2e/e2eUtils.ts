@@ -3,7 +3,7 @@ import { stringify as superjsonStringify } from 'superjson';
 
 const LAUNCH_SCREEN_NAME = 'Sourdaw — start a project';
 const PLAYBACK_CONTROLS_NAME = 'Playback controls';
-const LAUNCH_SCREEN_FIRST_PAINT_TIMEOUT_MS = 30_000;
+const LAUNCH_SCREEN_FIRST_PAINT_TIMEOUT_MS = 45_000;
 
 type LaunchOverlayState = 'active' | 'exited';
 
