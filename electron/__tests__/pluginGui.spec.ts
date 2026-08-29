@@ -14,16 +14,27 @@ import {
     createPluginWindowHost,
     registerPluginWindowHost,
     type CreateEditorWindowRequest,
+    type EditorResizeEvent,
+    type EditorSize,
     type EditorWindow,
+    type EditorWindowBounds,
     type EditorWindowOptions,
     type PluginWindowHost,
     type PluginWindowHostDeps,
 } from '../pluginGui.js';
 
+type WillResizeListener = (event: EditorResizeEvent, bounds: EditorWindowBounds) => void;
+
 type FakeWindow = EditorWindow & {
     readonly emitClosed: () => void;
+    /** The OS applied a resize, as it reports one after the fact. */
+    readonly emitResize: () => void;
+    readonly emitMoved: () => void;
+    /** A drag in progress. Answers whether the host stopped it. */
+    readonly emitWillResize: (bounds: EditorWindowBounds) => boolean;
     readonly options: EditorWindowOptions;
     readonly setContentSize: ReturnType<typeof vi.fn<(width: number, height: number) => void>>;
+    readonly setResizable: ReturnType<typeof vi.fn<(resizable: boolean) => void>>;
     readonly show: ReturnType<typeof vi.fn<() => void>>;
     readonly showInactive: ReturnType<typeof vi.fn<() => void>>;
     readonly focus: ReturnType<typeof vi.fn<() => void>>;
@@ -33,18 +44,55 @@ type FakeWindow = EditorWindow & {
 
 const createFakeWindow = (options: EditorWindowOptions): FakeWindow => {
     const closedListeners: (() => void)[] = [];
+    const resizeListeners: (() => void)[] = [];
+    const movedListeners: (() => void)[] = [];
+    const willResizeListeners: WillResizeListener[] = [];
     let destroyed = false;
+    let content = { width: 800, height: 600 };
     const emitClosed = (): void => {
         destroyed = true;
         for (const listener of closedListeners) {
             listener();
         }
     };
+    // Chromeless, so the frame and the content are the same rectangle: a bare
+    // editor window carries no title bar of its own on the platforms that
+    // report a drag, and the frame-to-content difference is what a pending drag
+    // is converted through.
+    const bounds = (): EditorWindowBounds => ({ x: 0, y: 0, ...content });
     return {
         options,
         emitClosed,
+        emitResize: () => {
+            for (const listener of resizeListeners) {
+                listener();
+            }
+        },
+        emitMoved: () => {
+            for (const listener of movedListeners) {
+                listener();
+            }
+        },
+        emitWillResize: (pending) => {
+            let prevented = false;
+            const event: EditorResizeEvent = {
+                preventDefault: () => {
+                    prevented = true;
+                },
+            };
+            for (const listener of willResizeListeners) {
+                listener(event, pending);
+            }
+            return prevented;
+        },
         getNativeWindowHandle: () => Buffer.alloc(8, 1),
-        setContentSize: vi.fn<(width: number, height: number) => void>(),
+        setContentSize: vi.fn<(width: number, height: number) => void>((width, height) => {
+            content = { width, height };
+        }),
+        getContentSize: () => [content.width, content.height],
+        getBounds: bounds,
+        getContentBounds: bounds,
+        setResizable: vi.fn<(resizable: boolean) => void>(),
         show: vi.fn<() => void>(),
         showInactive: vi.fn<() => void>(),
         focus: vi.fn<() => void>(),
@@ -53,41 +101,107 @@ const createFakeWindow = (options: EditorWindowOptions): FakeWindow => {
             emitClosed();
         }),
         isDestroyed: () => destroyed,
-        on: (event, listener) => {
-            if (event === 'closed') {
-                closedListeners.push(listener);
+        on: (event: string, listener: (() => void) | WillResizeListener) => {
+            if (event === 'will-resize') {
+                willResizeListeners.push(listener);
+                return;
             }
+            const listeners = { closed: closedListeners, resize: resizeListeners, moved: movedListeners }[event];
+            listeners?.push(listener as () => void);
         },
     };
 };
 
-const request = (label = 'plugin-a'): CreateEditorWindowRequest => ({
+const request = (label = 'plugin-a', instanceId = 'instance-a'): CreateEditorWindowRequest => ({
     label,
     title: 'Surge XT',
-    instanceId: 'instance-a',
+    instanceId,
+});
+
+/** The deps every registration test supplies, none of which it is about. */
+const shellDeps = (
+    createWindow: PluginWindowHostDeps['createWindow']
+): Omit<PluginWindowHostDeps, 'notifyClosed' | 'runLoopPump' | 'requestEditorSize' | 'applyEditorScale'> => ({
+    createWindow,
+    getParentWindow: () => undefined,
+    getScaleFactor: () => 1,
+    watchDisplayChanges: () => {},
+});
+
+/** A complete addon surface, so a test only states the member it is about. */
+const windowNative = (overrides: Record<string, unknown> = {}): object => ({
+    registerPluginWindowHost: vi.fn(),
+    notifyPluginWindowClosed: vi.fn(),
+    servicePluginEditorRunLoops: vi.fn(),
+    resizePluginGui: vi.fn(),
+    applyPluginGuiScale: vi.fn(),
+    ...overrides,
 });
 
 type Harness = {
     readonly host: ReturnType<typeof createPluginWindowHost>;
     readonly windows: FakeWindow[];
     readonly notifyClosed: ReturnType<typeof vi.fn>;
+    readonly requestEditorSize: PluginWindowHostDeps['requestEditorSize'];
+    readonly applyEditorScale: PluginWindowHostDeps['applyEditorScale'];
+    /** A display was added, removed, or rescaled under every open editor. */
+    readonly changeDisplays: () => void;
 };
+
+/** The plugin grants every size it is asked for. */
+const grantsEverySize = (): PluginWindowHostDeps['requestEditorSize'] =>
+    vi.fn((_instanceId: string, width: number, height: number): Promise<EditorSize> =>
+        Promise.resolve({ width, height })
+    );
 
 const createHarness = (overrides: Partial<PluginWindowHostDeps> = {}): Harness => {
     const windows: FakeWindow[] = [];
     const notifyClosed = vi.fn();
+    const requestEditorSize = overrides.requestEditorSize ?? grantsEverySize();
+    const applyEditorScale =
+        overrides.applyEditorScale ?? vi.fn((): Promise<EditorSize> => Promise.resolve({ width: 800, height: 600 }));
+    let displaysChanged = (): void => {};
     const host = createPluginWindowHost({
-        createWindow: (options) => {
+        ...shellDeps((options) => {
             const window = createFakeWindow(options);
             windows.push(window);
             return window;
+        }),
+        watchDisplayChanges: (onChanged) => {
+            displaysChanged = onChanged;
         },
-        getParentWindow: () => undefined,
-        getScaleFactor: () => 1,
+        requestEditorSize,
+        applyEditorScale,
         notifyClosed,
         ...overrides,
     });
-    return { host, windows, notifyClosed };
+    return {
+        host,
+        windows,
+        notifyClosed,
+        requestEditorSize,
+        applyEditorScale,
+        changeDisplays: () => {
+            displaysChanged();
+        },
+    };
+};
+
+/**
+ * Wait for the negotiation a window event started.
+ *
+ * A resize costs a round trip to the addon, so the window reaches the size the
+ * plugin granted a few microtasks after the event that asked for it.
+ */
+const settled = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
+
+/** The one window a test opened, or a failure that says so. */
+const onlyWindow = (windows: FakeWindow[]): FakeWindow => {
+    const window = windows[0];
+    if (window === undefined) {
+        throw new Error('expected a window');
+    }
+    return window;
 };
 
 describe('createPluginWindowHost', () => {
@@ -301,6 +415,173 @@ describe('createPluginWindowHost', () => {
 
         expect(runLoopPump.stop).toHaveBeenCalledTimes(1);
     });
+
+    it('lets the user drag only the editors whose plugin accepts a host-chosen size', () => {
+        const { host, windows } = createHarness();
+        host.create(request());
+        const window = onlyWindow(windows);
+
+        host.setResizable({ label: 'plugin-a', resizable: true });
+        host.setResizable({ label: 'plugin-b', resizable: false });
+
+        expect(window.setResizable).toHaveBeenCalledExactlyOnceWith(true);
+    });
+
+    it('asks the plugin what it will run at when the user drags the window, and lands on that answer', async () => {
+        const requestEditorSize = vi.fn(() => Promise.resolve({ width: 640, height: 480 }));
+        const { host, windows } = createHarness({ requestEditorSize });
+        host.create(request());
+        const window = onlyWindow(windows);
+
+        window.setContentSize(1000, 900);
+        window.emitResize();
+        await settled();
+
+        expect(requestEditorSize).toHaveBeenCalledExactlyOnceWith('instance-a', 1000, 900);
+        expect(window.getContentSize()).toEqual([640, 480]);
+    });
+
+    it('leaves the window where the drag put it when the plugin grants that size', async () => {
+        const { host, windows, requestEditorSize } = createHarness();
+        host.create(request());
+        const window = onlyWindow(windows);
+
+        window.setContentSize(1000, 900);
+        window.emitResize();
+        await settled();
+
+        expect(requestEditorSize).toHaveBeenCalledExactlyOnceWith('instance-a', 1000, 900);
+        expect(window.getContentSize()).toEqual([1000, 900]);
+    });
+
+    /**
+     * The plugin's own resize arrives through `setSize` and raises the same
+     * `resize` event a drag does. Putting it back to the plugin as a host
+     * request is a loop that never settles.
+     */
+    it('does not put the plugin its own resize back as a host-chosen size', async () => {
+        const { host, windows, requestEditorSize } = createHarness();
+        host.create(request());
+        const window = onlyWindow(windows);
+
+        host.setSize({ label: 'plugin-a', width: 500, height: 400 });
+        window.emitResize();
+        await settled();
+
+        expect(requestEditorSize).not.toHaveBeenCalled();
+    });
+
+    /**
+     * A drag produces resize events far faster than the round trip to the audio
+     * host's worker, and only the size the window ended at is worth asking
+     * about.
+     */
+    it('asks about the size the drag ended at, not every size it passed through', async () => {
+        const asked: number[] = [];
+        let grant = (_size: EditorSize): void => {};
+        const requestEditorSize = vi.fn((_instanceId: string, width: number, _height: number) => {
+            asked.push(width);
+            return new Promise<EditorSize>((resolve) => {
+                grant = resolve;
+            });
+        });
+        const { host, windows } = createHarness({ requestEditorSize });
+        host.create(request());
+        const window = onlyWindow(windows);
+
+        window.setContentSize(900, 700);
+        window.emitResize();
+        for (const width of [910, 920, 930]) {
+            window.setContentSize(width, 700);
+            window.emitResize();
+        }
+        grant({ width: 900, height: 700 });
+        await settled();
+        grant({ width: 930, height: 700 });
+        await settled();
+
+        expect(asked).toEqual([900, 930]);
+    });
+
+    it('stops a drag back through a size the plugin already refused', async () => {
+        const { host, windows } = createHarness({
+            requestEditorSize: vi.fn(() => Promise.resolve({ width: 640, height: 480 })),
+        });
+        host.create(request());
+        const window = onlyWindow(windows);
+        window.setContentSize(1000, 900);
+        window.emitResize();
+        await settled();
+
+        const prevented = window.emitWillResize({ x: 0, y: 0, width: 1000, height: 900 });
+
+        expect(prevented).toBe(true);
+        expect(window.getContentSize()).toEqual([640, 480]);
+    });
+
+    it('lets a drag to any other size through, because only the plugin can judge it', async () => {
+        const { host, windows } = createHarness({
+            requestEditorSize: vi.fn(() => Promise.resolve({ width: 640, height: 480 })),
+        });
+        host.create(request());
+        const window = onlyWindow(windows);
+        window.setContentSize(1000, 900);
+        window.emitResize();
+        await settled();
+
+        expect(window.emitWillResize({ x: 0, y: 0, width: 700, height: 500 })).toBe(false);
+    });
+
+    it('tells an editor dragged onto a denser display its new scale and takes the size that produced', async () => {
+        let scale = 1;
+        const applyEditorScale = vi.fn(() => Promise.resolve({ width: 1280, height: 960 }));
+        const { host, windows } = createHarness({ getScaleFactor: () => scale, applyEditorScale });
+        host.create(request());
+        const window = onlyWindow(windows);
+
+        window.emitMoved();
+        await settled();
+        expect(applyEditorScale).not.toHaveBeenCalled();
+
+        scale = 2;
+        window.emitMoved();
+        await settled();
+
+        expect(applyEditorScale).toHaveBeenCalledExactlyOnceWith('instance-a', 2);
+        expect(window.getContentSize()).toEqual([1280, 960]);
+    });
+
+    it('restates the scale on every open editor when the displays themselves change', async () => {
+        let scale = 1;
+        const applyEditorScale = vi.fn(() => Promise.resolve({ width: 1280, height: 960 }));
+        const { host, changeDisplays } = createHarness({ getScaleFactor: () => scale, applyEditorScale });
+        host.create(request('plugin-a', 'instance-a'));
+        host.create(request('plugin-b', 'instance-b'));
+
+        scale = 2;
+        changeDisplays();
+        await settled();
+
+        expect(applyEditorScale.mock.calls).toEqual([
+            ['instance-a', 2],
+            ['instance-b', 2],
+        ]);
+    });
+
+    it('keeps the editor open when the plugin refuses a host resize', async () => {
+        const { host, windows } = createHarness({
+            requestEditorSize: vi.fn(() => Promise.reject(new Error('the editor is busy'))),
+        });
+        host.create(request());
+        const window = onlyWindow(windows);
+
+        window.setContentSize(1000, 900);
+        window.emitResize();
+        await settled();
+
+        expect(host.exists('plugin-a')).toBe(true);
+        expect(window.isDestroyed()).toBe(false);
+    });
 });
 
 describe('createIntervalRunLoopPump', () => {
@@ -325,34 +606,28 @@ describe('createIntervalRunLoopPump', () => {
 });
 
 describe('registerPluginWindowHost', () => {
-    it('hands the addon the seven callbacks in the order it consumes them', () => {
+    it('hands the addon the eight callbacks in the order it consumes them', () => {
         // Four of the callbacks share the type `(label: string) => void`, so a
         // transposition typechecks; each slot is therefore driven by index and
         // pinned to its discriminating effect on the window.
         const register = vi.fn();
         const windows: FakeWindow[] = [];
         const registered = registerPluginWindowHost(
-            {
-                registerPluginWindowHost: register,
-                notifyPluginWindowClosed: vi.fn(),
-                servicePluginEditorRunLoops: vi.fn(),
-            },
-            {
-                createWindow: (options) => {
-                    const window = createFakeWindow(options);
-                    windows.push(window);
-                    return window;
-                },
-                getParentWindow: () => undefined,
-                getScaleFactor: () => 1,
-            }
+            windowNative({ registerPluginWindowHost: register }),
+            shellDeps((options) => {
+                const window = createFakeWindow(options);
+                windows.push(window);
+                return window;
+            })
         );
         expect(registered).toBe(true);
-        expect(register.mock.calls[0]).toHaveLength(7);
-        const [create, exists, setSize, showAndFocus, destroy, hide, show] = (register.mock.calls[0] ?? []) as [
+        expect(register.mock.calls[0]).toHaveLength(8);
+        const [create, exists, setSize, setResizable, showAndFocus, destroy, hide, show] = (register.mock.calls[0] ??
+            []) as [
             PluginWindowHost['create'],
             PluginWindowHost['exists'],
             PluginWindowHost['setSize'],
+            PluginWindowHost['setResizable'],
             PluginWindowHost['showAndFocus'],
             PluginWindowHost['destroy'],
             PluginWindowHost['hide'],
@@ -360,14 +635,14 @@ describe('registerPluginWindowHost', () => {
         ];
 
         expect(create(request()).error).toBeNull();
-        const window = windows[0];
-        if (window === undefined) {
-            throw new Error('expected a window');
-        }
+        const window = onlyWindow(windows);
         expect(exists('plugin-a')).toBe(true);
 
         setSize({ label: 'plugin-a', width: 640, height: 480 });
         expect(window.setContentSize).toHaveBeenCalledExactlyOnceWith(640, 480);
+
+        setResizable({ label: 'plugin-a', resizable: true });
+        expect(window.setResizable).toHaveBeenCalledExactlyOnceWith(true);
 
         showAndFocus('plugin-a');
         expect(window.show).toHaveBeenCalledTimes(1);
@@ -388,21 +663,19 @@ describe('registerPluginWindowHost', () => {
     it('reports the OS close to the addon off the event path when a window closes', () => {
         const register = vi.fn();
         const notify = vi.fn(() => Promise.resolve());
-        const native = {
+        const native = windowNative({
             registerPluginWindowHost: register,
             notifyPluginWindowClosed: notify,
-            servicePluginEditorRunLoops: vi.fn(),
-        };
+        });
         const windows: FakeWindow[] = [];
-        registerPluginWindowHost(native, {
-            createWindow: (options) => {
+        registerPluginWindowHost(
+            native,
+            shellDeps((options) => {
                 const window = createFakeWindow(options);
                 windows.push(window);
                 return window;
-            },
-            getParentWindow: () => undefined,
-            getScaleFactor: () => 1,
-        });
+            })
+        );
         const create = register.mock.calls[0]?.[0] as (req: CreateEditorWindowRequest) => unknown;
 
         create(request());
@@ -412,12 +685,24 @@ describe('registerPluginWindowHost', () => {
     });
 
     it('survives an addon built before this packet', () => {
-        const registered = registerPluginWindowHost(
-            {},
-            { createWindow: createFakeWindow, getParentWindow: () => undefined, getScaleFactor: () => 1 }
-        );
+        const registered = registerPluginWindowHost({}, shellDeps(createFakeWindow));
 
         expect(registered).toBe(false);
+    });
+
+    /**
+     * A window whose edges the user can drag is only safe once the addon can be
+     * asked what the plugin will run at. Registering against a binary that
+     * carries the window seam but not the resize commands would open editors
+     * whose every drag lands on a missing method.
+     */
+    it('refuses an addon that carries the window seam without the resize commands', () => {
+        for (const missing of ['resizePluginGui', 'applyPluginGuiScale']) {
+            const native = windowNative();
+            Reflect.deleteProperty(native, missing);
+
+            expect(registerPluginWindowHost(native, shellDeps(createFakeWindow))).toBe(false);
+        }
     });
 
     /**
@@ -443,12 +728,11 @@ describe('registerPluginWindowHost', () => {
         const register = vi.fn();
         withPlatform(platform, () =>
             registerPluginWindowHost(
-                {
+                windowNative({
                     registerPluginWindowHost: register,
-                    notifyPluginWindowClosed: vi.fn(),
                     servicePluginEditorRunLoops: serviceRunLoops,
-                },
-                { createWindow: createFakeWindow, getParentWindow: () => undefined, getScaleFactor: () => 1 }
+                }),
+                shellDeps(createFakeWindow)
             )
         );
         const create = register.mock.calls[0]?.[0] as (req: CreateEditorWindowRequest) => unknown;
@@ -479,11 +763,10 @@ describe('registerPluginWindowHost', () => {
 
     it('refuses an addon that carries the window seam without the run-loop pump', () => {
         const register = vi.fn();
+        const native = windowNative({ registerPluginWindowHost: register });
+        Reflect.deleteProperty(native, 'servicePluginEditorRunLoops');
 
-        const registered = registerPluginWindowHost(
-            { registerPluginWindowHost: register, notifyPluginWindowClosed: vi.fn() },
-            { createWindow: createFakeWindow, getParentWindow: () => undefined, getScaleFactor: () => 1 }
-        );
+        const registered = registerPluginWindowHost(native, shellDeps(createFakeWindow));
 
         expect(registered).toBe(false);
         expect(register).not.toHaveBeenCalled();

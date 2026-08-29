@@ -46,14 +46,18 @@ const addonMethods = (): string[] =>
 /**
  * `#[napi]` items that are shell plumbing, not renderer-invokable commands:
  * the scan-worker process entry point, the engine's constructor and shutdown,
- * and the plugin-window host registration the shell itself performs. Pinned
+ * and the plugin-window host seam the shell itself drives — its registration,
+ * and the answers it needs when the user or the display resizes an editor
+ * window, neither of which the renderer can ask for. Pinned
  * by name so a new addon method lands in the registered set by default and
  * must be triaged here explicitly to escape the exposed/denied partition.
  */
 const ADDON_PLUMBING: ReadonlySet<string> = new Set([
+    'apply_plugin_gui_scale',
     'new',
     'notify_plugin_window_closed',
     'register_plugin_window_host',
+    'resize_plugin_gui',
     'run_plugin_scan_worker',
     'service_plugin_editor_run_loops',
     'shutdown',
@@ -222,9 +226,13 @@ describe('addon method naming', () => {
         expect(published.has('register_plugin_window_host')).toBe(true);
         expect(published.has('notify_plugin_window_closed')).toBe(true);
         expect(published.has('service_plugin_editor_run_loops')).toBe(true);
+        expect(published.has('resize_plugin_gui')).toBe(true);
+        expect(published.has('apply_plugin_gui_scale')).toBe(true);
         expect(addonMethodName('register_plugin_window_host')).toBe('registerPluginWindowHost');
         expect(addonMethodName('notify_plugin_window_closed')).toBe('notifyPluginWindowClosed');
         expect(addonMethodName('service_plugin_editor_run_loops')).toBe('servicePluginEditorRunLoops');
+        expect(addonMethodName('resize_plugin_gui')).toBe('resizePluginGui');
+        expect(addonMethodName('apply_plugin_gui_scale')).toBe('applyPluginGuiScale');
     });
 
     it('translates the shapes the surface actually contains', () => {
