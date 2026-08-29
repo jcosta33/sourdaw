@@ -1,0 +1,36 @@
+src/app/__tests__/DesktopStartupError.spec.tsx
+  s_ae074277795b45::t_15c293c09bd343 1-19
+src/app/main.tsx
+  s_ae074277795b45::t_ea82456c1db9f2 2,5-6,23-32,34-35
+  s_ae074277795b45::t_1e57fa2af165a5 9
+src/app/__tests__/resolveAppComposition.spec.ts
+  s_ae074277795b45::t_1e57fa2af165a5 9,19,25
+  s_ae074277795b45::t_15c293c09bd343 3,5-7,13-18,20-24,26-29,32-36,39,41-42,46,51-52,55,58-59
+  s_ae074277795b45::t_dc9904de288cfa 30-31
+src/app/resolveAppComposition.ts
+  s_ae074277795b45::t_1e57fa2af165a5 7,17,20
+  s_ae074277795b45::t_ea82456c1db9f2 1-4,13-14,19,21-23,25-29
+src/app/DesktopStartupError.tsx
+  s_ae074277795b45::t_c3c07ffc6a9da7 22
+  s_ae074277795b45::t_ea82456c1db9f2 1-21,23-31
+src/app/__tests__/main.spec.tsx
+  s_ae074277795b45::t_15c293c09bd343 5,8,20-25,39,54,62-70
+  s_ae074277795b45::t_dc9904de288cfa 45-47
+  s_ae074277795b45::t_41af7a4dd8edac 71-72
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "b5caebc10d7ef018d9be1fed19951a2231641dc7",
+  "prompts": {},
+  "sessions": {
+    "s_ae074277795b45": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04ab5-5234-7100-be1c-76ebfaba88d3",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
