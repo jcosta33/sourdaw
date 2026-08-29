@@ -157,6 +157,25 @@ describe('agent project repair inspection', () => {
         expect(inspectCurrentAgentProjectRepairState()).toBeNull();
     });
 
+    it('does not require repair when two arrangement snapshots repeat one another’s track ids', () => {
+        const tracks = tracksSlot([masterBus(), track('track-a'), track('track-b')]);
+        seedRootDocument({
+            tracks,
+            // The ordinary state after `duplicateArrangement`: the clone keeps
+            // every track, clip and alternative id of the arrangement it was
+            // copied from, and only its own `id` is reminted. Each snapshot's
+            // contents are a namespace of their own, so those repeats are not
+            // collisions.
+            arrangements: {
+                activeArrangementId: 'arrangement-1',
+                arrangements: [arrangement('arrangement-1', tracks), arrangement('arrangement-2', tracks)],
+            },
+            grooveTemplates: encodedGrooveTemplates(),
+        });
+
+        expect(inspectCurrentAgentProjectRepairState()).toBeNull();
+    });
+
     it('still reports a raw projection loss on a slot the store projects directly', () => {
         seedRootDocument({
             tracks: tracksSlot([masterBus(), track('track-a')]),

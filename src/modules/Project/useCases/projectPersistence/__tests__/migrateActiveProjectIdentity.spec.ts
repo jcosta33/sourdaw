@@ -328,6 +328,52 @@ describe('migrateActiveProjectIdentity', () => {
         });
     });
 
+    it('reports a superseded attempt as spent when its own write was discarded', async () => {
+        const firstPersistence = Promise.withResolvers<void>();
+        const secondPersistence = Promise.withResolvers<void>();
+        mocks.persistCrdtProject
+            .mockReturnValueOnce(firstPersistence.promise)
+            .mockReturnValueOnce(secondPersistence.promise);
+        mocks.project.value = legacyProject();
+
+        const first = migrateActiveProjectIdentity();
+        // The action transaction owning the first attempt's store write aborts,
+        // so the projection reverts to the legacy identity and a successor
+        // migration takes ownership of the seam.
+        mocks.project.value = legacyProject();
+        const second = migrateActiveProjectIdentity();
+        // The successor's write is discarded the same way, so when the first
+        // persistence resolves the projection carries no canonical identity at
+        // all — and the successor, not this spent attempt, owes its publication.
+        mocks.project.value = legacyProject();
+
+        firstPersistence.resolve();
+        await expect(first).resolves.toBe(true);
+
+        // The successor is the one that must report the discarded write.
+        secondPersistence.resolve();
+        await expect(second).rejects.toThrow('Minted project identity did not survive persistence');
+    });
+
+    it('reports failure when a discarded write leaves a malformed legacy identity in the projection', async () => {
+        const persistence = Promise.withResolvers<void>();
+        mocks.persistCrdtProject.mockReturnValueOnce(persistence.promise);
+        mocks.project.value = legacyProject('not-a-uuid');
+
+        const migrating = migrateActiveProjectIdentity();
+        expect(isCanonicalProjectId(mocks.project.value?.projectId)).toBe(true);
+        // The minted write is discarded while persistence is in flight. The
+        // projection is not empty — it carries the malformed version-1 id it
+        // always had — so presence alone cannot tell a migrated projection from
+        // this one, and reporting success hands `saveProject` a projection
+        // `buildProjectData` refuses.
+        mocks.project.value = legacyProject('not-a-uuid');
+
+        persistence.resolve();
+        await expect(migrating).rejects.toThrow('Minted project identity did not survive persistence');
+        expect(mocks.project.value).toMatchObject({ projectId: 'not-a-uuid' });
+    });
+
     it('is idempotent once the active project has a canonical identity', async () => {
         mocks.project.value = legacyProject('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');
 
