@@ -377,17 +377,25 @@ CLI, GitHub Actions, and App configuration — and use the launcher-resolved `gi
 
 Hosted checks run. `.github/workflows/health-gates.yml` is authoritative about which lanes it runs,
 when, and what each covers; `gate` is its stable summary, and other tooling reads that name, so do
-not rename it. GitHub can require workflow job checks, but Sourdaw deliberately keeps
-pull-request-editable workflows out of merge authority; that is a Sourdaw trust policy, not a GitHub
-platform restriction.
+not rename it. `Gate` is a required status check on `main`, in strict mode, by owner decision. The
+earlier policy of keeping pull-request-editable workflows out of merge authority is superseded: a
+head that softens its own gate is caught by review of that file like any other reviewed code, and
+`deliver` is the second gate, reading what gates a merge from the pinned `origin/main` copy of the
+workflow rather than the head's — so subverting the check means subverting both. That second gate
+is dormant while `deliver`'s CI admission is advisory; until it is armed, the ruleset is the only
+CI merge authority. Both suites now decide `gate`: `unit` on every run that touches the web scope,
+and the end-to-end suite on the heavy-lane runs where it executes.
 
 Those checks exist so that nobody runs them on this machine. Never run a repository-wide check
 locally to satisfy a gate the pipeline already runs on every push; Resource Safety governs what
 stays local.
 
 `main` is covered by a ruleset. Read the live one rather than trusting a copy here — it blocks
-deletion and non-fast-forward, forces a squashed pull request, and demands resolved threads, but the
-enforcement that actually holds is repository configuration, not something this file can promise.
+deletion and non-fast-forward, forces a squashed pull request, demands resolved threads, and
+requires `Gate` under a strict policy, but the enforcement that actually holds is repository
+configuration, not something this file can promise. Strict means the head must carry `main` before
+it can merge, so a lane that has fallen behind merges `origin/main` and republishes rather than
+waiting.
 
 Some crates compile to wasm packages that ship as committed artifacts. `scripts/wasm-artifacts.ts`
 is the list, and it names each package's build script because that name is not derivable from the
@@ -469,14 +477,15 @@ current head actually addresses it. A new head needs a new review.
 
 Before merge the orchestrator does its own final check on the current head: read the diff, confirm
 the change does what it was specified to do, that a test observes what its name claims, and that
-every accepted finding is actually addressed there rather than silenced. Inspect the pipeline's
-result for that head past the summary, because a softened leg can report a caused regression only as
-a warning annotation. CI is advisory, so its result is diagnostic rather than merge authority, but
-an unexplained failure or warning is still attributed to the change, or to a named pre-existing
-defect and filed, or it blocks. The checks are the pipeline's job, not a second local run of the
-same commands. Formatting is the exception worth doing locally, because it rewrites rather than
-reports:
-run it on the changed files and stage what it rewrote.
+every accepted finding is actually addressed there rather than silenced. No leg is softened any
+more, so a red suite reports as a red `Gate` rather than as a warning annotation, and `Gate` is
+required — a failure now blocks the merge instead of merely informing it. That raises rather than
+lowers what the orchestrator owes: a green `Gate` says the gates passed, not that the change does
+what it was specified to do, that a test observes what its name claims, or that a finding was
+addressed rather than silenced. Read the diff for those. An unexplained failure is still attributed
+to the change, or to a named pre-existing defect and filed. The checks are the pipeline's job, not a
+second local run of the same commands. Formatting is the exception worth doing locally, because it
+rewrites rather than reports: run it on the changed files and stage what it rewrote.
 
 Unrelated `origin/main` movement does not by itself stale a review. Re-review when the feature head
 changes in a way that touches the reviewed surface, and when you resolve conflicts. Base

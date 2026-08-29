@@ -24,14 +24,17 @@ name: Health gates
 # has classified yet — the classifier fails towards running too much.
 #
 # `gate` is the stable workflow summary. It depends on every job whose result
-# currently decides that summary, and passes when each either succeeded or was
-# legitimately skipped. It is informational today: the live ruleset requires no
-# status checks. GitHub can require workflow job checks, but Sourdaw deliberately
-# keeps pull-request-editable workflows out of merge authority; that is this
-# repository's trust policy, not a GitHub platform restriction. A required check
-# from a workflow skipped by trigger-level path, branch, or commit-message
-# filters remains pending; `gate` only makes conditional job skips resolve. Do
-# not rename `gate`.
+# decides that summary, and passes when each either succeeded or was
+# legitimately skipped. The `main` ruleset requires it, in strict mode, by owner
+# decision, so it is merge authority rather than a report. That decision accepts
+# what it costs: this workflow is pull-request-editable, so an author who softens
+# a leg here softens their own gate, and what catches that is review of this file
+# like any other reviewed code. `deliver` carries a dormant required-CI path that
+# reads the gating job set from the pinned `origin/main` copy of this file rather
+# than the head's; while that path stays advisory the ruleset is the only CI
+# merge authority. A required check from a workflow skipped by trigger-level
+# path, branch, or commit-message filters remains pending; `gate` only makes
+# conditional job skips resolve. Do not rename `gate`.
 #
 # Runners are standard GitHub-hosted labels only. Public repositories bill
 # nothing for those; larger and GPU runners bill even here.
@@ -358,11 +361,15 @@ jobs:
       # default of two exists for the agent resource guard, not for CI.
       - name: Run shard
         id: run_shard
-        continue-on-error: ${{ github.event_name == 'pull_request' || github.event_name == 'pull_request_review' }}
         env:
           VITEST_MAX_WORKERS: 4
         run: pnpm run test:run --shard=${{ matrix.shard }}/4
 
+      # The shard failure is already fatal above; this only names which of the
+      # four it was, in the annotation list and the run summary, so a reader
+      # does not open four logs to find the one that failed. `!cancelled()`
+      # replaces the implicit `success()` that a failed shard would otherwise
+      # skip this step on.
       - name: Report shard failure
         if: ${{ !cancelled() && steps.run_shard.outcome == 'failure' }}
         env:
@@ -562,9 +569,10 @@ jobs:
 
       - name: Run shard
         id: run_shard
-        continue-on-error: ${{ github.event_name == 'pull_request' || github.event_name == 'pull_request_review' }}
         run: pnpm test:e2e --shard=${{ matrix.shard }}/12 --reporter=blob
 
+      # As in the unit matrix: the failure is already fatal, and this names the
+      # shard so twelve logs do not have to be opened to find it.
       - name: Report shard failure
         if: ${{ !cancelled() && steps.run_shard.outcome == 'failure' }}
         env:
@@ -1261,21 +1269,43 @@ jobs:
     # It runs whatever happened upstream, so a pull request that legitimately
     # skips every heavy leg still reports a conclusion instead of sitting pending.
     #
-    # The full `unit` and general `e2e` jobs are deliberately absent. They run,
-    # and their results are visible on the pull request, but they do not decide
-    # this summary yet. The focused Browser AI hardware proof below is separate:
-    # its deterministic positive admission boundary does gate. The test pins the
-    # current non-gating job list, not a claimed future admission policy.
+    # `unit` gates on every event. It runs on every push that touches the web
+    # scope, its shards fail their job outright, and a failure therefore fails
+    # this summary. That is the whole point of the change: before it, a broken
+    # spec reached `main` as a warning annotation nobody had to read.
     #
-    # The unit suite has an existing-main baseline failure. Gating on it now
-    # would mean a red check that says "main was already broken" on every
-    # unrelated change, and would freeze the repository against a defect its
-    # author is not fixing. Promote it once `main` is green and deterministic.
+    # `e2e` gates on the runs where it executes. It is a heavy-lane job, so a
+    # push run skips it and this summary concludes on the skip; an approving
+    # review, the nightly, or a dispatch runs all twelve shards, and a failed
+    # shard fails this summary there. An approval precedes every merge, so no
+    # change reaches `main` without one run of the suite deciding this check.
     #
-    # Some end-to-end tests download a model from a third-party host at run time
-    # and fail with `Failed to fetch` when that host is unreachable, which makes
-    # the suite non-deterministic as a gate rather than merely red. Promote it
-    # once those tests no longer reach the network and the suite is green.
+    # `e2e-report` is deliberately absent, and stays absent. It merges blob
+    # reports into an artifact; it observes nothing about the product, so its
+    # result is not evidence and must never be able to block or clear a merge.
+    #
+    # Both historical exclusions are retired, but for different reasons, and the
+    # difference is worth being exact about.
+    #
+    # The end-to-end exclusion was a determinism claim, and that claim is now
+    # false: no spec in `tests/e2e/` fetches a third-party host to assert on.
+    # The DDSP render proof aborts `storage.googleapis.com/magentadata` and
+    # asserts zero requests reached it; the model-manager download flow routes
+    # and aborts the Kokoro artifact URL; the smoke set blocks every non-loopback
+    # request outright. One residual is stated rather than hidden:
+    # `browserAiPanelsTestId.spec.ts` clicks Download with no route installed, so
+    # a real request to the Kokoro host leaves the runner, and a fast failure
+    # from that host can flip the row to "download failed" before the spec's
+    # progress-bar assertion settles. That is a flake window in one spec, not a
+    # suite-wide network dependency, and the spec owes a route of its own.
+    #
+    # The unit exclusion was a baseline claim, and it is retired by decision
+    # rather than by evidence that `main` is green. `Gate` is a required check
+    # now, so a leg outside it is a leg that cannot stop anything, which is the
+    # hole this list existed to leave open. Both suites are therefore in, and
+    # what contains a pre-existing red is the ordinary obligation to fix or file
+    # it — not a softened leg that hides it. Read the last nightly before
+    # assuming `main` is clean; the nightly is the only run that observes it.
     #
     # `codeql` and `secrets` were held out until each had completed a run, on
     # the principle that gating on unobserved behaviour is the mistake that left
@@ -1284,9 +1314,7 @@ jobs:
     # their first hosted run and gate for the same reason: each is deterministic
     # by construction — the smoke set reaches no network at all, and the diff
     # scan carries a positive control that fails the job when the scanner stops
-    # detecting. Neither exclusion above is weakened by that: `unit` still
-    # carries a main baseline failure, and the general `e2e` suite still fetches
-    # a model from a third-party host.
+    # detecting.
     # `!cancelled()` still evaluates failed or skipped dependencies for a live
     # run. The review predicate prevents an intentionally skipped review run
     # from reporting a successful Gate from all-skipped dependencies.
@@ -1296,6 +1324,7 @@ jobs:
       - static
       - lint
       - boundaries
+      - unit
       - dependency-review
       - pr-secrets
       - smoke
@@ -1303,6 +1332,7 @@ jobs:
       - rust
       - native-macos
       - native-windows
+      - e2e
       - browser-ai-webgpu
       - codeql
       - secrets

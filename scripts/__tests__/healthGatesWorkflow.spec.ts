@@ -68,12 +68,15 @@ const BROWSER_AI_WEBGPU_TEST_MATCH = ['browserAiWebGpuAdmission.spec.ts', 'brows
 const BROWSER_AI_WEBGPU_ORIGIN = 'http://localhost:5188';
 const BROWSER_AI_WEBGPU_SERVER_COMMAND = 'pnpm dev --host 127.0.0.1 --port 5188 --strictPort';
 // Exact rather than a subset: a job added to the Gate without a first observed
-// hosted run is the mistake this pin exists to catch.
+// hosted run is the mistake this pin exists to catch, and `Gate` is a required
+// status check on `main`, so a job dropped from this list stops deciding merges
+// while every check still reads green.
 const GATE_MEMBERS = [
     'decide',
     'static',
     'lint',
     'boundaries',
+    'unit',
     'dependency-review',
     'pr-secrets',
     'smoke',
@@ -81,11 +84,15 @@ const GATE_MEMBERS = [
     'rust',
     'native-macos',
     'native-windows',
+    'e2e',
     'browser-ai-webgpu',
     'codeql',
     'secrets',
 ] as const;
-const CURRENT_NON_GATING_JOBS = ['unit', 'e2e'] as const;
+// A reporter observes nothing about the product — it merges blob artifacts —
+// so its result is not evidence and must never be able to block or clear a
+// merge, however green it happens to be.
+const NON_GATING_JOBS = ['e2e-report'] as const;
 const DEPLOY_WEB_JOB = 'deploy-web';
 const DEPLOY_WEB_JOB_NAME = 'Daily web deploy';
 // A dispatch runs on whichever ref the person firing it chose, so the branch
@@ -161,10 +168,17 @@ const RELEASE_SIDE_EFFECTS = [
     /release:propose/u,
     /release:cut/u,
 ] as const;
-const CURRENT_NON_GATING_JOB_WIRING = {
+// The two suites are Gate members, so their scope conditions decide when the
+// required check may legitimately conclude on a skip. `unit` runs on every push
+// touching the web scope; `e2e` is heavy-lane only, so a push run skips it and
+// an approving review, the nightly, or a dispatch is where it decides the Gate.
+// Widening either condition would silently retire a proof from the merge path.
+const SUITE_JOB_WIRING = {
     unit: { needs: 'decide', if: "needs.decide.outputs.web == 'true'" },
     e2e: { needs: 'decide', if: "needs.decide.outputs.heavy == 'true' && needs.decide.outputs.e2e == 'true'" },
-} satisfies Record<(typeof CURRENT_NON_GATING_JOBS)[number], Readonly<{ needs: string; if: string }>>;
+} satisfies Record<string, Readonly<{ needs: string; if: string }>>;
+// A softened shard step reports a failing suite as a passing required check.
+const SUITE_SHARD_STEP = 'Run shard';
 
 const repositoryRoot = resolve(import.meta.dirname, '../..');
 const parsedPackageManifest: unknown = JSON.parse(readFileSync(join(repositoryRoot, 'package.json'), 'utf8'));
@@ -390,6 +404,24 @@ function assertPullRequestSecretScan(candidate: UnknownRecord): void {
     }
 }
 
+// Both suites decide the required Gate, so each owes two things: the scope
+// condition that says when a skip is legitimate, and a shard step that fails
+// its job. Softening either reports a failing suite as a passing merge gate.
+function assertBlockingSuites(candidate: UnknownRecord): void {
+    for (const [job, expectedWiring] of Object.entries(SUITE_JOB_WIRING)) {
+        const suite = jobAt(candidate, job);
+        if (suite.needs !== expectedWiring.needs || suite.if !== expectedWiring.if) {
+            throw new Error(`${job} must retain its current decide dependency and scope condition`);
+        }
+        if (stepNamed(suite, SUITE_SHARD_STEP)['continue-on-error'] !== undefined) {
+            throw new Error(`${job} shards must fail their job rather than report a warning`);
+        }
+        if (suite['continue-on-error'] !== undefined) {
+            throw new Error(`${job} must not use job-level continue-on-error`);
+        }
+    }
+}
+
 function assertJobGraph(candidate: UnknownRecord): void {
     const dependencyReview = jobAt(candidate, 'dependency-review');
     if (dependencyReview.needs !== 'decide' || dependencyReview.if !== PULL_REQUEST_PAYLOAD_CONDITION) {
@@ -410,14 +442,10 @@ function assertJobGraph(candidate: UnknownRecord): void {
             throw new Error(`gate must depend on ${job}`);
         }
     }
-    for (const job of CURRENT_NON_GATING_JOBS) {
-        const nonGatingJob = jobAt(candidate, job);
-        const expectedWiring = CURRENT_NON_GATING_JOB_WIRING[job];
-        if (nonGatingJob.needs !== expectedWiring.needs || nonGatingJob.if !== expectedWiring.if) {
-            throw new Error(`${job} must retain its current decide dependency and scope condition`);
-        }
+    assertBlockingSuites(candidate);
+    for (const job of NON_GATING_JOBS) {
         if (gateNeeds.includes(job)) {
-            throw new Error(`${job} is currently non-gating`);
+            throw new Error(`${job} observes nothing about the product and must stay outside the gate`);
         }
     }
     if (gateNeeds.length !== GATE_MEMBERS.length) {
@@ -914,7 +942,7 @@ describe('health gates workflow contract', () => {
         );
     });
 
-    it('keeps the current fast, heavy, and non-gating job list', () => {
+    it('makes both suites block the required Gate and keeps the reporter out of it', () => {
         expect(() => assertJobGraph(workflow)).not.toThrow();
         const eventGatedDependencyReview = asRecord(
             structuredClone(workflow),
@@ -924,11 +952,13 @@ describe('health gates workflow contract', () => {
         expect(() => assertJobGraph(eventGatedDependencyReview)).toThrow(
             'dependency review must gate on the pull request payload rather than the triggering event'
         );
-        const overGatedSummary = asRecord(structuredClone(workflow), 'over-gated summary workflow');
-        arrayAt(jobAt(overGatedSummary, 'gate'), 'needs').push('unit');
-        expect(() => assertJobGraph(overGatedSummary)).toThrow('unit is currently non-gating');
+        const reporterGatedSummary = asRecord(structuredClone(workflow), 'reporter-gated summary workflow');
+        arrayAt(jobAt(reporterGatedSummary, 'gate'), 'needs').push('e2e-report');
+        expect(() => assertJobGraph(reporterGatedSummary)).toThrow(
+            'e2e-report observes nothing about the product and must stay outside the gate'
+        );
         const widenedSummary = asRecord(structuredClone(workflow), 'widened summary workflow');
-        arrayAt(jobAt(widenedSummary, 'gate'), 'needs').push('e2e-report');
+        arrayAt(jobAt(widenedSummary, 'gate'), 'needs').push('nightly-report');
         expect(() => assertJobGraph(widenedSummary)).toThrow('gate must depend on exactly the pinned member list');
         const narrowedSummary = asRecord(structuredClone(workflow), 'narrowed summary workflow');
         const narrowedNeeds = arrayAt(jobAt(narrowedSummary, 'gate'), 'needs');
@@ -947,12 +977,28 @@ describe('health gates workflow contract', () => {
         expect(() => assertJobGraph(ungatedE2eScope)).toThrow(
             'e2e must retain its current decide dependency and scope condition'
         );
-        const prematureUnitGate = asRecord(structuredClone(workflow), 'premature unit gate workflow');
-        arrayAt(jobAt(prematureUnitGate, 'gate'), 'needs').push('unit');
-        expect(() => assertJobGraph(prematureUnitGate)).toThrow('unit is currently non-gating');
-        const prematureE2eGate = asRecord(structuredClone(workflow), 'premature e2e gate workflow');
-        arrayAt(jobAt(prematureE2eGate, 'gate'), 'needs').push('e2e');
-        expect(() => assertJobGraph(prematureE2eGate)).toThrow('e2e is currently non-gating');
+        // Dropping a suite from the Gate is the regression that reopens the hole
+        // this list closed: the suite still runs, still goes red, and stops
+        // deciding the required check.
+        for (const suite of ['unit', 'e2e']) {
+            const ungatedSuite = asRecord(structuredClone(workflow), `ungated ${suite} workflow`);
+            const ungatedNeeds = arrayAt(jobAt(ungatedSuite, 'gate'), 'needs');
+            ungatedNeeds.splice(ungatedNeeds.indexOf(suite), 1);
+            expect(() => assertJobGraph(ungatedSuite)).toThrow(`gate must depend on ${suite}`);
+
+            // Softening the shard step is the other route to the same hole: the
+            // job stays in the Gate and reports success over a failing suite.
+            const softenedSuite = asRecord(structuredClone(workflow), `softened ${suite} workflow`);
+            stepNamed(jobAt(softenedSuite, suite), 'Run shard')['continue-on-error'] =
+                "${{ github.event_name == 'pull_request' }}";
+            expect(() => assertJobGraph(softenedSuite)).toThrow(
+                `${suite} shards must fail their job rather than report a warning`
+            );
+
+            const softenedSuiteJob = asRecord(structuredClone(workflow), `job-softened ${suite} workflow`);
+            jobAt(softenedSuiteJob, suite)['continue-on-error'] = true;
+            expect(() => assertJobGraph(softenedSuiteJob)).toThrow(`${suite} must not use job-level continue-on-error`);
+        }
     });
 
     it('fetches immutable measurement provenance history only in the unit matrix', () => {

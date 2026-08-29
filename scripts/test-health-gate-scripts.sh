@@ -303,6 +303,7 @@ const expectedGateNeeds = [
     'static',
     'lint',
     'boundaries',
+    'unit',
     'dependency-review',
     'pr-secrets',
     'smoke',
@@ -310,6 +311,7 @@ const expectedGateNeeds = [
     'rust',
     'native-macos',
     'native-windows',
+    'e2e',
     'browser-ai-webgpu',
     'codeql',
     'secrets',
@@ -552,7 +554,6 @@ expect(
     unitRun === 'pnpm run test:run --shard=${{ matrix.shard }}/4',
     'unit shard must use explicit pnpm run so the wrapper receives only the Vitest shard argument'
 );
-const pullRequestReportAllowance = "${{ github.event_name == 'pull_request' || github.event_name == 'pull_request_review' }}";
 const shardFailureCondition = "${{ !cancelled() && steps.run_shard.outcome == 'failure' }}";
 expect(
     unit?.['continue-on-error'] === undefined,
@@ -564,13 +565,17 @@ expect(
 );
 expect(unitRunStep?.id === 'run_shard', 'unit Run shard step must keep its stable id');
 expect(e2eRunStep?.id === 'run_shard', 'end-to-end Run shard step must keep its stable id');
+// Both suites are Gate members now, so a softened shard step would report a
+// failing suite as a passing required check — the exact hole this pin closes.
+// `continue-on-error` on any event, not merely on the pull-request events it
+// used to carry, is what must stay absent.
 expect(
-    unitRunStep?.['continue-on-error'] === pullRequestReportAllowance,
-    'unit Run shard must allow failure only for pull request events so schedule and workflow_dispatch stay blocking'
+    unitRunStep?.['continue-on-error'] === undefined,
+    'unit Run shard must fail its job on every event so a failing shard fails the required Gate'
 );
 expect(
-    e2eRunStep?.['continue-on-error'] === pullRequestReportAllowance,
-    'end-to-end Run shard must allow failure only for pull request events so schedule and workflow_dispatch stay blocking'
+    e2eRunStep?.['continue-on-error'] === undefined,
+    'end-to-end Run shard must fail its job on every event so a failing shard fails the required Gate'
 );
 expect(
     unitFailureWarning?.if === shardFailureCondition,
@@ -608,8 +613,10 @@ expect(
         gateNeeds.every((need, index) => need === expectedGateNeeds[index]),
     `Gate needs must stay exactly: ${expectedGateNeeds.join(', ')}`
 );
-expect(!gateNeeds.includes('unit'), 'unit suite must remain outside required Gate needs');
-expect(!gateNeeds.includes('e2e'), 'e2e suite must remain outside required Gate needs');
+expect(gateNeeds.includes('unit'), 'unit suite must decide the required Gate');
+expect(gateNeeds.includes('e2e'), 'e2e suite must decide the required Gate');
+// A reporter merges blob artifacts and observes nothing about the product, so
+// its result is not evidence and must never block or clear a merge.
 expect(!gateNeeds.includes('e2e-report'), 'e2e report must remain outside required Gate needs');
 expect(
     gateRun.includes('select(.value.result != "success" and .value.result != "skipped")') &&
