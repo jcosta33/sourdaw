@@ -7,6 +7,11 @@ type WorkspaceMobileGateProps = {
     children: ReactNode;
 };
 
+const ScaleSynchronizationBoundary = ({ children }: WorkspaceMobileGateProps): ReactElement => {
+    useDisplayScaleSynchronization();
+    return <>{children}</>;
+};
+
 /**
  * Cross-module surface for the mobile viewport gate.
  *
@@ -19,12 +24,15 @@ type WorkspaceMobileGateProps = {
  * the gate now owns the shell's mount rather than just its output, `MobileGate`'s
  * viewport check is one-way — see the note on `useIsMobile`.
  *
- * Display-scale synchronization also belongs here, outside the gated child. Its effect
- * runs after `MobileGate`'s first render has classified the reset, unscaled desktop
- * viewport, then reapplies the stored preference without making AppShell responsible
- * for the capability that determines whether AppShell can mount.
+ * Display-scale synchronization also belongs here, outside AppShell but inside the
+ * mobile gate. The boundary mounts only after `MobileGate` has classified the reset,
+ * unscaled viewport as desktop eligible, then reapplies the stored preference without
+ * allowing scale to turn a phone viewport into an eligible desktop viewport.
  */
 export const WorkspaceMobileGate = ({ children }: WorkspaceMobileGateProps): ReactElement => {
-    useDisplayScaleSynchronization();
-    return <MobileGate>{children}</MobileGate>;
+    return (
+        <MobileGate>
+            <ScaleSynchronizationBoundary>{children}</ScaleSynchronizationBoundary>
+        </MobileGate>
+    );
 };

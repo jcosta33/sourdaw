@@ -149,8 +149,9 @@ describe('WorkspaceMobileGate', () => {
         expect(childMounted).toHaveBeenCalledTimes(1);
     });
 
-    it('never mounts its children on a phone viewport, so no shell effect runs', () => {
-        setViewportWidth(375);
+    it('does not apply a stored 50% scale or mount its children on a phone viewport', () => {
+        setViewportWidth(393);
+        displayScaleMocks.preferences.current = { uiScale: 0.5 };
 
         render(
             <WorkspaceMobileGate>
@@ -161,23 +162,33 @@ describe('WorkspaceMobileGate', () => {
         expect(screen.getByText('Desktop DAW')).toBeInTheDocument();
         expect(screen.queryByTestId('shell-probe')).not.toBeInTheDocument();
         expect(childMounted).not.toHaveBeenCalled();
+        expect(applyDisplayScale).not.toHaveBeenCalled();
+        expect(displayScaleMocks.listeners.size).toBe(0);
     });
 
-    it('mounts the children when the viewport widens past the breakpoint', () => {
+    it('applies and subscribes to display scale only after the viewport becomes desktop eligible', () => {
         setViewportWidth(375);
+        displayScaleMocks.preferences.current = { uiScale: 0.5 };
 
-        render(
+        const { unmount } = render(
             <WorkspaceMobileGate>
                 <ShellProbe />
             </WorkspaceMobileGate>
         );
 
         expect(childMounted).not.toHaveBeenCalled();
+        expect(applyDisplayScale).not.toHaveBeenCalled();
+        expect(displayScaleMocks.listeners.size).toBe(0);
 
         resizeViewportTo(1280);
 
         expect(screen.getByTestId('shell-probe')).toBeInTheDocument();
         expect(childMounted).toHaveBeenCalledTimes(1);
+        expect(applyDisplayScale).toHaveBeenCalledWith(0.5);
+        expect(displayScaleMocks.listeners.size).toBe(1);
+
+        unmount();
+        expect(displayScaleMocks.listeners.size).toBe(0);
     });
 
     it('preserves shell state when a desktop window is resized below the breakpoint and back', () => {
