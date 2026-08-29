@@ -1,0 +1,53 @@
+crates/daw-engine/src/timeline.rs
+  s_4f908a5afb6b58::t_d53e04801b50a9 1707-1708
+  s_4f908a5afb6b58::t_e8e84050006f2f 1426-1442
+  s_4f908a5afb6b58::t_45188706d6119f 1085-1089,1097-1106,1113-1115,1129-1131,1144-1154,1163-1164
+  s_4f908a5afb6b58::t_1c6be05206cc66 1760
+  s_4f908a5afb6b58::t_834316e3ecf26f 115
+  s_4f908a5afb6b58::t_007aaf4cde4525 1165,2822-2974
+  s_4f908a5afb6b58::t_84d64333bf2ffb 1771-1777
+  s_4f908a5afb6b58::t_19c7a0a7b2fdf6 2019-2027,2029-2033
+  s_4f908a5afb6b58::t_abce9f8420a8c2 1166
+src/modules/AudioEngine/useCases/offlineRender/__tests__/selectOfflineRenderEngine.spec.ts
+  s_4f908a5afb6b58::t_1c4915f96bea69 179-192
+crates/daw-engine/src/scheduler.rs
+  s_4f908a5afb6b58::t_397eb2252a218e 557-558
+  s_4f908a5afb6b58::t_392105cdf1636d 1874-1881
+  s_4f908a5afb6b58::t_d481cdf92d2974 411-417
+  s_4f908a5afb6b58::t_0fb23d68c094b7 5566-5568,5573-5603
+  s_4f908a5afb6b58::t_9091a9ca8630b0 5569-5572
+  s_4f908a5afb6b58::t_604507f3762df4 5565
+src/modules/AudioEngine/useCases/livePlayback/__tests__/projectLiveGraphTopology.spec.ts
+  s_4f908a5afb6b58::t_dd88ad3d88d9ff 137-143,152,154-167
+crates/daw-engine/src/lib.rs
+  s_4f908a5afb6b58::t_da3eaf6bdc0660 618-629
+src/modules/AudioEngine/useCases/livePlayback/projectLiveGraphTopology.ts
+  s_4f908a5afb6b58::t_7b1d709451f776 77-87,99,109-112,116-117
+src/modules/AudioEngine/useCases/offlineRender/selectOfflineRenderEngine.ts
+  s_4f908a5afb6b58::t_f1f8ac1e2e3773 27
+crates/sourdaw-native/src/commands/graph.rs
+  s_4f908a5afb6b58::t_d175eeb3a355e5 1801-1805
+  s_4f908a5afb6b58::t_e9ba429a523395 114-117
+  s_4f908a5afb6b58::t_4db7e71b48552a 1766-1769,1775-1778
+  s_4f908a5afb6b58::t_20d24fa340ae36 4293-4297
+  s_4f908a5afb6b58::t_b9389006b10be6 4357-4529
+  s_4f908a5afb6b58::t_beda62866e7a00 4534-4537
+  s_4f908a5afb6b58::t_a8897cb05c9baa 4337,4345
+  s_4f908a5afb6b58::t_03dccba1731426 1379,1390-1403
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "73de90159e871c4fcaeccf8b0f6c95e84e42aee1",
+  "prompts": {},
+  "sessions": {
+    "s_4f908a5afb6b58": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fcb92ba4-bf56-47a4-8b57-803f335a449e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
