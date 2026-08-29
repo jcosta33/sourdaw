@@ -294,7 +294,6 @@ beforeEach(() => {
     mocks.prepareResourceLease.mockResolvedValue(undefined);
     mocks.protectResourceLease.mockReturnValue(undefined);
     mocks.prepareContinuation.mockReturnValue({ promote: () => undefined, discard: () => undefined });
-    mocks.recordReceipt.mockReturnValue({ warning: null, effectsPending: false, committedWorkRecorded: true });
     mocks.issueApprovalBinding.mockImplementation(({ commandBatch: approvedBatch }) =>
         issueCommandApprovalBinding({
             authority: approvedBatch.authority,
@@ -419,10 +418,16 @@ describe('executeConfirmedCommandBatch', () => {
             })
         ).resolves.toMatchObject({ status: 'recovery-failed' });
 
-        expect(mocks.recordReceipt).toHaveBeenLastCalledWith(missingGroupConfirmation, receipt, {
+        expect(mocks.recordCommittedRecoveryFailure).toHaveBeenLastCalledWith(missingGroupConfirmation, {
+            category: 'internal',
+            retriable: false,
+            receipt,
+            actions: missingGroupConfirmation.actions,
+            commandBatch,
             revertGroupId: 'batch-1',
-            completesRun: false,
+            committedRevision: 'revision-2',
         });
+        expect(mocks.recordReceipt).not.toHaveBeenCalled();
     });
 
     it.each([
@@ -535,15 +540,17 @@ describe('executeConfirmedCommandBatch', () => {
             content:
                 'The project change remains durably committed, but pending-effect reconciliation could not continue: pending-effect continuation failed',
         });
-        expect(mocks.recordReceipt).toHaveBeenCalledWith(confirmation, receipt, {
-            revertGroupId: 'batch-1',
-            completesRun: false,
-        });
-        expect(mocks.recordPostCommitRecoveryFailure).toHaveBeenCalledWith(confirmation, {
+        expect(mocks.recordCommittedRecoveryFailure).toHaveBeenCalledExactlyOnceWith(confirmation, {
             category: 'internal',
             retriable: false,
-            receiptIdentity: 'receipt-identity',
+            receipt,
+            actions: confirmation.actions,
+            commandBatch,
+            revertGroupId: 'batch-1',
+            committedRevision: 'revision-2',
         });
+        expect(mocks.recordReceipt).not.toHaveBeenCalled();
+        expect(mocks.recordPostCommitRecoveryFailure).not.toHaveBeenCalled();
         expect(releaseCancellation).toHaveBeenCalledOnce();
         expect(mocks.setActiveAborter).toHaveBeenLastCalledWith(null);
         expect(mocks.setChatGenerating).toHaveBeenLastCalledWith(false);
@@ -582,13 +589,9 @@ describe('executeConfirmedCommandBatch', () => {
         expect(mocks.recordPostCommitRecoveryFailure).not.toHaveBeenCalled();
     });
 
-    it('should atomically terminalize committed recovery when receipt recording fails before work is live', async () => {
+    it('should avoid a split receipt writer when recovery settlement reports a persistence warning', async () => {
         mocks.prepareResourceLease.mockRejectedValue(new Error('pending-effect continuation failed'));
-        mocks.recordReceipt.mockReturnValue({
-            warning: 'Agent run persistence warning.',
-            effectsPending: false,
-            committedWorkRecorded: false,
-        });
+        mocks.recordCommittedRecoveryFailure.mockReturnValue('Agent run persistence warning.');
 
         const result = await execute({ priorVerifiedBatchReceipt: receipt, recoveringPendingEffects: true });
 
@@ -604,7 +607,7 @@ describe('executeConfirmedCommandBatch', () => {
             error: reason,
             content: `The project change remains durably committed, but pending-effect reconciliation could not continue: ${reason}`,
         });
-        expect(mocks.recordCommittedRecoveryFailure).toHaveBeenCalledWith(confirmation, {
+        expect(mocks.recordCommittedRecoveryFailure).toHaveBeenCalledExactlyOnceWith(confirmation, {
             category: 'internal',
             retriable: false,
             receipt,
@@ -613,29 +616,13 @@ describe('executeConfirmedCommandBatch', () => {
             revertGroupId: 'batch-1',
             committedRevision: 'revision-2',
         });
+        expect(mocks.recordReceipt).not.toHaveBeenCalled();
         expect(mocks.recordPostCommitRecoveryFailure).not.toHaveBeenCalled();
-    });
-
-    it('should terminalize recovery after a later receipt saga write failure preserves committed work', async () => {
-        mocks.prepareResourceLease.mockRejectedValue(new Error('pending-effect continuation failed'));
-        mocks.recordReceipt.mockReturnValue({
-            warning: 'Agent run persistence warning.',
-            effectsPending: false,
-            committedWorkRecorded: true,
-        });
-
-        await execute({ priorVerifiedBatchReceipt: receipt, recoveringPendingEffects: true });
-
-        expect(mocks.recordPostCommitRecoveryFailure).toHaveBeenCalledWith(confirmation, {
-            category: 'internal',
-            retriable: false,
-            receiptIdentity: 'receipt-identity',
-        });
     });
 
     it('should surface a terminal lifecycle persistence warning through committed-effect recovery failure', async () => {
         mocks.prepareResourceLease.mockRejectedValue(new Error('pending-effect continuation failed'));
-        mocks.recordPostCommitRecoveryFailure.mockReturnValue('Terminal lifecycle persistence warning.');
+        mocks.recordCommittedRecoveryFailure.mockReturnValue('Terminal lifecycle persistence warning.');
 
         const result = await execute({ priorVerifiedBatchReceipt: receipt, recoveringPendingEffects: true });
 
@@ -651,6 +638,8 @@ describe('executeConfirmedCommandBatch', () => {
             error: reason,
             content: `The project change remains durably committed, but pending-effect reconciliation could not continue: ${reason}`,
         });
+        expect(mocks.recordReceipt).not.toHaveBeenCalled();
+        expect(mocks.recordCommittedRecoveryFailure).toHaveBeenCalledOnce();
     });
 
     it('should release preview resources and return the exact preview-mode failure', async () => {

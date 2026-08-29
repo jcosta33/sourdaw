@@ -195,34 +195,16 @@ export async function executeConfirmedCommandBatch(
     } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);
         if (hasCommittedProjectPriorReceipt(priorVerifiedBatchReceipt)) {
-            const receiptPersistence = confirmedBatchOutcomeSupport.recordTrackedAgentRunReceipt(
-                confirmation,
-                priorVerifiedBatchReceipt,
-                {
-                    revertGroupId: group.groupId,
-                    completesRun: false,
-                }
-            );
-            const runPersistenceWarning =
-                receiptPersistence.warning && !receiptPersistence.committedWorkRecorded
-                    ? agentRunExecutionSettlement.recordCommittedRecoveryFailure(confirmation, {
-                          category: 'internal',
-                          retriable: false,
-                          receipt: priorVerifiedBatchReceipt,
-                          actions: confirmation.actions,
-                          commandBatch,
-                          revertGroupId: group.groupId,
-                          committedRevision: captureProjectRevision(),
-                      })
-                    : agentRunExecutionSettlement.recordPostCommitRecoveryFailure(confirmation, {
-                          category: 'internal',
-                          retriable: false,
-                          receiptIdentity:
-                              confirmedBatchOutcomeSupport.getVerifiedReceiptIdentity(priorVerifiedBatchReceipt),
-                      });
-            const recoveryFailureReason = [reason, receiptPersistence.warning, runPersistenceWarning]
-                .filter(Boolean)
-                .join(' ');
+            const runPersistenceWarning = agentRunExecutionSettlement.recordCommittedRecoveryFailure(confirmation, {
+                category: 'internal',
+                retriable: false,
+                receipt: priorVerifiedBatchReceipt,
+                actions: confirmation.actions,
+                commandBatch,
+                revertGroupId: group.groupId,
+                committedRevision: captureProjectRevision(),
+            });
+            const recoveryFailureReason = [reason, runPersistenceWarning].filter(Boolean).join(' ');
             updatePendingActionConfirmationStatus({
                 confirmationId: confirmation.id,
                 status: 'failed',

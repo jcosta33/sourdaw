@@ -295,7 +295,7 @@ describe('agentRunExecutionSettlement', () => {
             committedRevision: 'revision-2',
         });
 
-        expect(setItem).toHaveBeenCalledOnce();
+        expect(setItem).toHaveBeenCalledExactlyOnceWith('sourdaw-agent-runs', expect.any(String));
         setItem.mockRestore();
         expect(readAgentRunState().runs[0]).toMatchObject({
             pendingEffectContinuations: [expect.objectContaining({ batchId: 'batch-1' })],
