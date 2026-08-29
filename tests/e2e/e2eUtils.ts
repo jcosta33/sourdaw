@@ -17,8 +17,9 @@ type SetupWorkspaceOptions = {
 
 /**
  * Existing E2E specs address the application through Playwright's Page fixture.
- * Keep that stable in e2e mode while the dedicated browser-display-scale spec
- * exercises the production iframe boundary directly.
+ * Keep that stable on either a reused development server or the e2e-mode server,
+ * while the dedicated browser-display-scale spec exercises the production iframe
+ * boundary directly.
  */
 export async function enable_direct_e2e_viewport(page: Page): Promise<void> {
     await page.context().addInitScript(() => {

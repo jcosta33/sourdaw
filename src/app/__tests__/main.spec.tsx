@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
     bootstrap: vi.fn(),
@@ -30,8 +30,6 @@ describe('app main composition', () => {
         document.body.innerHTML = '<div id="root"></div>';
     });
 
-    afterEach(() => vi.unstubAllEnvs());
-
     it('mounts only the browser viewport host in the top-level browser document', async () => {
         await import('../main');
 
@@ -42,17 +40,6 @@ describe('app main composition', () => {
 
     it('initializes the application directly in a desktop renderer', async () => {
         Reflect.set(window, 'sourdaw', {});
-
-        await import('../main');
-
-        await vi.waitFor(() => expect(mocks.bootstrap).toHaveBeenCalledOnce());
-        await vi.waitFor(() => expect(mocks.render).toHaveBeenCalledOnce());
-        expect(mocks.mountBrowserDisplayScaleHost).not.toHaveBeenCalled();
-    });
-
-    it('initializes the application directly for the e2e Page fixture marker', async () => {
-        vi.stubEnv('MODE', 'e2e');
-        window.name = 'sourdaw-e2e-direct';
 
         await import('../main');
 

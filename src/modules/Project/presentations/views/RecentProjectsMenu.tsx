@@ -183,7 +183,7 @@ export const RecentProjectsMenu = (): ReactElement => {
             </Tooltip>
             {open ? (
                 <div
-                    className="absolute top-full left-0 mt-1 z-50 w-64 rounded-md border border-border bg-surface-overlay shadow-lg py-1"
+                    className="absolute top-full left-0 mt-1 z-50 max-h-[calc(100vh-3rem)] w-64 overflow-y-auto overscroll-contain rounded-md border border-border bg-surface-overlay py-1 shadow-lg"
                     role="menu"
                     aria-label="Project menu"
                 >

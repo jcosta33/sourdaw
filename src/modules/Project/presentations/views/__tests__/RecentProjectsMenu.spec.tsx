@@ -96,6 +96,17 @@ describe('RecentProjectsMenu', () => {
         expect(screen.getByRole('menu')).toBeInTheDocument();
     });
 
+    it('keeps the project menu scrollable within the renderer height', () => {
+        render(<RecentProjectsMenu />);
+        fireEvent.click(screen.getByLabelText(/Project menu/i));
+
+        expect(screen.getByRole('menu')).toHaveClass(
+            'max-h-[calc(100vh-3rem)]',
+            'overflow-y-auto',
+            'overscroll-contain'
+        );
+    });
+
     it('left-aligns menu rows that do not carry a trailing shortcut', () => {
         render(<RecentProjectsMenu />);
         fireEvent.click(screen.getByLabelText(/Project menu/i));

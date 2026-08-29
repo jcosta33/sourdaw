@@ -2,8 +2,14 @@ import { expect, test, type Frame, type FrameLocator, type Locator, type Page } 
 import { stringify as superjsonStringify } from 'superjson';
 
 type Box = { x: number; y: number; width: number; height: number };
+type RecentProject = { key: string; name: string; updatedAt: number };
 
 const VIEWPORT = { width: 1280, height: 720 };
+const RECENT_PROJECTS: RecentProject[] = Array.from({ length: 10 }, (_, index) => ({
+    key: `recent-project-${String(index + 1)}`,
+    name: `Recent Project ${String(index + 1)}`,
+    updatedAt: Date.now() - index * 60_000,
+}));
 
 function requireBox(box: Box | null, label: string): Box {
     if (box === null) {
@@ -169,7 +175,67 @@ async function expectContextMenuUsable(app: FrameLocator, scale: number): Promis
     await expect(menu).toHaveCount(0);
 }
 
+async function expectRightEdgeContextMenuClamped(page: Page, app: FrameLocator): Promise<void> {
+    const timeline = app.getByLabel('Timeline editor surface');
+    const timelineBox = requireBox(await timeline.boundingBox(), 'timeline editor');
+    const clickPoint = {
+        x: timelineBox.x + timelineBox.width - 4,
+        y: timelineBox.y + timelineBox.height / 2,
+    };
+    await page.mouse.click(clickPoint.x, clickPoint.y, { button: 'right' });
+
+    const menu = app.getByRole('menu');
+    await expect(menu).toBeVisible();
+    const menuBox = requireBox(await menu.boundingBox(), 'right-edge context menu');
+    expectInsideViewport(menuBox);
+    expect(menuBox.x).toBeLessThan(clickPoint.x);
+    expect(menuBox.x + menuBox.width).toBeLessThanOrEqual(VIEWPORT.width);
+
+    await menu.getByRole('menuitem').first().press('Escape');
+    await expect(menu).toHaveCount(0);
+}
+
+async function expectRecentProjectsMenuUsable(frame: Frame, app: FrameLocator, scale: number): Promise<void> {
+    await frame.evaluate(async (entries) => {
+        const { recentProjectsStorage } = await import('/src/modules/Project/useCases/recentProjects/helpers.ts');
+        recentProjectsStorage.set(entries);
+    }, RECENT_PROJECTS);
+
+    await app.getByRole('button', { name: 'Project menu', exact: true }).click();
+    const menu = app.getByRole('menu', { name: 'Project menu' });
+    await expect(menu).toBeVisible();
+    const lastRecent = menu.getByRole('menuitem').filter({ hasText: 'Recent Project 10' });
+    await lastRecent.scrollIntoViewIfNeeded();
+    await expect(lastRecent).toBeVisible();
+
+    const menuBox = requireBox(await menu.boundingBox(), 'Project menu');
+    expectInsideViewport(menuBox);
+    const scrollState = await menu.evaluate((element) => ({
+        clientHeight: element.clientHeight,
+        overflowY: window.getComputedStyle(element).overflowY,
+        scrollHeight: element.scrollHeight,
+        scrollTop: element.scrollTop,
+    }));
+    expect(scrollState.overflowY).toBe('auto');
+    if (scale === 2) {
+        expect(scrollState.scrollHeight).toBeGreaterThan(scrollState.clientHeight);
+        expect(scrollState.scrollTop).toBeGreaterThan(0);
+    }
+
+    await lastRecent.hover();
+    const remove = lastRecent.getByRole('button', { name: 'Remove Recent Project 10 from recent projects' });
+    await expect(remove).toBeVisible();
+    await remove.click();
+    await expect(lastRecent).toHaveCount(0);
+    await menu.getByRole('menuitem').first().press('Escape');
+    await expect(menu).toHaveCount(0);
+}
+
 async function expectEqCanvasDrag(page: Page, app: FrameLocator): Promise<void> {
+    const inspector = app.getByRole('complementary', { name: 'Inspector panel' });
+    await inspector.getByText('Proof', { exact: false }).first().click();
+    await expect(app.getByRole('button', { name: /reset loudness/i })).toBeVisible({ timeout: 15_000 });
+    await app.getByRole('button', { name: 'Build Modules' }).click();
     const canvas = app.getByLabel('8-band parametric EQ frequency response');
     const band = app.getByRole('slider', { name: /EQ band 1/i });
     await canvas.scrollIntoViewIfNeeded();
@@ -183,6 +249,8 @@ async function expectEqCanvasDrag(page: Page, app: FrameLocator): Promise<void> 
     await page.mouse.up();
 
     await expect.poll(async () => Number(await band.getAttribute('aria-valuenow'))).toBeGreaterThan(before);
+    await app.getByRole('button', { name: 'Close Proof' }).click();
+    await expect(canvas).toHaveCount(0);
 }
 
 async function expectExportUsable(page: Page, app: FrameLocator): Promise<void> {
@@ -226,10 +294,6 @@ test('browser display scale preserves viewport geometry and interactions at 50%,
     await inspector.getByRole('button', { name: 'Add device' }).click();
     await app.getByRole('menuitem', { name: /^Proof$/ }).click();
     await expect(inspector.getByRole('button', { name: /^Bypass Proof$/i })).toBeVisible();
-    await inspector.getByText('Proof', { exact: false }).first().click();
-    await expect(app.getByRole('button', { name: /reset loudness/i })).toBeVisible({ timeout: 15_000 });
-    await app.getByRole('button', { name: 'Build Modules' }).click();
-    await expect(app.getByLabel('8-band parametric EQ frequency response')).toBeVisible({ timeout: 15_000 });
 
     expect(page.frames().filter((candidate) => candidate.parentFrame() === page.mainFrame())).toHaveLength(1);
     await expect(page.getByTestId('app-shell')).toHaveCount(0);
@@ -239,7 +303,9 @@ test('browser display scale preserves viewport geometry and interactions at 50%,
         const preferences = await setDisplayScale(app, frame, scale);
         await expectPreferencesUsable(app, preferences, scale);
         await expectFrameGeometry(page, frame, scale);
+        await expectRecentProjectsMenuUsable(frame, app, scale);
         await expectContextMenuUsable(app, scale);
+        await expectRightEdgeContextMenuClamped(page, app);
         await expectEqCanvasDrag(page, app);
         await expectExportUsable(page, app);
     }
