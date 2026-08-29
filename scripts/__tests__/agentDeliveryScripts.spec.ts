@@ -361,12 +361,13 @@ type WorkflowRecord = Record<string, unknown>;
 const AUTHORIZED_APPROVAL_CONDITION =
     "github.event_name != 'pull_request_review' || github.event.review.state == 'approved'";
 // Only a pull-request push and an approving review validate a head, so only
-// those two share the PR-number group and may cancel each other. Every other
-// event is isolated on its own run id and replaces nothing.
+// those two share the PR-number group. A newer pull-request push may replace
+// stale validation; an approving review validates and queues behind that push
+// instead of cancelling it. Every other event is isolated on its own run id.
 const VALIDATING_EVENT_CONDITION =
     "github.event_name == 'pull_request' || (github.event_name == 'pull_request_review' && github.event.review.state == 'approved')";
 const REVIEW_ISOLATED_CONCURRENCY_GROUP = `health-gates-\${{ (${VALIDATING_EVENT_CONDITION}) && github.event.pull_request.number || github.run_id }}`;
-const AUTHORIZED_CANCELLATION_CONDITION = `\${{ ${VALIDATING_EVENT_CONDITION} }}`;
+const AUTHORIZED_CANCELLATION_CONDITION = "${{ github.event_name == 'pull_request' }}";
 const GATE_SUMMARY_NAME = 'Gate';
 // `!cancelled()` rather than `always()`: the summary must still evaluate failed
 // and skipped dependencies on a live run, while the approval predicate keeps a
