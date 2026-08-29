@@ -358,6 +358,63 @@ describe('beginConfirmedCommandExecution', () => {
         }
     );
 
+    it('settles verified-receipt recovery when its approved command batch is absent', async () => {
+        const priorVerifiedBatchReceipt = await createVerifiedRecoveryReceipt();
+        const confirmationWithoutBatch = {
+            ...confirmation,
+            approvalSnapshot: { ...confirmation.approvalSnapshot, commandBatch: undefined },
+        } satisfies PendingAppActionConfirmation;
+
+        const result = beginConfirmedCommandExecution({
+            confirmation: confirmationWithoutBatch,
+            priorVerifiedBatchReceipt,
+            recoveringPendingEffects: true,
+        });
+
+        expect(result.status).toBe('settled');
+        if (result.status !== 'settled') {
+            throw new Error('Expected verified-receipt recovery without a batch to settle.');
+        }
+        await result.result;
+        expect(mocks.failPreflight).toHaveBeenCalledWith(
+            confirmationWithoutBatch,
+            'The confirmation has no approved command batch.',
+            'authorization'
+        );
+        expect(mocks.validateApproval).not.toHaveBeenCalled();
+        expect(mocks.parseBatch).not.toHaveBeenCalled();
+        expect(mocks.reserveBudget).not.toHaveBeenCalled();
+        expect(mocks.claimLease).not.toHaveBeenCalled();
+        expect(mocks.updateConfirmation).not.toHaveBeenCalled();
+        expect(mocks.transitionToExecuting).not.toHaveBeenCalled();
+        expect(mocks.updateMessage).not.toHaveBeenCalled();
+    });
+
+    it('settles verified-receipt recovery when its approved command batch is invalid', async () => {
+        const priorVerifiedBatchReceipt = await createVerifiedRecoveryReceipt();
+        mocks.parseBatch.mockReturnValueOnce({ status: 'invalid', reason: 'recovery batch schema is invalid' });
+
+        const result = beginConfirmedCommandExecution({
+            confirmation,
+            priorVerifiedBatchReceipt,
+            recoveringPendingEffects: true,
+        });
+
+        expect(result.status).toBe('settled');
+        if (result.status !== 'settled') {
+            throw new Error('Expected verified-receipt recovery with an invalid batch to settle.');
+        }
+        await result.result;
+        expect(mocks.failPreflight).toHaveBeenCalledWith(confirmation, 'recovery batch schema is invalid', 'schema');
+        expect(mocks.validateApproval).not.toHaveBeenCalled();
+        expect(mocks.parseBatch).toHaveBeenCalledWith(commandBatch.serialized, commandBatch.authority);
+        expect(mocks.reserveBudget).not.toHaveBeenCalled();
+        expect(mocks.claimLease).not.toHaveBeenCalled();
+        expect(mocks.updateConfirmation).not.toHaveBeenCalled();
+        expect(mocks.transitionToExecuting).not.toHaveBeenCalled();
+        expect(mocks.updateMessage).not.toHaveBeenCalled();
+    });
+
     it('settles a hard command budget limit without claiming work or accepting the confirmation', async () => {
         mocks.reserveBudget.mockReturnValueOnce({ status: 'hard-limit-reached', reason: 'maxCommands', estimates: [] });
 
