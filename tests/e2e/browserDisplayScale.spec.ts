@@ -58,6 +58,33 @@ async function setDisplayScale(app: FrameLocator, frame: Frame, scale: number): 
     return dialog;
 }
 
+async function expectUiScaleDragDefersDisplayScale(page: Page, frame: Frame, dialog: Locator): Promise<void> {
+    const slider = dialog.getByRole('slider', { name: 'UI Scale' });
+    const sliderRoot = slider.locator('xpath=..');
+    const sliderBox = requireBox(await slider.boundingBox(), 'UI Scale slider thumb');
+    const sliderRootBox = requireBox(await sliderRoot.boundingBox(), 'UI Scale slider');
+    const initialInnerWidth = await frame.evaluate(() => window.innerWidth);
+
+    await page.mouse.move(sliderBox.x + sliderBox.width / 2, sliderBox.y + sliderBox.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(sliderBox.x + sliderBox.width / 2 + 32, sliderBox.y + sliderBox.height / 2);
+
+    expect(await frame.evaluate(() => window.innerWidth)).toBe(initialInnerWidth);
+    const draftSliderRootBox = requireBox(await sliderRoot.boundingBox(), 'UI Scale slider during drag');
+    expect(draftSliderRootBox.x).toBeCloseTo(sliderRootBox.x, 4);
+    expect(draftSliderRootBox.y).toBeCloseTo(sliderRootBox.y, 4);
+    expect(draftSliderRootBox.width).toBeCloseTo(sliderRootBox.width, 4);
+    expect(draftSliderRootBox.height).toBeCloseTo(sliderRootBox.height, 4);
+
+    await page.mouse.up();
+
+    const committedScale = Number(await slider.getAttribute('aria-valuenow')) / 100;
+    expect(committedScale).toBeGreaterThan(1);
+    await expect
+        .poll(async () => frame.evaluate(() => window.innerWidth))
+        .toBe(Math.round(VIEWPORT.width / committedScale));
+}
+
 async function expectScrollableAncestor(locator: Locator, shouldScroll: boolean): Promise<void> {
     const scrollState = await locator.evaluate((element) => {
         let ancestor = element.parentElement;
@@ -324,6 +351,10 @@ test('browser display scale preserves viewport geometry and interactions at 50%,
     expect(page.frames().filter((candidate) => candidate.parentFrame() === page.mainFrame())).toHaveLength(1);
     await expect(page.getByTestId('app-shell')).toHaveCount(0);
     await expect(app.getByTestId('app-shell')).toHaveCount(1);
+
+    const dragPreferences = await setDisplayScale(app, frame, 1);
+    await expectUiScaleDragDefersDisplayScale(page, frame, dragPreferences);
+    await dragPreferences.getByRole('button', { name: 'Done', exact: true }).click();
 
     for (const scale of [0.5, 1, 1.25, 2]) {
         const preferences = await setDisplayScale(app, frame, scale);
