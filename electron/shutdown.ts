@@ -75,6 +75,41 @@ export const runShutdownWithDeadline = async ({
     }
 };
 
+export type BeforeQuitCascadeInput = {
+    /** Close shell admission for plugin runtime commands. */
+    readonly refusePluginCommands: () => void;
+    /** Kill the out-of-process scan worker, if one is running. */
+    readonly disposeScanSupervisor?: () => void;
+    /** Live native host, or undefined when the addon never loaded. */
+    readonly host: { readonly shutdown: () => unknown } | undefined;
+    readonly timers: Timers;
+    readonly deadlineMs?: number;
+};
+
+/**
+ * The body of `before-quit`: refuse plugin IPC, dispose the scan worker, then
+ * run the native cascade under the deadline.
+ *
+ * Admission must close before `host.shutdown()` so a late `load_plugin` cannot
+ * insert an instance after the drain. The scan worker is disposed next — it
+ * holds its own addon — then the host cascade, or a completed outcome when no
+ * host was loaded.
+ */
+export const runBeforeQuitCascade = async ({
+    refusePluginCommands,
+    disposeScanSupervisor,
+    host,
+    timers,
+    deadlineMs,
+}: BeforeQuitCascadeInput): Promise<ShutdownOutcome> => {
+    refusePluginCommands();
+    disposeScanSupervisor?.();
+    if (host === undefined) {
+        return { status: 'completed', report: undefined };
+    }
+    return runShutdownWithDeadline({ shutdown: () => host.shutdown(), timers, deadlineMs });
+};
+
 /** The one member of `before-quit`'s event the handler uses. */
 export type PreventableEvent = { readonly preventDefault: () => void };
 

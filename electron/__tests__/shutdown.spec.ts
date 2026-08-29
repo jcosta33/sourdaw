@@ -11,11 +11,22 @@
  * The residue is recorded in the pull request rather than hidden behind these
  * assertions.
  */
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
 import { describe, expect, it, vi } from 'vitest';
 
-import { createQuitHandler, runShutdownWithDeadline, SHUTDOWN_DEADLINE_MS, type ShutdownOutcome } from '../shutdown.js';
+import {
+    createQuitHandler,
+    runBeforeQuitCascade,
+    runShutdownWithDeadline,
+    SHUTDOWN_DEADLINE_MS,
+    type ShutdownOutcome,
+} from '../shutdown.js';
 
 import type { Timers } from '../timers.js';
+
+const mainSource = readFileSync(resolve('electron/main.ts'), 'utf8');
 
 /** A clock that only moves when the test says so. */
 const manualTimers = (): { timers: Timers; fire: () => void; armed: () => number } => {
@@ -108,23 +119,32 @@ describe('the exit cascade under its deadline', () => {
 
 describe('plugin command admission before the cascade', () => {
     it('refuses plugin IPC before native shutdown is invoked', async () => {
-        const refusePluginCommands = vi.fn();
-        const shutdown = vi.fn(() => undefined);
+        // Pins the live before-quit body (`runBeforeQuitCascade`), not a
+        // test-local stand-in: dropping refuse or calling it after shutdown
+        // must fail this check.
+        const order: string[] = [];
         const { timers } = manualTimers();
-        let refusedBeforeShutdown = false;
 
-        const run = vi.fn(async () => {
-            refusePluginCommands();
-            refusedBeforeShutdown = shutdown.mock.calls.length === 0;
-            return runShutdownWithDeadline({ shutdown, timers });
+        await runBeforeQuitCascade({
+            refusePluginCommands: () => {
+                order.push('refuse');
+            },
+            host: {
+                shutdown: () => {
+                    order.push('shutdown');
+                },
+            },
+            timers,
         });
-        const handler = createQuitHandler(run, { exit: () => undefined, report: () => undefined });
 
-        handler({ preventDefault: () => undefined });
-        await vi.waitFor(() => expect(shutdown).toHaveBeenCalled());
+        expect(order).toEqual(['refuse', 'shutdown']);
+    });
 
-        expect(refusePluginCommands).toHaveBeenCalledTimes(1);
-        expect(refusedBeforeShutdown).toBe(true);
+    it('wires before-quit through runBeforeQuitCascade', () => {
+        // Leaving `shutdown.ts` intact while deleting the main wiring must fail.
+        expect(mainSource).toMatch(
+            /'before-quit',\s*createQuitHandler\(\s*\(\)\s*:\s*Promise<ShutdownOutcome>\s*=>\s*runBeforeQuitCascade\(/u
+        );
     });
 });
 
