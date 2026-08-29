@@ -113,6 +113,7 @@ describe('stopAutomationRecording', () => {
         activeRecording.clear();
         pendingPoints.clear();
         touchActive.clear();
+        laneBaselines.clear();
         findLaneId.mockReturnValue(null);
         automationSnapshot.value = null;
         undoEntries.length = 0;
@@ -186,6 +187,40 @@ describe('stopAutomationRecording', () => {
 
         expect(clearPointsInRange).toHaveBeenCalledTimes(1);
         expect(clearPointsInRange).toHaveBeenCalledWith('lane-a', 2, 6);
+    });
+
+    // The undo-entry decider must see curve-shape-only changes: a pass that
+    // moved only a bezier control point or a stair count differs from its
+    // baseline in no other field, so a beat/value/curve/tension-only comparison
+    // would record the pass with no undo entry.
+    it('creates an undo entry when only a control point or stair count changed', () => {
+        automationSnapshot.value = {
+            lanes: [
+                {
+                    id: 'lane-a',
+                    trackId: 't1',
+                    parameterId: 'gain',
+                    points: [{ beat: 1, value: 0.5, curve: 'bezier', tension: 0, cp1: { x: 0.8, y: 0.3 } }],
+                },
+                {
+                    id: 'lane-b',
+                    trackId: 't1',
+                    parameterId: 'pan',
+                    points: [{ beat: 2, value: 0.25, curve: 'stairs', tension: 0, stairSteps: 8 }],
+                },
+            ],
+        };
+        laneBaselines.set('lane-a', [{ beat: 1, value: 0.5, curve: 'bezier', tension: 0, cp1: { x: 0.2, y: 0.3 } }]);
+        laneBaselines.set('lane-b', [{ beat: 2, value: 0.25, curve: 'stairs', tension: 0, stairSteps: 4 }]);
+
+        stopAutomationRecording();
+
+        expect(undoEntries).toHaveLength(1);
+        undoEntries[0]!.undo();
+        const laneA = automationSnapshot.value?.lanes.find((lane) => lane.id === 'lane-a');
+        const laneB = automationSnapshot.value?.lanes.find((lane) => lane.id === 'lane-b');
+        expect(laneA?.points[0]?.cp1).toEqual({ x: 0.2, y: 0.3 });
+        expect(laneB?.points[0]?.stairSteps).toBe(4);
     });
 
     // Regression (Batch B fix 6): the undo must be scoped to the recorded lane.

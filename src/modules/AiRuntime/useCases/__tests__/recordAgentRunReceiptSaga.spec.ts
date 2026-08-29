@@ -213,6 +213,42 @@ describe('recordAgentRunReceiptSaga', () => {
         });
     });
 
+    it('moves only the external effect receipt step to manual repair', async () => {
+        const stemEffect = {
+            commandId: STEM_COMMAND.commandId,
+            kind: 'external-effect' as const,
+            operation: STEM_COMMAND.operation,
+            reason: 'imported stem runtime reconciliation remains pending',
+            remediation: 'reconcile' as const,
+            state: 'pending' as const,
+        };
+        recordAgentRunReceiptSaga({
+            runId: 'run-agent-effects',
+            receipt: await createReceipt([stemEffect]),
+            actions: ACTIONS,
+            completesRun: true,
+            commandBatch: COMMAND_BATCH,
+        });
+
+        agentRunLifecycle.requirePendingEffectManualRepair({
+            runId: 'run-agent-effects',
+            batchId: 'batch-agent-effects',
+            reason: 'Manual reconciliation is required.',
+            requiredAt: 200,
+        });
+
+        const steps = agentRunLifecycle.get('run-agent-effects')?.saga.steps ?? [];
+        expect(steps.filter((step) => step.owner === 'command' || step.owner === 'import')).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({ state: 'committed' }),
+                expect.objectContaining({ state: 'committed' }),
+            ])
+        );
+        expect(steps.filter((step) => step.owner === 'external-effect')).toEqual([
+            expect.objectContaining({ state: 'manual-repair', updatedAt: 200 }),
+        ]);
+    });
+
     it('persists every effect in a mixed batch as one receipt-bound continuation', async () => {
         const runtimeEffect = {
             commandId: DEVICE_COMMAND.commandId,

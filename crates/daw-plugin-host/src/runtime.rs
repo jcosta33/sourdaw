@@ -189,6 +189,18 @@ impl HostedPluginRuntime for HostedRuntime {
     fn latency_samples(&self) -> u32 {
         delegate!(self, backend => backend.latency_samples())
     }
+
+    fn tail_samples(&self) -> u32 {
+        delegate!(self, backend => backend.tail_samples())
+    }
+
+    fn take_tail_change(&mut self) -> Option<u32> {
+        delegate!(self, backend => backend.take_tail_change())
+    }
+
+    fn report_plugin_observations(&mut self) {
+        delegate!(self, backend => backend.report_plugin_observations())
+    }
 }
 
 impl HostedRuntime {

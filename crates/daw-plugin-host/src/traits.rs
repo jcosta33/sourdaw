@@ -421,4 +421,65 @@ pub trait HostedPluginRuntime: AudioPlugin {
 
     /// Reported latency in frames of the plugin's own activation rate.
     fn latency_samples(&self) -> u32;
+
+    /// Reported processing tail in frames of the plugin's own activation rate —
+    /// how long the plugin keeps sounding after its input goes quiet.
+    ///
+    /// Frames rather than the milliseconds latency is reported in, because both
+    /// formats define a sentinel at the top of the range for an infinite tail —
+    /// CLAP's "any value greater or equal to `INT32_MAX`", VST3's
+    /// `kInfiniteTail` — and a sentinel does not survive a conversion.
+    ///
+    /// Zero means no tail, which is also what a plugin that declares nothing
+    /// reports. Control path only.
+    fn tail_samples(&self) -> u32;
+
+    /// Take a tail change the plugin flagged, answering the tail it reports now,
+    /// or `None` when nothing was pending. Control path only.
+    ///
+    /// Defaults to `None` for a format that has no way for a plugin to announce
+    /// one: VST3 defines `getTailSamples` as a question the host asks and
+    /// carries no tail-changed callback, so nothing there is ever pending.
+    fn take_tail_change(&mut self) -> Option<u32> {
+        None
+    }
+
+    /// Say out loud what the audio thread recorded about this plugin.
+    ///
+    /// The audio thread may not allocate or take the I/O lock, so a plugin that
+    /// failed a process call is latched as a flag and reported from here.
+    /// Latched, so a plugin failing every block still produces one line. Control
+    /// path only, and cheap for a plugin that recorded nothing: the recurring
+    /// visit driven by [`take_pending_process_refusal_signal`] calls it on every
+    /// instance, and only the one that failed has anything to say.
+    fn report_plugin_observations(&mut self) {}
 }
+
+/// Process-wide hint that some plugin latched a process failure.
+///
+/// The same shape as the parameter-event hint and for the same reason: the
+/// failure is recorded on the audio thread, which cannot name the instance
+/// without allocating. A coalescing hint, never the record — each wrapper's own
+/// latch is the record — so a lost signal costs nothing a later failure does not
+/// raise again.
+static PROCESS_REFUSAL_PENDING: AtomicBool = AtomicBool::new(false);
+
+/// Raise the failure hint. **Called from the audio thread**, so it is one
+/// release store and nothing else — and only on the first block that fails,
+/// because the wrapper's own latch is what decides there is news.
+pub fn signal_pending_process_refusal() {
+    PROCESS_REFUSAL_PENDING.store(true, Ordering::Release);
+}
+
+/// Read and clear the failure hint.
+pub fn take_pending_process_refusal_signal() -> bool {
+    PROCESS_REFUSAL_PENDING.swap(false, Ordering::AcqRel)
+}
+
+/// Serialises every test that reads or clears the failure hint.
+///
+/// The hint is one process-wide flag shared by both backends, so two such tests
+/// running side by side in the same binary would each consume the other's
+/// signal.
+#[cfg(test)]
+pub(crate) static PROCESS_REFUSAL_HINT_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());

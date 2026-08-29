@@ -2,6 +2,7 @@ use clap_sys::ext::gui::{clap_host_gui, CLAP_EXT_GUI};
 use clap_sys::ext::latency::{clap_host_latency, CLAP_EXT_LATENCY};
 use clap_sys::ext::params::{clap_host_params, CLAP_EXT_PARAMS};
 use clap_sys::ext::state::{clap_host_state, CLAP_EXT_STATE};
+use clap_sys::ext::tail::{clap_host_tail, CLAP_EXT_TAIL};
 /// CLAP Host implementation — provides the `clap_host_t` and host extensions.
 ///
 /// The CLAP spec requires the host to provide callback function pointers
@@ -71,6 +72,10 @@ pub struct HostCallbackState {
     /// Whether the plugin has asked the host to call `params.flush()` and the
     /// host has not done so since.
     parameters_flush: AtomicBool,
+    /// Whether the plugin has reported a new processing tail the host has not
+    /// re-read. Set from `clap_host_tail.changed`, which CLAP marks
+    /// `[audio-thread]`; cleared on the control path.
+    tail_dirty: AtomicBool,
     /// The wake shared by every plugin-initiated ask that the host may only
     /// answer off the calling thread.
     request_notifier: OnceLock<PluginHostRequestNotifier>,
@@ -102,6 +107,7 @@ impl std::fmt::Debug for HostCallbackState {
                 "parameters_flush",
                 &self.parameters_flush.load(Ordering::Relaxed),
             )
+            .field("tail_dirty", &self.tail_dirty.load(Ordering::Relaxed))
             .field(
                 "has_request_notifier",
                 &self.request_notifier.get().is_some(),
@@ -261,6 +267,42 @@ impl HostCallbackState {
     pub fn take_parameters_flush(&self) -> bool {
         self.parameters_flush.swap(false, Ordering::AcqRel)
     }
+
+    /// Record that the plugin's processing tail changed.
+    ///
+    /// Two release stores and nothing else, for the same reason
+    /// [`Self::request_parameters_flush`] has none: CLAP marks
+    /// `clap_host_tail.changed` `[audio-thread]`, so a plugin raises it from
+    /// inside `process()`, where copying an instance id onto the heap to wake a
+    /// channel is a missed device period. The flag is the record and the
+    /// process-wide hint is the wake.
+    pub fn mark_tail_dirty(&self) {
+        self.tail_dirty.store(true, Ordering::Release);
+        signal_pending_tail_change();
+    }
+
+    /// Atomically read-and-clear the tail-dirty flag.
+    pub fn take_tail_dirty(&self) -> bool {
+        self.tail_dirty.swap(false, Ordering::AcqRel)
+    }
+}
+
+/// Process-wide hint that some plugin reported a new processing tail.
+///
+/// A hint, never the record — each instance's own flag is that. A lost signal
+/// costs at most one drain interval, because the flag stays set until a control
+/// pass takes it.
+static TAIL_CHANGE_PENDING: AtomicBool = AtomicBool::new(false);
+
+/// Raise the tail hint. **Called from the plugin's own audio thread**, so it is
+/// one release store and nothing else.
+pub fn signal_pending_tail_change() {
+    TAIL_CHANGE_PENDING.store(true, Ordering::Release);
+}
+
+/// Read and clear the tail hint.
+pub fn take_pending_tail_change_signal() -> bool {
+    TAIL_CHANGE_PENDING.swap(false, Ordering::AcqRel)
 }
 
 /// Borrow the host callback state pinned into a `clap_host`'s `host_data`.
@@ -322,6 +364,9 @@ unsafe extern "C" fn host_get_extension(
     }
     if id == CLAP_EXT_LATENCY {
         return &HOST_LATENCY as *const clap_host_latency as *const c_void;
+    }
+    if id == CLAP_EXT_TAIL {
+        return &HOST_TAIL as *const clap_host_tail as *const c_void;
     }
 
     std::ptr::null()
@@ -486,6 +531,24 @@ unsafe extern "C" fn host_latency_changed(host: *const clap_host) {
     eprintln!("[CLAP Host] Plugin reported a latency change");
 }
 
+// ── clap_host_tail extension ───────────────────────────────────────────
+
+static HOST_TAIL: clap_host_tail = clap_host_tail {
+    changed: Some(host_tail_changed),
+};
+
+/// The plugin reports that its processing tail changed.
+///
+/// Flag and hint, nothing else — and deliberately unlogged. CLAP marks this
+/// callback `[audio-thread]`, so it can be the render thread, where locking
+/// stderr and making a write syscall is a dropout. Re-reading `clap.tail` is the
+/// control path's job.
+unsafe extern "C" fn host_tail_changed(host: *const clap_host) {
+    if let Some(state) = host_state(host) {
+        state.mark_tail_dirty();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -596,6 +659,10 @@ mod tests {
     /// Serialises every test that raises the process-wide flush hint, so one
     /// test's raise cannot stand in for another's deleted one.
     static FLUSH_SIGNAL_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    /// Serialises every test that raises the process-wide tail hint, for the
+    /// same reason.
+    static TAIL_SIGNAL_TEST_LOCK: Mutex<()> = Mutex::new(());
 
     /// Arm a state so a resize request can be accepted: an open editor window
     /// and an installed wake, recording what the wake was told.
@@ -980,5 +1047,63 @@ mod tests {
             let ext = &*(ptr as *const clap_host_latency);
             assert!(ext.changed.is_some());
         }
+    }
+
+    /// A plugin only calls `clap_host_tail.changed` if the host answers the
+    /// query for `clap.tail`. Without this the tail flag can never be raised, so
+    /// every tail the host reports is the one read at load and nothing else.
+    #[test]
+    fn get_extension_exposes_the_tail_extension() {
+        unsafe {
+            let ptr = host_get_extension(std::ptr::null(), CLAP_EXT_TAIL.as_ptr());
+            assert!(!ptr.is_null(), "host advertises clap.tail");
+            let ext = &*(ptr as *const clap_host_tail);
+            assert!(ext.changed.is_some());
+        }
+    }
+
+    #[test]
+    fn a_tail_change_callback_raises_the_flag_the_control_path_reads() {
+        let _guard = TAIL_SIGNAL_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let state = HostCallbackState::default();
+        let host = host_with_state(&state);
+
+        assert!(
+            !state.take_tail_dirty(),
+            "nothing is pending before the call"
+        );
+
+        unsafe { host_tail_changed(&host as *const clap_host) };
+
+        assert!(state.take_tail_dirty(), "the callback records the change");
+        assert!(
+            !state.take_tail_dirty(),
+            "the flag is read-and-clear, so one change is answered once"
+        );
+    }
+
+    /// The callback is `[audio-thread]`, so the wake it raises has to be the
+    /// process-wide hint rather than a channel send: a control thread that never
+    /// learns a tail moved re-reads it only by polling every instance.
+    #[test]
+    fn a_tail_change_raises_the_process_wide_hint() {
+        // The tail hint is process-wide, and the callback test above raises one
+        // too; without this its raise would mask a deleted raise here.
+        let _guard = TAIL_SIGNAL_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let state = HostCallbackState::default();
+        let host = host_with_state(&state);
+        take_pending_tail_change_signal();
+
+        unsafe { host_tail_changed(&host as *const clap_host) };
+
+        assert!(take_pending_tail_change_signal(), "the hint is raised");
+        assert!(
+            !take_pending_tail_change_signal(),
+            "the hint is read-and-clear"
+        );
     }
 }

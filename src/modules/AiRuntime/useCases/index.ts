@@ -63,6 +63,7 @@ export { getAgentExecutionModeFailure } from './getAgentExecutionModeFailure';
 export { resolveAgentExecutionMode } from './resolveAgentExecutionMode';
 export { recoverInterruptedAgentRuns } from './agentRunRecovery';
 export { recoverAgentRunPendingEffects } from './recoverAgentRunPendingEffects';
+export { recoverRetainedSectionRenderEffects } from './recoverRetainedSectionRenderEffects';
 export { agentRunWorkLease } from './agentRunWorkLease';
 export { normalizeAgentFailure } from './agentErrorAndSaga';
 export { admitAgentRetry } from './admitAgentRetry';
