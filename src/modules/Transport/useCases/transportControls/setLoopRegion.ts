@@ -1,6 +1,8 @@
 import { getTransportState } from '../../repositories/transport/getTransportState';
 import { updateTransportState } from '../../repositories/transport/updateTransportState';
 
+import { sendLoopRegionToNativeSession } from './sendLoopRegionToNativeSession';
+
 export function setLoopRegion(startBeat: number, endBeat: number, enableLooping = true): void {
     const state = getTransportState();
     if (!state) {
@@ -17,6 +19,7 @@ export function setLoopRegion(startBeat: number, endBeat: number, enableLooping 
 
     if (!enableLooping) {
         updateTransportState({ loopStart, loopEnd });
+        sendLoopRegionToNativeSession();
         return;
     }
 
@@ -25,4 +28,5 @@ export function setLoopRegion(startBeat: number, endBeat: number, enableLooping 
     // ignore.
     const isLooping = loopEnd > loopStart;
     updateTransportState({ loopStart, loopEnd, isLooping });
+    sendLoopRegionToNativeSession();
 }

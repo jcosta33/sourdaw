@@ -109,6 +109,7 @@ export { initializeAudioEngine } from './initializeAudioEngine';
 export { readNativeEnginePlayheadSeconds } from './livePlayback/readNativeEnginePlayheadSeconds';
 export { startNativeLiveGraphSession } from './livePlayback/startNativeLiveGraphSession';
 export { stopNativeLiveGraphSession } from './livePlayback/stopNativeLiveGraphSession';
+export { updateNativeLiveGraphSessionTransportMaps } from './livePlayback/updateNativeLiveGraphSessionTransportMaps';
 
 export { getTrackLatency } from './latencyCompensation/compensation/getTrackLatency';
 export { getCompensationDelay } from './latencyCompensation/compensation/getCompensationDelay';

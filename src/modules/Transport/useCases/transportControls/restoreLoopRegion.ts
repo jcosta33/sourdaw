@@ -1,6 +1,8 @@
 import { getTransportState } from '../../repositories/transport/getTransportState';
 import { updateTransportState } from '../../repositories/transport/updateTransportState';
 
+import { sendLoopRegionToNativeSession } from './sendLoopRegionToNativeSession';
+
 type RestoreLoopRegionInput = {
     loopStart: number;
     loopEnd: number;
@@ -13,4 +15,5 @@ export function restoreLoopRegion({ loopStart, loopEnd, isLooping }: RestoreLoop
         return;
     }
     updateTransportState({ loopStart, loopEnd, isLooping });
+    sendLoopRegionToNativeSession();
 }
