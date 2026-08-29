@@ -189,6 +189,38 @@ describe('handleRestoreAutomationLanePoints — malformed replacement points', (
     });
 });
 
+describe('handleRestoreAutomationLanePoints — malformed expectedPoints', () => {
+    it('refuses a null expectedPoints entry via conflict instead of crashing', () => {
+        setLane([makePoint()]);
+        const result = handleRestoreAutomationLanePoints.execute({
+            type: 'restoreAutomationLanePoints',
+            payload: { laneId: 'lane1', points: [makePoint()] as never, expectedPoints: [null] as never },
+        });
+        expect(result).toEqual({ status: 'conflict' });
+        expect(mockedRestore).not.toHaveBeenCalled();
+    });
+
+    it('refuses a non-object expectedPoints entry via conflict', () => {
+        setLane([makePoint()]);
+        const result = handleRestoreAutomationLanePoints.execute({
+            type: 'restoreAutomationLanePoints',
+            payload: { laneId: 'lane1', points: [makePoint()] as never, expectedPoints: ['p1'] as never },
+        });
+        expect(result).toEqual({ status: 'conflict' });
+        expect(mockedRestore).not.toHaveBeenCalled();
+    });
+
+    it('reports a null expectedPoints entry as not-a-noop so it reaches execute and conflicts', () => {
+        setLane([makePoint()]);
+        expect(
+            handleRestoreAutomationLanePoints.isNoop!({
+                type: 'restoreAutomationLanePoints',
+                payload: { laneId: 'lane1', points: [makePoint()] as never, expectedPoints: [null] as never },
+            })
+        ).toBe(false);
+    });
+});
+
 describe('handleRestoreAutomationLanePoints — describe', () => {
     it('returns label without inverse action', () => {
         const result = handleRestoreAutomationLanePoints.describe({

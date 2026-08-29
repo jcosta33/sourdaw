@@ -13,13 +13,24 @@ function controlPointsMatch(
     return current?.x === expected?.x && current?.y === expected?.y;
 }
 
+/**
+ * `expectedPoints` is document data carried by the inverse action (possibly a
+ * remote peer's), so an entry can be null or a non-object at runtime even
+ * though the contract types it as a snapshot. Such an entry cannot be compared
+ * field-by-field and therefore cannot match — `pointsMatch` returning false
+ * refuses the restore as a conflict, the same outcome as a divergence.
+ */
+function isComparableSnapshot(value: unknown): value is AutomationPointSnapshot {
+    return value !== null && typeof value === 'object';
+}
+
 function pointsMatch(current: readonly AutomationPoint[], expected: readonly AutomationPointSnapshot[]): boolean {
     return (
         current.length === expected.length &&
         current.every((point, index) => {
             const expectedPoint = expected[index];
             return (
-                expectedPoint !== undefined &&
+                isComparableSnapshot(expectedPoint) &&
                 point.id === expectedPoint.id &&
                 point.beat === expectedPoint.beat &&
                 point.value === expectedPoint.value &&
