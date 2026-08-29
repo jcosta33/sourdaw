@@ -87,6 +87,7 @@ function createObligation() {
             serializedBatch: commandBatch.serialized,
             authority: commandBatch.authority,
             lastError: 'Review exact retained evidence.',
+            sourceRevision: 'revision-source',
         },
         recordedAt: 3,
     });
@@ -199,27 +200,42 @@ describe('retained section render review hydration', () => {
         expect(sanitizeAgentRunState(invalid)).toEqual({ schemaVersion: 1, runs: [] });
     });
 
-    it('upgrades both source-less legacy copies from the committed revision and keeps the review after hydration', () => {
+    it('keeps a restarted prepared second batch unbound when only the prior committed revision is known', () => {
         createObligation();
-        const legacy = structuredClone(readAgentRunState());
-        delete legacy.runs[0]!.pendingEffectContinuations[0]!.sourceRevision;
-        delete legacy.pendingEffectRecoveryLedger![0]!.sourceRevision;
-        agentRunStore.set(sanitizeAgentRunState(legacy));
+        const preparedState = structuredClone(readAgentRunState());
+        preparedState.runs[0]!.pendingEffectContinuations = [];
+        preparedState.pendingEffectRecoveryLedger![0]!.checkpoint = 'prepared';
+        delete preparedState.pendingEffectRecoveryLedger![0]!.sourceRevision;
+
+        restartFrom(JSON.stringify(preparedState));
+
+        const preparedRecovery = readAgentRunState().pendingEffectRecoveryLedger?.[0];
+        if (!preparedRecovery) {
+            throw new Error('Expected the restarted prepared recovery.');
+        }
+        const { checkpoint: _checkpoint, runId: _runId, ...continuation } = preparedRecovery;
+        agentRunLifecycle.recordPendingEffectContinuation({
+            runId: 'run-hydrate-review',
+            continuation,
+            recordedAt: 4,
+        });
 
         agentRunLifecycle.requirePendingEffectManualRepair({
             runId: 'run-hydrate-review',
             batchId: 'batch-hydrate-review',
             reason: 'Review exact retained evidence.',
-            requiredAt: 4,
+            requiredAt: 5,
         });
 
-        expect(readAgentRunState().runs[0]?.pendingEffectContinuations[0]?.sourceRevision).toBe('revision-source');
-        expect(readAgentRunState().pendingEffectRecoveryLedger?.[0]?.sourceRevision).toBe('revision-source');
+        expect(readAgentRunState().runs[0]?.revisions.committed).toBe('revision-source');
+        expect(readAgentRunState().runs[0]?.pendingEffectContinuations[0]).not.toHaveProperty('sourceRevision');
+        expect(readAgentRunState().pendingEffectRecoveryLedger?.[0]).not.toHaveProperty('sourceRevision');
         const serializedState = JSON.stringify(readAgentRunState());
 
         restartFrom(serializedState);
 
-        expect(selectRetainedSectionRenderManualReviews(readAgentRunState())).toHaveLength(1);
+        expect(selectRetainedSectionRenderManualReviews(readAgentRunState())).toEqual([]);
+        expect(mocks.getExact).not.toHaveBeenCalled();
     });
 
     it('promotes a second partial render commit with its exact finalized revision before hydration', async () => {

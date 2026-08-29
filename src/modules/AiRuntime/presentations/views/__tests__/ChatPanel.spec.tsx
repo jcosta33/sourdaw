@@ -846,6 +846,41 @@ describe('ChatPanel', () => {
         selectReview.mockRestore();
     });
 
+    it('keeps the active preview when another review card has expired', () => {
+        const selectReview = vi.spyOn(retainedReviewProjection, 'selectRetainedSectionRenderManualReviews');
+        selectReview.mockReturnValue([
+            createRetainedReview({
+                runId: 'run-shared-review',
+                batchId: 'batch-verse-review',
+                commandId: 'command-verse-review',
+                jobId: 'job-verse-review',
+                sectionName: 'Verse',
+                buffer: verseBuffer,
+            }),
+            createRetainedReview({
+                runId: 'run-shared-review',
+                batchId: 'batch-chorus-review',
+                commandId: 'command-chorus-review',
+                jobId: 'job-chorus-review',
+                sectionName: 'Chorus',
+                buffer: chorusBuffer,
+            }),
+        ]);
+        retainedPreviewMocks.getExact.mockImplementation(({ job }: { job: { jobId: string } }) =>
+            job.jobId === 'job-verse-review' ? { buffer: verseBuffer } : null
+        );
+
+        render(<ChatPanel />);
+        fireEvent.click(screen.getByRole('button', { name: 'Play Verse' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Play Chorus' }));
+
+        expect(retainedPreviewMocks.stopVerse).not.toHaveBeenCalled();
+        expect(retainedPreviewMocks.release).not.toHaveBeenCalled();
+        expect(screen.getByRole('button', { name: 'Stop Verse' })).toHaveAttribute('aria-pressed', 'true');
+        expect(screen.getByRole('status')).toHaveTextContent('Preview audio for Chorus is unavailable.');
+        selectReview.mockRestore();
+    });
+
     it('should have correct accessibility attributes', () => {
         render(<ChatPanel />);
         const panel = screen.getByText('AI Chat').closest('[class*="flex-col"]');

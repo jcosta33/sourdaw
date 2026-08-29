@@ -116,8 +116,6 @@ export const RetainedSectionRenderManualReview = ({
             releasePreview(jobKey);
             return;
         }
-        releaseAllPreviews();
-        previewCoordinator.stopOther(previewOwnerId);
         const artifact = getExactAgentSectionRenderArtifact({
             job: job.job,
             sourceRevision: review.binding.sourceRevision,
@@ -126,6 +124,8 @@ export const RetainedSectionRenderManualReview = ({
             onStatus(`Preview audio for ${job.job.sectionName} is unavailable.`);
             return;
         }
+        releaseAllPreviews();
+        previewCoordinator.stopOther(previewOwnerId);
         let bufferId: string;
         try {
             bufferId = cacheAudioBuffer({ buffer: artifact.buffer });
