@@ -262,7 +262,7 @@ beforeEach(() => {
 });
 
 describe('beginConfirmedCommandExecution', () => {
-    it('settles approval failures before parsing, budget reservation, lease claim, or accepted writes', async () => {
+    it('should settle approval failures before parsing, budget reservation, lease claim, or accepted writes', async () => {
         mocks.validateApproval.mockReturnValueOnce({ status: 'invalid', reason: 'approval is stale' });
 
         const result = execute();
@@ -279,7 +279,7 @@ describe('beginConfirmedCommandExecution', () => {
         expect(mocks.updateConfirmation).not.toHaveBeenCalled();
     });
 
-    it('settles a confirmation without an exact risk approval binding before admission continues', async () => {
+    it('should settle a confirmation without an exact risk approval binding before admission continues', async () => {
         const confirmationWithoutApproval = {
             ...confirmation,
             approvalSnapshot: { ...confirmation.approvalSnapshot, agentApproval: undefined },
@@ -291,7 +291,7 @@ describe('beginConfirmedCommandExecution', () => {
         );
     });
 
-    it('settles immutable proposal drift that does not target a protected current object', async () => {
+    it('should settle immutable proposal drift that does not target a protected current object', async () => {
         const driftedConfirmation = {
             ...confirmation,
             actionLabels: ['A changed action label'],
@@ -303,7 +303,7 @@ describe('beginConfirmedCommandExecution', () => {
         );
     });
 
-    it('settles an approved snapshot that targets a protected object', async () => {
+    it('should settle an approved snapshot that targets a protected object', async () => {
         const protectedConfirmation = {
             ...confirmation,
             actions: [protectedAction],
@@ -334,7 +334,7 @@ describe('beginConfirmedCommandExecution', () => {
         ],
         ['invalid batch', () => confirmation, 'bad batch schema', 'schema'],
     ])(
-        'settles %s before command execution admission continues',
+        'should settle %s before command execution admission continues',
         async (name, createConfirmation, reason, category) => {
             const currentConfirmation = createConfirmation();
             if (name === 'invalid batch') {
@@ -358,7 +358,7 @@ describe('beginConfirmedCommandExecution', () => {
         }
     );
 
-    it('settles verified-receipt recovery when its approved command batch is absent', async () => {
+    it('should settle verified-receipt recovery when its approved command batch is absent', async () => {
         const priorVerifiedBatchReceipt = await createVerifiedRecoveryReceipt();
         const confirmationWithoutBatch = {
             ...confirmation,
@@ -390,7 +390,7 @@ describe('beginConfirmedCommandExecution', () => {
         expect(mocks.updateMessage).not.toHaveBeenCalled();
     });
 
-    it('settles verified-receipt recovery when its approved command batch is invalid', async () => {
+    it('should settle verified-receipt recovery when its approved command batch is invalid', async () => {
         const priorVerifiedBatchReceipt = await createVerifiedRecoveryReceipt();
         mocks.parseBatch.mockReturnValueOnce({ status: 'invalid', reason: 'recovery batch schema is invalid' });
 
@@ -415,7 +415,7 @@ describe('beginConfirmedCommandExecution', () => {
         expect(mocks.updateMessage).not.toHaveBeenCalled();
     });
 
-    it('settles a hard command budget limit without claiming work or accepting the confirmation', async () => {
+    it('should settle a hard command budget limit without claiming work or accepting the confirmation', async () => {
         mocks.reserveBudget.mockReturnValueOnce({ status: 'hard-limit-reached', reason: 'maxCommands', estimates: [] });
 
         const result = execute();
@@ -434,7 +434,7 @@ describe('beginConfirmedCommandExecution', () => {
         expect(mocks.updateConfirmation).not.toHaveBeenCalled();
     });
 
-    it('settles a work-lease conflict without accepting the confirmation', async () => {
+    it('should settle a work-lease conflict without accepting the confirmation', async () => {
         mocks.claimLease.mockReturnValueOnce({ status: 'already-claimed' });
 
         const result = execute();
@@ -452,7 +452,7 @@ describe('beginConfirmedCommandExecution', () => {
         expect(mocks.updateConfirmation).not.toHaveBeenCalled();
     });
 
-    it('admits untracked work without budgeting or claiming a lease', () => {
+    it('should admit untracked work without budgeting or claiming a lease', () => {
         mocks.getRun.mockReturnValueOnce(undefined);
 
         const result = execute();
@@ -475,7 +475,7 @@ describe('beginConfirmedCommandExecution', () => {
         });
     });
 
-    it('returns ordinary admission synchronously after reserving budget, claiming work, and writing accepted state', () => {
+    it('should return ordinary admission synchronously after reserving budget, claiming work, and writing accepted state', () => {
         const result = execute();
 
         expect(result).toMatchObject({
@@ -515,7 +515,7 @@ describe('beginConfirmedCommandExecution', () => {
         expect(claimOrder).toBeLessThan(acceptedOrder);
     });
 
-    it('bypasses approval, budget, and lease work for an already verified batch while admitting recovered execution', async () => {
+    it('should bypass approval, budget, and lease work for an already verified batch while admitting recovered execution', async () => {
         const priorVerifiedBatchReceipt = await createVerifiedRecoveryReceipt();
         expect(priorVerifiedBatchReceipt).toMatchObject({
             schemaVersion: 2,
