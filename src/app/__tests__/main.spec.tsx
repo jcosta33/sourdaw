@@ -48,7 +48,7 @@ describe('app main composition', () => {
         await import('../main');
 
         expect(mocks.resolveAppComposition).toHaveBeenCalledWith(
-            expect.objectContaining({ protocol: window.location.protocol })
+            expect.objectContaining({ protocol: window.location.protocol, userAgent: navigator.userAgent })
         );
         expect(mocks.mountBrowserDisplayScaleHost).toHaveBeenCalledWith(document.getElementById('root'));
         expect(mocks.bootstrap).not.toHaveBeenCalled();

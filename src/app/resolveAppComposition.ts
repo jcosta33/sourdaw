@@ -5,6 +5,7 @@ type AppCompositionEnvironment = {
     isDevelopment: boolean;
     isTopLevel: boolean;
     protocol: string;
+    userAgent: string;
     windowName: string;
 };
 
@@ -15,14 +16,16 @@ export function resolveAppComposition({
     isDevelopment,
     isTopLevel,
     protocol,
+    userAgent,
     windowName,
 }: AppCompositionEnvironment): AppComposition {
-    if (protocol === 'app:') {
+    const isElectronDocument = protocol === 'app:' || userAgent.includes('Electron/');
+    if (isElectronDocument) {
         return hasDesktopBridge ? 'application' : 'desktop-startup-error';
     }
 
     const usesDirectDevelopmentViewport = isDevelopment && windowName === DIRECT_E2E_VIEWPORT_NAME;
-    if (hasDesktopBridge || !isTopLevel || usesDirectDevelopmentViewport) {
+    if (!isTopLevel || usesDirectDevelopmentViewport) {
         return 'application';
     }
 

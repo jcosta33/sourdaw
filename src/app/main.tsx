@@ -8,6 +8,7 @@ const composition = resolveAppComposition({
     isDevelopment: import.meta.env.DEV,
     isTopLevel: window.parent === window,
     protocol: window.location.protocol,
+    userAgent: navigator.userAgent,
     windowName: window.name,
 });
 

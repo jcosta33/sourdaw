@@ -6,7 +6,7 @@ import { applyDisplayScale } from '../applyDisplayScale';
 vi.mock('../../repositories/setDisplayScale', () => ({ setDisplayScale: vi.fn() }));
 
 describe('applyDisplayScale', () => {
-    it.each([0.5, 2])('preserves the supported UI scale boundary %s', (scale) => {
+    it.each([0.5, 1.25, 2])('preserves supported UI scale %s', (scale) => {
         applyDisplayScale(scale);
 
         expect(setDisplayScale).toHaveBeenLastCalledWith(scale);

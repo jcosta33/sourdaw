@@ -8,7 +8,7 @@ describe('normalizeUiScale', () => {
         expect(normalizeUiScale).not.toBe(normalizePreferenceModelUiScale);
     });
 
-    it.each([0.5, 1, 2])('preserves supported UI scale %s', (scale) => {
+    it.each([0.5, 1, 1.25, 2])('preserves supported UI scale %s', (scale) => {
         expect(normalizeUiScale(scale)).toBe(scale);
     });
 

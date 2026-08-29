@@ -6,9 +6,12 @@ const topLevelWebDocument = {
     hasDesktopBridge: false,
     isDevelopment: false,
     isTopLevel: true,
-    protocol: 'https:',
+    protocol: 'http:',
+    userAgent: 'Mozilla/5.0 Chrome/140.0.0.0 Safari/537.36',
     windowName: '',
 };
+
+const electronUserAgent = 'Mozilla/5.0 Chrome/140.0.0.0 Electron/38.0.0 Safari/537.36';
 
 describe('resolveAppComposition', () => {
     it('runs the application in an app document with its desktop bridge', () => {
@@ -25,8 +28,24 @@ describe('resolveAppComposition', () => {
         expect(resolveAppComposition({ ...topLevelWebDocument, protocol: 'app:' })).toBe('desktop-startup-error');
     });
 
+    it.each([
+        { hasDesktopBridge: false, expected: 'desktop-startup-error' },
+        { hasDesktopBridge: true, expected: 'application' },
+    ] as const)(
+        'resolves an HTTP Electron document with bridge $hasDesktopBridge as $expected',
+        ({ hasDesktopBridge, expected }) => {
+            expect(
+                resolveAppComposition({
+                    ...topLevelWebDocument,
+                    hasDesktopBridge,
+                    userAgent: electronUserAgent,
+                })
+            ).toBe(expected);
+        }
+    );
+
     it.each([false, true])(
-        'hosts the application frame in a top-level web document (development: %s)',
+        'hosts the application frame in a top-level Chrome HTTP document (development: %s)',
         (isDevelopment) => {
             expect(resolveAppComposition({ ...topLevelWebDocument, isDevelopment })).toBe('browser-host');
         }
@@ -55,7 +74,7 @@ describe('resolveAppComposition', () => {
         ).toBe('browser-host');
     });
 
-    it('preserves direct application composition for a web document with the desktop bridge', () => {
-        expect(resolveAppComposition({ ...topLevelWebDocument, hasDesktopBridge: true })).toBe('application');
+    it('does not treat a bridge-shaped property as Electron in an ordinary Chrome HTTP document', () => {
+        expect(resolveAppComposition({ ...topLevelWebDocument, hasDesktopBridge: true })).toBe('browser-host');
     });
 });
