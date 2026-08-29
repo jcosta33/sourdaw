@@ -105,15 +105,14 @@ fn validate_adapter(adapter_id: &str, origin: &str) -> Result<(), String> {
 }
 
 fn validate_credential(source: &str, credential: &Zeroizing<String>) -> Result<(), String> {
-    let required = match source {
-        "anthropic" | "openai" => true,
-        "openai-compatible" => false,
+    match source {
+        "anthropic" | "openai" | "openai-compatible" => (),
         _ => return Err("Provider gateway credential source is invalid".to_string()),
-    };
+    }
     if credential.len() > MAX_API_KEY_BYTES {
         return Err("Provider gateway credential exceeds its size limit".to_string());
     }
-    if required && credential.is_empty() {
+    if credential.is_empty() {
         return Err("Provider gateway credential is invalid".to_string());
     }
     Ok(())
@@ -854,8 +853,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn session_opening_rejects_blank_first_party_credentials_but_allows_unauthenticated_compatible_endpoints(
-    ) {
+    async fn session_opening_rejects_blank_credentials_for_every_provider_session() {
         let state = ProviderGatewayState::default();
 
         assert!(open_provider_gateway_session(
@@ -876,15 +874,18 @@ mod tests {
         )
         .await
         .is_err());
-        assert!(open_provider_gateway_session(
-            OPENAI_ADAPTER_ID.to_string(),
-            "https://provider.example".to_string(),
-            "openai-compatible".to_string(),
-            Zeroizing::new(String::new()),
-            &state,
-        )
-        .await
-        .is_ok());
+        assert_eq!(
+            open_provider_gateway_session(
+                OPENAI_ADAPTER_ID.to_string(),
+                "https://provider.example".to_string(),
+                "openai-compatible".to_string(),
+                Zeroizing::new(String::new()),
+                &state,
+            )
+            .await
+            .expect_err("public compatible sessions require a credential"),
+            "Provider gateway credential is invalid"
+        );
     }
 
     #[tokio::test]

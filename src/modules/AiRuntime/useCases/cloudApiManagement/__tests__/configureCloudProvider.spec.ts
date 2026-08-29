@@ -46,7 +46,7 @@ describe('configureCloudProvider', () => {
         });
     });
 
-    it('accepts HTTPS and loopback compatible endpoints', async () => {
+    it('accepts an unauthenticated loopback compatible endpoint', async () => {
         await configureCloudProvider({
             provider: 'openai-compatible',
             model: 'qwen',
@@ -58,6 +58,24 @@ describe('configureCloudProvider', () => {
         expect(mocks.setCloudProviderConfig).toHaveBeenCalledWith(
             expect.objectContaining({ baseUrl: 'http://localhost:1234/v1' })
         );
+    });
+
+    it('forwards an authenticated HTTPS compatible configuration with its normalized base URL', async () => {
+        await configureCloudProvider({
+            provider: 'openai-compatible',
+            model: 'custom-model',
+            baseUrl: ' https://models.example.test/v1/ ',
+            authentication: 'api-key',
+            apiKey: '  compatible-key  ',
+        });
+
+        expect(mocks.setCloudProviderConfig).toHaveBeenCalledWith({
+            provider: 'openai-compatible',
+            model: 'custom-model',
+            baseUrl: 'https://models.example.test/v1',
+            authentication: 'api-key',
+            apiKey: '  compatible-key  ',
+        });
     });
 
     it('invalidates cloud readiness after reconfiguration', async () => {
@@ -142,6 +160,19 @@ describe('configureCloudProvider', () => {
                 apiKey: 'must-not-be-forwarded',
             })
         ).rejects.toThrow('Remove the API key before connecting without authentication');
+        expect(mocks.setCloudProviderConfig).not.toHaveBeenCalled();
+    });
+
+    it('rejects unauthenticated public HTTPS compatible configuration before repository setup', async () => {
+        await expect(
+            configureCloudProvider({
+                provider: 'openai-compatible',
+                model: 'qwen',
+                baseUrl: 'https://models.example.test/v1',
+                authentication: 'none',
+                apiKey: '',
+            })
+        ).rejects.toThrow('Unauthenticated OpenAI-compatible providers require loopback HTTP');
         expect(mocks.setCloudProviderConfig).not.toHaveBeenCalled();
     });
 

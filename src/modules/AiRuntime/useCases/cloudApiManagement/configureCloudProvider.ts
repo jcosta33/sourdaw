@@ -55,6 +55,13 @@ export async function configureCloudProvider(configuration: HostedLlmConfigurati
     const normalizedBaseUrl = normalizeBaseUrl(configuration.provider, configuration.baseUrl);
     if (
         configuration.provider === 'openai-compatible' &&
+        configuration.authentication === 'none' &&
+        !normalizedBaseUrl?.startsWith('http:')
+    ) {
+        throw createAiRuntimeError('Unauthenticated OpenAI-compatible providers require loopback HTTP');
+    }
+    if (
+        configuration.provider === 'openai-compatible' &&
         configuration.authentication === 'api-key' &&
         normalizedBaseUrl?.startsWith('http:')
     ) {
