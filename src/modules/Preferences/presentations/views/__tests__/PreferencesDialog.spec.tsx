@@ -65,7 +65,7 @@ describe('PreferencesDialog', () => {
             'max-h-[80%]',
             'w-[720px]',
             'max-w-[90%]',
-            'sm:max-w-none',
+            'sm:max-w-[90%]',
             'overflow-hidden'
         );
         expect(shell?.tagName).toBe('DIV');

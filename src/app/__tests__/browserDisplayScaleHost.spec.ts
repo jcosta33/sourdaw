@@ -90,4 +90,38 @@ describe('mountBrowserDisplayScaleHost', () => {
         expect(frame.style.height).toBe('100vh');
         expect(frame.style.transform).toBe('scale(1)');
     });
+
+    it('keeps display-scale messages active while the host is stored in the back-forward cache', () => {
+        const root = document.getElementById('root')!;
+        mountBrowserDisplayScaleHost(root);
+        const frame = document.querySelector('iframe')!;
+
+        window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true }));
+        window.dispatchEvent(
+            new MessageEvent('message', {
+                data: { type: 'sourdaw:browser-display-scale', scale: 2 },
+                origin: window.location.origin,
+                source: frame.contentWindow,
+            })
+        );
+
+        expect(frame.style.transform).toBe('scale(2)');
+    });
+
+    it('removes display-scale messages when the host is permanently unloaded', () => {
+        const root = document.getElementById('root')!;
+        mountBrowserDisplayScaleHost(root);
+        const frame = document.querySelector('iframe')!;
+
+        window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: false }));
+        window.dispatchEvent(
+            new MessageEvent('message', {
+                data: { type: 'sourdaw:browser-display-scale', scale: 2 },
+                origin: window.location.origin,
+                source: frame.contentWindow,
+            })
+        );
+
+        expect(frame.style.transform).toBe('scale(1)');
+    });
 });

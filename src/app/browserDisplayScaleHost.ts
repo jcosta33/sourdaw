@@ -59,8 +59,12 @@ export function mountBrowserDisplayScaleHost(root: HTMLElement): void {
         }
         sizeViewport(frame, scale);
     };
+    const handlePageHide = (event: PageTransitionEvent): void => {
+        if (!event.persisted) {
+            window.removeEventListener('message', handleDisplayScale);
+            window.removeEventListener('pagehide', handlePageHide);
+        }
+    };
     window.addEventListener('message', handleDisplayScale);
-    window.addEventListener('pagehide', () => window.removeEventListener('message', handleDisplayScale), {
-        once: true,
-    });
+    window.addEventListener('pagehide', handlePageHide);
 }

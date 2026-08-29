@@ -79,7 +79,7 @@ export const PreferencesDialog = ({ open, onClose }: PreferencesDialogProps): Re
                 }
             }}
         >
-            <DialogContent className="h-[520px] max-h-[80%] w-[720px] max-w-[90%] overflow-hidden bg-surface-raised p-0 sm:max-w-none">
+            <DialogContent className="h-[520px] max-h-[80%] w-[720px] max-w-[90%] overflow-hidden bg-surface-raised p-0 sm:max-w-[90%]">
                 <Row align="stretch" className="h-full min-h-0 overflow-hidden">
                     {/* ── Sidebar navigation ── */}
                     <DawSideRail className="w-[180px] overflow-y-auto p-3">

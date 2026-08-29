@@ -1,9 +1,11 @@
 import { fireEvent, render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { DawContextMenuSurface } from '../DawContextMenuSurface';
 
 describe('DawContextMenuSurface', () => {
+    afterEach(() => vi.unstubAllGlobals());
+
     it('should render children without portal', () => {
         const { container } = render(
             <DawContextMenuSurface x={10} y={20} portal={false}>
@@ -51,6 +53,38 @@ describe('DawContextMenuSurface', () => {
         );
 
         const menu = screen.getByRole('menu');
+        expect(menu.style.maxHeight).toBe('calc(100vh - 28px)');
+        expect(menu.style.overflowY).toBe('auto');
+    });
+
+    it('clamps a down-anchored menu opened near the lower viewport edge', () => {
+        vi.stubGlobal('innerHeight', 360);
+
+        render(
+            <DawContextMenuSurface x={10} y={340} yClampOffset={300} portal={false} role="menu">
+                <span>Item</span>
+            </DawContextMenuSurface>
+        );
+
+        const menu = screen.getByRole('menu');
+        expect(menu.style.top).toBe('60px');
+        expect(menu.style.bottom).toBe('');
+        expect(menu.style.maxHeight).toBe('calc(100vh - 68px)');
+        expect(menu.style.overflowY).toBe('auto');
+    });
+
+    it.each(['up', 'auto'] as const)('keeps a %s-anchored menu scrollable above its anchor', (anchorY) => {
+        vi.stubGlobal('innerHeight', 360);
+
+        render(
+            <DawContextMenuSurface x={10} y={340} anchorY={anchorY} portal={false} role="menu">
+                <span>Item</span>
+            </DawContextMenuSurface>
+        );
+
+        const menu = screen.getByRole('menu');
+        expect(menu.style.top).toBe('');
+        expect(menu.style.bottom).toBe('20px');
         expect(menu.style.maxHeight).toBe('calc(100vh - 28px)');
         expect(menu.style.overflowY).toBe('auto');
     });

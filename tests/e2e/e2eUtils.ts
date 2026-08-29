@@ -16,6 +16,17 @@ type SetupWorkspaceOptions = {
 };
 
 /**
+ * Existing E2E specs address the application through Playwright's Page fixture.
+ * Keep that stable in e2e mode while the dedicated browser-display-scale spec
+ * exercises the production iframe boundary directly.
+ */
+export async function enable_direct_e2e_viewport(page: Page): Promise<void> {
+    await page.context().addInitScript(() => {
+        window.name = 'sourdaw-e2e-direct';
+    });
+}
+
+/**
  * Common setup for E2E tests: bypasses the onboarding tour, alpha notice, and
  * delayed first-load shortcut hint via local storage, then navigates to the
  * root URL and ensures basic DOM loading is complete.
@@ -29,6 +40,7 @@ export async function setupWorkspace(page: Page, options: SetupWorkspaceOptions 
     // parse it as boolean `true`.
     const alphaDismissed = superjsonStringify(true);
 
+    await enable_direct_e2e_viewport(page);
     await page.addInitScript(
         ({ alphaDismissed, localStorage }) => {
             window.localStorage.clear();

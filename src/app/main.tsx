@@ -1,7 +1,8 @@
 import { mountBrowserDisplayScaleHost } from './browserDisplayScaleHost';
 
 const root = document.getElementById('root')!;
-const shouldHostBrowserViewport = !('sourdaw' in window) && window.parent === window;
+const isDirectE2EViewport = import.meta.env.MODE === 'e2e' && window.name === 'sourdaw-e2e-direct';
+const shouldHostBrowserViewport = !isDirectE2EViewport && !('sourdaw' in window) && window.parent === window;
 
 async function renderApplication(): Promise<void> {
     const [, , { createRoot }, { App }] = await Promise.all([
