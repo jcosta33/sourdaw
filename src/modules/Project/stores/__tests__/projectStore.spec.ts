@@ -355,6 +355,57 @@ describe('projectStore', () => {
         expect(mutation_count).toBe(0);
     });
 
+    it('keeps an already-clean production brief by reference through projectMeta hydrate', () => {
+        // Hydrate JSON-roundtrips the slot, so nested brief identity with the pre-hydrate
+        // object cannot hold. A Symbol marker on the pending state survives only when
+        // sanitize returns that same object — setProjected rebuilds strip symbols.
+        const accept_marker = Symbol('projectMeta-sanitize-accept');
+        const clean = create_default_state();
+        Object.defineProperty(clean, accept_marker, { value: true, enumerable: true });
+        fake_doc.projectMeta = {
+            projectId: clean.projectId,
+            name: clean.name,
+            createdAt: clean.createdAt,
+            updatedAt: clean.updatedAt,
+            keyRoot: clean.keyRoot,
+            scaleName: clean.scaleName,
+            tuning: clean.tuning,
+            productionBrief: clean.productionBrief,
+        };
+
+        projectStore.set(clean);
+        expect(Object.is(projectStore.value?.productionBrief, clean.productionBrief)).toBe(true);
+        projectStore.hydrate();
+
+        // Marker survives only when sanitize accepts the rebased pending by reference.
+        expect(Object.getOwnPropertyDescriptor(projectStore.value, accept_marker)?.value).toBe(true);
+    });
+
+    it('preserves a pending projectMeta write across hydrate of an unchanged document snapshot', () => {
+        const accept_marker = Symbol('projectMeta-pending-accept');
+        const meta = create_valid_meta();
+        fake_doc.projectMeta = meta;
+
+        const authored: ProjectStoreState = {
+            ...create_default_state(),
+            ...meta,
+            dirty: true,
+            loading: false,
+            identityMigrationPending: false,
+            identityPersistencePending: false,
+            initialized: true,
+        };
+        Object.defineProperty(authored, accept_marker, { value: true, enumerable: true });
+        projectStore.set(authored);
+
+        // Same durable snapshot as the pending write's base; do not flush the rAF commit.
+        projectStore.hydrate();
+
+        expect(projectStore.value?.dirty).toBe(true);
+        expect(projectStore.value?.initialized).toBe(true);
+        expect(Object.getOwnPropertyDescriptor(projectStore.value, accept_marker)?.value).toBe(true);
+    });
+
     it('writes production brief revisions through the collaborative project document', async () => {
         const state = create_default_state();
         const productionBrief = {
