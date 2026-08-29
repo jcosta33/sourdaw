@@ -2,8 +2,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { beginConfirmedCommandExecution } from '../beginConfirmedCommandExecution';
 
+import type { createVerifiedBatchReceipt } from '#/modules/Command/useCases';
 import type { AgentRunWorkLease } from '../../../models/AgentRun';
 import type { PendingAppActionConfirmation } from '../../../stores/pendingActionConfirmationStore';
+
+type CommandVerifiedBatchReceipt = ReturnType<typeof createVerifiedBatchReceipt>;
 
 const mocks = vi.hoisted(() => ({
     captureRevision: vi.fn(() => 'revision-1'),
@@ -19,7 +22,8 @@ const mocks = vi.hoisted(() => ({
     validateApproval: vi.fn(() => ({ status: 'valid' })),
 }));
 
-vi.mock('#/modules/Command/useCases', () => ({
+vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
     parseVersionedCommandBatchEnvelope: mocks.parseBatch,
 }));
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
@@ -149,11 +153,66 @@ const lease = {
     settledAt: null,
 } satisfies AgentRunWorkLease;
 
-function execute(options: { priorVerifiedBatchReceipt?: object | null } = {}) {
+function execute(options: { priorVerifiedBatchReceipt?: CommandVerifiedBatchReceipt | null } = {}) {
     return beginConfirmedCommandExecution({
         confirmation,
-        priorVerifiedBatchReceipt: (options.priorVerifiedBatchReceipt ?? null) as never,
+        priorVerifiedBatchReceipt: options.priorVerifiedBatchReceipt ?? null,
         recoveringPendingEffects: false,
+    });
+}
+
+async function createVerifiedRecoveryReceipt(): Promise<CommandVerifiedBatchReceipt> {
+    const commandUseCases =
+        await vi.importActual<typeof import('#/modules/Command/useCases')>('#/modules/Command/useCases');
+    const action = { type: 'setTempo', payload: { bpm: 132 } } as const;
+    const command = commandUseCases.createVersionedCommandEnvelope({
+        action,
+        availableDeviceVersions: {},
+        expectedEffect: 'Tempo changes to 132 BPM.',
+        groupId: 'batch-verified',
+        normalizedProjectRevision: 'revision-1',
+        objectReferences: [],
+        parameterUnits: [{ argument: 'bpm', unit: 'beats-per-minute' }],
+        reason: 'Apply the confirmed tempo change.',
+        time: [],
+    });
+    const compiled = commandUseCases.compileVersionedCommandBatchEnvelope({
+        runId: 'run-verified',
+        batchId: 'batch-verified',
+        projectId: 'project-1',
+        baseRevision: 'revision-1',
+        intent: 'Set tempo to 132 BPM.',
+        commands: [commandUseCases.serializeVersionedCommandEnvelope(command)],
+    });
+    const parsed = commandUseCases.parseVersionedCommandBatchEnvelope(compiled.serialized, compiled.authority);
+    if (parsed.status === 'invalid') {
+        throw new Error(parsed.reason);
+    }
+    return commandUseCases.createVerifiedBatchReceipt({
+        contentHash: 'verified-recovery-receipt',
+        envelope: parsed.envelope,
+        observedBaseRevision: 'revision-1',
+        resultingRevision: 'revision-2',
+        result: {
+            status: 'committed-with-warning',
+            actions: [],
+            warning: 'The committed render remains pending.',
+            warningDetails: [
+                {
+                    kind: 'external-effect',
+                    message: 'The committed render remains pending.',
+                    commandId: command.commandId,
+                    pendingEffect: {
+                        commandId: command.commandId,
+                        operation: 'setTempo',
+                        reason: 'The committed render remains pending.',
+                        state: 'pending',
+                        kind: 'external-effect',
+                        remediation: 'reconcile',
+                    },
+                },
+            ],
+        },
     });
 }
 
@@ -310,12 +369,27 @@ describe('beginConfirmedCommandExecution', () => {
         expect(claimOrder).toBeLessThan(acceptedOrder);
     });
 
-    it('bypasses approval, budget, and lease work for an already verified batch while admitting recovered execution', () => {
-        const priorVerifiedBatchReceipt = { outcome: 'partially-committed', pendingEffects: [{}] };
+    it('bypasses approval, budget, and lease work for an already verified batch while admitting recovered execution', async () => {
+        const priorVerifiedBatchReceipt = await createVerifiedRecoveryReceipt();
+        expect(priorVerifiedBatchReceipt).toMatchObject({
+            schemaVersion: 2,
+            runId: 'run-verified',
+            batchId: 'batch-verified',
+            outcome: 'partially-committed',
+            pendingEffects: [
+                {
+                    commandId: priorVerifiedBatchReceipt.commandOutcomes[0]?.commandId,
+                    operation: 'setTempo',
+                    state: 'pending',
+                    kind: 'external-effect',
+                    remediation: 'reconcile',
+                },
+            ],
+        });
 
         const result = beginConfirmedCommandExecution({
             confirmation,
-            priorVerifiedBatchReceipt: priorVerifiedBatchReceipt as never,
+            priorVerifiedBatchReceipt,
             recoveringPendingEffects: true,
         });
 
