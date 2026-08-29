@@ -83,6 +83,7 @@ describe('AiSection', () => {
         const apiKey = screen.getByLabelText('Hosted AI API key');
         expect(apiKey).toHaveAttribute('type', 'password');
         expect(apiKey).toHaveAttribute('autocomplete', 'new-password');
+        expect(screen.getByText(/never saved in Preferences or included in later AI requests/u)).toBeInTheDocument();
         expect(screen.getByRole('button', { name: 'Connect' })).toBeDisabled();
         fireEvent.change(apiKey, { target: { value: 'sk-test-key' } });
         fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
