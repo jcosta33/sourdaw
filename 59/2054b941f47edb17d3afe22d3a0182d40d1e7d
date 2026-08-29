@@ -1,0 +1,20 @@
+electron/__tests__/commands.spec.ts
+  s_4f908a5afb6b58::t_f03ac5d3be5937 58
+  s_4f908a5afb6b58::t_43fc6002154180 224,227
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "592054b941f47edb17d3afe22d3a0182d40d1e7d",
+  "prompts": {},
+  "sessions": {
+    "s_4f908a5afb6b58": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fcb92ba4-bf56-47a4-8b57-803f335a449e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
