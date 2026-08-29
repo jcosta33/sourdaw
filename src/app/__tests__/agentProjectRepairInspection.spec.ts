@@ -1,18 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { automergeRepository } from '#/modules/CrdtDocument/repositories/automergeRepository';
 import {
     agentProjectInspectionPort,
     createCrdtDoc,
     inspectCurrentAgentProjectRepairState,
+    mutateCrdtDoc,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
 } from '#/modules/CrdtDocument/useCases';
 
 import { captureAgentProjectInspectionState } from '../captureCommandBatchPreflightState';
-
-// Registers every root slot's inbound sanitizer as a side effect of importing the stores.
-import '#/modules/CrdtDocument/useCases/projection/projectSlotProjections';
 
 function trackRow(id: string, kind: 'master' | 'midi', outputId: string): Record<string, unknown> {
     return {
@@ -114,10 +111,13 @@ function encodedGrooveTemplates(): Record<string, unknown> {
 
 function seedRootDocument(slots: Record<string, unknown>): void {
     createCrdtDoc('root');
-    automergeRepository.changeDoc<Record<string, unknown>>('root', (doc) => {
-        for (const [slot, value] of Object.entries(slots)) {
-            doc[slot] = value;
-        }
+    mutateCrdtDoc<Record<string, unknown>>({
+        id: 'root',
+        changeFn: (doc) => {
+            for (const [slot, value] of Object.entries(slots)) {
+                doc[slot] = value;
+            }
+        },
     });
 }
 

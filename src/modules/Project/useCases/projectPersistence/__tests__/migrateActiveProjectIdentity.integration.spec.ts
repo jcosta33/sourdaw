@@ -4,8 +4,13 @@ import {
     resetAutomergeStorageProjections,
     runWithAutomergeStorageTransaction,
 } from '#/infra/store/storage/createAutomergeStorage';
-import { automergeRepository } from '#/modules/CrdtDocument/repositories/automergeRepository';
-import { createCrdtDoc, getCrdtDoc, registerCrdtStorageRuntime, removeCrdtDoc } from '#/modules/CrdtDocument/useCases';
+import {
+    createCrdtDoc,
+    getCrdtDoc,
+    mutateCrdtDoc,
+    registerCrdtStorageRuntime,
+    removeCrdtDoc,
+} from '#/modules/CrdtDocument/useCases';
 
 import { createDefaultProductionBrief } from '../../../models/ProductionBrief';
 import { isCanonicalProjectId } from '../../../models/ProjectData';
@@ -61,8 +66,11 @@ describe('migrateActiveProjectIdentity against a live legacy Automerge document'
         mocks.persistCrdtProject.mockResolvedValue(undefined);
         registerCrdtStorageRuntime();
         createCrdtDoc('root');
-        automergeRepository.changeDoc<Record<string, unknown>>('root', (doc) => {
-            doc.projectMeta = legacyProjectMeta();
+        mutateCrdtDoc<Record<string, unknown>>({
+            id: 'root',
+            changeFn: (doc) => {
+                doc.projectMeta = legacyProjectMeta();
+            },
         });
         // The previous test's projected cache and any write it left pending
         // belong to the document just replaced; a hydrate would otherwise
