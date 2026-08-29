@@ -62,7 +62,7 @@ const SCHEDULER_RELEASE_POLL: Duration = Duration::from_millis(2);
 /// approach it, because reaching it means the graceful path was abandoned and
 /// every plugin still waiting is killed mid-flight — the outcome this module
 /// exists to prevent.
-const SHELL_FORCE_EXIT_DEADLINE: Duration = Duration::from_millis(5_000);
+pub(crate) const SHELL_FORCE_EXIT_DEADLINE: Duration = Duration::from_millis(5_000);
 
 const _: () = assert!(
     SCHEDULER_RELEASE_BUDGET.as_millis() * 4 <= SHELL_FORCE_EXIT_DEADLINE.as_millis(),

@@ -390,6 +390,33 @@ impl AppState {
         runtime.with_control(Duration::from_secs(2), operation)
     }
 
+    /// The same operation, but refusing an instance whose control gate is busy
+    /// rather than waiting for it.
+    ///
+    /// For callers that must not park: the gate's wait is unbounded, and a
+    /// caller running on the shell's UI thread cannot afford one — the worker
+    /// holding the gate may itself be waiting for that very thread, and the
+    /// refusal is what breaks the cycle. See
+    /// [`SharedHostedPlugin::try_with_control`](crate::host::native_bridge::SharedHostedPlugin::try_with_control).
+    pub fn try_with_engine_plugin_control<ResultValue>(
+        &self,
+        instance_id: &str,
+        operation: impl FnOnce(&mut HostedRuntime) -> Result<ResultValue, String>,
+    ) -> Result<ResultValue, String> {
+        let runtime = {
+            let engine_plugins = self
+                .engine_plugins
+                .lock()
+                .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
+            engine_plugins
+                .get(instance_id)
+                .map(|instance| Arc::clone(&instance.runtime))
+                .ok_or_else(|| format!("No engine-owned plugin instance: {}", instance_id))?
+        };
+
+        runtime.try_with_control(Duration::from_secs(2), operation)
+    }
+
     pub fn retain_retired_engine_plugin(&self, runtime: Arc<SharedHostedPlugin>) {
         match self.retired_engine_plugins.lock() {
             Ok(mut retired_plugins) => {

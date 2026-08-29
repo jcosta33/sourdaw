@@ -6,7 +6,8 @@ use crate::host::plugin_registry_store::{
 };
 use crate::host::plugin_scan_policy::PluginScanPolicy;
 use crate::host::plugin_scan_worker;
-use crate::host::plugin_window::PluginWindowHost;
+use crate::host::plugin_window::{NoWindowHost, PluginWindowHost};
+use crate::host::ui_thread::lend_on_ui_thread;
 use crate::state::{AppState, PluginInstanceData, PluginRegistryEntry};
 use cpal::traits::{DeviceTrait, HostTrait};
 use daw_engine::audio_bridge::{create_audio_bridge, MAX_BLOCK_FRAMES};
@@ -1410,6 +1411,15 @@ async fn unload_all_plugin_runtimes(
     Ok(result)
 }
 
+/// The thread this unload's editor teardown must run on.
+///
+/// An unload can run with no window host at all — a shell may lose its windows
+/// before its last instance — and [`NoWindowHost`] says so: the editor calls then
+/// run on this thread, which is the only one left to run them on.
+fn editor_thread(windows_host: Option<&dyn PluginWindowHost>) -> &dyn PluginWindowHost {
+    windows_host.unwrap_or(&NoWindowHost)
+}
+
 async fn unload_plugin_runtime(
     instance_id: &str,
     windows_host: Option<&dyn PluginWindowHost>,
@@ -1424,7 +1434,13 @@ async fn unload_plugin_runtime(
         plugins.remove(instance_id)
     };
     if let Some(mut instance) = command_plugin {
-        instance.close_gui();
+        // Removing a device closes its editor, and closing an editor is the same
+        // thread-affine lifecycle a GUI command runs: `close_gui` reaches VST3
+        // `removed` and CLAP `gui.destroy`, and running them on this worker
+        // un-parents an NSView off the main thread.
+        let _ = lend_on_ui_thread(editor_thread(windows_host), &mut instance, |instance| {
+            instance.close_gui()
+        });
         remove_plugin_window(instance_id, windows_host, state);
         return Ok(());
     }
@@ -1464,8 +1480,9 @@ async fn unload_plugin_runtime(
 
         if let Err(error) =
             runtime.with_unload_control(std::time::Duration::from_secs(2), |plugin| {
-                plugin.close_gui();
-                Ok(())
+                lend_on_ui_thread(editor_thread(windows_host), plugin, |plugin| {
+                    plugin.close_gui()
+                })
             })
         {
             eprintln!("[Plugin] GUI cleanup failed during unload: {error}");
@@ -1978,6 +1995,7 @@ pub async fn process_plugin_audio(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::host::plugin_window::testing::DedicatedUiWindowHost;
     use crate::state::EnginePluginInstanceData;
     use daw_core::PluginInstanceId;
     use std::path::Path;
@@ -3740,6 +3758,47 @@ mod tests {
         assert_eq!(unload_all.1, ["Native engine not running"]);
         let windows = state.plugin_windows.lock().expect("plugin_windows lock");
         assert!(windows.is_empty());
+    }
+
+    /// Removing a device while its editor is open closes that editor, and the
+    /// close is the same thread-affine lifecycle a GUI command runs: it reaches
+    /// VST3 `removed` and CLAP `gui.destroy`. An unload that ran it on the
+    /// executor's worker un-parents an `NSView` off the main thread, which on
+    /// macOS is a crash rather than a mistake — and no GUI command is involved,
+    /// so nothing in `plugin_gui` covers this path.
+    #[test]
+    fn unloading_an_instance_closes_its_editor_on_the_shell_thread() {
+        let state = AppState::default();
+        let wrapper =
+            ClapWrapper::new_engine_owned_command_fixture("Command Fixture", vec![], true);
+        let gui_threads = wrapper
+            .engine_owned_command_fixture_gui_threads()
+            .expect("the command fixture records its editor lifecycle threads");
+        state.plugins.lock().expect("plugins lock").insert(
+            "command-instance".into(),
+            PluginInstanceData {
+                plugin: Box::new(wrapper),
+            },
+        );
+        let windows = DedicatedUiWindowHost::start();
+
+        crate::block_on_test(unload_plugin(
+            Some(PluginInstanceId("command-instance".to_string())),
+            &windows,
+            &state,
+        ))
+        .expect("the instance should unload");
+
+        assert_eq!(
+            gui_threads.lock().expect("gui thread log").clone(),
+            [windows.thread_id],
+            "the editor close an unload performs must run on the shell's thread"
+        );
+        assert_ne!(
+            windows.thread_id,
+            std::thread::current().id(),
+            "the fake shell thread must not be this one, or this test proves nothing"
+        );
     }
 
     #[test]

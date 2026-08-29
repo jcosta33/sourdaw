@@ -34,14 +34,36 @@ use napi::bindgen_prelude::*;
 use napi::threadsafe_function::{ThreadsafeFunction, ThreadsafeFunctionCallMode};
 use napi_derive::napi;
 
-use crate::host::plugin_window::{native_handle_from_bytes, PluginEditorWindow, PluginWindowHost};
-use crate::host::ui_thread::{call_on_ui_thread, UiThread, UiThreadTask};
+use crate::host::plugin_window::{
+    apply_editor_size_on_ui_thread, native_handle_from_bytes, PluginEditorWindow, PluginWindowHost,
+};
+use crate::host::ui_thread::{PostedUiThread, UiThread, UiThreadTask};
 
 /// How long one JS round trip may take before the operation fails.
 ///
 /// Generous because the main thread may be mid-layout; bounded because a shell
 /// that never answers must fail the open, not park a worker forever.
 const WINDOW_HOST_DEADLINE: Duration = Duration::from_secs(10);
+
+/// How long a worker waits for the main thread to run one editor call.
+///
+/// Much shorter than the round trips above, and the difference is the point.
+/// Those wait for a JS answer the main thread will get to; this one is waited on
+/// while holding a plugin's control gate, and the main thread may be blocked on
+/// that very gate — the one cycle the ordering rules in
+/// [`crate::host::ui_thread`] cannot rule out. What ends it is this side giving
+/// up, so the bound is chosen against what is waiting behind it: two seconds is
+/// the control timeout every editor command already spends, so a hop can never
+/// outlast the claim it runs inside, and the assertion below keeps it clear of
+/// the deadline at which the shell stops waiting for a graceful exit and kills
+/// every plugin mid-flight.
+const EDITOR_UI_THREAD_DEADLINE: Duration = Duration::from_secs(2);
+
+const _: () = assert!(
+    EDITOR_UI_THREAD_DEADLINE.as_millis() * 2
+        <= crate::shutdown::SHELL_FORCE_EXIT_DEADLINE.as_millis(),
+    "an editor hop must give up with time to spare inside the shell's force-exit deadline"
+);
 
 #[napi(object)]
 pub struct CreateEditorWindowRequest {
@@ -124,33 +146,16 @@ struct JsUiThread {
     thread_id: ThreadId,
     env: MainThreadEnv,
     pump: UiThreadPumpFn,
-    queued: Arc<Mutex<Vec<Arc<UiThreadTask>>>>,
-}
-
-fn take_queued(queued: &Mutex<Vec<Arc<UiThreadTask>>>) -> Vec<Arc<UiThreadTask>> {
-    std::mem::take(
-        &mut *queued
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner()),
-    )
-}
-
-fn forget_queued(queued: &Mutex<Vec<Arc<UiThreadTask>>>, task: &Arc<UiThreadTask>) {
-    queued
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-        .retain(|pending| !Arc::ptr_eq(pending, task));
+    posted: Arc<PostedUiThread>,
 }
 
 impl JsUiThread {
     fn new(env: &Env) -> Result<Self> {
-        let queued: Arc<Mutex<Vec<Arc<UiThreadTask>>>> = Arc::new(Mutex::new(Vec::new()));
-        let drained = Arc::clone(&queued);
+        let posted = Arc::new(PostedUiThread::new(EDITOR_UI_THREAD_DEADLINE));
+        let drained = Arc::clone(&posted);
         let pump: Function<'_, (), ()> =
             env.create_function_from_closure("sourdawPluginEditorUiThreadPump", move |_| {
-                for task in take_queued(&drained) {
-                    task.run();
-                }
+                drained.drain();
                 Ok(())
             })?;
 
@@ -164,7 +169,7 @@ impl JsUiThread {
                 .build_threadsafe_function::<()>()
                 .weak::<true>()
                 .build()?,
-            queued,
+            posted,
         })
     }
 
@@ -183,41 +188,17 @@ impl UiThread for JsUiThread {
         if self.is_ui_thread() {
             // Unreachable through `call_on_ui_thread`, which runs the work in
             // place instead. Refused rather than queued because the pump cannot
-            // run until this call returns, so the wait below would never end.
+            // run until this call returns, so the wait would never end.
             return Err("The shell's main thread cannot wait for its own turn".to_string());
         }
 
-        let (ran, waited) = mpsc::sync_channel(1);
-        let inner = Arc::clone(task);
-        let posted = UiThreadTask::new(move || {
-            inner.run();
-            let _ = ran.send(());
-        });
-        self.queued
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .push(Arc::clone(&posted));
-
-        let status = self.pump.call((), ThreadsafeFunctionCallMode::NonBlocking);
-        if status != Status::Ok {
-            forget_queued(&self.queued, &posted);
-            posted.withdraw();
-            return Err(format!("Shell main thread is unreachable: {status}"));
-        }
-
-        if waited.recv_timeout(WINDOW_HOST_DEADLINE).is_ok() {
-            return Ok(());
-        }
-
-        forget_queued(&self.queued, &posted);
-        // `withdraw` blocks while the pump is inside the work, so this cannot
-        // report a failure while the main thread still holds what the call
-        // lent it. A `false` means it ran after the deadline and the caller has
-        // its answer after all.
-        if posted.withdraw() {
-            return Err("Shell main thread did not run the editor call in time".to_string());
-        }
-        Ok(())
+        self.posted.post_and_wait(task, || {
+            let status = self.pump.call((), ThreadsafeFunctionCallMode::NonBlocking);
+            if status != Status::Ok {
+                return Err(format!("Shell main thread is unreachable: {status}"));
+            }
+            Ok(())
+        })
     }
 }
 
@@ -437,11 +418,10 @@ impl PluginEditorWindow for JsEditorWindow {
             height,
         };
 
-        // Discarded for the same reason `fire` discards a status: a window the
-        // shell no longer has is not a failure of the resize, and the seam has
-        // nowhere to report one to.
-        let _ = call_on_ui_thread(self.ui.as_ref(), move || {
-            apply_editor_window_size(&ui, &callbacks.set_size, request)
+        apply_editor_size_on_ui_thread(self.ui.as_ref(), move || {
+            if let Err(error) = apply_editor_window_size(&ui, &callbacks.set_size, request) {
+                eprintln!("[Plugin] {error}");
+            }
         });
     }
 

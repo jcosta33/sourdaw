@@ -18,13 +18,21 @@
 //!
 //! None of this is reachable from the audio thread, and none of it takes a lock
 //! the audio thread holds. `IPlugView` is specified to be driven from the thread
-//! that owns the parent window, so every call in this module runs on the shell's
-//! UI thread: an editor command claims the runtime owner's control gate on its
-//! own worker — which is what serialises view lifecycle against every other
-//! control call — and then hands the view calls themselves to the UI thread and
-//! waits. The claim never travels with them, because a UI thread waiting for a
-//! control gate is a UI thread that cannot answer the call the gate's holder is
-//! waiting on.
+//! that owns the parent window, and the host carries the editor's lifecycle
+//! there: every path that opens or closes an editor — the GUI commands, the
+//! OS-close reset, the exit cascade, and an unload that removes a device while
+//! its editor is open — claims the runtime owner's control gate on its own
+//! worker, which is what serialises view lifecycle against every other control
+//! call, and then hands the view calls themselves to the UI thread and waits.
+//! The claim never travels with them, because a UI thread waiting for a control
+//! gate is a UI thread that cannot answer the call the gate's holder is waiting
+//! on. That is the contract this module is written against, and it is the
+//! caller's to keep: nothing here can check which thread it was entered on.
+//!
+//! Two entries into this file are outside it. The editor-support probe creates
+//! and releases a throwaway view on whatever thread asked, and `Vst3Editor`'s
+//! own `Drop` runs wherever the runtime is finally released. Both are known and
+//! tracked separately; neither is on the open/close path above.
 //!
 //! `ViewRect` is not one unit on every platform. macOS states it in logical
 //! points and the window server applies the backing scale, while Windows and
