@@ -9,6 +9,7 @@
 
 /** Exposed commands whose bodies touch live plugin runtimes or start plugin work. */
 export const PLUGIN_RUNTIME_COMMANDS = [
+    'close_all_plugin_guis',
     'close_plugin_gui',
     'get_plugin_parameters',
     'get_plugin_state_bytes',
