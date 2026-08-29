@@ -36,10 +36,16 @@ import {
 import { EVENT_CHANNEL, STREAM_CHANNEL, WINDOW_MAXIMIZED_CHANGED_CHANNEL } from './channels.js';
 import { EXPOSED_COMMANDS } from './commands.js';
 import { createCommandStream, createEventForwarder } from './events.js';
+import { bindMainWindowOwnerTeardown, destroyCrashedMainWindow } from './mainWindowTeardown.js';
 import { loadNativeAddon, NATIVE_ADDON_PATH_ENV, resolveNativeAddonPath, type NativeHost } from './native.js';
 import { forwardNativeEvent } from './nativeEventRouter.js';
 import { createPluginCommandAdmission } from './pluginCommandAdmission.js';
-import { registerPluginWindowHost, type EditorWindowOptions, type EditorWindow } from './pluginGui.js';
+import {
+    registerPluginWindowHost,
+    type EditorWindow,
+    type EditorWindowOptions,
+    type PluginWindowHost,
+} from './pluginGui.js';
 import { APP_ENTRY_URL, APP_ORIGIN, handleAppProtocol, registerAppScheme, resolveContentRoots } from './protocol.js';
 import { registerCommandRouter } from './router.js';
 import { createScanSupervisor, type ScanSupervisor } from './scan.js';
@@ -95,6 +101,8 @@ const isAllowedNavigation = (url: string): boolean => isNavigationAllowed(allowe
 const isAllowedFrameUrl = trustedFrameGuard(allowedOrigins);
 
 let mainWindow: BrowserWindow | undefined;
+let pluginWindowHost: PluginWindowHost | undefined;
+let destroyMainWindowAfterEditorsDetach: (() => Promise<void>) | undefined;
 
 const attachWebContentsPolicy = (window: BrowserWindow): void => {
     window.webContents.on('will-navigate', (event, url) => {
@@ -172,6 +180,7 @@ const createWindow = (): BrowserWindow => {
     window.on('unmaximize', () => window.webContents.send(WINDOW_MAXIMIZED_CHANGED_CHANNEL, false));
     attachWebContentsPolicy(window);
     void window.loadURL(entryUrl);
+    destroyMainWindowAfterEditorsDetach = bindMainWindowOwnerTeardown(window, pluginWindowHost);
     return window;
 };
 
@@ -416,7 +425,7 @@ const startNativeSurface = (): void => {
     });
 
     if (nativeHost !== undefined) {
-        registerPluginWindowHost(nativeHost, {
+        pluginWindowHost = registerPluginWindowHost(nativeHost, {
             createWindow: createEditorWindow,
             getParentWindow: () => (mainWindow !== undefined && !mainWindow.isDestroyed() ? mainWindow : undefined),
             getScaleFactor: editorWindowScaleFactor,
@@ -528,10 +537,15 @@ app.on('render-process-gone', (_event, contents, details) => {
         return;
     }
 
+    // Captured before the replacement window rebinds teardown to itself:
+    // destroying the new window after a crash would leave the dead parent —
+    // and every editor parented to it — on the CloseImmediately path.
+    const destroyCrashed = destroyMainWindowAfterEditorsDetach;
     const destroyCrashedWindow = (): void => {
-        if (crashedWindow !== null && !crashedWindow.isDestroyed()) {
-            crashedWindow.destroy();
+        if (crashedWindow === null) {
+            return;
         }
+        destroyCrashedMainWindow(crashedWindow, destroyCrashed);
     };
 
     const now = Date.now();

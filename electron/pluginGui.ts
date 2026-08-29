@@ -24,7 +24,9 @@
  *   teardown is a frozen editor, because the plugin call is carried back to this
  *   same thread. `destroy` raises no second close, so the shell's own close path
  *   — which already detached before it reached the window host — passes straight
- *   through, and so does the exit cascade.
+ *   through, and so does the exit cascade. Parent `destroy()` is different: it
+ *   ends children with CloseImmediately (`closed` and no `close`), so the
+ *   owner must be intercepted and every editor detached before it is destroyed.
  * - That teardown must run *off* this event path. The notify call is an async
  *   napi method, so it only schedules work on the addon's executor; running it
  *   inline on the main thread is the documented deadlock with GUI-affine
@@ -198,7 +200,7 @@ export type PluginWindowHostDeps = {
     readonly runLoopPump?: EditorRunLoopPump;
 };
 
-/** The callbacks `registerPluginWindowHost` hands the addon. */
+/** The callbacks `registerPluginWindowHost` hands the addon, plus JS-only teardown. */
 export type PluginWindowHost = {
     readonly create: (request: CreateEditorWindowRequest) => CreateEditorWindowResponse;
     readonly exists: (label: string) => boolean;
@@ -208,6 +210,23 @@ export type PluginWindowHost = {
     readonly destroy: (label: string) => void;
     readonly hide: (label: string) => void;
     readonly show: (label: string) => void;
+    /**
+     * Un-parent every live editor while its window still exists.
+     *
+     * The addon's eight callbacks do not include this: it is the shell's answer
+     * to owner-destroy, which never raises a stoppable `close` on the children.
+     * Each editor is bounded by `DETACH_DEADLINE_MS`, and they run together so
+     * two open editors cannot stack that wait.
+     */
+    readonly detachOpenEditors: () => Promise<void>;
+};
+
+/** The DAW window the editors are parented to. */
+export type OwnerWindow = {
+    readonly on: (event: 'close', listener: (event: PreventableEditorEvent) => void) => unknown;
+    readonly hide: () => void;
+    readonly destroy: () => void;
+    readonly isDestroyed: () => boolean;
 };
 
 /**
@@ -540,6 +559,36 @@ export const createPluginWindowHost = (deps: PluginWindowHostDeps): PluginWindow
         }
     };
 
+    const detaches = new Map<string, Promise<void>>();
+
+    /**
+     * Start the hide-then-un-parent-then-destroy sequence, or join it.
+     *
+     * Title-bar close, owner-destroy, and a second click during teardown all
+     * land here so the plugin is asked once while the window is still alive.
+     */
+    const beginDetach = (label: string): Promise<void> => {
+        const inFlight = detaches.get(label);
+        if (inFlight !== undefined) {
+            return inFlight;
+        }
+        const record = editors.get(label);
+        if (record === undefined || record.window.isDestroyed()) {
+            return Promise.resolve();
+        }
+        stopAskingThePlugin(record);
+        record.window.hide();
+        const done = detachThenDestroy(record.window, record.instanceId, label).finally(() => {
+            detaches.delete(label);
+        });
+        detaches.set(label, done);
+        return done;
+    };
+
+    const detachOpenEditors = async (): Promise<void> => {
+        await Promise.all([...editors.keys()].map((label) => beginDetach(label)));
+    };
+
     deps.watchDisplayChanges(() => {
         for (const label of editors.keys()) {
             void followDisplayScale(label);
@@ -565,6 +614,11 @@ export const createPluginWindowHost = (deps: PluginWindowHostDeps): PluginWindow
             return failure(`A window labelled ${request.label} already exists`);
         }
 
+        const parent = deps.getParentWindow();
+        if (parent !== undefined && ownersInTeardown.has(parent)) {
+            return failure('The parent window is tearing down');
+        }
+
         let built: { window: EditorWindow; parented: boolean };
         try {
             built = buildWindow(request.title);
@@ -578,29 +632,15 @@ export const createPluginWindowHost = (deps: PluginWindowHostDeps): PluginWindow
         // The addon's reset is idempotent and tolerates a close for a window
         // that was never published.
 
-        // Whether this window's teardown is already running. A user who clicks
-        // the title bar again while the plugin is still leaving must not start a
-        // second teardown, and must not get the window destroyed under the first.
-        let detaching = false;
         window.on('close', (event: PreventableEditorEvent) => {
             // Stopped before anything else, on every close: letting the platform
             // destroy the window here is the un-parent against a dead parent
             // that both formats forbid, whether it is the first close or the
-            // fifth.
+            // fifth. `beginDetach` is the latch: a second click joins the
+            // in-flight teardown instead of starting another, and does not let
+            // the platform destroy the window under the first.
             event.preventDefault();
-            if (detaching) {
-                return;
-            }
-            detaching = true;
-            stopAskingThePlugin(editors.get(request.label));
-            // Off screen in the same turn as the click, because the teardown is
-            // seconds of frozen editor otherwise: the plugin call it makes is
-            // carried back to this very thread, so nothing repaints until it
-            // returns. A hidden window is still a live parent — the DAW hides
-            // every editor on minimise with its view fully attached — so this
-            // costs the un-parent nothing.
-            window.hide();
-            void detachThenDestroy(window, request.instanceId, request.label);
+            void beginDetach(request.label);
         });
 
         window.on('closed', () => {
@@ -749,7 +789,61 @@ export const createPluginWindowHost = (deps: PluginWindowHostDeps): PluginWindow
                 window.showInactive();
             });
         },
+        detachOpenEditors,
     };
+};
+
+/**
+ * Stop the DAW window's close, detach every open editor against a live parent,
+ * then destroy the owner.
+ *
+ * `destroy()` on the owner is CloseImmediately for children — no stoppable
+ * `close` — so crash recovery and any other owner-destroy call this returned
+ * function rather than `owner.destroy()` directly. Quit does not: `app.exit()`
+ * already waited out `SHUTDOWN_DEADLINE_MS` and destroys windows without
+ * raising `close`, so this intercept never stacks a second detach wait on the
+ * exit cascade.
+ */
+/**
+ * Owners whose detach-then-destroy is in flight.
+ *
+ * `create` refuses to parent a new editor to one of these: `detachOpenEditors`
+ * snapshots labels once, so a late child would miss the drain and then take
+ * CloseImmediately from `owner.destroy()`. Crash recovery parents to the
+ * replacement window instead, which is not in this set.
+ */
+const ownersInTeardown = new WeakSet<object>();
+
+export const interceptOwnerWindowTeardown = (
+    owner: OwnerWindow,
+    detachOpenEditors: () => Promise<void>
+): { readonly destroyAfterEditorsDetach: () => Promise<void> } => {
+    let inFlight: Promise<void> | undefined;
+
+    const destroyAfterEditorsDetach = (): Promise<void> => {
+        if (inFlight !== undefined) {
+            return inFlight;
+        }
+        ownersInTeardown.add(owner);
+        inFlight = (async () => {
+            try {
+                owner.hide();
+                await detachOpenEditors();
+            } finally {
+                if (!owner.isDestroyed()) {
+                    owner.destroy();
+                }
+            }
+        })();
+        return inFlight;
+    };
+
+    owner.on('close', (event) => {
+        event.preventDefault();
+        void destroyAfterEditorsDetach();
+    });
+
+    return { destroyAfterEditorsDetach };
 };
 
 /** The addon methods this module drives; a stale addon may lack them. */
@@ -858,12 +952,12 @@ const editorSizeFrom = async (answer: unknown): Promise<EditorSize> => {
 export const registerPluginWindowHost = (
     native: object,
     deps: Omit<PluginWindowHostDeps, 'notifyClosed' | 'runLoopPump' | 'requestEditorSize' | 'applyEditorScale'>
-): boolean => {
+): PluginWindowHost | undefined => {
     if (!hasPluginWindowHost(native)) {
         console.error(
             '[shell] the native addon predates the plugin window host; plugin editors are unavailable until it is rebuilt'
         );
-        return false;
+        return undefined;
     }
     const {
         registerPluginWindowHost: register,
@@ -901,5 +995,5 @@ export const registerPluginWindowHost = (
         host.hide,
         host.show
     );
-    return true;
+    return host;
 };
