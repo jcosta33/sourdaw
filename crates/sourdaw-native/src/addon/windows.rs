@@ -26,7 +26,7 @@
 //! uncaught exception instead of failing the open that caused it.
 
 use std::sync::mpsc;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::thread::ThreadId;
 use std::time::Duration;
 
