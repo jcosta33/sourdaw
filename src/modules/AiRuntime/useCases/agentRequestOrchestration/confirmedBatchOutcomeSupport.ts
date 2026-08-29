@@ -70,7 +70,7 @@ function createCommittedEffectFailureResult(
         status: 'failed',
         durableCommit: true,
         reason,
-        effects: structuredClone(effects),
+        effects: structuredClone([...effects]),
         continuation: {
             authority: 'authoritative-collaboration-host',
             idempotency: 'project-checkpoint',
