@@ -21,10 +21,12 @@ function runIsolatedGuardedCommand(
     return runGuardedCommand({ ...input, admissionRoot: enforcementAdmissionRoot });
 }
 
-const largeStdoutChild = [
+/** Child stdout exceeds 32 KiB so a bumped 32 KiB tail still drops LINE 1. */
+const oversizedStdoutLineCount = 4000;
+const oversizedStdoutChild = [
     '-e',
     `
-for (let line = 1; line <= 2000; line += 1) {
+for (let line = 1; line <= ${oversizedStdoutLineCount}; line += 1) {
     process.stdout.write('LINE ' + line + '\\n');
 }
 `.trim(),
@@ -32,7 +34,7 @@ for (let line = 1; line <= 2000; line += 1) {
 
 describe('resource guard --show-output', () => {
     it('captures child stdout from the first line when showOutput is set', async () => {
-        const cli = parseCliArgs(['--show-output', '--', process.execPath, ...largeStdoutChild]);
+        const cli = parseCliArgs(['--show-output', '--', process.execPath, ...oversizedStdoutChild]);
         expect(cli.showOutput).toBe(true);
 
         const result = await runIsolatedGuardedCommand({
@@ -46,13 +48,13 @@ describe('resource guard --show-output', () => {
         expect(result.code).toBe(0);
         expect(result.omittedBytes).toBe(0);
         expect(result.output.startsWith('LINE 1\n')).toBe(true);
-        expect(result.output).toContain('LINE 2000');
+        expect(result.output).toContain(`LINE ${oversizedStdoutLineCount}`);
     });
 
     it('emits the full child stdout on success when showOutput is set', async () => {
         const result = await runIsolatedGuardedCommand({
             command: process.execPath,
-            args: largeStdoutChild,
+            args: oversizedStdoutChild,
             profile: 'focused',
             showOutput: true,
             availableMemoryBytes: abundantMemoryBytes,

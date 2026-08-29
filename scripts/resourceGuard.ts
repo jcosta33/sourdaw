@@ -98,15 +98,18 @@ const hostPressureSampleIntervalMs = 2_000;
 class OutputTail {
     private value = Buffer.alloc(0);
     private totalBytes = 0;
-    private readonly limitBytes: number;
+    private readonly limitBytes: number | undefined;
 
-    public constructor(limitBytes: number) {
+    public constructor(limitBytes?: number) {
+        if (limitBytes !== undefined && !Number.isFinite(limitBytes)) {
+            throw new Error('OutputTail limitBytes must be a finite byte count when provided');
+        }
         this.limitBytes = limitBytes;
     }
 
     public append(chunk: Buffer): void {
         this.totalBytes += chunk.byteLength;
-        if (!Number.isFinite(this.limitBytes)) {
+        if (this.limitBytes === undefined) {
             this.value = Buffer.concat([this.value, chunk]);
             return;
         }
@@ -116,7 +119,7 @@ class OutputTail {
     public result(): { output: string; omittedBytes: number } {
         const text = this.value.toString('utf8');
         return {
-            output: Number.isFinite(this.limitBytes) ? text.trim() : text,
+            output: this.limitBytes === undefined ? text : text.trim(),
             omittedBytes: Math.max(0, this.totalBytes - this.value.byteLength),
         };
     }
@@ -882,10 +885,10 @@ async function waitForProcessTreeExit(
 export async function runGuardedCommand(input: GuardedCommandInput): Promise<GuardedCommandResult> {
     const profile = profiles[input.profile];
     const timeoutMs = input.timeoutMs ?? profile.timeoutMs;
-    const outputLimitBytes = input.showOutput
-        ? Number.POSITIVE_INFINITY
-        : (input.outputLimitBytes ?? defaultOutputLimitBytes);
-    const output = new OutputTail(outputLimitBytes);
+    const output =
+        input.showOutput === true
+            ? new OutputTail()
+            : new OutputTail(input.outputLimitBytes ?? defaultOutputLimitBytes);
     const memoryReserveBytes = input.memoryReserveBytes ?? defaultMemoryReserveBytes;
     const readAvailableMemory = input.memorySampler ?? (() => input.availableMemoryBytes ?? availableMemoryBytes());
     const maxRssBytes = input.maxRssBytes ?? profile.maxRssBytes;
