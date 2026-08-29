@@ -139,6 +139,13 @@ const ACTIVE_CI_ADMISSION_MODE: CiAdmissionMode = 'advisory';
 
 export type DeliveryReceiptAuthorityPhase = 'prepared' | 'merge-authorized' | 'terminal';
 
+export class DeliveryMergeRejectedError extends Error {
+    constructor(message: string) {
+        super(message);
+        this.name = 'DeliveryMergeRejectedError';
+    }
+}
+
 export type PersistedPreparedPostMergeValidation = {
     headRefOid: string;
     headRefName: string;
@@ -1090,6 +1097,34 @@ function readStableExactDeliveryReceipt(
     return second;
 }
 
+function readStableExactMergedRecoveryReceipt(
+    pullRequest: PullRequestSnapshot,
+    port: DeliveryPort,
+    expectedReceiptId: string,
+    validate: (
+        lineage: DeliveryReceiptComment[],
+        receipt: DeliveryReceiptComment,
+        payload: DeliveryReceiptPayload
+    ) => void
+): DeliveryReceiptComment {
+    const read = () => {
+        const lineage = orderedDeliveryReceiptLineage(provenDeliveryReceiptComments(pullRequest, port), pullRequest);
+        const receipt = lineage.find((comment) => comment.id === expectedReceiptId);
+        if (receipt === undefined) {
+            fail(`PR #${pullRequest.number} delivery receipt changed during recovery`);
+        }
+        const payload = assertDeliveryReceiptForHead(receipt, pullRequest);
+        validate(lineage, receipt, payload);
+        return receipt;
+    };
+    const first = read();
+    const second = read();
+    if (first.id !== second.id || first.body !== second.body) {
+        fail(`PR #${pullRequest.number} delivery receipt changed during recovery`);
+    }
+    return second;
+}
+
 function assertCompleteDeliveryReceiptProof(
     number: number,
     comments: DeliveryReceiptComment[],
@@ -1230,19 +1265,43 @@ function compatibleBodylessPersistedMergedRecoveryReceipt(
     return stored;
 }
 
+function validatePreparedBodylessPersistedMergedRecoveryReceipt(
+    pullRequest: Pick<PullRequestSnapshot, 'number'>,
+    authority: CurrentPersistedPreparedDeliveryReceiptAuthority,
+    payload: DeliveryReceiptPayload
+): void {
+    const validation = authority.postMergeValidation;
+    if (validation === undefined) {
+        fail(`PR #${pullRequest.number} delivery receipt authority is not merge-authorized`);
+    }
+    if (payload.schemaVersion === 1) {
+        fail(`PR #${pullRequest.number} delivery receipt changed during recovery`);
+    }
+    if (
+        payload.head !== validation.headRefOid ||
+        payload.bodySha256 !== validation.bodySha256 ||
+        (payload.closingIssue ?? null) !== validation.trackerTarget
+    ) {
+        fail(`PR #${pullRequest.number} delivery receipt changed during recovery`);
+    }
+}
+
 function readCompatibleBodylessPersistedMergedRecoveryReceipt(
     pullRequest: PullRequestSnapshot,
     port: DeliveryPort,
     authority: CurrentPersistedDeliveryReceiptAuthority
 ): DeliveryReceiptComment {
-    const firstLineage = orderedDeliveryReceiptLineage(provenDeliveryReceiptComments(pullRequest, port), pullRequest);
-    const first = compatibleBodylessPersistedMergedRecoveryReceipt(firstLineage, authority, pullRequest);
-    const secondLineage = orderedDeliveryReceiptLineage(provenDeliveryReceiptComments(pullRequest, port), pullRequest);
-    const second = compatibleBodylessPersistedMergedRecoveryReceipt(secondLineage, authority, pullRequest);
-    if (first.id !== second.id) {
-        fail(`PR #${pullRequest.number} delivery receipt changed during recovery`);
-    }
-    return second;
+    return readStableExactMergedRecoveryReceipt(
+        pullRequest,
+        port,
+        authority.receiptId,
+        (lineage, _receipt, payload) => {
+            compatibleBodylessPersistedMergedRecoveryReceipt(lineage, authority, pullRequest);
+            if (authority.phase === 'prepared') {
+                validatePreparedBodylessPersistedMergedRecoveryReceipt(pullRequest, authority, payload);
+            }
+        }
+    );
 }
 
 function readStableMergedRecoveryReceipt(pullRequest: PullRequestSnapshot, port: DeliveryPort): DeliveryReceiptComment {
@@ -1263,7 +1322,16 @@ function readPersistedMergedRecoveryReceipt(
     authority: PersistedDeliveryReceiptAuthority
 ): DeliveryReceiptComment {
     if (authority.phase === 'legacy') {
-        return readStableMergedRecoveryReceipt(pullRequest, port);
+        return readStableExactMergedRecoveryReceipt(
+            pullRequest,
+            port,
+            authority.receiptId,
+            (_lineage, _receipt, payload) => {
+                if (payload.schemaVersion !== 1) {
+                    fail(`PR #${pullRequest.number} delivery receipt changed during recovery`);
+                }
+            }
+        );
     }
     if (authority.phase === 'prepared') {
         if (authority.postMergeValidation === undefined) {
@@ -1560,14 +1628,16 @@ function deliverPullRequestWithCiAdmission(
     try {
         port.merge(number, finalSnapshot.headRefOid, finalDependents.length > 0);
     } catch (error) {
-        tryRestorePreArmedDeliveryReceiptAuthorityAfterMergeFailure(
-            number,
-            authorityBeforeFinalFetchArming,
-            preMergeArmedAuthority,
-            finalSnapshot,
-            finalTrackerTarget,
-            port
-        );
+        if (error instanceof DeliveryMergeRejectedError) {
+            tryRestorePreArmedDeliveryReceiptAuthorityAfterMergeFailure(
+                number,
+                authorityBeforeFinalFetchArming,
+                preMergeArmedAuthority,
+                finalSnapshot,
+                finalTrackerTarget,
+                port
+            );
+        }
         throw error;
     }
     const mergedSnapshot = port.pullRequest(number);
@@ -2094,7 +2164,7 @@ export function shellPort(
                 'merge request'
             );
             if (!result.merged) {
-                fail(`PR #${number} was not merged: ${result.message}`);
+                throw new DeliveryMergeRejectedError(`PR #${number} was not merged: ${result.message}`);
             }
         },
         retarget: (number, baseBranch) =>
@@ -2457,6 +2527,13 @@ function readDeliveryLockOwner(primaryRoot: string, oid: string, number: number)
 }
 
 function readDeliveryReceiptAuthorityBlob(primaryRoot: string, oid: string, number: number): DeliveryReceiptAuthority {
+    const type = deliveryLockGit(primaryRoot, ['cat-file', '-t', oid]);
+    if (type.error !== undefined) {
+        throw type.error;
+    }
+    if (type.status !== 0 || type.stdout.trim() !== 'blob') {
+        fail(`PR #${number} delivery receipt authority cannot be verified`);
+    }
     const result = deliveryLockGit(primaryRoot, ['cat-file', 'blob', oid]);
     if (result.error !== undefined) {
         throw result.error;
