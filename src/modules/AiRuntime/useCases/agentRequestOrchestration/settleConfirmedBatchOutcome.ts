@@ -1,5 +1,5 @@
 import { logger } from '#/infra/logger/appLogger';
-import { type executeVersionedCommandBatchEnvelope, type generateGroupId } from '#/modules/Command/useCases';
+import { type executeVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
 
 import { pushAiActionGroup, type AiActionGroup } from '../../stores/aiActionHistoryStore';
 import { updateChatMessage } from '../../stores/chatStore';
@@ -31,7 +31,7 @@ type ConfirmedBatchResult = Extract<
 type SettleConfirmedBatchOutcomeInput = {
     confirmation: PendingAppActionConfirmation;
     batchResult: ConfirmedBatchResult;
-    group: ReturnType<typeof generateGroupId>;
+    groupId: string;
     committedProjectRevision: string;
     trackedLeaseSettlement: ReturnType<typeof settleAgentRunWorkLeaseSafely>;
     budgetPersistenceWarning: string | null;
@@ -45,7 +45,7 @@ export async function settleConfirmedBatchOutcome(
     const {
         confirmation,
         batchResult,
-        group,
+        groupId,
         committedProjectRevision,
         trackedLeaseSettlement,
         budgetPersistenceWarning,
@@ -58,7 +58,7 @@ export async function settleConfirmedBatchOutcome(
         confirmation,
         batchResult.receipt,
         {
-            ...(executionKind === 'project' ? { revertGroupId: group.groupId } : {}),
+            ...(executionKind === 'project' ? { revertGroupId: groupId } : {}),
             completesRun: trackedLeaseSettlement.accepted,
             committedRevision: committedProjectRevision,
         }
@@ -116,14 +116,14 @@ export async function settleConfirmedBatchOutcome(
             recordPendingActionExecution({ confirmationId: confirmation.id, execution });
         }
         const historyGroup: AiActionGroup = {
-            id: group.groupId,
+            id: groupId,
             prompt: confirmation.prompt,
             actions: executedLabels.map((entry) => ({
                 kind: 'appAction',
                 actionType: entry.actionType,
                 label: entry.label,
             })),
-            groupId: group.groupId,
+            groupId,
             timestamp: Date.now(),
             reverted: false,
             executionKind,

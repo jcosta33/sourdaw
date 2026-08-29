@@ -920,7 +920,7 @@ export async function confirmPendingChatActions(
         return settleConfirmedBatchOutcome({
             confirmation,
             batchResult,
-            group,
+            groupId: group.groupId,
             committedProjectRevision,
             trackedLeaseSettlement,
             budgetPersistenceWarning,

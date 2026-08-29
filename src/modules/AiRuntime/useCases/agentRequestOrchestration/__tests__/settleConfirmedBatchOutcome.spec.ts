@@ -72,7 +72,7 @@ function createInput(status: Input['batchResult']['status']): Input {
                 pendingEffects: [],
             },
         },
-        group: { groupId: 'group-1', groupLabel: 'Effect' },
+        groupId: 'group-1',
         committedProjectRevision: 'revision-1',
         trackedLeaseSettlement: { accepted: true, warning: null },
         budgetPersistenceWarning: null,
