@@ -111,8 +111,8 @@
 //!   and the stamp is not honoured at all: the native gates are strip flags,
 //!   not ramped parameters, so the write applies at the block boundary that
 //!   drains the command — even when its stamp names a future time.
-//! - A bus strip has no pan, no mute gate, no solo gate and no sends in
-//!   `daw-engine`; batches that need them refuse with a reason naming the gap.
+//! - A bus strip has no send taps in `daw-engine`; a send whose source is a
+//!   bus refuses with a reason naming the gap (`bus-send-unsupported`).
 
 use crate::state::{AppState, TimelineSample};
 use daw_engine::offline::OfflineRenderer;
@@ -1374,26 +1374,8 @@ fn map_command(
             if vca < 0.0 {
                 return Err("create-bus-strip: vcaMultiplier is negative".to_string());
             }
-            if pan_position(state.pan)? != 0.0 {
-                return Err(
-                    "create-bus-strip: bus-pan-unsupported — the native bus strip has no panner"
-                        .to_string(),
-                );
-            }
-            if *honor_muted && state.muted {
-                return Err(
-                    "create-bus-strip: bus-mute-unsupported — the native bus strip has no mute gate"
-                        .to_string(),
-                );
-            }
-            if state.solo_gated {
-                return Err(
-                    "create-bus-strip: bus-solo-gate-unsupported — the native bus strip has no \
-                     solo gate"
-                        .to_string(),
-                );
-            }
             let gain = fader_gain(state.gain, vca)?;
+            let pan = pan_position(state.pan)?;
             let native_id = registry.allocate_node_id();
 
             ops.push(GraphCommand::AddBus(TimelineBus::new(native_id)));
@@ -1403,6 +1385,20 @@ fn map_command(
                 budgets,
                 ops,
             )?;
+            if pan != 0.0 {
+                push_automation(
+                    AutomationTarget::BusPan(native_id),
+                    immediate_write(pan),
+                    budgets,
+                    ops,
+                )?;
+            }
+            if *honor_muted && state.muted {
+                ops.push(GraphCommand::SetBusMute(native_id, true));
+            }
+            if state.solo_gated {
+                ops.push(GraphCommand::SetBusSoloGate(native_id, true));
+            }
 
             let mut built_device_ids = Vec::new();
             let mut chain_index = 0usize;
@@ -1764,24 +1760,22 @@ fn map_parameter_write(
     match target {
         StripParameterTargetPayload::TrackMuteGate { track_id } => {
             let strip = strip_for(track_id)?;
-            if strip.kind == StripKind::Bus {
-                return Err(format!(
-                    "write-parameter: bus-mute-unsupported — strip '{track_id}' is a bus"
-                ));
-            }
             let closed = gate_step("track-mute-gate")?;
-            ops.push(GraphCommand::SetTrackMute(strip.native_id, closed));
+            match strip.kind {
+                StripKind::Track => ops.push(GraphCommand::SetTrackMute(strip.native_id, closed)),
+                StripKind::Bus => ops.push(GraphCommand::SetBusMute(strip.native_id, closed)),
+            }
             return Ok(());
         }
         StripParameterTargetPayload::TrackSoloGate { track_id } => {
             let strip = strip_for(track_id)?;
-            if strip.kind == StripKind::Bus {
-                return Err(format!(
-                    "write-parameter: bus-solo-gate-unsupported — strip '{track_id}' is a bus"
-                ));
-            }
             let closed = gate_step("track-solo-gate")?;
-            ops.push(GraphCommand::SetTrackSoloGate(strip.native_id, closed));
+            match strip.kind {
+                StripKind::Track => {
+                    ops.push(GraphCommand::SetTrackSoloGate(strip.native_id, closed))
+                }
+                StripKind::Bus => ops.push(GraphCommand::SetBusSoloGate(strip.native_id, closed)),
+            }
             return Ok(());
         }
         _ => {}
@@ -1804,17 +1798,11 @@ fn map_parameter_write(
         }
         StripParameterTargetPayload::TrackPan { track_id } => {
             let strip = strip_for(track_id)?;
-            if strip.kind == StripKind::Bus {
-                return Err(format!(
-                    "write-parameter: bus-pan-unsupported — strip '{track_id}' is a bus and \
-                         the native bus strip has no panner"
-                ));
-            }
-            (
-                strip,
-                AutomationTarget::TrackPan(strip.native_id),
-                |value, _| pan_position(value),
-            )
+            let target = match strip.kind {
+                StripKind::Track => AutomationTarget::TrackPan(strip.native_id),
+                StripKind::Bus => AutomationTarget::BusPan(strip.native_id),
+            };
+            (strip, target, |value, _| pan_position(value))
         }
         StripParameterTargetPayload::TrackSendLevel { track_id, bus_id } => {
             let strip = strip_for(track_id)?;
@@ -2904,6 +2892,85 @@ mod tests {
             .ops
             .iter()
             .any(|op| matches!(op, GraphCommand::SetBusOutput(2, RouteTarget::Track(1)))));
+    }
+
+    #[test]
+    fn a_bus_strip_maps_mute_pan_and_solo_gate() {
+        let batch = batch(json!([{
+            "kind": "create-bus-strip",
+            "busId": "b1",
+            "name": "Reverb",
+            "state": { "gain": 0.9, "pan": -25, "muted": true, "soloGated": true, "vcaMultiplier": 1 },
+            "devices": [],
+            "honorMuted": true,
+            "contributesAudio": true
+        }]));
+
+        let mapped = map_batch(
+            &batch,
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("a bus strip holds mute, pan, and solo");
+        assert!(mapped
+            .ops
+            .iter()
+            .any(|op| matches!(op, GraphCommand::SetBusMute(1, true))));
+        assert!(mapped
+            .ops
+            .iter()
+            .any(|op| matches!(op, GraphCommand::SetBusSoloGate(1, true))));
+        assert!(mapped.ops.iter().any(|op| matches!(
+            op,
+            GraphCommand::AutomateParam {
+                target: AutomationTarget::BusPan(1),
+                write: AutomationWrite::Replace(event),
+            } if event.value == -0.5
+        )));
+    }
+
+    #[test]
+    fn a_bus_parameter_write_maps_mute_pan_and_solo_gate() {
+        let batch = batch(json!([
+            {
+                "kind": "create-bus-strip", "busId": "b1", "name": "Reverb",
+                "state": strip_state(0.9), "devices": [], "honorMuted": true,
+                "contributesAudio": true
+            },
+            { "kind": "write-parameter",
+              "target": { "kind": "track-mute-gate", "trackId": "b1" },
+              "write": { "shape": "step", "value": 0, "time": 0 } },
+            { "kind": "write-parameter",
+              "target": { "kind": "track-solo-gate", "trackId": "b1" },
+              "write": { "shape": "step", "value": 0, "time": 0 } },
+            { "kind": "write-parameter",
+              "target": { "kind": "track-pan", "trackId": "b1" },
+              "write": { "shape": "step", "value": 25, "time": 0 } }
+        ]));
+
+        let mapped = map_batch(
+            &batch,
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("a bus accepts mute, pan, and solo writes");
+        assert!(mapped
+            .ops
+            .iter()
+            .any(|op| matches!(op, GraphCommand::SetBusMute(1, true))));
+        assert!(mapped
+            .ops
+            .iter()
+            .any(|op| matches!(op, GraphCommand::SetBusSoloGate(1, true))));
+        assert!(mapped.ops.iter().any(|op| matches!(
+            op,
+            GraphCommand::AutomateParam {
+                target: AutomationTarget::BusPan(1),
+                ..
+            }
+        )));
     }
 
     #[test]
@@ -4341,7 +4408,7 @@ mod tests {
                 "kind": "create-bus-strip",
                 "busId": "verb",
                 "name": "Reverb",
-                "state": { "gain": 0.9, "pan": 0, "muted": false, "soloGated": false, "vcaMultiplier": 1 },
+                "state": { "gain": 0.9, "pan": -10, "muted": false, "soloGated": true, "vcaMultiplier": 1 },
                 "devices": [
                     { "id": "d-bus-plugin", "name": "Valhalla", "type": "plugin", "bypassed": false,
                       "parameterValues": {},
@@ -4349,7 +4416,7 @@ mod tests {
                     { "id": "d-bus-knead", "name": "Knead", "type": "knead", "bypassed": false,
                       "parameterValues": {} }
                 ],
-                "honorMuted": false,
+                "honorMuted": true,
                 "contributesAudio": false
             },
             { "kind": "set-track-output", "trackId": "master", "target": { "kind": "master" } },
@@ -4367,12 +4434,9 @@ mod tests {
     ///
     /// Two shapes are guarded structurally here, and each was reachable from an
     /// ordinary session: a hosted plugin anywhere in a chain, and simply
-    /// pressing play twice. The third refusal an ordinary session could reach —
-    /// a bus built while anything is soloed — is not this test's to guard,
-    /// because the gate never reaches a bus strip in the first place: the
-    /// producer drops it, and `projectLiveGraphTopology.spec.ts` pins that in
-    /// "builds a bus the native strip can actually hold". The fixture below
-    /// only reflects what the producer emits.
+    /// pressing play twice. A bus that is itself solo-gated is ordinary too —
+    /// the producer now sends that gate, and the mapper must take it. The
+    /// fixture below reflects what the producer emits.
     #[test]
     fn a_live_topology_batch_maps_and_maps_again_over_itself() {
         let samples = sample_pool();

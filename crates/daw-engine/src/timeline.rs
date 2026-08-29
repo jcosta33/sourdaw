@@ -112,6 +112,7 @@ pub enum AutomationTarget {
     TrackPan(usize),
     TrackSendLevel { track_id: usize, bus_id: usize },
     BusGain(usize),
+    BusPan(usize),
     MasterGain,
 }
 
@@ -1081,11 +1082,11 @@ impl TimelineTrack {
     }
 }
 
-/// One bus: an input sum, a device chain, a gain, and an output. A bus may
-/// feed the master, another bus, or a track — the last of those is how a
-/// return reaches the master strip's insert chain, which is the professional
-/// convention (Pro Tools aux into the master, Ableton return into Master,
-/// Logic aux into Stereo Out).
+/// One bus: an input sum, a device chain, a mute, a panner, a solo gate, a
+/// gain, and an output. A bus may feed the master, another bus, or a track —
+/// the last of those is how a return reaches the master strip's insert chain,
+/// which is the professional convention (Pro Tools aux into the master,
+/// Ableton return into Master, Logic aux into Stereo Out).
 ///
 /// The chain is the point of a send bus. A bus without one is a gain and a
 /// routing hop, which cannot host the reverb or the delay every send in a mix
@@ -1093,12 +1094,22 @@ impl TimelineTrack {
 /// on exactly the same splice contract as a track's chain, ahead of the bus
 /// fader, and an effect belongs to one chain in the graph whether that chain is
 /// on a track or on a bus.
+///
+/// The strip order matches a track's, minus send taps the bus does not have:
+/// summed input, then the device chain, then the solo gate, then the fader,
+/// then the mute, then the panner, then the output. The two gates stay
+/// separate for the reason given on [`TimelineTrack`]: they are different
+/// reasons to silence, and folding them would make releasing solo clear a mute
+/// the user pressed.
 pub struct TimelineBus {
     id: usize,
     input_left: Vec<f32>,
     input_right: Vec<f32>,
     chain: Vec<ChainEntry>,
     gain: RampedParam,
+    pan: RampedParam,
+    muted: bool,
+    solo_gated: bool,
     output: RouteTarget,
 }
 
@@ -1112,6 +1123,9 @@ impl TimelineBus {
             input_right: vec![0.0; MAX_CALLBACK_FRAMES],
             chain: Vec::with_capacity(MAX_BUS_DEVICES),
             gain: RampedParam::new(1.0),
+            pan: RampedParam::new(0.0),
+            muted: false,
+            solo_gated: false,
             output: RouteTarget::Master,
         })
     }
@@ -1130,6 +1144,18 @@ impl TimelineBus {
 
     pub const fn gain(&self) -> &RampedParam {
         &self.gain
+    }
+
+    pub const fn pan(&self) -> &RampedParam {
+        &self.pan
+    }
+
+    pub const fn is_muted(&self) -> bool {
+        self.muted
+    }
+
+    pub const fn is_solo_gated(&self) -> bool {
+        self.solo_gated
     }
 
     fn clear_input(&mut self, frames: usize) {
@@ -1389,6 +1415,24 @@ impl TimelineGraph {
             return;
         };
         track.solo_gated = gated;
+    }
+
+    pub(crate) fn set_bus_mute(&mut self, id: usize, muted: bool) {
+        let Some(bus) = self.bus_mut(id) else {
+            self.diagnostics.record_unknown_target();
+            return;
+        };
+        bus.muted = muted;
+    }
+
+    /// Open or close a bus's pre-fader solo gate, on the same contract as
+    /// [`TimelineGraph::set_track_solo_gate`].
+    pub(crate) fn set_bus_solo_gate(&mut self, id: usize, gated: bool) {
+        let Some(bus) = self.bus_mut(id) else {
+            self.diagnostics.record_unknown_target();
+            return;
+        };
+        bus.solo_gated = gated;
     }
 
     /// Whether any chain in the graph — on a track or on a bus — already holds
@@ -1655,11 +1699,8 @@ impl TimelineGraph {
             AutomationTarget::MasterGain => Some(&mut self.master_gain),
             AutomationTarget::TrackGain(id) => self.track_mut(id).map(|track| &mut track.gain),
             AutomationTarget::TrackPan(id) => self.track_mut(id).map(|track| &mut track.pan),
-            AutomationTarget::BusGain(id) => self
-                .buses
-                .iter_mut()
-                .find(|bus| bus.id == id)
-                .map(|bus| &mut bus.gain),
+            AutomationTarget::BusGain(id) => self.bus_mut(id).map(|bus| &mut bus.gain),
+            AutomationTarget::BusPan(id) => self.bus_mut(id).map(|bus| &mut bus.pan),
             AutomationTarget::TrackSendLevel { track_id, bus_id } => self
                 .tracks
                 .iter_mut()
@@ -1711,6 +1752,7 @@ impl TimelineGraph {
         }
         for bus in self.buses.iter_mut() {
             visit(&mut bus.gain);
+            visit(&mut bus.pan);
         }
     }
 
@@ -1719,6 +1761,13 @@ impl TimelineGraph {
             .iter_mut()
             .find(|track| track.id == id)
             .map(|track| &mut **track)
+    }
+
+    fn bus_mut(&mut self, id: usize) -> Option<&mut TimelineBus> {
+        self.buses
+            .iter_mut()
+            .find(|bus| bus.id == id)
+            .map(|bus| &mut **bus)
     }
 
     /// Rebuild the shared render order. Returns `false` when the routing graph
@@ -1962,7 +2011,20 @@ impl TimelineGraph {
 
                     {
                         let bus = &mut buses[index];
+                        // Solo-in-place, ahead of the fader, matching the
+                        // track law. A bus has no send taps today, so the
+                        // placement is still the one a later tap would have
+                        // to sit behind.
+                        if bus.solo_gated {
+                            left.fill(0.0);
+                            right.fill(0.0);
+                        }
                         apply_gain(&mut bus.gain, block_start, frames, left, right, diagnostics);
+                        if bus.muted {
+                            left.fill(0.0);
+                            right.fill(0.0);
+                        }
+                        apply_pan(&mut bus.pan, block_start, frames, left, right, diagnostics);
                     }
 
                     route_sum(
@@ -2749,6 +2811,96 @@ mod tests {
         graph.render(0, 4, true, &mut NoDevices, &mut left, &mut right);
         assert_eq!(left, vec![1.0; 4]);
         assert!(graph.track(1).expect("the track").is_muted());
+    }
+
+    #[test]
+    fn bus_strip_mute_silences_the_sends_that_feed_it() {
+        let mut graph = graph_with_constant_clip(1, 1.0, 4);
+        assert!(graph.add_bus(TimelineBus::new(50)).is_none());
+        graph.add_send(1, 50, SendTap::PostFader, 1.0);
+
+        let mut left = vec![0.0; 4];
+        let mut right = vec![0.0; 4];
+        graph.render(0, 4, true, &mut NoDevices, &mut left, &mut right);
+        assert_eq!(left, vec![2.0; 4], "the track's output plus its send");
+
+        graph.set_bus_mute(50, true);
+        assert!(graph.bus(50).expect("the bus").is_muted());
+        left.fill(0.0);
+        right.fill(0.0);
+        graph.render(0, 4, true, &mut NoDevices, &mut left, &mut right);
+        assert_eq!(left, vec![1.0; 4], "the muted bus contributes silence");
+    }
+
+    #[test]
+    fn bus_strip_pan_folds_stereo_like_a_track() {
+        let mut graph = TimelineGraph::new();
+        assert!(graph.add_track(TimelineTrack::new(1)).is_none());
+        assert!(graph
+            .add_clip(
+                1,
+                TimelineClip::new(
+                    9,
+                    vec![1.0; 4],
+                    vec![0.0; 4],
+                    placement(0, 0, 4),
+                    ClipPlayback::at_gain(1.0),
+                )
+            )
+            .is_none());
+        assert!(graph.add_bus(TimelineBus::new(50)).is_none());
+        graph.set_track_output(1, RouteTarget::Bus(50));
+
+        let mut left = vec![0.0; 4];
+        let mut right = vec![0.0; 4];
+        graph.render(0, 4, true, &mut NoDevices, &mut left, &mut right);
+        assert_eq!(left, vec![1.0; 4], "a centred bus is an identity");
+        assert_eq!(right, vec![0.0; 4]);
+
+        graph.automate(
+            AutomationTarget::BusPan(50),
+            AutomationWrite::Append(AutomationEvent {
+                at_frame: 0,
+                duration_frames: 0,
+                value: 1.0,
+                shape: RampShape::Step,
+            }),
+        );
+        left.fill(0.0);
+        right.fill(0.0);
+        graph.render(0, 4, true, &mut NoDevices, &mut left, &mut right);
+        assert!(left.iter().all(|sample| sample.abs() < 1e-6), "{left:?}");
+        assert_eq!(
+            right,
+            vec![1.0; 4],
+            "hard right folds the left into the right"
+        );
+    }
+
+    #[test]
+    fn bus_strip_solo_gate_silences_like_a_track() {
+        let mut graph = graph_with_constant_clip(1, 1.0, 4);
+        assert!(graph.add_bus(TimelineBus::new(50)).is_none());
+        graph.add_send(1, 50, SendTap::PostFader, 1.0);
+
+        graph.set_bus_solo_gate(50, true);
+        assert!(graph.bus(50).expect("the bus").is_solo_gated());
+        let mut left = vec![0.0; 4];
+        let mut right = vec![0.0; 4];
+        graph.render(0, 4, true, &mut NoDevices, &mut left, &mut right);
+        assert_eq!(left, vec![1.0; 4], "a solo-gated bus contributes silence");
+
+        graph.set_bus_mute(50, true);
+        graph.set_bus_solo_gate(50, false);
+        left.fill(0.0);
+        right.fill(0.0);
+        graph.render(0, 4, true, &mut NoDevices, &mut left, &mut right);
+        assert_eq!(
+            left,
+            vec![1.0; 4],
+            "releasing solo leaves a mute the user pressed"
+        );
+        assert!(graph.bus(50).expect("the bus").is_muted());
     }
 
     #[test]

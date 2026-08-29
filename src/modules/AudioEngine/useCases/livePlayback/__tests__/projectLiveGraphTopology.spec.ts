@@ -134,11 +134,7 @@ describe('projectLiveGraphTopology', () => {
         ]);
     });
 
-    it('builds a bus the native strip can actually hold, whatever the project bus carries', () => {
-        // The native bus strip is a fader over a summing point. A pan, a mute
-        // it is asked to honour, or a solo gate each refuse the whole batch by
-        // name — and something being soloed is an ordinary session, so a bus
-        // that carried the gate would refuse every play in that session.
+    it('carries the project bus mute, pan and solo gate onto the native strip', () => {
         const commands = project({
             stripTracks: [createTrack({ id: 'bus-1', kind: 'bus', pan: -30, muted: true, gain: 0.9 })],
             soloGatedTrackIds: new Set(['bus-1']),
@@ -147,12 +143,12 @@ describe('projectLiveGraphTopology', () => {
         const creation = stripCreation(commands, 'bus-1');
         expect(creation?.kind === 'create-bus-strip' && creation.state).toEqual({
             gain: 0.9,
-            pan: 0,
+            pan: -30,
             muted: true,
-            soloGated: false,
+            soloGated: true,
             vcaMultiplier: 1,
         });
-        expect(creation?.kind === 'create-bus-strip' && creation.honorMuted).toBe(false);
+        expect(creation?.kind === 'create-bus-strip' && creation.honorMuted).toBe(true);
     });
 
     it('keeps the track gates a track strip does hold', () => {
