@@ -207,6 +207,9 @@ async function expectRightEdgeContextMenuClamped(page: Page, app: FrameLocator):
     expectInsideViewport(menuBox);
     expect(menuBox.x).toBeLessThan(clickPoint.x);
     expect(menuBox.x + menuBox.width).toBeLessThanOrEqual(VIEWPORT.width);
+    const attachedBelow = Math.abs(menuBox.y - clickPoint.y) <= 1;
+    const attachedAbove = Math.abs(menuBox.y + menuBox.height - clickPoint.y) <= 1;
+    expect(attachedBelow || attachedAbove).toBe(true);
 
     await menu.getByRole('menuitem').first().press('Escape');
     await expect(menu).toHaveCount(0);

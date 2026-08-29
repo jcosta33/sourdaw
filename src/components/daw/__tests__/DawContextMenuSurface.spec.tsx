@@ -57,35 +57,72 @@ describe('DawContextMenuSurface', () => {
         expect(menu.style.overflowY).toBe('auto');
     });
 
-    it('clamps a down-anchored menu opened near the lower viewport edge', () => {
+    it.each([
+        {
+            name: 'below a near-top pointer',
+            y: 20,
+            top: '20px',
+            bottom: '',
+            maxHeight: 'calc(100vh - 28px)',
+        },
+        {
+            name: 'above a mid-viewport pointer',
+            y: 200,
+            top: '',
+            bottom: '160px',
+            maxHeight: 'calc(100vh - 168px)',
+        },
+        {
+            name: 'above a near-bottom pointer',
+            y: 340,
+            top: '',
+            bottom: '20px',
+            maxHeight: 'calc(100vh - 28px)',
+        },
+    ])('keeps an oversized default menu attached $name', ({ y, top, bottom, maxHeight }) => {
         vi.stubGlobal('innerHeight', 360);
 
         render(
-            <DawContextMenuSurface x={10} y={340} yClampOffset={300} portal={false} role="menu">
+            <DawContextMenuSurface x={10} y={y} yClampOffset={400} portal={false} role="menu">
                 <span>Item</span>
             </DawContextMenuSurface>
         );
 
         const menu = screen.getByRole('menu');
-        expect(menu.style.top).toBe('60px');
-        expect(menu.style.bottom).toBe('');
-        expect(menu.style.maxHeight).toBe('calc(100vh - 68px)');
+        expect(menu.style.top).toBe(top);
+        expect(menu.style.bottom).toBe(bottom);
+        expect(menu.style.maxHeight).toBe(maxHeight);
         expect(menu.style.overflowY).toBe('auto');
     });
 
-    it.each(['up', 'auto'] as const)('keeps a %s-anchored menu scrollable above its anchor', (anchorY) => {
+    it('keeps explicit up anchoring when the space below is larger', () => {
         vi.stubGlobal('innerHeight', 360);
 
         render(
-            <DawContextMenuSurface x={10} y={340} anchorY={anchorY} portal={false} role="menu">
+            <DawContextMenuSurface x={10} y={20} anchorY="up" yClampOffset={400} portal={false} role="menu">
                 <span>Item</span>
             </DawContextMenuSurface>
         );
 
         const menu = screen.getByRole('menu');
         expect(menu.style.top).toBe('');
-        expect(menu.style.bottom).toBe('20px');
-        expect(menu.style.maxHeight).toBe('calc(100vh - 28px)');
+        expect(menu.style.bottom).toBe('340px');
+        expect(menu.style.maxHeight).toBe('calc(100vh - 348px)');
         expect(menu.style.overflowY).toBe('auto');
+    });
+
+    it('uses available space for auto anchoring when the estimated height cannot fit', () => {
+        vi.stubGlobal('innerHeight', 360);
+
+        render(
+            <DawContextMenuSurface x={10} y={200} anchorY="auto" yClampOffset={400} portal={false} role="menu">
+                <span>Item</span>
+            </DawContextMenuSurface>
+        );
+
+        const menu = screen.getByRole('menu');
+        expect(menu.style.top).toBe('');
+        expect(menu.style.bottom).toBe('160px');
+        expect(menu.style.maxHeight).toBe('calc(100vh - 168px)');
     });
 });
