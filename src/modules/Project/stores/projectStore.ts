@@ -248,7 +248,7 @@ function apply_tuning(source: object, next_state: ProjectStoreState): void {
 function apply_production_brief(source: object, next_state: ProjectStoreState): void {
     const property = get_own_value({ value: source, key: 'productionBrief' });
     if (property.found && isProductionBrief(property.value)) {
-        next_state.productionBrief = structuredClone(property.value);
+        next_state.productionBrief = property.value;
     }
 }
 
