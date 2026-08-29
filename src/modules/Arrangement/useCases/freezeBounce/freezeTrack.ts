@@ -197,7 +197,7 @@ export async function freezeTrack(trackId: string, freezeIdOverride?: string): P
         // buffer was baked. Frozen playback compensates against this, so a later
         // plugin-latency change cannot drift the frozen take out of alignment
         // (nothing marks a frozen track stale on a latency change).
-        const compensationSeconds = getCompensationDelay(trackId);
+        const compensationSeconds = getCompensationDelay(trackId, scheduleTally.withheldDeviceTypes);
 
         scope(() => {
             updateTrack(trackId, (time) => ({

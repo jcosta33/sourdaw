@@ -5,7 +5,11 @@ import { type TrackLatency } from '../../../models/LatencyCompensationTypes';
 
 import { getDeviceLatencyMs } from './getDeviceLatencyMs';
 
-export function getTrackLatency(trackId: string, visited = new Set<string>()): TrackLatency {
+export function getTrackLatency(
+    trackId: string,
+    visited = new Set<string>(),
+    omitDeviceTypes?: readonly string[]
+): TrackLatency {
     const state = trackStore.value;
     if (!state) {
         return { trackId, deviceLatencyMs: 0, totalLatencyMs: 0 };
@@ -20,9 +24,16 @@ export function getTrackLatency(trackId: string, visited = new Set<string>()): T
 
     let deviceLatencyMs = 0;
     for (const device of track.devices) {
-        if (!device.bypassed) {
-            deviceLatencyMs += getDeviceLatencyMs(device.id, device.type);
+        if (device.bypassed) {
+            continue;
         }
+        // Omit applies only to this queried track's own device loop — never to
+        // recursive downstream (output/sends/sidechain) totals. Freeze printed
+        // this track's chain without those types; buses below were not printed.
+        if (omitDeviceTypes?.includes(device.type)) {
+            continue;
+        }
+        deviceLatencyMs += getDeviceLatencyMs(device.id, device.type);
     }
 
     let maxDownstreamMs = 0;
