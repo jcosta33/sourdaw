@@ -101,6 +101,7 @@ describe('RecentProjectsMenu', () => {
             'border-l-[rgba(255,249,242,0.1)]',
             'hover:brightness-[1.06]'
         );
+        expect(trigger).toHaveAttribute('data-size', 'icon-sm');
         expect(trigger).toContainElement(screen.getByTestId('project-menu-chevron'));
     });
 

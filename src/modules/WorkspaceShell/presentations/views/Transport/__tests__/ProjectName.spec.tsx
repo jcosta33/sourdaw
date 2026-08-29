@@ -36,6 +36,7 @@ describe('ProjectName', () => {
             'rounded-l-sm',
             'rounded-r-none',
             'border-r-0',
+            'h-6',
             'hover:brightness-[1.06]'
         );
     });
