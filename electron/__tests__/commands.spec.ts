@@ -55,6 +55,7 @@ const ADDON_PLUMBING: ReadonlySet<string> = new Set([
     'notify_plugin_window_closed',
     'register_plugin_window_host',
     'run_plugin_scan_worker',
+    'service_plugin_editor_run_loops',
     'shutdown',
 ]);
 
@@ -220,8 +221,10 @@ describe('addon method naming', () => {
 
         expect(published.has('register_plugin_window_host')).toBe(true);
         expect(published.has('notify_plugin_window_closed')).toBe(true);
+        expect(published.has('service_plugin_editor_run_loops')).toBe(true);
         expect(addonMethodName('register_plugin_window_host')).toBe('registerPluginWindowHost');
         expect(addonMethodName('notify_plugin_window_closed')).toBe('notifyPluginWindowClosed');
+        expect(addonMethodName('service_plugin_editor_run_loops')).toBe('servicePluginEditorRunLoops');
     });
 
     it('translates the shapes the surface actually contains', () => {

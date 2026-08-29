@@ -17,13 +17,22 @@
 //! the time the report arrives there is nothing left to detach from.
 //!
 //! None of this is reachable from the audio thread, and none of it takes a lock
-//! the audio thread holds. What it does run on is a blocking worker of the
-//! host application's executor: an editor command reaches this module through
-//! the runtime owner's control claim, and that claim is what serialises view
-//! lifecycle against every other control call. It is not the platform's UI
-//! thread. `IPlugView` is specified to be driven from the thread that owns the
-//! parent window, and this host does not do that today — a known deviation,
-//! shared with the CLAP editor path, and tracked separately.
+//! the audio thread holds. `IPlugView` is specified to be driven from the thread
+//! that owns the parent window, and the host carries the editor's lifecycle
+//! there: every path that opens or closes an editor — the GUI commands, the
+//! OS-close reset, the exit cascade, and an unload that removes a device while
+//! its editor is open — claims the runtime owner's control gate on its own
+//! worker, which is what serialises view lifecycle against every other control
+//! call, and then hands the view calls themselves to the UI thread and waits.
+//! The claim never travels with them, because a UI thread waiting for a control
+//! gate is a UI thread that cannot answer the call the gate's holder is waiting
+//! on. That is the contract this module is written against, and it is the
+//! caller's to keep: nothing here can check which thread it was entered on.
+//!
+//! Two entries into this file are outside it. The editor-support probe creates
+//! and releases a throwaway view on whatever thread asked, and `Vst3Editor`'s
+//! own `Drop` runs wherever the runtime is finally released. Both are known and
+//! tracked separately; neither is on the open/close path above.
 //!
 //! `ViewRect` is not one unit on every platform. macOS states it in logical
 //! points and the window server applies the backing scale, while Windows and
@@ -50,7 +59,7 @@ use vst3::{Class, ComPtr, ComRef, ComWrapper};
 use crate::traits::EditorWindowResizer;
 
 #[cfg(target_os = "linux")]
-use crate::vst3_run_loop::{HostRunLoop, RunLoopService};
+use crate::vst3_run_loop::{register_editor_run_loop, EditorRunLoopRegistration, HostRunLoop};
 #[cfg(target_os = "linux")]
 use vst3::Steinberg::Linux::{
     FileDescriptor, IEventHandler, IRunLoop, IRunLoopTrait, ITimerHandler, TimerInterval,
@@ -450,12 +459,9 @@ impl IPlugFrameTrait for HostEditorFrame {
     /// window that has already changed, which is the classic "editor content
     /// clipped after a preset change" symptom.
     ///
-    /// The VST3 side of that handshake is synchronous here and the order is the
-    /// one the format states. The window itself is a separate matter: the
-    /// production window seam crosses to the shell as a non-blocking call, so
-    /// the host window is *asked* to resize before `onSize` and applies it a
-    /// turn of the shell's loop later. That seam limitation is shared with the
-    /// CLAP editor path and tracked separately.
+    /// The whole handshake is synchronous here, window included: the host window
+    /// seam does not return until the shell has applied the size, so the window
+    /// has already changed by the time `onSize` is delivered.
     ///
     /// A view that refuses the size it just asked for leaves the host holding a
     /// window it changed for nothing, so the refusal puts the window and the
@@ -549,10 +555,10 @@ pub struct Vst3Editor {
     view: ComPtr<IPlugView>,
     _frame: ComWrapper<HostEditorFrame>,
     state: Arc<EditorFrameState>,
-    /// The thread that services the editor's descriptors and timers, for as long
-    /// as the editor is open.
+    /// This editor's place in the set the host's UI loop services, held for as
+    /// long as the editor is open.
     #[cfg(target_os = "linux")]
-    run_loop_service: Option<RunLoopService>,
+    run_loop_registration: Option<EditorRunLoopRegistration>,
 }
 
 impl Vst3Editor {
@@ -649,28 +655,16 @@ impl Vst3Editor {
         }
 
         // An editor whose descriptors and timers nobody services never draws and
-        // never answers a click, so a service thread that will not start is a
-        // refusal rather than a degraded editor.
+        // never answers a click, so it joins the set the host's UI loop pumps
+        // the moment it is attached.
         #[cfg(target_os = "linux")]
-        let run_loop_service = match RunLoopService::start(Arc::clone(state.run_loop())) {
-            Ok(service) => Some(service),
-            Err(error) => {
-                state.disown();
-                // SAFETY: the view is attached and live; this is the detach the
-                // failure path owes before the frame and the view are released.
-                unsafe {
-                    view.removed();
-                    view.setFrame(ptr::null_mut());
-                }
-                return Err(format!("[VST3] '{plugin_name}': {error}"));
-            }
-        };
+        let run_loop_registration = Some(register_editor_run_loop(Arc::clone(state.run_loop())));
 
         Ok(Self {
             view,
             _frame: frame,
             #[cfg(target_os = "linux")]
-            run_loop_service,
+            run_loop_registration,
             state,
         })
     }
@@ -759,10 +753,11 @@ impl Drop for Vst3Editor {
     /// so giving up at the deadline costs this close its promptness rather than
     /// that call its vtable.
     fn drop(&mut self) {
-        // The service thread calls into handlers the editor registered, so it
-        // stops before anything the editor owns is torn down.
+        // The host's pump calls into handlers the editor registered, so this
+        // editor leaves the pumped set — and waits out a pass already inside it
+        // — before anything the editor owns is torn down.
         #[cfg(target_os = "linux")]
-        drop(self.run_loop_service.take());
+        drop(self.run_loop_registration.take());
 
         self.state.disown();
         let guarded = self.state.acquire_resize_guard_for_teardown();

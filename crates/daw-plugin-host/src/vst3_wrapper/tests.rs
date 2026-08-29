@@ -1104,6 +1104,15 @@ struct FakeEditor {
     /// Whether `resizeView` had already delivered `onSize` by the time it
     /// returned — the whole of what "synchronous, one callstack" means.
     on_size_arrived_before_resize_view_returned: AtomicBool,
+    /// The size the host's own window is holding right now.
+    host_window_size: Mutex<Option<(u32, u32)>>,
+    /// What that window was holding at the instant `onSize` arrived.
+    ///
+    /// VST3 states the order outright: the host resizes its window, then tells
+    /// the view what it granted. A host whose window seam only *queues* the
+    /// resize reaches `onSize` with the old size still on the window, and this
+    /// is the only field that can tell that apart from a host that applied it.
+    host_window_size_at_on_size: Mutex<Option<(u32, u32)>>,
     /// A size this editor asks for again from *inside* `onSize`. Taken rather
     /// than counted, so a host with no re-entrancy guard fails this test instead
     /// of exhausting the stack.
@@ -1333,6 +1342,15 @@ impl IPlugViewTrait for FakeView {
             ((*new_size).bottom - (*new_size).top) as u32,
         );
         self.editor.record("onSize");
+        *self
+            .editor
+            .host_window_size_at_on_size
+            .lock()
+            .expect("window size mutex") = *self
+            .editor
+            .host_window_size
+            .lock()
+            .expect("window size mutex");
         *self.editor.on_size_origin.lock().expect("size mutex") =
             Some(((*new_size).left, (*new_size).top));
         if self.editor.refuses_on_size.load(Ordering::Acquire) {
@@ -1611,6 +1629,10 @@ fn recording_window(
     let editor = Arc::clone(editor);
     let resize: EditorWindowResizer = Arc::new(move |width, height| {
         editor.record("resizeWindow");
+        // Applied before the call returns, which is what the production seam
+        // does now: a resizer that only queued the size would leave the old one
+        // readable here, and that is what the handshake test observes.
+        *editor.host_window_size.lock().expect("window size mutex") = Some((width, height));
         recorded
             .lock()
             .expect("window size mutex")
@@ -2773,11 +2795,10 @@ fn a_view_that_refuses_this_platform_is_not_attached() {
 /// inside `onSize`, and a host that answers it recurses until the stack runs
 /// out — so the second ask is refused rather than served.
 ///
-/// What this pins is the host's own ordering. The resizer here applies the size
-/// synchronously; the production one crosses to the shell as a non-blocking
-/// call, so the window itself takes the size a turn of the shell's loop later.
-/// That seam limitation is tracked separately, and no assertion here observes
-/// it.
+/// The window is part of the contract, not scenery: this drives the same
+/// [`EditorWindowResizer`] seam the shell's window implements, and asserts what
+/// that window was holding at the instant the view was told its size. A host
+/// that granted a size its window had not taken yet fails here.
 #[test]
 fn a_plugins_resize_completes_on_one_callstack_and_a_nested_one_is_refused() {
     let editor = FakeEditor::sized(800, 600);
@@ -2819,6 +2840,14 @@ fn a_plugins_resize_completes_on_one_callstack_and_a_nested_one_is_refused() {
         editor.on_size(),
         Some((1024, 768)),
         "the view must be told the size the host granted"
+    );
+    assert_eq!(
+        *editor
+            .host_window_size_at_on_size
+            .lock()
+            .expect("window size mutex"),
+        Some((1024, 768)),
+        "the host window must already hold the granted size when the view is told it"
     );
     assert_eq!(
         editor.attach_resize_result.load(Ordering::Acquire),
@@ -3355,6 +3384,17 @@ fn a_timer_registered_through_the_frame_fires_until_it_is_unregistered() {
 
     let editor = FakeEditor::sized(800, 600);
     let state = state_with_editor(&editor);
+
+    // Drop order: the handler must outlive the run-loop registration owned by
+    // `wrapper`, because a panic unwinds locals in reverse declaration order
+    // while a sibling test may still be pumping the global registry —
+    // dropping the handler first would free it while still registered.
+    let timer = ComWrapper::new(CountingTimer::default());
+    let raw = timer
+        .as_com_ref::<ITimerHandler>()
+        .expect("the fake timer implements ITimerHandler")
+        .as_ptr();
+
     let mut wrapper = load(&state, COMBINED_CID);
     wrapper
         .open_gui(ptr::null_mut())
@@ -3368,11 +3408,6 @@ fn a_timer_registered_through_the_frame_fires_until_it_is_unregistered() {
         .cast::<IRunLoop>()
         .expect("a Linux editor must be able to get a run loop from its frame");
 
-    let timer = ComWrapper::new(CountingTimer::default());
-    let raw = timer
-        .as_com_ref::<ITimerHandler>()
-        .expect("the fake timer implements ITimerHandler")
-        .as_ptr();
     // SAFETY: `raw` borrows a live handler this test owns.
     assert_eq!(unsafe { run_loop.registerTimer(raw, 1) }, kResultOk);
 
@@ -3383,9 +3418,9 @@ fn a_timer_registered_through_the_frame_fires_until_it_is_unregistered() {
 
     // SAFETY: the same live handler.
     assert_eq!(unsafe { run_loop.unregisterTimer(raw) }, kResultOk);
-    std::thread::sleep(std::time::Duration::from_millis(100));
+    pump_for(std::time::Duration::from_millis(100));
     let settled = timer.wakes.load(Ordering::Acquire);
-    std::thread::sleep(std::time::Duration::from_millis(100));
+    pump_for(std::time::Duration::from_millis(100));
 
     assert_eq!(
         timer.wakes.load(Ordering::Acquire),
@@ -3425,6 +3460,17 @@ fn an_event_handler_registered_through_the_frame_is_called_on_descriptor_readine
 
     let editor = FakeEditor::sized(800, 600);
     let state = state_with_editor(&editor);
+
+    // Drop order: the handler must outlive the run-loop registration owned by
+    // `wrapper`, because a panic unwinds locals in reverse declaration order
+    // while a sibling test may still be pumping the global registry —
+    // dropping the handler first would free it while still registered.
+    let handler = ComWrapper::new(DrainingEventHandler::default());
+    let raw = handler
+        .as_com_ref::<IEventHandler>()
+        .expect("the fake handler implements IEventHandler")
+        .as_ptr();
+
     let mut wrapper = load(&state, COMBINED_CID);
     wrapper
         .open_gui(ptr::null_mut())
@@ -3443,11 +3489,6 @@ fn an_event_handler_registered_through_the_frame_is_called_on_descriptor_readine
     assert_eq!(unsafe { libc::pipe(ends.as_mut_ptr()) }, 0);
     let (read_end, write_end) = (ends[0], ends[1]);
 
-    let handler = ComWrapper::new(DrainingEventHandler::default());
-    let raw = handler
-        .as_com_ref::<IEventHandler>()
-        .expect("the fake handler implements IEventHandler")
-        .as_ptr();
     // SAFETY: `raw` borrows a live handler this test owns.
     assert_eq!(
         unsafe { run_loop.registerEventHandler(raw, read_end) },
@@ -3477,12 +3518,15 @@ fn an_event_handler_registered_through_the_frame_is_called_on_descriptor_readine
     }
 }
 
-/// Poll for a condition rather than sleeping a fixed time: the service thread
-/// is real, and a fixed sleep is either flaky or slow.
+/// Poll for a condition rather than sleeping a fixed time. Nothing services
+/// the editor run-loop registry in this process on its own: production gets
+/// its pump from Electron's main loop calling `service_editor_run_loops`, and
+/// here the test drives that same call itself, standing in for Electron.
 #[cfg(target_os = "linux")]
 fn wait_until(mut condition: impl FnMut() -> bool) -> bool {
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
     while std::time::Instant::now() < deadline {
+        crate::vst3_run_loop::service_editor_run_loops();
         if condition() {
             return true;
         }
@@ -3492,17 +3536,32 @@ fn wait_until(mut condition: impl FnMut() -> bool) -> bool {
 }
 
 /// Long enough for a wrongly-eager service to have fired, short enough not to
-/// dominate the suite.
+/// dominate the suite. Pumps the same way `wait_until` does, so a handler
+/// that should not fire yet is given every chance to fire wrongly.
 #[cfg(target_os = "linux")]
 fn wait_briefly(mut condition: impl FnMut() -> bool) -> bool {
     let deadline = std::time::Instant::now() + std::time::Duration::from_millis(100);
     while std::time::Instant::now() < deadline {
+        crate::vst3_run_loop::service_editor_run_loops();
         if condition() {
             return true;
         }
         std::thread::sleep(std::time::Duration::from_millis(2));
     }
     condition()
+}
+
+/// Pumps the editor run-loop registry for roughly `duration`, the way
+/// `wait_until` and `wait_briefly` do, without waiting on any condition.
+/// Used to prove that pumping after an `unregister*` call does not wake a
+/// handler that is no longer registered.
+#[cfg(target_os = "linux")]
+fn pump_for(duration: std::time::Duration) {
+    let deadline = std::time::Instant::now() + duration;
+    while std::time::Instant::now() < deadline {
+        crate::vst3_run_loop::service_editor_run_loops();
+        std::thread::sleep(std::time::Duration::from_millis(2));
+    }
 }
 
 // ── RT-path allocation ──────────────────────────────────────────────────

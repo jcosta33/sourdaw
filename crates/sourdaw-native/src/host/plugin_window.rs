@@ -7,6 +7,11 @@
 //! bookkeeping and the close/hide/show decisions belong to the command body and
 //! stay in this crate.
 //!
+//! The seam carries the shell's UI thread as well as its windows
+//! ([`crate::host::ui_thread::UiThread`]), because they are the same thing: a
+//! window may only be touched from the thread that made it, and so may the
+//! plugin editor drawn into it.
+//!
 //! No method here may be called from the audio thread — every one of them
 //! reaches the platform's window server.
 
@@ -14,6 +19,8 @@ use std::ffi::c_void;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use raw_window_handle::RawWindowHandle;
+
+use crate::host::ui_thread::UiThread;
 
 /// Label the shell gives the DAW's own window.
 ///
@@ -183,6 +190,20 @@ pub trait PluginEditorWindow: Send + Sync {
     fn native_handle_ptr(&self) -> Result<*mut c_void, String>;
 
     /// Resize to the plugin's preferred editor size, in logical units.
+    ///
+    /// Returns only once the shell has applied the request to its window. A
+    /// plugin mid-handshake is told the size it was granted the instant this
+    /// returns — VST3 states that order outright, and an editor told it before
+    /// the host acted lays itself out against the old size — so an
+    /// implementation that merely queued the request would answer for work it
+    /// had not done.
+    ///
+    /// Applied, not granted: on X11 and Wayland a content-size call is a request
+    /// to the window manager, which may honour it late or not at all, and no
+    /// host can promise otherwise. What the caller may rely on is the ordering —
+    /// the shell's own resize ran before this returned — which is the same thing
+    /// conventional hosts rely on when they answer `onSize` right after asking
+    /// the platform.
     fn set_size(&self, width: u32, height: u32);
 
     /// The display scale this window was created at.
@@ -206,8 +227,28 @@ pub trait PluginEditorWindow: Send + Sync {
     fn destroy(&self);
 }
 
-/// Creates and addresses the native windows plugin editors are drawn into.
-pub trait PluginWindowHost: Send + Sync {
+/// Apply one editor resize on the UI thread, and return only once it has been
+/// applied.
+///
+/// [`PluginEditorWindow::set_size`]'s ordering contract, in one place, because
+/// it is the whole difference between a resize and a resize request: a plugin
+/// reads the answer as the size its window now has. A resize raised on the UI
+/// thread — a view laying itself out inside its own attach — is applied where it
+/// stands; one raised anywhere else crosses and waits there.
+///
+/// The outcome is discarded for the same reason a fire-and-forget window call
+/// discards its status: a window the shell no longer has is not a failure of the
+/// resize, and a plugin mid-handshake has nowhere to be told about one.
+pub fn apply_editor_size_on_ui_thread<Ui: UiThread + ?Sized>(
+    ui: &Ui,
+    apply: impl FnOnce() + Send + 'static,
+) {
+    let _ = crate::host::ui_thread::call_on_ui_thread(ui, apply);
+}
+
+/// Creates and addresses the native windows plugin editors are drawn into, and
+/// is the thread they live on.
+pub trait PluginWindowHost: UiThread {
     /// Whether a window with this label already exists.
     fn window_exists(&self, label: &str) -> bool;
 
@@ -254,6 +295,10 @@ pub trait PluginWindowHost: Send + Sync {
 /// itself open with no window behind it is worse than one that refuses.
 pub struct NoWindowHost;
 
+/// No shell, so no thread of its own: the defaults run editor calls where the
+/// caller stands, which is the only thread there is.
+impl UiThread for NoWindowHost {}
+
 impl PluginWindowHost for NoWindowHost {
     fn window_exists(&self, _label: &str) -> bool {
         false
@@ -275,9 +320,156 @@ impl PluginWindowHost for NoWindowHost {
     fn show_window(&self, _label: &str) {}
 }
 
+/// A window host with a UI thread of its own, for the tests of every path that
+/// has to reach one.
+///
+/// Shared rather than per-module because "which thread reached the plugin" is
+/// asked of the GUI commands and of the unload path alike, and two copies of the
+/// fake would let one of them drift into answering it the easy way.
+#[cfg(test)]
+pub mod testing {
+    use std::sync::mpsc;
+    use std::sync::{Arc, Mutex};
+    use std::thread::{self, JoinHandle, ThreadId};
+
+    use super::{PluginEditorWindow, PluginWindowHost};
+    use crate::host::ui_thread::{UiThread, UiThreadTask};
+
+    /// A shell's main loop, reduced to the one thing that matters here: a thread
+    /// of its own that does nothing but drain the editor work posted to it.
+    ///
+    /// That is what makes the thread question answerable — the id it records can
+    /// only appear in a plugin fixture's log if the call was actually carried
+    /// here.
+    pub struct DedicatedUiWindowHost {
+        work: mpsc::Sender<Arc<UiThreadTask>>,
+        pub thread_id: ThreadId,
+        thread: Mutex<Option<JoinHandle<()>>>,
+    }
+
+    impl DedicatedUiWindowHost {
+        pub fn start() -> Self {
+            let (work, queued) = mpsc::channel::<Arc<UiThreadTask>>();
+            let (announce, announced) = mpsc::channel();
+            let thread = thread::spawn(move || {
+                announce
+                    .send(thread::current().id())
+                    .expect("the fake UI thread must announce itself");
+                while let Ok(task) = queued.recv() {
+                    task.run();
+                }
+            });
+            let thread_id = announced.recv().expect("the fake UI thread must start");
+            Self {
+                work,
+                thread_id,
+                thread: Mutex::new(Some(thread)),
+            }
+        }
+    }
+
+    impl Drop for DedicatedUiWindowHost {
+        fn drop(&mut self) {
+            let (closed, _) = mpsc::channel();
+            drop(std::mem::replace(&mut self.work, closed));
+            if let Some(thread) = self.thread.lock().expect("ui thread handle").take() {
+                let _ = thread.join();
+            }
+        }
+    }
+
+    impl UiThread for DedicatedUiWindowHost {
+        fn is_ui_thread(&self) -> bool {
+            thread::current().id() == self.thread_id
+        }
+
+        fn run_on_ui_thread(&self, task: &Arc<UiThreadTask>) -> Result<(), String> {
+            let (done, waited) = mpsc::sync_channel(1);
+            let queued = Arc::clone(task);
+            self.work
+                .send(UiThreadTask::new(move || {
+                    queued.run();
+                    let _ = done.send(());
+                }))
+                .map_err(|_| "the fake UI thread is gone".to_string())?;
+            waited
+                .recv()
+                .map_err(|_| "the fake UI thread never answered".to_string())
+        }
+    }
+
+    /// A window with no platform behind it: enough for an editor to be opened
+    /// into, and nothing more.
+    pub struct BareEditorWindow;
+
+    impl PluginEditorWindow for BareEditorWindow {
+        fn native_handle_ptr(&self) -> Result<*mut std::ffi::c_void, String> {
+            Ok(std::ptr::null_mut())
+        }
+
+        fn set_size(&self, _width: u32, _height: u32) {}
+
+        fn show_and_focus(&self) {}
+
+        fn destroy(&self) {}
+    }
+
+    impl PluginWindowHost for DedicatedUiWindowHost {
+        fn window_exists(&self, _label: &str) -> bool {
+            false
+        }
+
+        fn create_editor_window(
+            &self,
+            _label: &str,
+            _title: &str,
+            _instance_id: &str,
+        ) -> Result<Box<dyn PluginEditorWindow>, String> {
+            Ok(Box::new(BareEditorWindow))
+        }
+
+        fn destroy_window(&self, _label: &str) {}
+
+        fn hide_window(&self, _label: &str) {}
+
+        fn show_window(&self, _label: &str) {}
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use super::testing::DedicatedUiWindowHost;
     use super::*;
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    /// The ordering the plugin depends on: by the time the resize call returns,
+    /// the shell has already applied it. A resize that was merely posted would
+    /// let the plugin lay itself out against the size it had before it asked.
+    ///
+    /// The applied work takes a moment on purpose — an implementation that
+    /// handed the resize to another thread and returned would come back with the
+    /// answer still in flight, and this is what makes that difference visible
+    /// rather than a coin flip.
+    #[test]
+    fn a_resize_is_applied_before_the_call_that_asked_for_it_returns() {
+        let ui = DedicatedUiWindowHost::start();
+        let (applied, was_applied) = mpsc::sync_channel(1);
+        let ui_thread = ui.thread_id;
+
+        apply_editor_size_on_ui_thread(&ui, move || {
+            std::thread::sleep(Duration::from_millis(20));
+            let _ = applied.send(std::thread::current().id());
+        });
+
+        let ran_on = was_applied
+            .try_recv()
+            .expect("the resize must have been applied by the time the call returned");
+        assert_eq!(
+            ran_on, ui_thread,
+            "the resize must be applied on the thread that owns the window"
+        );
+    }
 
     #[test]
     fn an_instance_id_and_an_opening_map_to_one_stable_window_label() {

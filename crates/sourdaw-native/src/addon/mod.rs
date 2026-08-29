@@ -31,7 +31,7 @@ use crate::host::plugin_window::{NoWindowHost, PluginWindowHost};
 use crate::NativeSingletons;
 
 use windows::{
-    CreateEditorWindowFn, EditorWindowExistsFn, EditorWindowLabelFn, EditorWindowSizeFn,
+    CreateEditorWindowFn, EditorWindowExistsFn, EditorWindowLabelFn, EditorWindowSizeRequest,
     JsWindowCallbacks, JsWindowHost,
 };
 
@@ -166,31 +166,58 @@ impl SourdawNative {
 
     /// Register the shell's plugin-window callbacks (packet T-4).
     ///
-    /// Called once at startup, before any plugin command. Each callback is a
-    /// weak threadsafe function for the same reason as the event sink: the
-    /// window host lives for the process, and a referenced one would pin the
-    /// Node event loop so the shell could never quit.
+    /// Called once at startup, before any plugin command, and on the shell's
+    /// main thread — that call is what tells the addon which thread the plugin
+    /// editor lifecycle belongs to, so registering from anywhere else sends
+    /// every editor call to the wrong one.
+    ///
+    /// Each fire-and-forget callback is a weak threadsafe function for the same
+    /// reason as the event sink: the window host lives for the process, and a
+    /// referenced one would pin the Node event loop so the shell could never
+    /// quit. The resize callback is kept as a plain reference instead, because
+    /// it is called on the main thread and must not queue.
     #[napi]
     pub fn register_plugin_window_host(
         &self,
+        env: &Env,
         create_editor_window: CreateEditorWindowFn,
         editor_window_exists: EditorWindowExistsFn,
-        set_editor_window_size: EditorWindowSizeFn,
+        set_editor_window_size: Function<'_, EditorWindowSizeRequest, ()>,
         show_and_focus_editor_window: EditorWindowLabelFn,
         destroy_editor_window: EditorWindowLabelFn,
         hide_editor_window: EditorWindowLabelFn,
         show_editor_window: EditorWindowLabelFn,
-    ) {
-        *self.windows.write().expect("window host lock poisoned") =
-            Arc::new(JsWindowHost::new(JsWindowCallbacks {
+    ) -> Result<()> {
+        let host = JsWindowHost::new(
+            env,
+            JsWindowCallbacks {
                 create: create_editor_window,
                 exists: editor_window_exists,
-                set_size: set_editor_window_size,
+                set_size: set_editor_window_size.create_ref()?,
                 show_and_focus: show_and_focus_editor_window,
                 destroy: destroy_editor_window,
                 hide: hide_editor_window,
                 show: show_editor_window,
-            }));
+            },
+        )?;
+        *self.windows.write().expect("window host lock poisoned") = Arc::new(host);
+        Ok(())
+    }
+
+    /// Give the Linux VST3 `IRunLoop` one pass on the shell's main thread.
+    ///
+    /// The shell calls this from its own loop while any editor is open. A
+    /// plugin's X11 event handlers and timers are the host's to dispatch, and
+    /// `IRunLoop` exists so that they are dispatched on the thread that owns
+    /// the editor's window; a pass never waits, so calling it on an idle loop
+    /// costs a poll with a zero timeout. Returns how many callbacks ran, which
+    /// is what makes the wiring observable from the shell's specs.
+    ///
+    /// Present on every platform so the shell has one surface to call; nothing
+    /// registers a run loop off Linux, so the pass finds nothing there.
+    #[napi]
+    pub fn service_plugin_editor_run_loops(&self) -> u32 {
+        daw_plugin_host::vst3_run_loop::service_editor_run_loops() as u32
     }
 
     /// The shell reports that the OS ended a plugin editor window (title-bar
@@ -202,9 +229,11 @@ impl SourdawNative {
     /// [`commands::plugin_gui::reset_plugin_gui_state_after_os_close`].
     #[napi]
     pub async fn notify_plugin_window_closed(&self, instance_id: String, label: String) {
+        let windows = self.window_host();
         commands::plugin_gui::reset_plugin_gui_state_after_os_close(
             &instance_id,
             &label,
+            windows.as_ref(),
             &self.singletons.app_state,
             &*self.singletons.events,
         );

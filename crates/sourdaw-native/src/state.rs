@@ -1,4 +1,5 @@
 use crate::host::native_bridge::SharedHostedPlugin;
+use crate::host::ui_thread::UiThread;
 use daw_engine::audio_bridge::{PluginAudioBridgeHandle, MAX_BLOCK_FRAMES};
 use daw_engine::EngineHandle;
 use daw_plugin_host::AudioPlugin;
@@ -9,7 +10,7 @@ use daw_plugin_host::PluginParameterEventQueue;
 use std::collections::HashMap;
 use std::ffi::c_void;
 use std::sync::atomic::AtomicU64;
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex, MutexGuard, TryLockError};
 use std::time::Duration;
 
 pub struct PluginInstanceData {
@@ -291,7 +292,16 @@ pub struct LivePluginInstances {
     /// the watcher threads hold clones — so dropping one runs the plugin's
     /// teardown only once every other clone is gone.
     pub engine_owned: Vec<EnginePluginInstanceData>,
+    /// One message per store this pass could not take at all, so its instances
+    /// are still in it. A store, not a name: a store that would not open cannot
+    /// be read for the names it holds.
+    pub left_in_a_busy_store: Vec<String>,
 }
+
+/// What the report says about command-owned instances the exit pass could not
+/// reach. Their teardown did not run.
+const COMMAND_OWNED_STORE_WAS_BUSY: &str =
+    "Command-owned plugin instances were busy; they were not torn down";
 
 /// Take a lock whose data stays usable after a panic elsewhere.
 ///
@@ -302,6 +312,33 @@ pub(crate) fn locked_or_poisoned<Value>(lock: &Mutex<Value>) -> MutexGuard<'_, V
     match lock.lock() {
         Ok(guard) => guard,
         Err(poisoned) => poisoned.into_inner(),
+    }
+}
+
+/// Take a store's lock, refusing rather than parking when this is the shell's
+/// UI thread.
+///
+/// `None` means the store was busy and the caller must do without it. Only the
+/// UI thread refuses: a worker may hold one of these across an editor call it
+/// needs the UI thread to run (`commands::plugin_gui`), so the UI thread waiting
+/// here waits for itself. Every other caller is a worker, and a worker waiting
+/// closes no cycle.
+///
+/// A poisoned store is still handed over, for the reason
+/// [`locked_or_poisoned`] gives: teardown is exactly what must survive a panic
+/// somewhere else.
+fn claimed_unless_the_ui_thread_would_park<'store, Value, Ui: UiThread + ?Sized>(
+    lock: &'store Mutex<Value>,
+    ui: &Ui,
+) -> Option<MutexGuard<'store, Value>> {
+    if !ui.is_ui_thread() {
+        return Some(locked_or_poisoned(lock));
+    }
+
+    match lock.try_lock() {
+        Ok(guard) => Some(guard),
+        Err(TryLockError::WouldBlock) => None,
+        Err(TryLockError::Poisoned(poisoned)) => Some(poisoned.into_inner()),
     }
 }
 
@@ -390,6 +427,33 @@ impl AppState {
         runtime.with_control(Duration::from_secs(2), operation)
     }
 
+    /// The same operation, but refusing an instance whose control gate is busy
+    /// rather than waiting for it.
+    ///
+    /// For callers that must not park: the gate's wait is unbounded, and a
+    /// caller running on the shell's UI thread cannot afford one — the worker
+    /// holding the gate may itself be waiting for that very thread, and the
+    /// refusal is what breaks the cycle. See
+    /// [`SharedHostedPlugin::try_with_control`](crate::host::native_bridge::SharedHostedPlugin::try_with_control).
+    pub fn try_with_engine_plugin_control<ResultValue>(
+        &self,
+        instance_id: &str,
+        operation: impl FnOnce(&mut HostedRuntime) -> Result<ResultValue, String>,
+    ) -> Result<ResultValue, String> {
+        let runtime = {
+            let engine_plugins = self
+                .engine_plugins
+                .lock()
+                .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
+            engine_plugins
+                .get(instance_id)
+                .map(|instance| Arc::clone(&instance.runtime))
+                .ok_or_else(|| format!("No engine-owned plugin instance: {}", instance_id))?
+        };
+
+        runtime.try_with_control(Duration::from_secs(2), operation)
+    }
+
     pub fn retain_retired_engine_plugin(&self, runtime: Arc<SharedHostedPlugin>) {
         match self.retired_engine_plugins.lock() {
             Ok(mut retired_plugins) => {
@@ -419,7 +483,21 @@ impl AppState {
     /// inside a store's critical section parks every other plugin command for
     /// its whole duration — the discipline `sweep_retired_runtimes` keeps for
     /// the retirement vec.
-    pub fn take_live_plugin_instances(&self) -> LivePluginInstances {
+    ///
+    /// `ui` is here because this pass runs on the shell's UI thread at exit, and
+    /// the command-owned store is held across editor calls that need that very
+    /// thread. Waiting for it there is a deadlock the shell only leaves through
+    /// its force-exit, which kills every plugin mid-flight — so the store is
+    /// claimed without parking, and a store that will not open is reported
+    /// instead of waited for.
+    ///
+    /// The engine-owned store is taken outright: nothing holds it across an
+    /// editor call, so no holder of it is waiting on the thread this pass runs
+    /// on.
+    pub fn take_live_plugin_instances<Ui: UiThread + ?Sized>(
+        &self,
+        ui: &Ui,
+    ) -> LivePluginInstances {
         let engine_owned = {
             let mut engine_plugins = locked_or_poisoned(&self.engine_plugins);
             for instance in engine_plugins.values() {
@@ -428,13 +506,18 @@ impl AppState {
             std::mem::take(&mut *engine_plugins).into_values().collect()
         };
 
-        let command_owned = std::mem::take(&mut *locked_or_poisoned(&self.plugins))
-            .into_values()
-            .collect();
+        let Some(mut plugins) = claimed_unless_the_ui_thread_would_park(&self.plugins, ui) else {
+            return LivePluginInstances {
+                command_owned: Vec::new(),
+                engine_owned,
+                left_in_a_busy_store: vec![COMMAND_OWNED_STORE_WAS_BUSY.to_string()],
+            };
+        };
 
         LivePluginInstances {
-            command_owned,
+            command_owned: std::mem::take(&mut *plugins).into_values().collect(),
             engine_owned,
+            left_in_a_busy_store: Vec::new(),
         }
     }
 
@@ -451,6 +534,7 @@ impl AppState {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::host::plugin_window::NoWindowHost;
 
     /// A hosted plugin that is not a `ClapWrapper`.
     ///
@@ -874,7 +958,7 @@ mod tests {
             },
         );
 
-        let instances = state.take_live_plugin_instances();
+        let instances = state.take_live_plugin_instances(&NoWindowHost);
 
         assert!(
             !dropped.load(std::sync::atomic::Ordering::Relaxed),
@@ -927,7 +1011,7 @@ mod tests {
             "the fixture must start wanted, or the withdrawal below proves nothing"
         );
 
-        let instances = state.take_live_plugin_instances();
+        let instances = state.take_live_plugin_instances(&NoWindowHost);
 
         assert_eq!(instances.engine_owned.len(), 1);
         assert!(
