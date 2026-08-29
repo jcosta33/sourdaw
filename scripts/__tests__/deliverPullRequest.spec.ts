@@ -1917,6 +1917,52 @@ describe('pull-request delivery', () => {
         });
     });
 
+    it('disarms a definitive CLOSED unmerged rejection before an UNKNOWN refresh can reopen on a new head', () => {
+        const closes = relationshipBody('Closes #2372');
+        const nextHead = 'reopened-head';
+        const { port, calls, tracker, persistedReceiptAuthority, receipts } = fakePort({
+            primary: [
+                pullRequest({ headRefOid: 'head', body: closes }),
+                pullRequest({ headRefOid: 'head', body: closes }),
+                pullRequest({ state: 'CLOSED', headRefOid: 'head', body: closes, mergeable: 'UNKNOWN' }),
+                pullRequest({ state: 'OPEN', headRefOid: nextHead, body: closes }),
+                pullRequest({ state: 'OPEN', headRefOid: nextHead, body: closes }),
+            ],
+            dependentSets: [[], []],
+        });
+        const originalMerge = port.merge;
+        let rejectOnce = true;
+        port.merge = (number, head, hasDependents) => {
+            if (rejectOnce) {
+                rejectOnce = false;
+                calls.push(`merge:${number}:${head}`);
+                throw new DeliveryMergeRejectedError('PR #42 was not merged: gh: HTTP 409: closed without merge');
+            }
+            originalMerge(number, head, hasDependents);
+        };
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/HTTP 409: closed without merge/i);
+        expect(calls).toContain('merge:42:head');
+        expect(calls).not.toContain('complete:2372');
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'prepared',
+            receiptId: 'IC_delivery_42_1',
+            receiptBody: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'),
+        });
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(2);
+        expect(receipts.map(({ id }) => id)).toEqual(['IC_delivery_42_1', 'IC_delivery_42_2']);
+        expect(calls).toContain(`merge:42:${nextHead}`);
+        expect(calls).toContain('complete:2372');
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'terminal',
+            receiptId: 'IC_delivery_42_2',
+            receiptBody: visibleDeliveryReceiptBody(42, nextHead, closes, 2372, 'successful'),
+        });
+    });
+
     it('retains the armed receipt authority after an ambiguous merge error even when one follow-up read still looks open, then recovers on merged retry', () => {
         const closes = relationshipBody('Closes #2372');
         const { port, calls, tracker, persistedReceiptAuthority } = fakePort({
@@ -2271,6 +2317,49 @@ describe('pull-request delivery', () => {
                 },
             ],
             deliveryReceiptProof: { totalCount: 1, latestCommentId: 'IC_x' },
+        });
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/delivery receipt changed during recovery/i);
+        expect(calls.filter((call) => call.startsWith('complete:'))).toHaveLength(0);
+        expect(calls.filter((call) => call.startsWith('retarget:'))).toHaveLength(0);
+    });
+
+    it('fails closed when prepared merged recovery only differs on receipt closingIssue versus stored trackerTarget', () => {
+        const related = relationshipBody('Related #2372');
+        const receiptBody = visibleDeliveryReceiptBody(42, 'head', related, 2372, 'successful');
+        const { port, calls, tracker } = fakePort({
+            primary: [
+                pullRequest({
+                    state: 'MERGED',
+                    body: related,
+                    mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
+                }),
+            ],
+            dependentSets: [[]],
+            persistedReceiptAuthority: {
+                phase: 'prepared',
+                receiptId: 'IC_prepared',
+                receiptBody,
+                postMergeValidation: {
+                    headRefOid: 'head',
+                    headRefName: 'feat/gate',
+                    baseRefName: 'main',
+                    bodySha256: createHash('sha256').update(related).digest('hex'),
+                    trackerTarget: null,
+                },
+            },
+            receipts: [
+                {
+                    id: 'IC_prepared',
+                    body: receiptBody,
+                    authorNodeId: AUTHOR_BOT_NODE_ID,
+                    authorLogin: 'renamed-author[bot]',
+                    authorType: 'Bot',
+                    createdAt: '2026-08-21T00:00:00Z',
+                    updatedAt: '2026-08-21T00:00:00Z',
+                },
+            ],
+            deliveryReceiptProof: { totalCount: 1, latestCommentId: 'IC_prepared' },
         });
 
         expect(() => deliverPullRequest(42, port, tracker)).toThrow(/delivery receipt changed during recovery/i);

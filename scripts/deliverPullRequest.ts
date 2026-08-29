@@ -1055,7 +1055,18 @@ function tryRestorePreArmedDeliveryReceiptAuthorityAfterMergeFailure(
 ): void {
     try {
         port.fetch();
-        const current = resolveStructuralMergeability(port.pullRequest(number), port);
+        const raw = port.pullRequest(number);
+        if (raw.state === 'MERGED') {
+            return;
+        }
+        if (raw.state === 'CLOSED') {
+            restorePreArmedDeliveryReceiptAuthority(number, beforeArming, armed, port);
+            return;
+        }
+        if (raw.state !== 'OPEN') {
+            return;
+        }
+        const current = resolveStructuralMergeability(raw, port);
         if (current.state === 'MERGED') {
             return;
         }
