@@ -122,6 +122,21 @@ describe('settleConfirmedBatchOutcome', () => {
                 execution: expect.objectContaining({ executionKind, outcome: status, label: 'Approved effect' }),
             })
         );
+        expect(mocks.pushHistory).toHaveBeenCalledWith(
+            expect.objectContaining({
+                id: 'group-1',
+                groupId: 'group-1',
+                prompt: 'Add an effect',
+                executionKind,
+                actions: [
+                    expect.objectContaining({
+                        kind: 'appAction',
+                        actionType: 'addDevice',
+                        label: 'Approved effect',
+                    }),
+                ],
+            })
+        );
         expect(mocks.updateConfirmation).toHaveBeenCalledWith(
             expect.objectContaining({ status: 'executed', ...(warning ? { error: warning } : {}) })
         );
