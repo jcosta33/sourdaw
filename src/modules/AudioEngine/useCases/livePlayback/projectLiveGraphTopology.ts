@@ -157,6 +157,38 @@ function resolveStripOutput(input: {
     return target;
 }
 
+/**
+ * The sends the native graph has a path for.
+ *
+ * Two kinds are dropped rather than sent, because the mapper refuses the *whole*
+ * batch over either one and a declined batch is a play button that starts no
+ * engine at all.
+ *
+ * A send naming no built bus carries no audio path in the project either, so
+ * dropping it is the same answer the export path gives. A send *from* a bus does
+ * carry one — bus into bus is ordinary practice, a reverb feeding a parallel
+ * compressor — but the native send tap sits on track strips only, so the engine
+ * refuses a bus-source send by name. What that path costs until the tap exists
+ * is its own audio, and growing one is engine fidelity work: the same class as
+ * the master-strip chain the bus route above gives up, never a producer emitting
+ * a command the engine refuses.
+ */
+function sendCommands(input: { track: Track; busStripIds: ReadonlySet<string> }): AudioGraphCommand[] {
+    const { track, busStripIds } = input;
+    if (track.kind === 'bus') {
+        return [];
+    }
+    return track.sends
+        .filter((send) => busStripIds.has(send.busId))
+        .map((send): AudioGraphCommand => ({
+            kind: 'add-send',
+            trackId: track.id,
+            busId: send.busId,
+            tap: send.preFader ? 'pre-fader' : 'post-fader',
+            level: send.level,
+        }));
+}
+
 function routingCommands(input: {
     track: Track;
     busStripIds: ReadonlySet<string>;
@@ -169,17 +201,7 @@ function routingCommands(input: {
             trackId: track.id,
             target: resolveStripOutput({ track, busStripIds, trackStripIds }),
         },
-        // A send naming no built bus carries no audio path either way, so it is
-        // dropped rather than refused — the same answer the export path gives.
-        ...track.sends
-            .filter((send) => busStripIds.has(send.busId))
-            .map((send): AudioGraphCommand => ({
-                kind: 'add-send',
-                trackId: track.id,
-                busId: send.busId,
-                tap: send.preFader ? 'pre-fader' : 'post-fader',
-                level: send.level,
-            })),
+        ...sendCommands({ track, busStripIds }),
     ];
 }
 

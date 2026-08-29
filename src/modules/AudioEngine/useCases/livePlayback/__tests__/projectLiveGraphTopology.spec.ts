@@ -243,6 +243,29 @@ describe('projectLiveGraphTopology', () => {
         ]);
     });
 
+    it('drops a send whose source is a bus, which the native graph refuses outright', () => {
+        // Bus into bus is ordinary practice — a reverb bus feeding a parallel
+        // compressor — and the sanctioned add-send path admits it, because a
+        // bus accepts sends. The native send tap sits on track strips only, so
+        // emitting it would refuse the batch and start no engine for the whole
+        // project. The track's own send must survive that filter.
+        const commands = project({
+            stripTracks: [
+                createTrack({ id: 'audio-1', sends: [{ busId: 'verb', level: 0.3, preFader: false }] }),
+                createTrack({
+                    id: 'verb',
+                    kind: 'bus',
+                    sends: [{ busId: 'parallel-comp', level: 0.5, preFader: false }],
+                }),
+                createTrack({ id: 'parallel-comp', kind: 'bus' }),
+            ],
+        });
+
+        expect(commands.filter((command) => command.kind === 'add-send')).toEqual([
+            { kind: 'add-send', trackId: 'audio-1', busId: 'verb', tap: 'post-fader', level: 0.3 },
+        ]);
+    });
+
     it('drops a send naming no built bus, because it names no audio path either', () => {
         const commands = project({
             stripTracks: [createTrack({ id: 'audio-1', sends: [{ busId: 'ghost-bus', level: 1, preFader: false }] })],

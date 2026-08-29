@@ -4347,7 +4347,9 @@ mod tests {
                 "devices": [
                     { "id": "d-bus-plugin", "name": "Valhalla", "type": "plugin", "bypassed": false,
                       "parameterValues": {},
-                      "externalPluginId": "com.valhalla.room", "externalInstanceId": "inst-2" }
+                      "externalPluginId": "com.valhalla.room", "externalInstanceId": "inst-2" },
+                    { "id": "d-bus-knead", "name": "Knead", "type": "knead", "bypassed": false,
+                      "parameterValues": {} }
                 ],
                 "honorMuted": false,
                 "contributesAudio": false
@@ -4394,9 +4396,9 @@ mod tests {
             vec!["master", "lead", "gated", "verb"],
             "every strip the batch created owes a report"
         );
-        // The hosted plugins degraded; the built-in is the only realized device.
+        // The hosted plugins degraded; the built-ins are the realized devices.
         assert_eq!(first.reports[1].device_ids, vec!["d-knead".to_string()]);
-        assert_eq!(first.reports[3].device_ids, Vec::<String>::new());
+        assert_eq!(first.reports[3].device_ids, vec!["d-bus-knead".to_string()]);
 
         let second = map_batch(
             &replacing_batch(live_topology_commands()),
@@ -4416,6 +4418,33 @@ mod tests {
         assert_eq!(registry.bus_count, 1);
     }
 
+    /// Assert one teardown arm: the strip holding a retired device is removed
+    /// only after that retirement.
+    ///
+    /// Per strip, not across the whole teardown: a strip carrying no device is
+    /// removed before another strip's devices are retired, and reading the first
+    /// index of each kind would call that an ordering violation.
+    fn assert_device_retired_before_its_strip(
+        teardown: &[GraphCommand],
+        retired_device_strip: impl Fn(&GraphCommand) -> Option<usize>,
+        removes_strip: impl Fn(&GraphCommand, usize) -> bool,
+        arm: &str,
+    ) {
+        let (retire_index, holder) = teardown
+            .iter()
+            .enumerate()
+            .find_map(|(index, op)| retired_device_strip(op).map(|strip| (index, strip)))
+            .unwrap_or_else(|| panic!("the {arm}'s built device must be retired"));
+        let remove_index = teardown
+            .iter()
+            .position(|op| removes_strip(op, holder))
+            .unwrap_or_else(|| panic!("the {arm} strip that held it must be removed"));
+        assert!(
+            retire_index < remove_index,
+            "a {arm} device is retired while its strip still holds it, not after"
+        );
+    }
+
     /// A replaced topology must not strand what it built: an effect whose strip
     /// is removed without it stays registered in the scheduler's shared table,
     /// detached, for the rest of the process.
@@ -4433,31 +4462,62 @@ mod tests {
 
         let teardown = registry.take_topology_down();
 
-        // Per strip, not across the teardown: a strip carrying no device is
-        // removed before another strip's devices are retired, and reading the
-        // first index of each kind would call that an ordering violation.
-        let (retire_index, holder) = teardown
-            .iter()
-            .enumerate()
-            .find_map(|(index, op)| match op {
-                GraphCommand::RemoveTrackDeviceRetired { track_id, .. } => Some((index, *track_id)),
+        // Both arms, because they are separate code: a bus device mistyped onto
+        // the track command would leak an effect-table slot per bus device per
+        // play with the track assertion still green.
+        assert_device_retired_before_its_strip(
+            &teardown,
+            |op| match op {
+                GraphCommand::RemoveTrackDeviceRetired { track_id, .. } => Some(*track_id),
                 _ => None,
-            })
-            .expect("the built device must be retired");
-        let remove_index = teardown
-            .iter()
-            .position(|op| matches!(op, GraphCommand::RemoveTrack(id) if *id == holder))
-            .expect("the strip that held it must be removed");
-        assert!(
-            retire_index < remove_index,
-            "a device is retired while its strip still holds it, not after"
+            },
+            |op, strip| matches!(op, GraphCommand::RemoveTrack(id) if *id == strip),
+            "track",
         );
-        assert!(teardown
-            .iter()
-            .any(|op| matches!(op, GraphCommand::RemoveBus(_))));
+        assert_device_retired_before_its_strip(
+            &teardown,
+            |op| match op {
+                GraphCommand::RemoveBusDeviceRetired { bus_id, .. } => Some(*bus_id),
+                _ => None,
+            },
+            |op, strip| matches!(op, GraphCommand::RemoveBus(id) if *id == strip),
+            "bus",
+        );
         assert_eq!(registry.track_count, 0);
         assert_eq!(registry.bus_count, 0);
         assert!(registry.devices.is_empty());
+    }
+
+    /// The refusal the producer's send filter exists for. Bus into bus is
+    /// ordinary practice and the project admits it, so the producer must drop
+    /// such a send rather than let the mapper decline the batch that carries it.
+    #[test]
+    fn a_send_whose_source_is_a_bus_refuses_the_batch_with_the_distinct_reason() {
+        let samples = sample_pool();
+        let refusal = map_batch(
+            &batch(json!([
+                {
+                    "kind": "create-bus-strip", "busId": "verb", "name": "Reverb",
+                    "state": strip_state(0.9), "devices": [], "honorMuted": false,
+                    "contributesAudio": false
+                },
+                {
+                    "kind": "create-bus-strip", "busId": "squash", "name": "Parallel",
+                    "state": strip_state(0.9), "devices": [], "honorMuted": false,
+                    "contributesAudio": false
+                },
+                { "kind": "add-send", "trackId": "verb", "busId": "squash",
+                  "tap": "post-fader", "level": 0.5 }
+            ])),
+            &mut GraphRegistry::default(),
+            &samples,
+            48_000.0,
+        )
+        .expect_err("a bus has no send tap natively");
+        assert!(
+            refusal.contains("bus-send-unsupported"),
+            "the refusal names the unsupported shape, got: {refusal}"
+        );
     }
 
     /// The degradation law is about whether the strip can be heard, not about
