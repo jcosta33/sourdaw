@@ -3,11 +3,10 @@ import {
     type PendingAppActionConfirmation,
     updatePendingActionConfirmationStatus,
 } from '../../stores/pendingActionConfirmationStore';
-import { agentRunLifecycle } from '../agentRunLifecycle';
 import { getVerifiedBatchReplayDisposition } from '../getVerifiedBatchReplayDisposition';
 import { recoverPreparedStemImportResources } from '../recoverPreparedStemImportResources';
 
-import { agentRunTerminalSupport } from './agentRunTerminalSupport';
+import { agentRunExecutionSettlement } from './agentRunExecutionSettlement';
 import {
     confirmedBatchOutcomeSupport,
     type CommandVerifiedBatchReceipt,
@@ -118,14 +117,7 @@ export async function settleVerifiedBatchReplay(
             });
             return { status: 'cancelled' };
         }
-        agentRunTerminalSupport.update(confirmation, () => {
-            agentRunLifecycle.updateBatchStatus({
-                runId: confirmation.runId,
-                batchId: receipt.batchId,
-                status: 'no-op',
-            });
-            agentRunLifecycle.transitionPhase({ runId: confirmation.runId, phase: 'completed' });
-        });
+        agentRunExecutionSettlement.completeNoOp(confirmation, receipt.batchId);
         await pendingActionResourceSettlement.settleBestEffort({
             confirmationId: confirmation.id,
             disposition: 'discard',
@@ -148,12 +140,7 @@ export async function settleVerifiedBatchReplay(
         return { status: 'executed' };
     }
     if (replay.status === 'cancelled') {
-        agentRunTerminalSupport.update(confirmation, () => {
-            agentRunLifecycle.cancel({
-                runId: confirmation.runId,
-                reason: 'The verified command receipt records cancellation.',
-            });
-        });
+        agentRunExecutionSettlement.cancelFromVerifiedReceipt(confirmation);
         updatePendingActionConfirmationStatus({
             confirmationId: confirmation.id,
             status: 'cancelled',
@@ -189,7 +176,7 @@ export async function settleVerifiedBatchReplay(
         error: userVisibleFailure,
     });
     if (leaseSettlement.accepted) {
-        agentRunTerminalSupport.recordFailure(confirmation, {
+        agentRunExecutionSettlement.recordFailure(confirmation, {
             category: replay.status === 'ambiguous' ? 'conflict' : 'project',
             retriable: false,
             workId: receipt.batchId,

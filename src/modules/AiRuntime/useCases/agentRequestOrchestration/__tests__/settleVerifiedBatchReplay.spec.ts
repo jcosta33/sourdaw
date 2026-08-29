@@ -21,7 +21,7 @@ const mocks = vi.hoisted(() => ({
     recover: vi.fn(),
     retain: vi.fn(),
     status: vi.fn(),
-    update: vi.fn((_, operation: () => void) => operation()),
+    completeNoOp: vi.fn(),
 }));
 
 vi.mock('../../../stores/chatStore', () => ({ updateChatMessage: mocks.message }));
@@ -30,11 +30,12 @@ vi.mock('../../../stores/pendingActionConfirmationStore', () => ({
 }));
 vi.mock('../../getVerifiedBatchReplayDisposition', () => ({ getVerifiedBatchReplayDisposition: mocks.getReplay }));
 vi.mock('../../recoverPreparedStemImportResources', () => ({ recoverPreparedStemImportResources: mocks.recover }));
-vi.mock('../../agentRunLifecycle', () => ({
-    agentRunLifecycle: { cancel: mocks.cancel, transitionPhase: vi.fn(), updateBatchStatus: vi.fn() },
-}));
-vi.mock('../agentRunTerminalSupport', () => ({
-    agentRunTerminalSupport: { recordFailure: mocks.recordFailure, update: mocks.update },
+vi.mock('../agentRunExecutionSettlement', () => ({
+    agentRunExecutionSettlement: {
+        cancelFromVerifiedReceipt: mocks.cancel,
+        completeNoOp: mocks.completeNoOp,
+        recordFailure: mocks.recordFailure,
+    },
 }));
 vi.mock('../confirmedBatchOutcomeSupport', () => ({
     confirmedBatchOutcomeSupport: {
@@ -198,9 +199,51 @@ describe('settleVerifiedBatchReplay', () => {
         }
         if (status === 'ambiguous') {
             expect(mocks.recover).toHaveBeenCalledWith({ runId: 'run-1' });
-            expect(mocks.recordFailure).toHaveBeenCalled();
+            expect(mocks.recordFailure).toHaveBeenCalledWith(confirmation, {
+                category: 'conflict',
+                retriable: false,
+                workId: 'batch-1',
+                receiptIdentity: 'receipt-identity',
+                compensation: 'manual-repair',
+            });
         }
     });
+
+    it.each(['committed', 'executed'] as const)(
+        'waits for committed-resource promotion before reporting a $status replay',
+        async (status) => {
+            mocks.getReplay.mockReturnValue({ status });
+            let resolveResourcePromotion: (() => void) | null = null;
+            const resourcePromotion = new Promise<void>((resolve) => {
+                resolveResourcePromotion = resolve;
+            });
+            mocks.retain.mockReturnValueOnce(resourcePromotion);
+            let replaySettled = false;
+            const replay = settleVerifiedBatchReplay(createInput()).then((result) => {
+                replaySettled = true;
+                return result;
+            });
+
+            expect(mocks.retain).toHaveBeenCalledWith('confirmation-1');
+            expect(replaySettled).toBe(false);
+            expect(mocks.status).not.toHaveBeenCalled();
+            expect(mocks.message).not.toHaveBeenCalled();
+
+            expect(resolveResourcePromotion).not.toBeNull();
+            resolveResourcePromotion?.();
+
+            await expect(replay).resolves.toEqual({ status: 'executed' });
+            expect(mocks.status).toHaveBeenCalledWith({
+                confirmationId: 'confirmation-1',
+                status: 'executed',
+                error: undefined,
+            });
+            expect(mocks.message).toHaveBeenCalledWith(
+                'assistant-1',
+                expect.objectContaining({ pendingActionConfirmationStatus: 'executed' })
+            );
+        }
+    );
 
     it('keeps partial committed effects durable and non-replayable', async () => {
         const input = createInput(true);

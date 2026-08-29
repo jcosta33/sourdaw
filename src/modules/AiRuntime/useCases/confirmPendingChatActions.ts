@@ -33,7 +33,7 @@ import {
 } from '../stores/pendingActionConfirmationStore';
 
 import { admitCommittedSectionRenderRetry } from './agentRequestOrchestration/admitCommittedSectionRenderRetry';
-import { agentRunTerminalSupport } from './agentRequestOrchestration/agentRunTerminalSupport';
+import { agentRunExecutionSettlement } from './agentRequestOrchestration/agentRunExecutionSettlement';
 import {
     confirmedBatchOutcomeSupport,
     type CommandVerifiedBatchReceipt,
@@ -437,13 +437,7 @@ export async function confirmPendingChatActions(
     }
 
     updatePendingActionConfirmationStatus({ confirmationId: confirmation.id, status: 'accepted' });
-    agentRunTerminalSupport.update(confirmation, () => {
-        agentRunLifecycle.transitionPhase({
-            runId: confirmation.runId,
-            phase: 'executing',
-            revision: confirmation.projectRevision,
-        });
-    });
+    agentRunExecutionSettlement.transitionToExecuting(confirmation);
     updateChatMessage(confirmation.assistantMessageId, {
         pendingActionConfirmationStatus: 'accepted',
         content: `Confirming:\n\n${confirmation.actionLabels.map((label) => `- ${label}`).join('\n')}`,
@@ -579,7 +573,7 @@ export async function confirmPendingChatActions(
             });
         }
         if (trackedLeaseSettlement.accepted) {
-            agentRunTerminalSupport.recordFailure(confirmation, {
+            agentRunExecutionSettlement.recordFailure(confirmation, {
                 category: error instanceof AiProposalInvalidatedError ? 'conflict' : 'internal',
                 retriable: false,
                 ...(trackedWorkLease ? { workId: trackedWorkLease.workId } : {}),
@@ -628,12 +622,10 @@ export async function confirmPendingChatActions(
         );
     }
     const budgetPersistenceWarning = commandBudget
-        ? agentRunTerminalSupport.update(confirmation, () => {
-              agentWorkBudget.reconcileCommandWork({
-                  runId: confirmation.runId,
-                  ...commandBudget,
-                  actualRenderJobs: renderJobAttempts,
-              });
+        ? agentRunExecutionSettlement.reconcileCommandBudget({
+              confirmation,
+              ...commandBudget,
+              actualRenderJobs: renderJobAttempts,
           })
         : null;
 
@@ -709,16 +701,7 @@ export async function confirmPendingChatActions(
             });
             return { status: 'cancelled' };
         }
-        agentRunTerminalSupport.update(confirmation, () => {
-            if (trackedWorkLease) {
-                agentRunLifecycle.updateBatchStatus({
-                    runId: confirmation.runId,
-                    batchId: trackedWorkLease.workId,
-                    status: 'no-op',
-                });
-            }
-            agentRunLifecycle.transitionPhase({ runId: confirmation.runId, phase: 'completed' });
-        });
+        agentRunExecutionSettlement.completeNoOp(confirmation, trackedWorkLease?.workId);
         await pendingActionResourceSettlement.settleBestEffort({
             confirmationId: confirmation.id,
             disposition: 'discard',
@@ -758,7 +741,7 @@ export async function confirmPendingChatActions(
             );
         }
         if (trackedLeaseSettlement.accepted) {
-            agentRunTerminalSupport.recordFailure(confirmation, {
+            agentRunExecutionSettlement.recordFailure(confirmation, {
                 category: 'conflict',
                 retriable: false,
                 ...(trackedWorkLease ? { workId: trackedWorkLease.workId } : {}),
@@ -814,7 +797,7 @@ export async function confirmPendingChatActions(
         failureCategory = 'authorization';
     }
     if (trackedLeaseSettlement.accepted) {
-        agentRunTerminalSupport.recordFailure(confirmation, {
+        agentRunExecutionSettlement.recordFailure(confirmation, {
             category: failureCategory,
             retriable: false,
             ...(trackedWorkLease ? { workId: trackedWorkLease.workId } : {}),
@@ -834,7 +817,7 @@ async function failApprovalPreflight(
     reason: string,
     category: AgentRunErrorCategory
 ): Promise<ConfirmPendingChatActionsResult> {
-    agentRunTerminalSupport.recordFailure(confirmation, {
+    agentRunExecutionSettlement.recordFailure(confirmation, {
         category,
         retriable: true,
     });
@@ -899,9 +882,7 @@ async function invalidatePendingConfirmationForDivergence(
 async function cancelAcceptedConfirmation(
     confirmation: PendingAppActionConfirmation
 ): Promise<ConfirmPendingChatActionsResult> {
-    agentRunTerminalSupport.update(confirmation, () => {
-        agentRunLifecycle.cancel({ runId: confirmation.runId, reason: 'User cancelled before the command committed.' });
-    });
+    agentRunExecutionSettlement.cancelBeforeCommit(confirmation);
     updatePendingActionConfirmationStatus({
         confirmationId: confirmation.id,
         status: 'cancelled',
