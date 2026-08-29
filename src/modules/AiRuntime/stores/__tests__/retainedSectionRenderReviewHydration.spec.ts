@@ -13,6 +13,7 @@ import {
 } from '#/modules/Command/useCases';
 import { type RenderProjectSectionJobSnapshot } from '#/utils/handlerContract';
 
+import { type AgentRunPendingEffect } from '../../models/AgentRun';
 import { agentRunLifecycle } from '../../useCases/agentRunLifecycle';
 import { createAgentSagaStep } from '../../useCases/createAgentSagaStep';
 import { selectRetainedSectionRenderManualReviews } from '../../useCases/selectRetainedSectionRenderManualReviews';
@@ -247,12 +248,12 @@ describe('retained section render review hydration', () => {
         }
         const pendingEffect = {
             commandId: commandEnvelope.commandId,
-            kind: 'external-effect' as const,
+            kind: 'external-effect',
             operation: 'renderProjectSections',
             reason: 'The retained render requires review.',
-            remediation: 'reconcile' as const,
-            state: 'pending' as const,
-        };
+            remediation: 'reconcile',
+            state: 'pending',
+        } satisfies AgentRunPendingEffect;
         const proof = await getVersionedCommandBatchCommitProof(commandBatch);
         const receipt = createVerifiedBatchReceipt({
             contentHash: proof.contentHash,
