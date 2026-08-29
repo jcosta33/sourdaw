@@ -1056,7 +1056,7 @@ function tryRestorePreArmedDeliveryReceiptAuthorityAfterMergeFailure(
     try {
         port.fetch();
         const current = resolveStructuralMergeability(port.pullRequest(number), port);
-        if (current.state !== 'OPEN') {
+        if (current.state === 'MERGED') {
             return;
         }
     } catch {
@@ -1361,7 +1361,7 @@ function readPersistedMergedRecoveryReceipt(
     if (authority.receiptBody === undefined) {
         return readCompatibleBodylessPersistedMergedRecoveryReceipt(pullRequest, port, authority);
     }
-    const receipt = readExactDeliveryReceipt(pullRequest, port, authority.receiptId);
+    const receipt = readStableExactMergedRecoveryReceipt(pullRequest, port, authority.receiptId, () => undefined);
     if (receipt.body !== authority.receiptBody) {
         fail(`PR #${pullRequest.number} delivery receipt changed during recovery`);
     }
@@ -1605,7 +1605,7 @@ function deliverPullRequestWithCiAdmission(
     const finalSnapshot = resolveStructuralMergeability(port.pullRequest(number), port);
     if (finalSnapshot.state === 'MERGED') {
         validatePostMergeSnapshot(preparedPostMergeValidation, finalSnapshot, number);
-        const recoveredReceipt = readExactDeliveryReceipt(finalSnapshot, port, receipt.id);
+        const recoveredReceipt = readStableExactDeliveryReceipt(finalSnapshot, port, receipt.id);
         const recoveredPayload = assertCanonicalDeliveryReceipt(recoveredReceipt, finalSnapshot, receiptPayload);
         validateReceiptPayloadAgainstPreparedPostMergeValidation(
             number,
