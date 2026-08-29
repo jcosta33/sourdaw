@@ -1752,14 +1752,50 @@ describe('command batch idempotency', () => {
         expect(effectAttempts).toBe(1);
     });
 
-    it.each([
+    const FINALIZE_FAILURE_CASES = [
         'invalid serialized batch',
         'denied initial authority',
         'unavailable checkpoint',
         'malformed stored receipt',
         'completed checkpoint with pending effects',
         'revision capture failure',
-    ])('does not finalize recovery when there is %s', async (failure) => {
+    ] as const;
+
+    // Each case pins the exact reason its branch returns, not only the
+    // disposition: neighbouring branches share a disposition, so a case whose
+    // fixture stops reaching the branch it names would otherwise stay green on
+    // the neighbour's result.
+    const EXPECTED_FINALIZE_FAILURES: Record<
+        (typeof FINALIZE_FAILURE_CASES)[number],
+        { disposition: 'manual-repair' | 'retryable'; reason: string }
+    > = {
+        'invalid serialized batch': {
+            disposition: 'manual-repair',
+            reason: 'Command batch must be valid JSON',
+        },
+        'denied initial authority': {
+            disposition: 'retryable',
+            reason: 'Only the authoritative collaboration host can finalize recovery',
+        },
+        'unavailable checkpoint': {
+            disposition: 'manual-repair',
+            reason: 'The durable project checkpoint is unavailable for finalization',
+        },
+        'malformed stored receipt': {
+            disposition: 'manual-repair',
+            reason: 'Stored project idempotency receipt is invalid',
+        },
+        'completed checkpoint with pending effects': {
+            disposition: 'manual-repair',
+            reason: 'Completed project checkpoint still contains pending effects',
+        },
+        'revision capture failure': {
+            disposition: 'retryable',
+            reason: 'The current project revision could not be verified: revision capture unavailable',
+        },
+    };
+
+    it.each(FINALIZE_FAILURE_CASES)('does not finalize recovery when there is %s', async (failure) => {
         clearHandlerRegistry();
         const gainStorage = createAutomergeStorage<{ value: number }>('root', 'trackGain');
         expect(gainStorage.hydrate?.()).toBe(true);
@@ -1819,13 +1855,6 @@ describe('command batch idempotency', () => {
         const mutationCountBeforeFinalization = mutationCount;
 
         const serialized = failure === 'invalid serialized batch' ? '{not-json' : batch.serialized;
-        const expectedDisposition =
-            failure === 'invalid serialized batch' ||
-            failure === 'unavailable checkpoint' ||
-            failure === 'malformed stored receipt' ||
-            failure === 'completed checkpoint with pending effects'
-                ? 'manual-repair'
-                : 'retryable';
 
         await expect(
             finalizeRecoveredCommandBatchEffects({
@@ -1834,7 +1863,7 @@ describe('command batch idempotency', () => {
                 pendingReceipt: first.receipt,
                 expectedProjectRevision,
             })
-        ).resolves.toMatchObject({ status: 'failed', disposition: expectedDisposition });
+        ).resolves.toEqual({ status: 'failed', ...EXPECTED_FINALIZE_FAILURES[failure] });
 
         expect(mutationCount).toBe(mutationCountBeforeFinalization);
         expect(execute).toHaveBeenCalledOnce();
