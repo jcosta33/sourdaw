@@ -1,0 +1,23 @@
+src/modules/AiRuntime/presentations/views/__tests__/ChatPanel.spec.tsx
+  s_a40848e8f8cca9::t_4e50d5393dbb84 849-883
+src/modules/AiRuntime/presentations/views/RetainedSectionRenderManualReview.tsx
+  s_a40848e8f8cca9::t_6470a634a8c6f2 127-128
+src/modules/AiRuntime/stores/__tests__/retainedSectionRenderReviewHydration.spec.ts
+  s_a40848e8f8cca9::t_6470a634a8c6f2 90,203,205-221,227,230-232,237-238
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "92dd591d2cc59ee251c4002c0ed53421dc1c253c",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
