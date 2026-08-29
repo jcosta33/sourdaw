@@ -167,13 +167,6 @@ export type PluginWindowHostDeps = {
      * with the size it takes at that scale.
      */
     readonly applyEditorScale: (instanceId: string, scaleFactor: number) => Promise<EditorSize>;
-    /**
-     * Whether this platform emits `resized` when a resize gesture commits.
-     * Electron documents that event for darwin and win32 alone; where it is
-     * absent, a pause in the `resize` stream is the only end of gesture there
-     * is.
-     */
-    readonly reportsResizeCommit: boolean;
     /** Reports an OS-level close to the addon. Must only schedule, never block. */
     readonly notifyClosed: (instanceId: string, label: string) => void;
     /** Absent where no hosted format needs a host-driven run loop. */
@@ -256,16 +249,26 @@ type EditorRecord = {
     scaling: boolean;
     /** The size the window reached while the plugin was answering the last one. */
     queued: EditorSize | undefined;
-    /** The pending end-of-gesture negotiation, where the platform reports none. */
+    /**
+     * Whether the user is holding an edge of this window right now.
+     *
+     * `will-resize` is the only event that means a frame drag, and it fires
+     * only on the platforms that also report the drag's commit — so the flag is
+     * set exactly where waiting for that commit is safe.
+     */
+    inGesture: boolean;
+    /** The pending settle for a size change no commit is coming for. */
     settle: ReturnType<typeof setTimeout> | undefined;
 };
 
 /**
  * How long a window must hold still before its size counts as settled.
  *
- * Only used where the platform reports no gesture commit. Long enough that the
- * pointer stream from a drag never pauses through it, short enough that the
- * editor follows the window while the user is still watching.
+ * A heuristic, and the only one available for a size change the platform sends
+ * no commit for: a maximise, a keyboard snap, or — where there is no
+ * `will-resize` to recognise a drag by — a drag whose pointer pauses this long,
+ * which is negotiated mid-gesture. Long enough to sit out an ordinary drag,
+ * short enough that the editor follows the window while the user is watching.
  */
 const RESIZE_SETTLE_MS = 200;
 
@@ -387,7 +390,7 @@ export const createPluginWindowHost = (deps: PluginWindowHostDeps): PluginWindow
         }
     };
 
-    /** Take the size the window ended its gesture at to the plugin, now. */
+    /** Take the size the window has settled at to the plugin, now. */
     const settleSize = (label: string): void => {
         const record = liveEditor(label);
         if (record === undefined) {
@@ -395,10 +398,17 @@ export const createPluginWindowHost = (deps: PluginWindowHostDeps): PluginWindow
         }
         clearTimeout(record.settle);
         record.settle = undefined;
+        record.inGesture = false;
         void negotiateSize(label, contentSizeOf(record.window));
     };
 
-    /** Restart the pause that stands in for a commit this platform never sends. */
+    /**
+     * Restart the pause that stands in for a commit that is not coming.
+     *
+     * Restarting is the whole point: a size change arriving before the pause
+     * elapses replaces the pending one, so the plugin is asked about where the
+     * window stopped rather than about somewhere it passed through.
+     */
     const scheduleSettle = (label: string): void => {
         const record = liveEditor(label);
         if (record === undefined) {
@@ -451,6 +461,7 @@ export const createPluginWindowHost = (deps: PluginWindowHostDeps): PluginWindow
             const record = editors.get(request.label);
             if (record?.window === window) {
                 clearTimeout(record.settle);
+                record.inGesture = false;
                 editors.delete(request.label);
                 trackEditorCount();
             }
@@ -463,7 +474,17 @@ export const createPluginWindowHost = (deps: PluginWindowHostDeps): PluginWindow
         // bouncing off it. Only a repeat can be caught here — the plugin's own
         // answer is asynchronous, and this event is not.
         window.on('will-resize', (event: EditorResizeEvent, newBounds: EditorWindowBounds) => {
-            const refusal = editors.get(request.label)?.refusal;
+            const record = editors.get(request.label);
+            if (record === undefined) {
+                return;
+            }
+            // The one event that means the user is holding an edge, and it
+            // arrives only on the platforms that also report the release. Every
+            // other way a window changes size — maximise, zoom, a keyboard
+            // snap, this host's own correction — reaches `resize` without it.
+            record.inGesture = true;
+
+            const refusal = record.refusal;
             if (refusal === undefined || !sameSize(refusal.requested, contentSizeForBounds(window, newBounds))) {
                 return;
             }
@@ -471,11 +492,14 @@ export const createPluginWindowHost = (deps: PluginWindowHostDeps): PluginWindow
             window.setContentSize(refusal.granted.width, refusal.granted.height);
         });
 
-        // Nothing is asked of the plugin while the pointer is down. Where the
-        // platform reports the commit, `resized` is the whole trigger; where it
-        // does not, the window holding still is what stands in for one.
+        // Nothing is asked of the plugin while the pointer is down: that drag
+        // ends in a commit, and the commit is the trigger. A size change with
+        // no drag behind it gets no commit — a maximise and a keyboard snap
+        // report nothing but this — so the window holding still stands in for
+        // one, and the same fallback is what a platform with no `will-resize`
+        // at all runs on.
         window.on('resize', () => {
-            if (deps.reportsResizeCommit) {
+            if (editors.get(request.label)?.inGesture === true) {
                 return;
             }
             scheduleSettle(request.label);
@@ -501,6 +525,7 @@ export const createPluginWindowHost = (deps: PluginWindowHostDeps): PluginWindow
             negotiating: false,
             scaling: false,
             queued: undefined,
+            inGesture: false,
             settle: undefined,
         });
         trackEditorCount();
@@ -615,14 +640,6 @@ const RUN_LOOP_INTERVAL_MS = 16;
  */
 const needsEditorRunLoopPump = (): boolean => process.platform === 'linux';
 
-/**
- * Whether this platform tells the shell when a resize gesture has committed.
- *
- * Electron documents `resized` for darwin and win32; X11 sends only the stream
- * of `resize` events, and there the gesture is over when that stream stops.
- */
-const reportsResizeCommit = (): boolean => process.platform === 'darwin' || process.platform === 'win32';
-
 /** An idempotent interval pump: repeated starts keep the one timer. */
 export const createIntervalRunLoopPump = (
     service: () => void,
@@ -690,10 +707,7 @@ const editorSizeFrom = async (answer: unknown): Promise<EditorSize> => {
  */
 export const registerPluginWindowHost = (
     native: object,
-    deps: Omit<
-        PluginWindowHostDeps,
-        'notifyClosed' | 'runLoopPump' | 'requestEditorSize' | 'applyEditorScale' | 'reportsResizeCommit'
-    >
+    deps: Omit<PluginWindowHostDeps, 'notifyClosed' | 'runLoopPump' | 'requestEditorSize' | 'applyEditorScale'>
 ): boolean => {
     if (!hasPluginWindowHost(native)) {
         console.error(
@@ -711,7 +725,6 @@ export const registerPluginWindowHost = (
 
     const host = createPluginWindowHost({
         ...deps,
-        reportsResizeCommit: reportsResizeCommit(),
         runLoopPump: needsEditorRunLoopPump()
             ? createIntervalRunLoopPump(() => {
                   serviceRunLoops.call(native);

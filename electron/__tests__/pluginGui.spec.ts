@@ -134,10 +134,7 @@ const request = (label = 'plugin-a', instanceId = 'instance-a'): CreateEditorWin
 /** The deps every registration test supplies, none of which it is about. */
 const shellDeps = (
     createWindow: PluginWindowHostDeps['createWindow']
-): Omit<
-    PluginWindowHostDeps,
-    'notifyClosed' | 'runLoopPump' | 'requestEditorSize' | 'applyEditorScale' | 'reportsResizeCommit'
-> => ({
+): Omit<PluginWindowHostDeps, 'notifyClosed' | 'runLoopPump' | 'requestEditorSize' | 'applyEditorScale'> => ({
     createWindow,
     getParentWindow: () => undefined,
     getScaleFactor: () => 1,
@@ -183,9 +180,6 @@ const createHarness = (overrides: Partial<PluginWindowHostDeps> = {}): Harness =
             windows.push(window);
             return window;
         }),
-        // The gesture-reporting platforms are the default, so a test that says
-        // nothing drives one editor resize per gesture rather than per event.
-        reportsResizeCommit: true,
         watchDisplayChanges: (onChanged) => {
             displaysChanged = onChanged;
         },
@@ -215,10 +209,11 @@ const createHarness = (overrides: Partial<PluginWindowHostDeps> = {}): Harness =
 const settled = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
 
 /**
- * One resize gesture on a platform that reports its commit: the OS applies the
- * size, says so, and says again that the user let go.
+ * One whole resize gesture on a platform that reports drags: the user takes an
+ * edge, the OS applies the size and says so, and the user lets go.
  */
 const dragTo = (window: FakeWindow, size: EditorSize): void => {
+    window.emitWillResize({ x: 0, y: 0, ...size });
     window.setContentSize(size.width, size.height);
     window.emitResize();
     window.emitResized();
@@ -492,45 +487,84 @@ describe('createPluginWindowHost', () => {
      * it.
      */
     it('asks the plugin nothing while the pointer is still down', async () => {
-        const { host, windows, requestEditorSize } = createHarness();
-        host.create(request());
-        const window = onlyWindow(windows);
-
-        for (const width of [820, 840, 860, 880]) {
-            window.setContentSize(width, 600);
-            window.emitResize();
-        }
-        await settled();
-        expect(requestEditorSize).not.toHaveBeenCalled();
-
-        window.emitResized();
-        await settled();
-
-        expect(requestEditorSize).toHaveBeenCalledExactlyOnceWith('instance-a', 880, 600);
-    });
-
-    /**
-     * X11 sends no commit, so the gesture is over when the window holds still.
-     * Without that fallback a Linux editor would never be told any size the
-     * user dragged the window to.
-     */
-    it('treats a window that holds still as a finished gesture where the platform reports none', async () => {
         vi.useFakeTimers();
         try {
-            const { host, windows, requestEditorSize } = createHarness({ reportsResizeCommit: false });
+            const { host, windows, requestEditorSize } = createHarness();
             host.create(request());
             const window = onlyWindow(windows);
 
-            for (const width of [820, 840, 860]) {
+            for (const width of [820, 840, 860, 880]) {
+                window.emitWillResize({ x: 0, y: 0, width, height: 600 });
                 window.setContentSize(width, 600);
                 window.emitResize();
-                await vi.advanceTimersByTimeAsync(50);
+                await vi.advanceTimersByTimeAsync(300);
             }
             expect(requestEditorSize).not.toHaveBeenCalled();
 
-            await vi.advanceTimersByTimeAsync(250);
+            window.emitResized();
+            await vi.advanceTimersByTimeAsync(0);
 
-            expect(requestEditorSize).toHaveBeenCalledExactlyOnceWith('instance-a', 860, 600);
+            expect(requestEditorSize).toHaveBeenCalledExactlyOnceWith('instance-a', 880, 600);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    /**
+     * A maximise, a title-bar zoom and a keyboard snap all resize the window
+     * without a drag, so no commit is coming: `will-resize` never fires, and
+     * `resized` belongs to the live-resize loop that never ran. Waiting for one
+     * leaves the editor drawing at its old size in the corner of the new frame
+     * for as long as the window stays maximised. It is also the whole of what
+     * X11 offers, where a drag reports neither event.
+     */
+    it('negotiates a size change that arrives with no gesture behind it', async () => {
+        vi.useFakeTimers();
+        try {
+            const { host, windows, requestEditorSize } = createHarness();
+            host.create(request());
+            const window = onlyWindow(windows);
+
+            window.setContentSize(1440, 900);
+            window.emitResize();
+            await vi.advanceTimersByTimeAsync(100);
+            expect(requestEditorSize).not.toHaveBeenCalled();
+
+            await vi.advanceTimersByTimeAsync(200);
+
+            expect(requestEditorSize).toHaveBeenCalledExactlyOnceWith('instance-a', 1440, 900);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    /**
+     * The pause is restarted by each size change, so a window still moving is
+     * never negotiated. A settle that only ever added timers would ask about
+     * every size the window passed through, one stale answer per timer.
+     */
+    it('asks about where the window stopped, not where it was when the pause started', async () => {
+        vi.useFakeTimers();
+        try {
+            const asked: EditorSize[] = [];
+            const requestEditorSize = vi.fn((_instanceId: string, width: number, height: number) => {
+                asked.push({ width, height });
+                return Promise.resolve({ width, height });
+            });
+            const { host, windows } = createHarness({ requestEditorSize });
+            host.create(request());
+            const window = onlyWindow(windows);
+
+            for (const width of [900, 930, 860]) {
+                window.setContentSize(width, 600);
+                window.emitResize();
+                await vi.advanceTimersByTimeAsync(150);
+            }
+            expect(asked).toEqual([]);
+
+            await vi.advanceTimersByTimeAsync(200);
+
+            expect(asked).toEqual([{ width: 860, height: 600 }]);
         } finally {
             vi.useRealTimers();
         }
@@ -542,16 +576,23 @@ describe('createPluginWindowHost', () => {
      * a loop that never settles.
      */
     it('does not put the plugin its own resize back as a host-chosen size', async () => {
-        const { host, windows, requestEditorSize } = createHarness();
-        host.create(request());
-        const window = onlyWindow(windows);
+        vi.useFakeTimers();
+        try {
+            const { host, windows, requestEditorSize } = createHarness();
+            host.create(request());
+            const window = onlyWindow(windows);
 
-        host.setSize({ label: 'plugin-a', width: 500, height: 400 });
-        window.emitResize();
-        window.emitResized();
-        await settled();
+            host.setSize({ label: 'plugin-a', width: 500, height: 400 });
+            window.emitResize();
+            // Past the settle the echo arms: no gesture stands behind a size
+            // the plugin chose, so it takes the same path a maximise does and
+            // is stopped by the size already granted rather than by the event.
+            await vi.advanceTimersByTimeAsync(300);
 
-        expect(requestEditorSize).not.toHaveBeenCalled();
+            expect(requestEditorSize).not.toHaveBeenCalled();
+        } finally {
+            vi.useRealTimers();
+        }
     });
 
     /**
