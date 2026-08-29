@@ -73,23 +73,25 @@ export function LatchButton({
                 active
                     ? {
                           // Reversed gradient + deep inset — sinks INTO the panel
-                          background: 'linear-gradient(180deg, #111 0%, #181818 50%, #1c1c1c 100%)',
+                          background:
+                              'linear-gradient(180deg, var(--surface-default) 0%, color-mix(in srgb, var(--surface-default) 35%, var(--surface-raised)) 50%, var(--surface-raised) 100%)',
                           boxShadow: `inset 0 2px 4px rgba(0,0,0,0.6), inset 0 1px 1px rgba(0,0,0,0.4)${
                               activeGlowShadow[variant]
                           }`,
                           border: '1px solid rgba(0,0,0,0.6)',
                           borderTopColor: 'rgba(0,0,0,0.8)',
-                          borderBottomColor: 'rgba(255,255,255,0.03)',
+                          borderBottomColor: 'rgba(255,249,242,0.03)',
                           transform: 'translateY(1px)',
                       }
                     : {
                           // Raised with NW light model, darkened slightly
-                          background: 'linear-gradient(180deg, #1d1d1d 0%, #171717 42%, #111111 100%)',
+                          background:
+                              'linear-gradient(180deg, var(--surface-raised) 0%, color-mix(in srgb, var(--surface-raised) 55%, var(--surface-default)) 42%, var(--surface-default) 100%)',
                           boxShadow:
-                              '0 2px 4px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.08), inset 0 -1px 0 rgba(0,0,0,0.24)',
+                              '0 2px 4px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,249,242,0.08), inset 0 -1px 0 rgba(0,0,0,0.24)',
                           border: '1px solid var(--color-border-soft)',
                           borderTopColor: 'var(--color-light-edge)',
-                          borderLeftColor: 'rgba(255,255,255,0.04)',
+                          borderLeftColor: 'rgba(255,249,242,0.04)',
                           borderBottomColor: 'rgba(0,0,0,0.3)',
                       }
             }
