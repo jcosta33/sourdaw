@@ -882,6 +882,29 @@ describe('pull-request delivery', () => {
         expect(calls).toContain('PR #42 became merged during delivery; repaired 1 dependent(s)');
     });
 
+    it('fails closed when the final refresh is already merged on a different closing target than the armed receipt', () => {
+        const closesX = relationshipBody('Closes #2372');
+        const closesY = relationshipBody('Closes #2373');
+        const { port, calls, tracker } = fakePort({
+            primary: [
+                pullRequest({ body: closesX }),
+                pullRequest({
+                    state: 'MERGED',
+                    body: closesY,
+                    mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
+                }),
+            ],
+            dependentSets: [[]],
+        });
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(
+            /body changed during delivery|closing target changed during delivery/i
+        );
+        expect(calls).not.toContain('receipt-authority:write:merge-authorized:IC_delivery_42_1');
+        expect(calls.filter((call) => call.startsWith('complete:'))).toHaveLength(0);
+        expect(calls.filter((call) => call.startsWith('retarget:'))).toHaveLength(0);
+    });
+
     it.each([
         { merger: 'automatic', actorNodeId: 'MDQ6QXBwOTk5OTk5' },
         { merger: 'unknown', actorNodeId: null },
@@ -1774,6 +1797,51 @@ describe('pull-request delivery', () => {
         });
     });
 
+    it('disarms a proven merge rejection after head drift leaves the PR open, so the new head can deliver on retry', () => {
+        const closes = relationshipBody('Closes #2372');
+        const nextHead = 'rewritten-head';
+        const { port, calls, tracker, persistedReceiptAuthority, receipts } = fakePort({
+            primary: [
+                pullRequest({ headRefOid: 'head', body: closes }),
+                pullRequest({ headRefOid: 'head', body: closes }),
+                pullRequest({ headRefOid: nextHead, body: closes }),
+                pullRequest({ headRefOid: nextHead, body: closes }),
+                pullRequest({ headRefOid: nextHead, body: closes }),
+            ],
+            dependentSets: [[], []],
+        });
+        const originalMerge = port.merge;
+        let rejectOnce = true;
+        port.merge = (number, head, hasDependents) => {
+            if (rejectOnce) {
+                rejectOnce = false;
+                calls.push(`merge:${number}:${head}`);
+                throw new DeliveryMergeRejectedError('PR #42 was not merged: gh: HTTP 409: head SHA changed');
+            }
+            originalMerge(number, head, hasDependents);
+        };
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/HTTP 409: head SHA changed/i);
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'prepared',
+            receiptId: 'IC_delivery_42_1',
+            receiptBody: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'),
+        });
+        expect(calls).not.toContain('complete:2372');
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(2);
+        expect(receipts.map(({ id }) => id)).toEqual(['IC_delivery_42_1', 'IC_delivery_42_2']);
+        expect(calls).toContain(`merge:42:${nextHead}`);
+        expect(calls).toContain('complete:2372');
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'terminal',
+            receiptId: 'IC_delivery_42_2',
+            receiptBody: visibleDeliveryReceiptBody(42, nextHead, closes, 2372, 'successful'),
+        });
+    });
+
     it('retains the armed receipt authority after an ambiguous merge error even when one follow-up read still looks open, then recovers on merged retry', () => {
         const closes = relationshipBody('Closes #2372');
         const { port, calls, tracker, persistedReceiptAuthority } = fakePort({
@@ -1982,6 +2050,50 @@ describe('pull-request delivery', () => {
         expect(calls).toContain('complete:2372');
         expect(calls).toContain('receipt-authority:write:merge-authorized:IC_prepared');
         expect(calls).toContain('receipt-authority:write:terminal:IC_prepared');
+    });
+
+    it('fails closed when a prepared authority receipt body names X but its stored post-merge validation belongs to Y', () => {
+        const bodyX = relationshipBody('Closes #2372');
+        const bodyY = relationshipBody('Closes #2373');
+        const receiptBodyX = visibleDeliveryReceiptBody(42, 'head', bodyX, 2372, 'successful');
+        const { port, calls, tracker } = fakePort({
+            primary: [
+                pullRequest({
+                    state: 'MERGED',
+                    body: bodyY,
+                    mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
+                }),
+            ],
+            dependentSets: [[]],
+            persistedReceiptAuthority: {
+                phase: 'prepared',
+                receiptId: 'IC_x',
+                receiptBody: receiptBodyX,
+                postMergeValidation: {
+                    headRefOid: 'head',
+                    headRefName: 'feat/gate',
+                    baseRefName: 'main',
+                    bodySha256: createHash('sha256').update(bodyY).digest('hex'),
+                    trackerTarget: 2373,
+                },
+            },
+            receipts: [
+                {
+                    id: 'IC_x',
+                    body: receiptBodyX,
+                    authorNodeId: AUTHOR_BOT_NODE_ID,
+                    authorLogin: 'renamed-author[bot]',
+                    authorType: 'Bot',
+                    createdAt: '2026-08-21T00:00:00Z',
+                    updatedAt: '2026-08-21T00:00:00Z',
+                },
+            ],
+            deliveryReceiptProof: { totalCount: 1, latestCommentId: 'IC_x' },
+        });
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/delivery receipt changed during recovery/i);
+        expect(calls.filter((call) => call.startsWith('complete:'))).toHaveLength(0);
+        expect(calls.filter((call) => call.startsWith('retarget:'))).toHaveLength(0);
     });
 
     it('fails closed when a bodyless current v2 authority points at an older wrong-issue receipt', () => {
@@ -5248,6 +5360,67 @@ describe('delivery shell boundary', () => {
                 `merge_method=${expectedMethod}`,
             ],
         });
+    });
+
+    it.each([
+        ['405', 'gh: HTTP 405: Base branch policy rejected the merge'],
+        ['409', 'gh: HTTP 409: Head SHA changed before merge'],
+    ])('classifies a shell merge HTTP %s refusal as a definitive rejection', (_code, message) => {
+        const shell: ShellRunner = {
+            capture: (_command, args) => {
+                if (args.join(' ') === 'api repos/jcosta33/sourdaw') {
+                    return mergeSettings({
+                        allow_merge_commit: false,
+                        allow_rebase_merge: false,
+                        allow_squash_merge: true,
+                        delete_branch_on_merge: false,
+                    });
+                }
+                if (args.includes('repos/jcosta33/sourdaw/pulls/42/merge')) {
+                    throw new Error(message);
+                }
+                throw new Error(`unexpected capture: ${args.join(' ')}`);
+            },
+            run: () => undefined,
+        };
+        const port = shellPort('jcosta33/sourdaw', shell);
+
+        try {
+            port.merge(42, 'head', false);
+            expect.unreachable();
+        } catch (error) {
+            expect(error).toBeInstanceOf(DeliveryMergeRejectedError);
+            expect(String(error)).toContain(message);
+        }
+    });
+
+    it('keeps shell merge transport ambiguity as a non-definitive error', () => {
+        const shell: ShellRunner = {
+            capture: (_command, args) => {
+                if (args.join(' ') === 'api repos/jcosta33/sourdaw') {
+                    return mergeSettings({
+                        allow_merge_commit: false,
+                        allow_rebase_merge: false,
+                        allow_squash_merge: true,
+                        delete_branch_on_merge: false,
+                    });
+                }
+                if (args.includes('repos/jcosta33/sourdaw/pulls/42/merge')) {
+                    throw new Error('network timeout');
+                }
+                throw new Error(`unexpected capture: ${args.join(' ')}`);
+            },
+            run: () => undefined,
+        };
+        const port = shellPort('jcosta33/sourdaw', shell);
+
+        try {
+            port.merge(42, 'head', false);
+            expect.unreachable();
+        } catch (error) {
+            expect(error).not.toBeInstanceOf(DeliveryMergeRejectedError);
+            expect(String(error)).toContain('network timeout');
+        }
     });
 
     it('rejects merging when no repository merge method is enabled', () => {

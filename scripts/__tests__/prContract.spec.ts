@@ -206,6 +206,71 @@ describe('pull-request contract', () => {
         });
     });
 
+    it.each([
+        [
+            'advisory mode without observed state',
+            [
+                'Delivery receipt for PR #2495.',
+                '',
+                '- Head: `3fc61d12acb110faba1a15e251268a1a7d09be9d`',
+                `- Pull request body SHA-256: \`${'a'.repeat(64)}\``,
+                '- Closing issue: #2406',
+                '- CI admission: advisory',
+                '',
+                '<!-- sourdaw-delivery-receipt:v2',
+                'pull-request: 2495',
+                'head: 3fc61d12acb110faba1a15e251268a1a7d09be9d',
+                `body-sha256: ${'a'.repeat(64)}`,
+                'closing-issue: 2406',
+                'ci-admission-mode: advisory',
+                '-->',
+            ].join('\n'),
+            /advisory mode requires an observed CI state/,
+        ],
+        [
+            'required mode with observed state',
+            [
+                'Delivery receipt for PR #2495.',
+                '',
+                '- Head: `3fc61d12acb110faba1a15e251268a1a7d09be9d`',
+                `- Pull request body SHA-256: \`${'a'.repeat(64)}\``,
+                '- Closing issue: #2406',
+                '- CI admission: required',
+                '',
+                '<!-- sourdaw-delivery-receipt:v2',
+                'pull-request: 2495',
+                'head: 3fc61d12acb110faba1a15e251268a1a7d09be9d',
+                `body-sha256: ${'a'.repeat(64)}`,
+                'closing-issue: 2406',
+                'ci-admission-mode: required',
+                'observed-ci-state: failed',
+                '-->',
+            ].join('\n'),
+            /required mode cannot carry an advisory CI state/,
+        ],
+        [
+            'observed state without mode',
+            [
+                'Delivery receipt for PR #2495.',
+                '',
+                '- Head: `3fc61d12acb110faba1a15e251268a1a7d09be9d`',
+                `- Pull request body SHA-256: \`${'a'.repeat(64)}\``,
+                '- Closing issue: #2406',
+                '',
+                '<!-- sourdaw-delivery-receipt:v2',
+                'pull-request: 2495',
+                'head: 3fc61d12acb110faba1a15e251268a1a7d09be9d',
+                `body-sha256: ${'a'.repeat(64)}`,
+                'closing-issue: 2406',
+                'observed-ci-state: failed',
+                '-->',
+            ].join('\n'),
+            /invalid delivery receipt|observed CI state requires an admission mode/,
+        ],
+    ])('rejects malformed raw v2 delivery receipts: %s', (_label, malformedReceipt, expectedError) => {
+        expect(() => parseDeliveryReceipt(malformedReceipt)).toThrow(expectedError);
+    });
+
     it('rejects hidden GitHub closing references', () => {
         expect(() => composePublishBody(2164, TITLE, 'feat(vcs): fixes #99', TEST_INSTRUCTIONS, 'relates')).toThrow(
             /unexpected issue-closing references/

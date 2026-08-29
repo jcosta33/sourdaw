@@ -146,6 +146,14 @@ export class DeliveryMergeRejectedError extends Error {
     }
 }
 
+function classifyGithubMergeRejection(number: number, error: unknown): DeliveryMergeRejectedError | undefined {
+    const detail = error instanceof Error ? error.message : String(error);
+    if (!/\bHTTP (405|409)\b/u.test(detail)) {
+        return undefined;
+    }
+    return new DeliveryMergeRejectedError(`PR #${number} was not merged: ${detail}`);
+}
+
 export type PersistedPreparedPostMergeValidation = {
     headRefOid: string;
     headRefName: string;
@@ -632,6 +640,28 @@ function validatePostMergeSnapshot(
     if (expected.baseRefName !== merged.baseRefName) {
         fail(`PR #${number} baseRefName changed during delivery`);
     }
+    validateStableTrackerTarget(number, expected.trackerTarget ?? undefined, trackerCompletionTarget(merged));
+}
+
+function validateReceiptPayloadAgainstPreparedPostMergeValidation(
+    number: number,
+    payload: DeliveryReceiptPayload,
+    validation: PersistedPreparedPostMergeValidation,
+    phase: 'delivery' | 'recovery'
+): void {
+    const timing = phase === 'delivery' ? 'during delivery' : 'during recovery';
+    if (payload.schemaVersion === 1) {
+        fail(`PR #${number} delivery receipt changed ${timing}`);
+    }
+    if (payload.head !== validation.headRefOid) {
+        fail(`PR #${number} delivery receipt changed ${timing}`);
+    }
+    if (payload.bodySha256 !== validation.bodySha256) {
+        fail(`PR #${number} delivery receipt changed ${timing}`);
+    }
+    if ((payload.closingIssue ?? undefined) !== (validation.trackerTarget ?? undefined)) {
+        fail(`PR #${number} delivery receipt changed ${timing}`);
+    }
 }
 
 function expectedDeliveryReceipt(
@@ -1021,8 +1051,6 @@ function tryRestorePreArmedDeliveryReceiptAuthorityAfterMergeFailure(
     number: number,
     beforeArming: PersistedDeliveryReceiptAuthority | undefined,
     armed: CurrentPersistedPreparedDeliveryReceiptAuthority,
-    expectedOpenSnapshot: PullRequestSnapshot,
-    expectedTrackerTarget: number | undefined,
     port: DeliveryPort
 ): void {
     try {
@@ -1031,9 +1059,6 @@ function tryRestorePreArmedDeliveryReceiptAuthorityAfterMergeFailure(
         if (current.state !== 'OPEN') {
             return;
         }
-        const currentTrackerTarget = trackerCompletionTarget(current);
-        validateStableTrackerTarget(number, expectedTrackerTarget, currentTrackerTarget);
-        validateStablePullRequest(expectedOpenSnapshot, current);
     } catch {
         return;
     }
@@ -1277,13 +1302,7 @@ function validatePreparedBodylessPersistedMergedRecoveryReceipt(
     if (payload.schemaVersion === 1) {
         fail(`PR #${pullRequest.number} delivery receipt changed during recovery`);
     }
-    if (
-        payload.head !== validation.headRefOid ||
-        payload.bodySha256 !== validation.bodySha256 ||
-        (payload.closingIssue ?? null) !== validation.trackerTarget
-    ) {
-        fail(`PR #${pullRequest.number} delivery receipt changed during recovery`);
-    }
+    validateReceiptPayloadAgainstPreparedPostMergeValidation(pullRequest.number, payload, validation, 'recovery');
 }
 
 function readCompatibleBodylessPersistedMergedRecoveryReceipt(
@@ -1346,6 +1365,14 @@ function readPersistedMergedRecoveryReceipt(
     if (receipt.body !== authority.receiptBody) {
         fail(`PR #${pullRequest.number} delivery receipt changed during recovery`);
     }
+    if (authority.phase === 'prepared') {
+        validateReceiptPayloadAgainstPreparedPostMergeValidation(
+            pullRequest.number,
+            assertDeliveryReceiptForHead(receipt, pullRequest),
+            authority.postMergeValidation,
+            'recovery'
+        );
+    }
     return receipt;
 }
 
@@ -1389,6 +1416,14 @@ function ensureDeliveryReceipt(
         }
         if (receipt.body !== frozenAuthority.receiptBody) {
             fail(`PR #${pullRequest.number} delivery receipt changed during delivery`);
+        }
+        if (frozenAuthority.phase === 'prepared' && frozenAuthority.postMergeValidation !== undefined) {
+            validateReceiptPayloadAgainstPreparedPostMergeValidation(
+                pullRequest.number,
+                expectedReceipt,
+                frozenAuthority.postMergeValidation,
+                'delivery'
+            );
         }
         assertCanonicalDeliveryReceipt(receipt, pullRequest, expectedReceipt);
     }
@@ -1569,13 +1604,15 @@ function deliverPullRequestWithCiAdmission(
     port.fetch();
     const finalSnapshot = resolveStructuralMergeability(port.pullRequest(number), port);
     if (finalSnapshot.state === 'MERGED') {
-        validateAuthorAppMerger(finalSnapshot);
-    }
-    if (finalSnapshot.state === 'MERGED') {
-        validateBaseBranch(finalSnapshot);
-        persistPreparedDeliveryReceiptAuthority(number, receipt, port, preparedPostMergeValidation);
+        validatePostMergeSnapshot(preparedPostMergeValidation, finalSnapshot, number);
         const recoveredReceipt = readExactDeliveryReceipt(finalSnapshot, port, receipt.id);
         const recoveredPayload = assertCanonicalDeliveryReceipt(recoveredReceipt, finalSnapshot, receiptPayload);
+        validateReceiptPayloadAgainstPreparedPostMergeValidation(
+            number,
+            recoveredPayload,
+            preparedPostMergeValidation,
+            'delivery'
+        );
         validateStableDeliveryReceipt(number, receiptPayload, recoveredPayload);
         persistMergeAuthorizedDeliveryReceiptAuthority(number, recoveredReceipt, port);
         const finalDependents = port
@@ -1633,8 +1670,6 @@ function deliverPullRequestWithCiAdmission(
                 number,
                 authorityBeforeFinalFetchArming,
                 preMergeArmedAuthority,
-                finalSnapshot,
-                finalTrackerTarget,
                 port
             );
         }
@@ -2150,8 +2185,9 @@ export function shellPort(
             if (hasDependents && policy.deletesMergedBranches) {
                 fail('automatic merged-branch deletion must be disabled before delivering a stacked PR');
             }
-            const result = parseJson<{ merged: boolean; message: string }>(
-                shell.capture('gh', [
+            let response: string;
+            try {
+                response = shell.capture('gh', [
                     'api',
                     '--method',
                     'PUT',
@@ -2160,9 +2196,15 @@ export function shellPort(
                     `sha=${expectedHead}`,
                     '-f',
                     `merge_method=${policy.method}`,
-                ]),
-                'merge request'
-            );
+                ]);
+            } catch (error) {
+                const rejection = classifyGithubMergeRejection(number, error);
+                if (rejection !== undefined) {
+                    throw rejection;
+                }
+                throw error;
+            }
+            const result = parseJson<{ merged: boolean; message: string }>(response, 'merge request');
             if (!result.merged) {
                 throw new DeliveryMergeRejectedError(`PR #${number} was not merged: ${result.message}`);
             }
