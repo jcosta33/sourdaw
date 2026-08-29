@@ -1785,7 +1785,20 @@ describe('command batch idempotency', () => {
         } else if (failure === 'unavailable checkpoint') {
             delete projectDocument.commandBatchIdempotency;
         } else if (failure === 'malformed stored receipt') {
-            projectDocument.commandBatchIdempotency = { records: [{ malformed: true }] };
+            // Corrupt the receipt on the checkpoint the reader does match. A
+            // ledger it cannot match at all reports the checkpoint missing,
+            // which is the case above rather than this one.
+            const parsed = parseVersionedCommandBatchEnvelope(batch.serialized, batch.authority);
+            if (parsed.status === 'invalid') {
+                throw new Error('Expected a valid command batch');
+            }
+            persistProjectCommandBatchIdempotencyCheckpoint({
+                projectId: parsed.envelope.projectId,
+                idempotencyKey: parsed.envelope.idempotencyKey,
+                contentHash: await getCommandBatchContentHash(parsed.envelope),
+                state: 'effects-pending',
+                serializedReceipt: '{not-json',
+            });
         } else if (failure === 'completed checkpoint with pending effects') {
             const parsed = parseVersionedCommandBatchEnvelope(batch.serialized, batch.authority);
             if (parsed.status === 'invalid') {
