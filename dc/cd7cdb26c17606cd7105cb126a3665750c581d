@@ -1,0 +1,75 @@
+src/modules/Preferences/presentations/views/preferences/__tests__/AiSection.spec.tsx
+  s_a40848e8f8cca9::t_6fbae569b55b5b 126
+src/modules/AiRuntime/useCases/__tests__/verseHallAutomationWorkflow.spec.ts
+  s_a40848e8f8cca9::t_f6696d822265a8 434
+src/modules/AiRuntime/useCases/__tests__/syncopatedArpeggioPromptWorkflow.spec.ts
+  s_a40848e8f8cca9::t_f6696d822265a8 424
+src/modules/AiRuntime/useCases/__tests__/wholeProjectVibeMixPlan.spec.ts
+  s_a40848e8f8cca9::t_f6696d822265a8 450
+src/modules/AiRuntime/useCases/__tests__/midiOverlapPromptWorkflow.spec.ts
+  s_a40848e8f8cca9::t_f6696d822265a8 479
+src/modules/AiRuntime/useCases/__tests__/articulationTransferPromptWorkflow.spec.ts
+  s_a40848e8f8cca9::t_f6696d822265a8 506
+src/modules/AiRuntime/useCases/__tests__/drumPreviewBranchesPromptWorkflow.spec.ts
+  s_a40848e8f8cca9::t_f6696d822265a8 536
+src/modules/AiRuntime/repositories/__tests__/providerAdapterConformance.spec.ts
+  s_a40848e8f8cca9::t_7c97109c9c5f33 55
+src/modules/AiRuntime/useCases/__tests__/deleteMutedEmptyTracksPromptWorkflow.spec.ts
+  s_a40848e8f8cca9::t_f6696d822265a8 435
+src/modules/AiRuntime/useCases/__tests__/backingVocalPlateWorkflow.spec.ts
+  s_a40848e8f8cca9::t_f6696d822265a8 907
+src/modules/AiRuntime/useCases/__tests__/sendChatMessage.spec.ts
+  s_a40848e8f8cca9::t_29cb3c8359f8f3 715,806,937,1009
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/streamCloudChatCompletion.spec.ts
+  s_a40848e8f8cca9::t_7c97109c9c5f33 40,108,241,266,298,314
+src/modules/AiRuntime/useCases/__tests__/bassCompressorPromptWorkflow.spec.ts
+  s_a40848e8f8cca9::t_f6696d822265a8 619
+src/modules/AiRuntime/repositories/cloudLlm/cloudSession.ts
+  s_a40848e8f8cca9::t_f6696d822265a8 10,18
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/requestOpenAiCompatibleProvider.spec.ts
+  s_a40848e8f8cca9::t_7c97109c9c5f33 24
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/generateOpenAiCompatibleToolCalls.spec.ts
+  s_a40848e8f8cca9::t_7c97109c9c5f33 8,378
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/inference.spec.ts
+  s_a40848e8f8cca9::t_29cb3c8359f8f3 109-114
+src/modules/AiRuntime/useCases/__tests__/bassCompressorParameterPromptWorkflow.spec.ts
+  s_a40848e8f8cca9::t_f6696d822265a8 467
+src/modules/AiRuntime/useCases/__tests__/mixPromptWorkflow.spec.ts
+  s_a40848e8f8cca9::t_f6696d822265a8 380
+src/modules/AiRuntime/useCases/__tests__/stemImportStartingMixWorkflow.spec.ts
+  s_a40848e8f8cca9::t_f6696d822265a8 570
+src/modules/AiRuntime/useCases/__tests__/bassProcessingCopyPromptWorkflow.spec.ts
+  s_a40848e8f8cca9::t_f6696d822265a8 644
+src/modules/AiRuntime/repositories/__tests__/drumBusProviderPlanConformance.spec.ts
+  s_a40848e8f8cca9::t_7c97109c9c5f33 55
+src/modules/AiRuntime/models/HostedLlmProvider.ts
+  s_a40848e8f8cca9::t_f6696d822265a8 22
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/generateAnthropicToolCalls.spec.ts
+  s_a40848e8f8cca9::t_7c97109c9c5f33 11
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/generateCloudToolCalls.spec.ts
+  s_a40848e8f8cca9::t_7c97109c9c5f33 38,68
+src/modules/AiRuntime/repositories/cloudLlm/__tests__/setCloudProviderConfig.spec.ts
+  s_a40848e8f8cca9::t_00a9c4ff490c6b 79
+src/modules/AiRuntime/useCases/__tests__/drumBusPromptWorkflow.spec.ts
+  s_a40848e8f8cca9::t_f6696d822265a8 1090
+src/modules/AiRuntime/useCases/__tests__/sharedVocalFxBusesWorkflow.spec.ts
+  s_a40848e8f8cca9::t_f6696d822265a8 924
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/streamOpenAiCompatibleChatCompletion.spec.ts
+  s_a40848e8f8cca9::t_7c97109c9c5f33 8
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "dccd7cdb26c17606cd7105cb126a3665750c581d",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
