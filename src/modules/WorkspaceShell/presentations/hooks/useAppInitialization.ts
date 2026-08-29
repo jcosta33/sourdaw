@@ -14,7 +14,7 @@ import { projectStore } from '#/modules/Project/stores';
 import { loadProject, saveProject } from '#/modules/Project/useCases';
 import { restoreLibrary, seedFactoryLibrary } from '#/modules/SampleLibrary/useCases';
 import { registerProSynthInstruments } from '#/modules/Synth/useCases';
-import { ensureTrackStrips, getTransportState } from '#/modules/Transport/useCases';
+import { ensureTrackStrips, getTransportState, syncTransportMapsToNativeSession } from '#/modules/Transport/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 const FIRST_LOAD_HINT_KEY = 'wd:first-load-hint-shown';
@@ -22,21 +22,26 @@ const FIRST_LOAD_HINT_DELAY_MS = 3000;
 
 export const useAppInitialization = (): void => {
     useEffect(() => {
-        // syncKneadToEngine subscribes to the knead/track stores and returns an
-        // unsubscribe. It is created inside the async boot sequence, so we hold it
-        // in a closure and tear it down on cleanup. `disposed` covers the race
-        // where the effect unmounts before the async work registers the
-        // subscription — in that case we unsubscribe as soon as it lands.
+        // syncKneadToEngine and syncTransportMapsToNativeSession each subscribe
+        // to a store and return an unsubscribe. Both are created inside the
+        // async boot sequence, so we hold them in a closure and tear them down
+        // on cleanup. `disposed` covers the race where the effect unmounts
+        // before the async work registers the subscriptions — in that case we
+        // unsubscribe as soon as they land.
         let unsubscribeKnead: (() => void) | null = null;
+        let unsubscribeTransportMaps: (() => void) | null = null;
         let disposed = false;
 
         void (async () => {
             try {
                 await initializeAudioEngine();
                 unsubscribeKnead = syncKneadToEngine();
+                unsubscribeTransportMaps = syncTransportMapsToNativeSession();
                 if (disposed) {
                     unsubscribeKnead();
                     unsubscribeKnead = null;
+                    unsubscribeTransportMaps();
+                    unsubscribeTransportMaps = null;
                 }
                 const transport = getTransportState();
                 if (transport) {
@@ -58,6 +63,10 @@ export const useAppInitialization = (): void => {
             if (unsubscribeKnead) {
                 unsubscribeKnead();
                 unsubscribeKnead = null;
+            }
+            if (unsubscribeTransportMaps) {
+                unsubscribeTransportMaps();
+                unsubscribeTransportMaps = null;
             }
         };
     }, []);
