@@ -65,6 +65,16 @@ vi.mock('remark-gfm', () => ({
     default: vi.fn(),
 }));
 
+vi.mock('../RetainedSectionRenderManualReview', () => ({
+    RetainedSectionRenderManualReview: ({ onStatus }: { onStatus: (message: string) => void }) => (
+        <div>
+            <p>Retained section render requires review</p>
+            <button onClick={() => onStatus('Exported the exact retained WAV.')}>Play Chorus</button>
+            <button onClick={() => onStatus('The exact WAV encoder failed.')}>Report retained review error</button>
+        </div>
+    ),
+}));
+
 vi.mock('../../components/ChatComposer', () => ({
     ChatComposer: ({
         executionMode,
@@ -701,6 +711,35 @@ describe('ChatPanel', () => {
             'publishRender: Publication evidence must be inspected manually.'
         );
         expect(screen.getByText('Manual repair required')).toBeInTheDocument();
+        selectReview.mockRestore();
+    });
+
+    it('announces retained-review outcomes and errors when no agent decision exists', () => {
+        const selectReview = vi.spyOn(retainedReviewProjection, 'selectRetainedSectionRenderManualReviews');
+        selectReview.mockReturnValue([
+            {
+                binding: {
+                    runId: 'run-render-review',
+                    batchId: 'batch-render-review',
+                    receiptIdentity: 'receipt-render-review',
+                    sourceRevision: 'revision-render-review',
+                    commands: [],
+                },
+                jobs: [],
+            },
+        ]);
+
+        render(<ChatPanel />);
+
+        expect(agentRunControls.listDecisions).toHaveReturnedWith([]);
+        expect(screen.queryByText('Agent decision required')).not.toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: 'Play Chorus' }));
+        expect(screen.getByRole('status')).toHaveTextContent('Exported the exact retained WAV.');
+        expect(screen.getByRole('status')).toHaveAttribute('aria-live', 'polite');
+        expect(screen.getByRole('status')).toHaveAttribute('aria-atomic', 'true');
+
+        fireEvent.click(screen.getByRole('button', { name: 'Report retained review error' }));
+        expect(screen.getByRole('status')).toHaveTextContent('The exact WAV encoder failed.');
         selectReview.mockRestore();
     });
 

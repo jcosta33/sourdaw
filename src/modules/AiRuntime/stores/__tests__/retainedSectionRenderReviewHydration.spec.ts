@@ -192,6 +192,29 @@ describe('retained section render review hydration', () => {
         expect(sanitizeAgentRunState(invalid)).toEqual({ schemaVersion: 1, runs: [] });
     });
 
+    it('upgrades both source-less legacy copies from the committed revision and keeps the review after hydration', () => {
+        createObligation();
+        const legacy = structuredClone(readAgentRunState());
+        delete legacy.runs[0]!.pendingEffectContinuations[0]!.sourceRevision;
+        delete legacy.pendingEffectRecoveryLedger![0]!.sourceRevision;
+        agentRunStore.set(sanitizeAgentRunState(legacy));
+
+        agentRunLifecycle.requirePendingEffectManualRepair({
+            runId: 'run-hydrate-review',
+            batchId: 'batch-hydrate-review',
+            reason: 'Review exact retained evidence.',
+            requiredAt: 4,
+        });
+
+        expect(readAgentRunState().runs[0]?.pendingEffectContinuations[0]?.sourceRevision).toBe('revision-source');
+        expect(readAgentRunState().pendingEffectRecoveryLedger?.[0]?.sourceRevision).toBe('revision-source');
+        const serializedState = JSON.stringify(readAgentRunState());
+
+        restartFrom(serializedState);
+
+        expect(selectRetainedSectionRenderManualReviews(readAgentRunState())).toHaveLength(1);
+    });
+
     it('hydrates an unsettled source-revision-bound review from serialized localStorage', async () => {
         createObligation();
         const serializedState = window.localStorage.getItem('sourdaw-agent-runs');

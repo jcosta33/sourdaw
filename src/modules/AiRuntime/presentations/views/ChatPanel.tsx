@@ -259,6 +259,7 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
 
     const [inputValue, setInputValue] = useState('');
     const [decisionStatusMessage, setDecisionStatusMessage] = useState<string | null>(null);
+    const [retainedReviewStatusMessage, setRetainedReviewStatusMessage] = useState<string | null>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -458,7 +459,7 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
                     <RetainedSectionRenderManualReview
                         key={`${review.binding.runId}:${review.binding.batchId}`}
                         review={review}
-                        onStatus={setDecisionStatusMessage}
+                        onStatus={setRetainedReviewStatusMessage}
                     />
                 ))}
                 {preparedStemManualRepairs.map((recovery) => (
@@ -530,6 +531,16 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
                     void handleResumeDecision(runId, alternativeId);
                 }}
             />
+            {retainedReviewStatusMessage !== null ? (
+                <p
+                    role="status"
+                    aria-live="polite"
+                    aria-atomic="true"
+                    className="shrink-0 border-b border-border/50 bg-surface-inset px-4 py-2 text-xs text-muted-foreground"
+                >
+                    {retainedReviewStatusMessage}
+                </p>
+            ) : null}
             {/* Scrollable message list. aria-live announces streamed assistant
                 output for screen-reader users during the long (30–90s) planning
                 pass; aria-busy signals that generation is in progress. */}

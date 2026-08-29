@@ -68,10 +68,15 @@ function createTempoCommand(commandId: string): string {
     return serializeVersionedCommandEnvelope({ ...command, commandId });
 }
 
-function createFixture(input?: { commands?: string[]; effectCommandIds?: string[] }) {
+function createFixture(input?: {
+    commands?: string[];
+    effectCommandIds?: string[];
+    envelopeRunId?: string;
+    envelopeBatchId?: string;
+}) {
     const commandBatch = compileVersionedCommandBatchEnvelope({
-        runId: 'run-review',
-        batchId: 'batch-review',
+        runId: input?.envelopeRunId ?? 'run-review',
+        batchId: input?.envelopeBatchId ?? 'batch-review',
         projectId: 'project-review',
         baseRevision: 'revision-original',
         intent: 'Render the retained review sections',
@@ -192,6 +197,35 @@ describe('selectRetainedSectionRenderManualReviews', () => {
         expect(reviews).toHaveLength(1);
         expect(reviews[0]?.binding.commands).toEqual([{ commandId: 'command-b', jobs: [outro] }]);
         expect(reviews[0]?.jobs.map(({ job }) => job.jobId)).toEqual(['job-outro']);
+    });
+
+    it.each([
+        ['run', { envelopeRunId: 'wrong-run' }],
+        ['batch', { envelopeBatchId: 'wrong-batch' }],
+    ])('rejects a valid envelope bound to the wrong %s before artifact lookup', (_label, input) => {
+        const { state } = createFixture(input);
+
+        expect(selectRetainedSectionRenderManualReviews(state)).toEqual([]);
+        expect(artifacts.getExact).not.toHaveBeenCalled();
+    });
+
+    it.each([
+        [
+            'within one command',
+            () => [
+                createCommand('command-a', [verse, { ...chorus, jobId: verse.jobId }]),
+                createCommand('command-b', [outro]),
+            ],
+        ],
+        [
+            'across commands',
+            () => [createCommand('command-a', [verse]), createCommand('command-b', [{ ...outro, jobId: verse.jobId }])],
+        ],
+    ])('rejects duplicate job IDs %s before artifact lookup', (_label, createCommands) => {
+        const { state } = createFixture({ commands: createCommands() });
+
+        expect(selectRetainedSectionRenderManualReviews(state)).toEqual([]);
+        expect(artifacts.getExact).not.toHaveBeenCalled();
     });
 
     it.each([

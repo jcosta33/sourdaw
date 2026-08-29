@@ -260,7 +260,7 @@ function createLegacyAgentRunPlan(input: {
         stoppingConditions: ['Stop if the persisted project revision is no longer current.'],
         alternatives: [],
         needsUserDecision: false,
-    } satisfies AgentRun;
+    } satisfies AgentRunPlan;
 }
 
 function clearAgentRuns(): void {
@@ -1368,6 +1368,7 @@ function settleAgentRunPendingEffectManualReview(input: {
             ? { ...step, state: 'reviewed' as const, manualReviewDisposition: input.disposition, updatedAt: settledAt }
             : step
     );
+    const remainingManualResumeWorkIds = run.manualResume.workIds.filter((workId) => workId !== input.batchId);
     const hasRecoveryObligation =
         steps.some(
             (step) =>
@@ -1378,16 +1379,18 @@ function settleAgentRunPendingEffectManualReview(input: {
         ) ||
         pendingEffectContinuations.length > 0 ||
         run.workLeases.some((lease) => lease.terminalState === null) ||
-        run.temporaryAssets.some((asset) => asset.status !== 'released');
+        run.temporaryAssets.some((asset) => asset.status !== 'released') ||
+        remainingManualResumeWorkIds.length > 0;
     const runs = [...state.runs];
     runs[runIndex] = {
         ...run,
         updatedAt: settledAt,
         phase: reduceAgentRunTransition(run.phase, { type: 'pending-effect-completed', hasRecoveryObligation }),
         pendingEffectContinuations,
-        manualResume: hasRecoveryObligation
-            ? run.manualResume
-            : { required: false, reason: null, workIds: [], requiredAt: null },
+        manualResume:
+            remainingManualResumeWorkIds.length > 0
+                ? { ...run.manualResume, required: true, workIds: remainingManualResumeWorkIds }
+                : { required: false, reason: null, workIds: [], requiredAt: null },
         saga: { schemaVersion: 1, steps },
     } satisfies AgentRun;
     const pendingEffectRecoveryLedger = getPendingEffectRecoveryLedger(state).filter(

@@ -132,10 +132,10 @@ function getExactRenderCommands(continuation: AgentRunPendingEffectContinuation,
         if (!Array.isArray(jobs) || jobs.length === 0 || !jobs.every(isRenderJob)) {
             return null;
         }
-        if (jobs.some(({ jobId }) => seenJobIds.has(jobId))) {
-            return null;
-        }
         for (const { jobId } of jobs) {
+            if (seenJobIds.has(jobId)) {
+                return null;
+            }
             seenJobIds.add(jobId);
         }
         commands.push({ commandId: command.commandId, jobs: structuredClone(jobs) });

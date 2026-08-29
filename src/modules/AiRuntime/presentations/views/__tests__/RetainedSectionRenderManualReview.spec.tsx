@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { RetainedSectionRenderManualReview } from '../RetainedSectionRenderManualReview';
@@ -117,6 +117,44 @@ describe('RetainedSectionRenderManualReview', () => {
             expect(mocks.exportWav).toHaveBeenCalledWith({ job: chorus, sourceRevision: 'revision-review' })
         );
         expect(screen.getByText('Exported the exact retained WAV.')).toBeInTheDocument();
+    });
+
+    it('releases the exact preview cache and restores Play when natural playback ends', () => {
+        render(<Harness />);
+        fireEvent.click(screen.getByRole('button', { name: 'Play Verse' }));
+        const onEnded = mocks.playCachedAudioBufferPreview.mock.calls[0]?.[0].onEnded;
+        if (!onEnded) {
+            throw new Error('Expected the preview completion callback.');
+        }
+
+        act(() => onEnded());
+
+        expect(mocks.stop).not.toHaveBeenCalled();
+        expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledExactlyOnceWith('cached-stereo-verse');
+        expect(screen.getByRole('button', { name: 'Play Verse' })).toHaveAttribute('aria-pressed', 'false');
+    });
+
+    it('stops and releases Verse before starting the Chorus preview', () => {
+        render(<Harness />);
+        fireEvent.click(screen.getByRole('button', { name: 'Play Verse' }));
+
+        fireEvent.click(screen.getByRole('button', { name: 'Play Chorus' }));
+
+        expect(mocks.stop).toHaveBeenCalledOnce();
+        expect(mocks.releasePreviewAudioBuffer).toHaveBeenNthCalledWith(1, 'cached-stereo-verse');
+        expect(mocks.cacheAudioBuffer).toHaveBeenNthCalledWith(2, { buffer: stereoChorusBuffer });
+        expect(mocks.playCachedAudioBufferPreview).toHaveBeenNthCalledWith(2, {
+            bufferId: 'cached-stereo-chorus',
+            onEnded: expect.any(Function),
+        });
+        expect(mocks.stop.mock.invocationCallOrder[0]).toBeLessThan(
+            mocks.playCachedAudioBufferPreview.mock.invocationCallOrder[1]!
+        );
+        expect(mocks.releasePreviewAudioBuffer.mock.invocationCallOrder[0]).toBeLessThan(
+            mocks.playCachedAudioBufferPreview.mock.invocationCallOrder[1]!
+        );
+        expect(screen.getByRole('button', { name: 'Play Verse' })).toHaveAttribute('aria-pressed', 'false');
+        expect(screen.getByRole('button', { name: 'Stop Chorus' })).toHaveAttribute('aria-pressed', 'true');
     });
 
     it.each(['accepted', 'discarded'] as const)(

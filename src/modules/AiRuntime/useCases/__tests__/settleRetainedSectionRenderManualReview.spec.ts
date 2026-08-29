@@ -263,6 +263,28 @@ describe('settleRetainedSectionRenderManualReview', () => {
         );
     });
 
+    it('removes only the settled batch from manual resume and preserves unrelated recovery work', () => {
+        const review = createReviewObligation();
+        const state = readAgentRunState();
+        state.runs[0]!.manualResume = {
+            required: true,
+            reason: 'Two retained operations require manual review.',
+            workIds: ['batch-review', 'unrelated-manual-work'],
+            requiredAt: 4,
+        };
+        agentRunStore.set(state);
+
+        settleRetainedSectionRenderManualReview({ binding: review.binding, disposition: 'accepted' });
+
+        expect(readAgentRunState().runs[0]?.manualResume).toEqual({
+            required: true,
+            reason: 'Two retained operations require manual review.',
+            workIds: ['unrelated-manual-work'],
+            requiredAt: 4,
+        });
+        expect(readAgentRunState().runs[0]?.phase).toBe('partially-completed');
+    });
+
     it('persists discard settlement before disposing every exact artifact', () => {
         const review = createReviewObligation();
         mocks.disposeExact.mockImplementation(() => {
