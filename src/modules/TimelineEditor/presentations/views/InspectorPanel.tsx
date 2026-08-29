@@ -36,7 +36,7 @@ export const InspectorPanel = ({ style }: InspectorPanelProps): ReactElement => 
     const selectedDevice = selectedTrack?.devices.find((data) => data.id === selectedDeviceId) ?? null;
 
     const isDeviceView = !!selectedDevice;
-    const renderIife_22 = () => {
+    const renderInspectorContent = (): ReactElement => {
         if (selectedDevice && selectedTrack) {
             return (
                 <DeviceInspector
@@ -45,56 +45,52 @@ export const InspectorPanel = ({ style }: InspectorPanelProps): ReactElement => 
                     onBack={() => setSelectedDeviceId(null)}
                 />
             );
-        } else {
-            if (selectedClip && selectedTrack) {
-                // Keyed by clip id: ClipInspector owns local rename-draft state that
-                // must not survive a selection change, and remounting is the only
-                // way to guarantee that without the component resyncing on every
-                // clip prop it renders from.
-                return (
-                    <ClipInspector
-                        key={selectedClip.id}
-                        clip={selectedClip}
-                        trackId={selectedTrack.id}
-                        onBack={clearClipSelection}
-                    />
-                );
-            } else {
-                if (selectedTrack) {
-                    return (
-                        <TrackInspector
-                            track={selectedTrack}
-                            allTracks={tracks}
-                            onSelectClip={selectClipWithFocus}
-                            onSelectDevice={setSelectedDeviceId}
-                        />
-                    );
-                } else {
-                    if (masterTrack) {
-                        return (
-                            <TrackInspector
-                                track={masterTrack}
-                                allTracks={tracks}
-                                onSelectClip={selectClipWithFocus}
-                                onSelectDevice={setSelectedDeviceId}
-                            />
-                        );
-                    } else {
-                        return (
-                            <Row justify="center" className="h-full p-6">
-                                <DawBlockedState
-                                    eyebrow="Inspector"
-                                    className="max-w-64"
-                                    title="No track selected"
-                                    description="Pick a track, clip, or device to inspect its details."
-                                    summary="The inspector follows the current selection and switches between track, clip, and device detail."
-                                />
-                            </Row>
-                        );
-                    }
-                }
-            }
         }
+        if (selectedClip && selectedTrack) {
+            // Keyed by clip id: ClipInspector owns local rename-draft state that
+            // must not survive a selection change, and remounting is the only
+            // way to guarantee that without the component resyncing on every
+            // clip prop it renders from.
+            return (
+                <ClipInspector
+                    key={selectedClip.id}
+                    clip={selectedClip}
+                    trackId={selectedTrack.id}
+                    onBack={clearClipSelection}
+                />
+            );
+        }
+        if (selectedTrack) {
+            return (
+                <TrackInspector
+                    track={selectedTrack}
+                    allTracks={tracks}
+                    onSelectClip={selectClipWithFocus}
+                    onSelectDevice={setSelectedDeviceId}
+                />
+            );
+        }
+        if (masterTrack) {
+            return (
+                <TrackInspector
+                    track={masterTrack}
+                    allTracks={tracks}
+                    onSelectClip={selectClipWithFocus}
+                    onSelectDevice={setSelectedDeviceId}
+                />
+            );
+        }
+        return (
+            <Row justify="center" className="h-full p-6">
+                <DawBlockedState
+                    eyebrow="Inspector"
+                    className="max-w-64"
+                    title="No track selected"
+                    description="Pick a track, clip, or device to inspect its details."
+                    summary="The inspector follows the current selection and switches between track, clip, and device detail."
+                />
+            </Row>
+        );
     };
 
     return (
@@ -120,7 +116,7 @@ export const InspectorPanel = ({ style }: InspectorPanelProps): ReactElement => 
                     </Button>
                 }
             />
-            <ScrollArea className="flex-1 min-h-0">{renderIife_22()}</ScrollArea>
+            <ScrollArea className="flex-1 min-h-0">{renderInspectorContent()}</ScrollArea>
         </DawPanelSurface>
     );
 };

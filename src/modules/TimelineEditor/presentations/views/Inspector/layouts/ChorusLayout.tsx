@@ -30,7 +30,7 @@ const ChorusLayout = ({ device, trackId, parameters }: DeviceLayoutProps): React
     const pv = device.parameterValues;
     const rate = pv['chorus-rate'] ?? pv['phaser-rate'] ?? pv['flanger-rate'] ?? 1.5;
     const depth = pv['chorus-depth'] ?? pv['phaser-depth'] ?? pv['flanger-depth'] ?? 5;
-    const renderIife_21 = () => {
+    const renderPairedParamRows = (): ReactElement[] => {
         const all = parameters.filter((param) => param.id !== 'phaser-stages');
         const pairs: P[][] = [];
         for (let index = 0; index < all.length; index += 2) {
@@ -53,7 +53,7 @@ const ChorusLayout = ({ device, trackId, parameters }: DeviceLayoutProps): React
             </Row>
             <SectionHeader title="Controls" />
             {/* Show all params in pairs of 2 */}
-            {renderIife_21()}
+            {renderPairedParamRows()}
             {/* Phaser stages (int, non-automatable) shown separately */}
             {filterParams(parameters, ['phaser-stages']).map((param) => (
                 <Param key={param.id} param={param} device={device} trackId={trackId} />

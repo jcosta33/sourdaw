@@ -73,7 +73,7 @@ export const TransportControls = ({
         }
         setCountInBars(next);
     };
-    const renderIife_14 = () => {
+    const statusAnnouncement = (): string => {
         if (isRecording) {
             return 'Recording';
         }
@@ -82,7 +82,7 @@ export const TransportControls = ({
         }
         return 'Stopped';
     };
-    const renderIife_15 = () => {
+    const recordButtonLabel = (): string => {
         if (isRecording) {
             return 'Stop Recording';
         }
@@ -95,7 +95,7 @@ export const TransportControls = ({
     return (
         <DawTransportCluster tone="well" role="group" aria-label="Playback controls">
             <span className="sr-only" aria-live="polite" role="status">
-                {renderIife_14()}
+                {statusAnnouncement()}
             </span>
             <Tooltip>
                 <TooltipTrigger asChild>
@@ -151,7 +151,7 @@ export const TransportControls = ({
                         />
                     </LatchButton>
                 </TooltipTrigger>
-                <TooltipContent>{renderIife_15()} (R)</TooltipContent>
+                <TooltipContent>{recordButtonLabel()} (R)</TooltipContent>
             </Tooltip>
             <LED on={isAudioRecording} variant="red" size="sm" />
 
