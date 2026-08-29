@@ -1070,6 +1070,9 @@ function tryRestorePreArmedDeliveryReceiptAuthorityAfterMergeFailure(
         if (current.state === 'MERGED') {
             return;
         }
+        if (current.state !== 'OPEN' && current.state !== 'CLOSED') {
+            return;
+        }
     } catch {
         return;
     }

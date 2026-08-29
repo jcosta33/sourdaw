@@ -1963,6 +1963,58 @@ describe('pull-request delivery', () => {
         });
     });
 
+    it('retains the armed receipt authority after an OPEN UNKNOWN merge-rejection refresh resolves to an unrecognized state, then recovers on merged retry', () => {
+        const closes = relationshipBody('Closes #2372');
+        const { port, calls, tracker, persistedReceiptAuthority } = fakePort({
+            primary: [
+                pullRequest({ body: closes }),
+                pullRequest({ body: closes }),
+                pullRequest({ body: closes, mergeable: 'UNKNOWN' }),
+                pullRequest({ state: 'UNRECOGNIZED', body: closes, mergeable: 'MERGEABLE' }),
+                pullRequest({
+                    state: 'MERGED',
+                    body: closes,
+                    mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
+                }),
+            ],
+            dependentSets: [[], []],
+        });
+        let rejectOnce = true;
+        port.merge = (number, head) => {
+            calls.push(`merge:${number}:${head}`);
+            if (rejectOnce) {
+                rejectOnce = false;
+                throw new DeliveryMergeRejectedError('PR #42 was not merged: gh: HTTP 409: merge result ambiguous');
+            }
+        };
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/HTTP 409: merge result ambiguous/i);
+        expect(calls).toContain('merge:42:head');
+        expect(calls).not.toContain('receipt-authority:clear:prepared:IC_delivery_42_1');
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'prepared',
+            receiptId: 'IC_delivery_42_1',
+            receiptBody: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'),
+            postMergeValidation: {
+                headRefOid: 'head',
+                headRefName: 'feat/gate',
+                baseRefName: 'main',
+                bodySha256: createHash('sha256').update(closes).digest('hex'),
+                trackerTarget: 2372,
+            },
+        });
+        expect(calls).not.toContain('complete:2372');
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(1);
+        expect(calls).toContain('receipt-authority:read:prepared:IC_delivery_42_1');
+        expect(calls).toContain('receipt-authority:write:merge-authorized:IC_delivery_42_1');
+        expect(calls).toContain('receipt-authority:write:terminal:IC_delivery_42_1');
+        expect(calls).toContain('complete:2372');
+        expect(calls).toContain('PR #42 was already merged; repaired 0 remaining dependent(s)');
+    });
+
     it('retains the armed receipt authority after an ambiguous merge error even when one follow-up read still looks open, then recovers on merged retry', () => {
         const closes = relationshipBody('Closes #2372');
         const { port, calls, tracker, persistedReceiptAuthority } = fakePort({
@@ -4972,6 +5024,17 @@ describe('delivery shell boundary', () => {
                 baseRefName: 'main',
                 bodySha256: 'a'.repeat(64),
                 trackerTarget: 0,
+            },
+        },
+        {
+            label: 'extra nested key',
+            postMergeValidation: {
+                headRefOid: 'head',
+                headRefName: 'feat/gate',
+                baseRefName: 'main',
+                bodySha256: 'a'.repeat(64),
+                trackerTarget: 2372,
+                unexpected: true,
             },
         },
     ])(
