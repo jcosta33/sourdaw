@@ -28,6 +28,18 @@ describe('ProjectName', () => {
         expect(screen.getByText('My Song')).toBeInTheDocument();
     });
 
+    it('renders as the left segment of the project control', () => {
+        renderWithTooltip(<ProjectName name="My Song" dirty={false} />);
+
+        expect(screen.getByTestId('project-name')).toHaveClass(
+            'daw-readout-well',
+            'rounded-l-sm',
+            'rounded-r-none',
+            'border-r-0',
+            'hover:brightness-[1.06]'
+        );
+    });
+
     it('shows the dirty indicator only when dirty is true', () => {
         const { rerender } = renderWithTooltip(<ProjectName name="My Song" dirty={false} />);
         expect(screen.queryByTitle('Unsaved changes')).not.toBeInTheDocument();
