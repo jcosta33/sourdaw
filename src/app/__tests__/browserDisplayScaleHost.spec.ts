@@ -1,12 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { mountBrowserDisplayScaleHost } from '../browserDisplayScaleHost';
+import {
+    mountBrowserDisplayScaleHost,
+    readBrowserDisplayScaleHostCapability,
+    resetBrowserDisplayScaleForChildStartup,
+} from '../browserDisplayScaleHost';
+
+const DISPLAY_SCALE_HOST_CAPABILITY_KEY = '__sourdawBrowserDisplayScaleHost';
 
 describe('mountBrowserDisplayScaleHost', () => {
     beforeEach(() => {
         document.documentElement.removeAttribute('style');
         document.body.removeAttribute('style');
         document.body.innerHTML = '<div id="root"></div>';
+        Reflect.deleteProperty(window, DISPLAY_SCALE_HOST_CAPABILITY_KEY);
     });
 
     afterEach(() => {
@@ -14,6 +21,7 @@ describe('mountBrowserDisplayScaleHost', () => {
         document.documentElement.removeAttribute('style');
         document.body.removeAttribute('style');
         document.body.replaceChildren();
+        Reflect.deleteProperty(window, DISPLAY_SCALE_HOST_CAPABILITY_KEY);
     });
 
     it.each([
@@ -91,12 +99,47 @@ describe('mountBrowserDisplayScaleHost', () => {
         expect(frame.style.transform).toBe('scale(1)');
     });
 
-    it('keeps display-scale messages active while the host is stored in the back-forward cache', () => {
+    it('lets only its exact child reset the frame synchronously for startup', () => {
         const root = document.getElementById('root')!;
         mountBrowserDisplayScaleHost(root);
         const frame = document.querySelector('iframe')!;
 
+        window.dispatchEvent(
+            new MessageEvent('message', {
+                data: { type: 'sourdaw:browser-display-scale', scale: 2 },
+                origin: window.location.origin,
+                source: frame.contentWindow,
+            })
+        );
+        const capability = readBrowserDisplayScaleHostCapability(window);
+        expect(capability).toBeDefined();
+
+        capability?.resetForChildStartup(window);
+        expect(frame.style.transform).toBe('scale(2)');
+
+        capability?.resetForChildStartup(frame.contentWindow!);
+        expect(frame.style.width).toBe('100vw');
+        expect(frame.style.height).toBe('100vh');
+        expect(frame.style.transform).toBe('scale(1)');
+    });
+
+    it('does not invoke a browser host startup reset from a top-level direct application', () => {
+        const resetForChildStartup = vi.fn();
+        Reflect.set(window, DISPLAY_SCALE_HOST_CAPABILITY_KEY, { resetForChildStartup });
+
+        resetBrowserDisplayScaleForChildStartup();
+
+        expect(resetForChildStartup).not.toHaveBeenCalled();
+    });
+
+    it('keeps display-scale messages active while the host is stored in the back-forward cache', () => {
+        const root = document.getElementById('root')!;
+        mountBrowserDisplayScaleHost(root);
+        const frame = document.querySelector('iframe')!;
+        const capability = readBrowserDisplayScaleHostCapability(window);
+
         window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true }));
+        expect(readBrowserDisplayScaleHostCapability(window)).toBe(capability);
         window.dispatchEvent(
             new MessageEvent('message', {
                 data: { type: 'sourdaw:browser-display-scale', scale: 2 },
@@ -106,6 +149,8 @@ describe('mountBrowserDisplayScaleHost', () => {
         );
 
         expect(frame.style.transform).toBe('scale(2)');
+        capability?.resetForChildStartup(frame.contentWindow!);
+        expect(frame.style.transform).toBe('scale(1)');
     });
 
     it('focuses the application on load and persisted restore until the host is permanently unloaded', () => {
@@ -133,6 +178,7 @@ describe('mountBrowserDisplayScaleHost', () => {
         const frame = document.querySelector('iframe')!;
 
         window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: false }));
+        expect(readBrowserDisplayScaleHostCapability(window)).toBeUndefined();
         window.dispatchEvent(
             new MessageEvent('message', {
                 data: { type: 'sourdaw:browser-display-scale', scale: 2 },

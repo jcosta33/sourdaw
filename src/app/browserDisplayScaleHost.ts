@@ -1,6 +1,22 @@
 const DISPLAY_SCALE_MESSAGE_TYPE = 'sourdaw:browser-display-scale';
+const DISPLAY_SCALE_HOST_CAPABILITY_KEY = '__sourdawBrowserDisplayScaleHost';
 const MIN_DISPLAY_SCALE = 0.5;
 const MAX_DISPLAY_SCALE = 2;
+
+type BrowserDisplayScaleHostCapability = {
+    resetForChildStartup: (source: Window) => void;
+};
+
+function isBrowserDisplayScaleHostCapability(value: unknown): value is BrowserDisplayScaleHostCapability {
+    return (
+        typeof value === 'object' && value !== null && typeof Reflect.get(value, 'resetForChildStartup') === 'function'
+    );
+}
+
+export function readBrowserDisplayScaleHostCapability(target: Window): BrowserDisplayScaleHostCapability | undefined {
+    const capability: unknown = Reflect.get(target, DISPLAY_SCALE_HOST_CAPABILITY_KEY);
+    return isBrowserDisplayScaleHostCapability(capability) ? capability : undefined;
+}
 
 function isSupportedDisplayScale(value: unknown): value is number {
     return (
@@ -24,6 +40,18 @@ function sizeViewport(frame: HTMLIFrameElement, scale: number): void {
     frame.style.width = `${String(100 / scale)}vw`;
 }
 
+export function resetBrowserDisplayScaleForChildStartup(): void {
+    if (window.parent === window) {
+        return;
+    }
+
+    try {
+        readBrowserDisplayScaleHostCapability(window.parent)?.resetForChildStartup(window);
+    } catch {
+        return;
+    }
+}
+
 export function mountBrowserDisplayScaleHost(root: HTMLElement): void {
     document.documentElement.style.height = '100%';
     document.documentElement.style.overflow = 'hidden';
@@ -39,7 +67,6 @@ export function mountBrowserDisplayScaleHost(root: HTMLElement): void {
 
     const frame = document.createElement('iframe');
     frame.title = 'Sourdaw';
-    frame.src = window.location.href;
     frame.style.border = '0';
     frame.style.display = 'block';
     frame.style.left = '0';
@@ -53,6 +80,15 @@ export function mountBrowserDisplayScaleHost(root: HTMLElement): void {
     };
     frame.addEventListener('load', focusApplication);
     root.replaceChildren(frame);
+
+    const startupCapability: BrowserDisplayScaleHostCapability = {
+        resetForChildStartup: (source): void => {
+            if (source === frame.contentWindow) {
+                sizeViewport(frame, 1);
+            }
+        },
+    };
+    Reflect.set(window, DISPLAY_SCALE_HOST_CAPABILITY_KEY, startupCapability);
 
     const handleDisplayScale = (event: MessageEvent): void => {
         if (event.origin !== window.location.origin || event.source !== frame.contentWindow) {
@@ -75,9 +111,13 @@ export function mountBrowserDisplayScaleHost(root: HTMLElement): void {
             window.removeEventListener('message', handleDisplayScale);
             window.removeEventListener('pagehide', handlePageHide);
             window.removeEventListener('pageshow', handlePageShow);
+            if (readBrowserDisplayScaleHostCapability(window) === startupCapability) {
+                Reflect.deleteProperty(window, DISPLAY_SCALE_HOST_CAPABILITY_KEY);
+            }
         }
     };
     window.addEventListener('message', handleDisplayScale);
     window.addEventListener('pagehide', handlePageHide);
     window.addEventListener('pageshow', handlePageShow);
+    frame.src = window.location.href;
 }

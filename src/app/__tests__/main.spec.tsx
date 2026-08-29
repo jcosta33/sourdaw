@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
     mountBrowserDisplayScaleHost: vi.fn(),
     reloadApplication: vi.fn(),
     render: vi.fn(),
+    resetBrowserDisplayScaleForChildStartup: vi.fn(),
     resetDisplayScaleForStartup: vi.fn(),
     resolveAppComposition: vi.fn(),
 }));
@@ -19,6 +20,7 @@ vi.mock('../bootstrap', () => {
 
 vi.mock('../browserDisplayScaleHost', () => ({
     mountBrowserDisplayScaleHost: mocks.mountBrowserDisplayScaleHost,
+    resetBrowserDisplayScaleForChildStartup: mocks.resetBrowserDisplayScaleForChildStartup,
 }));
 
 vi.mock('../DesktopStartupError', () => ({ DesktopStartupError: mocks.desktopStartupError }));
@@ -61,6 +63,7 @@ describe('app main composition', () => {
             windowName: '',
         });
         expect(mocks.mountBrowserDisplayScaleHost).toHaveBeenCalledWith(document.getElementById('root'));
+        expect(mocks.resetBrowserDisplayScaleForChildStartup).not.toHaveBeenCalled();
         expect(mocks.bootstrap).not.toHaveBeenCalled();
         expect(mocks.render).not.toHaveBeenCalled();
     });
@@ -96,15 +99,21 @@ describe('app main composition', () => {
             throw new Error('Display scale reset or application render did not run');
         }
         expect(resetCallOrder).toBeLessThan(renderCallOrder);
+        expect(mocks.resetBrowserDisplayScaleForChildStartup).not.toHaveBeenCalled();
         expect(mocks.mountBrowserDisplayScaleHost).not.toHaveBeenCalled();
     });
 
-    it('does not run the native startup reset for a browser child application', async () => {
+    it('resets the browser host before importing and rendering a child application', async () => {
         mocks.resolveAppComposition.mockReturnValue('application');
+        mocks.resetBrowserDisplayScaleForChildStartup.mockImplementationOnce(() => {
+            expect(mocks.bootstrap).not.toHaveBeenCalled();
+            expect(mocks.render).not.toHaveBeenCalled();
+        });
 
         await import('../main');
 
         await vi.waitFor(() => expect(mocks.render).toHaveBeenCalledOnce());
+        expect(mocks.resetBrowserDisplayScaleForChildStartup).toHaveBeenCalledOnce();
         expect(mocks.resetDisplayScaleForStartup).not.toHaveBeenCalled();
         expect(mocks.mountBrowserDisplayScaleHost).not.toHaveBeenCalled();
     });
@@ -125,6 +134,7 @@ describe('app main composition', () => {
         startupError.props.onReload();
 
         expect(mocks.reloadApplication).toHaveBeenCalledWith(window.location);
+        expect(mocks.resetBrowserDisplayScaleForChildStartup).not.toHaveBeenCalled();
         expect(mocks.resetDisplayScaleForStartup).not.toHaveBeenCalled();
         expect(mocks.bootstrap).not.toHaveBeenCalled();
         expect(mocks.mountBrowserDisplayScaleHost).not.toHaveBeenCalled();

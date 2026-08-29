@@ -1,4 +1,4 @@
-import { mountBrowserDisplayScaleHost } from './browserDisplayScaleHost';
+import { mountBrowserDisplayScaleHost, resetBrowserDisplayScaleForChildStartup } from './browserDisplayScaleHost';
 import { reloadApplication } from './reloadApplication';
 import { resolveAppComposition } from './resolveAppComposition';
 
@@ -17,6 +17,8 @@ async function renderApplication(): Promise<void> {
     if (hasDesktopBridge) {
         const { resetDisplayScaleForStartup } = await import('#/modules/WorkspaceShell/useCases');
         await resetDisplayScaleForStartup();
+    } else {
+        resetBrowserDisplayScaleForChildStartup();
     }
 
     const [, , { createRoot }, { App }] = await Promise.all([

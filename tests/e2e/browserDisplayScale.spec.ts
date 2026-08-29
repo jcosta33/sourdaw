@@ -299,6 +299,9 @@ test('browser display scale preserves viewport geometry and interactions at 50%,
     await page.setViewportSize(VIEWPORT);
     const alphaDismissed = superjsonStringify(true);
     await page.addInitScript((dismissed) => {
+        if (window.parent !== window) {
+            return;
+        }
         window.localStorage.clear();
         window.localStorage.setItem('wd:onboarding-completed', '1');
         window.localStorage.setItem('sourdaw-alpha-notice-dismissed', dismissed);
@@ -333,4 +336,9 @@ test('browser display scale preserves viewport geometry and interactions at 50%,
         await expectEqCanvasDrag(page, app);
         await expectExportUsable(page, app);
     }
+
+    await frame.goto(frame.url());
+    await expect(app.getByTestId('app-shell')).toHaveCount(1);
+    await expect.poll(async () => frame.evaluate(() => window.innerWidth)).toBe(VIEWPORT.width / 2);
+    await expectFrameGeometry(page, frame, 2);
 });
