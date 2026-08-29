@@ -2004,6 +2004,13 @@ mod tests {
     /// one, because every load the product makes does.
     const TEST_ENGINE_SAMPLE_RATE: f64 = 48_000.0;
 
+    /// `PLUGIN_SCAN_PERMIT` is process-global and maps contention to the
+    /// in-band "Plugin scan already in progress" error, which a scan test
+    /// running beside another would misread as its own behaviour under the
+    /// parallel harness — so every test that reaches the permit serializes
+    /// through this lock for its full duration.
+    static SCAN_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     fn plugin_parameter(id: u32, value: f64) -> PluginParameter {
         PluginParameter {
             id,
@@ -3124,6 +3131,9 @@ mod tests {
 
     #[test]
     fn scan_plugins_rejects_arbitrary_renderer_raw_path_without_grant() {
+        let _scan_serial = SCAN_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let state = AppState::default();
         let scan_root = unique_temp_scan_root("raw-plugin-scan-path");
         std::fs::create_dir_all(&scan_root).expect("temp scan root should be created");
@@ -3170,6 +3180,9 @@ mod tests {
     /// silently.
     #[test]
     fn a_quarantined_candidate_is_skipped_and_still_named_in_the_response() {
+        let _scan_serial = SCAN_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let root = created_temp_scan_root("quarantine-skip");
         let plugin_path = root.join("Hostile.clap");
         std::fs::write(&plugin_path, b"not a real clap bundle")
@@ -3226,6 +3239,9 @@ mod tests {
     /// failure, dated to now rather than to the sentinel, replaces it).
     #[test]
     fn retrying_quarantined_clears_the_record_before_the_helper_runs() {
+        let _scan_serial = SCAN_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let root = created_temp_scan_root("quarantine-retry");
         let plugin_path = root.join("Recovering.clap");
         std::fs::write(&plugin_path, b"not a real clap bundle")
@@ -3297,6 +3313,9 @@ mod tests {
     /// outcome.
     #[test]
     fn retrying_quarantined_clears_the_record_when_the_helper_succeeds() {
+        let _scan_serial = SCAN_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let root = created_temp_scan_root("quarantine-retry-success");
         let plugin_path = root.join("Recovered.clap");
         std::fs::write(&plugin_path, b"clap-bytes").expect("fixture plugin file should be written");
@@ -3346,6 +3365,9 @@ mod tests {
     /// clear a quarantine record on its own, whatever else the scan finds.
     #[test]
     fn a_default_scan_never_clears_a_quarantine_record() {
+        let _scan_serial = SCAN_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let root = created_temp_scan_root("quarantine-default-no-retry");
         let plugin_path = root.join("StillHostile.clap");
         std::fs::write(&plugin_path, b"not a real clap bundle")
