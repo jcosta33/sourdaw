@@ -73,6 +73,9 @@ describe('retained section render review artifacts', () => {
         expect(
             getExactAgentSectionRenderArtifact({ job: { ...job, endBeat: 15 }, sourceRevision: 'revision-1' })
         ).toBeNull();
+        expect(
+            getExactAgentSectionRenderArtifact({ job: { ...job, tailSeconds: 2 }, sourceRevision: 'revision-1' })
+        ).toBeNull();
         expect(getExactAgentSectionRenderArtifact({ job, sourceRevision: 'revision-2' })).toBeNull();
         expect(
             disposeExactAgentSectionRenderArtifact({ job: { ...job, jobId: 'other' }, sourceRevision: 'revision-1' })

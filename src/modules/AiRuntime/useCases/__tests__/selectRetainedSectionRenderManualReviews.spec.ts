@@ -170,6 +170,16 @@ describe('selectRetainedSectionRenderManualReviews', () => {
         expect(artifacts.getExact).toHaveBeenCalledWith({ job: verse, sourceRevision: 'revision-original' });
     });
 
+    it('looks up artifacts by the continuation source revision rather than the batch base revision', () => {
+        const { state } = createFixture();
+        state.runs[0]!.pendingEffectContinuations[0]!.sourceRevision = 'revision-finalized';
+        state.pendingEffectRecoveryLedger![0]!.sourceRevision = 'revision-finalized';
+
+        expect(selectRetainedSectionRenderManualReviews(state)).toHaveLength(1);
+        expect(state.pendingEffectRecoveryLedger![0]!.authority.baseRevision).toBe('revision-original');
+        expect(artifacts.getExact).toHaveBeenCalledWith({ job: verse, sourceRevision: 'revision-finalized' });
+    });
+
     it('projects only manual-review render effects when the original batch has a non-render sibling', () => {
         const { state } = createFixture({
             commands: [

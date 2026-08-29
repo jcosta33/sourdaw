@@ -215,6 +215,32 @@ describe('RetainedSectionRenderManualReview', () => {
         expect(screen.getByRole('button', { name: 'Stop Chorus' })).toHaveAttribute('aria-pressed', 'true');
     });
 
+    it('ignores a stopped playback completion after the same job starts again', () => {
+        const firstStop = vi.fn();
+        const secondStop = vi.fn();
+        mocks.cacheAudioBuffer
+            .mockReturnValueOnce('cached-stereo-verse-1')
+            .mockReturnValueOnce('cached-stereo-verse-2');
+        mocks.playCachedAudioBufferPreview
+            .mockReturnValueOnce({ stop: firstStop })
+            .mockReturnValueOnce({ stop: secondStop });
+        render(<Harness />);
+        fireEvent.click(screen.getByRole('button', { name: 'Play Verse' }));
+        const firstOnEnded = mocks.playCachedAudioBufferPreview.mock.calls[0]?.[0].onEnded;
+        if (!firstOnEnded) {
+            throw new Error('Expected the first Verse completion callback.');
+        }
+        fireEvent.click(screen.getByRole('button', { name: 'Stop Verse' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Play Verse' }));
+
+        act(() => firstOnEnded());
+
+        expect(firstStop).toHaveBeenCalledOnce();
+        expect(secondStop).not.toHaveBeenCalled();
+        expect(mocks.releasePreviewAudioBuffer.mock.calls).toEqual([['cached-stereo-verse-1']]);
+        expect(screen.getByRole('button', { name: 'Stop Verse' })).toHaveAttribute('aria-pressed', 'true');
+    });
+
     it.each(['accepted', 'discarded'] as const)(
         'releases every preview cache before the batch is %s',
         (disposition) => {

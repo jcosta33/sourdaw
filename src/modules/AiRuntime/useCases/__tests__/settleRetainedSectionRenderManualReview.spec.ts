@@ -185,6 +185,22 @@ describe('settleRetainedSectionRenderManualReview', () => {
         }
     );
 
+    it.each(['accepted', 'discarded'] as const)(
+        'preserves the exact obligation when evidence expires before %s settlement',
+        (disposition) => {
+            const review = createReviewObligation();
+            mocks.getExact.mockReturnValue(null);
+
+            expect(() => settleRetainedSectionRenderManualReview({ binding: review.binding, disposition })).toThrow(
+                'The exact retained render is no longer available.'
+            );
+
+            expect(readAgentRunState().runs[0]?.pendingEffectContinuations).toHaveLength(1);
+            expect(readAgentRunState().pendingEffectRecoveryLedger).toHaveLength(1);
+            expect(mocks.disposeExact).not.toHaveBeenCalled();
+        }
+    );
+
     it('acknowledges missing evidence only when at least one exact artifact is unavailable', () => {
         mocks.getExact.mockImplementation(({ job }) => (job.jobId === 'job-verse' ? artifactFor(job) : null));
         const review = createReviewObligation();

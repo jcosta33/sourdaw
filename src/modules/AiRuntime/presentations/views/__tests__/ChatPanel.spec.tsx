@@ -10,6 +10,7 @@ const retainedPreviewMocks = vi.hoisted(() => ({
     play: vi.fn(),
     release: vi.fn(),
     exportWav: vi.fn(),
+    getExact: vi.fn(),
     settle: vi.fn(),
     stopVerse: vi.fn(),
     stopChorus: vi.fn(),
@@ -84,6 +85,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 vi.mock('#/modules/AudioRendering/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioRendering/useCases')>()),
     exportExactAgentSectionRenderArtifactAsWav: retainedPreviewMocks.exportWav,
+    getExactAgentSectionRenderArtifact: retainedPreviewMocks.getExact,
 }));
 
 vi.mock('../../../useCases/settleRetainedSectionRenderManualReview', () => ({
@@ -254,6 +256,9 @@ describe('ChatPanel', () => {
             .mockReturnValueOnce({ stop: retainedPreviewMocks.stopVerse })
             .mockReturnValue({ stop: retainedPreviewMocks.stopChorus });
         retainedPreviewMocks.exportWav.mockResolvedValue(true);
+        retainedPreviewMocks.getExact.mockImplementation(({ job }: { job: { jobId: string } }) => ({
+            buffer: job.jobId.includes('verse') ? verseBuffer : chorusBuffer,
+        }));
     });
 
     it('should render without crashing', () => {
@@ -739,12 +744,6 @@ describe('ChatPanel', () => {
                                       recovery: 'manual-repair',
                                       lastError: null,
                                   },
-                              ],
-                          },
-                          {
-                              runId: 'run-generic-repair',
-                              revisions: { created: null, planned: null, approved: null, committed: null },
-                              pendingEffectContinuations: [
                                   {
                                       batchId: 'batch-generic-repair',
                                       effects: [
@@ -813,7 +812,7 @@ describe('ChatPanel', () => {
         const selectReview = vi.spyOn(retainedReviewProjection, 'selectRetainedSectionRenderManualReviews');
         selectReview.mockReturnValue([
             createRetainedReview({
-                runId: 'run-verse-review',
+                runId: 'run-shared-review',
                 batchId: 'batch-verse-review',
                 commandId: 'command-verse-review',
                 jobId: 'job-verse-review',
@@ -821,7 +820,7 @@ describe('ChatPanel', () => {
                 buffer: verseBuffer,
             }),
             createRetainedReview({
-                runId: 'run-chorus-review',
+                runId: 'run-shared-review',
                 batchId: 'batch-chorus-review',
                 commandId: 'command-chorus-review',
                 jobId: 'job-chorus-review',
