@@ -121,6 +121,27 @@ describe('getBulkDeviceInsertionTrackScope', () => {
         ).toBeNull();
     });
 
+    it('claims no scope when the family phrase and the insertion intent sit in different requests', () => {
+        expect(getBulkDeviceInsertionTrackScope('Mute every bass track, then add a reverb', context)).toBeNull();
+
+        const drumContext: ProjectContext = {
+            ...context,
+            tracks: [
+                ...context.tracks,
+                createTrack('track-drums-main', 'Drum Main'),
+                createTrack('track-drums-frozen', 'Drum Frozen', true),
+            ],
+        };
+
+        expect(
+            getBulkDeviceInsertionTrackScope('Delete all drum tracks, then add a compressor on the master', drumContext)
+        ).toBeNull();
+    });
+
+    it('claims no scope when a request says after yet names no device', () => {
+        expect(getBulkDeviceInsertionTrackScope('Add EQ to every bass track after', context)).toBeNull();
+    });
+
     it('returns null for prompts outside the bulk device-insertion family', () => {
         expect(getBulkDeviceInsertionTrackScope('Mute all bass tracks', context)).toBeNull();
         expect(getBulkDeviceInsertionTrackScope('Add EQ to the bass track', context)).toBeNull();
