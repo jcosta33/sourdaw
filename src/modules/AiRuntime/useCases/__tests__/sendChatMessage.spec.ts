@@ -712,6 +712,7 @@ describe('sendChatMessage retained-provider selection', () => {
             provider: 'openai',
             model: 'gpt-4o-mini',
             baseUrl: 'https://api.openai.com/v1',
+            authentication: 'api-key',
         });
         mocks.streamCloudChatCompletion.mockImplementation(
             async (
@@ -802,6 +803,7 @@ describe('sendChatMessage retained-provider selection', () => {
             provider: 'openai',
             model: 'gpt-4o-mini',
             baseUrl: 'https://api.openai.com/v1',
+            authentication: 'api-key',
         });
         mocks.streamCloudChatCompletion.mockImplementation(
             (
@@ -932,6 +934,7 @@ describe('sendChatMessage retained-provider selection', () => {
             provider: 'openai',
             model: 'gpt-4o-mini',
             baseUrl: 'https://api.openai.com/v1',
+            authentication: 'api-key',
         });
         mocks.streamCloudChatCompletion.mockImplementation(
             (
@@ -1003,6 +1006,7 @@ describe('sendChatMessage retained-provider selection', () => {
             provider: 'openai',
             model: 'gpt-4o-mini',
             baseUrl: 'https://api.openai.com/v1',
+            authentication: 'api-key',
         });
         mocks.streamCloudChatCompletion.mockImplementation(
             async (

@@ -35,6 +35,7 @@ describe('generateCloudToolCalls', () => {
         vi.clearAllMocks();
         mocks.getRuntime.mockReturnValue({
             provider: 'anthropic',
+            authentication: 'api-key',
             model: 'claude-test',
             session_id: 'provider-session-00000000000000000000000000000000',
         });
@@ -64,6 +65,7 @@ describe('generateCloudToolCalls', () => {
     it('dispatches OpenAI-compatible planning through its adapter', async () => {
         const runtime: OpenAiCompatibleCloudRuntime = {
             provider: 'openai',
+            authentication: 'api-key',
             model: 'gpt-test',
             base_url: 'https://api.openai.com/v1',
             session_id: 'provider-session-00000000000000000000000000000000',

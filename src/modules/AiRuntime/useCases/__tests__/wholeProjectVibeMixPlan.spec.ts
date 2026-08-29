@@ -447,6 +447,7 @@ describe('whole-project vibe-mix planning', () => {
         await cloudSession.clear();
         await cloudSession.replace_runtime({
             provider: 'openai-compatible',
+            authentication: 'none',
             session_id: null,
             model: 'fixture-model',
             base_url: 'http://localhost:1234/v1',

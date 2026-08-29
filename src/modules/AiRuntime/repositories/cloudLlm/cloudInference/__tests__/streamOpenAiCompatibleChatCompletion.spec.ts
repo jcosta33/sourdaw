@@ -5,6 +5,7 @@ import { streamOpenAiCompatibleChatCompletion } from '../streamOpenAiCompatibleC
 
 const runtime: OpenAiCompatibleCloudRuntime = {
     provider: 'openai-compatible',
+    authentication: 'none',
     session_id: null,
     model: 'local-model',
     base_url: 'http://localhost:1234/v1',

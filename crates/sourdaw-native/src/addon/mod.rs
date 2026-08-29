@@ -24,6 +24,7 @@ use napi::threadsafe_function::{ThreadsafeFunction, ThreadsafeFunctionCallMode};
 use napi_derive::napi;
 use serde::Serialize;
 use serde_json::Value;
+use zeroize::Zeroizing;
 
 use crate::commands;
 use crate::events::{EventSink, EventStream};
@@ -268,12 +269,15 @@ impl SourdawNative {
         adapter_id: String,
         origin: String,
         credential_source: String,
+        credential: String,
     ) -> Result<String> {
+        let credential = Zeroizing::new(credential);
         reason(
             commands::provider_gateway::open_provider_gateway_session(
                 adapter_id,
                 origin,
                 credential_source,
+                credential,
                 &self.singletons.provider_gateway,
             )
             .await,

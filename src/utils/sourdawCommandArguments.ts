@@ -57,7 +57,7 @@ export const SOURDAW_COMMAND_ARGUMENTS: ReadonlyMap<string, readonly string[]> =
     ['map_graph_batch', ['prior', 'batch', 'sample_rate', 'session']],
     ['open_midi_input', ['port_index']],
     ['open_plugin_gui', ['instance_id']],
-    ['open_provider_gateway_session', ['adapter_id', 'origin', 'credential_source']],
+    ['open_provider_gateway_session', ['adapter_id', 'origin', 'credential_source', 'credential']],
     ['open_push_transport', ['model']],
     ['parse_scl', ['content', 'root_note', 'root_freq']],
     ['process_plugin_audio', ['instance_id', 'audio_bytes']],
