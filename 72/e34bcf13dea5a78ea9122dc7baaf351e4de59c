@@ -1,0 +1,61 @@
+src/modules/AiRuntime/useCases/__tests__/settleRetainedSectionRenderManualReview.spec.ts
+  s_a40848e8f8cca9::t_1a7f96efb94501 54,75
+  s_a40848e8f8cca9::t_ae1dd609123ba7 1-2,4-53,55-74,76-144,170-216,247-259,278-289
+  s_a40848e8f8cca9::t_8d655b9f043fe6 3,145-169,217-246,260-277
+src/modules/AiRuntime/stores/agentRunStore.ts
+  s_a40848e8f8cca9::t_d1296d2de72d60 293-298,623-626
+src/modules/AiRuntime/useCases/__tests__/agentRunLifecycle.spec.ts
+  s_a40848e8f8cca9::t_54d8c2347fd871 5,272-273,303-304,322,372-378,538,540,630,632
+  s_a40848e8f8cca9::t_9b95451a6b0391 274-275,305-306,563
+src/modules/AiRuntime/useCases/settleRetainedSectionRenderManualReview.ts
+  s_a40848e8f8cca9::t_10bb30aca5b609 6,8-9,11-19,21-41,43-52,54,56,62,67-69,78
+  s_a40848e8f8cca9::t_26aa93ecb80766 70,74
+src/modules/AiRuntime/presentations/views/__tests__/RetainedSectionRenderManualReview.spec.tsx
+  s_a40848e8f8cca9::t_cc3e0fb8a99340 1,4-149,163-195
+  s_a40848e8f8cca9::t_8d655b9f043fe6 2-3
+  s_a40848e8f8cca9::t_119473048b8088 150-162
+src/modules/AiRuntime/presentations/views/ChatPanel.tsx
+  s_a40848e8f8cca9::t_9f5e482a875745 387-389
+  s_a40848e8f8cca9::t_827bbe8f069503 3,26,31-32,457-460
+src/modules/AiRuntime/useCases/selectRetainedSectionRenderManualReviews.ts
+  s_a40848e8f8cca9::t_52cf4028a3aa6c 7,11-16,19-102,107-109,111,113-115,117-128,130-131,133-137,139,141,144,147-148,150-152,156-158,162-165,168-170,172-195,198
+src/modules/AiRuntime/stores/__tests__/retainedSectionRenderReviewHydration.spec.ts
+  s_a40848e8f8cca9::t_ac3e53ad32cf6d 1-2,4-12,14-89,91-105,107-121,123-194
+  s_a40848e8f8cca9::t_62f2bed19ecd9c 90,106,122
+  s_a40848e8f8cca9::t_8d655b9f043fe6 3,13
+src/modules/AiRuntime/useCases/agentRunLifecycle.ts
+  s_a40848e8f8cca9::t_10bb30aca5b609 182-198,1170,1319-1325,1362-1371
+  s_a40848e8f8cca9::t_d1296d2de72d60 980,1149-1153,1171-1174
+  s_a40848e8f8cca9::t_bbb60254c66ccf 1297,1315,1318
+src/modules/AiRuntime/useCases/index.ts
+  s_a40848e8f8cca9::t_52cf4028a3aa6c 76
+src/modules/AiRuntime/presentations/views/RetainedSectionRenderManualReview.tsx
+  s_a40848e8f8cca9::t_8d655b9f043fe6 15-16,149-150
+  s_a40848e8f8cca9::t_9a5a2703176b87 1-14,17-148,151-231
+src/modules/AudioRendering/useCases/__tests__/retainedSectionRenderArtifactReview.spec.ts
+  s_a40848e8f8cca9::t_8bc67fab357b5e 1
+  s_a40848e8f8cca9::t_6bd9bbde3b597f 5,13-15,17,19-20,51-56,82-133
+src/modules/AiRuntime/useCases/__tests__/selectRetainedSectionRenderManualReviews.spec.ts
+  s_a40848e8f8cca9::t_282ee227558cba 1-2,4-96,98-141,149-169,233-239
+  s_a40848e8f8cca9::t_8d655b9f043fe6 3,97,142-148,170-232
+src/modules/AiRuntime/presentations/views/__tests__/ChatPanel.spec.tsx
+  s_a40848e8f8cca9::t_1468fda89ab769 5,620-663,665-704
+  s_a40848e8f8cca9::t_074642706f3b02 664
+  s_a40848e8f8cca9::t_f3766b36b439a6 705-706
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "72e34bcf13dea5a78ea9122dc7baaf351e4de59c",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
