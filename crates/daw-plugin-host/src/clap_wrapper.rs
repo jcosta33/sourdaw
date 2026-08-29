@@ -1116,6 +1116,49 @@ impl ClapWrapper {
         api != CLAP_WINDOW_API_COCOA
     }
 
+    /// How many plugin-stated units one logical window unit is worth here.
+    ///
+    /// gui.h states editor sizes in physical pixels for win32 and x11, and in
+    /// logical pixels for cocoa — the same split [`Self::scale_applies_to`]
+    /// encodes, because it is the same clause of the spec. The shell's window
+    /// seam is logical everywhere, so a physical-pixel API converts by the
+    /// display scale and cocoa converts by nothing.
+    ///
+    /// A scale nothing could be sized by converts nothing rather than
+    /// destroying every size that crosses.
+    fn plugin_units_per_logical_unit(&self) -> f64 {
+        if !Self::scale_applies_to(Self::platform_api()) {
+            return 1.0;
+        }
+        if self.editor_content_scale.is_finite() && self.editor_content_scale > 0.0 {
+            self.editor_content_scale
+        } else {
+            crate::traits::DEFAULT_EDITOR_CONTENT_SCALE
+        }
+    }
+
+    /// A size scaled by `factor`, rounded, and never scaled away to nothing: a
+    /// window of zero extent is not a smaller editor, it is no editor.
+    fn scaled_size((width, height): (u32, u32), factor: f64) -> (u32, u32) {
+        let convert = |value: u32| {
+            (f64::from(value) * factor)
+                .round()
+                .clamp(1.0, f64::from(u32::MAX)) as u32
+        };
+        (convert(width), convert(height))
+    }
+
+    /// A size the plugin stated, in the logical units the window seam sizes in.
+    fn to_logical_units(&self, size: (u32, u32)) -> (u32, u32) {
+        Self::scaled_size(size, 1.0 / self.plugin_units_per_logical_unit())
+    }
+
+    /// A size the host holds, in the units this platform's `gui` extension
+    /// speaks.
+    fn to_plugin_units(&self, size: (u32, u32)) -> (u32, u32) {
+        Self::scaled_size(size, self.plugin_units_per_logical_unit())
+    }
+
     /// Open the plugin GUI, parenting it into the given native window handle.
     ///
     /// `handle_ptr` is the platform-specific handle:
@@ -1229,11 +1272,14 @@ impl ClapWrapper {
             }
 
             self.gui_open = true;
+            // Reported in the window seam's units, like every other size that
+            // leaves here: `get_size` answered in the plugin's.
+            let opened = self.to_logical_units((width, height));
             eprintln!(
                 "[CLAP] Opened GUI for '{}' ({}x{})",
-                self.name, width, height
+                self.name, opened.0, opened.1
             );
-            Ok((width, height))
+            Ok(opened)
         }
     }
 
@@ -1317,6 +1363,10 @@ impl ClapWrapper {
     /// A plugin that refuses the adjusted size leaves the host holding a window
     /// it moved for nothing, so the refusal puts the window back before it is
     /// reported.
+    ///
+    /// The size arrives and leaves in the window seam's logical units; the
+    /// plugin is asked and told in its own, which on win32 and x11 are physical
+    /// pixels.
     pub fn request_editor_size(&mut self, width: u32, height: u32) -> Result<(u32, u32), String> {
         #[cfg(feature = "engine-owned-command-fixture")]
         if let Some(fixture) = self.command_fixture.as_ref() {
@@ -1336,7 +1386,7 @@ impl ClapWrapper {
         }
 
         let previous = self.get_gui_size();
-        let (mut granted_width, mut granted_height) = (width, height);
+        let (mut granted_width, mut granted_height) = self.to_plugin_units((width, height));
         // SAFETY: control path only, with the editor open; every call below is
         // one this platform's `gui` extension declared.
         unsafe {
@@ -1356,11 +1406,13 @@ impl ClapWrapper {
                 }
             }
 
-            self.resize_host_window(granted_width, granted_height);
+            let granted = self.to_logical_units((granted_width, granted_height));
+            self.resize_host_window(granted.0, granted.1);
 
             if let Some(set_size) = gui.set_size {
                 if !set_size(self.plugin, granted_width, granted_height) {
-                    if let Some((width, height)) = previous {
+                    if let Some(previous) = previous {
+                        let (width, height) = self.to_logical_units(previous);
                         self.resize_host_window(width, height);
                     }
                     return Err(format!(
@@ -1369,9 +1421,9 @@ impl ClapWrapper {
                     ));
                 }
             }
-        }
 
-        Ok((granted_width, granted_height))
+            Ok(granted)
+        }
     }
 
     /// Restate the display scale for an editor that is already open, reporting
@@ -1419,12 +1471,16 @@ impl ClapWrapper {
             }
         }
 
-        let (width, height) = self.get_gui_size().ok_or_else(|| {
+        let stated = self.get_gui_size().ok_or_else(|| {
             format!(
                 "Plugin '{}' states no editor size at the new display scale",
                 self.name
             )
         })?;
+        // Converted through the scale just stored: what the plugin lays out at
+        // the new density is stated in its own units, and the window it sits in
+        // is sized in the seam's.
+        let (width, height) = self.to_logical_units(stated);
         self.resize_host_window(width, height);
         Ok((width, height))
     }
@@ -1433,8 +1489,10 @@ impl ClapWrapper {
     /// reporting what was applied. Control path only — it reaches the shell's
     /// window server.
     pub fn apply_pending_editor_resize(&mut self) -> Option<(u32, u32)> {
-        let (width, height) = self.host_state.take_editor_resize()?;
+        let requested = self.host_state.take_editor_resize()?;
         let resize = self.editor_resizer.as_ref()?;
+        // The plugin asked in its own units; the window is sized in the seam's.
+        let (width, height) = self.to_logical_units(requested);
         resize(width, height);
         Some((width, height))
     }
@@ -4423,6 +4481,20 @@ mod tests {
         assert!(ClapWrapper::scale_applies_to(CLAP_WINDOW_API_WIN32));
     }
 
+    /// The same clause decides the units: a window API told a scale states its
+    /// sizes in physical pixels, and the seam converts them. Rounded, and
+    /// floored at one — a size scaled away to nothing is not a smaller editor,
+    /// it is no editor.
+    #[test]
+    fn a_size_crossing_the_unit_boundary_is_rounded_and_never_reaches_zero() {
+        assert_eq!(ClapWrapper::scaled_size((500, 450), 2.0), (1000, 900));
+        assert_eq!(
+            ClapWrapper::scaled_size((1001, 751), 1.0 / 1.25),
+            (801, 601)
+        );
+        assert_eq!(ClapWrapper::scaled_size((1, 1), 1.0 / 100.0), (1, 1));
+    }
+
     // ── The host's window and the editor's size move together ─────────────
 
     static EDITOR_RESIZE_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
@@ -4634,6 +4706,12 @@ mod tests {
     /// A window dragged to a display of another density has to tell the editor,
     /// and then find out what the editor became: the plugin lays itself out
     /// again, and the window it sits in has to follow it.
+    ///
+    /// The two sides speak different units. On win32 and x11 the editor states
+    /// physical pixels, so an editor that doubles at a 2.0 scale is drawing the
+    /// same window at twice the density — and a host that passed that number
+    /// straight to its logical window seam would double the window instead,
+    /// leaving the editor in the corner of a window four times its area.
     #[test]
     fn a_display_scale_change_restates_the_scale_and_resizes_the_window_to_what_it_produced() {
         let _guard = EDITOR_RESIZE_TEST_LOCK.lock().unwrap();
@@ -4643,27 +4721,81 @@ mod tests {
             .apply_editor_content_scale(2.0)
             .expect("an open editor must accept the scale of the display it moved to");
 
+        let physical_pixels = ClapWrapper::scale_applies_to(ClapWrapper::platform_api());
         // cocoa states logical sizes that already carry the OS scale, so it is
-        // told nothing and lays out nothing again; win32 and x11 are physical.
-        let expected = if ClapWrapper::scale_applies_to(ClapWrapper::platform_api()) {
+        // told nothing and lays out nothing again.
+        let stated_by_plugin = if physical_pixels {
             (1280, 960)
         } else {
             UNSCALED_EDITOR
         };
         assert_eq!(
+            *STATED_EDITOR_SIZE.lock().unwrap(),
+            stated_by_plugin,
+            "the plugin lays itself out in its own units, got: {:?}",
+            editor_steps()
+        );
+        assert_eq!(
             granted,
-            expected,
-            "the size must be re-read from the plugin, not assumed from the scale, got: {:?}",
+            UNSCALED_EDITOR,
+            "the window keeps its logical size on every platform: a denser display \
+             redraws the editor, it does not grow the window, got: {:?}",
             editor_steps()
         );
         assert_eq!(
             editor_steps().last(),
-            Some(&format!("window({}x{})", expected.0, expected.1)),
-            "the window must end at the size the re-scaled editor states"
+            Some(&format!(
+                "window({}x{})",
+                UNSCALED_EDITOR.0, UNSCALED_EDITOR.1
+            )),
+            "the window must end at the logical size the re-scaled editor states"
         );
         assert_eq!(
             wrapper.editor_content_scale, 2.0,
             "the scale is kept, so an editor reopened on that display opens at it"
+        );
+    }
+
+    /// The host chooses in the units its window seam speaks, and gui.h states
+    /// the plugin's in physical pixels for win32 and x11. A host that skips the
+    /// conversion asks a plugin on a 2.0 display for half the size the user
+    /// dragged to, and then sizes the window to twice what the plugin granted.
+    #[test]
+    fn a_host_resize_crosses_the_seam_in_the_units_each_side_speaks() {
+        let _guard = EDITOR_RESIZE_TEST_LOCK.lock().unwrap();
+        let mut wrapper = wrapper_with_open_editor(resizable_get_extension);
+        wrapper.set_editor_content_scale(2.0);
+        EDITOR_RESIZE_TRACE.lock().unwrap().clear();
+
+        let granted = wrapper
+            .request_editor_size(500, 450)
+            .expect("a resizable editor must accept an adjusted size");
+
+        // `quantising_adjust_size` answers 800x600 in the plugin's own units,
+        // whatever it was asked for.
+        let physical_pixels = ClapWrapper::scale_applies_to(ClapWrapper::platform_api());
+        let asked = if physical_pixels {
+            "adjust_size(1000x900)"
+        } else {
+            "adjust_size(500x450)"
+        };
+        let expected = if physical_pixels {
+            (400, 300)
+        } else {
+            (800, 600)
+        };
+        assert_eq!(
+            granted, expected,
+            "the seam must report the adjusted size in the window's units"
+        );
+        assert_eq!(
+            editor_steps(),
+            [
+                asked.to_string(),
+                format!("window({}x{})", expected.0, expected.1),
+                "set_size(800x600)".to_string()
+            ],
+            "the plugin is asked and told in its units, and the window moved in the seam's"
         );
     }
 

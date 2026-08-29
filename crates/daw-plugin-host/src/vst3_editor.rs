@@ -258,7 +258,17 @@ fn platform_view_type() -> Option<FIDString> {
 /// Whether this platform states `ViewRect` in physical pixels, and therefore
 /// needs to be told the scale it is running at.
 fn platform_states_content_scale() -> bool {
-    cfg!(any(target_os = "windows", target_os = "linux"))
+    states_content_scale(std::env::consts::OS)
+}
+
+/// The rule behind that answer, as a table an operating system is looked up in.
+///
+/// Written for a named platform rather than compiled for this one so that the
+/// whole table is observable wherever the tests run: a `cfg!` here would make
+/// every check of it re-derive the answer it is meant to pin, and the two
+/// branches nobody builds would never be read at all.
+fn states_content_scale(operating_system: &str) -> bool {
+    matches!(operating_system, "windows" | "linux")
 }
 
 /// Everything the frame owns on behalf of one open editor.
@@ -1072,6 +1082,29 @@ mod tests {
         };
 
         assert_eq!(view_units_per_logical_unit(2.0), expected);
+    }
+
+    /// The per-platform truth table behind every conversion in this file, read
+    /// on whatever platform the tests run on.
+    ///
+    /// The VST3 SDK states `ViewRect` in physical pixels on Windows and X11 and
+    /// in logical points on macOS, and `IPlugViewContentScaleSupport` exists for
+    /// exactly the platforms of the first kind. One wrong entry either halves
+    /// every editor on a Retina display or leaves a Windows editor drawing at a
+    /// quarter of its window.
+    #[test]
+    fn the_view_rect_is_physical_on_windows_and_x11_and_logical_everywhere_else() {
+        for physical in ["windows", "linux"] {
+            assert!(states_content_scale(physical), "{physical}");
+        }
+        for logical in ["macos", "ios", "freebsd"] {
+            assert!(!states_content_scale(logical), "{logical}");
+        }
+        assert_eq!(
+            platform_states_content_scale(),
+            states_content_scale(std::env::consts::OS),
+            "the live gate must be that table read for this platform, not a second copy of it"
+        );
     }
 
     /// A scale the shell could not measure must convert nothing. Dividing by
