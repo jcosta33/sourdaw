@@ -87,16 +87,19 @@ function cancel(confirmation: PendingAppActionConfirmation, reason: string): str
     }
 }
 
-function recordFailure(
+type AgentRunFailureInput = {
+    category: AgentRunErrorCategory;
+    retriable: boolean;
+    workId?: string;
+    receiptIdentity?: string;
+    compensation?: AgentRunErrorRemediation['compensation'];
+    knownDomain?: boolean;
+};
+
+function recordTerminalFailure(
     confirmation: PendingAppActionConfirmation,
-    input: {
-        category: AgentRunErrorCategory;
-        retriable: boolean;
-        workId?: string;
-        receiptIdentity?: string;
-        compensation?: AgentRunErrorRemediation['compensation'];
-        knownDomain?: boolean;
-    }
+    input: AgentRunFailureInput,
+    includeCommandBatchWorkId: boolean
 ): void {
     const parsedBatch = confirmation.approvalSnapshot.commandBatch
         ? parseVersionedCommandBatchEnvelope(
@@ -110,7 +113,7 @@ function recordFailure(
     const workIds: string[] = [];
     if (input.workId) {
         workIds.push(input.workId);
-    } else if (batchWorkId) {
+    } else if (includeCommandBatchWorkId && batchWorkId) {
         workIds.push(batchWorkId);
     }
     if (!agentRunLifecycle.get(confirmation.runId)) {
@@ -139,11 +142,23 @@ function recordFailure(
     }
 }
 
+function recordFailure(confirmation: PendingAppActionConfirmation, input: AgentRunFailureInput): void {
+    recordTerminalFailure(confirmation, input, true);
+}
+
+function recordPostCommitRecoveryFailure(
+    confirmation: PendingAppActionConfirmation,
+    input: Omit<AgentRunFailureInput, 'workId' | 'compensation'>
+): void {
+    recordTerminalFailure(confirmation, input, false);
+}
+
 export const agentRunExecutionSettlement = {
     cancelBeforeCommit,
     cancelFromVerifiedReceipt,
     completeNoOp,
     recordFailure,
+    recordPostCommitRecoveryFailure,
     reconcileCommandBudget,
     transitionToExecuting,
 };

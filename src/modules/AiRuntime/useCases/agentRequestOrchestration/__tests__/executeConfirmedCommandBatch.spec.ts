@@ -16,6 +16,7 @@ import { type PendingAppActionConfirmation } from '../../../stores/pendingAction
 import { executeConfirmedCommandBatch } from '../executeConfirmedCommandBatch';
 
 type ExecuteBatch = typeof executeVersionedCommandBatchEnvelope;
+type GenerateGroupId = typeof import('#/modules/Command/useCases').generateGroupId;
 type ApprovalBindingIssuer = typeof import('../../issueAgentCommandApprovalBinding').issueAgentCommandApprovalBinding;
 type PrepareResourceLease =
     typeof import('../../../stores/pendingActionConfirmationStore').preparePendingActionResourceLeaseForCommit;
@@ -34,12 +35,13 @@ const mocks = vi.hoisted(() => ({
     captureAuthorization: vi.fn<CaptureAuthorization>(),
     captureUnownedMutations: vi.fn<CaptureUnownedMutations>(),
     executeBatch: vi.fn<ExecuteBatch>(),
+    generateGroup: vi.fn<GenerateGroupId>(),
     getArtifacts: vi.fn(() => []),
     issueApprovalBinding: vi.fn<ApprovalBindingIssuer>(),
     prepareContinuation: vi.fn<PrepareContinuation>(),
     prepareResourceLease: vi.fn<PrepareResourceLease>(),
     protectResourceLease: vi.fn<ProtectResourceLease>(),
-    recordFailure: vi.fn(),
+    recordPostCommitRecoveryFailure: vi.fn(),
     recordReceipt: vi.fn(() => ({ warning: null, effectsPending: false })),
     retainCommitted: vi.fn(),
     setActiveAborter: vi.fn(),
@@ -55,6 +57,7 @@ vi.mock('#/modules/Collaboration/stores', () => ({ collaborationStore: collabora
 vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
     executeVersionedCommandBatchEnvelope: mocks.executeBatch,
+    generateGroupId: mocks.generateGroup,
 }));
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     captureProjectMutationAuthorization: mocks.captureAuthorization,
@@ -83,7 +86,7 @@ vi.mock('../../prepareAgentRunPendingEffectContinuation', () => ({
     prepareAgentRunPendingEffectContinuation: mocks.prepareContinuation,
 }));
 vi.mock('../agentRunExecutionSettlement', () => ({
-    agentRunExecutionSettlement: { recordFailure: mocks.recordFailure },
+    agentRunExecutionSettlement: { recordPostCommitRecoveryFailure: mocks.recordPostCommitRecoveryFailure },
 }));
 vi.mock('../confirmedBatchOutcomeSupport', () => ({
     confirmedBatchOutcomeSupport: {
@@ -231,10 +234,11 @@ function execute(
         trackedWorkLease?: AgentRunWorkLease | null;
         priorVerifiedBatchReceipt?: typeof receipt | null;
         recoveringPendingEffects?: boolean;
+        confirmation?: PendingAppActionConfirmation;
     } = {}
 ) {
     return executeConfirmedCommandBatch({
-        confirmation,
+        confirmation: options.confirmation ?? confirmation,
         commandBatch,
         trackedWorkLease: options.trackedWorkLease === undefined ? lease : options.trackedWorkLease,
         priorVerifiedBatchReceipt: options.priorVerifiedBatchReceipt ?? null,
@@ -268,6 +272,7 @@ beforeEach(() => {
     });
     mocks.retainCommitted.mockResolvedValue(undefined);
     mocks.executeBatch.mockResolvedValue(completedBatchResult);
+    mocks.generateGroup.mockReturnValue({ groupId: 'generated-group-1', groupLabel: confirmation.prompt });
 });
 
 describe('executeConfirmedCommandBatch', () => {
@@ -331,6 +336,26 @@ describe('executeConfirmedCommandBatch', () => {
         expect(mocks.setActiveAborter).toHaveBeenLastCalledWith(null);
         expect(mocks.setChatGenerating).toHaveBeenNthCalledWith(1, true);
         expect(mocks.setChatGenerating).toHaveBeenLastCalledWith(false);
+    });
+
+    it('should generate a complete group when a persisted group is missing its label', async () => {
+        const incompleteGroupConfirmation = {
+            ...confirmation,
+            groupLabel: undefined,
+        } satisfies PendingAppActionConfirmation;
+
+        const result = await execute({ confirmation: incompleteGroupConfirmation });
+
+        expect(result).toMatchObject({
+            status: 'completed',
+            group: { groupId: 'generated-group-1', groupLabel: confirmation.prompt },
+        });
+        expect(mocks.generateGroup).toHaveBeenCalledWith(confirmation.prompt);
+        expect(mocks.executeBatch).toHaveBeenCalledWith(
+            expect.objectContaining({
+                options: expect.objectContaining({ groupId: 'generated-group-1', groupLabel: confirmation.prompt }),
+            })
+        );
     });
 
     it.each([
@@ -447,10 +472,9 @@ describe('executeConfirmedCommandBatch', () => {
             revertGroupId: 'group-1',
             completesRun: false,
         });
-        expect(mocks.recordFailure).toHaveBeenCalledWith(confirmation, {
+        expect(mocks.recordPostCommitRecoveryFailure).toHaveBeenCalledWith(confirmation, {
             category: 'internal',
             retriable: false,
-            workId: 'batch-1',
             receiptIdentity: 'receipt-identity',
         });
         expect(releaseCancellation).toHaveBeenCalledOnce();
@@ -488,7 +512,27 @@ describe('executeConfirmedCommandBatch', () => {
         expect(mocks.updateConfirmation).not.toHaveBeenCalled();
         expect(mocks.updateMessage).not.toHaveBeenCalled();
         expect(mocks.recordReceipt).not.toHaveBeenCalled();
-        expect(mocks.recordFailure).not.toHaveBeenCalled();
+        expect(mocks.recordPostCommitRecoveryFailure).not.toHaveBeenCalled();
+    });
+
+    it('should surface the receipt persistence warning through committed-effect recovery failure', async () => {
+        mocks.prepareResourceLease.mockRejectedValue(new Error('pending-effect continuation failed'));
+        mocks.recordReceipt.mockReturnValue({ warning: 'Agent run persistence warning.', effectsPending: false });
+
+        const result = await execute({ priorVerifiedBatchReceipt: receipt, recoveringPendingEffects: true });
+
+        const reason = 'pending-effect continuation failed Agent run persistence warning.';
+        expect(result).toMatchObject({ status: 'recovery-failed', result: { reason } });
+        expect(mocks.updateConfirmation).toHaveBeenCalledWith({
+            confirmationId: 'confirmation-1',
+            status: 'failed',
+            error: reason,
+        });
+        expect(mocks.updateMessage).toHaveBeenCalledWith('assistant-1', {
+            pendingActionConfirmationStatus: 'failed',
+            error: reason,
+            content: `The project change remains durably committed, but pending-effect reconciliation could not continue: ${reason}`,
+        });
     });
 
     it('should release preview resources and return the exact preview-mode failure', async () => {

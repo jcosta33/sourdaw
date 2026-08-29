@@ -73,9 +73,10 @@ export async function executeConfirmedCommandBatch(
 ): Promise<ExecuteConfirmedCommandBatchResult> {
     const { confirmation, commandBatch, trackedWorkLease, priorVerifiedBatchReceipt, recoveringPendingEffects } = input;
     const hasPriorVerifiedBatchReceipt = priorVerifiedBatchReceipt !== null;
-    const group = confirmation.groupId
-        ? { groupId: confirmation.groupId, groupLabel: confirmation.groupLabel }
-        : generateGroupId(confirmation.prompt);
+    const group =
+        confirmation.groupId !== undefined && confirmation.groupLabel !== undefined
+            ? { groupId: confirmation.groupId, groupLabel: confirmation.groupLabel }
+            : generateGroupId(confirmation.prompt);
     const sectionRenderArtifactsBeforeExecution = getAgentSectionRenderArtifacts();
     const aborter = new AbortController();
     setChatGenerating(true);
@@ -182,32 +183,36 @@ export async function executeConfirmedCommandBatch(
     } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);
         if (hasCommittedProjectPriorReceipt(priorVerifiedBatchReceipt)) {
-            confirmedBatchOutcomeSupport.recordTrackedAgentRunReceipt(confirmation, priorVerifiedBatchReceipt, {
-                ...(confirmation.groupId ? { revertGroupId: confirmation.groupId } : {}),
-                completesRun: false,
-            });
-            agentRunExecutionSettlement.recordFailure(confirmation, {
+            const receiptPersistence = confirmedBatchOutcomeSupport.recordTrackedAgentRunReceipt(
+                confirmation,
+                priorVerifiedBatchReceipt,
+                {
+                    ...(confirmation.groupId ? { revertGroupId: confirmation.groupId } : {}),
+                    completesRun: false,
+                }
+            );
+            const recoveryFailureReason = [reason, receiptPersistence.warning].filter(Boolean).join(' ');
+            agentRunExecutionSettlement.recordPostCommitRecoveryFailure(confirmation, {
                 category: 'internal',
                 retriable: false,
-                workId: priorVerifiedBatchReceipt.batchId,
                 receiptIdentity: confirmedBatchOutcomeSupport.getVerifiedReceiptIdentity(priorVerifiedBatchReceipt),
             });
             updatePendingActionConfirmationStatus({
                 confirmationId: confirmation.id,
                 status: 'failed',
-                error: reason,
+                error: recoveryFailureReason,
             });
             updateChatMessage(confirmation.assistantMessageId, {
                 pendingActionConfirmationStatus: 'failed',
-                error: reason,
-                content: `The project change remains durably committed, but pending-effect reconciliation could not continue: ${reason}`,
+                error: recoveryFailureReason,
+                content: `The project change remains durably committed, but pending-effect reconciliation could not continue: ${recoveryFailureReason}`,
             });
             await pendingActionResourceSettlement.retainCommitted(confirmation.id);
             return {
                 status: 'recovery-failed',
                 result: confirmedBatchOutcomeSupport.createCommittedEffectFailureResult(
                     priorVerifiedBatchReceipt,
-                    reason
+                    recoveryFailureReason
                 ),
             };
         }
