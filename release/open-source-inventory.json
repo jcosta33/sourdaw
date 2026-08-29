@@ -1067,7 +1067,7 @@
             ],
             "revisions": ["not-applicable:direct-project-source"],
             "digests": [
-                "sha256:2bf7b626f838702f91e2ebd4b40eb25ba4049c206e33245d675d4ca20b311c25:public/audio/worklets/native-plugin-bridge-processor.js",
+                "sha256:69721a5e12449b11e81b9f9916fa6716ea8fc4f039b2552522c72e4c451107e6:public/audio/worklets/native-plugin-bridge-processor.js",
                 "sha256:35c6845ed329a0c3572d482e74cbf312a87f8216280cdd09905de5271e22f6ff:public/audio/worklets/sidechain-compressor-processor.js"
             ],
             "licenses": ["Apache-2.0"],

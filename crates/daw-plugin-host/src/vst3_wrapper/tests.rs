@@ -8,6 +8,7 @@
 //! not the path to it.
 
 use super::*;
+use crate::traits::{take_pending_process_refusal_signal, PROCESS_REFUSAL_HINT_TEST_LOCK};
 use crate::vst3_host::tuid_from_guid;
 use std::ffi::{CStr, CString};
 use std::sync::atomic::{AtomicBool, AtomicI32, AtomicPtr, AtomicU32, AtomicU64, Ordering};
@@ -28,6 +29,9 @@ use vst3::{uid, ComRef};
 const COMBINED_CID: TUID = uid(0x11111111, 0x22222222, 0x33333333, 0x44444444);
 const SPLIT_COMPONENT_CID: TUID = uid(0xAAAAAAAA, 0xBBBBBBBB, 0xCCCCCCCC, 0xDDDDDDDD);
 const SPLIT_CONTROLLER_CID: TUID = uid(0xAAAAAAAA, 0xBBBBBBBB, 0xCCCCCCCC, 0xEEEEEEEE);
+/// A second combined class, differing from `COMBINED_CID` only in what its
+/// factory row says it is: an instrument rather than an effect.
+const INSTRUMENT_CID: TUID = uid(0x11111111, 0x22222222, 0x33333333, 0x55555555);
 const UNKNOWN_CID: TUID = uid(0x00000000, 0x00000000, 0x00000000, 0x0000BEEF);
 
 const GAIN_PARAM: ParamID = 0;
@@ -67,6 +71,8 @@ struct FakeState {
     controller_gain: AtomicU64,
 
     latency: AtomicU32,
+    /// The processing tail the plugin declares, in frames.
+    tail: AtomicU32,
     event_input_buses: AtomicI32,
     max_block: AtomicI32,
     sample_rate: AtomicU64,
@@ -91,6 +97,9 @@ struct FakeState {
     observed_inputs: Mutex<Vec<ObservedBus>>,
     observed_outputs: Mutex<Vec<ObservedBus>>,
 
+    /// A processor that refuses to render the block it was handed, answering a
+    /// failure tresult without writing an output buffer.
+    refuses_process: AtomicBool,
     /// A processor that refuses the state a project restores into it.
     refuses_set_state: AtomicBool,
     /// A processor that will not report its own state.
@@ -569,6 +578,12 @@ unsafe fn fake_process(state: &FakeState, data: *mut ProcessData) -> tresult {
         return kInvalidArgument;
     }
     state.process_calls.fetch_add(1, Ordering::AcqRel);
+    if state.refuses_process.load(Ordering::Acquire) {
+        // Before touching a buffer: a processor that answers a failure has told
+        // the host its output means nothing, and one that wrote first would let
+        // a host reading that output pass the test anyway.
+        return kResultFalse;
+    }
     let data = &mut *data;
 
     record_bus_shape(&state.observed_inputs, data.inputs, data.numInputs);
@@ -807,7 +822,7 @@ macro_rules! fake_component_impls {
             }
 
             unsafe fn getTailSamples(&self) -> uint32 {
-                0
+                self.state.tail.load(Ordering::Acquire)
             }
         }
     };
@@ -1415,20 +1430,20 @@ impl IPluginFactoryTrait for FakeFactory {
     }
 
     unsafe fn countClasses(&self) -> int32 {
-        3
+        4
     }
 
     unsafe fn getClassInfo(&self, index: int32, info: *mut PClassInfo) -> tresult {
-        let Some((cid, category, name)) = class_entry(index) else {
+        let Some(entry) = class_entry(index) else {
             return kInvalidArgument;
         };
         if info.is_null() {
             return kInvalidArgument;
         }
-        (*info).cid = cid;
+        (*info).cid = entry.cid;
         (*info).cardinality = 0x7FFF_FFFF;
-        write_char8(&mut (*info).category, category);
-        write_char8(&mut (*info).name, name);
+        write_char8(&mut (*info).category, entry.category);
+        write_char8(&mut (*info).name, entry.name);
         kResultOk
     }
 
@@ -1445,7 +1460,9 @@ impl IPluginFactoryTrait for FakeFactory {
             return kInvalidArgument;
         }
         let state = Arc::clone(&self.state);
-        let pointer = if same_tuid(&cid, &COMBINED_CID) {
+        // The instrument class is the same object as the combined one: only its
+        // factory row differs, which is exactly what the host reads it for.
+        let pointer = if same_tuid(&cid, &COMBINED_CID) || same_tuid(&cid, &INSTRUMENT_CID) {
             ComWrapper::new(FakeCombined { state })
                 .to_com_ptr::<IComponent>()
                 .map(|component| component.into_raw() as *mut std::ffi::c_void)
@@ -1470,19 +1487,19 @@ impl IPluginFactoryTrait for FakeFactory {
 
 impl IPluginFactory2Trait for FakeFactory {
     unsafe fn getClassInfo2(&self, index: int32, info: *mut PClassInfo2) -> tresult {
-        let Some((cid, category, name)) = class_entry(index) else {
+        let Some(entry) = class_entry(index) else {
             return kInvalidArgument;
         };
         if info.is_null() {
             return kInvalidArgument;
         }
-        (*info).cid = cid;
+        (*info).cid = entry.cid;
         (*info).cardinality = 0x7FFF_FFFF;
-        write_char8(&mut (*info).category, category);
-        write_char8(&mut (*info).name, name);
+        write_char8(&mut (*info).category, entry.category);
+        write_char8(&mut (*info).name, entry.name);
         write_char8(&mut (*info).vendor, "Fake Audio");
         write_char8(&mut (*info).version, "3.2.1");
-        write_char8(&mut (*info).subCategories, "Fx|Reverb");
+        write_char8(&mut (*info).subCategories, entry.sub_categories);
         kResultOk
     }
 }
@@ -1497,15 +1514,41 @@ impl IPluginFactory3Trait for FakeFactory {
     }
 }
 
-fn class_entry(index: int32) -> Option<(TUID, &'static str, &'static str)> {
+/// One factory row: the class id, its VST3 category, its name, and the
+/// pipe-separated sub-categories `getClassInfo2` publishes for it.
+struct ClassEntry {
+    cid: TUID,
+    category: &'static str,
+    name: &'static str,
+    sub_categories: &'static str,
+}
+
+fn class_entry(index: int32) -> Option<ClassEntry> {
     match index {
-        0 => Some((COMBINED_CID, "Audio Module Class", "Fake Combined")),
-        1 => Some((SPLIT_COMPONENT_CID, "Audio Module Class", "Fake Split")),
-        2 => Some((
-            SPLIT_CONTROLLER_CID,
-            "Component Controller Class",
-            "Fake Split Controller",
-        )),
+        0 => Some(ClassEntry {
+            cid: COMBINED_CID,
+            category: "Audio Module Class",
+            name: "Fake Combined",
+            sub_categories: "Fx|Reverb",
+        }),
+        1 => Some(ClassEntry {
+            cid: SPLIT_COMPONENT_CID,
+            category: "Audio Module Class",
+            name: "Fake Split",
+            sub_categories: "Fx|Reverb",
+        }),
+        2 => Some(ClassEntry {
+            cid: SPLIT_CONTROLLER_CID,
+            category: "Component Controller Class",
+            name: "Fake Split Controller",
+            sub_categories: "Fx|Reverb",
+        }),
+        3 => Some(ClassEntry {
+            cid: INSTRUMENT_CID,
+            category: "Audio Module Class",
+            name: "Fake Instrument",
+            sub_categories: "Instrument|Synth",
+        }),
         _ => None,
     }
 }
@@ -1574,6 +1617,36 @@ fn recording_window(
             .push((width, height));
     });
     (resize, sizes)
+}
+
+/// What the engine's output buffer already holds when a block starts — the
+/// previous block, which a host that neither writes nor silences leaves
+/// sounding.
+const STALE_SAMPLE: f32 = -0.5;
+
+/// Render one block into an output bus that already holds the previous block,
+/// and answer both channels of what it carries afterwards.
+///
+/// Separate from [`render`], which zeroes its buffers and is shared by too many
+/// tests to change: a test asserting silence against a buffer it zeroed itself
+/// cannot tell a host that wrote silence from one that wrote nothing, and VST3
+/// zeroes only its own scratch — never the caller's outputs — so "wrote nothing"
+/// is the previous block playing again.
+fn render_over_stale_output(
+    wrapper: &mut Vst3Wrapper,
+    level: f32,
+    frames: usize,
+) -> (Vec<f32>, Vec<f32>) {
+    let left = vec![level; frames];
+    let right = vec![level; frames];
+    let mut out_left = vec![STALE_SAMPLE; frames];
+    let mut out_right = vec![STALE_SAMPLE; frames];
+    {
+        let inputs: [&[f32]; 2] = [&left, &right];
+        let mut out_slices: Vec<&mut [f32]> = vec![&mut out_left, &mut out_right];
+        wrapper.process(&inputs, &mut out_slices, frames);
+    }
+    (out_left, out_right)
 }
 
 /// Hand the plugin one block of a constant signal and read what came back.
@@ -1926,6 +1999,147 @@ fn latency_converts_to_milliseconds_at_the_activation_rate() {
     let wrapper = load(&state, COMBINED_CID);
 
     assert!((wrapper.latency_ms() - 10.0).abs() < 1e-9);
+}
+
+// ── Tail ────────────────────────────────────────────────────────────────
+
+/// The plugin's own answer, asked through `IAudioProcessor::getTailSamples`. A
+/// host that never asks reports every reverb as having no tail at all.
+#[test]
+fn the_declared_tail_is_read_from_the_processor() {
+    let state = FakeState::new();
+    state.tail.store(96_000, Ordering::Release);
+    let wrapper = load(&state, COMBINED_CID);
+
+    assert_eq!(wrapper.tail_samples(), 96_000);
+}
+
+/// `kNoTail` is zero, and it is what a plugin that adds nothing after its input
+/// reports. Pinned so the absent case cannot drift into a sentinel.
+#[test]
+fn a_plugin_declaring_no_tail_reports_zero() {
+    let state = FakeState::new();
+    let wrapper = load(&state, COMBINED_CID);
+
+    assert_eq!(wrapper.tail_samples(), 0);
+}
+
+/// VST3 carries no tail-changed callback, so nothing is ever pending on this
+/// backend — the host asks, the plugin answers, and there is no flag between
+/// them to consume.
+#[test]
+fn a_vst3_plugin_never_has_a_tail_change_pending() {
+    let state = FakeState::new();
+    let mut wrapper = load(&state, COMBINED_CID);
+
+    assert_eq!(wrapper.take_tail_change(), None);
+}
+
+// ── Process refusal ─────────────────────────────────────────────────────
+
+/// A processor answering anything but `kResultOk` wrote no output the host may
+/// use, so the block passes through and the failure is latched. Latching alone
+/// is not enough: the flag lives on the wrapper and nothing reads it on its own,
+/// so the audio thread also raises the process-wide hint the recurring control
+/// visit wakes on. Without that hint the refusal is recorded where no one looks.
+#[test]
+fn a_refused_block_latches_and_wakes_the_control_path() {
+    let _guard = PROCESS_REFUSAL_HINT_TEST_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let state = FakeState::new();
+    let mut wrapper = load(&state, COMBINED_CID);
+    state.refuses_process.store(true, Ordering::Release);
+    take_pending_process_refusal_signal();
+
+    let rendered = render(&mut wrapper, 0.5, 64);
+
+    assert_eq!(
+        state.process_calls.load(Ordering::Acquire),
+        1,
+        "the block reached the processor, so its answer is what was read"
+    );
+    assert_eq!(
+        rendered[0], 0.5,
+        "a refused block passes dry rather than the scratch the plugin never wrote"
+    );
+    assert!(
+        wrapper.process_refused,
+        "the refusal is recorded for the control path to report"
+    );
+    assert!(
+        take_pending_process_refusal_signal(),
+        "the refusal wakes the control path, which is the only thread that may report it"
+    );
+}
+
+/// The other leg of DG-003. This class differs from the effect above only in the
+/// sub-categories its factory row publishes, so what changes the answer is the
+/// plugin's own declaration and nothing else. A synth with audio routed into it
+/// would otherwise emit that routed signal at unity out of a voice slot on
+/// refusal — and the CLAP build of the same synth already falls silent.
+#[test]
+fn a_refused_instrument_falls_silent_rather_than_passing_what_was_routed_into_it() {
+    let _guard = PROCESS_REFUSAL_HINT_TEST_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let state = FakeState::new();
+    let mut wrapper = load(&state, INSTRUMENT_CID);
+    state.refuses_process.store(true, Ordering::Release);
+    take_pending_process_refusal_signal();
+
+    let (left, right) = render_over_stale_output(&mut wrapper, 0.5, 64);
+
+    assert_eq!(
+        state.process_calls.load(Ordering::Acquire),
+        1,
+        "the block reached the processor, so its answer is what was read"
+    );
+    assert_eq!(
+        (left[0], right[0]),
+        (0.0, 0.0),
+        "a failed instrument has no dry signal to pass, so its slot is silent \
+         — neither the routed signal nor the previous block may reach the bus"
+    );
+    assert!(wrapper.process_refused);
+    assert!(take_pending_process_refusal_signal());
+}
+
+/// The no-dry-input shape the sub-categories miss: a generator classed as an
+/// effect — a test-tone declaring `Fx|Generator` — has no main input bus, so its
+/// own declaration says it consumes no audio. Passing dry on refusal would emit
+/// the routed node signal at unity out of a slot that takes none, and DG-003
+/// puts an effect without a valid dry input at zero alongside the instruments.
+#[test]
+fn a_refused_effect_declaring_no_input_bus_falls_silent_rather_than_passing_dry() {
+    let _guard = PROCESS_REFUSAL_HINT_TEST_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let state = FakeState::with_buses(Vec::new(), vec![FakeBus::main(SpeakerArr::kStereo)]);
+    let mut wrapper = load(&state, COMBINED_CID);
+
+    // One accepted block first, so the negotiated layout is observed rather than
+    // assumed: the host handed this plugin no input bus because the plugin
+    // declared none.
+    render(&mut wrapper, 0.5, 64);
+    assert!(
+        state.observed_inputs().is_empty(),
+        "the plugin declared no audio input bus, so it was handed none"
+    );
+
+    state.refuses_process.store(true, Ordering::Release);
+    take_pending_process_refusal_signal();
+
+    let (left, right) = render_over_stale_output(&mut wrapper, 0.5, 64);
+
+    assert_eq!(
+        (left[0], right[0]),
+        (0.0, 0.0),
+        "a generator has no dry input to pass, so its refused slot is silent \
+         — neither the routed signal nor the previous block may reach the bus"
+    );
+    assert!(wrapper.process_refused);
+    assert!(take_pending_process_refusal_signal());
 }
 
 // ── State ───────────────────────────────────────────────────────────────

@@ -1056,6 +1056,10 @@ mod tests {
         fn latency_samples(&self) -> u32 {
             0
         }
+
+        fn tail_samples(&self) -> u32 {
+            0
+        }
     }
 
     fn editor_recording_plugin() -> (

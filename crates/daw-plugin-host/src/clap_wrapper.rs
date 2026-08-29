@@ -38,9 +38,10 @@ use crate::parameter_events::{
     PluginParameterEvent, PluginParameterEventKind, PluginParameterEventQueue,
 };
 use crate::params::PluginParameter;
+use crate::scanner::{category_from_clap_features, owned_feature_list};
 use crate::traits::{
-    AudioPlugin, EditorWindowResizer, HostParameterUpdate, HostTransport, HostedPluginRuntime,
-    PluginHostRequestNotifier, ProcessingGate,
+    signal_pending_process_refusal, AudioPlugin, EditorWindowResizer, HostParameterUpdate,
+    HostTransport, HostedPluginRuntime, PluginHostRequestNotifier, ProcessingGate,
 };
 use clap_sys::audio_buffer::clap_audio_buffer;
 use clap_sys::entry::clap_plugin_entry;
@@ -71,11 +72,12 @@ use clap_sys::ext::params::{
     CLAP_PARAM_IS_HIDDEN, CLAP_PARAM_IS_READONLY,
 };
 use clap_sys::ext::state::{clap_plugin_state, CLAP_EXT_STATE};
+use clap_sys::ext::tail::{clap_plugin_tail, CLAP_EXT_TAIL};
 use clap_sys::factory::plugin_factory::{clap_plugin_factory, CLAP_PLUGIN_FACTORY_ID};
 use clap_sys::fixedpoint::{CLAP_BEATTIME_FACTOR, CLAP_SECTIME_FACTOR};
 use clap_sys::host::clap_host;
 use clap_sys::plugin::clap_plugin;
-use clap_sys::process::clap_process;
+use clap_sys::process::{clap_process, clap_process_status, CLAP_PROCESS_ERROR};
 use clap_sys::stream::{clap_istream, clap_ostream};
 use libloading::Library;
 use std::ffi::{c_void, CStr, CString};
@@ -110,6 +112,8 @@ pub struct ClapWrapper {
     gui_ext: *const clap_plugin_gui,
     /// Cached pointer to the plugin's latency extension (may be null).
     latency_ext: *const clap_plugin_latency,
+    /// Cached pointer to the plugin's tail extension (may be null).
+    tail_ext: *const clap_plugin_tail,
     /// Per-instance host callback state, pinned into `host.host_data`. Owns the
     /// latency-dirty flag the plugin sets via `clap_host_latency.changed()` /
     /// `request_restart()`. Must outlive the plugin (dropped after it in field order).
@@ -130,10 +134,30 @@ pub struct ClapWrapper {
     /// Whether the host has supplied a timeline yet. Until it has, the plugin
     /// gets a null transport, which CLAP defines as "no timeline available".
     has_transport: bool,
+    /// Frames handed to the plugin since this activation began, which is what
+    /// CLAP's `steady_time` is: "a steady sample time counter … not counting the
+    /// steady time of the transport", monotonic and coherent with the block
+    /// sizes. Reset by every activation, because the counter describes one
+    /// activation and a plugin taken through a deactivate/reactivate cycle is
+    /// entitled to start again from zero. Written on the audio thread only, and
+    /// a plain field because that thread is the only one that touches it.
+    steady_time: i64,
+    /// Whether the plugin has returned `CLAP_PROCESS_ERROR`. Raised by the audio
+    /// thread, which may not allocate or take the I/O lock, and read by the
+    /// control path, which is the only thread that may report it.
+    process_refused: bool,
+    /// Whether that refusal has already been reported. A plugin that fails every
+    /// block would otherwise print once per control visit for the rest of the
+    /// session.
+    process_refusal_reported: bool,
     /// The plugin's declared audio port layout and the preallocated buffers
     /// that honour it. Replaces a hardcoded stereo pair that ignored the
     /// declaration entirely.
     audio: AudioBusLayout,
+    /// Whether the plugin's own descriptor calls it an instrument. Read once at
+    /// load, because the descriptor is fixed for the instance's life and the
+    /// audio thread may not walk the C strings it is written in.
+    is_instrument: bool,
     /// Whether the plugin declared at least one note input port speaking the
     /// dialect this host's note events are in. Read once at load; a plugin
     /// that declares none never gains one while it lives.
@@ -731,7 +755,9 @@ impl ClapWrapper {
         let gui_ext = Self::query_extension::<clap_plugin_gui>(plugin_ref, CLAP_EXT_GUI);
         let latency_ext =
             Self::query_extension::<clap_plugin_latency>(plugin_ref, CLAP_EXT_LATENCY);
+        let tail_ext = Self::query_extension::<clap_plugin_tail>(plugin_ref, CLAP_EXT_TAIL);
         let audio = Self::read_audio_bus_layout(plugin_ref)?;
+        let is_instrument = descriptor_declares_instrument(plugin);
         let accepts_note_events = Self::reads_note_input_ports(plugin_ref);
 
         if !params_ext.is_null() {
@@ -774,13 +800,18 @@ impl ClapWrapper {
             state_ext,
             gui_ext,
             latency_ext,
+            tail_ext,
             host_state,
             gui_open: false,
             editor_resizer: None,
             processing,
             transport_scratch: Box::new(empty_transport_event()),
             has_transport: false,
+            steady_time: 0,
+            process_refused: false,
+            process_refusal_reported: false,
             audio,
+            is_instrument,
             accepts_note_events,
             editor_content_scale: crate::traits::DEFAULT_EDITOR_CONTENT_SCALE,
             midi_scratch: Vec::with_capacity(MAX_MIDI),
@@ -806,13 +837,18 @@ impl ClapWrapper {
             state_ext: ptr::null(),
             gui_ext: ptr::null(),
             latency_ext: ptr::null(),
+            tail_ext: ptr::null(),
             host_state: Box::new(HostCallbackState::default()),
             gui_open: false,
             editor_resizer: None,
             processing: Arc::new(ProcessingGate::fixture_already_processing()),
             transport_scratch: Box::new(empty_transport_event()),
             has_transport: false,
+            steady_time: 0,
+            process_refused: false,
+            process_refusal_reported: false,
             audio: AudioBusLayout::portless(),
+            is_instrument: false,
             accepts_note_events: true,
             editor_content_scale: crate::traits::DEFAULT_EDITOR_CONTENT_SCALE,
             midi_scratch: Vec::with_capacity(MAX_MIDI),
@@ -853,6 +889,24 @@ impl ClapWrapper {
     #[doc(hidden)]
     pub fn engine_owned_command_fixture_host_state(&self) -> &HostCallbackState {
         &self.host_state
+    }
+
+    /// Latch a process failure on a fixture, exactly as the audio thread does:
+    /// the wrapper's own flag, and the process-wide hint that wakes the control
+    /// path. A fixture has no plugin to fail a real block, so this is the only
+    /// way a downstream host can drive the visit that reports one.
+    #[cfg(feature = "engine-owned-command-fixture")]
+    #[doc(hidden)]
+    pub fn latch_engine_owned_command_fixture_process_refusal(&mut self) {
+        self.latch_process_refusal();
+    }
+
+    /// Whether the recorded failure has already been said out loud. Read back to
+    /// prove the visit reported it, and reported it once.
+    #[cfg(feature = "engine-owned-command-fixture")]
+    #[doc(hidden)]
+    pub fn engine_owned_command_fixture_refusal_reported(&self) -> bool {
+        self.process_refusal_reported
     }
 
     /// Query a plugin extension by ID. Returns null if not supported.
@@ -1529,7 +1583,7 @@ impl ClapWrapper {
                 };
                 let out_events = capture_output_events(&self.parameter_events);
                 let process_data = clap_process {
-                    steady_time: -1,
+                    steady_time: self.steady_time,
                     frames_count: n_samp as u32,
                     transport,
                     audio_inputs: ptr::null(),
@@ -1539,7 +1593,15 @@ impl ClapWrapper {
                     in_events,
                     out_events: &out_events,
                 };
-                unsafe { process_fn(self.plugin, &process_data) };
+                let status = unsafe { process_fn(self.plugin, &process_data) };
+                self.advance_steady_time(n_samp);
+                if process_failed(status) {
+                    // A plugin with no audio ports wrote no audio to invalidate:
+                    // the block passes through its slot either way, and the
+                    // failure costs only the output events this call was made
+                    // for. Recording it is all the host can honestly do.
+                    self.latch_process_refusal();
+                }
             }
             copy_inputs_to_outputs(inputs, outputs, num_samples);
             return;
@@ -1579,7 +1641,7 @@ impl ClapWrapper {
 
             let out_events = capture_output_events(&self.parameter_events);
             let process_data = clap_process {
-                steady_time: -1,
+                steady_time: self.steady_time,
                 frames_count: n_samp as u32,
                 transport,
                 audio_inputs: input_buffers,
@@ -1590,10 +1652,121 @@ impl ClapWrapper {
                 out_events: &out_events,
             };
 
-            let _status = process_fn(self.plugin, &process_data);
+            let status = process_fn(self.plugin, &process_data);
+            self.advance_steady_time(n_samp);
+
+            if process_failed(status) {
+                self.latch_process_refusal();
+                // CLAP defines the error as "the plugin failed to process, and
+                // the output buffers are in an undefined state", so the output
+                // scratch is not audio and is never copied out. What reaches the
+                // bus instead is what ADR 0021 DG-003 decides for a failed slot:
+                // only an effect with a valid dry input passes it, because
+                // muting a crashed EQ takes the track with it. An instrument
+                // falls silent even when it declares an input port — the
+                // Surge XT shape, where routed audio feeds the oscillators — and
+                // its slot is a synth voice, not a path that signal was ever
+                // meant to travel through.
+                //
+                // What the plugin calls itself decides that; the input bus only
+                // stands in when the descriptor says nothing, and a plugin with
+                // no input bus has no dry signal to pass whatever it claims.
+                //
+                // The failure invalidates the scratch, not the caller's
+                // `inputs` — `fill_input_scratch` copies out of them — so this
+                // block's dry signal is still there to pass.
+                //
+                // A hard switch, like the bypass paths above: DG-003's ramp into
+                // the failure signal is failure-policy machinery that arrives
+                // with the rest of that policy.
+                if self.is_instrument || self.audio.input_buffers.is_empty() {
+                    silence_outputs(outputs, n_samp);
+                } else {
+                    copy_inputs_to_outputs(inputs, outputs, num_samples);
+                }
+                return;
+            }
 
             read_output_scratch(&self.audio, outputs, n_samp);
         }
+    }
+
+    /// Charge one processed block to the activation's steady sample clock.
+    ///
+    /// Saturating because CLAP types `steady_time` as a signed 64-bit frame
+    /// count and requires it to be increasing: at 48 kHz the saturation point is
+    /// six million years away, and wrapping into negatives there would hand a
+    /// plugin a counter that ran backwards.
+    fn advance_steady_time(&mut self, frames: usize) {
+        self.steady_time = self.steady_time.saturating_add(frames as i64);
+    }
+
+    /// Record a process failure, and wake the control path the first time.
+    ///
+    /// Audio thread. The store happens on the first failing block only: a plugin
+    /// failing every block latches once and then costs one bool test, and the
+    /// control path is told once about news it can only report once.
+    fn latch_process_refusal(&mut self) {
+        if self.process_refused {
+            return;
+        }
+        self.process_refused = true;
+        signal_pending_process_refusal();
+    }
+
+    /// Say out loud what the audio thread recorded.
+    ///
+    /// The audio thread cannot report anything itself — it may not allocate or
+    /// take the I/O lock — so what it saw is left as a flag for the control path
+    /// to read. Latched, so a plugin that fails every block still produces one
+    /// line.
+    fn report_plugin_observations(&mut self) {
+        if !self.process_refused || self.process_refusal_reported {
+            return;
+        }
+        self.process_refusal_reported = true;
+        eprintln!(
+            "[CLAP] '{}' failed a process call; the host did not use its output for those blocks",
+            self.name
+        );
+    }
+}
+
+/// Whether a process status means the block's output is not the plugin's.
+///
+/// CLAP defines every other status as a success: `CONTINUE`,
+/// `CONTINUE_IF_NOT_QUIET`, `TAIL` and `SLEEP` all describe whether the plugin
+/// still has something to add, which is a scheduling hint this host does not act
+/// on because it processes continuously. Only the error invalidates the block.
+fn process_failed(status: clap_process_status) -> bool {
+    status == CLAP_PROCESS_ERROR
+}
+
+/// Whether the plugin's descriptor calls it an instrument.
+///
+/// Read through the same feature mapping the scanner categorises with, so the
+/// browser and the audio path cannot disagree about what a plugin is. A plugin
+/// that declares no features, or none this host recognises, is not an
+/// instrument — the same default the scanner falls back to.
+///
+/// # Safety
+///
+/// `plugin` is either null or a live plugin whose descriptor outlives it, which
+/// CLAP requires of `clap_plugin.desc`.
+unsafe fn descriptor_declares_instrument(plugin: *const clap_plugin) -> bool {
+    if plugin.is_null() || (*plugin).desc.is_null() {
+        return false;
+    }
+    let features = owned_feature_list((*(*plugin).desc).features);
+    category_from_clap_features(&features) == "instrument"
+}
+
+/// Write silence over the engine's bus, for a block whose output the plugin
+/// did not produce.
+fn silence_outputs(outputs: &mut [&mut [f32]], num_samples: usize) {
+    for out in outputs.iter_mut() {
+        let len = num_samples.min(out.len());
+        out[..len].fill(0.0);
     }
 }
 
@@ -1766,6 +1939,22 @@ unsafe fn read_latency_ext(
     }
 }
 
+/// Read a CLAP plugin's reported processing tail through its tail extension.
+///
+/// Zero when the extension pointer, its `get` callback, or the plugin pointer is
+/// null — CLAP's own default for a plugin that does not implement `clap.tail`,
+/// which is "no tail". Free function so it can be unit-tested against a stub
+/// `clap_plugin_tail` without a live plugin.
+unsafe fn read_tail_ext(tail_ext: *const clap_plugin_tail, plugin: *const clap_plugin) -> u32 {
+    if tail_ext.is_null() || plugin.is_null() {
+        return 0;
+    }
+    match (*tail_ext).get {
+        Some(get) => get(plugin),
+        None => 0,
+    }
+}
+
 impl ClapWrapper {
     /// The plugin's current reported latency in samples. `0` when the plugin has
     /// no latency extension or is not active — CLAP defines `clap_plugin_latency.get`
@@ -1795,6 +1984,30 @@ impl ClapWrapper {
             return 0.0;
         }
         f64::from(self.latency_samples()) / self.sample_rate * 1000.0
+    }
+
+    /// The plugin's current reported processing tail in frames of the rate it
+    /// was activated with. `0` when it declares no `clap.tail`, which is the
+    /// spec's own answer for a plugin without the extension.
+    ///
+    /// Not gated on activation: CLAP annotates `clap_plugin_tail.get`
+    /// `[main-thread & audio-thread]` and states no activation precondition,
+    /// unlike latency, which is only defined while active.
+    pub fn tail_samples(&self) -> u32 {
+        unsafe { read_tail_ext(self.tail_ext, self.plugin) }
+    }
+
+    /// Take a tail change the plugin flagged through `clap_host_tail.changed`,
+    /// answering the tail it reports now. `None` when nothing was flagged.
+    ///
+    /// The flag is consumed whether or not the value moved, because the flag
+    /// records that the plugin spoke, not that the answer differs.
+    /// Main/control-thread only.
+    pub fn take_tail_change(&mut self) -> Option<u32> {
+        if !self.host_state.take_tail_dirty() {
+            return None;
+        }
+        Some(self.tail_samples())
     }
 
     /// Install the wake fired when this plugin flags a runtime latency change.
@@ -1840,6 +2053,10 @@ impl ClapWrapper {
                     ));
                 }
                 self.activated = true;
+                // A new activation is a new steady clock: the counter describes
+                // one activation, and carrying the old one across would hand the
+                // plugin frames it was never given.
+                self.steady_time = 0;
                 // The next audio block re-enters the processing state, on the
                 // thread CLAP requires for it.
                 self.processing.request_start();
@@ -1855,6 +2072,8 @@ impl ClapWrapper {
     /// consumed (read-and-cleared) whether or not a reactivation follows.
     /// Main/control-thread only.
     pub fn poll_latency_change(&mut self) -> Result<Option<u32>, String> {
+        self.report_plugin_observations();
+
         if !self.host_state.take_latency_dirty() {
             return Ok(None);
         }
@@ -2227,6 +2446,18 @@ impl HostedPluginRuntime for ClapWrapper {
     fn latency_samples(&self) -> u32 {
         ClapWrapper::latency_samples(self)
     }
+
+    fn tail_samples(&self) -> u32 {
+        ClapWrapper::tail_samples(self)
+    }
+
+    fn take_tail_change(&mut self) -> Option<u32> {
+        ClapWrapper::take_tail_change(self)
+    }
+
+    fn report_plugin_observations(&mut self) {
+        ClapWrapper::report_plugin_observations(self)
+    }
 }
 
 #[cfg(test)]
@@ -2344,6 +2575,10 @@ mod tests {
         let latency_ext = unsafe {
             ClapWrapper::query_extension::<clap_plugin_latency>(&*plugin, CLAP_EXT_LATENCY)
         };
+        // Queried the same way the loader does, so a stub that declares
+        // `clap.tail` is hosted exactly as a real plugin declaring it would be.
+        let tail_ext =
+            unsafe { ClapWrapper::query_extension::<clap_plugin_tail>(&*plugin, CLAP_EXT_TAIL) };
         // Mirrors what a successful load leaves behind: activated, and asking to
         // process as soon as the audio thread next runs the plugin.
         let processing = Arc::new(ProcessingGate::default());
@@ -2360,13 +2595,21 @@ mod tests {
             state_ext: ptr::null(),
             gui_ext: ptr::null(),
             latency_ext,
+            tail_ext,
             host_state: Box::new(HostCallbackState::default()),
             gui_open: false,
             editor_resizer: None,
             processing,
             transport_scratch: Box::new(empty_transport_event()),
             has_transport: false,
+            steady_time: 0,
+            process_refused: false,
+            process_refusal_reported: false,
             audio,
+            // Derived from the stub's own descriptor, the way the loader
+            // derives it, so a stub declaring `instrument` is hosted exactly as
+            // a real plugin declaring it would be.
+            is_instrument: unsafe { descriptor_declares_instrument(plugin) },
             accepts_note_events: true,
             editor_content_scale: crate::traits::DEFAULT_EDITOR_CONTENT_SCALE,
             midi_scratch: Vec::with_capacity(MAX_MIDI),
@@ -2993,7 +3236,7 @@ mod tests {
             }
         };
         *CAPTURED_TRANSPORT.lock().unwrap() = Some(captured);
-        0
+        CLAP_PROCESS_CONTINUE
     }
 
     /// A stub that counts its processing transitions and records the transport
@@ -3396,7 +3639,7 @@ mod tests {
                 samples.fill((channel + 1) as f32);
             }
         }
-        0
+        CLAP_PROCESS_CONTINUE
     }
 
     fn buffer_capturing_plugin_ptr() -> *const clap_plugin {
@@ -4167,7 +4410,7 @@ mod tests {
         process: *const clap_process,
     ) -> i32 {
         emit_staged_events((*process).out_events);
-        0
+        CLAP_PROCESS_CONTINUE
     }
 
     unsafe extern "C" fn stub_params_flush_emitting(
@@ -4556,6 +4799,441 @@ mod tests {
 
         assert!(AudioPlugin::take_parameters_rescan(&mut wrapper));
         assert!(!AudioPlugin::take_parameters_rescan(&mut wrapper));
+    }
+
+    // ── Process status ────────────────────────────────────────────────────
+    //
+    // CLAP's `process()` answers with a status, and `CLAP_PROCESS_ERROR` means
+    // "the plugin failed to process, and the output buffers are in an undefined
+    // state". A host that discards the answer plays those buffers.
+
+    use crate::traits::{take_pending_process_refusal_signal, PROCESS_REFUSAL_HINT_TEST_LOCK};
+    use clap_sys::process::{
+        CLAP_PROCESS_CONTINUE, CLAP_PROCESS_CONTINUE_IF_NOT_QUIET, CLAP_PROCESS_SLEEP,
+        CLAP_PROCESS_TAIL,
+    };
+    use std::sync::atomic::AtomicI32;
+
+    /// What the failing stub leaves in the output buffers before answering. Not
+    /// audio, and the value the bus carries if the host copies it out anyway.
+    const UNDEFINED_SAMPLE: f32 = 0.75;
+    /// What the engine's output buffer already holds when a block starts — the
+    /// previous block, which a host that neither writes nor silences leaves
+    /// sounding.
+    const STALE_SAMPLE: f32 = -0.5;
+    /// CLAP's primary category for a plugin that generates rather than
+    /// processes, as it appears in `clap_plugin_descriptor.features`.
+    const INSTRUMENT_FEATURE: &CStr = c"instrument";
+
+    static STUB_PROCESS_STATUS: AtomicI32 = AtomicI32::new(CLAP_PROCESS_CONTINUE);
+    static STATUS_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// Writes into every declared output channel and *then* answers with the
+    /// staged status — the exact shape CLAP's "undefined state" describes, and
+    /// the one a stub that wrote nothing could not tell from a correct host.
+    unsafe extern "C" fn stub_process_with_status(
+        _plugin: *const clap_plugin,
+        process: *const clap_process,
+    ) -> clap_process_status {
+        for buffer_index in 0..(*process).audio_outputs_count {
+            let buffer = &mut *(*process).audio_outputs.add(buffer_index as usize);
+            for channel in 0..buffer.channel_count {
+                let channel_data = *(buffer.data32.add(channel as usize));
+                let samples =
+                    std::slice::from_raw_parts_mut(channel_data, (*process).frames_count as usize);
+                samples.fill(UNDEFINED_SAMPLE);
+            }
+        }
+        STUB_PROCESS_STATUS.load(Ordering::Relaxed)
+    }
+
+    fn status_plugin_ptr() -> *const clap_plugin {
+        status_plugin_ptr_with_features(&[])
+    }
+
+    /// The same failing stub, behind a descriptor declaring `features`.
+    ///
+    /// Leaked deliberately: CLAP requires `clap_plugin.desc` to outlive the
+    /// plugin, and the stub plugin itself is leaked for the same reason.
+    fn status_plugin_ptr_with_features(features: &[&'static CStr]) -> *const clap_plugin {
+        use clap_sys::plugin::clap_plugin_descriptor;
+
+        let mut feature_pointers: Vec<*const std::os::raw::c_char> =
+            features.iter().map(|feature| feature.as_ptr()).collect();
+        feature_pointers.push(ptr::null());
+        let feature_pointers: &'static [*const std::os::raw::c_char] = Vec::leak(feature_pointers);
+
+        let mut descriptor: clap_plugin_descriptor = unsafe { mem::zeroed() };
+        descriptor.features = feature_pointers.as_ptr();
+
+        let mut plugin: clap_plugin = unsafe { mem::zeroed() };
+        plugin.desc = Box::leak(Box::new(descriptor));
+        plugin.get_extension = Some(stub_get_extension);
+        plugin.activate = Some(stub_activate);
+        plugin.deactivate = Some(stub_deactivate);
+        plugin.start_processing = Some(stub_start_processing);
+        plugin.stop_processing = Some(stub_stop_processing);
+        plugin.process = Some(stub_process_with_status);
+        Box::into_raw(Box::new(plugin)) as *const clap_plugin
+    }
+
+    /// Render one block into an output bus that already holds the previous
+    /// block, and answer what it carries afterwards.
+    ///
+    /// Pre-filled deliberately: a host that returns without writing leaves the
+    /// stale block sounding, and an output buffer the test zeroed itself would
+    /// read as silence either way.
+    fn process_block_over_stale_output(
+        wrapper: &mut ClapWrapper,
+        left: f32,
+        right: f32,
+    ) -> (f32, f32) {
+        let input_left = [left; 8];
+        let input_right = [right; 8];
+        let mut out_left = [STALE_SAMPLE; 8];
+        let mut out_right = [STALE_SAMPLE; 8];
+        let inputs: [&[f32]; 2] = [&input_left, &input_right];
+        let mut outputs: [&mut [f32]; 2] = [&mut out_left, &mut out_right];
+        wrapper.process(&inputs, &mut outputs, 8);
+        (out_left[3], out_right[3])
+    }
+
+    fn stereo_layout() -> AudioBusLayout {
+        AudioBusLayout::declared(&[2], &[2]).expect("stereo layout builds")
+    }
+
+    /// ADR 0021 DG-003: a failed slot that has a dry input passes it, and
+    /// all-zero was rejected by name because a crashed EQ would mute the track.
+    /// The three sentinels tell the three wrong answers apart: the plugin's
+    /// undefined buffers, the previous block left standing, and silence.
+    #[test]
+    fn a_failed_effect_passes_its_dry_input_rather_than_the_undefined_output() {
+        let _guard = STATUS_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        STUB_PROCESS_STATUS.store(CLAP_PROCESS_ERROR, Ordering::Relaxed);
+        let mut wrapper = stub_wrapper_over(stereo_layout(), status_plugin_ptr());
+
+        let (left, right) = process_block_over_stale_output(&mut wrapper, 0.25, 0.5);
+
+        assert_eq!(
+            (left, right),
+            (0.25, 0.5),
+            "a failed effect keeps its slot open with the dry signal: neither \
+             its undefined buffers nor the previous block may reach the bus"
+        );
+        assert!(
+            wrapper.process_refused,
+            "the failure is recorded for the control path to report"
+        );
+    }
+
+    /// The other half of DG-003: an instrument has no dry input to pass, and
+    /// passing the engine's buffer would put whatever fed the slot on the bus.
+    #[test]
+    fn a_failed_instrument_falls_silent_because_it_has_no_dry_input() {
+        let _guard = STATUS_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        STUB_PROCESS_STATUS.store(CLAP_PROCESS_ERROR, Ordering::Relaxed);
+        let layout = AudioBusLayout::declared(&[], &[2]).expect("an output-only layout builds");
+        let mut wrapper = stub_wrapper_over(layout, status_plugin_ptr());
+
+        let (left, right) = process_block_over_stale_output(&mut wrapper, 0.25, 0.5);
+
+        assert_eq!(
+            (left, right),
+            (0.0, 0.0),
+            "a generator with no input bus has no dry signal, so its failed \
+             slot is silent rather than passing what was fed to it"
+        );
+        assert!(wrapper.process_refused);
+    }
+
+    /// DG-003 groups instruments with the effects that have no valid dry input,
+    /// and an instrument is what the plugin says it is rather than what its port
+    /// list implies. A synth that takes routed audio into its oscillators — the
+    /// Surge XT shape — declares an input port and still has no dry signal its
+    /// failed slot could honestly pass, so passing that routed signal out of a
+    /// synth slot at unity is the wrong answer twice over.
+    #[test]
+    fn a_failed_instrument_that_declares_an_input_port_still_falls_silent() {
+        let _guard = STATUS_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        STUB_PROCESS_STATUS.store(CLAP_PROCESS_ERROR, Ordering::Relaxed);
+        let plugin = status_plugin_ptr_with_features(&[INSTRUMENT_FEATURE]);
+        let mut wrapper = stub_wrapper_over(stereo_layout(), plugin);
+
+        let (left, right) = process_block_over_stale_output(&mut wrapper, 0.25, 0.5);
+
+        assert_eq!(
+            (left, right),
+            (0.0, 0.0),
+            "a failed instrument is silent whatever it declared for input: not \
+             its undefined buffers, not the previous block, and not the signal \
+             that was routed into it"
+        );
+        assert!(wrapper.process_refused);
+    }
+
+    #[test]
+    fn every_other_status_is_a_success_whose_output_reaches_the_bus() {
+        let _guard = STATUS_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        for status in [
+            CLAP_PROCESS_CONTINUE,
+            CLAP_PROCESS_CONTINUE_IF_NOT_QUIET,
+            CLAP_PROCESS_TAIL,
+            CLAP_PROCESS_SLEEP,
+        ] {
+            STUB_PROCESS_STATUS.store(status, Ordering::Relaxed);
+            let mut wrapper = stub_wrapper_over(stereo_layout(), status_plugin_ptr());
+
+            let (left, right) = process_block_over_stale_output(&mut wrapper, 0.25, 0.5);
+
+            assert_eq!(
+                (left, right),
+                (UNDEFINED_SAMPLE, UNDEFINED_SAMPLE),
+                "status {status} is a success and its audio must play"
+            );
+            assert!(
+                !wrapper.process_refused,
+                "status {status} is not a failure and must not be recorded as one"
+            );
+        }
+    }
+
+    /// The portless path calls `process` for the output events a note effect
+    /// owes the host, so it has a status to read as well.
+    #[test]
+    fn a_portless_plugin_that_fails_records_it_and_still_passes_the_block() {
+        let _guard = STATUS_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        STUB_PROCESS_STATUS.store(CLAP_PROCESS_ERROR, Ordering::Relaxed);
+        let mut wrapper = stub_wrapper_over(AudioBusLayout::portless(), status_plugin_ptr());
+
+        let (left, right) = process_block_over_stale_output(&mut wrapper, 0.25, 0.5);
+
+        assert_eq!(
+            (left, right),
+            (0.25, 0.5),
+            "a plugin with no audio ports produced no audio to invalidate, so \
+             its slot still passes the block"
+        );
+        assert!(
+            wrapper.process_refused,
+            "the portless path reads the status too"
+        );
+    }
+
+    /// The audio thread may not print, so it latches the failure and raises the
+    /// process-wide hint the control path wakes on. Raised on the first failing
+    /// block and not again: the store is news, and a plugin failing every block
+    /// has no further news to deliver at block rate.
+    ///
+    /// Reporting itself is driven by the recurring visit that reads this hint —
+    /// covered where that visit lives, in `sourdaw-native`.
+    #[test]
+    fn a_failed_block_latches_and_wakes_the_control_path_once() {
+        let _guard = STATUS_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        // Both backends raise the one process-wide hint, so the VST3 test that
+        // reads it is held off while this one owns it.
+        let _hint_guard = PROCESS_REFUSAL_HINT_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        STUB_PROCESS_STATUS.store(CLAP_PROCESS_ERROR, Ordering::Relaxed);
+        take_pending_process_refusal_signal();
+        let mut wrapper = stub_wrapper_over(stereo_layout(), status_plugin_ptr());
+
+        process_block_over_stale_output(&mut wrapper, 0.25, 0.5);
+        assert!(
+            !wrapper.process_refusal_reported,
+            "the audio thread records the failure and reports nothing itself"
+        );
+        assert!(
+            take_pending_process_refusal_signal(),
+            "the first failing block wakes the control path"
+        );
+
+        process_block_over_stale_output(&mut wrapper, 0.25, 0.5);
+        assert!(
+            !take_pending_process_refusal_signal(),
+            "a plugin already latched must not store to the hint on every block"
+        );
+    }
+
+    // ── steady_time ──────────────────────────────────────────────────────
+    //
+    // CLAP: "a steady sample time counter … it must be monotonically increasing
+    // and coherent with the block sizes". `-1` means the host has none, which
+    // stops a plugin from placing anything on that clock.
+
+    static CAPTURED_STEADY_TIMES: std::sync::Mutex<Vec<i64>> = std::sync::Mutex::new(Vec::new());
+    static STEADY_TIME_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    unsafe extern "C" fn stub_process_recording_steady_time(
+        _plugin: *const clap_plugin,
+        process: *const clap_process,
+    ) -> clap_process_status {
+        CAPTURED_STEADY_TIMES
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .push((*process).steady_time);
+        CLAP_PROCESS_CONTINUE
+    }
+
+    fn steady_time_plugin_ptr() -> *const clap_plugin {
+        let mut plugin: clap_plugin = unsafe { mem::zeroed() };
+        plugin.get_extension = Some(stub_get_extension);
+        plugin.activate = Some(stub_activate);
+        plugin.deactivate = Some(stub_deactivate);
+        plugin.start_processing = Some(stub_start_processing);
+        plugin.stop_processing = Some(stub_stop_processing);
+        plugin.process = Some(stub_process_recording_steady_time);
+        Box::into_raw(Box::new(plugin)) as *const clap_plugin
+    }
+
+    fn take_captured_steady_times() -> Vec<i64> {
+        std::mem::take(
+            &mut *CAPTURED_STEADY_TIMES
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner()),
+        )
+    }
+
+    #[test]
+    fn steady_time_advances_by_each_block_on_both_process_paths() {
+        let _guard = STEADY_TIME_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+
+        for (path, layout) in [
+            ("portless", AudioBusLayout::portless()),
+            ("ported", stereo_layout()),
+        ] {
+            take_captured_steady_times();
+            let mut wrapper = stub_wrapper_over(layout, steady_time_plugin_ptr());
+
+            process_one_block(&mut wrapper);
+            process_one_block(&mut wrapper);
+            process_one_block(&mut wrapper);
+
+            assert_eq!(
+                take_captured_steady_times(),
+                vec![0, 8, 16],
+                "the {path} path starts the activation's clock at zero and \
+                 charges it the frames of each block it hands over"
+            );
+        }
+    }
+
+    /// The counter describes one activation. A plugin taken through a
+    /// deactivate/reactivate cycle is entitled to a clock that starts again,
+    /// and one carried across would place its first block eight frames in.
+    #[test]
+    fn steady_time_restarts_at_zero_after_a_reactivation() {
+        let _guard = STEADY_TIME_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        take_captured_steady_times();
+        let mut wrapper = stub_wrapper_over(stereo_layout(), steady_time_plugin_ptr());
+
+        process_one_block(&mut wrapper);
+        process_one_block(&mut wrapper);
+        wrapper
+            .reactivate_for_latency()
+            .expect("the stub reactivates");
+        process_one_block(&mut wrapper);
+
+        assert_eq!(take_captured_steady_times(), vec![0, 8, 0]);
+    }
+
+    // ── Tail ─────────────────────────────────────────────────────────────
+
+    static STUB_TAIL: AtomicU32 = AtomicU32::new(0);
+    static TAIL_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    unsafe extern "C" fn stub_tail_get(_plugin: *const clap_plugin) -> u32 {
+        STUB_TAIL.load(Ordering::Relaxed)
+    }
+
+    static STUB_TAIL_EXT: clap_plugin_tail = clap_plugin_tail {
+        get: Some(stub_tail_get),
+    };
+
+    unsafe extern "C" fn stub_get_extension_with_tail(
+        plugin: *const clap_plugin,
+        id: *const i8,
+    ) -> *const c_void {
+        if CStr::from_ptr(id) == CLAP_EXT_TAIL {
+            return &STUB_TAIL_EXT as *const clap_plugin_tail as *const c_void;
+        }
+        stub_get_extension(plugin, id)
+    }
+
+    fn tail_plugin_ptr() -> *const clap_plugin {
+        let mut plugin: clap_plugin = unsafe { mem::zeroed() };
+        plugin.get_extension = Some(stub_get_extension_with_tail);
+        plugin.activate = Some(stub_activate);
+        plugin.deactivate = Some(stub_deactivate);
+        plugin.start_processing = Some(stub_start_processing);
+        plugin.stop_processing = Some(stub_stop_processing);
+        Box::into_raw(Box::new(plugin)) as *const clap_plugin
+    }
+
+    #[test]
+    fn a_declared_tail_is_what_the_runtime_seam_reports() {
+        let _guard = TAIL_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        STUB_TAIL.store(4_800, Ordering::Relaxed);
+        let wrapper = stub_wrapper(tail_plugin_ptr());
+
+        assert_eq!(HostedPluginRuntime::tail_samples(&wrapper), 4_800);
+    }
+
+    /// CLAP's own answer for a plugin that does not implement `clap.tail`: no
+    /// tail. Not an infinite one, which is what the top of the range means.
+    #[test]
+    fn a_plugin_without_the_tail_extension_reports_no_tail() {
+        let wrapper = stub_wrapper(stub_plugin_ptr());
+
+        assert_eq!(wrapper.tail_samples(), 0);
+    }
+
+    #[test]
+    fn a_flagged_tail_change_answers_the_value_the_plugin_reports_now() {
+        let _guard = TAIL_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        STUB_TAIL.store(1_000, Ordering::Relaxed);
+        let mut wrapper = stub_wrapper(tail_plugin_ptr());
+
+        assert_eq!(
+            wrapper.take_tail_change(),
+            None,
+            "nothing was flagged, so nothing is pending"
+        );
+
+        // What `clap_host_tail.changed` does from the plugin's audio thread.
+        wrapper.host_state.mark_tail_dirty();
+        STUB_TAIL.store(96_000, Ordering::Relaxed);
+
+        assert_eq!(
+            HostedPluginRuntime::take_tail_change(&mut wrapper),
+            Some(96_000),
+            "the flag is answered by re-reading the plugin, not by a cached value"
+        );
+        assert_eq!(
+            wrapper.take_tail_change(),
+            None,
+            "one flagged change is answered once"
+        );
     }
 }
 
