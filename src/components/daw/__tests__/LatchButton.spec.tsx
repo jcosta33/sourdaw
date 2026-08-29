@@ -25,8 +25,10 @@ describe('LatchButton — active vs inactive styling', () => {
         render(<LatchButton active>Test</LatchButton>);
         const btn = screen.getByRole('button', { name: 'Test' });
         const style = btn.style;
-        // Active uses a reversed gradient (jsdom normalizes #111 → rgb(17,17,17)).
-        expect(style.background).toContain('rgb(17, 17, 17)');
+        // Active reverses the semantic ramp from default to raised.
+        expect(style.background.indexOf('var(--surface-default)')).toBeLessThan(
+            style.background.indexOf('var(--surface-raised)')
+        );
         // Active has inset shadow.
         expect(style.boxShadow).toContain('inset');
         // Active sinks down 1px.
@@ -37,8 +39,10 @@ describe('LatchButton — active vs inactive styling', () => {
         render(<LatchButton active={false}>Test</LatchButton>);
         const btn = screen.getByRole('button', { name: 'Test' });
         const style = btn.style;
-        // Inactive uses a raised gradient (jsdom normalizes #1d1d1d → rgb(29,29,29)).
-        expect(style.background).toContain('rgb(29, 29, 29)');
+        // Inactive runs the semantic ramp from raised to default.
+        expect(style.background.indexOf('var(--surface-raised)')).toBeLessThan(
+            style.background.indexOf('var(--surface-default)')
+        );
         // Inactive has a drop shadow (not inset-only).
         expect(style.boxShadow).toContain('0 2px 4px');
         // Inactive does not translate.
