@@ -1,0 +1,44 @@
+src/modules/AudioEngine/useCases/livePlayback/stopNativeLiveGraphSession.ts
+  s_4f908a5afb6b58::t_8460bba12b76bf 49-52
+src/modules/Transport/useCases/transportControls/__tests__/executePlayheadSeek.spec.ts
+  s_4f908a5afb6b58::t_403a57f59d5b61 25-26
+  s_4f908a5afb6b58::t_b6c6c2ff0a0a99 113-168
+  s_4f908a5afb6b58::t_13b87c842a4cbe 13-14
+  s_4f908a5afb6b58::t_70d5dd2e8a360a 43-46,48
+src/modules/AudioEngine/useCases/livePlayback/nativeLiveGraphSessionState.ts
+  s_4f908a5afb6b58::t_41db26ffc19e67 32-43,51
+src/modules/AudioEngine/useCases/index.ts
+  s_4f908a5afb6b58::t_d982e776a4d0f3 110
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeLiveGraphSession.spec.ts
+  s_4f908a5afb6b58::t_ad722e70155f2d 415-505,507-508
+  s_4f908a5afb6b58::t_8f3ee736dc74a1 27
+  s_4f908a5afb6b58::t_8846ca8a1cdf95 519,535-536
+  s_4f908a5afb6b58::t_01fce2db125067 169
+  s_4f908a5afb6b58::t_5e23c0c652c5ba 506,509-518,520-534
+  s_4f908a5afb6b58::t_08c5e91b8100e5 537-539
+src/modules/AudioEngine/useCases/livePlayback/repositionNativeLiveGraphSession.ts
+  s_4f908a5afb6b58::t_4be3afaf69f166 1-74
+src/modules/Transport/useCases/transportControls/executePlayheadSeek.ts
+  s_4f908a5afb6b58::t_697badaacfbad4 1-2,8,12,27-64
+  s_4f908a5afb6b58::t_20edc29efdde0a 65
+src/modules/AudioEngine/useCases/livePlayback/startNativeLiveGraphSession.ts
+  s_4f908a5afb6b58::t_eff2adc2b4aa2b 180-182
+  s_4f908a5afb6b58::t_d275b38d5222bf 204
+  s_4f908a5afb6b58::t_9d65f646856960 121,128,130
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "f4fa47dd4d9c18d998de52bd88a1158ca9a4cdd9",
+  "prompts": {},
+  "sessions": {
+    "s_4f908a5afb6b58": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fcb92ba4-bf56-47a4-8b57-803f335a449e",
+        "model": "claude-fable-5"
+      },
+      "human_author": null
+    }
+  }
+}
