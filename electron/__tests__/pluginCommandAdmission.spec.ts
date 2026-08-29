@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { EXPOSED_COMMANDS } from '../commands.js';
 import {
     createPluginCommandAdmission,
     isPluginRuntimeCommand,
@@ -7,10 +8,12 @@ import {
 } from '../pluginCommandAdmission.js';
 
 describe('plugin runtime command classification', () => {
-    it('names every exposed command that touches live runtimes or starts plugin work', () => {
-        expect(isPluginRuntimeCommand('load_plugin')).toBe(true);
-        expect(isPluginRuntimeCommand('scan_plugins')).toBe(true);
-        expect(isPluginRuntimeCommand('list_midi_inputs')).toBe(false);
+    it('classifies every exposed command against PLUGIN_RUNTIME_COMMANDS', () => {
+        const runtimeCommands = new Set<string>(PLUGIN_RUNTIME_COMMANDS);
+
+        for (const command of EXPOSED_COMMANDS) {
+            expect(isPluginRuntimeCommand(command)).toBe(runtimeCommands.has(command));
+        }
     });
 
     it('keeps the runtime list sorted for one-line diffs', () => {

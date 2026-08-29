@@ -142,8 +142,9 @@ describe('plugin command admission before the cascade', () => {
 
     it('wires before-quit through runBeforeQuitCascade', () => {
         // Leaving `shutdown.ts` intact while deleting the main wiring must fail.
+        // A no-op refuse callback must fail too — quit would still admit load_plugin.
         expect(mainSource).toMatch(
-            /'before-quit',\s*createQuitHandler\(\s*\(\)\s*:\s*Promise<ShutdownOutcome>\s*=>\s*runBeforeQuitCascade\(/u
+            /'before-quit',\s*createQuitHandler\(\s*\(\)\s*:\s*Promise<ShutdownOutcome>\s*=>\s*runBeforeQuitCascade\(\{[\s\S]*?refusePluginCommands:\s*\(\)\s*=>\s*pluginCommandAdmission\.refusePluginCommands\(\)/u
         );
     });
 });
