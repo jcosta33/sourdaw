@@ -28,12 +28,12 @@ import {
     protectPendingActionResourceLease,
     refreshPendingActionConfirmationApproval,
     type PendingAppActionConfirmation,
-    updatePendingActionFollowUp,
     updatePendingActionConfirmationStatus,
 } from '../stores/pendingActionConfirmationStore';
 
 import { admitCommittedSectionRenderRetry } from './agentRequestOrchestration/admitCommittedSectionRenderRetry';
 import { agentRunExecutionSettlement } from './agentRequestOrchestration/agentRunExecutionSettlement';
+import { confirmationTerminalSettlement } from './agentRequestOrchestration/confirmationTerminalSettlement';
 import {
     confirmedBatchOutcomeSupport,
     type CommandVerifiedBatchReceipt,
@@ -85,9 +85,6 @@ type ConfirmPendingChatActionsResult =
     | { status: 'failed'; reason: string };
 
 type ConfirmPendingChatActionsOutput = Promise<ConfirmPendingChatActionsResult>;
-
-const RENDER_RETRY_PROOF_MISMATCH_REASON =
-    'The retained render retry proof no longer matches the committed project batch.';
 
 const COMPLETED_BATCH_STATUSES = new Set([
     'committed',
@@ -221,46 +218,6 @@ function rebindFreshSectionRenderArtifactsToCommittedRevision(
     });
 }
 
-function failCommittedSectionRenderRetryProof(
-    confirmation: PendingAppActionConfirmation
-): ConfirmPendingChatActionsResult {
-    updatePendingActionFollowUp({
-        confirmationId: confirmation.id,
-        error: RENDER_RETRY_PROOF_MISMATCH_REASON,
-        status: 'failed',
-    });
-    updatePendingActionConfirmationStatus({
-        confirmationId: confirmation.id,
-        status: 'failed',
-        error: RENDER_RETRY_PROOF_MISMATCH_REASON,
-    });
-    updateChatMessage(confirmation.assistantMessageId, {
-        pendingActionConfirmationStatus: 'failed',
-        pendingActionFollowUpStatus: 'failed',
-        error: RENDER_RETRY_PROOF_MISMATCH_REASON,
-        content: `The missing section renders were not retried because the retained proof no longer matches the approved batch and recorded commit evidence. Project actions were not replayed. Verify the project state before taking further action.`,
-    });
-    return { status: 'failed', reason: RENDER_RETRY_PROOF_MISMATCH_REASON };
-}
-
-function failUnreadableCommitEvidence(
-    confirmation: PendingAppActionConfirmation,
-    error: unknown,
-    retryRemainsAvailable: boolean
-): ConfirmPendingChatActionsResult {
-    const detail = error instanceof Error ? error.message : String(error);
-    const reason = retryRemainsAvailable
-        ? `The durable commit evidence for the retained render retry could not be read: ${detail}. The render retry remains available.`
-        : `The durable commit evidence for the confirmed actions could not be read: ${detail}. The proposal remains pending.`;
-    updateChatMessage(confirmation.assistantMessageId, {
-        error: reason,
-        content: retryRemainsAvailable
-            ? `The missing section renders were not retried because the durable commit evidence could not be read: ${detail}. Project actions were not replayed and the render retry remains available.`
-            : `The confirmed actions were not executed because the durable commit evidence could not be read: ${detail}. Project actions were not replayed; the proposal remains pending.`,
-    });
-    return { status: 'failed', reason };
-}
-
 export async function confirmPendingChatActions(
     input: ConfirmPendingChatActionsInput
 ): ConfirmPendingChatActionsOutput {
@@ -286,7 +243,7 @@ export async function confirmPendingChatActions(
         } catch (error) {
             // Unreadable commit evidence is not absence: never fail the retry
             // proof or re-execute against evidence that could not be read.
-            return failUnreadableCommitEvidence(confirmation, error, wasRetryEligible);
+            return confirmationTerminalSettlement.failUnreadableCommitEvidence(confirmation, error, wasRetryEligible);
         }
         const refreshedConfirmation = getPendingActionConfirmation(input.confirmationId);
         if (!refreshedConfirmation) {
@@ -317,7 +274,7 @@ export async function confirmPendingChatActions(
         if (retryAdmission.status === 'admitted') {
             const admittedCommandBatch = confirmation.approvalSnapshot.commandBatch;
             if (!admittedCommandBatch) {
-                return failCommittedSectionRenderRetryProof(confirmation);
+                return confirmationTerminalSettlement.failSectionRenderRetryProof(confirmation);
             }
             return executeCommittedSectionRenderRetry({
                 confirmation,
@@ -326,7 +283,7 @@ export async function confirmPendingChatActions(
             });
         }
         if (retryAdmission.status === 'proof-mismatch') {
-            return failCommittedSectionRenderRetryProof(confirmation);
+            return confirmationTerminalSettlement.failSectionRenderRetryProof(confirmation);
         }
     }
     if (confirmation.status !== 'proposed') {
@@ -341,7 +298,7 @@ export async function confirmPendingChatActions(
     if (!hasPriorVerifiedBatchReceipt && captureProjectRevision() !== confirmation.projectRevision) {
         const commandBatch = confirmation.approvalSnapshot.commandBatch;
         if (!commandBatch) {
-            return invalidatePendingConfirmation(confirmation);
+            return confirmationTerminalSettlement.invalidateForProjectChange(confirmation);
         }
         const refreshed = refreshVersionedCommandBatchForApproval({
             authority: commandBatch.authority,
@@ -349,9 +306,9 @@ export async function confirmPendingChatActions(
         });
         if (refreshed.status !== 'ready') {
             if (refreshed.status === 'conflicted') {
-                return invalidatePendingConfirmationForDivergence(confirmation, refreshed.divergence);
+                return confirmationTerminalSettlement.invalidateForDivergence(confirmation, refreshed.divergence);
             }
-            return invalidatePendingConfirmation(confirmation);
+            return confirmationTerminalSettlement.invalidateForProjectChange(confirmation);
         }
         const agentApproval = compileAgentRiskApproval({ commandBatch: refreshed.commandBatch });
         const rebound = refreshPendingActionConfirmationApproval({
@@ -362,7 +319,7 @@ export async function confirmPendingChatActions(
             projectRevision: refreshed.currentRevision,
         });
         if (!rebound) {
-            return invalidatePendingConfirmation(confirmation);
+            return confirmationTerminalSettlement.invalidateForProjectChange(confirmation);
         }
         updateChatMessage(confirmation.assistantMessageId, {
             pendingActionConfirmationStatus: 'proposed',
@@ -381,19 +338,31 @@ export async function confirmPendingChatActions(
 
     const approvalPreflightFailure = hasPriorVerifiedBatchReceipt ? null : getApprovalPreflightFailure(confirmation);
     if (approvalPreflightFailure) {
-        return failApprovalPreflight(confirmation, approvalPreflightFailure, 'authorization');
+        return confirmationTerminalSettlement.failApprovalPreflight(
+            confirmation,
+            approvalPreflightFailure,
+            'authorization'
+        );
     }
 
     const commandBatch = confirmation.approvalSnapshot.commandBatch;
     if (!commandBatch) {
-        return failApprovalPreflight(confirmation, 'The confirmation has no approved command batch.', 'authorization');
+        return confirmationTerminalSettlement.failApprovalPreflight(
+            confirmation,
+            'The confirmation has no approved command batch.',
+            'authorization'
+        );
     }
     let trackedWorkLease: AgentRunWorkLease | null = null;
     let commandBudget: { attemptId: string; estimates: AgentWorkBudgetEstimate[] } | null = null;
     if (agentRunLifecycle.get(confirmation.runId)) {
         const parsedCommandBatch = parseVersionedCommandBatchEnvelope(commandBatch.serialized, commandBatch.authority);
         if (parsedCommandBatch.status === 'invalid') {
-            return failApprovalPreflight(confirmation, parsedCommandBatch.reason, 'schema');
+            return confirmationTerminalSettlement.failApprovalPreflight(
+                confirmation,
+                parsedCommandBatch.reason,
+                'schema'
+            );
         }
         const attemptId = `${parsedCommandBatch.envelope.batchId}:1`;
         const budgetReservation = hasPriorVerifiedBatchReceipt
@@ -404,7 +373,7 @@ export async function confirmPendingChatActions(
                   attemptId,
               });
         if (budgetReservation?.status === 'hard-limit-reached') {
-            return failApprovalPreflight(
+            return confirmationTerminalSettlement.failApprovalPreflight(
                 confirmation,
                 `The confirmed command work exceeds the user budget for ${budgetReservation.reason}.`,
                 'budget'
@@ -423,7 +392,7 @@ export async function confirmPendingChatActions(
                 retriable: false,
             });
             if (leaseResult.status !== 'claimed') {
-                return failApprovalPreflight(
+                return confirmationTerminalSettlement.failApprovalPreflight(
                     confirmation,
                     `The confirmed command work could not be claimed: ${leaseResult.status}`,
                     'conflict'
@@ -654,14 +623,14 @@ export async function confirmPendingChatActions(
     const batchFailedBeforeCommit =
         batchResult.status === 'rejected' || batchResult.status === 'conflicted' || batchResult.status === 'failed';
     if (!recoveringPendingEffects && batchFailedBeforeCommit && !isProjectMutationAuthorized()) {
-        return invalidatePendingConfirmation(confirmation);
+        return confirmationTerminalSettlement.invalidateForProjectChange(confirmation);
     }
 
     if (batchResult.status === 'cancelled') {
         if (aborter.signal.aborted && !cancellationTriggeredByInvalidation) {
-            return cancelAcceptedConfirmation(confirmation);
+            return confirmationTerminalSettlement.cancelAcceptedConfirmation(confirmation);
         }
-        return invalidatePendingConfirmation(confirmation);
+        return confirmationTerminalSettlement.invalidateForProjectChange(confirmation);
     }
 
     if (
@@ -810,88 +779,4 @@ export async function confirmPendingChatActions(
     });
     await pendingActionResourceSettlement.settleBestEffort({ confirmationId: confirmation.id, disposition: 'discard' });
     return { status: 'failed', reason: batchResult.reason };
-}
-
-async function failApprovalPreflight(
-    confirmation: PendingAppActionConfirmation,
-    reason: string,
-    category: AgentRunErrorCategory
-): Promise<ConfirmPendingChatActionsResult> {
-    agentRunExecutionSettlement.recordFailure(confirmation, {
-        category,
-        retriable: true,
-    });
-    updatePendingActionConfirmationStatus({
-        confirmationId: confirmation.id,
-        status: 'failed',
-        error: reason,
-    });
-    updateChatMessage(confirmation.assistantMessageId, {
-        pendingActionConfirmationStatus: 'failed',
-        error: reason,
-        content: `The confirmed command was rejected before execution: ${reason}`,
-    });
-    await pendingActionResourceSettlement.settleBestEffort({ confirmationId: confirmation.id, disposition: 'discard' });
-    return { status: 'failed', reason };
-}
-
-async function invalidatePendingConfirmation(
-    confirmation: PendingAppActionConfirmation
-): Promise<Extract<ConfirmPendingChatActionsResult, { status: 'invalidated' }>> {
-    const reason = new AiProposalInvalidatedError().message;
-    await agentRunCancellation.cancel({ runId: confirmation.runId, reason });
-    updatePendingActionConfirmationStatus({
-        confirmationId: confirmation.id,
-        status: 'invalidated',
-        error: reason,
-    });
-    updateChatMessage(confirmation.assistantMessageId, {
-        pendingActionConfirmationStatus: 'invalidated',
-        error: reason,
-        content:
-            'This proposal was not executed because the project changed after it was created. Review the current project and submit the command again.',
-    });
-    await pendingActionResourceSettlement.settleBestEffort({ confirmationId: confirmation.id, disposition: 'discard' });
-    return { status: 'invalidated', reason };
-}
-
-async function invalidatePendingConfirmationForDivergence(
-    confirmation: PendingAppActionConfirmation,
-    divergence: ApprovalDivergence
-): Promise<Extract<ConfirmPendingChatActionsResult, { status: 'invalidated' }>> {
-    const targetIds = divergence.targetIds.length > 0 ? divergence.targetIds.join(', ') : 'none';
-    const candidates = divergence.repairCandidates
-        .map((candidate) => `${candidate.kind}: ${candidate.targetIds.join(', ') || 'project'}`)
-        .join('; ');
-    const reason = `The approved command was not executed because project divergence is ${divergence.kind}.`;
-    await agentRunCancellation.cancel({ runId: confirmation.runId, reason });
-    updatePendingActionConfirmationStatus({
-        confirmationId: confirmation.id,
-        status: 'invalidated',
-        error: reason,
-    });
-    updateChatMessage(confirmation.assistantMessageId, {
-        pendingActionConfirmationStatus: 'invalidated',
-        error: reason,
-        content: `${reason} Affected targets: ${targetIds}.${candidates ? ` Repair candidates: ${candidates}.` : ''} Review the current project before planning again.`,
-    });
-    await pendingActionResourceSettlement.settleBestEffort({ confirmationId: confirmation.id, disposition: 'discard' });
-    return { status: 'invalidated', reason, divergence };
-}
-
-async function cancelAcceptedConfirmation(
-    confirmation: PendingAppActionConfirmation
-): Promise<ConfirmPendingChatActionsResult> {
-    agentRunExecutionSettlement.cancelBeforeCommit(confirmation);
-    updatePendingActionConfirmationStatus({
-        confirmationId: confirmation.id,
-        status: 'cancelled',
-    });
-    updateChatMessage(confirmation.assistantMessageId, {
-        pendingActionConfirmationStatus: 'cancelled',
-        error: undefined,
-        content: 'Command cancelled before it committed. No project changes were applied.',
-    });
-    await pendingActionResourceSettlement.settleBestEffort({ confirmationId: confirmation.id, disposition: 'discard' });
-    return { status: 'cancelled' };
 }
