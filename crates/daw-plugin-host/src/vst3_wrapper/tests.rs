@@ -1104,6 +1104,15 @@ struct FakeEditor {
     /// Whether `resizeView` had already delivered `onSize` by the time it
     /// returned — the whole of what "synchronous, one callstack" means.
     on_size_arrived_before_resize_view_returned: AtomicBool,
+    /// The size the host's own window is holding right now.
+    host_window_size: Mutex<Option<(u32, u32)>>,
+    /// What that window was holding at the instant `onSize` arrived.
+    ///
+    /// VST3 states the order outright: the host resizes its window, then tells
+    /// the view what it granted. A host whose window seam only *queues* the
+    /// resize reaches `onSize` with the old size still on the window, and this
+    /// is the only field that can tell that apart from a host that applied it.
+    host_window_size_at_on_size: Mutex<Option<(u32, u32)>>,
     /// A size this editor asks for again from *inside* `onSize`. Taken rather
     /// than counted, so a host with no re-entrancy guard fails this test instead
     /// of exhausting the stack.
@@ -1333,6 +1342,15 @@ impl IPlugViewTrait for FakeView {
             ((*new_size).bottom - (*new_size).top) as u32,
         );
         self.editor.record("onSize");
+        *self
+            .editor
+            .host_window_size_at_on_size
+            .lock()
+            .expect("window size mutex") = *self
+            .editor
+            .host_window_size
+            .lock()
+            .expect("window size mutex");
         *self.editor.on_size_origin.lock().expect("size mutex") =
             Some(((*new_size).left, (*new_size).top));
         if self.editor.refuses_on_size.load(Ordering::Acquire) {
@@ -1611,6 +1629,10 @@ fn recording_window(
     let editor = Arc::clone(editor);
     let resize: EditorWindowResizer = Arc::new(move |width, height| {
         editor.record("resizeWindow");
+        // Applied before the call returns, which is what the production seam
+        // does now: a resizer that only queued the size would leave the old one
+        // readable here, and that is what the handshake test observes.
+        *editor.host_window_size.lock().expect("window size mutex") = Some((width, height));
         recorded
             .lock()
             .expect("window size mutex")
@@ -2773,11 +2795,10 @@ fn a_view_that_refuses_this_platform_is_not_attached() {
 /// inside `onSize`, and a host that answers it recurses until the stack runs
 /// out — so the second ask is refused rather than served.
 ///
-/// What this pins is the host's own ordering. The resizer here applies the size
-/// synchronously; the production one crosses to the shell as a non-blocking
-/// call, so the window itself takes the size a turn of the shell's loop later.
-/// That seam limitation is tracked separately, and no assertion here observes
-/// it.
+/// The window is part of the contract, not scenery: this drives the same
+/// [`EditorWindowResizer`] seam the shell's window implements, and asserts what
+/// that window was holding at the instant the view was told its size. A host
+/// that granted a size its window had not taken yet fails here.
 #[test]
 fn a_plugins_resize_completes_on_one_callstack_and_a_nested_one_is_refused() {
     let editor = FakeEditor::sized(800, 600);
@@ -2819,6 +2840,14 @@ fn a_plugins_resize_completes_on_one_callstack_and_a_nested_one_is_refused() {
         editor.on_size(),
         Some((1024, 768)),
         "the view must be told the size the host granted"
+    );
+    assert_eq!(
+        *editor
+            .host_window_size_at_on_size
+            .lock()
+            .expect("window size mutex"),
+        Some((1024, 768)),
+        "the host window must already hold the granted size when the view is told it"
     );
     assert_eq!(
         editor.attach_resize_result.load(Ordering::Acquire),
