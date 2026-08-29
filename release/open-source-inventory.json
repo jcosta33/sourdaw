@@ -1130,8 +1130,8 @@
                 "sha256:c2da95a42f825cc8cb0ed208ae4441bfc4400e84548723c5b1b96526de53eef7:public/icon-transparent.png",
                 "sha256:f0520cf9febf63733577684160316901499a16b89c469fbbfc7a62613376a447:public/icon.png",
                 "sha256:f0520cf9febf63733577684160316901499a16b89c469fbbfc7a62613376a447:sourdaw.png",
-                "tree-sha256:7dac68d653c32736b1507d07574e5a288049351ba7d58d8d82fe6602f995cadf:public/logo-parts",
-                "tree-sha256:3e010276cd1d29a68235a79227300c6e8d7ec61484ef9166eaed92bf490b7f14:build/icons"
+                "tree-sha256:fa5dd4f455fd2a2176fb9c3a166b2a002104ac9528bb94e517aac35910cbebc2:public/logo-parts",
+                "tree-sha256:2192dad880ac845c75c42e8c170185a2e5f3e66e4bcc9203bdf8d5a81b03939f:build/icons"
             ],
             "licenses": ["Apache-2.0"],
             "productSurfaces": ["application icons", "brand logo", "release screenshots"],
