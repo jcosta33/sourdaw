@@ -1,12 +1,13 @@
 import { test, expect, type Page } from '@playwright/test';
 import { stringify as superjsonStringify } from 'superjson';
 
-import { launch_new_project } from './e2eUtils';
+import { enable_direct_e2e_viewport, launch_new_project } from './e2eUtils';
 
 // Mirrors onboardingTour.spec.ts: omit the onboarding-completed key so the tour
 // auto-starts on a fresh profile, exercising the real auto-trigger.
 async function setup_fresh_onboarding_workspace(page: Page): Promise<void> {
     const alphaDismissed = superjsonStringify(true);
+    await enable_direct_e2e_viewport(page);
     await page.addInitScript(
         ({ alphaDismissed: dismissed }) => {
             window.localStorage.clear();

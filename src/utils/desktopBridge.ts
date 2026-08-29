@@ -334,6 +334,11 @@ export function desktopPlatform(): string | null {
     return sourdawBridge().platform;
 }
 
+/** Scale the Electron renderer while preserving its viewport bounds. */
+export function desktopSetZoomFactor(factor: number): void {
+    sourdawBridge().display.setZoomFactor(factor);
+}
+
 /** The frameless window chrome's controls. Only meaningful on the Linux desktop build. */
 export function desktopWindowControls(): SourdawDesktopBridge['windowControls'] {
     return sourdawBridge().windowControls;

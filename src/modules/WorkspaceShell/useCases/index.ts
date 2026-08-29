@@ -2,6 +2,7 @@ export { openExportDialog } from './dialogs/openExportDialog';
 export { openPreferencesDialog } from './dialogs/openPreferencesDialog';
 export { dismissAlphaNotice } from './dismissAlphaNotice';
 export { setWorkspaceEventBus } from './workspaceEventBus';
+export { resetDisplayScaleForStartup } from './resetDisplayScaleForStartup';
 
 // ── Scratch Pad ───────────────────────────────────────────────────────────────
 

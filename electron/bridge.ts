@@ -176,7 +176,8 @@ export const createSourdawBridge = (
     ipc: RendererIpc,
     epoch: string = bootEpoch(),
     voiceDocument: VoiceControlDocument | undefined = discoveredVoiceDocument(),
-    platform: string = process.platform
+    platform: string = process.platform,
+    setZoomFactor: (factor: number) => void = () => undefined
 ): SourdawBridge => {
     const eventListeners = new Map<string, Set<(payload: unknown) => void>>();
     const streamListeners = new Map<string, (payload: unknown) => void>();
@@ -238,6 +239,10 @@ export const createSourdawBridge = (
 
     return {
         platform,
+
+        display: {
+            setZoomFactor,
+        },
 
         invoke: async (command, args = []) => {
             rejectUnknownCommand(command);

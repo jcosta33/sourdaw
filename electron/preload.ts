@@ -12,8 +12,11 @@
  * object and this only hands it across the context boundary, so the bridge
  * stays testable against a fake `ipcRenderer` instead of a booted Electron.
  */
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer, webFrame } from 'electron';
 
 import { createSourdawBridge } from './bridge.js';
 
-contextBridge.exposeInMainWorld('sourdaw', createSourdawBridge(ipcRenderer));
+contextBridge.exposeInMainWorld(
+    'sourdaw',
+    createSourdawBridge(ipcRenderer, undefined, undefined, undefined, (factor) => webFrame.setZoomFactor(factor))
+);

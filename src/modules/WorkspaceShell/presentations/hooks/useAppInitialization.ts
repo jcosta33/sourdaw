@@ -186,16 +186,6 @@ export const useAppInitialization = (): void => {
     }, []);
 
     useEffect(() => {
-        const applyDisplayScale = (): void => {
-            const scale = preferencesStore.value?.uiScale ?? 1.0;
-            document.documentElement.style.zoom = String(scale);
-        };
-
-        applyDisplayScale();
-        return preferencesStore.subscribe(applyDisplayScale);
-    }, []);
-
-    useEffect(() => {
         let alreadyShown: boolean;
         try {
             alreadyShown = localStorage.getItem(FIRST_LOAD_HINT_KEY) === '1';

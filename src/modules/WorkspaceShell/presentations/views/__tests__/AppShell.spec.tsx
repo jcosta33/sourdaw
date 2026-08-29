@@ -429,6 +429,8 @@ describe('AppShell', () => {
         render(<AppShell>Content</AppShell>);
         const shell = screen.getByTestId('app-shell');
         expect(shell.classList.contains('flex')).toBe(true);
+        expect(shell).toHaveClass('h-full', 'w-full');
+        expect(shell).not.toHaveClass('h-screen', 'w-screen');
     });
 
     describe('bottom-dock accessibility (Fix 1)', () => {

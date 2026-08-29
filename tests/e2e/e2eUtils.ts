@@ -3,6 +3,7 @@ import { stringify as superjsonStringify } from 'superjson';
 
 const LAUNCH_SCREEN_NAME = 'Sourdaw — start a project';
 const PLAYBACK_CONTROLS_NAME = 'Playback controls';
+const LAUNCH_SCREEN_FIRST_PAINT_TIMEOUT_MS = 45_000;
 
 type LaunchOverlayState = 'active' | 'exited';
 
@@ -11,9 +12,30 @@ type LaunchFromTemplateInput = {
     template_name: string | RegExp;
 };
 
+type LaunchNewProjectOptions = {
+    firstPaintTimeoutMs?: number;
+};
+
 type SetupWorkspaceOptions = {
     localStorage?: Array<{ name: string; value: string }>;
 };
+
+/**
+ * Existing E2E specs address the application through Playwright's Page fixture.
+ * Keep that stable on either a reused development server or the e2e-mode server,
+ * while the dedicated browser-display-scale spec exercises the production iframe
+ * boundary directly.
+ */
+export async function enable_direct_e2e_viewport(page: Page): Promise<void> {
+    // The page-scoped script covers this Page's first and later documents; the
+    // context script covers subsequently created Pages and frames.
+    await page.addInitScript(() => {
+        window.name = 'sourdaw-e2e-direct';
+    });
+    await page.context().addInitScript(() => {
+        window.name = 'sourdaw-e2e-direct';
+    });
+}
 
 /**
  * Common setup for E2E tests: bypasses the onboarding tour, alpha notice, and
@@ -29,6 +51,7 @@ export async function setupWorkspace(page: Page, options: SetupWorkspaceOptions 
     // parse it as boolean `true`.
     const alphaDismissed = superjsonStringify(true);
 
+    await enable_direct_e2e_viewport(page);
     await page.addInitScript(
         ({ alphaDismissed, localStorage }) => {
             window.localStorage.clear();
@@ -77,11 +100,14 @@ export async function wait_for_workspace_ready(page: Page): Promise<void> {
     await expect(page.getByRole('group', { name: PLAYBACK_CONTROLS_NAME })).toBeVisible();
 }
 
-export async function launch_new_project(page: Page): Promise<void> {
-    // Bounded independently of the 60s suite ceiling: the overlay is the app's
-    // first paint, so a genuine hang here should fail fast, not ride the slow
-    // multi-step allowance.
-    await expect(page.getByLabel(LAUNCH_SCREEN_NAME)).toBeVisible({ timeout: 15_000 });
+export async function launch_new_project(
+    page: Page,
+    { firstPaintTimeoutMs = LAUNCH_SCREEN_FIRST_PAINT_TIMEOUT_MS }: LaunchNewProjectOptions = {}
+): Promise<void> {
+    // Bounded independently of the suite ceiling: the overlay is the app's
+    // first paint. It admits a cold Vite transform while a genuine hang still
+    // fails before the multi-step allowance.
+    await expect(page.getByLabel(LAUNCH_SCREEN_NAME)).toBeVisible({ timeout: firstPaintTimeoutMs });
 
     await page.locator('#launch-new-project').click();
     await wait_for_workspace_ready(page);
@@ -89,7 +115,7 @@ export async function launch_new_project(page: Page): Promise<void> {
 
 export async function launch_from_template({ page, template_name }: LaunchFromTemplateInput): Promise<void> {
     // Same fast-fail bound as launch_new_project — see comment there.
-    await expect(page.getByLabel(LAUNCH_SCREEN_NAME)).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByLabel(LAUNCH_SCREEN_NAME)).toBeVisible({ timeout: LAUNCH_SCREEN_FIRST_PAINT_TIMEOUT_MS });
 
     await page.locator('#launch-from-template').click();
     await expect(page.getByText('Start a new project')).toBeVisible();

@@ -61,6 +61,17 @@ export function isAutoSaveIntervalMs(value: unknown): value is AutoSaveIntervalM
 
 export const PREFERENCES_SCHEMA_VERSION = 2;
 
+export const UI_SCALE_MIN = 0.5;
+export const UI_SCALE_MAX = 2;
+export const DEFAULT_UI_SCALE = 1;
+
+export function normalizeUiScale(value: unknown): number {
+    if (typeof value !== 'number' || !Number.isFinite(value) || value < UI_SCALE_MIN || value > UI_SCALE_MAX) {
+        return DEFAULT_UI_SCALE;
+    }
+    return value;
+}
+
 export type Preferences = {
     preferencesSchemaVersion: number;
     trackHeight: 'compact' | 'normal' | 'large';
@@ -103,7 +114,7 @@ export const defaultPreferences: Preferences = {
     timelineMinimapHeight: TIMELINE_MINIMAP_DEFAULT_HEIGHT,
     voiceCommandKey: 'v',
     theme: 'dark',
-    uiScale: 1.0,
+    uiScale: DEFAULT_UI_SCALE,
     panelPlacementSidebar: 'left',
     panelPlacementInspector: 'right',
     panelPlacementChat: 'right',
