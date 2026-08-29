@@ -47,6 +47,9 @@ const mocks = vi.hoisted(() => ({
     setSemanticContext: vi.fn(),
 }));
 
+const EXACT_CHECKPOINT_REVISION_RECOVERY_REASON =
+    'Pending project checkpoint recovery requires exact post-commit project revision evidence.';
+
 vi.mock('#/modules/CrdtDocument/stores', () => ({
     agentProjectRepairStateStore: { value: null },
     clearSemanticContext: mocks.clearSemanticContext,
@@ -1252,7 +1255,7 @@ describe('command batch idempotency', () => {
         expect(runtimeEffectCount).toBe(1);
     });
 
-    it('retries reconciliation after completion crashes without duplicating external effects', async () => {
+    it('keeps a pending checkpoint when completion crashes without exact recovery binding', async () => {
         rejectProjectReceiptFinalization = true;
         rejectReceiptPersistence = true;
         const batch = compileBatch();
@@ -1285,13 +1288,13 @@ describe('command batch idempotency', () => {
         });
         runtimeEffectCount = 0;
         runtimeGain = 1;
-        const interruptedRecovery = await executeVersionedCommandBatchEnvelope({
+        const firstRetry = await executeVersionedCommandBatchEnvelope({
             authority: batch.authority,
             confirmed: true,
             serialized: batch.serialized,
         });
         rejectProjectReceiptFinalization = false;
-        const retry = await executeVersionedCommandBatchEnvelope({
+        const secondRetry = await executeVersionedCommandBatchEnvelope({
             authority: batch.authority,
             confirmed: true,
             serialized: batch.serialized,
@@ -1300,27 +1303,25 @@ describe('command batch idempotency', () => {
         expect(first.status).toBe('committed-with-warning');
         expect('warning' in first ? first.warning : '').toContain('post-commit receipt finalization was interrupted');
         expect('receipt' in first ? first.receipt.outcome : null).toBe('partially-committed');
-        expect(interruptedRecovery).toMatchObject({
+        expect(firstRetry).toMatchObject({
             status: 'ambiguous',
-            reason: 'Idempotency checkpoint finalization failed: project receipt finalization unavailable',
+            reason: EXACT_CHECKPOINT_REVISION_RECOVERY_REASON,
         });
-        expect(retry).toMatchObject({
-            status: 'idempotent-replay',
-            actions: [],
-            receipt: {
-                outcome: 'committed',
-                errors: [],
-                modelSummary: expect.stringContaining('external effects were reconciled successfully'),
-            },
+        expect(secondRetry).toMatchObject({
+            status: 'ambiguous',
+            reason: EXACT_CHECKPOINT_REVISION_RECOVERY_REASON,
         });
-        expect(mutationCount).toBe(2);
-        expect(runtimeEffectCount).toBe(1);
+        expect(getProjectCommandBatchIdempotencyCheckpoint(projectCommitProof)).toMatchObject({ status: 'pending' });
+        expect(mutationCount).toBe(1);
+        expect(runtimeEffectCount).toBe(0);
     });
 
-    it('does not run retained effects after the originating project generation changes during lease admission', async () => {
+    it('does not run retained effects or finalize when the project advances before recovery', async () => {
         clearHandlerRegistry();
         const gainStorage = createAutomergeStorage<{ value: number }>('root', 'trackGain');
+        const unrelatedStorage = createAutomergeStorage<{ value: boolean }>('root', 'unrelated');
         expect(gainStorage.hydrate?.()).toBe(true);
+        expect(unrelatedStorage.hydrate?.()).toBe(true);
         let effectAttempts = 0;
         registerHandlerMap({
             setTrackGain: createHandler({
@@ -1339,6 +1340,7 @@ describe('command batch idempotency', () => {
             }),
         });
         const batch = compileBatch();
+        const projectCommitProof = await getVersionedCommandBatchCommitProof(batch);
         const first = await executeVersionedCommandBatchEnvelope({
             authority: batch.authority,
             confirmed: true,
@@ -1346,6 +1348,7 @@ describe('command batch idempotency', () => {
         });
         expect(first).toMatchObject({ status: 'committed-with-warning' });
         expect(effectAttempts).toBe(2);
+        const pendingProjectRevision = commandProjectRevisionPort.capture();
 
         const lease = Promise.withResolvers<boolean>();
         const leaseStarted = vi.fn();
@@ -1364,26 +1367,23 @@ describe('command batch idempotency', () => {
             serialized: batch.serialized,
         });
         await vi.waitFor(() => expect(leaseStarted).toHaveBeenCalledOnce());
-        projectRevisionOverride = JSON.stringify({
-            documentIdentityEpoch: 2,
-            mutationEpoch: 0,
-            documents: [{ docId: 'root', heads: ['project-b'] }],
-        });
+        unrelatedStorage.set({ value: true });
+        expect(commandProjectRevisionPort.capture()).not.toBe(pendingProjectRevision);
         lease.resolve(true);
 
         await expect(recovery).resolves.toMatchObject({
             status: 'ambiguous',
-            reason: expect.stringContaining('originating project'),
+            reason: EXACT_CHECKPOINT_REVISION_RECOVERY_REASON,
         });
         expect(effectAttempts).toBe(2);
+        expect(getProjectCommandBatchIdempotencyCheckpoint(projectCommitProof)).toMatchObject({ status: 'pending' });
     });
 
-    it('does not write recovery completion after the originating project generation changes during an effect', async () => {
+    it('does not start retained effects without exact post-commit checkpoint binding', async () => {
         clearHandlerRegistry();
         const gainStorage = createAutomergeStorage<{ value: number }>('root', 'trackGain');
         expect(gainStorage.hydrate?.()).toBe(true);
         let effectAttempts = 0;
-        const recoveryEffect = Promise.withResolvers<void>();
         const recoveryStarted = vi.fn();
         registerHandlerMap({
             setTrackGain: createHandler({
@@ -1395,7 +1395,6 @@ describe('command batch idempotency', () => {
                             throw new Error('runtime strip unavailable');
                         }
                         recoveryStarted();
-                        await recoveryEffect.promise;
                     };
                     return {
                         status: 'written',
@@ -1406,6 +1405,7 @@ describe('command batch idempotency', () => {
             }),
         });
         const batch = compileBatch();
+        const projectCommitProof = await getVersionedCommandBatchCommitProof(batch);
         const first = await executeVersionedCommandBatchEnvelope({
             authority: batch.authority,
             confirmed: true,
@@ -1421,27 +1421,22 @@ describe('command batch idempotency', () => {
         });
         const mutationsBeforeRecovery = mutationCount;
 
-        const recovery = executeVersionedCommandBatchEnvelope({
-            authority: batch.authority,
-            serialized: batch.serialized,
-        });
-        await vi.waitFor(() => expect(recoveryStarted).toHaveBeenCalledOnce());
-        projectRevisionOverride = JSON.stringify({
-            documentIdentityEpoch: 2,
-            mutationEpoch: 0,
-            documents: [{ docId: 'root', heads: ['project-b'] }],
-        });
-        recoveryEffect.resolve();
-
-        await expect(recovery).resolves.toMatchObject({
+        await expect(
+            executeVersionedCommandBatchEnvelope({
+                authority: batch.authority,
+                serialized: batch.serialized,
+            })
+        ).resolves.toMatchObject({
             status: 'ambiguous',
-            reason: expect.stringContaining('originating project'),
+            reason: EXACT_CHECKPOINT_REVISION_RECOVERY_REASON,
         });
-        expect(effectAttempts).toBe(3);
+        expect(recoveryStarted).not.toHaveBeenCalled();
+        expect(effectAttempts).toBe(2);
         expect(mutationCount).toBe(mutationsBeforeRecovery);
+        expect(getProjectCommandBatchIdempotencyCheckpoint(projectCommitProof)).toMatchObject({ status: 'pending' });
     });
 
-    it('recovers only the failed runtime effect from a mixed batch without replaying project truth', async () => {
+    it('keeps all pending effects in a mixed batch instead of recovering a subset without binding', async () => {
         clearHandlerRegistry();
         const gainStorage = createAutomergeStorage<{ value: number }>('root', 'trackGain');
         const panStorage = createAutomergeStorage<{ value: number }>('root', 'trackPan');
@@ -1519,6 +1514,7 @@ describe('command batch idempotency', () => {
             projectId: 'project-idempotency',
             runId: 'run-mixed-runtime-recovery',
         });
+        const projectCommitProof = await getVersionedCommandBatchCommitProof(batch);
 
         const first = await executeVersionedCommandBatchEnvelope({
             authority: batch.authority,
@@ -1552,13 +1548,17 @@ describe('command batch idempotency', () => {
                 ],
             },
         });
-        expect(retry).toMatchObject({ status: 'idempotent-replay', recoveredExternalEffects: true });
+        expect(retry).toMatchObject({
+            status: 'ambiguous',
+            reason: EXACT_CHECKPOINT_REVISION_RECOVERY_REASON,
+        });
         expect(gainRuntimeEffect).toHaveBeenCalledOnce();
-        expect(panRuntimeEffect).toHaveBeenCalledTimes(3);
+        expect(panRuntimeEffect).toHaveBeenCalledTimes(2);
         expect(onProjectCommitFinalized).not.toHaveBeenCalled();
         expect(onProjectCommitFinalizationUnavailable).not.toHaveBeenCalled();
         expect(projectDocument).toMatchObject({ trackGain: { value: 0.8 }, trackPan: { value: -0.2 } });
-        expect(mutationCount).toBe(mutationsAfterCommit + 1);
+        expect(mutationCount).toBe(mutationsAfterCommit);
+        expect(getProjectCommandBatchIdempotencyCheckpoint(projectCommitProof)).toMatchObject({ status: 'pending' });
     });
 
     it('finds a pending project checkpoint before an empty local idempotency cache', async () => {
@@ -1926,7 +1926,7 @@ describe('command batch idempotency', () => {
         ).resolves.toMatchObject({ outcome: 'partially-committed', pendingEffects: expect.any(Array) });
     });
 
-    it('routes needs-reconcile runtime truth through a current-project rebuild instead of exact effect retry', async () => {
+    it('keeps needs-reconcile runtime truth pending without exact checkpoint binding', async () => {
         clearHandlerRegistry();
         const gainStorage = createAutomergeStorage<{ value: number }>('root', 'trackGain');
         expect(gainStorage.hydrate?.()).toBe(true);
@@ -1981,9 +1981,12 @@ describe('command batch idempotency', () => {
                 pendingEffects: [expect.objectContaining({ remediation: 'repair' })],
             },
         });
-        expect(retry).toMatchObject({ status: 'idempotent-replay', recoveredExternalEffects: true });
+        expect(retry).toMatchObject({
+            status: 'ambiguous',
+            reason: EXACT_CHECKPOINT_REVISION_RECOVERY_REASON,
+        });
         expect(exactEffectAttempts).toBe(2);
-        expect(repairRuntimeFromProject).toHaveBeenCalledOnce();
+        expect(repairRuntimeFromProject).not.toHaveBeenCalled();
     });
 
     it('does not clear a generic pending effect when runtime graph repair also runs', async () => {
@@ -2105,9 +2108,12 @@ describe('command batch idempotency', () => {
                 ],
             },
         });
-        expect(retry).toMatchObject({ status: 'idempotent-replay', recoveredExternalEffects: true });
-        expect(repairRuntimeFromProject).toHaveBeenCalledOnce();
-        expect(panReconcile).toHaveBeenCalledOnce();
+        expect(retry).toMatchObject({
+            status: 'ambiguous',
+            reason: EXACT_CHECKPOINT_REVISION_RECOVERY_REASON,
+        });
+        expect(repairRuntimeFromProject).not.toHaveBeenCalled();
+        expect(panReconcile).not.toHaveBeenCalled();
     });
 
     it('does not settle a diverged generic effect through runtime graph repair', async () => {
@@ -2162,8 +2168,9 @@ describe('command batch idempotency', () => {
         });
         expect(retry).toMatchObject({
             status: 'ambiguous',
-            reason: 'Pending external effect cannot be retried exactly',
+            reason: EXACT_CHECKPOINT_REVISION_RECOVERY_REASON,
         });
+        expect(reconcileAttempts).toBe(1);
         expect(repairRuntimeFromProject).not.toHaveBeenCalled();
     });
 
@@ -2213,7 +2220,7 @@ describe('command batch idempotency', () => {
         });
         expect(retry).toMatchObject({
             status: 'ambiguous',
-            reason: 'Pending external effect requires manual repair',
+            reason: EXACT_CHECKPOINT_REVISION_RECOVERY_REASON,
         });
         expect(reconcile).toHaveBeenCalledOnce();
     });
@@ -2611,19 +2618,11 @@ describe('command batch idempotency', () => {
         expect(runtimeEffectCount).toBe(1);
     });
 
-    it('serializes recovery while a committed batch reconciles its failed external effect', async () => {
+    it('releases the recovery lease when exact checkpoint binding is unavailable', async () => {
         clearHandlerRegistry();
         const gainStorage = createAutomergeStorage<{ value: number }>('root', 'trackGain');
         expect(gainStorage.hydrate?.()).toBe(true);
         let effectAttempts = 0;
-        let markRecoveryStarted!: () => void;
-        let releaseRecoveryEffect!: () => void;
-        const recoveryStarted = new Promise<void>((resolve) => {
-            markRecoveryStarted = resolve;
-        });
-        const recoveryEffectGate = new Promise<void>((resolve) => {
-            releaseRecoveryEffect = resolve;
-        });
         let recoveryLeaseHeld = false;
         const tryAcquireRecoveryLease = vi.fn(() => {
             if (recoveryLeaseHeld) {
@@ -2651,17 +2650,9 @@ describe('command batch idempotency', () => {
             setTrackGain: createHandler({
                 execute: () => {
                     gainStorage.set({ value: 0.8 });
-                    const applyRuntimeEffect = async () => {
+                    const applyRuntimeEffect = () => {
                         effectAttempts += 1;
-                        if (effectAttempts <= 2) {
-                            throw new Error('runtime strip unavailable');
-                        }
-                        if (effectAttempts === 3) {
-                            markRecoveryStarted();
-                            await recoveryEffectGate;
-                        }
-                        runtimeGain = 0.8;
-                        runtimeEffectCount += 1;
+                        throw new Error('runtime strip unavailable');
                     };
                     return {
                         status: 'written',
@@ -2672,25 +2663,18 @@ describe('command batch idempotency', () => {
             }),
         });
         const batch = compileBatch();
+        const projectCommitProof = await getVersionedCommandBatchCommitProof(batch);
 
         const first = await executeVersionedCommandBatchEnvelope({
             authority: batch.authority,
             confirmed: true,
             serialized: batch.serialized,
         });
-        const retryPromise = executeVersionedCommandBatchEnvelope({
+        const retry = await executeVersionedCommandBatchEnvelope({
             authority: batch.authority,
             confirmed: true,
             serialized: batch.serialized,
         });
-        await recoveryStarted;
-        const concurrentRetry = await executeVersionedCommandBatchEnvelope({
-            authority: batch.authority,
-            confirmed: true,
-            serialized: batch.serialized,
-        });
-        releaseRecoveryEffect();
-        const retry = await retryPromise;
         const settledRetry = await executeVersionedCommandBatchEnvelope({
             authority: batch.authority,
             confirmed: true,
@@ -2702,26 +2686,19 @@ describe('command batch idempotency', () => {
             receipt: { outcome: 'partially-committed' },
         });
         expect(retry).toMatchObject({
-            status: 'idempotent-replay',
-            receipt: { outcome: 'committed', atomicity: 'atomic', errors: [] },
-        });
-        expect('receipt' in retry ? retry.receipt.warnings : []).not.toContain(
-            expect.stringContaining('runtime strip unavailable')
-        );
-        expect(concurrentRetry).toMatchObject({
             status: 'ambiguous',
-            reason: 'Command batch external-effect recovery is already in progress',
+            reason: EXACT_CHECKPOINT_REVISION_RECOVERY_REASON,
         });
         expect(settledRetry).toMatchObject({
-            status: 'idempotent-replay',
-            receipt: { outcome: 'committed', atomicity: 'atomic', errors: [] },
+            status: 'ambiguous',
+            reason: EXACT_CHECKPOINT_REVISION_RECOVERY_REASON,
         });
         expect(tryAcquireRecoveryLease).toHaveBeenCalledTimes(2);
-        expect(release).toHaveBeenCalledTimes(1);
-        expect(effectAttempts).toBe(3);
-        expect(runtimeEffectCount).toBe(1);
-        expect(runtimeGain).toBe(0.8);
-        expect(mutationCount).toBe(3);
+        expect(release).toHaveBeenCalledTimes(2);
+        expect(effectAttempts).toBe(2);
+        expect(runtimeEffectCount).toBe(0);
+        expect(runtimeGain).toBe(1);
+        expect(getProjectCommandBatchIdempotencyCheckpoint(projectCommitProof)).toMatchObject({ status: 'pending' });
     });
 
     it('re-reads project truth after waiting for the recovery lease', async () => {
@@ -2875,7 +2852,7 @@ describe('command batch idempotency', () => {
 
         expect(retry).toMatchObject({
             status: 'ambiguous',
-            reason: 'Only the authoritative collaboration host can reconcile a durable command batch',
+            reason: EXACT_CHECKPOINT_REVISION_RECOVERY_REASON,
         });
         expect(effectAttempts).toBe(2);
         expect(runtimeEffectCount).toBe(0);
