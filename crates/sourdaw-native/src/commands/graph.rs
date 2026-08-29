@@ -60,6 +60,25 @@
 //! beside a lazy one is two bootstraps to keep honest instead of one.
 //! `render_graph_offline` never starts the live engine at all.
 //!
+//! ## The loop seam
+//!
+//! A loop region breaks the playhead's monotonicity, and the progress echo
+//! carries the seam beside it for that reason: `loop_wraps` counts the seams
+//! the engine has closed, and `last_wrap_frame` is the frame the pass that
+//! closed the newest one walked to.
+//!
+//! Two consumers read that pair, and only one of them is here. This module's
+//! queue ledger uses it to prove a write left the engine's queue when the
+//! pinned playhead never can ([`proven_popped`]). The other is the per-pass
+//! automation re-arm: the engine's automation queue is a window rather than a
+//! curve, so a pass consumes what it walks past and the seam does not put it
+//! back, and something has to re-send it. That belongs to the automation owner
+//! above this layer, which holds the three things re-arming needs and this
+//! layer has none of — it owns the curve, it learns the loop region, and it
+//! already polls the position feed on a cadence it can send from. This module
+//! sees single commands from an arbitrary caller, is never told the region,
+//! and has no clock of its own.
+//!
 //! ## Strip reports
 //!
 //! The result's `reports` are observations of the post-batch registry, never
@@ -555,8 +574,8 @@ struct DeviceEntry {
 /// laws, each a mirror of an engine law, never a guess: a replace/hold's
 /// stale-cancellation and a backward locate mirror the queues' own
 /// cancellation ([`QueueBudgets`]); and [`Self::release_landed`] subtracts
-/// what the engine's progress echo **proves** has left its queue —
-/// admitted-batch and stamp both behind the echoed horizon. The echo lags
+/// what the engine's progress echo **proves** has left its queue
+/// ([`proven_popped`]). The echo lags
 /// the engine, so the ledger may over-refuse for a batch or two; it never
 /// under-refuses, because nothing is released ahead of proof. An offline
 /// render's fresh registry keeps the ledger exact for its one
@@ -677,8 +696,8 @@ impl GraphRegistry {
     /// engine's own applied count: that stream is not restarting here, only the
     /// graph it carries.
     ///
-    /// The queue ledgers do go, with the strips they describe: every stamp they
-    /// hold addresses a node or an effect this teardown removes, and a removed
+    /// The queue ledgers do go, with the strips they describe: every stamp
+    /// addresses a node or an effect this teardown removes, and a removed
     /// node's queue is removed with it.
     fn take_topology_down(&mut self) -> Vec<GraphCommand> {
         let mut strips: Vec<&StripEntry> = self.strips.values().collect();
@@ -723,31 +742,93 @@ impl GraphRegistry {
     /// proof, because a stamp the ledger's own mirrored cancellations already
     /// removed must not release a second slot.
     ///
-    /// The proof is the echo's happens-before guarantee
-    /// ([`GraphProgressSnapshot`]): a write is gone from its engine queue
-    /// once its admitting fenced batch is at or behind the echoed batch
-    /// horizon **and** its stamp sits strictly before the echoed playhead.
-    /// Strictly — a stamp at the playhead itself is not yet proven popped.
-    /// Both queue kinds pop by that law every rendered block, playing or
-    /// stopped: `RampedParam` frees a slot when the playhead reaches a
-    /// write's start frame, `DeviceParamQueue` pops everything due within
-    /// the block. A stale echo, an engine restart, or a stamp the engine
-    /// dropped by a law with no mirror here (a foreign seek, a stop-edge
-    /// hold) all degrade the same direction: the stamp stays charged and the
-    /// ledger over-refuses until a later echo — never under-refuses.
+    /// The proof is [`proven_popped`], and a stamp it does not prove stays
+    /// charged: a stale echo, an engine restart, or a stamp the engine dropped
+    /// by a law with no mirror here (a foreign seek, a stop-edge hold) all
+    /// degrade the same direction — the ledger over-refuses until a later echo,
+    /// never under-refuses.
     fn release_landed(&mut self, progress: GraphProgressSnapshot) {
-        let proven_landed = |admitted_batch: u64, at_frame: u64| {
-            admitted_batch <= progress.batches_applied && at_frame < progress.playhead_frame
-        };
         self.automation_pending.retain(|_, queued| {
-            queued.retain(|stamp| !proven_landed(stamp.admitted_batch, stamp.at_frame));
+            queued.retain_mut(|stamp| {
+                !proven_popped(
+                    progress,
+                    stamp.admitted_batch,
+                    stamp.at_frame,
+                    &mut stamp.landed_wraps,
+                )
+            });
             !queued.is_empty()
         });
         self.device_param_pending.retain(|_, queued| {
-            queued.retain(|stamp| !proven_landed(stamp.admitted_batch, stamp.at_frame));
+            queued.retain_mut(|stamp| {
+                !proven_popped(
+                    progress,
+                    stamp.admitted_batch,
+                    stamp.at_frame,
+                    &mut stamp.landed_wraps,
+                )
+            });
             !queued.is_empty()
         });
     }
+}
+
+/// How many seams must close after a stamp is known queued before a *whole*
+/// pass is proven to have run with it there.
+///
+/// One is not enough: the seam that closes first ends the pass the stamp was
+/// admitted into, and the playhead may already have been past the stamp when
+/// the batch drained, so that pass proves nothing about it. The pass between
+/// the first and second seam is the earliest one that ran from the region's
+/// start with the stamp already queued.
+const SEAMS_PROVING_A_WHOLE_PASS: u64 = 2;
+
+/// Whether the engine's progress echo proves one queued write has left its
+/// fixed engine queue.
+///
+/// Nothing is released on a count, always on a per-stamp proof, because a stamp
+/// the ledger's own mirrored cancellations already removed must not release a
+/// second slot. Two proofs exist, and both first require the write's admitting
+/// fenced batch to be at or behind the echoed batch horizon — until then the
+/// engine has not even been handed it.
+///
+/// **The playhead.** A stamp strictly before the echoed playhead is popped
+/// ([`GraphProgressSnapshot`]'s happens-before). Strictly — a stamp at the
+/// playhead itself is due in the block that has not run. Both queue kinds pop
+/// by that law every rendered block, playing or stopped: `RampedParam` frees a
+/// slot when the walk reaches a write's start frame, `DeviceParamQueue` pops
+/// everything due within the block.
+///
+/// **The seam.** A loop pins the playhead below the region's end forever, so
+/// the first proof alone would leave every stamp in the region charged for the
+/// life of the session and a looping musician's parameter edits would exhaust
+/// the admission budget. The seam proof replaces the playhead's monotonicity
+/// with the wrap counter's: `last_wrap_frame` is the frame the pass ending at
+/// seam `loop_wraps` walked to, so every write queued *before that pass began*
+/// and stamped below it was consumed by it. `landed_wraps` anchors "before":
+/// it is the wrap count on the first echo that proved the batch drained, which
+/// is an echo at which the write was certainly on the queue, and
+/// [`SEAMS_PROVING_A_WHOLE_PASS`] seams after it is the earliest point a whole
+/// pass has run since.
+///
+/// Neither proof can release a stamp the audio thread might still consume, and
+/// neither depends on how often the echo is sampled: sampling less often only
+/// delays a release.
+fn proven_popped(
+    progress: GraphProgressSnapshot,
+    admitted_batch: u64,
+    at_frame: u64,
+    landed_wraps: &mut Option<u64>,
+) -> bool {
+    if admitted_batch > progress.batches_applied {
+        return false;
+    }
+    if at_frame < progress.playhead_frame {
+        return true;
+    }
+    let anchor = *landed_wraps.get_or_insert(progress.loop_wraps);
+    progress.loop_wraps.saturating_sub(anchor) >= SEAMS_PROVING_A_WHOLE_PASS
+        && at_frame < progress.last_wrap_frame
 }
 
 // ── Validation and mapping ─────────────────────────────────────────────────
@@ -779,6 +860,10 @@ struct PendingStamp {
     at_frame: u64,
     lands_at: u64,
     admitted_batch: u64,
+    /// The wrap count on the first echo that proved this stamp's batch drained
+    /// — the anchor the loop half of the release proof counts passes from. See
+    /// [`proven_popped`].
+    landed_wraps: Option<u64>,
 }
 
 /// One device-parameter change the ledger believes a device's pending window
@@ -789,6 +874,8 @@ struct PendingStamp {
 struct DeviceParamStamp {
     at_frame: u64,
     admitted_batch: u64,
+    /// As [`PendingStamp::landed_wraps`].
+    landed_wraps: Option<u64>,
 }
 
 /// Control-side ledger of what accepted batches queue on the engine's fixed
@@ -842,15 +929,7 @@ impl QueueBudgets {
         write: &AutomationWrite,
     ) -> Result<(), String> {
         let queued = self.automation.entry(target).or_default();
-        let (start, lands_at) = match write {
-            AutomationWrite::Append(event) | AutomationWrite::Replace(event) => (
-                event.at_frame,
-                event
-                    .at_frame
-                    .saturating_add(u64::from(event.duration_frames)),
-            ),
-            AutomationWrite::Hold { at_frame } => (*at_frame, *at_frame),
-        };
+        let (start, lands_at) = write_frames(write);
         if !matches!(write, AutomationWrite::Append(_)) {
             queued.retain(|pending| pending.lands_at < start);
         }
@@ -870,6 +949,7 @@ impl QueueBudgets {
             at_frame: start,
             lands_at,
             admitted_batch: self.charging_batch,
+            landed_wraps: None,
         });
         Ok(())
     }
@@ -889,6 +969,7 @@ impl QueueBudgets {
         queued.push(DeviceParamStamp {
             at_frame,
             admitted_batch: self.charging_batch,
+            landed_wraps: None,
         });
         Ok(())
     }
@@ -901,6 +982,21 @@ impl QueueBudgets {
         for queued in self.automation.values_mut() {
             queued.retain(|pending| pending.at_frame < frame);
         }
+    }
+}
+
+/// The frame a write starts at and the frame it lands on — a ramp's start and
+/// its landing, a step's or a hold's own stamp for both, because both land
+/// instantly.
+fn write_frames(write: &AutomationWrite) -> (u64, u64) {
+    match write {
+        AutomationWrite::Append(event) | AutomationWrite::Replace(event) => (
+            event.at_frame,
+            event
+                .at_frame
+                .saturating_add(u64::from(event.duration_frames)),
+        ),
+        AutomationWrite::Hold { at_frame } => (*at_frame, *at_frame),
     }
 }
 
@@ -1687,13 +1783,15 @@ fn map_command(
             })?;
             let StepWritePayload::Step { value, time } = write;
             let at_frame = seconds_to_frames(*time, sample_rate, "write-device-parameter time")?;
+            let value = finite(*value, "write-device-parameter value")? as f32;
+            let effect_id = device.native_effect_id;
             budgets
-                .charge_device_param(device.native_effect_id, at_frame)
+                .charge_device_param(effect_id, at_frame)
                 .map_err(|reason| format!("write-device-parameter: {reason}"))?;
             ops.push(GraphCommand::AutomateDeviceParam {
-                effect_id: device.native_effect_id,
+                effect_id,
                 param,
-                value: finite(*value, "write-device-parameter value")? as f32,
+                value,
                 at_frame,
             });
             Ok(())
@@ -3766,6 +3864,122 @@ mod tests {
         assert!(
             registry.device_param_pending.is_empty(),
             "the stamp releases once the echoed playhead is strictly past it"
+        );
+    }
+
+    /// A loop region two render blocks long, so a pass is exactly two blocks
+    /// and its seam falls on a block boundary.
+    const LOOP_END_FRAME: u64 = 1_024;
+
+    /// Install the region as a loose command, the way `engine_transport_set_maps`
+    /// does: the loop is not part of a graph batch, so it must not advance the
+    /// fence horizon the ledger numbers against.
+    fn install_loop(renderer: &mut OfflineRenderer) {
+        renderer
+            .push(GraphCommand::SetLoopRegion(
+                daw_engine::transport_map::LoopRegion {
+                    enabled: true,
+                    start_frame: 0,
+                    end_frame: LOOP_END_FRAME,
+                },
+            ))
+            .expect("the loose loop command fits");
+    }
+
+    /// The release proof's loop half. A stamp inside the loop region is
+    /// consumed on every pass, but the echoed playhead is pinned below the
+    /// region's end forever, so the playhead proof alone charges that stamp for
+    /// the life of the session — the starvation that makes a looping session's
+    /// parameter edits refuse. The seam proves what the playhead cannot, and
+    /// only a *whole* pass does: one seam after the stamp is known queued ends
+    /// the pass it arrived in, which says nothing about a stamp the playhead
+    /// was already past.
+    ///
+    /// Both of the proof's bounds are strict, and the region's own end is where
+    /// that matters: the closing pass walks *to* `last_wrap_frame` without
+    /// rendering it, so a stamp sitting exactly there is one the engine has
+    /// never popped and never will while the region holds. It stays charged
+    /// forever, and that is the correct answer — the ledger over-refuses rather
+    /// than freeing a slot the engine still owes.
+    #[test]
+    fn a_stamp_a_whole_loop_pass_walked_past_releases_on_the_seam() {
+        const STAMP: u64 = 768;
+        let samples = sample_pool();
+        let mut registry = GraphRegistry::default();
+        let mut renderer = OfflineRenderer::new(48_000.0, 64);
+        install_loop(&mut renderer);
+
+        admit_and_send(
+            &mut registry,
+            &mut renderer,
+            json!([
+                track_strip("t1"),
+                { "kind": "set-transport", "playing": true, "positionSeconds": 0.0 },
+            ]),
+            &samples,
+        )
+        .expect("the setup batch maps");
+        renderer.render(512);
+
+        admit_and_send(
+            &mut registry,
+            &mut renderer,
+            json!([
+                pan_step("t1", 0.1, STAMP as f64 / 48_000.0),
+                pan_step("t1", 0.2, LOOP_END_FRAME as f64 / 48_000.0),
+            ]),
+            &samples,
+        )
+        .expect("the writes admit");
+
+        // The block that drains it is the one that closes the seam, so the
+        // engine walks past the stamp and reports a playhead below it.
+        renderer.render(512);
+        let closed = renderer.graph_progress();
+        assert_eq!(closed.loop_wraps, 1);
+        assert!(
+            closed.playhead_frame < STAMP,
+            "the pinned playhead is what makes this stamp unprovable without the seam"
+        );
+
+        let charged = |registry: &GraphRegistry| -> usize {
+            registry.automation_pending.values().map(Vec::len).sum()
+        };
+
+        registry.release_landed(closed);
+        assert_eq!(
+            charged(&registry),
+            2,
+            "the first echo proving the batch drained only anchors the seam count"
+        );
+
+        renderer.render(LOOP_END_FRAME as usize);
+        assert_eq!(renderer.graph_progress().loop_wraps, 2);
+        registry.release_landed(renderer.graph_progress());
+        assert_eq!(
+            charged(&registry),
+            2,
+            "one seam after the anchor only ends the pass the stamp arrived in"
+        );
+
+        renderer.render(LOOP_END_FRAME as usize);
+        let walked = renderer.graph_progress();
+        assert_eq!(walked.loop_wraps, 3);
+        assert_eq!(
+            walked.last_wrap_frame, LOOP_END_FRAME,
+            "the pass walked to the region's end, so a stamp there is the boundary case"
+        );
+        registry.release_landed(walked);
+        let left: Vec<u64> = registry
+            .automation_pending
+            .values()
+            .flatten()
+            .map(|stamp| stamp.at_frame)
+            .collect();
+        assert_eq!(
+            left,
+            vec![LOOP_END_FRAME],
+            "a whole pass ran with both stamps queued, but it only popped the one below its walk"
         );
     }
 
