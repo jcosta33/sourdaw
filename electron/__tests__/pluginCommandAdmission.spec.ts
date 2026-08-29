@@ -1,18 +1,34 @@
 import { describe, expect, it } from 'vitest';
 
-import { EXPOSED_COMMANDS } from '../commands.js';
 import {
     createPluginCommandAdmission,
     isPluginRuntimeCommand,
     PLUGIN_RUNTIME_COMMANDS,
 } from '../pluginCommandAdmission.js';
 
-describe('plugin runtime command classification', () => {
-    it('classifies every exposed command against PLUGIN_RUNTIME_COMMANDS', () => {
-        const runtimeCommands = new Set<string>(PLUGIN_RUNTIME_COMMANDS);
+/** Explicit pin of the production runtime surface — omitting a member must fail. */
+const EXPECTED_PLUGIN_RUNTIME_COMMANDS = [
+    'close_plugin_gui',
+    'get_plugin_parameters',
+    'get_plugin_state_bytes',
+    'load_plugin',
+    'open_plugin_gui',
+    'process_plugin_audio',
+    'scan_plugins',
+    'set_plugin_bypass',
+    'set_plugin_parameter',
+    'set_plugin_state_bytes',
+    'unload_plugin',
+] as const;
 
-        for (const command of EXPOSED_COMMANDS) {
-            expect(isPluginRuntimeCommand(command)).toBe(runtimeCommands.has(command));
+describe('plugin runtime command classification', () => {
+    it('pins PLUGIN_RUNTIME_COMMANDS to the known runtime surface', () => {
+        expect([...PLUGIN_RUNTIME_COMMANDS]).toEqual([...EXPECTED_PLUGIN_RUNTIME_COMMANDS]);
+    });
+
+    it('classifies each expected runtime command', () => {
+        for (const command of EXPECTED_PLUGIN_RUNTIME_COMMANDS) {
+            expect(isPluginRuntimeCommand(command)).toBe(true);
         }
     });
 
