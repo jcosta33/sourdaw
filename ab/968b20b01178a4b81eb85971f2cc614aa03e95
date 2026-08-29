@@ -1,0 +1,56 @@
+src/modules/AudioEngine/models/AudioGraphBackend.ts
+  s_4f908a5afb6b58::t_968e7c6e238124 509-523
+crates/sourdaw-native/src/commands/graph.rs
+  s_4f908a5afb6b58::t_41fc5fb6f08207 136
+  s_4f908a5afb6b58::t_9f43dac3cbb8f1 651-710
+  s_4f908a5afb6b58::t_8244383d3a7bfd 2234-2242,2247-2253
+  s_4f908a5afb6b58::t_6d9c95b5990e57 969-996
+  s_4f908a5afb6b58::t_233f13b1481935 1014,1016
+  s_4f908a5afb6b58::t_447eff0c99d66c 193-203
+  s_4f908a5afb6b58::t_ba11ac7c0c694a 2152-2180,2196,4546
+  s_4f908a5afb6b58::t_768631086bd47e 2205-2209
+  s_4f908a5afb6b58::t_26deed9a75dc65 1137-1142,1145-1151
+  s_4f908a5afb6b58::t_c33bee84dd67c1 2186,2193,4286-4545
+  s_4f908a5afb6b58::t_c2710e794d7486 280-282
+  s_4f908a5afb6b58::t_0a6bc689de337e 173-184
+  s_4f908a5afb6b58::t_e981536105e9ca 2181-2185,2187-2192,2194-2195,2197-2198,2522,4234,4262,4547-4549
+src/modules/AudioEngine/useCases/livePlayback/__tests__/projectLiveGraphTopology.spec.ts
+  s_4f908a5afb6b58::t_9ed412d595b9f8 136-168
+src/modules/AudioEngine/useCases/livePlayback/startNativeLiveGraphSession.ts
+  s_4f908a5afb6b58::t_769d1ebbc37a54 110-116
+src/modules/AudioEngine/useCases/livePlayback/projectLiveGraphTopology.ts
+  s_4f908a5afb6b58::t_85e9fecdfdc1a9 37-47
+  s_4f908a5afb6b58::t_1770ac59d3d7bb 88-99,105,118-121
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeLiveGraphSession.spec.ts
+  s_4f908a5afb6b58::t_07ac80557fcca2 141-144
+  s_4f908a5afb6b58::t_096ee2c7c6c094 220-222
+src/modules/Transport/useCases/transportControls/__tests__/stopPlayback.spec.ts
+  s_4f908a5afb6b58::t_f8febdc51aeba4 3
+  s_4f908a5afb6b58::t_fa5b76d43f2d3e 72-80,82-85,88,92,94-95
+  s_4f908a5afb6b58::t_42430617004616 81,86-87,89-91,93
+src/modules/AudioEngine/repositories/nativeGraph/serializeAudioGraphCommandBatch.ts
+  s_4f908a5afb6b58::t_d17d04fafa97a8 5-7
+  s_4f908a5afb6b58::t_a74ff8d4c8dbde 18
+src/modules/AudioEngine/repositories/nativeGraph/serializeAudioGraphCommand.ts
+  s_4f908a5afb6b58::t_cda40bc0586310 119
+src/modules/AudioEngine/useCases/livePlayback/stopNativeLiveGraphSession.ts
+  s_4f908a5afb6b58::t_73d768563efbd8 10-12
+electron/shutdown.ts
+  s_4f908a5afb6b58::t_84e5c2e106fed4 4-14
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "ab968b20b01178a4b81eb85971f2cc614aa03e95",
+  "prompts": {},
+  "sessions": {
+    "s_4f908a5afb6b58": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fcb92ba4-bf56-47a4-8b57-803f335a449e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
