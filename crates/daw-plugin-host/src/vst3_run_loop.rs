@@ -7,28 +7,23 @@
 //! refuses the query leaves an attached editor that never draws and never
 //! responds.
 //!
-//! This type is the registry and the dispatcher; [`RunLoopService`] is the
-//! thread that drives it. They are split because the driving is the part a host
-//! with its own UI loop would replace: [`HostRunLoop::service_once`] is the
-//! whole of one pass, and a shell that owns an event thread can call it from
-//! there instead of letting the service thread run. Sourdaw's plugin-host crate
-//! has no UI thread of its own — the native editor window belongs to the
-//! desktop shell — so the service thread is what makes registered handlers fire
-//! today, and the split is what lets that change without touching the registry.
+//! `IRunLoop` exists so those callbacks run on the host's UI event loop — the
+//! thread that owns the editor's X11 window — so that is where they run. A
+//! [`HostRunLoop`] is the registry and the dispatcher for one editor;
+//! [`service_editor_run_loops`] is one pass over every open editor's, and the
+//! shell calls it from its own event loop.
 //!
-//! That is a deviation from what `IRunLoop` is for. The interface exists so a
-//! plugin's descriptor and timer callbacks run on the host's UI event loop,
-//! which is the thread that owns the editor's X11 window; this host services
-//! them from a private thread instead, so a handler is called off that thread.
-//! It is the same deviation the editor module states for `IPlugView`, it is
-//! shared with the CLAP editor path, and it is tracked as #2902.
+//! A pass therefore never waits: it fires the timers that are due, hands each
+//! readable descriptor to its handler, and returns. The thread it runs on is
+//! the one that has to keep drawing, so what paces the loop is the shell's own
+//! turn rate rather than anything decided here — which is also the ceiling on
+//! how fast a plugin's timer can be served.
 //!
 //! Nothing here is reachable from the audio thread.
 
 use std::collections::HashSet;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
-use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use vst3::Steinberg::Linux::{
@@ -39,15 +34,6 @@ use vst3::Steinberg::{kInvalidArgument, kResultFalse, kResultOk, tresult};
 use vst3::{ComPtr, ComRef};
 
 use crate::vst3_editor::com_identity;
-
-/// The longest one service pass waits on the registered descriptors before
-/// looking at the timers again.
-///
-/// A ceiling on how long a pass may block rather than a poll interval: a pass
-/// returns as soon as any descriptor is readable, and it never waits past the
-/// next timer that comes due, so an idle editor costs nothing and a timer is
-/// never held back by this number.
-const SERVICE_POLL_SLICE: Duration = Duration::from_millis(16);
 
 /// The floor a plugin's requested timer interval is held to.
 ///
@@ -113,6 +99,15 @@ struct Registry {
 #[derive(Default)]
 pub struct HostRunLoop {
     registry: Mutex<Registry>,
+    /// Held for the whole of one pass, and taken again by the close.
+    ///
+    /// A pass calls into handlers this editor owns, so the editor may not
+    /// release them while one is running. Uncontended whenever the shell's pump
+    /// and the editor's close are the same thread, which is the arrangement the
+    /// whole editor lifecycle now keeps; the lock is what makes the other
+    /// arrangement — a runtime retired off that thread with its editor still
+    /// open — wait rather than free a handler mid-call.
+    pass: Mutex<()>,
 }
 
 impl HostRunLoop {
@@ -241,56 +236,34 @@ impl HostRunLoop {
         due.len()
     }
 
-    /// How long a pass may block before the next registered timer comes due.
+    /// One pass of the loop: fire every timer that is due, then hand each
+    /// readable descriptor to its handler. Returns how many handlers were
+    /// called.
     ///
-    /// Bounded above by [`SERVICE_POLL_SLICE`] so a loop with no timers still
-    /// wakes, and below by [`MIN_TIMER_INTERVAL`] so a timer already overdue
-    /// asks for a zero-length wait — which is a spin, not a poll.
-    pub fn service_slice(&self, now: Instant) -> Duration {
-        self.time_until_next_timer(now)
-            .map_or(SERVICE_POLL_SLICE, |until| {
-                until.clamp(MIN_TIMER_INTERVAL, SERVICE_POLL_SLICE)
-            })
+    /// Never waits. This runs on the shell's UI thread, so a pass that blocked
+    /// would stop the editor it is servicing from drawing.
+    pub fn service_once(&self) -> usize {
+        let _pass = self
+            .pass
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        self.service_timers(Instant::now()) + self.service_file_descriptors()
     }
 
-    fn time_until_next_timer(&self, now: Instant) -> Option<Duration> {
-        let registry = self.lock();
-        registry
-            .timers
-            .iter()
-            .map(|timer| timer.due.saturating_duration_since(now))
-            .min()
-    }
-
-    /// One pass of the loop: fire what is due, then wait for a descriptor no
-    /// longer than the next timer allows.
-    pub fn service_once(&self) {
-        let now = Instant::now();
-        self.service_timers(now);
-        self.service_file_descriptors(self.service_slice(now));
-    }
-
-    /// Wait up to `timeout` for any registered descriptor to become readable and
-    /// hand each ready one to its handler. Returns how many handlers were called.
+    /// Hand every registered descriptor that is readable right now to its
+    /// handler. Returns how many handlers were called.
     ///
-    /// A pass that dispatched nothing always either blocks in `poll` or sleeps.
-    /// A descriptor the kernel refuses returns from `poll` instantly and for
-    /// ever, so a pass that could return without waiting and without work would
-    /// spin a core for as long as the editor is open.
-    ///
-    /// Handlers are taken out from under the lock for the same reason timers are,
-    /// and the registry is read again after the wait: a descriptor unregistered
-    /// while `poll` was blocked may already be closed, and its number reused by
-    /// something else in this process.
-    pub fn service_file_descriptors(&self, timeout: Duration) -> usize {
-        let started = Instant::now();
+    /// Handlers are taken out from under the lock for the same reason timers
+    /// are, and the registry is read again after the poll: a descriptor
+    /// unregistered from inside a handler may already be closed, and its number
+    /// reused by something else in this process.
+    pub fn service_file_descriptors(&self) -> usize {
         let watched = self.watched_descriptors();
         if watched.is_empty() {
-            std::thread::sleep(timeout);
             return 0;
         }
 
-        let polled = poll_descriptors(&watched, timeout);
+        let polled = poll_descriptors(&watched);
         // Which registrations the dead descriptors belong to is settled before
         // the dispatch, and the dispatch's own wakes decide nothing about it.
         let doomed = self.registrations_on(&polled.dead);
@@ -300,10 +273,6 @@ impl HostRunLoop {
         // dying connection is owed.
         let dispatched = self.dispatch_ready(&polled.ready);
         self.drop_registrations(&doomed);
-
-        if dispatched == 0 {
-            sleep_remainder(timeout, started.elapsed());
-        }
         dispatched
     }
 
@@ -408,9 +377,9 @@ struct PolledDescriptors {
     dead: HashSet<FileDescriptor>,
 }
 
-/// Wait up to `timeout` for any of `descriptors` to become readable, and report
-/// which of them ended while waiting.
-fn poll_descriptors(descriptors: &[FileDescriptor], timeout: Duration) -> PolledDescriptors {
+/// Ask which of `descriptors` are readable right now, and which of them have
+/// ended.
+fn poll_descriptors(descriptors: &[FileDescriptor]) -> PolledDescriptors {
     let mut poll_fds: Vec<libc::pollfd> = descriptors
         .iter()
         .map(|descriptor| libc::pollfd {
@@ -420,16 +389,11 @@ fn poll_descriptors(descriptors: &[FileDescriptor], timeout: Duration) -> Polled
         })
         .collect();
 
-    let milliseconds = i32::try_from(timeout.as_millis()).unwrap_or(i32::MAX);
+    // Zero timeout: `poll` answers what is ready and returns. A pass on the UI
+    // thread has no time to wait in.
     // SAFETY: `poll_fds` is a live, correctly sized array of `pollfd`, and the
     // length is its own element count.
-    let ready = unsafe {
-        libc::poll(
-            poll_fds.as_mut_ptr(),
-            poll_fds.len() as libc::nfds_t,
-            milliseconds,
-        )
-    };
+    let ready = unsafe { libc::poll(poll_fds.as_mut_ptr(), poll_fds.len() as libc::nfds_t, 0) };
     if ready <= 0 {
         return PolledDescriptors::default();
     }
@@ -460,59 +424,68 @@ fn poll_descriptors(descriptors: &[FileDescriptor], timeout: Duration) -> Polled
     polled
 }
 
-/// Sleep out whatever is left of a pass that did no work.
-fn sleep_remainder(timeout: Duration, elapsed: Duration) {
-    let remaining = timeout.saturating_sub(elapsed);
-    if !remaining.is_zero() {
-        std::thread::sleep(remaining);
-    }
-}
-
-/// The thread that services a [`HostRunLoop`] when nothing else does.
+/// Every open editor's run loop, in the order the editors opened.
 ///
-/// Started when the editor opens and stopped when the editor that owns it is
-/// dropped.
-pub struct RunLoopService {
-    stop: Arc<AtomicBool>,
-    thread: Option<JoinHandle<()>>,
+/// Process-wide because what pumps it is: one UI thread serves every editor
+/// this host has open, and the alternative — carrying a run-loop host down
+/// through `AudioPlugin::open_gui` — would put a platform's event loop into a
+/// seam that is deliberately shell-independent.
+static EDITOR_RUN_LOOPS: Mutex<Vec<(EditorRunLoopId, Arc<HostRunLoop>)>> = Mutex::new(Vec::new());
+
+/// Names one editor's registration, so a close removes its own and no other.
+type EditorRunLoopId = u64;
+
+/// One editor's place in the pumped set, given up when the editor closes.
+pub struct EditorRunLoopRegistration {
+    id: EditorRunLoopId,
+    run_loop: Arc<HostRunLoop>,
 }
 
-impl RunLoopService {
-    /// Start the service thread, or report why the editor cannot run.
+fn editor_run_loops() -> std::sync::MutexGuard<'static, Vec<(EditorRunLoopId, Arc<HostRunLoop>)>> {
+    EDITOR_RUN_LOOPS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// Ask the host's UI loop to start servicing this editor.
+pub fn register_editor_run_loop(run_loop: Arc<HostRunLoop>) -> EditorRunLoopRegistration {
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+    let id = NEXT.fetch_add(1, Ordering::Relaxed);
+    editor_run_loops().push((id, Arc::clone(&run_loop)));
+    EditorRunLoopRegistration { id, run_loop }
+}
+
+impl Drop for EditorRunLoopRegistration {
+    /// Leave the pumped set, then wait out a pass already inside this loop.
     ///
-    /// Fallible because there is no degraded mode: an editor whose descriptors
-    /// and timers nobody services never draws and never answers a click, so a
-    /// caller that swallowed a failed spawn would report an editor that is
-    /// permanently dead.
-    pub fn start(run_loop: Arc<HostRunLoop>) -> Result<Self, String> {
-        let stop = Arc::new(AtomicBool::new(false));
-        let thread_stop = Arc::clone(&stop);
-        let thread = std::thread::Builder::new()
-            .name("vst3-editor-run-loop".to_string())
-            .spawn(move || {
-                while !thread_stop.load(Ordering::Acquire) {
-                    run_loop.service_once();
-                }
-            })
-            .map_err(|error| format!("the editor's run-loop thread would not start: {error}"))?;
-
-        Ok(Self {
-            stop,
-            thread: Some(thread),
-        })
+    /// The wait is what the private service thread's `join` used to be: a pass
+    /// calls into handlers the editor is about to release, so the close may not
+    /// return while one is running.
+    fn drop(&mut self) {
+        editor_run_loops().retain(|(id, _)| *id != self.id);
+        let _pass = self
+            .run_loop
+            .pass
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
     }
 }
 
-impl Drop for RunLoopService {
-    fn drop(&mut self) {
-        self.stop.store(true, Ordering::Release);
-        if let Some(thread) = self.thread.take() {
-            // Joined rather than detached: the thread calls into editor code
-            // through retained handler pointers, and letting it outlive the
-            // registration that holds them is a call into a released object.
-            let _ = thread.join();
-        }
-    }
+/// One pass over every open editor's run loop. Returns how many handlers were
+/// called.
+///
+/// The shell calls this from its own event loop, which is the thread that owns
+/// the editor windows — the thread `IRunLoop` exists to deliver these callbacks
+/// on. The registry is copied out before any of them runs: `onTimer` and
+/// `onFDIsSet` are editor code, and an editor that closes from inside its own
+/// callback would otherwise deadlock against the registry it is already inside.
+pub fn service_editor_run_loops() -> usize {
+    let open: Vec<Arc<HostRunLoop>> = editor_run_loops()
+        .iter()
+        .map(|(_, run_loop)| Arc::clone(run_loop))
+        .collect();
+
+    open.iter().map(|run_loop| run_loop.service_once()).sum()
 }
 
 #[cfg(test)]
@@ -684,16 +657,10 @@ mod tests {
 
         // Nothing has been written, so a handler called here would be called on
         // registration rather than on readiness.
-        assert_eq!(
-            run_loop.service_file_descriptors(Duration::from_millis(0)),
-            0
-        );
+        assert_eq!(run_loop.service_file_descriptors(), 0);
 
         pipe.make_readable();
-        assert_eq!(
-            run_loop.service_file_descriptors(Duration::from_millis(50)),
-            1
-        );
+        assert_eq!(run_loop.service_file_descriptors(), 1);
         assert_eq!(
             *handler.woken_for.lock().expect("descriptor log mutex"),
             vec![pipe.read],
@@ -717,15 +684,12 @@ mod tests {
         unsafe {
             assert_eq!(run_loop.register_event_handler(raw, pipe.read), kResultOk);
             pipe.make_readable();
-            assert_eq!(
-                run_loop.service_file_descriptors(Duration::from_millis(50)),
-                1
-            );
+            assert_eq!(run_loop.service_file_descriptors(), 1);
             assert_eq!(run_loop.unregister_event_handler(raw), kResultOk);
         }
 
         assert_eq!(
-            run_loop.service_file_descriptors(Duration::from_millis(0)),
+            run_loop.service_file_descriptors(),
             0,
             "an unregistered handler must not be called again"
         );
@@ -763,7 +727,7 @@ mod tests {
 
         pipe.make_readable();
         assert_eq!(
-            run_loop.service_file_descriptors(Duration::from_millis(50)),
+            run_loop.service_file_descriptors(),
             2,
             "both handlers on the ready descriptor must be called"
         );
@@ -799,7 +763,7 @@ mod tests {
         pipe.hang_up();
 
         assert_eq!(
-            run_loop.service_file_descriptors(Duration::from_millis(50)),
+            run_loop.service_file_descriptors(),
             1,
             "the handler must be told the descriptor it waits on has ended"
         );
@@ -809,7 +773,7 @@ mod tests {
         );
 
         assert_eq!(
-            run_loop.service_file_descriptors(Duration::from_millis(0)),
+            run_loop.service_file_descriptors(),
             0,
             "a hung-up descriptor must stop being dispatched, not wake for ever"
         );
@@ -884,11 +848,11 @@ mod tests {
     }
 
     /// A descriptor the kernel refuses is never readable and never will be, and
-    /// `poll` returns on it instantly for ever. Keeping the registration turns
-    /// every later pass into a spin that costs a full core for as long as the
-    /// editor is open, so the registration goes and the pass still waits.
+    /// `poll` returns on it instantly for ever. Keeping the registration means
+    /// every later pass dispatches nothing and reports the same descriptor
+    /// again, so the registration goes on the pass that first sees it refused.
     #[test]
-    fn a_descriptor_the_kernel_refuses_is_dropped_and_its_pass_still_waits() {
+    fn a_descriptor_the_kernel_refuses_is_dropped_rather_than_polled_for_ever() {
         let run_loop = HostRunLoop::new();
         let handler = ComWrapper::new(RecordingEventHandler::default());
         let raw = handler
@@ -902,15 +866,8 @@ mod tests {
             kResultOk
         );
 
-        let timeout = Duration::from_millis(20);
-        let started = Instant::now();
-        assert_eq!(run_loop.service_file_descriptors(timeout), 0);
-        let waited = started.elapsed();
+        assert_eq!(run_loop.service_file_descriptors(), 0);
 
-        assert!(
-            waited >= timeout / 2,
-            "a pass that neither waited nor dispatched is a busy spin, it took {waited:?}"
-        );
         // SAFETY: `raw` borrows a live handler this test owns.
         assert_eq!(
             unsafe { run_loop.unregister_event_handler(raw) },
@@ -927,53 +884,54 @@ mod tests {
         );
     }
 
-    /// A pass that always waited its full slice would make the shortest timer a
-    /// plugin can ask for unreachable: a 10 ms animation would run at the
-    /// slice's rate instead, and the editor would visibly stutter.
+    /// The whole point of the registration: an editor's timers and descriptors
+    /// are serviced by the host's own UI loop, and a pass that skipped a
+    /// registered loop would leave that editor frozen on screen.
     #[test]
-    fn a_pass_never_waits_past_the_timer_it_owes_next() {
-        let run_loop = HostRunLoop::new();
+    fn an_open_editors_run_loop_is_serviced_by_the_host_pump() {
+        let run_loop = Arc::new(HostRunLoop::new());
         let handler = ComWrapper::new(CountingTimerHandler::default());
         let raw = handler
             .as_com_ref::<ITimerHandler>()
             .expect("the fake handler implements ITimerHandler")
             .as_ptr();
-
-        assert_eq!(
-            run_loop.service_slice(Instant::now()),
-            SERVICE_POLL_SLICE,
-            "with no timer to owe, a pass waits its whole slice"
-        );
-
         // SAFETY: `raw` borrows a live handler this test owns.
-        assert_eq!(unsafe { run_loop.register_timer(raw, 10) }, kResultOk);
+        assert_eq!(unsafe { run_loop.register_timer(raw, 0) }, kResultOk);
 
-        let slice = run_loop.service_slice(Instant::now());
+        let registration = register_editor_run_loop(Arc::clone(&run_loop));
+        std::thread::sleep(MIN_TIMER_INTERVAL * 4);
+        service_editor_run_loops();
+
         assert!(
-            slice <= Duration::from_millis(10),
-            "a 10 ms timer must not wait out a longer slice, got {slice:?}"
+            handler.wakes.load(Ordering::Acquire) > 0,
+            "a registered editor's timer must fire on the host's pump"
         );
-        assert!(slice >= MIN_TIMER_INTERVAL, "got {slice:?}");
+        drop(registration);
     }
 
-    /// An overdue timer asks for a zero-length wait, and a pass that took it
-    /// would poll without blocking — the same spin an unusable descriptor
-    /// causes. The floor is what keeps the loop a loop.
+    /// A closed editor's handlers are released, so a pass that still reached
+    /// them would be calling into an object the editor has finished with.
     #[test]
-    fn an_overdue_timer_still_leaves_a_pass_something_to_wait_on() {
-        let run_loop = HostRunLoop::new();
+    fn a_closed_editors_run_loop_is_no_longer_pumped() {
+        let run_loop = Arc::new(HostRunLoop::new());
         let handler = ComWrapper::new(CountingTimerHandler::default());
         let raw = handler
             .as_com_ref::<ITimerHandler>()
             .expect("the fake handler implements ITimerHandler")
             .as_ptr();
-
         // SAFETY: `raw` borrows a live handler this test owns.
-        assert_eq!(unsafe { run_loop.register_timer(raw, 10) }, kResultOk);
+        assert_eq!(unsafe { run_loop.register_timer(raw, 0) }, kResultOk);
+
+        drop(register_editor_run_loop(Arc::clone(&run_loop)));
+        let wakes_at_close = handler.wakes.load(Ordering::Acquire);
+
+        std::thread::sleep(MIN_TIMER_INTERVAL * 4);
+        service_editor_run_loops();
 
         assert_eq!(
-            run_loop.service_slice(Instant::now() + Duration::from_secs(1)),
-            MIN_TIMER_INTERVAL
+            handler.wakes.load(Ordering::Acquire),
+            wakes_at_close,
+            "an editor that gave up its registration must not be serviced again"
         );
     }
 

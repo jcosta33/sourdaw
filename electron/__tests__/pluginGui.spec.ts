@@ -10,6 +10,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import {
+    createIntervalRunLoopPump,
     createPluginWindowHost,
     registerPluginWindowHost,
     type CreateEditorWindowRequest,
@@ -272,6 +273,55 @@ describe('createPluginWindowHost', () => {
         expect(windows[0]?.setContentSize).not.toHaveBeenCalled();
         expect(windows[0]?.destroy).toHaveBeenCalledTimes(1);
     });
+
+    it('runs the plugin run loop only while an editor is open', () => {
+        const runLoopPump = { start: vi.fn(), stop: vi.fn() };
+        const { host } = createHarness({ runLoopPump });
+
+        expect(runLoopPump.start).not.toHaveBeenCalled();
+
+        host.create(request('plugin-a'));
+        host.create(request('plugin-b'));
+        expect(runLoopPump.start).toHaveBeenCalled();
+        expect(runLoopPump.stop).not.toHaveBeenCalled();
+
+        host.destroy('plugin-a');
+        expect(runLoopPump.stop).not.toHaveBeenCalled();
+
+        host.destroy('plugin-b');
+        expect(runLoopPump.stop).toHaveBeenCalledTimes(1);
+    });
+
+    it('stops the run loop when the OS closes the last editor behind the host', () => {
+        const runLoopPump = { start: vi.fn(), stop: vi.fn() };
+        const { host, windows } = createHarness({ runLoopPump });
+        host.create(request());
+
+        windows[0]?.emitClosed();
+
+        expect(runLoopPump.stop).toHaveBeenCalledTimes(1);
+    });
+});
+
+describe('createIntervalRunLoopPump', () => {
+    it('keeps one timer across repeated starts and releases it on stop', () => {
+        vi.useFakeTimers();
+        try {
+            const service = vi.fn();
+            const pump = createIntervalRunLoopPump(service, 16);
+
+            pump.start();
+            pump.start();
+            vi.advanceTimersByTime(48);
+            expect(service).toHaveBeenCalledTimes(3);
+
+            pump.stop();
+            vi.advanceTimersByTime(48);
+            expect(service).toHaveBeenCalledTimes(3);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
 });
 
 describe('registerPluginWindowHost', () => {
@@ -282,7 +332,11 @@ describe('registerPluginWindowHost', () => {
         const register = vi.fn();
         const windows: FakeWindow[] = [];
         const registered = registerPluginWindowHost(
-            { registerPluginWindowHost: register, notifyPluginWindowClosed: vi.fn() },
+            {
+                registerPluginWindowHost: register,
+                notifyPluginWindowClosed: vi.fn(),
+                servicePluginEditorRunLoops: vi.fn(),
+            },
             {
                 createWindow: (options) => {
                     const window = createFakeWindow(options);
@@ -334,7 +388,11 @@ describe('registerPluginWindowHost', () => {
     it('reports the OS close to the addon off the event path when a window closes', () => {
         const register = vi.fn();
         const notify = vi.fn(() => Promise.resolve());
-        const native = { registerPluginWindowHost: register, notifyPluginWindowClosed: notify };
+        const native = {
+            registerPluginWindowHost: register,
+            notifyPluginWindowClosed: notify,
+            servicePluginEditorRunLoops: vi.fn(),
+        };
         const windows: FakeWindow[] = [];
         registerPluginWindowHost(native, {
             createWindow: (options) => {
@@ -360,5 +418,17 @@ describe('registerPluginWindowHost', () => {
         );
 
         expect(registered).toBe(false);
+    });
+
+    it('refuses an addon that carries the window seam without the run-loop pump', () => {
+        const register = vi.fn();
+
+        const registered = registerPluginWindowHost(
+            { registerPluginWindowHost: register, notifyPluginWindowClosed: vi.fn() },
+            { createWindow: createFakeWindow, getParentWindow: () => undefined, getScaleFactor: () => 1 }
+        );
+
+        expect(registered).toBe(false);
+        expect(register).not.toHaveBeenCalled();
     });
 });

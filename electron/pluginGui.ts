@@ -18,6 +18,9 @@
  *   call is an async napi method, so it only schedules work on the addon's
  *   executor; running the reset inline on the main thread is the documented
  *   deadlock with GUI-affine plugins.
+ * - A plugin editor's own event loop, where the format has one the host drives,
+ *   belongs to the thread that owns the window. That is this thread, so the
+ *   pump runs here, and only while an editor is open.
  *
  * The window registry lives here, in the `editors` map, and nowhere else: the
  * addon probes and addresses windows by label through the callbacks, so a
@@ -70,6 +73,19 @@ export type EditorWindow = {
     readonly on: (event: 'closed', listener: () => void) => unknown;
 };
 
+/**
+ * Drives a plugin format's own event loop on this thread.
+ *
+ * The VST3 `IRunLoop` a Linux plugin registers its X11 handlers and timers with
+ * is the host's to dispatch, and it must be dispatched on the thread that owns
+ * the editor window — this one. It runs only while an editor is open, because
+ * with none open there is nothing registered to dispatch.
+ */
+export type EditorRunLoopPump = {
+    readonly start: () => void;
+    readonly stop: () => void;
+};
+
 export type PluginWindowHostDeps = {
     readonly createWindow: (options: EditorWindowOptions) => EditorWindow;
     /** The live DAW window, re-read per create because it is replaced on a renderer crash. */
@@ -78,6 +94,8 @@ export type PluginWindowHostDeps = {
     readonly getScaleFactor: () => number;
     /** Reports an OS-level close to the addon. Must only schedule, never block. */
     readonly notifyClosed: (instanceId: string, label: string) => void;
+    /** Absent where no hosted format needs a host-driven run loop. */
+    readonly runLoopPump?: EditorRunLoopPump;
 };
 
 /** The seven callbacks `registerPluginWindowHost` hands the addon. */
@@ -111,6 +129,17 @@ const failure = (error: string): CreateEditorWindowResponse => ({
 
 export const createPluginWindowHost = (deps: PluginWindowHostDeps): PluginWindowHost => {
     const editors = new Map<string, EditorWindow>();
+
+    // Keyed off the registry rather than off open/close calls, because the
+    // registry is the one place every arrival and departure passes through —
+    // including the OS close nobody asked for.
+    const trackEditorCount = (): void => {
+        if (editors.size === 0) {
+            deps.runLoopPump?.stop();
+            return;
+        }
+        deps.runLoopPump?.start();
+    };
 
     const buildWindow = (title: string): { window: EditorWindow; parented: boolean } => {
         const parent = deps.getParentWindow();
@@ -146,10 +175,12 @@ export const createPluginWindowHost = (deps: PluginWindowHostDeps): PluginWindow
         window.on('closed', () => {
             if (editors.get(request.label) === window) {
                 editors.delete(request.label);
+                trackEditorCount();
             }
             deps.notifyClosed(request.instanceId, request.label);
         });
         editors.set(request.label, window);
+        trackEditorCount();
 
         try {
             return {
@@ -160,6 +191,7 @@ export const createPluginWindowHost = (deps: PluginWindowHostDeps): PluginWindow
             };
         } catch (error) {
             editors.delete(request.label);
+            trackEditorCount();
             window.destroy();
             return failure(String(error));
         }
@@ -220,6 +252,45 @@ export type PluginWindowNative = {
     ) => void;
     /** Async on the addon side; typed loosely because the router-facing addon type is untyped. */
     readonly notifyPluginWindowClosed: (instanceId: string, label: string) => unknown;
+    /** One pass over every open editor's run loop. Returns how many callbacks ran. */
+    readonly servicePluginEditorRunLoops: () => number;
+};
+
+/**
+ * How often the run loop is pumped while an editor is open.
+ *
+ * A plugin's X11 handlers and timers are dispatched from here, so this is the
+ * granularity of its own animation and input handling; a frame at 60 Hz is what
+ * the plugin would get from a native host's loop.
+ */
+const RUN_LOOP_INTERVAL_MS = 16;
+
+/**
+ * Whether this platform's hosted formats need the host to drive their run loop.
+ *
+ * VST3 defines `IRunLoop` for Linux alone; every other platform's plugins are
+ * dispatched by the OS toolkit the shell already runs.
+ */
+const needsEditorRunLoopPump = (): boolean => process.platform === 'linux';
+
+/** An idempotent interval pump: repeated starts keep the one timer. */
+export const createIntervalRunLoopPump = (
+    service: () => void,
+    interval: number = RUN_LOOP_INTERVAL_MS
+): EditorRunLoopPump => {
+    let timer: ReturnType<typeof setInterval> | undefined;
+    return {
+        start: () => {
+            timer ??= setInterval(service, interval);
+        },
+        stop: () => {
+            if (timer === undefined) {
+                return;
+            }
+            clearInterval(timer);
+            timer = undefined;
+        },
+    };
 };
 
 /**
@@ -237,7 +308,8 @@ export type PluginWindowNative = {
  */
 const hasPluginWindowHost = (native: object): native is PluginWindowNative =>
     typeof Reflect.get(native, 'registerPluginWindowHost') === 'function' &&
-    typeof Reflect.get(native, 'notifyPluginWindowClosed') === 'function';
+    typeof Reflect.get(native, 'notifyPluginWindowClosed') === 'function' &&
+    typeof Reflect.get(native, 'servicePluginEditorRunLoops') === 'function';
 
 /**
  * Register the shell's window callbacks with the addon.
@@ -246,17 +318,29 @@ const hasPluginWindowHost = (native: object): native is PluginWindowNative =>
  * works and plugin editors keep refusing to open, exactly the pre-T-4 state —
  * rather than turning a stale binary into a startup crash.
  */
-export const registerPluginWindowHost = (native: object, deps: Omit<PluginWindowHostDeps, 'notifyClosed'>): boolean => {
+export const registerPluginWindowHost = (
+    native: object,
+    deps: Omit<PluginWindowHostDeps, 'notifyClosed' | 'runLoopPump'>
+): boolean => {
     if (!hasPluginWindowHost(native)) {
         console.error(
             '[shell] the native addon predates the plugin window host; plugin editors are unavailable until it is rebuilt'
         );
         return false;
     }
-    const { registerPluginWindowHost: register, notifyPluginWindowClosed: notifyClosed } = native;
+    const {
+        registerPluginWindowHost: register,
+        notifyPluginWindowClosed: notifyClosed,
+        servicePluginEditorRunLoops: serviceRunLoops,
+    } = native;
 
     const host = createPluginWindowHost({
         ...deps,
+        runLoopPump: needsEditorRunLoopPump()
+            ? createIntervalRunLoopPump(() => {
+                  serviceRunLoops.call(native);
+              })
+            : undefined,
         notifyClosed: (instanceId, label) => {
             // Fire and forget: the napi method is async, so this only
             // schedules the reset on the addon's executor.
