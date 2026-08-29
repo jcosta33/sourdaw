@@ -80,8 +80,10 @@ extra stance to reach a number.
 
 Review test validity as its own stance. A passing check is not evidence. Ask what would have to
 break for this check to fail, and whether it observes the thing its name claims. The standard probe
-is mechanical: revert the behavioural hunk, or apply one targeted mutation, and run the named spec —
-a spec that stays green has failed the stance.
+is mechanical — revert the behavioural hunk, or apply one targeted mutation, and run the named
+spec; a spec that stays green has failed the stance. The reviewer names that probe; performing it
+belongs to the orchestrator's validation or the author's repair, inside a lane that exists for the
+change, because a reviewer holds no writable tree.
 
 Each reviewer's stance names a posture, not only a surface. A reviewer's job is to try to break the
 change and report the strongest thing it found — with a concrete failure scenario, the inputs or
@@ -130,9 +132,10 @@ persona on the pull request.
 
 A defect that reaches `main` is fixed under Ownership, but never only fixed. The orchestrator
 traces it to the pull request that introduced it and the stance that should have caught it —
-missing, mis-tiered, or mis-prompted — and the lesson lands in that stance's dispatch from then on.
-Escapes are the only measure a review architecture has; one that never learns from them is
-unmeasured, not proven.
+missing, mis-tiered, or mis-prompted. The lesson has a durable home: a stance's dispatch guidance
+lives as a tracked file under `.agents/skills/`, and an escape lesson is an edit to that stance's
+file, so a cold orchestrator inherits every prior escape. Escapes are the only measure a review
+architecture has; one that never learns from them is unmeasured, not proven.
 
 ## Docs
 
@@ -194,11 +197,15 @@ and returns an answer the pipeline was going to give anyway.
 
 Tests use at most two workers. Playwright uses one. See [testing](./docs/06-testing.md).
 
-A failed check is never re-run to make it pass. A failure that vanishes on retry with no relevant
-change is a defect with a name — a race, an ordering or isolation dependency, leaked state, or
-environment — and it gets a fix, a lane, or an issue; green-by-retry launders a failure exactly as
-a weakened test does. In a DAW the retried "flake" is disproportionately likely to be a real timing
-defect, because concurrency and scheduling are where flakiness and product risk coincide.
+Rerun-to-green is forbidden as a response to failure: never re-run a failed check to make it pass,
+never bump a head to reroll one, and never read a pass produced by a retry as clean. Committed test
+infrastructure may retry on its own and report the run green; that reporting discharges nothing — a
+result that needed a retry is a flaky result, and it creates the same duty a failure does. A
+failure that vanishes on retry with no relevant change is a defect with a name — a race, an
+ordering or isolation dependency, leaked state, or environment — and it gets a fix, a lane, or an
+issue; green-by-retry launders a failure exactly as a weakened test does. In a DAW the retried
+"flake" is disproportionately likely to be a real timing defect, because concurrency and scheduling
+are where flakiness and product risk coincide.
 
 ## Map
 
@@ -451,11 +458,13 @@ Before merge the orchestrator does its own final check on the current head, beca
 says the gates passed and nothing more. Read the diff: confirm the change does what it was specified
 to do, that a test observes what its name claims, and that every accepted finding is actually
 addressed there rather than silenced. For the checks themselves a green `Gate` on this head is the
-evidence, not a second local run of the same commands. A red check is never waved off as flake: an
+evidence, not a second local run of the same commands — and reading the pipeline means reading past
+the summary, because a leg the workflow softens reports a caused regression as a warning
+annotation, not a red check, so the pre-merge read covers those annotations too. A failed check is
+never waved off as flake, whether it shows red or only as a warning on a softened leg: an
 unexplained failure is attributed to the change, or to a named pre-existing defect and filed, or it
-blocks. Formatting is the exception worth doing
-locally, because it rewrites rather than reports: run it on the changed files and stage what it
-rewrote.
+blocks. Formatting is the exception worth doing locally, because it rewrites rather than reports:
+run it on the changed files and stage what it rewrote.
 
 Unrelated `origin/main` movement does not by itself stale a review. Re-review when the feature head
 changes in a way that touches the reviewed surface, and when you resolve conflicts. Base
