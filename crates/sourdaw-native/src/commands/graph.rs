@@ -113,9 +113,6 @@
 //!   drains the command — even when its stamp names a future time.
 //! - A bus strip has no pan, no mute gate, no solo gate and no sends in
 //!   `daw-engine`; batches that need them refuse with a reason naming the gap.
-//! - `bus -> track` routing refuses with its own reason — the D3 obligation
-//!   named at `AudioGraphBackend.ts` (routing constraint): buses are summed
-//!   after every track, so the edge cannot carry audio today.
 
 use crate::state::{AppState, TimelineSample};
 use daw_engine::offline::OfflineRenderer;
@@ -132,7 +129,7 @@ use daw_engine::timeline::{
 use daw_engine::GraphBatchError;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
 
 /// Headroom the fader allows above unity, in decibels — the mirror of
@@ -620,19 +617,25 @@ impl GraphRegistry {
     }
 
     /// Whether routing `from` at `target` closes a cycle, walking the outputs
-    /// this registry has recorded. The engine refuses cycles too, but its
-    /// refusal is a counted drop on the audio thread; the contract demands the
-    /// *batch* refuse instead, so the walk happens here first.
+    /// and the sends this registry has recorded. The engine refuses cycles too,
+    /// but its refusal is a counted drop on the audio thread; the contract
+    /// demands the *batch* refuse instead, so the walk happens here first.
     fn would_cycle(&self, from: &StripEntry, target: StripOutput) -> bool {
-        let mut current = target;
-        let mut hops = 0usize;
+        let mut stack = vec![target];
+        let mut seen = HashSet::new();
         let limit = MAX_TIMELINE_TRACKS + MAX_TIMELINE_BUSES;
-        while hops <= limit {
+        while let Some(current) = stack.pop() {
             let next_native = match current {
-                StripOutput::Master => return false,
+                StripOutput::Master => continue,
                 StripOutput::Track(native_id) | StripOutput::Bus(native_id) => native_id,
             };
             if next_native == from.native_id {
+                return true;
+            }
+            if !seen.insert(next_native) {
+                continue;
+            }
+            if seen.len() > limit {
                 return true;
             }
             let Some(next) = self
@@ -640,12 +643,19 @@ impl GraphRegistry {
                 .values()
                 .find(|entry| entry.native_id == next_native)
             else {
-                return false;
+                continue;
             };
-            current = next.output;
-            hops += 1;
+            stack.push(next.output);
+            if next.kind == StripKind::Track {
+                for bus_id in &next.send_bus_ids {
+                    let Some(bus) = self.strips.get(bus_id) else {
+                        continue;
+                    };
+                    stack.push(StripOutput::Bus(bus.native_id));
+                }
+            }
         }
-        true
+        false
     }
 
     /// Retire everything this registry built, returning the engine ops that do
@@ -1452,20 +1462,6 @@ fn map_command(
                 .get(track_id)
                 .ok_or_else(|| format!("set-track-output: unknown strip '{track_id}'"))?
                 .clone();
-            if strip.kind == StripKind::Bus {
-                if matches!(output, StripOutput::Track(_)) {
-                    // The refusal asymmetry named at AudioGraphBackend.ts's
-                    // routing constraint: buses are summed after every track,
-                    // so this edge cannot carry audio. Refusing the batch —
-                    // with this reason, distinct from an unknown target — is
-                    // the D3 obligation this slice takes; rendering bus->track
-                    // is not.
-                    return Err(format!(
-                        "set-track-output: bus-to-track-routing-unsupported — strip '{track_id}' \
-                         is a bus and daw-engine sums buses after tracks"
-                    ));
-                }
-            }
             if registry.would_cycle(&strip, output) {
                 return Err(format!(
                     "set-track-output: routing '{track_id}' there closes a cycle"
@@ -1518,6 +1514,11 @@ fn map_command(
                 return Err(format!(
                     "add-send: send target '{bus_id}' is a track, and a native send lands only on \
                      a bus"
+                ));
+            }
+            if registry.would_cycle(source, StripOutput::Bus(destination.native_id)) {
+                return Err(format!(
+                    "add-send: routing '{track_id}' there closes a cycle"
                 ));
             }
             let source_native = source.native_id;
@@ -2885,7 +2886,7 @@ mod tests {
     }
 
     #[test]
-    fn a_bus_routed_at_a_track_refuses_the_batch_with_the_distinct_reason() {
+    fn a_bus_routed_at_a_track_maps_onto_a_bus_to_track_edge() {
         let batch = batch(json!([
             { "kind": "create-track-strip", "trackId": "t1", "name": "T", "state": strip_state(1.0),
               "devices": [], "honorMuted": true, "contributesAudio": true },
@@ -2895,14 +2896,14 @@ mod tests {
         ]));
 
         let mut registry = GraphRegistry::default();
-        let refusal = map_batch(&batch, &mut registry, &sample_pool(), 48_000.0)
-            .expect_err("bus->track must refuse");
+        let mapped = map_batch(&batch, &mut registry, &sample_pool(), 48_000.0)
+            .expect("bus->track must map");
 
-        assert!(
-            refusal.contains("bus-to-track-routing-unsupported"),
-            "the refusal must carry its own reason, got: {refusal}"
-        );
-        assert!(refusal.contains("commands[2]"));
+        // Node ids are allocated in creation order: the track is 1, the bus is 2.
+        assert!(mapped
+            .ops
+            .iter()
+            .any(|op| matches!(op, GraphCommand::SetBusOutput(2, RouteTarget::Track(1)))));
     }
 
     #[test]
@@ -4299,11 +4300,8 @@ mod tests {
     ///
     /// The routes are the ones a default session really produces, not the
     /// simplest ones that map: every added track's stored output is the master
-    /// track, so an ordinary track routes at that *track* strip and runs through
-    /// its device chain. A bus's stored output is the master track too, but the
-    /// engine has no bus -> track edge, so the producer sends it to the master
-    /// sum instead; the refusal it would otherwise hit is pinned by
-    /// `a_bus_routed_at_a_track_refuses_the_batch_with_the_distinct_reason`.
+    /// track, so an ordinary track — and a bus — routes at that *track* strip
+    /// and runs through its device chain.
     fn live_topology_commands() -> Value {
         json!([
             {
@@ -4357,7 +4355,7 @@ mod tests {
             { "kind": "set-track-output", "trackId": "master", "target": { "kind": "master" } },
             { "kind": "set-track-output", "trackId": "lead", "target": { "kind": "track", "trackId": "master" } },
             { "kind": "set-track-output", "trackId": "gated", "target": { "kind": "track", "trackId": "master" } },
-            { "kind": "set-track-output", "trackId": "verb", "target": { "kind": "master" } },
+            { "kind": "set-track-output", "trackId": "verb", "target": { "kind": "track", "trackId": "master" } },
             { "kind": "add-send", "trackId": "lead", "busId": "verb", "tap": "post-fader", "level": 0.4 },
             { "kind": "set-transport", "playing": true, "positionSeconds": 0 }
         ])

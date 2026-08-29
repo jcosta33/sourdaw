@@ -581,8 +581,7 @@ impl EngineHandle {
         self.push(GraphCommand::RemoveSend { track_id, bus_id })
     }
 
-    /// Add a bus. A bus may feed the master or another bus; buses are summed
-    /// after every track, so a bus cannot feed a track.
+    /// Add a bus. A bus may feed the master, another bus, or a track.
     pub fn add_bus(&mut self, id: usize) -> Result<(), String> {
         self.push(GraphCommand::AddBus(TimelineBus::new(id)))
     }

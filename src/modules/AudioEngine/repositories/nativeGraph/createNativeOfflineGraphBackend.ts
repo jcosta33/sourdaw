@@ -13,8 +13,8 @@
  * The contract requires a batch to be refused **at apply time**, whole, before
  * any of it is applied — and the native side's validation (`map_batch`, with
  * every refusal reason this backend is accountable for: `stretched-clip-
- * unsupported`, `smoothed-write-unsupported`, `bus-to-track-routing-
- * unsupported`, the queue-capacity refusals) lives on the native side. So
+ * unsupported`, `smoothed-write-unsupported`, the queue-capacity refusals)
+ * lives on the native side. So
  * `apply` probes through `map_graph_batch`: the incoming batch maps against
  * the graph the committed commands built, and the answer is the native
  * apply-result itself — refusal reasons and strip reports — with nothing

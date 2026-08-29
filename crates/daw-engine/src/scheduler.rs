@@ -5174,13 +5174,52 @@ mod timeline_tests {
     }
 
     #[test]
-    fn a_bus_asked_to_feed_a_track_is_refused_because_buses_are_summed_last() {
+    fn a_bus_routed_at_a_track_enters_that_track_device_chain() {
+        let mut harness = Harness::new(32);
+        harness.playing();
+        // Track 1 stands in for the master strip: no clip of its own, a 0.5
+        // insert, output to the engine sum. Track 2 is muted so only its
+        // pre-fader send reaches the bus. The bus then feeds track 1. A bus
+        // that still dumped onto the sum would bypass the insert and render 1.
+        harness.send(GraphCommand::AddTrack(TimelineTrack::new(1)));
+        harness.send(GraphCommand::AddPlugin(
+            7,
+            Box::new(ScalingPlugin { factor: 0.5 }),
+        ));
+        harness.send(GraphCommand::InsertTrackDevice {
+            track_id: 1,
+            entry: effect(7),
+            index: 0,
+        });
+        track_with_constant_clip(&mut harness, 2, 9, 1.0, 4);
+        harness.send(GraphCommand::SetTrackMute(2, true));
+        harness.send(GraphCommand::AddBus(TimelineBus::new(50)));
+        harness.send(GraphCommand::AddSend {
+            track_id: 2,
+            bus_id: 50,
+            tap: SendTap::PreFader,
+            level: 1.0,
+        });
+        harness.send(GraphCommand::SetBusOutput(50, RouteTarget::Track(1)));
+
+        assert_eq!(
+            harness.scheduler.timeline().bus(50).map(|bus| bus.output()),
+            Some(RouteTarget::Track(1))
+        );
+        let (left, _) = harness.render(4);
+        assert_eq!(left, vec![0.5; 4]);
+    }
+
+    #[test]
+    #[test]
+    fn a_bus_and_track_that_feed_each_other_are_refused_as_a_cycle() {
         let mut harness = Harness::new(16);
         harness.send(GraphCommand::AddTrack(TimelineTrack::new(1)));
         harness.send(GraphCommand::AddBus(TimelineBus::new(50)));
+        harness.send(GraphCommand::SetTrackOutput(1, RouteTarget::Bus(50)));
         harness.send(GraphCommand::SetBusOutput(50, RouteTarget::Track(1)));
 
-        assert_eq!(harness.diagnostics().invalid_bus_routings, 1);
+        assert_eq!(harness.diagnostics().routing_cycles_refused, 1);
         assert_eq!(
             harness.scheduler.timeline().bus(50).map(|bus| bus.output()),
             Some(RouteTarget::Master)
@@ -5188,6 +5227,22 @@ mod timeline_tests {
     }
 
     #[test]
+    fn a_send_into_a_bus_that_feeds_the_same_track_is_refused_as_a_cycle() {
+        let mut harness = Harness::new(16);
+        harness.send(GraphCommand::AddTrack(TimelineTrack::new(1)));
+        harness.send(GraphCommand::AddBus(TimelineBus::new(50)));
+        harness.send(GraphCommand::SetBusOutput(50, RouteTarget::Track(1)));
+        harness.send(GraphCommand::AddSend {
+            track_id: 1,
+            bus_id: 50,
+            tap: SendTap::PreFader,
+            level: 1.0,
+        });
+
+        assert_eq!(harness.diagnostics().routing_cycles_refused, 1);
+        assert_eq!(harness.scheduler.timeline().send_tap(1, 50), None);
+    }
+
     fn a_track_feeding_another_track_is_rendered_ahead_of_it_and_enters_its_device_chain() {
         let mut harness = Harness::new(32);
         harness.playing();

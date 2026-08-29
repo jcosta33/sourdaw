@@ -3009,7 +3009,7 @@ describe('live/offline null test — the native backend leg', () => {
             });
         });
 
-        it('refuses routing a bus at a track with bus-to-track-routing-unsupported', async () => {
+        it('accepts routing a bus at a track', async () => {
             const backend = createNativeOfflineGraphBackend({
                 sampleRate: SAMPLE_RATE,
                 transport: inProcessNativeTransport(requireNativeHost()),
@@ -3037,9 +3037,7 @@ describe('live/offline null test — the native backend leg', () => {
             backend.dispose();
 
             expect(result).toMatchObject({
-                acceptance: 'rejected',
-                application: 'not-applied',
-                reason: expect.stringMatching(/bus-to-track-routing-unsupported/),
+                acceptance: 'accepted',
             });
         });
     });

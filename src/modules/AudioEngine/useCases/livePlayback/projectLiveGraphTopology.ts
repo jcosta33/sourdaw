@@ -6,9 +6,7 @@
  * (`offlineRender/renderOfflineWithNativeEngine.ts`) and decides routing with
  * its law (`resolveOutputTarget`), because a second precedence for "which of
  * master, a bus or a track does this output id name" is how the live and the
- * bounced mix start disagreeing about where a strip goes. What it layers on top
- * is not a second precedence but a native constraint the engine enforces by
- * refusing the batch; see `resolveStripOutput`.
+ * bounced mix start disagreeing about where a strip goes.
  *
  * ── What this slice produces, and what it deliberately does not ───────────
  *
@@ -51,11 +49,7 @@
 
 import { type Track } from '#/modules/Arrangement/stores';
 
-import {
-    type AudioGraphCommand,
-    type AudioGraphRouteTarget,
-    type AudioGraphStripState,
-} from '../../models/AudioGraphBackend';
+import { type AudioGraphCommand, type AudioGraphStripState } from '../../models/AudioGraphBackend';
 import { resolveOutputTarget } from '../offlineRender/resolveOutputTarget';
 
 export type LiveGraphTransportState = Readonly<{
@@ -128,36 +122,6 @@ function createStripCommand(input: { track: Track; state: AudioGraphStripState }
 }
 
 /**
- * Where a strip's output lands natively.
- *
- * The shared routing law decides it, with one native constraint over the top:
- * `daw-engine` has no bus → track edge, because buses are summed after every
- * track, so a bus routed at a track refuses the whole batch. That is not an
- * exotic project — a bus's default output *is* the master track — so a bus
- * whose output resolves to a track lands on the engine's master sum instead,
- * which is where its audio arrives either way.
- *
- * The asymmetry is deliberate: an ordinary track routed at the master track
- * keeps resolving to that track, because track → track is an edge the engine
- * has and it is what runs the mix through the master strip's device chain. What
- * a bus gives up by taking the sum directly is exactly that chain, and closing
- * the gap means giving the engine a bus edge into a track strip — never a
- * producer emitting a route the engine refuses.
- */
-function resolveStripOutput(input: {
-    track: Track;
-    busStripIds: ReadonlySet<string>;
-    trackStripIds: ReadonlySet<string>;
-}): AudioGraphRouteTarget {
-    const { track, busStripIds, trackStripIds } = input;
-    const target = resolveOutputTarget({ outputId: track.outputId, busStripIds, trackStripIds });
-    if (track.kind === 'bus' && target.kind === 'track') {
-        return { kind: 'master' };
-    }
-    return target;
-}
-
-/**
  * The sends the native graph has a path for.
  *
  * Two kinds are dropped rather than sent, because the mapper refuses the *whole*
@@ -169,9 +133,8 @@ function resolveStripOutput(input: {
  * carry one — bus into bus is ordinary practice, a reverb feeding a parallel
  * compressor — but the native send tap sits on track strips only, so the engine
  * refuses a bus-source send by name. What that path costs until the tap exists
- * is its own audio, and growing one is engine fidelity work: the same class as
- * the master-strip chain the bus route above gives up, never a producer emitting
- * a command the engine refuses.
+ * is its own audio, and growing one is engine fidelity work, never a producer
+ * emitting a command the engine refuses.
  */
 function sendCommands(input: { track: Track; busStripIds: ReadonlySet<string> }): AudioGraphCommand[] {
     const { track, busStripIds } = input;
@@ -199,7 +162,7 @@ function routingCommands(input: {
         {
             kind: 'set-track-output',
             trackId: track.id,
-            target: resolveStripOutput({ track, busStripIds, trackStripIds }),
+            target: resolveOutputTarget({ outputId: track.outputId, busStripIds, trackStripIds }),
         },
         ...sendCommands({ track, busStripIds }),
     ];

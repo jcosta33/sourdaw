@@ -64,12 +64,10 @@
  *
  * **Routing constraint.** This contract permits any strip to route to any of
  * `master`, a bus, or a track, and does not carve out bus outputs. `daw-engine`
- * today refuses `bus -> track` outright (`Timeline::set_bus_output` records
- * `invalid_bus_routing` and drops the command). A backend that cannot honour a
+ * honours `bus -> track`: the bus is rendered before the destination strip so
+ * the signal enters that strip's device chain. A backend that cannot honour a
  * route must **refuse the batch** rather than drop the route, because a dropped
- * route is a strip that silently stops reaching the mix. Closing that gap —
- * either by supporting bus -> track natively or by narrowing this law — is a
- * D3 obligation, and it is stated here so it is not discovered as a silence.
+ * route is a strip that silently stops reaching the mix.
  *
  * ── What is deliberately *not* here ───────────────────────────────────────
  *
