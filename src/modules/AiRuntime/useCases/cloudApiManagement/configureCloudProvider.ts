@@ -40,8 +40,8 @@ export async function configureCloudProvider(configuration: HostedLlmConfigurati
     if (!model) {
         throw createAiRuntimeError('Model cannot be empty');
     }
-    const apiKey = configuration.apiKey.trim();
-    if ((configuration.provider === 'anthropic' || configuration.provider === 'openai') && !apiKey) {
+    const apiKey = configuration.apiKey;
+    if ((configuration.provider === 'anthropic' || configuration.provider === 'openai') && !apiKey.trim()) {
         throw createAiRuntimeError(
             `${configuration.provider === 'anthropic' ? 'Anthropic' : 'OpenAI'} API key is required`
         );

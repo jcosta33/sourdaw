@@ -26,9 +26,9 @@ provider's policy before sending project material.
 Desktop credentials are entered in Preferences and sent once to the native provider gateway to
 create a volatile session. The key is not saved in Preferences, project files, renderer status,
 chat, logs, or collaboration data; subsequent requests use only the opaque session ID. Desktop
-CLAP plugins run in the native application process and are not a credential isolation boundary. The
-browser has no hosted credential surface; its OpenAI-compatible provider path is loopback-only and
-carries no credential.
+CLAP plugins run in the native application process and are not a credential isolation boundary.
+Sessions end when Sourdaw restarts, so credentials must be entered again. The browser has no hosted
+credential surface; its OpenAI-compatible provider path is loopback-only and carries no credential.
 
 ## Models
 

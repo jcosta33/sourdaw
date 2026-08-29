@@ -77,15 +77,15 @@ describe('AiSection', () => {
         expect(mocks.setAiBackendPreference).toHaveBeenCalledWith('webllm');
     });
 
-    it('passes a desktop API-key draft only to hosted-provider configuration and clears it after saving', async () => {
+    it('passes a desktop API-key draft only to hosted-provider configuration and clears it after connecting', async () => {
         render(<AiSection />);
 
         const apiKey = screen.getByLabelText('Hosted AI API key');
         expect(apiKey).toHaveAttribute('type', 'password');
         expect(apiKey).toHaveAttribute('autocomplete', 'new-password');
-        expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
+        expect(screen.getByRole('button', { name: 'Connect' })).toBeDisabled();
         fireEvent.change(apiKey, { target: { value: 'sk-test-key' } });
-        fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
 
         await waitFor(() => {
             expect(mocks.configureCloudProvider).toHaveBeenCalledWith({

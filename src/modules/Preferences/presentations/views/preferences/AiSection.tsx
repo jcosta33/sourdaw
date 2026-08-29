@@ -216,7 +216,7 @@ export const AiSection = (): ReactElement => {
                 <FieldGroup label="Hosted AI provider">
                     <p className="text-[10px] text-muted-foreground mb-2 leading-relaxed">
                         Your key is sent once to create an in-memory native session. It is never saved in Preferences or
-                        exposed to the AI runtime.
+                        exposed to the AI runtime. This session-only key must be entered again after restarting Sourdaw.
                     </p>
                     <Grid cols={2} gap={1.5} className="mb-1.5">
                         <DawCompactSelect
@@ -328,7 +328,7 @@ export const AiSection = (): ReactElement => {
                                 void saveHostedProvider();
                             }}
                         >
-                            {configurationPending ? 'Saving…' : 'Save'}
+                            {configurationPending ? 'Connecting…' : 'Connect'}
                         </Button>
                     </Row>
                     {configurationError ? (

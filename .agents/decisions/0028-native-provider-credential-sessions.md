@@ -43,7 +43,7 @@ pins public DNS results, bounds traffic, and never logs credentials or provider 
 Closing or replacing a configuration aborts frontend-owned requests and destroys its native session.
 Sessions are never persisted. Web builds expose no hosted-provider credential surface. Explicit
 unauthenticated loopback OpenAI-compatible endpoints may remain renderer-local because they carry no
-secret.
+secret. Restarting Sourdaw destroys every session, so credentialed providers require a new entry.
 
 ## Consequences
 

@@ -29,14 +29,14 @@ describe('configureCloudProvider', () => {
         mocks.llmStatusValue.value = { state: 'idle' };
     });
 
-    it('normalizes models and fixed provider origins', async () => {
+    it('normalizes models and fixed provider origins without altering the API key', async () => {
         await configureCloudProvider({ provider: 'openai', model: '  gpt-test  ', apiKey: '  sk-test-key  ' });
 
         expect(mocks.setCloudProviderConfig).toHaveBeenCalledWith({
             provider: 'openai',
             model: 'gpt-test',
             baseUrl: 'https://api.openai.com/v1',
-            apiKey: 'sk-test-key',
+            apiKey: '  sk-test-key  ',
         });
     });
 
