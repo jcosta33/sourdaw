@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { stopAllScheduled } from '#/modules/AudioEngine/useCases';
+import { stopAllScheduled, stopNativeLiveGraphSession } from '#/modules/AudioEngine/useCases';
 import { resetMidiState } from '#/modules/MIDI/useCases';
 import { yeastPanic } from '#/modules/Yeast/useCases';
 
@@ -19,6 +19,7 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
     getAudioContext: vi.fn(() => ({ currentTime: 1, sampleRate: 48000 })),
     stopAllScheduled: vi.fn(),
+    stopNativeLiveGraphSession: vi.fn(() => Promise.resolve({ outcome: 'declined', reason: 'no session' })),
 }));
 vi.mock('#/modules/MIDI/useCases', () => ({
     resetMidiState: vi.fn(),
@@ -46,7 +47,25 @@ describe('stopPlayback', () => {
         vi.mocked(getTransportState).mockClear();
         vi.mocked(updateTransportState).mockClear();
         vi.mocked(stopActiveRecording).mockClear();
+        vi.mocked(stopNativeLiveGraphSession).mockClear();
         playheadPositionRef.current = 0;
+    });
+
+    it('tells the native engine playback stopped, at the beat the playhead came to rest on', () => {
+        // A loop region parks the playhead on the loop start, so stop rests at
+        // beat 4 — two seconds at 120 BPM. A native engine that never hears the
+        // stop keeps its own `is_playing` true and runs the topology forever.
+        vi.mocked(getTransportState).mockReturnValue({
+            ...defaultTransportState,
+            isPlaying: true,
+            loopStart: 4,
+            loopEnd: 8,
+            playheadPosition: 6,
+        });
+
+        void stopPlayback();
+
+        expect(stopNativeLiveGraphSession).toHaveBeenCalledWith({ positionSeconds: 2 });
     });
 
     it('should stop playback and reset playhead when no loop region', () => {
