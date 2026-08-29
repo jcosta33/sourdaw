@@ -36,11 +36,11 @@ import {
 import { EVENT_CHANNEL, STREAM_CHANNEL, WINDOW_MAXIMIZED_CHANGED_CHANNEL } from './channels.js';
 import { EXPOSED_COMMANDS } from './commands.js';
 import { createCommandStream, createEventForwarder } from './events.js';
+import { bindMainWindowOwnerTeardown, destroyCrashedMainWindow } from './mainWindowTeardown.js';
 import { loadNativeAddon, NATIVE_ADDON_PATH_ENV, resolveNativeAddonPath, type NativeHost } from './native.js';
 import { forwardNativeEvent } from './nativeEventRouter.js';
 import { createPluginCommandAdmission } from './pluginCommandAdmission.js';
 import {
-    interceptOwnerWindowTeardown,
     registerPluginWindowHost,
     type EditorWindow,
     type EditorWindowOptions,
@@ -180,23 +180,8 @@ const createWindow = (): BrowserWindow => {
     window.on('unmaximize', () => window.webContents.send(WINDOW_MAXIMIZED_CHANGED_CHANNEL, false));
     attachWebContentsPolicy(window);
     void window.loadURL(entryUrl);
-    destroyMainWindowAfterEditorsDetach = bindOwnerTeardown(window);
+    destroyMainWindowAfterEditorsDetach = bindMainWindowOwnerTeardown(window, pluginWindowHost);
     return window;
-};
-
-/**
- * Detach parented plugin editors before this DAW window can be destroyed.
- *
- * Absent when the addon never registered a window host: there are then no
- * editors to un-parent, and close/destroy stay the platform's.
- */
-const bindOwnerTeardown = (window: BrowserWindow): (() => Promise<void>) | undefined => {
-    if (pluginWindowHost === undefined) {
-        return undefined;
-    }
-    const host = pluginWindowHost;
-    const { destroyAfterEditorsDetach } = interceptOwnerWindowTeardown(window, () => host.detachOpenEditors());
-    return destroyAfterEditorsDetach;
 };
 
 /**
@@ -557,14 +542,10 @@ app.on('render-process-gone', (_event, contents, details) => {
     // and every editor parented to it — on the CloseImmediately path.
     const destroyCrashed = destroyMainWindowAfterEditorsDetach;
     const destroyCrashedWindow = (): void => {
-        if (crashedWindow === null || crashedWindow.isDestroyed()) {
+        if (crashedWindow === null) {
             return;
         }
-        if (destroyCrashed !== undefined) {
-            void destroyCrashed();
-            return;
-        }
-        crashedWindow.destroy();
+        destroyCrashedMainWindow(crashedWindow, destroyCrashed);
     };
 
     const now = Date.now();

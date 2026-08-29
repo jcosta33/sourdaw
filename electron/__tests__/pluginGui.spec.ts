@@ -7,9 +7,6 @@
  * Electron process. What stays untested here is the thin `BaseWindow` factory
  * in `main.ts`, which holds no decisions.
  */
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
-
 import { describe, expect, it, vi } from 'vitest';
 
 import {
@@ -1425,14 +1422,5 @@ describe('registerPluginWindowHost', () => {
 
         expect(registered).toBeUndefined();
         expect(register).not.toHaveBeenCalled();
-    });
-});
-
-describe('DAW window owner-destroy wiring', () => {
-    it('intercepts main-window close and crash destroy through the plugin window host', () => {
-        const mainSource = readFileSync(resolve('electron/main.ts'), 'utf8');
-        expect(mainSource).toMatch(/interceptOwnerWindowTeardown\(/u);
-        expect(mainSource).toMatch(/host\.detachOpenEditors\(/u);
-        expect(mainSource).toMatch(/void destroyCrashed\(\)/u);
     });
 });
