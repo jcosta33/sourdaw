@@ -342,9 +342,8 @@ function createWarningBatchResult(input: {
     };
 }
 
-function createPendingExternalEffectBatchResult(
-    commandBatch: ReturnType<typeof compileVersionedCommandBatchEnvelope>,
-    operation: string
+function createPendingRenderBatchResult(
+    commandBatch: ReturnType<typeof compileVersionedCommandBatchEnvelope>
 ): ConfirmedActionBatchResult {
     const parsed = parseVersionedCommandBatchEnvelope(commandBatch.serialized, commandBatch.authority);
     if (parsed.status !== 'valid') {
@@ -353,7 +352,7 @@ function createPendingExternalEffectBatchResult(
     const pendingEffect = {
         commandId: parsed.envelope.commands[0]?.commandId,
         kind: 'external-effect' as const,
-        operation,
+        operation: 'renderProjectSections',
         reason: 'comparison renderer unavailable',
         remediation: 'reconcile' as const,
         state: 'pending' as const,
@@ -1352,7 +1351,7 @@ describe('confirmPendingChatActions transaction admission', () => {
             .spyOn(commandUseCases, 'executeVersionedCommandBatchEnvelope')
             .mockImplementation(async (input) => {
                 input.options?.onProjectCommitFinalizationUnavailable?.({ reason: 'render artifact vanished' });
-                return createPendingExternalEffectBatchResult(commandBatch, 'renderProjectSections');
+                return createPendingRenderBatchResult(commandBatch);
             });
         const settle = vi.spyOn(agentRunWorkLease, 'settle').mockImplementation(() => {
             agentRunLifecycle.transitionPhase({ runId, phase: 'cancelled' });
