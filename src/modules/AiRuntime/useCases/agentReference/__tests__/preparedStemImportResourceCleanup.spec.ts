@@ -437,6 +437,47 @@ describe('prepared stem import resource cleanup', () => {
         expect(readAgentRunState().preparedStemImportRecoveryLedger ?? []).toEqual([]);
     });
 
+    it('discards every stem of a verified noncommit whose run has left run history', async () => {
+        const runId = 'stem-evicted-noncommit-discard';
+        const batchId = 'batch-evicted-noncommit-discard';
+        const twoStems = [
+            ...stems,
+            {
+                ...stems[0],
+                audioBufferId: 'decoded-buffer-2',
+                assetHash: 'hash-staged-asset-2',
+                assetLeaseId: 'staged-asset-2',
+                clipId: 'clip-staged-asset-2',
+                stemId: 'stem-staged-asset-2',
+            },
+        ];
+        agentRunLifecycle.create({ runId, request: 'Import stems.', mode: 'plan', createdRevision: 'r1' });
+        preparedStemImportResources.register({ runId, stems: twoStems });
+        preparedStemImportResources.protect({
+            runId,
+            stems: twoStems,
+            recovery: { batchId, commandBatch: createRecoveryCommandBatch(runId, batchId) },
+        });
+        for (let index = 0; index < 50; index += 1) {
+            agentRunLifecycle.create({
+                runId: `later-evicting-run-${String(index)}`,
+                request: `Later run ${String(index)}`,
+                mode: 'plan',
+                createdRevision: `later-revision-${String(index)}`,
+            });
+        }
+        expect(agentRunLifecycle.get(runId)).toBeNull();
+
+        await expect(
+            preparedStemImportResources.discardAfterVerifiedNoncommit({ runId, stems: twoStems })
+        ).resolves.toBeUndefined();
+
+        expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledTimes(2);
+        expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledWith('decoded-buffer-1');
+        expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledWith('decoded-buffer-2');
+        expect(readAgentRunState().preparedStemImportRecoveryLedger ?? []).toEqual([]);
+    });
+
     it('keeps failed confirmation cleanup executable until the durable lease releases', async () => {
         mocks.completeDurableCleanupRecovery
             .mockResolvedValueOnce({ status: 'failed', reason: 'transaction-aborted' })
