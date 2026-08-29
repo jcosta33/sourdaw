@@ -563,43 +563,6 @@ function sameDeliveryReceiptIdentity(left: DeliveryReceiptPayload, right: Delive
     return left.observedCiState === right.observedCiState;
 }
 
-function assertCompatibleDeliveryReceiptPair(
-    previous: DeliveryReceiptComment,
-    current: DeliveryReceiptComment,
-    pullRequest: Pick<PullRequestSnapshot, 'number' | 'headRefOid'>
-): void {
-    const previousPayload = assertDeliveryReceiptForHead(previous, pullRequest);
-    const currentPayload = assertDeliveryReceiptForHead(current, pullRequest);
-    if (!sameDeliveryReceiptKey(previousPayload, currentPayload)) {
-        return;
-    }
-    if (sameDeliveryReceiptIdentity(previousPayload, currentPayload)) {
-        return;
-    }
-    fail(`PR #${pullRequest.number} has an invalid delivery receipt lineage`);
-}
-
-function newestEquivalentDeliveryReceipt(
-    lineage: DeliveryReceiptComment[],
-    expected: DeliveryReceiptPayload,
-    pullRequest: Pick<PullRequestSnapshot, 'number' | 'headRefOid'>
-): DeliveryReceiptComment | undefined {
-    for (let index = lineage.length - 1; index >= 0; index -= 1) {
-        const comment = lineage[index];
-        if (comment === undefined) {
-            continue;
-        }
-        const payload = assertDeliveryReceiptForHead(comment, pullRequest);
-        if (sameDeliveryReceiptIdentity(payload, expected)) {
-            return comment;
-        }
-        if (sameDeliveryReceiptKey(payload, expected)) {
-            fail(`PR #${pullRequest.number} has an invalid delivery receipt lineage`);
-        }
-    }
-    return undefined;
-}
-
 function authoritativeDeliveryReceipt(
     lineage: DeliveryReceiptComment[],
     pullRequest: Pick<PullRequestSnapshot, 'number' | 'headRefOid'>
@@ -611,16 +574,40 @@ function authoritativeDeliveryReceipt(
     return receipt;
 }
 
+function deliveryReceiptKey(payload: DeliveryReceiptPayload): string {
+    return [payload.pullRequest, payload.head, payload.bodySha256, payload.closingIssue ?? 'none'].join(':');
+}
+
+function assertCompatibleDeliveryReceiptLineage(
+    lineage: DeliveryReceiptComment[],
+    pullRequest: Pick<PullRequestSnapshot, 'number' | 'headRefOid'>
+): void {
+    const seenByKey = new Map<string, DeliveryReceiptPayload[]>();
+    for (const comment of lineage) {
+        const payload = assertDeliveryReceiptForHead(comment, pullRequest);
+        const key = deliveryReceiptKey(payload);
+        const seen = seenByKey.get(key) ?? [];
+        for (const previous of seen) {
+            if (!sameDeliveryReceiptIdentity(previous, payload)) {
+                fail(`PR #${pullRequest.number} has an invalid delivery receipt lineage`);
+            }
+        }
+        seen.push(payload);
+        seenByKey.set(key, seen);
+    }
+}
+
 function authoritativeEquivalentDeliveryReceipt(
     lineage: DeliveryReceiptComment[],
     expected: DeliveryReceiptPayload,
     pullRequest: Pick<PullRequestSnapshot, 'number' | 'headRefOid'>
 ): DeliveryReceiptComment | undefined {
-    const receipt = newestEquivalentDeliveryReceipt(lineage, expected, pullRequest);
-    if (receipt !== undefined) {
-        return receipt;
+    const receipt = lineage.at(-1);
+    if (receipt === undefined) {
+        return undefined;
     }
-    return undefined;
+    const payload = assertDeliveryReceiptForHead(receipt, pullRequest);
+    return sameDeliveryReceiptIdentity(payload, expected) ? receipt : undefined;
 }
 
 function deliveryReceiptsForHead(
@@ -649,14 +636,7 @@ function orderedDeliveryReceiptLineage(
     pullRequest: Pick<PullRequestSnapshot, 'number' | 'headRefOid'>
 ): DeliveryReceiptComment[] {
     const ordered = deliveryReceiptsForHead(comments, pullRequest);
-    for (let index = 1; index < ordered.length; index += 1) {
-        const previous = ordered[index - 1];
-        const current = ordered[index];
-        if (previous === undefined || current === undefined) {
-            fail(`PR #${pullRequest.number} has an invalid delivery receipt lineage`);
-        }
-        assertCompatibleDeliveryReceiptPair(previous, current, pullRequest);
-    }
+    assertCompatibleDeliveryReceiptLineage(ordered, pullRequest);
     return ordered;
 }
 
@@ -868,11 +848,7 @@ function deliverPullRequestWithCiAdmission(
     if (initial.state === 'MERGED') {
         validateBaseBranch(initial);
         validateAuthorAppMerger(initial);
-        const receipt = readDeliveryReceipt(
-            initial,
-            port,
-            expectedDeliveryReceipt(initial, trackerCompletionTarget(initial), ciAdmissionMode)
-        );
+        const receipt = readDeliveryReceipt(initial, port);
         const remaining = port.dependents(initial.headRefName).filter((candidate) => candidate.number !== number);
         retargetDependents(remaining, initial.baseRefName, port);
         completeIssueAfterMerge(number, receipt.closingIssue, tracker);
