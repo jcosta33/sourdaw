@@ -271,6 +271,7 @@ export async function confirmPendingChatActions(
     if (batchResult.status === 'idempotent-replay') {
         return settleVerifiedBatchReplay({
             confirmation,
+            approvedBatchId,
             receipt: batchResult.receipt,
             recoveredExternalEffects:
                 'recoveredExternalEffects' in batchResult && batchResult.recoveredExternalEffects === true,

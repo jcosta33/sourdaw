@@ -20,6 +20,7 @@ import {
 
 type SettleVerifiedBatchReplayInput = {
     confirmation: PendingAppActionConfirmation;
+    approvedBatchId: string;
     receipt: CommandVerifiedBatchReceipt;
     recoveredExternalEffects?: boolean;
     leaseSettlement?: ReturnType<typeof settleAgentRunWorkLeaseSafely>;
@@ -35,6 +36,7 @@ export async function settleVerifiedBatchReplay(
 > {
     const {
         confirmation,
+        approvedBatchId,
         receipt,
         recoveredExternalEffects = false,
         leaseSettlement = { accepted: true, warning: null },
@@ -44,7 +46,7 @@ export async function settleVerifiedBatchReplay(
             confirmation,
             receipt,
             {
-                ...(confirmation.groupId ? { revertGroupId: confirmation.groupId } : {}),
+                revertGroupId: approvedBatchId,
                 completesRun: false,
             }
         );
@@ -69,9 +71,7 @@ export async function settleVerifiedBatchReplay(
             confirmation,
             receipt,
             {
-                ...(replay.status === 'committed' && confirmation.groupId
-                    ? { revertGroupId: confirmation.groupId }
-                    : {}),
+                ...(replay.status === 'committed' ? { revertGroupId: approvedBatchId } : {}),
                 completesRun: leaseSettlement.accepted,
             }
         );

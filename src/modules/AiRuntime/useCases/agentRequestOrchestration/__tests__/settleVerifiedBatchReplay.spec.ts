@@ -168,7 +168,7 @@ function createInput(pendingEffect = false): Input {
               }
             : { status: 'committed', actions: [{ action }] },
     });
-    return { confirmation, receipt } satisfies Input;
+    return { approvedBatchId: 'batch-1', confirmation, receipt } satisfies Input;
 }
 
 function createDeferred(): { promise: Promise<void>; resolve: () => void } {
@@ -294,6 +294,26 @@ describe('settleVerifiedBatchReplay', () => {
             expect.objectContaining({ content: expect.stringContaining('will not replay') })
         );
     });
+
+    it.each([
+        { pendingEffect: false, completesRun: true },
+        { pendingEffect: true, completesRun: false },
+    ])(
+        'records committed replay work under the approved ID when confirmation group ID is absent',
+        async ({ pendingEffect, completesRun }) => {
+            const input = {
+                ...createInput(pendingEffect),
+                confirmation: { ...confirmation, groupId: undefined },
+            };
+
+            await settleVerifiedBatchReplay(input);
+
+            expect(mocks.recordReceipt).toHaveBeenCalledWith(input.confirmation, input.receipt, {
+                revertGroupId: 'batch-1',
+                completesRun,
+            });
+        }
+    );
 
     it('retains partially committed resources after a stale lease completion', async () => {
         const input = {

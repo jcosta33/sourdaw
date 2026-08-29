@@ -2324,6 +2324,15 @@ describe('confirmPendingChatActions transaction admission', () => {
             confirmPendingChatActions({ confirmationId: 'confirmation-recovery-batch-retry' })
         ).resolves.toEqual({ status: 'executed' });
 
+        expect(agentRunLifecycle.get('confirmation-recovery-batch')).toMatchObject({
+            committedWork: [
+                expect.objectContaining({
+                    workId: 'group-recovery-batch',
+                    revertGroupId: 'group-recovery-batch',
+                }),
+            ],
+        });
+
         expect(effectAttempts).toBe(3);
         expect(chatStore.value?.messages[0]?.content).toContain('recovered verified receipt');
         expect(chatStore.value?.messages[0]?.content).toContain(
