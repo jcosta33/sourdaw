@@ -1,0 +1,65 @@
+src/modules/AudioEngine/repositories/engineTransport/__tests__/setEngineTransportMaps.spec.ts
+  s_4f908a5afb6b58::t_9bf269d663480a 1-80
+src/modules/Transport/useCases/tempoMap/projectEngineTransportMaps.ts
+  s_4f908a5afb6b58::t_faa699e63cca49 227-233,247
+  s_4f908a5afb6b58::t_7e106c2b12d725 60-99
+  s_4f908a5afb6b58::t_8f1885b6c8692b 187-199,201-204,207-208,213-215
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeLiveGraphSession.spec.ts
+  s_4f908a5afb6b58::t_0386bbe28a28c6 22
+  s_4f908a5afb6b58::t_6bd6794a1736b2 26
+  s_4f908a5afb6b58::t_949a4c0ef5c144 63-84
+  s_4f908a5afb6b58::t_b3bf8d55442ce6 211-228,235-237,253-262,264-270
+  s_4f908a5afb6b58::t_9c17ddb729ad05 263
+  s_4f908a5afb6b58::t_1ea4a428ef971e 377-378,382,384-385
+  s_4f908a5afb6b58::t_1a50f9d4946379 39-45
+  s_4f908a5afb6b58::t_14159f3dc17c53 162,164,206,210,376
+src/modules/Transport/useCases/tempoMap/__tests__/projectEngineTransportMaps.spec.ts
+  s_4f908a5afb6b58::t_47b90e31db14fd 79-118
+.agents/decisions/0039-transport-features-follow-the-fed-back-playhead.md
+  s_4f908a5afb6b58::t_5f1402b953fa91 95-97
+  s_4f908a5afb6b58::t_23c3aa4d5d39a4 92
+  s_4f908a5afb6b58::t_3e5d66b22170b7 42-50
+  s_4f908a5afb6b58::t_a2ce3acea5a8c1 72-74
+src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts
+  s_4f908a5afb6b58::t_7f97286e8b785c 348-357
+src/modules/Transport/useCases/__tests__/playheadScheduler.spec.ts
+  s_4f908a5afb6b58::t_4faed2885afcd4 136-139
+crates/daw-engine/src/scheduler.rs
+  s_4f908a5afb6b58::t_838fef7ce8cbdf 1701-1711,1713-1718,6763-6803
+crates/daw-engine/src/transport_map.rs
+  s_c35a383286ec6a::t_fd4f4020d1a6e9 123-127,272-275
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeEnginePlayheadFeed.spec.ts
+  s_c35a383286ec6a::t_a4c1445b46260f 37,82-112
+src/modules/AudioEngine/useCases/livePlayback/nativeEnginePlayheadFeedState.ts
+  s_c35a383286ec6a::t_e1c7639ab05310 18-30,46-53,57-58,62,64-67,70,73,76,86-91
+src/modules/AudioEngine/useCases/livePlayback/startNativeEnginePlayheadFeed.ts
+  s_c35a383286ec6a::t_488602815c2e85 20-22
+src/modules/AudioEngine/useCases/livePlayback/startNativeLiveGraphSession.ts
+  s_c35a383286ec6a::t_3baa57c2bf711c 116-125,128,155-158,162-163,166-181
+src/modules/AudioEngine/useCases/livePlayback/stopNativeEnginePlayheadFeed.ts
+  s_c35a383286ec6a::t_7660973af58e88 17-19
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "91caa5aef4ca7057b0938881abebf790eedfe984",
+  "prompts": {},
+  "sessions": {
+    "s_4f908a5afb6b58": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fcb92ba4-bf56-47a4-8b57-803f335a449e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_c35a383286ec6a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a2510750ac582fc31",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
