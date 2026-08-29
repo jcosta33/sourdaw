@@ -1,0 +1,32 @@
+docs/architecture/09-ai-stack.md
+  s_a40848e8f8cca9::t_7bc9ad555d91b8 10-11
+src/modules/AiRuntime/useCases/cloudApiManagement/__tests__/configureCloudProvider.spec.ts
+  s_a40848e8f8cca9::t_21c48372c48e33 32,39
+src/modules/Preferences/presentations/views/preferences/AiSection.tsx
+  s_a40848e8f8cca9::t_7bc9ad555d91b8 219,331
+src/modules/AiRuntime/useCases/cloudApiManagement/configureCloudProvider.ts
+  s_a40848e8f8cca9::t_7bc9ad555d91b8 43-44
+.agents/decisions/0028-native-provider-credential-sessions.md
+  s_a40848e8f8cca9::t_7bc9ad555d91b8 46
+src/modules/Preferences/presentations/views/preferences/__tests__/AiSection.spec.tsx
+  s_a40848e8f8cca9::t_7bc9ad555d91b8 80
+  s_a40848e8f8cca9::t_21c48372c48e33 86,88
+PRIVACY.md
+  s_a40848e8f8cca9::t_7bc9ad555d91b8 29-31
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "a10e70bc2913c0ca99b7de1aeac2d3fdef8dd083",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
