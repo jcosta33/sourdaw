@@ -55,6 +55,14 @@ function track(id: string): Record<string, unknown> {
     return trackRow(id, 'midi', 'master');
 }
 
+function trackSharingAlternativeId(id: string, alternativeId: string): Record<string, unknown> {
+    return {
+        ...track(id),
+        activeAlternativeId: alternativeId,
+        alternatives: [{ clips: [], id: alternativeId, name: 'Alternative 1' }],
+    };
+}
+
 function masterBus(): Record<string, unknown> {
     return trackRow('master', 'master', 'hw_out');
 }
@@ -165,7 +173,34 @@ describe('agent project repair inspection', () => {
 
     it('still requires repair when one id is genuinely used twice inside the live project', () => {
         seedRootDocument({
-            tracks: tracksSlot([masterBus(), track('track-a'), track('track-a')]),
+            // Two distinct tracks sharing one alternative id. `inspectStagedProjectDocument`
+            // walks track ids and never descends into alternatives, so only the
+            // whole-document duplicate scan can see this collision.
+            tracks: tracksSlot([
+                masterBus(),
+                trackSharingAlternativeId('track-a', 'alt-shared'),
+                trackSharingAlternativeId('track-b', 'alt-shared'),
+            ]),
+        });
+
+        expect(inspectCurrentAgentProjectRepairState()).toMatchObject({
+            projectInvariantsValid: false,
+            status: 'repair-required',
+        });
+    });
+
+    it('still requires repair when two arrangement snapshots carry the same arrangement id', () => {
+        const tracks = tracksSlot([masterBus(), track('track-a')]);
+        seedRootDocument({
+            tracks,
+            // `duplicateArrangement` remints only the clone's own `id`, so a
+            // repeated one is a real collision: `syncCurrentArrangementToStore`
+            // overwrites every snapshot matching the active id and destroys the
+            // other arrangement's tracks, clips and MIDI.
+            arrangements: {
+                activeArrangementId: 'arrangement-1',
+                arrangements: [arrangement('arrangement-1', tracks), arrangement('arrangement-1', tracks)],
+            },
         });
 
         expect(inspectCurrentAgentProjectRepairState()).toMatchObject({

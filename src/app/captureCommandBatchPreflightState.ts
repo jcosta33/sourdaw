@@ -98,6 +98,16 @@ function projectInvariantsAreValid(context: ReturnType<typeof getProjectContext>
     return context.vcaGroups?.every((group) => group.trackIds.every((trackId) => trackIds.has(trackId))) ?? true;
 }
 
+function recordId(id: unknown, ids: Set<string>, duplicates: Set<string>): void {
+    if (typeof id !== 'string' || id.length === 0) {
+        return;
+    }
+    if (ids.has(id)) {
+        duplicates.add(id);
+    }
+    ids.add(id);
+}
+
 function findDuplicateIds(value: unknown, ids: Set<string>, duplicates: Set<string>, visited: WeakSet<object>): void {
     if (Array.isArray(value)) {
         for (const item of value) {
@@ -110,12 +120,7 @@ function findDuplicateIds(value: unknown, ids: Set<string>, duplicates: Set<stri
     }
     visited.add(value);
     const record = value as Record<string, unknown>;
-    if (typeof record.id === 'string' && record.id.length > 0) {
-        if (ids.has(record.id)) {
-            duplicates.add(record.id);
-        }
-        ids.add(record.id);
-    }
+    recordId(record.id, ids, duplicates);
     for (const child of Object.values(record)) {
         findDuplicateIds(child, ids, duplicates, visited);
     }
@@ -444,14 +449,22 @@ function inspectStagedProjectDocument(document: Readonly<Record<string, unknown>
  * repair-required: every mutation is refused and every save fails.
  *
  * A collision within the live project, or within one snapshot, is still a real
- * defect and is still reported.
+ * defect and is still reported. So is a repeated arrangement `id`: it is the
+ * one field `duplicateArrangement` remints, so two snapshots may share every
+ * track, clip, alternative and device id but never their own. Two snapshots
+ * under one id are indistinguishable to `syncCurrentArrangementToStore`, which
+ * overwrites every match with the active snapshot and destroys the other
+ * arrangement, so those ids are scanned in one namespace shared across
+ * snapshots while each snapshot's contents keep their own.
  */
 function findProjectDuplicateIds(document: Readonly<Record<string, unknown>>): Set<string> {
     const duplicateIds = new Set<string>();
     const { arrangements, ...liveDocument } = document;
     findDuplicateIds(liveDocument, new Set<string>(), duplicateIds, new WeakSet<object>());
     const snapshots = asRecord(arrangements)?.arrangements;
+    const arrangementIds = new Set<string>();
     for (const snapshot of Array.isArray(snapshots) ? snapshots : []) {
+        recordId(asRecord(snapshot)?.id, arrangementIds, duplicateIds);
         findDuplicateIds(snapshot, new Set<string>(), duplicateIds, new WeakSet<object>());
     }
     return duplicateIds;
