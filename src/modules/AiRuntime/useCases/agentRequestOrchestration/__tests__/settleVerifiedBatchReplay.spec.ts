@@ -171,6 +171,23 @@ function createInput(pendingEffect = false): Input {
     return { confirmation, receipt } satisfies Input;
 }
 
+function createDeferred(): { promise: Promise<void>; resolve: () => void } {
+    const deferred: { resolve: (() => void) | null } = { resolve: null };
+    const promise = new Promise<void>((resolve) => {
+        deferred.resolve = () => resolve();
+    });
+    return {
+        promise,
+        resolve: () => {
+            const resolveDeferred = deferred.resolve;
+            if (!resolveDeferred) {
+                throw new Error('Deferred resolver was not initialized.');
+            }
+            resolveDeferred();
+        },
+    };
+}
+
 beforeEach(() => {
     vi.clearAllMocks();
     mocks.getReplay.mockReturnValue({ status: 'committed' });
@@ -213,11 +230,8 @@ describe('settleVerifiedBatchReplay', () => {
         'waits for committed-resource promotion before reporting a $status replay',
         async (status) => {
             mocks.getReplay.mockReturnValue({ status });
-            let resolveResourcePromotion: (() => void) | null = null;
-            const resourcePromotion = new Promise<void>((resolve) => {
-                resolveResourcePromotion = resolve;
-            });
-            mocks.retain.mockReturnValueOnce(resourcePromotion);
+            const resourcePromotion = createDeferred();
+            mocks.retain.mockReturnValueOnce(resourcePromotion.promise);
             let replaySettled = false;
             const replay = settleVerifiedBatchReplay(createInput()).then((result) => {
                 replaySettled = true;
@@ -229,8 +243,7 @@ describe('settleVerifiedBatchReplay', () => {
             expect(mocks.status).not.toHaveBeenCalled();
             expect(mocks.message).not.toHaveBeenCalled();
 
-            expect(resolveResourcePromotion).not.toBeNull();
-            resolveResourcePromotion?.();
+            resourcePromotion.resolve();
 
             await expect(replay).resolves.toEqual({ status: 'executed' });
             expect(mocks.status).toHaveBeenCalledWith({
@@ -287,11 +300,8 @@ describe('settleVerifiedBatchReplay', () => {
             ...createInput(true),
             leaseSettlement: { accepted: false, warning: 'stale warning' },
         };
-        let resolveResourcePromotion: (() => void) | null = null;
-        const resourcePromotion = new Promise<void>((resolve) => {
-            resolveResourcePromotion = resolve;
-        });
-        mocks.retain.mockReturnValueOnce(resourcePromotion);
+        const resourcePromotion = createDeferred();
+        mocks.retain.mockReturnValueOnce(resourcePromotion.promise);
         let replaySettled = false;
         const replay = settleVerifiedBatchReplay(input).then((result) => {
             replaySettled = true;
@@ -303,8 +313,7 @@ describe('settleVerifiedBatchReplay', () => {
         expect(mocks.status).not.toHaveBeenCalled();
         expect(mocks.message).not.toHaveBeenCalled();
 
-        expect(resolveResourcePromotion).not.toBeNull();
-        resolveResourcePromotion?.();
+        resourcePromotion.resolve();
 
         await expect(replay).resolves.toMatchObject({
             status: 'failed',
