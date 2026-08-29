@@ -1,0 +1,33 @@
+src/app/browserDisplayScaleHost.ts
+  s_ae074277795b45::t_0dc2e384b18a9b 12,16-17
+  s_ae074277795b45::t_85aee19dab7a50 6-9,19-20,43-48,50-54,84-90,116,122
+  s_ae074277795b45::t_5d6ba65af43146 2,10-11,13-15,18,49,91-92,114-115
+src/app/main.tsx
+  s_ae074277795b45::t_85aee19dab7a50 1,20-21
+tests/e2e/browserDisplayScale.spec.ts
+  s_ae074277795b45::t_adca4f137ee431 342
+  s_ae074277795b45::t_2614da7c3c6323 302-304,339-341,343
+src/app/__tests__/main.spec.tsx
+  s_ae074277795b45::t_2614da7c3c6323 11,23,66,102,106,108-111,116,137
+src/app/__tests__/browserDisplayScaleHost.spec.ts
+  s_ae074277795b45::t_adca4f137ee431 3-4,6-7,124-127,129-132
+  s_ae074277795b45::t_2614da7c3c6323 102-113,115-123,133-134,152-153
+  s_ae074277795b45::t_f6e88980cfefac 5,9,16,24,114,128,139,142,181
+  s_ae074277795b45::t_7f7bfa93ff438d 8
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "ce710797b9111a464b614d6117ebb036ee8f9767",
+  "prompts": {},
+  "sessions": {
+    "s_ae074277795b45": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04ab5-5234-7100-be1c-76ebfaba88d3",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
