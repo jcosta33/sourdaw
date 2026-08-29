@@ -13,7 +13,6 @@ import {
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { createInterface } from 'node:readline';
-import type { Readable, Writable } from 'node:stream';
 
 import { describe, expect, it } from 'vitest';
 import { parseDocument } from 'yaml';
@@ -46,6 +45,7 @@ import type {
     TrackerCompletionPort,
 } from '../deliverPullRequest.ts';
 import type { ReconcileTrackerIssuePort } from '../trackerIssueReconciliation.ts';
+import type { Readable, Writable } from 'node:stream';
 
 function runGit(repository: string, args: string[]): string {
     const env = { ...process.env };
