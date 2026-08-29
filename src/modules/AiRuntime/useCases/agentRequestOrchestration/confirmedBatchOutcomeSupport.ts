@@ -23,6 +23,16 @@ export type CommittedEffectFailureResult = {
     };
 };
 
+export type CommittedFinalizationEvidenceFailureResult = {
+    status: 'failed';
+    durableCommit: true;
+    reason: string;
+    recovery: {
+        kind: 'inspect-current-project';
+        replay: 'forbidden';
+    };
+};
+
 function updateTrackedAgentRun(confirmation: PendingAppActionConfirmation, update: () => void): string | null {
     if (!agentRunLifecycle.get(confirmation.runId)) {
         return null;
@@ -67,6 +77,18 @@ function createCommittedEffectFailureResult(
     };
 }
 
+function createCommittedFinalizationEvidenceFailureResult(reason: string): CommittedFinalizationEvidenceFailureResult {
+    return {
+        status: 'failed',
+        durableCommit: true,
+        reason,
+        recovery: {
+            kind: 'inspect-current-project',
+            replay: 'forbidden',
+        },
+    };
+}
+
 function getVerifiedReceiptIdentity(receipt: CommandVerifiedBatchReceipt): string {
     return `${receipt.schemaVersion}:${receipt.runId}:${receipt.batchId}:${receipt.outcome}`;
 }
@@ -96,6 +118,7 @@ function recordTrackedAgentRunReceipt(
 
 export const confirmedBatchOutcomeSupport = {
     createCommittedEffectFailureResult,
+    createCommittedFinalizationEvidenceFailureResult,
     getApprovalLabelsByCommandId,
     getVerifiedReceiptIdentity,
     recordTrackedAgentRunReceipt,

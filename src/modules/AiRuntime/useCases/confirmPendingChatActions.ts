@@ -19,6 +19,7 @@ import { confirmationTerminalSettlement } from './agentRequestOrchestration/conf
 import {
     confirmedBatchOutcomeSupport,
     type CommittedEffectFailureResult,
+    type CommittedFinalizationEvidenceFailureResult,
 } from './agentRequestOrchestration/confirmedBatchOutcomeSupport';
 import { executeCommittedSectionRenderRetry } from './agentRequestOrchestration/executeCommittedSectionRenderRetry';
 import { executeConfirmedCommandBatch } from './agentRequestOrchestration/executeConfirmedCommandBatch';
@@ -52,6 +53,7 @@ type ConfirmPendingChatActionsResult =
     | { status: 'busy' }
     | { status: 'executed' }
     | CommittedEffectFailureResult
+    | CommittedFinalizationEvidenceFailureResult
     | { status: 'invalidated'; reason: string; divergence?: ApprovalDivergence }
     | {
           status: 'reapproval_required';
@@ -213,6 +215,10 @@ export async function confirmPendingChatActions(
         const reason =
             finalizationEvidenceFailure ??
             'The committed command batch did not expose its exact project checkpoint revision.';
+        const hasPendingEffects = batchResult.receipt.pendingEffects.length > 0;
+        const hasPendingRenderEffects = batchResult.receipt.pendingEffects.some(
+            (effect) => effect.kind === 'external-effect' && effect.operation === 'renderProjectSections'
+        );
         const runPersistenceWarning = agentRunExecutionSettlement.recordCommittedRecoveryFailure(confirmation, {
             category: 'internal',
             retriable: false,
@@ -222,9 +228,7 @@ export async function confirmPendingChatActions(
             revertGroupId: group.groupId,
             ...(committedProjectRevision ? { committedRevision: committedProjectRevision } : {}),
         });
-        const manualRepairPersistenceWarning = batchResult.receipt.pendingEffects.some(
-            (effect) => effect.kind === 'external-effect' && effect.operation === 'renderProjectSections'
-        )
+        const manualRepairPersistenceWarning = hasPendingRenderEffects
             ? requireSectionRenderManualRepair({
                   runId: confirmation.runId,
                   batchId: batchResult.receipt.batchId,
@@ -245,19 +249,25 @@ export async function confirmPendingChatActions(
             status: 'failed',
             error: userVisibleReason,
         });
-        updatePendingActionFollowUp({
-            confirmationId: confirmation.id,
-            error: userVisibleReason,
-            projectRevision: null,
-            status: 'failed',
-        });
+        if (hasPendingEffects) {
+            updatePendingActionFollowUp({
+                confirmationId: confirmation.id,
+                error: userVisibleReason,
+                projectRevision: null,
+                status: 'failed',
+            });
+        }
         updateChatMessage(confirmation.assistantMessageId, {
             pendingActionConfirmationStatus: 'failed',
             error: userVisibleReason,
-            content: `The project change is durably committed, but its finalization evidence is unavailable: ${userVisibleReason}. Do not replay these actions; use the retained manual-repair guidance.`,
+            content: hasPendingEffects
+                ? `The project change is durably committed, but its finalization evidence is unavailable: ${userVisibleReason}. Do not replay these actions; use the retained pending-effect recovery guidance.`
+                : `The project change is durably committed, but its finalization evidence is unavailable: ${userVisibleReason}. Do not replay these actions. Inspect the current project state before further automation.`,
         });
         await pendingActionResourceSettlement.retainCommitted(confirmation.id);
-        return confirmedBatchOutcomeSupport.createCommittedEffectFailureResult(batchResult.receipt, userVisibleReason);
+        return hasPendingEffects
+            ? confirmedBatchOutcomeSupport.createCommittedEffectFailureResult(batchResult.receipt, userVisibleReason)
+            : confirmedBatchOutcomeSupport.createCommittedFinalizationEvidenceFailureResult(userVisibleReason);
     }
     const settledProjectRevision = committedProjectRevision ?? confirmation.projectRevision;
 

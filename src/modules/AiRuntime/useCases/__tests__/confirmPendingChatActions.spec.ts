@@ -1100,11 +1100,18 @@ describe('confirmPendingChatActions transaction admission', () => {
         }
     );
 
-    it('settles unavailable post-commit evidence as durable manual recovery instead of throwing', async () => {
+    it('settles unavailable post-commit evidence without fabricating pending-effect recovery', async () => {
         const runId = 'confirmation-finalization-unavailable';
         const confirmationId = 'confirmation-finalization-unavailable';
         const batchId = 'group-finalization-unavailable';
-        const commandBatch = configureLateSettlementConfirmation({ runId, confirmationId, batchId });
+        const release = vi.fn().mockResolvedValue(undefined);
+        const retain = vi.fn().mockResolvedValue(undefined);
+        const commandBatch = configureLateSettlementConfirmation({
+            runId,
+            confirmationId,
+            batchId,
+            resourceLease: { bytes: 1, release, retain },
+        });
         const commandUseCases = await import('#/modules/Command/useCases');
         const crdtUseCases = await import('#/modules/CrdtDocument/useCases');
         const captureMutationAuthorization = vi
@@ -1120,19 +1127,26 @@ describe('confirmPendingChatActions transaction admission', () => {
             });
 
         try {
-            await expect(confirmPendingChatActions({ confirmationId })).resolves.toMatchObject({
+            await expect(confirmPendingChatActions({ confirmationId })).resolves.toEqual({
                 status: 'failed',
                 durableCommit: true,
                 reason: 'The project revision provider is unavailable for finalization evidence.',
+                recovery: { kind: 'inspect-current-project', replay: 'forbidden' },
             });
             expect(getPendingActionConfirmation(confirmationId)).toMatchObject({
                 status: 'failed',
                 error: 'The project revision provider is unavailable for finalization evidence.',
+                followUpProjectRevision: null,
+                followUpStatus: null,
             });
             expect(chatStore.value?.messages[0]).toMatchObject({
                 pendingActionConfirmationStatus: 'failed',
-                content: expect.stringContaining('The project change is durably committed'),
+                pendingActionFollowUpStatus: undefined,
+                content: expect.stringContaining('Inspect the current project state before further automation.'),
             });
+            expect(chatStore.value?.messages[0]?.content).not.toContain('manual-repair');
+            expect(retain).toHaveBeenCalledOnce();
+            expect(release).not.toHaveBeenCalled();
         } finally {
             execute.mockRestore();
             captureMutationAuthorization.mockRestore();

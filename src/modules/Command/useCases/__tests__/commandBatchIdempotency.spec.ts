@@ -2279,10 +2279,13 @@ describe('command batch idempotency', () => {
 
     it('reports unavailable finalization evidence after a durable commit without reclassifying the batch', async () => {
         const batch = compileBatch();
+        const proof = await getVersionedCommandBatchCommitProof(batch);
         const onProjectCommitFinalized = vi.fn(() => {
             throw new Error('render artifact vanished');
         });
-        const onProjectCommitFinalizationUnavailable = vi.fn();
+        const onProjectCommitFinalizationUnavailable = vi.fn(() => {
+            throw new Error('unavailable observer also failed');
+        });
 
         const result = await executeVersionedCommandBatchEnvelope({
             authority: batch.authority,
@@ -2292,10 +2295,37 @@ describe('command batch idempotency', () => {
         });
 
         expect(result).toMatchObject({ status: 'committed' });
+        expect(getProjectCommandBatchIdempotencyCheckpoint(proof)).toMatchObject({ status: 'complete' });
         expect(onProjectCommitFinalized).toHaveBeenCalledExactlyOnceWith({ revision: revision(2) });
         expect(onProjectCommitFinalizationUnavailable).toHaveBeenCalledExactlyOnceWith({
             reason: 'render artifact vanished',
         });
+    });
+
+    it('keeps the durable checkpoint when no project revision provider can emit finalization evidence', async () => {
+        const batch = compileBatch({ batchId: 'finalization-revision-provider-unavailable' });
+        const proof = await getVersionedCommandBatchCommitProof(batch);
+        const onProjectCommitFinalized = vi.fn();
+        const onProjectCommitFinalizationUnavailable = vi.fn();
+        commandProjectRevisionPort.setProvider(null);
+
+        try {
+            const result = await executeVersionedCommandBatchEnvelope({
+                authority: batch.authority,
+                confirmed: true,
+                serialized: batch.serialized,
+                options: { onProjectCommitFinalized, onProjectCommitFinalizationUnavailable },
+            });
+
+            expect(result).toMatchObject({ status: 'committed' });
+            expect(getProjectCommandBatchIdempotencyCheckpoint(proof)).toMatchObject({ status: 'complete' });
+            expect(onProjectCommitFinalized).not.toHaveBeenCalled();
+            expect(onProjectCommitFinalizationUnavailable).toHaveBeenCalledExactlyOnceWith({
+                reason: 'The project revision provider is unavailable for finalization evidence.',
+            });
+        } finally {
+            commandProjectRevisionPort.setProvider(() => projectRevisionOverride ?? revision(mutationCount));
+        }
     });
 
     it('writes the durable checkpoint but withholds caller evidence when finalization authority is revoked', async () => {
