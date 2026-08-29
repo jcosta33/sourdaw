@@ -32,15 +32,16 @@ export const DawContextMenuSurface = ({
     ...props
 }: DawContextMenuSurfaceProps): ReactElement => {
     const useBottomAnchor = anchorY === 'up' || (anchorY === 'auto' && y > window.innerHeight - yClampOffset);
-    const positionStyle: CSSProperties = useBottomAnchor
-        ? {
-              left: Math.min(x, window.innerWidth - xClampOffset),
-              bottom: Math.max(8, window.innerHeight - y),
-          }
-        : {
-              left: Math.min(x, window.innerWidth - xClampOffset),
-              top: Math.min(y, window.innerHeight - yClampOffset),
-          };
+    const farEdgeInset = 8;
+    const verticalPosition = useBottomAnchor
+        ? Math.max(farEdgeInset, window.innerHeight - y)
+        : Math.max(farEdgeInset, Math.min(y, window.innerHeight - yClampOffset));
+    const positionStyle: CSSProperties = {
+        left: Math.min(x, window.innerWidth - xClampOffset),
+        maxHeight: `calc(100vh - ${String(verticalPosition + farEdgeInset)}px)`,
+        overflowY: 'auto',
+        ...(useBottomAnchor ? { bottom: verticalPosition } : { top: verticalPosition }),
+    };
 
     const surface = (
         <>

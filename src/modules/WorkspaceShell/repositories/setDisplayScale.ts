@@ -26,6 +26,8 @@ export function setDisplayScale(scale: number): void {
     document.documentElement.style.overflow = 'hidden';
     document.documentElement.style.width = '100%';
     document.body.style.overflow = 'hidden';
+    document.body.style.height = '100%';
+    document.body.style.width = '100%';
 
     const root = document.getElementById(ROOT_ELEMENT_ID);
     if (root !== null) {
@@ -34,14 +36,9 @@ export function setDisplayScale(scale: number): void {
     }
 
     if (isDesktopRuntime()) {
-        document.body.style.height = '100%';
-        document.body.style.width = '100%';
         desktopSetZoomFactor(scale);
         return;
     }
 
-    document.body.style.height = `${String(100 / scale)}vh`;
-    document.body.style.transform = `scale(${String(scale)})`;
-    document.body.style.transformOrigin = 'top left';
-    document.body.style.width = `${String(100 / scale)}vw`;
+    window.parent.postMessage({ type: 'sourdaw:browser-display-scale', scale }, window.location.origin);
 }

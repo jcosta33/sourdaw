@@ -48,11 +48,9 @@ describe('setDisplayScale', () => {
         expect(document.body.style.transform).toBe('');
     });
 
-    it.each([
-        { scale: 0.5, inverseViewport: '200vw' },
-        { scale: 2, inverseViewport: '50vw' },
-    ])('scales all browser geometry at $scale without document overflow', ({ scale, inverseViewport }) => {
+    it.each([0.5, 1, 2])('delegates browser scale %s to the containing viewport without CSS scaling', (scale) => {
         vi.mocked(isDesktopRuntime).mockReturnValue(false);
+        const postMessage = vi.spyOn(window.parent, 'postMessage').mockImplementation(() => undefined);
         document.documentElement.style.zoom = '1.5';
 
         setDisplayScale(scale);
@@ -60,11 +58,15 @@ describe('setDisplayScale', () => {
         expect(desktopSetZoomFactor).not.toHaveBeenCalled();
         expect(document.documentElement.style.zoom).toBe('');
         expect(document.documentElement.style.overflow).toBe('hidden');
-        expect(document.body.style.transform).toBe(`scale(${String(scale)})`);
-        expect(document.body.style.transformOrigin).toBe('top left');
-        expect(document.body.style.width).toBe(inverseViewport);
-        expect(document.body.style.height).toBe(inverseViewport.replace('vw', 'vh'));
+        expect(document.body.style.transform).toBe('');
+        expect(document.body.style.transformOrigin).toBe('');
+        expect(document.body.style.width).toBe('100%');
+        expect(document.body.style.height).toBe('100%');
         expect(document.body.style.overflow).toBe('hidden');
+        expect(postMessage).toHaveBeenCalledWith(
+            { type: 'sourdaw:browser-display-scale', scale },
+            window.location.origin
+        );
 
         const root = document.getElementById('root');
         expect(root?.style.width).toBe('100%');

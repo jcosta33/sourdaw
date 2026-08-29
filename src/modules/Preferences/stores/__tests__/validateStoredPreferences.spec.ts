@@ -92,6 +92,12 @@ describe('validateStoredPreferences — per-field schema guards', () => {
         }
     );
 
+    it.each(['1', null, true, {}, undefined])('replaces wrong-type UI scale %s with the default', (uiScale) => {
+        const result = validateStoredPreferences({ ...defaultPreferences, uiScale });
+
+        expect(result.uiScale).toBe(defaultPreferences.uiScale);
+    });
+
     it('replaces an out-of-range preRollBars with its default', () => {
         const result = validateStoredPreferences({ ...defaultPreferences, preRollBars: 3 });
 

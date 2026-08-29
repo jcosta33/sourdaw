@@ -42,4 +42,16 @@ describe('DawContextMenuSurface', () => {
 
         expect(handle_close).toHaveBeenCalledOnce();
     });
+
+    it('keeps a tall context menu scrollable inside the remaining viewport height', () => {
+        render(
+            <DawContextMenuSurface x={10} y={20} portal={false} role="menu">
+                <span>Item</span>
+            </DawContextMenuSurface>
+        );
+
+        const menu = screen.getByRole('menu');
+        expect(menu.style.maxHeight).toBe('calc(100vh - 28px)');
+        expect(menu.style.overflowY).toBe('auto');
+    });
 });

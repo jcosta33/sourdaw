@@ -1,7 +1,20 @@
-import './bootstrap';
-import '#/styles/main.css';
-import { createRoot } from 'react-dom/client';
+import { mountBrowserDisplayScaleHost } from './browserDisplayScaleHost';
 
-import { App } from './App';
+const root = document.getElementById('root')!;
+const shouldHostBrowserViewport = !('sourdaw' in window) && window.parent === window;
 
-createRoot(document.getElementById('root')!).render(<App />);
+async function renderApplication(): Promise<void> {
+    const [, , { createRoot }, { App }] = await Promise.all([
+        import('./bootstrap'),
+        import('#/styles/main.css'),
+        import('react-dom/client'),
+        import('./App'),
+    ]);
+    createRoot(root).render(<App />);
+}
+
+if (shouldHostBrowserViewport) {
+    mountBrowserDisplayScaleHost(root);
+} else {
+    void renderApplication();
+}

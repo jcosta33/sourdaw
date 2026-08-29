@@ -60,7 +60,14 @@ describe('PreferencesDialog', () => {
         const sideRail = navigation.parentElement;
         const shell = sideRail?.parentElement;
 
-        expect(dialog).toHaveClass('h-[520px]', 'max-h-[80%]', 'w-[720px]', 'max-w-[90%]', 'overflow-hidden');
+        expect(dialog).toHaveClass(
+            'h-[520px]',
+            'max-h-[80%]',
+            'w-[720px]',
+            'max-w-[90%]',
+            'sm:max-w-none',
+            'overflow-hidden'
+        );
         expect(shell?.tagName).toBe('DIV');
         expect(shell).toHaveClass(
             'flex',
