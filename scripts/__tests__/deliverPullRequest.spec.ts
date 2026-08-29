@@ -951,7 +951,9 @@ describe('pull-request delivery', () => {
             return structuredClone(receipts.slice(0, 2));
         };
 
-        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/delivery receipt changed during recovery/i);
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(
+            /invalid delivery receipt lineage|delivery receipt changed during recovery/i
+        );
         expect(calls).toContain('receipt-authority:read:terminal:IC_delivery_42_3');
         expect(calls.filter((call) => call === 'complete:2372')).toHaveLength(2);
         expect(calls.filter((call) => call === 'complete:2373')).toHaveLength(0);
@@ -1017,7 +1019,9 @@ describe('pull-request delivery', () => {
 
         staleMergedRecovery = true;
         const receiptReadsBeforeRecovery = calls.filter((call) => call === 'receipts:42').length;
-        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/delivery receipt changed during recovery/i);
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(
+            /invalid delivery receipt lineage|delivery receipt changed during recovery/i
+        );
         expect(calls.filter((call) => call === 'receipts:42')).toHaveLength(receiptReadsBeforeRecovery + 1);
         expect(calls.filter((call) => call === 'complete:2372')).toHaveLength(1);
         expect(calls.filter((call) => call === 'complete:2373')).toHaveLength(0);
@@ -1739,6 +1743,91 @@ describe('pull-request delivery', () => {
 
         expect(() => deliverPullRequest(42, port, tracker)).toThrow(
             /delivery receipt authority cannot be proven|delivery receipt changed during recovery/i
+        );
+        expect(calls.filter((call) => call.startsWith('complete:'))).toHaveLength(0);
+        expect(calls.filter((call) => call.startsWith('retarget:'))).toHaveLength(0);
+    });
+
+    it('keeps the stored bodyless v2 authority id when a newer same-key advisory receipt only changes observed CI state', () => {
+        const closes = relationshipBody('Closes #2372');
+        const receiptA = visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful');
+        const receiptB = visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'failed');
+        const { port, calls, tracker, persistedReceiptAuthority } = fakePort({
+            primary: [pullRequest({ state: 'MERGED', body: relationshipBody('None.') })],
+            dependentSets: [[]],
+            persistedReceiptAuthority: { phase: 'terminal', receiptId: 'IC_a' },
+            receipts: [
+                {
+                    id: 'IC_a',
+                    body: receiptA,
+                    authorNodeId: AUTHOR_BOT_NODE_ID,
+                    authorLogin: 'renamed-author[bot]',
+                    authorType: 'Bot',
+                    createdAt: '2026-08-21T00:00:00Z',
+                    updatedAt: '2026-08-21T00:00:00Z',
+                },
+                {
+                    id: 'IC_b',
+                    body: receiptB,
+                    authorNodeId: AUTHOR_BOT_NODE_ID,
+                    authorLogin: 'renamed-author[bot]',
+                    authorType: 'Bot',
+                    createdAt: '2026-08-21T00:00:01Z',
+                    updatedAt: '2026-08-21T00:00:01Z',
+                },
+            ],
+            deliveryReceiptProof: { totalCount: 2, latestCommentId: 'IC_b' },
+        });
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls).toContain('complete:2372');
+        expect(calls).toContain('receipt-authority:write:terminal:IC_a');
+        expect(calls).not.toContain('receipt-authority:write:terminal:IC_b');
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'terminal',
+            receiptId: 'IC_a',
+            receiptBody: receiptA,
+        });
+    });
+
+    it('fails closed when a bodyless current v2 authority points at an older same-key receipt with a conflicting admission mode', () => {
+        const closes = relationshipBody('Closes #2372');
+        const { port, calls, tracker } = fakePort({
+            primary: [pullRequest({ state: 'MERGED', body: relationshipBody('None.') })],
+            dependentSets: [[]],
+            persistedReceiptAuthority: { phase: 'terminal', receiptId: 'IC_advisory' },
+            receipts: [
+                {
+                    id: 'IC_advisory',
+                    body: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'),
+                    authorNodeId: AUTHOR_BOT_NODE_ID,
+                    authorLogin: 'renamed-author[bot]',
+                    authorType: 'Bot',
+                    createdAt: '2026-08-21T00:00:00Z',
+                    updatedAt: '2026-08-21T00:00:00Z',
+                },
+                {
+                    id: 'IC_required',
+                    body: composeDeliveryReceipt({
+                        pullRequest: 42,
+                        head: 'head',
+                        bodySha256: createHash('sha256').update(closes).digest('hex'),
+                        closingIssue: 2372,
+                        ciAdmissionMode: 'required',
+                    }),
+                    authorNodeId: AUTHOR_BOT_NODE_ID,
+                    authorLogin: 'renamed-author[bot]',
+                    authorType: 'Bot',
+                    createdAt: '2026-08-21T00:00:01Z',
+                    updatedAt: '2026-08-21T00:00:01Z',
+                },
+            ],
+            deliveryReceiptProof: { totalCount: 2, latestCommentId: 'IC_required' },
+        });
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(
+            /invalid delivery receipt lineage|delivery receipt changed during recovery/i
         );
         expect(calls.filter((call) => call.startsWith('complete:'))).toHaveLength(0);
         expect(calls.filter((call) => call.startsWith('retarget:'))).toHaveLength(0);

@@ -1157,7 +1157,7 @@ function compatibleBodylessPersistedMergedRecoveryReceipt(
     ) {
         fail(`PR #${pullRequest.number} delivery receipt changed during recovery`);
     }
-    return authoritative;
+    return stored;
 }
 
 function readCompatibleBodylessPersistedMergedRecoveryReceipt(
