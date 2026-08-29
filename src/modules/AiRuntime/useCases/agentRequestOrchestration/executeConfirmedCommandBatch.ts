@@ -4,7 +4,11 @@ import {
 } from '#/modules/AudioRendering/useCases';
 import { collaborationStore } from '#/modules/Collaboration/stores';
 import { executeVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
-import { captureProjectMutationAuthorization, captureProjectRevision } from '#/modules/CrdtDocument/useCases';
+import {
+    captureProjectMutationAuthorization,
+    captureProjectRevision,
+    captureUnownedProjectMutations,
+} from '#/modules/CrdtDocument/useCases';
 import { type HandlerDeferredEffectAttempt } from '#/utils/handlerContract';
 
 import { type AgentRunWorkLease } from '../../models/AgentRun';
@@ -46,6 +50,7 @@ type ExecuteConfirmedCommandBatchResult =
           >;
           group: { groupId: string; groupLabel: string };
           committedProjectRevision: string | null;
+          finalizationEvidenceFailure: string | null;
           canRebindSectionRenderArtifacts: boolean;
           isProjectMutationAuthorized: () => boolean;
           renderJobAttempts: number;
@@ -139,8 +144,10 @@ export async function executeConfirmedCommandBatch(
     // Capture before the batch owner exists. The check binds that exact owner
     // on its first in-transaction call and retains it across handler awaits.
     const isProjectMutationAuthorized = captureProjectMutationAuthorization();
+    const unownedMutationBaseline = captureUnownedProjectMutations();
     let renderJobAttempts = 0;
     let committedProjectRevision: string | null = null;
+    let finalizationEvidenceFailure: string | null = null;
     let canRebindSectionRenderArtifacts = false;
     try {
         const executionOptions = {
@@ -161,12 +168,20 @@ export async function executeConfirmedCommandBatch(
             },
             onProjectCommitFinalized: ({ revision }: { revision: string }) => {
                 committedProjectRevision = revision;
+                if (captureUnownedProjectMutations() !== unownedMutationBaseline) {
+                    finalizationEvidenceFailure =
+                        'The project changed outside the confirmed command while render evidence was finalizing.';
+                    return;
+                }
                 rebindFreshSectionRenderArtifactsToCommittedRevision(
                     confirmation,
                     sectionRenderArtifactsBeforeExecution,
                     revision
                 );
                 canRebindSectionRenderArtifacts = true;
+            },
+            onProjectCommitFinalizationUnavailable: ({ reason }: { reason: string }) => {
+                finalizationEvidenceFailure = reason;
             },
             requireCompensation: confirmation.executionMode === 'atomic',
             shouldExecute: () => {
@@ -227,6 +242,7 @@ export async function executeConfirmedCommandBatch(
             batchResult,
             group,
             committedProjectRevision,
+            finalizationEvidenceFailure,
             canRebindSectionRenderArtifacts,
             isProjectMutationAuthorized,
             renderJobAttempts,

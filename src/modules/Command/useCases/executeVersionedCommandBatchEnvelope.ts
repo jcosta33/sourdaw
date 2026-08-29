@@ -37,6 +37,8 @@ type ExecuteVersionedCommandBatchEnvelopeInput = {
         } | void;
         /** Observe the exact revision after the final project checkpoint becomes visible. */
         onProjectCommitFinalized?: (result: { revision: string }) => void;
+        /** Observe why exact post-checkpoint evidence could not be provided after a durable project commit. */
+        onProjectCommitFinalizationUnavailable?: (result: { reason: string }) => void;
     };
     onProjectCommitPrepared?: () => void;
 };
@@ -53,6 +55,18 @@ const PROJECT_COMMIT_RECOVERY_WARNING =
 const PROJECT_RECEIPT_REVISION_WARNING =
     'Resulting project heads are omitted because the verified receipt is itself journaled in project truth.';
 const activeIdempotencyClaims = new Set<string>();
+
+function reportUnavailableProjectCommitFinalization(
+    options: ExecuteVersionedCommandBatchEnvelopeInput['options'],
+    error: unknown
+): void {
+    const reason = error instanceof Error ? error.message : String(error);
+    try {
+        options?.onProjectCommitFinalizationUnavailable?.({ reason });
+    } catch {
+        // Finalization observers never alter the durable command result.
+    }
+}
 
 function isOriginatingProjectCurrent(capturedRevision: string | null): boolean {
     if (!commandProjectRevisionPort.isConfigured()) {
@@ -696,14 +710,15 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
                     idempotencyKey: parsed.envelope.idempotencyKey,
                     contentHash: idempotencyContentHash,
                 });
-                if (
-                    (checkpoint.status === 'complete' || checkpoint.status === 'pending') &&
-                    commandProjectRevisionPort.isConfigured()
-                ) {
-                    input.options?.onProjectCommitFinalized?.({ revision: commandProjectRevisionPort.capture() });
+                if (checkpoint.status !== 'complete' && checkpoint.status !== 'pending') {
+                    throw new Error('The durable project checkpoint is unavailable for finalization evidence.');
                 }
-            } catch {
-                // A missing checkpoint/revision leaves callers unable to bind post-commit evidence.
+                if (!commandProjectRevisionPort.isConfigured()) {
+                    throw new Error('The project revision provider is unavailable for finalization evidence.');
+                }
+                input.options?.onProjectCommitFinalized?.({ revision: commandProjectRevisionPort.capture() });
+            } catch (error) {
+                reportUnavailableProjectCommitFinalization(input.options, error);
             }
         }
         settlePreparedProjectCommitRecovery({

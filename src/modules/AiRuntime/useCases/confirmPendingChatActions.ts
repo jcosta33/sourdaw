@@ -8,7 +8,10 @@ import { AiProposalInvalidatedError } from '../errors/AiProposalInvalidatedError
 import { type AgentRunErrorCategory } from '../models/AgentRun';
 import { type ChatActionConfirmationStatus } from '../models/Chat';
 import { updateChatMessage } from '../stores/chatStore';
-import { updatePendingActionConfirmationStatus } from '../stores/pendingActionConfirmationStore';
+import {
+    updatePendingActionConfirmationStatus,
+    updatePendingActionFollowUp,
+} from '../stores/pendingActionConfirmationStore';
 
 import { agentRunExecutionSettlement } from './agentRequestOrchestration/agentRunExecutionSettlement';
 import { beginConfirmedCommandExecution } from './agentRequestOrchestration/beginConfirmedCommandExecution';
@@ -20,6 +23,7 @@ import {
 import { executeCommittedSectionRenderRetry } from './agentRequestOrchestration/executeCommittedSectionRenderRetry';
 import { executeConfirmedCommandBatch } from './agentRequestOrchestration/executeConfirmedCommandBatch';
 import { pendingActionResourceSettlement } from './agentRequestOrchestration/pendingActionResourceSettlement';
+import { requireSectionRenderManualRepair } from './agentRequestOrchestration/requireSectionRenderManualRepair';
 import { confirmationAdmission } from './agentRequestOrchestration/resolveConfirmationAdmission';
 import {
     AGENT_RUN_PERSISTENCE_WARNING,
@@ -178,6 +182,7 @@ export async function confirmPendingChatActions(
         batchResult,
         group,
         committedProjectRevision,
+        finalizationEvidenceFailure,
         canRebindSectionRenderArtifacts,
         isProjectMutationAuthorized,
         renderJobAttempts,
@@ -185,8 +190,49 @@ export async function confirmPendingChatActions(
         abortSignal,
     } = executionFlight;
     const batchCommittedProject = batchResult.status === 'committed' || batchResult.status === 'committed-with-warning';
-    if (batchCommittedProject && committedProjectRevision === null) {
-        throw new Error('The committed command batch did not expose its exact project checkpoint revision.');
+    if (batchCommittedProject && (committedProjectRevision === null || finalizationEvidenceFailure !== null)) {
+        const reason =
+            finalizationEvidenceFailure ??
+            'The committed command batch did not expose its exact project checkpoint revision.';
+        const runPersistenceWarning = agentRunExecutionSettlement.recordCommittedRecoveryFailure(confirmation, {
+            category: 'internal',
+            retriable: false,
+            receipt: batchResult.receipt,
+            actions: confirmation.actions,
+            commandBatch,
+            revertGroupId: group.groupId,
+            ...(committedProjectRevision ? { committedRevision: committedProjectRevision } : {}),
+        });
+        const manualRepairPersistenceWarning = batchResult.receipt.pendingEffects.some(
+            (effect) => effect.kind === 'external-effect' && effect.operation === 'renderProjectSections'
+        )
+            ? requireSectionRenderManualRepair({
+                  runId: confirmation.runId,
+                  batchId: batchResult.receipt.batchId,
+                  reason,
+              })
+            : null;
+        const userVisibleReason = [reason, runPersistenceWarning, manualRepairPersistenceWarning]
+            .filter(Boolean)
+            .join(' ');
+        updatePendingActionConfirmationStatus({
+            confirmationId: confirmation.id,
+            status: 'failed',
+            error: userVisibleReason,
+        });
+        updatePendingActionFollowUp({
+            confirmationId: confirmation.id,
+            error: userVisibleReason,
+            projectRevision: null,
+            status: 'failed',
+        });
+        updateChatMessage(confirmation.assistantMessageId, {
+            pendingActionConfirmationStatus: 'failed',
+            error: userVisibleReason,
+            content: `The project change is durably committed, but its finalization evidence is unavailable: ${userVisibleReason}. Do not replay these actions; use the retained manual-repair guidance.`,
+        });
+        await pendingActionResourceSettlement.retainCommitted(confirmation.id);
+        return confirmedBatchOutcomeSupport.createCommittedEffectFailureResult(batchResult.receipt, userVisibleReason);
     }
     const settledProjectRevision = committedProjectRevision ?? confirmation.projectRevision;
     const budgetPersistenceWarning = commandBudget

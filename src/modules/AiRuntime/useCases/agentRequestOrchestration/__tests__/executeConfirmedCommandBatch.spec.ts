@@ -45,6 +45,7 @@ type BindCancellation = typeof import('../../cancelAgentRun').agentRunCancellati
 type CancelRun = typeof import('../../cancelAgentRun').agentRunCancellation.cancel;
 type CaptureAuthorization = typeof import('#/modules/CrdtDocument/useCases').captureProjectMutationAuthorization;
 type CaptureRevision = typeof import('#/modules/CrdtDocument/useCases').captureProjectRevision;
+type CaptureUnownedMutations = typeof import('#/modules/CrdtDocument/useCases').captureUnownedProjectMutations;
 type RecordPostCommitRecoveryFailure =
     typeof import('../agentRunExecutionSettlement').agentRunExecutionSettlement.recordPostCommitRecoveryFailure;
 type RecordCommittedRecoveryFailure =
@@ -55,6 +56,7 @@ const mocks = vi.hoisted(() => ({
     cancelRun: vi.fn<CancelRun>(),
     captureAuthorization: vi.fn<CaptureAuthorization>(),
     captureRevision: vi.fn<CaptureRevision>(),
+    captureUnownedMutations: vi.fn<CaptureUnownedMutations>(),
     executeBatch: vi.fn<TestBatchExecutor>(),
     getArtifacts: vi.fn(() => []),
     rebindArtifacts: vi.fn(),
@@ -86,6 +88,7 @@ vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     captureProjectMutationAuthorization: mocks.captureAuthorization,
     captureProjectRevision: mocks.captureRevision,
+    captureUnownedProjectMutations: mocks.captureUnownedMutations,
 }));
 vi.mock('../../../stores/chatStore', () => ({
     setActiveAborter: mocks.setActiveAborter,
@@ -291,6 +294,7 @@ beforeEach(() => {
     projectMutationAuthorized = true;
     mocks.captureAuthorization.mockReturnValue(() => projectMutationAuthorized);
     mocks.captureRevision.mockReturnValue('revision-2');
+    mocks.captureUnownedMutations.mockReturnValue(0);
     mocks.prepareResourceLease.mockResolvedValue(undefined);
     mocks.protectResourceLease.mockReturnValue(undefined);
     mocks.prepareContinuation.mockReturnValue({ promote: () => undefined, discard: () => undefined });
@@ -386,6 +390,88 @@ describe('executeConfirmedCommandBatch', () => {
         expect(mocks.setActiveAborter).toHaveBeenLastCalledWith(null);
         expect(mocks.setChatGenerating).toHaveBeenNthCalledWith(1, true);
         expect(mocks.setChatGenerating).toHaveBeenLastCalledWith(false);
+    });
+
+    it('keeps fresh render artifacts unrebound when an ownerless project mutation lands before finalization', async () => {
+        mocks.getArtifacts.mockReturnValueOnce([]).mockReturnValueOnce([
+            {
+                jobId: 'render-1',
+                sectionId: 'section-1',
+                sectionName: 'Verse',
+                startBeat: 0,
+                endBeat: 16,
+                sampleRate: 44_100,
+                tailSeconds: 0,
+                renderedAt: 1,
+                sourceRevision: 'revision-before-command',
+            },
+        ]);
+        mocks.captureUnownedMutations.mockReturnValueOnce(4).mockReturnValueOnce(5);
+        const renderConfirmation = {
+            ...confirmation,
+            approvalSnapshot: {
+                ...confirmation.approvalSnapshot,
+                actions: [
+                    {
+                        type: 'renderProjectSections',
+                        payload: {
+                            sectionIds: ['section-1'],
+                            jobs: [
+                                {
+                                    jobId: 'render-1',
+                                    sectionId: 'section-1',
+                                    sectionName: 'Verse',
+                                    startBeat: 0,
+                                    endBeat: 16,
+                                    sampleRate: 44_100,
+                                    tailSeconds: 0,
+                                },
+                            ],
+                        },
+                    },
+                ],
+            },
+        } satisfies PendingAppActionConfirmation;
+        mocks.executeBatch.mockImplementation(async (input) => {
+            input.options?.onProjectCommitFinalized?.({ revision: 'revision-checkpoint' });
+            return completedBatchResult;
+        });
+
+        const result = await execute({ confirmation: renderConfirmation });
+
+        expect(result).toMatchObject({
+            status: 'completed',
+            committedProjectRevision: 'revision-checkpoint',
+            canRebindSectionRenderArtifacts: false,
+            finalizationEvidenceFailure:
+                'The project changed outside the confirmed command while render evidence was finalizing.',
+        });
+        expect(mocks.rebindArtifacts).not.toHaveBeenCalled();
+    });
+
+    it('keeps a rebind failure fail-closed after Command reports unavailable finalization evidence', async () => {
+        mocks.rebindArtifacts.mockImplementation(() => {
+            throw new Error('render artifact vanished');
+        });
+        mocks.executeBatch.mockImplementation(async (input) => {
+            try {
+                input.options?.onProjectCommitFinalized?.({ revision: 'revision-checkpoint' });
+            } catch (error) {
+                input.options?.onProjectCommitFinalizationUnavailable?.({
+                    reason: error instanceof Error ? error.message : String(error),
+                });
+            }
+            return completedBatchResult;
+        });
+
+        const result = await execute();
+
+        expect(result).toMatchObject({
+            status: 'completed',
+            committedProjectRevision: 'revision-checkpoint',
+            canRebindSectionRenderArtifacts: false,
+            finalizationEvidenceFailure: 'render artifact vanished',
+        });
     });
 
     it('should derive the approved batch group ID when confirmation metadata differs or is incomplete', async () => {

@@ -1100,6 +1100,45 @@ describe('confirmPendingChatActions transaction admission', () => {
         }
     );
 
+    it('settles unavailable post-commit evidence as durable manual recovery instead of throwing', async () => {
+        const runId = 'confirmation-finalization-unavailable';
+        const confirmationId = 'confirmation-finalization-unavailable';
+        const batchId = 'group-finalization-unavailable';
+        const commandBatch = configureLateSettlementConfirmation({ runId, confirmationId, batchId });
+        const commandUseCases = await import('#/modules/Command/useCases');
+        const crdtUseCases = await import('#/modules/CrdtDocument/useCases');
+        const captureMutationAuthorization = vi
+            .spyOn(crdtUseCases, 'captureProjectMutationAuthorization')
+            .mockReturnValue(() => true);
+        const execute = vi
+            .spyOn(commandUseCases, 'executeVersionedCommandBatchEnvelope')
+            .mockImplementation(async (input) => {
+                input.options?.onProjectCommitFinalizationUnavailable?.({
+                    reason: 'The project revision provider is unavailable for finalization evidence.',
+                });
+                return createWarningBatchResult({ status: 'committed-with-warning', commandBatch });
+            });
+
+        try {
+            await expect(confirmPendingChatActions({ confirmationId })).resolves.toMatchObject({
+                status: 'failed',
+                durableCommit: true,
+                reason: 'The project revision provider is unavailable for finalization evidence.',
+            });
+            expect(getPendingActionConfirmation(confirmationId)).toMatchObject({
+                status: 'failed',
+                error: 'The project revision provider is unavailable for finalization evidence.',
+            });
+            expect(chatStore.value?.messages[0]).toMatchObject({
+                pendingActionConfirmationStatus: 'failed',
+                content: expect.stringContaining('The project change is durably committed'),
+            });
+        } finally {
+            execute.mockRestore();
+            captureMutationAuthorization.mockRestore();
+        }
+    });
+
     it('retains a verified receipt without reopening a cancelled run after stale lease settlement', async () => {
         configureAiWorkflowCommandPreflightFixture('project-1');
         configureCommandBatchIdempotency({ canExecute: () => true });
@@ -2962,8 +3001,8 @@ describe('confirmPendingChatActions transaction admission', () => {
             });
         });
         // The batch flight awaits durable idempotency completion after its
-        // project checkpoint is visible. Land a normal owned app action in
-        // that await so a late revision capture would mislabel the artifact.
+        // project checkpoint is visible. Land an ownerless project mutation in
+        // that await so no retained render artifact can be relabelled across it.
         let foreignWriteInjected = false;
         let checkpointRevision: string | null = null;
         let foreignRevision: string | null = null;
@@ -2974,7 +3013,12 @@ describe('confirmPendingChatActions transaction admission', () => {
                     if (lastRenderAttempted && !foreignWriteInjected) {
                         checkpointRevision = captureProjectRevision();
                         foreignWriteInjected = true;
-                        await executeAppAction({ type: 'setTempo', payload: { bpm: 144 } });
+                        mutateCrdtDoc<Record<string, unknown>>({
+                            id: 'foreign-render-writer',
+                            changeFn: (doc) => {
+                                doc.changedDuringRender = true;
+                            },
+                        });
                         foreignRevision = captureProjectRevision();
                     }
                     return task();
@@ -3038,21 +3082,26 @@ describe('confirmPendingChatActions transaction admission', () => {
         }
         expect(committedConfirmation).toMatchObject({
             status: 'failed',
-            followUpProjectRevision: checkpointRevision,
-            followUpStatus: 'retryable',
+            followUpProjectRevision: null,
+            followUpStatus: 'failed',
         });
         const artifacts = getAgentSectionRenderArtifacts();
         expect(artifacts).toHaveLength(1);
-        expect(artifacts[0]).toMatchObject({ jobId: verseJob.jobId, sourceRevision: checkpointRevision });
-        expect(artifacts[0]?.sourceRevision).not.toBe(foreignRevision);
+        expect(artifacts[0]).toMatchObject({ jobId: verseJob.jobId });
+        expect(artifacts[0]?.sourceRevision).not.toBe(checkpointRevision);
 
-        // The retry stays bound to the batch checkpoint and must fail closed
-        // rather than treat the later foreign revision as its source.
+        // No retry is armed: the retained artifact cannot cross the ownerless
+        // mutation into a different project checkpoint.
         const renderCallsBeforeRetry = runtimeMocks.renderOffline.mock.calls.length;
         await expect(
             confirmPendingChatActions({ confirmationId: 'confirmation-render-rebind' })
-        ).resolves.toMatchObject({ status: 'failed' });
+        ).resolves.toMatchObject({ status: 'not_pending' });
         expect(runtimeMocks.renderOffline).toHaveBeenCalledTimes(renderCallsBeforeRetry);
+        expect(
+            selectAgentRunPendingEffectRecoveries(readAgentRunState()).find(
+                ({ runId, batchId }) => runId === 'confirmation-render-rebind' && batchId === 'group-render-rebind'
+            )
+        ).toMatchObject({ recovery: 'manual-repair' });
     });
 
     it.each([false, true])(

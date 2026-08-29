@@ -2277,6 +2277,67 @@ describe('command batch idempotency', () => {
         await expect(execution).resolves.toMatchObject({ status: 'committed' });
     });
 
+    it('reports unavailable finalization evidence after a durable commit without reclassifying the batch', async () => {
+        const batch = compileBatch();
+        const onProjectCommitFinalized = vi.fn(() => {
+            throw new Error('render artifact vanished');
+        });
+        const onProjectCommitFinalizationUnavailable = vi.fn();
+
+        const result = await executeVersionedCommandBatchEnvelope({
+            authority: batch.authority,
+            confirmed: true,
+            serialized: batch.serialized,
+            options: { onProjectCommitFinalized, onProjectCommitFinalizationUnavailable },
+        });
+
+        expect(result).toMatchObject({ status: 'committed' });
+        expect(onProjectCommitFinalized).toHaveBeenCalledExactlyOnceWith({ revision: revision(2) });
+        expect(onProjectCommitFinalizationUnavailable).toHaveBeenCalledExactlyOnceWith({
+            reason: 'render artifact vanished',
+        });
+    });
+
+    it('never emits finalization evidence for rejected, cancelled, or idempotent replay outcomes', async () => {
+        const callbacks = {
+            onProjectCommitFinalized: vi.fn(),
+            onProjectCommitFinalizationUnavailable: vi.fn(),
+        };
+        const rejectedBatch = compileBatch({ batchId: 'finalization-rejected' });
+        const rejected = await executeVersionedCommandBatchEnvelope({
+            authority: rejectedBatch.authority,
+            serialized: rejectedBatch.serialized,
+            options: callbacks,
+        });
+        const cancelledBatch = compileBatch({ batchId: 'finalization-cancelled' });
+        const cancelled = await executeVersionedCommandBatchEnvelope({
+            authority: cancelledBatch.authority,
+            confirmed: true,
+            serialized: cancelledBatch.serialized,
+            options: { ...callbacks, shouldExecute: () => false },
+        });
+        const replayBatch = compileBatch({ batchId: 'finalization-replay' });
+        await executeVersionedCommandBatchEnvelope({
+            authority: replayBatch.authority,
+            confirmed: true,
+            serialized: replayBatch.serialized,
+        });
+        callbacks.onProjectCommitFinalized.mockClear();
+        callbacks.onProjectCommitFinalizationUnavailable.mockClear();
+        const replay = await executeVersionedCommandBatchEnvelope({
+            authority: replayBatch.authority,
+            confirmed: true,
+            serialized: replayBatch.serialized,
+            options: callbacks,
+        });
+
+        expect(rejected.status).toBe('rejected');
+        expect(cancelled.status).toBe('cancelled');
+        expect(replay.status).toBe('idempotent-replay');
+        expect(callbacks.onProjectCommitFinalized).not.toHaveBeenCalled();
+        expect(callbacks.onProjectCommitFinalizationUnavailable).not.toHaveBeenCalled();
+    });
+
     it('reclaims an orphaned pre-commit claim when project truth proves no commit occurred', async () => {
         const claim = vi.fn((input: { reclaimPending?: boolean }) =>
             Promise.resolve(input.reclaimPending ? ({ status: 'claimed' } as const) : ({ status: 'pending' } as const))
