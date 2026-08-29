@@ -55,10 +55,12 @@ describe('PreferencesDialog', () => {
     it('preserves the dialog shell and navigation layout contracts', () => {
         render(<PreferencesDialog open={true} onClose={vi.fn()} />);
 
+        const dialog = screen.getByRole('dialog');
         const navigation = screen.getByRole('navigation');
         const sideRail = navigation.parentElement;
         const shell = sideRail?.parentElement;
 
+        expect(dialog).toHaveClass('h-[520px]', 'max-h-[80%]', 'w-[720px]', 'max-w-[90%]', 'overflow-hidden');
         expect(shell?.tagName).toBe('DIV');
         expect(shell).toHaveClass(
             'flex',
@@ -67,22 +69,26 @@ describe('PreferencesDialog', () => {
             'gap-0',
             'items-stretch',
             'justify-start',
-            'h-[520px]'
+            'h-full',
+            'min-h-0',
+            'overflow-hidden'
         );
         expect(shell?.children).toHaveLength(2);
         expect(shell?.children[0]).toBe(sideRail);
         expect(shell?.children[1]).toHaveClass('flex-1', 'gap-5', 'bg-surface-base/60', 'p-5', '[&>*]:shrink-0');
+        expect(sideRail).toHaveClass('overflow-y-auto');
 
         expect(navigation.tagName).toBe('NAV');
         expect(navigation).toHaveClass(
             'flex',
             'flex-col',
-            'min-h-0',
             'gap-0.5',
             'items-stretch',
             'justify-start',
-            'h-full'
+            'h-max',
+            'min-h-full'
         );
+        expect(navigation).not.toHaveClass('h-full');
     });
 
     it('preserves navigation content and focus order', () => {

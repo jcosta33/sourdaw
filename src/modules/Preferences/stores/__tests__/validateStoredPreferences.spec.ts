@@ -77,6 +77,21 @@ describe('validateStoredPreferences — per-field schema guards', () => {
         expect(result.recordCountIn).toBe(4);
     });
 
+    it.each([0.5, 2])('preserves the supported UI scale boundary %s', (uiScale) => {
+        const result = validateStoredPreferences({ ...defaultPreferences, uiScale });
+
+        expect(result.uiScale).toBe(uiScale);
+    });
+
+    it.each([0, -1, 2.01, 100, Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY])(
+        'replaces unsupported UI scale %s with the default',
+        (uiScale) => {
+            const result = validateStoredPreferences({ ...defaultPreferences, uiScale });
+
+            expect(result.uiScale).toBe(defaultPreferences.uiScale);
+        }
+    );
+
     it('replaces an out-of-range preRollBars with its default', () => {
         const result = validateStoredPreferences({ ...defaultPreferences, preRollBars: 3 });
 

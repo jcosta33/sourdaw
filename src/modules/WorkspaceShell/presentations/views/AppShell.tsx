@@ -565,7 +565,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     return (
         <>
             <Stack
-                className="h-screen w-screen overflow-hidden bg-surface-app"
+                className="h-full w-full overflow-hidden bg-surface-app"
                 data-testid="app-shell"
                 inert={projectLoadFailure !== null || cheatSheetOpen}
             >

@@ -1,15 +1,47 @@
 import { desktopSetZoomFactor, isDesktopRuntime } from '#/utils/desktopBridge';
 
-const BROWSER_BASE_FONT_SIZE_PX = 16;
+const ROOT_ELEMENT_ID = 'root';
+
+function resetBrowserScale(): void {
+    document.documentElement.style.removeProperty('height');
+    document.documentElement.style.removeProperty('overflow');
+    document.documentElement.style.removeProperty('width');
+    document.body.style.removeProperty('height');
+    document.body.style.removeProperty('overflow');
+    document.body.style.removeProperty('transform');
+    document.body.style.removeProperty('transform-origin');
+    document.body.style.removeProperty('width');
+
+    const root = document.getElementById(ROOT_ELEMENT_ID);
+    root?.style.removeProperty('height');
+    root?.style.removeProperty('width');
+}
 
 export function setDisplayScale(scale: number): void {
     document.documentElement.style.removeProperty('zoom');
+    document.documentElement.style.removeProperty('font-size');
+    resetBrowserScale();
+
+    document.documentElement.style.height = '100%';
+    document.documentElement.style.overflow = 'hidden';
+    document.documentElement.style.width = '100%';
+    document.body.style.overflow = 'hidden';
+
+    const root = document.getElementById(ROOT_ELEMENT_ID);
+    if (root !== null) {
+        root.style.height = '100%';
+        root.style.width = '100%';
+    }
 
     if (isDesktopRuntime()) {
-        document.documentElement.style.removeProperty('font-size');
+        document.body.style.height = '100%';
+        document.body.style.width = '100%';
         desktopSetZoomFactor(scale);
         return;
     }
 
-    document.documentElement.style.fontSize = `${String(BROWSER_BASE_FONT_SIZE_PX * scale)}px`;
+    document.body.style.height = `${String(100 / scale)}vh`;
+    document.body.style.transform = `scale(${String(scale)})`;
+    document.body.style.transformOrigin = 'top left';
+    document.body.style.width = `${String(100 / scale)}vw`;
 }

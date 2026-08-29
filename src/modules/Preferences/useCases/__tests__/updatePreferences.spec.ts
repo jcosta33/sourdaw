@@ -52,4 +52,29 @@ describe('updatePreferences', () => {
         });
         expect(setSoloMode).toHaveBeenCalledWith('pfl');
     });
+
+    it.each([0.5, 2])('should preserve a supported UI scale of %s', (uiScale) => {
+        updatePreferences({ patch: { uiScale } });
+
+        expect(preferencesStore.trySet).toHaveBeenCalledWith({
+            ...defaultPreferences,
+            theme: 'dark',
+            soloMode: 'sip',
+            uiScale,
+        });
+    });
+
+    it.each([0, -1, 2.01, 100, Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY])(
+        'should replace an unsupported UI scale of %s with the default',
+        (uiScale) => {
+            updatePreferences({ patch: { uiScale } });
+
+            expect(preferencesStore.trySet).toHaveBeenCalledWith({
+                ...defaultPreferences,
+                theme: 'dark',
+                soloMode: 'sip',
+                uiScale: defaultPreferences.uiScale,
+            });
+        }
+    );
 });

@@ -449,6 +449,14 @@ describe('useAppInitialization — display scale', () => {
 
         expect(applyDisplayScale).toHaveBeenLastCalledWith(0.9);
         unmount();
+
+        vi.mocked(applyDisplayScale).mockClear();
+        act(() => {
+            for (const listener of preferenceListeners) {
+                listener();
+            }
+        });
+        expect(applyDisplayScale).not.toHaveBeenCalled();
     });
 });
 
