@@ -1,0 +1,59 @@
+src/modules/AudioRendering/useCases/getExactAgentSectionRenderArtifact.ts
+  s_a40848e8f8cca9::t_342addebc5d00c 1-18
+  s_a40848e8f8cca9::t_462098094a4c33 19-28
+src/modules/AudioRendering/useCases/disposeExactAgentSectionRenderArtifact.ts
+  s_a40848e8f8cca9::t_342addebc5d00c 1-20
+src/modules/AiRuntime/stores/index.ts
+  s_a40848e8f8cca9::t_2cfe18e52fda2d 31-32
+src/modules/AiRuntime/useCases/index.ts
+  s_a40848e8f8cca9::t_2cfe18e52fda2d 75
+src/modules/AiRuntime/useCases/settleRetainedSectionRenderManualReview.ts
+  s_a40848e8f8cca9::t_2cfe18e52fda2d 1-37
+  s_a40848e8f8cca9::t_576b88a502d1d0 38-62
+src/modules/AiRuntime/presentations/views/ChatPanel.tsx
+  s_a40848e8f8cca9::t_e926e31ea11fb6 3-16,24-28,39-42,282-285,301-308,310-316,318-321,324-336,344-346,348-352,355-368,370-438,538-539,568-571,640-646
+  s_a40848e8f8cca9::t_e974fa7866fc8c 29,50,277-281,286-298,309,317,322-323,337-342,353-354,369,439-440,461
+  s_a40848e8f8cca9::t_f1f560a31b488b 343,347
+  s_a40848e8f8cca9::t_79ccd8f65e92f3 299-300,564-567,573-576
+  s_a40848e8f8cca9::t_096995811270d6 572
+src/modules/AiRuntime/stores/agentRunStore.ts
+  s_a40848e8f8cca9::t_a73ca63d9da2f4 589,608-616,626
+src/modules/AudioRendering/useCases/__tests__/retainedSectionRenderArtifactReview.spec.ts
+  s_a40848e8f8cca9::t_e85b8655f9d540 1-10,12,15-16,24,38-39,44-49,53,55-60,64,68-70
+  s_a40848e8f8cca9::t_a7ed4944e7ee68 11,13-14,54
+  s_a40848e8f8cca9::t_f1f560a31b488b 17-23,25-37,40-43,50-52,61-63,65-67
+src/modules/AiRuntime/stores/selectRetainedSectionRenderManualReviews.ts
+  s_a40848e8f8cca9::t_2cfe18e52fda2d 1-21,27-29,40-52,62-80,86,93-101,113,125-130
+  s_a40848e8f8cca9::t_571c529612a78d 22-26,30-39,53-61,81-85,87-92,102-112,114-124
+src/modules/AiRuntime/useCases/agentRunLifecycle.ts
+  s_a40848e8f8cca9::t_a73ca63d9da2f4 1254-1268,1279-1280,1284-1288,1299-1305,1309-1310,1314,1316-1317,2077
+  s_a40848e8f8cca9::t_c59eb37dd2f484 216
+  s_a40848e8f8cca9::t_571c529612a78d 998,1269-1278,1281-1283,1289-1298,1306-1308,1311-1313
+  s_a40848e8f8cca9::t_e2f0ea977fcd11 1315
+src/modules/AudioRendering/useCases/index.ts
+  s_a40848e8f8cca9::t_342addebc5d00c 8-10
+src/modules/AudioRendering/useCases/exportExactAgentSectionRenderArtifactAsWav.ts
+  s_a40848e8f8cca9::t_f1f560a31b488b 1,4-5,7-8,13-14,18-27,29-30
+  s_a40848e8f8cca9::t_342addebc5d00c 3,6,9-12,15-17,28,31
+  s_a40848e8f8cca9::t_aa2d31741ced14 2
+src/modules/AudioRendering/repositories/audioExport/downloadAudioWav.ts
+  s_a40848e8f8cca9::t_f1f560a31b488b 1-10
+src/modules/AiRuntime/models/AgentRun.ts
+  s_a40848e8f8cca9::t_a73ca63d9da2f4 271,281-282
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "0e765fbbd07009b886e364c65b7c76b58e1e55b0",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
