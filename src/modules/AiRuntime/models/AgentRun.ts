@@ -393,6 +393,8 @@ export type AgentRunPendingEffectContinuation = {
     serializedBatch: string;
     authority: AgentRunCommandBatchAuthority;
     lastError: string | null;
+    /** Exact post-commit revision for retained render evidence; absent only on legacy capsules. */
+    sourceRevision?: string;
 };
 
 export type AgentRunPendingEffectRecovery = AgentRunPendingEffectContinuation & {

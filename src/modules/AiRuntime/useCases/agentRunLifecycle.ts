@@ -956,8 +956,16 @@ function recordAgentRunPendingEffectContinuation(input: {
     const recordedAt = input.recordedAt ?? Date.now();
     const state = readAgentRunState();
     const clonedContinuation = structuredClone(input.continuation);
+    const committedRevision = state.runs.find((run) => run.runId === input.runId)?.revisions.committed;
     const continuation = {
         ...clonedContinuation,
+        ...(clonedContinuation.sourceRevision === undefined &&
+        clonedContinuation.effects.some(
+            (effect) => effect.kind === 'external-effect' && effect.operation === 'renderProjectSections'
+        ) &&
+        committedRevision
+            ? { sourceRevision: committedRevision }
+            : {}),
         recovery: clonedContinuation.effects.some(({ remediation }) => remediation === 'manual-repair')
             ? 'manual-repair'
             : clonedContinuation.recovery,
@@ -1121,6 +1129,9 @@ function requireAgentRunPendingEffectManualRepair(input: {
                       effects: requireManualRepairEffects(candidate.effects),
                       recovery: 'manual-repair',
                       lastError: input.reason,
+                      ...(candidate.sourceRevision === undefined && run.revisions.committed
+                          ? { sourceRevision: run.revisions.committed }
+                          : {}),
                   }
                 : candidate
         ),
@@ -1135,6 +1146,9 @@ function requireAgentRunPendingEffectManualRepair(input: {
                       effects: requireManualRepairEffects(candidate.effects),
                       recovery: 'manual-repair',
                       lastError: input.reason,
+                      ...(candidate.sourceRevision === undefined && run.revisions.committed
+                          ? { sourceRevision: run.revisions.committed }
+                          : {}),
                   }
                 : candidate
     );

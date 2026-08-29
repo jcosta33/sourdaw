@@ -274,6 +274,7 @@ function readPendingEffectContinuation(value: unknown): AgentRunPendingEffectCon
             : null;
     const authority = readCommandBatchAuthority(value.authority);
     const lastError = readNullableString(value.lastError);
+    const sourceRevision = value.sourceRevision === undefined ? undefined : readString(value.sourceRevision);
     if (
         batchId === null ||
         effects === null ||
@@ -283,6 +284,7 @@ function readPendingEffectContinuation(value: unknown): AgentRunPendingEffectCon
         serializedBatch === null ||
         authority === null ||
         lastError === undefined ||
+        sourceRevision === null ||
         (value.recovery !== 'reconcile-batch' && value.recovery !== 'manual-repair')
     ) {
         return null;
@@ -296,6 +298,7 @@ function readPendingEffectContinuation(value: unknown): AgentRunPendingEffectCon
         serializedBatch,
         authority,
         lastError: lastError ?? (recoveryPolicy.recovery === 'manual-repair' ? recoveryPolicy.reason : null),
+        ...(sourceRevision === undefined ? {} : { sourceRevision }),
     };
 }
 

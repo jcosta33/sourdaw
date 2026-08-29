@@ -22,7 +22,7 @@ import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { useStore } from '#/infra/store/useStore';
 import {
-    cachePreviewAudioBuffer,
+    cacheAudioBuffer,
     playCachedAudioBufferPreview,
     releasePreviewAudioBuffer,
 } from '#/modules/AudioEngine/useCases';
@@ -315,10 +315,7 @@ const RetainedSectionRenderManualReviewCard = ({
             return;
         }
         if (!bufferIdRef.current) {
-            bufferIdRef.current = cachePreviewAudioBuffer({
-                audio: review.artifact.buffer.getChannelData(0),
-                sampleRate: review.artifact.sampleRate,
-            });
+            bufferIdRef.current = cacheAudioBuffer({ buffer: review.artifact.buffer });
         }
         let playback: PreviewPlayback | null = null;
         playback = playCachedAudioBufferPreview({

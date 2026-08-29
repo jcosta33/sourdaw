@@ -73,8 +73,8 @@ export function selectRetainedSectionRenderManualReviews(
 ): RetainedSectionRenderManualReviewProjection[] {
     const output: RetainedSectionRenderManualReviewProjection[] = [];
     for (const run of state?.runs ?? []) {
-        const sourceRevision = run.revisions.committed;
         for (const continuation of run.pendingEffectContinuations) {
+            const sourceRevision = continuation.sourceRevision;
             if (continuation.recovery !== 'manual-repair' || !sourceRevision) {
                 continue;
             }
@@ -88,7 +88,10 @@ export function selectRetainedSectionRenderManualReviews(
                 !recovery ||
                 recovery.receiptIdentity !== continuation.receiptIdentity ||
                 recovery.serializedBatch !== continuation.serializedBatch ||
-                recovery.authority.baseRevision !== continuation.authority.baseRevision
+                JSON.stringify(recovery.authority) !== JSON.stringify(continuation.authority) ||
+                JSON.stringify(recovery.effects) !== JSON.stringify(continuation.effects) ||
+                recovery.sourceRevision !== continuation.sourceRevision ||
+                recovery.recovery !== continuation.recovery
             ) {
                 continue;
             }
