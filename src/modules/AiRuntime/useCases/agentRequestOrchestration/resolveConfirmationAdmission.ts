@@ -23,15 +23,16 @@ type ApprovalDivergence = Extract<
     { status: 'ready' | 'conflicted' }
 >['divergence'];
 
+type TerminalConfirmationResult = ReturnType<typeof confirmationTerminalSettlement.failSectionRenderRetryProof>;
+
 type HandledConfirmationAdmission = {
     status: 'handled';
     result:
+        | TerminalConfirmationResult
         | { status: 'missing' }
         | { status: 'not_pending'; currentStatus: ChatActionConfirmationStatus }
         | { status: 'busy' }
-        | { status: 'invalidated'; reason: string; divergence?: ApprovalDivergence }
-        | { status: 'reapproval_required'; divergence: ApprovalDivergence }
-        | { status: 'failed'; reason: string };
+        | { status: 'reapproval_required'; divergence: ApprovalDivergence };
 };
 
 type ResolveConfirmationAdmissionResult =
