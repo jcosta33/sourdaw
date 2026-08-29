@@ -102,7 +102,11 @@ const ddspModelEnforcementPaths = [
 ] as const;
 const WEBLLM_SURFACE_ID = 'webllm-qwen-artifacts';
 const WEBLLM_LEGAL_PATH_PREFIX = 'public/legal/';
-const WEBLLM_LEGAL_CLOSURE_DIGEST = '29ae9a90a1fe893c5a57581377e127a041af4ee3cc392e388da8c1f042279bc0';
+// Re-pinned after #2869 amended `public/legal/THIRD-PARTY-NOTICES.md` for the
+// VST3 host: the closure's paths, source buckets, and path-to-source mapping
+// are byte-identical to the previous pin, and only that notice's own content
+// digest moved. Any other field moving is a legal-closure change, not drift.
+const WEBLLM_LEGAL_CLOSURE_DIGEST = 'b11aadca93727098096b64d2fbf0664eaff4c2268240ba5a99eca2be0c6e13a6';
 const APACHE_TVM_COMMIT = 'bc1a904ec1ad89454ee6577d66cde1268b8f6bc8';
 const TVM_FFI_COMMIT = '3c35034fd1026011736e19a4e0e1ed0f22058c42';
 

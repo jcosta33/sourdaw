@@ -62,6 +62,11 @@ vi.mock('#/utils/UI/useContextMenuDismiss', () => ({ useContextMenuDismiss: vi.f
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     updateDeviceParam: vi.fn(),
     getAudioContext: vi.fn(() => ({ currentTime: 0, sampleRate: 48000 })),
+    // The rate `projectTrackToLiveStrip` activates external plugins at. It must
+    // agree with the mocked context above: a live engine has exactly one clock,
+    // and `undefined` here would mean the engine is not rendering, which leaves
+    // the restored track's plugin dormant instead of rebuilt.
+    getLiveEngineSampleRate: vi.fn(() => 48000),
     getRuntimeGraphRevision: vi.fn(() => 0),
     initializeTrackStripFromSnapshot: vi.fn(() => ({
         acceptance: 'accepted' as const,

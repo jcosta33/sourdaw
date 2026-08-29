@@ -992,6 +992,25 @@ function productionSources(root: string): ProductionSource[] {
     return files;
 }
 
+/**
+ * One sweep of `src/`, shared by every case below. Parsing and re-printing the
+ * whole tree costs seconds; doing it once per case put every case in this file
+ * over its timeout. The working tree cannot change mid-run, so one sweep is the
+ * same evidence as fourteen, and each case still composes its own synthetic
+ * file onto a copy.
+ */
+const productionSourcesByRoot = new Map<string, ProductionSource[]>();
+
+function readProductionSources(root: string): ProductionSource[] {
+    const cached = productionSourcesByRoot.get(root);
+    if (cached) {
+        return cached;
+    }
+    const files = productionSources(root);
+    productionSourcesByRoot.set(root, files);
+    return files;
+}
+
 function countByPath(files: ReadonlyArray<ProductionSource>, definition: SinkDefinition): Record<string, number> {
     const result: Record<string, number> = {};
     for (const file of files) {
@@ -1320,7 +1339,7 @@ function assertProductionClosure(files: ReadonlyArray<ProductionSource>): void {
 
 describe('device write boundary closure', () => {
     it('classifies every production sink by family, path, and exact count', () => {
-        const files = productionSources(process.cwd());
+        const files = readProductionSources(process.cwd());
         expect(() => assertProductionClosure(files)).not.toThrow();
     });
 
@@ -1543,7 +1562,7 @@ describe('device write boundary closure', () => {
             source: 'const parameterValues = {}; updateTrack("track", (current) => ({ ...current, parameterValues }));',
         },
     ])('rejects $name through the production closure assertion', ({ path, source }) => {
-        const files = productionSources(process.cwd());
+        const files = readProductionSources(process.cwd());
         expect(() => assertProductionClosure([...files, productionSource(path, source)])).toThrow(
             /sink census changed/
         );

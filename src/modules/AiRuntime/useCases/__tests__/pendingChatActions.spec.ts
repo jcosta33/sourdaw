@@ -34,6 +34,7 @@ const projectMutationAuthorization = vi.hoisted(() => {
 
 const mocks = vi.hoisted(() => ({
     projectRevision: { value: 'revision-1' },
+    unownedMutationEpoch: { value: 0 },
     executeAppAction: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
     executeAppActionBatch: vi.fn<ExecuteAppActionBatch>(),
     executeVersionedCommandBatchEnvelope: vi.fn(),
@@ -51,6 +52,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     captureProjectMutationAuthorization: projectMutationAuthorization.capture,
     captureProjectRevision: () => mocks.projectRevision.value,
+    captureUnownedProjectMutations: () => mocks.unownedMutationEpoch.value,
 }));
 
 vi.mock('#/modules/Command/useCases', async (import_original) => ({

@@ -350,8 +350,9 @@ describe('prepared stem import resource cleanup', () => {
         await expect(preparedStemImportResources.discard({ runId, stems: twoStems })).resolves.toBeUndefined();
         await expect(preparedStemImportResources.discard({ runId, stems: twoStems })).resolves.toBeUndefined();
 
-        expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledExactlyOnceWith('decoded-buffer-1');
-        expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledExactlyOnceWith('decoded-buffer-2');
+        expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledTimes(2);
+        expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledWith('decoded-buffer-1');
+        expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledWith('decoded-buffer-2');
         setItem.mockRestore();
     });
 
@@ -397,8 +398,9 @@ describe('prepared stem import resource cleanup', () => {
         await expect(preparedStemImportResources.discard({ runId, stems: [twoStems[1]!] })).resolves.toBeUndefined();
         await expect(preparedStemImportResources.discard({ runId, stems: twoStems })).resolves.toBeUndefined();
 
-        expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledExactlyOnceWith('decoded-buffer-1');
-        expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledExactlyOnceWith('decoded-buffer-2');
+        expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledTimes(2);
+        expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledWith('decoded-buffer-1');
+        expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledWith('decoded-buffer-2');
         setItem.mockRestore();
     });
 

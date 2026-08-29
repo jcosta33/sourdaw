@@ -135,9 +135,9 @@ describe('desktopBridge', () => {
         it('should order load_plugin as (plugin_id, instance_id) — the transposition nothing downstream rejects', async () => {
             const bridge = installBridge();
 
-            await desktopInvoke('load_plugin', { instanceId: 'inst-1', pluginId: 'plug-1' });
+            await desktopInvoke('load_plugin', { instanceId: 'inst-1', pluginId: 'plug-1', sampleRate: 48000 });
 
-            expect(bridge.invoke).toHaveBeenCalledWith('load_plugin', ['plug-1', 'inst-1']);
+            expect(bridge.invoke).toHaveBeenCalledWith('load_plugin', ['plug-1', 'inst-1', 48000]);
         });
 
         it('should send a zero-argument command as an empty array', async () => {
