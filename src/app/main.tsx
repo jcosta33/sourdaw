@@ -1,4 +1,5 @@
 import { mountBrowserDisplayScaleHost } from './browserDisplayScaleHost';
+import { reloadApplication } from './reloadApplication';
 import { resolveAppComposition } from './resolveAppComposition';
 
 const root = document.getElementById('root')!;
@@ -26,7 +27,7 @@ async function renderDesktopStartupError(): Promise<void> {
         import('react-dom/client'),
         import('./DesktopStartupError'),
     ]);
-    createRoot(root).render(<DesktopStartupError onReload={() => window.location.reload()} />);
+    createRoot(root).render(<DesktopStartupError onReload={() => reloadApplication(window.location)} />);
 }
 
 if (composition === 'browser-host') {

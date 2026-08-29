@@ -1,9 +1,12 @@
+import { isValidElement } from 'react';
+
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
     bootstrap: vi.fn(),
     desktopStartupError: vi.fn(() => null),
     mountBrowserDisplayScaleHost: vi.fn(),
+    reloadApplication: vi.fn(),
     render: vi.fn(),
     resolveAppComposition: vi.fn(),
 }));
@@ -22,6 +25,8 @@ vi.mock('../DesktopStartupError', () => ({ DesktopStartupError: mocks.desktopSta
 vi.mock('../resolveAppComposition', () => ({
     resolveAppComposition: mocks.resolveAppComposition,
 }));
+
+vi.mock('../reloadApplication', () => ({ reloadApplication: mocks.reloadApplication }));
 
 vi.mock('../App', () => ({ App: () => null }));
 
@@ -66,7 +71,16 @@ describe('app main composition', () => {
         await import('../main');
 
         await vi.waitFor(() => expect(mocks.render).toHaveBeenCalledOnce());
-        expect(mocks.render.mock.calls[0]?.[0]).toMatchObject({ type: mocks.desktopStartupError });
+        const startupError = mocks.render.mock.calls[0]?.[0];
+        expect(isValidElement(startupError)).toBe(true);
+        if (!isValidElement<{ onReload: () => void }>(startupError)) {
+            throw new Error('Desktop startup error did not render a React element');
+        }
+        expect(startupError.type).toBe(mocks.desktopStartupError);
+
+        startupError.props.onReload();
+
+        expect(mocks.reloadApplication).toHaveBeenCalledWith(window.location);
         expect(mocks.bootstrap).not.toHaveBeenCalled();
         expect(mocks.mountBrowserDisplayScaleHost).not.toHaveBeenCalled();
     });
