@@ -245,6 +245,25 @@ describe('settleVerifiedBatchReplay', () => {
         }
     );
 
+    it('preserves a verified replay warning in the confirmation and chat status', async () => {
+        mocks.getReplay.mockReturnValue({ status: 'committed', warning: 'prior warning' });
+
+        await expect(settleVerifiedBatchReplay(createInput())).resolves.toEqual({ status: 'executed' });
+
+        expect(mocks.status).toHaveBeenCalledWith({
+            confirmationId: 'confirmation-1',
+            status: 'executed',
+            error: 'prior warning',
+        });
+        expect(mocks.message).toHaveBeenCalledWith(
+            'assistant-1',
+            expect.objectContaining({
+                pendingActionConfirmationStatus: 'executed',
+                error: 'prior warning',
+            })
+        );
+    });
+
     it('keeps partial committed effects durable and non-replayable', async () => {
         const input = createInput(true);
 
