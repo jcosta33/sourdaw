@@ -45,7 +45,7 @@
  *
  * An offline backend deliberately never calls `apply_graph_commands`: that
  * command lazily starts the live CPAL engine (#1984), and a bounce must not
- * open an audio device. Live adoption is the live-cutover slice (#2230).
+ * open an audio device. Its live sibling is `createNativeLiveGraphBackend`.
  *
  * ── The strip reports ─────────────────────────────────────────────────────
  *
@@ -70,6 +70,7 @@ import { collectBufferedClipSources } from './collectBufferedClipSources';
 import { deinterleaveStereoPcm, type PlanarStereo } from './deinterleaveStereoPcm';
 import { interleaveAudioBufferPcm } from './interleaveAudioBufferPcm';
 import { type NativeGraphTransport } from './nativeGraphTransport';
+import { readNativeStripReports } from './readNativeStripReports';
 import { type NativeGraphWireCommand } from './serializeAudioGraphCommand';
 import { serializeAudioGraphCommandBatch } from './serializeAudioGraphCommandBatch';
 
@@ -127,36 +128,6 @@ function reasonOf(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
 }
 
-function readStringArray(value: unknown): string[] | null {
-    if (!Array.isArray(value)) {
-        return null;
-    }
-    const out: string[] = [];
-    for (const entry of value as readonly unknown[]) {
-        if (typeof entry !== 'string') {
-            return null;
-        }
-        out.push(entry);
-    }
-    return out;
-}
-
-function readStripReports(value: unknown): AudioGraphStripReport[] {
-    if (!Array.isArray(value)) {
-        throw new TypeError(`map_graph_batch answered without reports: ${JSON.stringify(value)}`);
-    }
-    return (value as readonly unknown[]).map((entry) => {
-        const report = typeof entry === 'object' && entry !== null ? (entry as Record<string, unknown>) : null;
-        const kind = report?.kind;
-        const id = report?.id;
-        const deviceIds = readStringArray(report?.deviceIds);
-        if ((kind !== 'track' && kind !== 'bus') || typeof id !== 'string' || deviceIds === null) {
-            throw new Error(`map_graph_batch answered a malformed strip report: ${JSON.stringify(entry)}`);
-        }
-        return { kind, id, deviceIds };
-    });
-}
-
 type MappedOutcome =
     | Readonly<{ outcome: 'rejected'; reason: string }>
     | Readonly<{ outcome: 'mapped'; reports: readonly AudioGraphStripReport[] }>;
@@ -176,7 +147,7 @@ function readMappedResult(value: unknown): MappedOutcome {
         };
     }
     if (payload?.acceptance === 'accepted' && payload.application === 'applied') {
-        return { outcome: 'mapped', reports: readStripReports(payload.reports) };
+        return { outcome: 'mapped', reports: readNativeStripReports(payload.reports, 'map_graph_batch') };
     }
     throw new Error(`map_graph_batch answered an unknown outcome: ${JSON.stringify(value)}`);
 }

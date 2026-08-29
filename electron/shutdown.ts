@@ -1,12 +1,26 @@
 /**
  * The quit path (REQ-012).
  *
- * Rust drop order is load bearing — the engine's CPAL stream has to be released
- * before the CLAP runtimes it reads — and Node does not reliably run
- * destructors at process exit. So shutdown is explicit: `before-quit` calls the
- * addon's `shutdown()`, which retires discovery, closes every plugin editor and
- * sweeps the retirement vec in that one correct order, and only then does the
- * process end.
+ * Node does not reliably run destructors at process exit, so shutdown is
+ * explicit: `before-quit` calls the addon's `shutdown()`, which retires
+ * discovery, closes every plugin editor, takes engine-owned runtimes out of the
+ * audio graph and sweeps the retirement vec, in that one correct order, and
+ * only then does the process end.
+ *
+ * The cascade does not release the engine's audio stream, and cannot: taking
+ * runtimes out of the graph is something it asks the running engine to do. No
+ * destructor releases it afterwards either — quit ends at `app.exit()`, so no
+ * Rust `Drop` on the host state runs on this path, whatever `AppState`'s field
+ * order guarantees on the paths where it does. What keeps the still-open stream
+ * off a freed CLAP
+ * runtime is the cascade's own `Arc` discipline
+ * (`crates/sourdaw-native/src/shutdown.rs`): a runtime's removal from the
+ * scheduler is queued first, the runtime is retired, and it is freed only once
+ * every other holder — the scheduler included — has let go of its reference.
+ * One the scheduler never releases inside the waiting budget is retained rather
+ * than freed, and reported as an unreclaimed retirement. Leaking it past exit is
+ * the deliberate trade: the process is ending regardless, and freeing memory a
+ * live audio callback may still read is the worse outcome.
  *
  * The deadline is the other half. A third-party plugin editor that refuses to
  * die must not wedge quit: a musician who asked the app to close and watched

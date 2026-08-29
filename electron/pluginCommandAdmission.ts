@@ -7,8 +7,18 @@
  * still in flight from inserting an instance after the drain.
  */
 
-/** Exposed commands whose bodies touch live plugin runtimes or start plugin work. */
+/**
+ * Exposed commands whose bodies touch live plugin runtimes or start plugin work.
+ *
+ * `apply_graph_commands` is here for the second reason rather than the first:
+ * it is the native engine's only bootstrap (#1984), and the engine is what owns
+ * the hosted plugin slots and the retirement reclaimer. One still in flight
+ * when quit begins would spawn an audio stream *after* the cascade drained the
+ * runtimes it feeds, which is the same insertion-after-the-drain hazard a late
+ * `load_plugin` is closed for.
+ */
 export const PLUGIN_RUNTIME_COMMANDS = [
+    'apply_graph_commands',
     'close_plugin_gui',
     'get_plugin_parameters',
     'get_plugin_state_bytes',

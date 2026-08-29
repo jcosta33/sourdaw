@@ -77,12 +77,10 @@ export type NativeGraphTransport = Readonly<{
     renderGraphOffline: (input: RenderGraphOfflineInput) => Promise<Uint8Array>;
     /**
      * `apply_graph_commands`: one batch onto the **live** native engine, which
-     * lazily starts on the first batch. Not called by the offline backend —
-     * live adoption is the live-cutover slice (#2230) — but carried on the
-     * seam so that cutover swaps a call site, not the transport. Its command
-     * stays in `DENIED_COMMANDS` until that caller exists (the exposure law
-     * in `electron/commands.ts`), so invoking this method today throws at the
-     * bridge seam.
+     * lazily starts on the first batch. Never called by the offline backend —
+     * a bounce must not open an audio device — and reached in production only
+     * through `createNativeLiveGraphBackend`, whose session the transport
+     * gestures drive (#3066).
      */
     applyGraphCommands: (input: ApplyGraphCommandsInput) => Promise<unknown>;
     /**
