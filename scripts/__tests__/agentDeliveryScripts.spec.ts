@@ -225,10 +225,14 @@ try {
 `;
     const startContender = (): LockContender => {
         const stdio: ['pipe', 'pipe', 'pipe'] = ['pipe', 'pipe', 'pipe'];
-        const child = spawn(process.execPath, ['--no-warnings', '--import', tsxImport, '--input-type=module', '--eval', childSource], {
-            cwd: repositoryRoot,
-            stdio,
-        });
+        const child = spawn(
+            process.execPath,
+            ['--no-warnings', '--import', tsxImport, '--input-type=module', '--eval', childSource],
+            {
+                cwd: repositoryRoot,
+                stdio,
+            }
+        );
         const stderr: string[] = [];
         child.stderr.setEncoding('utf8');
         child.stderr.on('data', (chunk: string) => stderr.push(chunk));
