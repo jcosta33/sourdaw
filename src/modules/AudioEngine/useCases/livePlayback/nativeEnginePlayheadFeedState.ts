@@ -15,6 +15,19 @@
  * must not stack: the reading is a level, not a stream, so a late answer that
  * arrives behind a newer one has nothing to contribute.
  *
+ * ## Why the epoch, and not a boolean
+ *
+ * A bridge round trip can outlive the session that issued it. Stop and play
+ * again inside one round trip — a transport tap, or any stop the user
+ * immediately reverses — and the feed is running again by the time the old
+ * promise resolves, so a `running` check adopts the previous session's position
+ * onto the new one. The in-flight flag is the same defect from the other side:
+ * released by the stale settlement, it makes the new session's first frame skip
+ * its own poll, and released by the new session's own poll it never clears at
+ * all. The epoch numbers the sessions. A reading is adopted only by the epoch
+ * that asked for it, and a request belongs to an epoch that has since ended
+ * exactly as much as it belongs to no one.
+ *
  * Module state rather than a parameter for the same reason the live session's
  * is: the engine it reads is process-wide, so a second feed object would be a
  * second belief about a thing there is only one of.
@@ -30,26 +43,37 @@ export const NATIVE_ENGINE_PLAYHEAD_FEED_ID = 'audio-engine/native-engine-playhe
 
 export const nativeEnginePlayheadFeed: {
     running: boolean;
-    inFlight: boolean;
+    /**
+     * Which run of the feed is current. Bumped by every start and every stop,
+     * so no two runs ever share a number and a settled request can always tell
+     * whether the run that issued it is still the live one.
+     */
+    epoch: number;
+    /** The epoch whose request is unanswered, or `null` when none is. */
+    inFlightEpoch: number | null;
     reading: EngineTransportPosition | null;
 } = {
     running: false,
-    inFlight: false,
+    epoch: 0,
+    inFlightEpoch: null,
     reading: null,
 };
 
-/** Ask the engine where it is, unless a previous ask is still unanswered. */
+/** Ask the engine where it is, unless this run's previous ask is unanswered. */
 export function pollNativeEnginePlayheadOnce(): void {
-    if (nativeEnginePlayheadFeed.inFlight) {
+    const epoch = nativeEnginePlayheadFeed.epoch;
+    // Only this run's own unanswered request holds the line. A request left
+    // behind by an earlier run must not make this run skip its first frame.
+    if (nativeEnginePlayheadFeed.inFlightEpoch === epoch) {
         return;
     }
-    nativeEnginePlayheadFeed.inFlight = true;
+    nativeEnginePlayheadFeed.inFlightEpoch = epoch;
     void getEngineTransportPosition()
         .then((reading) => {
-            // A reading that lands after the feed stopped belongs to a session
+            // A reading that lands after its own run ended belongs to a session
             // that is over; keeping it would let the next session start on a
             // stale position.
-            if (nativeEnginePlayheadFeed.running) {
+            if (nativeEnginePlayheadFeed.epoch === epoch && nativeEnginePlayheadFeed.running) {
                 nativeEnginePlayheadFeed.reading = reading;
             }
         })
@@ -59,6 +83,11 @@ export function pollNativeEnginePlayheadOnce(): void {
             logger.warn('[AudioEngine] native transport position poll failed:', error);
         })
         .finally(() => {
-            nativeEnginePlayheadFeed.inFlight = false;
+            // Release only what this request claimed. A newer run may already
+            // have a request of its own out, and clearing that would let the
+            // frame after it stack a second one.
+            if (nativeEnginePlayheadFeed.inFlightEpoch === epoch) {
+                nativeEnginePlayheadFeed.inFlightEpoch = null;
+            }
         });
 }

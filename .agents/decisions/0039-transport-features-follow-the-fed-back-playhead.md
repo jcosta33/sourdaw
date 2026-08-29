@@ -39,8 +39,15 @@ start from, which clip to launch next) needs only a musically-correct position a
 
 ## Decision
 
-All five features stay JS-side, evaluated against the fed-back playhead. None moves native in this
-slice, and none loses function.
+All five features stay JS-side. None moves native in this slice, and none loses function.
+
+Each of them evaluates against the clock that scheduled the sound it is reasoning about — the
+playhead scheduler's own integration of the tempo map. The fed-back engine playhead is adopted for
+the cursor and for the cursor alone. That split is deliberate: the scheduler's clip windows, MIDI
+high-water mark, loop wrap and follow-action crossings are all integrated on one number, and a
+decision that read a different one could open a punch window on a beat nothing was ever scheduled
+for, or fire a follow action on a crossing the emitter never saw. One clock decides what happens;
+another may report where the sound has got to.
 
 **Metronome** — stays JS-side. `useCases/scheduling/scheduleMetronome.ts` already reads the tempo
 and meter maps and schedules clicks onto the audio clock with lookahead, so its clicks are already
@@ -62,8 +69,9 @@ there. It has no per-block behaviour at all, so there is nothing for the engine 
 **Punch** — stays JS-side, inside the scheduler tick at
 `useCases/playheadScheduler/startPlayheadScheduler.ts`. Punch decides when a record-arm window
 opens and closes against a musical position; every DAW surveyed evaluates it against the transport
-position rather than in the audio callback. Its accuracy ceiling is the accuracy of the position it
-reads, which is exactly what the fed-back playhead improves.
+position rather than in the audio callback. Its accuracy ceiling is the accuracy of the scheduler
+tick that arms the recording, because the window it opens has to line up with the material that
+tick emitted — so it reads the tick's own position, not the fed-back one.
 
 **Follow actions** — stay JS-side, at `useCases/evaluateFollowActions.ts`, driven from the same
 scheduler tick. A follow action is an arrangement decision — which clip plays next — and Ableton,
@@ -81,9 +89,9 @@ own integration is the correct cursor.
 
 - The engine owns the sample clock, the tempo and meter maps, and the loop wrap. The renderer owns
   every feature that reacts to a musical position.
-- Each of the five features has exactly one implementation, and the fed-back playhead makes them
-  more accurate without being rewritten.
+- Each of the five features has exactly one implementation, reading one clock.
 - The count-in's wall-clock recording start is a named, separately-tracked defect; this ADR
   deliberately does not launder it as a consequence of the JS-side disposition.
-- A later slice that makes the native engine the audible path inherits these dispositions unchanged:
-  the features already read a position, and that position simply becomes the engine's.
+- A later slice that makes the native engine the audible path inherits these dispositions unchanged.
+  It re-anchors the scheduler's integration on the engine, and all five features follow without
+  being rewritten, because they already read that one number.

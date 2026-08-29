@@ -76,6 +76,46 @@ describe('projectEngineTransportMaps', () => {
         expect(maps.tempo.at(-1)?.beatsPerMinute).toBe(240);
     });
 
+    it('fits exactly at the ceiling when the opening segment has to be prepended', () => {
+        // Exactly `MAX_ENGINE_SEGMENTS` authored changes, none of them on beat
+        // zero. Counting the cap before the prepend is the whole test: a
+        // projection that filled to 4096 and *then* opened the map at zero
+        // would hand the engine 4097 segments, hit OverCapacity, and install no
+        // map at all — the arrangement would play at the engine's own default.
+        tempoMapStore.set({ changes: Array.from({ length: 4096 }, (_, index) => tempoChange(index + 1, 100 + index)) });
+        timeSignatureMapStore.set({
+            changes: Array.from({ length: 4096 }, (_, index) => ({
+                id: `ts-${index}`,
+                beat: index + 1,
+                numerator: 3,
+                denominator: 4,
+            })),
+        });
+
+        const maps = projectEngineTransportMaps();
+
+        expect(maps.tempo).toHaveLength(4096);
+        expect(maps.timeSignature).toHaveLength(4096);
+        expect(maps.tempo[0]?.startSeconds).toBe(0);
+        expect(maps.timeSignature[0]?.startSeconds).toBe(0);
+    });
+
+    it('thins a map denser than the ceiling across its whole span, rather than cutting its tail', () => {
+        const lastBeat = 10_000;
+        tempoMapStore.set({
+            changes: Array.from({ length: lastBeat }, (_, index) => tempoChange(index + 1, 100 + (index % 50))),
+        });
+
+        const maps = projectEngineTransportMaps();
+
+        expect(maps.tempo).toHaveLength(4096);
+        // Truncation would end the map a quarter of the way in and leave the
+        // rest of the arrangement on whichever tempo the cut landed on. Even
+        // thinning keeps a segment near the end of the timeline.
+        const lastSecond = maps.tempo.at(-1)?.startSeconds ?? 0;
+        expect(lastSecond).toBeGreaterThan((lastBeat / 2) * (60 / 150));
+    });
+
     it('reports the loop in seconds, and disabled when the transport is not looping', () => {
         vi.mocked(getTransportState).mockReturnValue({
             ...defaultTransportState,

@@ -19,10 +19,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { trackStore, type Track } from '#/modules/Arrangement/stores';
 
-import { type AudioGraphCommandBatch } from '../../../models/AudioGraphBackend';
+import { type AudioGraphCommand, type AudioGraphCommandBatch } from '../../../models/AudioGraphBackend';
 import { type NativeGraphTransport } from '../../../repositories/nativeGraph/nativeGraphTransport';
 import { type NativeGraphAvailability } from '../../../repositories/nativeGraph/probeNativeGraphTransport';
 import { nativeLiveGraphSession } from '../nativeLiveGraphSessionState';
+import { type LiveGraphTopologyInput } from '../projectLiveGraphTopology';
 import { startNativeLiveGraphSession } from '../startNativeLiveGraphSession';
 import { stopNativeLiveGraphSession } from '../stopNativeLiveGraphSession';
 
@@ -35,6 +36,13 @@ const mocks = vi.hoisted(() => ({
     setEngineTransportMaps: vi.fn((_maps: unknown) => Promise.resolve({ outcome: 'applied' as const })),
     startPlayheadFeed: vi.fn(),
     stopPlayheadFeed: vi.fn(),
+    /**
+     * A batch to send in place of the one the real producer builds, or `null`
+     * to send the real one. The live producer emits no `schedule-clip` by
+     * design, so this is the only way to observe what the session concludes
+     * from a batch that does.
+     */
+    topologyOverride: null as readonly unknown[] | null,
 }));
 
 vi.mock('../../../repositories/nativeGraph/probeNativeGraphTransport', () => ({
@@ -52,6 +60,28 @@ vi.mock('../startNativeEnginePlayheadFeed', () => ({
 vi.mock('../stopNativeEnginePlayheadFeed', () => ({
     stopNativeEnginePlayheadFeed: () => mocks.stopPlayheadFeed(),
 }));
+vi.mock('../projectLiveGraphTopology', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('../projectLiveGraphTopology')>();
+    return {
+        projectLiveGraphTopology: (input: LiveGraphTopologyInput): readonly AudioGraphCommand[] =>
+            (mocks.topologyOverride as readonly AudioGraphCommand[] | null) ?? actual.projectLiveGraphTopology(input),
+    };
+});
+
+/** A `schedule-clip` command, in the shape the contract actually defines. */
+const SCHEDULED_CLIP: AudioGraphCommand = {
+    kind: 'schedule-clip',
+    playback: {
+        trackId: 'audio-1',
+        source: { sourceId: 'sample-1' },
+        startTime: 0,
+        sourceOffsetSeconds: 0,
+        durationSeconds: 1,
+        playbackRate: 1,
+        gain: 1,
+        fade: { microFadeSeconds: 0.005 },
+    },
+};
 
 /**
  * The arrangement's transport maps as this module receives them: already
@@ -129,7 +159,9 @@ beforeEach(() => {
     mocks.setEngineTransportMaps.mockClear();
     mocks.startPlayheadFeed.mockClear();
     mocks.stopPlayheadFeed.mockClear();
+    mocks.topologyOverride = null;
     nativeLiveGraphSession.backend = null;
+    nativeLiveGraphSession.carriesAudio = false;
     nativeLiveGraphSession.pending = Promise.resolve();
     trackStore.set({ tracks: [createTrack({ id: 'audio-1' })], selectedTrackId: null, ghostClips: [] });
 });
@@ -162,7 +194,6 @@ describe('startNativeLiveGraphSession', () => {
         const result = await startNativeLiveGraphSession({ positionSeconds: 2.5, transportMaps: FLAT_MAPS });
 
         expect(result).toMatchObject({ outcome: 'started', runtimeRevision: 1 });
-        expect(appliedBatches()).toHaveLength(1);
         // The native registry outlives every batch and has no remove-strip
         // command, so a start that did not say it replaces would collide with
         // its own strip ids on the second play and refuse forever after.
@@ -172,8 +203,27 @@ describe('startNativeLiveGraphSession', () => {
             expect.objectContaining({ kind: 'create-bus-strip', busId: 'bus-1' }),
             expect.objectContaining({ kind: 'set-track-output', trackId: 'audio-1' }),
             expect.objectContaining({ kind: 'set-track-output', trackId: 'bus-1' }),
-            { kind: 'set-transport', playing: true, positionSeconds: 2.5 },
+            { kind: 'set-transport', playing: false, positionSeconds: 2.5 },
         ]);
+    });
+
+    it('installs the loop region before the engine is ever allowed to roll', async () => {
+        await startNativeLiveGraphSession({ positionSeconds: 2.5, transportMaps: FLAT_MAPS });
+
+        // The engine renders for the whole of the maps round trip. Were it
+        // rolling for that stretch, a play started near the loop end would
+        // cross the boundary before it was told where the boundary is, and
+        // `frames_until_loop_end` would never wrap again for the session.
+        const [topology, roll] = appliedBatches();
+        expect(topology?.commands.at(-1)).toEqual({ kind: 'set-transport', playing: false, positionSeconds: 2.5 });
+        expect(roll?.commands).toEqual([{ kind: 'set-transport', playing: true, positionSeconds: 2.5 }]);
+        // The roll replaces nothing: a second replacing batch would tear down
+        // the topology the first one just built.
+        expect(roll?.replaceTopology).toBeUndefined();
+
+        const mapsInstalled = mocks.setEngineTransportMaps.mock.invocationCallOrder[0]!;
+        expect(mapsInstalled).toBeGreaterThan(mocks.applyGraphCommands.mock.invocationCallOrder[0]!);
+        expect(mapsInstalled).toBeLessThan(mocks.applyGraphCommands.mock.invocationCallOrder[1]!);
     });
 
     it('installs the transport maps outside the topology batch, and only once it is applied', async () => {
@@ -182,7 +232,9 @@ describe('startNativeLiveGraphSession', () => {
         // Tempo and meter have a different producer from the live topology, so
         // they travel as their own command. A batch carrying them would make
         // the graph's all-or-nothing fence decide whether the tempo applied.
-        expect(appliedBatches()).toHaveLength(1);
+        expect(appliedBatches().flatMap((batch) => batch.commands)).not.toContainEqual(
+            expect.objectContaining({ kind: 'set-transport-maps' })
+        );
         expect(mocks.setEngineTransportMaps).toHaveBeenCalledWith(FLAT_MAPS);
         expect(mocks.setEngineTransportMaps.mock.invocationCallOrder[0]).toBeGreaterThan(
             mocks.applyGraphCommands.mock.invocationCallOrder[0]!
@@ -196,6 +248,24 @@ describe('startNativeLiveGraphSession', () => {
 
         expect(mocks.setEngineTransportMaps).not.toHaveBeenCalled();
         expect(mocks.startPlayheadFeed).not.toHaveBeenCalled();
+    });
+
+    it('reads carriesAudio off the batch it actually sent: silent while nothing is scheduled', async () => {
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS });
+
+        // The live topology emits strips and routes and no `schedule-clip`, so
+        // this engine renders silence and Web Audio is what a musician hears.
+        expect(nativeLiveGraphSession.carriesAudio).toBe(false);
+    });
+
+    it('reads carriesAudio off the batch it actually sent: audible once a clip is scheduled', async () => {
+        mocks.topologyOverride = [SCHEDULED_CLIP, { kind: 'set-transport', playing: false, positionSeconds: 0 }];
+
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS });
+
+        // Derived from the batch rather than declared, so the day the topology
+        // starts carrying clips the cursor follows the engine with no edit here.
+        expect(nativeLiveGraphSession.carriesAudio).toBe(true);
     });
 
     it('declines on desktop when the addon cannot answer the graph surface', async () => {
@@ -303,10 +373,15 @@ describe('stopNativeLiveGraphSession', () => {
         const stopResult = await stop;
 
         expect(stopResult).toEqual({ outcome: 'stopped' });
+        // Topology, then the roll the start owns, and only then the stop. A
+        // stop admitted between the two would park an engine the start is
+        // about to set rolling, and the session would play with no transport.
         expect(appliedBatches().map((batch) => batch.commands.at(-1)?.kind)).toEqual([
             'set-transport',
             'set-transport',
+            'set-transport',
         ]);
-        expect(appliedBatches()[1]?.commands).toEqual([{ kind: 'set-transport', playing: false, positionSeconds: 4 }]);
+        expect(appliedBatches()[1]?.commands).toEqual([{ kind: 'set-transport', playing: true, positionSeconds: 0 }]);
+        expect(appliedBatches()[2]?.commands).toEqual([{ kind: 'set-transport', playing: false, positionSeconds: 4 }]);
     });
 });

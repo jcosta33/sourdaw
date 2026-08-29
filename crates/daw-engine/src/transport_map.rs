@@ -120,9 +120,11 @@ impl TempoMap {
     ///
     /// `sample_rate` is baked in because the beat integral is a function of it
     /// and the audio thread must not be handed a map it has to re-integrate.
-    /// A map built for one rate is wrong at another, which is why the engine
-    /// rebuilds its maps when the device rate changes rather than converting
-    /// them.
+    /// A map built for one rate is wrong at another, so the rate travels on
+    /// [`TransportMaps`] and the install refuses a mismatch outright rather
+    /// than converting the map or reading it at the wrong rate; a device that
+    /// opened at a new rate gets new maps from the control side, which builds
+    /// them against the rate the running engine reports.
     pub fn new(segments: &[TempoSegment], sample_rate: f64) -> Result<Self, TransportMapError> {
         if segments.is_empty() {
             return Err(TransportMapError::Empty);
@@ -267,8 +269,10 @@ impl TimeSignatureMap {
 pub struct TransportMaps {
     pub tempo: TempoMap,
     pub time_signature: TimeSignatureMap,
-    /// The rate `tempo`'s beat integral was built against. The engine refuses
-    /// a map built for another rate rather than reading it at the wrong one.
+    /// The rate `tempo`'s beat integral was built against, carried so the
+    /// install can compare it with the rate the device actually opened at:
+    /// [`crate::scheduler::GraphCommand::SetTransportMaps`] retires a
+    /// mismatched pair unapplied rather than reading it at the wrong rate.
     pub sample_rate: f64,
 }
 

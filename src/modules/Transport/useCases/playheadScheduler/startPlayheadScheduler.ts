@@ -345,9 +345,16 @@ export function startPlayheadScheduler(): void {
         // scheduling clock; the rest of the time there is no engine reading and
         // the two are the same number.
         //
-        // Punch and follow actions below, and the metronome, count-in and
-        // pre-roll elsewhere in this module, all evaluate against this position
-        // rather than moving into the engine — ADR 0039.
+        // The cursor, and only the cursor. Every decision this tick takes below
+        // — the punch window, the follow-action crossing, the clip and MIDI
+        // windows they share — is about material *this* scheduler emitted, and
+        // it emitted it against `newPosition`. Reading a different clock for
+        // some of those decisions and not the others would let punch open on a
+        // beat whose window was never scheduled, or a follow action jump from a
+        // crossing the emitter never saw. One clock decides, and it is the one
+        // that scheduled the sound (ADR 0039). When the engine becomes the
+        // audible transport this integration is what gets re-anchored on it,
+        // and every decision here follows without being rewritten.
         playheadPositionRef.current = readNativeEngineCursorBeats() ?? newPosition;
 
         // Sync to AudioEngine for real-time DSP (SAB-backed)

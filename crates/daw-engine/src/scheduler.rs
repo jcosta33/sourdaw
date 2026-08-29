@@ -1698,13 +1698,24 @@ impl AudioScheduler {
                     self.transport.song_pos_beats = song_pos_seconds * self.transport.tempo / 60.0;
                     None
                 }
+                // A swap, never a build and never a free: the box that was
+                // installed leaves through the retirement channel, and the one
+                // arriving was built control-side (ADR 0020).
+                //
+                // A map built for another rate is refused rather than read at
+                // this one. Its beat integral is a function of the rate it was
+                // built against ([`TempoMap::new`]), so a 44.1 kHz map on a
+                // 48 kHz device would report every beat position 8.8% off.
+                // Refusing keeps whatever is installed — a map built for this
+                // rate, or none at all — and the unapplied box leaves over the
+                // same channel an accepted one displaces, never freed here.
                 GraphCommand::SetTransportMaps(maps) => {
-                    // A swap, never a build and never a free: the box that was
-                    // installed leaves through the retirement channel, and the
-                    // one arriving was built control-side (ADR 0020).
-                    self.transport_maps
-                        .replace(maps)
-                        .map(RetiredGraphObjects::transport_maps)
+                    if maps.sample_rate == f64::from(self.sample_rate) {
+                        self.transport_maps.replace(maps)
+                    } else {
+                        Some(maps)
+                    }
+                    .map(RetiredGraphObjects::transport_maps)
                 }
                 GraphCommand::SetLoopRegion(region) => {
                     self.loop_region = region;
@@ -6748,5 +6759,46 @@ mod timeline_tests {
         harness.playing();
         harness.render(48_000);
         assert_eq!(harness.scheduler.transport.tempo, 200.0);
+    }
+
+    /// A tempo map's beat integral is a function of the rate it was built
+    /// against, so a map for another rate is refused rather than read here —
+    /// and refused the same way everything else is, by retiring the box the
+    /// callback did not take.
+    #[test]
+    fn a_map_built_for_another_sample_rate_is_retired_unapplied() {
+        let mut harness = Harness::new(16);
+        harness.send(GraphCommand::SetTransportMaps(tempo_maps(&[
+            TempoSegment {
+                start_frame: 0,
+                beats_per_minute: 100.0,
+            },
+        ])));
+        assert!(harness.retired_rx.pop().is_err());
+
+        // The harness opens at 48 kHz; this pair was integrated at 44.1 kHz.
+        harness.send(GraphCommand::SetTransportMaps(Box::new(TransportMaps {
+            tempo: TempoMap::flat(200.0, 44_100.0).expect("a flat map is well formed"),
+            time_signature: TimeSignatureMap::flat(3, 4).expect("3/4 is well formed"),
+            sample_rate: 44_100.0,
+        })));
+        assert!(
+            harness.retired_rx.pop().is_ok(),
+            "the refused pair leaves over the retirement ring rather than being freed here"
+        );
+
+        harness.playing();
+        harness.render(48_000);
+        // The 100 BPM map built for this rate is still the one in force. Had
+        // the refused map been installed, the transport would read 200 BPM and
+        // 3/4, and every beat position it reported would be 8.8% adrift.
+        assert_eq!(harness.scheduler.transport.tempo, 100.0);
+        assert_eq!(
+            (
+                harness.scheduler.transport.time_sig_num,
+                harness.scheduler.transport.time_sig_denom
+            ),
+            (4, 4)
+        );
     }
 }

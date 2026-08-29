@@ -113,9 +113,19 @@ export function startNativeLiveGraphSession(
         const topology = readSessionTopology();
         // Read after the probe, so the batch describes the project as it stands
         // when it is actually sent rather than when the gesture happened.
+        //
+        // Parked, not rolling. The loop region arrives with the maps, one
+        // awaited bridge round trip after this batch lands, and an engine
+        // already rolling renders that whole round trip: press play a beat
+        // before the loop end and it crosses the boundary before it is told
+        // where the boundary is. `frames_until_loop_end` then reads a playhead
+        // already past the region and never wraps again for the rest of the
+        // session. A parked transport advances no playhead at all
+        // (`advance_playhead` returns on `!is_playing`), so nothing can be
+        // rendered ahead of the region that governs it.
         const commands = projectLiveGraphTopology({
             ...topology,
-            transport: { playing: true, positionSeconds: input.positionSeconds },
+            transport: { playing: false, positionSeconds: input.positionSeconds },
         });
 
         const backend = createNativeLiveGraphBackend({ transport: availability.transport });
@@ -142,14 +152,32 @@ export function startNativeLiveGraphSession(
 
         // After the topology, never with it: the maps have their own owner and
         // their own command (the transport ownership law in `graph.rs`). Before
-        // the feed, because a position read against no maps reports the
-        // engine's default tempo rather than the arrangement's.
+        // the roll, because the loop region travels with them and the engine
+        // must not render a frame the region does not govern. Before the feed
+        // too, because a position read against no maps reports the engine's
+        // default tempo rather than the arrangement's.
         const maps = await setEngineTransportMaps(input.transportMaps);
         if (maps.outcome === 'declined') {
             // The session stands: an engine without the arrangement's maps
-            // still renders, it just counts beats at its own tempo, and the
-            // next play sends them again.
+            // still renders, it just counts beats at its own tempo and honours
+            // no loop, and the next play sends them again.
             logger.warn(`[AudioEngine] native transport maps declined: ${maps.reason}`);
+        }
+
+        // Now the engine may roll. Its own admission, not the topology's: the
+        // fenced topology batch is all-or-nothing, and a roll folded into it
+        // would have to be applied before the region it is bounded by.
+        const rolling = await backend.apply({
+            schemaVersion: 1,
+            commands: [{ kind: 'set-transport', playing: true, positionSeconds: input.positionSeconds }],
+        });
+        if (rolling.application !== 'applied') {
+            // The session stands and the handle stays open — the topology is
+            // mirrored and plugin hosting is live, which is what a session is
+            // for while Web Audio remains the audible path. What the engine
+            // does not do is roll, so the feed below reports a parked
+            // transport and the cursor keeps the scheduler's own clock.
+            logger.warn(`[AudioEngine] native transport did not start rolling: ${rolling.reason}`);
         }
         startNativeEnginePlayheadFeed();
         return { outcome: 'started', runtimeRevision: result.runtimeRevision, reports: result.reports };

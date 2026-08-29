@@ -34,7 +34,7 @@ const rollingAt = (positionSeconds: number) => ({
 describe('the native engine playhead feed', () => {
     beforeEach(() => {
         stopNativeEnginePlayheadFeed();
-        nativeEnginePlayheadFeed.inFlight = false;
+        nativeEnginePlayheadFeed.inFlightEpoch = null;
         nativeLiveGraphSession.carriesAudio = true;
         vi.mocked(animationScheduler.register).mockClear();
         vi.mocked(animationScheduler.unregister).mockClear();
@@ -77,6 +77,37 @@ describe('the native engine playhead feed', () => {
         // A frame that outlasts the round trip must not queue a reading that
         // will already be superseded when it lands.
         expect(getEngineTransportPosition).toHaveBeenCalledTimes(1);
+    });
+
+    it('gives a restarted feed neither the previous run’s reading nor its in-flight slot', async () => {
+        let answerTheStalePoll = (): void => undefined;
+        const stalePoll = new Promise<ReturnType<typeof rollingAt>>((resolve) => {
+            answerTheStalePoll = () => {
+                resolve(rollingAt(9));
+            };
+        });
+        vi.mocked(getEngineTransportPosition).mockReturnValueOnce(stalePoll);
+
+        startNativeEnginePlayheadFeed();
+        pollNativeEnginePlayheadOnce();
+        stopNativeEnginePlayheadFeed();
+        startNativeEnginePlayheadFeed();
+
+        // The stop and the restart both happened inside the first round trip.
+        // Its answer belongs to the run that asked for it, which is over.
+        answerTheStalePoll();
+        await stalePoll;
+        expect(nativeEnginePlayheadFeed.reading).toBeNull();
+        expect(readNativeEnginePlayheadSeconds()).toBeNull();
+
+        // And the new run's first frame must reach the engine: an in-flight
+        // slot the previous run left claimed would swallow it silently.
+        vi.mocked(getEngineTransportPosition).mockResolvedValue(rollingAt(1.5));
+        pollNativeEnginePlayheadOnce();
+        await vi.waitFor(() => expect(nativeEnginePlayheadFeed.reading).not.toBeNull());
+
+        expect(getEngineTransportPosition).toHaveBeenCalledTimes(2);
+        expect(readNativeEnginePlayheadSeconds()).toBe(1.5);
     });
 
     it('refuses to answer while the session topology carries no audio', async () => {

@@ -14,6 +14,9 @@ export function stopNativeEnginePlayheadFeed(): void {
         return;
     }
     nativeEnginePlayheadFeed.running = false;
+    // End this run. Whatever it still has in flight now answers to nobody, so
+    // a restart inside that round trip cannot inherit its position.
+    nativeEnginePlayheadFeed.epoch += 1;
     nativeEnginePlayheadFeed.reading = null;
     animationScheduler.unregister(NATIVE_ENGINE_PLAYHEAD_FEED_ID);
 }

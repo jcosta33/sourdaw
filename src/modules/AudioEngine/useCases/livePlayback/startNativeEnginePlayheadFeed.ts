@@ -17,6 +17,9 @@ export function startNativeEnginePlayheadFeed(): void {
         return;
     }
     nativeEnginePlayheadFeed.running = true;
+    // A new run, so a request the previous one left in flight can neither be
+    // adopted here nor hold this run's first frame back.
+    nativeEnginePlayheadFeed.epoch += 1;
     nativeEnginePlayheadFeed.reading = null;
     animationScheduler.register(NATIVE_ENGINE_PLAYHEAD_FEED_ID, pollNativeEnginePlayheadOnce);
 }

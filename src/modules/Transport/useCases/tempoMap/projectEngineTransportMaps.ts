@@ -58,6 +58,46 @@ const byBeat = <TChange extends { beat: number }>(changes: readonly TChange[]): 
     [...changes].sort((left, right) => left.beat - right.beat);
 
 /**
+ * Reduce a list to at most `cap` entries, spread evenly, always keeping the
+ * first.
+ *
+ * Truncation is the wrong degradation here. The engine refuses an over-capacity
+ * map whole, so the choice is never "keep the tail or drop it" — it is "install
+ * a thinner map or install nothing". Dropping everything past the cap would
+ * leave the end of a long arrangement playing at whatever tempo the cap
+ * happened to land on; thinning evenly keeps the map's shape everywhere and
+ * loses only resolution. The first entry is kept unconditionally because it is
+ * what opens the map, and the engine refuses a map that does not open at zero.
+ */
+function thinUniformly<TItem>(items: readonly TItem[], cap: number): TItem[] {
+    if (items.length <= cap) {
+        return [...items];
+    }
+    const stride = items.length / cap;
+    const kept: TItem[] = [];
+    for (let slot = 0; slot < cap; slot += 1) {
+        const item = items[Math.floor(slot * stride)];
+        if (item !== undefined) {
+            kept.push(item);
+        }
+    }
+    return kept;
+}
+
+/**
+ * How many authored segments fit, once the opening segment the engine demands
+ * at zero has taken its slot.
+ *
+ * A map whose first change already sits on beat zero needs no opening segment
+ * and spends nothing. Counting this before anything is dropped is the whole
+ * point: slicing to the cap and *then* prepending is how a projection ends up
+ * one segment over it.
+ */
+function authoredCapacity(sorted: readonly { beat: number }[]): number {
+    return sorted[0]?.beat === 0 ? MAX_ENGINE_SEGMENTS : MAX_ENGINE_SEGMENTS - 1;
+}
+
+/**
  * Walk beats forward, integrating each step through the tempo map.
  *
  * One integration per step rather than one from beat zero per point: the map
@@ -144,18 +184,35 @@ function projectTempo(
         return [{ startSeconds: 0, beatsPerMinute: defaultTempo }];
     }
 
-    const ramped = totalRampBeats(sorted);
-    const budget = Math.max(1, MAX_ENGINE_SEGMENTS - sorted.length - 1);
-    const rampStep = ramped > 0 ? Math.max(RAMP_SEGMENT_BEATS, ramped / budget) : RAMP_SEGMENT_BEATS;
+    // Instant changes are held to the same budget as ramp samples: a map with
+    // more authored changes than the engine can hold is thinned rather than
+    // truncated, and never left over the cap for the engine to refuse whole.
+    const capacity = authoredCapacity(sorted);
+    const authored = thinUniformly(sorted, capacity);
 
-    const beats = segmentBeats(sorted, rampStep).sort((left, right) => left - right);
+    const ramped = totalRampBeats(authored);
+    const budget = capacity - authored.length;
+    // No budget left for ramp samples: an infinite step emits none, which is a
+    // ramp read as a step. That is the correct degradation when the authored
+    // changes alone already fill the engine's map.
+    const rampStep =
+        ramped > 0 && budget > 0 ? Math.max(RAMP_SEGMENT_BEATS, ramped / budget) : Number.POSITIVE_INFINITY;
+
+    const beats = thinUniformly(
+        segmentBeats(authored, rampStep).sort((left, right) => left - right),
+        capacity
+    );
     // The engine refuses a map that does not start at zero. Before the first
     // change the arrangement holds that change's tempo, so opening the map with
-    // it is the projection of what the timeline already sounds like.
+    // it is the projection of what the timeline already sounds like. `capacity`
+    // reserved this slot, so the composed list is still within the cap.
     if (beats[0] !== 0) {
         beats.unshift(0);
     }
 
+    // Tempo is read from the whole authored map, not from the thinned one: a
+    // segment that survived should still state the tempo the arrangement is
+    // actually at, whatever was dropped around it.
     return beats.map((beat) => ({
         startSeconds: atBeat(beat),
         beatsPerMinute: tempoAtBeat(sorted, beat, defaultTempo),
@@ -167,10 +224,13 @@ function projectTimeSignature(
     fallback: Readonly<{ numerator: number; denominator: number }>,
     atBeat: (beat: number) => number
 ): EngineTimeSignatureSegment[] {
-    const sorted = byBeat(changes)
-        .filter((change) => Number.isFinite(change.beat) && change.beat >= 0)
-        .slice(0, MAX_ENGINE_SEGMENTS);
-    const first = sorted[0];
+    const sorted = byBeat(changes).filter((change) => Number.isFinite(change.beat) && change.beat >= 0);
+    // Thinned against the capacity the opening segment has already been
+    // subtracted from, so the composed list is within the cap rather than one
+    // over it — which is what refuses the install and leaves the engine with no
+    // meter map at all.
+    const authored = thinUniformly(sorted, authoredCapacity(sorted));
+    const first = authored[0];
     const opening =
         first && first.beat === 0
             ? []
@@ -184,7 +244,7 @@ function projectTimeSignature(
 
     return [
         ...opening,
-        ...sorted.map((change) => ({
+        ...authored.map((change) => ({
             startSeconds: atBeat(change.beat),
             numerator: change.numerator,
             denominator: change.denominator,
