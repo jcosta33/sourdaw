@@ -16,7 +16,12 @@ import { type PendingAppActionConfirmation } from '../../../stores/pendingAction
 import { executeConfirmedCommandBatch } from '../executeConfirmedCommandBatch';
 
 type ExecuteBatch = typeof executeVersionedCommandBatchEnvelope;
-type GenerateGroupId = typeof import('#/modules/Command/useCases').generateGroupId;
+type TestBatchReceipt = ReturnType<typeof createVerifiedBatchReceipt>;
+type TestBatchExecutorResult =
+    | { status: 'committed'; actions: readonly []; receipt: TestBatchReceipt }
+    | { status: 'cancelled'; reason: string; actions: readonly []; receipt: TestBatchReceipt }
+    | { status: 'previewed'; resource: { baseRevision: string; release: () => void } };
+type TestBatchExecutor = (input: Parameters<ExecuteBatch>[0]) => Promise<TestBatchExecutorResult>;
 type ApprovalBindingIssuer = typeof import('../../issueAgentCommandApprovalBinding').issueAgentCommandApprovalBinding;
 type PrepareResourceLease =
     typeof import('../../../stores/pendingActionConfirmationStore').preparePendingActionResourceLeaseForCommit;
@@ -36,8 +41,7 @@ const mocks = vi.hoisted(() => ({
     cancelRun: vi.fn<CancelRun>(),
     captureAuthorization: vi.fn<CaptureAuthorization>(),
     captureUnownedMutations: vi.fn<CaptureUnownedMutations>(),
-    executeBatch: vi.fn<ExecuteBatch>(),
-    generateGroup: vi.fn<GenerateGroupId>(),
+    executeBatch: vi.fn<TestBatchExecutor>(),
     getArtifacts: vi.fn(() => []),
     issueApprovalBinding: vi.fn<ApprovalBindingIssuer>(),
     prepareContinuation: vi.fn<PrepareContinuation>(),
@@ -59,7 +63,6 @@ vi.mock('#/modules/Collaboration/stores', () => ({ collaborationStore: collabora
 vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
     executeVersionedCommandBatchEnvelope: mocks.executeBatch,
-    generateGroupId: mocks.generateGroup,
 }));
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     captureProjectMutationAuthorization: mocks.captureAuthorization,
@@ -136,12 +139,17 @@ const receipt = createVerifiedBatchReceipt({
     resultingRevision: 'revision-2',
     result: { status: 'committed', actions: [] },
 });
-const completedBatchResult = { status: 'committed' as const, actions: [], receipt };
+const completedBatchResult = {
+    status: 'committed' as const,
+    actions: [],
+    receipt,
+};
 const cancelledBatchResult = {
     status: 'cancelled' as const,
     reason: 'execution refused',
     actions: [],
-} satisfies Awaited<ReturnType<ExecuteBatch>>;
+    receipt,
+};
 
 function createNonDurableReceipt(status: 'no-op' | 'cancelled' | 'ambiguous' | 'failed') {
     return createVerifiedBatchReceipt({
@@ -248,6 +256,7 @@ function execute(
     return executeConfirmedCommandBatch({
         confirmation: options.confirmation ?? confirmation,
         commandBatch,
+        approvedBatchId: parsedBatchEnvelope.batchId,
         trackedWorkLease: options.trackedWorkLease === undefined ? lease : options.trackedWorkLease,
         priorVerifiedBatchReceipt: options.priorVerifiedBatchReceipt ?? null,
         recoveringPendingEffects: options.recoveringPendingEffects ?? false,
@@ -281,7 +290,6 @@ beforeEach(() => {
     });
     mocks.retainCommitted.mockResolvedValue(undefined);
     mocks.executeBatch.mockResolvedValue(completedBatchResult);
-    mocks.generateGroup.mockReturnValue({ groupId: 'generated-group-1', groupLabel: confirmation.prompt });
 });
 
 describe('executeConfirmedCommandBatch', () => {
@@ -317,7 +325,7 @@ describe('executeConfirmedCommandBatch', () => {
         expect(result).toMatchObject({
             status: 'completed',
             batchResult: completedBatchResult,
-            group: { groupId: 'group-1', groupLabel: 'Set tempo' },
+            group: { groupId: 'batch-1', groupLabel: 'Set tempo' },
             renderJobAttempts: 1,
             cancellationTriggeredByInvalidation: false,
             abortSignal: expect.objectContaining({ aborted: false }),
@@ -333,7 +341,7 @@ describe('executeConfirmedCommandBatch', () => {
             serialized: commandBatch.serialized,
             onProjectCommitPrepared: expect.any(Function),
             options: expect.objectContaining({
-                groupId: 'group-1',
+                groupId: 'batch-1',
                 groupLabel: 'Set tempo',
                 source: 'prompt',
                 requireCompensation: true,
@@ -355,22 +363,27 @@ describe('executeConfirmedCommandBatch', () => {
         expect(mocks.setChatGenerating).toHaveBeenLastCalledWith(false);
     });
 
-    it('should retain the persisted group ID when its label is missing', async () => {
-        const incompleteGroupConfirmation = {
+    it('should derive the approved batch group ID when confirmation metadata differs or is incomplete', async () => {
+        const mismatchedGroupConfirmation = {
             ...confirmation,
+            groupId: 'unapproved-group-1',
+            groupLabel: undefined,
+        } satisfies PendingAppActionConfirmation;
+        const missingGroupConfirmation = {
+            ...confirmation,
+            groupId: undefined,
             groupLabel: undefined,
         } satisfies PendingAppActionConfirmation;
 
-        const result = await execute({ confirmation: incompleteGroupConfirmation });
+        const result = await execute({ confirmation: mismatchedGroupConfirmation });
 
         expect(result).toMatchObject({
             status: 'completed',
-            group: { groupId: 'group-1', groupLabel: confirmation.prompt },
+            group: { groupId: 'batch-1', groupLabel: confirmation.prompt },
         });
-        expect(mocks.generateGroup).not.toHaveBeenCalled();
         expect(mocks.executeBatch).toHaveBeenCalledWith(
             expect.objectContaining({
-                options: expect.objectContaining({ groupId: 'group-1', groupLabel: confirmation.prompt }),
+                options: expect.objectContaining({ groupId: 'batch-1', groupLabel: confirmation.prompt }),
             })
         );
 
@@ -378,14 +391,14 @@ describe('executeConfirmedCommandBatch', () => {
 
         await expect(
             execute({
-                confirmation: incompleteGroupConfirmation,
+                confirmation: missingGroupConfirmation,
                 priorVerifiedBatchReceipt: receipt,
                 recoveringPendingEffects: true,
             })
         ).resolves.toMatchObject({ status: 'recovery-failed' });
 
-        expect(mocks.recordReceipt).toHaveBeenLastCalledWith(incompleteGroupConfirmation, receipt, {
-            revertGroupId: 'group-1',
+        expect(mocks.recordReceipt).toHaveBeenLastCalledWith(missingGroupConfirmation, receipt, {
+            revertGroupId: 'batch-1',
             completesRun: false,
         });
     });
@@ -501,7 +514,7 @@ describe('executeConfirmedCommandBatch', () => {
                 'The project change remains durably committed, but pending-effect reconciliation could not continue: pending-effect continuation failed',
         });
         expect(mocks.recordReceipt).toHaveBeenCalledWith(confirmation, receipt, {
-            revertGroupId: 'group-1',
+            revertGroupId: 'batch-1',
             completesRun: false,
         });
         expect(mocks.recordPostCommitRecoveryFailure).toHaveBeenCalledWith(confirmation, {
@@ -565,6 +578,7 @@ describe('executeConfirmedCommandBatch', () => {
             error: reason,
             content: `The project change remains durably committed, but pending-effect reconciliation could not continue: ${reason}`,
         });
+        expect(mocks.recordPostCommitRecoveryFailure).not.toHaveBeenCalled();
     });
 
     it('should surface a terminal lifecycle persistence warning through committed-effect recovery failure', async () => {

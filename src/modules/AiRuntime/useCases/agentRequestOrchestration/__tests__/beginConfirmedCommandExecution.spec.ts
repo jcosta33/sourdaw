@@ -461,12 +461,13 @@ describe('beginConfirmedCommandExecution', () => {
             status: 'ready',
             confirmation,
             commandBatch,
+            approvedBatchId: 'batch-1',
             trackedWorkLease: null,
             commandBudget: null,
             priorVerifiedBatchReceipt: null,
             recoveringPendingEffects: false,
         });
-        expect(mocks.parseBatch).not.toHaveBeenCalled();
+        expect(mocks.parseBatch).toHaveBeenCalledWith(commandBatch.serialized, commandBatch.authority);
         expect(mocks.reserveBudget).not.toHaveBeenCalled();
         expect(mocks.claimLease).not.toHaveBeenCalled();
         expect(mocks.updateMessage).toHaveBeenCalledWith('assistant-1', {
@@ -482,6 +483,7 @@ describe('beginConfirmedCommandExecution', () => {
             status: 'ready',
             confirmation,
             commandBatch,
+            approvedBatchId: 'batch-1',
             trackedWorkLease: lease,
             commandBudget: { attemptId: 'batch-1:1', estimates: [{ category: 'maxCommands', amount: 1 }] },
         });
@@ -542,12 +544,14 @@ describe('beginConfirmedCommandExecution', () => {
         expect(result).toMatchObject({
             status: 'ready',
             commandBatch,
+            approvedBatchId: 'batch-1',
             trackedWorkLease: null,
             commandBudget: null,
             priorVerifiedBatchReceipt,
             recoveringPendingEffects: true,
         });
         expect(mocks.validateApproval).not.toHaveBeenCalled();
+        expect(mocks.parseBatch).toHaveBeenCalledWith(commandBatch.serialized, commandBatch.authority);
         expect(mocks.reserveBudget).not.toHaveBeenCalled();
         expect(mocks.claimLease).not.toHaveBeenCalled();
         expect(mocks.updateConfirmation).toHaveBeenCalledWith({ confirmationId: 'confirmation-1', status: 'accepted' });

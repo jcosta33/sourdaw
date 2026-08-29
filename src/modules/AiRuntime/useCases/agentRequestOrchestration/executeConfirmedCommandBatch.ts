@@ -1,6 +1,6 @@
 import { getAgentSectionRenderArtifacts } from '#/modules/AudioRendering/useCases';
 import { collaborationStore } from '#/modules/Collaboration/stores';
-import { executeVersionedCommandBatchEnvelope, generateGroupId } from '#/modules/Command/useCases';
+import { executeVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
 import { captureProjectMutationAuthorization, captureUnownedProjectMutations } from '#/modules/CrdtDocument/useCases';
 import { type HandlerDeferredEffectAttempt } from '#/utils/handlerContract';
 
@@ -28,6 +28,7 @@ import { pendingActionResourceSettlement } from './pendingActionResourceSettleme
 type ExecuteConfirmedCommandBatchInput = {
     confirmation: PendingAppActionConfirmation;
     commandBatch: NonNullable<PendingAppActionConfirmation['approvalSnapshot']['commandBatch']>;
+    approvedBatchId: string;
     trackedWorkLease: AgentRunWorkLease | null;
     priorVerifiedBatchReceipt: CommandVerifiedBatchReceipt | null;
     recoveringPendingEffects: boolean;
@@ -71,12 +72,19 @@ function hasCommittedProjectPriorReceipt(
 export async function executeConfirmedCommandBatch(
     input: ExecuteConfirmedCommandBatchInput
 ): Promise<ExecuteConfirmedCommandBatchResult> {
-    const { confirmation, commandBatch, trackedWorkLease, priorVerifiedBatchReceipt, recoveringPendingEffects } = input;
+    const {
+        confirmation,
+        commandBatch,
+        approvedBatchId,
+        trackedWorkLease,
+        priorVerifiedBatchReceipt,
+        recoveringPendingEffects,
+    } = input;
     const hasPriorVerifiedBatchReceipt = priorVerifiedBatchReceipt !== null;
-    const group =
-        confirmation.groupId !== undefined
-            ? { groupId: confirmation.groupId, groupLabel: confirmation.groupLabel ?? confirmation.prompt }
-            : generateGroupId(confirmation.prompt);
+    const group = {
+        groupId: approvedBatchId,
+        groupLabel: confirmation.groupLabel ?? confirmation.prompt,
+    };
     const sectionRenderArtifactsBeforeExecution = getAgentSectionRenderArtifacts();
     const aborter = new AbortController();
     setChatGenerating(true);
@@ -187,15 +195,18 @@ export async function executeConfirmedCommandBatch(
                 confirmation,
                 priorVerifiedBatchReceipt,
                 {
-                    ...(confirmation.groupId ? { revertGroupId: confirmation.groupId } : {}),
+                    revertGroupId: group.groupId,
                     completesRun: false,
                 }
             );
-            const runPersistenceWarning = agentRunExecutionSettlement.recordPostCommitRecoveryFailure(confirmation, {
-                category: 'internal',
-                retriable: false,
-                receiptIdentity: confirmedBatchOutcomeSupport.getVerifiedReceiptIdentity(priorVerifiedBatchReceipt),
-            });
+            const runPersistenceWarning = receiptPersistence.warning
+                ? null
+                : agentRunExecutionSettlement.recordPostCommitRecoveryFailure(confirmation, {
+                      category: 'internal',
+                      retriable: false,
+                      receiptIdentity:
+                          confirmedBatchOutcomeSupport.getVerifiedReceiptIdentity(priorVerifiedBatchReceipt),
+                  });
             const recoveryFailureReason = [reason, receiptPersistence.warning, runPersistenceWarning]
                 .filter(Boolean)
                 .join(' ');

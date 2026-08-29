@@ -34,6 +34,7 @@ type BeginConfirmedCommandExecutionResult =
           status: 'ready';
           confirmation: PendingAppActionConfirmation;
           commandBatch: NonNullable<PendingAppActionConfirmation['approvalSnapshot']['commandBatch']>;
+          approvedBatchId: string;
           trackedWorkLease: AgentRunWorkLease | null;
           commandBudget: CommandBudgetReconciliation | null;
           priorVerifiedBatchReceipt: CommandVerifiedBatchReceipt | null;
@@ -123,20 +124,20 @@ export function beginConfirmedCommandExecution(
             ),
         };
     }
+    const parsedCommandBatch = parseVersionedCommandBatchEnvelope(commandBatch.serialized, commandBatch.authority);
+    if (parsedCommandBatch.status === 'invalid') {
+        return {
+            status: 'settled',
+            result: confirmationTerminalSettlement.failApprovalPreflight(
+                confirmation,
+                parsedCommandBatch.reason,
+                'schema'
+            ),
+        };
+    }
     let trackedWorkLease: AgentRunWorkLease | null = null;
     let commandBudget: CommandBudgetReconciliation | null = null;
     if (agentRunLifecycle.get(confirmation.runId)) {
-        const parsedCommandBatch = parseVersionedCommandBatchEnvelope(commandBatch.serialized, commandBatch.authority);
-        if (parsedCommandBatch.status === 'invalid') {
-            return {
-                status: 'settled',
-                result: confirmationTerminalSettlement.failApprovalPreflight(
-                    confirmation,
-                    parsedCommandBatch.reason,
-                    'schema'
-                ),
-            };
-        }
         const attemptId = `${parsedCommandBatch.envelope.batchId}:1`;
         const budgetReservation = hasPriorVerifiedBatchReceipt
             ? null
@@ -195,6 +196,7 @@ export function beginConfirmedCommandExecution(
         status: 'ready',
         confirmation,
         commandBatch,
+        approvedBatchId: parsedCommandBatch.envelope.batchId,
         trackedWorkLease,
         commandBudget,
         priorVerifiedBatchReceipt,

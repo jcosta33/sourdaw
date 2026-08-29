@@ -159,6 +159,7 @@ export async function confirmPendingChatActions(
     const {
         confirmation,
         commandBatch,
+        approvedBatchId,
         trackedWorkLease,
         commandBudget,
         priorVerifiedBatchReceipt,
@@ -167,6 +168,7 @@ export async function confirmPendingChatActions(
     const executionFlight = await executeConfirmedCommandBatch({
         confirmation,
         commandBatch,
+        approvedBatchId,
         trackedWorkLease,
         priorVerifiedBatchReceipt,
         recoveringPendingEffects,
