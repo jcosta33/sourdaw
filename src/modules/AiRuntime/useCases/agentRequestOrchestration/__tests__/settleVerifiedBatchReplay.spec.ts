@@ -260,6 +260,7 @@ describe('settleVerifiedBatchReplay', () => {
             expect.objectContaining({
                 pendingActionConfirmationStatus: 'executed',
                 error: 'prior warning',
+                content: expect.stringContaining('prior warning'),
             })
         );
     });
