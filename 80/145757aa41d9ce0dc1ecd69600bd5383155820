@@ -1,0 +1,30 @@
+electron/__tests__/pluginGui.spec.ts
+  s_4f908a5afb6b58::t_ed0cdc5bbcd075 579-583,585-590,592-595
+  s_4f908a5afb6b58::t_56d0ca26c9f1bb 490-494,496-509,511,513-533,535-538,542-544,546,549-554,558,561,563,565,567
+  s_4f908a5afb6b58::t_24c429d1a928b8 212-213,216
+  s_4f908a5afb6b58::t_110df76f1d6c52 137
+electron/pluginGui.ts
+  s_4f908a5afb6b58::t_1062126542bcfd 495-500,502
+  s_4f908a5afb6b58::t_b2cbd9b845a882 252-260,267-271
+  s_4f908a5afb6b58::t_43bcfaf39cadf8 393,401,405-411
+  s_4f908a5afb6b58::t_76b7d9682cf7c5 464
+  s_4f908a5afb6b58::t_9194927ff60738 528
+  s_4f908a5afb6b58::t_3ce8002c11f6c2 710
+  s_4f908a5afb6b58::t_84821ca2f075f8 477-487
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "80145757aa41d9ce0dc1ecd69600bd5383155820",
+  "prompts": {},
+  "sessions": {
+    "s_4f908a5afb6b58": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fcb92ba4-bf56-47a4-8b57-803f335a449e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
