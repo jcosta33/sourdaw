@@ -963,6 +963,18 @@ function persistPreparedDeliveryReceiptAuthority(
     );
 }
 
+function preparedDeliveryReceiptAuthority(
+    receipt: Pick<DeliveryReceiptComment, 'id' | 'body'>,
+    postMergeValidation?: PersistedPreparedPostMergeValidation
+): CurrentPersistedPreparedDeliveryReceiptAuthority {
+    return {
+        phase: 'prepared',
+        receiptId: receipt.id,
+        receiptBody: receipt.body,
+        ...(postMergeValidation === undefined ? {} : { postMergeValidation }),
+    };
+}
+
 function restorePreArmedDeliveryReceiptAuthority(
     number: number,
     beforeArming: PersistedDeliveryReceiptAuthority | undefined,
@@ -981,6 +993,44 @@ function restorePreArmedDeliveryReceiptAuthority(
         return;
     }
     port.writeDeliveryReceiptAuthority(number, beforeArming);
+}
+
+function withRestorablePreArmedDeliveryReceiptAuthority<Result>(
+    number: number,
+    beforeArming: PersistedDeliveryReceiptAuthority | undefined,
+    armed: CurrentPersistedPreparedDeliveryReceiptAuthority,
+    port: DeliveryPort,
+    run: () => Result
+): Result {
+    try {
+        return run();
+    } catch (error) {
+        restorePreArmedDeliveryReceiptAuthority(number, beforeArming, armed, port);
+        throw error;
+    }
+}
+
+function tryRestorePreArmedDeliveryReceiptAuthorityAfterMergeFailure(
+    number: number,
+    beforeArming: PersistedDeliveryReceiptAuthority | undefined,
+    armed: CurrentPersistedPreparedDeliveryReceiptAuthority,
+    expectedOpenSnapshot: PullRequestSnapshot,
+    expectedTrackerTarget: number | undefined,
+    port: DeliveryPort
+): void {
+    try {
+        port.fetch();
+        const current = resolveStructuralMergeability(port.pullRequest(number), port);
+        if (current.state !== 'OPEN') {
+            return;
+        }
+        const currentTrackerTarget = trackerCompletionTarget(current);
+        validateStableTrackerTarget(number, expectedTrackerTarget, currentTrackerTarget);
+        validateStablePullRequest(expectedOpenSnapshot, current);
+    } catch {
+        return;
+    }
+    restorePreArmedDeliveryReceiptAuthority(number, beforeArming, armed, port);
 }
 
 function persistMergeAuthorizedDeliveryReceiptAuthority(
@@ -1445,33 +1495,13 @@ function deliverPullRequestWithCiAdmission(
     const receiptPayload = assertDeliveryReceiptForHead(receipt, initial);
     const preparedPostMergeValidation = persistedPreparedPostMergeValidation(initial, initialTrackerTarget);
     const authorityBeforeFinalFetchArming = port.readDeliveryReceiptAuthority(number);
+    const finalFetchArmedAuthority = preparedDeliveryReceiptAuthority(receipt, preparedPostMergeValidation);
     persistPreparedDeliveryReceiptAuthority(number, receipt, port, preparedPostMergeValidation);
 
     port.fetch();
     const finalSnapshot = resolveStructuralMergeability(port.pullRequest(number), port);
     if (finalSnapshot.state === 'MERGED') {
         validateAuthorAppMerger(finalSnapshot);
-    }
-    let finalTrackerTarget: number | undefined;
-    try {
-        finalTrackerTarget = trackerCompletionTarget(finalSnapshot);
-        validateStableTrackerTarget(number, initialTrackerTarget, finalTrackerTarget);
-        validateStablePullRequest(initial, finalSnapshot);
-    } catch (error) {
-        if (finalSnapshot.state !== 'MERGED') {
-            restorePreArmedDeliveryReceiptAuthority(
-                number,
-                authorityBeforeFinalFetchArming,
-                {
-                    phase: 'prepared',
-                    receiptId: receipt.id,
-                    receiptBody: receipt.body,
-                    postMergeValidation: preparedPostMergeValidation,
-                },
-                port
-            );
-        }
-        throw error;
     }
     if (finalSnapshot.state === 'MERGED') {
         validateBaseBranch(finalSnapshot);
@@ -1493,24 +1523,53 @@ function deliverPullRequestWithCiAdmission(
         port.log(`PR #${number} became merged during delivery; repaired ${finalDependents.length} dependent(s)`);
         return;
     }
-    validatePullRequest(finalSnapshot, port, ciAdmissionMode);
-    validateBaseBranch(finalSnapshot);
-    validateReview(number, port.reviewState(number, finalSnapshot.headRefOid));
-    const finalDependents = port
-        .dependents(finalSnapshot.headRefName)
-        .filter((candidate) => candidate.number !== number);
-    validateDependentSet(dependents, finalDependents);
-    for (const dependent of finalDependents) {
-        validateDependent(port.pullRequest(dependent.number), dependent);
-    }
+    const { finalDependents, finalTrackerTarget, preMergeArmedAuthority } =
+        withRestorablePreArmedDeliveryReceiptAuthority(
+            number,
+            authorityBeforeFinalFetchArming,
+            finalFetchArmedAuthority,
+            port,
+            () => {
+                const finalTrackerTarget = trackerCompletionTarget(finalSnapshot);
+                validateStableTrackerTarget(number, initialTrackerTarget, finalTrackerTarget);
+                validateStablePullRequest(initial, finalSnapshot);
+                validatePullRequest(finalSnapshot, port, ciAdmissionMode);
+                validateBaseBranch(finalSnapshot);
+                validateReview(number, port.reviewState(number, finalSnapshot.headRefOid));
+                const finalDependents = port
+                    .dependents(finalSnapshot.headRefName)
+                    .filter((candidate) => candidate.number !== number);
+                validateDependentSet(dependents, finalDependents);
+                for (const dependent of finalDependents) {
+                    validateDependent(port.pullRequest(dependent.number), dependent);
+                }
 
-    persistPreparedDeliveryReceiptAuthority(
-        number,
-        receipt,
-        port,
-        persistedPreparedPostMergeValidation(finalSnapshot, finalTrackerTarget)
-    );
-    port.merge(number, finalSnapshot.headRefOid, finalDependents.length > 0);
+                const preMergeArmedAuthority = preparedDeliveryReceiptAuthority(
+                    receipt,
+                    persistedPreparedPostMergeValidation(finalSnapshot, finalTrackerTarget)
+                );
+                persistPreparedDeliveryReceiptAuthority(
+                    number,
+                    receipt,
+                    port,
+                    preMergeArmedAuthority.postMergeValidation
+                );
+                return { finalDependents, finalTrackerTarget, preMergeArmedAuthority };
+            }
+        );
+    try {
+        port.merge(number, finalSnapshot.headRefOid, finalDependents.length > 0);
+    } catch (error) {
+        tryRestorePreArmedDeliveryReceiptAuthorityAfterMergeFailure(
+            number,
+            authorityBeforeFinalFetchArming,
+            preMergeArmedAuthority,
+            finalSnapshot,
+            finalTrackerTarget,
+            port
+        );
+        throw error;
+    }
     const mergedSnapshot = port.pullRequest(number);
     validatePostMergeSnapshot(
         persistedPreparedPostMergeValidation(finalSnapshot, finalTrackerTarget),
@@ -2333,13 +2392,6 @@ function readOptionalDeliveryRefOid(
     if (symbolic.status !== 1) {
         fail(`PR #${number} ${label} cannot be verified`);
     }
-    const result = deliveryLockGit(primaryRoot, ['show-ref', '--verify', '--hash', '--', ref]);
-    if (result.error !== undefined) {
-        throw result.error;
-    }
-    if (result.status === 0) {
-        return deliveryObjectId(result.stdout, `PR #${number} ${label} object identity is malformed`);
-    }
     const refPath = deliveryLockGit(primaryRoot, ['rev-parse', '--git-path', ref]);
     if (refPath.error !== undefined) {
         throw refPath.error;
@@ -2348,6 +2400,7 @@ function readOptionalDeliveryRefOid(
         fail(`PR #${number} ${label} cannot be verified`);
     }
     const exactRefPath = resolve(primaryRoot, refPath.stdout.trim());
+    let exactPathKind: 'missing' | 'directory' | 'regular';
     let refStats: ReturnType<typeof lstatSync>;
     try {
         refStats = lstatSync(exactRefPath);
@@ -2355,13 +2408,38 @@ function readOptionalDeliveryRefOid(
         if (!(error instanceof Error) || !('code' in error) || error.code !== 'ENOENT') {
             throw error;
         }
-        if (!/not a valid ref/u.test(result.stderr)) {
+        exactPathKind = 'missing';
+    }
+    if (refStats !== undefined) {
+        if (refStats.isDirectory()) {
+            exactPathKind = 'directory';
+        } else if (refStats.isFile()) {
+            exactPathKind = 'regular';
+        } else {
             fail(`PR #${number} ${label} cannot be verified`);
         }
+    }
+    const result = deliveryLockGit(primaryRoot, ['show-ref', '--verify', '--hash', '--', ref]);
+    if (result.error !== undefined) {
+        throw result.error;
+    }
+    if (result.status === 0) {
+        if (exactPathKind === 'directory') {
+            fail(`PR #${number} ${label} cannot be verified`);
+        }
+        return deliveryObjectId(result.stdout, `PR #${number} ${label} object identity is malformed`);
+    }
+    if (exactPathKind === 'directory') {
         return undefined;
     }
-    if (refStats.isDirectory()) {
+    if (exactPathKind === 'missing' && /not a valid ref/u.test(result.stderr)) {
         return undefined;
+    }
+    if (result.status !== 1) {
+        fail(`PR #${number} ${label} cannot be verified`);
+    }
+    if (!/not a valid ref/u.test(result.stderr)) {
+        fail(`PR #${number} ${label} cannot be verified`);
     }
     fail(`PR #${number} ${label} cannot be verified`);
     return undefined;
