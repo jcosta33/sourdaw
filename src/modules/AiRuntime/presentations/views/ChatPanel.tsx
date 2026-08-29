@@ -277,12 +277,14 @@ type ChatPanelProps = {
 type PreviewPlayback = NonNullable<ReturnType<typeof playCachedAudioBufferPreview>>;
 
 const RetainedSectionRenderManualReviewCard = ({
-    review,
+    reviews,
     onStatus,
 }: {
-    review: RetainedSectionRenderManualReviewProjection;
+    reviews: readonly RetainedSectionRenderManualReviewProjection[];
     onStatus: (message: string) => void;
 }): ReactElement => {
+    const review = reviews[0]!;
+    const hasUnavailableEvidence = reviews.some((candidate) => candidate.availability === 'unavailable');
     const playbackRef = useRef<PreviewPlayback | null>(null);
     const bufferIdRef = useRef<string | null>(null);
     const [isPlaying, setIsPlaying] = useState(false);
@@ -373,10 +375,17 @@ const RetainedSectionRenderManualReviewCard = ({
             <p className="mt-1 text-muted-foreground">
                 Receipt {review.receiptIdentity}; command {review.commandId}.
             </p>
-            {review.warnings.length > 0 ? (
-                <p className="mt-1 text-amber-200">Warnings: {review.warnings.join('; ')}</p>
-            ) : null}
-            {review.availability === 'unavailable' ? (
+            <ul className="mt-1 text-muted-foreground" aria-label="Receipt-bound retained render jobs">
+                {reviews.map((candidate) => (
+                    <li key={`${candidate.commandId}:${candidate.job.jobId}`}>
+                        {candidate.job.sectionName} ({candidate.commandId}):{' '}
+                        {candidate.availability === 'available'
+                            ? candidate.warnings.join('; ') || 'available'
+                            : `unavailable — ${candidate.reason}`}
+                    </li>
+                ))}
+            </ul>
+            {hasUnavailableEvidence ? (
                 <>
                     <p className="mt-2 text-destructive">Evidence unavailable: {review.reason}</p>
                     <Button
@@ -634,10 +643,12 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
                         </div>
                     );
                 })}
-                {retainedSectionRenderManualReviews.map((review) => (
+                {Object.values(
+                    Object.groupBy(retainedSectionRenderManualReviews, (review) => `${review.runId}:${review.batchId}`)
+                ).map((reviews) => (
                     <RetainedSectionRenderManualReviewCard
-                        key={`${review.runId}:${review.batchId}:${review.commandId}:${review.job.jobId}`}
-                        review={review}
+                        key={`${reviews![0]!.runId}:${reviews![0]!.batchId}`}
+                        reviews={reviews!}
                         onStatus={setDecisionStatusMessage}
                     />
                 ))}
