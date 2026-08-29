@@ -342,8 +342,9 @@ function createWarningBatchResult(input: {
     };
 }
 
-function createPendingRenderBatchResult(
-    commandBatch: ReturnType<typeof compileVersionedCommandBatchEnvelope>
+function createPendingExternalEffectBatchResult(
+    commandBatch: ReturnType<typeof compileVersionedCommandBatchEnvelope>,
+    operation: string
 ): ConfirmedActionBatchResult {
     const parsed = parseVersionedCommandBatchEnvelope(commandBatch.serialized, commandBatch.authority);
     if (parsed.status !== 'valid') {
@@ -352,7 +353,7 @@ function createPendingRenderBatchResult(
     const pendingEffect = {
         commandId: parsed.envelope.commands[0]?.commandId,
         kind: 'external-effect' as const,
-        operation: 'renderProjectSections',
+        operation,
         reason: 'comparison renderer unavailable',
         remediation: 'reconcile' as const,
         state: 'pending' as const,
@@ -1197,6 +1198,48 @@ describe('confirmPendingChatActions transaction admission', () => {
         }
     });
 
+    it('keeps non-render pending effects on exact-batch reconciliation when finalization evidence is unavailable', async () => {
+        const runId = 'confirmation-non-render-finalization-unavailable';
+        const confirmationId = 'confirmation-non-render-finalization-unavailable';
+        const batchId = 'group-non-render-finalization-unavailable';
+        const commandBatch = configureLateSettlementConfirmation({ runId, confirmationId, batchId });
+        const commandUseCases = await import('#/modules/Command/useCases');
+        const crdtUseCases = await import('#/modules/CrdtDocument/useCases');
+        const captureMutationAuthorization = vi
+            .spyOn(crdtUseCases, 'captureProjectMutationAuthorization')
+            .mockReturnValue(() => true);
+        const execute = vi
+            .spyOn(commandUseCases, 'executeVersionedCommandBatchEnvelope')
+            .mockImplementation(async (input) => {
+                input.options?.onProjectCommitFinalizationUnavailable?.({
+                    reason: 'The final project revision is unavailable.',
+                });
+                return createPendingExternalEffectBatchResult(commandBatch, 'setTempo');
+            });
+
+        try {
+            await expect(confirmPendingChatActions({ confirmationId })).resolves.toMatchObject({
+                status: 'failed',
+                durableCommit: true,
+                effects: [expect.objectContaining({ operation: 'setTempo', remediation: 'reconcile' })],
+                continuation: { kind: 'reconcile-exact-batch' },
+            });
+        } finally {
+            execute.mockRestore();
+            captureMutationAuthorization.mockRestore();
+        }
+
+        expect(getPendingActionConfirmation(confirmationId)).toMatchObject({
+            status: 'failed',
+            followUpProjectRevision: null,
+            followUpStatus: 'failed',
+        });
+        expect(chatStore.value?.messages[0]).toMatchObject({
+            pendingActionConfirmationStatus: 'failed',
+            pendingActionFollowUpStatus: 'failed',
+        });
+    });
+
     it('retains a late committed receipt without reopening a cancelled run or inventing recovery work', async () => {
         const runId = 'confirmation-stale-finalization-unavailable';
         const confirmationId = 'confirmation-stale-finalization-unavailable';
@@ -1219,7 +1262,7 @@ describe('confirmPendingChatActions transaction admission', () => {
             .spyOn(commandUseCases, 'executeVersionedCommandBatchEnvelope')
             .mockImplementation(async (input) => {
                 input.options?.onProjectCommitFinalizationUnavailable?.({ reason: 'render artifact vanished' });
-                return createPendingRenderBatchResult(commandBatch);
+                return createPendingExternalEffectBatchResult(commandBatch, 'renderProjectSections');
             });
         const settle = vi.spyOn(agentRunWorkLease, 'settle').mockImplementation(() => {
             agentRunLifecycle.transitionPhase({ runId, phase: 'cancelled' });

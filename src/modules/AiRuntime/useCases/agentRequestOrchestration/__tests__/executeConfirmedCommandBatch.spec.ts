@@ -470,6 +470,25 @@ describe('executeConfirmedCommandBatch', () => {
     });
 
     it('keeps a rebind failure fail-closed after Command reports unavailable finalization evidence', async () => {
+        const renderJob = {
+            jobId: 'render-1',
+            sectionId: 'section-1',
+            sectionName: 'Verse',
+            startBeat: 0,
+            endBeat: 16,
+            sampleRate: 44_100,
+            tailSeconds: 0,
+        };
+        const renderConfirmation = {
+            ...confirmation,
+            approvalSnapshot: {
+                ...confirmation.approvalSnapshot,
+                actions: [{ type: 'renderProjectSections', payload: { sectionIds: ['section-1'], jobs: [renderJob] } }],
+            },
+        } satisfies PendingAppActionConfirmation;
+        mocks.getArtifacts
+            .mockReturnValueOnce([])
+            .mockReturnValueOnce([{ ...renderJob, renderedAt: 1, sourceRevision: 'revision-before-command' }]);
         mocks.rebindArtifacts.mockImplementation(() => {
             throw new Error('render artifact vanished');
         });
@@ -484,13 +503,23 @@ describe('executeConfirmedCommandBatch', () => {
             return completedBatchResult;
         });
 
-        const result = await execute();
+        const result = await execute({ confirmation: renderConfirmation });
 
         expect(result).toMatchObject({
             status: 'completed',
             committedProjectRevision: 'revision-checkpoint',
             canRebindSectionRenderArtifacts: false,
             finalizationEvidenceFailure: 'render artifact vanished',
+        });
+        expect(mocks.rebindArtifacts).toHaveBeenCalledWith({
+            artifacts: [
+                {
+                    job: renderJob,
+                    renderedAt: 1,
+                    sourceRevision: 'revision-before-command',
+                },
+            ],
+            sourceRevision: 'revision-checkpoint',
         });
     });
 

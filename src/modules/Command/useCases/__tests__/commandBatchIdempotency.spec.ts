@@ -1533,9 +1533,12 @@ describe('command batch idempotency', () => {
             tryAcquireRecoveryLease: () => Promise.resolve(true),
             release: () => Promise.resolve(),
         });
+        const onProjectCommitFinalized = vi.fn();
+        const onProjectCommitFinalizationUnavailable = vi.fn();
         const retry = await executeVersionedCommandBatchEnvelope({
             authority: batch.authority,
             serialized: batch.serialized,
+            options: { onProjectCommitFinalized, onProjectCommitFinalizationUnavailable },
         });
 
         expect(first).toMatchObject({
@@ -1552,6 +1555,8 @@ describe('command batch idempotency', () => {
         expect(retry).toMatchObject({ status: 'idempotent-replay', recoveredExternalEffects: true });
         expect(gainRuntimeEffect).toHaveBeenCalledOnce();
         expect(panRuntimeEffect).toHaveBeenCalledTimes(3);
+        expect(onProjectCommitFinalized).not.toHaveBeenCalled();
+        expect(onProjectCommitFinalizationUnavailable).not.toHaveBeenCalled();
         expect(projectDocument).toMatchObject({ trackGain: { value: 0.8 }, trackPan: { value: -0.2 } });
         expect(mutationCount).toBe(mutationsAfterCommit + 1);
     });
@@ -2328,6 +2333,44 @@ describe('command batch idempotency', () => {
         }
     });
 
+    it('keeps a committed checkpoint when final revision capture throws', async () => {
+        const batch = compileBatch({ batchId: 'finalization-revision-capture-throws' });
+        const proof = await getVersionedCommandBatchCommitProof(batch);
+        const onProjectCommitFinalized = vi.fn();
+        const onProjectCommitFinalizationUnavailable = vi.fn();
+        let successfulCaptures = 0;
+        let failedCaptures = 0;
+        const captureRevision = vi.fn(() => {
+            if (mutationCount >= 2) {
+                failedCaptures += 1;
+                throw new Error('final revision capture unavailable');
+            }
+            successfulCaptures += 1;
+            return projectRevisionOverride ?? revision(mutationCount);
+        });
+        commandProjectRevisionPort.setProvider(captureRevision);
+
+        try {
+            const result = await executeVersionedCommandBatchEnvelope({
+                authority: batch.authority,
+                confirmed: true,
+                serialized: batch.serialized,
+                options: { onProjectCommitFinalized, onProjectCommitFinalizationUnavailable },
+            });
+
+            expect(result).toMatchObject({ status: 'committed' });
+            expect(getProjectCommandBatchIdempotencyCheckpoint(proof)).toMatchObject({ status: 'complete' });
+            expect(onProjectCommitFinalized).not.toHaveBeenCalled();
+            expect(onProjectCommitFinalizationUnavailable).toHaveBeenCalledExactlyOnceWith({
+                reason: 'final revision capture unavailable',
+            });
+            expect(successfulCaptures).toBeGreaterThan(0);
+            expect(failedCaptures).toBe(1);
+        } finally {
+            commandProjectRevisionPort.setProvider(() => projectRevisionOverride ?? revision(mutationCount));
+        }
+    });
+
     it('writes the durable checkpoint but withholds caller evidence when finalization authority is revoked', async () => {
         const batch = compileBatch();
         const proof = await getVersionedCommandBatchCommitProof(batch);
@@ -2378,6 +2421,42 @@ describe('command batch idempotency', () => {
         expect(onProjectCommitFinalizationUnavailable).toHaveBeenCalledExactlyOnceWith({
             reason: 'finalization authority unavailable',
         });
+    });
+
+    it('never emits finalization evidence for a real no-op result', async () => {
+        clearHandlerRegistry();
+        const execute = vi.fn();
+        registerHandlerMap({
+            setTrackGain: {
+                canReapplyAfterDivergence: () => true,
+                describe: () => ({
+                    inverseAction: null,
+                    label: 'Keep vocal gain',
+                }),
+                execute,
+                isNoop: () => true,
+                previewExecution: 'isolated-project',
+                undoable: true,
+                validate: () => true,
+            } satisfies ActionHandler<SetTrackGainAction>,
+        });
+        const batch = compileBatch({ batchId: 'finalization-no-op', gain: 1, expectedGain: 1 });
+        const callbacks = {
+            onProjectCommitFinalized: vi.fn(),
+            onProjectCommitFinalizationUnavailable: vi.fn(),
+        };
+
+        const result = await executeVersionedCommandBatchEnvelope({
+            authority: batch.authority,
+            confirmed: true,
+            serialized: batch.serialized,
+            options: callbacks,
+        });
+
+        expect(result).toMatchObject({ status: 'no-op' });
+        expect(execute).not.toHaveBeenCalled();
+        expect(callbacks.onProjectCommitFinalized).not.toHaveBeenCalled();
+        expect(callbacks.onProjectCommitFinalizationUnavailable).not.toHaveBeenCalled();
     });
 
     it('never emits finalization evidence for rejected, cancelled, or idempotent replay outcomes', async () => {
