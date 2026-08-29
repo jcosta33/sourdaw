@@ -1,0 +1,25 @@
+crates/daw-plugin-host/src/vst3_editor.rs
+  s_4f908a5afb6b58::t_2b86fca6d85c23 12-18
+  s_4f908a5afb6b58::t_41488b6b01d23f 11
+crates/sourdaw-native/src/host/plugin_window.rs
+  s_4f908a5afb6b58::t_6f3e3d78828e06 270-276
+crates/sourdaw-native/src/commands/plugin_gui.rs
+  s_4f908a5afb6b58::t_a5f302bf63b858 491-492,494
+  s_4f908a5afb6b58::t_59cd016460d664 493,495-498
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "099c95bc7f0079af2c3735d6638faedc3deb339d",
+  "prompts": {},
+  "sessions": {
+    "s_4f908a5afb6b58": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fcb92ba4-bf56-47a4-8b57-803f335a449e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
