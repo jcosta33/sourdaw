@@ -327,25 +327,29 @@ const createUtilityScanSupervisor = (addonPath: string): ScanSupervisor =>
     });
 
 /**
- * A bare native window for one CLAP editor: no webcontents, hidden until the
- * addon has run the GUI lifecycle and knows the plugin's preferred size,
- * `resizable: false` because that size is the plugin's to choose. 800×600 is
- * only the pre-lifecycle placeholder the addon immediately resizes.
- */
-/**
- * The scale of the display a new plugin editor window lands on.
+ * The scale of the display a plugin editor window is on.
  *
- * Matched against the DAW window, because that is where the editor opens: an
- * editor sized against the primary display's scale is the wrong size on every
- * other one. Read once per create — an editor dragged to a display of a
- * different scale is not re-scaled, which is tracked separately.
+ * The editor's own window when there is one, because an editor dragged to a
+ * display of a different density has to be told; the DAW window otherwise,
+ * which is where an editor is about to open, since an editor sized against the
+ * primary display's scale is the wrong size on every other one.
  */
-const editorWindowScaleFactor = (): number => {
+const editorWindowScaleFactor = (editor?: EditorWindow): number => {
     const daw = mainWindow !== undefined && !mainWindow.isDestroyed() ? mainWindow : undefined;
-    const display = daw === undefined ? screen.getPrimaryDisplay() : screen.getDisplayMatching(daw.getBounds());
-    return display.scaleFactor;
+    const bounds = editor?.getBounds() ?? daw?.getBounds();
+    return bounds === undefined
+        ? screen.getPrimaryDisplay().scaleFactor
+        : screen.getDisplayMatching(bounds).scaleFactor;
 };
 
+/**
+ * A bare native window for one plugin editor: no webcontents, hidden until the
+ * addon has run the GUI lifecycle and knows the plugin's preferred size, and
+ * `resizable: false` until the plugin has said whether its editor accepts a
+ * size the host chose — an answer that does not exist until that lifecycle has
+ * run. 800×600 is only the pre-lifecycle placeholder the addon immediately
+ * resizes.
+ */
 const createEditorWindow = (options: EditorWindowOptions): EditorWindow =>
     new BaseWindow({
         width: 800,
@@ -416,6 +420,11 @@ const startNativeSurface = (): void => {
             createWindow: createEditorWindow,
             getParentWindow: () => (mainWindow !== undefined && !mainWindow.isDestroyed() ? mainWindow : undefined),
             getScaleFactor: editorWindowScaleFactor,
+            // A display added, removed, or rescaled changes the density under
+            // every open editor at once, and none of them moved.
+            watchDisplayChanges: (onChanged) => {
+                screen.on('display-metrics-changed', onChanged);
+            },
         });
     }
 };
