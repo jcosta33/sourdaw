@@ -36,6 +36,7 @@ type SettleConfirmedBatchOutcomeInput = {
     trackedLeaseSettlement: ReturnType<typeof settleAgentRunWorkLeaseSafely>;
     budgetPersistenceWarning: string | null;
     canRebindSectionRenderArtifacts: boolean;
+    retainCommittedPendingActionResources: (confirmationId: string) => Promise<void>;
 };
 
 export async function settleConfirmedBatchOutcome(
@@ -49,6 +50,7 @@ export async function settleConfirmedBatchOutcome(
         trackedLeaseSettlement,
         budgetPersistenceWarning,
         canRebindSectionRenderArtifacts,
+        retainCommittedPendingActionResources,
     } = input;
     const executionKind =
         batchResult.status === 'executed' || batchResult.status === 'executed-with-warning' ? 'runtime' : 'project';
@@ -328,5 +330,3 @@ export async function settleConfirmedBatchOutcome(
     }
     return { status: 'executed' };
 }
-    retainCommittedPendingActionResources: (confirmationId: string) => Promise<void>;
-        retainCommittedPendingActionResources,
