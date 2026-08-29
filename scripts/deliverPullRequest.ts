@@ -114,13 +114,21 @@ const REQUIRED_CHECK_NAME = 'Gate';
 const SETTLED_CHECK_STATUS = 'COMPLETED';
 const SUPERSEDED_CONCLUSION = 'CANCELLED';
 const PASSING_CONCLUSION = 'SUCCESS';
+const SKIPPED_CONCLUSION = 'SKIPPED';
 /**
  * `SKIPPED` is a designed outcome: the workflow's path filters skip whole legs, and `Gate` is built
  * to pass on a skipped dependency. Nothing in it is designed to conclude `NEUTRAL`, which reports a
  * check that ran and reached no verdict — the same undecided state a cancellation with no success
  * beside it is refused for. An irreversible merge does not step over it.
  */
-const NON_BLOCKING_CONCLUSIONS = new Set(['SUCCESS', 'SKIPPED']);
+const NON_BLOCKING_CONCLUSIONS = new Set([PASSING_CONCLUSION, SKIPPED_CONCLUSION]);
+/**
+ * A conclusion that says nothing about this commit. A cancelled attempt was killed before it decided
+ * and a skipped one never executed, so neither is a later word on the name it reports under. Not
+ * blocking and having decided are different properties, and `SKIPPED` is the conclusion that is
+ * non-blocking without being a verdict — which is exactly why the two sets are written apart.
+ */
+const NON_VERDICT_CONCLUSIONS = new Set([SUPERSEDED_CONCLUSION, SKIPPED_CONCLUSION]);
 const CHECKS_PENDING_MERGE_STATE = 'UNSTABLE';
 const STRUCTURAL_MERGEABILITY_REFRESH_LIMIT = 1;
 
@@ -257,17 +265,23 @@ function unretiredFailedCheckRun(checkRuns: HeadCheckRun[]): HeadCheckRun | unde
 }
 
 /**
- * Only a later attempt that itself reached a verdict retires an earlier one. A later cancellation or
- * a still-running rerun decides nothing, so reading either as the newer word would drop a real
- * failure out of the evidence — the one direction this rule must never move. Attempts GitHub reports
- * no start for, and attempts that share a start, order nothing and so retire nothing: absent or
- * ambiguous recency leaves the failure standing rather than guessing it away.
+ * Only a later attempt that itself reached a verdict retires an earlier one. A non-verdict
+ * conclusion and a still-running rerun decide nothing, so reading either as the newer word would
+ * drop a real failure out of the evidence — the one direction this rule must never move. The
+ * repository mints that shape by itself: every non-approving `pull_request_review` event starts a
+ * run whose `decide` job is skipped, so each job downstream of it settles as `SKIPPED` with an
+ * evaluation-time start later than the push run's. Were a skip allowed to retire, one comment on a
+ * pull request would stamp a fresh non-verdict over a genuine failing execution and the head would
+ * merge.
+ *
+ * Attempts GitHub reports no start for, and attempts that share a start, order nothing and so retire
+ * nothing: absent or ambiguous recency leaves the failure standing rather than guessing it away.
  */
 function retiresAttempt(candidate: HeadCheckRun, attempt: HeadCheckRun): boolean {
     return (
         candidate.name === attempt.name &&
         candidate.status === SETTLED_CHECK_STATUS &&
-        candidate.conclusion !== SUPERSEDED_CONCLUSION &&
+        !NON_VERDICT_CONCLUSIONS.has(candidate.conclusion ?? '') &&
         startedAfter(candidate, attempt)
     );
 }
