@@ -164,8 +164,14 @@ describe('confirmationTerminalSettlement', () => {
 
     it('awaits run cancellation before invalidating an ordinarily stale proposal', async () => {
         const cancellation = createDeferred();
+        const discard = createDeferred();
         mocks.cancelRun.mockReturnValueOnce(cancellation.promise);
-        const result = confirmationTerminalSettlement.invalidateForProjectChange(confirmation);
+        mocks.settleResources.mockReturnValueOnce(discard.promise);
+        let settled = false;
+        const result = confirmationTerminalSettlement.invalidateForProjectChange(confirmation).then((value) => {
+            settled = true;
+            return value;
+        });
 
         expect(mocks.cancelRun).toHaveBeenCalledWith({
             runId: 'run-1',
@@ -174,12 +180,10 @@ describe('confirmationTerminalSettlement', () => {
         expect(mocks.status).not.toHaveBeenCalled();
         expect(mocks.message).not.toHaveBeenCalled();
         expect(mocks.settleResources).not.toHaveBeenCalled();
+        expect(settled).toBe(false);
 
         cancellation.resolve();
-        await expect(result).resolves.toEqual({
-            status: 'invalidated',
-            reason: 'The project changed after this proposal was created. Review and submit the command again.',
-        });
+        await Promise.resolve();
         expect(mocks.status).toHaveBeenCalledWith({
             confirmationId: 'confirmation-1',
             status: 'invalidated',
@@ -195,26 +199,49 @@ describe('confirmationTerminalSettlement', () => {
             confirmationId: 'confirmation-1',
             disposition: 'discard',
         });
+        expect(settled).toBe(false);
+
+        discard.resolve();
+        await expect(result).resolves.toEqual({
+            status: 'invalidated',
+            reason: 'The project changed after this proposal was created. Review and submit the command again.',
+        });
     });
 
-    it('invalidates a divergent proposal with repair guidance', async () => {
+    it('awaits cancellation and resource discard before invalidating a divergent proposal', async () => {
         const divergence = {
             kind: 'ambiguous-same-object',
             mayReapply: false,
             targetIds: ['track-a'],
             repairCandidates: [{ kind: 'review-ambiguous-target', targetIds: ['track-b'] }],
         } as const;
+        const cancellation = createDeferred();
+        const discard = createDeferred();
+        mocks.cancelRun.mockReturnValueOnce(cancellation.promise);
+        mocks.settleResources.mockReturnValueOnce(discard.promise);
+        let settled = false;
+        const result = confirmationTerminalSettlement
+            .invalidateForDivergence(confirmation, divergence)
+            .then((value) => {
+                settled = true;
+                return value;
+            });
 
-        await expect(confirmationTerminalSettlement.invalidateForDivergence(confirmation, divergence)).resolves.toEqual(
-            {
-                status: 'invalidated',
-                reason: 'The approved command was not executed because project divergence is ambiguous-same-object.',
-                divergence,
-            }
-        );
         expect(mocks.cancelRun).toHaveBeenCalledWith({
             runId: 'run-1',
             reason: 'The approved command was not executed because project divergence is ambiguous-same-object.',
+        });
+        expect(mocks.status).not.toHaveBeenCalled();
+        expect(mocks.message).not.toHaveBeenCalled();
+        expect(mocks.settleResources).not.toHaveBeenCalled();
+        expect(settled).toBe(false);
+
+        cancellation.resolve();
+        await Promise.resolve();
+        expect(mocks.status).toHaveBeenCalledWith({
+            confirmationId: 'confirmation-1',
+            status: 'invalidated',
+            error: 'The approved command was not executed because project divergence is ambiguous-same-object.',
         });
         expect(mocks.message).toHaveBeenCalledWith('assistant-1', {
             pendingActionConfirmationStatus: 'invalidated',
@@ -225,6 +252,37 @@ describe('confirmationTerminalSettlement', () => {
         expect(mocks.settleResources).toHaveBeenCalledWith({
             confirmationId: 'confirmation-1',
             disposition: 'discard',
+        });
+        expect(settled).toBe(false);
+
+        discard.resolve();
+        await expect(result).resolves.toEqual({
+            status: 'invalidated',
+            reason: 'The approved command was not executed because project divergence is ambiguous-same-object.',
+            divergence,
+        });
+    });
+
+    it('formats empty divergence targets and candidate targets as project guidance', async () => {
+        const divergence = {
+            kind: 'deleted-target',
+            mayReapply: false,
+            targetIds: [],
+            repairCandidates: [{ kind: 'replan-without-deleted-target', targetIds: [] }],
+        } as const;
+
+        await expect(confirmationTerminalSettlement.invalidateForDivergence(confirmation, divergence)).resolves.toEqual(
+            {
+                status: 'invalidated',
+                reason: 'The approved command was not executed because project divergence is deleted-target.',
+                divergence,
+            }
+        );
+        expect(mocks.message).toHaveBeenCalledWith('assistant-1', {
+            pendingActionConfirmationStatus: 'invalidated',
+            error: 'The approved command was not executed because project divergence is deleted-target.',
+            content:
+                'The approved command was not executed because project divergence is deleted-target. Affected targets: none. Repair candidates: replan-without-deleted-target: project. Review the current project before planning again.',
         });
     });
 
