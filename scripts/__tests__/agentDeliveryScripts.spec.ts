@@ -1351,7 +1351,7 @@ describe('package scripts and gitignore', () => {
             serializeDelivery: async (_primaryRoot, number, operation) => {
                 seen.push(`lock:${number}:acquire`);
                 try {
-                    await operation();
+                    return await operation();
                 } finally {
                     seen.push(`lock:${number}:release`);
                 }
