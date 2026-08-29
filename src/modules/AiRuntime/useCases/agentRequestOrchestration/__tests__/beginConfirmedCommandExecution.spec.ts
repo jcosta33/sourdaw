@@ -10,12 +10,14 @@ type CommandVerifiedBatchReceipt = ReturnType<typeof createVerifiedBatchReceipt>
 type FailApprovalPreflight =
     typeof import('../confirmationTerminalSettlement').confirmationTerminalSettlement.failApprovalPreflight;
 type ValidateAgentRiskApproval = typeof import('../../validateAgentRiskApproval').validateAgentRiskApproval;
+type GetPlannedActionAffectedIds = typeof import('../../getPlannedActionAffectedIds').getPlannedActionAffectedIds;
+type PendingProtectedTarget = PendingAppActionConfirmation['protectedUnchanged'][number];
 
 const mocks = vi.hoisted(() => ({
     captureRevision: vi.fn(() => 'revision-1'),
     claimLease: vi.fn(),
     failPreflight: vi.fn<FailApprovalPreflight>(),
-    getAffectedIds: vi.fn(() => []),
+    getAffectedIds: vi.fn<GetPlannedActionAffectedIds>(() => []),
     getRun: vi.fn(),
     parseBatch: vi.fn(),
     reserveBudget: vi.fn(),
@@ -161,7 +163,7 @@ const protectedAction = {
     payload: { trackId: 'track-protected', gain: 0.8, expectedGain: 1 },
 } satisfies PendingAppActionConfirmation['actions'][number];
 
-const protectedTarget = { id: 'track-protected', name: 'Protected track' };
+const protectedTarget = { id: 'track-protected', name: 'Protected track' } satisfies PendingProtectedTarget;
 
 function execute(options: { priorVerifiedBatchReceipt?: CommandVerifiedBatchReceipt | null } = {}) {
     return beginConfirmedCommandExecution({
