@@ -1,0 +1,35 @@
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeEnginePlayheadFeed.spec.ts
+  s_c35a383286ec6a::t_dfd603e7e6756e 113-153
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeLiveGraphSession.spec.ts
+  s_c35a383286ec6a::t_1cf6a5fd8d4116 36-39,247-268
+src/modules/AudioEngine/useCases/livePlayback/startNativeLiveGraphSession.ts
+  s_c35a383286ec6a::t_9920c9569d0b78 105-130,187-199
+src/modules/Transport/useCases/tempoMap/__tests__/projectEngineTransportMaps.spec.ts
+  s_c35a383286ec6a::t_deb922f34de242 3,120-139
+src/modules/Transport/useCases/tempoMap/projectEngineTransportMaps.ts
+  s_a7eb18ad191b82::t_d129496e5fb441 61,68-77,83-89,92
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "db1c605185720c9c97c73cab7d1f51410f885c48",
+  "prompts": {},
+  "sessions": {
+    "s_a7eb18ad191b82": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04ecd-4213-7ec2-b48d-46e72d23312e",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_c35a383286ec6a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a2510750ac582fc31",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
