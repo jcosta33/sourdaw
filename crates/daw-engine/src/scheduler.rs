@@ -408,6 +408,12 @@ pub enum GraphCommand {
     AddBus(Box<TimelineBus>),
     RemoveBus(usize),
     SetBusOutput(usize, RouteTarget),
+    /// Close or open the post-fader mute gate on a bus.
+    SetBusMute(usize, bool),
+    /// Close or open a bus's pre-fader solo gate — the same law as
+    /// [`GraphCommand::SetTrackSoloGate`]. See
+    /// [`crate::timeline::TimelineBus`].
+    SetBusSoloGate(usize, bool),
     /// Add a clip, with its decoded material, to a track.
     AddClip(usize, Box<TimelineClip>),
     RemoveClip(usize, usize),
@@ -547,6 +553,8 @@ impl GraphCommand {
             | Self::AddBus(..)
             | Self::RemoveBus(..)
             | Self::SetBusOutput(..)
+            | Self::SetBusMute(..)
+            | Self::SetBusSoloGate(..)
             | Self::AddClip(..)
             | Self::RemoveClip(..)
             | Self::SetClipPlacement(..)
@@ -1860,6 +1868,14 @@ impl AudioScheduler {
                 }
                 GraphCommand::SetBusOutput(id, target) => {
                     self.timeline.set_bus_output(id, target);
+                    None
+                }
+                GraphCommand::SetBusMute(id, muted) => {
+                    self.timeline.set_bus_mute(id, muted);
+                    None
+                }
+                GraphCommand::SetBusSoloGate(id, gated) => {
+                    self.timeline.set_bus_solo_gate(id, gated);
                     None
                 }
                 GraphCommand::AddClip(track_id, clip) => {

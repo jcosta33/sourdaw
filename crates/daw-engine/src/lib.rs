@@ -615,6 +615,18 @@ impl EngineHandle {
         self.push(GraphCommand::SetBusOutput(id, target))
     }
 
+    /// Mute a bus. The mute sits after the fader and before the panner, the
+    /// same place it sits on a track.
+    pub fn set_bus_mute(&mut self, id: usize, muted: bool) -> Result<(), String> {
+        self.push(GraphCommand::SetBusMute(id, muted))
+    }
+
+    /// Close or open a bus's pre-fader solo gate — the same law as
+    /// [`EngineHandle::set_track_solo_gate`].
+    pub fn set_bus_solo_gate(&mut self, id: usize, gated: bool) -> Result<(), String> {
+        self.push(GraphCommand::SetBusSoloGate(id, gated))
+    }
+
     /// Place a clip on a track. `right` may be empty for mono material, which
     /// plays to both outputs. The vectors are the clip's source material and
     /// are never written to again: an edit moves the placement instead.

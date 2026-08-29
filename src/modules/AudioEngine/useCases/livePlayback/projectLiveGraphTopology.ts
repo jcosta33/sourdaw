@@ -43,8 +43,9 @@
  *
  * ── Bus fidelity ──────────────────────────────────────────────────────────
  *
- * A native bus strip is a fader over a summing point, so the pan, mute and
- * solo gate a project bus carries have nowhere to land; see `stripState`.
+ * A native bus strip holds the same mixer state a track strip does: fader,
+ * pan, mute, and solo gate. The producer sends the project's real values.
+ * Bus-sourced sends are still dropped — the native strip has no send taps.
  */
 
 import { type Track } from '#/modules/Arrangement/stores';
@@ -86,17 +87,6 @@ function stripState(input: {
 }): AudioGraphStripState {
     const { track, soloGatedTrackIds, vcaMultiplierByTrackId } = input;
     const vcaMultiplier = vcaMultiplierByTrackId.get(track.id) ?? 1;
-    if (track.kind === 'bus') {
-        // A native bus strip is a summing point with a fader: no panner, no
-        // mute gate, no solo gate. Sending it any of the three refuses the
-        // whole batch by name (`bus-pan-unsupported`, `bus-mute-unsupported`,
-        // `bus-solo-gate-unsupported`), which in practice means every session
-        // that has anything soloed. So the state carries what a bus can hold,
-        // and `honorMuted` says outright that this strip does not honour one.
-        // Raising that fidelity is engine work — a bus strip that grows the
-        // gates — never a producer that pretends the state crossed.
-        return { gain: track.gain, pan: 0, muted: track.muted, soloGated: false, vcaMultiplier };
-    }
     return {
         gain: track.gain,
         pan: track.pan,
@@ -108,17 +98,18 @@ function stripState(input: {
 
 function createStripCommand(input: { track: Track; state: AudioGraphStripState }): AudioGraphCommand {
     const { track, state } = input;
+    // Live playback always honours a mute the engineer pressed; only an
+    // export chooses otherwise, and only for stems.
     const shared = {
         name: track.name,
         state,
         devices: track.devices,
         contributesAudio: NOTHING_IS_SCHEDULED_YET,
+        honorMuted: true,
     } as const;
     return track.kind === 'bus'
-        ? { kind: 'create-bus-strip', busId: track.id, ...shared, honorMuted: false }
-        : // Live playback always honours a mute the engineer pressed; only an
-          // export chooses otherwise, and only for stems.
-          { kind: 'create-track-strip', trackId: track.id, ...shared, honorMuted: true };
+        ? { kind: 'create-bus-strip', busId: track.id, ...shared }
+        : { kind: 'create-track-strip', trackId: track.id, ...shared };
 }
 
 /**
