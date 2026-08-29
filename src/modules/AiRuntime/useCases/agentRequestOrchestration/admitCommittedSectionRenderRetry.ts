@@ -323,6 +323,7 @@ function hasExactFinalizedContinuationBinding(
     if (
         matchingContinuations.length !== 1 ||
         !continuation ||
+        continuation.recovery !== 'manual-repair' ||
         continuation.serializedBatch !== approvedCommandBatch.serialized ||
         !hasExactAgentCommandBatchAuthority(approvedCommandBatch.authority, continuation.authority)
     ) {

@@ -178,7 +178,7 @@ function bindFinalizedCrashWindow(input: ReturnType<typeof createFixture>) {
             {
                 batchId: BATCH_ID,
                 receiptIdentity: pendingReceiptIdentity,
-                recovery: 'reconcile-batch',
+                recovery: 'manual-repair',
                 serializedBatch: input.commandBatch.serialized,
                 authority: input.commandBatch.authority,
                 effects: structuredClone(input.receipt.pendingEffects),
@@ -313,6 +313,15 @@ describe('admitCommittedSectionRenderRetry', () => {
 
         expect(admitCommittedSectionRenderRetry({ confirmation: fixture.confirmation, phase: 'eligibility' })).toEqual({
             status: 'ineligible',
+        });
+        expect(mocks.getRun).not.toHaveBeenCalled();
+    });
+
+    it('requires proof for a valid eligible confirmation', () => {
+        const fixture = createFixture();
+
+        expect(admitCommittedSectionRenderRetry({ confirmation: fixture.confirmation, phase: 'eligibility' })).toEqual({
+            status: 'requires-proof',
         });
         expect(mocks.getRun).not.toHaveBeenCalled();
     });
@@ -542,7 +551,7 @@ describe('admitCommittedSectionRenderRetry', () => {
         finalizedReceipt.outcome = 'committed';
         finalizedReceipt.atomicity = 'atomic';
         finalizedReceipt.pendingEffects = [];
-        bindFinalizedCrashWindow(fixture);
+        const trackedRun = bindFinalizedCrashWindow(fixture);
 
         expect(
             admitCommittedSectionRenderRetry({
@@ -552,6 +561,16 @@ describe('admitCommittedSectionRenderRetry', () => {
                 phase: 'proof',
             })
         ).toEqual({ durableReceipt: finalizedReceipt, status: 'admitted' });
+
+        trackedRun.pendingEffectContinuations[0]!.recovery = 'reconcile-batch';
+        expect(
+            admitCommittedSectionRenderRetry({
+                confirmation: fixture.confirmation,
+                durableReceipt: finalizedReceipt,
+                expectedCommandBatch: fixture.commandBatch,
+                phase: 'proof',
+            })
+        ).toEqual({ status: 'proof-mismatch' });
     });
 
     it.each([

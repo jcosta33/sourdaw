@@ -3,7 +3,7 @@ import {
     rebindAgentProjectSectionArtifactRevisions,
 } from '#/modules/AudioRendering/useCases';
 import { collaborationStore } from '#/modules/Collaboration/stores';
-import { executeVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
+import { executeVersionedCommandBatchEnvelope, parseVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
 import { captureProjectMutationAuthorization, captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 import { type HandlerDeferredEffectAttempt } from '#/utils/handlerContract';
 
@@ -16,6 +16,7 @@ import {
     updatePendingActionConfirmationStatus,
 } from '../../stores/pendingActionConfirmationStore';
 import { agentRunCancellation } from '../cancelAgentRun';
+import { getExactAgentActionHash } from '../getExactAgentActionHash';
 import { getVerifiedBatchReplayDisposition } from '../getVerifiedBatchReplayDisposition';
 import { issueAgentCommandApprovalBinding } from '../issueAgentCommandApprovalBinding';
 import { prepareAgentRunPendingEffectContinuation } from '../prepareAgentRunPendingEffectContinuation';
@@ -73,24 +74,110 @@ function hasCommittedProjectPriorReceipt(
     return disposition.status === 'committed';
 }
 
-function rebindFreshSectionRenderArtifactsToCommittedRevision(
+type ValidApprovedBatch = Extract<
+    ReturnType<typeof parseVersionedCommandBatchEnvelope>,
+    { status: 'valid' }
+>['envelope'];
+type ApprovedCommand = ValidApprovedBatch['commands'][number];
+type ApprovedRenderAction = Extract<
+    PendingAppActionConfirmation['approvalSnapshot']['actions'][number],
+    { type: 'renderProjectSections' }
+>;
+type ApprovedRenderCommand = {
+    command: ApprovedCommand;
+    jobs: NonNullable<ApprovedRenderAction['payload']['jobs']>;
+};
+
+function getApprovedRenderCommands(
     confirmation: PendingAppActionConfirmation,
-    artifactsBeforeExecution: ReturnType<typeof getAgentSectionRenderArtifacts>,
-    committedRevision: string
-): void {
-    const renderAction = confirmation.approvalSnapshot.actions.find(
-        (action) => action.type === 'renderProjectSections'
-    );
-    if (renderAction?.type !== 'renderProjectSections' || !renderAction.payload.jobs) {
-        return;
+    commandBatch: ExecuteConfirmedCommandBatchInput['commandBatch']
+): ApprovedRenderCommand[] {
+    const parsedBatch = parseVersionedCommandBatchEnvelope(commandBatch.serialized, commandBatch.authority);
+    if (parsedBatch.status !== 'valid') {
+        throw new Error('The approved command batch is unavailable for section render artifact binding.');
     }
-    const preexistingJobIds = new Set(artifactsBeforeExecution.map(({ jobId }) => jobId));
-    const currentArtifacts = getAgentSectionRenderArtifacts();
-    const freshArtifacts = renderAction.payload.jobs.flatMap((job) => {
-        if (preexistingJobIds.has(job.jobId)) {
+    const approvedActions = confirmation.approvalSnapshot.actions;
+    if (parsedBatch.envelope.commands.length !== approvedActions.length) {
+        throw new Error('The approved command batch does not exactly match the approved render actions.');
+    }
+    return approvedActions.flatMap((action, index) => {
+        const command = parsedBatch.envelope.commands[index];
+        const actionIsRender = action.type === 'renderProjectSections';
+        const commandIsRender = command?.operation === 'renderProjectSections';
+        if (!actionIsRender && !commandIsRender) {
             return [];
         }
-        const artifact = currentArtifacts.find(
+        if (!actionIsRender || !commandIsRender || !command || !action.payload.jobs) {
+            throw new Error('The approved render command cannot be bound to one exact approved action.');
+        }
+        const actionHash = getExactAgentActionHash({ operation: action.type, arguments: action.payload });
+        const commandHash = getExactAgentActionHash({ operation: command.operation, arguments: command.arguments });
+        if (actionHash !== commandHash) {
+            throw new Error(`The approved render command payload does not match action ${command.commandId}.`);
+        }
+        return [{ command, jobs: action.payload.jobs }];
+    });
+}
+
+function getCommittedRenderJobs(
+    renderCommands: readonly ApprovedRenderCommand[],
+    checkpointReceipt: CommandVerifiedBatchReceipt
+) {
+    const seenCommandIds = new Set<string>();
+    const seenJobIds = new Set<string>();
+    return renderCommands.flatMap(({ command, jobs }) => {
+        if (seenCommandIds.has(command.commandId)) {
+            throw new Error(`The approved render command identity is ambiguous: ${command.commandId}.`);
+        }
+        seenCommandIds.add(command.commandId);
+        for (const job of jobs) {
+            if (seenJobIds.has(job.jobId)) {
+                throw new Error(`The approved section render job identity is ambiguous: ${job.jobId}.`);
+            }
+            seenJobIds.add(job.jobId);
+        }
+        const commandOutcomes = checkpointReceipt.commandOutcomes.filter(
+            ({ commandId }) => commandId === command.commandId
+        );
+        const commandOutcome = commandOutcomes[0];
+        if (commandOutcomes.length !== 1 || commandOutcome?.operation !== command.operation) {
+            throw new Error(`The verified checkpoint has no exact outcome for render command ${command.commandId}.`);
+        }
+        const pendingEffects = checkpointReceipt.pendingEffects.filter(
+            ({ commandId }) => commandId === command.commandId
+        );
+        if (
+            pendingEffects.length > 1 ||
+            (pendingEffects[0] !== undefined && pendingEffects[0].operation !== command.operation)
+        ) {
+            throw new Error(
+                `The verified checkpoint has ambiguous pending effects for render command ${command.commandId}.`
+            );
+        }
+        if (commandOutcome.outcome !== 'committed' || pendingEffects.length === 1) {
+            return [];
+        }
+        const commandLinks = checkpointReceipt.links.render.filter(({ commandId }) => commandId === command.commandId);
+        if (
+            commandLinks.length !== jobs.length ||
+            jobs.some((job) => commandLinks.filter(({ jobId }) => jobId === job.jobId).length !== 1)
+        ) {
+            throw new Error(
+                `The verified checkpoint has ambiguous artifact links for render command ${command.commandId}.`
+            );
+        }
+        return jobs;
+    });
+}
+
+function getFreshArtifactBindings(
+    committedJobs: ReturnType<typeof getCommittedRenderJobs>,
+    artifactsBeforeExecution: ReturnType<typeof getAgentSectionRenderArtifacts>
+) {
+    const preexistingJobIds = new Set(artifactsBeforeExecution.map(({ jobId }) => jobId));
+    const currentArtifacts = getAgentSectionRenderArtifacts();
+    return committedJobs.map((job) => {
+        const matchingArtifacts = currentArtifacts.filter(
             (candidate) =>
                 candidate.jobId === job.jobId &&
                 candidate.sectionId === job.sectionId &&
@@ -100,10 +187,32 @@ function rebindFreshSectionRenderArtifactsToCommittedRevision(
                 candidate.sampleRate === job.sampleRate &&
                 candidate.tailSeconds === job.tailSeconds
         );
-        return artifact ? [{ job, renderedAt: artifact.renderedAt, sourceRevision: artifact.sourceRevision }] : [];
+        const artifact = matchingArtifacts[0];
+        if (preexistingJobIds.has(job.jobId) || matchingArtifacts.length !== 1 || !artifact) {
+            throw new Error(`Exactly one fresh section render artifact is required for committed job ${job.jobId}.`);
+        }
+        return { job, renderedAt: artifact.renderedAt, sourceRevision: artifact.sourceRevision };
     });
+}
+
+function rebindFreshSectionRenderArtifactsToCommittedRevision(
+    confirmation: PendingAppActionConfirmation,
+    commandBatch: ExecuteConfirmedCommandBatchInput['commandBatch'],
+    checkpointReceipt: CommandVerifiedBatchReceipt | null,
+    artifactsBeforeExecution: ReturnType<typeof getAgentSectionRenderArtifacts>,
+    committedRevision: string
+): void {
+    const renderCommands = getApprovedRenderCommands(confirmation, commandBatch);
+    if (renderCommands.length === 0) {
+        return;
+    }
+    if (!checkpointReceipt) {
+        throw new Error('The verified project checkpoint receipt is unavailable for section render artifact binding.');
+    }
+    const committedJobs = getCommittedRenderJobs(renderCommands, checkpointReceipt);
+    const bindings = getFreshArtifactBindings(committedJobs, artifactsBeforeExecution);
     rebindAgentProjectSectionArtifactRevisions({
-        artifacts: freshArtifacts,
+        artifacts: bindings,
         sourceRevision: committedRevision,
     });
 }
@@ -144,6 +253,7 @@ export async function executeConfirmedCommandBatch(
     let committedProjectRevision: string | null = null;
     let finalizationEvidenceFailure: string | null = null;
     let canRebindSectionRenderArtifacts = false;
+    let projectCommitCheckpointReceipt: CommandVerifiedBatchReceipt | null = null;
     try {
         const executionOptions = {
             ...group,
@@ -155,6 +265,7 @@ export async function executeConfirmedCommandBatch(
                 }
             },
             onProjectCommitCheckpoint: ({ receipt }: { receipt: CommandVerifiedBatchReceipt }) => {
+                projectCommitCheckpointReceipt = receipt;
                 return prepareAgentRunPendingEffectContinuation({
                     runId: confirmation.runId,
                     receipt,
@@ -165,6 +276,8 @@ export async function executeConfirmedCommandBatch(
                 committedProjectRevision = revision;
                 rebindFreshSectionRenderArtifactsToCommittedRevision(
                     confirmation,
+                    commandBatch,
+                    projectCommitCheckpointReceipt,
                     sectionRenderArtifactsBeforeExecution,
                     revision
                 );

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { createVersionedCommandEnvelope, serializeVersionedCommandEnvelope } from '#/modules/Command/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { type PendingAppActionConfirmation } from '../../../stores/pendingActionConfirmationStore';
@@ -71,6 +72,19 @@ function createConfirmation(): PendingAppActionConfirmation {
         groupId: 'batch-projection',
         groupLabel: 'Render Verse',
     };
+}
+
+function createRenderCommand(action: AppAction, expectedEffect: string) {
+    return createVersionedCommandEnvelope({
+        action,
+        availableDeviceVersions: {},
+        expectedEffect,
+        normalizedProjectRevision: 'revision-source',
+        objectReferences: [],
+        parameterUnits: [],
+        reason: expectedEffect,
+        time: [],
+    });
 }
 
 describe('projectSectionRenderConfirmation', () => {
@@ -149,5 +163,79 @@ describe('projectSectionRenderConfirmation', () => {
         expect(projected.performedSectionRenderJobIds).toEqual(new Set([JOB.jobId, secondJob.jobId]));
         expect(projected.reviewRequiredSectionRenders).toEqual([{ jobId: JOB.jobId, warnings: ['tail truncated'] }]);
         expect(projected.executions[0]?.affectedIds).toContain(JOB.jobId);
+    });
+
+    it('scopes every approved render execution to its own command and jobs', () => {
+        const confirmation = createConfirmation();
+        const firstAction = confirmation.approvalSnapshot.actions[0];
+        if (!firstAction || firstAction.type !== 'renderProjectSections') {
+            throw new Error('Expected first render action');
+        }
+        const secondJob = {
+            ...JOB,
+            jobId: 'render-chorus',
+            sectionId: 'section-chorus',
+            sectionName: 'Chorus',
+            startBeat: 16,
+            endBeat: 32,
+        };
+        const secondAction = {
+            type: 'renderProjectSections',
+            payload: { sectionIds: [secondJob.sectionId], jobs: [secondJob] },
+        } satisfies AppAction;
+        const firstCommand = createRenderCommand(firstAction, 'Render Verse');
+        const secondCommand = createRenderCommand(secondAction, 'Render Chorus');
+        confirmation.approvalSnapshot.actions = [firstAction, secondAction];
+        confirmation.approvalSnapshot.commandEnvelopes = [
+            serializeVersionedCommandEnvelope(firstCommand),
+            serializeVersionedCommandEnvelope(secondCommand),
+        ];
+        confirmation.executedActions = [
+            {
+                actionType: 'renderProjectSections',
+                commandId: firstCommand.commandId,
+                commandSchemaVersion: firstCommand.schemaVersion,
+                label: 'Render Verse',
+                executionKind: 'project',
+                affectedIds: ['shared-non-render-id', JOB.sectionId, JOB.jobId, secondJob.sectionId, secondJob.jobId],
+                outcome: 'committed-with-warning',
+            },
+            {
+                actionType: 'renderProjectSections',
+                commandId: secondCommand.commandId,
+                commandSchemaVersion: secondCommand.schemaVersion,
+                label: 'Render Chorus',
+                executionKind: 'project',
+                affectedIds: ['shared-non-render-id', JOB.sectionId, JOB.jobId, secondJob.sectionId, secondJob.jobId],
+                outcome: 'committed-with-warning',
+            },
+        ];
+        mocks.getArtifacts.mockReturnValue([EXACT_ARTIFACT, { ...EXACT_ARTIFACT, ...secondJob }]);
+
+        const projected = projectSectionRenderConfirmation({ confirmation });
+
+        expect(projected.approvedSectionRenderJobs).toEqual([JOB, secondJob]);
+        expect(projected.executions[0]?.affectedIds).toEqual(['shared-non-render-id', JOB.sectionId, JOB.jobId]);
+        expect(projected.executions[1]?.affectedIds).toEqual([
+            'shared-non-render-id',
+            secondJob.sectionId,
+            secondJob.jobId,
+        ]);
+        expect(projected.completedSectionRenderJobIds).toEqual(new Set([JOB.jobId, secondJob.jobId]));
+        expect(projected.incompleteSectionRenders).toBeNull();
+
+        confirmation.approvalSnapshot.commandEnvelopes.reverse();
+        const mismatched = projectSectionRenderConfirmation({ confirmation });
+        expect(mismatched.executions[0]?.affectedIds).toEqual(['shared-non-render-id']);
+        expect(mismatched.executions[1]?.affectedIds).toEqual(['shared-non-render-id']);
+    });
+
+    it('keeps an ambiguous duplicate artifact incomplete', () => {
+        mocks.getArtifacts.mockReturnValue([EXACT_ARTIFACT, { ...EXACT_ARTIFACT, renderedAt: 2 }]);
+
+        const projected = projectSectionRenderConfirmation({ confirmation: createConfirmation() });
+
+        expect(projected.incompleteSectionRenders).toEqual({ jobs: [JOB], missingJobIds: [JOB.jobId] });
+        expect(projected.performedSectionRenderJobIds).toEqual(new Set());
     });
 });

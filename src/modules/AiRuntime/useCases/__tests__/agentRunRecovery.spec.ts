@@ -687,14 +687,14 @@ describe('agent run recovery', () => {
                 {
                     batchId: 'batch-generic-effect',
                     effects: [expect.objectContaining({ kind: 'external-effect', remediation: 'reconcile' })],
-                    recovery: 'reconcile-batch',
+                    recovery: 'manual-repair',
                     serializedBatch: '{"batch":"generic-effect"}',
                     authority: {
                         projectId: 'project-runtime-recovery',
                         scope: { targetRanges: [{ startBeat: 8, endBeat: 8 }] },
                         budgets: { maxCommands: 2, maxAffectedTracks: 1 },
                     },
-                    lastError: null,
+                    lastError: MISSING_EXACT_CHECKPOINT_RECOVERY_REASON,
                 },
                 {
                     batchId: 'batch-mixed-effects',
@@ -702,8 +702,10 @@ describe('agent run recovery', () => {
                         expect.objectContaining({ kind: 'runtime-graph', remediation: 'repair' }),
                         expect.objectContaining({ kind: 'external-effect', remediation: 'reconcile' }),
                     ],
-                    recovery: 'reconcile-batch',
+                    recovery: 'manual-repair',
                     serializedBatch: '{"batch":"mixed-effects"}',
+                    lastError:
+                        'Generic pending-effect recovery cannot execute receipt-bound section renders. The original confirmation is required and may be unavailable after reload.',
                 },
                 {
                     batchId: 'batch-manual-effect',
@@ -771,7 +773,7 @@ describe('agent run recovery', () => {
                 runId: 'run-persisted-runtime-effects',
                 batchId: 'batch-generic-effect',
             })
-        ).resolves.toEqual({ status: 'recovered' });
+        ).resolves.toEqual({ status: 'failed', reason: MISSING_EXACT_CHECKPOINT_RECOVERY_REASON });
         await expect(
             recoverAgentRunPendingEffects({
                 runId: 'run-persisted-runtime-effects',
@@ -792,15 +794,17 @@ describe('agent run recovery', () => {
         });
 
         expect(commandRecoveryMocks.getVersionedCommandBatchIdempotentReplay).toHaveBeenCalledTimes(3);
-        expect(commandRecoveryMocks.executeVersionedCommandBatchEnvelope).toHaveBeenCalledTimes(1);
-        expect(commandRecoveryMocks.executeVersionedCommandBatchEnvelope).toHaveBeenNthCalledWith(1, {
-            authority: continuationAuthority,
-            serialized: '{"batch":"generic-effect"}',
-        });
+        expect(commandRecoveryMocks.executeVersionedCommandBatchEnvelope).not.toHaveBeenCalled();
         expect(hydratedAgentRunLifecycle.get('run-persisted-runtime-effects')).toMatchObject({
             phase: 'partially-completed',
             manualResume: { required: false, workIds: [] },
             pendingEffectContinuations: [
+                {
+                    batchId: 'batch-generic-effect',
+                    recovery: 'manual-repair',
+                    lastError: MISSING_EXACT_CHECKPOINT_RECOVERY_REASON,
+                    effects: [expect.objectContaining({ kind: 'external-effect', remediation: 'reconcile' })],
+                },
                 {
                     batchId: 'batch-mixed-effects',
                     recovery: 'manual-repair',
@@ -825,7 +829,7 @@ describe('agent run recovery', () => {
             batches: expect.arrayContaining([
                 expect.objectContaining({
                     batchId: 'batch-generic-effect',
-                    receiptIdentity: '1:run-persisted-runtime-effects:batch-generic-effect:committed',
+                    receiptIdentity: '1:run-persisted-runtime-effects:batch-generic-effect:partially-committed',
                 }),
                 expect.objectContaining({
                     batchId: 'batch-mixed-effects',
@@ -839,7 +843,7 @@ describe('agent run recovery', () => {
             receipts: expect.arrayContaining([
                 expect.objectContaining({
                     workId: 'batch-generic-effect',
-                    receiptIdentity: '1:run-persisted-runtime-effects:batch-generic-effect:committed',
+                    receiptIdentity: '1:run-persisted-runtime-effects:batch-generic-effect:partially-committed',
                 }),
                 expect.objectContaining({
                     workId: 'batch-mixed-effects',
@@ -853,7 +857,7 @@ describe('agent run recovery', () => {
             committedWork: expect.arrayContaining([
                 expect.objectContaining({
                     workId: 'batch-generic-effect',
-                    receiptIdentity: '1:run-persisted-runtime-effects:batch-generic-effect:committed',
+                    receiptIdentity: '1:run-persisted-runtime-effects:batch-generic-effect:partially-committed',
                 }),
                 expect.objectContaining({
                     workId: 'batch-mixed-effects',
@@ -868,8 +872,8 @@ describe('agent run recovery', () => {
                 steps: expect.arrayContaining([
                     expect.objectContaining({
                         workId: 'batch-generic-effect',
-                        receiptIdentity: '1:run-persisted-runtime-effects:batch-generic-effect:committed',
-                        state: 'committed',
+                        receiptIdentity: '1:run-persisted-runtime-effects:batch-generic-effect:partially-committed',
+                        state: 'manual-repair',
                     }),
                     expect.objectContaining({
                         workId: 'batch-mixed-effects',
