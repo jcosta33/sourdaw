@@ -199,7 +199,7 @@ function stackedDeliveryPort(finalSettings: MergeSettings) {
                 ]);
             }
             if (joined.includes('.delete_branch_on_merge')) {
-                return 'false';
+                return String(finalSettings.delete_branch_on_merge);
             }
             if (joined.includes('issues/42/comments?per_page=100')) {
                 return JSON.stringify([
@@ -1434,6 +1434,124 @@ describe('pull-request delivery', () => {
         expect(calls).toContain('receipt-authority:write:merge-authorized:IC_delivery_42_1');
         expect(calls).toContain('receipt-authority:write:terminal:IC_delivery_42_1');
         expect(calls.filter((call) => call === 'complete:2372')).toHaveLength(1);
+    });
+
+    it('preserves frozen prepared authority across a stale open retry, then completes only that receipt after merge', () => {
+        const closesX = relationshipBody('Closes #2372');
+        const closesY = relationshipBody('Closes #2373');
+        const receiptBodyX = visibleDeliveryReceiptBody(42, 'head', closesX, 2372, 'successful');
+        const { port, calls, tracker, persistedReceiptAuthority } = fakePort({
+            primary: [pullRequest({ body: closesY }), pullRequest({ state: 'MERGED', body: closesX })],
+            dependentSets: [[]],
+            persistedReceiptAuthority: {
+                phase: 'prepared',
+                receiptId: 'IC_frozen_x',
+                receiptBody: receiptBodyX,
+                postMergeValidation: {
+                    headRefOid: 'head',
+                    headRefName: 'feat/gate',
+                    baseRefName: 'main',
+                    bodySha256: createHash('sha256').update(closesX).digest('hex'),
+                    trackerTarget: 2372,
+                },
+            },
+            receipts: [
+                {
+                    id: 'IC_frozen_x',
+                    body: receiptBodyX,
+                    authorNodeId: AUTHOR_BOT_NODE_ID,
+                    authorLogin: 'renamed-author[bot]',
+                    authorType: 'Bot',
+                    createdAt: '2026-08-21T00:00:00Z',
+                    updatedAt: '2026-08-21T00:00:00Z',
+                },
+                {
+                    id: 'IC_stale_y',
+                    body: visibleDeliveryReceiptBody(42, 'head', closesY, 2373, 'successful'),
+                    authorNodeId: AUTHOR_BOT_NODE_ID,
+                    authorLogin: 'renamed-author[bot]',
+                    authorType: 'Bot',
+                    createdAt: '2026-08-21T00:00:01Z',
+                    updatedAt: '2026-08-21T00:00:01Z',
+                },
+            ],
+            deliveryReceiptProof: { totalCount: 2, latestCommentId: 'IC_stale_y' },
+        });
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/delivery receipt changed during delivery/i);
+        expect(calls).not.toContain('add-receipt:42');
+        expect(calls).not.toContain('merge:42:head');
+        expect(calls.filter((call) => call.startsWith('complete:'))).toHaveLength(0);
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'prepared',
+            receiptId: 'IC_frozen_x',
+            receiptBody: receiptBodyX,
+            postMergeValidation: {
+                headRefOid: 'head',
+                headRefName: 'feat/gate',
+                baseRefName: 'main',
+                bodySha256: createHash('sha256').update(closesX).digest('hex'),
+                trackerTarget: 2372,
+            },
+        });
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls).toContain('receipt-authority:read:prepared:IC_frozen_x');
+        expect(calls).toContain('receipt-authority:write:merge-authorized:IC_frozen_x');
+        expect(calls).toContain('receipt-authority:write:terminal:IC_frozen_x');
+        expect(calls).toContain('complete:2372');
+        expect(calls).not.toContain('complete:2373');
+    });
+
+    it('recovers from a late-merged merge-authorized write failure using prepared post-merge validation', () => {
+        const closes = relationshipBody('Closes #2372');
+        const child = stacked();
+        const { port, calls, tracker, persistedReceiptAuthority } = fakePort({
+            primary: [
+                pullRequest({ body: closes }),
+                pullRequest({ state: 'MERGED', body: closes }),
+                pullRequest({ state: 'MERGED', body: closes }),
+            ],
+            dependentSets: [[child], [child], []],
+        });
+        const originalWriteDeliveryReceiptAuthority = port.writeDeliveryReceiptAuthority;
+        let failMergeAuthorizedWrite = true;
+        port.writeDeliveryReceiptAuthority = (number, authority) => {
+            if (authority.phase === 'merge-authorized' && failMergeAuthorizedWrite) {
+                failMergeAuthorizedWrite = false;
+                throw new Error('authority persistence unavailable');
+            }
+            originalWriteDeliveryReceiptAuthority(number, authority);
+        };
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/authority persistence unavailable/i);
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'prepared',
+            receiptId: 'IC_delivery_42_1',
+            receiptBody: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'),
+            postMergeValidation: {
+                headRefOid: 'head',
+                headRefName: 'feat/gate',
+                baseRefName: 'main',
+                bodySha256: createHash('sha256').update(closes).digest('hex'),
+                trackerTarget: 2372,
+            },
+        });
+        expect(calls).toContain('receipt-authority:write:prepared:IC_delivery_42_1');
+        expect(calls).not.toContain('receipt-authority:write:terminal:IC_delivery_42_1');
+        expect(calls).not.toContain('retarget:43:main');
+        expect(calls.filter((call) => call.startsWith('complete:'))).toHaveLength(0);
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(1);
+        expect(calls).toContain('receipt-authority:read:prepared:IC_delivery_42_1');
+        expect(calls).toContain('receipt-authority:write:merge-authorized:IC_delivery_42_1');
+        expect(calls).toContain('retarget:43:main');
+        expect(calls).toContain('complete:2372');
+        expect(calls).toContain('receipt-authority:write:terminal:IC_delivery_42_1');
+        expect(calls).toContain('PR #42 was already merged; repaired 1 remaining dependent(s)');
     });
 
     it('completes the receipt issue after a single-receipt merged body drift', () => {
