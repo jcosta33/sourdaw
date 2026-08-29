@@ -48,7 +48,32 @@ type ResolveConfirmationAdmissionResult =
           recoveringPendingEffects: boolean;
       };
 
-export async function resolveConfirmationAdmission(input: {
+function consumeConfirmationAdmission(
+    admission: ResolveConfirmationAdmissionResult
+): ResolveConfirmationAdmissionResult {
+    if (admission.status === 'handled') {
+        return admission;
+    }
+    const current = getPendingActionConfirmation(admission.confirmation.id);
+    if (!current) {
+        return { status: 'handled', result: { status: 'missing' } };
+    }
+    if (current.status !== admission.confirmation.status) {
+        return { status: 'handled', result: { status: 'not_pending', currentStatus: current.status } };
+    }
+    if (chatStore.value?.isGenerating === true) {
+        updateChatMessage(current.assistantMessageId, {
+            pendingActionConfirmationStatus: 'proposed',
+            content: `Another AI command is still running. This proposal remains pending:\n\n${current.actionLabels.map((label) => `- ${label}`).join('\n')}`,
+        });
+        return { status: 'handled', result: { status: 'busy' } };
+    }
+    return admission.status === 'ready'
+        ? { ...admission, confirmation: current }
+        : { ...admission, confirmation: current };
+}
+
+async function resolveConfirmationAdmission(input: {
     confirmationId: string;
 }): Promise<ResolveConfirmationAdmissionResult> {
     let confirmation = getPendingActionConfirmation(input.confirmationId);
@@ -192,3 +217,5 @@ export async function resolveConfirmationAdmission(input: {
     }
     return { status: 'ready', confirmation, priorVerifiedBatchReceipt, recoveringPendingEffects };
 }
+
+export const confirmationAdmission = { consumeConfirmationAdmission, resolveConfirmationAdmission };

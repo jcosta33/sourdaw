@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { type PendingAppActionConfirmation } from '../../../stores/pendingActionConfirmationStore';
-import { resolveConfirmationAdmission } from '../resolveConfirmationAdmission';
+import { confirmationAdmission } from '../resolveConfirmationAdmission';
 
 const mocks = vi.hoisted(() => ({
     admitRetry: vi.fn(() => ({ status: 'not-applicable' })),
@@ -70,7 +70,9 @@ beforeEach(() => {
 describe('resolveConfirmationAdmission', () => {
     it('handles a missing confirmation without entering execution', async () => {
         mocks.getConfirmation.mockReturnValue(null);
-        await expect(resolveConfirmationAdmission({ confirmationId: 'missing' })).resolves.toEqual({
+        await expect(
+            confirmationAdmission.resolveConfirmationAdmission({ confirmationId: 'missing' })
+        ).resolves.toEqual({
             status: 'handled',
             result: { status: 'missing' },
         });
@@ -78,14 +80,18 @@ describe('resolveConfirmationAdmission', () => {
 
     it('preserves a non-pending status', async () => {
         mocks.getConfirmation.mockReturnValue(createConfirmation('failed'));
-        await expect(resolveConfirmationAdmission({ confirmationId: 'confirmation-1' })).resolves.toEqual({
+        await expect(
+            confirmationAdmission.resolveConfirmationAdmission({ confirmationId: 'confirmation-1' })
+        ).resolves.toEqual({
             status: 'handled',
             result: { status: 'not_pending', currentStatus: 'failed' },
         });
     });
 
     it('returns an ordinary ready decision with recovery facts', async () => {
-        await expect(resolveConfirmationAdmission({ confirmationId: 'confirmation-1' })).resolves.toMatchObject({
+        await expect(
+            confirmationAdmission.resolveConfirmationAdmission({ confirmationId: 'confirmation-1' })
+        ).resolves.toMatchObject({
             status: 'ready',
             confirmation: createConfirmation(),
             priorVerifiedBatchReceipt: null,
@@ -95,7 +101,9 @@ describe('resolveConfirmationAdmission', () => {
 
     it('invalidates a stale confirmation without an approved command batch', async () => {
         mocks.revision.mockReturnValue('revision-2');
-        await expect(resolveConfirmationAdmission({ confirmationId: 'confirmation-1' })).resolves.toEqual({
+        await expect(
+            confirmationAdmission.resolveConfirmationAdmission({ confirmationId: 'confirmation-1' })
+        ).resolves.toEqual({
             status: 'handled',
             result: { status: 'invalidated', reason: 'stale' },
         });

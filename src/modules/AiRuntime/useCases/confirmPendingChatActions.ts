@@ -37,7 +37,7 @@ import {
 } from './agentRequestOrchestration/confirmedBatchOutcomeSupport';
 import { executeCommittedSectionRenderRetry } from './agentRequestOrchestration/executeCommittedSectionRenderRetry';
 import { pendingActionResourceSettlement } from './agentRequestOrchestration/pendingActionResourceSettlement';
-import { resolveConfirmationAdmission } from './agentRequestOrchestration/resolveConfirmationAdmission';
+import { confirmationAdmission } from './agentRequestOrchestration/resolveConfirmationAdmission';
 import {
     AGENT_RUN_PERSISTENCE_WARNING,
     settleAgentRunWorkLeaseSafely,
@@ -217,7 +217,9 @@ function rebindFreshSectionRenderArtifactsToCommittedRevision(
 export async function confirmPendingChatActions(
     input: ConfirmPendingChatActionsInput
 ): ConfirmPendingChatActionsOutput {
-    const admission = await resolveConfirmationAdmission(input);
+    const admission = confirmationAdmission.consumeConfirmationAdmission(
+        await confirmationAdmission.resolveConfirmationAdmission(input)
+    );
     if (admission.status === 'handled') {
         return admission.result;
     }
