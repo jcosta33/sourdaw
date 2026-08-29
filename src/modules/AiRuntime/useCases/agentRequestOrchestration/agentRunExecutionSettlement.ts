@@ -6,6 +6,7 @@ import { type PendingAppActionConfirmation } from '../../stores/pendingActionCon
 import { normalizeAgentFailure } from '../agentErrorAndSaga';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { agentWorkBudget, type AgentWorkBudgetEstimate } from '../agentWorkBudget';
+import { type AgentRunReceiptSagaInput } from '../projectAgentRunReceiptSaga';
 
 import { AGENT_RUN_PERSISTENCE_WARNING } from './settleAgentRunWorkLeaseSafely';
 
@@ -87,17 +88,20 @@ function cancel(confirmation: PendingAppActionConfirmation, reason: string): str
     }
 }
 
-function recordFailure(
+type AgentRunFailureInput = {
+    category: AgentRunErrorCategory;
+    retriable: boolean;
+    workId?: string;
+    receiptIdentity?: string;
+    compensation?: AgentRunErrorRemediation['compensation'];
+    knownDomain?: boolean;
+};
+
+function recordTerminalFailure(
     confirmation: PendingAppActionConfirmation,
-    input: {
-        category: AgentRunErrorCategory;
-        retriable: boolean;
-        workId?: string;
-        receiptIdentity?: string;
-        compensation?: AgentRunErrorRemediation['compensation'];
-        knownDomain?: boolean;
-    }
-): void {
+    input: AgentRunFailureInput,
+    includeCommandBatchWorkId: boolean
+): string | null {
     const parsedBatch = confirmation.approvalSnapshot.commandBatch
         ? parseVersionedCommandBatchEnvelope(
               confirmation.approvalSnapshot.commandBatch.serialized,
@@ -110,11 +114,11 @@ function recordFailure(
     const workIds: string[] = [];
     if (input.workId) {
         workIds.push(input.workId);
-    } else if (batchWorkId) {
+    } else if (includeCommandBatchWorkId && batchWorkId) {
         workIds.push(batchWorkId);
     }
     if (!agentRunLifecycle.get(confirmation.runId)) {
-        return;
+        return null;
     }
     try {
         agentRunLifecycle.recordError({
@@ -134,8 +138,66 @@ function recordFailure(
             }),
             terminal: true,
         });
+        return null;
     } catch (error) {
-        lifecyclePersistenceWarning(error);
+        return lifecyclePersistenceWarning(error);
+    }
+}
+
+function recordFailure(confirmation: PendingAppActionConfirmation, input: AgentRunFailureInput): string | null {
+    return recordTerminalFailure(confirmation, input, true);
+}
+
+function recordPostCommitRecoveryFailure(
+    confirmation: PendingAppActionConfirmation,
+    input: Omit<AgentRunFailureInput, 'workId' | 'compensation'>
+): string | null {
+    return recordTerminalFailure(confirmation, input, false);
+}
+
+function recordCommittedRecoveryFailure(
+    confirmation: PendingAppActionConfirmation,
+    input: Omit<AgentRunFailureInput, 'compensation' | 'workId' | 'receiptIdentity'> &
+        Pick<AgentRunReceiptSagaInput, 'actions' | 'commandBatch' | 'committedRevision' | 'receipt'> & {
+            revertGroupId: string;
+        }
+): string | null {
+    const parsedBatch = confirmation.approvalSnapshot.commandBatch
+        ? parseVersionedCommandBatchEnvelope(
+              confirmation.approvalSnapshot.commandBatch.serialized,
+              confirmation.approvalSnapshot.commandBatch.authority
+          )
+        : null;
+    const commandIds =
+        parsedBatch?.status === 'valid' ? parsedBatch.envelope.commands.map((command) => command.commandId) : [];
+    const receiptIdentity = `${input.receipt.schemaVersion}:${input.receipt.runId}:${input.receipt.batchId}:${input.receipt.outcome}`;
+    if (!agentRunLifecycle.get(confirmation.runId)) {
+        return null;
+    }
+    try {
+        agentRunLifecycle.recordCommittedRecoveryFailure({
+            runId: confirmation.runId,
+            receipt: input.receipt,
+            actions: input.actions,
+            ...(input.commandBatch ? { commandBatch: input.commandBatch } : {}),
+            revertGroupId: input.revertGroupId,
+            ...(input.committedRevision ? { committedRevision: input.committedRevision } : {}),
+            error: normalizeAgentFailure({
+                category: input.category,
+                source: 'command-execution',
+                related: {
+                    targetIds: confirmation.affectedIds,
+                    commandIds,
+                    workIds: [],
+                    receiptIdentities: [receiptIdentity],
+                },
+                retry: input.retriable ? 'owner-proven-idempotent' : 'never',
+                knownDomain: input.knownDomain ?? true,
+            }),
+        });
+        return null;
+    } catch (error) {
+        return lifecyclePersistenceWarning(error);
     }
 }
 
@@ -144,6 +206,8 @@ export const agentRunExecutionSettlement = {
     cancelFromVerifiedReceipt,
     completeNoOp,
     recordFailure,
+    recordCommittedRecoveryFailure,
+    recordPostCommitRecoveryFailure,
     reconcileCommandBudget,
     transitionToExecuting,
 };
