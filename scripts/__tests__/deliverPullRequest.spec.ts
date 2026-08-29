@@ -385,6 +385,7 @@ type FakeInput = {
     primaryBodyOnReceiptRead?: string;
     reviewStateOnReceiptRead?: ReviewState;
     receipts?: DeliveryReceiptComment[];
+    mergedPrimaryAfterMerge?: Partial<PullRequestSnapshot>;
 };
 
 type DeliveryReceiptComment = {
@@ -517,6 +518,7 @@ function fakePort(input: FakeInput = {}) {
                     input.mergedByActorNodeIdAfterMerge === undefined
                         ? AUTHOR_BOT_NODE_ID
                         : input.mergedByActorNodeIdAfterMerge,
+                ...input.mergedPrimaryAfterMerge,
             };
         },
         retarget: (number, base) => {
@@ -682,6 +684,52 @@ describe('pull-request delivery', () => {
         expect(calls).toContain('retarget:43:main');
         expect(calls).toContain('complete:2372');
     });
+
+    it.each([
+        {
+            label: 'head OID drift',
+            mergedPrimaryAfterMerge: { headRefOid: 'moved-head' },
+            error: /headRefOid changed during delivery/,
+        },
+        {
+            label: 'head branch drift',
+            mergedPrimaryAfterMerge: { headRefName: 'feat/rewritten-head' },
+            error: /headRefName changed during delivery/,
+        },
+        {
+            label: 'base branch drift',
+            mergedPrimaryAfterMerge: { baseRefName: 'release/1.0' },
+            error: /targets release\/1.0, not main|baseRefName changed during delivery/,
+        },
+        {
+            label: 'body drift',
+            mergedPrimaryAfterMerge: { body: `${relationshipBody('Closes #2372')}\nChanged note.` },
+            error: /body changed during delivery/,
+        },
+        {
+            label: 'closing target drift',
+            mergedPrimaryAfterMerge: {
+                body: relationshipBody('Closes #9999'),
+                title: 'feat(delivery): post-merge retarget race',
+            },
+            authorizedBody: relationshipBody('Related #2372'),
+            error: /closing target changed during delivery/,
+        },
+    ])(
+        'detects post-merge $label before retarget or tracker completion',
+        ({ mergedPrimaryAfterMerge, authorizedBody, error }) => {
+            const bodyUnderReview = authorizedBody ?? relationshipBody('Closes #2372');
+            const { port, calls, tracker } = fakePort({
+                primary: [pullRequest({ body: bodyUnderReview }), pullRequest({ body: bodyUnderReview })],
+                mergedPrimaryAfterMerge,
+            });
+
+            expect(() => deliverPullRequest(42, port, tracker)).toThrow(error);
+            expect(calls).toContain('merge:42:head');
+            expect(calls).not.toContain('retarget:43:main');
+            expect(calls.some((call) => call.startsWith('complete:'))).toBe(false);
+        }
+    );
 
     it('recovers an UNKNOWN initial refresh that becomes a merged author-App head', () => {
         const closes = relationshipBody('Closes #2372');
@@ -2271,7 +2319,21 @@ describe('delivery shell boundary', () => {
                     );
                 }
                 if (joined.includes('mergedBy{__typename')) {
-                    return shellMergedByGraphql({ __typename: 'Bot', id: AUTHOR_BOT_NODE_ID });
+                    return args.join('\u0000') ===
+                        [
+                            'api',
+                            'graphql',
+                            '-f',
+                            'query=query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){mergedBy{__typename ... on Bot{id}}}}}',
+                            '-f',
+                            'owner=jcosta33',
+                            '-f',
+                            'name=sourdaw',
+                            '-F',
+                            'number=42',
+                        ].join('\u0000')
+                        ? shellMergedByGraphql({ __typename: 'Bot', id: AUTHOR_BOT_NODE_ID })
+                        : shellMergedByGraphql({ __typename: 'Bot', id: REVIEWER_BOT_NODE_ID });
                 }
                 throw new Error(`unexpected capture: ${command} ${joined}`);
             },
@@ -2280,7 +2342,18 @@ describe('delivery shell boundary', () => {
 
         expect(port.pullRequest(42).mergedByActorNodeId).toBe(AUTHOR_BOT_NODE_ID);
         expect(captures[0]?.args.join(' ')).toContain('mergedBy');
-        expect(captures[1]?.args.join(' ')).toContain('mergedBy{__typename');
+        expect(captures[1]?.args).toEqual([
+            'api',
+            'graphql',
+            '-f',
+            'query=query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){mergedBy{__typename ... on Bot{id}}}}}',
+            '-f',
+            'owner=jcosta33',
+            '-f',
+            'name=sourdaw',
+            '-F',
+            'number=42',
+        ]);
     });
 
     it('preserves paginated REST issue-comment response order for receipt authority', () => {

@@ -485,6 +485,18 @@ function validateStableTrackerTarget(number: number, before: number | undefined,
     }
 }
 
+function validatePostMergeSnapshot(
+    authorized: PullRequestSnapshot,
+    merged: PullRequestSnapshot,
+    number: number,
+    expectedTrackerTarget: number | undefined
+): void {
+    validateAuthorAppMerger(merged);
+    validateBaseBranch(merged);
+    validateStableTrackerTarget(number, expectedTrackerTarget, trackerCompletionTarget(merged));
+    validateStablePullRequest(authorized, merged);
+}
+
 function expectedDeliveryReceipt(
     pullRequest: PullRequestSnapshot,
     closingIssue: number | undefined
@@ -776,7 +788,8 @@ function deliverPullRequestWithCiAdmission(
     }
 
     port.merge(number, finalSnapshot.headRefOid, finalDependents.length > 0);
-    validateAuthorAppMerger(port.pullRequest(number));
+    const mergedSnapshot = port.pullRequest(number);
+    validatePostMergeSnapshot(finalSnapshot, mergedSnapshot, number, finalTrackerTarget);
     retargetDependents(finalDependents, finalSnapshot.baseRefName, port);
     completeIssueAfterMerge(number, receipt.closingIssue, tracker);
 }
