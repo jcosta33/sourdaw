@@ -1495,18 +1495,6 @@ function readCompatibleBodylessPersistedMergedRecoveryReceipt(
     );
 }
 
-function readStableMergedRecoveryReceipt(pullRequest: PullRequestSnapshot, port: DeliveryPort): DeliveryReceiptComment {
-    const firstLineage = orderedDeliveryReceiptLineage(provenDeliveryReceiptComments(pullRequest, port), pullRequest);
-    const first = newestLogicalDeliveryReceiptAuthority(firstLineage, pullRequest);
-    const secondLineage = orderedDeliveryReceiptLineage(provenDeliveryReceiptComments(pullRequest, port), pullRequest);
-    const second = newestLogicalDeliveryReceiptAuthority(secondLineage, pullRequest);
-    if (first.id !== second.id) {
-        fail(`PR #${pullRequest.number} delivery receipt changed during recovery`);
-    }
-    assertDeliveryReceiptForHead(second, pullRequest);
-    return second;
-}
-
 function readPersistedMergedRecoveryReceipt(
     pullRequest: PullRequestSnapshot,
     port: DeliveryPort,
@@ -1757,10 +1745,10 @@ function deliverPullRequestWithCiAdmission(
         validateBaseBranch(initial);
         validateAuthorAppMerger(initial);
         const receiptAuthority = port.readDeliveryReceiptAuthority(number);
-        const receipt =
-            receiptAuthority === undefined
-                ? readStableMergedRecoveryReceipt(initial, port)
-                : readPersistedMergedRecoveryReceipt(initial, port, receiptAuthority);
+        if (receiptAuthority === undefined) {
+            fail(`PR #${number} delivery receipt authority cannot be proven`);
+        }
+        const receipt = readPersistedMergedRecoveryReceipt(initial, port, receiptAuthority);
         const receiptPayload = assertDeliveryReceiptForHead(receipt, initial);
         if (receiptAuthority?.phase !== 'terminal') {
             persistMergeAuthorizedDeliveryReceiptAuthority(number, receipt, port);

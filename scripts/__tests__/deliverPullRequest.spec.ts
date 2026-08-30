@@ -879,7 +879,7 @@ describe('pull-request delivery', () => {
         }
     );
 
-    it('recovers an UNKNOWN initial refresh that becomes a merged author-App head', () => {
+    it('fails closed when an UNKNOWN initial refresh becomes a merged author-App head with only a live seeded receipt and no persisted authority', () => {
         const closes = relationshipBody('Closes #2372');
         const child = stacked();
         const seededReceipt: DeliveryReceiptComment = {
@@ -905,14 +905,13 @@ describe('pull-request delivery', () => {
             receipts: [seededReceipt],
         });
 
-        deliverPullRequest(42, port, tracker);
-
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/delivery receipt authority cannot be proven/i);
         expect(calls.filter((call) => call === 'review:42:head')).toHaveLength(0);
-        expect(calls.filter((call) => call === 'receipts:42')).toHaveLength(2);
+        expect(calls.filter((call) => call === 'receipts:42')).toHaveLength(0);
         expect(calls).not.toContain('merge:42:head');
-        expect(calls).toContain('retarget:43:main');
-        expect(calls).toContain('complete:2372');
-        expect(calls).toContain('PR #42 was already merged; repaired 1 remaining dependent(s)');
+        expect(calls).not.toContain('retarget:43:main');
+        expect(calls.filter((call) => call.startsWith('complete:'))).toHaveLength(0);
+        expect(calls).not.toContain('PR #42 was already merged; repaired 1 remaining dependent(s)');
         expect(receipts.map((receipt) => receipt.body)).toEqual([deliveryReceiptBody(42, 'head', closes, 2372)]);
     });
 
@@ -1090,7 +1089,7 @@ describe('pull-request delivery', () => {
         port.deliveryReceipts = originalDeliveryReceipts;
     });
 
-    it('appends a fresh expected X when an older exact X sits behind newer public Y, then recovers that newest X without a persisted ref', () => {
+    it('fails closed after clearing the persisted authority even when a newer exact X still survives behind older public Y after merge', () => {
         const bodyX = relationshipBody('Closes #2372');
         const bodyY = relationshipBody('Closes #2373');
         const receipt = (
@@ -1149,18 +1148,16 @@ describe('pull-request delivery', () => {
 
         port.clearDeliveryReceiptAuthority(42);
 
-        deliverPullRequest(42, port, tracker);
-
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/delivery receipt authority cannot be proven/i);
         expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(1);
-        expect(calls).toContain('receipt-proof:42:3:IC_delivery_42_3');
-        expect(calls.filter((call) => call === 'complete:2372')).toHaveLength(2);
         expect(calls).not.toContain('complete:2373');
-        expect(calls).toContain('receipt-authority:write:merge-authorized:IC_delivery_42_3');
-        expect(calls).toContain('receipt-authority:write:terminal:IC_delivery_42_3');
-        expect(calls).toContain('PR #42 was already merged; repaired 0 remaining dependent(s)');
+        expect(calls.filter((call) => call === 'complete:2372')).toHaveLength(1);
+        expect(calls.filter((call) => call === 'receipt-authority:write:merge-authorized:IC_delivery_42_3')).toHaveLength(1);
+        expect(calls.filter((call) => call === 'receipt-authority:write:terminal:IC_delivery_42_3')).toHaveLength(0);
+        expect(calls).not.toContain('PR #42 was already merged; repaired 0 remaining dependent(s)');
     });
 
-    it('appends a fresh canonical v2 after a trailing same-key legacy v1, then recovers that newest v2 without a persisted ref', () => {
+    it('fails closed after clearing the persisted authority even when a canonical v2 remains newer than a trailing same-key legacy v1 after merge', () => {
         const closes = relationshipBody('Closes #2372');
         const currentVisible = visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful');
         const { port, calls, receipts, tracker, persistedReceiptAuthority } = fakePort({
@@ -1219,14 +1216,12 @@ describe('pull-request delivery', () => {
 
         port.clearDeliveryReceiptAuthority(42);
 
-        deliverPullRequest(42, port, tracker);
-
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/delivery receipt authority cannot be proven/i);
         expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(1);
-        expect(calls).toContain('receipt-proof:42:3:IC_delivery_42_3');
-        expect(calls.filter((call) => call === 'complete:2372')).toHaveLength(2);
-        expect(calls).toContain('receipt-authority:write:merge-authorized:IC_delivery_42_3');
-        expect(calls).toContain('receipt-authority:write:terminal:IC_delivery_42_3');
-        expect(calls).toContain('PR #42 was already merged; repaired 0 remaining dependent(s)');
+        expect(calls.filter((call) => call === 'complete:2372')).toHaveLength(1);
+        expect(calls.filter((call) => call === 'receipt-authority:write:merge-authorized:IC_delivery_42_3')).toHaveLength(1);
+        expect(calls.filter((call) => call === 'receipt-authority:write:terminal:IC_delivery_42_3')).toHaveLength(0);
+        expect(calls).not.toContain('PR #42 was already merged; repaired 0 remaining dependent(s)');
     });
 
     it('stops merged recovery when one stale receipt listing still points at Y and later fresh recovery completes only X', () => {
@@ -1384,7 +1379,7 @@ describe('pull-request delivery', () => {
         expect(calls.filter((call) => call.startsWith('receipt-authority:write:terminal:'))).toHaveLength(0);
     });
 
-    it('recovers one logical authority from duplicate legacy v1 receipts when the complete lineage is proven', () => {
+    it('fails closed when duplicate legacy v1 receipts remain after merge with no persisted authority anchor', () => {
         const closes = relationshipBody('Closes #2372');
         const duplicate = (id: string, createdAt: string): DeliveryReceiptComment => ({
             id,
@@ -1402,14 +1397,13 @@ describe('pull-request delivery', () => {
             deliveryReceiptProof: { totalCount: 2, latestCommentId: 'IC_v1_b' },
         });
 
-        deliverPullRequest(42, port, tracker);
-
-        expect(calls.filter((call) => call.startsWith('complete:'))).toEqual(['complete:2372']);
-        expect(calls).toContain('receipt-authority:write:merge-authorized:IC_v1_b');
-        expect(calls).toContain('receipt-authority:write:terminal:IC_v1_b');
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/delivery receipt authority cannot be proven/i);
+        expect(calls.filter((call) => call.startsWith('complete:'))).toHaveLength(0);
+        expect(calls.filter((call) => call.startsWith('receipt-authority:write:merge-authorized:'))).toHaveLength(0);
+        expect(calls.filter((call) => call.startsWith('receipt-authority:write:terminal:'))).toHaveLength(0);
     });
 
-    it('recovers one logical authority from compatible legacy v1 then visible v2 receipts when the complete lineage is proven', () => {
+    it('fails closed when compatible legacy v1 then visible v2 receipts remain after merge with no persisted authority anchor', () => {
         const closes = relationshipBody('Closes #2372');
         const legacyReceipt = {
             id: 'IC_v1_legacy',
@@ -1436,14 +1430,13 @@ describe('pull-request delivery', () => {
             deliveryReceiptProof: { totalCount: 2, latestCommentId: 'IC_v2_visible' },
         });
 
-        deliverPullRequest(42, port, tracker);
-
-        expect(calls.filter((call) => call.startsWith('complete:'))).toEqual(['complete:2372']);
-        expect(calls).toContain('receipt-authority:write:merge-authorized:IC_v2_visible');
-        expect(calls).toContain('receipt-authority:write:terminal:IC_v2_visible');
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/delivery receipt authority cannot be proven/i);
+        expect(calls.filter((call) => call.startsWith('complete:'))).toHaveLength(0);
+        expect(calls.filter((call) => call.startsWith('receipt-authority:write:merge-authorized:'))).toHaveLength(0);
+        expect(calls.filter((call) => call.startsWith('receipt-authority:write:terminal:'))).toHaveLength(0);
     });
 
-    it('recovers the newest stable raw v1 authority across two complete keys during merged legacy recovery', () => {
+    it('fails closed when merged legacy recovery sees two complete raw v1 keys with no persisted authority anchor', () => {
         const bodyX = relationshipBody('Closes #2372');
         const bodyY = relationshipBody('Closes #2373');
         const receipt = (
@@ -1470,14 +1463,13 @@ describe('pull-request delivery', () => {
             deliveryReceiptProof: { totalCount: 2, latestCommentId: 'IC_historical_y' },
         });
 
-        deliverPullRequest(42, port, tracker);
-
-        expect(calls.filter((call) => call.startsWith('complete:'))).toEqual(['complete:2373']);
-        expect(calls).toContain('receipt-authority:write:merge-authorized:IC_historical_y');
-        expect(calls).toContain('receipt-authority:write:terminal:IC_historical_y');
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/delivery receipt authority cannot be proven/i);
+        expect(calls.filter((call) => call.startsWith('complete:'))).toHaveLength(0);
+        expect(calls.filter((call) => call.startsWith('receipt-authority:write:merge-authorized:'))).toHaveLength(0);
+        expect(calls.filter((call) => call.startsWith('receipt-authority:write:terminal:'))).toHaveLength(0);
     });
 
-    it('recovers a single legacy v1 receipt after the merged pull-request body drifts to None when completeness is proven', () => {
+    it('fails closed when only a single legacy v1 receipt survives after merge with no persisted authority anchor', () => {
         const closes = relationshipBody('Closes #2372');
         const { port, calls, tracker } = fakePort({
             primary: [pullRequest({ state: 'MERGED', body: relationshipBody('None.') })],
@@ -1496,10 +1488,35 @@ describe('pull-request delivery', () => {
             deliveryReceiptProof: { totalCount: 1, latestCommentId: 'IC_v1_only' },
         });
 
-        deliverPullRequest(42, port, tracker);
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/delivery receipt authority cannot be proven/i);
+        expect(calls.filter((call) => call.startsWith('complete:'))).toHaveLength(0);
+        expect(calls.filter((call) => call.startsWith('receipt-authority:write:merge-authorized:'))).toHaveLength(0);
+        expect(calls.filter((call) => call.startsWith('receipt-authority:write:terminal:'))).toHaveLength(0);
+    });
 
-        expect(calls.filter((call) => call.startsWith('complete:'))).toEqual(['complete:2372']);
-        expect(calls).toContain('receipt-authority:write:terminal:IC_v1_only');
+    it('fails closed when comments once held A then B but merged recovery can only see surviving A with no persisted authority', () => {
+        const closesA = relationshipBody('Closes #2372');
+        const { port, calls, tracker } = fakePort({
+            primary: [pullRequest({ state: 'MERGED', body: relationshipBody('None.') })],
+            dependentSets: [[]],
+            receipts: [
+                {
+                    id: 'IC_historical_a',
+                    body: deliveryReceiptBody(42, 'head', closesA, 2372),
+                    authorNodeId: AUTHOR_BOT_NODE_ID,
+                    authorLogin: 'renamed-author[bot]',
+                    authorType: 'Bot',
+                    createdAt: '2026-08-21T00:00:00Z',
+                    updatedAt: '2026-08-21T00:00:00Z',
+                },
+            ],
+            deliveryReceiptProof: { totalCount: 1, latestCommentId: 'IC_historical_a' },
+        });
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/delivery receipt authority cannot be proven/i);
+        expect(calls.filter((call) => call.startsWith('complete:'))).toHaveLength(0);
+        expect(calls.filter((call) => call.startsWith('receipt-authority:write:merge-authorized:'))).toHaveLength(0);
+        expect(calls.filter((call) => call.startsWith('receipt-authority:write:terminal:'))).toHaveLength(0);
     });
 
     it('recovers the exact legacy persisted receipt id instead of switching to a newer different-key receipt', () => {
@@ -2314,7 +2331,7 @@ describe('pull-request delivery', () => {
         });
     });
 
-    it('recovers a merged PR from the newest public trailing same-key legacy v1 when no persisted receipt authority remains', () => {
+    it('fails closed when merged recovery only has a trailing same-key legacy v1 comment after the persisted authority is gone', () => {
         const closes = relationshipBody('Closes #2372');
         const currentVisible = visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful');
         const { port, calls, tracker } = fakePort({
@@ -2342,12 +2359,11 @@ describe('pull-request delivery', () => {
             deliveryReceiptProof: { totalCount: 2, latestCommentId: 'IC_trailing_v1' },
         });
 
-        deliverPullRequest(42, port, tracker);
-
-        expect(calls).toContain('receipt-proof:42:2:IC_trailing_v1');
-        expect(calls).toContain('receipt-authority:write:merge-authorized:IC_trailing_v1');
-        expect(calls).toContain('receipt-authority:write:terminal:IC_trailing_v1');
-        expect(calls).toContain('complete:2372');
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/delivery receipt authority cannot be proven/i);
+        expect(calls).not.toContain('receipt-proof:42:2:IC_trailing_v1');
+        expect(calls).not.toContain('receipt-authority:write:merge-authorized:IC_trailing_v1');
+        expect(calls).not.toContain('receipt-authority:write:terminal:IC_trailing_v1');
+        expect(calls.filter((call) => call.startsWith('complete:'))).toHaveLength(0);
         expect(calls).not.toContain('add-receipt:42');
     });
 
@@ -3715,7 +3731,7 @@ describe('pull-request delivery', () => {
         expect(calls).not.toContain('complete:2372');
     });
 
-    it('uses REST comment order instead of timestamps to recover Y when older-order X claims the later timestamp', () => {
+    it('fails closed instead of trusting REST comment order alone when timestamps disagree and no persisted authority anchor remains', () => {
         const staleBody = relationshipBody('Closes #2372');
         const currentBody = relationshipBody('Closes #2373');
         const { port, calls, tracker } = fakePort({
@@ -3743,12 +3759,11 @@ describe('pull-request delivery', () => {
             deliveryReceiptProof: { totalCount: 2, latestCommentId: 'IC_second' },
         });
 
-        deliverPullRequest(42, port, tracker);
-
-        expect(calls).toContain('receipt-proof:42:2:IC_second');
-        expect(calls).toContain('receipt-authority:write:merge-authorized:IC_second');
-        expect(calls).toContain('receipt-authority:write:terminal:IC_second');
-        expect(calls).toContain('complete:2373');
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/delivery receipt authority cannot be proven/i);
+        expect(calls).not.toContain('receipt-proof:42:2:IC_second');
+        expect(calls).not.toContain('receipt-authority:write:merge-authorized:IC_second');
+        expect(calls).not.toContain('receipt-authority:write:terminal:IC_second');
+        expect(calls).not.toContain('complete:2373');
         expect(calls).not.toContain('complete:2372');
     });
 
@@ -6253,7 +6268,7 @@ describe('delivery shell boundary', () => {
         expect(() => port.deliveryReceiptProof(42)).toThrow(/cannot inspect delivery receipts for PR #42/i);
     });
 
-    it('completes merged shellPort recovery when a same-timestamp author receipt is unedited in GraphQL proof', () => {
+    it('fails merged shellPort recovery without a persisted authority anchor even when GraphQL proves the same-timestamp author receipt stayed unedited', () => {
         const closes = relationshipBody('Closes #2372');
         const effects: string[] = [];
         const primaryRoot = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-shell-port-'));
@@ -6302,14 +6317,16 @@ describe('delivery shell boundary', () => {
         );
 
         try {
-            deliverPullRequest(42, port, {
-                complete: (issue) => effects.push(`complete:${issue}`),
-            });
+            expect(() =>
+                deliverPullRequest(42, port, {
+                    complete: (issue) => effects.push(`complete:${issue}`),
+                })
+            ).toThrow(/delivery receipt authority cannot be proven/i);
         } finally {
             rmSync(primaryRoot, { recursive: true, force: true });
         }
 
-        expect(effects).toEqual(['complete:2372']);
+        expect(effects).toEqual([]);
     });
 
     it('fails merged shellPort recovery when GraphQL marks a same-timestamp author receipt as edited', () => {
