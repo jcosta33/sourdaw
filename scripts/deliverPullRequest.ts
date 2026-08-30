@@ -93,11 +93,14 @@ export type DeliveryPort = CheckEvidencePort & {
     writeDeliveryReceiptAuthority: (
         number: number,
         authority: PersistedDeliveryReceiptAuthority,
-        expectedCurrent?: PersistedDeliveryReceiptAuthority
+        expectedCurrent?: DeliveryReceiptAuthorityExpectation
     ) => void;
-    clearDeliveryReceiptAuthority: (number: number, expectedCurrent?: PersistedDeliveryReceiptAuthority) => void;
+    clearDeliveryReceiptAuthority: (number: number, expectedCurrent?: DeliveryReceiptAuthorityExpectation) => void;
     log: (message: string) => void;
 };
+
+export type DeliveryReceiptAuthorityExpectation =
+    { mode: 'absent' } | { mode: 'present'; authority: PersistedDeliveryReceiptAuthority };
 
 export type DeliveryReceiptComment = {
     id: string;
@@ -961,6 +964,29 @@ function samePersistedDeliveryReceiptAuthority(
     );
 }
 
+export function expectedAbsentDeliveryReceiptAuthority(): DeliveryReceiptAuthorityExpectation {
+    return { mode: 'absent' };
+}
+
+function exactDeliveryReceiptAuthorityExpectation(
+    authority: PersistedDeliveryReceiptAuthority | undefined
+): DeliveryReceiptAuthorityExpectation {
+    if (authority === undefined) {
+        return expectedAbsentDeliveryReceiptAuthority();
+    }
+    return { mode: 'present', authority };
+}
+
+function matchesDeliveryReceiptAuthorityExpectation(
+    current: PersistedDeliveryReceiptAuthority | undefined,
+    expected: DeliveryReceiptAuthorityExpectation
+): boolean {
+    if (expected.mode === 'absent') {
+        return current === undefined;
+    }
+    return samePersistedDeliveryReceiptAuthority(current, expected.authority);
+}
+
 function mergePersistedDeliveryReceiptAuthority(
     current: PersistedDeliveryReceiptAuthority,
     next: CurrentPersistedDeliveryReceiptAuthority
@@ -1020,7 +1046,7 @@ function persistDeliveryReceiptAuthority(
     if (samePersistedDeliveryReceiptAuthority(current, next)) {
         return;
     }
-    port.writeDeliveryReceiptAuthority(number, next, current);
+    port.writeDeliveryReceiptAuthority(number, next, exactDeliveryReceiptAuthorityExpectation(current));
 }
 
 function persistPreparedDeliveryReceiptAuthority(
@@ -1074,13 +1100,13 @@ function restorePreArmedDeliveryReceiptAuthority(
         return;
     }
     if (beforeArming === undefined || beforeArming.phase === 'legacy') {
-        port.clearDeliveryReceiptAuthority(number, current);
+        port.clearDeliveryReceiptAuthority(number, exactDeliveryReceiptAuthorityExpectation(current));
         return;
     }
     if (samePersistedDeliveryReceiptAuthority(current, beforeArming)) {
         return;
     }
-    port.writeDeliveryReceiptAuthority(number, beforeArming, current);
+    port.writeDeliveryReceiptAuthority(number, beforeArming, exactDeliveryReceiptAuthorityExpectation(current));
 }
 
 function replacePersistedDeliveryReceiptAuthorityIfUnchanged(
@@ -1092,7 +1118,7 @@ function replacePersistedDeliveryReceiptAuthorityIfUnchanged(
     if (samePersistedDeliveryReceiptAuthority(expectedCurrent, next)) {
         return;
     }
-    port.writeDeliveryReceiptAuthority(number, next, expectedCurrent);
+    port.writeDeliveryReceiptAuthority(number, next, exactDeliveryReceiptAuthorityExpectation(expectedCurrent));
 }
 
 function frozenDeliveryReceiptAuthorityHead(
@@ -3166,7 +3192,7 @@ function writeDeliveryReceiptAuthority(
     primaryRoot: string,
     number: number,
     authority: PersistedDeliveryReceiptAuthority,
-    expectedCurrent?: PersistedDeliveryReceiptAuthority
+    expectedCurrent?: DeliveryReceiptAuthorityExpectation
 ): void {
     if (!isCurrentPersistedDeliveryReceiptAuthority(authority)) {
         fail(`PR #${number} delivery receipt authority is malformed`);
@@ -3187,7 +3213,10 @@ function writeDeliveryReceiptAuthority(
             : { postMergeValidation: authority.postMergeValidation }),
     };
     const current = readDeliveryReceiptAuthorityEntry(primaryRoot, number);
-    if (expectedCurrent !== undefined && !samePersistedDeliveryReceiptAuthority(current?.authority, expectedCurrent)) {
+    if (
+        expectedCurrent !== undefined &&
+        !matchesDeliveryReceiptAuthorityExpectation(current?.authority, expectedCurrent)
+    ) {
         fail(`PR #${number} delivery receipt authority could not be stored`);
     }
     if (samePersistedDeliveryReceiptAuthority(current?.authority, authority)) {
@@ -3207,11 +3236,14 @@ function writeDeliveryReceiptAuthority(
 function clearDeliveryReceiptAuthority(
     primaryRoot: string,
     number: number,
-    expectedCurrent?: PersistedDeliveryReceiptAuthority
+    expectedCurrent?: DeliveryReceiptAuthorityExpectation
 ): void {
     const ref = deliveryReceiptAuthorityRef(number);
     const current = readDeliveryReceiptAuthorityEntry(primaryRoot, number);
-    if (expectedCurrent !== undefined && !samePersistedDeliveryReceiptAuthority(current?.authority, expectedCurrent)) {
+    if (
+        expectedCurrent !== undefined &&
+        !matchesDeliveryReceiptAuthorityExpectation(current?.authority, expectedCurrent)
+    ) {
         fail(`PR #${number} delivery receipt authority could not be cleared`);
     }
     if (current === undefined) {

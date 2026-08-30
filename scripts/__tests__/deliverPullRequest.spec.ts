@@ -11,10 +11,12 @@ import {
     DeliveryMergeRejectedError,
     deliverPullRequest as deliverPullRequestWithTracker,
     deliverPullRequestWithRequiredCi as deliverPullRequestWithRequiredCiAndTracker,
+    expectedAbsentDeliveryReceiptAuthority,
     gateRequiredCheckNames,
     parseCliArgs,
     readGateRequiredCheckNames,
     shellPort,
+    type DeliveryReceiptAuthorityExpectation,
     type DeliveryReceiptProof,
     type DeliveryPort,
     type HeadCheckRun,
@@ -535,6 +537,16 @@ function sameReceiptAuthority(
     return JSON.stringify(left) === JSON.stringify(right);
 }
 
+function sameReceiptAuthorityExpectation(
+    current: PersistedDeliveryReceiptAuthority | undefined,
+    expected: DeliveryReceiptAuthorityExpectation
+): boolean {
+    if (expected.mode === 'absent') {
+        return current === undefined;
+    }
+    return sameReceiptAuthority(current, expected.authority);
+}
+
 function fakePort(input: FakeInput = {}) {
     const calls: string[] = [];
     const primary = [...(input.primary ?? [pullRequest(), pullRequest()])];
@@ -699,14 +711,20 @@ function fakePort(input: FakeInput = {}) {
             return persistedReceiptAuthority;
         },
         writeDeliveryReceiptAuthority: (number, authority, expectedCurrent) => {
-            if (expectedCurrent !== undefined && !sameReceiptAuthority(persistedReceiptAuthority, expectedCurrent)) {
+            if (
+                expectedCurrent !== undefined &&
+                !sameReceiptAuthorityExpectation(persistedReceiptAuthority, expectedCurrent)
+            ) {
                 throw new Error(`PR #${number} delivery receipt authority could not be stored`);
             }
             calls.push(`receipt-authority:write:${authorityTrace(authority)}`);
             persistedReceiptAuthority = authority;
         },
         clearDeliveryReceiptAuthority: (number, expectedCurrent) => {
-            if (expectedCurrent !== undefined && !sameReceiptAuthority(persistedReceiptAuthority, expectedCurrent)) {
+            if (
+                expectedCurrent !== undefined &&
+                !sameReceiptAuthorityExpectation(persistedReceiptAuthority, expectedCurrent)
+            ) {
                 throw new Error(`PR #${number} delivery receipt authority could not be cleared`);
             }
             calls.push(`receipt-authority:clear:${authorityTrace(persistedReceiptAuthority)}`);
@@ -2884,14 +2902,14 @@ describe('pull-request delivery', () => {
             return observed;
         };
         port.writeDeliveryReceiptAuthority = (number, authority, expectedCurrent) => {
-            if (expectedCurrent !== undefined && !sameReceiptAuthority(currentAuthority, expectedCurrent)) {
+            if (expectedCurrent !== undefined && !sameReceiptAuthorityExpectation(currentAuthority, expectedCurrent)) {
                 throw new Error(`PR #${number} delivery receipt authority could not be stored`);
             }
             calls.push(`receipt-authority:write:${authorityTrace(authority)}`);
             currentAuthority = authority;
         };
         port.clearDeliveryReceiptAuthority = (number, expectedCurrent) => {
-            if (expectedCurrent !== undefined && !sameReceiptAuthority(currentAuthority, expectedCurrent)) {
+            if (expectedCurrent !== undefined && !sameReceiptAuthorityExpectation(currentAuthority, expectedCurrent)) {
                 throw new Error(`PR #${number} delivery receipt authority could not be cleared`);
             }
             calls.push(`receipt-authority:clear:${authorityTrace(currentAuthority)}`);
@@ -2902,6 +2920,49 @@ describe('pull-request delivery', () => {
         expect(calls).not.toContain('receipt-authority:write:released:IC_delivery_42_1');
         expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(1);
         expect(calls.filter((call) => call === `merge:42:${nextHead}`)).toHaveLength(0);
+        expect(currentAuthority).toEqual(hostileAuthority);
+    });
+
+    it('fails closed when an absent authority observation goes stale before the first write', () => {
+        const closes = relationshipBody('Closes #2372');
+        const hostileAuthority: PersistedDeliveryReceiptAuthority = {
+            phase: 'terminal',
+            receiptId: 'IC_hostile',
+            receiptBody: visibleDeliveryReceiptBody(42, 'hostile-head', closes, 2372, 'successful'),
+        };
+        const { port, calls, tracker, receipts, persistedReceiptAuthority } = fakePort({
+            primary: [pullRequest({ body: closes }), pullRequest({ body: closes })],
+            dependentSets: [[], []],
+        });
+        let currentAuthority = persistedReceiptAuthority();
+        let swapBeforeFirstWrite = true;
+        port.readDeliveryReceiptAuthority = () => {
+            calls.push(`receipt-authority:read:${authorityTrace(currentAuthority)}`);
+            return currentAuthority;
+        };
+        port.writeDeliveryReceiptAuthority = (number, authority, expectedCurrent) => {
+            if (swapBeforeFirstWrite) {
+                swapBeforeFirstWrite = false;
+                currentAuthority = hostileAuthority;
+            }
+            if (expectedCurrent !== undefined && !sameReceiptAuthorityExpectation(currentAuthority, expectedCurrent)) {
+                throw new Error(`PR #${number} delivery receipt authority could not be stored`);
+            }
+            calls.push(`receipt-authority:write:${authorityTrace(authority)}`);
+            currentAuthority = authority;
+        };
+        port.clearDeliveryReceiptAuthority = (number, expectedCurrent) => {
+            if (expectedCurrent !== undefined && !sameReceiptAuthorityExpectation(currentAuthority, expectedCurrent)) {
+                throw new Error(`PR #${number} delivery receipt authority could not be cleared`);
+            }
+            calls.push(`receipt-authority:clear:${authorityTrace(currentAuthority)}`);
+            currentAuthority = undefined;
+        };
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/delivery receipt authority could not be stored/i);
+        expect(receipts.map(({ id }) => id)).toEqual(['IC_delivery_42_1']);
+        expect(calls).not.toContain('merge:42:head');
+        expect(calls).not.toContain('complete:2372');
         expect(currentAuthority).toEqual(hostileAuthority);
     });
 
@@ -7014,9 +7075,12 @@ describe('delivery shell boundary', () => {
                 { primaryRoot }
             );
 
-            expect(() => port.writeDeliveryReceiptAuthority(42, nextAuthority, currentAuthority)).toThrow(
-                /delivery receipt authority could not be stored/i
-            );
+            expect(() =>
+                port.writeDeliveryReceiptAuthority(42, nextAuthority, {
+                    mode: 'present',
+                    authority: currentAuthority,
+                })
+            ).toThrow(/delivery receipt authority could not be stored/i);
             expect(port.readDeliveryReceiptAuthority(42)).toEqual(hostileAuthority);
         } finally {
             process.env.PATH = previousPath;
@@ -7072,9 +7136,56 @@ describe('delivery shell boundary', () => {
         try {
             firstPort.writeDeliveryReceiptAuthority(42, storedAuthority);
 
-            expect(() => secondPort.writeDeliveryReceiptAuthority(42, nextAuthority, staleExpectedAuthority)).toThrow(
-                /delivery receipt authority could not be stored/i
-            );
+            expect(() =>
+                secondPort.writeDeliveryReceiptAuthority(42, nextAuthority, {
+                    mode: 'present',
+                    authority: staleExpectedAuthority,
+                })
+            ).toThrow(/delivery receipt authority could not be stored/i);
+            expect(secondPort.readDeliveryReceiptAuthority(42)).toEqual(storedAuthority);
+        } finally {
+            rmSync(primaryRoot, { recursive: true, force: true });
+        }
+    });
+
+    it('fails shellPort adapter writes when expected authority must still be absent and a newer authority already exists', () => {
+        const closes = relationshipBody('Closes #2372');
+        const primaryRoot = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-shell-port-'));
+        execFileSync('git', ['init', '--quiet'], { cwd: primaryRoot });
+        const storedAuthority: PersistedDeliveryReceiptAuthority = {
+            phase: 'prepared',
+            receiptId: 'IC_current',
+            receiptBody: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'),
+            postMergeValidation: {
+                headRefOid: 'head',
+                headRefName: 'feat/gate',
+                baseRefName: 'main',
+                bodySha256: createHash('sha256').update(closes).digest('hex'),
+                trackerTarget: 2372,
+            },
+        };
+        const nextAuthority: PersistedDeliveryReceiptAuthority = {
+            phase: 'released',
+            receiptId: 'IC_current',
+            receiptBody: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'),
+        };
+        const firstPort = shellPort(
+            'jcosta33/sourdaw',
+            { capture: () => expect.fail('unexpected capture'), run: () => undefined },
+            { primaryRoot }
+        );
+        const secondPort = shellPort(
+            'jcosta33/sourdaw',
+            { capture: () => expect.fail('unexpected capture'), run: () => undefined },
+            { primaryRoot }
+        );
+
+        try {
+            firstPort.writeDeliveryReceiptAuthority(42, storedAuthority);
+
+            expect(() =>
+                secondPort.writeDeliveryReceiptAuthority(42, nextAuthority, expectedAbsentDeliveryReceiptAuthority())
+            ).toThrow(/delivery receipt authority could not be stored/i);
             expect(secondPort.readDeliveryReceiptAuthority(42)).toEqual(storedAuthority);
         } finally {
             rmSync(primaryRoot, { recursive: true, force: true });
@@ -7123,12 +7234,93 @@ describe('delivery shell boundary', () => {
         try {
             firstPort.writeDeliveryReceiptAuthority(42, storedAuthority);
 
-            expect(() => secondPort.clearDeliveryReceiptAuthority(42, staleExpectedAuthority)).toThrow(
-                /delivery receipt authority could not be cleared/i
-            );
+            expect(() =>
+                secondPort.clearDeliveryReceiptAuthority(42, {
+                    mode: 'present',
+                    authority: staleExpectedAuthority,
+                })
+            ).toThrow(/delivery receipt authority could not be cleared/i);
             expect(secondPort.readDeliveryReceiptAuthority(42)).toEqual(storedAuthority);
         } finally {
             rmSync(primaryRoot, { recursive: true, force: true });
+        }
+    });
+
+    it('fails shellPort clear when a hostile authority is recreated after the delete succeeds but before readback', () => {
+        const closes = relationshipBody('Closes #2372');
+        const primaryRoot = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-shell-port-'));
+        const wrapperRoot = mkdtempSync(join(tmpdir(), 'sourdaw-git-wrapper-'));
+        execFileSync('git', ['init', '--quiet'], { cwd: primaryRoot });
+        const storedAuthority: PersistedDeliveryReceiptAuthority = {
+            phase: 'prepared',
+            receiptId: 'IC_current',
+            receiptBody: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'),
+            postMergeValidation: {
+                headRefOid: 'head',
+                headRefName: 'feat/gate',
+                baseRefName: 'main',
+                bodySha256: createHash('sha256').update(closes).digest('hex'),
+                trackerTarget: 2372,
+            },
+        };
+        const hostileAuthority = {
+            phase: 'terminal',
+            receiptId: 'IC_hostile',
+            receiptBody: visibleDeliveryReceiptBody(42, 'hostile-head', closes, 2372, 'successful'),
+        } satisfies PersistedDeliveryReceiptAuthority;
+        const storedOid = execFileSync('git', ['hash-object', '-w', '--stdin'], {
+            cwd: primaryRoot,
+            encoding: 'utf8',
+            input: JSON.stringify({ version: 2, ...storedAuthority }),
+        }).trim();
+        execFileSync('git', ['update-ref', 'refs/sourdaw/delivery-receipt/pr-42', storedOid], { cwd: primaryRoot });
+        const hostileOid = execFileSync('git', ['hash-object', '-w', '--stdin'], {
+            cwd: primaryRoot,
+            encoding: 'utf8',
+            input: JSON.stringify({ version: 2, ...hostileAuthority }),
+        }).trim();
+        const realGit = execFileSync('which', ['git'], { encoding: 'utf8' }).trim();
+        const wrapperPath = join(wrapperRoot, 'git');
+        writeFileSync(
+            wrapperPath,
+            [
+                '#!/usr/bin/env bash',
+                'set -euo pipefail',
+                `real_git=${JSON.stringify(realGit)}`,
+                `ref=${JSON.stringify('refs/sourdaw/delivery-receipt/pr-42')}`,
+                `replacement=${JSON.stringify(hostileOid)}`,
+                `marker=${JSON.stringify(join(wrapperRoot, 'post-delete-recreated'))}`,
+                'if [[ "${1:-}" == "update-ref" && "${2:-}" == "--no-deref" && "${3:-}" == "-d" && "${4:-}" == "$ref" && ! -e "$marker" ]]; then',
+                '  "$real_git" "$@"',
+                '  status=$?',
+                '  if [[ "$status" -eq 0 ]]; then',
+                '    : > "$marker"',
+                '    "$real_git" update-ref "$ref" "$replacement"',
+                '  fi',
+                '  exit "$status"',
+                'fi',
+                'exec "$real_git" "$@"',
+            ].join('\n')
+        );
+        chmodSync(wrapperPath, 0o755);
+        const previousPath = process.env.PATH;
+        process.env.PATH = `${wrapperRoot}:${previousPath ?? ''}`;
+
+        try {
+            const port = shellPort(
+                'jcosta33/sourdaw',
+                { capture: () => expect.fail('unexpected capture'), run: () => undefined },
+                { primaryRoot }
+            );
+
+            expect(() =>
+                port.clearDeliveryReceiptAuthority(42, { mode: 'present', authority: storedAuthority })
+            ).toThrow(/delivery receipt authority could not be verified/i);
+            expect(port.readDeliveryReceiptAuthority(42)).toEqual(hostileAuthority);
+        } finally {
+            process.env.PATH = previousPath;
+            rmSync(primaryRoot, { recursive: true, force: true });
+            rmSync(wrapperRoot, { recursive: true, force: true });
         }
     });
 
