@@ -1739,6 +1739,8 @@ type DecodedRgbaPng = {
 };
 
 const OWNER_ICON_BACKGROUND = [12, 10, 9] as const;
+const OWNER_ICON_ICNS_MAGIC = Buffer.from('icns', 'ascii');
+const OWNER_ICON_LEGACY_ARGB_MAGIC = Buffer.from('ARGB', 'ascii');
 const OWNER_ICON_PARTIAL_EDGE_SHA256 = 'cdfc19f49aa90f8433c5377a54f5b732584a91ea12c11ecec9341abf8dcfaddd';
 const OWNER_ICON_PNG_FILE_BYTE_LIMIT = 2 * 1024 * 1024;
 const OWNER_ICON_PNG_IDAT_BYTE_LIMIT = 1024 * 1024;
@@ -1826,6 +1828,10 @@ function ownerPngCrc32(value: Buffer): number {
         }
     }
     return (crc ^ 0xffffffff) >>> 0;
+}
+
+function ownerIcnsFrameKey(type: Buffer): string {
+    return type.toString('hex');
 }
 
 function isOwnerPngChunkType(type: Buffer): boolean {
@@ -2093,7 +2099,10 @@ function assertCanonicalOwnerIcon(root: string): void {
 }
 
 function decodeOwnerLegacyArgb(payload: Buffer, type: 'ic04' | 'ic05', size: number): DecodedRgbaPng {
-    if (payload.length < 4 || payload.toString('ascii', 0, 4) !== 'ARGB') {
+    if (
+        payload.length < OWNER_ICON_LEGACY_ARGB_MAGIC.length ||
+        !payload.subarray(0, 4).equals(OWNER_ICON_LEGACY_ARGB_MAGIC)
+    ) {
         throw new Error(`owner visual asset build/icons/icon.icns ${type} frame is not ARGB`);
     }
     const pixelCount = size * size;
@@ -2157,7 +2166,7 @@ function assertOwnerFramePixels(image: DecodedRgbaPng, expectedSha256: string, l
 function assertOwnerIcnsFrames(root: string): void {
     const path = resolve(root, 'build/icons/icon.icns');
     const data = readBoundedOwnerAsset(path, 'build/icons/icon.icns', OWNER_ICON_CONTAINER_BYTE_LIMIT);
-    if (data.length < 8 || data.toString('ascii', 0, 4) !== 'icns' || data.readUInt32BE(4) !== data.length) {
+    if (data.length < 8 || !data.subarray(0, 4).equals(OWNER_ICON_ICNS_MAGIC) || data.readUInt32BE(4) !== data.length) {
         throw new Error('owner visual asset build/icons/icon.icns has an invalid container header');
     }
     const frames = new Map<string, Buffer>();
@@ -2166,16 +2175,18 @@ function assertOwnerIcnsFrames(root: string): void {
         if (offset + 8 > data.length) {
             throw new Error('owner visual asset build/icons/icon.icns has a truncated frame header');
         }
-        const type = data.toString('ascii', offset, offset + 4);
+        const typeBytes = data.subarray(offset, offset + 4);
+        const type = typeBytes.toString('ascii');
         const length = data.readUInt32BE(offset + 4);
-        if (length <= 8 || offset + length > data.length || frames.has(type)) {
+        const key = ownerIcnsFrameKey(typeBytes);
+        if (length <= 8 || offset + length > data.length || frames.has(key)) {
             throw new Error(`owner visual asset build/icons/icon.icns has an invalid ${type} frame`);
         }
-        frames.set(type, data.subarray(offset + 8, offset + length));
+        frames.set(key, data.subarray(offset + 8, offset + length));
         offset += length;
     }
     for (const required of OWNER_ICON_REQUIRED_ICNS_FRAMES) {
-        const payload = frames.get(required);
+        const payload = frames.get(ownerIcnsFrameKey(Buffer.from(required, 'ascii')));
         if (payload === undefined) {
             throw new Error(`owner visual asset build/icons/icon.icns is missing frame ${required}`);
         }

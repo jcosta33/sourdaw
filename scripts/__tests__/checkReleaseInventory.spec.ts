@@ -325,6 +325,7 @@ function icnsFixturePayload(
     frame: string,
     payload: Buffer,
     options: {
+        highBitArgbFrame?: string;
         malformedFrame?: string;
         seamFrame?: string;
         wrongDimensionFrame?: string;
@@ -351,12 +352,20 @@ function icnsFixturePayload(
         }
         return rgbaPng(size, size, () => ownerIconBackground);
     }
+    if (options.highBitArgbFrame === frame) {
+        const changed = Buffer.from(payload);
+        changed[0] = changed[0]! | 0x80;
+        return changed;
+    }
     return payload;
 }
 
 function icnsFixture(
     frames: readonly string[] = ownerIcnsFrames,
     options: {
+        highBitArgbFrame?: string;
+        highBitFrame?: string;
+        highBitMagic?: boolean;
         malformedFrame?: string;
         seamFrame?: string;
         wrongDimensionFrame?: string;
@@ -380,7 +389,22 @@ function icnsFixture(
     const header = Buffer.alloc(8);
     header.write('icns', 0, 'ascii');
     header.writeUInt32BE(8 + chunks.reduce((total, chunk) => total + chunk.length, 0), 4);
-    return Buffer.concat([header, ...chunks]);
+    const container = Buffer.concat([header, ...chunks]);
+    if (options.highBitMagic) {
+        container[0] = container[0]! | 0x80;
+    }
+    if (options.highBitFrame !== undefined) {
+        let offset = 8;
+        while (offset < container.length) {
+            const length = container.readUInt32BE(offset + 4);
+            if (container.toString('ascii', offset, offset + 4) === options.highBitFrame) {
+                container[offset] = container[offset]! | 0x80;
+                break;
+            }
+            offset += length;
+        }
+    }
+    return container;
 }
 
 type IcoFixtureFrame = { payload: Buffer; size: number };
@@ -574,6 +598,9 @@ function writeOwnerVisualAssetFixture(
         canonical?: Buffer;
         icnsFrames?: readonly string[];
         icoFrames?: readonly number[];
+        highBitIcnsArgbFrame?: string;
+        highBitIcnsFrame?: string;
+        highBitIcnsMagic?: boolean;
         malformedIcnsFrame?: string;
         malformedIcoSize?: number;
         overlappingIcoPayloads?: boolean;
@@ -599,6 +626,9 @@ function writeOwnerVisualAssetFixture(
     writeFileSync(
         join(root, 'build/icons/icon.icns'),
         icnsFixture(options.icnsFrames, {
+            highBitArgbFrame: options.highBitIcnsArgbFrame,
+            highBitFrame: options.highBitIcnsFrame,
+            highBitMagic: options.highBitIcnsMagic,
             malformedFrame: options.malformedIcnsFrame,
             seamFrame: options.seamIcnsFrame,
             wrongDimensionFrame: options.wrongDimensionIcnsFrame,
@@ -3275,6 +3305,48 @@ describe('release inventory', () => {
         }
     });
 
+    it('rejects a high-bit alias of the ICNS container magic', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-owner-assets-icns-magic-'));
+
+        try {
+            writeOwnerVisualAssetFixture(root, { highBitIcnsMagic: true });
+
+            expect(() => assertOwnerVisualAssetIntegrity(root)).toThrow(
+                'owner visual asset build/icons/icon.icns has an invalid container header'
+            );
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it.each(ownerIcnsFrames)('rejects a high-bit alias of required ICNS %s frame type', (highBitFrame) => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-owner-assets-icns-fourcc-'));
+
+        try {
+            writeOwnerVisualAssetFixture(root, { highBitIcnsFrame: highBitFrame });
+
+            expect(() => assertOwnerVisualAssetIntegrity(root)).toThrow(
+                `owner visual asset build/icons/icon.icns is missing frame ${highBitFrame}`
+            );
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it.each(['ic04', 'ic05'] as const)('rejects a high-bit alias of legacy ICNS %s ARGB magic', (highBitFrame) => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-owner-assets-icns-argb-'));
+
+        try {
+            writeOwnerVisualAssetFixture(root, { highBitIcnsArgbFrame: highBitFrame });
+
+            expect(() => assertOwnerVisualAssetIntegrity(root)).toThrow(
+                `owner visual asset build/icons/icon.icns ${highBitFrame} frame is not ARGB`
+            );
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
     it.each(['ic04', 'ic05'] as const)('rejects repaired legacy ICNS %s blue-tail seam pixels', (seamFrame) => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-owner-assets-icns-seam-'));
 
@@ -3383,6 +3455,34 @@ describe('release inventory', () => {
             writeOwnerVisualAssetFixture(root, { wrongDimensionIcoSize: 24 });
 
             expect(() => assertOwnerVisualAssetIntegrity(root)).toThrow(
+                'owner visual asset build/icons/icon.ico 24px frame payload has wrong dimensions'
+            );
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('routes malformed ICNS through the release inventory contract', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-owner-assets-contract-icns-'));
+
+        try {
+            writeOwnerVisualAssetFixture(root, { malformedIcnsFrame: 'ic07' });
+
+            expect(() => ownerVisualAssetReleaseInventoryContract(root)).toThrow(
+                'owner visual asset build/icons/icon.icns ic07 is not a PNG'
+            );
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('routes wrong-dimension ICO payloads through the release inventory contract', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-owner-assets-contract-ico-'));
+
+        try {
+            writeOwnerVisualAssetFixture(root, { wrongDimensionIcoSize: 24 });
+
+            expect(() => ownerVisualAssetReleaseInventoryContract(root)).toThrow(
                 'owner visual asset build/icons/icon.ico 24px frame payload has wrong dimensions'
             );
         } finally {
