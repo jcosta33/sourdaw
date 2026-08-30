@@ -81,6 +81,7 @@ export type CheckEvidencePort = {
 export type DeliveryPort = CheckEvidencePort & {
     fetch: () => void;
     pullRequest: (number: number) => PullRequestSnapshot;
+    headCommitSubject: (headRefOid: string) => string;
     reviewState: (number: number, expectedHead: string) => ReviewState;
     dependents: (baseBranch: string) => StackedPullRequest[];
     repositoryDeletesMergedBranches: () => boolean;
@@ -1570,6 +1571,41 @@ function tryStableHistoricalDeliveryReceipt(
     }
 }
 
+function stableLegacyCutoverMergedRecoveryReceipt(
+    pullRequest: PullRequestSnapshot,
+    port: DeliveryPort
+): DeliveryReceiptComment | undefined {
+    const readCandidate = (): DeliveryReceiptComment | undefined => {
+        const lineage = orderedDeliveryReceiptLineage(provenDeliveryReceiptComments(pullRequest, port), pullRequest);
+        if (lineage.length !== 1) {
+            return undefined;
+        }
+        const only = lineage[0];
+        if (only === undefined) {
+            return undefined;
+        }
+        const payload = assertDeliveryReceiptForHead(only, pullRequest);
+        if (payload.schemaVersion !== 1) {
+            return undefined;
+        }
+        validateLegacyPersistedMergedRecoveryReceipt(pullRequest, payload);
+        return only;
+    };
+
+    const first = readCandidate();
+    const second = readCandidate();
+    if (first === undefined || second === undefined) {
+        if (first === undefined && second === undefined) {
+            return undefined;
+        }
+        fail(`PR #${pullRequest.number} delivery receipt changed during recovery`);
+    }
+    if (first.id !== second.id || first.body !== second.body) {
+        fail(`PR #${pullRequest.number} delivery receipt changed during recovery`);
+    }
+    return second;
+}
+
 function compatibleBodylessPersistedMergedRecoveryReceipt(
     lineage: DeliveryReceiptComment[],
     authority: CurrentPersistedDeliveryReceiptAuthority,
@@ -1887,22 +1923,35 @@ function deliverPullRequestWithCiAdmission(
         validateBaseBranch(initial);
         validateAuthorAppMerger(initial);
         const receiptAuthority = port.readDeliveryReceiptAuthority(number);
-        if (receiptAuthority === undefined) {
-            fail(`PR #${number} delivery receipt authority cannot be proven`);
-        }
-        const receipt = readPersistedMergedRecoveryReceipt(initial, port, receiptAuthority);
-        const receiptPayload = assertDeliveryReceiptForHead(receipt, initial);
+        let receipt: DeliveryReceiptComment;
+        let receiptPayload: DeliveryReceiptPayload;
         let recoveryPostMergeValidation: PersistedPreparedPostMergeValidation | undefined;
-        if (receiptAuthority.phase === 'legacy') {
+        if (receiptAuthority === undefined) {
+            const cutoverReceipt = stableLegacyCutoverMergedRecoveryReceipt(initial, port);
+            if (cutoverReceipt === undefined) {
+                fail(`PR #${number} delivery receipt authority cannot be proven`);
+            }
+            receipt = cutoverReceipt;
+            receiptPayload = assertDeliveryReceiptForHead(receipt, initial);
             recoveryPostMergeValidation = persistedPreparedPostMergeValidation(
                 initial,
                 receiptPayload.closingIssue ?? undefined
             );
-        } else if (receiptAuthority.phase !== 'released') {
-            recoveryPostMergeValidation = receiptAuthority.postMergeValidation;
-        }
-        if (receiptAuthority?.phase !== 'terminal') {
             persistMergeAuthorizedDeliveryReceiptAuthority(number, receipt, recoveryPostMergeValidation, port);
+        } else {
+            receipt = readPersistedMergedRecoveryReceipt(initial, port, receiptAuthority);
+            receiptPayload = assertDeliveryReceiptForHead(receipt, initial);
+            if (receiptAuthority.phase === 'legacy') {
+                recoveryPostMergeValidation = persistedPreparedPostMergeValidation(
+                    initial,
+                    receiptPayload.closingIssue ?? undefined
+                );
+            } else if (receiptAuthority.phase !== 'released') {
+                recoveryPostMergeValidation = receiptAuthority.postMergeValidation;
+            }
+            if (receiptAuthority.phase !== 'terminal') {
+                persistMergeAuthorizedDeliveryReceiptAuthority(number, receipt, recoveryPostMergeValidation, port);
+            }
         }
         const remaining = port.dependents(initial.headRefName).filter((candidate) => candidate.number !== number);
         retargetDependents(remaining, initial.baseRefName, port);
@@ -2011,7 +2060,12 @@ function deliverPullRequestWithCiAdmission(
             }
         );
     try {
-        port.merge(number, finalSnapshot.headRefOid, finalDependents.length > 0, finalSnapshot.title);
+        port.merge(
+            number,
+            finalSnapshot.headRefOid,
+            finalDependents.length > 0,
+            port.headCommitSubject(finalSnapshot.headRefOid)
+        );
     } catch (error) {
         if (error instanceof DeliveryMergeRejectedError) {
             tryRestorePreArmedDeliveryReceiptAuthorityAfterMergeFailure(
@@ -2619,6 +2673,13 @@ export function shellPort(
         },
         repositoryDeletesMergedBranches: () =>
             shell.capture('gh', ['api', `repos/${repository}`, '--jq', '.delete_branch_on_merge']) === 'true',
+        headCommitSubject: (headRefOid) => {
+            const subject = shell.capture('git', ['show', '-s', '--format=%s', headRefOid]).trim();
+            if (subject === '') {
+                fail(`head commit ${headRefOid} subject is unreadable`);
+            }
+            return subject;
+        },
         merge: (number, expectedHead, hasDependents, expectedTitle) => {
             const policy = repositoryMergePolicy(repository, shell);
             if (hasDependents && policy.deletesMergedBranches) {
