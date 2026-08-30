@@ -210,7 +210,11 @@ describe('selectRetainedSectionRenderManualReviews', () => {
             ['command-a', 'job-chorus', 'available'],
             ['command-b', 'job-outro', 'available'],
         ]);
-        expect(artifacts.getExact).toHaveBeenCalledWith({ job: verse, sourceRevision: 'revision-original' });
+        expect(artifacts.getExact.mock.calls).toEqual([
+            [{ job: verse, sourceRevision: 'revision-original' }],
+            [{ job: chorus, sourceRevision: 'revision-original' }],
+            [{ job: outro, sourceRevision: 'revision-original' }],
+        ]);
     });
 
     it('hides promoted recovery until the matching run receipt is projected', () => {
@@ -303,7 +307,11 @@ describe('selectRetainedSectionRenderManualReviews', () => {
 
         expect(selectRetainedSectionRenderManualReviews(state)).toHaveLength(1);
         expect(state.pendingEffectRecoveryLedger![0]!.authority.baseRevision).toBe('revision-original');
-        expect(artifacts.getExact).toHaveBeenCalledWith({ job: verse, sourceRevision: 'revision-finalized' });
+        expect(artifacts.getExact.mock.calls).toEqual([
+            [{ job: verse, sourceRevision: 'revision-finalized' }],
+            [{ job: chorus, sourceRevision: 'revision-finalized' }],
+            [{ job: outro, sourceRevision: 'revision-finalized' }],
+        ]);
     });
 
     it('projects only manual-review render effects when the original batch has a non-render sibling', () => {
