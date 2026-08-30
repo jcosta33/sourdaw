@@ -153,6 +153,7 @@ export function resolveReviewThread(
         return logResolutionSuccess(number, threadId, port);
     }
     assertResolvableThread(before.thread, threadId);
+    assertManagedReplyMarkersReadable(before.thread!, context, ['PENDING', 'COMMENTED'], true);
     let pendingReviewCreateAttempted = false;
     let pendingReviewCreated = false;
     let replyAttempted = false;
@@ -844,6 +845,16 @@ function managedReplyMarkers(
         });
     }
     return managed.sort(compareManagedReplyMarkers);
+}
+function assertManagedReplyMarkersReadable(
+    thread: ReviewThread,
+    context: ResolutionReviewContext,
+    allowedStates: string[],
+    allowEmptyBody: boolean
+): void {
+    for (const marker of validatedReplyMarkers(thread)) {
+        requireReplyReview(marker, context, allowedStates, allowEmptyBody, null);
+    }
 }
 function compareManagedReplyMarkers(left: ManagedReplyMarker, right: ManagedReplyMarker): number {
     const leftPriority = managedReplyPriority(left);

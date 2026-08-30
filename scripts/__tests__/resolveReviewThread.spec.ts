@@ -21,7 +21,7 @@ const threadId = 'PRRT_kwDOExample';
 const rootId = 'PRRC_root';
 const replyId = 'PRRC_reply';
 const reviewId = 'PRR_resolution';
-type ReviewState = 'PENDING' | 'COMMENTED';
+type ReviewState = 'PENDING' | 'COMMENTED' | 'APPROVED';
 type ReviewRecord = {
     id: string;
     body: string;
@@ -93,6 +93,7 @@ type Input = {
     existingReplyReviewCommitOid?: string;
     existingReplyReviewAuthorNodeId?: string | null;
     existingReplyReviewAuthorType?: string | null;
+    existingReplyReviewMissing?: boolean;
     addForeignPendingReview?: boolean;
     addExactPendingReplyMarker?: boolean;
     exactPendingReplyFullDatabaseId?: string;
@@ -211,14 +212,16 @@ function fakePort(input: Input = {}) {
     }
     for (let replyIndex = 0; replyIndex < (input.existingReplyCount ?? 0); replyIndex += 1) {
         const currentReviewId = replyIndex === 0 ? reviewId : `PRR_existing_${replyIndex}`;
-        pushReview(
-            currentReviewId,
-            input.existingReplyReviewState ?? 'COMMENTED',
-            input.existingReplyReviewBody ?? expectedReviewBody,
-            input.existingReplyReviewCommitOid ?? head
-        );
-        reviews[reviews.length - 1]!.authorNodeId = input.existingReplyReviewAuthorNodeId ?? AUTHOR_BOT_NODE_ID;
-        reviews[reviews.length - 1]!.authorType = input.existingReplyReviewAuthorType ?? 'Bot';
+        if (!input.existingReplyReviewMissing) {
+            pushReview(
+                currentReviewId,
+                input.existingReplyReviewState ?? 'COMMENTED',
+                input.existingReplyReviewBody ?? expectedReviewBody,
+                input.existingReplyReviewCommitOid ?? head
+            );
+            reviews[reviews.length - 1]!.authorNodeId = input.existingReplyReviewAuthorNodeId ?? AUTHOR_BOT_NODE_ID;
+            reviews[reviews.length - 1]!.authorType = input.existingReplyReviewAuthorType ?? 'Bot';
+        }
         pushReply(
             replyIndex === 0 ? replyId : `PRRC_existing_${replyIndex}`,
             String(9223372036854775808n + BigInt(replyIndex)),
@@ -1215,6 +1218,24 @@ describe('review thread resolution', () => {
         expect(calls.filter((call) => call.startsWith('resolve:'))).toEqual([`resolve:${threadId}`]);
         expectCanonicalResolutionReview(state().reviews[0]!);
     });
+    it('backfills and submits a whitespace-only pending resolution review before resolving an existing Done marker', () => {
+        const { port, calls, authorNodeId, state } = fakePort({
+            existingReplyCount: 1,
+            existingReplyReviewState: 'PENDING',
+            existingReplyReviewBody: '  \n\t  ',
+        });
+        expect(resolveReviewThread(42, threadId, head, authorNodeId, port)).toBe(
+            `review-thread-resolved:42:${threadId}`
+        );
+        expect(calls.filter((call) => call.startsWith('createReview:') || call.startsWith('reply:'))).toEqual([]);
+        expect(calls.filter((call) => call.startsWith('updateReview:'))).toEqual([`updateReview:${reviewId}`]);
+        expect(calls.filter((call) => call.startsWith('submitReview:'))).toEqual([`submitReview:${reviewId}`]);
+        expect(calls.filter((call) => call.startsWith('resolve:'))).toEqual([`resolve:${threadId}`]);
+        expect(state().comments.filter((comment) => comment.body === 'Done')).toEqual([
+            expect.objectContaining({ id: replyId, reviewId }),
+        ]);
+        expectCanonicalResolutionReview(state().reviews[0]!);
+    });
     it('rejects a reviewer-owned empty COMMENTED envelope linked to an author Done marker without trying to update it', () => {
         const { port, calls, authorNodeId } = fakePort({
             isResolved: true,
@@ -1249,6 +1270,32 @@ describe('review thread resolution', () => {
         ]);
         expect(calls.filter((call) => call.startsWith('reply:'))).toEqual([]);
         expectCanonicalResolutionReview(state().reviews[0]!, head);
+        expect(state().resolved).toBe(true);
+    });
+    it('backfills and submits an already resolved whitespace-only author review without creating another marker', () => {
+        const { port, calls, authorNodeId, state } = fakePort({
+            isResolved: true,
+            initialResolvedByNodeId: AUTHOR_BOT_NODE_ID,
+            initialResolvedByType: 'User',
+            existingReplyCount: 1,
+            existingReplyReviewState: 'PENDING',
+            existingReplyReviewBody: ' \n\t ',
+        });
+        expect(resolveReviewThread(42, threadId, head, authorNodeId, port)).toBe(
+            `review-thread-resolved:42:${threadId}`
+        );
+        expect(calls).toEqual([
+            'inspect:1',
+            `updateReview:${reviewId}`,
+            'inspect:2',
+            `submitReview:${reviewId}`,
+            'inspect:3',
+            `log:review-thread-resolved:42:${threadId}`,
+        ]);
+        expect(state().comments.filter((comment) => comment.body === 'Done')).toEqual([
+            expect.objectContaining({ id: replyId, reviewId }),
+        ]);
+        expectCanonicalResolutionReview(state().reviews[0]!);
         expect(state().resolved).toBe(true);
     });
     it('fails without success when the exact receipt reply disappears before final inspection', () => {
@@ -1846,6 +1893,43 @@ describe('review thread resolution', () => {
             )
         ).toEqual([]);
     });
+    const invalidCurrentHeadMarkerCases = [
+        [
+            'foreign Bot review',
+            { existingReplyReviewAuthorNodeId: REVIEWER_BOT_NODE_ID, existingReplyReviewAuthorType: 'Bot' },
+            /non-author review/i,
+        ],
+        ['unreadable review', { existingReplyReviewMissing: true }, /readable pull-request review/i],
+        ['unsupported review state', { existingReplyReviewState: 'APPROVED' as const }, /unsupported review state/i],
+        [
+            'noncanonical author review',
+            { existingReplyReviewBody: 'not the managed resolution review body' },
+            /noncanonical author review/i,
+        ],
+    ] satisfies [string, Partial<Input>, RegExp][];
+    it.each(invalidCurrentHeadMarkerCases)(
+        'rejects a current-head attached Done marker linked to a %s before any mutation',
+        (_case, input, errorPattern) => {
+            const { port, authorNodeId, calls } = fakePort({
+                existingReplyCount: 1,
+                ...input,
+            });
+            expect(() => resolveReviewThread(42, threadId, head, authorNodeId, port)).toThrow(errorPattern);
+            expect(
+                calls.filter(
+                    (call) =>
+                        call.startsWith('updateReview:') ||
+                        call.startsWith('submitReview:') ||
+                        call.startsWith('createReview:') ||
+                        call.startsWith('delete:') ||
+                        call.startsWith('deleteReview:') ||
+                        call.startsWith('reply:') ||
+                        call.startsWith('resolve:') ||
+                        call.startsWith('log:')
+                )
+            ).toEqual([]);
+        }
+    );
     it('preserves a marker after an unresolved resolve throw, then reuses it on retry', () => {
         const { port, authorNodeId, state, calls } = fakePort({ throwResolveOnceWithoutState: true });
         expect(() => resolveReviewThread(42, threadId, head, authorNodeId, port)).toThrow(
