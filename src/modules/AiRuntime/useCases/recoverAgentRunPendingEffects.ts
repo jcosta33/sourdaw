@@ -102,7 +102,7 @@ function hasIntentionalManualizedRuntimeGraphBinding(
                 (effect.reason === PROVISIONAL_DURABLE_EFFECT_REASON &&
                     receiptEffect.reason !== PROVISIONAL_DURABLE_EFFECT_REASON)) &&
             effect.remediation === 'repair' &&
-            receiptEffect.remediation === 'retry' &&
+            (receiptEffect.remediation === 'retry' || receiptEffect.remediation === 'repair') &&
             effect.state === receiptEffect.state;
         if (!isManualizedRuntimeGraphEffect) {
             return false;

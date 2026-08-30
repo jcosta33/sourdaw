@@ -266,6 +266,49 @@ describe('recoverAgentRunPendingEffects', () => {
         expect(mocks.executeBatch).not.toHaveBeenCalled();
     });
 
+    it('admits a provisional repair when the final runtime-graph receipt also requires repair', async () => {
+        const receiptEffect = { ...runtimeGraphReceiptEffect(), remediation: 'repair' as const };
+        configureManualizedRuntimeGraphProof({
+            continuationEffects: [manualizedRuntimeGraphEffect(receiptEffect)],
+            receiptEffects: [receiptEffect],
+        });
+
+        await expect(
+            recoverAgentRunPendingEffects({ runId: 'run-render-recovery', batchId: 'batch-render-recovery' })
+        ).resolves.toEqual({ status: 'failed', reason: MISSING_EXACT_CHECKPOINT_RECOVERY_REASON });
+
+        expect(mocks.requireManualRepair).toHaveBeenCalledWith({
+            runId: 'run-render-recovery',
+            batchId: 'batch-render-recovery',
+            reason: MISSING_EXACT_CHECKPOINT_RECOVERY_REASON,
+            preserveEffects: true,
+        });
+        expect(mocks.executeBatch).not.toHaveBeenCalled();
+    });
+
+    it('admits an exact effect beside one manualized runtime-graph effect without executing', async () => {
+        const manualRepairReason =
+            'Generic pending-effect recovery cannot execute receipt-bound section renders. The original confirmation is required and may be unavailable after reload.';
+        const exactEffect = renderRecovery().effects[0];
+        const receiptRuntimeEffect = runtimeGraphReceiptEffect();
+        configureManualizedRuntimeGraphProof({
+            continuationEffects: [exactEffect, manualizedRuntimeGraphEffect(receiptRuntimeEffect)],
+            receiptEffects: [exactEffect, receiptRuntimeEffect],
+        });
+
+        await expect(
+            recoverAgentRunPendingEffects({ runId: 'run-render-recovery', batchId: 'batch-render-recovery' })
+        ).resolves.toEqual({ status: 'failed', reason: manualRepairReason });
+
+        expect(mocks.requireManualRepair).toHaveBeenCalledWith({
+            runId: 'run-render-recovery',
+            batchId: 'batch-render-recovery',
+            reason: manualRepairReason,
+            preserveEffects: false,
+        });
+        expect(mocks.executeBatch).not.toHaveBeenCalled();
+    });
+
     it('rejects a manualized runtime-graph binding with any other changed continuation reason', async () => {
         const recovery = renderRecovery();
         const receiptEffect = {
@@ -384,13 +427,10 @@ describe('recoverAgentRunPendingEffects', () => {
             'wrong continuation remediation',
             () => {
                 const receiptEffect = runtimeGraphReceiptEffect();
+                const continuationEffect = manualizedRuntimeGraphEffect(receiptEffect);
+                Reflect.set(continuationEffect, 'remediation', 'retry');
                 configureManualizedRuntimeGraphProof({
-                    continuationEffects: [
-                        {
-                            ...manualizedRuntimeGraphEffect(receiptEffect),
-                            remediation: 'retry',
-                        },
-                    ],
+                    continuationEffects: [continuationEffect],
                     receiptEffects: [receiptEffect],
                 });
             },
@@ -400,9 +440,10 @@ describe('recoverAgentRunPendingEffects', () => {
             'wrong receipt remediation',
             () => {
                 const receiptEffect = runtimeGraphReceiptEffect();
+                Reflect.set(receiptEffect, 'remediation', 'reconcile');
                 configureManualizedRuntimeGraphProof({
                     continuationEffects: [manualizedRuntimeGraphEffect(receiptEffect)],
-                    receiptEffects: [{ ...receiptEffect, remediation: 'repair' }],
+                    receiptEffects: [receiptEffect],
                 });
             },
             PENDING_EFFECT_PROOF_MISMATCH_REASON,
