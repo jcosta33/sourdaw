@@ -1,0 +1,58 @@
+electron/__tests__/rendererSessionQuiescer.spec.ts
+  s_ae074277795b45::t_b0005da44536ec 3-7,30-48
+  s_ae074277795b45::t_3490e523f7b51d 1-2,8-29,49-50
+electron/channels.ts
+  s_ae074277795b45::t_822fc9571af5a3 56-59,212-213
+  s_ae074277795b45::t_2f6543766ee8ce 201
+electron/main.ts
+  s_ae074277795b45::t_b0005da44536ec 62,330-337
+  s_ae074277795b45::t_1949c34b51e414 126
+  s_ae074277795b45::t_04d11420e9de2e 41,120,122,203-210,328-329,338-340,671-679
+  s_ae074277795b45::t_39f53dbf38f579 197
+src/types/sourdaw-desktop.d.ts
+  s_ae074277795b45::t_822fc9571af5a3 134-135
+electron/bridge.ts
+  s_ae074277795b45::t_822fc9571af5a3 43-44,194,259-268,448-454
+src/modules/WorkspaceShell/presentations/hooks/__tests__/useNativeApplicationMenu.spec.tsx
+  s_ae074277795b45::t_b1cbd834266ce4 13-14,28,95-96
+electron/appIpc.ts
+  s_ae074277795b45::t_822fc9571af5a3 31,338-341,400-412,420,428
+  s_ae074277795b45::t_085ace7043e864 429-433
+src/modules/Project/useCases/projectPersistence/__tests__/quiesceProjectSession.spec.ts
+  s_ae074277795b45::t_f22266b072ee50 1,12-17
+  s_ae074277795b45::t_3490e523f7b51d 2-11,18-35
+src/modules/WorkspaceShell/presentations/hooks/useNativeApplicationMenu.ts
+  s_ae074277795b45::t_feb01c9f1a168b 19,257-259,264
+src/modules/Project/useCases/projectPersistence/__tests__/discardProjectChanges.realPath.spec.ts
+  s_ae074277795b45::t_dc65c5784b2c95 3-9,11-17,25,55-57,91-93
+  s_ae074277795b45::t_d36c79600fa974 1-2,10,18-24,26-37,43-54,58-90,94-129
+  s_ae074277795b45::t_5c5dd1803b664f 38-42
+src/modules/Project/useCases/projectPersistence/quiesceProjectSession.ts
+  s_ae074277795b45::t_7c38ef7b2c7a43 1-15
+electron/__tests__/appIpc.spec.ts
+  s_ae074277795b45::t_cce61d58d0ffbb 143,205,258
+electron/__tests__/bridge.spec.ts
+  s_ae074277795b45::t_cce61d58d0ffbb 34-35,96-103,165,170-173
+  s_ae074277795b45::t_fff78e7dbedf4f 136
+electron/rendererSessionQuiescer.ts
+  s_ae074277795b45::t_b0005da44536ec 63-78
+  s_ae074277795b45::t_7c38ef7b2c7a43 1-62
+src/modules/Project/useCases/index.ts
+  s_ae074277795b45::t_7c38ef7b2c7a43 5
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "6065cc6e70d8622d5f6fe0a9b800127178522c64",
+  "prompts": {},
+  "sessions": {
+    "s_ae074277795b45": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04ab5-5234-7100-be1c-76ebfaba88d3",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
