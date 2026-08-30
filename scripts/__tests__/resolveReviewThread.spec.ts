@@ -18,6 +18,7 @@ import {
     publishReviewResolutionChildLaunchMarker,
     readPersistedReviewResolutionChildLaunchMarker,
     runResolveReviewThreadCli,
+    reviewResolutionOwnerFenceIsLive,
     resolveReviewThread,
     shellPort,
     deleteReply,
@@ -1123,6 +1124,41 @@ function requireLockOwner(repository: string, number: number): ReviewResolutionL
     return owner as ReviewResolutionLockOwner;
 }
 
+function writeLegacyLockOwnerBlob(
+    repository: string,
+    version: 2 | 3,
+    pid: number,
+    pgid: number,
+    currentHead: string = head,
+    mutation?: {
+        phase: string;
+        epoch: number;
+        reviewId?: string;
+        replyId?: string;
+        body?: string;
+        pendingReviewIds?: readonly string[];
+        settleAtMs?: number;
+        replies?: readonly { replyId: string; reviewId: string; reviewState: 'PENDING' | 'COMMENTED' }[];
+        allowedAttachedThreadIds?: readonly string[];
+        snapshotHead?: string;
+        dispatchState?: string;
+    }
+): string {
+    return gitCapture(
+        repository,
+        ['hash-object', '-w', '--stdin'],
+        JSON.stringify({
+            version,
+            pid,
+            pgid,
+            threadId,
+            head: currentHead,
+            token: '11111111-1111-4111-8111-111111111111',
+            ...(version === 3 && mutation !== undefined ? { mutation } : {}),
+        })
+    );
+}
+
 function writeLockOwnerBlob(
     repository: string,
     pid: number,
@@ -1762,6 +1798,40 @@ describe('review thread resolution', () => {
         } finally {
             rmSync(repository, { recursive: true, force: true });
         }
+    });
+
+    it.each([
+        ['ESRCH', false],
+        ['EPERM', true],
+    ] as const)('treats injected Windows PID liveness %s as %s', (code, expected) => {
+        const error = new Error(code) as NodeJS.ErrnoException;
+        error.code = code;
+        expect(
+            reviewResolutionOwnerFenceIsLive(
+                {
+                    kind: 'pid',
+                    pid: 1234,
+                },
+                () => {
+                    throw error;
+                }
+            )
+        ).toBe(expected);
+    });
+
+    it('propagates unexpected injected Windows PID liveness failures', () => {
+        const failure = new Error('probe exploded');
+        expect(() =>
+            reviewResolutionOwnerFenceIsLive(
+                {
+                    kind: 'pid',
+                    pid: 1234,
+                },
+                () => {
+                    throw failure;
+                }
+            )
+        ).toThrow(failure);
     });
 
     it.each([
@@ -2650,18 +2720,7 @@ describe('review thread resolution', () => {
         try {
             const recorded = JSON.parse(await readFirstStdoutLine(holder)) as { parentPid: number; childPid: number };
             descendantPid = recorded.childPid;
-            const ownerOid = gitCapture(
-                repository,
-                ['hash-object', '-w', '--stdin'],
-                JSON.stringify({
-                    version: 2,
-                    pid: recorded.parentPid,
-                    pgid: recorded.parentPid,
-                    threadId,
-                    head,
-                    token: '11111111-1111-4111-8111-111111111111',
-                })
-            );
+            const ownerOid = writeLegacyLockOwnerBlob(repository, 2, recorded.parentPid, recorded.parentPid);
             updateLock(repository, 42, ownerOid);
             expect(() => recoverPullRequestReviewResolutionLock(repository, 42, ownerOid, () => 'reconciled')).toThrow(
                 /still held by live process group/i
@@ -2703,6 +2762,108 @@ describe('review thread resolution', () => {
         }
     }, 10_000);
 
+    it('keeps a legacy v3 non-idle PGID owner live until its descendant exits and preserves the recovery mutation', async () => {
+        const repository = createTemporaryGitRepository();
+        const holder = spawn(
+            process.execPath,
+            [
+                '--input-type=module',
+                '--eval',
+                [
+                    "import { spawn } from 'node:child_process';",
+                    "const child = spawn('bash', ['-lc', 'sleep 30'], { stdio: 'ignore' });",
+                    "if (child.pid === undefined) throw new Error('missing child pid');",
+                    'console.log(JSON.stringify({ parentPid: process.pid, childPid: child.pid }));',
+                    'setInterval(() => {}, 1000);',
+                ].join('\n'),
+            ],
+            { detached: true, stdio: ['ignore', 'pipe', 'ignore'] }
+        );
+        let descendantPid: number | undefined;
+        try {
+            const recorded = JSON.parse(await readFirstStdoutLine(holder)) as { parentPid: number; childPid: number };
+            descendantPid = recorded.childPid;
+            const ownerOid = writeLegacyLockOwnerBlob(repository, 3, recorded.parentPid, recorded.parentPid, head, {
+                phase: 'replyDone',
+                epoch: 1,
+                reviewId,
+            });
+            updateLock(repository, 42, ownerOid);
+            expect(() => recoverPullRequestReviewResolutionLock(repository, 42, ownerOid, () => 'reconciled')).toThrow(
+                /still held by live process group/i
+            );
+            holder.kill('SIGKILL');
+            await waitForExit(holder);
+            expect(() => recoverPullRequestReviewResolutionLock(repository, 42, ownerOid, () => 'reconciled')).toThrow(
+                /still held by live process group/i
+            );
+
+            process.kill(descendantPid, 'SIGKILL');
+            await waitForProcessGroupGone(recorded.parentPid);
+            expect(
+                recoverPullRequestReviewResolutionLock(repository, 42, ownerOid, (owner) => ({
+                    owner,
+                    inspection: {
+                        pullRequestId,
+                        head: owner.head,
+                        thread: { id: owner.threadId, isResolved: false },
+                        pendingReviews: [],
+                    },
+                }))
+            ).toMatchObject({
+                owner: {
+                    threadId,
+                    head,
+                    pid: process.pid,
+                    ownerFence: { kind: 'pgid', pgid: readProcessGroupId(process.pid) },
+                    mutation: { phase: 'replyDone', epoch: 1, reviewId },
+                },
+                inspection: { head, thread: { id: threadId, isResolved: false }, pendingReviews: [] },
+            });
+            expect(readLockOid(repository, 42)).toBeUndefined();
+        } finally {
+            if (descendantPid !== undefined) {
+                try {
+                    process.kill(descendantPid, 'SIGKILL');
+                } catch {
+                    // Best-effort cleanup for a descendant already gone.
+                }
+            }
+            holder.kill('SIGKILL');
+            await waitForExit(holder).catch(() => undefined);
+            rmSync(repository, { recursive: true, force: true });
+        }
+    }, 10_000);
+
+    it('rejects cross-kind POSIX owner fences before recovery', () => {
+        const repository = createTemporaryGitRepository();
+        try {
+            const malformedOwnerOid = gitCapture(
+                repository,
+                ['hash-object', '-w', '--stdin'],
+                JSON.stringify({
+                    version: 4,
+                    pid: 999999,
+                    ownerFence: {
+                        kind: 'pgid',
+                        pgid: 999999,
+                        pid: 999999,
+                    },
+                    threadId,
+                    head,
+                    token: '11111111-1111-4111-8111-111111111111',
+                    mutation: { phase: 'idle', epoch: 0 },
+                })
+            );
+            updateLock(repository, 42, malformedOwnerOid);
+            expect(() =>
+                recoverPullRequestReviewResolutionLock(repository, 42, malformedOwnerOid, () => 'reconciled')
+            ).toThrow(/lock ownership is malformed/i);
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
     it('rejects cross-kind Windows owner fences before recovery', () => {
         const repository = createTemporaryGitRepository();
         try {
@@ -2714,6 +2875,7 @@ describe('review thread resolution', () => {
                     pid: 999999,
                     ownerFence: {
                         kind: 'pid',
+                        pid: 999999,
                         pgid: 999999,
                     },
                     threadId,

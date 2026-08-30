@@ -727,7 +727,7 @@ async function runSnapshotModule(
         'const loaded = await import(pathToFileURL(entryPath).href);',
         'const command = Reflect.get(loaded, runner);',
         "if (typeof command !== 'function') throw new Error(`trusted snapshot does not export ${runner}`);",
-        'const trustedLauncher = typeof process.env.SOURDAW_TRUSTED_PRIMARY_ROOT === "string" && typeof process.env.SOURDAW_TRUSTED_GIT_PATH === "string" && typeof process.env.SOURDAW_TRUSTED_GH_PATH === "string" && typeof process.env.SOURDAW_TRUSTED_PS_PATH === "string" ? { primaryRoot: process.env.SOURDAW_TRUSTED_PRIMARY_ROOT, gitPath: process.env.SOURDAW_TRUSTED_GIT_PATH, ghPath: process.env.SOURDAW_TRUSTED_GH_PATH, psPath: process.env.SOURDAW_TRUSTED_PS_PATH } : undefined;',
+        'const trustedLauncher = typeof process.env.SOURDAW_TRUSTED_PRIMARY_ROOT === "string" && typeof process.env.SOURDAW_TRUSTED_GIT_PATH === "string" && typeof process.env.SOURDAW_TRUSTED_GH_PATH === "string" ? { primaryRoot: process.env.SOURDAW_TRUSTED_PRIMARY_ROOT, gitPath: process.env.SOURDAW_TRUSTED_GIT_PATH, ghPath: process.env.SOURDAW_TRUSTED_GH_PATH, ...(typeof process.env.SOURDAW_TRUSTED_PS_PATH === "string" ? { psPath: process.env.SOURDAW_TRUSTED_PS_PATH } : {}) } : undefined;',
         'const dependencies = runner === "runResolveReviewThreadCli" || runner === "runRecoverReviewResolutionLockCli" ? { trustedLauncher } : undefined;',
         'const result = dependencies === undefined ? await command(args) : await command(args, dependencies);',
         "if (!Number.isSafeInteger(result)) throw new Error('trusted snapshot returned an invalid exit code');",
@@ -854,7 +854,8 @@ function repositoryCommonDir(checkoutRoot: string, gitPath: string): string {
 export function resolveTrustedLauncherBinding(
     launcherRoot: string,
     parent: NodeJS.ProcessEnv = process.env,
-    command?: TrustedGithubWriteCommand
+    command?: TrustedGithubWriteCommand,
+    platform: NodeJS.Platform = process.platform
 ): TrustedLauncherBinding {
     const root = realpathSync(launcherRoot);
     const gitPath = resolveTrustedExecutable('git', parent);
@@ -868,12 +869,12 @@ export function resolveTrustedLauncherBinding(
         commonDir,
         gitPath,
         ghPath: resolveTrustedExecutable('gh', parent),
-        psPath: commandRequiresTrustedPs(command) ? resolveTrustedExecutable('ps', parent) : undefined,
+        psPath: commandRequiresTrustedPs(command, platform) ? resolveTrustedExecutable('ps', parent) : undefined,
     };
 }
 
-function commandRequiresTrustedPs(command: TrustedGithubWriteCommand | undefined): boolean {
-    return command === 'review:resolve' || command === 'review:resolve:recover';
+function commandRequiresTrustedPs(command: TrustedGithubWriteCommand | undefined, platform: NodeJS.Platform): boolean {
+    return platform !== 'win32' && (command === 'review:resolve' || command === 'review:resolve:recover');
 }
 
 function defaultPort(binding: TrustedLauncherBinding): TrustedSourcePort {

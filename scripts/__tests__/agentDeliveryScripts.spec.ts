@@ -1059,7 +1059,7 @@ describe('package scripts and gitignore', () => {
         }
     });
 
-    it('requires a trusted ps binding only for review-resolution commands and reports invalid commands before binding', () => {
+    it('requires a trusted ps binding only for non-Windows review-resolution commands and reports invalid commands before binding', () => {
         const fixtureRoot = mkdtempSync(join(tmpdir(), 'sourdaw-bootstrap-command-gating-'));
         const primary = join(fixtureRoot, 'primary');
         const gitBin = join(fixtureRoot, 'git-bin');
@@ -1086,6 +1086,12 @@ describe('package scripts and gitignore', () => {
             });
             expect(resolveTrustedLauncherBinding(primary, { PATH: path }, 'lane:publish').psPath).toBeUndefined();
             expect(resolveTrustedLauncherBinding(primary, { PATH: path }, 'issue:reconcile').psPath).toBeUndefined();
+            expect(
+                resolveTrustedLauncherBinding(primary, { PATH: path }, 'review:resolve', 'win32').psPath
+            ).toBeUndefined();
+            expect(
+                resolveTrustedLauncherBinding(primary, { PATH: path }, 'review:resolve:recover', 'win32').psPath
+            ).toBeUndefined();
             expect(() => resolveTrustedLauncherBinding(primary, { PATH: path }, 'review:resolve')).toThrow(
                 /cannot resolve trusted ps executable/i
             );
@@ -1356,6 +1362,52 @@ describe('package scripts and gitignore', () => {
                 ).resolves.toBe(0);
 
                 expect(readFileSync(recordPath, 'utf8')).toBe(psPath);
+            } finally {
+                rmSync(root, { recursive: true, force: true });
+            }
+        }
+    );
+
+    it.each([
+        ['review:resolve', 'scripts/resolveReviewThread.ts', 'runResolveReviewThreadCli'],
+        ['review:resolve:recover', 'scripts/recoverReviewResolutionLock.ts', 'runRecoverReviewResolutionLockCli'],
+    ] as const)(
+        'passes a Windows no-ps launcher into the generated %s snapshot dependencies',
+        async (command, entryPath, runner) => {
+            const root = mkdtempSync(join(tmpdir(), 'sourdaw-trusted-review-win32-deps-'));
+            const recordPath = join(root, 'trusted-launcher.json');
+            const gitPath = execFileSync('/usr/bin/which', ['git'], { encoding: 'utf8' }).trim();
+            const ghPath = execFileSync('/usr/bin/which', ['gh'], { encoding: 'utf8' }).trim();
+            try {
+                await expect(
+                    executeTrustedSnapshot(command, ['42', '--record', recordPath], {
+                        commit: 'a'.repeat(40),
+                        sources: new Map([
+                            [
+                                entryPath,
+                                [
+                                    "import { writeFileSync } from 'node:fs';",
+                                    `export async function ${runner}(_args, dependencies) {`,
+                                    "  writeFileSync(process.argv.at(-1), JSON.stringify(dependencies?.trustedLauncher ?? null), 'utf8');",
+                                    '  return 0;',
+                                    '}',
+                                ].join('\n'),
+                            ],
+                        ]),
+                        launcher: {
+                            primaryRoot: '/repo',
+                            commonDir: '/repo/.git',
+                            gitPath,
+                            ghPath,
+                        },
+                    })
+                ).resolves.toBe(0);
+
+                expect(JSON.parse(readFileSync(recordPath, 'utf8'))).toEqual({
+                    primaryRoot: '/repo',
+                    gitPath,
+                    ghPath,
+                });
             } finally {
                 rmSync(root, { recursive: true, force: true });
             }

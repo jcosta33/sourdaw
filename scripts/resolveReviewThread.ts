@@ -265,6 +265,7 @@ type ReviewResolutionChildValidationPort = {
     platform?: NodeJS.Platform;
     sleep?: (ms: number) => Promise<void>;
 };
+type ReviewResolutionLivenessProbe = (target: number) => void;
 
 function canonicalGitObjectId(value: string, label: string, lengths: number[] = [40]): string {
     const trimmed = value.trim();
@@ -2314,9 +2315,16 @@ function reviewResolutionOwnerFenceLabel(ownerFence: ReviewResolutionLockOwnerFe
     return ownerFence.kind === 'pgid' ? `process group ${ownerFence.pgid}` : `process ${ownerFence.pid}`;
 }
 
-function isLiveProcessId(pid: number): boolean {
+function signalReviewResolutionLivenessTarget(target: number): void {
+    process.kill(target, 0);
+}
+
+function isLiveReviewResolutionTarget(
+    target: number,
+    probe: ReviewResolutionLivenessProbe = signalReviewResolutionLivenessTarget
+): boolean {
     try {
-        process.kill(pid, 0);
+        probe(target);
         return true;
     } catch (error) {
         if (error instanceof Error && 'code' in error && error.code === 'ESRCH') {
@@ -2329,8 +2337,20 @@ function isLiveProcessId(pid: number): boolean {
     }
 }
 
-function reviewResolutionOwnerFenceIsLive(ownerFence: ReviewResolutionLockOwnerFence): boolean {
-    return ownerFence.kind === 'pgid' ? isLiveProcessGroup(ownerFence.pgid) : isLiveProcessId(ownerFence.pid);
+function isLiveProcessId(
+    pid: number,
+    probe: ReviewResolutionLivenessProbe = signalReviewResolutionLivenessTarget
+): boolean {
+    return isLiveReviewResolutionTarget(pid, probe);
+}
+
+export function reviewResolutionOwnerFenceIsLive(
+    ownerFence: ReviewResolutionLockOwnerFence,
+    probe: ReviewResolutionLivenessProbe = signalReviewResolutionLivenessTarget
+): boolean {
+    return ownerFence.kind === 'pgid'
+        ? isLiveProcessGroup(ownerFence.pgid, probe)
+        : isLiveProcessId(ownerFence.pid, probe);
 }
 
 function writeReviewResolutionLockOwner(primaryRoot: string, owner: ReviewResolutionLockOwner, number: number): string {
@@ -2525,19 +2545,11 @@ export async function assertDetachedReviewResolutionChild(
     return invalidReviewResolutionChildMarker();
 }
 
-function isLiveProcessGroup(pgid: number): boolean {
-    try {
-        process.kill(-pgid, 0);
-        return true;
-    } catch (error) {
-        if (error instanceof Error && 'code' in error && error.code === 'ESRCH') {
-            return false;
-        }
-        if (error instanceof Error && 'code' in error && error.code === 'EPERM') {
-            return true;
-        }
-        throw error;
-    }
+function isLiveProcessGroup(
+    pgid: number,
+    probe: ReviewResolutionLivenessProbe = signalReviewResolutionLivenessTarget
+): boolean {
+    return isLiveReviewResolutionTarget(-pgid, probe);
 }
 
 function acquirePullRequestReviewResolutionLock(
