@@ -125,10 +125,19 @@ export type DeletePendingReviewOptions = {
     allowedAttachedThreadIds?: string[];
     snapshotHead?: string;
 };
+export type ReviewResolutionLockOwnerFence =
+    | {
+          kind: 'pgid';
+          pgid: number;
+      }
+    | {
+          kind: 'pid';
+          pid: number;
+      };
 export type ReviewResolutionLockOwner = {
-    version: 3;
+    version: 4;
     pid: number;
-    pgid: number;
+    ownerFence: ReviewResolutionLockOwnerFence;
     threadId: string;
     head: string;
     token: string;
@@ -138,7 +147,7 @@ export type ReviewResolutionTrustedLauncher = {
     primaryRoot: string;
     gitPath: string;
     ghPath: string;
-    psPath: string;
+    psPath?: string;
 };
 export type ReviewResolutionRecoveryClock = {
     now: () => number;
@@ -200,7 +209,7 @@ type ManagedReplyMarker = {
 };
 type ReviewResolutionExecutionFence = {
     pid: number;
-    pgid: number;
+    ownerFence: ReviewResolutionLockOwnerFence;
 };
 type ActiveReviewResolutionLock = {
     primaryRoot: string;
@@ -212,9 +221,13 @@ type ActiveReviewResolutionLock = {
 type ReviewResolutionLockInspectionPort = {
     readOid?: (primaryRoot: string, ref: string, number: number) => string | undefined;
     release?: (primaryRoot: string, ref: string, oid: string, number: number) => void;
+    executionFence?: ReviewResolutionExecutionFence;
+    platform?: NodeJS.Platform;
 };
 type ReviewResolutionLockRecoveryPort = {
     updateRef?: (primaryRoot: string, args: string[]) => boolean;
+    executionFence?: ReviewResolutionExecutionFence;
+    platform?: NodeJS.Platform;
 };
 export const REVIEW_RESOLUTION_CHILD_ENV = 'SOURDAW_REVIEW_RESOLUTION_CHILD';
 const REVIEW_RESOLUTION_CHILD_MARKER_VERSION = 1;
@@ -247,6 +260,11 @@ type ReviewResolutionChildMarkerPublicationPort = {
     renameSync?: typeof renameSync;
     rmSync?: typeof rmSync;
 };
+type ReviewResolutionChildValidationPort = {
+    executionFence?: ReviewResolutionExecutionFence;
+    platform?: NodeJS.Platform;
+    sleep?: (ms: number) => Promise<void>;
+};
 
 function canonicalGitObjectId(value: string, label: string, lengths: number[] = [40]): string {
     const trimmed = value.trim();
@@ -273,8 +291,13 @@ function isPositiveSafeInteger(value: unknown): value is number {
 
 export function assertTrustedReviewResolutionLauncher(
     value: unknown,
-    label: string = 'review:resolve must run through the protected primary checkout launcher'
+    label: string = 'review:resolve must run through the protected primary checkout launcher',
+    platform: NodeJS.Platform = process.platform
 ): ReviewResolutionTrustedLauncher {
+    const psPath =
+        typeof value === 'object' && value !== null && 'psPath' in value && typeof value.psPath === 'string'
+            ? value.psPath
+            : undefined;
     if (
         typeof value !== 'object' ||
         value === null ||
@@ -293,11 +316,8 @@ export function assertTrustedReviewResolutionLauncher(
         value.ghPath.trim() === '' ||
         !isAbsolute(value.ghPath) ||
         normalize(value.ghPath) !== value.ghPath ||
-        !('psPath' in value) ||
-        typeof value.psPath !== 'string' ||
-        value.psPath.trim() === '' ||
-        !isAbsolute(value.psPath) ||
-        normalize(value.psPath) !== value.psPath
+        (platform !== 'win32' && psPath === undefined) ||
+        (psPath !== undefined && (psPath.trim() === '' || !isAbsolute(psPath) || normalize(psPath) !== psPath))
     ) {
         fail(label);
     }
@@ -305,7 +325,7 @@ export function assertTrustedReviewResolutionLauncher(
         primaryRoot: value.primaryRoot,
         gitPath: value.gitPath,
         ghPath: value.ghPath,
-        psPath: value.psPath,
+        ...(psPath === undefined ? {} : { psPath }),
     };
 }
 
@@ -381,7 +401,8 @@ export function readPersistedReviewResolutionChildLaunchMarker(
 
 function readPersistedReviewResolutionBootstrapCapability(
     path: string,
-    token: string
+    token: string,
+    platform: NodeJS.Platform = process.platform
 ): PersistedReviewResolutionBootstrapCapability {
     let parsed: unknown;
     try {
@@ -404,7 +425,11 @@ function readPersistedReviewResolutionBootstrapCapability(
     return {
         version: 1,
         token,
-        trustedLauncher: assertTrustedReviewResolutionLauncher(parsed.trustedLauncher),
+        trustedLauncher: assertTrustedReviewResolutionLauncher(
+            parsed.trustedLauncher,
+            'review:resolve must run through the protected primary checkout launcher',
+            platform
+        ),
     };
 }
 
@@ -2094,15 +2119,11 @@ function parseReviewResolutionLockOwner(contents: string, number: number): Revie
         typeof value !== 'object' ||
         value === null ||
         !('version' in value) ||
-        (value.version !== 2 && value.version !== 3) ||
+        (value.version !== 2 && value.version !== 3 && value.version !== 4) ||
         !('pid' in value) ||
         typeof value.pid !== 'number' ||
         !Number.isSafeInteger(value.pid) ||
         value.pid <= 0 ||
-        !('pgid' in value) ||
-        typeof value.pgid !== 'number' ||
-        !Number.isSafeInteger(value.pgid) ||
-        value.pgid <= 0 ||
         !('threadId' in value) ||
         typeof value.threadId !== 'string' ||
         value.threadId.trim() === '' ||
@@ -2115,20 +2136,39 @@ function parseReviewResolutionLockOwner(contents: string, number: number): Revie
     ) {
         fail(`${scope} lock ownership is malformed`);
     }
+    const label = `${scope} lock ownership is malformed`;
+    let ownerFence: ReviewResolutionLockOwnerFence;
+    if (value.version === 4) {
+        ownerFence = parseReviewResolutionLockOwnerFence(
+            (value as { ownerFence?: unknown }).ownerFence,
+            label,
+            value.pid
+        );
+    } else {
+        if (
+            !('pgid' in value) ||
+            typeof value.pgid !== 'number' ||
+            !Number.isSafeInteger(value.pgid) ||
+            value.pgid <= 0
+        ) {
+            fail(label);
+        }
+        ownerFence = { kind: 'pgid', pgid: value.pgid };
+    }
+    let mutation: ReviewResolutionLockMutation;
+    if (value.version === 3 || value.version === 4) {
+        mutation = parseReviewResolutionLockMutation((value as { mutation?: unknown }).mutation, label);
+    } else {
+        mutation = { phase: 'idle', epoch: 0 };
+    }
     return {
-        version: 3,
+        version: 4,
         pid: value.pid,
-        pgid: value.pgid,
+        ownerFence,
         threadId: value.threadId,
-        head: canonicalGitObjectId(value.head, `${scope} lock ownership is malformed`),
+        head: canonicalGitObjectId(value.head, label),
         token: value.token,
-        mutation:
-            value.version === 3
-                ? parseReviewResolutionLockMutation(
-                      (value as { mutation?: unknown }).mutation,
-                      `${scope} lock ownership is malformed`
-                  )
-                : { phase: 'idle', epoch: 0 },
+        mutation,
     };
 }
 
@@ -2245,6 +2285,54 @@ function reviewResolutionLockObjectId(value: string, number: number): string {
     return canonicalGitObjectId(value, `${scope} lock object identity is malformed`, [40, 64]);
 }
 
+function parseReviewResolutionLockOwnerFence(
+    value: unknown,
+    label: string,
+    ownerPid?: number
+): ReviewResolutionLockOwnerFence {
+    if (typeof value !== 'object' || value === null || typeof (value as { kind?: unknown }).kind !== 'string') {
+        fail(label);
+    }
+    if ((value as { kind: string }).kind === 'pgid') {
+        const pgid = (value as { pgid?: unknown }).pgid;
+        if (!isPositiveSafeInteger(pgid) || 'pid' in value) {
+            fail(label);
+        }
+        return { kind: 'pgid', pgid };
+    }
+    if ((value as { kind: string }).kind === 'pid') {
+        const pid = (value as { pid?: unknown }).pid;
+        if (!isPositiveSafeInteger(pid) || 'pgid' in value || (ownerPid !== undefined && pid !== ownerPid)) {
+            fail(label);
+        }
+        return { kind: 'pid', pid };
+    }
+    return fail(label);
+}
+
+function reviewResolutionOwnerFenceLabel(ownerFence: ReviewResolutionLockOwnerFence): string {
+    return ownerFence.kind === 'pgid' ? `process group ${ownerFence.pgid}` : `process ${ownerFence.pid}`;
+}
+
+function isLiveProcessId(pid: number): boolean {
+    try {
+        process.kill(pid, 0);
+        return true;
+    } catch (error) {
+        if (error instanceof Error && 'code' in error && error.code === 'ESRCH') {
+            return false;
+        }
+        if (error instanceof Error && 'code' in error && error.code === 'EPERM') {
+            return true;
+        }
+        throw error;
+    }
+}
+
+function reviewResolutionOwnerFenceIsLive(ownerFence: ReviewResolutionLockOwnerFence): boolean {
+    return ownerFence.kind === 'pgid' ? isLiveProcessGroup(ownerFence.pgid) : isLiveProcessId(ownerFence.pid);
+}
+
 function writeReviewResolutionLockOwner(primaryRoot: string, owner: ReviewResolutionLockOwner, number: number): string {
     const result = reviewResolutionLockGit(primaryRoot, ['hash-object', '-w', '--stdin'], JSON.stringify(owner));
     if (result.error !== undefined) {
@@ -2290,9 +2378,6 @@ function updateReviewResolutionLockRef(primaryRoot: string, args: string[]): boo
 }
 
 function currentProcessGroupId(pid: number, env: NodeJS.ProcessEnv = process.env): number {
-    if (process.platform === 'win32') {
-        fail('review-resolution lock requires POSIX process-group fencing');
-    }
     const result = spawnSync(trustedReviewResolutionPsPath(env), ['-o', 'pgid=', '-p', String(pid)], {
         encoding: 'utf8',
         shell: false,
@@ -2311,9 +2396,45 @@ function currentProcessGroupId(pid: number, env: NodeJS.ProcessEnv = process.env
     return pgid;
 }
 
-function currentReviewResolutionExecutionFence(): ReviewResolutionExecutionFence {
+function currentReviewResolutionExecutionFence(
+    platform: NodeJS.Platform = process.platform
+): ReviewResolutionExecutionFence {
     const pid = process.pid;
-    return { pid, pgid: currentProcessGroupId(pid) };
+    if (platform === 'win32') {
+        return {
+            pid,
+            ownerFence: {
+                kind: 'pid',
+                pid,
+            },
+        };
+    }
+    return {
+        pid,
+        ownerFence: {
+            kind: 'pgid',
+            pgid: currentProcessGroupId(pid),
+        },
+    };
+}
+
+function assertReviewResolutionExecutionFence(
+    executionFence: ReviewResolutionExecutionFence,
+    platform: NodeJS.Platform
+): ReviewResolutionExecutionFence {
+    if (!isPositiveSafeInteger(executionFence.pid)) {
+        fail('review-resolution lock reported an invalid execution PID');
+    }
+    if (platform === 'win32') {
+        if (executionFence.ownerFence.kind !== 'pid' || executionFence.ownerFence.pid !== executionFence.pid) {
+            fail('review-resolution lock requires exact PID fencing on Windows');
+        }
+        return executionFence;
+    }
+    if (executionFence.ownerFence.kind !== 'pgid' || !isPositiveSafeInteger(executionFence.ownerFence.pgid)) {
+        fail('review-resolution lock requires POSIX process-group fencing');
+    }
+    return executionFence;
 }
 
 function pushActiveReviewResolutionLock(lock: ActiveReviewResolutionLock): void {
@@ -2371,26 +2492,33 @@ function replaceActiveReviewResolutionLockMutation(
 }
 
 export async function assertDetachedReviewResolutionChild(
-    markerValue: string
+    markerValue: string,
+    port: ReviewResolutionChildValidationPort = {}
 ): Promise<ReviewResolutionTrustedLauncher> {
-    if (process.platform === 'win32') {
-        fail('review-resolution lock requires POSIX process-group fencing');
-    }
     const marker = parseReviewResolutionChildLaunchMarker(markerValue);
-    const { pid, pgid } = currentReviewResolutionExecutionFence();
-    if (pid !== pgid) {
+    const platform = port.platform ?? process.platform;
+    const executionFence = assertReviewResolutionExecutionFence(
+        port.executionFence ?? currentReviewResolutionExecutionFence(platform),
+        platform
+    );
+    if (executionFence.ownerFence.kind === 'pgid' && executionFence.pid !== executionFence.ownerFence.pgid) {
         fail('review:resolve must run in its own detached POSIX process group');
     }
+    const sleep = port.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
     for (let attempt = 0; attempt < 50; attempt += 1) {
         const persisted = readPersistedReviewResolutionChildLaunchMarker(marker);
         if (persisted.pid === null) {
-            await new Promise((resolve) => setTimeout(resolve, 10));
+            await sleep(10);
             continue;
         }
-        if (persisted.pid !== pid) {
+        if (persisted.pid !== executionFence.pid) {
             invalidReviewResolutionChildMarker();
         }
-        const capability = readPersistedReviewResolutionBootstrapCapability(persisted.capabilityPath, marker.token);
+        const capability = readPersistedReviewResolutionBootstrapCapability(
+            persisted.capabilityPath,
+            marker.token,
+            platform
+        );
         rmSync(marker.path, { force: true });
         return capability.trustedLauncher;
     }
@@ -2421,9 +2549,9 @@ function acquirePullRequestReviewResolutionLock(
 ): { ref: string; oid: string } {
     const ref = pullRequestReviewResolutionLockRef(number);
     const owner: ReviewResolutionLockOwner = {
-        version: 3,
+        version: 4,
         pid: executionFence.pid,
-        pgid: executionFence.pgid,
+        ownerFence: executionFence.ownerFence,
         threadId,
         head: expectedHead,
         token: randomUUID(),
@@ -2440,7 +2568,7 @@ function acquirePullRequestReviewResolutionLock(
     }
     const previousOwner = readReviewResolutionLockOwner(primaryRoot, previousOid, number);
     return fail(
-        `${pullRequestReviewResolutionLockScope(number)} is already being resolved by process group ${previousOwner.pgid}`
+        `${pullRequestReviewResolutionLockScope(number)} is already being resolved by ${reviewResolutionOwnerFenceLabel(previousOwner.ownerFence)}`
     );
 }
 
@@ -2513,12 +2641,16 @@ export function withPullRequestReviewResolutionLock<Value>(
 ): Value {
     const readOid = port.readOid ?? readReviewResolutionLockOid;
     const release = port.release ?? releasePullRequestReviewResolutionLock;
+    const platform = port.platform ?? process.platform;
     const lock = acquirePullRequestReviewResolutionLock(
         primaryRoot,
         number,
         threadId,
         expectedHead,
-        currentReviewResolutionExecutionFence()
+        assertReviewResolutionExecutionFence(
+            port.executionFence ?? currentReviewResolutionExecutionFence(platform),
+            platform
+        )
     );
     const active: ActiveReviewResolutionLock = {
         primaryRoot,
@@ -2564,7 +2696,7 @@ export function recoverPullRequestReviewResolutionLock<Value>(
     number: number,
     expectedOwnerOid: string,
     reconcile: (owner: ReviewResolutionLockOwner) => Value,
-    processGroupIsLive: (pgid: number) => boolean = isLiveProcessGroup,
+    ownerFenceIsLive: (ownerFence: ReviewResolutionLockOwnerFence) => boolean = reviewResolutionOwnerFenceIsLive,
     port: ReviewResolutionLockRecoveryPort = {}
 ): Value {
     const ref = pullRequestReviewResolutionLockRef(number);
@@ -2577,18 +2709,22 @@ export function recoverPullRequestReviewResolutionLock<Value>(
         return fail(`${pullRequestReviewResolutionLockScope(number)} lock ownership changed before recovery`);
     }
     const owner = readReviewResolutionLockOwner(primaryRoot, currentOwnerOid, number);
-    if (processGroupIsLive(owner.pgid)) {
+    if (ownerFenceIsLive(owner.ownerFence)) {
         return fail(
-            `${pullRequestReviewResolutionLockScope(number)} lock is still held by live process group ${owner.pgid}`
+            `${pullRequestReviewResolutionLockScope(number)} lock is still held by live ${reviewResolutionOwnerFenceLabel(owner.ownerFence)}`
         );
     }
+    const platform = port.platform ?? process.platform;
     const claimed = claimRecoveringPullRequestReviewResolutionLock(
         primaryRoot,
         ref,
         currentOwnerOid,
         owner,
         number,
-        currentReviewResolutionExecutionFence(),
+        assertReviewResolutionExecutionFence(
+            port.executionFence ?? currentReviewResolutionExecutionFence(platform),
+            platform
+        ),
         port.updateRef ?? updateReviewResolutionLockRef
     );
     const active: ActiveReviewResolutionLock = {
@@ -2636,7 +2772,7 @@ function claimRecoveringPullRequestReviewResolutionLock(
     const claimedOwner: ReviewResolutionLockOwner = {
         ...owner,
         pid: executionFence.pid,
-        pgid: executionFence.pgid,
+        ownerFence: executionFence.ownerFence,
     };
     const claimedOid = writeReviewResolutionLockOwner(primaryRoot, claimedOwner, number);
     if (!updateRef(primaryRoot, [ref, claimedOid, currentOwnerOid])) {

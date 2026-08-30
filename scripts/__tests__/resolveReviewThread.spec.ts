@@ -11,6 +11,7 @@ import {
     runRecoverReviewResolutionLockCli,
 } from '../recoverReviewResolutionLock.ts';
 import {
+    assertDetachedReviewResolutionChild,
     type DeletePendingReviewOptions,
     inspectReviewThread,
     parseResolveReviewThreadArgs,
@@ -26,6 +27,7 @@ import {
     recoverReviewResolutionLockOwnerState,
     withPullRequestReviewResolutionLock,
     type ReviewResolutionLockOwner,
+    type ReviewResolutionLockOwnerFence,
     type ResolveReviewThreadPort,
 } from '../resolveReviewThread.ts';
 
@@ -80,6 +82,32 @@ type CommentRecord = {
     authorLogin: string | null;
     authorType: string | null;
     reviewId: string | null;
+};
+type TestLockOwnerRecord = {
+    version: number;
+    pid: number;
+    ownerFence?: {
+        kind: string;
+        pid?: number;
+        pgid?: number;
+    };
+    pgid?: number;
+    threadId: string;
+    head: string;
+    token: string;
+    mutation?: {
+        phase?: string;
+        epoch?: number;
+        reviewId?: string;
+        replyId?: string;
+        body?: string;
+        pendingReviewIds?: string[];
+        settleAtMs?: number;
+        replies?: { replyId?: string; reviewId?: string; reviewState?: string }[];
+        allowedAttachedThreadIds?: string[];
+        snapshotHead?: string;
+        dispatchState?: string;
+    };
 };
 function withTemporaryEnvironment<Value>(overrides: Record<string, string | undefined>, operation: () => Value): Value {
     const previous = new Map<string, string | undefined>();
@@ -1079,57 +1107,12 @@ function readLockOid(repository: string, number: number): string | undefined {
     return result.stdout.trim();
 }
 
-function readLockOwner(
-    repository: string,
-    number: number
-):
-    | {
-          version: number;
-          pid: number;
-          pgid: number;
-          threadId: string;
-          head: string;
-          token: string;
-          mutation?: {
-              phase?: string;
-              epoch?: number;
-              reviewId?: string;
-              replyId?: string;
-              body?: string;
-              pendingReviewIds?: string[];
-              settleAtMs?: number;
-              replies?: { replyId?: string; reviewId?: string; reviewState?: string }[];
-              allowedAttachedThreadIds?: string[];
-              snapshotHead?: string;
-              dispatchState?: string;
-          };
-      }
-    | undefined {
+function readLockOwner(repository: string, number: number): TestLockOwnerRecord | undefined {
     const oid = readLockOid(repository, number);
     if (oid === undefined) {
         return undefined;
     }
-    return JSON.parse(gitCapture(repository, ['cat-file', 'blob', oid])) as {
-        version: number;
-        pid: number;
-        pgid: number;
-        threadId: string;
-        head: string;
-        token: string;
-        mutation?: {
-            phase?: string;
-            epoch?: number;
-            reviewId?: string;
-            replyId?: string;
-            body?: string;
-            pendingReviewIds?: string[];
-            settleAtMs?: number;
-            replies?: { replyId?: string; reviewId?: string; reviewState?: string }[];
-            allowedAttachedThreadIds?: string[];
-            snapshotHead?: string;
-            dispatchState?: string;
-        };
-    };
+    return JSON.parse(gitCapture(repository, ['cat-file', 'blob', oid])) as TestLockOwnerRecord;
 }
 
 function requireLockOwner(repository: string, number: number): ReviewResolutionLockOwner {
@@ -1159,15 +1142,19 @@ function writeLockOwnerBlob(
     } = {
         phase: 'idle',
         epoch: 0,
+    },
+    ownerFence: ReviewResolutionLockOwnerFence = {
+        kind: 'pgid',
+        pgid: pid,
     }
 ): string {
     return gitCapture(
         repository,
         ['hash-object', '-w', '--stdin'],
         JSON.stringify({
-            version: 3,
+            version: 4,
             pid,
-            pgid: pid,
+            ownerFence,
             threadId,
             head: currentHead,
             token: '11111111-1111-4111-8111-111111111111',
@@ -1242,6 +1229,21 @@ async function waitForProcessGroupGone(pgid: number): Promise<void> {
     throw new Error(`process group ${pgid} did not exit`);
 }
 
+async function waitForProcessGone(pid: number): Promise<void> {
+    for (let attempt = 0; attempt < 200; attempt += 1) {
+        try {
+            process.kill(pid, 0);
+        } catch (error) {
+            if (error instanceof Error && 'code' in error && error.code === 'ESRCH') {
+                return;
+            }
+            throw error;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    throw new Error(`process ${pid} did not exit`);
+}
+
 function readProcessGroupId(pid: number): number {
     const result = spawnSync('ps', ['-o', 'pgid=', '-p', String(pid)], {
         encoding: 'utf8',
@@ -1263,18 +1265,13 @@ function readProcessGroupId(pid: number): number {
 async function waitForReviewResolutionLock(
     repository: string,
     number: number
-): Promise<{ oid: string; owner: { pid: number; pgid: number; threadId: string; head: string } }> {
+): Promise<{ oid: string; owner: TestLockOwnerRecord }> {
     for (let attempt = 0; attempt < 200; attempt += 1) {
         const oid = readLockOid(repository, number);
         if (oid !== undefined) {
             return {
                 oid,
-                owner: JSON.parse(gitCapture(repository, ['cat-file', 'blob', oid])) as {
-                    pid: number;
-                    pgid: number;
-                    threadId: string;
-                    head: string;
-                },
+                owner: JSON.parse(gitCapture(repository, ['cat-file', 'blob', oid])) as TestLockOwnerRecord,
             };
         }
         await new Promise((resolve) => setTimeout(resolve, 10));
@@ -1286,16 +1283,11 @@ async function waitForReviewResolutionLockOwnerPidChange(
     repository: string,
     number: number,
     originalPid: number
-): Promise<{ oid: string; owner: { pid: number; pgid: number; threadId: string; head: string } }> {
+): Promise<{ oid: string; owner: TestLockOwnerRecord }> {
     for (let attempt = 0; attempt < 200; attempt += 1) {
         const oid = readLockOid(repository, number);
         if (oid !== undefined) {
-            const owner = JSON.parse(gitCapture(repository, ['cat-file', 'blob', oid])) as {
-                pid: number;
-                pgid: number;
-                threadId: string;
-                head: string;
-            };
+            const owner = JSON.parse(gitCapture(repository, ['cat-file', 'blob', oid])) as TestLockOwnerRecord;
             if (owner.pid !== originalPid) {
                 return { oid, owner };
             }
@@ -1742,6 +1734,36 @@ describe('review thread resolution', () => {
         }
     });
 
+    it('uses exact PID fencing for Windows lock ownership without requiring a trusted ps path', () => {
+        const repository = createTemporaryGitRepository();
+        try {
+            withTemporaryEnvironment({ SOURDAW_TRUSTED_PS_PATH: undefined }, () => {
+                expect(
+                    withPullRequestReviewResolutionLock(
+                        repository,
+                        42,
+                        threadId,
+                        head,
+                        () => {
+                            expect(requireLockOwner(repository, 42)).toMatchObject({
+                                pid: process.pid,
+                                ownerFence: { kind: 'pid', pid: process.pid },
+                                threadId,
+                                head,
+                                mutation: { phase: 'idle', epoch: 0 },
+                            });
+                            return 'ok';
+                        },
+                        { platform: 'win32' }
+                    )
+                ).toBe('ok');
+            });
+            expect(readLockOid(repository, 42)).toBeUndefined();
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
     it.each([
         ['create', 'createPendingReview', { phase: 'createPendingReview', epoch: 1 }],
         [
@@ -1817,7 +1839,7 @@ describe('review thread resolution', () => {
                             threadId,
                             head,
                             pid: process.pid,
-                            pgid: currentPgid,
+                            ownerFence: { kind: 'pgid', pgid: currentPgid },
                             mutation: { phase: 'createPendingReview', epoch: 1 },
                         });
                         const claimedOwnerOid = readLockOid(repository, 42);
@@ -1829,14 +1851,14 @@ describe('review thread resolution', () => {
                                 42,
                                 claimedOwnerOid!,
                                 () => 'nested recovery must not start',
-                                (pgid) => pgid === currentPgid
+                                (ownerFence) => ownerFence.kind === 'pgid' && ownerFence.pgid === currentPgid
                             )
                         ).toThrow(
                             `review resolution on PR #42 lock is still held by live process group ${currentPgid}`
                         );
                         return 'outer recovery claimed the lock';
                     },
-                    (pgid) => pgid === currentPgid
+                    (ownerFence) => ownerFence.kind === 'pgid' && ownerFence.pgid === currentPgid
                 )
             ).toBe('outer recovery claimed the lock');
             expect(readLockOid(repository, 42)).toBeUndefined();
@@ -2681,6 +2703,120 @@ describe('review thread resolution', () => {
         }
     }, 10_000);
 
+    it('rejects cross-kind Windows owner fences before recovery', () => {
+        const repository = createTemporaryGitRepository();
+        try {
+            const malformedOwnerOid = gitCapture(
+                repository,
+                ['hash-object', '-w', '--stdin'],
+                JSON.stringify({
+                    version: 4,
+                    pid: 999999,
+                    ownerFence: {
+                        kind: 'pid',
+                        pgid: 999999,
+                    },
+                    threadId,
+                    head,
+                    token: '11111111-1111-4111-8111-111111111111',
+                    mutation: { phase: 'idle', epoch: 0 },
+                })
+            );
+            updateLock(repository, 42, malformedOwnerOid);
+            expect(() =>
+                recoverPullRequestReviewResolutionLock(repository, 42, malformedOwnerOid, () => 'reconciled')
+            ).toThrow(/lock ownership is malformed/i);
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
+    it('uses the detached child PID as the Windows recovery fence so a live child blocks and its exit unlocks recovery', async () => {
+        const repository = createTemporaryGitRepository();
+        const holder = spawn(
+            process.execPath,
+            [
+                '--input-type=module',
+                '--eval',
+                [
+                    "import { spawn } from 'node:child_process';",
+                    "const child = spawn('bash', ['-lc', 'sleep 30'], { stdio: 'ignore' });",
+                    "if (child.pid === undefined) throw new Error('missing child pid');",
+                    'console.log(JSON.stringify({ parentPid: process.pid, childPid: child.pid }));',
+                    'setInterval(() => {}, 1000);',
+                ].join('\n'),
+            ],
+            { detached: true, stdio: ['ignore', 'pipe', 'ignore'] }
+        );
+        let childPid: number | undefined;
+        try {
+            const recorded = JSON.parse(await readFirstStdoutLine(holder)) as { parentPid: number; childPid: number };
+            childPid = recorded.childPid;
+            const ownerOid = writeLockOwnerBlob(
+                repository,
+                childPid,
+                head,
+                {
+                    phase: 'replyDone',
+                    epoch: 1,
+                    reviewId,
+                },
+                {
+                    kind: 'pid',
+                    pid: childPid,
+                }
+            );
+            updateLock(repository, 42, ownerOid);
+
+            expect(() =>
+                recoverPullRequestReviewResolutionLock(repository, 42, ownerOid, () => 'reconciled', undefined, {
+                    platform: 'win32',
+                })
+            ).toThrow(`review resolution on PR #42 lock is still held by live process ${childPid}`);
+
+            process.kill(childPid, 'SIGKILL');
+            await waitForProcessGone(childPid);
+
+            expect(holder.exitCode).toBeNull();
+            expect(
+                recoverPullRequestReviewResolutionLock(
+                    repository,
+                    42,
+                    ownerOid,
+                    (owner) => {
+                        expect(owner.ownerFence).toEqual({ kind: 'pid', pid: process.pid });
+                        return {
+                            owner,
+                            inspection: {
+                                pullRequestId,
+                                head: owner.head,
+                                thread: { id: owner.threadId, isResolved: false },
+                                pendingReviews: [],
+                            },
+                        };
+                    },
+                    undefined,
+                    { platform: 'win32' }
+                )
+            ).toMatchObject({
+                owner: { threadId, head, ownerFence: { kind: 'pid', pid: process.pid } },
+                inspection: { head, thread: { id: threadId, isResolved: false }, pendingReviews: [] },
+            });
+            expect(readLockOid(repository, 42)).toBeUndefined();
+        } finally {
+            if (childPid !== undefined) {
+                try {
+                    process.kill(childPid, 'SIGKILL');
+                } catch {
+                    // Best-effort cleanup for a child already gone.
+                }
+            }
+            holder.kill('SIGKILL');
+            await waitForExit(holder).catch(() => undefined);
+            rmSync(repository, { recursive: true, force: true });
+        }
+    }, 10_000);
+
     it('recovers a quiescent PR-scoped review-resolution lock only after reconciliation and fences owner changes', () => {
         const repository = createTemporaryGitRepository();
         try {
@@ -2756,7 +2892,7 @@ describe('review thread resolution', () => {
             expect(readLockOid(repository, 42)).toBe(replacementOwnerOid);
             expect(requireLockOwner(repository, 42)).toMatchObject({
                 pid: 1_000_000,
-                pgid: 1_000_000,
+                ownerFence: { kind: 'pgid', pgid: 1_000_000 },
                 threadId,
                 head,
                 mutation: { phase: 'idle', epoch: 0 },
@@ -3222,6 +3358,49 @@ describe('review thread resolution', () => {
         }
     });
 
+    it('accepts a Windows detached child marker and launcher capability without a ps path', async () => {
+        const markerRoot = mkdtempSync(join(tmpdir(), 'sourdaw-review-win32-child-marker-'));
+        const markerPath = join(markerRoot, 'child-marker.json');
+        const capabilityPath = join(markerRoot, 'bootstrap-capability.json');
+        const token = '11111111-1111-4111-8111-111111111111';
+        try {
+            writeFileSync(
+                capabilityPath,
+                JSON.stringify({
+                    version: 1,
+                    token,
+                    trustedLauncher: {
+                        primaryRoot: markerRoot,
+                        gitPath: trustedGitPath,
+                        ghPath: trustedGhPath,
+                    },
+                }),
+                { encoding: 'utf8', mode: 0o600 }
+            );
+            publishReviewResolutionChildLaunchMarker(markerPath, token, process.pid, capabilityPath);
+            await expect(
+                assertDetachedReviewResolutionChild(JSON.stringify({ path: markerPath, token }), {
+                    platform: 'win32',
+                    executionFence: {
+                        pid: process.pid,
+                        ownerFence: {
+                            kind: 'pid',
+                            pid: process.pid,
+                        },
+                    },
+                    sleep: async () => undefined,
+                })
+            ).resolves.toEqual({
+                primaryRoot: markerRoot,
+                gitPath: trustedGitPath,
+                ghPath: trustedGhPath,
+            });
+            expect(existsSync(markerPath)).toBe(false);
+        } finally {
+            rmSync(markerRoot, { recursive: true, force: true });
+        }
+    });
+
     it('rejects a forged preset child marker before creating the PR lock', async () => {
         const repository = createTemporaryGitRepository();
         const snapshotRoot = mkdtempSync(join(tmpdir(), 'sourdaw-review-resolve-forged-marker-'));
@@ -3582,7 +3761,7 @@ describe('review thread resolution', () => {
         launcher.stderr?.on('data', (chunk: string) => {
             stderr += chunk;
         });
-        let owner: { pid: number; pgid: number; threadId: string; head: string } | undefined;
+        let owner: TestLockOwnerRecord | undefined;
         try {
             if (launcher.pid === undefined) {
                 throw new Error('launcher pid is unavailable');
@@ -3593,14 +3772,15 @@ describe('review thread resolution', () => {
             expect(owner.threadId).toBe(threadId);
             expect(owner.head).toBe(head);
             expect(owner.pid).not.toBe(launcher.pid);
-            expect(owner.pgid).toBe(owner.pid);
-            expect(owner.pgid).not.toBe(launcherPgid);
+            expect(owner.ownerFence).toEqual({ kind: 'pgid', pgid: owner.pid });
+            expect(owner.ownerFence?.kind).toBe('pgid');
+            expect(owner.ownerFence?.pgid).not.toBe(launcherPgid);
             expect(() => recoverPullRequestReviewResolutionLock(repository, 42, lock.oid, () => 'recovered')).toThrow(
                 /still held by live process group/i
             );
 
-            process.kill(-owner.pgid, 'SIGKILL');
-            await waitForProcessGroupGone(owner.pgid);
+            process.kill(-owner.pid, 'SIGKILL');
+            await waitForProcessGroupGone(owner.pid);
             await waitForExit(launcher);
             expect(launcher.exitCode).toBe(1);
             expect(stderr).toMatch(/terminated by SIGKILL/i);
@@ -3615,7 +3795,7 @@ describe('review thread resolution', () => {
         } finally {
             if (owner !== undefined) {
                 try {
-                    process.kill(-owner.pgid, 'SIGKILL');
+                    process.kill(-owner.pid, 'SIGKILL');
                 } catch {
                     // Best-effort cleanup for a worker group already gone.
                 }
@@ -3666,7 +3846,7 @@ describe('review thread resolution', () => {
             const claimed = await waitForReviewResolutionLockOwnerPidChange(repository, 42, 999999);
             expect(launcher.exitCode).toBeNull();
             expect(claimed.owner.pid).not.toBe(launcher.pid);
-            expect(claimed.owner.pgid).toBe(claimed.owner.pid);
+            expect(claimed.owner.ownerFence).toEqual({ kind: 'pgid', pgid: claimed.owner.pid });
             expect(
                 recoverPullRequestReviewResolutionLock(
                     repository,
