@@ -137,7 +137,7 @@ describe('resetExternalPluginRuntimeForGraphRebuild', () => {
             latency_ms: 2,
             engine_plugin_id: 1001,
         });
-        const retirement = beginProjectSessionPluginRetirement();
+        const retirement = await beginProjectSessionPluginRetirement();
         const retiring = retirement.retire();
         const activation = activateExternalPlugin({
             engineSampleRate: 48_000,
@@ -154,6 +154,21 @@ describe('resetExternalPluginRuntimeForGraphRebuild', () => {
         retirement.reopen();
         await activation;
         expect(mocks.loadPlugin).toHaveBeenCalledOnce();
+    });
+
+    it('waits for an already-active rebuild before acquiring the project-session retirement fence', async () => {
+        const activeUnload = Promise.withResolvers<[string[], string[]]>();
+        mocks.unloadPlugin.mockReturnValueOnce(activeUnload.promise);
+        const activeRebuild = resetExternalPluginRuntimeForGraphRebuild();
+        const retirement = beginProjectSessionPluginRetirement();
+
+        activeUnload.resolve([[], []]);
+        await activeRebuild;
+        const sessionRetirement = await retirement;
+        await sessionRetirement.retire();
+        sessionRetirement.reopen();
+
+        expect(mocks.unloadPlugin).toHaveBeenCalledTimes(2);
     });
 
     it('serializes bulk unload after an already admitted keyed lifecycle operation', async () => {

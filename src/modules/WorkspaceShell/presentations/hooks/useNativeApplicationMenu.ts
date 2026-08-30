@@ -206,8 +206,6 @@ const runMenuAction = async (intent: NativeMenuIntent): Promise<void> => {
 
 /** Binds macOS menu intents to existing renderer-owned product operations. */
 export const useNativeApplicationMenu = (project: ProjectStoreState): void => {
-    useEffect(() => () => releaseProjectSessionPluginRetirement(), []);
-
     useEffect(() => {
         const menu = nativeApplicationMenu();
         if (menu === undefined) {
@@ -241,12 +239,16 @@ export const useNativeApplicationMenu = (project: ProjectStoreState): void => {
         const unlistenSessionQuiesceCancel = menu.listenSessionQuiesceCancel((requestId) => {
             void cancelProjectSessionQuiesce(requestId).then((quiesced) => menu.sessionQuiesced(requestId, quiesced));
         });
+        const unlistenSessionWindowDestroying = menu.listenSessionWindowDestroying(
+            releaseProjectSessionPluginRetirement
+        );
         const unsubscribeRecentProjects = recentProjectChanges.subscribe(publishProjectState);
         const unsubscribeCrdt = subscribeToCrdtChanges(publishProjectState);
         return () => {
             unlisten();
             unlistenSessionQuiesce();
             unlistenSessionQuiesceCancel();
+            unlistenSessionWindowDestroying();
             unsubscribeRecentProjects();
             unsubscribeCrdt();
         };

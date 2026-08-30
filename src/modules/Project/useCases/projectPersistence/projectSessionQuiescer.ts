@@ -15,7 +15,7 @@ let quiescedRequestId: number | undefined;
 let cancellationRequestId: number | undefined;
 let recovery: Promise<boolean> | undefined;
 let recoveryFailed = false;
-let pluginRetirement: ReturnType<typeof beginProjectSessionPluginRetirement> | undefined;
+let pluginRetirement: Awaited<ReturnType<typeof beginProjectSessionPluginRetirement>> | undefined;
 
 const repair = async (): Promise<boolean> => {
     pluginRetirement?.reopen();
@@ -26,7 +26,7 @@ const repair = async (): Promise<boolean> => {
         recoveryFailed = true;
         // Repair itself could not establish a fresh runtime boundary. Hold the
         // PluginHost admission fence closed until reload replaces this session.
-        pluginRetirement = beginProjectSessionPluginRetirement();
+        pluginRetirement = await beginProjectSessionPluginRetirement();
         const projectName = projectStore.value?.name ?? 'this project';
         projectLoadFailureStore.set({
             projectName,
@@ -65,7 +65,7 @@ const retire = async (requestId: number, beginDestructiveTeardown: () => Promise
         if (cancellationRequestId === requestId) {
             return await repair();
         }
-        pluginRetirement = beginProjectSessionPluginRetirement();
+        pluginRetirement = await beginProjectSessionPluginRetirement();
         resetAudioGraph();
         await pluginRetirement.retire();
         if (cancellationRequestId === requestId) {
@@ -94,6 +94,9 @@ export const projectSessionQuiescer = {
         return promise;
     },
     releaseAfterWindowDestroy: (): void => {
+        if (recoveryFailed) {
+            return;
+        }
         pluginRetirement?.reopen();
         pluginRetirement = undefined;
     },

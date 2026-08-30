@@ -32,6 +32,7 @@ import {
     NATIVE_MENU_SAVE_RESULT_CHANNEL,
     RENDERER_SESSION_QUIESCE_CHANNEL,
     RENDERER_SESSION_QUIESCE_CANCEL_CHANNEL,
+    RENDERER_SESSION_WINDOW_DESTROYING_CHANNEL,
     RENDERER_SESSION_QUIESCED_CHANNEL,
     RENDERER_SESSION_QUIESCE_STARTED_CHANNEL,
 } from '../channels.js';
@@ -98,6 +99,7 @@ describe('the published surface', () => {
             'listen',
             'listenSessionQuiesce',
             'listenSessionQuiesceCancel',
+            'listenSessionWindowDestroying',
             'projectState',
             'saveResult',
             'sessionQuiesceStarted',
@@ -137,6 +139,7 @@ describe('the published surface', () => {
                 [NATIVE_MENU_ACTION_CHANNEL, 1],
                 [RENDERER_SESSION_QUIESCE_CHANNEL, 1],
                 [RENDERER_SESSION_QUIESCE_CANCEL_CHANNEL, 1],
+                [RENDERER_SESSION_WINDOW_DESTROYING_CHANNEL, 1],
             ])
         );
     });
@@ -253,6 +256,16 @@ describe('native menu transport', () => {
         fake.push(RENDERER_SESSION_QUIESCE_CANCEL_CHANNEL, '7');
 
         expect(listener).toHaveBeenCalledExactlyOnceWith(7);
+    });
+
+    it('delivers a trusted native window-destruction acknowledgement', () => {
+        const fake = fakeIpc();
+        const listener = vi.fn();
+        createSourdawBridge(fake.ipc).nativeMenu.listenSessionWindowDestroying(listener);
+
+        fake.push(RENDERER_SESSION_WINDOW_DESTROYING_CHANNEL);
+
+        expect(listener).toHaveBeenCalledOnce();
     });
 });
 

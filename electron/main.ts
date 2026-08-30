@@ -39,6 +39,7 @@ import {
     EVENT_CHANNEL,
     NATIVE_MENU_ACTION_CHANNEL,
     RENDERER_SESSION_QUIESCE_CANCEL_CHANNEL,
+    RENDERER_SESSION_WINDOW_DESTROYING_CHANNEL,
     RENDERER_SESSION_QUIESCE_CHANNEL,
     STREAM_CHANNEL,
     WINDOW_MAXIMIZED_CHANGED_CHANNEL,
@@ -150,6 +151,12 @@ const nativeMenuAction = (intent: NativeMenuIntent): void => {
     nativeMenuActionDispatcher.dispatch(intent);
 };
 
+const acknowledgeRendererSessionDestroying = (window: BrowserWindow): void => {
+    if (!window.isDestroyed()) {
+        window.webContents.send(RENDERER_SESSION_WINDOW_DESTROYING_CHANNEL);
+    }
+};
+
 const rebuildMacApplicationMenu = (
     recentProjects: readonly { readonly key: string; readonly name: string }[] = []
 ): void => {
@@ -224,6 +231,7 @@ const quiesceApprovedMainWindow = async (): Promise<boolean> => {
                     return false;
                 }
                 window.hide();
+                acknowledgeRendererSessionDestroying(window);
                 windowCloseCoordinator.markClosing();
                 window.destroy();
                 destroyed = true;
@@ -354,6 +362,7 @@ const createWindow = (): BrowserWindow => {
             rendererSessionLifecycle.approveTeardown();
             nativeMenuActionDispatcher.clearPending(window);
             if (destroyMainWindowAfterEditorsDetach === undefined) {
+                acknowledgeRendererSessionDestroying(window);
                 windowCloseCoordinator.markClosing();
             }
             return;
@@ -376,7 +385,10 @@ const createWindow = (): BrowserWindow => {
             rendererSessionQuiescer.cancel();
             rendererSessionLifecycle.cancelTeardown();
         },
-        () => windowCloseCoordinator.markClosing(),
+        () => {
+            acknowledgeRendererSessionDestroying(window);
+            windowCloseCoordinator.markClosing();
+        },
         () => process.platform !== 'darwin' || closeSessionQuiescedWindow === window
     );
     return window;

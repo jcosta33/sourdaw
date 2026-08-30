@@ -4,10 +4,14 @@ import { pluginLifecycleScheduler } from './serializePluginLifecycle';
 import { unloadPlugin } from './unloadPlugin';
 
 /** Fences plugin admission across a renderer project-session retirement. */
-export function beginProjectSessionPluginRetirement(): {
+export async function beginProjectSessionPluginRetirement(): Promise<{
     readonly retire: () => Promise<void>;
     readonly reopen: () => void;
-} {
+}> {
+    const activeRebuild = pluginLifecycleScheduler.currentRebuildCompletion();
+    if (activeRebuild) {
+        await activeRebuild;
+    }
     externalPluginActivationEpoch.current += 1;
     const rebuild = pluginLifecycleScheduler.beginRebuild();
     const admittedActivations = [...externalPluginActivationTasks.values()];
