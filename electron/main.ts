@@ -298,6 +298,7 @@ const attachWebContentsPolicy = (window: BrowserWindow): void => {
 
 const createWindow = (): BrowserWindow => {
     windowCloseCoordinator.resetForWindow();
+    const contentRoots = resolveContentRoots();
     const window = new BrowserWindow({
         width: 1440,
         height: 900,
@@ -306,6 +307,7 @@ const createWindow = (): BrowserWindow => {
         title: 'Sourdaw',
         backgroundColor: '#0a0a0a',
         show: false,
+        ...(process.platform === 'linux' ? { icon: join(contentRoots.distDir, 'icon-transparent.png') } : {}),
         ...getWindowChromeOptions(process.platform),
         webPreferences: {
             // Stated rather than inherited: these three are Electron's defaults

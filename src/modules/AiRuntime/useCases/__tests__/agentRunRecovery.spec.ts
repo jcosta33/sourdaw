@@ -636,7 +636,8 @@ describe('agent run recovery', () => {
         expect(persistedBytes).toContain('"pendingEffectContinuations"');
         expect(persistedBytes).toContain('"kind":"external-effect"');
         expect(persistedBytes).toContain('"kind":"runtime-graph"');
-        expect(persistedBytes).toContain('"recovery":"reconcile-batch"');
+        expect(persistedBytes).toContain('"recovery":"manual-repair"');
+        expect(persistedBytes).toContain(MISSING_EXACT_CHECKPOINT_RECOVERY_REASON);
         expect(persistedBytes).toContain('"startBeat":8');
         expect(persistedBytes).toContain('"endBeat":8');
 

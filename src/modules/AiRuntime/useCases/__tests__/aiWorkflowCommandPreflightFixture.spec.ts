@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { adjustmentLayerStore } from '#/modules/Arrangement/stores';
-import { commandBatchPreflightPort } from '#/modules/Command/useCases';
+import { commandBatchPreflightPort, commandProjectRevisionPort } from '#/modules/Command/useCases';
 
 import {
     configureAiWorkflowCommandPreflightFixture,
@@ -74,5 +74,11 @@ describe('AI workflow command preflight fixture', () => {
                 '{"enabled":false,"id":"layer-persisted","name":"Persisted document wins"}',
             ]),
         });
+    });
+
+    it('installs the production command-batch checkpoint revision provider', () => {
+        configureAiWorkflowCommandPreflightFixture('project-test');
+
+        expect(commandProjectRevisionPort.isConfigured()).toBe(true);
     });
 });

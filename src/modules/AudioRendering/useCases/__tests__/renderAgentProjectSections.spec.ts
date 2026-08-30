@@ -10,6 +10,7 @@ import { renderAgentProjectSections } from '../renderAgentProjectSections';
 const mocks = vi.hoisted(() => ({
     cancelExport: vi.fn(),
     captureProjectRevision: vi.fn(),
+    projectRevisionMatchesLiveIgnoringCommandCheckpoint: vi.fn(),
     renderOffline: vi.fn(),
 }));
 
@@ -20,6 +21,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     captureProjectRevision: mocks.captureProjectRevision,
+    projectRevisionMatchesLiveIgnoringCommandCheckpoint: mocks.projectRevisionMatchesLiveIgnoringCommandCheckpoint,
 }));
 
 function createAudioBuffer(
@@ -58,6 +60,9 @@ describe('renderAgentProjectSections', () => {
         vi.clearAllMocks();
         clearAgentSectionRenderArtifacts();
         mocks.captureProjectRevision.mockReturnValue('revision-a');
+        mocks.projectRevisionMatchesLiveIgnoringCommandCheckpoint.mockImplementation(
+            (revision: string) => mocks.captureProjectRevision() === revision
+        );
         mocks.renderOffline.mockResolvedValue(createAudioBuffer());
     });
 
@@ -520,9 +525,42 @@ describe('renderAgentProjectSections', () => {
         await renderAgentProjectSections({ jobs: [job], sourceRevision: 'revision-a' });
         mocks.captureProjectRevision.mockReturnValue('revision-b');
 
-        await expect(renderAgentProjectSections({ jobs: [job], sourceRevision: 'revision-b' })).rejects.toThrow(
-            'identity is already owned'
-        );
+        await expect(renderAgentProjectSections({ jobs: [job], sourceRevision: 'revision-b' })).rejects.toMatchObject({
+            message: expect.stringContaining('bound to a different project revision'),
+            pendingEffect: expect.objectContaining({ remediation: 'reconcile', state: 'pending' }),
+        });
         expect(mocks.renderOffline).toHaveBeenCalledOnce();
+        expect(getAgentSectionRenderArtifacts().map((artifact) => artifact.sourceRevision)).toEqual(['revision-a']);
+    });
+
+    it('attaches when live revision advanced only for the command-batch checkpoint', async () => {
+        mocks.captureProjectRevision.mockReturnValue('revision-checkpoint');
+        mocks.projectRevisionMatchesLiveIgnoringCommandCheckpoint.mockReturnValue(true);
+
+        await renderAgentProjectSections({ jobs: [createJob()], sourceRevision: 'revision-a' });
+
+        expect(getAgentSectionRenderArtifacts()).toEqual([
+            expect.objectContaining({ jobId: 'render-chorus-one', sourceRevision: 'revision-a' }),
+        ]);
+    });
+
+    it('replaces a stale same-job artifact when retry asks to rebind the job identity', async () => {
+        const job = createJob();
+        await renderAgentProjectSections({ jobs: [job], sourceRevision: 'revision-a' });
+        mocks.captureProjectRevision.mockReturnValue('revision-b');
+        mocks.projectRevisionMatchesLiveIgnoringCommandCheckpoint.mockImplementation(
+            (revision: string) => revision === 'revision-b'
+        );
+
+        await renderAgentProjectSections({
+            jobs: [job],
+            sourceRevision: 'revision-b',
+            replaceMismatchedRevisionArtifacts: true,
+        });
+
+        expect(mocks.renderOffline).toHaveBeenCalledTimes(2);
+        expect(getAgentSectionRenderArtifacts()).toEqual([
+            expect.objectContaining({ jobId: job.jobId, sourceRevision: 'revision-b' }),
+        ]);
     });
 });
