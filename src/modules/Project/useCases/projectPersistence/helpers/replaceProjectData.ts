@@ -391,6 +391,15 @@ export async function replaceProjectData({
         } catch (error) {
             degraded = true;
             durable = false;
+            // A durable recovery caller must not close a clean-looking loaded
+            // projection whose initial CRDT snapshot failed. This transient
+            // Project-owned barrier is cleared only by the normal save path.
+            runCommittedStep('project durability pending', () => {
+                const project = projectStore.value;
+                if (project) {
+                    projectStore.set({ ...project, identityPersistencePending: true });
+                }
+            });
             logger.error(new Error(`[${context}] Initial CRDT snapshot persistence failed`, { cause: error }));
         }
     }
