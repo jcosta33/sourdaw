@@ -232,7 +232,11 @@ export async function renderOfflineWithNativeEngine(
         {
             kind: 'set-track-output',
             trackId: track.id,
-            target: resolveOutputTarget({ outputId: track.outputId, busStripIds: busIds, trackStripIds: trackIds }),
+            target: resolveOutputTarget({
+                outputId: track.outputId,
+                busStripIds: busIds,
+                trackStripIds: trackIds,
+            }),
         },
         // A send naming no built bus is dropped, exactly as the web backend
         // drops it — the audio path it would carry does not exist either way.

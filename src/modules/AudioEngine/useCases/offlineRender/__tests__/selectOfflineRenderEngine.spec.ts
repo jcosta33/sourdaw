@@ -29,6 +29,7 @@ import { type TransportState } from '#/modules/Transport/stores';
 import { type NativeGraphTransport } from '../../../repositories/nativeGraph/nativeGraphTransport';
 import { type NativeGraphAvailability } from '../../../repositories/nativeGraph/probeNativeGraphTransport';
 import { renderOffline } from '../../renderOffline';
+import { resolveOutputTarget } from '../resolveOutputTarget';
 import { type OfflineRenderContext } from '../resolveRenderContext';
 import { selectOfflineRenderEngine } from '../selectOfflineRenderEngine';
 
@@ -173,6 +174,36 @@ describe('selectOfflineRenderEngine — the choice and its reason (#2225)', () =
 
         // The transport identity matters: the caller renders through exactly
         // the transport the probe proved, never a second one it constructs.
+        expect(selection).toEqual({ engine: 'native/offline', transport: stubTransport });
+    });
+
+    it('hands a bus whose default output names the master track to the native engine', async () => {
+        mocks.availability = { available: true, transport: stubTransport };
+        const master = createTrack({ id: 'master', name: 'Master', kind: 'master', outputId: 'hw_out' });
+        const track = createTrack({
+            id: 'track-a',
+            outputId: 'master',
+            clips: [createClip({ id: 'clip-a', trackId: 'track-a', audioBufferId: 'mat-a' })],
+        });
+        const bus = createTrack({ id: 'bus-1', name: 'Bus 1', kind: 'bus', outputId: 'master' });
+        const trackStripIds = new Set(['master', 'track-a']);
+        const busStripIds = new Set(['bus-1']);
+
+        // Native because the edge stays a track-to-master-strip route, not
+        // because the mapper remapped it onto the engine sum.
+        expect(
+            resolveOutputTarget({
+                outputId: bus.outputId,
+                busStripIds,
+                trackStripIds,
+            })
+        ).toEqual({ kind: 'track', trackId: 'master' });
+
+        const selection = await selectOfflineRenderEngine({
+            renderableTracks: [master, track, bus],
+            scheduledTracks: [track],
+        });
+
         expect(selection).toEqual({ engine: 'native/offline', transport: stubTransport });
     });
 
