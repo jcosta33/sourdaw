@@ -1732,6 +1732,69 @@ describe('package scripts and gitignore', () => {
         }
     });
 
+    it('reads head commit subjects from the literal head object even when replace refs are present', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-subject-'));
+        initializeDeliveryLockRepository(root);
+
+        const previousCwd = process.cwd();
+        try {
+            runGit(root, ['config', 'user.name', 'Test User']);
+            runGit(root, ['config', 'user.email', 'test@example.com']);
+            writeFileSync(join(root, 'tracked.txt'), 'one\n');
+            runGit(root, ['add', 'tracked.txt']);
+            runGit(root, ['commit', '--quiet', '-m', 'feat(delivery): literal subject']);
+            const literalOid = runGit(root, ['rev-parse', 'HEAD']);
+
+            writeFileSync(join(root, 'tracked.txt'), 'two\n');
+            runGit(root, ['commit', '--quiet', '-am', 'feat(delivery): replacement subject']);
+            const replacementOid = runGit(root, ['rev-parse', 'HEAD']);
+            runGit(root, ['update-ref', `refs/replace/${literalOid}`, replacementOid]);
+
+            expect(runGit(root, ['show', '-s', '--format=%s', literalOid])).toBe('feat(delivery): replacement subject');
+
+            process.chdir(root);
+            expect(shellPort('jcosta33/sourdaw').headCommitSubject(literalOid)).toBe('feat(delivery): literal subject');
+        } finally {
+            process.chdir(previousCwd);
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('reads delivery receipt authority blobs from their literal object IDs even when replace refs are present', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-authority-'));
+        initializeDeliveryLockRepository(root);
+
+        try {
+            const original = JSON.stringify({ version: 2, phase: 'terminal', receiptId: 'IC_original' });
+            const replacement = JSON.stringify({ version: 2, phase: 'terminal', receiptId: 'IC_replacement' });
+            const originalOid = writeDeliveryReceiptAuthority(root, 2495, original);
+            const replacementOid = execFileSync('git', ['hash-object', '-w', '--stdin'], {
+                cwd: root,
+                encoding: 'utf8',
+                input: replacement,
+            }).trim();
+            runGit(root, ['update-ref', `refs/replace/${originalOid}`, replacementOid]);
+
+            expect(runGit(root, ['cat-file', 'blob', originalOid])).toBe(replacement);
+
+            const port = shellPort(
+                'jcosta33/sourdaw',
+                {
+                    capture: () => expect.fail('receipt authority reads should not query GitHub'),
+                    run: () => expect.fail('receipt authority reads should not run shell commands'),
+                },
+                { primaryRoot: root }
+            );
+
+            expect(port.readDeliveryReceiptAuthority(2495)).toEqual({
+                phase: 'terminal',
+                receiptId: 'IC_original',
+            });
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
     it('does not delete a delivery receipt authority ref whose object changed after verification', () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-authority-'));
         const wrapperRoot = mkdtempSync(join(tmpdir(), 'sourdaw-git-wrapper-'));

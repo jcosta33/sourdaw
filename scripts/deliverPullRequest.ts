@@ -742,25 +742,43 @@ function normalizeObservedCiState(checkRuns: HeadCheckRun[]): NonNullable<Delive
     const successfulNames = new Set<string>();
     const cancelledNames = new Set<string>();
     let sawSuccess = false;
+    let sawSkipped = false;
+    let sawPending = false;
+    let sawFailed = false;
+    let sawMalformed = false;
     for (const check of checkRuns) {
         const state = observedCheckRunState(check);
-        if (state === 'malformed') {
-            return 'malformed';
-        }
-        if (state === 'pending') {
-            return 'pending';
-        }
-        if (state === 'failed') {
-            return 'failed';
-        }
         if (state === 'successful') {
             sawSuccess = true;
             successfulNames.add(check.name);
             continue;
         }
+        if (state === 'skipped') {
+            sawSkipped = true;
+            continue;
+        }
         if (state === 'cancelled') {
             cancelledNames.add(check.name);
+            continue;
         }
+        if (state === 'pending') {
+            sawPending = true;
+            continue;
+        }
+        if (state === 'failed') {
+            sawFailed = true;
+            continue;
+        }
+        sawMalformed = true;
+    }
+    if (sawMalformed) {
+        return 'malformed';
+    }
+    if (sawFailed) {
+        return 'failed';
+    }
+    if (sawPending) {
+        return 'pending';
     }
     for (const name of cancelledNames) {
         if (!successfulNames.has(name)) {
@@ -770,7 +788,10 @@ function normalizeObservedCiState(checkRuns: HeadCheckRun[]): NonNullable<Delive
     if (cancelledNames.size > 0) {
         return 'unstable';
     }
-    return sawSuccess ? 'successful' : 'absent';
+    if (sawSuccess) {
+        return 'successful';
+    }
+    return sawSkipped ? 'skipped' : 'absent';
 }
 
 function observedCheckRunState(
@@ -2120,7 +2141,12 @@ export function deliverPullRequestWithRequiredCi(
 }
 
 function capture(command: string, args: string[]): string {
-    const result = spawnSync(command, args, { cwd: process.cwd(), encoding: 'utf8', shell: false });
+    const result = spawnSync(command, args, {
+        cwd: process.cwd(),
+        encoding: 'utf8',
+        shell: false,
+        ...(command === 'git' ? { env: trustedDeliveryGitEnv() } : {}),
+    });
     if (result.error !== undefined) {
         throw result.error;
     }
@@ -2131,7 +2157,12 @@ function capture(command: string, args: string[]): string {
 }
 
 function run(command: string, args: string[]): void {
-    const result = spawnSync(command, args, { cwd: process.cwd(), stdio: 'inherit', shell: false });
+    const result = spawnSync(command, args, {
+        cwd: process.cwd(),
+        stdio: 'inherit',
+        shell: false,
+        ...(command === 'git' ? { env: trustedDeliveryGitEnv() } : {}),
+    });
     if (result.error !== undefined) {
         throw result.error;
     }
@@ -2828,10 +2859,18 @@ function deliveryReceiptAuthorityRef(number: number): string {
 function deliveryLockGit(primaryRoot: string, args: string[], input?: string) {
     return spawnSync('git', args, {
         cwd: primaryRoot,
+        env: trustedDeliveryGitEnv(),
         encoding: 'utf8',
         shell: false,
         ...(input === undefined ? {} : { input }),
     });
+}
+
+function trustedDeliveryGitEnv(parent: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+    return {
+        ...parent,
+        GIT_NO_REPLACE_OBJECTS: '1',
+    };
 }
 
 function deliveryObjectId(value: string, invalidMessage: string): string {
@@ -3458,8 +3497,21 @@ function defaultDeliveryCoordinatorDependencies(cwd: string): DeliveryCoordinato
         deliveryPort: (repository, authentication, primaryRoot) => {
             const shell: ShellRunner = {
                 capture: (command, args) =>
-                    spawnCapture(command, args, { env: authentication.session.env, cwd: primaryRoot }),
-                run: (command, args) => spawnRun(command, args, { env: authentication.session.env, cwd: primaryRoot }),
+                    spawnCapture(command, args, {
+                        env:
+                            command === 'git'
+                                ? trustedDeliveryGitEnv(authentication.session.env)
+                                : authentication.session.env,
+                        cwd: primaryRoot,
+                    }),
+                run: (command, args) =>
+                    spawnRun(command, args, {
+                        env:
+                            command === 'git'
+                                ? trustedDeliveryGitEnv(authentication.session.env)
+                                : authentication.session.env,
+                        cwd: primaryRoot,
+                    }),
             };
             return shellPort(repository, shell, {
                 gitToken: authentication.minted.token,

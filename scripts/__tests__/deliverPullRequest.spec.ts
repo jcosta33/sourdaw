@@ -520,7 +520,15 @@ function visibleDeliveryReceiptBody(
     pullRequestBody: string,
     closingIssue: number | undefined,
     observedCiState:
-        'successful' | 'failed' | 'pending' | 'absent' | 'cancelled' | 'unstable' | 'malformed' | 'unavailable'
+        | 'successful'
+        | 'failed'
+        | 'pending'
+        | 'absent'
+        | 'skipped'
+        | 'cancelled'
+        | 'unstable'
+        | 'malformed'
+        | 'unavailable'
 ): string {
     return composeDeliveryReceipt({
         pullRequest: pullRequestNumber,
@@ -4335,6 +4343,52 @@ describe('pull-request delivery', () => {
         });
     });
 
+    it('preserves bodyless prepared merged recovery when the stored advisory receipt only recorded skipped evidence', () => {
+        const closes = relationshipBody('Closes #2372');
+        const storedReceiptBody = visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'skipped');
+        const { port, calls, tracker, persistedReceiptAuthority } = fakePort({
+            primary: [
+                pullRequest({
+                    state: 'MERGED',
+                    body: closes,
+                    mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
+                }),
+            ],
+            dependentSets: [[]],
+            persistedReceiptAuthority: {
+                phase: 'prepared',
+                receiptId: 'IC_prepared_skipped',
+                postMergeValidation: persistedPostMergeValidation('head', closes, 2372),
+            },
+            receipts: [
+                {
+                    id: 'IC_prepared_skipped',
+                    body: storedReceiptBody,
+                    authorNodeId: AUTHOR_BOT_NODE_ID,
+                    authorLogin: 'renamed-author[bot]',
+                    authorType: 'Bot',
+                    createdAt: '2026-08-21T00:00:00Z',
+                    updatedAt: '2026-08-21T00:00:00Z',
+                },
+            ],
+            deliveryReceiptProof: { totalCount: 1, latestCommentId: 'IC_prepared_skipped' },
+        });
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls).toContain('receipt-proof:42:1:IC_prepared_skipped');
+        expect(calls).toContain('receipt-authority:write:merge-authorized:IC_prepared_skipped');
+        expect(calls).toContain('receipt-authority:write:terminal:IC_prepared_skipped');
+        expect(calls).toContain('complete:2372');
+        expect(calls).not.toContain('add-receipt:42');
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'terminal',
+            receiptId: 'IC_prepared_skipped',
+            receiptBody: storedReceiptBody,
+            postMergeValidation: persistedPostMergeValidation('head', closes, 2372),
+        });
+    });
+
     it('fails closed when prepared merged recovery only differs on receipt closingIssue versus stored trackerTarget', () => {
         const related = relationshipBody('Related #2372');
         const receiptBody = visibleDeliveryReceiptBody(42, 'head', related, 2372, 'successful');
@@ -5624,6 +5678,11 @@ describe('pull-request delivery', () => {
         },
         { ciState: 'absent', mergeStateStatus: 'BLOCKED', headCheckRuns: [] as HeadCheckRun[] },
         {
+            ciState: 'skipped',
+            mergeStateStatus: 'CLEAN',
+            headCheckRuns: [checkRun({ name: 'Native audio backend (macOS)', conclusion: 'SKIPPED' })],
+        },
+        {
             ciState: 'cancelled',
             mergeStateStatus: 'CLEAN',
             headCheckRuns: [checkRun({ name: 'Lint', conclusion: 'CANCELLED' }), checkRun()],
@@ -5660,6 +5719,11 @@ describe('pull-request delivery', () => {
         },
         { ciState: 'absent', mergeStateStatus: 'BLOCKED', headCheckRuns: [] as HeadCheckRun[] },
         {
+            ciState: 'skipped',
+            mergeStateStatus: 'CLEAN',
+            headCheckRuns: [checkRun({ name: 'Native audio backend (macOS)', conclusion: 'SKIPPED' })],
+        },
+        {
             ciState: 'cancelled',
             mergeStateStatus: 'CLEAN',
             headCheckRuns: [checkRun({ name: 'Lint', conclusion: 'CANCELLED' }), checkRun()],
@@ -5685,6 +5749,92 @@ describe('pull-request delivery', () => {
             expect(receipts[0]?.body).toContain('Delivery receipt for PR #42.');
             expect(receipts[0]?.body).toContain('- CI admission: advisory');
             expect(receipts[0]?.body).toContain(`- Observed CI state: ${ciState}`);
+        }
+    );
+
+    it.each([
+        {
+            headCheckRuns: [
+                checkRun({ name: '', status: 'COMPLETED', conclusion: 'SUCCESS' }),
+                checkRun({ name: 'Lint', status: 'IN_PROGRESS', conclusion: null }),
+                checkRun({ name: 'Unit suite 1/4', conclusion: 'FAILURE' }),
+            ],
+        },
+        {
+            headCheckRuns: [
+                checkRun({ name: '', status: 'COMPLETED', conclusion: 'SUCCESS' }),
+                checkRun({ name: 'Unit suite 1/4', conclusion: 'FAILURE' }),
+                checkRun({ name: 'Lint', status: 'IN_PROGRESS', conclusion: null }),
+            ],
+        },
+        {
+            headCheckRuns: [
+                checkRun({ name: 'Lint', status: 'IN_PROGRESS', conclusion: null }),
+                checkRun({ name: '', status: 'COMPLETED', conclusion: 'SUCCESS' }),
+                checkRun({ name: 'Unit suite 1/4', conclusion: 'FAILURE' }),
+            ],
+        },
+        {
+            headCheckRuns: [
+                checkRun({ name: 'Lint', status: 'IN_PROGRESS', conclusion: null }),
+                checkRun({ name: 'Unit suite 1/4', conclusion: 'FAILURE' }),
+                checkRun({ name: '', status: 'COMPLETED', conclusion: 'SUCCESS' }),
+            ],
+        },
+        {
+            headCheckRuns: [
+                checkRun({ name: 'Unit suite 1/4', conclusion: 'FAILURE' }),
+                checkRun({ name: '', status: 'COMPLETED', conclusion: 'SUCCESS' }),
+                checkRun({ name: 'Lint', status: 'IN_PROGRESS', conclusion: null }),
+            ],
+        },
+        {
+            headCheckRuns: [
+                checkRun({ name: 'Unit suite 1/4', conclusion: 'FAILURE' }),
+                checkRun({ name: 'Lint', status: 'IN_PROGRESS', conclusion: null }),
+                checkRun({ name: '', status: 'COMPLETED', conclusion: 'SUCCESS' }),
+            ],
+        },
+    ] satisfies Array<{ headCheckRuns: HeadCheckRun[] }>)(
+        'writes malformed advisory evidence for the same mixed pending, failed, and malformed head in any order %#',
+        ({ headCheckRuns }) => {
+            const { port, receipts } = fakePort({
+                primary: [pullRequest(), pullRequest()],
+                headCheckRuns,
+            });
+
+            deliverPullRequest(42, port);
+
+            expect(receipts).toHaveLength(1);
+            expect(receipts[0]?.body).toContain('- Observed CI state: malformed');
+        }
+    );
+
+    it.each([
+        {
+            headCheckRuns: [
+                checkRun({ name: 'Lint', status: 'IN_PROGRESS', conclusion: null }),
+                checkRun({ name: 'Unit suite 1/4', conclusion: 'FAILURE' }),
+            ],
+        },
+        {
+            headCheckRuns: [
+                checkRun({ name: 'Unit suite 1/4', conclusion: 'FAILURE' }),
+                checkRun({ name: 'Lint', status: 'IN_PROGRESS', conclusion: null }),
+            ],
+        },
+    ] satisfies Array<{ headCheckRuns: HeadCheckRun[] }>)(
+        'writes failed advisory evidence for the same mixed pending and failed head in any order %#',
+        ({ headCheckRuns }) => {
+            const { port, receipts } = fakePort({
+                primary: [pullRequest(), pullRequest()],
+                headCheckRuns,
+            });
+
+            deliverPullRequest(42, port);
+
+            expect(receipts).toHaveLength(1);
+            expect(receipts[0]?.body).toContain('- Observed CI state: failed');
         }
     );
 
@@ -7452,7 +7602,7 @@ describe('delivery shell boundary', () => {
         expect(effects).toEqual(['complete:2372']);
     });
 
-    it('round-trips prepared shellPort authority with receiptBody and post-merge validation across fresh instances', () => {
+    it('round-trips prepared shellPort authority with a skipped advisory receiptBody and post-merge validation across fresh instances', () => {
         const closes = relationshipBody('Closes #2372');
         const primaryRoot = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-shell-port-'));
         execFileSync('git', ['init', '--quiet'], { cwd: primaryRoot });
@@ -7469,7 +7619,7 @@ describe('delivery shell boundary', () => {
         const authority: PersistedDeliveryReceiptAuthority = {
             phase: 'prepared',
             receiptId: 'IC_delivery_42_1',
-            receiptBody: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'),
+            receiptBody: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'skipped'),
             postMergeValidation: {
                 headRefOid: 'head',
                 headRefName: 'feat/gate',
