@@ -180,9 +180,11 @@ describe('createAutomergeStorage raw projection loss reordering', () => {
         });
 
         // The tensioned row's only match is the eased row the curve-only row
-        // already holds; placing the last row needs the curve-only row to
-        // re-route to its second match (the easing row) while the augmenting
-        // search is running. Marking a candidate as visited on a probe that
+        // already holds; its search re-routes the curve-only row to its
+        // second match (the easing row) to place it. The last row's own
+        // search later tries to re-route the curve-only row to the spline
+        // row, that probe is rejected, and the last row falls through to the
+        // free spline row. Marking a candidate as visited on a probe that
         // rejected it would block the free spline row the bare row needs.
         expect(
             findSlotLosses('widened', [
@@ -218,11 +220,13 @@ describe('createAutomergeStorage raw projection loss reordering', () => {
         );
 
         // Every projected row gains a key, so no exact twins exist and the
-        // whole set reaches the matching. Meeting the curved twin first, the
-        // bare row claims it; the curved row fits only that twin, so
-        // first-fit claiming — with or without the augmenting recursion —
-        // starves it. Only the complete matcher reassigning the bare row to
-        // its own twin places both.
+        // whole set reaches the matching. Meeting the curved twin first,
+        // the bare row claims it, and the curved row fits only that twin —
+        // a matcher that cannot re-route starves the curved row (greedy
+        // claiming, or the augmenting recursion deleted). The rescue is one
+        // augmenting-path step: the curved row's probe recurses into the
+        // bare row, which reassigns to its own twin and frees the curved
+        // twin.
         expect(
             findSlotLosses('reversed', [
                 { beat: 1, value: 1 },
