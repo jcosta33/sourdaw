@@ -8,7 +8,7 @@ import type { Device } from '../../../../models/TrackViewTypes';
 // Mock external dependencies
 vi.mock('../layouts', () => ({})); // Prevent OOM by not loading all layouts
 
-const mockGetBuiltinPlugins = vi.fn<() => unknown[]>(() => []);
+const mockGetBuiltinPlugins = vi.fn<() => readonly unknown[]>(() => []);
 const mockBypassDevice = vi.fn<(deviceId: string, bypassed: boolean) => void>();
 vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Arrangement/useCases')>();
@@ -63,7 +63,11 @@ vi.mock('#/components/daw/MechanicalSwitch', () => ({
 
 vi.mock('../GenericDeviceLayout', () => ({
     GenericDeviceLayout: ({ parameters }: { parameters: ReadonlyArray<{ id: string }> }) => (
-        <div data-testid="generic-layout" data-param-count={parameters.length}>
+        <div
+            data-testid="generic-layout"
+            data-param-count={parameters.length}
+            data-param-ids={parameters.map((parameter) => parameter.id).join(',')}
+        >
             Generic Layout
         </div>
     ),
@@ -163,6 +167,34 @@ describe('DeviceInspector', () => {
         ]);
         render(<DeviceInspector device={makeDevice()} trackId="track-1" onBack={mockOnBack} />);
         expect(screen.getByTestId('generic-layout').getAttribute('data-param-count')).toBe('2');
+    });
+
+    it('should resolve the declared gain control for a faust-fm-synth device from the real registry', async () => {
+        // The fm-synth descriptor declares only `gain`; its op-level controls
+        // wait on the FM preset migration. An empty declared `parameters`
+        // array is not nullish, so before `gain` was declared the device fell
+        // past the derive fallback and the inspector resolved no controls at
+        // all — the Faust instrument layout showed its loading message
+        // forever. Run against the real registry (the module mock's
+        // importActual), not a hand-built descriptor, so the case fails if
+        // the descriptor's parameters revert to [].
+        const actual = await vi.importActual<typeof import('#/modules/Arrangement/useCases')>(
+            '#/modules/Arrangement/useCases'
+        );
+        mockGetBuiltinPlugins.mockImplementation(actual.getBuiltinPlugins);
+        render(
+            <DeviceInspector
+                device={makeDevice({
+                    id: 'device-fm',
+                    name: 'FM Synth',
+                    type: 'faust-fm-synth',
+                    parameterValues: { gain: 0.35 },
+                })}
+                trackId="track-1"
+                onBack={mockOnBack}
+            />
+        );
+        expect(screen.getByTestId('generic-layout').getAttribute('data-param-ids')).toBe('gain');
     });
 
     it('should match a builtin plugin by display name', () => {
