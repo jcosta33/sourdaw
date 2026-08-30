@@ -11,7 +11,10 @@ import {
     assertRecoverableReviewResolutionLockOwner,
     assertTrustedReviewResolutionLauncher,
     inspectReviewThread,
+    recoverReviewResolutionLockOwnerState,
     recoverPullRequestReviewResolutionLock,
+    shellPort,
+    type ResolveReviewThreadPort,
     type ReviewResolutionTrustedLauncher,
     type ReviewResolutionLockOwner,
     type ReviewThreadInspection,
@@ -33,6 +36,12 @@ export type ReviewResolutionRecoveryDependencies = {
     repositoryName?: (session: GhSession, primaryRoot: string) => string;
     gh?: (session: GhSession, primaryRoot: string) => (args: string[]) => string;
     inspectThread?: (number: number, threadId: string, gh: (args: string[]) => string) => ReviewThreadInspection;
+    createPort?: (
+        session: GhSession,
+        primaryRoot: string,
+        inspectThread: (number: number, threadId: string, gh: (args: string[]) => string) => ReviewThreadInspection,
+        gh: (args: string[]) => string
+    ) => ResolveReviewThreadPort;
     recoverLock?: <Value>(
         primaryRoot: string,
         number: number,
@@ -50,6 +59,12 @@ type ResolvedReviewResolutionRecoveryDependencies = {
     repositoryName: (session: GhSession, primaryRoot: string) => string;
     gh: (session: GhSession, primaryRoot: string) => (args: string[]) => string;
     inspectThread: (number: number, threadId: string, gh: (args: string[]) => string) => ReviewThreadInspection;
+    createPort: (
+        session: GhSession,
+        primaryRoot: string,
+        inspectThread: (number: number, threadId: string, gh: (args: string[]) => string) => ReviewThreadInspection,
+        gh: (args: string[]) => string
+    ) => ResolveReviewThreadPort;
     recoverLock: <Value>(
         primaryRoot: string,
         number: number,
@@ -96,6 +111,12 @@ function resolveRecoveryDependencies(
             dependencies.gh ??
             ((session, primaryRoot) => (args) => spawnCapture('gh', args, { cwd: primaryRoot, env: session.env })),
         inspectThread: dependencies.inspectThread ?? inspectReviewThread,
+        createPort:
+            dependencies.createPort ??
+            ((session, primaryRoot, inspectThread, gh) => ({
+                ...shellPort(session, primaryRoot),
+                inspect: (number, threadId) => inspectThread(number, threadId, gh),
+            })),
         recoverLock: dependencies.recoverLock ?? recoverPullRequestReviewResolutionLock,
     };
 }
@@ -156,11 +177,12 @@ export async function runRecoverReviewResolutionLockCli(
         }
         assertRequiredRepository(resolvedDependencies.repositoryName(auth.session, primaryRoot));
         const gh = resolvedDependencies.gh(auth.session, primaryRoot);
+        const port = resolvedDependencies.createPort(auth.session, primaryRoot, resolvedDependencies.inspectThread, gh);
         const summary = resolvedDependencies.recoverLock(primaryRoot, parsed.number, parsed.owner, (lockOwner) =>
             recoverySummary(
                 parsed.number!,
                 lockOwner,
-                resolvedDependencies.inspectThread(parsed.number!, lockOwner.threadId, gh)
+                recoverReviewResolutionLockOwnerState(parsed.number!, lockOwner, port)
             )
         );
         console.log(summary);
