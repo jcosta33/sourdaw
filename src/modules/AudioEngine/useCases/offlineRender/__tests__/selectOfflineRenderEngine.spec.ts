@@ -29,6 +29,7 @@ import { type TransportState } from '#/modules/Transport/stores';
 import { type NativeGraphTransport } from '../../../repositories/nativeGraph/nativeGraphTransport';
 import { type NativeGraphAvailability } from '../../../repositories/nativeGraph/probeNativeGraphTransport';
 import { renderOffline } from '../../renderOffline';
+import { resolveOutputTarget } from '../resolveOutputTarget';
 import { type OfflineRenderContext } from '../resolveRenderContext';
 import { selectOfflineRenderEngine } from '../selectOfflineRenderEngine';
 
@@ -176,6 +177,58 @@ describe('selectOfflineRenderEngine — the choice and its reason (#2225)', () =
         expect(selection).toEqual({ engine: 'native/offline', transport: stubTransport });
     });
 
+    it('hands a bus whose default output names the master track to the native engine', async () => {
+        mocks.availability = { available: true, transport: stubTransport };
+        const master = createTrack({ id: 'master', name: 'Master', kind: 'master', outputId: 'hw_out' });
+        const track = createTrack({
+            id: 'track-a',
+            outputId: 'master',
+            clips: [createClip({ id: 'clip-a', trackId: 'track-a', audioBufferId: 'mat-a' })],
+        });
+        const bus = createTrack({ id: 'bus-1', name: 'Bus 1', kind: 'bus', outputId: 'master' });
+        const trackStripIds = new Set(['master', 'track-a']);
+        const busStripIds = new Set(['bus-1']);
+
+        // Native because the edge stays a track-to-master-strip route, not
+        // because the mapper remapped it onto the engine sum.
+        expect(
+            resolveOutputTarget({
+                outputId: bus.outputId,
+                busStripIds,
+                trackStripIds,
+            })
+        ).toEqual({ kind: 'track', trackId: 'master' });
+
+        const selection = await selectOfflineRenderEngine({
+            renderableTracks: [master, track, bus],
+            scheduledTracks: [track],
+        });
+
+        expect(selection).toEqual({ engine: 'native/offline', transport: stubTransport });
+    });
+
+    /**
+     * Live native already honours bus mute, pan and solo (#3103). The selector
+     * used to refuse pan/mute and force Web Audio; these cases pin that the
+     * engine that holds the shape is the one that renders it.
+     */
+    it.each([
+        { name: 'a panned bus', bus: { pan: 25 } },
+        { name: 'a muted bus', bus: { muted: true } },
+        { name: 'a soloed bus', bus: { soloed: true } },
+    ])('hands $name to the native engine', async ({ bus }) => {
+        mocks.availability = { available: true, transport: stubTransport };
+        const { renderableTracks, scheduledTracks } = cleanProject();
+        const project = {
+            scheduledTracks,
+            renderableTracks: renderableTracks.map((track) => (track.kind === 'bus' ? { ...track, ...bus } : track)),
+        };
+
+        const selection = await selectOfflineRenderEngine(project);
+
+        expect(selection).toEqual({ engine: 'native/offline', transport: stubTransport });
+    });
+
     describe('content gates — a shape the native engine refuses degrades instead', () => {
         /**
          * One case per clause of `contentGateReason`. The expected text is the
@@ -250,14 +303,6 @@ describe('selectOfflineRenderEngine — the choice and its reason (#2225)', () =
                     return { renderableTracks: [track], scheduledTracks: [track] };
                 },
                 reason: 'clip "clip-a" on track "Stretched A" is time-stretched (#2219)',
-            },
-            {
-                name: 'a shaped bus',
-                project: () => {
-                    const bus = createTrack({ id: 'bus-1', name: 'Wide', kind: 'bus', pan: 25 });
-                    return { renderableTracks: [bus], scheduledTracks: [] };
-                },
-                reason: 'bus "Wide" is panned or muted, which the native bus strip cannot hold',
             },
             {
                 name: 'a send configured on a bus',
