@@ -1,0 +1,25 @@
+electron/__tests__/nativeMenuActionDispatcher.spec.ts
+  s_ae074277795b45::t_0c56a2a077a6e4 38-39
+electron/__tests__/nativeMenuProjectState.spec.ts
+  s_ae074277795b45::t_0c56a2a077a6e4 48-67
+  s_ae074277795b45::t_47ab77ec8cc437 68-70
+src/modules/CommandInterface/useCases/__tests__/isKeyboardEditableTarget.spec.ts
+  s_ae074277795b45::t_0c56a2a077a6e4 1-17
+  s_ae074277795b45::t_ec62f89252f54a 18-20
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "8211a40a1ea24c2296d429355a84f1874e8af8bb",
+  "prompts": {},
+  "sessions": {
+    "s_ae074277795b45": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04ab5-5234-7100-be1c-76ebfaba88d3",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
