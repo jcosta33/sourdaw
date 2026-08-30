@@ -143,6 +143,53 @@ function getExactRenderCommands(continuation: AgentRunPendingEffectContinuation,
     return commands;
 }
 
+function createReviewFromDurableBinding(
+    continuation: AgentRunPendingEffectContinuation,
+    runId: string
+): RetainedSectionRenderManualReview | null {
+    const sourceRevision = continuation.sourceRevision;
+    const exactReceiptIdentity = getVerifiedBatchReceiptIdentity({
+        runId,
+        batchId: continuation.batchId,
+        outcome: 'partially-committed',
+    });
+    if (
+        continuation.recovery !== 'manual-repair' ||
+        !sourceRevision ||
+        continuation.receiptIdentity !== exactReceiptIdentity
+    ) {
+        return null;
+    }
+    const commands = getExactRenderCommands(continuation, runId);
+    if (!commands) {
+        return null;
+    }
+    const jobs: RetainedRenderJobReview[] = commands.flatMap(({ commandId, jobs: commandJobs }) =>
+        commandJobs.map((job) => {
+            const artifact = getExactAgentSectionRenderArtifact({ job, sourceRevision });
+            return artifact
+                ? { commandId, job, availability: 'available' as const, artifact, warnings: artifact.warnings }
+                : {
+                      commandId,
+                      job,
+                      availability: 'unavailable' as const,
+                      warnings: [] as const,
+                      reason: 'The exact retained render evidence has expired, was evicted, or no longer matches this receipt.',
+                  };
+        })
+    );
+    return {
+        binding: {
+            runId,
+            batchId: continuation.batchId,
+            receiptIdentity: exactReceiptIdentity,
+            sourceRevision,
+            commands,
+        },
+        jobs,
+    };
+}
+
 /** Joins one durable run-and-batch obligation to every exact retained render artifact it owns. */
 export function selectRetainedSectionRenderManualReviews(
     state: AgentRunState | null | undefined
@@ -153,10 +200,9 @@ export function selectRetainedSectionRenderManualReviews(
             continue;
         }
         for (const continuation of run.pendingEffectContinuations) {
-            const sourceRevision = continuation.sourceRevision;
             if (
                 continuation.recovery !== 'manual-repair' ||
-                !sourceRevision ||
+                !continuation.sourceRevision ||
                 run.pendingEffectContinuations.filter(({ batchId }) => batchId === continuation.batchId).length !== 1
             ) {
                 continue;
@@ -180,34 +226,25 @@ export function selectRetainedSectionRenderManualReviews(
             if (recoveries.length !== 1 || !hasExactDurableBinding(continuation, recoveries[0]!)) {
                 continue;
             }
-            const commands = getExactRenderCommands(continuation, run.runId);
-            if (!commands) {
-                continue;
+            const review = createReviewFromDurableBinding(continuation, run.runId);
+            if (review) {
+                reviews.push(review);
             }
-            const jobs: RetainedRenderJobReview[] = commands.flatMap(({ commandId, jobs: commandJobs }) =>
-                commandJobs.map((job) => {
-                    const artifact = getExactAgentSectionRenderArtifact({ job, sourceRevision });
-                    return artifact
-                        ? { commandId, job, availability: 'available' as const, artifact, warnings: artifact.warnings }
-                        : {
-                              commandId,
-                              job,
-                              availability: 'unavailable' as const,
-                              warnings: [] as const,
-                              reason: 'The exact retained render evidence has expired, was evicted, or no longer matches this receipt.',
-                          };
-                })
-            );
-            reviews.push({
-                binding: {
-                    runId: run.runId,
-                    batchId: continuation.batchId,
-                    receiptIdentity: continuation.receiptIdentity,
-                    sourceRevision,
-                    commands,
-                },
-                jobs,
-            });
+        }
+    }
+    for (const recovery of state?.pendingEffectRecoveryLedger ?? []) {
+        if ((state?.runs ?? []).some(({ runId }) => runId === recovery.runId)) {
+            continue;
+        }
+        const matching = (state?.pendingEffectRecoveryLedger ?? []).filter(
+            (candidate) => candidate.runId === recovery.runId && candidate.batchId === recovery.batchId
+        );
+        if (matching.length !== 1 || recovery.checkpoint !== 'durable') {
+            continue;
+        }
+        const review = createReviewFromDurableBinding(recovery, recovery.runId);
+        if (review) {
+            reviews.push(review);
         }
     }
     return reviews;

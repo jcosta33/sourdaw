@@ -1348,7 +1348,32 @@ function settleAgentRunPendingEffectManualReview(input: {
     const state = readAgentRunState();
     const runIndex = state.runs.findIndex((run) => run.runId === input.runId);
     if (runIndex < 0) {
-        throw new Error(`Unknown agent run: ${input.runId}`);
+        const matchingRecoveries = getPendingEffectRecoveryLedger(state).filter(
+            (candidate) => candidate.runId === input.runId && candidate.batchId === input.batchId
+        );
+        const recovery = matchingRecoveries[0];
+        if (
+            matchingRecoveries.length !== 1 ||
+            !recovery ||
+            recovery.checkpoint !== 'durable' ||
+            recovery.receiptIdentity !== input.receiptIdentity ||
+            recovery.sourceRevision !== input.sourceRevision ||
+            recovery.recovery !== 'manual-repair' ||
+            recovery.effects.length === 0 ||
+            recovery.effects.some(
+                (effect) =>
+                    effect.kind !== 'external-effect' ||
+                    effect.operation !== 'renderProjectSections' ||
+                    effect.remediation !== 'manual-repair'
+            )
+        ) {
+            throw new Error('The exact manual-review obligation is stale or unavailable.');
+        }
+        const pendingEffectRecoveryLedger = getPendingEffectRecoveryLedger(state).filter(
+            (candidate) => candidate !== recovery
+        );
+        persistAgentRunState(withPendingEffectRecoveryLedger(state, pendingEffectRecoveryLedger));
+        return null;
     }
     const run = state.runs[runIndex]!;
     const continuation = run.pendingEffectContinuations.find((candidate) => candidate.batchId === input.batchId);

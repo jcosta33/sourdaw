@@ -110,6 +110,24 @@ export const RetainedSectionRenderManualReview = ({
         [previewCoordinator, previewOwnerId]
     );
 
+    useEffect(() => {
+        const availableJobKeys = new Set(
+            review.jobs.filter(({ availability }) => availability === 'available').map(getJobKey)
+        );
+        for (const [jobKey, preview] of previewsRef.current) {
+            if (availableJobKeys.has(jobKey)) {
+                continue;
+            }
+            previewsRef.current.delete(jobKey);
+            const cleanupError = stopAndReleasePreview(preview);
+            setPlayingJobKey((current) => (current === jobKey ? null : current));
+            previewCoordinator.release(previewOwnerId);
+            if (cleanupError) {
+                onStatus(getErrorMessage(cleanupError));
+            }
+        }
+    }, [onStatus, previewCoordinator, previewOwnerId, review.jobs]);
+
     const play = (job: AvailableJob): void => {
         const jobKey = getJobKey(job);
         if (playingJobKey === jobKey) {

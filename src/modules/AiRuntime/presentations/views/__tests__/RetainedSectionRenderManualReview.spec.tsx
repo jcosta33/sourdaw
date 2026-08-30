@@ -347,6 +347,33 @@ describe('RetainedSectionRenderManualReview', () => {
         expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledWith('cached-stereo-chorus');
     });
 
+    it('stops and releases an active preview when rerendered evidence becomes unavailable', () => {
+        const available = availableReview();
+        const view = render(<Harness review={available} />);
+        fireEvent.click(screen.getByRole('button', { name: 'Play Verse' }));
+        const unavailable: Review = {
+            ...available,
+            jobs: [
+                {
+                    commandId: 'command-review',
+                    job: verse,
+                    availability: 'unavailable',
+                    reason: 'The exact verse evidence expired.',
+                    warnings: [],
+                },
+                available.jobs[1]!,
+            ],
+        };
+
+        view.rerender(<Harness review={unavailable} />);
+
+        expect(mocks.stop).toHaveBeenCalledOnce();
+        expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledExactlyOnceWith('cached-stereo-verse');
+        expect(mocks.release).toHaveBeenCalledWith('run-review:batch-review');
+        expect(screen.queryByRole('button', { name: 'Stop Verse' })).not.toBeInTheDocument();
+        expect(screen.getByText('The exact verse evidence expired.')).toBeInTheDocument();
+    });
+
     it('shows one missing-evidence acknowledgement and visible operation errors', async () => {
         const available = availableReview();
         const review: Review = {

@@ -128,6 +128,37 @@ describe('retained section render review hydration', () => {
         expect(selectRetainedSectionRenderManualReviews(readAgentRunState())).toHaveLength(1);
     });
 
+    it('keeps an evicted review owner actionable from its durable capsule after restart', () => {
+        createObligation();
+        for (let index = 0; index < 50; index += 1) {
+            agentRunLifecycle.create({
+                runId: `run-capacity-${String(index)}`,
+                request: 'Fill bounded run history.',
+                mode: 'explain',
+                createdRevision: 'revision-source',
+                createdAt: 10 + index,
+            });
+        }
+        const serializedState = JSON.stringify(readAgentRunState());
+        restartFrom(serializedState);
+
+        expect(readAgentRunState().runs.some(({ runId }) => runId === 'run-hydrate-review')).toBe(false);
+        const review = selectRetainedSectionRenderManualReviews(readAgentRunState())[0];
+        if (!review) {
+            throw new Error('Expected the evicted owner review to remain actionable.');
+        }
+        expect(review.binding).toMatchObject({
+            runId: 'run-hydrate-review',
+            batchId: 'batch-hydrate-review',
+            sourceRevision: 'revision-source',
+        });
+
+        settleRetainedSectionRenderManualReview({ binding: review.binding, disposition: 'accepted' });
+
+        expect(readAgentRunState().pendingEffectRecoveryLedger).toBeUndefined();
+        expect(selectRetainedSectionRenderManualReviews(readAgentRunState())).toEqual([]);
+    });
+
     it('preserves reviewed disposition and never resurrects a settled review after restart', () => {
         createObligation();
         const review = selectRetainedSectionRenderManualReviews(readAgentRunState())[0];
