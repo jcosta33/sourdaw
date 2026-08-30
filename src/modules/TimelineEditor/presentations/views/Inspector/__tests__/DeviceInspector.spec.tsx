@@ -169,9 +169,10 @@ describe('DeviceInspector', () => {
         expect(screen.getByTestId('generic-layout').getAttribute('data-param-count')).toBe('2');
     });
 
-    it('should resolve the declared gain control for a faust-fm-synth device from the real registry', async () => {
-        // The fm-synth descriptor declares only `gain`; its op-level controls
-        // wait on the FM preset migration. An empty declared `parameters`
+    it('should resolve every declared control for a faust-fm-synth device from the real registry', async () => {
+        // The fm-synth descriptor declares every input control the compiled
+        // node exposes (algorithm, the four ratio/level/ADSR op blocks, gain,
+        // and the note-level freq and gate). An empty declared `parameters`
         // array is not nullish, so before `gain` was declared the device fell
         // past the derive fallback and the inspector resolved no controls at
         // all — the Faust instrument layout showed its loading message
@@ -194,7 +195,67 @@ describe('DeviceInspector', () => {
                 onBack={mockOnBack}
             />
         );
-        expect(screen.getByTestId('generic-layout').getAttribute('data-param-ids')).toBe('gain');
+        expect(screen.getByTestId('generic-layout').getAttribute('data-param-ids')).toBe(
+            [
+                'algorithm',
+                'op1_ratio',
+                'op1_level',
+                'op1_attack',
+                'op1_decay',
+                'op1_sustain',
+                'op1_release',
+                'op2_ratio',
+                'op2_level',
+                'op2_attack',
+                'op2_decay',
+                'op2_sustain',
+                'op2_release',
+                'op3_ratio',
+                'op3_level',
+                'op3_attack',
+                'op3_decay',
+                'op3_sustain',
+                'op3_release',
+                'op4_ratio',
+                'op4_level',
+                'op4_attack',
+                'op4_decay',
+                'op4_sustain',
+                'op4_release',
+                'gain',
+                'freq',
+                'gate',
+            ].join(',')
+        );
+    });
+
+    it('should resolve every declared control for a faust-rhodes device from the real registry', async () => {
+        // Same contract as the fm-synth case above, for the other Faust
+        // instrument #3154 brought into descriptor scope: the descriptor
+        // declares every input control the compiled rhodes node exposes,
+        // including the note-level freq and gate. Run against the real
+        // registry (the module mock's importActual), not a hand-built
+        // descriptor, so the case fails if the descriptor's parameters
+        // revert to [].
+        const actual = await vi.importActual<typeof import('#/modules/Arrangement/useCases')>(
+            '#/modules/Arrangement/useCases'
+        );
+        mockGetBuiltinPlugins.mockImplementation(actual.getBuiltinPlugins);
+        render(
+            <DeviceInspector
+                device={makeDevice({
+                    id: 'device-rhodes',
+                    name: 'Warm Rhodes',
+                    type: 'faust-rhodes',
+                    parameterValues: { gain: 0.4 },
+                })}
+                trackId="track-1"
+                onBack={mockOnBack}
+            />
+        );
+        expect(screen.getByTestId('generic-layout').getAttribute('data-param-ids')).toBe(
+            ['brightness', 'body_decay', 'bell_decay', 'gain', 'freq', 'gate'].join(',')
+        );
     });
 
     it('should match a builtin plugin by display name', () => {
