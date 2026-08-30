@@ -1,0 +1,57 @@
+electron/mainWindowTeardown.ts
+  s_ae074277795b45::t_ba6b83dff9bb28 13-14,23-24
+  s_ae074277795b45::t_683ad19371b5f4 12,22
+  s_ae074277795b45::t_e90783fbc8801a 15,38,44
+electron/__tests__/shutdown.spec.ts
+  s_ae074277795b45::t_2f8543e2fa1e3e 322-338
+  s_ae074277795b45::t_21fe4afa8858dd 177
+  s_ae074277795b45::t_7897ba032fef2f 276,279,304
+electron/pluginGui.ts
+  s_ae074277795b45::t_183363faceaa33 228,825,833,837-839,841,843-844,848-854
+  s_ae074277795b45::t_683ad19371b5f4 821,842
+  s_ae074277795b45::t_ba6b83dff9bb28 822-823,846
+  s_ae074277795b45::t_e90783fbc8801a 824,827,840
+electron/__tests__/windowCloseCoordinator.spec.ts
+  s_ae074277795b45::t_2f8543e2fa1e3e 45-63
+electron/__tests__/pluginGui.spec.ts
+  s_ae074277795b45::t_56347d264398d5 490,502-507,518
+  s_ae074277795b45::t_4f8a6474762fd5 489,493-497,499-500,512
+  s_ae074277795b45::t_2f8543e2fa1e3e 486-488,491-492,498,501,508-511,513-517,519-522
+src/modules/WorkspaceShell/presentations/hooks/useNativeApplicationMenu.ts
+  s_ae074277795b45::t_183363faceaa33 87-96
+electron/rendererSessionLifecycle.ts
+  s_ae074277795b45::t_683ad19371b5f4 12-14
+electron/main.ts
+  s_ae074277795b45::t_e90783fbc8801a 116
+  s_ae074277795b45::t_183363faceaa33 187,190,192,196,198-200,204,215,218,229
+  s_ae074277795b45::t_683ad19371b5f4 207-211,223-227,329
+  s_ae074277795b45::t_ba6b83dff9bb28 202,314-316,330-331
+  s_ae074277795b45::t_c6975c8bec7a70 328,332-333
+electron/shutdown.ts
+  s_ae074277795b45::t_d139314ef04b58 137-138,145,147,158-161,195,217-220
+  s_ae074277795b45::t_272bec33668e29 156
+electron/__tests__/rendererSessionLifecycle.spec.ts
+  s_ae074277795b45::t_683ad19371b5f4 23-31
+electron/windowCloseCoordinator.ts
+  s_ae074277795b45::t_183363faceaa33 48,50
+src/modules/WorkspaceShell/presentations/hooks/__tests__/useNativeApplicationMenu.spec.tsx
+  s_ae074277795b45::t_2f8543e2fa1e3e 259-276,283-284,308
+  s_ae074277795b45::t_4f8a6474762fd5 252
+  s_ae074277795b45::t_1c3075cc14c21d 277-282
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "97783d19b8a362b6f3030dcc5a946baac13d3096",
+  "prompts": {},
+  "sessions": {
+    "s_ae074277795b45": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04ab5-5234-7100-be1c-76ebfaba88d3",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
