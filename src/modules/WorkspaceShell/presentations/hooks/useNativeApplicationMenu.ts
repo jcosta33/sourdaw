@@ -39,6 +39,10 @@ import type { ProjectStoreState } from '#/modules/Project/stores';
 
 type NativeMenu = NonNullable<ReturnType<typeof nativeApplicationMenu>>;
 type NativeMenuIntent = Parameters<Parameters<NativeMenu['listen']>[0]>[0];
+type CanvasEditorCommand = Parameters<typeof dispatchCanvasEditorCommand>[1];
+
+const isCanvasEditorCommand = (action: NativeMenuIntent['action']): action is CanvasEditorCommand =>
+    action.startsWith('edit:');
 
 const allClipIds = (): string[] =>
     trackStore.value?.tracks.flatMap((track) => track.clips.map((clip) => clip.id)) ?? [];
@@ -63,14 +67,14 @@ const reportCloseResult = async (
         requestId,
         saved,
         dirty: dirty || current?.dirty === true || current?.identityPersistencePending === true,
-        projectKey: current === undefined ? fallbackProjectKey : nativeProjectKey(current),
+        projectKey: current === null ? fallbackProjectKey : nativeProjectKey(current),
         revision: captureProjectRevision(),
     });
 };
 
 const runMenuAction = async (intent: NativeMenuIntent): Promise<void> => {
     const { action } = intent;
-    if (action.startsWith('edit:')) {
+    if (isCanvasEditorCommand(action)) {
         if (isNativeTextEditableTarget(document.activeElement)) {
             return;
         }
@@ -95,12 +99,13 @@ const runMenuAction = async (intent: NativeMenuIntent): Promise<void> => {
             await pickAndImportProjectFile();
             return;
         case 'project:save': {
+            const currentProject = projectStore.value;
             if (
                 intent.requestId !== undefined &&
                 (intent.projectKey === undefined ||
                     intent.revision === undefined ||
-                    projectStore.value === undefined ||
-                    nativeProjectKey(projectStore.value) !== intent.projectKey ||
+                    currentProject === null ||
+                    nativeProjectKey(currentProject) !== intent.projectKey ||
                     captureProjectRevision() !== intent.revision)
             ) {
                 if (intent.projectKey !== undefined) {
@@ -115,11 +120,12 @@ const runMenuAction = async (intent: NativeMenuIntent): Promise<void> => {
             return;
         }
         case 'project:discard': {
+            const currentProject = projectStore.value;
             if (
                 intent.projectKey === undefined ||
                 intent.revision === undefined ||
-                projectStore.value === undefined ||
-                nativeProjectKey(projectStore.value) !== intent.projectKey ||
+                currentProject === null ||
+                nativeProjectKey(currentProject) !== intent.projectKey ||
                 captureProjectRevision() !== intent.revision
             ) {
                 if (intent.requestId !== undefined && intent.projectKey !== undefined) {
@@ -226,7 +232,7 @@ export const useNativeApplicationMenu = (project: ProjectStoreState): void => {
         }
         const publishProjectState = (): void => {
             const currentProject = projectStore.value;
-            if (currentProject === undefined) {
+            if (currentProject === null) {
                 void menu.projectState({
                     title: 'Sourdaw',
                     dirty: true,

@@ -27,6 +27,7 @@ const desktop = vi.hoisted(() => ({
     sessionQuiesceStarted: vi.fn(async () => true),
 }));
 const projectState = vi.hoisted(() => ({
+    available: true,
     projectId: 'project' as string | undefined,
     name: 'Song',
     createdAt: 1,
@@ -61,6 +62,9 @@ const projectActions = vi.hoisted(() => ({
 vi.mock('#/modules/Project/stores', () => ({
     projectStore: {
         get value() {
+            if (!projectState.available) {
+                return null;
+            }
             return {
                 projectId: projectState.projectId,
                 name: projectState.name,
@@ -164,6 +168,7 @@ describe('useNativeApplicationMenu', () => {
                 return (await begin()) ? ('success' as const) : ('rejected' as const);
             });
         projectState.dirty = false;
+        projectState.available = true;
         projectState.projectId = 'project';
         projectState.name = 'Song';
         projectState.createdAt = 1;
@@ -455,6 +460,37 @@ describe('useNativeApplicationMenu', () => {
             durabilityPending: true,
             projectKey: 'sourdaw:project:42',
             revision: 'revision-2',
+            rendererReady: false,
+            recentProjects: [],
+        });
+    });
+
+    it('publishes a fail-closed projection while the project store is unavailable', () => {
+        projectState.available = false;
+
+        renderHook(() =>
+            useNativeApplicationMenu({
+                projectId: 'captured-project',
+                name: 'Captured Song',
+                createdAt: 1,
+                updatedAt: 1,
+                dirty: false,
+                identityPersistencePending: false,
+                loading: false,
+                keyRoot: 0,
+                scaleName: 'chromatic',
+                tuning: { name: 'Equal Temperament', frequencies: [] },
+                productionBrief: {} as never,
+                initialized: true,
+            })
+        );
+
+        expect(desktop.projectState).toHaveBeenCalledWith({
+            title: 'Sourdaw',
+            dirty: true,
+            durabilityPending: true,
+            projectKey: 'sourdaw:project:unavailable',
+            revision: 'revision-1',
             rendererReady: false,
             recentProjects: [],
         });
