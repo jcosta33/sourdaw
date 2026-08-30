@@ -1057,6 +1057,31 @@ pub async fn load_plugin(
     windows_host: &dyn PluginWindowHost,
     state: &AppState,
 ) -> Result<PluginInstance, String> {
+    load_plugin_with_backend(
+        plugin_id,
+        instance_id,
+        engine_sample_rate,
+        windows_host,
+        state,
+        create_hosted_runtime,
+    )
+    .await
+}
+
+/// `create_runtime` is a parameter so a test can inject a fixture runtime —
+/// one whose editor-support ask records its caller — without loading a real
+/// plugin library, the same way [`scan_plugins_with_backend`]'s
+/// `scan_descriptor`/`scan_instance` let a scan test inject a scan outcome.
+/// Production reaches this only through [`load_plugin`], which always supplies
+/// [`create_hosted_runtime`].
+async fn load_plugin_with_backend(
+    plugin_id: PluginId,
+    instance_id: PluginInstanceId,
+    engine_sample_rate: f64,
+    windows_host: &dyn PluginWindowHost,
+    state: &AppState,
+    create_runtime: impl Fn(HostBackend, &str, &str, f64) -> Result<HostedRuntime, String>,
+) -> Result<PluginInstance, String> {
     // The rate is decided before anything is resolved, locked or constructed:
     // it is the caller's own input, refusing it costs nothing, and a load that
     // cannot state its rate must not reach a plugin's entry point at all.
@@ -1117,7 +1142,7 @@ pub async fn load_plugin(
         eprintln!("{note}");
     }
 
-    let mut wrapper = create_hosted_runtime(backend, &entry.path, &descriptor_id, sample_rate)?;
+    let mut wrapper = create_runtime(backend, &entry.path, &descriptor_id, sample_rate)?;
     let name = wrapper.get_name().to_string();
     let params = wrapper.get_parameters();
     // Asked on the shell's UI thread because, for VST3, the question is a real
@@ -2028,6 +2053,8 @@ pub async fn process_plugin_audio(
 mod tests {
     use super::*;
     use crate::host::plugin_window::testing::DedicatedUiWindowHost;
+    use crate::host::plugin_window::PluginEditorWindow;
+    use crate::host::ui_thread::{UiThread, UiThreadTask};
     use crate::state::EnginePluginInstanceData;
     use daw_core::PluginInstanceId;
     use std::path::Path;
@@ -3108,6 +3135,41 @@ mod tests {
         );
     }
 
+    /// A shell whose UI thread never takes an editor lend — what the real
+    /// seam's deadline produces when the shell is gone or stuck. Standing in
+    /// for the give-up rather than reproducing its wait, because a host that
+    /// hangs proves nothing about what broke.
+    struct LendRefusingWindowHost;
+
+    impl UiThread for LendRefusingWindowHost {
+        fn is_ui_thread(&self) -> bool {
+            false
+        }
+
+        fn run_on_ui_thread(&self, _task: &Arc<UiThreadTask>) -> Result<(), String> {
+            Err("the shell's UI thread did not take the editor call".to_string())
+        }
+    }
+
+    impl PluginWindowHost for LendRefusingWindowHost {
+        fn window_exists(&self, _label: &str) -> bool {
+            false
+        }
+
+        fn create_editor_window(
+            &self,
+            _label: &str,
+            _title: &str,
+            _instance_id: &str,
+        ) -> Result<Box<dyn PluginEditorWindow>, String> {
+            Err("This host cannot create plugin editor windows".to_string())
+        }
+
+        fn destroy_window(&self, _label: &str) {}
+        fn hide_window(&self, _label: &str) {}
+        fn show_window(&self, _label: &str) {}
+    }
+
     /// A plugin that records the thread its editor support was asked on. The
     /// real VST3 backend's ask is a `createView` — the format has no other
     /// "has an editor" query — so this stands in for exactly the call the load
@@ -3139,13 +3201,14 @@ mod tests {
         }
     }
 
-    /// The load path's editor-support ask is an editor call for VST3 — a real
-    /// `createView` before any window exists — so it has to reach the plugin on
-    /// the shell's UI thread like the open it precedes, not on the worker that
-    /// took the load. Both answers cross: a plugin that offers an editor and
-    /// one that does not must keep their own answer through the hop.
+    /// The editor-support helper's own contract, apart from any load: the ask
+    /// is an editor call for VST3 — a real `createView` before any window
+    /// exists — so it has to reach the plugin on the shell's UI thread like the
+    /// open it precedes, not on the worker that took it. Both answers cross: a
+    /// plugin that offers an editor and one that does not must keep their own
+    /// answer through the hop.
     #[test]
-    fn the_load_path_asks_editor_support_on_the_shells_ui_thread() {
+    fn editor_support_keeps_the_plugins_answer_across_the_thread_hop() {
         for offered in [true, false] {
             let asked_on = Arc::new(Mutex::new(Vec::new()));
             let mut plugin = EditorSupportThreadPlugin {
@@ -3173,6 +3236,149 @@ mod tests {
                 "the fake shell thread must not be this one, or this test proves nothing"
             );
         }
+    }
+
+    /// The registry row the load-path tests resolve. The format is `clap`
+    /// because the runtime they inject is a CLAP fixture; nothing else in the
+    /// row reaches the plugin, whose construction the test replaces.
+    fn register_editor_support_fixture(state: &AppState) {
+        state
+            .plugin_registry
+            .lock()
+            .expect("plugin registry lock should be available")
+            .insert(
+                "editor-support-fixture".to_string(),
+                PluginRegistryEntry {
+                    path: "/plugins/editor-support-fixture.clap".to_string(),
+                    stable_id: "editor-support-fixture".to_string(),
+                    descriptor_id: "com.sourdaw.editor-support-fixture".to_string(),
+                    format: "clap".to_string(),
+                    name: "Editor Support Fixture".to_string(),
+                    num_inputs: 2,
+                    num_outputs: 2,
+                    has_custom_ui: true,
+                    capability_metadata_reason: None,
+                },
+            );
+    }
+
+    /// The load path's own routing, one level deeper than the helper test
+    /// above: the ask has to cross inside the real `load_plugin`, from the
+    /// worker that took the load, against a runtime the load itself
+    /// constructed. The fixture records the thread its support was asked on,
+    /// so the assertion is the plugin's own observation of its caller.
+    #[test]
+    fn loading_a_plugin_asks_its_editor_support_on_the_shells_ui_thread() {
+        let state = AppState::default();
+        register_editor_support_fixture(&state);
+        let wrapper = ClapWrapper::new_engine_owned_command_fixture(
+            "Editor Support Fixture",
+            Vec::new(),
+            true,
+        );
+        let asked_on = wrapper
+            .engine_owned_command_fixture_editor_support_threads()
+            .expect("the command fixture records its editor-support asks");
+        let runtime_slot = Arc::new(Mutex::new(Some(HostedRuntime::from(wrapper))));
+        let slot = Arc::clone(&runtime_slot);
+        let windows = DedicatedUiWindowHost::start();
+
+        let instance = crate::block_on_test(load_plugin_with_backend(
+            PluginId("editor-support-fixture".to_string()),
+            PluginInstanceId("editor-support-instance".to_string()),
+            TEST_ENGINE_SAMPLE_RATE,
+            &windows,
+            &state,
+            |_backend, _path, _descriptor_id, _sample_rate| {
+                slot.lock()
+                    .expect("fixture runtime slot")
+                    .take()
+                    .ok_or_else(|| "the fixture runtime is single-use".to_string())
+            },
+        ))
+        .expect("the fixture plugin should load");
+
+        assert_ne!(
+            windows.thread_id,
+            std::thread::current().id(),
+            "the fake shell thread must not be this one, or this test proves nothing"
+        );
+        assert_eq!(
+            instance.name, "Editor Support Fixture",
+            "the loaded instance must be the fixture the load constructed"
+        );
+        assert!(
+            state
+                .plugins
+                .lock()
+                .expect("plugins lock")
+                .contains_key("editor-support-instance"),
+            "a load with no engine behind it keeps its plugin in the command-owned map"
+        );
+        assert_eq!(
+            *asked_on.lock().expect("editor-support ask log"),
+            [windows.thread_id],
+            "the load's editor-support ask must reach the plugin on the shell's thread and \
+             nowhere else"
+        );
+    }
+
+    /// A shell whose UI thread cannot take the lend — the give-up the real
+    /// seam's deadline produces. Swallowing it (`.unwrap_or(false)`) would
+    /// report a successful load whose plugin has its GUI permanently hidden,
+    /// so the load must refuse with the lend's own failure and leave no
+    /// instance behind.
+    #[test]
+    fn a_load_whose_editor_support_lend_never_lands_refuses_the_plugin() {
+        let state = AppState::default();
+        register_editor_support_fixture(&state);
+        let wrapper = ClapWrapper::new_engine_owned_command_fixture(
+            "Editor Support Fixture",
+            Vec::new(),
+            true,
+        );
+        let asked_on = wrapper
+            .engine_owned_command_fixture_editor_support_threads()
+            .expect("the command fixture records its editor-support asks");
+        let runtime_slot = Arc::new(Mutex::new(Some(HostedRuntime::from(wrapper))));
+        let slot = Arc::clone(&runtime_slot);
+
+        let error = crate::block_on_test(load_plugin_with_backend(
+            PluginId("editor-support-fixture".to_string()),
+            PluginInstanceId("lend-refused-instance".to_string()),
+            TEST_ENGINE_SAMPLE_RATE,
+            &LendRefusingWindowHost,
+            &state,
+            |_backend, _path, _descriptor_id, _sample_rate| {
+                slot.lock()
+                    .expect("fixture runtime slot")
+                    .take()
+                    .ok_or_else(|| "the fixture runtime is single-use".to_string())
+            },
+        ))
+        .expect_err("a load whose editor-support lend fails must refuse");
+
+        assert_eq!(
+            error, "the shell's UI thread did not take the editor call",
+            "the refusal must be the lend's own failure, not a later one"
+        );
+        assert!(
+            asked_on.lock().expect("editor-support ask log").is_empty(),
+            "a lend that never landed must not have reached the plugin either"
+        );
+        assert!(
+            !state
+                .engine_plugins
+                .lock()
+                .expect("engine_plugins lock")
+                .contains_key("lend-refused-instance")
+                && !state
+                    .plugins
+                    .lock()
+                    .expect("plugins lock")
+                    .contains_key("lend-refused-instance"),
+            "a refused load must leave no instance behind"
+        );
     }
 
     /// An empty descriptor id used to be replaced by the display name, which is
