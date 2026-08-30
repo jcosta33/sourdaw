@@ -15,6 +15,7 @@ import {
     recoverPullRequestReviewResolutionLock,
     shellPort,
     type ResolveReviewThreadPort,
+    type ReviewResolutionRecoveryClock,
     type ReviewResolutionTrustedLauncher,
     type ReviewResolutionLockOwner,
     type ReviewThreadInspection,
@@ -42,6 +43,7 @@ export type ReviewResolutionRecoveryDependencies = {
         inspectThread: (number: number, threadId: string, gh: (args: string[]) => string) => ReviewThreadInspection,
         gh: (args: string[]) => string
     ) => ResolveReviewThreadPort;
+    clock?: ReviewResolutionRecoveryClock;
     recoverLock?: <Value>(
         primaryRoot: string,
         number: number,
@@ -65,6 +67,7 @@ type ResolvedReviewResolutionRecoveryDependencies = {
         inspectThread: (number: number, threadId: string, gh: (args: string[]) => string) => ReviewThreadInspection,
         gh: (args: string[]) => string
     ) => ResolveReviewThreadPort;
+    clock: ReviewResolutionRecoveryClock;
     recoverLock: <Value>(
         primaryRoot: string,
         number: number,
@@ -117,6 +120,7 @@ function resolveRecoveryDependencies(
                 ...shellPort(session, primaryRoot),
                 inspect: (number, threadId) => inspectThread(number, threadId, gh),
             })),
+        clock: dependencies.clock ?? { now: () => Date.now() },
         recoverLock: dependencies.recoverLock ?? recoverPullRequestReviewResolutionLock,
     };
 }
@@ -182,7 +186,7 @@ export async function runRecoverReviewResolutionLockCli(
             recoverySummary(
                 parsed.number!,
                 lockOwner,
-                recoverReviewResolutionLockOwnerState(parsed.number!, lockOwner, port)
+                recoverReviewResolutionLockOwnerState(parsed.number!, lockOwner, port, resolvedDependencies.clock)
             )
         );
         console.log(summary);

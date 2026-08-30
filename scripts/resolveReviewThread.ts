@@ -88,20 +88,43 @@ export type ReviewResolutionReceipt = {
     resolvedByType: string;
     clientMutationId: string;
 };
+type ReviewResolutionSettledReply = {
+    replyId: string;
+    reviewId: string;
+    reviewState: 'PENDING' | 'COMMENTED';
+};
 export type ReviewResolutionLockMutation =
     | { phase: 'idle'; epoch: number }
     | { phase: 'createPendingReview'; epoch: number }
+    | { phase: 'createPendingReviewSettlement'; epoch: number; pendingReviewIds: string[]; settleAtMs: number }
     | { phase: 'replyDone'; epoch: number; reviewId: string }
+    | {
+          phase: 'replyDoneSettlement';
+          epoch: number;
+          reviewId: string;
+          replies: ReviewResolutionSettledReply[];
+          settleAtMs: number;
+      }
     | { phase: 'submitReview'; epoch: number; reviewId: string; body: string }
     | { phase: 'updateReviewBody'; epoch: number; reviewId: string; body: string }
     | { phase: 'resolveThread'; epoch: number }
     | { phase: 'deleteReply'; epoch: number; replyId: string }
-    | { phase: 'deletePendingReview'; epoch: number; reviewId: string };
+    | {
+          phase: 'deletePendingReview';
+          epoch: number;
+          reviewId: string;
+          allowedAttachedThreadIds: string[];
+          snapshotHead: string;
+      };
 type ReviewResolutionLockMutationUpdate = ReviewResolutionLockMutation extends infer Mutation
     ? Mutation extends { epoch: number }
         ? Omit<Mutation, 'epoch'>
         : never
     : never;
+export type DeletePendingReviewOptions = {
+    allowedAttachedThreadIds?: string[];
+    snapshotHead?: string;
+};
 export type ReviewResolutionLockOwner = {
     version: 3;
     pid: number;
@@ -115,6 +138,9 @@ export type ReviewResolutionTrustedLauncher = {
     primaryRoot: string;
     gitPath: string;
     ghPath: string;
+};
+export type ReviewResolutionRecoveryClock = {
+    now: () => number;
 };
 export type ResolveReviewThreadPort = {
     inspect: (number: number, threadId: string) => ReviewThreadInspection;
@@ -130,7 +156,7 @@ export type ResolveReviewThreadPort = {
     updateReviewBody: (reviewId: string, body: string) => ReviewEnvelopeReceipt;
     resolve: (threadId: string) => ReviewResolutionReceipt;
     deleteReply: (replyId: string) => void;
-    deletePendingReview: (reviewId: string) => void;
+    deletePendingReview: (reviewId: string, options?: DeletePendingReviewOptions) => void;
     serializeReviewThreadMutation: <Value>(
         number: number,
         threadId: string,
@@ -184,7 +210,9 @@ type ReviewResolutionLockInspectionPort = {
 const REVIEW_RESOLUTION_CHILD_ENV = 'SOURDAW_REVIEW_RESOLUTION_CHILD';
 const REVIEW_RESOLUTION_CHILD_MARKER_VERSION = 1;
 const TRUSTED_GIT_PATH_ENV = 'SOURDAW_TRUSTED_GIT_PATH';
+const REVIEW_RESOLUTION_RECOVERY_SETTLEMENT_WINDOW_MS = 1_000;
 const activeReviewResolutionLocks: ActiveReviewResolutionLock[] = [];
+const systemReviewResolutionRecoveryClock: ReviewResolutionRecoveryClock = { now: () => Date.now() };
 
 type ReviewResolutionChildLaunchMarker = {
     path: string;
@@ -960,6 +988,83 @@ function assertExpectedHeadAfterMutation(currentHead: string, expectedHead: stri
         fail('pull-request head moved after mutation; compensating');
     }
 }
+
+function assertRecoveryHeadMatchesOwner(currentHead: string, expectedHead: string): void {
+    if (
+        canonicalGitObjectId(currentHead, 'pull-request head changed while reconciling review resolution') !==
+        expectedHead
+    ) {
+        fail('pull-request head changed while reconciling review resolution');
+    }
+}
+
+function sortedUniqueStrings(values: readonly string[], label: string): string[] {
+    const unique = new Set<string>();
+    for (const value of values) {
+        if (typeof value !== 'string' || value.trim() === '') {
+            fail(label);
+        }
+        unique.add(value);
+    }
+    return [...unique].sort();
+}
+
+function nextRecoverySettlementDeadline(clock: ReviewResolutionRecoveryClock): number {
+    const current = clock.now();
+    if (!Number.isSafeInteger(current) || current < 0) {
+        fail('review-resolution recovery clock is invalid');
+    }
+    const settleAtMs = current + REVIEW_RESOLUTION_RECOVERY_SETTLEMENT_WINDOW_MS;
+    if (!Number.isSafeInteger(settleAtMs) || settleAtMs < current) {
+        fail('review-resolution recovery clock is invalid');
+    }
+    return settleAtMs;
+}
+
+function exactPendingReviewIds(pendingReviews: PullRequestReview[], context: ResolutionReviewContext): string[] {
+    return pendingReviews
+        .filter((review) => isExactPendingReview(review, context))
+        .map((review) => review.id)
+        .sort();
+}
+
+function observedReplySettlementReplies(
+    thread: ReviewThread,
+    context: ResolutionReviewContext
+): ReviewResolutionSettledReply[] {
+    return managedReplyMarkers(thread, context, ['PENDING', 'COMMENTED'], true).map((candidate) => ({
+        replyId: candidate.marker.id,
+        reviewId: candidate.review.id,
+        reviewState: candidate.review.state === 'COMMENTED' ? 'COMMENTED' : 'PENDING',
+    }));
+}
+
+function sameStringArray(left: readonly string[], right: readonly string[]): boolean {
+    return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
+function sameSettledReplies(
+    left: readonly ReviewResolutionSettledReply[],
+    right: readonly ReviewResolutionSettledReply[]
+): boolean {
+    return (
+        left.length === right.length &&
+        left.every(
+            (value, index) =>
+                value.replyId === right[index]?.replyId &&
+                value.reviewId === right[index]?.reviewId &&
+                value.reviewState === right[index]?.reviewState
+        )
+    );
+}
+
+function isRecoverySettlementPhase(
+    mutation: ReviewResolutionLockMutation
+): mutation is
+    | Extract<ReviewResolutionLockMutation, { phase: 'createPendingReviewSettlement' }>
+    | Extract<ReviewResolutionLockMutation, { phase: 'replyDoneSettlement' }> {
+    return mutation.phase === 'createPendingReviewSettlement' || mutation.phase === 'replyDoneSettlement';
+}
 function isDecimalId(value: unknown): value is string {
     return typeof value === 'string' && /^[1-9][0-9]*$/.test(value);
 }
@@ -1573,7 +1678,10 @@ function deletePendingReviewSafely(
             `pending author review ${reviewId} still has attached review-thread comments on ${unsafeThreadIds.join(', ')}`
         );
     }
-    port.deletePendingReview(reviewId);
+    port.deletePendingReview(reviewId, {
+        allowedAttachedThreadIds: [...allowedThreadIds],
+        snapshotHead,
+    });
 }
 
 function convergePendingReplyStateBeforeSubmit(
@@ -1877,7 +1985,7 @@ export function shellPort(session: GhSession, cwd: string = process.cwd()): Reso
             });
             return deleteReply(id, mutationGh);
         },
-        deletePendingReview: (id) => {
+        deletePendingReview: (id, options) => {
             const active = activeReviewResolutionLocks.at(-1);
             if (active === undefined) {
                 fail('pending review deletion is not fenced by the active review-resolution lock');
@@ -1885,6 +1993,14 @@ export function shellPort(session: GhSession, cwd: string = process.cwd()): Reso
             advanceActiveReviewResolutionLockMutation(primaryRoot, active.number, {
                 phase: 'deletePendingReview',
                 reviewId: id,
+                allowedAttachedThreadIds: sortedUniqueStrings(
+                    options?.allowedAttachedThreadIds ?? [],
+                    'delete pending review requires valid attached thread ids'
+                ),
+                snapshotHead: canonicalGitObjectId(
+                    options?.snapshotHead ?? active.owner.head,
+                    'delete pending review requires a valid snapshot head'
+                ),
             });
             return deletePendingReview(id, mutationGh);
         },
@@ -1994,12 +2110,68 @@ function parseReviewResolutionLockMutation(value: unknown, label: string): Revie
     if (phase === 'idle' || phase === 'createPendingReview' || phase === 'resolveThread') {
         return { phase, epoch };
     }
-    if (phase === 'replyDone' || phase === 'deletePendingReview') {
+    if (phase === 'createPendingReviewSettlement') {
+        const pendingReviewIds = sortedUniqueStrings(
+            Array.isArray((value as { pendingReviewIds?: unknown }).pendingReviewIds)
+                ? ((value as { pendingReviewIds: unknown[] }).pendingReviewIds as string[])
+                : [],
+            label
+        );
+        const settleAtMs = (value as { settleAtMs?: unknown }).settleAtMs;
+        if (
+            pendingReviewIds.length === 0 ||
+            typeof settleAtMs !== 'number' ||
+            !Number.isSafeInteger(settleAtMs) ||
+            settleAtMs < 0
+        ) {
+            fail(label);
+        }
+        return { phase, epoch, pendingReviewIds, settleAtMs };
+    }
+    if (phase === 'replyDone') {
         const reviewId = (value as { reviewId?: unknown }).reviewId;
         if (typeof reviewId !== 'string' || reviewId.trim() === '') {
             fail(label);
         }
         return { phase, epoch, reviewId };
+    }
+    if (phase === 'replyDoneSettlement') {
+        const reviewId = (value as { reviewId?: unknown }).reviewId;
+        const rawReplies = (value as { replies?: unknown }).replies;
+        const settleAtMs = (value as { settleAtMs?: unknown }).settleAtMs;
+        if (
+            typeof reviewId !== 'string' ||
+            reviewId.trim() === '' ||
+            !Array.isArray(rawReplies) ||
+            typeof settleAtMs !== 'number' ||
+            !Number.isSafeInteger(settleAtMs) ||
+            settleAtMs < 0
+        ) {
+            fail(label);
+        }
+        const replies = rawReplies.map((entry) => {
+            if (
+                typeof entry !== 'object' ||
+                entry === null ||
+                typeof (entry as { replyId?: unknown }).replyId !== 'string' ||
+                (entry as { replyId: string }).replyId.trim() === '' ||
+                typeof (entry as { reviewId?: unknown }).reviewId !== 'string' ||
+                (entry as { reviewId: string }).reviewId.trim() === '' ||
+                ((entry as { reviewState?: unknown }).reviewState !== 'PENDING' &&
+                    (entry as { reviewState?: unknown }).reviewState !== 'COMMENTED')
+            ) {
+                fail(label);
+            }
+            return {
+                replyId: (entry as { replyId: string }).replyId,
+                reviewId: (entry as { reviewId: string }).reviewId,
+                reviewState: (entry as { reviewState: 'PENDING' | 'COMMENTED' }).reviewState,
+            };
+        });
+        if (replies.length === 0) {
+            fail(label);
+        }
+        return { phase, epoch, reviewId, replies, settleAtMs };
     }
     if (phase === 'deleteReply') {
         const replyId = (value as { replyId?: unknown }).replyId;
@@ -2007,6 +2179,21 @@ function parseReviewResolutionLockMutation(value: unknown, label: string): Revie
             fail(label);
         }
         return { phase, epoch, replyId };
+    }
+    if (phase === 'deletePendingReview') {
+        const reviewId = (value as { reviewId?: unknown }).reviewId;
+        const rawAllowedAttachedThreadIds = (value as { allowedAttachedThreadIds?: unknown }).allowedAttachedThreadIds;
+        const snapshotHead = (value as { snapshotHead?: unknown }).snapshotHead;
+        if (typeof reviewId !== 'string' || reviewId.trim() === '' || !Array.isArray(rawAllowedAttachedThreadIds)) {
+            fail(label);
+        }
+        return {
+            phase,
+            epoch,
+            reviewId,
+            allowedAttachedThreadIds: sortedUniqueStrings(rawAllowedAttachedThreadIds as string[], label),
+            snapshotHead: typeof snapshotHead === 'string' ? canonicalGitObjectId(snapshotHead, label) : fail(label),
+        };
     }
     if (phase === 'submitReview' || phase === 'updateReviewBody') {
         const reviewId = (value as { reviewId?: unknown }).reviewId;
@@ -2113,6 +2300,14 @@ function currentActiveReviewResolutionLock(primaryRoot: string, number: number):
     return current;
 }
 
+function currentRecoveringReviewResolutionLock(number: number): ActiveReviewResolutionLock {
+    const current = activeReviewResolutionLocks.at(-1);
+    if (current === undefined || current.number !== number) {
+        fail(`${pullRequestReviewResolutionLockScope(number)} mutation is not fenced by the active lock owner`);
+    }
+    return current;
+}
+
 function advanceActiveReviewResolutionLockMutation(
     primaryRoot: string,
     number: number,
@@ -2128,6 +2323,14 @@ function advanceActiveReviewResolutionLockMutation(
         },
         number
     );
+}
+
+function advanceRecoveringReviewResolutionLockMutation(
+    number: number,
+    mutation: ReviewResolutionLockMutationUpdate
+): void {
+    const active = currentRecoveringReviewResolutionLock(number);
+    advanceActiveReviewResolutionLockMutation(active.primaryRoot, number, mutation);
 }
 
 function replaceActiveReviewResolutionLockMutation(
@@ -2359,6 +2562,14 @@ export function recoverPullRequestReviewResolutionLock<Value>(
     pushActiveReviewResolutionLock(active);
     try {
         const reconciled = reconcile(owner);
+        if (isRecoverySettlementPhase(active.owner.mutation)) {
+            popActiveReviewResolutionLock(active);
+            return preserveReviewResolutionLockFailure(
+                number,
+                active,
+                new Error(unreconciledReviewResolutionMutationMessage(number, active.owner.mutation))
+            );
+        }
         popActiveReviewResolutionLock(active);
         releasePullRequestReviewResolutionLock(primaryRoot, active.ref, active.oid, number);
         return reconciled;
@@ -2909,6 +3120,9 @@ function unreconciledReviewResolutionMutationMessage(
     number: number,
     mutation: Exclude<ReviewResolutionLockMutation, { phase: 'idle' }>
 ): string {
+    if (mutation.phase === 'createPendingReviewSettlement' || mutation.phase === 'replyDoneSettlement') {
+        return `${pullRequestReviewResolutionLockScope(number)} is waiting for ${mutation.phase} through unix-ms ${mutation.settleAtMs}; retry recovery after GitHub state settles`;
+    }
     return `${pullRequestReviewResolutionLockScope(number)} has an unreconciled in-flight ${mutation.phase} mutation from epoch ${mutation.epoch}; retry recovery after GitHub state settles`;
 }
 
@@ -2930,10 +3144,17 @@ function hasRecoveredReviewResolutionMutation(
                     review.body === resolutionReviewBody(context, owner.head) &&
                     isAuthorBotActor(review.authorNodeId, review.authorType)
             );
+        case 'createPendingReviewSettlement':
+            return sameStringArray(
+                exactPendingReviewIds(inspection.pendingReviews, context),
+                mutation.pendingReviewIds
+            );
         case 'replyDone':
             return managedReplyMarkers(thread, context, ['PENDING', 'COMMENTED'], true).some(
                 (candidate) => candidate.review.id === mutation.reviewId
             );
+        case 'replyDoneSettlement':
+            return sameSettledReplies(observedReplySettlementReplies(thread, context), mutation.replies);
         case 'submitReview':
             return managedReplyMarkers(thread, context, ['COMMENTED'], false).some(
                 (candidate) => candidate.review.id === mutation.reviewId && candidate.review.body === mutation.body
@@ -2963,6 +3184,204 @@ function hasRecoveredReviewResolutionMutation(
         default:
             return fail('review-resolution lock ownership is malformed');
     }
+}
+
+function beginCreatePendingReviewSettlement(
+    number: number,
+    inspection: ReviewThreadInspection,
+    context: ResolutionReviewContext,
+    port: ResolveReviewThreadPort,
+    clock: ReviewResolutionRecoveryClock
+): ReviewThreadInspection {
+    let working = inspection;
+    const observedBefore = exactPendingReviewIds(working.pendingReviews, context);
+    if (observedBefore.length === 0) {
+        fail(unreconciledReviewResolutionMutationMessage(number, { phase: 'createPendingReview', epoch: 0 }));
+    }
+    let converged = false;
+    if (observedBefore.length > 1) {
+        assertRecoveryHeadMatchesOwner(working.head, context.expectedHead);
+        convergePendingReviews(number, working.pendingReviews, context, port, undefined, working.head);
+        working = port.inspect(number, context.threadId);
+        assertExpectedHeadAfterMutation(working.head, context.expectedHead);
+        if (working.thread === null) {
+            fail(`review thread ${context.threadId} was not found on this pull request`);
+        }
+        converged = true;
+    }
+    const observedAfter = exactPendingReviewIds(working.pendingReviews, context);
+    if (observedAfter.length === 0) {
+        fail(unreconciledReviewResolutionMutationMessage(number, { phase: 'createPendingReview', epoch: 0 }));
+    }
+    if (converged || !sameStringArray(observedBefore, observedAfter)) {
+        // Delayed originals can reintroduce duplicate exact reviews; restart settlement after convergence.
+    }
+    advanceRecoveringReviewResolutionLockMutation(number, {
+        phase: 'createPendingReviewSettlement',
+        pendingReviewIds: observedAfter,
+        settleAtMs: nextRecoverySettlementDeadline(clock),
+    });
+    return working;
+}
+
+function continueCreatePendingReviewSettlement(
+    number: number,
+    mutation: Extract<ReviewResolutionLockMutation, { phase: 'createPendingReviewSettlement' }>,
+    inspection: ReviewThreadInspection,
+    context: ResolutionReviewContext,
+    port: ResolveReviewThreadPort,
+    clock: ReviewResolutionRecoveryClock
+): ReviewThreadInspection {
+    let working = inspection;
+    const observedBefore = exactPendingReviewIds(working.pendingReviews, context);
+    if (observedBefore.length === 0) {
+        fail(unreconciledReviewResolutionMutationMessage(number, mutation));
+    }
+    let converged = false;
+    if (observedBefore.length > 1) {
+        assertRecoveryHeadMatchesOwner(working.head, context.expectedHead);
+        convergePendingReviews(
+            number,
+            working.pendingReviews,
+            context,
+            port,
+            mutation.pendingReviewIds[0],
+            working.head
+        );
+        working = port.inspect(number, context.threadId);
+        assertExpectedHeadAfterMutation(working.head, context.expectedHead);
+        if (working.thread === null) {
+            fail(`review thread ${context.threadId} was not found on this pull request`);
+        }
+        converged = true;
+    }
+    const observedAfter = exactPendingReviewIds(working.pendingReviews, context);
+    if (observedAfter.length === 0) {
+        fail(unreconciledReviewResolutionMutationMessage(number, mutation));
+    }
+    if (converged || !sameStringArray(observedAfter, mutation.pendingReviewIds)) {
+        advanceRecoveringReviewResolutionLockMutation(number, {
+            phase: 'createPendingReviewSettlement',
+            pendingReviewIds: observedAfter,
+            settleAtMs: nextRecoverySettlementDeadline(clock),
+        });
+        return working;
+    }
+    if (clock.now() < mutation.settleAtMs) {
+        return working;
+    }
+    advanceRecoveringReviewResolutionLockMutation(number, { phase: 'idle' });
+    return working;
+}
+
+function beginReplyDoneSettlement(
+    number: number,
+    reviewId: string,
+    inspection: ReviewThreadInspection,
+    context: ResolutionReviewContext,
+    port: ResolveReviewThreadPort,
+    clock: ReviewResolutionRecoveryClock
+): ReviewThreadInspection {
+    let working = inspection;
+    let converged = false;
+    if (working.thread === null) {
+        fail(`review thread ${context.threadId} was not found on this pull request`);
+    }
+    const exactPendingCount = exactPendingReviewIds(working.pendingReviews, context).length;
+    const pendingMarkers = managedReplyMarkers(working.thread, context, ['PENDING'], true).length;
+    if (exactPendingCount > 1 || pendingMarkers > 1) {
+        assertRecoveryHeadMatchesOwner(working.head, context.expectedHead);
+        working = convergePendingReplyStateBeforeSubmit(number, working, context, reviewId, port);
+        assertExpectedHeadAfterMutation(working.head, context.expectedHead);
+        converged = true;
+    }
+    if (working.thread === null) {
+        fail(`review thread ${context.threadId} was not found on this pull request`);
+    }
+    const managedReplies = observedReplySettlementReplies(working.thread, context);
+    if (managedReplies.length > 1) {
+        assertRecoveryHeadMatchesOwner(working.head, context.expectedHead);
+        convergeReplyMarkers(context.threadId, working.thread, port, context, ['PENDING', 'COMMENTED']);
+        working = port.inspect(number, context.threadId);
+        assertExpectedHeadAfterMutation(working.head, context.expectedHead);
+        if (working.thread === null) {
+            fail(`review thread ${context.threadId} was not found on this pull request`);
+        }
+        converged = true;
+    }
+    const observedReplies = observedReplySettlementReplies(working.thread, context);
+    if (observedReplies.length === 0 || !observedReplies.some((reply) => reply.reviewId === reviewId)) {
+        fail(unreconciledReviewResolutionMutationMessage(number, { phase: 'replyDone', epoch: 0, reviewId }));
+    }
+    if (converged) {
+        // Recovery converged visible duplicates before starting the quiescence window.
+    }
+    advanceRecoveringReviewResolutionLockMutation(number, {
+        phase: 'replyDoneSettlement',
+        reviewId,
+        replies: observedReplies,
+        settleAtMs: nextRecoverySettlementDeadline(clock),
+    });
+    return working;
+}
+
+function continueReplyDoneSettlement(
+    number: number,
+    mutation: Extract<ReviewResolutionLockMutation, { phase: 'replyDoneSettlement' }>,
+    inspection: ReviewThreadInspection,
+    context: ResolutionReviewContext,
+    port: ResolveReviewThreadPort,
+    clock: ReviewResolutionRecoveryClock
+): ReviewThreadInspection {
+    let working = inspection;
+    let converged = false;
+    if (working.thread === null) {
+        fail(`review thread ${context.threadId} was not found on this pull request`);
+    }
+    const observedBefore = observedReplySettlementReplies(working.thread, context);
+    if (observedBefore.length === 0 || !observedBefore.some((reply) => reply.reviewId === mutation.reviewId)) {
+        fail(unreconciledReviewResolutionMutationMessage(number, mutation));
+    }
+    const exactPendingCount = exactPendingReviewIds(working.pendingReviews, context).length;
+    const pendingMarkers = managedReplyMarkers(working.thread, context, ['PENDING'], true).length;
+    if (exactPendingCount > 1 || pendingMarkers > 1) {
+        assertRecoveryHeadMatchesOwner(working.head, context.expectedHead);
+        working = convergePendingReplyStateBeforeSubmit(number, working, context, mutation.reviewId, port);
+        assertExpectedHeadAfterMutation(working.head, context.expectedHead);
+        if (working.thread === null) {
+            fail(`review thread ${context.threadId} was not found on this pull request`);
+        }
+        converged = true;
+    }
+    const managedReplies = observedReplySettlementReplies(working.thread, context);
+    if (managedReplies.length > 1) {
+        assertRecoveryHeadMatchesOwner(working.head, context.expectedHead);
+        convergeReplyMarkers(context.threadId, working.thread, port, context, ['PENDING', 'COMMENTED']);
+        working = port.inspect(number, context.threadId);
+        assertExpectedHeadAfterMutation(working.head, context.expectedHead);
+        if (working.thread === null) {
+            fail(`review thread ${context.threadId} was not found on this pull request`);
+        }
+        converged = true;
+    }
+    const observedAfter = observedReplySettlementReplies(working.thread, context);
+    if (observedAfter.length === 0 || !observedAfter.some((reply) => reply.reviewId === mutation.reviewId)) {
+        fail(unreconciledReviewResolutionMutationMessage(number, mutation));
+    }
+    if (converged || !sameSettledReplies(observedAfter, mutation.replies)) {
+        advanceRecoveringReviewResolutionLockMutation(number, {
+            phase: 'replyDoneSettlement',
+            reviewId: mutation.reviewId,
+            replies: observedAfter,
+            settleAtMs: nextRecoverySettlementDeadline(clock),
+        });
+        return working;
+    }
+    if (clock.now() < mutation.settleAtMs) {
+        return working;
+    }
+    advanceRecoveringReviewResolutionLockMutation(number, { phase: 'idle' });
+    return working;
 }
 
 function inspectReviewResolutionRecovery(
@@ -3006,50 +3425,59 @@ function assertReplayableReviewReceipt(
 export function recoverReviewResolutionLockOwnerState(
     number: number,
     owner: ReviewResolutionLockOwner,
-    port: ResolveReviewThreadPort
+    port: ResolveReviewThreadPort,
+    clock: ReviewResolutionRecoveryClock = systemReviewResolutionRecoveryClock
 ): ReviewThreadInspection {
     let inspection = inspectReviewResolutionRecovery(number, owner, port);
     if (owner.mutation.phase === 'idle') {
         return inspection;
     }
     const context = resolutionReviewContext(inspection.pullRequestId, owner.threadId, owner.head);
-    if (hasRecoveredReviewResolutionMutation(owner, inspection, context, inspection.thread!)) {
-        return inspection;
-    }
     const mutation = assertMutationPhaseOwner(owner);
     switch (mutation.phase) {
         case 'createPendingReview': {
-            const created = port.createPendingReview(
-                inspection.pullRequestId,
-                owner.head,
-                resolutionReviewBody(context, owner.head)
-            );
-            assertReviewEnvelopeReceipt(
-                created,
-                createReviewClientMutationId(owner.threadId),
-                'PENDING',
-                resolutionReviewBody(context, owner.head),
-                owner.head,
-                'create pending review'
-            );
-            inspection = inspectReviewResolutionRecovery(number, owner, port);
-            break;
-        }
-        case 'replyDone': {
-            port.replyDone(owner.threadId, mutation.reviewId);
-            inspection = inspectReviewResolutionRecovery(number, owner, port);
-            if (inspection.head === owner.head) {
-                inspection = convergePendingReplyStateBeforeSubmit(
-                    number,
-                    inspection,
-                    context,
-                    mutation.reviewId,
-                    port
+            if (!hasRecoveredReviewResolutionMutation(owner, inspection, context, inspection.thread!)) {
+                assertRecoveryHeadMatchesOwner(inspection.head, owner.head);
+                const created = port.createPendingReview(
+                    inspection.pullRequestId,
+                    owner.head,
+                    resolutionReviewBody(context, owner.head)
                 );
+                assertReviewEnvelopeReceipt(
+                    created,
+                    createReviewClientMutationId(owner.threadId),
+                    'PENDING',
+                    resolutionReviewBody(context, owner.head),
+                    owner.head,
+                    'create pending review'
+                );
+                inspection = inspectReviewResolutionRecovery(number, owner, port);
+                assertExpectedHeadAfterMutation(inspection.head, owner.head);
             }
+            inspection = beginCreatePendingReviewSettlement(number, inspection, context, port, clock);
             break;
         }
+        case 'createPendingReviewSettlement':
+            inspection = continueCreatePendingReviewSettlement(number, mutation, inspection, context, port, clock);
+            break;
+        case 'replyDone': {
+            if (!hasRecoveredReviewResolutionMutation(owner, inspection, context, inspection.thread!)) {
+                assertRecoveryHeadMatchesOwner(inspection.head, owner.head);
+                port.replyDone(owner.threadId, mutation.reviewId);
+                inspection = inspectReviewResolutionRecovery(number, owner, port);
+                assertExpectedHeadAfterMutation(inspection.head, owner.head);
+            }
+            inspection = beginReplyDoneSettlement(number, mutation.reviewId, inspection, context, port, clock);
+            break;
+        }
+        case 'replyDoneSettlement':
+            inspection = continueReplyDoneSettlement(number, mutation, inspection, context, port, clock);
+            break;
         case 'submitReview': {
+            if (hasRecoveredReviewResolutionMutation(owner, inspection, context, inspection.thread!)) {
+                break;
+            }
+            assertRecoveryHeadMatchesOwner(inspection.head, owner.head);
             if (inspection.head === owner.head) {
                 convergePendingReplyStateBeforeSubmit(number, inspection, context, mutation.reviewId, port);
             }
@@ -3075,12 +3503,20 @@ export function recoverReviewResolutionLockOwnerState(
             break;
         }
         case 'updateReviewBody': {
+            if (hasRecoveredReviewResolutionMutation(owner, inspection, context, inspection.thread!)) {
+                break;
+            }
+            assertRecoveryHeadMatchesOwner(inspection.head, owner.head);
             const updated = port.updateReviewBody(mutation.reviewId, mutation.body);
             assertReplayableReviewReceipt(updated, mutation.reviewId, mutation.body, 'update review body');
             inspection = inspectReviewResolutionRecovery(number, owner, port);
             break;
         }
         case 'resolveThread': {
+            if (hasRecoveredReviewResolutionMutation(owner, inspection, context, inspection.thread!)) {
+                break;
+            }
+            assertRecoveryHeadMatchesOwner(inspection.head, owner.head);
             const receipt = port.resolve(owner.threadId);
             assertResolutionReceipt(receipt, resolveClientMutationId(owner.threadId));
             inspection = inspectReviewResolutionRecovery(number, owner, port);
@@ -3091,11 +3527,26 @@ export function recoverReviewResolutionLockOwnerState(
             break;
         }
         case 'deleteReply':
+            if (hasRecoveredReviewResolutionMutation(owner, inspection, context, inspection.thread!)) {
+                break;
+            }
+            assertRecoveryHeadMatchesOwner(inspection.head, owner.head);
             port.deleteReply(mutation.replyId);
             inspection = inspectReviewResolutionRecovery(number, owner, port);
             break;
         case 'deletePendingReview':
-            deletePendingReviewSafely(number, mutation.reviewId, context, port, [], inspection.head);
+            if (hasRecoveredReviewResolutionMutation(owner, inspection, context, inspection.thread!)) {
+                break;
+            }
+            assertRecoveryHeadMatchesOwner(inspection.head, owner.head);
+            deletePendingReviewSafely(
+                number,
+                mutation.reviewId,
+                context,
+                port,
+                mutation.allowedAttachedThreadIds,
+                mutation.snapshotHead
+            );
             inspection = inspectReviewResolutionRecovery(number, owner, port);
             break;
         default:
