@@ -193,19 +193,40 @@ describe('createAutomergeStorage raw projection loss reordering', () => {
         ).toEqual([]);
     });
 
-    it('reports no loss when default-widened rows overlap enough to starve greedy claiming', () => {
+    it('reports no loss when a rejected re-route probe must not block the free twin', () => {
         registerSanitizedSlot('defaults', (value) =>
             (value as AutomationPoint[]).map((point) => ({ ...point, tension: 0 }))
         );
 
         // Every projected row gains a key, so no exact twins exist and the
-        // whole set reaches the matching; the curved row fits only its own
-        // widened row, so the bare row can only be placed by pushing the
-        // curved row's owner onward.
+        // whole set reaches the matching. The curved row fits only its own
+        // widened row, so the bare row's attempt there recurses into it, and
+        // that re-route probe of the bare twin is rejected — the twin is
+        // free, so the bare row must still fall through to it. Marking the
+        // twin visited on the rejected probe starved the bare row.
         expect(
             findSlotLosses('defaults', [
                 { beat: 1, value: 1, curve: 'x' },
                 { beat: 1, value: 1 },
+            ])
+        ).toEqual([]);
+    });
+
+    it('reports no loss when first-fit claiming starves the curved row', () => {
+        registerSanitizedSlot('reversed', (value) =>
+            (value as AutomationPoint[]).map((point) => ({ ...point, tension: 0 })).toReversed()
+        );
+
+        // Every projected row gains a key, so no exact twins exist and the
+        // whole set reaches the matching. Meeting the curved twin first, the
+        // bare row claims it; the curved row fits only that twin, so
+        // first-fit claiming — with or without the augmenting recursion —
+        // starves it. Only the complete matcher reassigning the bare row to
+        // its own twin places both.
+        expect(
+            findSlotLosses('reversed', [
+                { beat: 1, value: 1 },
+                { beat: 1, value: 1, curve: 'x' },
             ])
         ).toEqual([]);
     });
