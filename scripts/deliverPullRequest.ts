@@ -2229,12 +2229,18 @@ type RawRollupContexts = {
 };
 
 type RawRollupEntry = {
+    id?: unknown;
     __typename?: unknown;
     name?: unknown;
     status?: unknown;
     conclusion?: unknown;
     context?: unknown;
     state?: unknown;
+};
+
+type RollupNode = {
+    id: string;
+    checkRun: HeadCheckRun;
 };
 
 type DeliveryReceiptProofResponse = {
@@ -2265,8 +2271,8 @@ const ROLLUP_QUERY = `query($owner:String!,$name:String!,$oid:GitObjectID!,$curs
             pageInfo{hasNextPage endCursor}
             nodes{
               __typename
-              ... on CheckRun{name status conclusion}
-              ... on StatusContext{context state}
+              ... on CheckRun{id name status conclusion}
+              ... on StatusContext{id context state}
             }
           }
         }
@@ -2281,20 +2287,51 @@ const ROLLUP_QUERY = `query($owner:String!,$name:String!,$oid:GitObjectID!,$curs
  * conclusion this gate draws from the rollup — a tolerated cancellation as much as a refusal — would
  * then rest on evidence that may simply be absent, and each further review event adds a whole run's
  * worth of contexts, so heads cross that line in the ordinary course of a long review. The rollup is
- * read through GraphQL instead, paged until the nodes account for `totalCount`, and refused when
- * they do not. A partial list is never merged over.
+ * read through GraphQL instead, pinned to the first page's declared total, paged through every page
+ * GitHub offers, and refused unless the terminal page accounts for that exact unique node count.
+ * A partial or self-contradictory list is never merged over.
  */
 function readHeadCheckRuns(pullRequestNumber: number, readPage: (cursor: string | null) => RollupPage): HeadCheckRun[] {
+    const runs: HeadCheckRun[] = [];
+    const seenNodeIds = new Set<string>();
+    const emittedCursors = new Set<string>();
     let page = readPage(null);
-    const nodes: unknown[] = [...page.nodes];
-    while (page.pageInfo.hasNextPage && page.pageInfo.endCursor !== null && nodes.length < page.totalCount) {
-        page = readPage(page.pageInfo.endCursor);
-        nodes.push(...page.nodes);
+    let cursor: string | null = null;
+    const expectedTotalCount = page.totalCount;
+    while (true) {
+        if (page.totalCount !== expectedTotalCount) {
+            fail(`cannot read all ${expectedTotalCount} checks on PR #${pullRequestNumber}: rollup totalCount drifted`);
+        }
+        for (const entry of page.nodes) {
+            const node = toRollupNode(entry, pullRequestNumber);
+            if (seenNodeIds.has(node.id)) {
+                fail(
+                    `cannot read all ${expectedTotalCount} checks on PR #${pullRequestNumber}: rollup repeated a node`
+                );
+            }
+            seenNodeIds.add(node.id);
+            runs.push(node.checkRun);
+        }
+        if (runs.length > expectedTotalCount) {
+            fail(`cannot read all ${expectedTotalCount} checks on PR #${pullRequestNumber}: got ${runs.length}`);
+        }
+        if (!page.pageInfo.hasNextPage) {
+            break;
+        }
+        if (page.pageInfo.endCursor === null || page.pageInfo.endCursor === cursor) {
+            fail(`cannot read all ${expectedTotalCount} checks on PR #${pullRequestNumber}: cursor did not advance`);
+        }
+        if (emittedCursors.has(page.pageInfo.endCursor)) {
+            fail(`cannot read all ${expectedTotalCount} checks on PR #${pullRequestNumber}: cursor did not advance`);
+        }
+        emittedCursors.add(page.pageInfo.endCursor);
+        cursor = page.pageInfo.endCursor;
+        page = readPage(cursor);
     }
-    if (nodes.length !== page.totalCount) {
-        fail(`cannot read all ${page.totalCount} checks on PR #${pullRequestNumber}: got ${nodes.length}`);
+    if (runs.length !== expectedTotalCount) {
+        fail(`cannot read all ${expectedTotalCount} checks on PR #${pullRequestNumber}: got ${runs.length}`);
     }
-    return nodes.map((entry) => toHeadCheckRun(entry, pullRequestNumber));
+    return runs;
 }
 
 function parseRollupPage(response: string, pullRequestNumber: number): RollupPage {
@@ -2325,17 +2362,33 @@ function parseRollupPage(response: string, pullRequestNumber: number): RollupPag
  * only the `CheckRun` arm would drop a failing status context out of the evidence entirely, so an
  * entry that matches neither arm refuses rather than being skipped.
  */
-function toHeadCheckRun(value: unknown, pullRequestNumber: number): HeadCheckRun {
+function toRollupNode(value: unknown, pullRequestNumber: number): RollupNode {
     const entry = (value === null || typeof value !== 'object' ? {} : value) as RawRollupEntry;
-    if (entry.__typename === 'CheckRun' && typeof entry.name === 'string' && typeof entry.status === 'string') {
+    if (
+        typeof entry.id === 'string' &&
+        entry.__typename === 'CheckRun' &&
+        typeof entry.name === 'string' &&
+        typeof entry.status === 'string'
+    ) {
         return {
-            name: entry.name,
-            status: entry.status,
-            conclusion: typeof entry.conclusion === 'string' && entry.conclusion !== '' ? entry.conclusion : null,
+            id: entry.id,
+            checkRun: {
+                name: entry.name,
+                status: entry.status,
+                conclusion: typeof entry.conclusion === 'string' && entry.conclusion !== '' ? entry.conclusion : null,
+            },
         };
     }
-    if (entry.__typename === 'StatusContext' && typeof entry.context === 'string' && typeof entry.state === 'string') {
-        return toStatusContextCheckRun(entry.context, entry.state);
+    if (
+        typeof entry.id === 'string' &&
+        entry.__typename === 'StatusContext' &&
+        typeof entry.context === 'string' &&
+        typeof entry.state === 'string'
+    ) {
+        return {
+            id: entry.id,
+            checkRun: toStatusContextCheckRun(entry.context, entry.state),
+        };
     }
     return fail(`cannot read a check on PR #${pullRequestNumber}`);
 }

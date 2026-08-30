@@ -410,8 +410,8 @@ function rollupResponse(page: RollupPageFixture): string {
     });
 }
 
-function rollupNodes(checkRuns: HeadCheckRun[]): unknown[] {
-    return checkRuns.map((check) => ({ __typename: 'CheckRun', ...check }));
+function rollupNodes(checkRuns: HeadCheckRun[], prefix = 'CR'): unknown[] {
+    return checkRuns.map((check, index) => ({ __typename: 'CheckRun', id: `${prefix}_${index + 1}`, ...check }));
 }
 
 function deliveryReceiptProofForIds(commentIds: string[], editedCommentIds: string[] = []): DeliveryReceiptProof {
@@ -6834,11 +6834,17 @@ describe('delivery shell boundary', () => {
         const { captures, port } = rollupPort([
             {
                 nodes: [
-                    { __typename: 'CheckRun', name: 'Gate', status: 'COMPLETED', conclusion: 'SUCCESS' },
-                    { __typename: 'CheckRun', name: 'Lint', status: 'COMPLETED', conclusion: 'CANCELLED' },
-                    { __typename: 'CheckRun', name: 'End-to-end 1/12', status: 'IN_PROGRESS', conclusion: '' },
-                    { __typename: 'StatusContext', context: 'coverage/external', state: 'FAILURE' },
-                    { __typename: 'StatusContext', context: 'deploy/preview', state: 'PENDING' },
+                    { __typename: 'CheckRun', id: 'CR_1', name: 'Gate', status: 'COMPLETED', conclusion: 'SUCCESS' },
+                    { __typename: 'CheckRun', id: 'CR_2', name: 'Lint', status: 'COMPLETED', conclusion: 'CANCELLED' },
+                    {
+                        __typename: 'CheckRun',
+                        id: 'CR_3',
+                        name: 'End-to-end 1/12',
+                        status: 'IN_PROGRESS',
+                        conclusion: '',
+                    },
+                    { __typename: 'StatusContext', id: 'SC_1', context: 'coverage/external', state: 'FAILURE' },
+                    { __typename: 'StatusContext', id: 'SC_2', context: 'deploy/preview', state: 'PENDING' },
                 ],
             },
         ]);
@@ -8735,12 +8741,12 @@ describe('delivery shell boundary', () => {
     it('pages the rollup to completion and keeps every context in order', () => {
         const { captures, port } = rollupPort([
             {
-                nodes: rollupNodes([checkRun({ name: 'Lint', conclusion: 'CANCELLED' }), checkRun()]),
+                nodes: rollupNodes([checkRun({ name: 'Lint', conclusion: 'CANCELLED' }), checkRun()], 'PAGE_1'),
                 totalCount: 3,
                 hasNextPage: true,
                 endCursor: 'Y3Vyc29yOjI=',
             },
-            { nodes: rollupNodes([checkRun({ name: 'Lint' })]), totalCount: 3 },
+            { nodes: rollupNodes([checkRun({ name: 'Lint' })], 'PAGE_2'), totalCount: 3 },
         ]);
 
         expect(port.headCheckRuns(42, 'head')).toEqual([
@@ -8758,9 +8764,19 @@ describe('delivery shell boundary', () => {
      * actually has. Merging on it would treat absent checks as absent problems.
      */
     it.each([
-        { label: 'a page that silently stops short of totalCount', hasNextPage: false, endCursor: null },
-        { label: 'a page that claims more contexts but hands back no cursor', hasNextPage: true, endCursor: null },
-    ])('refuses $label', ({ hasNextPage, endCursor }) => {
+        {
+            label: 'a page that silently stops short of totalCount',
+            hasNextPage: false,
+            endCursor: null,
+            expected: 'Error: cannot read all 19 checks on PR #42: got 1',
+        },
+        {
+            label: 'a page that claims more contexts but hands back no cursor',
+            hasNextPage: true,
+            endCursor: null,
+            expected: 'Error: cannot read all 19 checks on PR #42: cursor did not advance',
+        },
+    ])('refuses $label', ({ hasNextPage, endCursor, expected }) => {
         const { port } = rollupPort([{ nodes: rollupNodes([checkRun()]), totalCount: 19, hasNextPage, endCursor }]);
 
         let thrown: unknown;
@@ -8770,7 +8786,18 @@ describe('delivery shell boundary', () => {
             thrown = error;
         }
 
-        expect(String(thrown)).toBe('Error: cannot read all 19 checks on PR #42: got 1');
+        expect(String(thrown)).toBe(expected);
+    });
+
+    it('refuses a continuing page that drifts totalCount away from the first declaration', () => {
+        const { port } = rollupPort([
+            { nodes: rollupNodes([checkRun()]), totalCount: 2, hasNextPage: true, endCursor: 'cursor-1' },
+            { nodes: rollupNodes([checkRun({ name: 'Lint' })]), totalCount: 3 },
+        ]);
+
+        expect(() => port.headCheckRuns(42, 'head')).toThrow(
+            'cannot read all 2 checks on PR #42: rollup totalCount drifted'
+        );
     });
 
     /**
@@ -8798,12 +8825,11 @@ describe('delivery shell boundary', () => {
     });
 
     /**
-     * `nodes.length < totalCount` is what stops the paging once the head is fully accounted for.
-     * GitHub can report `hasNextPage` true beside a cursor on a connection whose `totalCount` the
-     * first page already satisfies; without this arm the reader fetches again, overshoots the total,
-     * and the completeness check then refuses a rollup that was complete on arrival.
+     * A continuing page has to be consumed even when the first page already accounts for the head.
+     * Stopping early would let a contradicted or drifting connection hide later evidence from the
+     * exact-head receipt.
      */
-    it('stops paging once the nodes account for the total even while a further page is offered', () => {
+    it('consumes a terminal empty page even when the first page already accounts for the declared total', () => {
         const { captures, port } = rollupPort([
             {
                 nodes: rollupNodes([checkRun(), checkRun({ name: 'Lint' })]),
@@ -8811,14 +8837,59 @@ describe('delivery shell boundary', () => {
                 hasNextPage: true,
                 endCursor: 'Y3Vyc29yOjI=',
             },
-            { nodes: rollupNodes([checkRun({ name: 'Secret scan' })]), totalCount: 2 },
+            { nodes: [], totalCount: 2 },
         ]);
 
         expect(port.headCheckRuns(42, 'head')).toEqual([
             { name: 'Gate', status: 'COMPLETED', conclusion: 'SUCCESS' },
             { name: 'Lint', status: 'COMPLETED', conclusion: 'SUCCESS' },
         ]);
-        expect(rollupCaptures(captures)).toHaveLength(1);
+        expect(rollupCaptures(captures)).toHaveLength(2);
+    });
+
+    it('refuses a later page that repeats a previously seen rollup node', () => {
+        const { port } = rollupPort([
+            {
+                nodes: [{ __typename: 'CheckRun', id: 'CR_1', ...checkRun() }],
+                totalCount: 2,
+                hasNextPage: true,
+                endCursor: 'cursor-1',
+            },
+            { nodes: [{ __typename: 'CheckRun', id: 'CR_1', ...checkRun({ name: 'Lint' }) }], totalCount: 2 },
+        ]);
+
+        expect(() => port.headCheckRuns(42, 'head')).toThrow(
+            'cannot read all 2 checks on PR #42: rollup repeated a node'
+        );
+    });
+
+    it('refuses a continuing page whose cursor repeats instead of advancing', () => {
+        const { port } = rollupPort([
+            { nodes: rollupNodes([checkRun()]), totalCount: 3, hasNextPage: true, endCursor: 'cursor-1' },
+            {
+                nodes: rollupNodes([checkRun({ name: 'Lint' })], 'PAGE_2'),
+                totalCount: 3,
+                hasNextPage: true,
+                endCursor: 'cursor-1',
+            },
+        ]);
+
+        expect(() => port.headCheckRuns(42, 'head')).toThrow(
+            'cannot read all 3 checks on PR #42: cursor did not advance'
+        );
+    });
+
+    it('records unavailable advisory CI evidence when the rollup connection contradicts its own total', () => {
+        const { port, receipts } = fakePort({
+            primary: [pullRequest({ mergeStateStatus: 'CLEAN' }), pullRequest({ mergeStateStatus: 'CLEAN' })],
+            headCheckRuns: new Error('cannot read all 2 checks on PR #42: rollup totalCount drifted'),
+        });
+
+        deliverPullRequest(42, port);
+
+        expect(receipts).toHaveLength(1);
+        expect(receipts[0]?.body).toContain('- CI admission: advisory');
+        expect(receipts[0]?.body).toContain('- Observed CI state: unavailable');
     });
 
     it('refuses to guess at an entry matching neither arm', () => {

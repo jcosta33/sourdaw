@@ -791,6 +791,7 @@ export function trustedGitReadEnv(parent: NodeJS.ProcessEnv = process.env): Node
     }
     env.GIT_CONFIG_GLOBAL = '/dev/null';
     env.GIT_CONFIG_SYSTEM = '/dev/null';
+    env.GIT_NO_REPLACE_OBJECTS = '1';
     env.GIT_TERMINAL_PROMPT = '0';
     env.GIT_SSH_COMMAND = '/usr/bin/false';
     env.GIT_SSH = '/usr/bin/false';

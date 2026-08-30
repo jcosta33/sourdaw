@@ -1021,6 +1021,7 @@ describe('package scripts and gitignore', () => {
         expect(env.NODE_PATH).toBeUndefined();
         expect(env.GIT_CONFIG_GLOBAL).toBe('/dev/null');
         expect(env.GIT_CONFIG_SYSTEM).toBe('/dev/null');
+        expect(env.GIT_NO_REPLACE_OBJECTS).toBe('1');
     });
 
     it('does not enter inherited Node preloads or child PATH shims', async () => {
@@ -1118,6 +1119,46 @@ describe('package scripts and gitignore', () => {
             ...paths.map((path) => `pinned-sha:${path}`),
             'pinned-sha:.github/workflows/health-gates.yml',
         ]);
+    });
+
+    it('loads the literal origin/main closure even when a replacement commit preserves bootstrap bytes', async () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-trusted-replace-ref-'));
+        const outputPath = join(root, 'publish-log.txt');
+
+        try {
+            trustedPublishFixture(root, 'literal');
+            const bootstrap = readFileSync(join(root, 'scripts/trustedGithubWriteBootstrap.ts'), 'utf8');
+            const literalCommit = runGit(root, ['rev-parse', 'HEAD']);
+
+            writeFileSync(
+                join(root, 'scripts/publishLane.ts'),
+                "import { appendFileSync } from 'node:fs';\n" +
+                    "export async function runPublishLaneCli(args) { appendFileSync(args.at(-1), 'replacement\\n'); return 0; }\n"
+            );
+            writeFileSync(join(root, 'scripts/trustedGithubWriteBootstrap.ts'), bootstrap);
+            runGit(root, ['add', 'scripts/publishLane.ts', 'scripts/trustedGithubWriteBootstrap.ts']);
+            runGit(root, ['commit', '--no-gpg-sign', '-m', 'test: replacement publish lane']);
+            const replacementCommit = runGit(root, ['rev-parse', 'HEAD']);
+            runGit(root, ['update-ref', `refs/replace/${literalCommit}`, replacementCommit]);
+
+            expect(runGit(root, ['show', `${literalCommit}:scripts/publishLane.ts`])).toContain('replacement');
+
+            const result = spawnSync(
+                process.execPath,
+                [join(root, 'scripts/trustedGithubWriteBootstrap.ts'), 'lane:publish', outputPath],
+                {
+                    cwd: root,
+                    encoding: 'utf8',
+                    shell: false,
+                }
+            );
+
+            expect(result.status).toBe(0);
+            expect(result.stderr).toBe('');
+            expect(readFileSync(outputPath, 'utf8')).toBe('literal:ordinary\n');
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
     });
 
     /**
