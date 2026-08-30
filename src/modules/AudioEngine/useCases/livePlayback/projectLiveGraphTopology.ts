@@ -214,7 +214,6 @@ function routingCommands(input: {
             trackId: track.id,
             target: resolveOutputTarget({
                 outputId: track.outputId,
-                sourceKind: track.kind === 'bus' ? 'bus' : 'track',
                 busStripIds,
                 trackStripIds,
             }),

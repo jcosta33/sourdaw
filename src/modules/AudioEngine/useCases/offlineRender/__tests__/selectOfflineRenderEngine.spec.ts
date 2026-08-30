@@ -29,6 +29,7 @@ import { type TransportState } from '#/modules/Transport/stores';
 import { type NativeGraphTransport } from '../../../repositories/nativeGraph/nativeGraphTransport';
 import { type NativeGraphAvailability } from '../../../repositories/nativeGraph/probeNativeGraphTransport';
 import { renderOffline } from '../../renderOffline';
+import { resolveOutputTarget } from '../resolveOutputTarget';
 import { type OfflineRenderContext } from '../resolveRenderContext';
 import { selectOfflineRenderEngine } from '../selectOfflineRenderEngine';
 
@@ -185,6 +186,18 @@ describe('selectOfflineRenderEngine — the choice and its reason (#2225)', () =
             clips: [createClip({ id: 'clip-a', trackId: 'track-a', audioBufferId: 'mat-a' })],
         });
         const bus = createTrack({ id: 'bus-1', name: 'Bus 1', kind: 'bus', outputId: 'master' });
+        const trackStripIds = new Set(['master', 'track-a']);
+        const busStripIds = new Set(['bus-1']);
+
+        // Native because the edge stays a track-to-master-strip route, not
+        // because the mapper remapped it onto the engine sum.
+        expect(
+            resolveOutputTarget({
+                outputId: bus.outputId,
+                busStripIds,
+                trackStripIds,
+            })
+        ).toEqual({ kind: 'track', trackId: 'master' });
 
         const selection = await selectOfflineRenderEngine({
             renderableTracks: [master, track, bus],

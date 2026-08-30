@@ -234,7 +234,6 @@ export async function renderOfflineWithNativeEngine(
             trackId: track.id,
             target: resolveOutputTarget({
                 outputId: track.outputId,
-                sourceKind: track.kind === 'bus' ? 'bus' : 'track',
                 busStripIds: busIds,
                 trackStripIds: trackIds,
             }),
