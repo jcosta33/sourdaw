@@ -112,6 +112,7 @@ export type TrackerCompletionPort = {
 export type DeliveryReceiptProof = {
     totalCount: number;
     latestCommentId: string | undefined;
+    commentIds?: string[];
 };
 
 export type ShellRunner = {
@@ -1294,17 +1295,32 @@ function assertCompleteDeliveryReceiptProof(
     comments: DeliveryReceiptComment[],
     proof: DeliveryReceiptProof
 ): void {
+    if (!Array.isArray(proof.commentIds) || proof.commentIds.some((commentId) => typeof commentId !== 'string')) {
+        fail(`PR #${number} delivery receipt authority cannot be proven`);
+    }
+    if (proof.commentIds.length !== proof.totalCount) {
+        fail(`PR #${number} delivery receipt authority cannot be proven`);
+    }
     if (comments.length !== proof.totalCount) {
         fail(`PR #${number} delivery receipt authority cannot be proven`);
     }
     if (proof.totalCount === 0) {
-        if (proof.latestCommentId !== undefined) {
+        if (proof.latestCommentId !== undefined || proof.commentIds.length > 0) {
             fail(`PR #${number} delivery receipt authority cannot be proven`);
         }
         return;
     }
-    if (proof.latestCommentId === undefined || comments.at(-1)?.id !== proof.latestCommentId) {
+    if (
+        proof.latestCommentId === undefined ||
+        proof.commentIds.at(-1) !== proof.latestCommentId ||
+        comments.at(-1)?.id !== proof.latestCommentId
+    ) {
         fail(`PR #${number} delivery receipt authority cannot be proven`);
+    }
+    for (let index = 0; index < proof.commentIds.length; index += 1) {
+        if (comments[index]?.id !== proof.commentIds[index]) {
+            fail(`PR #${number} delivery receipt authority cannot be proven`);
+        }
     }
 }
 
@@ -1961,6 +1977,7 @@ type DeliveryReceiptProofResponse = {
             pullRequest?: {
                 comments?: {
                     totalCount?: unknown;
+                    pageInfo?: { hasNextPage?: unknown; endCursor?: unknown } | null;
                     nodes?: Array<{ id?: unknown } | null> | null;
                 } | null;
             } | null;
@@ -2149,34 +2166,59 @@ function readDeliveryReceiptProofFromGithub(
     repository: { owner: string; name: string },
     shell: Pick<ShellRunner, 'capture'>
 ): DeliveryReceiptProof {
-    const query =
-        'query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){comments(last:1){totalCount nodes{id}}}}}';
-    const response = parseJson<DeliveryReceiptProofResponse>(
-        shell.capture('gh', [
-            'api',
-            'graphql',
-            '-f',
-            `query=${query}`,
-            '-f',
-            `owner=${repository.owner}`,
-            '-f',
-            `name=${repository.name}`,
-            '-F',
-            `number=${number}`,
-        ]),
-        `PR #${number} delivery receipt proof`
-    );
-    const comments = response.data?.repository?.pullRequest?.comments;
-    if (typeof comments?.totalCount !== 'number' || !Array.isArray(comments.nodes) || comments.nodes.length > 1) {
-        fail(`cannot inspect delivery receipts for PR #${number}`);
+    const query = `query($owner:String!,$name:String!,$number:Int!,$cursor:String){repository(owner:$owner,name:$name){pullRequest(number:$number){comments(first:${ROLLUP_PAGE_SIZE},after:$cursor){totalCount pageInfo{hasNextPage endCursor} nodes{id}}}}}`;
+    const readPage = (cursor: string | null) => {
+        const response = parseJson<DeliveryReceiptProofResponse>(
+            shell.capture('gh', [
+                'api',
+                'graphql',
+                '-f',
+                `query=${query}`,
+                '-f',
+                `owner=${repository.owner}`,
+                '-f',
+                `name=${repository.name}`,
+                '-F',
+                `number=${number}`,
+                ...(cursor === null ? [] : ['-f', `cursor=${cursor}`]),
+            ]),
+            `PR #${number} delivery receipt proof`
+        );
+        const comments = response.data?.repository?.pullRequest?.comments;
+        if (
+            typeof comments?.totalCount !== 'number' ||
+            typeof comments.pageInfo?.hasNextPage !== 'boolean' ||
+            !Array.isArray(comments.nodes)
+        ) {
+            fail(`cannot inspect delivery receipts for PR #${number}`);
+        }
+        return {
+            totalCount: comments.totalCount,
+            pageInfo: {
+                hasNextPage: comments.pageInfo.hasNextPage,
+                endCursor: typeof comments.pageInfo.endCursor === 'string' ? comments.pageInfo.endCursor : null,
+            },
+            commentIds: comments.nodes.map((comment) => {
+                if (comment === null || comment === undefined || typeof comment.id !== 'string') {
+                    fail(`cannot inspect delivery receipts for PR #${number}`);
+                }
+                return comment.id;
+            }),
+        };
+    };
+    let page = readPage(null);
+    const commentIds = [...page.commentIds];
+    while (page.pageInfo.hasNextPage && page.pageInfo.endCursor !== null && commentIds.length < page.totalCount) {
+        page = readPage(page.pageInfo.endCursor);
+        commentIds.push(...page.commentIds);
     }
-    const latest = comments.nodes[0];
-    if (latest !== null && latest !== undefined && typeof latest.id !== 'string') {
+    if (commentIds.length !== page.totalCount) {
         fail(`cannot inspect delivery receipts for PR #${number}`);
     }
     return {
-        totalCount: comments.totalCount,
-        latestCommentId: typeof latest?.id === 'string' ? latest.id : undefined,
+        totalCount: page.totalCount,
+        latestCommentId: commentIds.at(-1),
+        commentIds,
     };
 }
 

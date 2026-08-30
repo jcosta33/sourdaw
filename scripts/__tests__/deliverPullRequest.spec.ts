@@ -390,6 +390,36 @@ function rollupNodes(checkRuns: HeadCheckRun[]): unknown[] {
     return checkRuns.map((check) => ({ __typename: 'CheckRun', ...check }));
 }
 
+function deliveryReceiptProofForIds(commentIds: string[]): DeliveryReceiptProof {
+    return {
+        totalCount: commentIds.length,
+        latestCommentId: commentIds.at(-1),
+        commentIds,
+    };
+}
+
+function shellDeliveryReceiptProofResponse(
+    commentIds: string[],
+    pageInfo?: { hasNextPage?: boolean; endCursor?: string | null }
+) {
+    return JSON.stringify({
+        data: {
+            repository: {
+                pullRequest: {
+                    comments: {
+                        totalCount: commentIds.length,
+                        pageInfo: {
+                            hasNextPage: pageInfo?.hasNextPage ?? false,
+                            endCursor: pageInfo?.endCursor ?? null,
+                        },
+                        nodes: commentIds.map((id) => ({ id })),
+                    },
+                },
+            },
+        },
+    });
+}
+
 function stacked(overrides: Partial<StackedPullRequest> = {}): StackedPullRequest {
     return {
         number: 43,
@@ -619,12 +649,14 @@ function fakePort(input: FakeInput = {}) {
             return structuredClone(receipts);
         },
         deliveryReceiptProof: (number) => {
-            const proof = input.deliveryReceiptProof ?? {
-                totalCount: receipts.length,
-                latestCommentId: receipts.at(-1)?.id,
+            const proof =
+                input.deliveryReceiptProof ?? deliveryReceiptProofForIds(receipts.map((receipt) => receipt.id));
+            const normalizedProof = {
+                ...proof,
+                commentIds: proof.commentIds ?? receipts.map((receipt) => receipt.id),
             };
             calls.push(`receipt-proof:${number}:${proof.totalCount}:${proof.latestCommentId ?? 'none'}`);
-            return proof;
+            return normalizedProof;
         },
         addDeliveryReceipt: (number, receiptBody) => {
             calls.push(`add-receipt:${number}`);
@@ -942,8 +974,8 @@ describe('pull-request delivery', () => {
             proofReads += 1;
             const proof =
                 proofReads <= 2
-                    ? { totalCount: 1, latestCommentId: 'IC_delivery_42_1' }
-                    : { totalCount: 2, latestCommentId: 'IC_hidden_newer' };
+                    ? deliveryReceiptProofForIds(['IC_delivery_42_1'])
+                    : deliveryReceiptProofForIds(['IC_delivery_42_1', 'IC_hidden_newer']);
             calls.push(`receipt-proof:${number}:${proof.totalCount}:${proof.latestCommentId ?? 'none'}`);
             return proof;
         };
@@ -1523,7 +1555,7 @@ describe('pull-request delivery', () => {
         port.deliveryReceiptProof = (number) => {
             const latestCommentId = readCount === 1 ? 'IC_legacy_a' : 'IC_legacy_b';
             calls.push(`receipt-proof:${number}:1:${latestCommentId}`);
-            return { totalCount: 1, latestCommentId };
+            return deliveryReceiptProofForIds([latestCommentId]);
         };
 
         expect(() => deliverPullRequest(42, port, tracker)).toThrow(/delivery receipt changed during recovery/i);
@@ -2898,6 +2930,55 @@ describe('pull-request delivery', () => {
         expect(calls).not.toContain('complete:2372');
         expect(calls).not.toContain('retarget:43:main');
         expect(calls).not.toContain('receipt-authority:write:terminal:IC_delivery_42');
+    });
+
+    it('fails closed when bodyful persisted merged recovery sees a stale middle receipt even though count and newest still match', () => {
+        const closesX = relationshipBody('Closes #2372');
+        const closesStale = relationshipBody('Closes #2373');
+        const closesNewest = relationshipBody('Closes #2375');
+        const { port, calls, tracker } = fakePort({
+            primary: [pullRequest({ state: 'MERGED', body: relationshipBody('None.') })],
+            persistedReceiptAuthority: {
+                phase: 'terminal',
+                receiptId: 'IC_z',
+                receiptBody: deliveryReceiptBody(42, 'head', closesStale, 2373),
+            },
+            receipts: [
+                {
+                    id: 'IC_x',
+                    body: deliveryReceiptBody(42, 'head', closesX, 2372),
+                    authorNodeId: AUTHOR_BOT_NODE_ID,
+                    authorLogin: 'renamed-author[bot]',
+                    authorType: 'Bot',
+                    createdAt: '2026-08-21T00:00:00Z',
+                    updatedAt: '2026-08-21T00:00:00Z',
+                },
+                {
+                    id: 'IC_z',
+                    body: deliveryReceiptBody(42, 'head', closesStale, 2373),
+                    authorNodeId: AUTHOR_BOT_NODE_ID,
+                    authorLogin: 'renamed-author[bot]',
+                    authorType: 'Bot',
+                    createdAt: '2026-08-21T00:00:01Z',
+                    updatedAt: '2026-08-21T00:00:01Z',
+                },
+                {
+                    id: 'IC_n',
+                    body: deliveryReceiptBody(42, 'head', closesNewest, 2375),
+                    authorNodeId: AUTHOR_BOT_NODE_ID,
+                    authorLogin: 'renamed-author[bot]',
+                    authorType: 'Bot',
+                    createdAt: '2026-08-21T00:00:02Z',
+                    updatedAt: '2026-08-21T00:00:02Z',
+                },
+            ],
+            deliveryReceiptProof: deliveryReceiptProofForIds(['IC_x', 'IC_y', 'IC_n']),
+        });
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/delivery receipt authority cannot be proven/i);
+        expect(calls).not.toContain('complete:2373');
+        expect(calls).not.toContain('retarget:43:main');
+        expect(calls).not.toContain('receipt-authority:write:terminal:IC_z');
     });
 
     it('uses the historical advisory receipt when already-merged recovery no longer exposes its observed CI state', () => {
@@ -5865,7 +5946,7 @@ describe('delivery shell boundary', () => {
         ]);
     });
 
-    it('reads complete shellPort receipt comments in ascending issue-comment order and proves the newest one with GraphQL comments(last:1)', () => {
+    it('reads complete shellPort receipt comments in ascending issue-comment order and proves the full immutable sequence with GraphQL', () => {
         const captures: Array<{ command: string; args: string[] }> = [];
         const comment = (
             id: string,
@@ -5934,33 +6015,17 @@ describe('delivery shell boundary', () => {
                         ],
                     ]);
                 }
-                if (joined.includes('comments(last:1){totalCount nodes{id}}')) {
-                    return JSON.stringify({
-                        data: {
-                            repository: {
-                                pullRequest: {
-                                    comments: {
-                                        totalCount: 4,
-                                        nodes: [{ id: 'IC_receipt_newest' }],
-                                    },
-                                },
-                            },
-                        },
-                    });
-                }
-                if (joined.includes('comments(first:1){totalCount nodes{id}}')) {
-                    return JSON.stringify({
-                        data: {
-                            repository: {
-                                pullRequest: {
-                                    comments: {
-                                        totalCount: 4,
-                                        nodes: [{ id: 'IC_author_note' }],
-                                    },
-                                },
-                            },
-                        },
-                    });
+                if (
+                    joined.includes(
+                        'comments(first:100,after:$cursor){totalCount pageInfo{hasNextPage endCursor} nodes{id}}'
+                    )
+                ) {
+                    return shellDeliveryReceiptProofResponse([
+                        'IC_author_note',
+                        'IC_foreign_copy',
+                        'IC_receipt_older',
+                        'IC_receipt_newest',
+                    ]);
                 }
                 throw new Error(`unexpected capture: ${joined}`);
             },
@@ -5973,7 +6038,9 @@ describe('delivery shell boundary', () => {
             'IC_receipt_older',
             'IC_receipt_newest',
         ]);
-        expect(port.deliveryReceiptProof(42)).toEqual({ totalCount: 4, latestCommentId: 'IC_receipt_newest' });
+        expect(port.deliveryReceiptProof(42)).toEqual(
+            deliveryReceiptProofForIds(['IC_author_note', 'IC_foreign_copy', 'IC_receipt_older', 'IC_receipt_newest'])
+        );
         expect(captures).toEqual([
             {
                 command: 'gh',
@@ -5985,7 +6052,7 @@ describe('delivery shell boundary', () => {
                     'api',
                     'graphql',
                     '-f',
-                    'query=query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){comments(last:1){totalCount nodes{id}}}}}',
+                    'query=query($owner:String!,$name:String!,$number:Int!,$cursor:String){repository(owner:$owner,name:$name){pullRequest(number:$number){comments(first:100,after:$cursor){totalCount pageInfo{hasNextPage endCursor} nodes{id}}}}}',
                     '-f',
                     'owner=jcosta33',
                     '-f',
@@ -6094,19 +6161,12 @@ describe('delivery shell boundary', () => {
                             [comment('IC_y', deliveryReceiptBody(42, 'head', bodyY, 2373), '2026-08-21T00:00:01Z')],
                         ]);
                     }
-                    if (joined.includes('comments(last:1){totalCount nodes{id}}')) {
-                        return JSON.stringify({
-                            data: {
-                                repository: {
-                                    pullRequest: {
-                                        comments: {
-                                            totalCount: 2,
-                                            nodes: [{ id: 'IC_y' }],
-                                        },
-                                    },
-                                },
-                            },
-                        });
+                    if (
+                        joined.includes(
+                            'comments(first:100,after:$cursor){totalCount pageInfo{hasNextPage endCursor} nodes{id}}'
+                        )
+                    ) {
+                        return shellDeliveryReceiptProofResponse(['IC_x', 'IC_y']);
                     }
                     if (joined.includes('pulls?state=open')) {
                         return JSON.stringify([[]]);
@@ -6171,19 +6231,12 @@ describe('delivery shell boundary', () => {
                             ],
                         ]);
                     }
-                    if (joined.includes('comments(last:1){totalCount nodes{id}}')) {
-                        return JSON.stringify({
-                            data: {
-                                repository: {
-                                    pullRequest: {
-                                        comments: {
-                                            totalCount: 1,
-                                            nodes: [{ id: 'IC_legacy_v1' }],
-                                        },
-                                    },
-                                },
-                            },
-                        });
+                    if (
+                        joined.includes(
+                            'comments(first:100,after:$cursor){totalCount pageInfo{hasNextPage endCursor} nodes{id}}'
+                        )
+                    ) {
+                        return shellDeliveryReceiptProofResponse(['IC_legacy_v1']);
                     }
                     if (joined.includes('pulls?state=open')) {
                         return JSON.stringify([[]]);
@@ -6601,19 +6654,12 @@ describe('delivery shell boundary', () => {
                         ],
                     ]);
                 }
-                if (joined.includes('comments(last:1){totalCount nodes{id}}')) {
-                    return JSON.stringify({
-                        data: {
-                            repository: {
-                                pullRequest: {
-                                    comments: {
-                                        totalCount: 2,
-                                        nodes: [{ id: 'IC_x' }],
-                                    },
-                                },
-                            },
-                        },
-                    });
+                if (
+                    joined.includes(
+                        'comments(first:100,after:$cursor){totalCount pageInfo{hasNextPage endCursor} nodes{id}}'
+                    )
+                ) {
+                    return shellDeliveryReceiptProofResponse(['IC_x', 'IC_hidden_y']);
                 }
                 effects.push(`capture:${joined}`);
                 throw new Error(`unexpected capture: ${joined}`);
@@ -6656,19 +6702,12 @@ describe('delivery shell boundary', () => {
                         ],
                     ]);
                 }
-                if (joined.includes('comments(last:1){totalCount nodes{id}}')) {
-                    return JSON.stringify({
-                        data: {
-                            repository: {
-                                pullRequest: {
-                                    comments: {
-                                        totalCount: 1,
-                                        nodes: [{ id: 'IC_hidden_y' }],
-                                    },
-                                },
-                            },
-                        },
-                    });
+                if (
+                    joined.includes(
+                        'comments(first:100,after:$cursor){totalCount pageInfo{hasNextPage endCursor} nodes{id}}'
+                    )
+                ) {
+                    return shellDeliveryReceiptProofResponse(['IC_hidden_y']);
                 }
                 effects.push(`capture:${joined}`);
                 throw new Error(`unexpected capture: ${joined}`);
