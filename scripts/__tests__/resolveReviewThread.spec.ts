@@ -54,6 +54,7 @@ type Input = {
     authorNodeId?: string;
     throwAfterCreatePendingReview?: boolean;
     throwInspectAfterCreatePendingReview?: boolean;
+    createClientMutationId?: string;
     throwAfterReply?: boolean;
     concurrentReplyOnThrow?: boolean;
     concurrentReplyBeforeConvergence?: boolean;
@@ -98,6 +99,9 @@ type Input = {
     addExactPendingReviewAfterLostCreate?: boolean;
     attachConcurrentManagedPendingReplyAfterLostCreate?: boolean;
     attachConcurrentManagedPendingReplyDuringPendingDelete?: boolean;
+    concurrentCommentedReplyAfterReplyFailure?: boolean;
+    concurrentResolveAfterReplyFailure?: boolean;
+    concurrentCommentedResolvedStateOnCompensationInspect?: boolean;
     addTwoExactPendingReviewsAfterLostCreate?: boolean;
     attachManagedReplyBeforeCompensation?: boolean;
     failDeleteMissingReply?: boolean;
@@ -280,6 +284,17 @@ function fakePort(input: Input = {}) {
                 pushReview('PRR_concurrent_pending_1', 'PENDING', pendingReviewBody(movedHead), movedHead);
                 pushReview('PRR_concurrent_pending_2', 'PENDING', pendingReviewBody(movedHead), movedHead);
             }
+            if (input.concurrentCommentedResolvedStateOnCompensationInspect && index === 3) {
+                const targetReview = reviewById(reviewId);
+                if (targetReview !== undefined) {
+                    targetReview.state = 'COMMENTED';
+                    targetReview.body = pendingReviewBody(head);
+                }
+                resolved = true;
+                resolvedByNodeId = AUTHOR_BOT_NODE_ID;
+                resolvedByLogin = 'renamed-author';
+                resolvedByType = 'User';
+            }
             if (resolveCalled && input.resolvedByNodeIdAfterResolve !== undefined) {
                 resolvedByNodeId = input.resolvedByNodeIdAfterResolve;
                 resolvedByType = input.resolvedByTypeAfterResolve ?? 'User';
@@ -354,7 +369,7 @@ function fakePort(input: Input = {}) {
                 authorNodeId: AUTHOR_BOT_NODE_ID,
                 authorLogin,
                 authorType: 'Bot',
-                clientMutationId: `review-create:${threadId}`,
+                clientMutationId: input.createClientMutationId ?? `review-create:${threadId}`,
             };
         },
         replyDone: (id, currentReviewId) => {
@@ -461,6 +476,21 @@ function fakePort(input: Input = {}) {
             calls.push(`delete:${id}`);
             if (input.failDelete) {
                 throw new Error('delete denied');
+            }
+            if (input.concurrentCommentedReplyAfterReplyFailure) {
+                input.concurrentCommentedReplyAfterReplyFailure = false;
+                const targetReview = reviewById(reviewId);
+                if (targetReview !== undefined) {
+                    targetReview.state = 'COMMENTED';
+                    targetReview.body = pendingReviewBody(head);
+                }
+            }
+            if (input.concurrentResolveAfterReplyFailure) {
+                input.concurrentResolveAfterReplyFailure = false;
+                resolved = true;
+                resolvedByNodeId = AUTHOR_BOT_NODE_ID;
+                resolvedByLogin = 'renamed-author';
+                resolvedByType = 'User';
             }
             const commentIndex = comments.findIndex((comment) => comment.id === id);
             if (commentIndex < 0) {
@@ -1157,12 +1187,47 @@ describe('review thread resolution', () => {
         expect(calls.filter((call) => call.startsWith('delete:'))).toEqual([]);
         expect(state().comments.find((comment) => comment.id === replyId)?.body).toBe('Edited');
     });
-    it('deletes the exact created pending review when the head moves before replying', () => {
+    it('preserves the exact created pending review when the head moves before replying', () => {
         const { port, authorNodeId, state, calls } = fakePort({ heads: [head, movedHead, movedHead] });
         expect(() => resolveReviewThread(42, threadId, head, authorNodeId, port)).toThrow(/head moved/i);
-        expect(state().reviews).toEqual([]);
+        expect(state().reviews).toEqual([expect.objectContaining({ id: reviewId, state: 'PENDING', commitOid: head })]);
         expect(state().comments).toEqual([expect.objectContaining({ id: rootId, reviewId: null })]);
-        expect(calls).toContain(`deleteReview:${reviewId}`);
+        expect(calls.filter((call) => call.startsWith('deleteReview:'))).toEqual([]);
+    });
+    it('does not attempt successful-create cleanup deletion after head drift when the pending review could be attached concurrently', () => {
+        const { port, authorNodeId, state, calls } = fakePort({
+            heads: [head, movedHead, movedHead],
+            attachConcurrentManagedPendingReplyDuringPendingDelete: true,
+        });
+        expect(() => resolveReviewThread(42, threadId, head, authorNodeId, port)).toThrow(/head moved/i);
+        expect(calls.filter((call) => call.startsWith('deleteReview:'))).toEqual([]);
+        expect(state()).toMatchObject({
+            reviews: [{ id: reviewId, state: 'PENDING', commitOid: head }],
+            comments: [{ id: rootId }],
+        });
+    });
+    it('preserves a sole Done marker when compensation sees a concurrent canonical commented resolution', () => {
+        const { port, authorNodeId, state, calls } = fakePort({
+            existingPendingReviewCount: 1,
+            heads: [head, movedHead],
+            concurrentCommentedResolvedStateOnCompensationInspect: true,
+        });
+        expect(() => resolveReviewThread(42, threadId, head, authorNodeId, port)).toThrow(
+            /head moved[\s\S]*canonical commented review/i
+        );
+        expect(calls.filter((call) => call.startsWith('delete:'))).toEqual([]);
+        expect(state()).toMatchObject({
+            resolved: true,
+            comments: [{ id: rootId }, { id: replyId, body: 'Done', reviewId }],
+            reviews: [
+                {
+                    id: reviewId,
+                    state: 'COMMENTED',
+                    body: resolutionReviewSummary(pullRequestId, threadId, head),
+                    commitOid: head,
+                },
+            ],
+        });
     });
     it('fails closed when a thrown reply mutation collides with an identical concurrent comment', () => {
         const { port, authorNodeId, state, calls } = fakePort({ throwAfterReply: true, concurrentReplyOnThrow: true });
@@ -1348,6 +1413,21 @@ describe('review thread resolution', () => {
             /submit review returned an invalid result/i
         );
         expect(calls.filter((call) => call.startsWith('resolve:') || call.startsWith('log:'))).toEqual([]);
+    });
+    it('rejects a create-pending-review receipt with a mismatched clientMutationId before reply submit resolve or log', () => {
+        const { port, authorNodeId, calls } = fakePort({ createClientMutationId: 'wrong' });
+        expect(() => resolveReviewThread(42, threadId, head, authorNodeId, port)).toThrow(
+            /create pending review returned an invalid result/i
+        );
+        expect(
+            calls.filter(
+                (call) =>
+                    call.startsWith('reply:') ||
+                    call.startsWith('submitReview:') ||
+                    call.startsWith('resolve:') ||
+                    call.startsWith('log:')
+            )
+        ).toEqual([]);
     });
     it('retires a stale script-owned Done marker after a lost submit response and resolves with a new current-head review', () => {
         const { port, authorNodeId, state, calls } = fakePort({
@@ -1644,15 +1724,24 @@ describe('review thread resolution', () => {
             expect.objectContaining({ id: reviewId, state: 'COMMENTED', authorNodeId: AUTHOR_BOT_NODE_ID }),
         ]);
     });
-    it("deletes only this invocation's noncanonical reply when another invocation resolves first", () => {
+    it("preserves this invocation's draft when another invocation resolves first", () => {
         const { port, calls, authorNodeId, state } = fakePort({
             foreignLowerReplyBeforeConvergence: true,
             resolveBeforeConvergence: true,
         });
-        expect(() => resolveReviewThread(42, threadId, head, authorNodeId, port)).toThrow(/already resolved/i);
-        expect(calls.filter((call) => call.startsWith('deleteReview:'))).toEqual([`deleteReview:${reviewId}`]);
+        expect(() => resolveReviewThread(42, threadId, head, authorNodeId, port)).toThrow(
+            /already resolved[\s\S]*canonical commented review/i
+        );
+        expect(calls.filter((call) => call.startsWith('deleteReview:'))).toEqual([]);
         expect(calls.filter((call) => call.startsWith('resolve:'))).toEqual([]);
-        expect(state().comments.map((comment) => comment.id)).toEqual([rootId, 'PRRC_foreign']);
+        expect(state()).toMatchObject({
+            resolved: true,
+            comments: [{ id: rootId }, { id: 'PRRC_foreign', body: 'Done', reviewId: 'PRR_foreign' }],
+            reviews: [
+                { id: reviewId, state: 'PENDING', commitOid: head },
+                { id: 'PRR_foreign', state: 'COMMENTED', commitOid: head },
+            ],
+        });
     });
     it('returns completed success for one exact Bot Done marker resolved by the documented User actor', () => {
         const { port, calls, authorNodeId } = fakePort({

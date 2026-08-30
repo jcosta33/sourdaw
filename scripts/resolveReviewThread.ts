@@ -155,11 +155,8 @@ export function resolveReviewThread(
     assertResolvableThread(before.thread, threadId);
     let pendingReviewCreateAttempted = false;
     let pendingReviewCreated = false;
-    let createdPendingReviewId: string | undefined;
     let replyAttempted = false;
     let replyCreated = false;
-    let createdReplyId: string | undefined;
-    let replyReviewId: string | undefined;
     let reviewUpdateAttempted = false;
     let reviewSubmitAttempted = false;
     let replyId: string | undefined;
@@ -186,7 +183,6 @@ export function resolveReviewThread(
                     'create pending review'
                 );
                 pendingReviewCreated = true;
-                createdPendingReviewId = created.id;
                 working = port.inspect(number, threadId);
                 assertExpectedHeadAfterMutation(working.head, expectedHead);
                 assertResolvableThread(working.thread, threadId);
@@ -199,9 +195,7 @@ export function resolveReviewThread(
             const reply = port.replyDone(threadId, pendingReview.id);
             assertReply(reply, replyClientMutationId(threadId), pendingReview.id, context);
             replyId = reply.id;
-            replyReviewId = pendingReview.id;
             replyCreated = true;
-            createdReplyId = reply.id;
         } else {
             replyId = existingReply.id;
         }
@@ -285,11 +279,8 @@ export function resolveReviewThread(
             context,
             pendingReviewCreateAttempted,
             pendingReviewCreated,
-            createdPendingReviewId,
             replyAttempted,
             replyCreated,
-            createdReplyId,
-            replyReviewId,
             reviewUpdateAttempted,
             reviewSubmitAttempted,
             resolveAttempted,
@@ -314,11 +305,8 @@ function compensateResolution(
     context: ResolutionReviewContext,
     pendingReviewCreateAttempted: boolean,
     pendingReviewCreated: boolean,
-    createdPendingReviewId: string | undefined,
     replyAttempted: boolean,
     replyCreated: boolean,
-    createdReplyId: string | undefined,
-    replyReviewId: string | undefined,
     reviewUpdateAttempted: boolean,
     reviewSubmitAttempted: boolean,
     resolveAttempted: boolean,
@@ -335,13 +323,12 @@ function compensateResolution(
     if (current === undefined || current.thread === null || before.thread === null) {
         failures.push('cannot determine ambiguous review transaction state');
     } else {
-        const visibleReviewEvidence =
-            reviewUpdateAttempted &&
-            current.thread.comments.some((comment) => hasCanonicalCommentedReview(comment, context));
-        const submittedReviewEvidence =
-            reviewSubmitAttempted &&
-            current.thread.comments.some((comment) => hasCanonicalCommentedReview(comment, context));
-        const resolutionEvidence = resolutionReceipt !== undefined || resolveAttempted;
+        const canonicalCommentedReviewVisible = current.thread.comments.some((comment) =>
+            hasCanonicalCommentedReview(comment, context)
+        );
+        const visibleReviewEvidence = reviewUpdateAttempted && canonicalCommentedReviewVisible;
+        const submittedReviewEvidence = reviewSubmitAttempted && canonicalCommentedReviewVisible;
+        const resolutionEvidence = resolutionReceipt !== undefined || resolveAttempted || current.thread.isResolved;
         if (resolutionEvidence) {
             failures.push('review-thread resolution was attempted; preserving Done reply as durable evidence');
         }
@@ -351,10 +338,10 @@ function compensateResolution(
             failures.push('review submission was attempted; preserving pending review evidence');
         } else if (visibleReviewEvidence) {
             failures.push('review body update was attempted; preserving submitted review evidence');
+        } else if (canonicalCommentedReviewVisible) {
+            failures.push('canonical commented review is already visible; preserving Done reply as durable evidence');
         }
-        if (!resolveAttempted && current.thread.isResolved && replyCreated && createdReplyId !== undefined) {
-            deleteCreatedNoncanonicalReply(current.thread, createdReplyId, port, failures);
-        } else if (
+        if (
             pendingReviewCreateAttempted &&
             !pendingReviewCreated &&
             !replyAttempted &&
@@ -370,39 +357,13 @@ function compensateResolution(
                     failures
                 ) || preservedAmbiguousPendingEvidence;
         } else if (pendingReviewCreated && !replyAttempted) {
-            deleteCreatedPendingReviewUnlessManagedReplyAttached(
-                current.pendingReviews,
-                current.thread,
-                createdPendingReviewId,
-                context,
-                port,
-                failures
+            failures.push(
+                'created pending review is shareable after an ambiguous failure; preserving pending review evidence'
             );
         } else if (replyAttempted && !replyCreated) {
             failures.push('ambiguous review reply mutation; refusing to delete an unverified comment');
-        } else if (
-            replyCreated &&
-            !resolutionEvidence &&
-            !submittedReviewEvidence &&
-            !visibleReviewEvidence &&
-            !reviewSubmitAttempted
-        ) {
-            if (createdReplyId === undefined || replyReviewId === undefined) {
-                failures.push('ambiguous review reply mutation; refusing to delete an unverified comment');
-            } else if (pendingReviewCreated && createdPendingReviewId === replyReviewId) {
-                deleteCreatedPendingReviewUnlessManagedReplyAttached(
-                    current.pendingReviews,
-                    current.thread,
-                    createdPendingReviewId,
-                    context,
-                    port,
-                    failures
-                );
-            } else if (hasExpectedReply(current.thread, createdReplyId)) {
-                attempt(failures, 'delete review reply', () => port.deleteReply(createdReplyId));
-            } else if (current.thread.comments.some((comment) => comment.id === createdReplyId)) {
-                failures.push('review reply receipt is no longer present; refusing to delete an unverified comment');
-            }
+        } else if (replyCreated) {
+            failures.push('ambiguous review reply mutation; preserving Done reply evidence');
         } else if (
             !pendingReviewCreated &&
             current.pendingReviews.some((review) => isExactPendingReview(review, context))
@@ -939,75 +900,6 @@ function reconcilePendingReviewsForReply(
         deleted = true;
     }
     return deleted;
-}
-function requireOneOrMoreReplyMarker(thread: ReviewThread | null, threadId: string): ReviewComment {
-    if (thread === null) {
-        fail(`review thread ${threadId} was not found on this pull request`);
-    }
-    const [canonical] = validatedReplyMarkers(thread);
-    if (canonical === undefined) {
-        fail(`review thread ${threadId} has no valid Done reply marker`);
-    }
-    return canonical;
-}
-function deleteCreatedNoncanonicalReply(
-    thread: ReviewThread,
-    createdReplyId: string,
-    port: ResolveReviewThreadPort,
-    failures: string[]
-): void {
-    let canonical: ReviewComment;
-    try {
-        canonical = requireOneOrMoreReplyMarker(thread, thread.id);
-    } catch (error) {
-        failures.push(`inspect concurrent Done reply markers: ${errorMessage(error)}`);
-        return;
-    }
-    if (canonical.id === createdReplyId || !hasExpectedReply(thread, createdReplyId)) {
-        failures.push("concurrent resolution retained this invocation's canonical or unverified Done reply");
-        return;
-    }
-    attempt(failures, 'delete noncanonical review reply', () => port.deleteReply(createdReplyId));
-}
-function deleteCreatedPendingReview(
-    pendingReviews: PullRequestReview[],
-    createdPendingReviewId: string | undefined,
-    context: ResolutionReviewContext,
-    port: ResolveReviewThreadPort,
-    failures: string[]
-): void {
-    if (createdPendingReviewId === undefined) {
-        failures.push('ambiguous pending review mutation; refusing to delete an unverified review');
-        return;
-    }
-    const review = pendingReviews.find((candidate) => candidate.id === createdPendingReviewId);
-    if (review === undefined) {
-        return;
-    }
-    if (!isExactPendingReview(review, context)) {
-        failures.push('pending review receipt is no longer exact; refusing to delete an unverified review');
-        return;
-    }
-    attempt(failures, 'delete pending review', () => port.deletePendingReview(createdPendingReviewId));
-}
-function deleteCreatedPendingReviewUnlessManagedReplyAttached(
-    pendingReviews: PullRequestReview[],
-    thread: ReviewThread,
-    createdPendingReviewId: string | undefined,
-    context: ResolutionReviewContext,
-    port: ResolveReviewThreadPort,
-    failures: string[]
-): void {
-    if (
-        createdPendingReviewId !== undefined &&
-        managedReplyMarkers(thread, context, ['PENDING', 'COMMENTED'], true).some(
-            (candidate) => candidate.review.id === createdPendingReviewId
-        )
-    ) {
-        failures.push('pending review now has a managed Done reply; preserving attached review evidence');
-        return;
-    }
-    deleteCreatedPendingReview(pendingReviews, createdPendingReviewId, context, port, failures);
 }
 function deleteAmbiguousCreatedPendingReview(
     before: PullRequestReview[],
