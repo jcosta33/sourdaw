@@ -1,0 +1,19 @@
+src/modules/Transport/useCases/transportControls/__tests__/startPlayback.spec.ts
+  s_ae074277795b45::t_0b09a27567ee5e 29-31
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "392183a3e432d41749ddf1d82fb895b99bfc6b28",
+  "prompts": {},
+  "sessions": {
+    "s_ae074277795b45": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04ab5-5234-7100-be1c-76ebfaba88d3",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
