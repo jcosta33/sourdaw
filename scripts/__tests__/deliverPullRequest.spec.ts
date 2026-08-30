@@ -1963,34 +1963,40 @@ describe('pull-request delivery', () => {
         });
     });
 
-    it('restores the pre-final-fetch prepared authority after an OPEN UNKNOWN merge-rejection refresh resolves to a definitive OPEN CONFLICTING state', () => {
+    it('restores the pre-final-fetch prepared authority when the final fetch resolves to OPEN CONFLICTING, then lets a corrected head deliver on retry', () => {
         const closes = relationshipBody('Closes #2372');
-        const { port, calls, tracker, persistedReceiptAuthority } = fakePort({
+        const nextHead = 'corrected-head';
+        const { port, calls, tracker, persistedReceiptAuthority, receipts } = fakePort({
             primary: [
-                pullRequest({ body: closes }),
-                pullRequest({ body: closes }),
-                pullRequest({ body: closes, mergeable: 'UNKNOWN' }),
-                pullRequest({ body: closes, mergeable: 'CONFLICTING' }),
+                pullRequest({ headRefOid: 'head', body: closes }),
+                pullRequest({ headRefOid: 'head', body: closes, mergeable: 'UNKNOWN' }),
+                pullRequest({ headRefOid: 'head', body: closes, mergeable: 'CONFLICTING' }),
+                pullRequest({ headRefOid: nextHead, body: closes }),
+                pullRequest({ headRefOid: nextHead, body: closes }),
             ],
             dependentSets: [[], []],
         });
-        let rejectOnce = true;
-        port.merge = (number, head) => {
-            calls.push(`merge:${number}:${head}`);
-            if (rejectOnce) {
-                rejectOnce = false;
-                throw new DeliveryMergeRejectedError('PR #42 was not merged: gh: HTTP 409: head SHA changed');
-            }
-        };
 
-        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/HTTP 409: head SHA changed/i);
-        expect(calls).toContain('merge:42:head');
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/conflicting changes/i);
+        expect(calls).not.toContain('merge:42:head');
         expect(persistedReceiptAuthority()).toEqual({
             phase: 'prepared',
             receiptId: 'IC_delivery_42_1',
             receiptBody: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'),
         });
         expect(calls).not.toContain('complete:2372');
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(2);
+        expect(receipts.map(({ id }) => id)).toEqual(['IC_delivery_42_1', 'IC_delivery_42_2']);
+        expect(calls).toContain(`merge:42:${nextHead}`);
+        expect(calls).toContain('complete:2372');
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'terminal',
+            receiptId: 'IC_delivery_42_2',
+            receiptBody: visibleDeliveryReceiptBody(42, nextHead, closes, 2372, 'successful'),
+        });
     });
 
     it('retains the armed receipt authority after an OPEN UNKNOWN merge-rejection refresh resolves to an unrecognized state, then recovers on merged retry', () => {
@@ -5794,6 +5800,8 @@ describe('delivery shell boundary', () => {
     });
 
     it.each([
+        ['403', 'gh: HTTP 403: Resource not accessible by integration'],
+        ['404', 'gh: HTTP 404: Pull request not found'],
         ['405', 'gh: HTTP 405: Base branch policy rejected the merge'],
         ['409', 'gh: HTTP 409: Head SHA changed before merge'],
         ['422', 'gh: HTTP 422: Pull Request is not mergeable'],

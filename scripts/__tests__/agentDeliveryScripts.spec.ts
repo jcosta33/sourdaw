@@ -809,6 +809,38 @@ describe('package scripts and gitignore', () => {
         expect(executedUncheckedDependency).toBe(false);
     });
 
+    it('accepts the real deliver trusted-source closure instead of placeholder bytes', async () => {
+        const repositoryRoot = join(import.meta.dirname, '../..');
+        const deliverPaths = trustedDependencyPaths('deliver');
+        let executedSources: ReadonlyMap<string, string> | undefined;
+
+        const exitCode = await runTrustedGithubWriteCommand('deliver', ['42'], {
+            resolveOriginMain: () => 'trusted-sha',
+            readOriginSource: (_commit, candidate) => {
+                if (candidate.startsWith('scripts/')) {
+                    return readFileSync(join(import.meta.dirname, '..', candidate.slice('scripts/'.length)), 'utf8');
+                }
+                return readFileSync(join(repositoryRoot, candidate), 'utf8');
+            },
+            executeSnapshot: async (_command, _args, snapshot) => {
+                executedSources = snapshot.sources;
+                return 0;
+            },
+        });
+
+        expect(exitCode).toBe(0);
+        expect(executedSources).toEqual(
+            new Map(
+                deliverPaths.map((path) => {
+                    const absolutePath = path.startsWith('scripts/')
+                        ? join(import.meta.dirname, '..', path.slice('scripts/'.length))
+                        : join(repositoryRoot, path);
+                    return [path, readFileSync(absolutePath, 'utf8')];
+                })
+            )
+        );
+    });
+
     /**
      * The snapshot is a temporary directory holding nothing but `scripts/`, so Node resolves a bare
      * specifier upward from there, finds no `node_modules`, and kills the command with

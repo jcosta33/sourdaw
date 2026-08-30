@@ -30,7 +30,6 @@ import {
     type DeliveryReceiptPayload,
 } from './prContract.ts';
 import { shellPort as trackerIssueShellPort } from './reconcileTrackerIssue.ts';
-import { parseJsonWithUniqueKeys } from './strictJson.ts';
 import { completeTrackerIssue, type ReconcileTrackerIssuePort } from './trackerIssueReconciliation.ts';
 
 export type HeadCheckRun = {
@@ -149,7 +148,7 @@ export class DeliveryMergeRejectedError extends Error {
 
 function classifyGithubMergeRejection(number: number, error: unknown): DeliveryMergeRejectedError | undefined {
     const detail = error instanceof Error ? error.message : String(error);
-    if (!/\bHTTP (405|409|422)\b/u.test(detail)) {
+    if (!/\bHTTP (403|404|405|409|422)\b/u.test(detail)) {
         return undefined;
     }
     return new DeliveryMergeRejectedError(`PR #${number} was not merged: ${detail}`);
@@ -1079,6 +1078,10 @@ function tryRestorePreArmedDeliveryReceiptAuthorityAfterMergeFailure(
         if (current.state === 'MERGED') {
             return;
         }
+        if (current.state === 'OPEN' && current.mergeable === 'CONFLICTING') {
+            restorePreArmedDeliveryReceiptAuthority(number, beforeArming, armed, port);
+            return;
+        }
         if (current.state !== 'OPEN' && current.state !== 'CLOSED') {
             return;
         }
@@ -1630,7 +1633,22 @@ function deliverPullRequestWithCiAdmission(
     persistPreparedDeliveryReceiptAuthority(number, receipt, port, preparedPostMergeValidation);
 
     port.fetch();
-    const finalSnapshot = resolveStructuralMergeability(port.pullRequest(number), port);
+    const finalSnapshot = refreshStructuralMergeability(port.pullRequest(number), port);
+    if (
+        finalSnapshot.state !== 'MERGED' &&
+        finalSnapshot.state === 'OPEN' &&
+        finalSnapshot.mergeable === 'CONFLICTING'
+    ) {
+        restorePreArmedDeliveryReceiptAuthority(
+            number,
+            authorityBeforeFinalFetchArming,
+            finalFetchArmedAuthority,
+            port
+        );
+    }
+    if (finalSnapshot.state !== 'MERGED') {
+        validateStructuralMergeability(finalSnapshot);
+    }
     if (finalSnapshot.state === 'MERGED') {
         validatePostMergeSnapshot(preparedPostMergeValidation, finalSnapshot, number);
         const recoveredReceipt = readStableExactDeliveryReceipt(finalSnapshot, port, receipt.id);
@@ -2415,10 +2433,184 @@ function isPersistedPreparedPostMergeValidation(value: unknown): value is Persis
     );
 }
 
+function skipJsonWhitespace(source: string, index: number): number {
+    while (index < source.length && /\s/u.test(source[index] ?? '')) {
+        index += 1;
+    }
+    return index;
+}
+
+function readJsonStringToken(source: string, start: number): { value: string; end: number } {
+    if (source[start] !== '"') {
+        throw new Error('expected JSON string');
+    }
+    let index = start + 1;
+    while (index < source.length) {
+        const character = source[index];
+        if (character === '"') {
+            const end = index + 1;
+            return { value: JSON.parse(source.slice(start, end)) as string, end };
+        }
+        if (character === '\\') {
+            index += 2;
+            continue;
+        }
+        if (character === undefined || character < ' ') {
+            throw new Error('invalid JSON string');
+        }
+        index += 1;
+    }
+    throw new Error('unterminated JSON string');
+}
+
+function readJsonNumberEnd(source: string, start: number): number {
+    let index = start;
+    if (source[index] === '-') {
+        index += 1;
+    }
+    const firstDigit = source[index];
+    if (firstDigit === '0') {
+        index += 1;
+    } else {
+        if (firstDigit === undefined || firstDigit < '1' || firstDigit > '9') {
+            throw new Error('invalid JSON number');
+        }
+        index += 1;
+        while (index < source.length) {
+            const digit = source[index];
+            if (digit === undefined || digit < '0' || digit > '9') {
+                break;
+            }
+            index += 1;
+        }
+    }
+    if (source[index] === '.') {
+        index += 1;
+        const fractionDigit = source[index];
+        if (fractionDigit === undefined || fractionDigit < '0' || fractionDigit > '9') {
+            throw new Error('invalid JSON number');
+        }
+        index += 1;
+        while (index < source.length) {
+            const digit = source[index];
+            if (digit === undefined || digit < '0' || digit > '9') {
+                break;
+            }
+            index += 1;
+        }
+    }
+    const exponent = source[index];
+    if (exponent === 'e' || exponent === 'E') {
+        index += 1;
+        const sign = source[index];
+        if (sign === '+' || sign === '-') {
+            index += 1;
+        }
+        const exponentDigit = source[index];
+        if (exponentDigit === undefined || exponentDigit < '0' || exponentDigit > '9') {
+            throw new Error('invalid JSON number');
+        }
+        index += 1;
+        while (index < source.length) {
+            const digit = source[index];
+            if (digit === undefined || digit < '0' || digit > '9') {
+                break;
+            }
+            index += 1;
+        }
+    }
+    return index;
+}
+
+function readJsonLiteralEnd(source: string, start: number, literal: 'true' | 'false' | 'null'): number {
+    if (!source.startsWith(literal, start)) {
+        throw new Error(`invalid JSON literal ${literal}`);
+    }
+    return start + literal.length;
+}
+
+function scanJsonValueForDuplicateMembers(source: string, start: number): number {
+    const index = skipJsonWhitespace(source, start);
+    const character = source[index];
+    if (character === '{') {
+        return scanJsonObjectForDuplicateMembers(source, index);
+    }
+    if (character === '[') {
+        return scanJsonArrayForDuplicateMembers(source, index);
+    }
+    if (character === '"') {
+        return readJsonStringToken(source, index).end;
+    }
+    if (character === 't') {
+        return readJsonLiteralEnd(source, index, 'true');
+    }
+    if (character === 'f') {
+        return readJsonLiteralEnd(source, index, 'false');
+    }
+    if (character === 'n') {
+        return readJsonLiteralEnd(source, index, 'null');
+    }
+    return readJsonNumberEnd(source, index);
+}
+
+function scanJsonObjectForDuplicateMembers(source: string, start: number): number {
+    let index = skipJsonWhitespace(source, start + 1);
+    const keys = new Set<string>();
+    if (source[index] === '}') {
+        return index + 1;
+    }
+    while (true) {
+        const key = readJsonStringToken(source, index);
+        if (keys.has(key.value)) {
+            throw new Error(`duplicate key ${key.value}`);
+        }
+        keys.add(key.value);
+        index = skipJsonWhitespace(source, key.end);
+        if (source[index] !== ':') {
+            throw new Error('expected object colon');
+        }
+        index = scanJsonValueForDuplicateMembers(source, index + 1);
+        index = skipJsonWhitespace(source, index);
+        if (source[index] === '}') {
+            return index + 1;
+        }
+        if (source[index] !== ',') {
+            throw new Error('expected object comma');
+        }
+        index = skipJsonWhitespace(source, index + 1);
+    }
+}
+
+function scanJsonArrayForDuplicateMembers(source: string, start: number): number {
+    let index = skipJsonWhitespace(source, start + 1);
+    if (source[index] === ']') {
+        return index + 1;
+    }
+    while (true) {
+        index = scanJsonValueForDuplicateMembers(source, index);
+        index = skipJsonWhitespace(source, index);
+        if (source[index] === ']') {
+            return index + 1;
+        }
+        if (source[index] !== ',') {
+            throw new Error('expected array comma');
+        }
+        index = skipJsonWhitespace(source, index + 1);
+    }
+}
+
+function parseJsonWithoutDuplicateMembers<Value>(source: string): Value {
+    const end = scanJsonValueForDuplicateMembers(source, 0);
+    if (skipJsonWhitespace(source, end) !== source.length) {
+        throw new Error('unexpected trailing JSON content');
+    }
+    return JSON.parse(source) as Value;
+}
+
 function parseDeliveryReceiptAuthority(contents: string, number: number): DeliveryReceiptAuthority {
     let value: unknown;
     try {
-        value = parseJsonWithUniqueKeys<unknown>(contents, `PR #${number} delivery receipt authority`);
+        value = parseJsonWithoutDuplicateMembers<unknown>(contents);
     } catch {
         fail(`PR #${number} delivery receipt authority is malformed`);
     }
