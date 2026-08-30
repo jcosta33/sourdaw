@@ -3691,10 +3691,14 @@ function hasRecoveredReviewResolutionMutation(
                     (review) =>
                         review.id === mutation.reviewId &&
                         review.body === mutation.body &&
+                        review.commitOid === owner.head &&
                         isAuthorBotActor(review.authorNodeId, review.authorType)
                 ) ||
                 managedReplyMarkers(thread, context, ['PENDING', 'COMMENTED'], true).some(
-                    (candidate) => candidate.review.id === mutation.reviewId && candidate.review.body === mutation.body
+                    (candidate) =>
+                        candidate.review.id === mutation.reviewId &&
+                        candidate.review.body === mutation.body &&
+                        candidate.review.commitOid === owner.head
                 )
             );
         case 'resolveThread':
@@ -3747,20 +3751,47 @@ function assertMutationPhaseOwner(
     return owner.mutation;
 }
 
-function assertReplayableReviewReceipt(
+function requireReplayableHistoricalReviewBodyUpdate(
+    number: number,
+    owner: ReviewResolutionLockOwner,
+    inspection: ReviewThreadInspection,
+    context: ResolutionReviewContext,
+    mutation: Extract<ReviewResolutionLockMutation, { phase: 'updateReviewBody' }>,
+    port: ResolveReviewThreadPort
+): PullRequestReview {
+    if (mutation.body !== resolutionReviewBody(context, owner.head)) {
+        fail(`update review body recovery has an invalid historical body for ${mutation.reviewId}`);
+    }
+    const review = port.inspectPullRequestReview(number, mutation.reviewId, inspection.pullRequestId, inspection.head);
+    if (
+        review === null ||
+        review.id !== mutation.reviewId ||
+        !['PENDING', 'COMMENTED'].includes(review.state) ||
+        review.body.trim() !== '' ||
+        review.commitOid !== owner.head ||
+        !isAuthorBotActor(review.authorNodeId, review.authorType)
+    ) {
+        fail(`update review body recovery could not prove an unlanded historical review ${mutation.reviewId}`);
+    }
+    const currentHeadContext = resolutionReviewContext(inspection.pullRequestId, owner.threadId, inspection.head);
+    assertExclusiveBackfillReviewAttachment(number, mutation.reviewId, currentHeadContext, port);
+    return review;
+}
+
+function assertReplayedReviewBodyReceipt(
     receipt: ReviewEnvelopeReceipt,
-    reviewId: string,
-    body: string,
-    label: string
+    review: PullRequestReview,
+    expectedBody: string
 ): void {
     if (
-        receipt.id !== reviewId ||
-        receipt.body !== body ||
+        receipt.id !== review.id ||
+        receipt.state !== review.state ||
+        receipt.body !== expectedBody ||
+        receipt.commitOid !== review.commitOid ||
         !isAuthorBotActor(receipt.authorNodeId, receipt.authorType) ||
-        typeof receipt.commitOid !== 'string' ||
-        receipt.commitOid === ''
+        receipt.clientMutationId !== updateReviewClientMutationId(review.id)
     ) {
-        fail(`${label} returned an invalid result for ${reviewId}`);
+        fail(`update review body returned an invalid result for ${review.id}`);
     }
 }
 
@@ -3834,9 +3865,16 @@ export function recoverReviewResolutionLockOwnerState(
             if (hasRecoveredReviewResolutionMutation(number, owner, inspection, context, inspection.thread!, port)) {
                 break;
             }
-            assertRecoveryHeadMatchesOwner(inspection.head, owner.head);
+            const review = requireReplayableHistoricalReviewBodyUpdate(
+                number,
+                owner,
+                inspection,
+                context,
+                mutation,
+                port
+            );
             const updated = port.updateReviewBody(mutation.reviewId, mutation.body);
-            assertReplayableReviewReceipt(updated, mutation.reviewId, mutation.body, 'update review body');
+            assertReplayedReviewBodyReceipt(updated, review, mutation.body);
             inspection = inspectReviewResolutionRecovery(number, owner, port);
             break;
         }
