@@ -225,13 +225,26 @@ export const useNativeApplicationMenu = (project: ProjectStoreState): void => {
             return undefined;
         }
         const publishProjectState = (): void => {
+            const currentProject = projectStore.value;
+            if (currentProject === undefined) {
+                void menu.projectState({
+                    title: 'Sourdaw',
+                    dirty: true,
+                    durabilityPending: true,
+                    projectKey: 'sourdaw:project:unavailable',
+                    revision: captureProjectRevision(),
+                    rendererReady: false,
+                    recentProjects: getRecentProjects().map(({ key, name }) => ({ key, name })),
+                });
+                return;
+            }
             void menu.projectState({
-                title: project.name,
-                dirty: project.dirty,
-                durabilityPending: project.identityPersistencePending === true,
-                projectKey: nativeProjectKey(project),
+                title: currentProject.name,
+                dirty: currentProject.dirty,
+                durabilityPending: currentProject.identityPersistencePending === true,
+                projectKey: nativeProjectKey(currentProject),
                 revision: captureProjectRevision(),
-                rendererReady: project.loading !== true,
+                rendererReady: currentProject.loading !== true,
                 recentProjects: getRecentProjects().map(({ key, name }) => ({ key, name })),
             });
         };

@@ -46,14 +46,14 @@ describe('Electron shell composition policies', () => {
 
     const productionComposition = ({
         focused = 'main',
-        canQuit = vi.fn(async () => true),
+        requestClose = vi.fn(async () => true),
         exit = vi.fn(),
         quiesceBeforeQuit = vi.fn(async () => 'success' as const),
         runShutdown = vi.fn(async () => ({ status: 'completed' as const, report: undefined })),
         lifecycle = createRendererSessionLifecycle(),
     }: {
         focused?: 'main' | 'plugin';
-        canQuit?: ReturnType<typeof vi.fn<() => Promise<boolean>>>;
+        requestClose?: ReturnType<typeof vi.fn<() => Promise<boolean>>>;
         exit?: ReturnType<typeof vi.fn<(code: number) => void>>;
         quiesceBeforeQuit?: ReturnType<typeof vi.fn<() => Promise<'success'>>>;
         runShutdown?: ReturnType<typeof vi.fn<() => Promise<{ status: 'completed'; report: undefined }>>>;
@@ -80,8 +80,8 @@ describe('Electron shell composition policies', () => {
             sendToFirstResponder: responder,
             menuDispatcher: { dispatch: dispatchMenuIntent },
             runShutdown,
+            closeCoordinator: { requestClose },
             quit: {
-                canQuit,
                 quiesceBeforeQuit,
                 exit,
                 report: vi.fn(),
@@ -94,7 +94,7 @@ describe('Electron shell composition policies', () => {
             dispatchMenuIntent,
             editTarget,
             responder,
-            canQuit,
+            requestClose,
             exit,
             quiesceBeforeQuit,
             runShutdown,
@@ -149,23 +149,27 @@ describe('Electron shell composition policies', () => {
         expect(order).toEqual(['quiesce', 'shutdown']);
     });
 
-    it('uses the approved production lifecycle to suppress renderer crash recreation', () => {
+    it('records coordinator approval in the production lifecycle before shutdown', async () => {
         const lifecycle = createRendererSessionLifecycle();
-        lifecycle.approveTeardown();
-        const { composition } = productionComposition({ lifecycle });
+        const { composition, runShutdown } = productionComposition({ lifecycle });
 
+        composition.beforeQuit({ preventDefault: vi.fn() });
+
+        await vi.waitFor(() => expect(runShutdown).toHaveBeenCalledOnce());
         expect(composition.shouldRecreateAfterCrash()).toBe(false);
     });
 
-    it('stops before renderer quiesce and shutdown when close authority is denied', async () => {
-        const canQuit = vi.fn(async () => false);
-        const { composition, exit, quiesceBeforeQuit, runShutdown } = productionComposition({ canQuit });
+    it.each([
+        ['denial', vi.fn(async () => false)],
+        ['rejection', vi.fn(async () => Promise.reject(new Error('close authority failed')))],
+    ])('stops before renderer quiesce and shutdown on coordinator %s', async (_case, requestClose) => {
+        const { composition, exit, quiesceBeforeQuit, runShutdown } = productionComposition({ requestClose });
         const preventDefault = vi.fn();
 
         composition.beforeQuit({ preventDefault });
 
-        await vi.waitFor(() => expect(canQuit).toHaveBeenCalledOnce());
-        await Promise.resolve();
+        await vi.waitFor(() => expect(requestClose).toHaveBeenCalledOnce());
+        await new Promise((resolve) => setTimeout(resolve, 0));
         expect(preventDefault).toHaveBeenCalledOnce();
         expect(quiesceBeforeQuit).not.toHaveBeenCalled();
         expect(runShutdown).not.toHaveBeenCalled();

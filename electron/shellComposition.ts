@@ -110,6 +110,7 @@ export const createProductionShellComposition = <Menu>({
     sendToFirstResponder,
     menuDispatcher,
     runShutdown,
+    closeCoordinator,
     quit,
     lifecycle,
 }: {
@@ -121,11 +122,15 @@ export const createProductionShellComposition = <Menu>({
     readonly sendToFirstResponder: (action: NativeResponderEditAction) => void;
     readonly menuDispatcher: { readonly dispatch: (intent: NativeMenuIntent) => void };
     readonly runShutdown: () => Promise<ShutdownOutcome>;
-    readonly quit: Required<Pick<QuitDependencies, 'canQuit' | 'exit' | 'report'>> & {
+    readonly closeCoordinator: { readonly requestClose: () => Promise<boolean> };
+    readonly quit: Required<Pick<QuitDependencies, 'exit' | 'report'>> & {
         readonly quiesceBeforeQuit: NonNullable<QuitDependencies['beforeRun']>;
         readonly timers?: QuitDependencies['timers'];
     };
-    readonly lifecycle: { readonly shouldRecreateAfterCrash: () => boolean };
+    readonly lifecycle: {
+        readonly approveTeardown: () => void;
+        readonly shouldRecreateAfterCrash: () => boolean;
+    };
 }) =>
     createShellComposition({
         isMac,
@@ -143,7 +148,13 @@ export const createProductionShellComposition = <Menu>({
         dispatchMenuIntent: (intent) => menuDispatcher.dispatch(intent),
         runShutdown,
         quitDependencies: {
-            canQuit: quit.canQuit,
+            canQuit: async () => {
+                const approved = await closeCoordinator.requestClose();
+                if (approved) {
+                    lifecycle.approveTeardown();
+                }
+                return approved;
+            },
             beforeRun: quit.quiesceBeforeQuit,
             exit: quit.exit,
             report: quit.report,

@@ -388,7 +388,8 @@ const createWindow = (): BrowserWindow => {
         },
         () =>
             windowCloseCoordinator.permitsClose() &&
-            (process.platform !== 'darwin' || closeSessionQuiescedWindow === window)
+            (process.platform !== 'darwin' || closeSessionQuiescedWindow === window),
+        { timers: systemTimers }
     );
     return window;
 };
@@ -525,19 +526,13 @@ shellComposition = createProductionShellComposition({
             host: nativeHost,
             timers: systemTimers,
         }),
+    closeCoordinator: windowCloseCoordinator,
     quit: {
         exit: (code) => app.exit(code),
         report: (outcome) => {
             if (outcome.status !== 'completed') {
                 console.error(`[shell] shutdown ${outcome.status}: ${JSON.stringify(outcome)}`);
             }
-        },
-        canQuit: async () => {
-            const approved = await windowCloseCoordinator.requestClose();
-            if (approved) {
-                rendererSessionLifecycle.approveTeardown();
-            }
-            return approved;
         },
         quiesceBeforeQuit: quiesceApprovedMainWindow,
         timers: systemTimers,

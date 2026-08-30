@@ -28,13 +28,21 @@ const desktop = vi.hoisted(() => ({
 }));
 const projectState = vi.hoisted(() => ({
     projectId: 'project' as string | undefined,
+    name: 'Song',
     createdAt: 1,
     dirty: false,
     identityPersistencePending: false,
+    loading: false,
 }));
 const crdt = vi.hoisted(() => ({
     captureProjectRevision: vi.fn(() => 'revision-1'),
-    subscribeToCrdtChanges: vi.fn(() => () => undefined),
+    subscriber: undefined as (() => void) | undefined,
+    subscribeToCrdtChanges: vi.fn((listener: () => void) => {
+        crdt.subscriber = listener;
+        return () => {
+            crdt.subscriber = undefined;
+        };
+    }),
 }));
 const projectActions = vi.hoisted(() => ({
     saveProject: vi.fn(async () => true),
@@ -55,9 +63,11 @@ vi.mock('#/modules/Project/stores', () => ({
         get value() {
             return {
                 projectId: projectState.projectId,
+                name: projectState.name,
                 createdAt: projectState.createdAt,
                 dirty: projectState.dirty,
                 identityPersistencePending: projectState.identityPersistencePending,
+                loading: projectState.loading,
             };
         },
     },
@@ -155,10 +165,13 @@ describe('useNativeApplicationMenu', () => {
             });
         projectState.dirty = false;
         projectState.projectId = 'project';
+        projectState.name = 'Song';
         projectState.createdAt = 1;
         projectState.identityPersistencePending = false;
+        projectState.loading = false;
         crdt.captureProjectRevision.mockClear();
         crdt.captureProjectRevision.mockReturnValue('revision-1');
+        crdt.subscriber = undefined;
         crdt.subscribeToCrdtChanges.mockClear();
         projectActions.saveProject.mockReset();
         projectActions.saveProject.mockResolvedValue(true);
@@ -355,10 +368,12 @@ describe('useNativeApplicationMenu', () => {
             productionBrief: {} as never,
             initialized: true,
         });
+        projectState.loading = true;
         const { rerender } = renderHook(({ loading }) => useNativeApplicationMenu(project(loading)), {
             initialProps: { loading: true },
         });
 
+        projectState.loading = false;
         rerender({ loading: false });
 
         expect(desktop.projectState).toHaveBeenNthCalledWith(1, expect.objectContaining({ rendererReady: false }));
@@ -366,6 +381,7 @@ describe('useNativeApplicationMenu', () => {
     });
 
     it('does not dispatch DAW edits while a native text field owns focus', async () => {
+        projectState.dirty = true;
         renderHook(() =>
             useNativeApplicationMenu({
                 projectId: 'project',
@@ -403,6 +419,45 @@ describe('useNativeApplicationMenu', () => {
         expect(command.undo).not.toHaveBeenCalled();
         expect(command.redo).not.toHaveBeenCalled();
         input.remove();
+    });
+
+    it('publishes one atomic live project projection from a captured CRDT callback', () => {
+        renderHook(() =>
+            useNativeApplicationMenu({
+                projectId: 'project-a',
+                name: 'Captured Song',
+                createdAt: 1,
+                updatedAt: 1,
+                dirty: false,
+                identityPersistencePending: false,
+                loading: false,
+                keyRoot: 0,
+                scaleName: 'chromatic',
+                tuning: { name: 'Equal Temperament', frequencies: [] },
+                productionBrief: {} as never,
+                initialized: true,
+            })
+        );
+        desktop.projectState.mockClear();
+
+        projectState.projectId = 'project-b';
+        projectState.name = 'Live Song';
+        projectState.createdAt = 42;
+        projectState.dirty = true;
+        projectState.identityPersistencePending = true;
+        projectState.loading = true;
+        crdt.captureProjectRevision.mockReturnValue('revision-2');
+        crdt.subscriber?.();
+
+        expect(desktop.projectState).toHaveBeenCalledWith({
+            title: 'Live Song',
+            dirty: true,
+            durabilityPending: true,
+            projectKey: 'sourdaw:project:42',
+            revision: 'revision-2',
+            rendererReady: false,
+            recentProjects: [],
+        });
     });
 
     it('routes handled native selection commands to the focused canvas editor owned-command seam', async () => {

@@ -1,4 +1,9 @@
-import { interceptOwnerWindowTeardown, type OwnerWindow, type PluginWindowHost } from './pluginGui.js';
+import {
+    interceptOwnerWindowTeardown,
+    type OwnerTeardownOptions,
+    type OwnerWindow,
+    type PluginWindowHost,
+} from './pluginGui.js';
 
 /**
  * Detach parented plugin editors before the DAW window can be destroyed.
@@ -12,7 +17,8 @@ export const bindMainWindowOwnerTeardown = (
     shouldProceed?: () => boolean,
     onCancelled?: () => void,
     onDestroying?: () => void,
-    shouldInterceptClose?: () => boolean
+    shouldInterceptClose?: () => boolean,
+    options?: OwnerTeardownOptions
 ): ((force?: boolean) => Promise<boolean>) | undefined => {
     if (host === undefined) {
         return undefined;
@@ -23,7 +29,8 @@ export const bindMainWindowOwnerTeardown = (
         shouldProceed,
         onCancelled,
         onDestroying,
-        shouldInterceptClose
+        shouldInterceptClose,
+        options
     );
     return destroyAfterEditorsDetach;
 };

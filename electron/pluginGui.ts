@@ -51,6 +51,8 @@
  * addon probes and addresses windows by label through the callbacks, so a
  * label is free again the moment the platform reports the window closed.
  */
+import { systemTimers, type Timers } from './timers.js';
+
 import type { BaseWindow } from 'electron';
 
 export type CreateEditorWindowRequest = {
@@ -342,6 +344,9 @@ const RESIZE_SETTLE_MS = 200;
  * which is where every OS close stood before this.
  */
 const DETACH_DEADLINE_MS = 5_000;
+
+/** Maximum wait for all editor children before an approved owner destroy proceeds. */
+export const OWNER_EDITOR_DETACH_TIMEOUT_MS = DETACH_DEADLINE_MS;
 
 export const createPluginWindowHost = (deps: PluginWindowHostDeps): PluginWindowHost => {
     const editors = new Map<string, EditorRecord>();
@@ -815,13 +820,41 @@ export const createPluginWindowHost = (deps: PluginWindowHostDeps): PluginWindow
  */
 const ownersInTeardown = new WeakSet<object>();
 
+export type OwnerTeardownOptions = {
+    readonly timers?: Timers;
+    readonly detachTimeoutMs?: number;
+};
+
+const waitForOwnerEditorDetach = async (
+    detachOpenEditors: () => Promise<void>,
+    { timers = systemTimers, detachTimeoutMs = OWNER_EDITOR_DETACH_TIMEOUT_MS }: OwnerTeardownOptions
+): Promise<void> => {
+    let detach: Promise<void>;
+    try {
+        detach = Promise.resolve(detachOpenEditors());
+    } catch (error) {
+        detach = Promise.reject(error);
+    }
+    const handledDetach = detach.catch(() => undefined);
+    let deadline: ReturnType<Timers['setTimer']> | undefined;
+    const expiry = new Promise<void>((resolve) => {
+        deadline = timers.setTimer(resolve, detachTimeoutMs);
+    });
+    try {
+        await Promise.race([handledDetach, expiry]);
+    } finally {
+        deadline?.cancel();
+    }
+};
+
 export const interceptOwnerWindowTeardown = (
     owner: OwnerWindow,
     detachOpenEditors: () => Promise<void>,
     shouldProceed: () => boolean = () => true,
     onCancelled?: () => void,
     onDestroying?: () => void,
-    shouldInterceptClose: () => boolean = shouldProceed
+    shouldInterceptClose: () => boolean = shouldProceed,
+    options: OwnerTeardownOptions = {}
 ): { readonly destroyAfterEditorsDetach: (force?: boolean) => Promise<boolean> } => {
     let inFlight: Promise<boolean> | undefined;
     let forceDestroy = false;
@@ -838,21 +871,7 @@ export const interceptOwnerWindowTeardown = (
             let destroyed = false;
             try {
                 owner.hide();
-                try {
-                    await detachOpenEditors();
-                } catch {
-                    if (!forceDestroy && !shouldProceed()) {
-                        owner.show?.();
-                        onCancelled?.();
-                        return false;
-                    }
-                    if (!owner.isDestroyed()) {
-                        onDestroying?.();
-                        owner.destroy();
-                        destroyed = true;
-                    }
-                    return true;
-                }
+                await waitForOwnerEditorDetach(detachOpenEditors, options);
                 // A dirty/revision projection can arrive while a plugin editor
                 // drains. The original close approval is no longer authority
                 // to destroy this renderer session.

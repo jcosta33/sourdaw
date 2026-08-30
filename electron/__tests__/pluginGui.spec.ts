@@ -13,6 +13,7 @@ import {
     createIntervalRunLoopPump,
     createPluginWindowHost,
     interceptOwnerWindowTeardown,
+    OWNER_EDITOR_DETACH_TIMEOUT_MS,
     registerPluginWindowHost,
     type CreateEditorWindowRequest,
     type EditorSize,
@@ -548,6 +549,52 @@ describe('createPluginWindowHost', () => {
         expect(owner.destroy).toHaveBeenCalledTimes(1);
         expect(owner.show).not.toHaveBeenCalled();
         expect(onCancelled).not.toHaveBeenCalled();
+    });
+
+    it.each([
+        ['approved close', false],
+        ['forced crash', true],
+    ])('destroys the hidden owner after a never-settling detach on %s', async (_case, force) => {
+        const owner = createFakeOwnerWindow();
+        let expireDetach!: () => void;
+        const cancelDeadline = vi.fn();
+        const timers = {
+            setTimer: vi.fn((callback: () => void) => {
+                expireDetach = callback;
+                return { cancel: cancelDeadline };
+            }),
+        };
+        let rejectDetach!: (error: Error) => void;
+        const detachOpenEditors = vi.fn(
+            () =>
+                new Promise<void>((_resolve, reject) => {
+                    rejectDetach = reject;
+                })
+        );
+        const { destroyAfterEditorsDetach } = interceptOwnerWindowTeardown(
+            owner,
+            detachOpenEditors,
+            () => true,
+            undefined,
+            undefined,
+            undefined,
+            { timers }
+        );
+
+        const teardown = destroyAfterEditorsDetach(force);
+        await settled();
+        expect(owner.hide).toHaveBeenCalledOnce();
+        expect(owner.destroy).not.toHaveBeenCalled();
+        expect(timers.setTimer).toHaveBeenCalledWith(expect.any(Function), OWNER_EDITOR_DETACH_TIMEOUT_MS);
+
+        expireDetach();
+        await expect(teardown).resolves.toBe(true);
+        expect(owner.destroy).toHaveBeenCalledOnce();
+        expect(owner.isDestroyed()).toBe(true);
+
+        rejectDetach(new Error('late detach failure'));
+        await settled();
+        expect(owner.destroy).toHaveBeenCalledOnce();
     });
 
     it.each([
