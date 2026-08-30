@@ -148,6 +148,7 @@ export type ReviewResolutionLockOwner = {
     head: string;
     token: string;
     mutation: ReviewResolutionLockMutation;
+    legacyUnjournaled?: true;
 };
 export type ReviewResolutionTrustedLauncher = {
     primaryRoot: string;
@@ -2193,10 +2194,12 @@ function parseReviewResolutionLockOwner(contents: string, number: number): Revie
         ownerFence = { kind: 'pgid', pgid: value.pgid };
     }
     let mutation: ReviewResolutionLockMutation;
+    let legacyUnjournaled: true | undefined;
     if (value.version === 3 || value.version === 4) {
         mutation = parseReviewResolutionLockMutation((value as { mutation?: unknown }).mutation, label);
     } else {
         mutation = { phase: 'idle', epoch: 0 };
+        legacyUnjournaled = true;
     }
     return {
         version: 4,
@@ -2206,6 +2209,7 @@ function parseReviewResolutionLockOwner(contents: string, number: number): Revie
         head: canonicalGitObjectId(value.head, label),
         token: value.token,
         mutation,
+        ...(legacyUnjournaled === undefined ? {} : { legacyUnjournaled }),
     };
 }
 
@@ -2772,7 +2776,7 @@ function acquirePullRequestReviewResolutionLock(
     }
     const previousOwner = readReviewResolutionLockOwner(primaryRoot, previousOid, number);
     return fail(
-        `${pullRequestReviewResolutionLockScope(number)} is already being resolved by ${reviewResolutionOwnerFenceLabel(previousOwner.ownerFence)}`
+        `${pullRequestReviewResolutionLockScope(number)} is already being resolved by ${reviewResolutionOwnerFenceLabel(previousOwner.ownerFence)}; exact previous owner ${previousOid}; recover with ${reviewResolutionRecoveryCommand(number, previousOid)}`
     );
 }
 
@@ -3683,7 +3687,10 @@ function hasRecoveredReviewResolutionMutation(
             return hasVisibleRecoveredReply(thread, context, mutation.reviewId);
         case 'submitReview':
             return managedReplyMarkers(thread, context, ['COMMENTED'], false).some(
-                (candidate) => candidate.review.id === mutation.reviewId && candidate.review.body === mutation.body
+                (candidate) =>
+                    candidate.review.id === mutation.reviewId &&
+                    candidate.review.body === mutation.body &&
+                    candidate.review.commitOid === owner.head
             );
         case 'updateReviewBody':
             return (
@@ -3778,6 +3785,33 @@ function requireReplayableHistoricalReviewBodyUpdate(
     return review;
 }
 
+function requireReplayableHistoricalReviewSubmission(
+    number: number,
+    owner: ReviewResolutionLockOwner,
+    inspection: ReviewThreadInspection,
+    context: ResolutionReviewContext,
+    mutation: Extract<ReviewResolutionLockMutation, { phase: 'submitReview' }>,
+    port: ResolveReviewThreadPort
+): PullRequestReview {
+    if (mutation.body !== resolutionReviewBody(context, owner.head)) {
+        fail(`submit review recovery has an invalid historical body for ${mutation.reviewId}`);
+    }
+    const review = port.inspectPullRequestReview(number, mutation.reviewId, inspection.pullRequestId, inspection.head);
+    if (
+        review === null ||
+        review.id !== mutation.reviewId ||
+        review.state !== 'PENDING' ||
+        review.body !== mutation.body ||
+        review.commitOid !== owner.head ||
+        !isAuthorBotActor(review.authorNodeId, review.authorType)
+    ) {
+        fail(`submit review recovery could not prove an unlanded historical review ${mutation.reviewId}`);
+    }
+    const currentHeadContext = resolutionReviewContext(inspection.pullRequestId, owner.threadId, inspection.head);
+    assertExclusiveBackfillReviewAttachment(number, mutation.reviewId, currentHeadContext, port);
+    return review;
+}
+
 function assertReplayedReviewBodyReceipt(
     receipt: ReviewEnvelopeReceipt,
     review: PullRequestReview,
@@ -3795,12 +3829,34 @@ function assertReplayedReviewBodyReceipt(
     }
 }
 
+function assertReplayedReviewSubmissionReceipt(
+    receipt: ReviewEnvelopeReceipt,
+    review: PullRequestReview,
+    expectedBody: string
+): void {
+    if (
+        receipt.id !== review.id ||
+        receipt.state !== 'COMMENTED' ||
+        receipt.body !== expectedBody ||
+        receipt.commitOid !== review.commitOid ||
+        !isAuthorBotActor(receipt.authorNodeId, receipt.authorType) ||
+        receipt.clientMutationId !== submitReviewClientMutationId(review.id)
+    ) {
+        fail(`submit review returned an invalid result for ${review.id}`);
+    }
+}
+
 export function recoverReviewResolutionLockOwnerState(
     number: number,
     owner: ReviewResolutionLockOwner,
     port: ResolveReviewThreadPort,
     _clock: ReviewResolutionRecoveryClock = systemReviewResolutionRecoveryClock
 ): ReviewThreadInspection {
+    if (owner.legacyUnjournaled === true) {
+        fail(
+            'review-resolution recovery refuses an unjournaled legacy v2 lock owner without positive landed-mutation proof'
+        );
+    }
     let inspection = inspectReviewResolutionRecovery(number, owner, port);
     if (owner.mutation.phase === 'idle') {
         return inspection;
@@ -3834,7 +3890,20 @@ export function recoverReviewResolutionLockOwnerState(
             if (hasRecoveredReviewResolutionMutation(number, owner, inspection, context, inspection.thread!, port)) {
                 break;
             }
-            assertRecoveryHeadMatchesOwner(inspection.head, owner.head);
+            if (inspection.head !== owner.head) {
+                const review = requireReplayableHistoricalReviewSubmission(
+                    number,
+                    owner,
+                    inspection,
+                    context,
+                    mutation,
+                    port
+                );
+                const submitted = port.submitReview(mutation.reviewId, mutation.body);
+                assertReplayedReviewSubmissionReceipt(submitted, review, mutation.body);
+                inspection = inspectReviewResolutionRecovery(number, owner, port);
+                break;
+            }
             if (inspection.head === owner.head) {
                 convergePendingReplyStateBeforeSubmit(number, inspection, context, mutation.reviewId, port);
             }

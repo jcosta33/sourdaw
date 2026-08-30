@@ -255,6 +255,9 @@ type Input = {
     updateReceiptState?: ReviewState;
     updateReceiptAuthorNodeId?: string | null;
     updateReceiptAuthorType?: string | null;
+    submitReceiptReviewId?: string;
+    submitReceiptBody?: string;
+    submitReceiptCommitOid?: string | null;
 };
 function fakePort(input: Input = {}) {
     const calls: string[] = [];
@@ -638,10 +641,10 @@ function fakePort(input: Input = {}) {
                 throw new Error('submit review transport lost');
             }
             return {
-                id: currentReviewId,
+                id: input.submitReceiptReviewId ?? currentReviewId,
                 state: input.updateReceiptState ?? review.state,
-                body: review.body,
-                commitOid: review.commitOid,
+                body: input.submitReceiptBody ?? review.body,
+                commitOid: input.submitReceiptCommitOid ?? review.commitOid,
                 authorNodeId: input.submitReceiptAuthorNodeId ?? review.authorNodeId,
                 authorLogin: review.authorLogin,
                 authorType: input.submitReceiptAuthorType ?? review.authorType,
@@ -1681,7 +1684,9 @@ describe('review thread resolution', () => {
                                     operation
                                 ),
                         })
-                    ).toThrow(/already being resolved by process group/i);
+                    ).toThrow(
+                        /already being resolved by process group.*exact previous owner [0-9a-f]{40}.*pnpm review:resolve:recover 42 --owner [0-9a-f]{40}/i
+                    );
                     expect(withPullRequestReviewResolutionLock(repository, 43, threadId, head, () => 'other-pr')).toBe(
                         'other-pr'
                     );
@@ -2593,6 +2598,108 @@ describe('review thread resolution', () => {
         }
     });
 
+    it('replays an unlanded H1 pending submission at H2 after proving the historical review and current attachment', () => {
+        const repository = createTemporaryGitRepository();
+        const { port, calls, state } = fakePort({
+            heads: [movedHead, movedHead],
+            existingReplyCount: 1,
+            existingReplyReviewState: 'PENDING',
+            existingReplyReviewBody: resolutionReviewSummary(pullRequestId, threadId, head),
+            existingReplyReviewCommitOid: head,
+            expectedAttachedReviewThreadInspectionHead: movedHead,
+            expectedPullRequestReviewInspectionPullRequestId: pullRequestId,
+            expectedPullRequestReviewInspectionHead: movedHead,
+        });
+        try {
+            const ownerOid = writeLockOwnerBlob(repository, 999999, head, {
+                phase: 'submitReview',
+                epoch: 1,
+                reviewId,
+                body: resolutionReviewSummary(pullRequestId, threadId, head),
+            });
+            updateLock(repository, 42, ownerOid);
+            const inspection = recoverPullRequestReviewResolutionLock(repository, 42, ownerOid, (owner) =>
+                recoverReviewResolutionLockOwnerState(42, owner, port)
+            );
+            expect(calls).toEqual([
+                'inspect:1',
+                `inspectAttachedReviewThreads:42:${reviewId}:${pullRequestId}:${movedHead}`,
+                `submitReview:${reviewId}`,
+                'inspect:2',
+            ]);
+            expect(inspection.head).toBe(movedHead);
+            expect(state().reviews).toEqual([
+                expect.objectContaining({ id: reviewId, state: 'COMMENTED', commitOid: head }),
+            ]);
+            expect(readLockOid(repository, 42)).toBeUndefined();
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
+    it('preserves the recovery lock after a malformed historical submit receipt', () => {
+        const repository = createTemporaryGitRepository();
+        const { port } = fakePort({
+            existingReplyCount: 1,
+            existingReplyReviewState: 'PENDING',
+            existingReplyReviewBody: resolutionReviewSummary(pullRequestId, threadId, head),
+            submitReceiptAuthorType: 'User',
+        });
+        try {
+            const mutation = {
+                phase: 'submitReview' as const,
+                epoch: 1,
+                reviewId,
+                body: resolutionReviewSummary(pullRequestId, threadId, head),
+            };
+            const ownerOid = writeLockOwnerBlob(repository, 999999, head, mutation);
+            updateLock(repository, 42, ownerOid);
+            expect(() =>
+                recoverPullRequestReviewResolutionLock(repository, 42, ownerOid, (owner) =>
+                    recoverReviewResolutionLockOwnerState(42, owner, port)
+                )
+            ).toThrow(/submit review returned an invalid result/i);
+            expect(readLockOid(repository, 42)).toBeDefined();
+            expect(requireLockOwner(repository, 42)).toMatchObject({ threadId, head, mutation });
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
+    it('preserves the recovery lock when H1 submit recovery cannot prove the historical review at H2', () => {
+        const repository = createTemporaryGitRepository();
+        try {
+            const mutation = {
+                phase: 'submitReview' as const,
+                epoch: 1,
+                reviewId,
+                body: resolutionReviewSummary(pullRequestId, threadId, head),
+            };
+            const { port, calls } = fakePort({
+                heads: [movedHead],
+                existingReplyCount: 1,
+                existingReplyReviewState: 'PENDING',
+                existingReplyReviewBody: resolutionReviewSummary(pullRequestId, threadId, head),
+                existingReplyReviewCommitOid: movedHead,
+                expectedPullRequestReviewInspectionPullRequestId: pullRequestId,
+                expectedPullRequestReviewInspectionHead: movedHead,
+            });
+            const ownerOid = writeLockOwnerBlob(repository, 999999, head, mutation);
+            updateLock(repository, 42, ownerOid);
+
+            expect(() =>
+                recoverPullRequestReviewResolutionLock(repository, 42, ownerOid, (owner) =>
+                    recoverReviewResolutionLockOwnerState(42, owner, port)
+                )
+            ).toThrow(/could not prove an unlanded historical review/i);
+            expect(calls).toEqual(['inspect:1']);
+            expect(readLockOid(repository, 42)).toBeDefined();
+            expect(requireLockOwner(repository, 42)).toMatchObject({ threadId, head, mutation });
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
     it.each([
         ['client mutation id', { updateClientMutationId: 'wrong' }],
         ['review identity', { updateReceiptReviewId: 'PRR_wrong' }],
@@ -3006,21 +3113,14 @@ describe('review thread resolution', () => {
 
             process.kill(descendantPid, 'SIGKILL');
             await waitForProcessGroupGone(recorded.parentPid);
-            expect(
-                recoverPullRequestReviewResolutionLock(repository, 42, ownerOid, (owner) => ({
-                    owner,
-                    inspection: {
-                        pullRequestId,
-                        head: owner.head,
-                        thread: { id: owner.threadId, isResolved: false },
-                        pendingReviews: [],
-                    },
-                }))
-            ).toMatchObject({
-                owner: { threadId, head },
-                inspection: { head, thread: { id: threadId, isResolved: false }, pendingReviews: [] },
-            });
-            expect(readLockOid(repository, 42)).toBeUndefined();
+            const { port } = fakePort();
+            expect(() =>
+                recoverPullRequestReviewResolutionLock(repository, 42, ownerOid, (owner) =>
+                    recoverReviewResolutionLockOwnerState(42, owner, port)
+                )
+            ).toThrow(/refuses an unjournaled legacy v2 lock owner/i);
+            expect(readLockOid(repository, 42)).toBeDefined();
+            expect(requireLockOwner(repository, 42)).toMatchObject({ legacyUnjournaled: true, threadId, head });
         } finally {
             if (descendantPid !== undefined) {
                 try {
@@ -4560,6 +4660,23 @@ describe('review thread resolution', () => {
                             body: pendingReviewBody(head),
                             commit: { oid: head },
                             author: { id: REVIEWER_BOT_NODE_ID, login: 'renamed-reviewer', __typename: 'Bot' },
+                        },
+                    },
+                },
+            },
+        ],
+        [
+            'non-Bot author type',
+            {
+                data: {
+                    deletePullRequestReview: {
+                        clientMutationId: reviewId,
+                        pullRequestReview: {
+                            id: reviewId,
+                            state: 'PENDING',
+                            body: pendingReviewBody(head),
+                            commit: { oid: head },
+                            author: { id: AUTHOR_BOT_NODE_ID, login: 'renamed-author', __typename: 'User' },
                         },
                     },
                 },
