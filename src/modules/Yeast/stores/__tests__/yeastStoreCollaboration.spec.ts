@@ -159,6 +159,38 @@ describe('Yeast collaboration storage', () => {
         expect(localStorage.get()?.processors.map((processor) => processor.id)).toEqual(['local', 'remote']);
     });
 
+    it('rebases a pending local reorder over a newly hydrated remote field edit', () => {
+        const baseline = createBaseline(
+            createState([createProcessor('a'), createProcessor('b'), createProcessor('c')])
+        );
+        const localPeer = createPeer(clone(baseline));
+        const remotePeer = createPeer(clone(baseline));
+        const localStorage = createStorage();
+        const remoteStorage = createStorage();
+
+        configureAutomergeStoragePort(remotePeer.port);
+        remoteStorage.hydrate();
+        remoteStorage.set(
+            createState([
+                createProcessor('a'),
+                { ...createProcessor('b'), name: 'Remote renamed' },
+                createProcessor('c'),
+            ])
+        );
+        flushAutomergeStorageWrites();
+
+        configureAutomergeStoragePort(localPeer.port);
+        localStorage.hydrate();
+        localStorage.set(createState([createProcessor('c'), createProcessor('a'), createProcessor('b')]));
+        localPeer.replaceDoc(merge(localPeer.getDoc(), remotePeer.getDoc()));
+        expect(localStorage.hydrate()).toBe(true);
+        expect(localStorage.get()?.processors).toEqual([
+            createProcessor('c'),
+            createProcessor('a'),
+            { ...createProcessor('b'), name: 'Remote renamed' },
+        ]);
+    });
+
     it('round-trips a reorder of the processor list through storage', () => {
         // Mirrors what reorderYeastProcessor commits: the same three entities,
         // written back in a new order. A peer that hydrates afterward must see
