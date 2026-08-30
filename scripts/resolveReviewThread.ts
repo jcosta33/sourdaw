@@ -637,13 +637,10 @@ function resolveReviewThreadWithinMutation(
                             stalePendingReplyReview.id,
                             resolutionReviewBody(context, stalePendingReplyCommitOid)
                         );
-                        assertReviewEnvelopeReceipt(
+                        assertProvenReviewBodyReceipt(
                             updatedReview,
-                            updateReviewClientMutationId(stalePendingReplyReview.id),
-                            stalePendingReplyReview.state,
-                            resolutionReviewBody(context, stalePendingReplyCommitOid),
-                            stalePendingReplyCommitOid,
-                            'update review body'
+                            stalePendingReplyReview,
+                            resolutionReviewBody(context, stalePendingReplyCommitOid)
                         );
                         working = port.inspect(number, threadId);
                         assertExpectedHeadAfterMutation(working.head, expectedHead);
@@ -774,13 +771,10 @@ function resolveReviewThreadWithinMutation(
                 canonicalReview.id,
                 resolutionReviewBody(context, canonicalReviewCommitOid)
             );
-            assertReviewEnvelopeReceipt(
+            assertProvenReviewBodyReceipt(
                 updatedReview,
-                updateReviewClientMutationId(canonicalReview.id),
-                canonicalReview.state,
-                resolutionReviewBody(context, canonicalReviewCommitOid),
-                canonicalReviewCommitOid,
-                'update review body'
+                canonicalReview,
+                resolutionReviewBody(context, canonicalReviewCommitOid)
             );
             replyInspection = port.inspect(number, threadId);
             assertExpectedHeadAfterMutation(replyInspection.head, expectedHead);
@@ -1547,14 +1541,7 @@ function repairManagedCommentedReviewEnvelopes(
         assertExclusiveBackfillReviewAttachment(number, candidate.review.id, context, port);
         beforeUpdate?.();
         const updatedReview = port.updateReviewBody(candidate.review.id, expectedBody);
-        assertReviewEnvelopeReceipt(
-            updatedReview,
-            updateReviewClientMutationId(candidate.review.id),
-            candidate.review.state,
-            expectedBody,
-            reviewCommitOid,
-            'update review body'
-        );
+        assertProvenReviewBodyReceipt(updatedReview, candidate.review, expectedBody);
         repairedReviewIds.add(candidate.review.id);
         updated = true;
     }
@@ -3817,9 +3804,7 @@ function requireReplayableHistoricalReviewSubmission(
     mutation: Extract<ReviewResolutionLockMutation, { phase: 'submitReview' }>,
     port: ResolveReviewThreadPort
 ): PullRequestReview {
-    if (mutation.body !== resolutionReviewBody(context, owner.head)) {
-        fail(`submit review recovery has an invalid historical body for ${mutation.reviewId}`);
-    }
+    assertCanonicalHistoricalReviewSubmissionBody(owner, context, mutation);
     const review = port.inspectPullRequestReview(number, mutation.reviewId, inspection.pullRequestId, inspection.head);
     if (
         review === null ||
@@ -3836,7 +3821,17 @@ function requireReplayableHistoricalReviewSubmission(
     return review;
 }
 
-function assertReplayedReviewBodyReceipt(
+function assertCanonicalHistoricalReviewSubmissionBody(
+    owner: ReviewResolutionLockOwner,
+    context: ResolutionReviewContext,
+    mutation: Extract<ReviewResolutionLockMutation, { phase: 'submitReview' }>
+): void {
+    if (mutation.body !== resolutionReviewBody(context, owner.head)) {
+        fail(`submit review recovery has an invalid historical body for ${mutation.reviewId}`);
+    }
+}
+
+function assertProvenReviewBodyReceipt(
     receipt: ReviewEnvelopeReceipt,
     review: PullRequestReview,
     expectedBody: string
@@ -3853,7 +3848,7 @@ function assertReplayedReviewBodyReceipt(
     }
 }
 
-function assertReplayedReviewSubmissionReceipt(
+function assertProvenReviewSubmissionReceipt(
     receipt: ReviewEnvelopeReceipt,
     review: PullRequestReview,
     expectedBody: string
@@ -3926,10 +3921,11 @@ export function recoverReviewResolutionLockOwnerState(
                     port
                 );
                 const submitted = port.submitReview(mutation.reviewId, mutation.body);
-                assertReplayedReviewSubmissionReceipt(submitted, review, mutation.body);
+                assertProvenReviewSubmissionReceipt(submitted, review, mutation.body);
                 inspection = inspectReviewResolutionRecovery(number, owner, port);
                 break;
             }
+            assertCanonicalHistoricalReviewSubmissionBody(owner, context, mutation);
             if (inspection.head === owner.head) {
                 inspection = convergePendingReplyStateBeforeSubmit(
                     number,
@@ -3940,15 +3936,16 @@ export function recoverReviewResolutionLockOwnerState(
                 );
                 assertRecoveryHeadMatchesOwner(inspection.head, owner.head);
             }
-            const submitted = port.submitReview(mutation.reviewId, mutation.body);
-            assertReviewEnvelopeReceipt(
-                submitted,
-                submitReviewClientMutationId(mutation.reviewId),
-                'COMMENTED',
-                mutation.body,
-                requireReviewCommitOid(submitted, `pending review ${mutation.reviewId}`),
-                'submit review'
+            const review = requireReplayableHistoricalReviewSubmission(
+                number,
+                owner,
+                inspection,
+                context,
+                mutation,
+                port
             );
+            const submitted = port.submitReview(mutation.reviewId, mutation.body);
+            assertProvenReviewSubmissionReceipt(submitted, review, mutation.body);
             inspection = inspectReviewResolutionRecovery(number, owner, port);
             if (
                 repairManagedCommentedReviewEnvelopes(number, owner.threadId, inspection.thread, port, context, [
@@ -3976,7 +3973,7 @@ export function recoverReviewResolutionLockOwnerState(
                 port
             );
             const updated = port.updateReviewBody(mutation.reviewId, mutation.body);
-            assertReplayedReviewBodyReceipt(updated, review, mutation.body);
+            assertProvenReviewBodyReceipt(updated, review, mutation.body);
             inspection = inspectReviewResolutionRecovery(number, owner, port);
             break;
         }

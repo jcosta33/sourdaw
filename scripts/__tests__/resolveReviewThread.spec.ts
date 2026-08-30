@@ -2518,6 +2518,7 @@ describe('review thread resolution', () => {
                 'inspect:1',
                 'delete:PRRC_first_pending',
                 'inspect:2',
+                `inspectAttachedReviewThreads:42:${reviewId}:${pullRequestId}:${head}`,
                 `submitReview:${reviewId}`,
                 'inspect:3',
             ]);
@@ -2561,6 +2562,39 @@ describe('review thread resolution', () => {
                 head,
                 mutation: { phase: 'submitReview', epoch: 1, reviewId },
             });
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
+    it('preserves the submit-recovery lock without a public mutation when its historical body is malformed', () => {
+        const repository = createTemporaryGitRepository();
+        const mutation = {
+            phase: 'submitReview' as const,
+            epoch: 1,
+            reviewId,
+            body: 'forged review body',
+        };
+        const { port, calls } = fakePort({
+            existingReplyCount: 1,
+            existingReplyReviewState: 'PENDING',
+            existingReplyReviewBody: resolutionReviewSummary(pullRequestId, threadId, head),
+            attachManagedPendingReplyOnFirstInspect: true,
+        });
+        try {
+            const ownerOid = writeLockOwnerBlob(repository, 999999, head, mutation);
+            updateLock(repository, 42, ownerOid);
+
+            expect(() =>
+                recoverPullRequestReviewResolutionLock(repository, 42, ownerOid, (owner) =>
+                    recoverReviewResolutionLockOwnerState(42, owner, port)
+                )
+            ).toThrow(/submit review recovery has an invalid historical body/i);
+            expect(calls).toEqual(['inspect:1']);
+            const preservedOwnerOid = readLockOid(repository, 42);
+            expect(preservedOwnerOid).toBeDefined();
+            expect(preservedOwnerOid).not.toBe(ownerOid);
+            expect(requireLockOwner(repository, 42)).toMatchObject({ threadId, head, mutation });
         } finally {
             rmSync(repository, { recursive: true, force: true });
         }
@@ -2760,6 +2794,46 @@ describe('review thread resolution', () => {
                 )
             ).toThrow(/submit review returned an invalid result/i);
             expect(readLockOid(repository, 42)).toBeDefined();
+            expect(requireLockOwner(repository, 42)).toMatchObject({ threadId, head, mutation });
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
+    it.each([
+        ['review identity', { submitReceiptReviewId: 'PRR_wrong' }],
+        ['historical commit', { submitReceiptCommitOid: movedHead }],
+    ] as const)('preserves the same-head submit-recovery lock after a malformed %s receipt', (_label, input) => {
+        const repository = createTemporaryGitRepository();
+        const mutation = {
+            phase: 'submitReview' as const,
+            epoch: 1,
+            reviewId,
+            body: resolutionReviewSummary(pullRequestId, threadId, head),
+        };
+        const { port, calls } = fakePort({
+            ...input,
+            existingReplyCount: 1,
+            existingReplyReviewState: 'PENDING',
+            existingReplyReviewBody: resolutionReviewSummary(pullRequestId, threadId, head),
+        });
+        try {
+            const ownerOid = writeLockOwnerBlob(repository, 999999, head, mutation);
+            updateLock(repository, 42, ownerOid);
+
+            expect(() =>
+                recoverPullRequestReviewResolutionLock(repository, 42, ownerOid, (owner) =>
+                    recoverReviewResolutionLockOwnerState(42, owner, port)
+                )
+            ).toThrow(/submit review returned an invalid result/i);
+            expect(calls).toEqual([
+                'inspect:1',
+                `inspectAttachedReviewThreads:42:${reviewId}:${pullRequestId}:${head}`,
+                `submitReview:${reviewId}`,
+            ]);
+            const preservedOwnerOid = readLockOid(repository, 42);
+            expect(preservedOwnerOid).toBeDefined();
+            expect(preservedOwnerOid).not.toBe(ownerOid);
             expect(requireLockOwner(repository, 42)).toMatchObject({ threadId, head, mutation });
         } finally {
             rmSync(repository, { recursive: true, force: true });
@@ -4771,6 +4845,7 @@ describe('review thread resolution', () => {
                 'inspect:1',
                 'delete:PRRC_first_pending',
                 'inspect:2',
+                `inspectAttachedReviewThreads:42:${reviewId}:${pullRequestId}:${head}`,
                 `submitReview:${reviewId}`,
                 'inspect:3',
             ]);
@@ -7398,6 +7473,10 @@ describe('review thread resolution', () => {
         ).toEqual([]);
     });
     it.each([
+        ['review identity', { updateReceiptReviewId: 'PRR_wrong' }],
+        ['body', { updateReceiptBody: 'wrong body' }],
+        ['historical commit', { updateReceiptCommitOid: movedHead }],
+        ['client mutation id', { updateClientMutationId: 'wrong' }],
         ['wrong immutable actor ID', { updateReceiptAuthorNodeId: REVIEWER_BOT_NODE_ID }],
         ['non-Bot type', { updateReceiptAuthorType: 'User' as const }],
     ])('rejects an update-review-body receipt with %s before submit resolve delete or log', (_case, overrides) => {
@@ -7799,20 +7878,28 @@ describe('review thread resolution', () => {
         ]);
         expectCanonicalResolutionReview(state().reviews[0]!);
     });
-    it('fails closed on an invalid update-review-body receipt during completed-resolution backfill before logging success', () => {
-        const { port, calls, authorNodeId } = fakePort({
-            isResolved: true,
-            initialResolvedByNodeId: AUTHOR_BOT_NODE_ID,
-            initialResolvedByType: 'User',
-            existingReplyCount: 1,
-            existingReplyReviewBody: '',
-            updateClientMutationId: 'wrong',
-        });
-        expect(() => resolveReviewThread(42, threadId, head, authorNodeId, port)).toThrow(
-            /update review body returned an invalid result/i
-        );
-        expect(calls.filter((call) => call.startsWith('resolve:') || call.startsWith('log:'))).toEqual([]);
-    });
+    it.each([
+        ['review identity', { updateReceiptReviewId: 'PRR_wrong' }],
+        ['body', { updateReceiptBody: 'wrong body' }],
+        ['historical commit', { updateReceiptCommitOid: movedHead }],
+        ['client mutation id', { updateClientMutationId: 'wrong' }],
+    ] as const)(
+        'fails closed on a completed-resolution backfill receipt with the wrong %s before logging success',
+        (_label, input) => {
+            const { port, calls, authorNodeId } = fakePort({
+                isResolved: true,
+                initialResolvedByNodeId: AUTHOR_BOT_NODE_ID,
+                initialResolvedByType: 'User',
+                existingReplyCount: 1,
+                existingReplyReviewBody: '',
+                ...input,
+            });
+            expect(() => resolveReviewThread(42, threadId, head, authorNodeId, port)).toThrow(
+                /update review body returned an invalid result/i
+            );
+            expect(calls.filter((call) => call.startsWith('resolve:') || call.startsWith('log:'))).toEqual([]);
+        }
+    );
     it('rejects a completed resolution with the wrong resolvedBy typename', () => {
         const { port, calls, authorNodeId } = fakePort({
             isResolved: true,
