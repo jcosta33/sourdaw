@@ -25,7 +25,7 @@ const mocks = vi.hoisted(() => ({
     reconcileBudget: vi.fn(() => null),
     recoverStemResources: vi.fn(),
     retainResources: vi.fn(),
-    settleLease: vi.fn(() => ({ accepted: true, warning: null })),
+    settleLease: vi.fn((): { accepted: boolean; warning: string | null } => ({ accepted: true, warning: null })),
     settleResources: vi.fn(),
     settleBatchOutcome: vi.fn(async () => ({ status: 'executed' })),
     settleReplay: vi.fn(async () => ({ status: 'executed' })),
@@ -254,6 +254,18 @@ function createCommittedWithWarningBatchResult(): CompletedBatchResult {
     return { ...result, receipt: createReceipt(receiptObservation) } satisfies CompletedBatchResult;
 }
 
+function createExecutedWithWarningBatchResult(): Extract<CompletedBatchResult, { status: 'executed-with-warning' }> {
+    const result = {
+        status: 'executed-with-warning',
+        actions: createEmptyActions(),
+        warning: 'runtime follow-up pending',
+    } satisfies Parameters<typeof createReceipt>[0];
+    return {
+        ...result,
+        receipt: createReceipt(result),
+    } satisfies Extract<CompletedBatchResult, { status: 'executed-with-warning' }>;
+}
+
 function createNoOpBatchResult(): CompletedBatchResult {
     const result = { status: 'no-op', actions: createEmptyActions() } satisfies Parameters<typeof createReceipt>[0];
     return { ...result, receipt: createReceipt(result) } satisfies CompletedBatchResult;
@@ -311,14 +323,17 @@ function createCancelledBatchResult(): CompletedBatchResult {
     return { ...result, receipt: createReceipt(result) } satisfies CompletedBatchResult;
 }
 
-function createInput(executionFlight: Input['executionFlight']): Input {
+function createInput(
+    executionFlight: Input['executionFlight'],
+    input: { trackedWorkLease?: NonNullable<ReadyAdmission['trackedWorkLease']> } = {}
+): Input {
     return {
         executionAdmission: {
             status: 'ready',
             confirmation,
             commandBatch,
             approvedBatchId: 'batch-1',
-            trackedWorkLease: null,
+            trackedWorkLease: input.trackedWorkLease ?? null,
             commandBudget: null,
             priorVerifiedBatchReceipt: null,
             recoveringPendingEffects: false,
@@ -442,6 +457,43 @@ describe('settleConfirmedCommandExecution', () => {
 
         expect(mocks.settleBatchOutcome).toHaveBeenCalledWith(
             expect.objectContaining({ batchResult: expect.objectContaining({ status: 'committed-with-warning' }) })
+        );
+    });
+
+    it('settles a warned runtime result with authoritative receipt evidence', async () => {
+        const trackedWorkLease = {
+            leaseId: 'lease-1',
+            runId: 'run-1',
+            workId: 'work-1',
+            attempt: 1,
+            ownerKind: 'command',
+            cancellationGeneration: 0,
+            idempotencyKey: 'key-1',
+            receiptIdentity: 'receipt-1',
+            cleanupOwner: 'command',
+            idempotent: true,
+            retriable: false,
+            claimedAt: 0,
+            terminalState: null,
+            settledAt: null,
+        } satisfies NonNullable<ReadyAdmission['trackedWorkLease']>;
+        mocks.settleLease.mockReturnValueOnce({ accepted: false, warning: 'authoritative receipt warning' });
+
+        await settleConfirmedCommandExecution(
+            createInput(createCompletedFlight(createExecutedWithWarningBatchResult()), { trackedWorkLease })
+        );
+
+        expect(mocks.settleLease).toHaveBeenCalledWith(
+            expect.objectContaining({
+                lease: trackedWorkLease,
+                terminalState: 'completed',
+                evidence: 'verified-command-receipt',
+            })
+        );
+        expect(mocks.settleBatchOutcome).toHaveBeenCalledWith(
+            expect.objectContaining({
+                trackedLeaseSettlement: { accepted: false, warning: 'authoritative receipt warning' },
+            })
         );
     });
 
