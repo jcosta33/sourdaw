@@ -108,7 +108,7 @@ function createReviewObligation(input?: { commands?: string[]; effectCommandIds?
     agentRunLifecycle.recordCommittedWork({
         runId: 'run-review',
         workId: 'batch-review',
-        receiptIdentity: '1:run-review:batch-review:partially-committed',
+        receiptIdentity: '2:run-review:batch-review:partially-committed',
         committedRevision: 'revision-original',
         completesRun: false,
         committedAt: 2,
@@ -125,7 +125,7 @@ function createReviewObligation(input?: { commands?: string[]; effectCommandIds?
                 remediation: 'manual-repair' as const,
                 state: 'pending' as const,
             })),
-            receiptIdentity: '1:run-review:batch-review:partially-committed',
+            receiptIdentity: '2:run-review:batch-review:partially-committed',
             recovery: 'manual-repair',
             serializedBatch: commandBatch.serialized,
             authority: commandBatch.authority,

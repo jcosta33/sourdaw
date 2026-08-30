@@ -71,7 +71,7 @@ function createObligation() {
     agentRunLifecycle.recordCommittedWork({
         runId: 'run-hydrate-review',
         workId: 'batch-hydrate-review',
-        receiptIdentity: '1:run-hydrate-review:batch-hydrate-review:partially-committed',
+        receiptIdentity: '2:run-hydrate-review:batch-hydrate-review:partially-committed',
         committedRevision: 'revision-source',
         completesRun: false,
         committedAt: 2,
@@ -90,7 +90,7 @@ function createObligation() {
                     state: 'pending',
                 },
             ],
-            receiptIdentity: '1:run-hydrate-review:batch-hydrate-review:partially-committed',
+            receiptIdentity: '2:run-hydrate-review:batch-hydrate-review:partially-committed',
             recovery: 'manual-repair',
             serializedBatch: commandBatch.serialized,
             authority: commandBatch.authority,

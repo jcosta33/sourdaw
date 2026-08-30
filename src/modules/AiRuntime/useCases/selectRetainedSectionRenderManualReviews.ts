@@ -1,5 +1,5 @@
 import { getExactAgentSectionRenderArtifact } from '#/modules/AudioRendering/useCases';
-import { parseVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
+import { getVerifiedBatchReceiptIdentity, parseVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
 import { type RenderProjectSectionJobSnapshot } from '#/utils/handlerContract';
 
 import { type AgentRunPendingEffectContinuation, type AgentRunState } from '../models/AgentRun';
@@ -31,19 +31,6 @@ type RetainedSectionRenderManualReview = {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function hasExactPartiallyCommittedReceiptIdentity(identity: string, runId: string, batchId: string): boolean {
-    const [schemaVersion, receiptRunId, receiptBatchId, outcome, ...remainder] = identity.split(':');
-    return (
-        remainder.length === 0 &&
-        schemaVersion !== undefined &&
-        /^\d+$/.test(schemaVersion) &&
-        Number(schemaVersion) > 0 &&
-        receiptRunId === runId &&
-        receiptBatchId === batchId &&
-        outcome === 'partially-committed'
-    );
 }
 
 function hasSameValue(left: unknown, right: unknown): boolean {
@@ -175,14 +162,15 @@ export function selectRetainedSectionRenderManualReviews(
                 continue;
             }
             const receipts = run.receipts.filter(({ workId }) => workId === continuation.batchId);
+            const exactReceiptIdentity = getVerifiedBatchReceiptIdentity({
+                runId: run.runId,
+                batchId: continuation.batchId,
+                outcome: 'partially-committed',
+            });
             if (
-                !hasExactPartiallyCommittedReceiptIdentity(
-                    continuation.receiptIdentity,
-                    run.runId,
-                    continuation.batchId
-                ) ||
+                continuation.receiptIdentity !== exactReceiptIdentity ||
                 receipts.length !== 1 ||
-                receipts[0]?.receiptIdentity !== continuation.receiptIdentity
+                receipts[0]?.receiptIdentity !== exactReceiptIdentity
             ) {
                 continue;
             }

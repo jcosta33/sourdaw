@@ -106,7 +106,7 @@ function createFixture(input?: {
     const continuation = {
         batchId: 'batch-review',
         effects,
-        receiptIdentity: '1:run-review:batch-review:partially-committed',
+        receiptIdentity: '2:run-review:batch-review:partially-committed',
         recovery: 'manual-repair' as const,
         serializedBatch: commandBatch.serialized,
         authority: commandBatch.authority,
@@ -192,7 +192,7 @@ describe('selectRetainedSectionRenderManualReviews', () => {
         expect(reviews[0]?.binding).toEqual({
             runId: 'run-review',
             batchId: 'batch-review',
-            receiptIdentity: '1:run-review:batch-review:partially-committed',
+            receiptIdentity: '2:run-review:batch-review:partially-committed',
             sourceRevision: 'revision-original',
             commands: [
                 { commandId: 'command-a', jobs: [verse, chorus] },
@@ -229,7 +229,7 @@ describe('selectRetainedSectionRenderManualReviews', () => {
 
     it('rejects a sole run receipt whose identity differs from the exact durable binding', () => {
         const { state } = createFixture();
-        state.runs[0]!.receipts[0]!.receiptIdentity = '1:run-review:batch-review:committed';
+        state.runs[0]!.receipts[0]!.receiptIdentity = '2:run-review:batch-review:committed';
 
         expect(selectRetainedSectionRenderManualReviews(state)).toEqual([]);
         expect(artifacts.getExact).not.toHaveBeenCalled();
@@ -237,10 +237,21 @@ describe('selectRetainedSectionRenderManualReviews', () => {
 
     it('rejects a coherent committed-outcome binding before artifact lookup', () => {
         const { state } = createFixture();
-        const committedIdentity = '1:run-review:batch-review:committed';
+        const committedIdentity = '2:run-review:batch-review:committed';
         state.runs[0]!.receipts[0]!.receiptIdentity = committedIdentity;
         state.runs[0]!.pendingEffectContinuations[0]!.receiptIdentity = committedIdentity;
         state.pendingEffectRecoveryLedger![0]!.receiptIdentity = committedIdentity;
+
+        expect(selectRetainedSectionRenderManualReviews(state)).toEqual([]);
+        expect(artifacts.getExact).not.toHaveBeenCalled();
+    });
+
+    it('rejects a coherent non-current receipt schema before artifact lookup', () => {
+        const { state } = createFixture();
+        const futureIdentity = '999:run-review:batch-review:partially-committed';
+        state.runs[0]!.receipts[0]!.receiptIdentity = futureIdentity;
+        state.runs[0]!.pendingEffectContinuations[0]!.receiptIdentity = futureIdentity;
+        state.pendingEffectRecoveryLedger![0]!.receiptIdentity = futureIdentity;
 
         expect(selectRetainedSectionRenderManualReviews(state)).toEqual([]);
         expect(artifacts.getExact).not.toHaveBeenCalled();
