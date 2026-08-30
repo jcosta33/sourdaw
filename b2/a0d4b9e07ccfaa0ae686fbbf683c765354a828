@@ -1,0 +1,39 @@
+electron/main.ts
+  s_ae074277795b45::t_c25998f5211e35 164-165
+src/modules/TimelineEditor/presentations/views/ClipView/PianoRoll.tsx
+  s_ae074277795b45::t_546fbb574d7946 28,342
+  s_ae074277795b45::t_c25998f5211e35 343-347
+  s_ae074277795b45::t_d235036c428284 348-349,359
+electron/applicationMenu.ts
+  s_ae074277795b45::t_c25998f5211e35 44-45,122-140,151,157,159-161,164-166
+src/modules/WorkspaceShell/presentations/hooks/useNativeApplicationMenu.ts
+  s_ae074277795b45::t_c25998f5211e35 81-86
+  s_ae074277795b45::t_e6c1b586ba8268 87
+src/modules/CommandInterface/useCases/isCanvasEditorCommandRequest.ts
+  s_ae074277795b45::t_546fbb574d7946 1-13
+src/modules/CommandInterface/useCases/index.ts
+  s_ae074277795b45::t_546fbb574d7946 9
+electron/__tests__/applicationMenu.spec.ts
+  s_ae074277795b45::t_62e9430b392e80 113,123,131,137-163
+src/modules/WorkspaceShell/presentations/hooks/__tests__/useNativeApplicationMenu.spec.tsx
+  s_ae074277795b45::t_21e727f684c446 130-133,383,406,409-410,416-445
+  s_ae074277795b45::t_8706e8625ffb1b 446-448
+src/modules/CommandInterface/useCases/dispatchCanvasEditorCommand.ts
+  s_ae074277795b45::t_c25998f5211e35 3-7,20-22
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "b2a0d4b9e07ccfaa0ae686fbbf683c765354a828",
+  "prompts": {},
+  "sessions": {
+    "s_ae074277795b45": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04ab5-5234-7100-be1c-76ebfaba88d3",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
