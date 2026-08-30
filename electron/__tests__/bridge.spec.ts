@@ -137,7 +137,7 @@ describe('native menu transport', () => {
             title: 'Song',
             dirty: true,
             durabilityPending: false,
-            projectId: 'project-a',
+            projectKey: 'project-a',
             revision: 'revision-1',
             recentProjects: [{ key: 'project-a', name: 'Song' }],
         } as const;
@@ -145,7 +145,7 @@ describe('native menu transport', () => {
             requestId: 7,
             saved: true,
             dirty: false,
-            projectId: 'project-a',
+            projectKey: 'project-a',
             revision: 'revision-2',
         } as const;
 
@@ -166,17 +166,29 @@ describe('native menu transport', () => {
         fake.push(NATIVE_MENU_ACTION_CHANNEL, { action: 'edit:undo' });
         fake.push(NATIVE_MENU_ACTION_CHANNEL, { action: 'unknown' });
         fake.push(NATIVE_MENU_ACTION_CHANNEL, 'edit:undo');
-        fake.push(NATIVE_MENU_ACTION_CHANNEL, { action: 'project:discard', projectId: 7, revision: 'revision-1' });
         fake.push(NATIVE_MENU_ACTION_CHANNEL, {
             action: 'project:discard',
-            projectId: 'project',
+            projectId: 'legacy-canonical-id',
+            revision: 'revision-1',
+        });
+        fake.push(NATIVE_MENU_ACTION_CHANNEL, {
+            action: 'project:discard',
+            requestId: 2,
+            projectKey: 7,
+            revision: 'revision-1',
+        });
+        fake.push(NATIVE_MENU_ACTION_CHANNEL, {
+            action: 'project:discard',
+            requestId: 2,
+            projectKey: 'project',
             revision: 'revision-1',
         });
 
         expect(listener).toHaveBeenNthCalledWith(1, { action: 'edit:undo' });
         expect(listener).toHaveBeenNthCalledWith(2, {
             action: 'project:discard',
-            projectId: 'project',
+            requestId: 2,
+            projectKey: 'project',
             revision: 'revision-1',
         });
         expect(listener).toHaveBeenCalledTimes(2);

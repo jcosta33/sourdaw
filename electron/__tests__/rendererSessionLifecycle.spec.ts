@@ -38,11 +38,11 @@ describe('renderer session lifecycle', () => {
             send: () => undefined,
             onApprovalRevoked: () => lifecycle.cancelTeardown(),
         });
-        coordinator.updateProject({ title: 'Song', dirty: false, projectId: 'project-a', revision: 'revision-1' });
+        coordinator.updateProject({ title: 'Song', dirty: false, projectKey: 'project-a', revision: 'revision-1' });
 
         await coordinator.requestClose();
         lifecycle.approveTeardown();
-        coordinator.updateProject({ title: 'Song', dirty: true, projectId: 'project-a', revision: 'revision-2' });
+        coordinator.updateProject({ title: 'Song', dirty: true, projectKey: 'project-a', revision: 'revision-2' });
 
         expect(lifecycle.shouldRecreateAfterCrash()).toBe(true);
     });

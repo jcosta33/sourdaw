@@ -28,6 +28,7 @@ const projectActions = vi.hoisted(() => ({
     pickAndImportProjectFile: vi.fn(async () => true),
     exportProjectFile: vi.fn(async () => undefined),
     getRecentProjects: vi.fn(() => []),
+    getProjectSnapshotKey: vi.fn((createdAt: number) => `sourdaw:project:${createdAt}`),
     loadRecentProject: vi.fn(async () => 'committed'),
     recentProjectChanges: { subscribe: vi.fn((_listener: () => void) => () => undefined) },
 }));
@@ -151,7 +152,7 @@ describe('useNativeApplicationMenu', () => {
             title: 'Song',
             dirty: true,
             durabilityPending: false,
-            projectId: 'project',
+            projectKey: 'sourdaw:project:1',
             revision: 'revision-1',
             recentProjects: [],
         });
@@ -168,7 +169,7 @@ describe('useNativeApplicationMenu', () => {
         input.remove();
     });
 
-    it('keeps a legacy project close-authoritative until canonical identity migration republishes it', () => {
+    it('keeps a legacy project close-authoritative with the same snapshot key after canonical identity migration', () => {
         projectState.projectId = undefined;
         const { rerender } = renderHook(
             ({ projectId }) =>
@@ -189,14 +190,14 @@ describe('useNativeApplicationMenu', () => {
         );
 
         expect(desktop.projectState).toHaveBeenLastCalledWith(
-            expect.objectContaining({ projectId: 'created-at:1', revision: 'revision-1' })
+            expect.objectContaining({ projectKey: 'sourdaw:project:1', revision: 'revision-1' })
         );
 
         projectState.projectId = 'migrated-project';
         rerender({ projectId: 'migrated-project' });
 
         expect(desktop.projectState).toHaveBeenLastCalledWith(
-            expect.objectContaining({ projectId: 'migrated-project', revision: 'revision-1' })
+            expect.objectContaining({ projectKey: 'sourdaw:project:1', revision: 'revision-1' })
         );
     });
 
@@ -285,14 +286,19 @@ describe('useNativeApplicationMenu', () => {
             })
         );
 
-        desktop.listener?.({ action: 'project:save', requestId: 8, projectId: 'project', revision: 'revision-1' });
+        desktop.listener?.({
+            action: 'project:save',
+            requestId: 8,
+            projectKey: 'sourdaw:project:1',
+            revision: 'revision-1',
+        });
 
         await vi.waitFor(() =>
             expect(desktop.saveResult).toHaveBeenCalledWith({
                 requestId: 8,
                 saved: true,
                 dirty: true,
-                projectId: 'project',
+                projectKey: 'sourdaw:project:1',
                 revision: 'revision-1',
             })
         );
@@ -316,14 +322,19 @@ describe('useNativeApplicationMenu', () => {
         );
         crdt.captureProjectRevision.mockReturnValue('revision-2');
 
-        desktop.listener?.({ action: 'project:save', requestId: 8, projectId: 'project', revision: 'revision-1' });
+        desktop.listener?.({
+            action: 'project:save',
+            requestId: 8,
+            projectKey: 'sourdaw:project:1',
+            revision: 'revision-1',
+        });
 
         await vi.waitFor(() =>
             expect(desktop.saveResult).toHaveBeenCalledWith({
                 requestId: 8,
                 saved: false,
                 dirty: true,
-                projectId: 'project',
+                projectKey: 'sourdaw:project:1',
                 revision: 'revision-2',
             })
         );
@@ -353,27 +364,34 @@ describe('useNativeApplicationMenu', () => {
             })
         );
 
-        desktop.listener?.({ action: 'project:save', requestId: 9, projectId: 'project', revision: 'revision-1' });
+        desktop.listener?.({
+            action: 'project:save',
+            requestId: 9,
+            projectKey: 'sourdaw:project:1',
+            revision: 'revision-1',
+        });
 
         await vi.waitFor(() =>
             expect(desktop.saveResult).toHaveBeenCalledWith({
                 requestId: 9,
                 saved: true,
                 dirty: false,
-                projectId: 'project',
+                projectKey: 'sourdaw:project:1',
                 revision: 'revision-1',
             })
         );
     });
 
-    it('reports the CRDT revision produced by a successful close save', async () => {
+    it('reports the same stable project key after a close save migrates legacy canonical identity', async () => {
+        projectState.projectId = undefined;
         projectActions.saveProject.mockImplementation(async () => {
+            projectState.projectId = 'migrated-project';
             crdt.captureProjectRevision.mockReturnValue('revision-2');
             return true;
         });
         renderHook(() =>
             useNativeApplicationMenu({
-                projectId: 'project',
+                projectId: undefined,
                 name: 'Song',
                 createdAt: 1,
                 updatedAt: 2,
@@ -387,14 +405,19 @@ describe('useNativeApplicationMenu', () => {
             })
         );
 
-        desktop.listener?.({ action: 'project:save', requestId: 9, projectId: 'project', revision: 'revision-1' });
+        desktop.listener?.({
+            action: 'project:save',
+            requestId: 9,
+            projectKey: 'sourdaw:project:1',
+            revision: 'revision-1',
+        });
 
         await vi.waitFor(() =>
             expect(desktop.saveResult).toHaveBeenCalledWith({
                 requestId: 9,
                 saved: true,
                 dirty: false,
-                projectId: 'project',
+                projectKey: 'sourdaw:project:1',
                 revision: 'revision-2',
             })
         );
@@ -417,14 +440,19 @@ describe('useNativeApplicationMenu', () => {
             })
         );
 
-        desktop.listener?.({ action: 'project:discard', requestId: 7, projectId: 'project', revision: 'revision-1' });
+        desktop.listener?.({
+            action: 'project:discard',
+            requestId: 7,
+            projectKey: 'sourdaw:project:1',
+            revision: 'revision-1',
+        });
 
         await vi.waitFor(() => expect(projectActions.discardProjectChanges).toHaveBeenCalledTimes(1));
         expect(desktop.saveResult).toHaveBeenCalledWith({
             requestId: 7,
             saved: true,
             dirty: false,
-            projectId: 'project',
+            projectKey: 'sourdaw:project:1',
             revision: 'revision-1',
         });
     });
@@ -447,14 +475,19 @@ describe('useNativeApplicationMenu', () => {
         );
         crdt.captureProjectRevision.mockReturnValue('revision-2');
 
-        desktop.listener?.({ action: 'project:discard', requestId: 7, projectId: 'project', revision: 'revision-1' });
+        desktop.listener?.({
+            action: 'project:discard',
+            requestId: 7,
+            projectKey: 'sourdaw:project:1',
+            revision: 'revision-1',
+        });
 
         await vi.waitFor(() =>
             expect(desktop.saveResult).toHaveBeenCalledWith({
                 requestId: 7,
                 saved: false,
                 dirty: true,
-                projectId: 'project',
+                projectKey: 'sourdaw:project:1',
                 revision: 'revision-2',
             })
         );
@@ -464,13 +497,14 @@ describe('useNativeApplicationMenu', () => {
     it.each([
         ['project:save', 'saveProject'],
         ['project:discard', 'discardProjectChanges'],
-    ] as const)('rejects %s when its project identity no longer matches', async (action, sideEffect) => {
+    ] as const)('rejects %s when a different project snapshot key is active', async (action, sideEffect) => {
         projectState.projectId = 'project-b';
+        projectState.createdAt = 2;
         renderHook(() =>
             useNativeApplicationMenu({
                 projectId: 'project-b',
                 name: 'Song',
-                createdAt: 1,
+                createdAt: 2,
                 updatedAt: 2,
                 dirty: true,
                 loading: false,
@@ -482,14 +516,14 @@ describe('useNativeApplicationMenu', () => {
             })
         );
 
-        desktop.listener?.({ action, requestId: 7, projectId: 'project-a', revision: 'revision-1' });
+        desktop.listener?.({ action, requestId: 7, projectKey: 'sourdaw:project:1', revision: 'revision-1' });
 
         await vi.waitFor(() =>
             expect(desktop.saveResult).toHaveBeenCalledWith({
                 requestId: 7,
                 saved: false,
                 dirty: true,
-                projectId: 'project-b',
+                projectKey: 'sourdaw:project:2',
                 revision: 'revision-1',
             })
         );
@@ -515,14 +549,19 @@ describe('useNativeApplicationMenu', () => {
             })
         );
 
-        desktop.listener?.({ action: 'project:discard', requestId: 7, projectId: 'project', revision: 'revision-1' });
+        desktop.listener?.({
+            action: 'project:discard',
+            requestId: 7,
+            projectKey: 'sourdaw:project:1',
+            revision: 'revision-1',
+        });
 
         await vi.waitFor(() =>
             expect(desktop.saveResult).toHaveBeenCalledWith({
                 requestId: 7,
                 saved: true,
                 dirty: true,
-                projectId: 'project',
+                projectKey: 'sourdaw:project:1',
                 revision: 'revision-1',
             })
         );
@@ -724,7 +763,7 @@ describe('useNativeApplicationMenu', () => {
             title: 'Song',
             dirty: false,
             durabilityPending: false,
-            projectId: 'project',
+            projectKey: 'sourdaw:project:1',
             revision: 'revision-1',
             recentProjects: [{ key: 'recent-2', name: 'Second' }],
         });

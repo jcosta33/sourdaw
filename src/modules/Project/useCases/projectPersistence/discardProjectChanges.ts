@@ -1,13 +1,13 @@
 import { captureProjectRevision, compactProject } from '#/modules/CrdtDocument/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
-import { NAMED_PROJECT_KEY_PREFIX } from '../../models/ProjectData';
 import { readNamedProjectJson } from '../../repositories/project/readNamedProjectJson';
 import { projectStore } from '../../stores/projectStore';
 import { getRecentProjects } from '../recentProjects/helpers';
 import { loadRecentProject } from '../recentProjects/loadRecentProject';
 
 import { captureProjectTransitionAuthority } from './captureProjectTransitionAuthority';
+import { getProjectSnapshotKey } from './getProjectSnapshotKey';
 import { newProject } from './newProject';
 
 const notifyDiscardFailure = (message: string): false => {
@@ -22,7 +22,7 @@ export async function discardProjectChanges(): Promise<boolean> {
         return false;
     }
 
-    const snapshotKey = `${NAMED_PROJECT_KEY_PREFIX}${project.createdAt}`;
+    const snapshotKey = getProjectSnapshotKey(project.createdAt);
     const hasRecentEntry = getRecentProjects().some((entry) => entry.key === snapshotKey);
     const transitionAuthority = captureProjectTransitionAuthority();
     const transitionWasCurrent = transitionAuthority.isCurrent();

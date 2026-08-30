@@ -19,7 +19,7 @@ const canQueueForWindowlessRenderer = (intent: NativeMenuIntent): boolean =>
     (intent.action === 'project:open-recent' && intent.recentKey !== undefined) ||
     ((intent.action === 'project:save' || intent.action === 'project:discard') &&
         intent.requestId !== undefined &&
-        intent.projectId !== undefined &&
+        intent.projectKey !== undefined &&
         intent.revision !== undefined);
 
 /** Routes live menu actions and safely queues supported project actions for a new macOS session window. */

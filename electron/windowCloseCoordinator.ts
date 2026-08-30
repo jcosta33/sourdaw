@@ -8,8 +8,8 @@ export type ProjectCloseState = {
     readonly dirty: boolean;
     /** A clean replacement is not safe to discard until its identity snapshot persists. */
     readonly durabilityPending?: boolean;
-    /** Renderer-owned identity and CRDT revision make close approval specific to project truth. */
-    readonly projectId?: string;
+    /** Stable Project snapshot key and CRDT revision make close approval specific to project truth. */
+    readonly projectKey?: string;
     readonly revision?: string;
 };
 
@@ -17,7 +17,7 @@ export type SaveResult = {
     readonly requestId: number;
     readonly saved: boolean;
     readonly dirty: boolean;
-    readonly projectId?: string;
+    readonly projectKey?: string;
     readonly revision?: string;
 };
 
@@ -56,7 +56,7 @@ export const createWindowCloseCoordinator = ({
     const isCloseBlocking = (state: ProjectCloseState): boolean => state.dirty || state.durabilityPending === true;
 
     const sameProjectRevision = (left: ProjectCloseState, right: ProjectCloseState): boolean =>
-        left.projectId === right.projectId && left.revision === right.revision;
+        left.projectKey === right.projectKey && left.revision === right.revision;
 
     const updateProject = (next: ProjectCloseState): void => {
         const changedRevision = !sameProjectRevision(project, next);
@@ -70,7 +70,7 @@ export const createWindowCloseCoordinator = ({
         // A dialog decision is about a particular piece of project truth. A
         // new project or an edit while it is open needs a fresh decision.
         if (phase === 'saving' && changedRevision && pendingSave !== undefined) {
-            if (next.projectId === pendingSave.expected.projectId) {
+            if (next.projectKey === pendingSave.expected.projectKey) {
                 pendingSave.latestCandidate = next;
                 return;
             }
@@ -96,7 +96,7 @@ export const createWindowCloseCoordinator = ({
             requestId: pendingSave.requestId,
             saved: false,
             dirty: true,
-            projectId: pendingSave.expected.projectId,
+            projectKey: pendingSave.expected.projectKey,
             revision: pendingSave.expected.revision,
         });
     };
@@ -161,7 +161,7 @@ export const createWindowCloseCoordinator = ({
                             requestId,
                             saved: false,
                             dirty: true,
-                            projectId: expectedProject.projectId,
+                            projectKey: expectedProject.projectKey,
                             revision: expectedProject.revision,
                         }),
                     CLOSE_OPERATION_TIMEOUT_MS
@@ -201,7 +201,7 @@ export const createWindowCloseCoordinator = ({
             !result.saved ||
             result.dirty ||
             result.requestId !== requestId ||
-            (result.projectId !== undefined && result.projectId !== expectedProject.projectId) ||
+            (result.projectKey !== undefined && result.projectKey !== expectedProject.projectKey) ||
             (activeSave?.latestCandidate !== undefined && activeSave.latestCandidate.revision !== result.revision)
         ) {
             phase = 'idle';
@@ -209,7 +209,7 @@ export const createWindowCloseCoordinator = ({
         }
         project = {
             ...project,
-            projectId: result.projectId ?? project.projectId,
+            projectKey: result.projectKey ?? project.projectKey,
             revision: result.revision ?? project.revision,
             dirty: false,
             durabilityPending: false,

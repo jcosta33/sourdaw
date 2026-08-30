@@ -21,7 +21,7 @@ describe('native menu project-state controller', () => {
             title: 'First mix',
             dirty: false,
             durabilityPending: false,
-            projectId: 'first',
+            projectKey: 'first',
             revision: 'revision-1',
             recentProjects: [],
         });
@@ -29,7 +29,7 @@ describe('native menu project-state controller', () => {
             title: 'Final mix',
             dirty: true,
             durabilityPending: false,
-            projectId: 'final',
+            projectKey: 'final',
             revision: 'revision-2',
             recentProjects: [{ key: 'sourdaw:project:10', name: 'Final mix' }],
         });
@@ -40,7 +40,7 @@ describe('native menu project-state controller', () => {
             title: 'Final mix',
             dirty: true,
             durabilityPending: false,
-            projectId: 'final',
+            projectKey: 'final',
             revision: 'revision-2',
             recentProjects: [{ key: 'sourdaw:project:10', name: 'Final mix' }],
         });
@@ -63,7 +63,7 @@ describe('native menu project-state controller', () => {
             title: 'Untitled Project',
             dirty: false,
             durabilityPending: true,
-            projectId: 'untitled',
+            projectKey: 'untitled',
             revision: 'revision-1',
             recentProjects: [],
         });

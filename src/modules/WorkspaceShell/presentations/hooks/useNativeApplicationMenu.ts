@@ -10,6 +10,7 @@ import {
     exportProjectFile,
     discardProjectChanges,
     getRecentProjects,
+    getProjectSnapshotKey,
     loadRecentProject,
     newProject,
     pickAndImportProjectFile,
@@ -68,14 +69,14 @@ const saveProjectIfClean = async (): Promise<boolean> =>
     projectStore.value?.dirty !== true &&
     projectStore.value?.identityPersistencePending !== true;
 
-/** Legacy projects gain a canonical id during persistence; until then createdAt is their stable owner key. */
-const nativeProjectIdentity = (project: Pick<ProjectStoreState, 'projectId' | 'createdAt'>): string =>
-    project.projectId ?? `created-at:${String(project.createdAt)}`;
+/** Created-at named keys stay stable while legacy projects migrate to canonical ids. */
+const nativeProjectKey = (project: Pick<ProjectStoreState, 'createdAt'>): string =>
+    getProjectSnapshotKey(project.createdAt);
 
 const reportCloseResult = async (
     requestId: number,
     saved: boolean,
-    fallbackProjectId: string,
+    fallbackProjectKey: string,
     dirty = false
 ): Promise<void> => {
     const current = projectStore.value;
@@ -83,7 +84,7 @@ const reportCloseResult = async (
         requestId,
         saved,
         dirty: dirty || current?.dirty === true || current?.identityPersistencePending === true,
-        projectId: current === undefined ? fallbackProjectId : nativeProjectIdentity(current),
+        projectKey: current === undefined ? fallbackProjectKey : nativeProjectKey(current),
         revision: captureProjectRevision(),
     });
 };
@@ -107,39 +108,39 @@ const runMenuAction = async (intent: NativeMenuIntent): Promise<void> => {
         case 'project:save': {
             if (
                 intent.requestId !== undefined &&
-                (intent.projectId === undefined ||
+                (intent.projectKey === undefined ||
                     intent.revision === undefined ||
                     projectStore.value === undefined ||
-                    nativeProjectIdentity(projectStore.value) !== intent.projectId ||
+                    nativeProjectKey(projectStore.value) !== intent.projectKey ||
                     captureProjectRevision() !== intent.revision)
             ) {
-                if (intent.projectId !== undefined) {
-                    await reportCloseResult(intent.requestId, false, intent.projectId, true);
+                if (intent.projectKey !== undefined) {
+                    await reportCloseResult(intent.requestId, false, intent.projectKey, true);
                 }
                 return;
             }
             const saved = await saveProject();
-            if (intent.requestId !== undefined && intent.projectId !== undefined) {
-                await reportCloseResult(intent.requestId, saved, intent.projectId);
+            if (intent.requestId !== undefined && intent.projectKey !== undefined) {
+                await reportCloseResult(intent.requestId, saved, intent.projectKey);
             }
             return;
         }
         case 'project:discard': {
             if (
-                intent.projectId === undefined ||
+                intent.projectKey === undefined ||
                 intent.revision === undefined ||
                 projectStore.value === undefined ||
-                nativeProjectIdentity(projectStore.value) !== intent.projectId ||
+                nativeProjectKey(projectStore.value) !== intent.projectKey ||
                 captureProjectRevision() !== intent.revision
             ) {
-                if (intent.requestId !== undefined && intent.projectId !== undefined) {
-                    await reportCloseResult(intent.requestId, false, intent.projectId, true);
+                if (intent.requestId !== undefined && intent.projectKey !== undefined) {
+                    await reportCloseResult(intent.requestId, false, intent.projectKey, true);
                 }
                 return;
             }
             const discarded = await discardProjectChanges();
             if (intent.requestId !== undefined) {
-                await reportCloseResult(intent.requestId, discarded, intent.projectId);
+                await reportCloseResult(intent.requestId, discarded, intent.projectKey);
             }
             return;
         }
@@ -237,7 +238,7 @@ export const useNativeApplicationMenu = (project: ProjectStoreState): void => {
                 title: project.name,
                 dirty: project.dirty,
                 durabilityPending: project.identityPersistencePending === true,
-                projectId: nativeProjectIdentity(project),
+                projectKey: nativeProjectKey(project),
                 revision: captureProjectRevision(),
                 recentProjects: getRecentProjects().map(({ key, name }) => ({ key, name })),
             });

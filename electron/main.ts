@@ -174,7 +174,7 @@ const windowCloseCoordinator = createWindowCloseCoordinator({
         nativeMenuAction({
             action: operation === 'save' ? 'project:save' : 'project:discard',
             requestId,
-            projectId: expected.projectId,
+            projectKey: expected.projectKey,
             revision: expected.revision,
         }),
     onApprovalRevoked: () => rendererSessionLifecycle.cancelTeardown(),

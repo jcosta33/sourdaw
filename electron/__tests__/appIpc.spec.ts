@@ -148,7 +148,7 @@ describe('native menu channels', () => {
             title: 'Song',
             dirty: true,
             durabilityPending: false,
-            projectId: 'project',
+            projectKey: 'project',
             revision: 'revision-1',
             recentProjects: [],
         });
@@ -156,7 +156,7 @@ describe('native menu channels', () => {
             requestId: 2,
             saved: true,
             dirty: false,
-            projectId: 'project',
+            projectKey: 'project',
             revision: 'revision-2',
         });
         await handlers.get(NATIVE_EDIT_CHANNEL)?.(frame, 'copy');
@@ -171,7 +171,7 @@ describe('native menu channels', () => {
                 title: 'Song',
                 dirty: true,
                 durabilityPending: false,
-                projectId: 'project',
+                projectKey: 'project',
                 revision: 'revision-1',
                 recentProjects: [],
             },
@@ -181,7 +181,7 @@ describe('native menu channels', () => {
             requestId: 2,
             saved: true,
             dirty: false,
-            projectId: 'project',
+            projectKey: 'project',
             revision: 'revision-2',
         });
         expect(editTarget.copy).toHaveBeenCalledTimes(1);
@@ -210,7 +210,7 @@ describe('native menu channels', () => {
                 title: 'Song',
                 dirty: false,
                 durabilityPending: false,
-                projectId: 'project',
+                projectKey: 'project',
                 revision: 'revision-1',
                 recentProjects: 'not-an-array',
             })
@@ -220,7 +220,7 @@ describe('native menu channels', () => {
                 title: 'Song',
                 dirty: false,
                 durabilityPending: false,
-                projectId: 'project',
+                projectKey: 'project',
                 revision: 'revision-1',
                 recentProjects: [{ key: 'recent' }],
             })
@@ -228,6 +228,16 @@ describe('native menu channels', () => {
         expect(() => projectState?.(APP_FRAME, { title: 'Song', dirty: false, recentProjects: [] })).toThrow(
             /invalid/u
         );
+        expect(() =>
+            projectState?.(APP_FRAME, {
+                title: 'Song',
+                dirty: false,
+                durabilityPending: false,
+                projectId: 'canonical-id-is-not-close-authority',
+                revision: 'revision-1',
+                recentProjects: [],
+            })
+        ).toThrow(/invalid/u);
     });
 });
 

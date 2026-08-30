@@ -148,13 +148,13 @@ describe('native menu action dispatcher', () => {
         dispatcher.dispatch({
             action: 'project:save',
             requestId: 7,
-            projectId: 'project-a',
+            projectKey: 'project-a',
             revision: 'revision-1',
         });
         dispatcher.dispatch({
             action: 'project:discard',
             requestId: 8,
-            projectId: 'project-a',
+            projectKey: 'project-a',
             revision: 'revision-1',
         });
 
@@ -163,13 +163,13 @@ describe('native menu action dispatcher', () => {
         expect(startup.send).toHaveBeenNthCalledWith(1, 'native-menu-action', {
             action: 'project:save',
             requestId: 7,
-            projectId: 'project-a',
+            projectKey: 'project-a',
             revision: 'revision-1',
         });
         expect(startup.send).toHaveBeenNthCalledWith(2, 'native-menu-action', {
             action: 'project:discard',
             requestId: 8,
-            projectId: 'project-a',
+            projectKey: 'project-a',
             revision: 'revision-1',
         });
     });

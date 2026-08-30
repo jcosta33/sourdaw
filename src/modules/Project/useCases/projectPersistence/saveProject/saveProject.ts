@@ -4,12 +4,12 @@ import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
 import { captureProjectRevision, persistCrdtProject } from '#/modules/CrdtDocument/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
-import { NAMED_PROJECT_KEY_PREFIX } from '../../../models/ProjectData';
 import { writeNamedProjectJsonByKey } from '../../../repositories/project/writeNamedProjectJsonByKey';
 import { projectLoadFailureStore } from '../../../stores/projectLoadFailureStore';
 import { projectStore } from '../../../stores/projectStore';
 import { addToRecentProjects } from '../../recentProjects/addToRecentProjects';
 import { buildProjectData } from '../fileIO/buildProjectData';
+import { getProjectSnapshotKey } from '../getProjectSnapshotKey';
 import { migrateActiveProjectIdentity } from '../migrateActiveProjectIdentity';
 
 import { captureExternalPluginStates } from './captureExternalPluginStates';
@@ -57,7 +57,7 @@ export async function saveProject(): Promise<boolean> {
     // creation and preserved across renames and reloads) rather than the
     // mutable display name — so duplicate names don't collide and a rename
     // doesn't orphan the old key.
-    const recentKey = `${NAMED_PROJECT_KEY_PREFIX}${project.createdAt}`;
+    const recentKey = getProjectSnapshotKey(project.createdAt);
 
     try {
         await migrateActiveProjectIdentity();

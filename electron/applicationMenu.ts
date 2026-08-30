@@ -35,7 +35,7 @@ export type NativeMenuIntent = {
     readonly action: NativeMenuAction;
     readonly requestId?: number;
     readonly recentKey?: string;
-    readonly projectId?: string;
+    readonly projectKey?: string;
     readonly revision?: string;
 };
 
@@ -83,16 +83,25 @@ export const isNativeMenuIntent = (value: unknown): value is NativeMenuIntent =>
     ) {
         return false;
     }
-    if (
+    const invalidRequestId =
         'requestId' in value &&
-        (typeof value.requestId !== 'number' || !Number.isSafeInteger(value.requestId) || value.requestId < 1)
-    ) {
+        (typeof value.requestId !== 'number' || !Number.isSafeInteger(value.requestId) || value.requestId < 1);
+    if ('projectId' in value || invalidRequestId) {
         return false;
     }
-    return (
+    const validFields =
         (!('recentKey' in value) || typeof value.recentKey === 'string') &&
-        (!('projectId' in value) || typeof value.projectId === 'string') &&
-        (!('revision' in value) || typeof value.revision === 'string')
+        (!('projectKey' in value) || typeof value.projectKey === 'string') &&
+        (!('revision' in value) || typeof value.revision === 'string');
+    if (!validFields) {
+        return false;
+    }
+    const isCloseOperation = value.action === 'project:save' || value.action === 'project:discard';
+    const hasCloseCorrelation = 'requestId' in value || 'projectKey' in value || 'revision' in value;
+    return (
+        !isCloseOperation ||
+        !hasCloseCorrelation ||
+        ('requestId' in value && 'projectKey' in value && 'revision' in value)
     );
 };
 

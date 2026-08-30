@@ -313,7 +313,7 @@ export type NativeMenuProjectState = {
     readonly title: string;
     readonly dirty: boolean;
     readonly durabilityPending: boolean;
-    readonly projectId: string;
+    readonly projectKey: string;
     readonly revision: string;
     readonly recentProjects: readonly { readonly key: string; readonly name: string }[];
 };
@@ -322,7 +322,7 @@ export type NativeMenuSaveResult = {
     readonly requestId: number;
     readonly saved: boolean;
     readonly dirty: boolean;
-    readonly projectId: string;
+    readonly projectKey: string;
     readonly revision: string;
 };
 
@@ -340,7 +340,7 @@ const nativeMenuProjectState = (value: unknown): NativeMenuProjectState => {
         typeof state.title !== 'string' ||
         typeof state.dirty !== 'boolean' ||
         typeof state.durabilityPending !== 'boolean' ||
-        typeof state.projectId !== 'string' ||
+        typeof state.projectKey !== 'string' ||
         typeof state.revision !== 'string' ||
         !Array.isArray(state.recentProjects)
     ) {
@@ -357,7 +357,7 @@ const nativeMenuProjectState = (value: unknown): NativeMenuProjectState => {
         title: state.title,
         dirty: state.dirty,
         durabilityPending: state.durabilityPending,
-        projectId: state.projectId,
+        projectKey: state.projectKey,
         revision: state.revision,
         recentProjects,
     };
@@ -371,7 +371,7 @@ const nativeMenuSaveResult = (value: unknown): NativeMenuSaveResult => {
         result.requestId < 1 ||
         typeof result.saved !== 'boolean' ||
         typeof result.dirty !== 'boolean' ||
-        typeof result.projectId !== 'string' ||
+        typeof result.projectKey !== 'string' ||
         typeof result.revision !== 'string'
     ) {
         throw new TypeError('native menu save result is invalid');
@@ -380,7 +380,7 @@ const nativeMenuSaveResult = (value: unknown): NativeMenuSaveResult => {
         requestId: result.requestId,
         saved: result.saved,
         dirty: result.dirty,
-        projectId: result.projectId,
+        projectKey: result.projectKey,
         revision: result.revision,
     };
 };
