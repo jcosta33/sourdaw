@@ -172,7 +172,51 @@ describe('recoverAgentRunPendingEffects', () => {
         expect(mocks.executeBatch).not.toHaveBeenCalled();
     });
 
-    it('rejects a tampered manualized runtime-graph binding', async () => {
+    it('admits the established provisional runtime-graph reason only when the receipt supplies the final reason', async () => {
+        const recovery = renderRecovery();
+        const receiptEffect = {
+            ...recovery.effects[0],
+            kind: 'runtime-graph' as const,
+            reason: 'runtime graph revision is stale',
+            remediation: 'retry' as const,
+        };
+        mocks.getRecovery.mockReturnValue({
+            ...recovery,
+            effects: [
+                {
+                    ...receiptEffect,
+                    reason: 'Post-commit effect has not completed',
+                    remediation: 'repair' as const,
+                },
+            ],
+            lastError: MISSING_EXACT_CHECKPOINT_RECOVERY_REASON,
+            recovery: 'manual-repair',
+        });
+        mocks.getReceipt.mockResolvedValue({
+            schemaVersion: 2,
+            runId: 'run-render-recovery',
+            batchId: 'batch-render-recovery',
+            outcome: 'partially-committed',
+            pendingEffects: [receiptEffect],
+        });
+
+        await expect(
+            recoverAgentRunPendingEffects({ runId: 'run-render-recovery', batchId: 'batch-render-recovery' })
+        ).resolves.toEqual({
+            status: 'failed',
+            reason: MISSING_EXACT_CHECKPOINT_RECOVERY_REASON,
+        });
+
+        expect(mocks.requireManualRepair).toHaveBeenCalledWith({
+            runId: 'run-render-recovery',
+            batchId: 'batch-render-recovery',
+            reason: MISSING_EXACT_CHECKPOINT_RECOVERY_REASON,
+            preserveEffects: true,
+        });
+        expect(mocks.executeBatch).not.toHaveBeenCalled();
+    });
+
+    it('rejects a manualized runtime-graph binding with any other changed continuation reason', async () => {
         const recovery = renderRecovery();
         const receiptEffect = {
             ...recovery.effects[0],

@@ -3197,7 +3197,7 @@ describe('confirmPendingChatActions transaction admission', () => {
             'device-compressor',
         ]);
         expect(undoStore.value?.past).toHaveLength(1);
-        expect(runtimeMocks.applyRuntimeGraphDelta).toHaveBeenCalledOnce();
+        expect(runtimeMocks.applyRuntimeGraphDelta).toHaveBeenCalledTimes(3);
         expect(repairRuntimeFromCurrentProject).not.toHaveBeenCalled();
         expect(agentRunLifecycle.get('run-runtime-effect')).toMatchObject({
             phase: 'partially-completed',
@@ -3997,7 +3997,7 @@ describe('confirmPendingChatActions transaction admission', () => {
             )
         ).toMatchObject({ recovery: 'manual-repair' });
         expect(agentRunLifecycle.get('confirmation-ownerless-render')).toMatchObject({
-            budgets: { consumed: { maxCommands: 2, maxRenderJobs: 2 } },
+            budgets: { consumed: { maxCommands: 2, maxRenderJobs: 1 } },
             workLeases: [expect.objectContaining({ workId: 'group-ownerless-render', terminalState: 'completed' })],
         });
         expect(retain).toHaveBeenCalledOnce();

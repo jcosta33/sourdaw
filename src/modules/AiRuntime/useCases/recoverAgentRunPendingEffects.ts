@@ -15,6 +15,8 @@ import { agentRunLifecycle } from './agentRunLifecycle';
 type RecoverAgentRunPendingEffectsResult =
     { status: 'missing' } | { status: 'recovered' } | { status: 'failed'; reason: string };
 
+const PROVISIONAL_DURABLE_EFFECT_REASON = 'Post-commit effect has not completed';
+
 function getReceiptIdentity(receipt: {
     schemaVersion: number;
     runId: string;
@@ -96,7 +98,9 @@ function hasIntentionalManualizedRuntimeGraphBinding(
             effect.kind === 'runtime-graph' &&
             receiptEffect.kind === 'runtime-graph' &&
             effect.operation === receiptEffect.operation &&
-            effect.reason === receiptEffect.reason &&
+            (effect.reason === receiptEffect.reason ||
+                (effect.reason === PROVISIONAL_DURABLE_EFFECT_REASON &&
+                    receiptEffect.reason !== PROVISIONAL_DURABLE_EFFECT_REASON)) &&
             effect.remediation === 'repair' &&
             receiptEffect.remediation === 'retry' &&
             effect.state === receiptEffect.state;
