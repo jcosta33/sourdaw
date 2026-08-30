@@ -1920,24 +1920,40 @@ export function inspectReviewThread(number: number, requestedThreadId: string, g
                 (candidate as { id?: unknown }).id === requestedThreadId
         );
         if (selected !== undefined) {
+            const thread = inspectThreadComments(
+                number,
+                pullRequestId,
+                head,
+                requestedThreadId,
+                threadResolutionSnapshot(
+                    requestedThreadId,
+                    selected.isResolved,
+                    selected.resolvedBy?.id,
+                    selected.resolvedBy?.login,
+                    selected.resolvedBy?.__typename
+                ),
+                gh
+            );
+            const pendingReviews = inspectPendingReviews(number, pullRequestId, head, gh);
+            assertThreadResolutionAfterReviewInspection(
+                number,
+                pullRequestId,
+                head,
+                requestedThreadId,
+                threadResolutionSnapshot(
+                    requestedThreadId,
+                    thread.isResolved,
+                    thread.resolvedByNodeId,
+                    thread.resolvedByLogin,
+                    thread.resolvedByType
+                ),
+                gh
+            );
             return {
                 pullRequestId,
                 head,
-                thread: inspectThreadComments(
-                    number,
-                    pullRequestId,
-                    head,
-                    requestedThreadId,
-                    threadResolutionSnapshot(
-                        requestedThreadId,
-                        selected.isResolved,
-                        selected.resolvedBy?.id,
-                        selected.resolvedBy?.login,
-                        selected.resolvedBy?.__typename
-                    ),
-                    gh
-                ),
-                pendingReviews: inspectPendingReviews(number, pullRequestId, head, gh),
+                thread,
+                pendingReviews,
             };
         }
         if (!threads.pageInfo.hasNextPage) {
@@ -2263,7 +2279,8 @@ function assertMatchingThreadResolutionSnapshot(
         resolvedByNodeId: string | null;
         resolvedByLogin: string | null;
         resolvedByType: string | null;
-    }
+    },
+    phase: 'review comments' | 'reviews' = 'review comments'
 ): void {
     if (
         expected.isResolved !== current.isResolved ||
@@ -2271,8 +2288,70 @@ function assertMatchingThreadResolutionSnapshot(
         expected.resolvedByLogin !== current.resolvedByLogin ||
         expected.resolvedByType !== current.resolvedByType
     ) {
-        fail(`review thread ${threadId} changed while reading review comments`);
+        fail(`review thread ${threadId} changed while reading ${phase}`);
     }
+}
+function assertThreadResolutionAfterReviewInspection(
+    number: number,
+    expectedPullRequestId: string,
+    expectedHead: string,
+    threadId: string,
+    expectedResolution: {
+        isResolved: boolean;
+        resolvedByNodeId: string | null;
+        resolvedByLogin: string | null;
+        resolvedByType: string | null;
+    },
+    gh: Gh
+): void {
+    const [owner, name] = REQUIRED_REPOSITORY.split('/');
+    if (owner === undefined || name === undefined) {
+        fail(`invalid GitHub repository: ${REQUIRED_REPOSITORY}`);
+    }
+    const query =
+        'query($owner:String!,$name:String!,$number:Int!,$threadId:ID!){repository(owner:$owner,name:$name){pullRequest(number:$number){id headRefOid}} node(id:$threadId){... on PullRequestReviewThread{id isResolved resolvedBy{id login __typename}}}}';
+    const response = graphql(
+        gh,
+        query,
+        ['-F', `owner=${owner}`, '-F', `name=${name}`, '-F', `number=${number}`, '-F', `threadId=${threadId}`],
+        `review thread resolution for ${threadId}`
+    ) as {
+        data?: {
+            repository?: {
+                pullRequest?: {
+                    id?: unknown;
+                    headRefOid?: unknown;
+                } | null;
+            };
+            node?: {
+                id?: unknown;
+                isResolved?: unknown;
+                resolvedBy?: { id?: unknown; login?: unknown; __typename?: unknown } | null;
+            } | null;
+        };
+    };
+    assertExpectedPullRequestSnapshot(
+        response.data?.repository?.pullRequest,
+        expectedPullRequestId,
+        expectedHead,
+        `pull-request head changed while reading reviews for PR #${number}`
+    );
+    const thread = response.data?.node;
+    if (thread?.id !== threadId) {
+        fail(`review thread ${threadId} changed while reading reviews`);
+    }
+    assertMatchingThreadResolutionSnapshot(
+        threadId,
+        expectedResolution,
+        threadResolutionSnapshot(
+            threadId,
+            thread.isResolved,
+            thread.resolvedBy?.id,
+            thread.resolvedBy?.login,
+            thread.resolvedBy?.__typename
+        ),
+        'reviews'
+    );
 }
 function assertExpectedPullRequestSnapshot(
     pullRequest: { id?: unknown; headRefOid?: unknown } | null | undefined,

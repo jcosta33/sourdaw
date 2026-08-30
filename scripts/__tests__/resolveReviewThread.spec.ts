@@ -638,6 +638,25 @@ function commentPage(
         },
     });
 }
+function threadResolutionPage(
+    currentThreadId: string = threadId,
+    pageHead: string = head,
+    currentPullRequestId: string = pullRequestId,
+    threadState: {
+        isResolved?: boolean;
+        resolvedBy?: { id?: string; login?: string; __typename?: string } | null;
+    } = { isResolved: false, resolvedBy: null }
+) {
+    return JSON.stringify({
+        data: {
+            repository: { pullRequest: { id: currentPullRequestId, headRefOid: pageHead } },
+            node: {
+                id: currentThreadId,
+                ...threadState,
+            },
+        },
+    });
+}
 const root = {
     id: rootId,
     fullDatabaseId: '9223372036854775807',
@@ -704,7 +723,7 @@ function createFakeGhExecutable(responsesByKey: Record<string, string | string[]
             'const query = queryArg.slice("query=".length);',
             'const fields = new Map();',
             'for (let index = 0; index < args.length; index += 1) {',
-            "  if (args[index] !== '-F') continue;",
+            "  if (args[index] !== '-F' && args[index] !== '-f') continue;",
             '  const field = args[index + 1];',
             "  if (typeof field !== 'string') { console.error('missing field value'); process.exit(1); }",
             "  const separator = field.indexOf('=');",
@@ -715,6 +734,8 @@ function createFakeGhExecutable(responsesByKey: Record<string, string | string[]
             "if (query.includes('comments(first:100')) key = `comments:${fields.get('threadId') ?? ''}:${fields.get('cursor') ?? ''}`;",
             "else if (query.includes('reviews(first:100')) key = `reviews:${fields.get('cursor') ?? ''}`;",
             "else if (query.includes('reviewThreads(first:100')) key = `threads:${fields.get('cursor') ?? ''}`;",
+            "else if (query.includes('addPullRequestReview(input:{pullRequestId:$pullRequestId')) key = `createReview:${fields.get('pullRequestId') ?? ''}:${fields.get('commitOid') ?? ''}:${fields.get('clientMutationId') ?? ''}`;",
+            "else if (query.includes('node(id:$threadId){... on PullRequestReviewThread{id isResolved resolvedBy{id login __typename}}')) key = `threadResolution:${fields.get('threadId') ?? ''}`;",
             'const response = responses[key];',
             'if (response === undefined) { console.error(`unexpected key ${key}`); process.exit(1); }',
             'if (Array.isArray(response)) {',
@@ -1696,7 +1717,10 @@ describe('review thread resolution', () => {
             if (call === 3) {
                 return commentPage([root], false, null);
             }
-            return reviewPage([], false, null);
+            if (call === 4) {
+                return reviewPage([], false, null);
+            }
+            return threadResolutionPage();
         });
         expect(inspection).toMatchObject({
             pullRequestId,
@@ -1704,7 +1728,7 @@ describe('review thread resolution', () => {
             thread: { id: threadId, rootCommentFullDatabaseId: '9223372036854775807' },
             pendingReviews: [],
         });
-        expect(call).toBe(4);
+        expect(call).toBe(5);
     });
     it('retains linked author review metadata from inspected Done comments', () => {
         let call = 0;
@@ -1729,7 +1753,10 @@ describe('review thread resolution', () => {
             if (call === 2) {
                 return commentPage([root, linkedReply], false, null);
             }
-            return reviewPage([], false, null);
+            if (call === 3) {
+                return reviewPage([], false, null);
+            }
+            return threadResolutionPage();
         });
         expect(inspection.thread?.comments[1]).toEqual({
             id: replyId,
@@ -1757,19 +1784,22 @@ describe('review thread resolution', () => {
             if (call === 2) {
                 return commentPage([root], false, null);
             }
-            return reviewPage(
-                [
-                    {
-                        id: reviewId,
-                        state: 'PENDING',
-                        body: resolutionReviewSummary(pullRequestId, threadId, head),
-                        commit: { oid: head },
-                        author: { id: AUTHOR_BOT_NODE_ID, login: 'renamed-author', __typename: 'Bot' },
-                    },
-                ],
-                false,
-                null
-            );
+            if (call === 3) {
+                return reviewPage(
+                    [
+                        {
+                            id: reviewId,
+                            state: 'PENDING',
+                            body: resolutionReviewSummary(pullRequestId, threadId, head),
+                            commit: { oid: head },
+                            author: { id: AUTHOR_BOT_NODE_ID, login: 'renamed-author', __typename: 'Bot' },
+                        },
+                    ],
+                    false,
+                    null
+                );
+            }
+            return threadResolutionPage();
         });
         expect(inspection.pendingReviews).toEqual([
             {
@@ -1810,19 +1840,22 @@ describe('review thread resolution', () => {
                     'reviews-1'
                 );
             }
-            return reviewPage(
-                [
-                    {
-                        id: 'PRR_pending_1',
-                        state: 'PENDING',
-                        body: resolutionReviewSummary(pullRequestId, threadId, movedHead),
-                        commit: { oid: movedHead },
-                        author: { id: AUTHOR_BOT_NODE_ID, login: 'renamed-author', __typename: 'Bot' },
-                    },
-                ],
-                false,
-                null
-            );
+            if (call === 4) {
+                return reviewPage(
+                    [
+                        {
+                            id: 'PRR_pending_1',
+                            state: 'PENDING',
+                            body: resolutionReviewSummary(pullRequestId, threadId, movedHead),
+                            commit: { oid: movedHead },
+                            author: { id: AUTHOR_BOT_NODE_ID, login: 'renamed-author', __typename: 'Bot' },
+                        },
+                    ],
+                    false,
+                    null
+                );
+            }
+            return threadResolutionPage();
         });
         expect(inspection.pendingReviews).toEqual([
             {
@@ -1921,7 +1954,10 @@ describe('review thread resolution', () => {
             if (call === 3) {
                 return commentPage([later], false, null);
             }
-            return reviewPage([], false, null);
+            if (call === 4) {
+                return reviewPage([], false, null);
+            }
+            return threadResolutionPage();
         });
         expect(inspection.thread?.comments).toHaveLength(101);
         expect(inspection.thread?.comments.at(-1)?.id).toBe(replyId);
@@ -1986,6 +2022,52 @@ describe('review thread resolution', () => {
                 return reviewPage([], false, null, movedHead);
             })
         ).toThrow(/changed while reading review comments/i);
+    });
+    it('rejects a same-head resolve-state drift that appears only after multi-page pending-review pagination', () => {
+        let call = 0;
+        expect(() =>
+            inspectReviewThread(42, threadId, () => {
+                call += 1;
+                if (call === 1) {
+                    return threadPage(
+                        [
+                            {
+                                id: threadId,
+                                isResolved: true,
+                                resolvedBy: {
+                                    id: AUTHOR_BOT_NODE_ID,
+                                    login: 'renamed-author',
+                                    __typename: 'User',
+                                },
+                            },
+                        ],
+                        false,
+                        null,
+                        movedHead
+                    );
+                }
+                if (call === 2) {
+                    return commentPage([root], false, null, threadId, movedHead, pullRequestId, {
+                        isResolved: true,
+                        resolvedBy: {
+                            id: AUTHOR_BOT_NODE_ID,
+                            login: 'renamed-author',
+                            __typename: 'User',
+                        },
+                    });
+                }
+                if (call === 3) {
+                    return reviewPage([], true, 'reviews-1', movedHead);
+                }
+                if (call === 4) {
+                    return reviewPage([], false, null, movedHead);
+                }
+                return threadResolutionPage(threadId, movedHead, pullRequestId, {
+                    isResolved: false,
+                    resolvedBy: null,
+                });
+            })
+        ).toThrow(/changed while reading reviews/i);
     });
     it.each([
         ['repeated', 'comments-1'],
@@ -2881,6 +2963,7 @@ describe('review thread resolution', () => {
                 'thread-page-2',
                 movedHead
             ),
+            [`threadResolution:${threadId}`]: threadResolutionPage(threadId, movedHead),
             'threads:thread-page-2': threadPage(
                 [{ id: otherThreadId, isResolved: false, resolvedBy: null }],
                 false,
@@ -3014,6 +3097,7 @@ describe('review thread resolution', () => {
                     },
                 }),
             ],
+            [`threadResolution:${threadId}`]: threadResolutionPage(threadId, movedHead),
             [`comments:${threadId}:`]: [
                 commentPage([root], false, null, threadId, movedHead),
                 commentPage([root], false, null, threadId, movedHead, 'PR_kwDOOtherPullRequest'),
@@ -3150,6 +3234,87 @@ describe('review thread resolution', () => {
                 })
             ).toThrow(/changed while reading review comments/i);
             expect(calls).toEqual([]);
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+            rmSync(fakeGh.root, { recursive: true, force: true });
+        }
+    });
+    it('binds the shell-backed create-pending-review mutation to the inspected pull-request node id before any later mutation', () => {
+        const repository = createTemporaryGitRepository();
+        const createBody = resolutionReviewSummary(pullRequestId, threadId, movedHead);
+        const createClientMutationId = `review-create:${threadId}`;
+        const fakeGh = createFakeGhExecutable({
+            'threads:': threadPage([{ id: threadId, isResolved: false, resolvedBy: null }], false, null, movedHead),
+            [`comments:${threadId}:`]: commentPage([root], false, null, threadId, movedHead),
+            [`threadResolution:${threadId}`]: threadResolutionPage(threadId, movedHead),
+            'reviews:': [
+                reviewPage([], false, null, movedHead),
+                reviewPage(
+                    [
+                        {
+                            id: reviewId,
+                            state: 'PENDING',
+                            body: createBody,
+                            commit: { oid: movedHead },
+                            author: { id: AUTHOR_BOT_NODE_ID, login: 'renamed-author', __typename: 'Bot' },
+                        },
+                    ],
+                    false,
+                    null,
+                    movedHead
+                ),
+            ],
+            [`createReview:${pullRequestId}:${movedHead}:${createClientMutationId}`]: JSON.stringify({
+                data: {
+                    addPullRequestReview: {
+                        clientMutationId: createClientMutationId,
+                        pullRequestReview: {
+                            id: reviewId,
+                            state: 'PENDING',
+                            body: createBody,
+                            commit: { oid: movedHead },
+                            author: { id: AUTHOR_BOT_NODE_ID, login: 'renamed-author', __typename: 'Bot' },
+                        },
+                    },
+                },
+            }),
+        });
+        const basePort = shellPort(
+            {
+                configDir: repository,
+                env: { SOURDAW_TRUSTED_GH_PATH: fakeGh.executable },
+                dispose() {},
+            },
+            repository
+        );
+        const calls: string[] = [];
+        try {
+            expect(() =>
+                resolveReviewThread(42, threadId, movedHead, AUTHOR_BOT_NODE_ID, {
+                    ...basePort,
+                    replyDone: () => {
+                        calls.push('replyDone');
+                        throw new Error('stop after create');
+                    },
+                    submitReview: () => {
+                        calls.push('submitReview');
+                        throw new Error('unexpected submit');
+                    },
+                    resolve: () => {
+                        calls.push('resolve');
+                        throw new Error('unexpected resolve');
+                    },
+                    deletePendingReview: (id) => {
+                        calls.push(`deleteReview:${id}`);
+                    },
+                    deleteReply: (id) => {
+                        calls.push(`deleteReply:${id}`);
+                    },
+                    serializeReviewThreadMutation: (_number, _threadId, _expectedHead, operation) => operation(),
+                    log: (message) => calls.push(`log:${message}`),
+                })
+            ).toThrow(/stop after create[\s\S]*ambiguous review reply mutation/i);
+            expect(calls).toEqual(['replyDone']);
         } finally {
             rmSync(repository, { recursive: true, force: true });
             rmSync(fakeGh.root, { recursive: true, force: true });
