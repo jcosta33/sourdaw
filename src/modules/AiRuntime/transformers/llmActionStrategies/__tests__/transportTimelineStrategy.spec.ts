@@ -78,4 +78,19 @@ describe('transportTimelineStrategy', () => {
             })
         ).toBeNull();
     });
+
+    it('rejects a loop region with extra fields', () => {
+        expect(
+            bridgeTransportTimelineToolCall({
+                call: { name: 'setLoopRegion', arguments: { startBeat: 4, endBeat: 8, enabled: true } },
+                context: projectContext,
+                index: 0,
+                projectPunchRegion: createPunchRegionPatch,
+            })
+        ).toEqual({
+            index: 0,
+            name: 'setLoopRegion',
+            reason: 'Expected finite loop beats with 0 <= startBeat < endBeat',
+        });
+    });
 });

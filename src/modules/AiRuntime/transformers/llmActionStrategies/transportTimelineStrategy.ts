@@ -37,12 +37,16 @@ type TransportTimelineStrategyInput = {
     projectPunchRegion: ProjectPunchRegion;
 };
 
-type TransportTimelineStrategy = (input: TransportTimelineStrategyInput) => RuntimeAction | LlmActionRejection;
+type TransportTimelineStrategy<Name extends TransportTimelineCallName> = (
+    input: TransportTimelineStrategyInput
+) => Extract<RuntimeAction, { type: Name }> | LlmActionRejection;
 
-type LlmActionStrategyDefinition<Name extends string> = {
-    name: Name;
-    transform: TransportTimelineStrategy;
-};
+type LlmActionStrategyDefinition<Name extends TransportTimelineCallName> = {
+    [StrategyName in Name]: {
+        name: StrategyName;
+        transform: TransportTimelineStrategy<StrategyName>;
+    };
+}[Name];
 
 function hasExactKeys(value: Record<string, unknown>, expectedKeys: readonly string[]): boolean {
     const actualKeys = Object.keys(value);
@@ -64,10 +68,10 @@ function rejection(index: number, name: string, reason: string): LlmActionReject
     return { index, name, reason };
 }
 
-export function createLlmActionStrategyRegistry<Name extends string>(
+export function createLlmActionStrategyRegistry<Name extends TransportTimelineCallName>(
     definitions: readonly LlmActionStrategyDefinition<Name>[]
-): ReadonlyMap<Name, TransportTimelineStrategy> {
-    const registry = new Map<Name, TransportTimelineStrategy>();
+): ReadonlyMap<Name, TransportTimelineStrategy<Name>> {
+    const registry = new Map<Name, TransportTimelineStrategy<Name>>();
     for (const definition of definitions) {
         if (registry.has(definition.name)) {
             throw new Error(`Duplicate LLM action strategy: ${definition.name}`);
