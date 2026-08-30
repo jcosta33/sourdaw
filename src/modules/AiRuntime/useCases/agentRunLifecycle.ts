@@ -799,7 +799,11 @@ function applyAgentRunReceiptSagaProjection(
         );
     }
     const hasUnsettledExternalSagaStep = sagaSteps.some(
-        (step) => step.state === 'pending' || step.state === 'external-pending' || step.state === 'uncompensated'
+        (step) =>
+            step.state === 'pending' ||
+            step.state === 'external-pending' ||
+            step.state === 'uncompensated' ||
+            step.state === 'manual-repair'
     );
     let phase = reduceAgentRunTransition(run.phase, {
         type: 'work-committed',
@@ -1543,7 +1547,11 @@ function recordAgentRunCommittedWork(input: {
         const renderJobIds = input.renderJobIds ?? [];
         const analysisIds = input.analysisIds ?? [];
         const hasUnsettledExternalSagaStep = run.saga.steps.some(
-            (step) => step.state === 'pending' || step.state === 'external-pending' || step.state === 'uncompensated'
+            (step) =>
+                step.state === 'pending' ||
+                step.state === 'external-pending' ||
+                step.state === 'uncompensated' ||
+                step.state === 'manual-repair'
         );
         const phase = reduceAgentRunTransition(run.phase, {
             type: 'work-committed',
