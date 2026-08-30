@@ -1,0 +1,29 @@
+src/infra/store/storage/createAutomergeStorage.ts
+  s_ae074277795b45::t_88b5c64b2b23e6 395-402,412-418,430-433,444
+src/infra/store/storage/__tests__/createAutomergeStorage.rawProjectionLossReorder.spec.ts
+  s_892717b998e599::t_058770e4af3b73 152-168
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "3bf70f5a67ebb6eb0dd28038b19a1b3260907d2a",
+  "prompts": {},
+  "sessions": {
+    "s_892717b998e599": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0535c-b165-7762-a907-aefd212cc0b1",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ae074277795b45": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04ab5-5234-7100-be1c-76ebfaba88d3",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
