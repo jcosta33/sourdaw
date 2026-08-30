@@ -1,0 +1,36 @@
+src/modules/Project/useCases/recentProjects/loadRecentProject.ts
+  s_ae074277795b45::t_490acd3358d5c0 22-23,28,62-65,70
+src/modules/Project/useCases/projectPersistence/discardProjectChanges.ts
+  s_ae074277795b45::t_490acd3358d5c0 54-56
+src/modules/Project/useCases/projectPersistence/helpers/replaceProjectData.ts
+  s_ae074277795b45::t_490acd3358d5c0 47-48,77,111,190
+  s_ae074277795b45::t_72621616f440a7 191-194,235,242,248
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/replaceProjectData.spec.ts
+  s_ae074277795b45::t_7081a612ce3b16 194-211
+electron/nativeMenuActionDispatcher.ts
+  s_ae074277795b45::t_200d3a3cb314db 38-40
+src/modules/Project/useCases/projectPersistence/__tests__/discardProjectChanges.spec.ts
+  s_ae074277795b45::t_200d3a3cb314db 75-78
+  s_ae074277795b45::t_7081a612ce3b16 132-154
+electron/__tests__/nativeMenuActionDispatcher.spec.ts
+  s_ae074277795b45::t_7081a612ce3b16 72-97
+src/modules/Project/useCases/recentProjects/__tests__/loadRecentProject.spec.ts
+  s_ae074277795b45::t_b0440682d59aba 143-144
+  s_ae074277795b45::t_9c62512814989b 140-142,145-160
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "03f25be252f40254a8d95d0d17f8d4201874921f",
+  "prompts": {},
+  "sessions": {
+    "s_ae074277795b45": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04ab5-5234-7100-be1c-76ebfaba88d3",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
