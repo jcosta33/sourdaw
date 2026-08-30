@@ -3216,6 +3216,70 @@ function hasVisibleRecoveredReply(thread: ReviewThread, context: ResolutionRevie
     );
 }
 
+function exactRecoveredReviewIdsAtOwnerHead(
+    inspection: ReviewThreadInspection,
+    context: ResolutionReviewContext
+): string[] {
+    const reviewIds = new Set<string>();
+    for (const review of inspection.pendingReviews) {
+        if (isExactPendingReview(review, context)) {
+            reviewIds.add(review.id);
+        }
+    }
+    if (inspection.thread !== null) {
+        for (const candidate of managedReplyMarkers(inspection.thread, context, ['PENDING', 'COMMENTED'], true)) {
+            if (candidate.currentHead) {
+                reviewIds.add(candidate.review.id);
+            }
+        }
+    }
+    return [...reviewIds].sort();
+}
+
+function exactRecoveredReplyMarkersAtOwnerHead(
+    thread: ReviewThread,
+    context: ResolutionReviewContext,
+    reviewId: string
+): ManagedReplyMarker[] {
+    return managedReplyMarkers(thread, context, ['PENDING', 'COMMENTED'], true).filter(
+        (candidate) => candidate.currentHead && candidate.review.id === reviewId
+    );
+}
+
+function assertExactRecoveredMutationAfterHeadDrift(
+    number: number,
+    owner: ReviewResolutionLockOwner,
+    inspection: ReviewThreadInspection,
+    context: ResolutionReviewContext,
+    thread: ReviewThread
+): void {
+    switch (owner.mutation.phase) {
+        case 'createPendingReview':
+        case 'createPendingReviewSettlement': {
+            if (exactRecoveredReviewIdsAtOwnerHead(inspection, context).length === 1) {
+                return;
+            }
+            fail(
+                `${pullRequestReviewResolutionLockScope(number)} could not prove exact landed createPendingReview after head drift`
+            );
+            break;
+        }
+        case 'replyDone':
+        case 'replyDoneSettlement': {
+            const matchingReplies = exactRecoveredReplyMarkersAtOwnerHead(thread, context, owner.mutation.reviewId);
+            if (matchingReplies.length === 1) {
+                return;
+            }
+            fail(
+                `${pullRequestReviewResolutionLockScope(number)} could not prove exact landed replyDone after head drift`
+            );
+            break;
+        }
+        default:
+            return;
+    }
+}
+
 function hasRecoveredReviewResolutionMutation(
     number: number,
     owner: ReviewResolutionLockOwner,
@@ -3353,12 +3417,20 @@ export function recoverReviewResolutionLockOwnerState(
             if (!hasRecoveredReviewResolutionMutation(number, owner, inspection, context, inspection.thread!, port)) {
                 fail(unreconciledReviewResolutionMutationMessage(number, mutation));
             }
+            if (inspection.head !== owner.head) {
+                assertExactRecoveredMutationAfterHeadDrift(number, owner, inspection, context, inspection.thread!);
+                break;
+            }
             inspection = continueRecoveredReviewResolution(number, owner, port);
             break;
         case 'replyDoneSettlement':
         case 'replyDone':
             if (!hasRecoveredReviewResolutionMutation(number, owner, inspection, context, inspection.thread!, port)) {
                 fail(unreconciledReviewResolutionMutationMessage(number, mutation));
+            }
+            if (inspection.head !== owner.head) {
+                assertExactRecoveredMutationAfterHeadDrift(number, owner, inspection, context, inspection.thread!);
+                break;
             }
             inspection = continueRecoveredReviewResolution(number, owner, port);
             break;

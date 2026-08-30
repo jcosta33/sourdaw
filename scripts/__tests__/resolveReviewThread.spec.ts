@@ -1462,6 +1462,70 @@ function writePinnedOriginResolveReviewSnapshot(
     return entryPath;
 }
 
+function writePinnedOriginRecoverReviewSnapshot(
+    snapshotRoot: string,
+    recordedRevisionPath: string,
+    releasePath: string
+): string {
+    const entryPath = writeRecoverReviewResolutionSnapshot(snapshotRoot);
+    writeFileSync(
+        join(snapshotRoot, 'scripts', 'githubAppIdentity.ts'),
+        [
+            'const sleeper = new Int32Array(new SharedArrayBuffer(4));',
+            "import { readFileSync, existsSync, writeFileSync } from 'node:fs';",
+            "import { spawnSync } from 'node:child_process';",
+            "import { fileURLToPath } from 'node:url';",
+            `const recordedRevisionPath = ${JSON.stringify(recordedRevisionPath)};`,
+            `const releasePath = ${JSON.stringify(releasePath)};`,
+            `export const AUTHOR_BOT_NODE_ID = ${JSON.stringify(AUTHOR_BOT_NODE_ID)};`,
+            `export const REVIEWER_BOT_NODE_ID = ${JSON.stringify(REVIEWER_BOT_NODE_ID)};`,
+            `export const REQUIRED_REPOSITORY = ${JSON.stringify(REQUIRED_REPOSITORY)};`,
+            'export function assertRequiredRepository(repository) {',
+            '  if (repository !== REQUIRED_REPOSITORY) throw new Error(`unexpected repository ${repository}`);',
+            '}',
+            'export function assertTrustedExecutingBlob(repoRelativePath, executingFile, originBlob, executingSource = readFileSync(executingFile, "utf8")) {',
+            '  if (originBlob === undefined) return;',
+            '  if (originBlob !== executingSource) {',
+            '    throw new Error(`${repoRelativePath} does not match origin/main; refusing to run a mutated copy`);',
+            '  }',
+            '}',
+            'export async function authenticateRole() {',
+            "  throw new Error('stop after trusted blob check');",
+            '}',
+            'export function isAuthorBotNodeId(value) { return value === AUTHOR_BOT_NODE_ID; }',
+            'export function isReviewerBotNodeId(value) { return value === REVIEWER_BOT_NODE_ID; }',
+            'export function originMainBlob(_repoRelativePath, cwd = process.cwd(), env, gitCommand = process.env.SOURDAW_TEST_TRUSTED_GIT_PATH ?? "git", revision = "origin/main") {',
+            '  writeFileSync(recordedRevisionPath, revision, "utf8");',
+            '  while (!existsSync(releasePath)) Atomics.wait(sleeper, 0, 0, 20);',
+            '  const pinned = process.env.SOURDAW_TRUSTED_ORIGIN_COMMIT;',
+            "  if (typeof pinned !== 'string' || pinned.trim() === '') throw new Error('missing pinned origin commit');",
+            '  if (revision === pinned) {',
+            '    return readFileSync(fileURLToPath(new URL("./recoverReviewResolutionLock.ts", import.meta.url)), "utf8");',
+            '  }',
+            '  const result = spawnSync(gitCommand, ["rev-parse", "--verify", "refs/remotes/origin/main^{commit}"], {',
+            '    cwd,',
+            '    env,',
+            '    encoding: "utf8",',
+            '    shell: false,',
+            '  });',
+            '  if (result.error !== undefined) throw result.error;',
+            "  if (result.status !== 0) throw new Error(result.stderr || result.stdout || 'origin/main lookup failed');",
+            '  return result.stdout.trim() === pinned',
+            '    ? readFileSync(fileURLToPath(new URL("./recoverReviewResolutionLock.ts", import.meta.url)), "utf8")',
+            '    : "mutated";',
+            '}',
+            'export function parseGraphqlResponse(output) { return JSON.parse(output); }',
+            'export function resolvePrimaryRoot() {',
+            '  const root = process.env.SOURDAW_TEST_PRIMARY_ROOT;',
+            "  if (typeof root !== 'string' || root.trim() === '') throw new Error('missing test primary root');",
+            '  return root;',
+            '}',
+            'export function spawnCapture() { throw new Error("unexpected spawnCapture"); }',
+        ].join('\n')
+    );
+    return entryPath;
+}
+
 function writeRecoverReviewResolutionSnapshot(snapshotRoot: string): string {
     const scriptsRoot = join(snapshotRoot, 'scripts');
     mkdirSync(scriptsRoot, { recursive: true });
@@ -1784,6 +1848,156 @@ describe('review thread resolution', () => {
             });
             expectCanonicalResolutionReview(state().reviews[0]!);
             expect(readLockOid(repository, 42)).toBeUndefined();
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
+    it('releases the stale-head create-pending-review recovery once one exact H1 draft is provably landed, then admits a fresh H2 acquisition', () => {
+        const repository = createTemporaryGitRepository();
+        const { port, calls, state } = fakePort({
+            heads: [movedHead],
+            existingPendingReviewCount: 1,
+            existingPendingReviewCommitOid: head,
+        });
+        try {
+            const ownerOid = writeLockOwnerBlob(repository, 999999, head, {
+                phase: 'createPendingReview',
+                epoch: 1,
+            });
+            updateLock(repository, 42, ownerOid);
+            const inspection = recoverPullRequestReviewResolutionLock(
+                repository,
+                42,
+                ownerOid,
+                (owner) => recoverReviewResolutionLockOwnerState(42, owner, port),
+                () => false
+            );
+            expect(calls).toEqual(['inspect:1']);
+            expect(inspection.head).toBe(movedHead);
+            expect(inspection.pendingReviews).toEqual([
+                expect.objectContaining({
+                    id: reviewId,
+                    state: 'PENDING',
+                    body: resolutionReviewSummary(pullRequestId, threadId, head),
+                    commitOid: head,
+                }),
+            ]);
+            expect(state().comments.filter((comment) => comment.body === 'Done')).toHaveLength(0);
+            expect(readLockOid(repository, 42)).toBeUndefined();
+            expect(withPullRequestReviewResolutionLock(repository, 42, threadId, movedHead, () => 'fresh-h2')).toBe(
+                'fresh-h2'
+            );
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
+    it('fails closed on stale-head create-pending-review recovery when more than one exact H1 draft exists', () => {
+        const repository = createTemporaryGitRepository();
+        const { port, calls } = fakePort({
+            heads: [movedHead],
+            existingPendingReviewCount: 2,
+            existingPendingReviewCommitOid: head,
+        });
+        try {
+            const ownerOid = writeLockOwnerBlob(repository, 999999, head, {
+                phase: 'createPendingReview',
+                epoch: 1,
+            });
+            updateLock(repository, 42, ownerOid);
+            expect(() =>
+                recoverPullRequestReviewResolutionLock(
+                    repository,
+                    42,
+                    ownerOid,
+                    (owner) => recoverReviewResolutionLockOwnerState(42, owner, port),
+                    () => false
+                )
+            ).toThrow(/could not prove exact landed createPendingReview/i);
+            expect(calls).toEqual(['inspect:1']);
+            const preservedOwnerOid = readLockOid(repository, 42);
+            expect(preservedOwnerOid).toBeDefined();
+            expect(preservedOwnerOid).not.toBe(ownerOid);
+            expect(requireLockOwner(repository, 42)).toMatchObject({
+                threadId,
+                head,
+                mutation: { phase: 'createPendingReview', epoch: 1 },
+            });
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
+    it('releases the stale-head reply recovery once one exact H1 Done marker is provably landed, then admits a fresh H2 acquisition', () => {
+        const repository = createTemporaryGitRepository();
+        const { port, calls } = fakePort({
+            heads: [movedHead],
+            existingReplyCount: 1,
+            existingReplyReviewState: 'PENDING',
+            existingReplyReviewCommitOid: head,
+        });
+        try {
+            const ownerOid = writeLockOwnerBlob(repository, 999999, head, {
+                phase: 'replyDone',
+                epoch: 1,
+                reviewId,
+            });
+            updateLock(repository, 42, ownerOid);
+            const inspection = recoverPullRequestReviewResolutionLock(
+                repository,
+                42,
+                ownerOid,
+                (owner) => recoverReviewResolutionLockOwnerState(42, owner, port),
+                () => false
+            );
+            expect(calls).toEqual(['inspect:1']);
+            expect(inspection.head).toBe(movedHead);
+            expect(inspection.thread?.comments.filter((comment) => comment.body === 'Done')).toHaveLength(1);
+            expect(readLockOid(repository, 42)).toBeUndefined();
+            expect(withPullRequestReviewResolutionLock(repository, 42, threadId, movedHead, () => 'fresh-h2')).toBe(
+                'fresh-h2'
+            );
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
+    it('fails closed on stale-head reply recovery when more than one exact H1 Done marker matches the same review', () => {
+        const repository = createTemporaryGitRepository();
+        const { port, calls } = fakePort({
+            heads: [movedHead],
+            existingReplyCount: 2,
+            existingReplyReviewState: 'PENDING',
+            existingReplyReviewCommitOid: head,
+            secondaryReplyReviewId: reviewId,
+            secondaryReplyReviewMissing: true,
+        });
+        try {
+            const ownerOid = writeLockOwnerBlob(repository, 999999, head, {
+                phase: 'replyDone',
+                epoch: 1,
+                reviewId,
+            });
+            updateLock(repository, 42, ownerOid);
+            expect(() =>
+                recoverPullRequestReviewResolutionLock(
+                    repository,
+                    42,
+                    ownerOid,
+                    (owner) => recoverReviewResolutionLockOwnerState(42, owner, port),
+                    () => false
+                )
+            ).toThrow(/could not prove exact landed replyDone/i);
+            expect(calls).toEqual(['inspect:1']);
+            const preservedOwnerOid = readLockOid(repository, 42);
+            expect(preservedOwnerOid).toBeDefined();
+            expect(preservedOwnerOid).not.toBe(ownerOid);
+            expect(requireLockOwner(repository, 42)).toMatchObject({
+                threadId,
+                head,
+                mutation: { phase: 'replyDone', epoch: 1, reviewId },
+            });
         } finally {
             rmSync(repository, { recursive: true, force: true });
         }
@@ -3055,6 +3269,135 @@ describe('review thread resolution', () => {
             expect(stderr).toMatch(/stop after trusted blob check/i);
             expect(stderr).not.toMatch(/mutated copy/i);
             expect(readLockOid(repository, 42)).toBeUndefined();
+        } finally {
+            child.kill('SIGKILL');
+            await waitForExit(child).catch(() => undefined);
+            rmSync(markerRoot, { recursive: true, force: true });
+            rmSync(snapshotRoot, { recursive: true, force: true });
+            rmSync(repository, { recursive: true, force: true });
+        }
+    }, 10_000);
+
+    it('pins detached recover child blob verification to the launcher commit even if local origin/main advances before the check resumes', async () => {
+        const { repository, pinnedCommit, advancedCommit } = createTemporaryGitRepositoryWithTrackedResolveSource();
+        const snapshotRoot = mkdtempSync(join(tmpdir(), 'sourdaw-review-recover-pinned-origin-'));
+        const markerRoot = mkdtempSync(join(tmpdir(), 'sourdaw-review-recover-pinned-origin-marker-'));
+        const recordedRevisionPath = join(snapshotRoot, 'recorded-revision.txt');
+        const releasePath = join(snapshotRoot, 'release-origin-check');
+        const entryPath = writePinnedOriginRecoverReviewSnapshot(snapshotRoot, recordedRevisionPath, releasePath);
+        const token = '123e4567-e89b-12d3-a456-426614174000';
+        const markerPath = join(markerRoot, 'child-marker.json');
+        const capabilityPath = join(markerRoot, 'bootstrap-capability.json');
+        const ownerOid = writeLockOwnerBlob(repository, 999999, head, {
+            phase: 'replyDone',
+            epoch: 1,
+            reviewId,
+        });
+        updateLock(repository, 42, ownerOid);
+        writeFileSync(
+            capabilityPath,
+            JSON.stringify({
+                version: 1,
+                token,
+                trustedLauncher: { primaryRoot: repository, gitPath: trustedGitPath, ghPath: trustedGhPath },
+            }),
+            { encoding: 'utf8', mode: 0o600 }
+        );
+        publishReviewResolutionChildLaunchMarker(markerPath, token, null, capabilityPath);
+        const child = spawn(process.execPath, [entryPath, '42', '--owner', ownerOid], {
+            cwd: repository,
+            env: {
+                ...process.env,
+                SOURDAW_TEST_PRIMARY_ROOT: repository,
+                SOURDAW_TEST_TRUSTED_GIT_PATH: trustedGitPath,
+                SOURDAW_TRUSTED_ORIGIN_COMMIT: pinnedCommit,
+                SOURDAW_REVIEW_RESOLUTION_CHILD: JSON.stringify({ path: markerPath, token }),
+            },
+            stdio: ['ignore', 'ignore', 'pipe'],
+            shell: false,
+            detached: true,
+        });
+        let stderr = '';
+        child.stderr?.setEncoding('utf8');
+        child.stderr?.on('data', (chunk: string) => {
+            stderr += chunk;
+        });
+        try {
+            if (child.pid === undefined) {
+                throw new Error('child pid is unavailable');
+            }
+            publishReviewResolutionChildLaunchMarker(markerPath, token, child.pid, capabilityPath);
+            await waitForFile(recordedRevisionPath);
+            expect(readFileSync(recordedRevisionPath, 'utf8')).toBe(pinnedCommit);
+            gitCapture(repository, ['update-ref', 'refs/remotes/origin/main', advancedCommit, pinnedCommit]);
+            writeFileSync(releasePath, '1', 'utf8');
+            await waitForExit(child);
+            expect(child.exitCode).toBe(1);
+            expect(stderr).toMatch(/stop after trusted blob check/i);
+            expect(stderr).not.toMatch(/mutated copy/i);
+            expect(readLockOid(repository, 42)).toBe(ownerOid);
+        } finally {
+            child.kill('SIGKILL');
+            await waitForExit(child).catch(() => undefined);
+            rmSync(markerRoot, { recursive: true, force: true });
+            rmSync(snapshotRoot, { recursive: true, force: true });
+            rmSync(repository, { recursive: true, force: true });
+        }
+    }, 10_000);
+
+    it('refuses detached recover execution when the launcher-pinned origin commit is missing', async () => {
+        const repository = createTemporaryGitRepository();
+        const snapshotRoot = mkdtempSync(join(tmpdir(), 'sourdaw-review-recover-missing-origin-'));
+        const markerRoot = mkdtempSync(join(tmpdir(), 'sourdaw-review-recover-missing-origin-marker-'));
+        const recordedRevisionPath = join(snapshotRoot, 'recorded-revision.txt');
+        const releasePath = join(snapshotRoot, 'release-origin-check');
+        const entryPath = writePinnedOriginRecoverReviewSnapshot(snapshotRoot, recordedRevisionPath, releasePath);
+        const token = '123e4567-e89b-12d3-a456-426614174001';
+        const markerPath = join(markerRoot, 'child-marker.json');
+        const capabilityPath = join(markerRoot, 'bootstrap-capability.json');
+        const ownerOid = writeLockOwnerBlob(repository, 999999, head, {
+            phase: 'replyDone',
+            epoch: 1,
+            reviewId,
+        });
+        updateLock(repository, 42, ownerOid);
+        writeFileSync(
+            capabilityPath,
+            JSON.stringify({
+                version: 1,
+                token,
+                trustedLauncher: { primaryRoot: repository, gitPath: trustedGitPath, ghPath: trustedGhPath },
+            }),
+            { encoding: 'utf8', mode: 0o600 }
+        );
+        publishReviewResolutionChildLaunchMarker(markerPath, token, null, capabilityPath);
+        const child = spawn(process.execPath, [entryPath, '42', '--owner', ownerOid], {
+            cwd: repository,
+            env: {
+                ...process.env,
+                SOURDAW_TEST_PRIMARY_ROOT: repository,
+                SOURDAW_TEST_TRUSTED_GIT_PATH: trustedGitPath,
+                SOURDAW_REVIEW_RESOLUTION_CHILD: JSON.stringify({ path: markerPath, token }),
+            },
+            stdio: ['ignore', 'ignore', 'pipe'],
+            shell: false,
+            detached: true,
+        });
+        let stderr = '';
+        child.stderr?.setEncoding('utf8');
+        child.stderr?.on('data', (chunk: string) => {
+            stderr += chunk;
+        });
+        try {
+            if (child.pid === undefined) {
+                throw new Error('child pid is unavailable');
+            }
+            publishReviewResolutionChildLaunchMarker(markerPath, token, child.pid, capabilityPath);
+            await waitForExit(child);
+            expect(child.exitCode).toBe(1);
+            expect(stderr).toMatch(/protected primary checkout launcher/i);
+            expect(() => statSync(recordedRevisionPath)).toThrow();
+            expect(readLockOid(repository, 42)).toBe(ownerOid);
         } finally {
             child.kill('SIGKILL');
             await waitForExit(child).catch(() => undefined);
