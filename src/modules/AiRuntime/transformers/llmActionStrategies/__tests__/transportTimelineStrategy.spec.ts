@@ -126,6 +126,55 @@ function assertAllExactKeyGuardsCovered(
     return cases;
 }
 
+type PunchCallName = Extract<TransportTimelineCallName, 'setPunchIn' | 'setPunchOut'>;
+
+type PunchCallCase<Name extends PunchCallName> = {
+    [CallName in Name]: {
+        arguments: Record<string, unknown>;
+        endpointReason: string;
+        name: CallName;
+    };
+}[Name];
+
+const punchCallCases = [
+    {
+        arguments: { beat: 4 },
+        endpointReason: 'Expected exactly one finite punch-in beat with 0 <= beat < Number.MAX_VALUE',
+        name: 'setPunchIn',
+    },
+    {
+        arguments: { beat: 12 },
+        endpointReason: 'Expected exactly one finite punch-out beat with 0 < beat <= Number.MAX_VALUE',
+        name: 'setPunchOut',
+    },
+] as const satisfies readonly PunchCallCase<PunchCallName>[];
+
+const invalidPunchRegionContexts = [
+    { context: { ...projectContext, punchInBeat: Number.NaN }, label: 'non-finite punch-in beat' },
+    { context: { ...projectContext, punchOutBeat: Number.NaN }, label: 'non-finite punch-out beat' },
+    { context: { ...projectContext, punchInBeat: -1 }, label: 'negative punch-in beat' },
+    { context: { ...projectContext, punchInBeat: 8, punchOutBeat: 4 }, label: 'punch-out at or before punch-in' },
+] satisfies readonly { context: ProjectContext; label: string }[];
+
+function bridgePunchCall({
+    arguments: callArguments,
+    context,
+    name,
+    projectPunchRegion,
+}: {
+    arguments: Record<string, unknown>;
+    context: ProjectContext;
+    name: PunchCallName;
+    projectPunchRegion: typeof createPunchRegionPatch;
+}) {
+    return bridgeTransportTimelineToolCall({
+        call: { name, arguments: callArguments },
+        context,
+        index: 0,
+        projectPunchRegion,
+    });
+}
+
 describe('transportTimelineStrategy', () => {
     it('registers the complete transport and timeline family exactly once', () => {
         expect([...transportTimelineStrategyRegistry.keys()]).toEqual([
@@ -194,6 +243,51 @@ describe('transportTimelineStrategy', () => {
                     call: { name: testCase.name, arguments: { ...testCase.arguments, unexpected: true } },
                 })
             ).toEqual({ index: 0, name: testCase.name, reason: testCase.reason });
+        }
+    });
+
+    it('rejects invalid punch regions before calling the projector', () => {
+        for (const invalidRegion of invalidPunchRegionContexts) {
+            for (const testCase of punchCallCases) {
+                let projectorCalls = 0;
+                const projectPunchRegion: typeof createPunchRegionPatch = () => {
+                    projectorCalls += 1;
+                    return null;
+                };
+
+                expect(
+                    bridgePunchCall({
+                        ...testCase,
+                        context: invalidRegion.context,
+                        projectPunchRegion,
+                    })
+                ).toEqual({ index: 0, name: testCase.name, reason: testCase.endpointReason });
+                expect(projectorCalls, invalidRegion.label).toBe(0);
+            }
+        }
+    });
+
+    it('rejects punch endpoints when the projector cannot produce a region', () => {
+        for (const testCase of punchCallCases) {
+            const projectPunchRegion: typeof createPunchRegionPatch = () => null;
+
+            expect(bridgePunchCall({ ...testCase, context: projectContext, projectPunchRegion })).toEqual({
+                index: 0,
+                name: testCase.name,
+                reason: 'Requested punch endpoint cannot produce a finite punch region',
+            });
+        }
+    });
+
+    it('rejects punch endpoints when the projector leaves the region unchanged', () => {
+        for (const testCase of punchCallCases) {
+            const projectPunchRegion: typeof createPunchRegionPatch = ({ current }) => ({ ...current });
+
+            expect(bridgePunchCall({ ...testCase, context: projectContext, projectPunchRegion })).toEqual({
+                index: 0,
+                name: testCase.name,
+                reason: 'Requested punch endpoint already matches project state',
+            });
         }
     });
 });
