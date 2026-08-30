@@ -131,12 +131,12 @@ export const PromptBar = (): ReactElement => {
     // ── Preview mode ────────────────────────────────────────────────────
     if (prompt.preview) {
         return (
-            <Row gap={2} className="max-w-lg">
+            <Row gap={2} className="transport-bar__prompt-preview max-w-full overflow-hidden">
                 <Sparkles className="size-3.5 shrink-0 text-[var(--color-accent-peach)]" aria-hidden="true" />
-                <div className="flex-1 min-w-0">
-                    <Row align="stretch" wrap gap={1}>
+                <div className="flex-1 min-w-0 overflow-hidden">
+                    <Row align="stretch" gap={1} className="overflow-hidden">
                         {prompt.preview.actionLabels.map((label, index) => (
-                            <DawMicroBadge key={index} className="text-[10px] text-foreground">
+                            <DawMicroBadge key={index} className="shrink-0 text-[10px] text-foreground">
                                 {label}
                             </DawMicroBadge>
                         ))}

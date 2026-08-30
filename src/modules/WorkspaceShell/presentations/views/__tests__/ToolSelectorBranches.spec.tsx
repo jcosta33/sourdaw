@@ -63,6 +63,34 @@ describe('ToolSelector — radio group structure', () => {
         expect(screen.getAllByRole('radio')).toHaveLength(6);
         expect(within(tools).getByRole('radio', { checked: true })).toBeInTheDocument();
     });
+
+    it('selects and focuses adjacent compact tools with arrow keys', () => {
+        render(
+            <TooltipProvider>
+                <ToolSelector compact />
+            </TooltipProvider>
+        );
+        fireEvent.click(screen.getByRole('button', { name: /Editing tools:/ }));
+
+        const select = screen.getByRole('radio', { name: 'Select (S)' });
+        fireEvent.keyDown(select, { key: 'ArrowRight' });
+        expect(mockedSetEditingTool).toHaveBeenLastCalledWith('cut');
+        expect(screen.getByRole('radio', { name: 'Cut (C)' })).toHaveFocus();
+
+        fireEvent.keyDown(screen.getByRole('radio', { name: 'Cut (C)' }), { key: 'ArrowLeft' });
+        expect(mockedSetEditingTool).toHaveBeenLastCalledWith('select');
+    });
+
+    it('activates a compact tool by click', () => {
+        render(
+            <TooltipProvider>
+                <ToolSelector compact />
+            </TooltipProvider>
+        );
+        fireEvent.click(screen.getByRole('button', { name: /Editing tools:/ }));
+        fireEvent.click(screen.getByRole('radio', { name: 'Draw (D/B)' }));
+        expect(mockedSetEditingTool).toHaveBeenCalledWith('draw');
+    });
 });
 
 describe('ToolSelector — active selection', () => {

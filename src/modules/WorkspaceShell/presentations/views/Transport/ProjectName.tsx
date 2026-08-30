@@ -25,9 +25,9 @@ export const ProjectName = ({ name, dirty }: ProjectNameProps): ReactElement => 
 
     if (editing) {
         return (
-            <Row gap={1.5} shrink={false}>
+            <Row gap={1.5} shrink={false} className="transport-bar__project-name">
                 <DawCompactInput
-                    className="daw-readout-well w-32 px-1.5 font-medium ring-1 ring-ring"
+                    className="transport-bar__project-name-input daw-readout-well w-32 min-w-0 px-1.5 font-medium ring-1 ring-ring"
                     value={value}
                     onChange={(event) => setValue(event.target.value)}
                     onBlur={commit}

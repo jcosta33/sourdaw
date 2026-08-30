@@ -1,4 +1,4 @@
-import { type ReactElement } from 'react';
+import { type KeyboardEvent, type ReactElement } from 'react';
 
 import {
     MousePointer2,
@@ -29,6 +29,25 @@ const TOOL_ICONS: Record<EditingTool, ReactElement> = {
 };
 
 const TOOLS: EditingTool[] = ['select', 'cut', 'draw', 'automation', 'stretch', 'marquee'];
+
+const selectToolOnArrowKey = (event: KeyboardEvent<HTMLButtonElement>, tool: EditingTool): void => {
+    if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') {
+        return;
+    }
+    const direction = event.key === 'ArrowRight' ? 1 : -1;
+    event.preventDefault();
+    const index = TOOLS.indexOf(tool);
+    const nextTool = TOOLS[(index + direction + TOOLS.length) % TOOLS.length];
+    if (nextTool === undefined) {
+        return;
+    }
+    setEditingTool(nextTool);
+    const radios = event.currentTarget
+        .closest('[role="radiogroup"]')
+        ?.querySelectorAll<HTMLButtonElement>('[role="radio"]');
+    const nextRadio = radios?.[(index + direction + TOOLS.length) % TOOLS.length];
+    nextRadio?.focus();
+};
 
 type ToolSelectorProps = {
     rippleEditing?: boolean;
@@ -69,7 +88,9 @@ export const ToolSelector = ({ rippleEditing, onToggleRipple, compact = false }:
                                     size="sm"
                                     role="radio"
                                     aria-checked={activeTool === tool}
+                                    tabIndex={activeTool === tool ? 0 : -1}
                                     onClick={() => setEditingTool(tool)}
+                                    onKeyDown={(event) => selectToolOnArrowKey(event, tool)}
                                 >
                                     {TOOL_ICONS[tool]}
                                     {TOOL_LABELS[tool]}
@@ -102,9 +123,11 @@ export const ToolSelector = ({ rippleEditing, onToggleRipple, compact = false }:
                             size="icon-sm"
                             role="radio"
                             aria-checked={activeTool === tool}
+                            tabIndex={activeTool === tool ? 0 : -1}
                             aria-label={TOOL_LABELS[tool]}
                             data-testid={`tool-${tool}`}
                             onClick={() => setEditingTool(tool)}
+                            onKeyDown={(event) => selectToolOnArrowKey(event, tool)}
                         >
                             {TOOL_ICONS[tool]}
                         </Button>

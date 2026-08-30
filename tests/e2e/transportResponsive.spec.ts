@@ -99,6 +99,13 @@ test.describe('Responsive transport bar', () => {
 
         await page.keyboard.press('Escape');
         await expect(page.getByRole('button', { name: 'Transport settings' })).toBeFocused();
+
+        for (const width of [1024, 512]) {
+            await page.setViewportSize({ width, height: 900 });
+            await page.getByRole('button', { name: 'Project controls' }).click();
+            await expect(page.getByRole('dialog', { name: 'Project controls' })).toBeVisible();
+            await page.keyboard.press('Escape');
+        }
     });
 
     test('does not duplicate compact actions when More is open', async ({ page }) => {
@@ -120,5 +127,18 @@ test.describe('Responsive transport bar', () => {
         await expect(tools).toHaveCount(1);
         await expect(tools.getByRole('radio')).toHaveCount(6);
         await expect(tools.locator('[role="radio"][aria-checked="true"]')).toHaveCount(1);
+    });
+
+    test('keeps More open across compact and minimal widths', async ({ page }) => {
+        test.setTimeout(120_000);
+        await page.setViewportSize({ width: 1440, height: 900 });
+        await setupWorkspace(page);
+        await launch_new_project(page);
+        await page.setViewportSize({ width: 819, height: 900 });
+
+        await page.getByRole('button', { name: 'More transport controls' }).click();
+        await expect(page.getByRole('button', { name: 'Punch recording settings' })).toBeVisible();
+        await page.setViewportSize({ width: 683, height: 900 });
+        await expect(page.getByRole('button', { name: 'Punch recording settings' })).toBeVisible();
     });
 });

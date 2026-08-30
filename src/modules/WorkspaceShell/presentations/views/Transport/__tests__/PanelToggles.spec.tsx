@@ -196,4 +196,29 @@ describe('PanelToggles', () => {
             expect(screen.getByRole('button', { name })).toHaveAttribute('data-variant', 'secondary');
         }
     });
+
+    it('routes every compact row to its owning use case', () => {
+        renderWithTooltip(<PanelToggles {...allClosed} compact />);
+        fireEvent.click(screen.getByRole('button', { name: 'View and panel controls' }));
+
+        fireEvent.click(screen.getByRole('button', { name: 'Track list' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Browser' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Inspector' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Session + Arrangement View' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Bottom dock' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Virtual keyboard' }));
+        fireEvent.click(screen.getByRole('button', { name: 'AI chat' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Generate' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Preferences' }));
+
+        expect(mocks.toggleTrackList).toHaveBeenCalledTimes(1);
+        expect(mocks.toggleSidebar).toHaveBeenCalledTimes(1);
+        expect(mocks.toggleInspector).toHaveBeenCalledTimes(1);
+        expect(mocks.toggleDualView).toHaveBeenCalledTimes(1);
+        expect(mocks.toggleMixer).toHaveBeenCalledTimes(1);
+        expect(mocks.toggleVirtualKeyboard).toHaveBeenCalledTimes(1);
+        expect(mocks.toggleChatPanel).toHaveBeenCalledTimes(1);
+        expect(mocks.toggleAiPanel).toHaveBeenCalledTimes(1);
+        expect(mocks.openPreferencesDialog).toHaveBeenCalledTimes(1);
+    });
 });

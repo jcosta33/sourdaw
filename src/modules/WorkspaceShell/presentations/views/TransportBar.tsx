@@ -123,6 +123,21 @@ export const TransportBar = (): ReactElement => {
                     >
                         <ProjectName name={project.name} dirty={project.dirty} />
                         <RecentProjectsMenu />
+                        <span className="transport-bar__compact-only">
+                            <Popover>
+                                <PopoverTrigger asChild>
+                                    <Button variant="ghost" size="icon-sm" aria-label="Project controls">
+                                        <Ellipsis className="size-3.5" aria-hidden="true" />
+                                    </Button>
+                                </PopoverTrigger>
+                                <PopoverContent align="start" aria-label="Project controls">
+                                    <div className="space-y-2">
+                                        <ArrangementSelector />
+                                        <MissingMediaPanel />
+                                    </div>
+                                </PopoverContent>
+                            </Popover>
+                        </span>
                     </Row>
                     <span className="transport-bar__full-only contents">
                         <Sep />
@@ -234,22 +249,7 @@ export const TransportBar = (): ReactElement => {
                     <Sep />
                     <UndoRedoButtons canUndo={undoState.canUndo} canRedo={undoState.canRedo} />
                 </Row>
-                <div className="transport-bar__action-more transport-bar__compact-more">
-                    <Popover>
-                        <PopoverTrigger asChild>
-                            <Button variant="ghost" size="icon-sm" aria-label="More transport controls">
-                                <Ellipsis className="size-3.5" aria-hidden="true" />
-                            </Button>
-                        </PopoverTrigger>
-                        <PopoverContent align="end" aria-label="More transport controls">
-                            <div className="space-y-2">
-                                <TempoEditor />
-                                <PunchRecordingControls />
-                            </div>
-                        </PopoverContent>
-                    </Popover>
-                </div>
-                <div className="transport-bar__action-more transport-bar__minimal-more">
+                <div className="transport-bar__action-more">
                     <Popover>
                         <PopoverTrigger asChild>
                             <Button variant="ghost" size="icon-sm" aria-label="More transport controls">

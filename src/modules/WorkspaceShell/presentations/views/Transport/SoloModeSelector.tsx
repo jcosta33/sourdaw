@@ -1,4 +1,4 @@
-import { type ReactElement } from 'react';
+import { type KeyboardEvent, type ReactElement } from 'react';
 
 import { DawTransportCluster } from '#/components/daw/DawTransportCluster';
 import { Button } from '#/components/ui/button';
@@ -25,6 +25,25 @@ const SOLO_MODES: { value: SoloMode; label: string; description: string }[] = [
         description: 'Pre Fader Listen — solo at unity gain',
     },
 ];
+
+const selectSoloModeOnArrowKey = (event: KeyboardEvent<HTMLButtonElement>, mode: SoloMode): void => {
+    if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') {
+        return;
+    }
+    const direction = event.key === 'ArrowRight' ? 1 : -1;
+    event.preventDefault();
+    const index = SOLO_MODES.findIndex((option) => option.value === mode);
+    const next = SOLO_MODES[(index + direction + SOLO_MODES.length) % SOLO_MODES.length];
+    if (next === undefined) {
+        return;
+    }
+    setSoloMode(next.value);
+    const radios = event.currentTarget
+        .closest('[role="radiogroup"]')
+        ?.querySelectorAll<HTMLButtonElement>('[role="radio"]');
+    const nextRadio = radios?.[(index + direction + SOLO_MODES.length) % SOLO_MODES.length];
+    nextRadio?.focus();
+};
 
 type SoloModeSelectorProps = {
     soloMode: SoloMode;
@@ -54,7 +73,9 @@ export const SoloModeSelector = ({ soloMode, compact = false }: SoloModeSelector
                                 size="sm"
                                 role="radio"
                                 aria-checked={soloMode === message.value}
+                                tabIndex={soloMode === message.value ? 0 : -1}
                                 onClick={() => setSoloMode(message.value)}
+                                onKeyDown={(event) => selectSoloModeOnArrowKey(event, message.value)}
                             >
                                 {message.label} — {message.description}
                             </Button>
@@ -75,8 +96,10 @@ export const SoloModeSelector = ({ soloMode, compact = false }: SoloModeSelector
                             size="xs"
                             role="radio"
                             aria-checked={soloMode === message.value}
+                            tabIndex={soloMode === message.value ? 0 : -1}
                             data-testid={`solo-mode-${message.value}`}
                             onClick={() => setSoloMode(message.value)}
+                            onKeyDown={(event) => selectSoloModeOnArrowKey(event, message.value)}
                             className={soloMode === message.value ? 'text-[var(--color-state-solo)]' : ''}
                         >
                             {message.label}

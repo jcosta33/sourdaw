@@ -134,7 +134,7 @@
     }
 
     .transport-bar__action-row {
-        grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto;
+        grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
     }
 
     .transport-bar__project-menu-control {
@@ -150,30 +150,26 @@
         overflow: hidden;
     }
 
+    .transport-bar__project-name-input {
+        width: 100%;
+    }
+
     .transport-bar__action-left .transport-bar__full-or-compact {
         display: none;
     }
 
-    .transport-bar__compact-more {
+    .transport-bar__action-more {
         display: inline-flex;
-    }
-}
-
-@container (max-width: 739px) {
-    .transport-bar__action-row {
-        grid-template-columns: minmax(0, 1fr) auto auto;
     }
 
     .transport-bar__action-right {
         display: none;
     }
+}
 
-    .transport-bar__compact-more {
-        display: none;
-    }
-
-    .transport-bar__minimal-more {
-        display: inline-flex;
+@container (max-width: 739px) {
+    .transport-bar__action-row {
+        grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
     }
 
     .transport-bar__project-menu-control {

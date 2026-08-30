@@ -39,7 +39,11 @@ const renderWithTooltip = (ui: React.ReactElement) => {
 };
 
 const openTransportSettings = (): void => {
-    fireEvent.click(screen.getAllByRole('button', { name: 'Transport settings' })[0]);
+    const button = screen.getAllByRole('button', { name: 'Transport settings' }).at(0);
+    if (button === undefined) {
+        throw new Error('Expected a transport settings button');
+    }
+    fireEvent.click(button);
 };
 
 describe('TransportControls', () => {
