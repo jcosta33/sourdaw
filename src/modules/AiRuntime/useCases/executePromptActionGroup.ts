@@ -407,6 +407,8 @@ export async function executePromptActionGroup(
         }
         const leaseSettlement = settleCommand('completed', 'verified-command-receipt');
         const receiptIdentity = getReceiptIdentity(execution.receipt);
+        const hasExactFinalizationEvidence =
+            execution.status !== 'committed' || execution.finalizationEvidenceFailure === undefined;
         const receiptPersistenceWarning = recordCommittedCommandWarningSafe({
             runId: input.runId,
             receipt: execution.receipt,
@@ -415,10 +417,7 @@ export async function executePromptActionGroup(
             ...(execution.status === 'committed' && execution.committedRevision
                 ? { committedRevision: execution.committedRevision }
                 : {}),
-            completesRun:
-                leaseSettlement.accepted &&
-                leaseSettlement.warning === null &&
-                execution.finalizationEvidenceFailure === undefined,
+            completesRun: leaseSettlement.accepted && leaseSettlement.warning === null && hasExactFinalizationEvidence,
             ...(execution.status === 'committed' && execution.finalizationEvidenceFailure
                 ? {
                       recoveryError: normalizeAgentFailure({
