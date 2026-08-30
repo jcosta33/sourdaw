@@ -31,6 +31,13 @@ export const createNativeMenuActionDispatcher = ({
     };
 
     return {
+        /** Every new renderer starts unready; only windowless project transitions may wait for it. */
+        registerWindow(window: NativeMenuActionWindow): void {
+            if (window.isDestroyed() || pending !== undefined) {
+                return;
+            }
+            pending = { window, intents: [] };
+        },
         dispatch(intent: NativeMenuIntent): void {
             const window = getWindow();
             if (window !== undefined && !window.isDestroyed()) {
@@ -47,6 +54,10 @@ export const createNativeMenuActionDispatcher = ({
                 return;
             }
             const createdWindow = createWindow();
+            if (pending?.window === createdWindow) {
+                pending.intents.push(intent);
+                return;
+            }
             pending = { window: createdWindow, intents: [intent] };
         },
         rendererReady(window: NativeMenuActionWindow): void {

@@ -11,7 +11,7 @@ const desktop = vi.hoisted(() => ({
     saveResult: vi.fn(async () => undefined),
     edit: vi.fn(async () => undefined),
 }));
-const projectState = vi.hoisted(() => ({ dirty: false, identityPersistencePending: false }));
+const projectState = vi.hoisted(() => ({ projectId: 'project', dirty: false, identityPersistencePending: false }));
 const crdt = vi.hoisted(() => ({
     captureProjectRevision: vi.fn(() => 'revision-1'),
     subscribeToCrdtChanges: vi.fn(() => () => undefined),
@@ -27,26 +27,11 @@ const projectActions = vi.hoisted(() => ({
     recentProjectChanges: { subscribe: vi.fn((_listener: () => void) => () => undefined) },
 }));
 
-vi.mock('#/utils/desktopBridge', () => ({
-    isDesktopRuntime: () => true,
-    desktopNativeMenu: () => ({
-        listen: (listener: (intent: NativeMenuIntent) => void) => {
-            desktop.listener = listener;
-            return () => {
-                desktop.listener = undefined;
-            };
-        },
-        projectState: desktop.projectState,
-        saveResult: desktop.saveResult,
-        edit: desktop.edit,
-    }),
-}));
-
 vi.mock('#/modules/Project/stores', () => ({
     projectStore: {
         get value() {
             return {
-                projectId: 'project',
+                projectId: projectState.projectId,
                 dirty: projectState.dirty,
                 identityPersistencePending: projectState.identityPersistencePending,
             };
@@ -87,6 +72,17 @@ const workspace = vi.hoisted(() => ({
     toggleChatPanel: vi.fn(),
     zoomToFit: vi.fn(),
     zoomToSelection: vi.fn(),
+    nativeApplicationMenu: vi.fn(() => ({
+        listen: (listener: (intent: NativeMenuIntent) => void) => {
+            desktop.listener = listener;
+            return () => {
+                desktop.listener = undefined;
+            };
+        },
+        projectState: desktop.projectState,
+        saveResult: desktop.saveResult,
+        edit: desktop.edit,
+    })),
 }));
 vi.mock('#/modules/WorkspaceShell/useCases', () => ({
     ...workspace,
@@ -103,6 +99,7 @@ describe('useNativeApplicationMenu', () => {
         desktop.saveResult.mockClear();
         desktop.edit.mockClear();
         projectState.dirty = false;
+        projectState.projectId = 'project';
         projectState.identityPersistencePending = false;
         crdt.captureProjectRevision.mockClear();
         crdt.captureProjectRevision.mockReturnValue('revision-1');
@@ -252,7 +249,13 @@ describe('useNativeApplicationMenu', () => {
         desktop.listener?.({ action: 'project:save', requestId: 8, projectId: 'project', revision: 'revision-1' });
 
         await vi.waitFor(() =>
-            expect(desktop.saveResult).toHaveBeenCalledWith({ requestId: 8, saved: true, dirty: true })
+            expect(desktop.saveResult).toHaveBeenCalledWith({
+                requestId: 8,
+                saved: true,
+                dirty: true,
+                projectId: 'project',
+                revision: 'revision-1',
+            })
         );
     });
 
@@ -277,7 +280,13 @@ describe('useNativeApplicationMenu', () => {
         desktop.listener?.({ action: 'project:save', requestId: 8, projectId: 'project', revision: 'revision-1' });
 
         await vi.waitFor(() =>
-            expect(desktop.saveResult).toHaveBeenCalledWith({ requestId: 8, saved: false, dirty: true })
+            expect(desktop.saveResult).toHaveBeenCalledWith({
+                requestId: 8,
+                saved: false,
+                dirty: true,
+                projectId: 'project',
+                revision: 'revision-2',
+            })
         );
         expect(projectActions.saveProject).not.toHaveBeenCalled();
     });
@@ -308,7 +317,47 @@ describe('useNativeApplicationMenu', () => {
         desktop.listener?.({ action: 'project:save', requestId: 9, projectId: 'project', revision: 'revision-1' });
 
         await vi.waitFor(() =>
-            expect(desktop.saveResult).toHaveBeenCalledWith({ requestId: 9, saved: true, dirty: false })
+            expect(desktop.saveResult).toHaveBeenCalledWith({
+                requestId: 9,
+                saved: true,
+                dirty: false,
+                projectId: 'project',
+                revision: 'revision-1',
+            })
+        );
+    });
+
+    it('reports the CRDT revision produced by a successful close save', async () => {
+        projectActions.saveProject.mockImplementation(async () => {
+            crdt.captureProjectRevision.mockReturnValue('revision-2');
+            return true;
+        });
+        renderHook(() =>
+            useNativeApplicationMenu({
+                projectId: 'project',
+                name: 'Song',
+                createdAt: 1,
+                updatedAt: 2,
+                dirty: true,
+                loading: false,
+                keyRoot: 0,
+                scaleName: 'chromatic',
+                tuning: { name: 'Equal Temperament', frequencies: [] },
+                productionBrief: {} as never,
+                initialized: true,
+            })
+        );
+
+        desktop.listener?.({ action: 'project:save', requestId: 9, projectId: 'project', revision: 'revision-1' });
+
+        await vi.waitFor(() =>
+            expect(desktop.saveResult).toHaveBeenCalledWith({
+                requestId: 9,
+                saved: true,
+                dirty: false,
+                projectId: 'project',
+                revision: 'revision-2',
+            })
         );
     });
 
@@ -332,7 +381,13 @@ describe('useNativeApplicationMenu', () => {
         desktop.listener?.({ action: 'project:discard', requestId: 7, projectId: 'project', revision: 'revision-1' });
 
         await vi.waitFor(() => expect(projectActions.discardProjectChanges).toHaveBeenCalledTimes(1));
-        expect(desktop.saveResult).toHaveBeenCalledWith({ requestId: 7, saved: true, dirty: false });
+        expect(desktop.saveResult).toHaveBeenCalledWith({
+            requestId: 7,
+            saved: true,
+            dirty: false,
+            projectId: 'project',
+            revision: 'revision-1',
+        });
     });
 
     it('rejects a discard request whose renderer revision has changed before it begins', async () => {
@@ -356,9 +411,50 @@ describe('useNativeApplicationMenu', () => {
         desktop.listener?.({ action: 'project:discard', requestId: 7, projectId: 'project', revision: 'revision-1' });
 
         await vi.waitFor(() =>
-            expect(desktop.saveResult).toHaveBeenCalledWith({ requestId: 7, saved: false, dirty: true })
+            expect(desktop.saveResult).toHaveBeenCalledWith({
+                requestId: 7,
+                saved: false,
+                dirty: true,
+                projectId: 'project',
+                revision: 'revision-2',
+            })
         );
         expect(projectActions.discardProjectChanges).not.toHaveBeenCalled();
+    });
+
+    it.each([
+        ['project:save', 'saveProject'],
+        ['project:discard', 'discardProjectChanges'],
+    ] as const)('rejects %s when its project identity no longer matches', async (action, sideEffect) => {
+        projectState.projectId = 'project-b';
+        renderHook(() =>
+            useNativeApplicationMenu({
+                projectId: 'project-b',
+                name: 'Song',
+                createdAt: 1,
+                updatedAt: 2,
+                dirty: true,
+                loading: false,
+                keyRoot: 0,
+                scaleName: 'chromatic',
+                tuning: { name: 'Equal Temperament', frequencies: [] },
+                productionBrief: {} as never,
+                initialized: true,
+            })
+        );
+
+        desktop.listener?.({ action, requestId: 7, projectId: 'project-a', revision: 'revision-1' });
+
+        await vi.waitFor(() =>
+            expect(desktop.saveResult).toHaveBeenCalledWith({
+                requestId: 7,
+                saved: false,
+                dirty: true,
+                projectId: 'project-b',
+                revision: 'revision-1',
+            })
+        );
+        expect(projectActions[sideEffect]).not.toHaveBeenCalled();
     });
 
     it('keeps a clean replacement close-blocking until its identity persistence finishes', async () => {
@@ -383,7 +479,13 @@ describe('useNativeApplicationMenu', () => {
         desktop.listener?.({ action: 'project:discard', requestId: 7, projectId: 'project', revision: 'revision-1' });
 
         await vi.waitFor(() =>
-            expect(desktop.saveResult).toHaveBeenCalledWith({ requestId: 7, saved: true, dirty: true })
+            expect(desktop.saveResult).toHaveBeenCalledWith({
+                requestId: 7,
+                saved: true,
+                dirty: true,
+                projectId: 'project',
+                revision: 'revision-1',
+            })
         );
     });
 

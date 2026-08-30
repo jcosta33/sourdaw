@@ -120,6 +120,7 @@ const createAndActivateWindow = (): BrowserWindow => {
     rendererSessionLifecycle.startWindow();
     const window = createWindow();
     mainWindow = window;
+    nativeMenuActionDispatcher.registerWindow(window);
     return window;
 };
 

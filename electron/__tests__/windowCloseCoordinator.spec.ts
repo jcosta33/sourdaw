@@ -61,6 +61,64 @@ describe('window close coordinator', () => {
         );
     });
 
+    it('accepts the clean CRDT revision produced by its own close save', async () => {
+        const send = vi.fn();
+        const coordinator = createWindowCloseCoordinator({ ask: async () => 'save', send });
+        coordinator.updateProject({ title: 'Song', dirty: true, projectId: 'project-a', revision: 'revision-1' });
+
+        const close = coordinator.requestClose();
+        await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+        coordinator.updateProject({ title: 'Song', dirty: false, projectId: 'project-a', revision: 'revision-2' });
+        coordinator.resolveSave({
+            requestId: 1,
+            saved: true,
+            dirty: false,
+            projectId: 'project-a',
+            revision: 'revision-2',
+        });
+
+        await expect(close).resolves.toBe(true);
+        expect(coordinator.permitsClose()).toBe(true);
+    });
+
+    it('rejects a later dirty CRDT revision while a close save is pending', async () => {
+        const send = vi.fn();
+        const coordinator = createWindowCloseCoordinator({ ask: async () => 'save', send });
+        coordinator.updateProject({ title: 'Song', dirty: true, projectId: 'project-a', revision: 'revision-1' });
+
+        const close = coordinator.requestClose();
+        await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+        coordinator.updateProject({ title: 'Song', dirty: true, projectId: 'project-a', revision: 'revision-3' });
+        coordinator.resolveSave({
+            requestId: 1,
+            saved: true,
+            dirty: false,
+            projectId: 'project-a',
+            revision: 'revision-2',
+        });
+
+        await expect(close).resolves.toBe(false);
+        expect(coordinator.permitsClose()).toBe(false);
+    });
+
+    it('rejects a clean save result from a different project identity', async () => {
+        const send = vi.fn();
+        const coordinator = createWindowCloseCoordinator({ ask: async () => 'save', send });
+        coordinator.updateProject({ title: 'Song', dirty: true, projectId: 'project-a', revision: 'revision-1' });
+
+        const close = coordinator.requestClose();
+        await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+        coordinator.resolveSave({
+            requestId: 1,
+            saved: true,
+            dirty: false,
+            projectId: 'project-b',
+            revision: 'revision-2',
+        });
+
+        await expect(close).resolves.toBe(false);
+    });
+
     it('settles an in-flight request when its renderer window is reset', async () => {
         const coordinator = createWindowCloseCoordinator({ ask: async () => 'save', send: vi.fn() });
         coordinator.updateProject({ title: 'Dirty song', dirty: true });
@@ -265,6 +323,19 @@ describe('window close coordinator', () => {
     });
 
     it.each([
+        ['a clean revision change', { projectId: 'project-a', revision: 'revision-2' }],
+        ['a same-revision project replacement', { projectId: 'project-b', revision: 'revision-1' }],
+    ])('revokes an approved close after %s', async (_label, changed) => {
+        const coordinator = createWindowCloseCoordinator({ ask: async () => 'cancel', send: vi.fn() });
+        coordinator.updateProject({ title: 'Song', dirty: false, projectId: 'project-a', revision: 'revision-1' });
+
+        await expect(coordinator.requestClose()).resolves.toBe(true);
+        coordinator.updateProject({ title: 'Song', dirty: false, ...changed });
+
+        expect(coordinator.permitsClose()).toBe(false);
+    });
+
+    it.each([
         ['a replacement project', { projectId: 'project-b', revision: 'revision-2' }],
         ['an edit to an already-dirty project', { projectId: 'project-a', revision: 'revision-2' }],
     ])('cancels a pending decision after %s changes the renderer authority', async (_label, changed) => {
@@ -290,5 +361,26 @@ describe('window close coordinator', () => {
         expect(send).not.toHaveBeenCalled();
         await expect(coordinator.requestClose()).resolves.toBe(false);
         expect(ask).toHaveBeenCalledTimes(2);
+    });
+
+    it.each([
+        ['a clean revision change', { projectId: 'project-a', revision: 'revision-2' }],
+        ['a same-revision project replacement', { projectId: 'project-b', revision: 'revision-1' }],
+    ])('cancels a pending decision after %s', async (_label, changed) => {
+        let resolvePrompt: ((decision: 'save' | 'discard' | 'cancel') => void) | undefined;
+        const coordinator = createWindowCloseCoordinator({
+            ask: () =>
+                new Promise((resolve: (decision: 'save' | 'discard' | 'cancel') => void) => {
+                    resolvePrompt = resolve;
+                }),
+            send: vi.fn(),
+        });
+        coordinator.updateProject({ title: 'Song', dirty: true, projectId: 'project-a', revision: 'revision-1' });
+
+        const close = coordinator.requestClose();
+        coordinator.updateProject({ title: 'Song', dirty: false, ...changed });
+        resolvePrompt?.('save');
+
+        await expect(close).resolves.toBe(false);
     });
 });

@@ -152,10 +152,19 @@ describe('native menu channels', () => {
             revision: 'revision-1',
             recentProjects: [],
         });
-        await handlers.get(NATIVE_MENU_SAVE_RESULT_CHANNEL)?.(frame, { requestId: 2, saved: true, dirty: false });
+        await handlers.get(NATIVE_MENU_SAVE_RESULT_CHANNEL)?.(frame, {
+            requestId: 2,
+            saved: true,
+            dirty: false,
+            projectId: 'project',
+            revision: 'revision-2',
+        });
         await handlers.get(NATIVE_EDIT_CHANNEL)?.(frame, 'copy');
         await handlers.get(NATIVE_EDIT_CHANNEL)?.(frame, 'undo');
         await handlers.get(NATIVE_EDIT_CHANNEL)?.(frame, 'redo');
+        await handlers.get(NATIVE_EDIT_CHANNEL)?.(frame, 'cut');
+        await handlers.get(NATIVE_EDIT_CHANNEL)?.(frame, 'paste');
+        await handlers.get(NATIVE_EDIT_CHANNEL)?.(frame, 'selectAll');
 
         expect(onProjectState).toHaveBeenCalledWith(
             {
@@ -168,10 +177,19 @@ describe('native menu channels', () => {
             },
             'sender'
         );
-        expect(onSaveResult).toHaveBeenCalledWith({ requestId: 2, saved: true, dirty: false });
+        expect(onSaveResult).toHaveBeenCalledWith({
+            requestId: 2,
+            saved: true,
+            dirty: false,
+            projectId: 'project',
+            revision: 'revision-2',
+        });
         expect(editTarget.copy).toHaveBeenCalledTimes(1);
         expect(editTarget.undo).toHaveBeenCalledTimes(1);
         expect(editTarget.redo).toHaveBeenCalledTimes(1);
+        expect(editTarget.cut).toHaveBeenCalledTimes(1);
+        expect(editTarget.paste).toHaveBeenCalledTimes(1);
+        expect(editTarget.selectAll).toHaveBeenCalledTimes(1);
         expect(() => handlers.get(NATIVE_EDIT_CHANNEL)?.(FOREIGN_FRAME, 'copy')).toThrow(/not the application/u);
         expect(() => handlers.get(NATIVE_EDIT_CHANNEL)?.(frame, 'reload')).toThrow(/invalid/u);
     });

@@ -550,6 +550,26 @@ describe('createPluginWindowHost', () => {
         expect(onCancelled).not.toHaveBeenCalled();
     });
 
+    it.each([
+        ['approved', true, false, true],
+        ['forced', false, true, true],
+        ['authority-invalidated', false, false, false],
+    ])('handles a rejected editor detach for %s teardown', async (_case, proceed, force, destroys) => {
+        const owner = createFakeOwnerWindow();
+        const onCancelled = vi.fn();
+        const { destroyAfterEditorsDetach } = interceptOwnerWindowTeardown(
+            owner,
+            async () => Promise.reject(new Error('editor detach failed')),
+            () => proceed,
+            onCancelled
+        );
+
+        await expect(destroyAfterEditorsDetach(force)).resolves.toBe(destroys);
+        expect(owner.destroy).toHaveBeenCalledTimes(destroys ? 1 : 0);
+        expect(owner.show).toHaveBeenCalledTimes(destroys ? 0 : 1);
+        expect(onCancelled).toHaveBeenCalledTimes(destroys ? 0 : 1);
+    });
+
     /**
      * Intercepting the owner must not swallow a title-bar close of an editor.
      */

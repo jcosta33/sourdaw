@@ -169,6 +169,12 @@ describe('plugin command admission before the cascade', () => {
         );
     });
 
+    it('registers every new main renderer as unready before native menu actions can be delivered', () => {
+        expect(mainSource).toMatch(
+            /const createAndActivateWindow[\s\S]*?const window\s*=\s*createWindow\(\);[\s\S]*?mainWindow\s*=\s*window;[\s\S]*?nativeMenuActionDispatcher\.registerWindow\(window\);/u
+        );
+    });
+
     it('carries only queued windowless project commands into the exact crash replacement', () => {
         expect(mainSource).toMatch(
             /const replacementWindow\s*=\s*createAndActivateWindow\(\);\s*nativeMenuActionDispatcher\.recoverPendingWindow\(crashedWindow,\s*replacementWindow\);/u

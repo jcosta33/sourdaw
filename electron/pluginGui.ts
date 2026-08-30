@@ -837,7 +837,21 @@ export const interceptOwnerWindowTeardown = (
             let destroyed = false;
             try {
                 owner.hide();
-                await detachOpenEditors();
+                try {
+                    await detachOpenEditors();
+                } catch {
+                    if (!forceDestroy && !shouldProceed()) {
+                        owner.show?.();
+                        onCancelled?.();
+                        return false;
+                    }
+                    if (!owner.isDestroyed()) {
+                        onDestroying?.();
+                        owner.destroy();
+                        destroyed = true;
+                    }
+                    return true;
+                }
                 // A dirty/revision projection can arrive while a plugin editor
                 // drains. The original close approval is no longer authority
                 // to destroy this renderer session.

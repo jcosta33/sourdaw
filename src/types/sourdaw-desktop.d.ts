@@ -126,6 +126,8 @@ type SourdawDesktopBridge = {
             readonly requestId: number;
             readonly saved: boolean;
             readonly dirty: boolean;
+            readonly projectId: string;
+            readonly revision: string;
         }) => Promise<void>;
         readonly edit: (operation: 'undo' | 'redo' | 'cut' | 'copy' | 'paste' | 'selectAll') => Promise<void>;
     };

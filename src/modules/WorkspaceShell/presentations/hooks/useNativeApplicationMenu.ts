@@ -28,12 +28,13 @@ import {
     toggleSidebar,
     zoomToFit,
     zoomToSelection,
+    nativeApplicationMenu,
 } from '#/modules/WorkspaceShell/useCases';
-import { desktopNativeMenu, isDesktopRuntime } from '#/utils/desktopBridge';
 
 import type { ProjectStoreState } from '#/modules/Project/stores';
 
-type NativeMenuIntent = Parameters<Parameters<SourdawDesktopBridge['nativeMenu']['listen']>[0]>[0];
+type NativeMenu = NonNullable<ReturnType<typeof nativeApplicationMenu>>;
+type NativeMenuIntent = Parameters<Parameters<NativeMenu['listen']>[0]>[0];
 
 const editableElement = (element: Element | null): boolean =>
     element instanceof HTMLInputElement ||
@@ -67,11 +68,22 @@ const saveProjectIfClean = async (): Promise<boolean> =>
     projectStore.value?.dirty !== true &&
     projectStore.value?.identityPersistencePending !== true;
 
+const reportCloseResult = async (requestId: number, saved: boolean, dirty = false): Promise<void> => {
+    const current = projectStore.value;
+    await nativeApplicationMenu()?.saveResult({
+        requestId,
+        saved,
+        dirty: dirty || current?.dirty === true || current?.identityPersistencePending === true,
+        projectId: current?.projectId ?? '',
+        revision: captureProjectRevision(),
+    });
+};
+
 const runMenuAction = async (intent: NativeMenuIntent): Promise<void> => {
     const { action } = intent;
     const edit = nativeEditOperation(action);
     if (edit !== undefined && editableElement(document.activeElement)) {
-        await desktopNativeMenu().edit(edit);
+        await nativeApplicationMenu()?.edit(edit);
         return;
     }
     switch (action) {
@@ -91,17 +103,12 @@ const runMenuAction = async (intent: NativeMenuIntent): Promise<void> => {
                     projectStore.value?.projectId !== intent.projectId ||
                     captureProjectRevision() !== intent.revision)
             ) {
-                await desktopNativeMenu().saveResult({ requestId: intent.requestId, saved: false, dirty: true });
+                await reportCloseResult(intent.requestId, false, true);
                 return;
             }
             const saved = await saveProject();
             if (intent.requestId !== undefined) {
-                await desktopNativeMenu().saveResult({
-                    requestId: intent.requestId,
-                    saved,
-                    dirty:
-                        projectStore.value?.dirty === true || projectStore.value?.identityPersistencePending === true,
-                });
+                await reportCloseResult(intent.requestId, saved);
             }
             return;
         }
@@ -113,18 +120,13 @@ const runMenuAction = async (intent: NativeMenuIntent): Promise<void> => {
                 captureProjectRevision() !== intent.revision
             ) {
                 if (intent.requestId !== undefined) {
-                    await desktopNativeMenu().saveResult({ requestId: intent.requestId, saved: false, dirty: true });
+                    await reportCloseResult(intent.requestId, false, true);
                 }
                 return;
             }
             const discarded = await discardProjectChanges();
             if (intent.requestId !== undefined) {
-                await desktopNativeMenu().saveResult({
-                    requestId: intent.requestId,
-                    saved: discarded,
-                    dirty:
-                        projectStore.value?.dirty === true || projectStore.value?.identityPersistencePending === true,
-                });
+                await reportCloseResult(intent.requestId, discarded);
             }
             return;
         }
@@ -213,10 +215,10 @@ const runMenuAction = async (intent: NativeMenuIntent): Promise<void> => {
 /** Binds macOS menu intents to existing renderer-owned product operations. */
 export const useNativeApplicationMenu = (project: ProjectStoreState): void => {
     useEffect(() => {
-        if (!isDesktopRuntime()) {
+        const menu = nativeApplicationMenu();
+        if (menu === undefined) {
             return undefined;
         }
-        const menu = desktopNativeMenu();
         const publishProjectState = (): void => {
             void menu.projectState({
                 title: project.name,

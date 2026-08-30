@@ -12,6 +12,8 @@ export type SaveResult = {
     readonly requestId: number;
     readonly saved: boolean;
     readonly dirty: boolean;
+    readonly projectId?: string;
+    readonly revision?: string;
 };
 
 type CloseDecision = 'save' | 'discard' | 'cancel';
@@ -28,7 +30,14 @@ type CreateWindowCloseCoordinatorInput = {
 export const createWindowCloseCoordinator = ({ ask, send, onApprovalRevoked }: CreateWindowCloseCoordinatorInput) => {
     let project: ProjectCloseState = { title: 'Sourdaw', dirty: false, durabilityPending: false };
     let phase: 'idle' | 'deciding' | 'saving' | 'approved' | 'closing' = 'idle';
-    let pendingSave: { readonly requestId: number; readonly settle: (result: SaveResult) => void } | undefined;
+    let pendingSave:
+        | {
+              readonly requestId: number;
+              readonly expected: ProjectCloseState;
+              successor: ProjectCloseState | undefined;
+              readonly settle: (result: SaveResult) => void;
+          }
+        | undefined;
     let nextRequestId = 1;
     let generation = 0;
 
@@ -40,7 +49,7 @@ export const createWindowCloseCoordinator = ({ ask, send, onApprovalRevoked }: C
     const updateProject = (next: ProjectCloseState): void => {
         const changedRevision = !sameProjectRevision(project, next);
         project = next;
-        if (phase === 'approved' && isCloseBlocking(next)) {
+        if (phase === 'approved' && changedRevision) {
             generation += 1;
             phase = 'idle';
             onApprovalRevoked?.();
@@ -48,6 +57,12 @@ export const createWindowCloseCoordinator = ({ ask, send, onApprovalRevoked }: C
         }
         // A dialog decision is about a particular piece of project truth. A
         // new project or an edit while it is open needs a fresh decision.
+        if (phase === 'saving' && changedRevision && pendingSave !== undefined) {
+            if (next.projectId === pendingSave.expected.projectId && !isCloseBlocking(next)) {
+                pendingSave.successor = next;
+                return;
+            }
+        }
         if ((phase === 'deciding' || phase === 'saving') && changedRevision) {
             generation += 1;
             cancelPending();
@@ -65,7 +80,13 @@ export const createWindowCloseCoordinator = ({ ask, send, onApprovalRevoked }: C
         if (pendingSave === undefined) {
             return;
         }
-        pendingSave.settle({ requestId: pendingSave.requestId, saved: false, dirty: true });
+        pendingSave.settle({
+            requestId: pendingSave.requestId,
+            saved: false,
+            dirty: true,
+            projectId: pendingSave.expected.projectId,
+            revision: pendingSave.expected.revision,
+        });
     };
 
     const invalidateWindowRequests = (): void => {
@@ -117,7 +138,7 @@ export const createWindowCloseCoordinator = ({ ask, send, onApprovalRevoked }: C
         let result: SaveResult;
         try {
             result = await new Promise<SaveResult>((resolve, reject) => {
-                pendingSave = { requestId, settle: resolve };
+                pendingSave = { requestId, expected: expectedProject, successor: undefined, settle: resolve };
                 try {
                     send(decision, requestId, expectedProject);
                 } catch (error) {
@@ -136,15 +157,28 @@ export const createWindowCloseCoordinator = ({ ask, send, onApprovalRevoked }: C
         if (requestGeneration !== generation) {
             return false;
         }
+        const activeSave = pendingSave;
         pendingSave = undefined;
         // A dirty post-save projection means a newer edit raced the save. The
         // original dirty bit is stale until React publishes the result, so the
         // correlated result is authoritative for that exact save request.
-        if (!result.saved || result.dirty || result.requestId !== requestId) {
+        if (
+            !result.saved ||
+            result.dirty ||
+            result.requestId !== requestId ||
+            (result.projectId !== undefined && result.projectId !== expectedProject.projectId) ||
+            (activeSave?.successor !== undefined && activeSave.successor.revision !== result.revision)
+        ) {
             phase = 'idle';
             return false;
         }
-        project = { ...project, dirty: false, durabilityPending: false };
+        project = {
+            ...project,
+            projectId: result.projectId ?? project.projectId,
+            revision: result.revision ?? project.revision,
+            dirty: false,
+            durabilityPending: false,
+        };
         phase = 'approved';
         return true;
     };

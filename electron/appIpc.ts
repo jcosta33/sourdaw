@@ -322,6 +322,8 @@ export type NativeMenuSaveResult = {
     readonly requestId: number;
     readonly saved: boolean;
     readonly dirty: boolean;
+    readonly projectId: string;
+    readonly revision: string;
 };
 
 export type RegisterNativeMenuChannelsInput = {
@@ -368,11 +370,19 @@ const nativeMenuSaveResult = (value: unknown): NativeMenuSaveResult => {
         !Number.isSafeInteger(result.requestId) ||
         result.requestId < 1 ||
         typeof result.saved !== 'boolean' ||
-        typeof result.dirty !== 'boolean'
+        typeof result.dirty !== 'boolean' ||
+        typeof result.projectId !== 'string' ||
+        typeof result.revision !== 'string'
     ) {
         throw new TypeError('native menu save result is invalid');
     }
-    return { requestId: result.requestId, saved: result.saved, dirty: result.dirty };
+    return {
+        requestId: result.requestId,
+        saved: result.saved,
+        dirty: result.dirty,
+        projectId: result.projectId,
+        revision: result.revision,
+    };
 };
 
 /** The entire renderer-facing native menu surface: validated projections and text editing only. */
