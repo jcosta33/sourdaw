@@ -8070,6 +8070,50 @@ describe('delivery shell boundary', () => {
         }
     });
 
+    it('never accepts a packed descendant delivery receipt authority ref when the exact ref does not exist', () => {
+        const closes = relationshipBody('Closes #2372');
+        const primaryRoot = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-shell-port-'));
+        execFileSync('git', ['init', '--quiet'], { cwd: primaryRoot });
+        const ref = 'refs/sourdaw/delivery-receipt/pr-42';
+        const authority = {
+            phase: 'terminal',
+            receiptId: 'IC_packed_child',
+            receiptBody: deliveryReceiptBody(42, 'head', closes, 2372),
+        } satisfies PersistedDeliveryReceiptAuthority;
+        const authorityOid = execFileSync('git', ['hash-object', '-w', '--stdin'], {
+            cwd: primaryRoot,
+            encoding: 'utf8',
+            input: JSON.stringify({ version: 2, ...authority }),
+        }).trim();
+        execFileSync('git', [`update-ref`, `${ref}/child`, authorityOid], {
+            cwd: primaryRoot,
+        });
+        execFileSync('git', ['pack-refs', '--all', '--prune'], { cwd: primaryRoot });
+        const refPath = execFileSync('git', ['rev-parse', '--git-path', ref], {
+            cwd: primaryRoot,
+            encoding: 'utf8',
+        }).trim();
+        rmSync(join(primaryRoot, refPath), { recursive: true, force: true });
+        const port = shellPort(
+            'jcosta33/sourdaw',
+            { capture: () => expect.fail('unexpected capture'), run: () => undefined },
+            { primaryRoot }
+        );
+
+        try {
+            try {
+                expect(port.readDeliveryReceiptAuthority(42)).toBeUndefined();
+            } catch (error) {
+                expect(error).toBeInstanceOf(Error);
+                expect(String(error)).toMatch(
+                    /delivery receipt authority cannot be proven|delivery receipt authority cannot be verified/i
+                );
+            }
+        } finally {
+            rmSync(primaryRoot, { recursive: true, force: true });
+        }
+    });
+
     it('rejects an exact loose directory that conflicts with a packed delivery receipt authority ref', () => {
         const closes = relationshipBody('Closes #2372');
         const primaryRoot = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-shell-port-'));

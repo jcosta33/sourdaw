@@ -3099,7 +3099,12 @@ function readOptionalDeliveryRefOid(
             fail(`PR #${number} ${label} cannot be verified`);
         }
     }
-    const result = deliveryLockGit(primaryRoot, ['for-each-ref', '--format=%(objectname)%00%(symref)', '--', ref]);
+    const result = deliveryLockGit(primaryRoot, [
+        'for-each-ref',
+        '--format=%(refname)%00%(objectname)%00%(symref)',
+        '--',
+        ref,
+    ]);
     if (result.error !== undefined) {
         throw result.error;
     }
@@ -3118,7 +3123,10 @@ function readOptionalDeliveryRefOid(
         if (exactPathKind === 'directory') {
             fail(`PR #${number} ${label} cannot be verified`);
         }
-        const [oid = '', symref = ''] = entry;
+        const [resolvedRef = '', oid = '', symref = ''] = entry;
+        if (resolvedRef !== ref) {
+            fail(`PR #${number} ${label} cannot be verified`);
+        }
         if (symref !== '') {
             fail(`PR #${number} ${label} cannot be verified`);
         }
