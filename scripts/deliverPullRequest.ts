@@ -1665,7 +1665,11 @@ function deliverPullRequestWithCiAdmission(
     ciAdmissionMode: CiAdmissionMode
 ): void {
     port.fetch();
-    const initial = resolveStructuralMergeability(port.pullRequest(number), port);
+    const rawInitial = port.pullRequest(number);
+    if (rawInitial.state === 'CLOSED') {
+        restorePreparedDeliveryReceiptAuthorityBeforeClosedRetry(number, port);
+    }
+    const initial = resolveStructuralMergeability(rawInitial, port);
     if (initial.state === 'MERGED') {
         validateBaseBranch(initial);
         validateAuthorAppMerger(initial);
@@ -1684,9 +1688,6 @@ function deliverPullRequestWithCiAdmission(
         persistTerminalDeliveryReceiptAuthority(number, receipt, port);
         port.log(`PR #${number} was already merged; repaired ${remaining.length} remaining dependent(s)`);
         return;
-    }
-    if (initial.state === 'CLOSED') {
-        restorePreparedDeliveryReceiptAuthorityBeforeClosedRetry(number, port);
     }
     validateBaseBranch(initial);
     const initialTrackerTarget = trackerCompletionTarget(initial);
