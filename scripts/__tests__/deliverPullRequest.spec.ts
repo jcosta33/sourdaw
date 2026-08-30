@@ -6459,9 +6459,7 @@ describe('delivery shell boundary', () => {
                             'comments(first:100,after:$cursor){totalCount pageInfo{hasNextPage endCursor} nodes{id lastEditedAt}}'
                         )
                     ) {
-                        return shellDeliveryReceiptProofResponse(['IC_same_timestamp'], {
-                            editedCommentIds: ['IC_same_timestamp'],
-                        });
+                        return shellDeliveryReceiptProofResponse(['IC_same_timestamp']);
                     }
                     if (joined.includes('pulls?state=open')) {
                         return JSON.stringify([[]]);
