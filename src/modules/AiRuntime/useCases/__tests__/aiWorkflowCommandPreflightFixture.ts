@@ -6,7 +6,13 @@ import {
 import { captureCommandTargetFingerprints, commandBatchPreflightPort } from '#/modules/Command/useCases';
 import { captureProjectRevision, getCrdtDoc } from '#/modules/CrdtDocument/useCases';
 
+import {
+    configureAiWorkflowCommandCheckpointRuntime,
+    resetAiWorkflowCommandCheckpointRuntime,
+} from './aiWorkflowCommandCheckpointRuntime';
+
 export function configureAiWorkflowCommandPreflightFixture(projectId?: string): void {
+    configureAiWorkflowCommandCheckpointRuntime();
     configureRuntimeGraphProjectRevisionValidator(
         (expectedProjectRevision) => captureProjectRevision() === expectedProjectRevision
     );
@@ -36,6 +42,7 @@ export function configureAiWorkflowCommandPreflightFixture(projectId?: string): 
 }
 
 export function resetAiWorkflowCommandPreflightFixture(): void {
+    resetAiWorkflowCommandCheckpointRuntime();
     commandBatchPreflightPort.setProvider(null);
     configureRuntimeGraphProjectRevisionValidator(null);
     configureRuntimeGraphTopologyValidator(null);
