@@ -198,8 +198,8 @@ function expect(condition, message) {
 function expectNightlyDoesNotMintGate(jobs) {
     expect(jobs?.gate === undefined, 'nightly must not mint Gate');
     for (const [jobId, job] of Object.entries(jobs ?? {})) {
-        const name = job?.name;
-        if (name === 'Gate') {
+        const checkName = typeof job?.name === 'string' ? job.name : jobId;
+        if (checkName === 'Gate') {
             expect(false, `nightly job ${jobId} must not mint Gate`);
         }
     }

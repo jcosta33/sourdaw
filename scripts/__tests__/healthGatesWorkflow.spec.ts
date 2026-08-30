@@ -345,16 +345,21 @@ function assertPullRequestWorkflowIsolation(candidate: UnknownRecord): void {
     }
 }
 
+function nightlyJobCheckName(jobId: string, value: unknown): string {
+    const job = asRecord(value, jobId);
+    const name = job.name;
+    if (typeof name === 'string') {
+        return name;
+    }
+    return jobId;
+}
+
 function assertNightlyDoesNotMintGate(jobs: UnknownRecord): void {
     if (Object.hasOwn(jobs, 'gate')) {
         throw new Error('the nightly train must not mint Gate');
     }
     for (const [jobId, value] of Object.entries(jobs)) {
-        const name = asRecord(value, jobId).name;
-        if (typeof name !== 'string') {
-            continue;
-        }
-        if (name === GATE_SUMMARY_NAME) {
+        if (nightlyJobCheckName(jobId, value) === GATE_SUMMARY_NAME) {
             throw new Error('the nightly train must not mint Gate');
         }
     }
@@ -915,6 +920,10 @@ describe('health gates workflow contract', () => {
         const impostorGate = asRecord(structuredClone(nightly), 'impostor-gate nightly');
         recordAt(impostorGate, 'jobs')['fake-gate'] = { name: 'Gate', needs: ['decide'] };
         expect(() => assertNightlyWorkflowIsolation(impostorGate)).toThrow('the nightly train must not mint Gate');
+
+        const namelessGateId = asRecord(structuredClone(nightly), 'nameless-gate-id nightly');
+        recordAt(namelessGateId, 'jobs').Gate = { needs: ['decide'] };
+        expect(() => assertNightlyWorkflowIsolation(namelessGateId)).toThrow('the nightly train must not mint Gate');
 
         const extraPullRequestTarget = asRecord(structuredClone(workflow), 'extra pull_request_target workflow');
         recordAt(extraPullRequestTarget, 'on').pull_request_target = {};
