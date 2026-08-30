@@ -23,7 +23,14 @@ async function quiesce(beginDestructiveTeardown: () => Promise<boolean>): Promis
         inFlight = undefined;
         return false;
     }
-    if (!(await beginDestructiveTeardown())) {
+    let committed: boolean;
+    try {
+        committed = await beginDestructiveTeardown();
+    } catch {
+        inFlight = undefined;
+        return false;
+    }
+    if (!committed) {
         inFlight = undefined;
         return false;
     }

@@ -48,4 +48,18 @@ describe('quiesceProjectSession', () => {
         await expect(quiesceProjectSession()).resolves.toBe(true);
         expect(runtime.resetAudioGraph).toHaveBeenCalledTimes(1);
     });
+
+    it('recovers from a rejected commitment handshake and lets a later Close retry', async () => {
+        runtime.stopPlayback.mockResolvedValue(undefined);
+        runtime.unloadPlugin.mockResolvedValue(undefined);
+        const { quiesceProjectSession } = await import('../quiesceProjectSession');
+
+        await expect(
+            quiesceProjectSession(async () => Promise.reject(new Error('main window replaced')))
+        ).resolves.toBe(false);
+        expect(runtime.resetAudioGraph).not.toHaveBeenCalled();
+
+        await expect(quiesceProjectSession(async () => true)).resolves.toBe(true);
+        expect(runtime.resetAudioGraph).toHaveBeenCalledTimes(1);
+    });
 });
