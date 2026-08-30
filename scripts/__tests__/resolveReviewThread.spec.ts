@@ -1,4 +1,4 @@
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -13,7 +13,8 @@ import {
     deleteReply,
     deletePendingReview,
     submitReview,
-    withReviewThreadMutationLock,
+    recoverPullRequestReviewResolutionLock,
+    withPullRequestReviewResolutionLock,
     type ResolveReviewThreadPort,
 } from '../resolveReviewThread.ts';
 
@@ -633,23 +634,142 @@ function createTemporaryGitRepository(): string {
     return directory;
 }
 
+function reviewResolutionLockRef(number: number): string {
+    return `refs/sourdaw/review-resolution/pr-${number}`;
+}
+
+function gitCapture(repository: string, args: string[], input?: string): string {
+    const result = spawnSync('git', args, {
+        cwd: repository,
+        encoding: 'utf8',
+        shell: false,
+        ...(input === undefined ? {} : { input }),
+    });
+    if (result.error !== undefined) {
+        throw result.error;
+    }
+    if (result.status !== 0) {
+        throw new Error(result.stderr || result.stdout || `git ${args.join(' ')} failed`);
+    }
+    return result.stdout.trim();
+}
+
+function readLockOid(repository: string, number: number): string | undefined {
+    const result = spawnSync('git', ['rev-parse', '--verify', '--quiet', reviewResolutionLockRef(number)], {
+        cwd: repository,
+        encoding: 'utf8',
+        shell: false,
+    });
+    if (result.error !== undefined) {
+        throw result.error;
+    }
+    if (result.status === 1) {
+        return undefined;
+    }
+    if (result.status !== 0) {
+        throw new Error(result.stderr || result.stdout || 'git show-ref failed');
+    }
+    return result.stdout.trim();
+}
+
+function writeLockOwnerBlob(repository: string, pid: number): string {
+    return gitCapture(
+        repository,
+        ['hash-object', '-w', '--stdin'],
+        JSON.stringify({ version: 1, pid, token: '11111111-1111-4111-8111-111111111111' })
+    );
+}
+
+function updateLock(repository: string, number: number, nextOid: string, previousOid?: string): void {
+    const args =
+        previousOid === undefined
+            ? [reviewResolutionLockRef(number), nextOid, '0'.repeat(nextOid.length)]
+            : [reviewResolutionLockRef(number), nextOid, previousOid];
+    gitCapture(repository, ['update-ref', ...args]);
+}
+
+async function waitForExit(child: ReturnType<typeof spawn>): Promise<void> {
+    if (child.exitCode !== null || child.signalCode !== null) {
+        return;
+    }
+    await new Promise<void>((resolve, reject) => {
+        child.once('exit', () => resolve());
+        child.once('error', reject);
+    });
+}
+
 describe('review thread resolution', () => {
-    it('serializes one review-thread mutation per PR/thread and releases the lock after failure', () => {
+    it('serializes one review-resolution mutation per PR, refuses same-PR different-thread contenders, and releases after failure', () => {
         const repository = createTemporaryGitRepository();
         try {
             expect(() =>
-                withReviewThreadMutationLock(repository, 42, threadId, () => {
-                    expect(() => withReviewThreadMutationLock(repository, 42, threadId, () => undefined)).toThrow(
-                        /already being resolved by process/i
-                    );
+                withPullRequestReviewResolutionLock(repository, 42, () => {
+                    expect(() =>
+                        resolveReviewThread(42, `${threadId}_other`, head, AUTHOR_BOT_NODE_ID, {
+                            ...fakePort().port,
+                            serializeReviewThreadMutation: (number, _threadId, operation) =>
+                                withPullRequestReviewResolutionLock(repository, number, operation),
+                        })
+                    ).toThrow(/already being resolved by process/i);
+                    expect(withPullRequestReviewResolutionLock(repository, 43, () => 'other-pr')).toBe('other-pr');
                     throw new Error('boom');
                 })
             ).toThrow(/boom/);
-            expect(withReviewThreadMutationLock(repository, 42, threadId, () => 'ok')).toBe('ok');
+            expect(withPullRequestReviewResolutionLock(repository, 42, () => 'ok')).toBe('ok');
         } finally {
             rmSync(repository, { recursive: true, force: true });
         }
     });
+
+    it('recovers a killed PR-scoped review-resolution lock only after reconciliation and fences owner changes', async () => {
+        const repository = createTemporaryGitRepository();
+        const child = spawn(process.execPath, ['--input-type=module', '--eval', 'setInterval(() => {}, 1000);'], {
+            stdio: ['ignore', 'ignore', 'ignore'],
+        });
+        try {
+            const livePid = child.pid;
+            if (livePid === undefined) {
+                throw new Error('child process did not report a pid');
+            }
+            const ownerOid = writeLockOwnerBlob(repository, livePid);
+            updateLock(repository, 42, ownerOid);
+            expect(() => recoverPullRequestReviewResolutionLock(repository, 42, ownerOid, () => 'reconciled')).toThrow(
+                /still held by live process/i
+            );
+            child.kill('SIGKILL');
+            await waitForExit(child);
+
+            expect(
+                recoverPullRequestReviewResolutionLock(repository, 42, ownerOid, () => ({
+                    head,
+                    pendingReviews: [],
+                    thread: { id: threadId, isResolved: false },
+                }))
+            ).toMatchObject({ head, pendingReviews: [], thread: { id: threadId, isResolved: false } });
+            expect(readLockOid(repository, 42)).toBeUndefined();
+
+            const staleOwnerOid = writeLockOwnerBlob(repository, 999999);
+            updateLock(repository, 42, staleOwnerOid);
+            expect(() =>
+                recoverPullRequestReviewResolutionLock(
+                    repository,
+                    42,
+                    staleOwnerOid,
+                    () => {
+                        const replacementOwnerOid = writeLockOwnerBlob(repository, 1000000);
+                        updateLock(repository, 42, replacementOwnerOid, staleOwnerOid);
+                        return 'reconciled';
+                    },
+                    () => false
+                )
+            ).toThrow(/ownership changed before recovery/i);
+            expect(readLockOid(repository, 42)).not.toBe(staleOwnerOid);
+        } finally {
+            child.kill('SIGKILL');
+            await waitForExit(child).catch(() => undefined);
+            rmSync(repository, { recursive: true, force: true });
+        }
+    }, 10_000);
 
     it('uses supported GraphQL review-envelope, reply, and deletion input fields', () => {
         const source = readFileSync(join(import.meta.dirname, '../resolveReviewThread.ts'), 'utf8');

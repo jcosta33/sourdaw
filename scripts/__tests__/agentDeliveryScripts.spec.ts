@@ -13,6 +13,7 @@ import {
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { createInterface } from 'node:readline';
+import { pathToFileURL } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 import { parseDocument } from 'yaml';
@@ -200,7 +201,7 @@ async function waitForLockContenderReady(contender: LockContender): Promise<Lock
 }
 
 async function contendForDeliveryLock(root: string): Promise<string[]> {
-    const moduleUrl = new URL('../deliverPullRequest.ts', import.meta.url).href;
+    const moduleUrl = pathToFileURL(join(import.meta.dirname, '../deliverPullRequest.ts')).href;
     const tsxImport = import.meta.resolve('tsx');
     const repositoryRoot = join(import.meta.dirname, '..', '..');
     const childSource = `
@@ -612,6 +613,9 @@ describe('package scripts and gitignore', () => {
         expect(pkg.scripts['review:prepare']).toBe('node scripts/prepareReview.ts');
         expect(pkg.scripts['review:publish']).toBe('node scripts/publishReview.ts');
         expect(pkg.scripts['review:resolve']).toBe('node scripts/resolveReviewThread.ts');
+        expect(pkg.scripts['review:resolve:recover']).toBe(
+            'node scripts/trustedGithubWriteBootstrap.ts review:resolve:recover'
+        );
         expect(pkg.scripts['pr:supersede']).toBe('node scripts/supersedePullRequest.ts');
         expect(pkg.scripts['issue:reconcile']).toBe('node scripts/trustedGithubWriteBootstrap.ts issue:reconcile');
         expect(pkg.scripts['lane:remove']).toBe('node scripts/removeLane.ts');
@@ -699,6 +703,7 @@ describe('package scripts and gitignore', () => {
             'deliverPullRequest.ts',
             'removeLane.ts',
             'resolveReviewThread.ts',
+            'recoverReviewResolutionLock.ts',
             'supersedePullRequest.ts',
             'reconcileTrackerIssue.ts',
             'trackerIssueReconciliation.ts',
@@ -725,6 +730,13 @@ describe('package scripts and gitignore', () => {
             'scripts/deliverPullRequest.ts',
             'scripts/reconcileTrackerIssue.ts',
             'scripts/trackerIssueReconciliation.ts',
+            'scripts/githubAppIdentity.ts',
+            'scripts/prContract.ts',
+        ]);
+        expect(trustedDependencyPaths('review:resolve:recover')).toEqual([
+            'scripts/trustedGithubWriteBootstrap.ts',
+            'scripts/recoverReviewResolutionLock.ts',
+            'scripts/resolveReviewThread.ts',
             'scripts/githubAppIdentity.ts',
             'scripts/prContract.ts',
         ]);

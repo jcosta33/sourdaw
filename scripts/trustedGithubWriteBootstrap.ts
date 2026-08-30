@@ -14,7 +14,7 @@ import { tmpdir } from 'node:os';
 import { delimiter, dirname, isAbsolute, join, posix, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-export type TrustedGithubWriteCommand = 'deliver' | 'issue:reconcile' | 'lane:publish';
+export type TrustedGithubWriteCommand = 'deliver' | 'issue:reconcile' | 'lane:publish' | 'review:resolve:recover';
 
 export const BOOTSTRAP_PATH = 'scripts/trustedGithubWriteBootstrap.ts';
 export const HEALTH_GATES_WORKFLOW_PATH = '.github/workflows/health-gates.yml';
@@ -88,12 +88,23 @@ const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly string
         'scripts/githubAppIdentity.ts',
         'scripts/prContract.ts',
     ],
+    'review:resolve:recover': [
+        'scripts/trustedGithubWriteBootstrap.ts',
+        'scripts/recoverReviewResolutionLock.ts',
+        'scripts/resolveReviewThread.ts',
+        'scripts/githubAppIdentity.ts',
+        'scripts/prContract.ts',
+    ],
 };
 
 const commandEntries: Record<TrustedGithubWriteCommand, { path: string; runner: string }> = {
     deliver: { path: 'scripts/deliverPullRequest.ts', runner: 'runDeliverCli' },
     'issue:reconcile': { path: 'scripts/reconcileTrackerIssue.ts', runner: 'runReconcileTrackerIssueCli' },
     'lane:publish': { path: 'scripts/publishLane.ts', runner: 'runPublishLaneCli' },
+    'review:resolve:recover': {
+        path: 'scripts/recoverReviewResolutionLock.ts',
+        runner: 'runRecoverReviewResolutionLockCli',
+    },
 };
 
 export function trustedDependencyPaths(command: TrustedGithubWriteCommand): readonly string[] {
@@ -855,10 +866,17 @@ function defaultPort(binding: TrustedLauncherBinding): TrustedSourcePort {
 }
 
 function parseCommand(value: string | undefined): TrustedGithubWriteCommand {
-    if (value === 'deliver' || value === 'issue:reconcile' || value === 'lane:publish') {
+    if (
+        value === 'deliver' ||
+        value === 'issue:reconcile' ||
+        value === 'lane:publish' ||
+        value === 'review:resolve:recover'
+    ) {
         return value;
     }
-    throw new Error('usage: trustedGithubWriteBootstrap.ts <deliver|issue:reconcile|lane:publish> [args...]');
+    throw new Error(
+        'usage: trustedGithubWriteBootstrap.ts <deliver|issue:reconcile|lane:publish|review:resolve:recover> [args...]'
+    );
 }
 
 async function main(): Promise<number> {
