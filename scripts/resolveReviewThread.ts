@@ -209,7 +209,9 @@ export function resolveReviewThread(
         assertExpectedHeadAfterMutation(afterReply.head, expectedHead);
         assertResolvableThread(afterReply.thread, threadId);
         reviewUpdateAttempted =
-            repairManagedCommentedReviewEnvelopes(threadId, afterReply.thread, port, context) || reviewUpdateAttempted;
+            repairManagedCommentedReviewEnvelopes(threadId, afterReply.thread, port, context, ['COMMENTED'], () => {
+                reviewUpdateAttempted = true;
+            }) || reviewUpdateAttempted;
         const pendingReviewDeleted = reconcilePendingReviewsForReply(
             afterReply.pendingReviews,
             afterReply.thread,
@@ -379,7 +381,14 @@ function compensateResolution(
             if (createdReplyId === undefined || replyReviewId === undefined) {
                 failures.push('ambiguous review reply mutation; refusing to delete an unverified comment');
             } else if (pendingReviewCreated && createdPendingReviewId === replyReviewId) {
-                deleteCreatedPendingReview(current.pendingReviews, createdPendingReviewId, context, port, failures);
+                deleteCreatedPendingReviewUnlessManagedReplyAttached(
+                    current.pendingReviews,
+                    current.thread,
+                    createdPendingReviewId,
+                    context,
+                    port,
+                    failures
+                );
             } else if (hasExpectedReply(current.thread, createdReplyId)) {
                 attempt(failures, 'delete review reply', () => port.deleteReply(createdReplyId));
             } else if (current.thread.comments.some((comment) => comment.id === createdReplyId)) {
@@ -408,8 +417,8 @@ function compensateResolution(
             if (
                 verified.thread === null ||
                 verified.thread.isResolved !== beforeThread.isResolved ||
-                !sameCommentIds(verified.thread.comments, beforeThread.comments) ||
-                !sameReviewIds(verified.pendingReviews, before.pendingReviews)
+                !sameComments(verified.thread.comments, beforeThread.comments) ||
+                !sameReviews(verified.pendingReviews, before.pendingReviews)
             ) {
                 fail(`review thread ${threadId} compensation was not verified`);
             }
@@ -418,19 +427,48 @@ function compensateResolution(
     throwWithCompensation(original, failures);
 }
 
-function sameCommentIds(left: ReviewComment[], right: ReviewComment[]): boolean {
+function sameComments(left: ReviewComment[], right: ReviewComment[]): boolean {
     if (left.length !== right.length) {
         return false;
     }
-    const ids = new Set(left.map((comment) => comment.id));
-    return ids.size === right.length && right.every((comment) => ids.has(comment.id));
+    const commentsById = new Map(left.map((comment) => [comment.id, comment]));
+    return (
+        commentsById.size === right.length &&
+        right.every((comment) => sameComment(commentsById.get(comment.id), comment))
+    );
 }
-function sameReviewIds(left: PullRequestReview[], right: PullRequestReview[]): boolean {
+function sameComment(left: ReviewComment | undefined, right: ReviewComment): boolean {
+    return (
+        left?.fullDatabaseId === right.fullDatabaseId &&
+        left.body === right.body &&
+        left.authorNodeId === right.authorNodeId &&
+        left.authorLogin === right.authorLogin &&
+        left.authorType === right.authorType &&
+        left.reviewId === right.reviewId &&
+        left.reviewState === right.reviewState &&
+        left.reviewBody === right.reviewBody &&
+        left.reviewCommitOid === right.reviewCommitOid &&
+        left.reviewAuthorNodeId === right.reviewAuthorNodeId &&
+        left.reviewAuthorLogin === right.reviewAuthorLogin &&
+        left.reviewAuthorType === right.reviewAuthorType
+    );
+}
+function sameReviews(left: PullRequestReview[], right: PullRequestReview[]): boolean {
     if (left.length !== right.length) {
         return false;
     }
-    const ids = new Set(left.map((review) => review.id));
-    return ids.size === right.length && right.every((review) => ids.has(review.id));
+    const reviewsById = new Map(left.map((review) => [review.id, review]));
+    return reviewsById.size === right.length && right.every((review) => sameReview(reviewsById.get(review.id), review));
+}
+function sameReview(left: PullRequestReview | undefined, right: PullRequestReview): boolean {
+    return (
+        left?.state === right.state &&
+        left.body === right.body &&
+        left.commitOid === right.commitOid &&
+        left.authorNodeId === right.authorNodeId &&
+        left.authorLogin === right.authorLogin &&
+        left.authorType === right.authorType
+    );
 }
 function throwWithCompensation(original: unknown, failures: string[]): never {
     const message = errorMessage(original);
@@ -808,24 +846,27 @@ function repairManagedCommentedReviewEnvelopes(
     threadId: string,
     thread: ReviewThread | null,
     port: ResolveReviewThreadPort,
-    context: ResolutionReviewContext
+    context: ResolutionReviewContext,
+    allowedStates: string[] = ['COMMENTED'],
+    beforeUpdate?: () => void
 ): boolean {
     if (thread === null) {
         fail(`review thread ${threadId} was not found on this pull request`);
     }
     const repairedReviewIds = new Set<string>();
     let updated = false;
-    for (const candidate of managedReplyMarkers(thread, context, ['COMMENTED'], true)) {
+    for (const candidate of managedReplyMarkers(thread, context, allowedStates, true)) {
         if (repairedReviewIds.has(candidate.review.id) || candidate.review.body.trim() !== '') {
             continue;
         }
         const reviewCommitOid = requireReviewCommitOid(candidate.review, `Done reply ${candidate.marker.id}`);
         const expectedBody = resolutionReviewBody(context, reviewCommitOid);
+        beforeUpdate?.();
         const updatedReview = port.updateReviewBody(candidate.review.id, expectedBody);
         assertReviewEnvelopeReceipt(
             updatedReview,
             updateReviewClientMutationId(candidate.review.id),
-            'COMMENTED',
+            candidate.review.state,
             expectedBody,
             reviewCommitOid,
             'update review body'
@@ -993,14 +1034,56 @@ function repairCompletedResolution(
     context: ResolutionReviewContext,
     port: ResolveReviewThreadPort
 ): void {
-    const thread = inspection.thread;
+    let working = inspection;
+    let thread = inspection.thread;
     if (thread === null) {
         fail(`review thread ${context.threadId} was not found on this pull request`);
     }
     assertCompletedResolution(thread, context.threadId);
-    const updated = repairManagedCommentedReviewEnvelopes(context.threadId, thread, port, context);
-    const duplicateMarkers = managedReplyMarkers(thread, context, ['COMMENTED'], true);
-    if (!updated && duplicateMarkers.length <= 1) {
+    const refresh = (): ReviewThread => {
+        working = port.inspect(number, context.threadId);
+        assertExpectedHeadAfterMutation(working.head, context.expectedHead);
+        if (working.thread === null) {
+            fail(`review thread ${context.threadId} was not found on this pull request`);
+        }
+        assertCompletedResolution(working.thread, context.threadId);
+        return working.thread;
+    };
+    const updated = repairManagedCommentedReviewEnvelopes(context.threadId, thread, port, context, [
+        'PENDING',
+        'COMMENTED',
+    ]);
+    if (updated) {
+        thread = refresh();
+    }
+    const pendingReviewDeleted = reconcilePendingReviewsForReply(working.pendingReviews, thread, context, port);
+    if (pendingReviewDeleted) {
+        thread = refresh();
+    }
+    const currentHeadPendingReply = managedReplyMarkers(thread, context, ['PENDING'], false).find(
+        (candidate) => candidate.currentHead
+    );
+    if (currentHeadPendingReply !== undefined) {
+        const reviewCommitOid = requireReviewCommitOid(
+            currentHeadPendingReply.review,
+            `Done reply ${currentHeadPendingReply.marker.id}`
+        );
+        const submittedReview = port.submitReview(
+            currentHeadPendingReply.review.id,
+            resolutionReviewBody(context, reviewCommitOid)
+        );
+        assertReviewEnvelopeReceipt(
+            submittedReview,
+            submitReviewClientMutationId(currentHeadPendingReply.review.id),
+            'COMMENTED',
+            resolutionReviewBody(context, reviewCommitOid),
+            reviewCommitOid,
+            'submit review'
+        );
+        thread = refresh();
+    }
+    const duplicateMarkers = managedReplyMarkers(thread, context, ['COMMENTED'], false);
+    if (duplicateMarkers.length <= 1) {
         assertCommentedResolutionReply(requireOneReplyMarker(thread, context.threadId), context);
         return;
     }
@@ -1450,7 +1533,7 @@ function mutationReply(threadId: string, reviewId: string, gh: Gh): ReviewReply 
         clientMutationId,
     };
 }
-function submitReview(reviewId: string, body: string, gh: Gh): ReviewEnvelopeReceipt {
+export function submitReview(reviewId: string, body: string, gh: Gh): ReviewEnvelopeReceipt {
     const clientMutationId = submitReviewClientMutationId(reviewId);
     const query =
         'mutation($reviewId:ID!,$body:String!,$clientMutationId:String!){submitPullRequestReview(input:{pullRequestReviewId:$reviewId,event:COMMENT,body:$body,clientMutationId:$clientMutationId}){clientMutationId pullRequestReview{id state body commit{oid} author{login __typename ... on Bot{id}}}}}';
