@@ -592,8 +592,8 @@ expect(
 expect(unitRunStep?.id === 'run_shard', 'unit Run shard step must keep its stable id');
 expect(e2eRunStep?.id === 'run_shard', 'end-to-end Run shard step must keep its stable id');
 expect(
-    unitRunStep?.['continue-on-error'] === true,
-    'pull-request unit Run shard must continue on error so Gate can still report'
+    unitRunStep?.['continue-on-error'] === undefined,
+    'pull-request unit Run shard must not continue on error'
 );
 expect(
     e2eRunStep?.['continue-on-error'] === undefined,
