@@ -339,6 +339,14 @@ pub fn take_pending_editor_resize_signal() -> bool {
     EDITOR_RESIZE_PENDING.swap(false, Ordering::AcqRel)
 }
 
+/// Serialises every raiser of the process-wide editor-resize hint against
+/// every asserter of it, so one test's raise cannot stand in for another's
+/// deleted one. Raisers live in more than one of this crate's test modules,
+/// which is why the lock is crate-visible here beside the hint it guards;
+/// `#[cfg(test)]` keeps it out of production builds.
+#[cfg(test)]
+pub(crate) static RESIZE_SIGNAL_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 /// Borrow the host callback state pinned into a `clap_host`'s `host_data`.
 /// Returns `None` when `host` or `host_data` is null (e.g. a descriptor created
 /// without per-instance state, such as legacy test fixtures).
@@ -700,10 +708,6 @@ mod tests {
     /// same reason.
     static TAIL_SIGNAL_TEST_LOCK: Mutex<()> = Mutex::new(());
 
-    /// Serialises every test that raises the process-wide editor-resize hint,
-    /// for the same reason.
-    static RESIZE_SIGNAL_TEST_LOCK: Mutex<()> = Mutex::new(());
-
     /// Arm a state so a resize request can be accepted: an open editor window
     /// and an installed wake, recording what the wake was told.
     fn state_with_open_editor() -> (HostCallbackState, Arc<Mutex<Vec<PluginHostRequest>>>) {
@@ -774,8 +778,11 @@ mod tests {
     /// the channel not at all.
     #[test]
     fn a_resize_request_records_without_waking_the_allocating_channel() {
-        // The resize hint is process-wide, and every other test here that raises
-        // one would otherwise mask a deleted raise in this one.
+        // The resize hint is process-wide, so a raise from any other test
+        // landing between this test's clear and its assert would mask a deleted
+        // raise. RESIZE_SIGNAL_TEST_LOCK prevents that only because every
+        // raiser in the crate — this module's tests and the wrapper's alike —
+        // holds it; an unserialised raiser anywhere reopens the window.
         let _guard = RESIZE_SIGNAL_TEST_LOCK
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -803,6 +810,9 @@ mod tests {
     /// distinguishes a correct packing from a transposed one.
     #[test]
     fn the_newest_requested_size_replaces_an_unread_older_one() {
+        let _guard = RESIZE_SIGNAL_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let (state, _requests) = state_with_open_editor();
         let host = host_with_state(&state);
 
