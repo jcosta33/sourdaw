@@ -605,10 +605,11 @@ describe('settleConfirmedCommandExecution', () => {
         );
 
         expect(result).toEqual({ status: 'failed', reason: 'partial write' });
-        expect(mocks.recordFailure).toHaveBeenCalledWith(
-            expect.anything(),
-            expect.objectContaining({ category: 'conflict' })
-        );
+        expect(mocks.recordFailure).toHaveBeenCalledWith(confirmation, {
+            category: 'conflict',
+            retriable: false,
+            compensation: 'manual-repair',
+        });
         expect(mocks.settleResources).toHaveBeenCalledWith({ confirmationId: 'confirmation-1', disposition: 'retain' });
     });
 
