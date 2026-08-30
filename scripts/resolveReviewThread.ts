@@ -731,7 +731,27 @@ function managedReplyMarkers(
             currentHead: review.commitOid === context.expectedHead,
         });
     }
-    return managed.sort((left, right) => compareMarkers(left.marker, right.marker));
+    return managed.sort(compareManagedReplyMarkers);
+}
+function compareManagedReplyMarkers(left: ManagedReplyMarker, right: ManagedReplyMarker): number {
+    const leftPriority = managedReplyPriority(left);
+    const rightPriority = managedReplyPriority(right);
+    if (leftPriority !== rightPriority) {
+        return leftPriority - rightPriority;
+    }
+    return compareMarkers(left.marker, right.marker);
+}
+function managedReplyPriority(candidate: ManagedReplyMarker): number {
+    if (candidate.currentHead && candidate.review.state === 'COMMENTED') {
+        return 0;
+    }
+    if (candidate.currentHead) {
+        return 1;
+    }
+    if (candidate.review.state === 'COMMENTED') {
+        return 2;
+    }
+    return 3;
 }
 function requireCanonicalManagedReplyMarker(
     thread: ReviewThread,
@@ -741,7 +761,7 @@ function requireCanonicalManagedReplyMarker(
     allowEmptyBody: boolean
 ): ManagedReplyMarker {
     const managed = managedReplyMarkers(thread, context, allowedStates, allowEmptyBody);
-    const canonical = managed.find((candidate) => candidate.currentHead) ?? managed[0];
+    const canonical = managed[0];
     if (canonical === undefined) {
         fail(`review thread ${threadId} has no valid Done reply marker`);
     }
@@ -973,33 +993,38 @@ function repairCompletedResolution(
     if (pendingReviewDeleted) {
         thread = refresh();
     }
-    const currentHeadCommentedReply = managedReplyMarkers(thread, context, ['COMMENTED'], false).find(
-        (candidate) => candidate.currentHead
-    );
-    const pendingReplies = managedReplyMarkers(thread, context, ['PENDING'], false);
-    const currentHeadPendingReply = pendingReplies.find((candidate) => candidate.currentHead);
-    if (currentHeadPendingReply !== undefined && currentHeadCommentedReply === undefined) {
+    let commentedReplies = managedReplyMarkers(thread, context, ['COMMENTED'], false);
+    let pendingReplies = managedReplyMarkers(thread, context, ['PENDING'], false);
+    const canonicalCommentedReply = commentedReplies[0];
+    const canonicalPendingReply = pendingReplies[0];
+    if (canonicalPendingReply !== undefined && canonicalCommentedReply === undefined) {
         const reviewCommitOid = requireReviewCommitOid(
-            currentHeadPendingReply.review,
-            `Done reply ${currentHeadPendingReply.marker.id}`
+            canonicalPendingReply.review,
+            `Done reply ${canonicalPendingReply.marker.id}`
         );
         const submittedReview = port.submitReview(
-            currentHeadPendingReply.review.id,
+            canonicalPendingReply.review.id,
             resolutionReviewBody(context, reviewCommitOid)
         );
         assertReviewEnvelopeReceipt(
             submittedReview,
-            submitReviewClientMutationId(currentHeadPendingReply.review.id),
+            submitReviewClientMutationId(canonicalPendingReply.review.id),
             'COMMENTED',
             resolutionReviewBody(context, reviewCommitOid),
             reviewCommitOid,
             'submit review'
         );
         thread = refresh();
+        commentedReplies = managedReplyMarkers(thread, context, ['COMMENTED'], false);
+        pendingReplies = managedReplyMarkers(thread, context, ['PENDING'], false);
     }
+    const currentHeadCommentedReply = commentedReplies.find((candidate) => candidate.currentHead);
     const managedPendingReviewIdsToDelete = new Set(
         pendingReplies
-            .filter((candidate) => currentHeadCommentedReply !== undefined || !candidate.currentHead)
+            .filter(
+                (candidate) =>
+                    currentHeadCommentedReply !== undefined || candidate.review.id !== canonicalPendingReply?.review.id
+            )
             .map((candidate) => candidate.review.id)
     );
     if (managedPendingReviewIdsToDelete.size > 0) {

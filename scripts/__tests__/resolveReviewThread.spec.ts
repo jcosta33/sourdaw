@@ -95,7 +95,9 @@ type Input = {
     existingReplyReviewAuthorType?: string | null;
     addForeignPendingReview?: boolean;
     addExactPendingReplyMarker?: boolean;
+    exactPendingReplyFullDatabaseId?: string;
     addPendingReplyMarkerToResolvedThread?: boolean;
+    resolvedPendingReplyFullDatabaseId?: string;
     addExactPendingReviewAfterLostCreate?: boolean;
     attachConcurrentManagedPendingReplyAfterLostCreate?: boolean;
     attachConcurrentManagedPendingReplyDuringPendingDelete?: boolean;
@@ -107,6 +109,7 @@ type Input = {
     failDeleteMissingReply?: boolean;
     replyReceiptReviewId?: string;
     failUpdateReviewBodyIds?: string[];
+    updateClientMutationId?: string;
 };
 function fakePort(input: Input = {}) {
     const calls: string[] = [];
@@ -199,7 +202,11 @@ function fakePort(input: Input = {}) {
     }
     if (input.addExactPendingReplyMarker) {
         pushReview('PRR_pending_reply', 'PENDING', expectedReviewBody, head);
-        pushReply('PRRC_pending_reply', '9223372036854775811', 'PRR_pending_reply');
+        pushReply(
+            'PRRC_pending_reply',
+            input.exactPendingReplyFullDatabaseId ?? '9223372036854775811',
+            'PRR_pending_reply'
+        );
     }
     for (let replyIndex = 0; replyIndex < (input.existingReplyCount ?? 0); replyIndex += 1) {
         const currentReviewId = replyIndex === 0 ? reviewId : `PRR_existing_${replyIndex}`;
@@ -219,7 +226,11 @@ function fakePort(input: Input = {}) {
     }
     if (input.addPendingReplyMarkerToResolvedThread) {
         pushReview('PRR_resolved_pending', 'PENDING', expectedReviewBody, head);
-        pushReply('PRRC_resolved_pending', '9223372036854775812', 'PRR_resolved_pending');
+        pushReply(
+            'PRRC_resolved_pending',
+            input.resolvedPendingReplyFullDatabaseId ?? '9223372036854775812',
+            'PRR_resolved_pending'
+        );
     }
     function reviewById(id: string | null): ReviewRecord | undefined {
         return reviews.find((review) => review.id === id);
@@ -448,7 +459,7 @@ function fakePort(input: Input = {}) {
                 authorNodeId: review.authorNodeId,
                 authorLogin: review.authorLogin,
                 authorType: review.authorType,
-                clientMutationId: `review-update:${currentReviewId}`,
+                clientMutationId: input.updateClientMutationId ?? `review-update:${currentReviewId}`,
             };
         },
         resolve: (id) => {
@@ -698,6 +709,40 @@ describe('review thread resolution', () => {
                             body: pendingReviewBody(head),
                             commit: { oid: head },
                             author: { id: REVIEWER_BOT_NODE_ID, login: 'renamed-reviewer', __typename: 'Bot' },
+                        },
+                    },
+                },
+            },
+        ],
+        [
+            'null client mutation',
+            {
+                data: {
+                    deletePullRequestReview: {
+                        clientMutationId: null,
+                        pullRequestReview: {
+                            id: reviewId,
+                            state: 'PENDING',
+                            body: pendingReviewBody(head),
+                            commit: { oid: head },
+                            author: { id: AUTHOR_BOT_NODE_ID, login: 'renamed-author', __typename: 'Bot' },
+                        },
+                    },
+                },
+            },
+        ],
+        [
+            'mismatched client mutation',
+            {
+                data: {
+                    deletePullRequestReview: {
+                        clientMutationId: 'wrong',
+                        pullRequestReview: {
+                            id: reviewId,
+                            state: 'PENDING',
+                            body: pendingReviewBody(head),
+                            commit: { oid: head },
+                            author: { id: AUTHOR_BOT_NODE_ID, login: 'renamed-author', __typename: 'Bot' },
                         },
                     },
                 },
@@ -1791,6 +1836,34 @@ describe('review thread resolution', () => {
             expect.objectContaining({ id: reviewId, state: 'COMMENTED', commitOid: head }),
         ]);
     });
+    it('submits and preserves a sole stale-head pending Done marker on an already resolved thread', () => {
+        const { port, calls, authorNodeId, state } = fakePort({
+            heads: [movedHead, movedHead, movedHead],
+            isResolved: true,
+            initialResolvedByNodeId: AUTHOR_BOT_NODE_ID,
+            initialResolvedByType: 'User',
+            existingReplyCount: 1,
+            existingReplyReviewState: 'PENDING',
+            existingReplyReviewCommitOid: head,
+        });
+        expect(resolveReviewThread(42, threadId, movedHead, authorNodeId, port)).toBe(
+            `review-thread-resolved:42:${threadId}`
+        );
+        expect(calls.filter((call) => call.startsWith('submitReview:'))).toEqual([`submitReview:${reviewId}`]);
+        expect(calls.filter((call) => call.startsWith('deleteReview:') || call.startsWith('delete:'))).toEqual([]);
+        expect(state()).toMatchObject({
+            resolved: true,
+            comments: [{ id: rootId }, { id: replyId, body: 'Done', reviewId }],
+            reviews: [
+                {
+                    id: reviewId,
+                    state: 'COMMENTED',
+                    commitOid: head,
+                    body: resolutionReviewSummary(pullRequestId, threadId, head),
+                },
+            ],
+        });
+    });
     it('deletes duplicate current-head pending envelopes on a completed resolution and keeps one canonical Done marker', () => {
         const { port, calls, authorNodeId, state } = fakePort({
             isResolved: true,
@@ -1805,6 +1878,25 @@ describe('review thread resolution', () => {
         expect(calls.filter((call) => call.startsWith('deleteReview:'))).toEqual(['deleteReview:PRR_resolved_pending']);
         expect(state().comments.filter((comment) => comment.body === 'Done')).toEqual([
             expect.objectContaining({ id: replyId }),
+        ]);
+    });
+    it('prefers the current-head commented Done marker over a lower-id pending marker before canonical tie-breaking', () => {
+        const { port, calls, authorNodeId, state } = fakePort({
+            existingReplyCount: 1,
+            addExactPendingReplyMarker: true,
+            exactPendingReplyFullDatabaseId: '9223372036854775806',
+        });
+        expect(resolveReviewThread(42, threadId, head, authorNodeId, port)).toBe(
+            `review-thread-resolved:42:${threadId}`
+        );
+        expect(calls.filter((call) => call.startsWith('submitReview:'))).toEqual([]);
+        expect(calls.filter((call) => call.startsWith('deleteReview:'))).toEqual(['deleteReview:PRR_pending_reply']);
+        expect(calls.filter((call) => call.startsWith('delete:'))).toEqual([]);
+        expect(state().comments.filter((comment) => comment.body === 'Done')).toEqual([
+            expect.objectContaining({ id: replyId, reviewId }),
+        ]);
+        expect(state().reviews).toEqual([
+            expect.objectContaining({ id: reviewId, state: 'COMMENTED', commitOid: head }),
         ]);
     });
     it('backfills an already resolved thread whose associated author review summary is empty', () => {
@@ -1825,6 +1917,20 @@ describe('review thread resolution', () => {
             `log:review-thread-resolved:42:${threadId}`,
         ]);
         expectCanonicalResolutionReview(state().reviews[0]!);
+    });
+    it('fails closed on an invalid update-review-body receipt during completed-resolution backfill before logging success', () => {
+        const { port, calls, authorNodeId } = fakePort({
+            isResolved: true,
+            initialResolvedByNodeId: AUTHOR_BOT_NODE_ID,
+            initialResolvedByType: 'User',
+            existingReplyCount: 1,
+            existingReplyReviewBody: '',
+            updateClientMutationId: 'wrong',
+        });
+        expect(() => resolveReviewThread(42, threadId, head, authorNodeId, port)).toThrow(
+            /update review body returned an invalid result/i
+        );
+        expect(calls.filter((call) => call.startsWith('resolve:') || call.startsWith('log:'))).toEqual([]);
     });
     it('rejects a completed resolution with the wrong resolvedBy typename', () => {
         const { port, calls, authorNodeId } = fakePort({
