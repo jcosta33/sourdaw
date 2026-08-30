@@ -1048,6 +1048,76 @@ describe('pull-request delivery', () => {
         port.deliveryReceipts = originalDeliveryReceipts;
     });
 
+    it('appends a fresh expected X when an older exact X sits behind newer public Y, then recovers that newest X without a persisted ref', () => {
+        const bodyX = relationshipBody('Closes #2372');
+        const bodyY = relationshipBody('Closes #2373');
+        const receipt = (
+            id: string,
+            body: string,
+            closingIssue: number,
+            createdAt: string
+        ): DeliveryReceiptComment => ({
+            id,
+            body: visibleDeliveryReceiptBody(42, 'head', body, closingIssue, 'successful'),
+            authorNodeId: AUTHOR_BOT_NODE_ID,
+            authorLogin: 'renamed-author[bot]',
+            authorType: 'Bot',
+            createdAt,
+            updatedAt: createdAt,
+        });
+        const { port, calls, receipts, tracker, persistedReceiptAuthority } = fakePort({
+            primary: [
+                pullRequest({ body: bodyX }),
+                pullRequest({ body: bodyX }),
+                pullRequest({ state: 'MERGED', body: bodyX }),
+                pullRequest({ state: 'MERGED', body: relationshipBody('None.') }),
+            ],
+            dependentSets: [[], []],
+            receipts: [
+                receipt('IC_visible_x', bodyX, 2372, '2026-08-21T00:00:00.000Z'),
+                receipt('IC_visible_y', bodyY, 2373, '2026-08-21T00:00:01.000Z'),
+            ],
+        });
+        let failTrackerOnce = true;
+        tracker.complete = (issueNumber) => {
+            calls.push(`complete:${issueNumber}`);
+            if (failTrackerOnce) {
+                failTrackerOnce = false;
+                throw new Error('tracker unavailable');
+            }
+        };
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(
+            /PR #42.*merged.*issue #2372.*tracker unavailable/i
+        );
+        expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(1);
+        expect(receipts.map(({ id }) => id)).toEqual(['IC_visible_x', 'IC_visible_y', 'IC_delivery_42_3']);
+        expect(receipts.map(({ body }) => body)).toEqual([
+            visibleDeliveryReceiptBody(42, 'head', bodyX, 2372, 'successful'),
+            visibleDeliveryReceiptBody(42, 'head', bodyY, 2373, 'successful'),
+            visibleDeliveryReceiptBody(42, 'head', bodyX, 2372, 'successful'),
+        ]);
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'merge-authorized',
+            receiptId: 'IC_delivery_42_3',
+            receiptBody: visibleDeliveryReceiptBody(42, 'head', bodyX, 2372, 'successful'),
+        });
+        expect(calls).toContain('complete:2372');
+        expect(calls).not.toContain('complete:2373');
+
+        port.clearDeliveryReceiptAuthority(42);
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(1);
+        expect(calls).toContain('receipt-proof:42:3:IC_delivery_42_3');
+        expect(calls.filter((call) => call === 'complete:2372')).toHaveLength(2);
+        expect(calls).not.toContain('complete:2373');
+        expect(calls).toContain('receipt-authority:write:merge-authorized:IC_delivery_42_3');
+        expect(calls).toContain('receipt-authority:write:terminal:IC_delivery_42_3');
+        expect(calls).toContain('PR #42 was already merged; repaired 0 remaining dependent(s)');
+    });
+
     it('stops merged recovery when one stale receipt listing still points at Y and later fresh recovery completes only X', () => {
         const bodyX = relationshipBody('Closes #2372');
         const bodyY = relationshipBody('Closes #2373');
@@ -5257,7 +5327,7 @@ describe('delivery shell boundary', () => {
         ]);
     });
 
-    it('reads complete shellPort receipt comments and proof exactly, while leaving ordinary and foreign comments non-authoritative', () => {
+    it('reads complete shellPort receipt comments in ascending issue-comment order and proves the newest one with GraphQL comments(last:1)', () => {
         const captures: Array<{ command: string; args: string[] }> = [];
         const comment = (
             id: string,
@@ -5294,12 +5364,27 @@ describe('delivery shell boundary', () => {
                         ],
                         [
                             comment(
-                                'IC_receipt',
+                                'IC_receipt_older',
                                 visibleDeliveryReceiptBody(
                                     42,
                                     'head',
                                     relationshipBody('Closes #2372'),
                                     2372,
+                                    'successful'
+                                ),
+                                {
+                                    nodeId: AUTHOR_BOT_NODE_ID,
+                                    login: 'renamed-author[bot]',
+                                    type: 'Bot',
+                                }
+                            ),
+                            comment(
+                                'IC_receipt_newest',
+                                visibleDeliveryReceiptBody(
+                                    42,
+                                    'head',
+                                    relationshipBody('Closes #2373'),
+                                    2373,
                                     'successful'
                                 ),
                                 {
@@ -5317,8 +5402,22 @@ describe('delivery shell boundary', () => {
                             repository: {
                                 pullRequest: {
                                     comments: {
-                                        totalCount: 3,
-                                        nodes: [{ id: 'IC_receipt' }],
+                                        totalCount: 4,
+                                        nodes: [{ id: 'IC_receipt_newest' }],
+                                    },
+                                },
+                            },
+                        },
+                    });
+                }
+                if (joined.includes('comments(first:1){totalCount nodes{id}}')) {
+                    return JSON.stringify({
+                        data: {
+                            repository: {
+                                pullRequest: {
+                                    comments: {
+                                        totalCount: 4,
+                                        nodes: [{ id: 'IC_author_note' }],
                                     },
                                 },
                             },
@@ -5333,9 +5432,10 @@ describe('delivery shell boundary', () => {
         expect(port.deliveryReceipts(42).map(({ id }) => id)).toEqual([
             'IC_author_note',
             'IC_foreign_copy',
-            'IC_receipt',
+            'IC_receipt_older',
+            'IC_receipt_newest',
         ]);
-        expect(port.deliveryReceiptProof(42)).toEqual({ totalCount: 3, latestCommentId: 'IC_receipt' });
+        expect(port.deliveryReceiptProof(42)).toEqual({ totalCount: 4, latestCommentId: 'IC_receipt_newest' });
         expect(captures).toEqual([
             {
                 command: 'gh',

@@ -816,9 +816,9 @@ function authoritativeEquivalentDeliveryReceipt(
     ) {
         return undefined;
     }
-    const canonical = newestCanonicalDeliveryReceiptForKey(lineage, deliveryReceiptKey(expected), pullRequest);
-    if (sameExactDeliveryReceipt(assertDeliveryReceiptForHead(canonical, pullRequest), expected)) {
-        return canonical;
+    const authoritative = newestLogicalDeliveryReceiptAuthority(lineage, pullRequest);
+    if (sameExactDeliveryReceipt(assertDeliveryReceiptForHead(authoritative, pullRequest), expected)) {
+        return authoritative;
     }
     return undefined;
 }
