@@ -3,8 +3,10 @@ import { fileURLToPath } from 'node:url';
 import {
     AUTHOR_BOT_NODE_ID,
     assertRequiredRepository,
+    assertTrustedExecutingBlob,
     authenticateRole,
     isAuthorBotNodeId,
+    originMainBlob,
     spawnCapture,
     type GhSession,
 } from './githubAppIdentity.ts';
@@ -15,6 +17,7 @@ import {
     assertDetachedReviewResolutionChild,
     assertTrustedReviewResolutionLauncher,
     inspectReviewThread,
+    requiredTrustedReviewResolutionOriginCommit,
     recoverReviewResolutionLockOwnerState,
     recoverPullRequestReviewResolutionLock,
     runDetachedReviewResolutionWorker,
@@ -225,6 +228,20 @@ export async function runRecoverReviewResolutionLockCli(
         return await runRecoverReviewResolutionLockCliResolved(parsed, resolvedDependencies);
     }
     const trustedLauncher = await assertDetachedReviewResolutionChild(childMarker);
+    const trustedOriginCommit = requiredTrustedReviewResolutionOriginCommit(
+        'review:resolve:recover must run through the protected primary checkout launcher'
+    );
+    assertTrustedExecutingBlob(
+        'scripts/recoverReviewResolutionLock.ts',
+        fileURLToPath(import.meta.url),
+        originMainBlob(
+            'scripts/recoverReviewResolutionLock.ts',
+            process.cwd(),
+            undefined,
+            undefined,
+            trustedOriginCommit
+        )
+    );
     return await runRecoverReviewResolutionLockCliResolved(
         parsed,
         resolveRecoveryDependencies({ ...(dependencies ?? {}), trustedLauncher })

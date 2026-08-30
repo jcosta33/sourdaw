@@ -218,6 +218,7 @@ type ReviewResolutionLockRecoveryPort = {
 export const REVIEW_RESOLUTION_CHILD_ENV = 'SOURDAW_REVIEW_RESOLUTION_CHILD';
 const REVIEW_RESOLUTION_CHILD_MARKER_VERSION = 1;
 const TRUSTED_GIT_PATH_ENV = 'SOURDAW_TRUSTED_GIT_PATH';
+const TRUSTED_ORIGIN_COMMIT_ENV = 'SOURDAW_TRUSTED_ORIGIN_COMMIT';
 const activeReviewResolutionLocks: ActiveReviewResolutionLock[] = [];
 const systemReviewResolutionRecoveryClock: ReviewResolutionRecoveryClock = { now: () => Date.now() };
 
@@ -298,6 +299,16 @@ export function assertTrustedReviewResolutionLauncher(
         gitPath: value.gitPath,
         ghPath: value.ghPath,
     };
+}
+
+export function requiredTrustedReviewResolutionOriginCommit(
+    label: string = 'review:resolve must run through the protected primary checkout launcher'
+): string {
+    const value = process.env[TRUSTED_ORIGIN_COMMIT_ENV];
+    if (typeof value !== 'string' || value.trim() === '') {
+        fail(label);
+    }
+    return canonicalGitObjectId(value, label);
 }
 
 function parseReviewResolutionChildLaunchMarker(value: string): ReviewResolutionChildLaunchMarker {
@@ -3818,10 +3829,11 @@ export async function runResolveReviewThreadCli(
     const trustedLauncher = await assertDetachedReviewResolutionChild(childMarker);
     const resolvedDependencies = resolveReviewThreadCliDependencies(dependencies, trustedLauncher);
     const cwd = process.cwd();
+    const trustedOriginCommit = requiredTrustedReviewResolutionOriginCommit();
     assertTrustedExecutingBlob(
         'scripts/resolveReviewThread.ts',
         fileURLToPath(import.meta.url),
-        originMainBlob('scripts/resolveReviewThread.ts', cwd)
+        originMainBlob('scripts/resolveReviewThread.ts', cwd, undefined, undefined, trustedOriginCommit)
     );
     const primaryRoot = resolvedDependencies.trustedLauncher.primaryRoot;
     const auth = await resolvedDependencies.authenticateAuthor(primaryRoot);

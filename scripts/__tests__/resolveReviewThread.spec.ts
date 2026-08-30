@@ -808,6 +808,43 @@ function createTemporaryGitRepository(): string {
     return directory;
 }
 
+function createTemporaryGitRepositoryWithTrackedResolveSource(): {
+    repository: string;
+    pinnedCommit: string;
+    advancedCommit: string;
+} {
+    const repository = createTemporaryGitRepository();
+    mkdirSync(join(repository, 'scripts'), { recursive: true });
+    writeFileSync(join(repository, 'scripts/resolveReviewThread.ts'), 'export const trusted = "pinned";\n');
+    gitCapture(repository, ['add', 'scripts/resolveReviewThread.ts']);
+    gitCapture(repository, [
+        '-c',
+        'user.name=Codex',
+        '-c',
+        'user.email=codex@example.com',
+        'commit',
+        '--quiet',
+        '-m',
+        'base',
+    ]);
+    const pinnedCommit = gitCapture(repository, ['rev-parse', 'HEAD']);
+    gitCapture(repository, ['update-ref', 'refs/remotes/origin/main', pinnedCommit]);
+    writeFileSync(join(repository, 'scripts/resolveReviewThread.ts'), 'export const trusted = "advanced";\n');
+    gitCapture(repository, ['add', 'scripts/resolveReviewThread.ts']);
+    gitCapture(repository, [
+        '-c',
+        'user.name=Codex',
+        '-c',
+        'user.email=codex@example.com',
+        'commit',
+        '--quiet',
+        '-m',
+        'advanced',
+    ]);
+    const advancedCommit = gitCapture(repository, ['rev-parse', 'HEAD']);
+    return { repository, pinnedCommit, advancedCommit };
+}
+
 function createFakeGhExecutable(responsesByKey: Record<string, string | string[]>): {
     root: string;
     executable: string;
@@ -1273,6 +1310,20 @@ async function waitForProcessExitWithoutReviewResolutionLock(
     throw new Error(`process did not exit before creating a review-resolution lock for PR #${number}`);
 }
 
+async function waitForFile(path: string): Promise<void> {
+    for (let attempt = 0; attempt < 200; attempt += 1) {
+        try {
+            if (statSync(path).isFile()) {
+                return;
+            }
+        } catch {
+            // Wait for the file to appear.
+        }
+        await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    throw new Error(`timed out waiting for file ${path}`);
+}
+
 function writeResolveReviewSnapshot(snapshotRoot: string): string {
     const scriptsRoot = join(snapshotRoot, 'scripts');
     mkdirSync(scriptsRoot, { recursive: true });
@@ -1343,6 +1394,70 @@ function writeResolveReviewSnapshot(snapshotRoot: string): string {
             'process.exitCode = exitCode;',
         ].join('\n'),
         { encoding: 'utf8', mode: 0o600 }
+    );
+    return entryPath;
+}
+
+function writePinnedOriginResolveReviewSnapshot(
+    snapshotRoot: string,
+    recordedRevisionPath: string,
+    releasePath: string
+): string {
+    const entryPath = writeResolveReviewSnapshot(snapshotRoot);
+    writeFileSync(
+        join(snapshotRoot, 'scripts', 'githubAppIdentity.ts'),
+        [
+            'const sleeper = new Int32Array(new SharedArrayBuffer(4));',
+            "import { readFileSync, existsSync, writeFileSync } from 'node:fs';",
+            "import { spawnSync } from 'node:child_process';",
+            "import { fileURLToPath } from 'node:url';",
+            `const recordedRevisionPath = ${JSON.stringify(recordedRevisionPath)};`,
+            `const releasePath = ${JSON.stringify(releasePath)};`,
+            `export const AUTHOR_BOT_NODE_ID = ${JSON.stringify(AUTHOR_BOT_NODE_ID)};`,
+            `export const REVIEWER_BOT_NODE_ID = ${JSON.stringify(REVIEWER_BOT_NODE_ID)};`,
+            `export const REQUIRED_REPOSITORY = ${JSON.stringify(REQUIRED_REPOSITORY)};`,
+            'export function assertRequiredRepository(repository) {',
+            '  if (repository !== REQUIRED_REPOSITORY) throw new Error(`unexpected repository ${repository}`);',
+            '}',
+            'export function assertTrustedExecutingBlob(repoRelativePath, executingFile, originBlob, executingSource = readFileSync(executingFile, "utf8")) {',
+            '  if (originBlob === undefined) return;',
+            '  if (originBlob !== executingSource) {',
+            '    throw new Error(`${repoRelativePath} does not match origin/main; refusing to run a mutated copy`);',
+            '  }',
+            '}',
+            'export async function authenticateRole() {',
+            "  throw new Error('stop after trusted blob check');",
+            '}',
+            'export function isAuthorBotNodeId(value) { return value === AUTHOR_BOT_NODE_ID; }',
+            'export function isReviewerBotNodeId(value) { return value === REVIEWER_BOT_NODE_ID; }',
+            'export function originMainBlob(_repoRelativePath, cwd = process.cwd(), env, gitCommand = process.env.SOURDAW_TEST_TRUSTED_GIT_PATH ?? "git", revision = "origin/main") {',
+            '  writeFileSync(recordedRevisionPath, revision, "utf8");',
+            '  while (!existsSync(releasePath)) Atomics.wait(sleeper, 0, 0, 20);',
+            '  const pinned = process.env.SOURDAW_TRUSTED_ORIGIN_COMMIT;',
+            "  if (typeof pinned !== 'string' || pinned.trim() === '') throw new Error('missing pinned origin commit');",
+            '  if (revision === pinned) {',
+            '    return readFileSync(fileURLToPath(new URL("./resolveReviewThread.ts", import.meta.url)), "utf8");',
+            '  }',
+            '  const result = spawnSync(gitCommand, ["rev-parse", "--verify", "refs/remotes/origin/main^{commit}"], {',
+            '    cwd,',
+            '    env,',
+            '    encoding: "utf8",',
+            '    shell: false,',
+            '  });',
+            '  if (result.error !== undefined) throw result.error;',
+            "  if (result.status !== 0) throw new Error(result.stderr || result.stdout || 'origin/main lookup failed');",
+            '  return result.stdout.trim() === pinned',
+            '    ? readFileSync(fileURLToPath(new URL("./resolveReviewThread.ts", import.meta.url)), "utf8")',
+            '    : "mutated";',
+            '}',
+            'export function parseGraphqlResponse(output) { return JSON.parse(output); }',
+            'export function resolvePrimaryRoot() {',
+            '  const root = process.env.SOURDAW_TEST_PRIMARY_ROOT;',
+            "  if (typeof root !== 'string' || root.trim() === '') throw new Error('missing test primary root');",
+            '  return root;',
+            '}',
+            'export function spawnCapture() { throw new Error("unexpected spawnCapture"); }',
+        ].join('\n')
     );
     return entryPath;
 }
@@ -2832,13 +2947,134 @@ describe('review thread resolution', () => {
         }
     }, 10_000);
 
+    it('rejects a valid PID-bound child marker when the child is not its own process-group leader before lock acquisition', async () => {
+        const repository = createTemporaryGitRepository();
+        const snapshotRoot = mkdtempSync(join(tmpdir(), 'sourdaw-review-resolve-shared-pgid-'));
+        const markerRoot = mkdtempSync(join(tmpdir(), 'sourdaw-review-resolve-shared-pgid-marker-'));
+        const entryPath = writeResolveReviewSnapshot(snapshotRoot);
+        const token = '33333333-3333-4333-8333-333333333333';
+        const markerPath = join(markerRoot, 'child-marker.json');
+        const capabilityPath = join(markerRoot, 'bootstrap-capability.json');
+        writeFileSync(
+            capabilityPath,
+            JSON.stringify({
+                version: 1,
+                token,
+                trustedLauncher: { primaryRoot: repository, gitPath: trustedGitPath, ghPath: trustedGhPath },
+            }),
+            { encoding: 'utf8', mode: 0o600 }
+        );
+        publishReviewResolutionChildLaunchMarker(markerPath, token, null, capabilityPath);
+        const child = spawn(process.execPath, [entryPath, '42', '--thread', threadId, '--head', head], {
+            cwd: repository,
+            env: {
+                ...process.env,
+                SOURDAW_TEST_PRIMARY_ROOT: repository,
+                SOURDAW_TEST_TRUSTED_GIT_PATH: trustedGitPath,
+                SOURDAW_TRUSTED_ORIGIN_COMMIT: head,
+                SOURDAW_REVIEW_RESOLUTION_CHILD: JSON.stringify({ path: markerPath, token }),
+            },
+            stdio: ['ignore', 'ignore', 'pipe'],
+            shell: false,
+        });
+        let stderr = '';
+        child.stderr?.setEncoding('utf8');
+        child.stderr?.on('data', (chunk: string) => {
+            stderr += chunk;
+        });
+        try {
+            if (child.pid === undefined) {
+                throw new Error('child pid is unavailable');
+            }
+            expect(readProcessGroupId(child.pid)).not.toBe(child.pid);
+            publishReviewResolutionChildLaunchMarker(markerPath, token, child.pid, capabilityPath);
+            await waitForProcessExitWithoutReviewResolutionLock(child, repository, 42);
+            await waitForExit(child);
+            expect(child.exitCode).toBe(1);
+            expect(stderr).toMatch(/own detached POSIX process group/i);
+            expect(readLockOid(repository, 42)).toBeUndefined();
+        } finally {
+            child.kill('SIGKILL');
+            await waitForExit(child).catch(() => undefined);
+            rmSync(markerRoot, { recursive: true, force: true });
+            rmSync(snapshotRoot, { recursive: true, force: true });
+            rmSync(repository, { recursive: true, force: true });
+        }
+    }, 10_000);
+
+    it('pins detached child blob verification to the launcher commit even if local origin/main advances before the check resumes', async () => {
+        const { repository, pinnedCommit, advancedCommit } = createTemporaryGitRepositoryWithTrackedResolveSource();
+        const snapshotRoot = mkdtempSync(join(tmpdir(), 'sourdaw-review-resolve-pinned-origin-'));
+        const markerRoot = mkdtempSync(join(tmpdir(), 'sourdaw-review-resolve-pinned-origin-marker-'));
+        const recordedRevisionPath = join(snapshotRoot, 'recorded-revision.txt');
+        const releasePath = join(snapshotRoot, 'release-origin-check');
+        const entryPath = writePinnedOriginResolveReviewSnapshot(snapshotRoot, recordedRevisionPath, releasePath);
+        const token = '44444444-4444-4444-8444-444444444444';
+        const markerPath = join(markerRoot, 'child-marker.json');
+        const capabilityPath = join(markerRoot, 'bootstrap-capability.json');
+        writeFileSync(
+            capabilityPath,
+            JSON.stringify({
+                version: 1,
+                token,
+                trustedLauncher: { primaryRoot: repository, gitPath: trustedGitPath, ghPath: trustedGhPath },
+            }),
+            { encoding: 'utf8', mode: 0o600 }
+        );
+        publishReviewResolutionChildLaunchMarker(markerPath, token, null, capabilityPath);
+        const child = spawn(process.execPath, [entryPath, '42', '--thread', threadId, '--head', head], {
+            cwd: repository,
+            env: {
+                ...process.env,
+                SOURDAW_TEST_PRIMARY_ROOT: repository,
+                SOURDAW_TEST_TRUSTED_GIT_PATH: trustedGitPath,
+                SOURDAW_TRUSTED_ORIGIN_COMMIT: pinnedCommit,
+                SOURDAW_REVIEW_RESOLUTION_CHILD: JSON.stringify({ path: markerPath, token }),
+            },
+            stdio: ['ignore', 'ignore', 'pipe'],
+            shell: false,
+            detached: true,
+        });
+        let stderr = '';
+        child.stderr?.setEncoding('utf8');
+        child.stderr?.on('data', (chunk: string) => {
+            stderr += chunk;
+        });
+        try {
+            if (child.pid === undefined) {
+                throw new Error('child pid is unavailable');
+            }
+            publishReviewResolutionChildLaunchMarker(markerPath, token, child.pid, capabilityPath);
+            await waitForFile(recordedRevisionPath);
+            expect(readFileSync(recordedRevisionPath, 'utf8')).toBe(pinnedCommit);
+            gitCapture(repository, ['update-ref', 'refs/remotes/origin/main', advancedCommit, pinnedCommit]);
+            writeFileSync(releasePath, '1', 'utf8');
+            await waitForProcessExitWithoutReviewResolutionLock(child, repository, 42);
+            await waitForExit(child);
+            expect(child.exitCode).toBe(1);
+            expect(stderr).toMatch(/stop after trusted blob check/i);
+            expect(stderr).not.toMatch(/mutated copy/i);
+            expect(readLockOid(repository, 42)).toBeUndefined();
+        } finally {
+            child.kill('SIGKILL');
+            await waitForExit(child).catch(() => undefined);
+            rmSync(markerRoot, { recursive: true, force: true });
+            rmSync(snapshotRoot, { recursive: true, force: true });
+            rmSync(repository, { recursive: true, force: true });
+        }
+    }, 10_000);
+
     it('launches review:resolve in a detached worker group and keeps recovery fenced until that group exits', async () => {
         const repository = createTemporaryGitRepository();
         const snapshotRoot = mkdtempSync(join(tmpdir(), 'sourdaw-review-resolve-launcher-'));
         const entryPath = writeResolveReviewSnapshot(snapshotRoot);
         const launcher = spawn(process.execPath, [entryPath, '42', '--thread', threadId, '--head', head], {
             cwd: repository,
-            env: { ...process.env, SOURDAW_TEST_PRIMARY_ROOT: repository },
+            env: {
+                ...process.env,
+                SOURDAW_TEST_PRIMARY_ROOT: repository,
+                SOURDAW_TRUSTED_ORIGIN_COMMIT: head,
+            },
             stdio: ['ignore', 'ignore', 'pipe'],
             shell: false,
         });
@@ -2918,6 +3154,7 @@ describe('review thread resolution', () => {
                     SOURDAW_TEST_PRIMARY_ROOT: repository,
                     SOURDAW_TEST_TRUSTED_GIT_PATH: trustedGitPath,
                     SOURDAW_TEST_TRUSTED_GH_PATH: fakeGh.executable,
+                    SOURDAW_TRUSTED_ORIGIN_COMMIT: head,
                     SOURDAW_TEST_LINGER_AFTER_COMMAND_MS: '3000',
                 },
                 stdio: ['ignore', 'ignore', 'pipe'],
@@ -3157,6 +3394,29 @@ describe('review thread resolution', () => {
             /delete review reply returned an invalid result/i
         );
     });
+    it('passes the requested review id into delete-pending-review and accepts only the matching receipt identity', () => {
+        const ghCalls: string[][] = [];
+        deletePendingReview(reviewId, (args) => {
+            ghCalls.push(args);
+            return JSON.stringify({
+                data: {
+                    deletePullRequestReview: {
+                        clientMutationId: reviewId,
+                        pullRequestReview: {
+                            id: reviewId,
+                            state: 'PENDING',
+                            body: pendingReviewBody(head),
+                            commit: { oid: head },
+                            author: { id: AUTHOR_BOT_NODE_ID, login: 'renamed-author', __typename: 'Bot' },
+                        },
+                    },
+                },
+            });
+        });
+        expect(ghCalls).toHaveLength(1);
+        expect(ghCalls[0]).toContain(`reviewId=${reviewId}`);
+        expect(ghCalls[0]).toContain(`clientMutationId=${reviewId}`);
+    });
     it.each([
         [
             'missing review',
@@ -3191,6 +3451,23 @@ describe('review thread resolution', () => {
                             body: pendingReviewBody(head),
                             commit: { oid: head },
                             author: { id: REVIEWER_BOT_NODE_ID, login: 'renamed-reviewer', __typename: 'Bot' },
+                        },
+                    },
+                },
+            },
+        ],
+        [
+            'mismatched receipt id',
+            {
+                data: {
+                    deletePullRequestReview: {
+                        clientMutationId: reviewId,
+                        pullRequestReview: {
+                            id: 'PRR_other',
+                            state: 'PENDING',
+                            body: pendingReviewBody(head),
+                            commit: { oid: head },
+                            author: { id: AUTHOR_BOT_NODE_ID, login: 'renamed-author', __typename: 'Bot' },
                         },
                     },
                 },
