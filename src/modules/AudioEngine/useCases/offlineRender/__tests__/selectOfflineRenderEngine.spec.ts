@@ -176,6 +176,28 @@ describe('selectOfflineRenderEngine — the choice and its reason (#2225)', () =
         expect(selection).toEqual({ engine: 'native/offline', transport: stubTransport });
     });
 
+    /**
+     * Live native already honours bus mute, pan and solo (#3103). The selector
+     * used to refuse pan/mute and force Web Audio; these cases pin that the
+     * engine that holds the shape is the one that renders it.
+     */
+    it.each([
+        { name: 'a panned bus', bus: { pan: 25 } },
+        { name: 'a muted bus', bus: { muted: true } },
+        { name: 'a soloed bus', bus: { soloed: true } },
+    ])('hands $name to the native engine', async ({ bus }) => {
+        mocks.availability = { available: true, transport: stubTransport };
+        const { renderableTracks, scheduledTracks } = cleanProject();
+        const project = {
+            scheduledTracks,
+            renderableTracks: renderableTracks.map((track) => (track.kind === 'bus' ? { ...track, ...bus } : track)),
+        };
+
+        const selection = await selectOfflineRenderEngine(project);
+
+        expect(selection).toEqual({ engine: 'native/offline', transport: stubTransport });
+    });
+
     describe('content gates — a shape the native engine refuses degrades instead', () => {
         /**
          * One case per clause of `contentGateReason`. The expected text is the
@@ -250,14 +272,6 @@ describe('selectOfflineRenderEngine — the choice and its reason (#2225)', () =
                     return { renderableTracks: [track], scheduledTracks: [track] };
                 },
                 reason: 'clip "clip-a" on track "Stretched A" is time-stretched (#2219)',
-            },
-            {
-                name: 'a shaped bus',
-                project: () => {
-                    const bus = createTrack({ id: 'bus-1', name: 'Wide', kind: 'bus', pan: 25 });
-                    return { renderableTracks: [bus], scheduledTracks: [] };
-                },
-                reason: 'bus "Wide" is panned or muted, which the native bus strip cannot hold',
             },
             {
                 name: 'a send configured on a bus',

@@ -24,15 +24,19 @@
  *     MIDI clip would be a rest that reads as a correct file.
  *   - **Stretched clips** — the native timeline refuses any non-unity rate
  *     (`stretched-clip-unsupported`, #2219).
- *   - **Shaped buses** — the native bus strip has no panner or mute gate and
- *     refuses a state that needs one.
- *   - **Bus sends** — the same strip has no send taps either, so a send
+ *   - **Bus sends** — the native bus strip has no send taps, so a send
  *     configured on a bus reaches the seam as an `add-send` refusal
  *     (`bus-send-unsupported`). Refused mid-render it would still fall back,
  *     but only after building the whole graph twice, and this file is where
  *     the promise above says that answer is decided.
  *   - **Bus → track routing** — `daw-engine` refuses it outright (the routing
  *     constraint recorded in `AudioGraphBackend`'s header).
+ *
+ * Mute, pan and solo on a bus are not a gate: the native strip holds them
+ * (`SetBusMute` / `SetBusSoloGate` / `BusPan`, #3103), and the offline
+ * projection already puts that shape on `create-bus-strip`. Mixdown still
+ * omits a solo-gated track from `scheduledTracks` rather than solo-gating
+ * the strip, matching the web path.
  *
  * The gates admit conservatively: anything they cannot prove native-renderable
  * goes web, because a wrong `web-audio/offline` answer costs speed while a
@@ -75,9 +79,6 @@ function contentGateReason(input: SelectOfflineRenderEngineInput): string | null
         }
         if (track.devices.length > 0) {
             return `track "${track.name}" carries a device chain`;
-        }
-        if (track.kind === 'bus' && (track.pan !== 0 || track.muted)) {
-            return `bus "${track.name}" is panned or muted, which the native bus strip cannot hold`;
         }
         if (track.kind === 'bus' && track.sends.length > 0) {
             return `bus "${track.name}" carries a send, which the native bus strip has no tap for`;
