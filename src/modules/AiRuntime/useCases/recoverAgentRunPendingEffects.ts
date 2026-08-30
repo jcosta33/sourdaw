@@ -45,7 +45,7 @@ function hasExactPendingReceiptBinding(
     if (receipt.pendingEffects.length === 0) {
         return true;
     }
-    if (isIntentionalManualRepairContinuation(continuation)) {
+    if (isDurableManualRepairContinuation(continuation)) {
         return hasIntentionalManualizedPendingEffectBinding(continuation, receipt.pendingEffects);
     }
     return hasExactPendingEffects(continuation.effects, receipt.pendingEffects);
@@ -75,14 +75,10 @@ function hasExactPendingEffect(effect: AgentRunPendingEffect, receiptEffect: Age
     );
 }
 
-function isIntentionalManualRepairContinuation(
+function isDurableManualRepairContinuation(
     continuation: NonNullable<ReturnType<typeof agentRunLifecycle.getPendingEffectRecovery>>
 ): boolean {
-    return (
-        continuation.checkpoint === 'durable' &&
-        continuation.recovery === 'manual-repair' &&
-        continuation.lastError === MISSING_EXACT_CHECKPOINT_RECOVERY_REASON
-    );
+    return continuation.checkpoint === 'durable' && continuation.recovery === 'manual-repair';
 }
 
 function isIntentionalManualizedRuntimeGraphEffect(
@@ -142,7 +138,6 @@ function hasIntentionalManualizedPendingEffectBinding(
         .map(({ commandId }) => commandId);
     const extraEffects: AgentRunPendingEffect[] = [];
     let receiptIndex = 0;
-    let hasManualizedRuntimeGraphEffect = false;
     for (const effect of continuation.effects) {
         const receiptEffect = receiptEffects[receiptIndex];
         if (receiptEffect?.commandId === effect.commandId) {
@@ -150,10 +145,12 @@ function hasIntentionalManualizedPendingEffectBinding(
                 receiptIndex += 1;
                 continue;
             }
-            if (!isIntentionalManualizedRuntimeGraphEffect(effect, receiptEffect)) {
+            if (
+                continuation.lastError !== MISSING_EXACT_CHECKPOINT_RECOVERY_REASON ||
+                !isIntentionalManualizedRuntimeGraphEffect(effect, receiptEffect)
+            ) {
                 return false;
             }
-            hasManualizedRuntimeGraphEffect = true;
             receiptIndex += 1;
             continue;
         }
@@ -169,7 +166,7 @@ function hasIntentionalManualizedPendingEffectBinding(
         (effect, index) =>
             effect.commandId === expectedExtraCommandIds[index] && isSynthesizedRenderManualRepair(effect)
     );
-    return hasExactAuthorizedExtras && (hasManualizedRuntimeGraphEffect || extraEffects.length > 0);
+    return hasExactAuthorizedExtras;
 }
 
 /** Resumes only persisted, receipt-backed effects; it never admits or replays project mutations. */

@@ -374,8 +374,9 @@ describe('recoverAgentRunPendingEffects', () => {
         const firstRender = synthesizedRenderEffect('command-render-first');
         const secondRender = synthesizedRenderEffect('command-render-second');
         configureManualizedRuntimeGraphProof({
-            continuationEffects: [manualizedRuntimeGraphEffect(receiptEffect), firstRender, secondRender],
+            continuationEffects: [receiptEffect, firstRender, secondRender],
             receiptEffects: [receiptEffect],
+            lastError: 'The final project revision is unavailable.',
         });
 
         await expect(
