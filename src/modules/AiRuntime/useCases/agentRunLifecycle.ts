@@ -1151,6 +1151,17 @@ function requireAgentRunPendingEffectManualRepair(input: {
     const recovery = getPendingEffectRecoveryLedger(state).find((candidate) =>
         isPendingEffectRecovery(candidate, input)
     );
+    if (!continuation && !recovery) {
+        const settledSteps = run.saga.steps.filter(
+            (step) => step.owner === 'external-effect' && step.workId === input.batchId
+        );
+        if (
+            settledSteps.length > 0 &&
+            settledSteps.every((step) => step.state === 'reviewed' && step.manualReviewDisposition !== undefined)
+        ) {
+            return structuredClone(run);
+        }
+    }
     if (!continuation || !recovery || recovery.checkpoint !== 'durable') {
         throw new Error(`Unknown durable pending effect continuation: ${input.batchId}`);
     }

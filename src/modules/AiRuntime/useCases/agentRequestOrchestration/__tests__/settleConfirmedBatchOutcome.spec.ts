@@ -347,6 +347,43 @@ describe('settleConfirmedBatchOutcome', () => {
         );
     });
 
+    it('does not report a persistence failure when review settles during deferred resource retention', async () => {
+        const input = createInput('committed-with-warning');
+        input.canRebindSectionRenderArtifacts = false;
+        let releaseResources: (() => void) | undefined;
+        input.retainCommittedPendingActionResources = vi.fn(
+            () =>
+                new Promise<void>((resolve) => {
+                    releaseResources = resolve;
+                })
+        );
+        mocks.project.mockReturnValueOnce({ executions: [], receipt: 'receipt' }).mockReturnValueOnce({
+            incompleteSectionRenders: { jobs: [{ jobId: 'render-a' }] },
+            reviewRequiredSectionRenders: [],
+        });
+        let reviewSettled = false;
+        mocks.requireManualRepair.mockImplementation(() =>
+            reviewSettled
+                ? null
+                : 'The retained render manual-repair state could not be persisted. Do not reconcile or replay this committed batch until durable run state is repaired.'
+        );
+
+        const settlement = settleConfirmedBatchOutcome(input);
+        expect(mocks.recordReceipt).toHaveBeenCalledOnce();
+        expect(input.retainCommittedPendingActionResources).toHaveBeenCalledOnce();
+        reviewSettled = true;
+        releaseResources?.();
+
+        await expect(settlement).resolves.toEqual({ status: 'executed' });
+        expect(mocks.requireManualRepair).toHaveBeenCalledOnce();
+        expect(mocks.updateConfirmation).toHaveBeenCalledWith(
+            expect.objectContaining({
+                status: 'executed',
+                error: expect.not.stringContaining('could not be persisted'),
+            })
+        );
+    });
+
     it('reports the durable outcome if execution reporting throws', async () => {
         const input = createInput('executed');
         mocks.recordExecution.mockImplementation(() => {

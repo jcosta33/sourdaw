@@ -24,7 +24,7 @@ function createRenderReviewRun(): void {
     agentRunLifecycle.recordSagaStep({
         runId: 'run-render-review',
         step: createAgentSagaStep({
-            stepId: 'effect:render-review',
+            stepId: 'effect:batch-render-review:command-render-review',
             order: 0,
             owner: 'external-effect',
             workId: 'batch-render-review',
@@ -217,6 +217,54 @@ describe('agentRunLifecycle', () => {
                 lastError: 'The retained render has a truncated tail.',
             }),
         ]);
+    });
+
+    it('accepts a late manual-repair request only after the exact batch review is settled', () => {
+        createRenderReviewRun();
+        const continuation = agentRunLifecycle.get('run-render-review')?.pendingEffectContinuations[0];
+        if (!continuation) {
+            throw new Error('Expected retained render continuation.');
+        }
+        agentRunLifecycle.recordPendingEffectContinuation({
+            runId: 'run-render-review',
+            continuation: { ...continuation, sourceRevision: 'heads-render-review' },
+            recordedAt: 2,
+        });
+        agentRunLifecycle.requirePendingEffectManualRepair({
+            runId: 'run-render-review',
+            batchId: 'batch-render-review',
+            reason: 'Review the retained render.',
+            requiredAt: 3,
+        });
+        agentRunLifecycle.settlePendingEffectManualReview({
+            runId: 'run-render-review',
+            batchId: 'batch-render-review',
+            receiptIdentity: '1:run-render-review:batch-render-review:partially-committed',
+            sourceRevision: 'heads-render-review',
+            disposition: 'accepted',
+            reviewedAt: 4,
+        });
+
+        expect(() =>
+            agentRunLifecycle.requirePendingEffectManualRepair({
+                runId: 'run-render-review',
+                batchId: 'batch-render-review',
+                reason: 'Late duplicate request.',
+                requiredAt: 5,
+            })
+        ).not.toThrow();
+
+        const unsettled = readAgentRunState();
+        delete unsettled.runs[0]!.saga.steps[0]!.manualReviewDisposition;
+        agentRunStore.set(unsettled);
+        expect(() =>
+            agentRunLifecycle.requirePendingEffectManualRepair({
+                runId: 'run-render-review',
+                batchId: 'batch-render-review',
+                reason: 'Reject incomplete settlement evidence.',
+                requiredAt: 6,
+            })
+        ).toThrow('Unknown durable pending effect continuation');
     });
 
     it('retries persistence from the exact live settled continuation after a local storage refusal', () => {
@@ -458,7 +506,11 @@ describe('agentRunLifecycle', () => {
         ]);
         expect(agentRunLifecycle.get('run-render-review')?.saga.steps).toEqual(
             expect.arrayContaining([
-                expect.objectContaining({ stepId: 'effect:render-review', state: 'manual-repair', updatedAt: 4 }),
+                expect.objectContaining({
+                    stepId: 'effect:batch-render-review:command-render-review',
+                    state: 'manual-repair',
+                    updatedAt: 4,
+                }),
                 expect.objectContaining({ stepId: 'runtime:render-review', state: 'external-pending', updatedAt: 3 }),
             ])
         );
