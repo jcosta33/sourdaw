@@ -1138,12 +1138,37 @@ function frozenDeliveryReceiptAuthorityHead(
     return payload.head;
 }
 
+function samePreparedDeliveryInputsForOpenRetry(
+    pullRequest: PullRequestSnapshot,
+    authority: CurrentPersistedPreparedDeliveryReceiptAuthority
+): boolean {
+    if (authority.postMergeValidation === undefined) {
+        return false;
+    }
+    return samePreparedPostMergeValidation(
+        authority.postMergeValidation,
+        persistedPreparedPostMergeValidation(pullRequest, trackerCompletionTarget(pullRequest))
+    );
+}
+
 function releaseStaleFrozenDeliveryReceiptAuthorityBeforeOpenRetry(
     pullRequest: PullRequestSnapshot,
     port: DeliveryPort
 ): void {
     const current = port.readDeliveryReceiptAuthority(pullRequest.number);
     if (!isFrozenPersistedDeliveryReceiptAuthority(current)) {
+        return;
+    }
+    if (current.phase === 'prepared' && current.postMergeValidation !== undefined) {
+        if (samePreparedDeliveryInputsForOpenRetry(pullRequest, current)) {
+            return;
+        }
+        replacePersistedDeliveryReceiptAuthorityIfUnchanged(
+            pullRequest.number,
+            current,
+            releasedDeliveryReceiptAuthority(current),
+            port
+        );
         return;
     }
     const frozenHead = frozenDeliveryReceiptAuthorityHead(pullRequest.number, current);
@@ -2277,7 +2302,7 @@ function readDeliveryReceiptProofFromGithub(
     repository: { owner: string; name: string },
     shell: Pick<ShellRunner, 'capture'>
 ): DeliveryReceiptProof {
-    const query = `query($owner:String!,$name:String!,$number:Int!,$cursor:String){repository(owner:$owner,name:$name){pullRequest(number:$number){comments(first:${ROLLUP_PAGE_SIZE},after:$cursor){totalCount pageInfo{hasNextPage endCursor} nodes{id lastEditedAt}}}}}`;
+    const query = `query($owner:String!,$name:String!,$number:Int!,$cursor:String){repository(owner:$owner,name:$name){pullRequest(number:$number){comments(first:${ROLLUP_PAGE_SIZE},after:$cursor,orderBy:{field:CREATED_AT,direction:ASC}){totalCount pageInfo{hasNextPage endCursor} nodes{id lastEditedAt}}}}}`;
     const readPage = (cursor: string | null) => {
         const response = parseJson<DeliveryReceiptProofResponse>(
             shell.capture('gh', [

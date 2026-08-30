@@ -88,6 +88,9 @@ ${relationship}`;
 }
 
 const body = relationshipBody('None.');
+const ORDERED_RECEIPT_PROOF_QUERY_FRAGMENT =
+    'comments(first:100,after:$cursor,orderBy:{field:CREATED_AT,direction:ASC}){totalCount pageInfo{hasNextPage endCursor} nodes{id lastEditedAt}}';
+const ORDERED_RECEIPT_PROOF_QUERY = `query=query($owner:String!,$name:String!,$number:Int!,$cursor:String){repository(owner:$owner,name:$name){pullRequest(number:$number){${ORDERED_RECEIPT_PROOF_QUERY_FRAGMENT}}}}`;
 
 type MergeSettings = {
     allow_merge_commit: boolean;
@@ -1869,12 +1872,17 @@ describe('pull-request delivery', () => {
         expect(calls.filter((call) => call === 'complete:2372')).toHaveLength(1);
     });
 
-    it('preserves frozen prepared authority across a stale open retry, then completes only that receipt after merge', () => {
+    it('re-arms to the current open receipt on a stale retry and then refuses merged recovery if the merged body reverts', () => {
         const closesX = relationshipBody('Closes #2372');
         const closesY = relationshipBody('Closes #2373');
         const receiptBodyX = visibleDeliveryReceiptBody(42, 'head', closesX, 2372, 'successful');
+        const receiptBodyY = visibleDeliveryReceiptBody(42, 'head', closesY, 2373, 'successful');
         const { port, calls, tracker, persistedReceiptAuthority } = fakePort({
-            primary: [pullRequest({ body: closesY }), pullRequest({ state: 'MERGED', body: closesX })],
+            primary: [
+                pullRequest({ body: closesY }),
+                pullRequest({ state: 'MERGED', body: closesX }),
+                pullRequest({ state: 'MERGED', body: closesX }),
+            ],
             dependentSets: [[]],
             persistedReceiptAuthority: {
                 phase: 'prepared',
@@ -1911,29 +1919,31 @@ describe('pull-request delivery', () => {
             deliveryReceiptProof: { totalCount: 2, latestCommentId: 'IC_stale_y' },
         });
 
-        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/delivery receipt changed during delivery/i);
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/body changed during delivery/i);
         expect(calls).not.toContain('add-receipt:42');
         expect(calls).not.toContain('merge:42:head');
         expect(calls.filter((call) => call.startsWith('complete:'))).toHaveLength(0);
         expect(persistedReceiptAuthority()).toEqual({
             phase: 'prepared',
-            receiptId: 'IC_frozen_x',
-            receiptBody: receiptBodyX,
+            receiptId: 'IC_stale_y',
+            receiptBody: receiptBodyY,
             postMergeValidation: {
                 headRefOid: 'head',
                 headRefName: 'feat/gate',
                 baseRefName: 'main',
-                bodySha256: createHash('sha256').update(closesX).digest('hex'),
-                trackerTarget: 2372,
+                bodySha256: createHash('sha256').update(closesY).digest('hex'),
+                trackerTarget: 2373,
             },
         });
 
-        deliverPullRequest(42, port, tracker);
-
-        expect(calls).toContain('receipt-authority:read:prepared:IC_frozen_x');
-        expect(calls).toContain('receipt-authority:write:merge-authorized:IC_frozen_x');
-        expect(calls).toContain('receipt-authority:write:terminal:IC_frozen_x');
-        expect(calls).toContain('complete:2372');
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/body changed during delivery/i);
+        expect(calls).toContain('receipt-authority:write:released:IC_frozen_x');
+        expect(calls).toContain('receipt-authority:write:prepared:IC_stale_y');
+        expect(calls).not.toContain('receipt-authority:write:merge-authorized:IC_frozen_x');
+        expect(calls).not.toContain('receipt-authority:write:terminal:IC_frozen_x');
+        expect(calls).not.toContain('receipt-authority:write:merge-authorized:IC_stale_y');
+        expect(calls).not.toContain('receipt-authority:write:terminal:IC_stale_y');
+        expect(calls).not.toContain('complete:2372');
         expect(calls).not.toContain('complete:2373');
     });
 
@@ -2921,6 +2931,165 @@ describe('pull-request delivery', () => {
         expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(1);
         expect(calls.filter((call) => call === `merge:42:${nextHead}`)).toHaveLength(0);
         expect(currentAuthority).toEqual(hostileAuthority);
+    });
+
+    it('reuses retained ambiguous merge authority when a later definitive OPEN retry keeps the same immutable delivery inputs', () => {
+        const closes = relationshipBody('Closes #2372');
+        const { port, calls, tracker, persistedReceiptAuthority, receipts } = fakePort({
+            primary: [
+                pullRequest({ body: closes }),
+                pullRequest({ body: closes }),
+                pullRequest({ body: closes, mergeable: 'UNKNOWN' }),
+                new Error('PR #42 merge recovery became unreadable'),
+                pullRequest({ body: closes }),
+                pullRequest({ body: closes }),
+            ],
+            dependentSets: [[], [], []],
+        });
+        const originalMerge = port.merge;
+        let rejectOnce = true;
+        port.merge = (number, head, hasDependents) => {
+            if (rejectOnce) {
+                rejectOnce = false;
+                calls.push(`merge:${number}:${head}`);
+                throw new DeliveryMergeRejectedError('PR #42 was not merged: gh: HTTP 409: merge result ambiguous');
+            }
+            originalMerge(number, head, hasDependents);
+        };
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/HTTP 409: merge result ambiguous/i);
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'prepared',
+            receiptId: 'IC_delivery_42_1',
+            receiptBody: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'),
+            postMergeValidation: {
+                headRefOid: 'head',
+                headRefName: 'feat/gate',
+                baseRefName: 'main',
+                bodySha256: createHash('sha256').update(closes).digest('hex'),
+                trackerTarget: 2372,
+            },
+        });
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls).not.toContain('receipt-authority:write:released:IC_delivery_42_1');
+        expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(1);
+        expect(receipts.map(({ id }) => id)).toEqual(['IC_delivery_42_1']);
+        expect(calls.filter((call) => call.startsWith('merge:42:'))).toEqual(['merge:42:head', 'merge:42:head']);
+        expect(calls).toContain('complete:2372');
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'terminal',
+            receiptId: 'IC_delivery_42_1',
+            receiptBody: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'),
+        });
+    });
+
+    it('releases retained ambiguous merge authority when a later retry keeps the same head but the PR body digest changes, then posts a fresh receipt', () => {
+        const staleBody = relationshipBody('Closes #2372\nOld note.');
+        const currentBody = relationshipBody('Closes #2372\nCurrent note.');
+        const { port, calls, tracker, persistedReceiptAuthority, receipts } = fakePort({
+            primary: [
+                pullRequest({ body: staleBody }),
+                pullRequest({ body: staleBody }),
+                pullRequest({ body: staleBody, mergeable: 'UNKNOWN' }),
+                new Error('PR #42 merge recovery became unreadable'),
+                pullRequest({ body: currentBody }),
+                pullRequest({ body: currentBody }),
+            ],
+            dependentSets: [[], [], []],
+        });
+        const originalMerge = port.merge;
+        let rejectOnce = true;
+        port.merge = (number, head, hasDependents) => {
+            if (rejectOnce) {
+                rejectOnce = false;
+                calls.push(`merge:${number}:${head}`);
+                throw new DeliveryMergeRejectedError('PR #42 was not merged: gh: HTTP 409: merge result ambiguous');
+            }
+            originalMerge(number, head, hasDependents);
+        };
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/HTTP 409: merge result ambiguous/i);
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'prepared',
+            receiptId: 'IC_delivery_42_1',
+            receiptBody: visibleDeliveryReceiptBody(42, 'head', staleBody, 2372, 'successful'),
+            postMergeValidation: {
+                headRefOid: 'head',
+                headRefName: 'feat/gate',
+                baseRefName: 'main',
+                bodySha256: createHash('sha256').update(staleBody).digest('hex'),
+                trackerTarget: 2372,
+            },
+        });
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls).toContain('receipt-authority:write:released:IC_delivery_42_1');
+        expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(2);
+        expect(receipts.map(({ id }) => id)).toEqual(['IC_delivery_42_1', 'IC_delivery_42_2']);
+        expect(calls.filter((call) => call.startsWith('merge:42:'))).toEqual(['merge:42:head', 'merge:42:head']);
+        expect(calls).toContain('complete:2372');
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'terminal',
+            receiptId: 'IC_delivery_42_2',
+            receiptBody: visibleDeliveryReceiptBody(42, 'head', currentBody, 2372, 'successful'),
+        });
+    });
+
+    it('releases retained ambiguous merge authority when a later retry keeps the same head but the closing target changes, then posts a fresh receipt', () => {
+        const staleBody = relationshipBody('Closes #2372');
+        const currentBody = relationshipBody('Closes #2373');
+        const { port, calls, tracker, persistedReceiptAuthority, receipts } = fakePort({
+            primary: [
+                pullRequest({ body: staleBody }),
+                pullRequest({ body: staleBody }),
+                pullRequest({ body: staleBody, mergeable: 'UNKNOWN' }),
+                new Error('PR #42 merge recovery became unreadable'),
+                pullRequest({ body: currentBody }),
+                pullRequest({ body: currentBody }),
+            ],
+            dependentSets: [[], [], []],
+        });
+        const originalMerge = port.merge;
+        let rejectOnce = true;
+        port.merge = (number, head, hasDependents) => {
+            if (rejectOnce) {
+                rejectOnce = false;
+                calls.push(`merge:${number}:${head}`);
+                throw new DeliveryMergeRejectedError('PR #42 was not merged: gh: HTTP 409: merge result ambiguous');
+            }
+            originalMerge(number, head, hasDependents);
+        };
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/HTTP 409: merge result ambiguous/i);
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'prepared',
+            receiptId: 'IC_delivery_42_1',
+            receiptBody: visibleDeliveryReceiptBody(42, 'head', staleBody, 2372, 'successful'),
+            postMergeValidation: {
+                headRefOid: 'head',
+                headRefName: 'feat/gate',
+                baseRefName: 'main',
+                bodySha256: createHash('sha256').update(staleBody).digest('hex'),
+                trackerTarget: 2372,
+            },
+        });
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls).toContain('receipt-authority:write:released:IC_delivery_42_1');
+        expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(2);
+        expect(receipts.map(({ id }) => id)).toEqual(['IC_delivery_42_1', 'IC_delivery_42_2']);
+        expect(calls.filter((call) => call.startsWith('merge:42:'))).toEqual(['merge:42:head', 'merge:42:head']);
+        expect(calls).not.toContain('complete:2372');
+        expect(calls).toContain('complete:2373');
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'terminal',
+            receiptId: 'IC_delivery_42_2',
+            receiptBody: visibleDeliveryReceiptBody(42, 'head', currentBody, 2373, 'successful'),
+        });
     });
 
     it('fails closed when an absent authority observation goes stale before the first write', () => {
@@ -6405,7 +6574,7 @@ describe('delivery shell boundary', () => {
                 }
                 if (
                     joined.includes(
-                        'comments(first:100,after:$cursor){totalCount pageInfo{hasNextPage endCursor} nodes{id lastEditedAt}}'
+                        'comments(first:100,after:$cursor,orderBy:{field:CREATED_AT,direction:ASC}){totalCount pageInfo{hasNextPage endCursor} nodes{id lastEditedAt}}'
                     )
                 ) {
                     return shellDeliveryReceiptProofResponse([
@@ -6440,7 +6609,7 @@ describe('delivery shell boundary', () => {
                     'api',
                     'graphql',
                     '-f',
-                    'query=query($owner:String!,$name:String!,$number:Int!,$cursor:String){repository(owner:$owner,name:$name){pullRequest(number:$number){comments(first:100,after:$cursor){totalCount pageInfo{hasNextPage endCursor} nodes{id lastEditedAt}}}}}',
+                    ORDERED_RECEIPT_PROOF_QUERY,
                     '-f',
                     'owner=jcosta33',
                     '-f',
@@ -6460,7 +6629,7 @@ describe('delivery shell boundary', () => {
                 const joined = args.join(' ');
                 if (
                     joined.includes(
-                        'comments(first:100,after:$cursor){totalCount pageInfo{hasNextPage endCursor} nodes{id lastEditedAt}}'
+                        'comments(first:100,after:$cursor,orderBy:{field:CREATED_AT,direction:ASC}){totalCount pageInfo{hasNextPage endCursor} nodes{id lastEditedAt}}'
                     )
                 ) {
                     if (joined.includes('cursor=cursor-1')) {
@@ -6489,7 +6658,7 @@ describe('delivery shell boundary', () => {
                     'api',
                     'graphql',
                     '-f',
-                    'query=query($owner:String!,$name:String!,$number:Int!,$cursor:String){repository(owner:$owner,name:$name){pullRequest(number:$number){comments(first:100,after:$cursor){totalCount pageInfo{hasNextPage endCursor} nodes{id lastEditedAt}}}}}',
+                    ORDERED_RECEIPT_PROOF_QUERY,
                     '-f',
                     'owner=jcosta33',
                     '-f',
@@ -6504,7 +6673,7 @@ describe('delivery shell boundary', () => {
                     'api',
                     'graphql',
                     '-f',
-                    'query=query($owner:String!,$name:String!,$number:Int!,$cursor:String){repository(owner:$owner,name:$name){pullRequest(number:$number){comments(first:100,after:$cursor){totalCount pageInfo{hasNextPage endCursor} nodes{id lastEditedAt}}}}}',
+                    ORDERED_RECEIPT_PROOF_QUERY,
                     '-f',
                     'owner=jcosta33',
                     '-f',
@@ -6518,6 +6687,30 @@ describe('delivery shell boundary', () => {
         ]);
     });
 
+    it('requests GraphQL receipt proof in created-at ascending order', () => {
+        const captures: string[] = [];
+        const port = shellPort('jcosta33/sourdaw', {
+            capture: (_command, args) => {
+                const joined = args.join(' ');
+                captures.push(joined);
+                if (
+                    joined.includes(
+                        'comments(first:100,after:$cursor,orderBy:{field:CREATED_AT,direction:ASC}){totalCount pageInfo{hasNextPage endCursor} nodes{id lastEditedAt}}'
+                    )
+                ) {
+                    return shellDeliveryReceiptProofResponse([]);
+                }
+                throw new Error(`unexpected capture: ${joined}`);
+            },
+            run: () => undefined,
+        });
+
+        expect(port.deliveryReceiptProof(42)).toEqual(deliveryReceiptProofForIds([]));
+        expect(captures).toEqual([
+            `api graphql -f ${ORDERED_RECEIPT_PROOF_QUERY} -f owner=jcosta33 -f name=sourdaw -F number=42`,
+        ]);
+    });
+
     it('fails shellPort receipt proof when GraphQL cursors cycle across later pages even if the final count could still be reached', () => {
         let cursorOneReads = 0;
         const port = shellPort('jcosta33/sourdaw', {
@@ -6525,7 +6718,7 @@ describe('delivery shell boundary', () => {
                 const joined = args.join(' ');
                 if (
                     joined.includes(
-                        'comments(first:100,after:$cursor){totalCount pageInfo{hasNextPage endCursor} nodes{id lastEditedAt}}'
+                        'comments(first:100,after:$cursor,orderBy:{field:CREATED_AT,direction:ASC}){totalCount pageInfo{hasNextPage endCursor} nodes{id lastEditedAt}}'
                     )
                 ) {
                     if (joined.includes('cursor=cursor-2')) {
@@ -6565,11 +6758,7 @@ describe('delivery shell boundary', () => {
         const port = shellPort('jcosta33/sourdaw', {
             capture: (_command, args) => {
                 const joined = args.join(' ');
-                if (
-                    joined.includes(
-                        'comments(first:100,after:$cursor){totalCount pageInfo{hasNextPage endCursor} nodes{id lastEditedAt}}'
-                    )
-                ) {
+                if (joined.includes(ORDERED_RECEIPT_PROOF_QUERY_FRAGMENT)) {
                     if (joined.includes('cursor=cursor-2')) {
                         return shellDeliveryReceiptProofResponse(['IC_b', 'IC_c'], {
                             totalCount: 3,
@@ -6600,11 +6789,7 @@ describe('delivery shell boundary', () => {
         const port = shellPort('jcosta33/sourdaw', {
             capture: (_command, args) => {
                 const joined = args.join(' ');
-                if (
-                    joined.includes(
-                        'comments(first:100,after:$cursor){totalCount pageInfo{hasNextPage endCursor} nodes{id lastEditedAt}}'
-                    )
-                ) {
+                if (joined.includes(ORDERED_RECEIPT_PROOF_QUERY_FRAGMENT)) {
                     if (joined.includes('cursor=cursor-2')) {
                         return shellDeliveryReceiptProofResponse(['IC_b'], {
                             totalCount: 3,
@@ -6662,11 +6847,7 @@ describe('delivery shell boundary', () => {
                             ],
                         ]);
                     }
-                    if (
-                        joined.includes(
-                            'comments(first:100,after:$cursor){totalCount pageInfo{hasNextPage endCursor} nodes{id lastEditedAt}}'
-                        )
-                    ) {
+                    if (joined.includes(ORDERED_RECEIPT_PROOF_QUERY_FRAGMENT)) {
                         return shellDeliveryReceiptProofResponse(['IC_same_timestamp']);
                     }
                     if (joined.includes('pulls?state=open')) {
@@ -6731,11 +6912,7 @@ describe('delivery shell boundary', () => {
                             ],
                         ]);
                     }
-                    if (
-                        joined.includes(
-                            'comments(first:100,after:$cursor){totalCount pageInfo{hasNextPage endCursor} nodes{id lastEditedAt}}'
-                        )
-                    ) {
+                    if (joined.includes(ORDERED_RECEIPT_PROOF_QUERY_FRAGMENT)) {
                         return shellDeliveryReceiptProofResponse(['IC_same_timestamp'], {
                             editedCommentIds: ['IC_same_timestamp'],
                         });
@@ -6763,9 +6940,7 @@ describe('delivery shell boundary', () => {
             expect.stringContaining('pr view 42'),
             expect.stringContaining('mergedBy{__typename'),
             'api --paginate --slurp repos/jcosta33/sourdaw/issues/42/comments?per_page=100',
-            expect.stringContaining(
-                'comments(first:100,after:$cursor){totalCount pageInfo{hasNextPage endCursor} nodes{id lastEditedAt}}'
-            ),
+            expect.stringContaining(ORDERED_RECEIPT_PROOF_QUERY_FRAGMENT),
         ]);
         expect(effects).toEqual([]);
     });
@@ -6867,11 +7042,7 @@ describe('delivery shell boundary', () => {
                             [comment('IC_y', deliveryReceiptBody(42, 'head', bodyY, 2373), '2026-08-21T00:00:01Z')],
                         ]);
                     }
-                    if (
-                        joined.includes(
-                            'comments(first:100,after:$cursor){totalCount pageInfo{hasNextPage endCursor} nodes{id lastEditedAt}}'
-                        )
-                    ) {
+                    if (joined.includes(ORDERED_RECEIPT_PROOF_QUERY_FRAGMENT)) {
                         return shellDeliveryReceiptProofResponse(['IC_x', 'IC_y']);
                     }
                     if (joined.includes('pulls?state=open')) {
@@ -6935,11 +7106,7 @@ describe('delivery shell boundary', () => {
                             ],
                         ]);
                     }
-                    if (
-                        joined.includes(
-                            'comments(first:100,after:$cursor){totalCount pageInfo{hasNextPage endCursor} nodes{id lastEditedAt}}'
-                        )
-                    ) {
+                    if (joined.includes(ORDERED_RECEIPT_PROOF_QUERY_FRAGMENT)) {
                         return shellDeliveryReceiptProofResponse(['IC_legacy_v1']);
                     }
                     if (joined.includes('pulls?state=open')) {
@@ -7426,11 +7593,7 @@ describe('delivery shell boundary', () => {
                                 })),
                             ]);
                         }
-                        if (
-                            joined.includes(
-                                'comments(first:100,after:$cursor){totalCount pageInfo{hasNextPage endCursor} nodes{id lastEditedAt}}'
-                            )
-                        ) {
+                        if (joined.includes(ORDERED_RECEIPT_PROOF_QUERY_FRAGMENT)) {
                             return shellDeliveryReceiptProofResponse(receipts.map((receipt) => receipt.id));
                         }
                         if (joined.includes('POST repos/jcosta33/sourdaw/issues/42/comments')) {
@@ -7836,11 +7999,7 @@ describe('delivery shell boundary', () => {
                         ],
                     ]);
                 }
-                if (
-                    joined.includes(
-                        'comments(first:100,after:$cursor){totalCount pageInfo{hasNextPage endCursor} nodes{id lastEditedAt}}'
-                    )
-                ) {
+                if (joined.includes(ORDERED_RECEIPT_PROOF_QUERY_FRAGMENT)) {
                     return shellDeliveryReceiptProofResponse(['IC_x', 'IC_hidden_y']);
                 }
                 effects.push(`capture:${joined}`);
@@ -7884,11 +8043,7 @@ describe('delivery shell boundary', () => {
                         ],
                     ]);
                 }
-                if (
-                    joined.includes(
-                        'comments(first:100,after:$cursor){totalCount pageInfo{hasNextPage endCursor} nodes{id lastEditedAt}}'
-                    )
-                ) {
+                if (joined.includes(ORDERED_RECEIPT_PROOF_QUERY_FRAGMENT)) {
                     return shellDeliveryReceiptProofResponse(['IC_hidden_y']);
                 }
                 effects.push(`capture:${joined}`);
@@ -7909,11 +8064,7 @@ describe('delivery shell boundary', () => {
         const port = shellPort('jcosta33/sourdaw', {
             capture: (_command, args) => {
                 const joined = args.join(' ');
-                if (
-                    joined.includes(
-                        'comments(first:100,after:$cursor){totalCount pageInfo{hasNextPage endCursor} nodes{id lastEditedAt}}'
-                    )
-                ) {
+                if (joined.includes(ORDERED_RECEIPT_PROOF_QUERY_FRAGMENT)) {
                     return shellDeliveryReceiptProofResponse(['IC_x'], {
                         totalCount: 1,
                         hasNextPage: true,
@@ -7932,11 +8083,7 @@ describe('delivery shell boundary', () => {
         const port = shellPort('jcosta33/sourdaw', {
             capture: (_command, args) => {
                 const joined = args.join(' ');
-                if (
-                    joined.includes(
-                        'comments(first:100,after:$cursor){totalCount pageInfo{hasNextPage endCursor} nodes{id lastEditedAt}}'
-                    )
-                ) {
+                if (joined.includes(ORDERED_RECEIPT_PROOF_QUERY_FRAGMENT)) {
                     if (joined.includes('cursor=cursor-1')) {
                         return shellDeliveryReceiptProofResponse(['IC_y'], {
                             totalCount: 3,
