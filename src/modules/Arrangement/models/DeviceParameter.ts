@@ -8,6 +8,7 @@ import { BUILTIN_INSTRUMENT_DESCRIPTORS } from './PluginDescriptors/BuiltinInstr
 import { CRUMBS_DESCRIPTOR } from './PluginDescriptors/CrumbsDescriptor';
 import { CRUST_DESCRIPTOR } from './PluginDescriptors/CrustDescriptor';
 import { FAUST_EFFECT_DESCRIPTORS } from './PluginDescriptors/FaustEffectDescriptors';
+import { FAUST_INSTRUMENT_DESCRIPTORS } from './PluginDescriptors/FaustInstrumentDescriptors';
 import { FERMENTER_DESCRIPTOR } from './PluginDescriptors/FermenterDescriptor';
 import { GLUTEN_DESCRIPTOR } from './PluginDescriptors/GlutenDescriptor';
 import { GRAND_BOULE_DESCRIPTOR } from './PluginDescriptors/GrandBouleDescriptor';
@@ -151,6 +152,7 @@ export const BUILTIN_PLUGINS: PluginDescriptor[] = [
     ...BUILTIN_INSTRUMENT_DESCRIPTORS,
     ...NATIVE_DSP_DESCRIPTORS,
     ...FAUST_EFFECT_DESCRIPTORS,
+    ...FAUST_INSTRUMENT_DESCRIPTORS,
     ...SYNTH_VARIANTS,
     ...DRUM_VARIANTS,
     FERMENTER_DESCRIPTOR,

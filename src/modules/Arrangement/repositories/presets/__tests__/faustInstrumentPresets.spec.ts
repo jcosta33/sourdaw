@@ -3,21 +3,31 @@ import { describe, expect, it } from 'vitest';
 import { getPluginById } from '../../../models/DeviceParameter';
 import { FAUST_INSTRUMENT_PRESETS } from '../faustInstrumentPresets';
 
-// Source-text scan of `registerFaustDSP`'s address lists in PluginHost's
-// `builtinDSP.ts` — the addresses that actually reach the compiled Faust
-// node (see `FaustDeviceStrategy.setParam`). Read as raw text via
-// `import.meta.glob` rather than imported, because PluginHost is outside
-// this module's ownership and cross-module imports may only target its
-// contract barrels (`useCases/`, `stores/`, `events/`,
-// `presentations/views/`), none of which currently re-export this data.
-// Mirrors the source-scanning "class guard" pattern already used in
+// Source-text scan of `registerFaustDSP`'s address lists — the addresses that
+// actually reach the compiled Faust node (see `FaustDeviceStrategy.setParam`).
+// Read as raw text via `import.meta.glob` rather than imported, because
+// PluginHost and Synth are outside this module's ownership and cross-module
+// imports may only target their contract barrels (`useCases/`, `stores/`,
+// `events/`, `presentations/views/`), none of which currently re-export this
+// data. Mirrors the source-scanning "class guard" pattern already used in
 // `CrdtDocument/useCases/projection/__tests__/projectionCompleteness.spec.ts`
 // for the same kind of cross-module-truth problem.
-const BUILTIN_DSP_SOURCE_GLOB = import.meta.glob('/src/modules/PluginHost/useCases/faustEngine/builtinDSP.ts', {
-    query: '?raw',
-    import: 'default',
-    eager: true,
-});
+//
+// Both live registration sites are scanned: PluginHost's `builtinDSP.ts` and
+// Synth's `proSynthInstruments.ts`. Scanning only the first would declare the
+// Supersaw Unison addresses (registered by Synth) unreal, so every supersaw
+// preset key would read as a stray even though it reaches the DSP.
+const FAUST_DSP_SOURCE_GLOB = import.meta.glob(
+    [
+        '/src/modules/PluginHost/useCases/faustEngine/builtinDSP.ts',
+        '/src/modules/Synth/useCases/proSynthInstruments.ts',
+    ],
+    {
+        query: '?raw',
+        import: 'default',
+        eager: true,
+    }
+);
 
 const REGISTER_FAUST_DSP_CALL = /registerFaustDSP\(\s*'([^']+)',\s*\w+,\s*\[([\s\S]*?)\]/g;
 const REGISTERED_ADDRESS = /address:\s*'\/[^/']+\/([^']+)'/g;
@@ -34,26 +44,27 @@ const REGISTERED_ADDRESS = /address:\s*'\/[^/']+\/([^']+)'/g;
  * what the DSP actually declared.
  */
 function scanRealFaustDeviceParamIds(): Map<string, Set<string>> {
-    const [source] = Object.values(BUILTIN_DSP_SOURCE_GLOB);
-    if (!source) {
-        throw new Error('builtinDSP.ts source not found via import.meta.glob — check the glob pattern');
-    }
     const idsByDevice = new Map<string, Set<string>>();
-    for (const call of source.matchAll(REGISTER_FAUST_DSP_CALL)) {
-        const name = call[1];
-        const block = call[2];
-        if (!name || !block) {
-            continue;
+    for (const source of Object.values(FAUST_DSP_SOURCE_GLOB)) {
+        if (!source) {
+            throw new Error('Faust DSP source not found via import.meta.glob — check the glob pattern');
         }
-        const deviceId = `faust-${name.toLowerCase().replaceAll(/\s+/g, '-')}`;
-        const ids = new Set<string>();
-        for (const address of block.matchAll(REGISTERED_ADDRESS)) {
-            const id = address[1];
-            if (id) {
-                ids.add(id);
+        for (const call of source.matchAll(REGISTER_FAUST_DSP_CALL)) {
+            const name = call[1];
+            const block = call[2];
+            if (!name || !block) {
+                continue;
             }
+            const deviceId = `faust-${name.toLowerCase().replaceAll(/\s+/g, '-')}`;
+            const ids = idsByDevice.get(deviceId) ?? new Set<string>();
+            for (const address of block.matchAll(REGISTERED_ADDRESS)) {
+                const id = address[1];
+                if (id) {
+                    ids.add(id);
+                }
+            }
+            idsByDevice.set(deviceId, ids);
         }
-        idsByDevice.set(deviceId, ids);
     }
     return idsByDevice;
 }
@@ -122,9 +133,12 @@ describe('faustInstrumentPresets', () => {
             for (const device of preset.devices) {
                 const descriptor = getPluginById(device.type);
                 if (!descriptor || descriptor.parameters.length === 0) {
-                    // Faust instrument voices (hammond-b3, rhodes, …) declare
-                    // no TS-side descriptor; their params are Faust-native
-                    // and out of scope for this check.
+                    // Faust instrument voices (hammond-b3, minimoog-lead, …)
+                    // declare no TS-side descriptor at all; the FM Synth
+                    // declares guidance but no parameters until its preset
+                    // migration maps the retired single-operator keys. Both
+                    // shapes are Faust-native parameter spaces this check has
+                    // no declared contract to compare against.
                     continue;
                 }
                 // Faust effects (the ones this finding is about) are checked
@@ -143,6 +157,31 @@ describe('faustInstrumentPresets', () => {
             }
         }
         expect(unknownKeysByDevice).toEqual([]);
+    });
+
+    it('declares only parameter ids the compiled Faust node answers to', () => {
+        // The descriptor-side weld of the scan above, scoped to the Faust
+        // instrument descriptors: a descriptor that advertises a parameter id
+        // no registered address carries is an inert control (the engine
+        // ignores it), the same failure class the F1 check guards presets
+        // against. Not yet run over the Faust effect descriptors: the
+        // registration table is missing `De-esser/reduction`, a pre-existing
+        // gap this lane does not widen.
+        const realIdsByDevice = scanRealFaustDeviceParamIds();
+        const orphans: string[] = [];
+        for (const deviceType of ['faust-rhodes', 'faust-fm-synth', 'faust-supersaw-unison']) {
+            const descriptor = getPluginById(deviceType);
+            if (!descriptor) {
+                throw new Error(`Expected a plugin descriptor for ${deviceType}`);
+            }
+            const realIds = realIdsByDevice.get(deviceType) ?? new Set<string>();
+            for (const parameter of descriptor.parameters) {
+                if (!realIds.has(parameter.id)) {
+                    orphans.push(`${deviceType}/${parameter.id}`);
+                }
+            }
+        }
+        expect(orphans).toEqual([]);
     });
 
     it('Ambient Rhodes delay time is authored in seconds, matching the tape-delay descriptor unit', () => {
