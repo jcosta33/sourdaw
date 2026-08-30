@@ -1,5 +1,7 @@
+import { dispatchFocusedNativeMenuIntent } from './applicationMenu.js';
 import { createQuitHandler, type PreventableEvent, type QuitDependencies, type ShutdownOutcome } from './shutdown.js';
 
+import type { NativeMenuIntent, NativeTextEditTarget, NativeResponderEditAction } from './applicationMenu.js';
 import type { MenuItemConstructorOptions } from 'electron';
 
 export const installMacApplicationMenu = <Menu>({
@@ -44,3 +46,48 @@ export const composeQuitHandler = (
 export const shouldRecreateRendererAfterCrash = (lifecycle: {
     readonly shouldRecreateAfterCrash: () => boolean;
 }): boolean => lifecycle.shouldRecreateAfterCrash();
+
+/** The shell's testable composition root; main supplies Electron concretions only. */
+export const createShellComposition = <Menu>({
+    isMac,
+    buildMenu,
+    setMenu,
+    getMainTarget,
+    isMainTargetFocused,
+    sendToNativeResponder,
+    dispatchMenuIntent,
+    runShutdown,
+    quitDependencies,
+    lifecycle,
+}: {
+    readonly isMac: boolean;
+    readonly buildMenu: (template: MenuItemConstructorOptions[]) => Menu;
+    readonly setMenu: (menu: Menu) => void;
+    readonly getMainTarget: () => NativeTextEditTarget | undefined;
+    readonly isMainTargetFocused: () => boolean;
+    readonly sendToNativeResponder?: (action: NativeResponderEditAction) => void;
+    readonly dispatchMenuIntent: (intent: NativeMenuIntent) => void;
+    readonly runShutdown: () => Promise<ShutdownOutcome>;
+    readonly quitDependencies: Required<Pick<QuitDependencies, 'canQuit' | 'beforeRun'>> &
+        Omit<QuitDependencies, 'canQuit' | 'beforeRun'>;
+    readonly lifecycle: { readonly shouldRecreateAfterCrash: () => boolean };
+}) => ({
+    sendMenuIntent: (intent: NativeMenuIntent): void => {
+        const target = getMainTarget();
+        if (intent.action.startsWith('edit:') && target !== undefined) {
+            dispatchFocusedNativeMenuIntent({
+                intent,
+                isMainWindowFocused: isMainTargetFocused(),
+                target,
+                send: dispatchMenuIntent,
+                sendToNativeResponder,
+            });
+            return;
+        }
+        dispatchMenuIntent(intent);
+    },
+    installMenu: (template: MenuItemConstructorOptions[]): void =>
+        installMacApplicationMenu({ isMac, build: buildMenu, set: setMenu, template }),
+    beforeQuit: composeQuitHandler(runShutdown, quitDependencies),
+    shouldRecreateAfterCrash: (): boolean => shouldRecreateRendererAfterCrash(lifecycle),
+});

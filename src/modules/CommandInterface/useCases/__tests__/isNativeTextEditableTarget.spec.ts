@@ -16,6 +16,15 @@ describe('isNativeTextEditableTarget', () => {
             true,
         ],
         [
+            'inherited editing host',
+            () => {
+                const element = document.createElement('div');
+                Object.defineProperty(element, 'isContentEditable', { value: true });
+                return element;
+            },
+            true,
+        ],
+        [
             'canvas editor',
             () => {
                 const element = document.createElement('div');
