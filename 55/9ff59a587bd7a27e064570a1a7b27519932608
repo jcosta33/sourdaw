@@ -1,0 +1,23 @@
+src/modules/WorkspaceShell/presentations/views/Transport/ProjectName.tsx
+  s_ae074277795b45::t_beca34ac79f33d 56
+src/modules/WorkspaceShell/presentations/views/TransportBar.tsx
+  s_ae074277795b45::t_24d72e51cd88d6 118-123
+src/styles/main.css
+  s_ae074277795b45::t_beca34ac79f33d 140,146,179
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "559ff59a587bd7a27e064570a1a7b27519932608",
+  "prompts": {},
+  "sessions": {
+    "s_ae074277795b45": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04ab5-5234-7100-be1c-76ebfaba88d3",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
