@@ -2,6 +2,7 @@ import { logger } from '#/infra/logger/appLogger';
 import {
     executeVersionedCommandBatchEnvelope,
     getVersionedCommandBatchIdempotentReplay,
+    parseVersionedCommandBatchEnvelope,
 } from '#/modules/Command/useCases';
 
 import { type AgentRunPendingEffect } from '../models/AgentRun';
@@ -14,6 +15,8 @@ import { agentRunLifecycle } from './agentRunLifecycle';
 
 type RecoverAgentRunPendingEffectsResult =
     { status: 'missing' } | { status: 'recovered' } | { status: 'failed'; reason: string };
+
+const PROVISIONAL_DURABLE_EFFECT_REASON = 'Post-commit effect has not completed';
 
 function getReceiptIdentity(receipt: {
     schemaVersion: number;
@@ -39,7 +42,13 @@ function hasExactPendingReceiptBinding(
     if (continuation.receiptIdentity !== expectedPendingIdentity) {
         return false;
     }
-    return receipt.pendingEffects.length === 0 || hasExactPendingEffects(continuation.effects, receipt.pendingEffects);
+    if (receipt.pendingEffects.length === 0) {
+        return true;
+    }
+    if (isDurableManualRepairContinuation(continuation)) {
+        return hasIntentionalManualizedPendingEffectBinding(continuation, receipt.pendingEffects);
+    }
+    return hasExactPendingEffects(continuation.effects, receipt.pendingEffects);
 }
 
 function hasExactPendingEffects(
@@ -50,17 +59,117 @@ function hasExactPendingEffects(
         continuationEffects.length === receiptEffects.length &&
         continuationEffects.every((effect, index) => {
             const receiptEffect = receiptEffects[index];
-            return (
-                receiptEffect !== undefined &&
-                effect.commandId === receiptEffect.commandId &&
-                effect.kind === receiptEffect.kind &&
-                effect.operation === receiptEffect.operation &&
-                effect.reason === receiptEffect.reason &&
-                effect.remediation === receiptEffect.remediation &&
-                effect.state === receiptEffect.state
-            );
+            return receiptEffect !== undefined && hasExactPendingEffect(effect, receiptEffect);
         })
     );
+}
+
+function hasExactPendingEffect(effect: AgentRunPendingEffect, receiptEffect: AgentRunPendingEffect): boolean {
+    return (
+        effect.commandId === receiptEffect.commandId &&
+        effect.kind === receiptEffect.kind &&
+        effect.operation === receiptEffect.operation &&
+        effect.reason === receiptEffect.reason &&
+        effect.remediation === receiptEffect.remediation &&
+        effect.state === receiptEffect.state
+    );
+}
+
+function isDurableManualRepairContinuation(
+    continuation: NonNullable<ReturnType<typeof agentRunLifecycle.getPendingEffectRecovery>>
+): boolean {
+    return continuation.checkpoint === 'durable' && continuation.recovery === 'manual-repair';
+}
+
+function isIntentionalManualizedRuntimeGraphEffect(
+    effect: AgentRunPendingEffect,
+    receiptEffect: AgentRunPendingEffect
+): boolean {
+    return (
+        effect.commandId === receiptEffect.commandId &&
+        effect.kind === 'runtime-graph' &&
+        receiptEffect.kind === 'runtime-graph' &&
+        effect.operation === receiptEffect.operation &&
+        ((effect.reason === receiptEffect.reason && effect.reason !== PROVISIONAL_DURABLE_EFFECT_REASON) ||
+            (effect.reason === PROVISIONAL_DURABLE_EFFECT_REASON &&
+                receiptEffect.reason !== PROVISIONAL_DURABLE_EFFECT_REASON)) &&
+        effect.remediation === 'repair' &&
+        (receiptEffect.remediation === 'retry' || receiptEffect.remediation === 'repair') &&
+        effect.state === receiptEffect.state
+    );
+}
+
+function isSynthesizedRenderManualRepair(effect: AgentRunPendingEffect, durableReason: string | null): boolean {
+    return (
+        typeof durableReason === 'string' &&
+        durableReason.trim().length > 0 &&
+        effect.kind === 'external-effect' &&
+        effect.operation === 'renderProjectSections' &&
+        effect.remediation === 'manual-repair' &&
+        effect.state === 'pending' &&
+        effect.reason === durableReason
+    );
+}
+
+function hasIntentionalManualizedPendingEffectBinding(
+    continuation: NonNullable<ReturnType<typeof agentRunLifecycle.getPendingEffectRecovery>>,
+    receiptEffects: readonly AgentRunPendingEffect[]
+): boolean {
+    const parsed = parseVersionedCommandBatchEnvelope(continuation.serializedBatch, continuation.authority);
+    if (
+        parsed.status === 'invalid' ||
+        parsed.envelope.runId !== continuation.runId ||
+        parsed.envelope.batchId !== continuation.batchId
+    ) {
+        return false;
+    }
+    const receiptCommandIds = new Set(receiptEffects.map(({ commandId }) => commandId));
+    const continuationCommandIds = new Set(continuation.effects.map(({ commandId }) => commandId));
+    const serializedCommandIds = new Set(parsed.envelope.commands.map(({ commandId }) => commandId));
+    if (
+        receiptCommandIds.size !== receiptEffects.length ||
+        continuationCommandIds.size !== continuation.effects.length ||
+        serializedCommandIds.size !== parsed.envelope.commands.length
+    ) {
+        return false;
+    }
+    const expectedExtraCommandIds = parsed.envelope.commands
+        .filter(
+            ({ commandId, operation }) => operation === 'renderProjectSections' && !receiptCommandIds.has(commandId)
+        )
+        .map(({ commandId }) => commandId);
+    const extraEffects: AgentRunPendingEffect[] = [];
+    let receiptIndex = 0;
+    for (const effect of continuation.effects) {
+        const receiptEffect = receiptEffects[receiptIndex];
+        if (receiptEffect?.commandId === effect.commandId) {
+            if (hasExactPendingEffect(effect, receiptEffect)) {
+                receiptIndex += 1;
+                continue;
+            }
+            if (
+                continuation.lastError !== MISSING_EXACT_CHECKPOINT_RECOVERY_REASON ||
+                !isIntentionalManualizedRuntimeGraphEffect(effect, receiptEffect)
+            ) {
+                return false;
+            }
+            receiptIndex += 1;
+            continue;
+        }
+        if (receiptCommandIds.has(effect.commandId)) {
+            return false;
+        }
+        extraEffects.push(effect);
+    }
+    if (receiptIndex !== receiptEffects.length || extraEffects.length !== expectedExtraCommandIds.length) {
+        return false;
+    }
+    const hasExactAuthorizedExtras = extraEffects.every(
+        (effect, index) =>
+            effect.commandId === expectedExtraCommandIds[index] &&
+            isSynthesizedRenderManualRepair(effect, continuation.lastError)
+    );
+    return hasExactAuthorizedExtras;
 }
 
 /** Resumes only persisted, receipt-backed effects; it never admits or replays project mutations. */
