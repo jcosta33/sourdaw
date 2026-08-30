@@ -1,0 +1,21 @@
+src/infra/store/storage/__tests__/createAutomergeStorage.rawProjectionLossReorder.spec.ts
+  s_79ef0fa469710e::t_052fbde0e9d0df 1-112
+src/infra/store/storage/createAutomergeStorage.ts
+  s_79ef0fa469710e::t_5c70be49f14ed1 300-311,320,333-353
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "7282451696695b0596f9f6ae8fd81fc57a8c8178",
+  "prompts": {},
+  "sessions": {
+    "s_79ef0fa469710e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0518f-6f56-7543-a4a9-7e18372de615",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
