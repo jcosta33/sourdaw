@@ -1,3 +1,5 @@
+import { fileURLToPath } from 'node:url';
+
 import {
     AUTHOR_BOT_NODE_ID,
     assertRequiredRepository,
@@ -8,11 +10,14 @@ import {
 } from './githubAppIdentity.ts';
 import { fail } from './prContract.ts';
 import {
+    REVIEW_RESOLUTION_CHILD_ENV,
     assertRecoverableReviewResolutionLockOwner,
+    assertDetachedReviewResolutionChild,
     assertTrustedReviewResolutionLauncher,
     inspectReviewThread,
     recoverReviewResolutionLockOwnerState,
     recoverPullRequestReviewResolutionLock,
+    runDetachedReviewResolutionWorker,
     shellPort,
     type ResolveReviewThreadPort,
     type ReviewResolutionRecoveryClock,
@@ -149,14 +154,50 @@ export function parseRecoverReviewResolutionLockArgs(args: string[]): RecoverRev
     return { number, owner: args[2].toLowerCase(), help: false };
 }
 
-function recoverySummary(number: number, owner: ReviewResolutionLockOwner, inspection: ReviewThreadInspection): string {
-    assertRecoverableReviewResolutionLockOwner(number, owner, inspection);
+function recoverySummary(
+    number: number,
+    owner: ReviewResolutionLockOwner,
+    inspection: ReviewThreadInspection,
+    port: ResolveReviewThreadPort
+): string {
+    assertRecoverableReviewResolutionLockOwner(number, owner, inspection, port);
     const thread = inspection.thread;
     if (thread === null) {
         fail(`review thread ${owner.threadId} was not found on this pull request`);
     }
     const resolutionState = thread.isResolved ? 'resolved' : 'unresolved';
     return `review-resolution-lock-recovered:${number}:${owner.threadId}:${owner.head}:${inspection.head}:${resolutionState}:${inspection.pendingReviews.length}`;
+}
+
+async function runRecoverReviewResolutionLockCliResolved(
+    parsed: RecoverReviewResolutionLockArgs,
+    resolvedDependencies: ResolvedReviewResolutionRecoveryDependencies
+): Promise<number> {
+    if (parsed.number === undefined || parsed.owner === undefined) {
+        fail(usage);
+    }
+    const primaryRoot = resolvedDependencies.trustedPrimaryRoot();
+    const auth = await resolvedDependencies.authenticateAuthor(primaryRoot);
+    try {
+        if (!isAuthorBotNodeId(auth.minted.actorNodeId)) {
+            fail(`minted actor ${auth.minted.actorNodeId} is not ${AUTHOR_BOT_NODE_ID}`);
+        }
+        assertRequiredRepository(resolvedDependencies.repositoryName(auth.session, primaryRoot));
+        const gh = resolvedDependencies.gh(auth.session, primaryRoot);
+        const port = resolvedDependencies.createPort(auth.session, primaryRoot, resolvedDependencies.inspectThread, gh);
+        const summary = resolvedDependencies.recoverLock(primaryRoot, parsed.number, parsed.owner, (lockOwner) =>
+            recoverySummary(
+                parsed.number!,
+                lockOwner,
+                recoverReviewResolutionLockOwnerState(parsed.number!, lockOwner, port, resolvedDependencies.clock),
+                port
+            )
+        );
+        console.log(summary);
+        return 0;
+    } finally {
+        auth.session.dispose();
+    }
 }
 
 export async function runRecoverReviewResolutionLockCli(
@@ -171,27 +212,35 @@ export async function runRecoverReviewResolutionLockCli(
     if (parsed.number === undefined || parsed.owner === undefined) {
         fail(usage);
     }
-
-    const resolvedDependencies = resolveRecoveryDependencies(dependencies);
-    const primaryRoot = resolvedDependencies.trustedPrimaryRoot();
-    const auth = await resolvedDependencies.authenticateAuthor(primaryRoot);
-    try {
-        if (!isAuthorBotNodeId(auth.minted.actorNodeId)) {
-            fail(`minted actor ${auth.minted.actorNodeId} is not ${AUTHOR_BOT_NODE_ID}`);
+    const childMarker = process.env[REVIEW_RESOLUTION_CHILD_ENV];
+    if (childMarker === undefined) {
+        const resolvedDependencies = resolveRecoveryDependencies(dependencies);
+        if (resolvedDependencies.trustedLauncher !== undefined) {
+            return await runDetachedReviewResolutionWorker(
+                fileURLToPath(import.meta.url),
+                args,
+                resolvedDependencies.trustedLauncher
+            );
         }
-        assertRequiredRepository(resolvedDependencies.repositoryName(auth.session, primaryRoot));
-        const gh = resolvedDependencies.gh(auth.session, primaryRoot);
-        const port = resolvedDependencies.createPort(auth.session, primaryRoot, resolvedDependencies.inspectThread, gh);
-        const summary = resolvedDependencies.recoverLock(primaryRoot, parsed.number, parsed.owner, (lockOwner) =>
-            recoverySummary(
-                parsed.number!,
-                lockOwner,
-                recoverReviewResolutionLockOwnerState(parsed.number!, lockOwner, port, resolvedDependencies.clock)
-            )
-        );
-        console.log(summary);
-        return 0;
-    } finally {
-        auth.session.dispose();
+        return await runRecoverReviewResolutionLockCliResolved(parsed, resolvedDependencies);
     }
+    const trustedLauncher = await assertDetachedReviewResolutionChild(childMarker);
+    return await runRecoverReviewResolutionLockCliResolved(
+        parsed,
+        resolveRecoveryDependencies({ ...(dependencies ?? {}), trustedLauncher })
+    );
+}
+
+async function main(): Promise<number> {
+    return await runRecoverReviewResolutionLockCli(process.argv.slice(2));
+}
+
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+    void main().then(
+        (code) => process.exit(code),
+        (error: unknown) => {
+            console.error(error instanceof Error ? error.message : error);
+            process.exit(1);
+        }
+    );
 }

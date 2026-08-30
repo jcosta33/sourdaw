@@ -144,6 +144,12 @@ export type ReviewResolutionRecoveryClock = {
 };
 export type ResolveReviewThreadPort = {
     inspect: (number: number, threadId: string) => ReviewThreadInspection;
+    inspectPullRequestReview: (
+        number: number,
+        reviewId: string,
+        expectedPullRequestId: string,
+        expectedHead: string
+    ) => PullRequestReview | null;
     inspectAttachedReviewThreadIds: (
         number: number,
         reviewId: string,
@@ -209,7 +215,7 @@ type ReviewResolutionLockInspectionPort = {
 type ReviewResolutionLockRecoveryPort = {
     updateRef?: (primaryRoot: string, args: string[]) => boolean;
 };
-const REVIEW_RESOLUTION_CHILD_ENV = 'SOURDAW_REVIEW_RESOLUTION_CHILD';
+export const REVIEW_RESOLUTION_CHILD_ENV = 'SOURDAW_REVIEW_RESOLUTION_CHILD';
 const REVIEW_RESOLUTION_CHILD_MARKER_VERSION = 1;
 const TRUSTED_GIT_PATH_ENV = 'SOURDAW_TRUSTED_GIT_PATH';
 const activeReviewResolutionLocks: ActiveReviewResolutionLock[] = [];
@@ -1910,6 +1916,8 @@ export function shellPort(session: GhSession, cwd: string = process.cwd()): Reso
     const mutationGh = (args: string[]) => spawnCapture('gh', args, { cwd: primaryRoot, env: session.env });
     return {
         inspect: (number, id) => inspectReviewThread(number, id, queryGh),
+        inspectPullRequestReview: (number, reviewId, expectedPullRequestId, expectedHead) =>
+            inspectPullRequestReview(number, reviewId, expectedPullRequestId, expectedHead, queryGh),
         inspectAttachedReviewThreadIds: (number, reviewId, expectedPullRequestId, expectedHead) =>
             inspectAttachedReviewThreadIds(number, reviewId, expectedPullRequestId, expectedHead, queryGh),
         createPendingReview: (pullRequestId, commitOid, body) => {
@@ -2328,7 +2336,9 @@ function replaceActiveReviewResolutionLockMutation(
     active.owner = nextOwner;
 }
 
-async function assertDetachedReviewResolutionChild(markerValue: string): Promise<ReviewResolutionTrustedLauncher> {
+export async function assertDetachedReviewResolutionChild(
+    markerValue: string
+): Promise<ReviewResolutionTrustedLauncher> {
     if (process.platform === 'win32') {
         fail('review-resolution lock requires POSIX process-group fencing');
     }
@@ -2813,6 +2823,55 @@ function inspectAttachedReviewThreadIds(
         cursor = next;
     }
 }
+function inspectPullRequestReview(
+    number: number,
+    reviewId: string,
+    expectedPullRequestId: string,
+    expectedHead: string,
+    gh: Gh
+): PullRequestReview | null {
+    const [owner, name] = REQUIRED_REPOSITORY.split('/');
+    if (owner === undefined || name === undefined) {
+        fail(`invalid GitHub repository: ${REQUIRED_REPOSITORY}`);
+    }
+    const response = graphql(
+        gh,
+        'query($owner:String!,$name:String!,$number:Int!,$reviewId:ID!){repository(owner:$owner,name:$name){pullRequest(number:$number){id headRefOid}} node(id:$reviewId){... on PullRequestReview{id state body commit{oid} author{login __typename ... on Bot{id}} pullRequest{id}}}}',
+        ['-F', `owner=${owner}`, '-F', `name=${name}`, '-F', `number=${number}`, '-F', `reviewId=${reviewId}`],
+        `pull-request review ${reviewId}`
+    ) as {
+        data?: {
+            repository?: {
+                pullRequest?: {
+                    id?: unknown;
+                    headRefOid?: unknown;
+                } | null;
+            };
+            node?: {
+                id?: unknown;
+                state?: unknown;
+                body?: unknown;
+                commit?: { oid?: unknown } | null;
+                author?: { id?: unknown; login?: unknown; __typename?: unknown } | null;
+                pullRequest?: { id?: unknown } | null;
+            } | null;
+        };
+    };
+    assertExpectedPullRequestSnapshot(
+        response.data?.repository?.pullRequest,
+        expectedPullRequestId,
+        expectedHead,
+        `pull-request head changed while reading review ${reviewId}`
+    );
+    const review = response.data?.node;
+    if (review === null || review === undefined) {
+        return null;
+    }
+    if (review.pullRequest?.id !== expectedPullRequestId) {
+        fail(`pull-request review ${reviewId} changed while reading reviews`);
+    }
+    return toPullRequestReview(review);
+}
 function inspectPendingReviews(
     number: number,
     pullRequestId: string,
@@ -3101,6 +3160,7 @@ export function assertRecoverableReviewResolutionLockOwner(
     number: number,
     owner: ReviewResolutionLockOwner,
     inspection: ReviewThreadInspection,
+    port: ResolveReviewThreadPort,
     _primaryRoot: string = process.cwd()
 ): void {
     const thread = inspection.thread;
@@ -3112,7 +3172,7 @@ export function assertRecoverableReviewResolutionLockOwner(
         return;
     }
     const context = resolutionReviewContext(inspection.pullRequestId, owner.threadId, owner.head);
-    if (hasRecoveredReviewResolutionMutation(owner, inspection, context, thread)) {
+    if (hasRecoveredReviewResolutionMutation(number, owner, inspection, context, thread, port)) {
         return;
     }
     fail(unreconciledReviewResolutionMutationMessage(number, mutation));
@@ -3146,10 +3206,12 @@ function hasVisibleRecoveredReply(thread: ReviewThread, context: ResolutionRevie
 }
 
 function hasRecoveredReviewResolutionMutation(
+    number: number,
     owner: ReviewResolutionLockOwner,
     inspection: ReviewThreadInspection,
     context: ResolutionReviewContext,
-    thread: ReviewThread
+    thread: ReviewThread,
+    port: ResolveReviewThreadPort
 ): boolean {
     const mutation = owner.mutation;
     switch (mutation.phase) {
@@ -3204,7 +3266,10 @@ function hasRecoveredReviewResolutionMutation(
         case 'deleteReply':
             return thread.comments.every((comment) => comment.id !== mutation.replyId);
         case 'deletePendingReview':
-            return inspection.pendingReviews.every((review) => review.id !== mutation.reviewId);
+            return (
+                port.inspectPullRequestReview(number, mutation.reviewId, inspection.pullRequestId, inspection.head) ===
+                null
+            );
         default:
             return fail('review-resolution lock ownership is malformed');
     }
@@ -3274,20 +3339,20 @@ export function recoverReviewResolutionLockOwnerState(
     switch (mutation.phase) {
         case 'createPendingReviewSettlement':
         case 'createPendingReview':
-            if (!hasRecoveredReviewResolutionMutation(owner, inspection, context, inspection.thread!)) {
+            if (!hasRecoveredReviewResolutionMutation(number, owner, inspection, context, inspection.thread!, port)) {
                 fail(unreconciledReviewResolutionMutationMessage(number, mutation));
             }
             inspection = continueRecoveredReviewResolution(number, owner, port);
             break;
         case 'replyDoneSettlement':
         case 'replyDone':
-            if (!hasRecoveredReviewResolutionMutation(owner, inspection, context, inspection.thread!)) {
+            if (!hasRecoveredReviewResolutionMutation(number, owner, inspection, context, inspection.thread!, port)) {
                 fail(unreconciledReviewResolutionMutationMessage(number, mutation));
             }
             inspection = continueRecoveredReviewResolution(number, owner, port);
             break;
         case 'submitReview': {
-            if (hasRecoveredReviewResolutionMutation(owner, inspection, context, inspection.thread!)) {
+            if (hasRecoveredReviewResolutionMutation(number, owner, inspection, context, inspection.thread!, port)) {
                 break;
             }
             assertRecoveryHeadMatchesOwner(inspection.head, owner.head);
@@ -3318,7 +3383,7 @@ export function recoverReviewResolutionLockOwnerState(
             break;
         }
         case 'updateReviewBody': {
-            if (hasRecoveredReviewResolutionMutation(owner, inspection, context, inspection.thread!)) {
+            if (hasRecoveredReviewResolutionMutation(number, owner, inspection, context, inspection.thread!, port)) {
                 break;
             }
             assertRecoveryHeadMatchesOwner(inspection.head, owner.head);
@@ -3328,7 +3393,7 @@ export function recoverReviewResolutionLockOwnerState(
             break;
         }
         case 'resolveThread': {
-            if (hasRecoveredReviewResolutionMutation(owner, inspection, context, inspection.thread!)) {
+            if (hasRecoveredReviewResolutionMutation(number, owner, inspection, context, inspection.thread!, port)) {
                 break;
             }
             assertRecoveryHeadMatchesOwner(inspection.head, owner.head);
@@ -3342,7 +3407,7 @@ export function recoverReviewResolutionLockOwnerState(
             break;
         }
         case 'deleteReply':
-            if (hasRecoveredReviewResolutionMutation(owner, inspection, context, inspection.thread!)) {
+            if (hasRecoveredReviewResolutionMutation(number, owner, inspection, context, inspection.thread!, port)) {
                 break;
             }
             assertRecoveryHeadMatchesOwner(inspection.head, owner.head);
@@ -3350,10 +3415,16 @@ export function recoverReviewResolutionLockOwnerState(
             inspection = inspectReviewResolutionRecovery(number, owner, port);
             break;
         case 'deletePendingReview':
-            if (hasRecoveredReviewResolutionMutation(owner, inspection, context, inspection.thread!)) {
+            if (hasRecoveredReviewResolutionMutation(number, owner, inspection, context, inspection.thread!, port)) {
                 break;
             }
             assertRecoveryHeadMatchesOwner(inspection.head, owner.head);
+            if (
+                port.inspectPullRequestReview(number, mutation.reviewId, inspection.pullRequestId, inspection.head)
+                    ?.state !== 'PENDING'
+            ) {
+                fail(unreconciledReviewResolutionMutationMessage(number, mutation));
+            }
             deletePendingReviewSafely(
                 number,
                 mutation.reviewId,
@@ -3367,7 +3438,7 @@ export function recoverReviewResolutionLockOwnerState(
         default:
             fail(`${pullRequestReviewResolutionLockScope(number)} lock ownership is malformed`);
     }
-    assertRecoverableReviewResolutionLockOwner(number, owner, inspection);
+    assertRecoverableReviewResolutionLockOwner(number, owner, inspection, port);
     return inspection;
 }
 function assertExpectedPullRequestSnapshot(
@@ -3690,13 +3761,14 @@ export function deleteReply(replyId: string, gh: Gh): void {
     }
 }
 
-async function runResolveReviewThreadInDetachedProcess(
+export async function runDetachedReviewResolutionWorker(
+    modulePath: string,
     args: string[],
     trustedLauncher: ReviewResolutionTrustedLauncher
 ): Promise<number> {
     const marker = createReviewResolutionChildLaunchMarker(trustedLauncher);
     try {
-        const child = spawn(process.execPath, [fileURLToPath(import.meta.url), ...args], {
+        const child = spawn(process.execPath, [modulePath, ...args], {
             cwd: process.cwd(),
             env: { ...process.env, [REVIEW_RESOLUTION_CHILD_ENV]: marker.envValue },
             stdio: 'inherit',
@@ -3737,7 +3809,11 @@ export async function runResolveReviewThreadCli(
     const childMarker = process.env[REVIEW_RESOLUTION_CHILD_ENV];
     if (childMarker === undefined) {
         const resolvedDependencies = resolveReviewThreadCliDependencies(dependencies);
-        return await runResolveReviewThreadInDetachedProcess(args, resolvedDependencies.trustedLauncher);
+        return await runDetachedReviewResolutionWorker(
+            fileURLToPath(import.meta.url),
+            args,
+            resolvedDependencies.trustedLauncher
+        );
     }
     const trustedLauncher = await assertDetachedReviewResolutionChild(childMarker);
     const resolvedDependencies = resolveReviewThreadCliDependencies(dependencies, trustedLauncher);

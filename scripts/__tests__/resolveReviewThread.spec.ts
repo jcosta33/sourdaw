@@ -490,6 +490,21 @@ function fakePort(input: Input = {}) {
                     })),
             };
         },
+        inspectPullRequestReview: (_number, id) => {
+            const review = reviewById(id);
+            if (review === undefined) {
+                return null;
+            }
+            return {
+                id: review.id,
+                state: review.state,
+                body: review.body,
+                commitOid: review.commitOid,
+                authorNodeId: review.authorNodeId,
+                authorLogin: review.authorLogin,
+                authorType: review.authorType,
+            };
+        },
         createPendingReview: (currentPullRequestId, commitOid, body) => {
             calls.push(`createReview:${currentPullRequestId}`);
             if (hasAuthorPendingReview()) {
@@ -827,6 +842,7 @@ function createFakeGhExecutable(responsesByKey: Record<string, string | string[]
             "if (query.includes('comments(first:100')) key = `comments:${fields.get('threadId') ?? ''}:${fields.get('cursor') ?? ''}`;",
             "else if (query.includes('reviews(first:100')) key = `reviews:${fields.get('cursor') ?? ''}`;",
             "else if (query.includes('reviewThreads(first:100')) key = `threads:${fields.get('cursor') ?? ''}`;",
+            "else if (query.includes('node(id:$reviewId){... on PullRequestReview{')) key = `review:${fields.get('reviewId') ?? ''}`;",
             "else if (query.includes('addPullRequestReview(input:{pullRequestId:$pullRequestId')) key = `createReview:${fields.get('pullRequestId') ?? ''}:${fields.get('commitOid') ?? ''}:${fields.get('clientMutationId') ?? ''}`;",
             "else if (query.includes('node(id:$threadId){... on PullRequestReviewThread{id isResolved resolvedBy{id login __typename}}')) key = `threadResolution:${fields.get('threadId') ?? ''}`;",
             'const response = responses[key];',
@@ -1217,6 +1233,29 @@ async function waitForReviewResolutionLock(
     throw new Error(`review-resolution lock for PR #${number} did not appear`);
 }
 
+async function waitForReviewResolutionLockOwnerPidChange(
+    repository: string,
+    number: number,
+    originalPid: number
+): Promise<{ oid: string; owner: { pid: number; pgid: number; threadId: string; head: string } }> {
+    for (let attempt = 0; attempt < 200; attempt += 1) {
+        const oid = readLockOid(repository, number);
+        if (oid !== undefined) {
+            const owner = JSON.parse(gitCapture(repository, ['cat-file', 'blob', oid])) as {
+                pid: number;
+                pgid: number;
+                threadId: string;
+                head: string;
+            };
+            if (owner.pid !== originalPid) {
+                return { oid, owner };
+            }
+        }
+        await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    throw new Error(`review-resolution lock owner for PR #${number} did not change pid`);
+}
+
 async function waitForProcessExitWithoutReviewResolutionLock(
     child: ReturnType<typeof spawn>,
     repository: string,
@@ -1301,6 +1340,87 @@ function writeResolveReviewSnapshot(snapshotRoot: string): string {
             `  ghPath: process.env.SOURDAW_TEST_TRUSTED_GH_PATH ?? ${JSON.stringify(trustedGhPath)},`,
             '});',
             'const exitCode = await runResolveReviewThreadCli(process.argv.slice(2), { trustedLauncher });',
+            'process.exitCode = exitCode;',
+        ].join('\n'),
+        { encoding: 'utf8', mode: 0o600 }
+    );
+    return entryPath;
+}
+
+function writeRecoverReviewResolutionSnapshot(snapshotRoot: string): string {
+    const scriptsRoot = join(snapshotRoot, 'scripts');
+    mkdirSync(scriptsRoot, { recursive: true });
+    writeFileSync(
+        join(scriptsRoot, 'resolveReviewThread.ts'),
+        readFileSync(join(import.meta.dirname, '../resolveReviewThread.ts'))
+    );
+    writeFileSync(
+        join(scriptsRoot, 'recoverReviewResolutionLock.ts'),
+        readFileSync(join(import.meta.dirname, '../recoverReviewResolutionLock.ts'))
+    );
+    writeFileSync(join(scriptsRoot, 'prContract.ts'), readFileSync(join(import.meta.dirname, '../prContract.ts')));
+    writeFileSync(
+        join(scriptsRoot, 'githubAppIdentity.ts'),
+        [
+            "import { spawnSync } from 'node:child_process';",
+            `export const AUTHOR_BOT_NODE_ID = ${JSON.stringify(AUTHOR_BOT_NODE_ID)};`,
+            `export const REVIEWER_BOT_NODE_ID = ${JSON.stringify(REVIEWER_BOT_NODE_ID)};`,
+            `export const REQUIRED_REPOSITORY = ${JSON.stringify(REQUIRED_REPOSITORY)};`,
+            'export function assertRequiredRepository(repository) {',
+            '  if (repository !== REQUIRED_REPOSITORY) throw new Error(`unexpected repository ${repository}`);',
+            '}',
+            'export function assertTrustedExecutingBlob() {}',
+            'export async function authenticateRole() {',
+            '  return { minted: { actorNodeId: AUTHOR_BOT_NODE_ID }, session: { env: {}, dispose() {} } };',
+            '}',
+            'export function isAuthorBotNodeId(value) { return value === AUTHOR_BOT_NODE_ID; }',
+            'export function isReviewerBotNodeId(value) { return value === REVIEWER_BOT_NODE_ID; }',
+            "export function originMainBlob() { return 'trusted'; }",
+            'export function parseGraphqlResponse(output) { return JSON.parse(output); }',
+            'export function resolvePrimaryRoot() {',
+            '  const root = process.env.SOURDAW_TEST_PRIMARY_ROOT;',
+            "  if (typeof root !== 'string' || root.trim() === '') throw new Error('missing test primary root');",
+            '  return root;',
+            '}',
+            'export function spawnCapture(command, args, options = {}) {',
+            "  if (command !== 'gh') throw new Error(`unexpected command ${command}`);",
+            "  if (args[0] === 'repo' && args[1] === 'view') return REQUIRED_REPOSITORY;",
+            '  const executable = process.env.SOURDAW_TEST_TRUSTED_GH_PATH;',
+            "  if (typeof executable !== 'string' || executable.trim() === '') throw new Error('missing test gh executable');",
+            '  const result = spawnSync(executable, args, {',
+            '    cwd: options.cwd,',
+            '    env: options.env ?? process.env,',
+            "    encoding: 'utf8',",
+            '    shell: false,',
+            '  });',
+            '  if (result.error !== undefined) throw result.error;',
+            '  if (result.status !== 0) throw new Error(result.stderr || result.stdout || `gh failed with exit ${result.status ?? "signal"}`);',
+            '  return result.stdout.trim();',
+            '}',
+        ].join('\n')
+    );
+    const entryPath = join(snapshotRoot, 'recover-review-entry.mjs');
+    writeFileSync(
+        entryPath,
+        [
+            "import { runRecoverReviewResolutionLockCli } from './scripts/recoverReviewResolutionLock.ts';",
+            "import { assertTrustedReviewResolutionLauncher } from './scripts/resolveReviewThread.ts';",
+            'const primaryRoot = process.env.SOURDAW_TEST_PRIMARY_ROOT;',
+            "if (typeof primaryRoot !== 'string' || primaryRoot.trim() === '') throw new Error('missing test primary root');",
+            'const trustedLauncher = assertTrustedReviewResolutionLauncher({',
+            '  primaryRoot,',
+            `  gitPath: process.env.SOURDAW_TEST_TRUSTED_GIT_PATH ?? ${JSON.stringify(trustedGitPath)},`,
+            `  ghPath: process.env.SOURDAW_TEST_TRUSTED_GH_PATH ?? ${JSON.stringify(trustedGhPath)},`,
+            '});',
+            'const lingerMs = Number(process.env.SOURDAW_TEST_LINGER_AFTER_COMMAND_MS ?? "0");',
+            'let exitCode;',
+            'try {',
+            '  exitCode = await runRecoverReviewResolutionLockCli(process.argv.slice(2), { trustedLauncher });',
+            '} finally {',
+            '  if (Number.isSafeInteger(lingerMs) && lingerMs > 0) {',
+            '    await new Promise((resolve) => setTimeout(resolve, lingerMs));',
+            '  }',
+            '}',
             'process.exitCode = exitCode;',
         ].join('\n'),
         { encoding: 'utf8', mode: 0o600 }
@@ -1770,6 +1890,43 @@ describe('review thread resolution', () => {
         }
     });
 
+    it('preserves the recovery owner when delete-pending-review inspection can still read the review as COMMENTED', () => {
+        const repository = createTemporaryGitRepository();
+        const { port, state } = fakePort({ existingPendingReviewCount: 1 });
+        state().reviews[0]!.state = 'COMMENTED';
+        try {
+            const ownerOid = writeLockOwnerBlob(repository, 999999, head, {
+                phase: 'deletePendingReview',
+                epoch: 1,
+                reviewId,
+                allowedAttachedThreadIds: [threadId],
+                snapshotHead: head,
+            });
+            updateLock(repository, 42, ownerOid);
+            expect(() =>
+                recoverPullRequestReviewResolutionLock(repository, 42, ownerOid, (owner) =>
+                    recoverReviewResolutionLockOwnerState(42, owner, port)
+                )
+            ).toThrow(
+                /unreconciled in-flight deletePendingReview mutation from epoch 1; retry recovery after GitHub state changes/i
+            );
+            expect(readLockOid(repository, 42)).toBeDefined();
+            expect(requireLockOwner(repository, 42)).toMatchObject({
+                threadId,
+                head,
+                mutation: {
+                    phase: 'deletePendingReview',
+                    epoch: 1,
+                    reviewId,
+                    allowedAttachedThreadIds: [threadId],
+                    snapshotHead: head,
+                },
+            });
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
     it.each([
         [
             'update review body',
@@ -1954,6 +2111,7 @@ describe('review thread resolution', () => {
             const port: ResolveReviewThreadPort = {
                 ...mutationPort,
                 inspect: inspectionPort.port.inspect,
+                inspectPullRequestReview: mutationPort.inspectPullRequestReview,
                 inspectAttachedReviewThreadIds: inspectionPort.port.inspectAttachedReviewThreadIds,
                 log: inspectionPort.port.log,
             };
@@ -2729,6 +2887,73 @@ describe('review thread resolution', () => {
             }
             launcher.kill('SIGKILL');
             await waitForExit(launcher).catch(() => undefined);
+            rmSync(snapshotRoot, { recursive: true, force: true });
+            rmSync(repository, { recursive: true, force: true });
+        }
+    }, 10_000);
+
+    it('admits later recovery after a failed detached recover worker exits, even while its launcher parent is still alive', async () => {
+        const repository = createTemporaryGitRepository();
+        const snapshotRoot = mkdtempSync(join(tmpdir(), 'sourdaw-review-recover-launcher-'));
+        const entryPath = writeRecoverReviewResolutionSnapshot(snapshotRoot);
+        const fakeGh = createFakeGhExecutable({
+            'threads:': threadPage([{ id: threadId, isResolved: false }], false, null),
+            [`comments:${threadId}:`]: commentPage([root], false, null),
+            [`threadResolution:${threadId}`]: threadResolutionPage(threadId, head),
+            'reviews:': reviewPage([], false, null),
+        });
+        let launcher: ReturnType<typeof spawn> | undefined;
+        let stderr = '';
+        try {
+            const ownerOid = writeLockOwnerBlob(repository, 999999, head, {
+                phase: 'replyDone',
+                epoch: 1,
+                reviewId,
+            });
+            updateLock(repository, 42, ownerOid);
+            launcher = spawn(process.execPath, [entryPath, '42', '--owner', ownerOid], {
+                cwd: repository,
+                env: {
+                    ...process.env,
+                    SOURDAW_TEST_PRIMARY_ROOT: repository,
+                    SOURDAW_TEST_TRUSTED_GIT_PATH: trustedGitPath,
+                    SOURDAW_TEST_TRUSTED_GH_PATH: fakeGh.executable,
+                    SOURDAW_TEST_LINGER_AFTER_COMMAND_MS: '3000',
+                },
+                stdio: ['ignore', 'ignore', 'pipe'],
+                shell: false,
+            });
+            launcher.stderr?.setEncoding('utf8');
+            launcher.stderr?.on('data', (chunk: string) => {
+                stderr += chunk;
+            });
+            const claimed = await waitForReviewResolutionLockOwnerPidChange(repository, 42, 999999);
+            expect(launcher.exitCode).toBeNull();
+            expect(claimed.owner.pid).not.toBe(launcher.pid);
+            expect(claimed.owner.pgid).toBe(claimed.owner.pid);
+            expect(
+                recoverPullRequestReviewResolutionLock(
+                    repository,
+                    42,
+                    claimed.oid,
+                    (owner) => ({
+                        head: owner.head,
+                        pendingReviews: [],
+                        thread: { id: owner.threadId, isResolved: false },
+                    }),
+                    () => false
+                )
+            ).toMatchObject({ head, pendingReviews: [], thread: { id: threadId, isResolved: false } });
+            expect(readLockOid(repository, 42)).toBeUndefined();
+            await waitForExit(launcher);
+            expect(launcher.exitCode).toBe(1);
+            expect(stderr).toMatch(/unreconciled in-flight replyDone mutation/i);
+        } finally {
+            launcher?.kill('SIGKILL');
+            if (launcher !== undefined) {
+                await waitForExit(launcher).catch(() => undefined);
+            }
+            rmSync(fakeGh.root, { recursive: true, force: true });
             rmSync(snapshotRoot, { recursive: true, force: true });
             rmSync(repository, { recursive: true, force: true });
         }
