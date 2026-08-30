@@ -375,16 +375,34 @@ same account can read its credential files. Snapshot and token-bearing children 
 environment overrides that could redirect them — Node loader and preload settings, and Git, GitHub
 CLI, GitHub Actions, and App configuration — and use the launcher-resolved `git` and `gh`.
 
-Hosted checks run. `.github/workflows/health-gates.yml` is authoritative about which lanes it runs,
-when, and what each covers; `gate` is its stable summary, and other tooling reads that name, so do
-not rename it. `Gate` is a required status check on `main`, in strict mode, by owner decision. The
-earlier policy of keeping pull-request-editable workflows out of merge authority is superseded: a
-head that softens its own gate is caught by review of that file like any other reviewed code, and
-`deliver` is the second gate, reading what gates a merge from the pinned `origin/main` copy of the
-workflow rather than the head's — so subverting the check means subverting both. That second gate
-is dormant while `deliver`'s CI admission is advisory; until it is armed, the ruleset is the only
-CI merge authority. Both suites now decide `gate`: `unit` on every run that touches the web scope,
-and the end-to-end suite on the heavy-lane runs where it executes.
+Hosted checks run across three workflow files, and the split between them is a security boundary
+rather than an organising preference. `Gate` is a required status check on `main`, in strict mode,
+by owner decision. GitHub counts a check run whose conclusion is `skipped` as satisfying a required
+check, and prefers the newest run of that name — so any event that can reach the file minting `Gate`
+and legitimately skip it mints a passing `Gate` over a red head. A `pull_request_review` trigger did
+exactly that in production. Therefore:
+
+- `.github/workflows/health-gates.yml` answers to `pull_request` alone and mints `Gate`. Its `gate`
+  job carries `!cancelled()` and no other predicate, because any predicate that can be false is the
+  hole. Do not add a trigger to this file, and do not rename `gate`.
+- `.github/workflows/validation.yml` is the shared lane — types, lint, boundaries, the unit matrix,
+  build, Rust, the natives, the offline smoke set, the diff secret scan, dependency review — called
+  by both other workflows so there is one definition rather than two that drift.
+- `.github/workflows/heavy-gates.yml` owns the review, schedule, and dispatch events and the jobs
+  that cannot fit a push budget: the end-to-end matrix, the Browser AI hardware proof, CodeQL, the
+  full-history secret scan, the daily web train, and the nightly report. Its summary is `HeavyGate`
+  and is deliberately not ruleset-required. No job outside `health-gates.yml` may be named `Gate`.
+
+So `unit` decides the required check, through the validation lane it lives in, on every run that
+touches the web scope. The end-to-end suite does not: no pull-request run executes it, so naming it
+in `Gate` would have listed an always-skipped job and claimed coverage the check never had. It
+decides `HeavyGate` on approving-review, nightly and dispatch runs. Under the current ruleset an
+approving review is not required to merge, so nothing today forces that suite to have run against a
+head before it lands; its merge enforcement arrives when `deliver`'s required-CI admission is armed,
+which is a separate change. The earlier policy of keeping pull-request-editable workflows out of
+merge authority is superseded — a head that softens its own gate is caught by review of that file
+like any other reviewed code — but note what that leaves: the ruleset is the only CI merge authority
+while `deliver`'s admission stays advisory.
 
 Those checks exist so that nobody runs them on this machine. Never run a repository-wide check
 locally to satisfy a gate the pipeline already runs on every push; Resource Safety governs what
@@ -395,7 +413,8 @@ deletion and non-fast-forward, forces a squashed pull request, demands resolved 
 requires `Gate` under a strict policy, but the enforcement that actually holds is repository
 configuration, not something this file can promise. Strict means the head must carry `main` before
 it can merge, so a lane that has fallen behind merges `origin/main` and republishes rather than
-waiting.
+waiting — and that produces a new head, which needs a fresh `Gate` and a fresh review. Take `main`
+before asking for review, not after it.
 
 Some crates compile to wasm packages that ship as committed artifacts. `scripts/wasm-artifacts.ts`
 is the list, and it names each package's build script because that name is not derivable from the

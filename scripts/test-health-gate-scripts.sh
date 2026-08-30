@@ -178,12 +178,20 @@ fi
 SH
 chmod +x "$git_tip_bin/git"
 
-WORKFLOW_PATH="$repo_root/.github/workflows/health-gates.yml" REPO_ROOT="$repo_root" TEST_TEMP_ROOT="$temp_root" FAKE_BIN="$fake_bin" GIT_TIP_BIN="$git_tip_bin" node --input-type=module <<'NODE'
+WORKFLOW_PATH="$repo_root/.github/workflows/health-gates.yml" VALIDATION_WORKFLOW_PATH="$repo_root/.github/workflows/validation.yml" HEAVY_WORKFLOW_PATH="$repo_root/.github/workflows/heavy-gates.yml" REPO_ROOT="$repo_root" TEST_TEMP_ROOT="$temp_root" FAKE_BIN="$fake_bin" GIT_TIP_BIN="$git_tip_bin" node --input-type=module <<'NODE'
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { parse } from 'yaml';
 
+// Three files rather than one, and the split is the security boundary rather
+// than an organising preference. `Gate` is a required status check, GitHub
+// counts a `skipped` conclusion as satisfying one, and it prefers the newest
+// run of that name — so any event that can reach the file holding `gate` and
+// legitimately skip it can mint a passing `Gate` over a red head. Only
+// `pull_request` reaches `health-gates.yml`, and `gate` cannot skip there.
 const workflow = parse(readFileSync(process.env.WORKFLOW_PATH, 'utf8'));
+const validationWorkflow = parse(readFileSync(process.env.VALIDATION_WORKFLOW_PATH, 'utf8'));
+const heavyWorkflow = parse(readFileSync(process.env.HEAVY_WORKFLOW_PATH, 'utf8'));
 const gitleaksHelper = readFileSync(`${process.env.REPO_ROOT}/scripts/run-gitleaks-history-scan.sh`, 'utf8');
 const gitleaksConfig = readFileSync(`${process.env.REPO_ROOT}/.gitleaks.toml`, 'utf8');
 const failures = [];
@@ -256,27 +264,32 @@ function expectShardFailureWarning(step, slug, suite, shard) {
 }
 
 const events = workflow.on;
+const validationEvents = validationWorkflow.on;
+const heavyEvents = heavyWorkflow.on;
 const concurrency = workflow.concurrency;
-const decide = workflow.jobs?.decide;
-const staticJob = workflow.jobs?.static;
-const lint = workflow.jobs?.lint;
-const boundaries = workflow.jobs?.boundaries;
-const smoke = workflow.jobs?.smoke;
-const prSecrets = workflow.jobs?.['pr-secrets'];
+// The validation lane is one definition called from both workflows, so its jobs
+// are read from that file rather than from either caller.
+const decide = validationWorkflow.jobs?.decide;
+const staticJob = validationWorkflow.jobs?.static;
+const lint = validationWorkflow.jobs?.lint;
+const boundaries = validationWorkflow.jobs?.boundaries;
+const smoke = validationWorkflow.jobs?.smoke;
+const prSecrets = validationWorkflow.jobs?.['pr-secrets'];
 const prSecretsTrustedCheckout = stepNamed(prSecrets, 'Checkout trusted scanner');
 const prSecretsTargetCheckout = stepNamed(prSecrets, 'Checkout scan target');
 const prSecretsScanRun = stepNamed(prSecrets, 'Scan pull request diff for secrets')?.run ?? '';
 const prMergeControl = stepNamed(prSecrets, 'Validate PR merge diff secret scanner');
 const prMergeControlRun = prMergeControl?.run ?? '';
 const TOKEN_PATTERN = /GITHUB_TOKEN|GH_TOKEN|github\.token|\$\{\{\s*secrets\./iu;
-const secrets = workflow.jobs?.secrets;
-const unit = workflow.jobs?.unit;
-const e2e = workflow.jobs?.e2e;
+const secrets = heavyWorkflow.jobs?.secrets;
+const unit = validationWorkflow.jobs?.unit;
+const e2e = heavyWorkflow.jobs?.e2e;
 const gate = workflow.jobs?.gate;
-const dependencyReview = workflow.jobs?.['dependency-review'];
+const heavyGate = heavyWorkflow.jobs?.['heavy-gate'];
+const dependencyReview = validationWorkflow.jobs?.['dependency-review'];
 const dependencyReviewWith = stepNamed(dependencyReview, 'Review dependency changes')?.with ?? {};
-const browserAiWebGpu = workflow.jobs?.['browser-ai-webgpu'];
-const nightlyReport = workflow.jobs?.['nightly-report'];
+const browserAiWebGpu = heavyWorkflow.jobs?.['browser-ai-webgpu'];
+const nightlyReport = heavyWorkflow.jobs?.['nightly-report'];
 const resolveScopeRun = stepNamed(decide, 'Resolve scope')?.run ?? '';
 const decideCheckoutUses = stepNamed(decide, 'Checkout')?.uses ?? '';
 const trustedCheckout = stepNamed(secrets, 'Checkout trusted scanner');
@@ -298,38 +311,94 @@ const nightlyReportStep = stepNamed(nightlyReport, 'Open or update the nightly f
 const nightlyReportRun = nightlyReportStep?.run ?? '';
 const gateRun = stepNamed(gate, 'Require every job to have succeeded or been skipped')?.run ?? '';
 const gateNeeds = gate?.needs ?? [];
-const expectedGateNeeds = [
+// One entry, because the validation lane is one reusable workflow now. A
+// `uses:` job reports failure when any job inside it failed, so the summary is
+// no weaker for being shorter — and `expectedValidationJobs` below is what
+// keeps a leg from being dropped out of the lane unnoticed.
+const expectedGateNeeds = ['validation'];
+const expectedValidationJobs = [
     'decide',
     'static',
     'lint',
     'boundaries',
     'unit',
-    'dependency-review',
-    'pr-secrets',
     'smoke',
     'build',
     'rust',
     'native-macos',
     'native-windows',
-    'e2e',
-    'browser-ai-webgpu',
-    'codeql',
-    'secrets',
+    'dependency-review',
+    'pr-secrets',
 ];
+const expectedHeavyGateNeeds = ['validation', 'e2e', 'browser-ai-webgpu', 'codeql', 'secrets'];
 
 expect(workflow.name === 'Health gates', 'workflow name must stay Health gates');
-expect(events?.pull_request !== undefined, 'pull_request trigger must remain present');
-expect(events?.pull_request_review?.types?.includes('submitted'), 'pull_request_review submitted must trigger the workflow');
-expect(events?.schedule !== undefined, 'schedule trigger must remain present');
-expect(events?.workflow_dispatch !== undefined, 'workflow_dispatch trigger must remain present');
+// The central invariant of the split. GitHub counts a check run whose
+// conclusion is `skipped` as satisfying a required status check, and prefers
+// the newest run of that name, so an event that can reach `gate` and skip it
+// mints a passing `Gate` over a red head. A `pull_request_review` trigger did
+// exactly that in production. `pull_request` is the only event here, and it can
+// never skip `gate`.
 expect(
-    concurrency?.group ===
-        "health-gates-${{ (github.event_name == 'pull_request' || (github.event_name == 'pull_request_review' && github.event.review.state == 'approved')) && github.event.pull_request.number || github.run_id }}",
-    'only pull_request and approved reviews may share a PR-number concurrency group'
+    JSON.stringify(Object.keys(events ?? {})) === JSON.stringify(['pull_request']),
+    'health-gates.yml must answer to pull_request alone, because any other event can skip Gate and a skipped Gate satisfies the required check'
+);
+expect(gate?.if === '${{ !cancelled() }}', 'Gate must carry no predicate that could skip it and mint a passing required check');
+// The heavy lane owns the events that were removed above, and mints its own
+// differently-named summary so no skip of it can ever satisfy `Gate`.
+expect(heavyWorkflow.name === 'Heavy gates', 'heavy workflow name must stay Heavy gates');
+expect(
+    JSON.stringify(Object.keys(heavyEvents ?? {}).sort()) ===
+        JSON.stringify(['pull_request_review', 'schedule', 'workflow_dispatch']),
+    'the heavy workflow must own exactly the review, schedule, and dispatch events that health-gates.yml gave up'
 );
 expect(
-    concurrency?.['cancel-in-progress'] === "${{ github.event_name == 'pull_request' }}",
-    'only newer pull_request runs may cancel in-progress work; approved reviews must wait without cancelling'
+    heavyEvents?.pull_request_review?.types?.includes('submitted'),
+    'pull_request_review submitted must trigger the heavy workflow'
+);
+expect(heavyEvents?.schedule?.[0]?.cron === '0 3 * * *', 'the nightly cron must survive the move to the heavy workflow');
+expect(heavyEvents?.pull_request === undefined, 'the heavy workflow must not run on a pull-request push');
+// `Gate` is the required context. Only health-gates.yml may mint it, so no job
+// anywhere else may carry that name — a same-named check run from another
+// workflow competes for the required context.
+for (const [file, parsed] of [['validation.yml', validationWorkflow], ['heavy-gates.yml', heavyWorkflow]]) {
+    for (const [id, job] of Object.entries(parsed.jobs ?? {})) {
+        expect(job?.name !== 'Gate', `${file} job ${id} must not be named Gate; only a pull_request run of health-gates.yml may mint that check`);
+    }
+}
+expect(heavyGate?.name === 'HeavyGate', 'the heavy summary must keep its own distinct, non-required name');
+expect(
+    JSON.stringify(heavyGate?.needs ?? []) === JSON.stringify(expectedHeavyGateNeeds),
+    `HeavyGate needs must stay exactly: ${expectedHeavyGateNeeds.join(', ')}`
+);
+// The shared lane is a reusable workflow and nothing else: a second trigger
+// would let it mint its own check runs beside the callers'.
+expect(validationWorkflow.name === 'Validation', 'validation workflow name must stay Validation');
+expect(
+    JSON.stringify(Object.keys(validationEvents ?? {})) === JSON.stringify(['workflow_call']),
+    'validation.yml must be reusable-only, so it runs exactly once per caller run and never on its own'
+);
+expect(
+    JSON.stringify(Object.keys(validationWorkflow.jobs ?? {})) === JSON.stringify(expectedValidationJobs),
+    `validation.yml must hold exactly these jobs, in order: ${expectedValidationJobs.join(', ')}`
+);
+for (const [file, parsed] of [['health-gates.yml', workflow], ['heavy-gates.yml', heavyWorkflow]]) {
+    expect(
+        parsed.jobs?.validation?.uses === './.github/workflows/validation.yml',
+        `${file} must call the shared validation lane rather than redefine it`
+    );
+}
+expect(
+    concurrency?.group === 'health-gates-${{ github.event.pull_request.number }}',
+    'pull-request validation must group by pull request'
+);
+expect(
+    concurrency?.['cancel-in-progress'] === true,
+    'a newer pull-request push must cancel the older run, whose answer is about a head nobody will merge'
+);
+expect(
+    heavyWorkflow.concurrency?.['cancel-in-progress'] === false,
+    'the heavy lane must never cancel: an approving review run is the only run that observes those legs on that head'
 );
 expect(
     decide?.if === "github.event_name != 'pull_request_review' || github.event.review.state == 'approved'",
@@ -453,7 +522,7 @@ expect(
     prMergeControl?.['working-directory'] === '${{ github.workspace }}',
     'merge-diff positive control must run outside the untrusted checkout'
 );
-expect(secrets?.if === "needs.decide.outputs.heavy == 'true'", 'secrets job must remain on the heavy path');
+expect(secrets?.if === "needs.validation.outputs.heavy == 'true'", 'secrets job must remain on the heavy path');
 expect(/^actions\/checkout@[0-9a-f]{40}$/u.test(trustedCheckout?.uses ?? ''), 'trusted scanner checkout action must be pinned to a full commit SHA');
 expect(/^actions\/checkout@[0-9a-f]{40}$/u.test(targetCheckout?.uses ?? ''), 'scan target checkout action must be pinned to a full commit SHA');
 expect(
@@ -600,12 +669,15 @@ expect(
     'dependency review must pass the explicit pull request head SHA, which the action cannot infer on a pull_request_review run'
 );
 expect(gate?.name === 'Gate', 'required Gate job name must stay exact');
-expect(browserAiWebGpu !== undefined, 'browser-ai-webgpu job must remain connected to the workflow');
-expect(gateNeeds.includes('browser-ai-webgpu'), 'Gate must depend on browser-ai-webgpu');
+expect(browserAiWebGpu !== undefined, 'browser-ai-webgpu job must remain connected to the heavy workflow');
 expect(
-    gate?.if ===
+    (heavyGate?.needs ?? []).includes('browser-ai-webgpu'),
+    'HeavyGate must depend on browser-ai-webgpu, which is the only runner that reaches the admitted side of AI availability'
+);
+expect(
+    heavyGate?.if ===
         "${{ !cancelled() && (github.event_name != 'pull_request_review' || github.event.review.state == 'approved') }}",
-    'Gate must cancel with superseded runs and must not report success for non-approved reviews'
+    'HeavyGate must not report success over an all-skipped comment-only review run'
 );
 expect(
     Array.isArray(gateNeeds) &&
@@ -613,11 +685,24 @@ expect(
         gateNeeds.every((need, index) => need === expectedGateNeeds[index]),
     `Gate needs must stay exactly: ${expectedGateNeeds.join(', ')}`
 );
-expect(gateNeeds.includes('unit'), 'unit suite must decide the required Gate');
-expect(gateNeeds.includes('e2e'), 'e2e suite must decide the required Gate');
-// A reporter merges blob artifacts and observes nothing about the product, so
-// its result is not evidence and must never block or clear a merge.
-expect(!gateNeeds.includes('e2e-report'), 'e2e report must remain outside required Gate needs');
+// `unit` reaches the required Gate through the validation lane it lives in, and
+// its shards fail their job, so a failing unit suite fails `Gate`.
+expect(expectedValidationJobs.includes('unit'), 'unit suite must stay inside the validation lane the required Gate depends on');
+// `e2e` deliberately does not. It is a heavy-lane job that no pull-request run
+// executes, so listing it in `Gate` would have meant listing a job that is
+// always `skipped` — a claim of coverage the check never had. It decides
+// `HeavyGate` on approval, nightly and dispatch runs, and its merge enforcement
+// arrives when `deliver`'s required-CI admission is armed.
+for (const heavyOnly of ['e2e', 'e2e-report', 'browser-ai-webgpu', 'codeql', 'secrets', 'deploy-web']) {
+    expect(
+        !gateNeeds.includes(heavyOnly),
+        `${heavyOnly} never runs on a pull-request push, so naming it in Gate would claim coverage the check does not have`
+    );
+    expect(
+        !expectedValidationJobs.includes(heavyOnly),
+        `${heavyOnly} belongs to the heavy workflow, not to the validation lane`
+    );
+}
 expect(
     gateRun.includes('select(.value.result != "success" and .value.result != "skipped")') &&
         gateRun.includes('if [ -n "$failed" ]; then') &&
@@ -628,22 +713,12 @@ expect(
 // The daily web train. It is the only route to production now that the Vercel
 // Git integration is off, so what it refuses to deploy from matters as much as
 // what it deploys.
-const deployWeb = workflow.jobs?.['deploy-web'];
+const deployWeb = heavyWorkflow.jobs?.['deploy-web'];
 const deployWebNeeds = deployWeb?.needs ?? [];
-const expectedDeployWebNeeds = [
-    'static',
-    'lint',
-    'boundaries',
-    'unit',
-    'build',
-    'rust',
-    'native-macos',
-    'native-windows',
-    'e2e',
-    'browser-ai-webgpu',
-    'codeql',
-    'secrets',
-];
+// The fast legs reach this list through the validation call rather than one by
+// one. A `uses:` job reports failure when any job inside it failed, so the
+// train still promotes only a revision every leg reported success on.
+const expectedDeployWebNeeds = ['validation', 'e2e', 'browser-ai-webgpu', 'codeql', 'secrets'];
 const deployWebGuardStep = stepNamed(deployWeb, 'Require a validated revision of main');
 const deployWebGuardRun = deployWebGuardStep?.run ?? '';
 const deployWebFreshnessStep = stepNamed(deployWeb, 'Refuse a stale candidate revision');
@@ -726,14 +801,18 @@ expect(
     }) === 0,
     'the daily web deploy must proceed when every validation leg succeeded on main'
 );
-for (const result of ['failure', 'cancelled', 'skipped']) {
-    expect(
-        workflowShellStatus(deployWebGuardRun, {
-            RESULTS: deployWebResults('success', { unit: result }),
-            TRAIN_REF: 'refs/heads/main',
-        }) !== 0,
-        `the daily web deploy must refuse to promote a revision whose unit leg was ${result}`
-    );
+// `validation` carries the fast legs, `e2e` the slow half. Probing one of each
+// proves the guard reads its whole needs map rather than a favoured entry.
+for (const leg of ['validation', 'e2e']) {
+    for (const result of ['failure', 'cancelled', 'skipped']) {
+        expect(
+            workflowShellStatus(deployWebGuardRun, {
+                RESULTS: deployWebResults('success', { [leg]: result }),
+                TRAIN_REF: 'refs/heads/main',
+            }) !== 0,
+            `the daily web deploy must refuse to promote a revision whose ${leg} leg was ${result}`
+        );
+    }
 }
 for (const ref of ['refs/heads/agent/2940/daily-train', 'refs/tags/v1.0.0', 'main']) {
     expect(
