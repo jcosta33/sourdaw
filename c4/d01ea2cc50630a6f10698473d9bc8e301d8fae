@@ -1,0 +1,46 @@
+electron/main.ts
+  s_ae074277795b45::t_3df1a32e0f0b07 391-392,529
+src/modules/WorkspaceShell/presentations/hooks/useNativeApplicationMenu.ts
+  s_ae074277795b45::t_3df1a32e0f0b07 228-240,242-245,247
+electron/shellComposition.ts
+  s_ae074277795b45::t_3df1a32e0f0b07 113,125-126,130-133,151-157
+src/modules/WorkspaceShell/presentations/hooks/__tests__/useNativeApplicationMenu.spec.tsx
+  s_ae074277795b45::t_252748e217a3a1 31,35,39-45,66,70,168,171,174,371,376,384,424-460
+  s_a40848e8f8cca9::t_9415cc2396ad90 461-462
+electron/__tests__/pluginGui.spec.ts
+  s_ae074277795b45::t_252748e217a3a1 555-587,589-599
+  s_ae074277795b45::t_15cfc9fe79b3b9 16,588
+  s_ae074277795b45::t_b2182038e1b1e1 554
+electron/pluginGui.ts
+  s_ae074277795b45::t_3df1a32e0f0b07 54,348-350,823-849,856-857,874
+  s_ae074277795b45::t_ac7cc3e43d254d 55
+electron/__tests__/shellComposition.spec.ts
+  s_ae074277795b45::t_15cfc9fe79b3b9 152,154,156-158
+  s_ae074277795b45::t_252748e217a3a1 49,56,83,97,162-166,171-172
+electron/mainWindowTeardown.ts
+  s_ae074277795b45::t_3df1a32e0f0b07 1-6,20-21,32-33
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "c4d01ea2cc50630a6f10698473d9bc8e301d8fae",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ae074277795b45": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04ab5-5234-7100-be1c-76ebfaba88d3",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
