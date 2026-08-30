@@ -43,9 +43,10 @@ function tryRecordCommittedAgentRunWork(input: {
     revertGroupId?: string;
     committedRevision?: string;
     completesRun?: boolean;
+    recoveryError?: Parameters<typeof agentRunLifecycle.recordCommittedRecoveryFailure>[0]['error'];
 }): string | null {
     try {
-        recordAgentRunReceiptSaga({
+        const receiptInput = {
             runId: input.runId,
             receipt: input.receipt,
             actions: input.actions,
@@ -53,7 +54,12 @@ function tryRecordCommittedAgentRunWork(input: {
             ...(input.revertGroupId ? { revertGroupId: input.revertGroupId } : {}),
             ...(input.committedRevision ? { committedRevision: input.committedRevision } : {}),
             ...(input.completesRun !== undefined ? { completesRun: input.completesRun } : {}),
-        });
+        };
+        if (input.recoveryError) {
+            agentRunLifecycle.recordCommittedRecoveryFailure({ ...receiptInput, error: input.recoveryError });
+        } else {
+            recordAgentRunReceiptSaga(receiptInput);
+        }
         return null;
     } catch {
         return AGENT_RUN_PERSISTENCE_WARNING;
@@ -190,31 +196,28 @@ export async function executeImmediatePromptCommand(
             revertGroupId: group.groupId,
             ...(execution.committedRevision ? { committedRevision: execution.committedRevision } : {}),
             completesRun: commandLeaseSettlement.accepted && execution.finalizationEvidenceFailure === undefined,
+            ...(execution.finalizationEvidenceFailure
+                ? {
+                      recoveryError: normalizeAgentFailure({
+                          category: 'internal',
+                          source: 'command-execution',
+                          related: {
+                              targetIds: [...parsedCommandBatch.envelope.scope.targetIds],
+                              commandIds: parsedCommandBatch.envelope.commands.map((command) => command.commandId),
+                              receiptIdentities: [
+                                  `${execution.receipt.schemaVersion}:${execution.receipt.runId}:${execution.receipt.batchId}:${execution.receipt.outcome}`,
+                              ],
+                          },
+                          knownDomain: true,
+                      }),
+                  }
+                : {}),
         });
         if (runPersistenceWarning) {
             receiptWarnings.push(runPersistenceWarning);
         }
         if (commandLeasePersistenceWarning && !runPersistenceWarning) {
             receiptWarnings.push(commandLeasePersistenceWarning);
-        }
-        if (execution.finalizationEvidenceFailure && commandLeaseSettlement.accepted) {
-            tryRecordTerminalFailure({
-                runId,
-                error: normalizeAgentFailure({
-                    category: 'internal',
-                    source: 'command-execution',
-                    related: {
-                        targetIds: [...parsedCommandBatch.envelope.scope.targetIds],
-                        commandIds: parsedCommandBatch.envelope.commands.map((command) => command.commandId),
-                        workIds: [parsedCommandBatch.envelope.batchId],
-                        receiptIdentities: [
-                            `${execution.receipt.schemaVersion}:${execution.receipt.runId}:${execution.receipt.batchId}:${execution.receipt.outcome}`,
-                        ],
-                    },
-                    knownDomain: true,
-                }),
-                terminal: true,
-            });
         }
         const actionSummary = execution.actions
             .map((entry) => `- **${entry.actionType.replaceAll('_', ' ')}**: ${entry.label}`)

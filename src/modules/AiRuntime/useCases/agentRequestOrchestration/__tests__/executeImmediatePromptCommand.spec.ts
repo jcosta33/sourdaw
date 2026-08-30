@@ -21,7 +21,7 @@ const mocks = vi.hoisted(() => ({
     captureProjectRevision: vi.fn(),
     executePlannedActions: vi.fn(),
     recordReceiptSaga: vi.fn(),
-    recordError: vi.fn(),
+    recordCommittedRecoveryFailure: vi.fn(),
     transitionPhase: vi.fn(),
     claimLease: vi.fn(),
     settleLease: vi.fn(),
@@ -38,7 +38,7 @@ vi.mock('../../agentRunLifecycle', () => ({
     agentRunLifecycle: {
         transitionPhase: mocks.transitionPhase,
         updateBatchStatus: vi.fn(),
-        recordError: mocks.recordError,
+        recordCommittedRecoveryFailure: mocks.recordCommittedRecoveryFailure,
     },
 }));
 vi.mock('../../agentRunWorkLease', () => ({
@@ -201,12 +201,13 @@ describe('executeImmediatePromptCommand', () => {
             })
         ).resolves.toBe(receipt);
 
-        expect(mocks.recordReceiptSaga).toHaveBeenCalledWith(expect.objectContaining({ completesRun: false }));
-        expect(mocks.recordReceiptSaga.mock.calls[0]?.[0]).not.toHaveProperty('committedRevision');
-        expect(mocks.recordError).toHaveBeenCalledWith(
+        expect(mocks.recordReceiptSaga).not.toHaveBeenCalled();
+        expect(mocks.recordCommittedRecoveryFailure).toHaveBeenCalledWith(
             expect.objectContaining({
                 runId: 'run-immediate',
-                error: expect.objectContaining({ category: 'internal', workId: 'batch-immediate' }),
+                receipt,
+                completesRun: false,
+                error: expect.objectContaining({ category: 'internal', workId: null }),
             })
         );
         expect(mocks.updateChatMessage).toHaveBeenCalledWith(

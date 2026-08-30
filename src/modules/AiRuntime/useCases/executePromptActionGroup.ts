@@ -16,7 +16,6 @@ import { agentRunLifecycle } from './agentRunLifecycle';
 import { agentRunWorkLease } from './agentRunWorkLease';
 import { agentRunCancellation } from './cancelAgentRun';
 import { executePlannedActions } from './executePlannedActions';
-import { getProjectCommitFinalizationWarning } from './getProjectCommitFinalizationWarning';
 import { issueAgentCommandApprovalBinding } from './issueAgentCommandApprovalBinding';
 import { notifyAiChange } from './notifyAiChange';
 import { recordAgentRunReceiptSaga } from './recordAgentRunReceiptSaga';
@@ -78,12 +77,21 @@ function recordCommittedCommandWarningSafe(input: {
     commandBatch: Parameters<typeof recordAgentRunReceiptSaga>[0]['commandBatch'];
     committedRevision?: string;
     completesRun: boolean;
+    recoveryError?: Parameters<typeof agentRunLifecycle.recordCommittedRecoveryFailure>[0]['error'];
 }): string | null {
     try {
-        recordAgentRunReceiptSaga(input);
+        const { recoveryError, ...receiptInput } = input;
+        if (recoveryError) {
+            agentRunLifecycle.recordCommittedRecoveryFailure({ ...receiptInput, error: recoveryError });
+        } else {
+            recordAgentRunReceiptSaga(receiptInput);
+        }
         return null;
     } catch (error) {
         logger.error(new Error('Prompt command receipt persistence failed after verified execution', { cause: error }));
+        if (input.recoveryError) {
+            return AGENT_RUN_PERSISTENCE_WARNING;
+        }
         const receiptIdentity = getReceiptIdentity(input.receipt);
         try {
             agentRunLifecycle.updateBatchStatus({
@@ -411,6 +419,16 @@ export async function executePromptActionGroup(
                 leaseSettlement.accepted &&
                 leaseSettlement.warning === null &&
                 execution.finalizationEvidenceFailure === undefined,
+            ...(execution.status === 'committed' && execution.finalizationEvidenceFailure
+                ? {
+                      recoveryError: normalizeAgentFailure({
+                          category: 'internal',
+                          source: 'command-execution',
+                          related: { receiptIdentities: [receiptIdentity] },
+                          knownDomain: true,
+                      }),
+                  }
+                : {}),
         });
         const resourcePromotionWarning = await completeCommittedImportedStemPromotion();
         if ((!leaseSettlement.accepted || leaseSettlement.warning !== null) && receiptPersistenceWarning === null) {
@@ -424,36 +442,12 @@ export async function executePromptActionGroup(
                 );
             }
         }
-        if (execution.status === 'committed' && execution.finalizationEvidenceFailure) {
-            try {
-                agentRunLifecycle.recordError({
-                    runId: input.runId,
-                    error: normalizeAgentFailure({
-                        category: 'internal',
-                        source: 'command-execution',
-                        related: {
-                            workIds: [execution.receipt.batchId],
-                            receiptIdentities: [receiptIdentity],
-                        },
-                        knownDomain: true,
-                    }),
-                    terminal: true,
-                });
-            } catch (error) {
-                logger.error(new Error('Prompt command finalization warning could not be persisted', { cause: error }));
-            }
-        }
         reportCommittedWarning({
             executionKind: execution.status === 'committed' ? 'project' : 'runtime',
             receiptIdentity,
-            warnings: [
-                execution.status === 'committed' && execution.finalizationEvidenceFailure
-                    ? getProjectCommitFinalizationWarning(execution.finalizationEvidenceFailure)
-                    : null,
-                leaseSettlement.warning,
-                receiptPersistenceWarning,
-                resourcePromotionWarning,
-            ].filter((warning): warning is string => warning !== null),
+            warnings: [leaseSettlement.warning, receiptPersistenceWarning, resourcePromotionWarning].filter(
+                (warning): warning is string => warning !== null
+            ),
             actionTypes: execution.actions.map((entry) => entry.actionType),
         });
         return { status: execution.status };

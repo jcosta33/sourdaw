@@ -414,6 +414,7 @@ describe('executePlannedActions', () => {
             'The project change is durably committed, but its finalization evidence is unavailable: revision capture failed at commit. Do not replay these actions. Inspect the current project state before further automation.',
             ['muteTrack']
         );
+        expect(notifyAiChange).toHaveBeenCalledTimes(1);
         expect(notifyAiChange).not.toHaveBeenCalledWith('Executed: Mute vocals', expect.anything());
     });
 

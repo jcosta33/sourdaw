@@ -873,12 +873,53 @@ describe('executePromptActionGroup', () => {
         expect(run).toMatchObject({
             phase: 'partially-completed',
             revisions: { committed: null },
-            errors: [expect.objectContaining({ category: 'internal', workId: BATCH_ID })],
+            batches: [expect.objectContaining({ batchId: BATCH_ID, status: 'committed' })],
+            committedWork: [expect.objectContaining({ workId: BATCH_ID })],
+            errors: [expect.objectContaining({ category: 'internal', workId: null })],
         });
-        expect(mocks.notifyAiChange).toHaveBeenCalledWith(
-            expect.stringContaining('finalization evidence is unavailable: revision capture failed at commit'),
+        expect(readAgentRunState().runs.find((candidate) => candidate.runId === RUN_ID)).toMatchObject({
+            phase: 'partially-completed',
+            batches: [expect.objectContaining({ batchId: BATCH_ID, status: 'committed' })],
+            committedWork: [expect.objectContaining({ workId: BATCH_ID })],
+            errors: [expect.objectContaining({ category: 'internal', workId: null })],
+        });
+        expect(mocks.notifyAiChange).not.toHaveBeenCalled();
+    });
+
+    it('does not partially project a missing-provenance recovery when its atomic persistence fails', async () => {
+        const fixture = getBatchFixtures().stem;
+        seedRun(fixture);
+        mocks.executePlannedActions.mockResolvedValue({
+            status: 'committed',
+            actions: [{ actionType: 'importStemSet', label: 'Import stems' }],
+            receipt: committedReceipt(fixture),
+            finalizationEvidenceFailure: 'revision capture failed at commit',
+        });
+        const recordRecoveryFailure = vi
+            .spyOn(agentRunLifecycle, 'recordCommittedRecoveryFailure')
+            .mockImplementationOnce(() => {
+                throw new Error('atomic persistence unavailable');
+            });
+
+        await expect(
+            executePromptActionGroup({
+                actions: fixture.actions,
+                prompt: 'Import stems',
+                projectRevision: 'revision-1',
+                ...admitted(fixture),
+            })
+        ).resolves.toEqual({ status: 'committed' });
+
+        expect(agentRunLifecycle.get(RUN_ID)).toMatchObject({
+            phase: 'executing',
+            committedWork: [],
+            errors: [],
+        });
+        expect(mocks.notifyAiChange).toHaveBeenCalledExactlyOnceWith(
+            expect.stringContaining('Agent run recovery state could not be persisted after execution'),
             ['importStemSet']
         );
+        recordRecoveryFailure.mockRestore();
     });
 
     it('exposes manual repair instead of a reconcile-batch continuation for a manual-repair receipt', async () => {
