@@ -19,11 +19,13 @@ export type LoadRecentProjectOutcome = 'committed' | 'not-found' | 'failed' | 'a
 type LoadRecentProjectOptions = {
     /** A recovery path may only accept a load whose CRDT snapshot compacted. */
     readonly requireDurable?: boolean;
+    /** A discard caller keeps this true only while its captured project authority is still current. */
+    readonly shouldProceed?: () => boolean;
 };
 
 export async function loadRecentProject(
     key: string,
-    { requireDurable = false }: LoadRecentProjectOptions = {}
+    { requireDurable = false, shouldProceed }: LoadRecentProjectOptions = {}
 ): Promise<LoadRecentProjectOutcome> {
     const transaction = runProjectLoadTransaction();
     let raw: string | null;
@@ -57,10 +59,15 @@ export async function loadRecentProject(
         return 'failed';
     }
 
+    if (shouldProceed !== undefined && !shouldProceed()) {
+        return 'aborted';
+    }
+
     const result = await replaceProjectData({
         afterCommit: () => writeProjectJson(JSON.stringify(data)),
         context: 'loadRecentProject',
         data,
+        shouldProceed,
         transaction,
     });
     if (result.status === 'committed') {

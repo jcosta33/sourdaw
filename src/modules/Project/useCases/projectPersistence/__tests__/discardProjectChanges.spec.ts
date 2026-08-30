@@ -72,7 +72,10 @@ describe('discardProjectChanges', () => {
 
         await expect(discardProjectChanges()).resolves.toBe(true);
 
-        expect(load.loadRecentProject).toHaveBeenCalledWith('sourdaw:project:10', { requireDurable: true });
+        expect(load.loadRecentProject).toHaveBeenCalledWith('sourdaw:project:10', {
+            requireDurable: true,
+            shouldProceed: expect.any(Function),
+        });
         expect(create.newProject).not.toHaveBeenCalled();
         expect(state.project?.dirty).toBe(false);
     });
@@ -124,6 +127,29 @@ describe('discardProjectChanges', () => {
         await expect(discard).resolves.toBe(false);
         expect(load.loadRecentProject).not.toHaveBeenCalled();
         expect(create.newProject).not.toHaveBeenCalled();
+    });
+
+    it('carries discard authority through the deferred recent-project read before it can replace project truth', async () => {
+        let resolveSecondRead: (() => void) | undefined;
+        recent.getRecentProjects.mockReturnValue([]);
+        snapshot.readNamedProjectJson.mockResolvedValue('{"version":2}');
+        load.loadRecentProject.mockImplementation(
+            async (_key: string, options: { readonly shouldProceed?: () => boolean }) =>
+                new Promise<'committed' | 'aborted'>((resolve) => {
+                    resolveSecondRead = () => resolve(options.shouldProceed?.() ? 'committed' : 'aborted');
+                })
+        );
+
+        const discard = discardProjectChanges();
+        await vi.waitFor(() => expect(load.loadRecentProject).toHaveBeenCalledTimes(1));
+        crdt.captureProjectRevision.mockReturnValue('revision-after-edit');
+        resolveSecondRead?.();
+
+        await expect(discard).resolves.toBe(false);
+        expect(load.loadRecentProject).toHaveBeenCalledWith('sourdaw:project:10', {
+            requireDurable: true,
+            shouldProceed: expect.any(Function),
+        });
     });
 
     it('replaces a never-explicitly-saved project with a clean blank project', async () => {

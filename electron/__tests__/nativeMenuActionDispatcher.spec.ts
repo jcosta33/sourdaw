@@ -69,4 +69,30 @@ describe('native menu action dispatcher', () => {
         expect(stale.send).not.toHaveBeenCalled();
         expect(createWindow).toHaveBeenCalledTimes(1);
     });
+
+    it('drops Edit and View commands while a windowless project intent is waiting for its renderer', () => {
+        let current: ReturnType<typeof makeWindow> | undefined;
+        const createWindow = vi.fn(() => {
+            current = makeWindow();
+            return current;
+        });
+        const dispatcher = createNativeMenuActionDispatcher({
+            isMac: true,
+            actionChannel: 'native-menu-action',
+            getWindow: () => current,
+            createWindow,
+        });
+
+        dispatcher.dispatch({ action: 'project:new' });
+        const pendingWindow = current;
+        dispatcher.dispatch({ action: 'edit:undo' });
+        dispatcher.dispatch({ action: 'view:zoom-in' });
+        if (pendingWindow === undefined) {
+            throw new Error('Expected a pending renderer window');
+        }
+        dispatcher.rendererReady(pendingWindow);
+
+        expect(pendingWindow.send).toHaveBeenCalledTimes(1);
+        expect(pendingWindow.send).toHaveBeenCalledWith('native-menu-action', { action: 'project:new' });
+    });
 });

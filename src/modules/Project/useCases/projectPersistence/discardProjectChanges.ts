@@ -51,7 +51,9 @@ export async function discardProjectChanges(): Promise<boolean> {
     }
 
     if (snapshot !== null) {
-        const restored = (await loadRecentProject(snapshotKey, { requireDurable: true })) === 'committed';
+        const restored =
+            (await loadRecentProject(snapshotKey, { requireDurable: true, shouldProceed: stillOwnsDiscard })) ===
+            'committed';
         if (restored && projectStore.value?.dirty === false) {
             return true;
         }

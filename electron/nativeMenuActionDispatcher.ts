@@ -35,7 +35,9 @@ export const createNativeMenuActionDispatcher = ({
             const window = getWindow();
             if (window !== undefined && !window.isDestroyed()) {
                 if (pending?.window === window) {
-                    pending.intents.push(intent);
+                    if (canQueueForWindowlessRenderer(intent)) {
+                        pending.intents.push(intent);
+                    }
                     return;
                 }
                 deliver(window, intent);

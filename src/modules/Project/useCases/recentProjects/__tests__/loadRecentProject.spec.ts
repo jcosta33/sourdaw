@@ -137,6 +137,27 @@ describe('loadRecentProject', () => {
         expect(importInput?.shouldContinue?.()).toBe(true);
     });
 
+    it('does not replace project truth when discard authority is revoked while its JSON read is pending', async () => {
+        let resolveRead: ((value: string) => void) | undefined;
+        let authorityCurrent = true;
+        vi.mocked(resetCrdtProjectAuthority).mockClear();
+        vi.mocked(hydrateModuleStoresFromProjectData).mockClear();
+        vi.mocked(readNamedProjectJson).mockImplementation(
+            () =>
+                new Promise<string>((resolve) => {
+                    resolveRead = resolve;
+                })
+        );
+
+        const load = loadRecentProject('discarded-project', { shouldProceed: () => authorityCurrent });
+        authorityCurrent = false;
+        resolveRead?.(validProject);
+
+        await expect(load).resolves.toBe('aborted');
+        expect(resetCrdtProjectAuthority).not.toHaveBeenCalled();
+        expect(hydrateModuleStoresFromProjectData).not.toHaveBeenCalled();
+    });
+
     it('keeps the committed project live when post-commit embedded persistence fails', async () => {
         vi.mocked(readNamedProjectJson).mockResolvedValue(validProject);
         const persistEmbedded = vi.fn().mockResolvedValue(false);

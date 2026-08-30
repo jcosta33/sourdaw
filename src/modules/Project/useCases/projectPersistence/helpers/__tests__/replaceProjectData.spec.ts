@@ -191,6 +191,24 @@ describe('replaceProjectData', () => {
         expect(result.status).toBe('aborted');
     });
 
+    it('does not switch project authority after an external discard authority is revoked during preparation', async () => {
+        let allowed = true;
+        mockPrepareCachedAudioBuffersFromIdb.mockImplementation(async () => {
+            allowed = false;
+            return { cancel: mockCancelPreparedStoredBuffers, publish: vi.fn() };
+        });
+
+        const result = await replaceProjectData({
+            context: 'loadRecentProject',
+            data: makeData(),
+            shouldProceed: () => allowed,
+            transaction: makeTransaction(),
+        });
+
+        expect(result.status).toBe('aborted');
+        expect(mockResetCrdtProjectAuthority).not.toHaveBeenCalled();
+    });
+
     it('aborts when transaction.prepare throws', async () => {
         const result = await replaceProjectData({
             context: 'loadRecentProject',
