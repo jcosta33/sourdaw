@@ -1,0 +1,78 @@
+electron/windowCloseCoordinator.ts
+  s_ae074277795b45::t_2f9fbb7580bd0a 1-61,72-85,90-92
+  s_ae074277795b45::t_5207567a208bed 62-65
+  s_ae074277795b45::t_f242752822c9b1 66-71,86-89
+src/types/sourdaw-desktop.d.ts
+  s_ae074277795b45::t_29862119dc3753 76-81
+  s_ae074277795b45::t_480df54a1b861f 82-84
+  s_deed16ec265976::t_c48e09bbdfd674 85-89
+electron/appIpc.ts
+  s_ae074277795b45::t_a0bfb2eb7d15ef 28-30,302-397
+  s_ae074277795b45::t_0f3a2de4f9586e 398-400
+  s_deed16ec265976::t_8e275c0a23072e 401
+electron/shutdown.ts
+  s_ae074277795b45::t_7767b3fad8242b 164-165,167-170
+  s_ae074277795b45::t_fca27bf3d596a2 134-135,152,163,172
+  s_ae074277795b45::t_7127fe7f7a069a 155,158,161,166,171,173
+electron/main.ts
+  s_ae074277795b45::t_500452c15f1e9f 33,64,115,117-122,124-128,136-139,215-226,500,526-538,545-547,582
+  s_ae074277795b45::t_7767b3fad8242b 37
+  s_ae074277795b45::t_e00c25ab892069 116,229-231
+  s_ae074277795b45::t_9fa98d6e5971a1 38-43,123,129-135,501-503,539-544
+  s_ae074277795b45::t_f242752822c9b1 181
+electron/channels.ts
+  s_ae074277795b45::t_29862119dc3753 46-54,187-191
+  s_ae074277795b45::t_aee84d7dbe904a 192-194
+  s_deed16ec265976::t_390efef75d1d26 195-200
+electron/__tests__/windowCloseCoordinator.spec.ts
+  s_ae074277795b45::t_ea5794094dcf43 15,27
+  s_ae074277795b45::t_75cfb9978f1ab9 1-14,16-26,28-52
+electron/bridge.ts
+  s_ae074277795b45::t_29862119dc3753 38-41,190,245-254,419-433
+  s_ae074277795b45::t_0e421472bab5c8 434
+electron/mainWindowTeardown.ts
+  s_ae074277795b45::t_e00c25ab892069 11-12,17
+  s_ae074277795b45::t_955252141ea30b 18-20
+  s_deed16ec265976::t_ca9b17a452b892 21
+electron/applicationMenu.ts
+  s_ae074277795b45::t_cbf598d21e94e1 20,45
+  s_ae074277795b45::t_2f9fbb7580bd0a 1-19,21-44,46-99
+  s_ae074277795b45::t_5b419d4dd0366d 100-102
+  s_deed16ec265976::t_63a7e53b7fa2cd 103-107
+electron/pluginGui.ts
+  s_ae074277795b45::t_e00c25ab892069 819-820,843-845
+electron/__tests__/bridge.spec.ts
+  s_ae074277795b45::t_8a437a343e05f3 30,74,91,123
+electron/__tests__/appIpc.spec.ts
+  s_ae074277795b45::t_b30c4bdd7e5a76 125-151
+  s_ae074277795b45::t_8a437a343e05f3 16,32-34
+electron/__tests__/applicationMenu.spec.ts
+  s_ae074277795b45::t_75cfb9978f1ab9 1-35
+  s_ae074277795b45::t_d0db85f2f38f3f 36-38
+src/utils/desktopBridge.ts
+  s_ae074277795b45::t_29862119dc3753 347-351
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "08f06050d11bc5495669071b6de8df7ffb664b08",
+  "prompts": {},
+  "sessions": {
+    "s_ae074277795b45": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04ab5-5234-7100-be1c-76ebfaba88d3",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_deed16ec265976": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04ff2-2eed-7ea3-952d-2b0a647afae1",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
