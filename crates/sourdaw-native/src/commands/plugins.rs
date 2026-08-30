@@ -2615,6 +2615,12 @@ mod tests {
     /// And once it is free, an unload+reload can land in that window: the value
     /// went to the runtime that is gone, so it must not be written onto the
     /// record that replaced it.
+    ///
+    /// The interleaving is constructed with gates, not sleeps: the control
+    /// holder parks the write on the runtime's real control gate, the reload
+    /// replaces the record while that gate is still held, and the gate is
+    /// handed back only once the replacement is installed — so the write can
+    /// never complete against the record it resolved.
     #[test]
     fn set_plugin_parameter_frees_the_map_during_the_write_and_refuses_a_swapped_record() {
         let state = AppState::default();
@@ -2622,40 +2628,61 @@ mod tests {
         let runtime = engine_fixture_runtime(&state, "instance-swapped-write");
 
         std::thread::scope(|scope| {
-            // The plugin owns its control path for longer than the map-lock
-            // deadline below, so a command that held the map across the write
-            // would hold it past that deadline.
-            let control_holder = scope.spawn(|| {
-                runtime.with_control(Duration::from_secs(5), |_| {
-                    std::thread::sleep(Duration::from_millis(800));
+            let (control_held, control_gate_taken) = std::sync::mpsc::channel();
+            let (write_issued, writer_issued_write) = std::sync::mpsc::channel();
+            let state_ref = &state;
+            // The holder owns the runtime's control gate — the mutex and the
+            // access seam beneath it — for its whole closure, and the closure
+            // performs the swap itself: the writer parks on the gate, the
+            // replacement is installed while the gate is still held, and only
+            // the closure's return hands the gate back. The write can never
+            // land on the record that replaced the runtime it addressed.
+            let control_holder = scope.spawn(move || {
+                runtime.with_control(Duration::from_secs(5), |_plugin| {
+                    control_held.send(()).expect("the test is still listening");
+                    writer_issued_write
+                        .recv_timeout(Duration::from_secs(5))
+                        .expect("the writer must issue the write while the gate is held");
+
+                    // The writer's next step after signalling is two lock
+                    // acquisitions, then it parks on the gate this closure
+                    // holds — so its resolution of the runtime is long done.
+                    // Building the replacement is real work on this side of
+                    // the signal, which keeps it that way under load. The map
+                    // must be free here — the first half of this contract —
+                    // and the replacement goes in under one critical section
+                    // before the gate is handed back.
+                    let replacement = reloaded_engine_owned_record(0.25);
+                    let mut engine_plugins =
+                        lock_engine_plugins_for_the_swap(state_ref, "set_plugin_parameter");
+                    reload_engine_owned_record(
+                        &mut engine_plugins,
+                        "instance-swapped-write",
+                        replacement,
+                    );
                     Ok(())
                 })
             });
-            std::thread::sleep(Duration::from_millis(100));
+            control_gate_taken
+                .recv_timeout(Duration::from_secs(5))
+                .expect("the control holder must take the gate before the write is issued");
 
-            let writer = scope.spawn(|| {
-                crate::block_on_test(set_plugin_parameter(
-                    PluginInstanceId("instance-swapped-write".to_string()),
-                    7,
-                    0.75,
-                    &state,
-                ))
+            let writer = scope.spawn(move || {
+                crate::block_on_test(async {
+                    // Sent from inside the driven future, one statement before
+                    // the command resolves its runtime: the signal and the
+                    // resolution share a thread with nothing schedulable
+                    // between them but the resolve itself.
+                    write_issued.send(()).expect("the test is still listening");
+                    set_plugin_parameter(
+                        PluginInstanceId("instance-swapped-write".to_string()),
+                        7,
+                        0.75,
+                        state_ref,
+                    )
+                    .await
+                })
             });
-            std::thread::sleep(Duration::from_millis(100));
-
-            let deadline = Instant::now() + Duration::from_millis(300);
-            loop {
-                if state.engine_plugins.try_lock().is_ok() {
-                    break;
-                }
-                assert!(
-                    Instant::now() < deadline,
-                    "set_plugin_parameter must not hold engine_plugins across the control write"
-                );
-                std::thread::sleep(Duration::from_millis(5));
-            }
-
-            reload_engine_owned_fixture(&state, "instance-swapped-write", 0.25);
 
             assert_eq!(writer.join().expect("writer thread"), Ok(()));
             control_holder
@@ -2871,6 +2898,12 @@ mod tests {
     /// poll was determined is newer than the poll, and the cache already holds
     /// it. Storing the poll on top reverts it — the exact knob snap-back
     /// `poll_parameters` claims to prevent.
+    ///
+    /// The window is constructed with gates, not sleeps: the map is held from
+    /// before the poll may run until the newer write and its cache entry are
+    /// both in, and the write is enqueued only after a control round trip
+    /// proves the poll's snapshot was taken — so the write-back always meets
+    /// a cache that is newer than the poll.
     #[test]
     fn get_plugin_parameters_does_not_revert_a_write_accepted_during_the_poll() {
         let state = AppState::default();
@@ -2884,42 +2917,94 @@ mod tests {
             .expect("fixture control access should succeed");
 
         let polled = std::thread::scope(|scope| {
-            let control_holder = scope.spawn(|| {
-                runtime.with_control(Duration::from_secs(5), |_| {
-                    std::thread::sleep(Duration::from_millis(600));
+            let (control_held, control_gate_taken) = std::sync::mpsc::channel();
+            let (let_poll_run, poll_may_run) = std::sync::mpsc::channel();
+            let (poll_issued, reader_issued_poll) = std::sync::mpsc::channel();
+            let (go_hold_map, hold_map) = std::sync::mpsc::channel();
+            let (map_held, map_was_held) = std::sync::mpsc::channel();
+
+            // The holder owns the runtime's control gate for its whole
+            // closure and opens it only on this thread's say-so — which is
+            // sent once the map below is held — so the reader's write-back
+            // can never run before the newer write is in the cache.
+            let event_runtime = Arc::clone(&runtime);
+            let control_holder = scope.spawn(move || {
+                runtime.with_control(Duration::from_secs(5), |_plugin| {
+                    control_held.send(()).expect("the test is still listening");
+                    poll_may_run
+                        .recv_timeout(Duration::from_secs(5))
+                        .expect("the test opens the gate once the map is held");
                     Ok(())
                 })
             });
-            std::thread::sleep(Duration::from_millis(100));
+            control_gate_taken
+                .recv_timeout(Duration::from_secs(5))
+                .expect("the control holder must take the gate before the poll is issued");
 
-            let reader = scope.spawn(|| {
-                crate::block_on_test(get_plugin_parameters(
-                    PluginInstanceId("instance-late-write".to_string()),
-                    &state,
-                ))
+            let state_ref = &state;
+            let reader = scope.spawn(move || {
+                crate::block_on_test(async {
+                    // Sent from inside the driven future, one statement before
+                    // the command resolves its runtime: the signal and the
+                    // resolution share a thread with nothing schedulable
+                    // between them but the resolve itself.
+                    poll_issued.send(()).expect("the test is still listening");
+                    get_plugin_parameters(
+                        PluginInstanceId("instance-late-write".to_string()),
+                        state_ref,
+                    )
+                    .await
+                })
             });
-            // The reader has cloned the runtime and is parked in the poll.
-            std::thread::sleep(Duration::from_millis(200));
+            reader_issued_poll
+                .recv_timeout(Duration::from_secs(5))
+                .expect("the reader must issue the poll while control is held");
 
-            // Occupy the map so the reader cannot store the instant its poll
-            // returns, then land the write in that window exactly as
-            // `set_plugin_parameter` does: enqueue, then record it in the cache.
-            let mut engine_plugins = state.engine_plugins.lock().expect("engine_plugins lock");
-            std::thread::sleep(Duration::from_millis(600));
-            runtime
-                .enqueue_parameter(7, 0.75)
-                .expect("the queued write should be accepted");
-            engine_plugins
-                .get_mut("instance-late-write")
-                .expect("fixture should exist")
-                .parameters = vec![plugin_parameter(7, 0.75)];
-            drop(engine_plugins);
+            // Holds the map across the reader's poll, then lands the write in
+            // that window exactly as `set_plugin_parameter` does: enqueue,
+            // then record it in the cache.
+            let map_holder = scope.spawn(move || {
+                hold_map
+                    .recv_timeout(Duration::from_secs(5))
+                    .expect("the test asks for the map once the poll is issued");
+
+                let mut engine_plugins =
+                    lock_engine_plugins_for_the_swap(state_ref, "get_plugin_parameters");
+                map_held.send(()).expect("the test is still listening");
+
+                // The gate is still closed above, so this parks until it
+                // opens; once the reader's poll runs it holds the runtime's
+                // control mutex for the poll's duration, so this round trip
+                // returning means the poll's snapshot is determined — the
+                // write that follows is provably the newer one.
+                event_runtime
+                    .with_control(Duration::from_secs(2), |_plugin| Ok(()))
+                    .expect("fixture control access should succeed");
+                event_runtime
+                    .enqueue_parameter(7, 0.75)
+                    .expect("the queued write should be accepted");
+                engine_plugins
+                    .get_mut("instance-late-write")
+                    .expect("fixture should exist")
+                    .parameters = vec![plugin_parameter(7, 0.75)];
+            });
+
+            go_hold_map
+                .send(())
+                .expect("the map holder is still waiting");
+            map_was_held
+                .recv_timeout(Duration::from_secs(5))
+                .expect("the map must be held before the poll may run");
+            let_poll_run
+                .send(())
+                .expect("the control holder is still parked in its gate");
 
             let polled = reader.join().expect("reader thread");
             control_holder
                 .join()
                 .expect("control holder thread")
                 .expect("fixture control access should succeed");
+            map_holder.join().expect("map holder thread");
             polled
         })
         .expect("parameters should resolve");
