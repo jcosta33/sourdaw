@@ -7,6 +7,7 @@ export type NativeMenuAction =
     | 'project:import-midi'
     | 'project:open-recent'
     | 'project:save'
+    | 'project:discard'
     | 'project:export-audio'
     | 'project:export-file'
     | 'edit:undo'
@@ -45,6 +46,7 @@ const nativeMenuActions = new Set<NativeMenuAction>([
     'project:import-midi',
     'project:open-recent',
     'project:save',
+    'project:discard',
     'project:export-audio',
     'project:export-file',
     'edit:undo',
@@ -184,8 +186,8 @@ export const createApplicationMenuTemplate = ({
             { type: 'separator' },
             action('Zoom In', 'CommandOrControl+=', send, 'view:zoom-in'),
             action('Zoom Out', 'CommandOrControl+-', send, 'view:zoom-out'),
-            action('Zoom to Fit', 'F', send, 'view:zoom-fit'),
-            action('Zoom to Selection', 'Shift+F', send, 'view:zoom-selection'),
+            action('Zoom to Fit', undefined, send, 'view:zoom-fit'),
+            action('Zoom to Selection', undefined, send, 'view:zoom-selection'),
             { type: 'separator' },
             { role: 'togglefullscreen' },
         ],

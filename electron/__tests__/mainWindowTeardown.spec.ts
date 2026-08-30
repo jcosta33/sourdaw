@@ -101,6 +101,20 @@ describe('main window owner teardown wiring', () => {
         expect(owner.destroy).toHaveBeenCalledTimes(1);
     });
 
+    it('leaves a cancelled dirty close untouched', async () => {
+        const owner = createOwnerStub();
+        const detachOpenEditors = vi.fn((): Promise<void> => Promise.resolve());
+        bindMainWindowOwnerTeardown(owner, createHostStub(detachOpenEditors), () => false);
+
+        const stopped = owner.emitClose();
+        await settled();
+
+        expect(stopped).toBe(false);
+        expect(detachOpenEditors).not.toHaveBeenCalled();
+        expect(owner.hide).not.toHaveBeenCalled();
+        expect(owner.destroy).not.toHaveBeenCalled();
+    });
+
     it('destroys a crashed main window through the captured detach-first path after recovery rebinding', async () => {
         const crashedOwner = createOwnerStub();
         let releaseDetach!: () => void;

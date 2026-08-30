@@ -46,6 +46,7 @@ import { createCommandStream, createEventForwarder } from './events.js';
 import { bindMainWindowOwnerTeardown, destroyCrashedMainWindow } from './mainWindowTeardown.js';
 import { loadNativeAddon, NATIVE_ADDON_PATH_ENV, resolveNativeAddonPath, type NativeHost } from './native.js';
 import { forwardNativeEvent } from './nativeEventRouter.js';
+import { createNativeMenuProjectStateController } from './nativeMenuProjectState.js';
 import { createPluginCommandAdmission } from './pluginCommandAdmission.js';
 import {
     registerPluginWindowHost,
@@ -116,6 +117,19 @@ const nativeMenuAction = (intent: NativeMenuIntent): void => {
     rendererTarget()?.send(NATIVE_MENU_ACTION_CHANNEL, intent);
 };
 
+const rebuildMacApplicationMenu = (
+    recentProjects: readonly { readonly key: string; readonly name: string }[] = []
+): void => {
+    if (process.platform !== 'darwin') {
+        return;
+    }
+    Menu.setApplicationMenu(
+        Menu.buildFromTemplate(
+            createApplicationMenuTemplate({ appName: 'Sourdaw', send: nativeMenuAction, recentProjects })
+        )
+    );
+};
+
 const windowCloseCoordinator = createWindowCloseCoordinator({
     ask: async (title) => {
         const window = mainWindow;
@@ -138,7 +152,14 @@ const windowCloseCoordinator = createWindowCloseCoordinator({
         }
         return 'cancel';
     },
-    send: (requestId) => nativeMenuAction({ action: 'project:save', requestId }),
+    send: (operation, requestId) =>
+        nativeMenuAction({ action: operation === 'save' ? 'project:save' : 'project:discard', requestId }),
+});
+
+const nativeMenuProjectStateController = createNativeMenuProjectStateController({
+    updateCloseState: (state) => windowCloseCoordinator.updateProject(state),
+    getWindow: () => mainWindow,
+    rebuildApplicationMenu: rebuildMacApplicationMenu,
 });
 
 const attachWebContentsPolicy = (window: BrowserWindow): void => {
@@ -502,9 +523,7 @@ void app.whenReady().then(() => {
     if (process.platform === 'linux') {
         Menu.setApplicationMenu(null);
     } else if (process.platform === 'darwin') {
-        Menu.setApplicationMenu(
-            Menu.buildFromTemplate(createApplicationMenuTemplate({ appName: 'Sourdaw', send: nativeMenuAction }))
-        );
+        rebuildMacApplicationMenu();
     }
 
     registerDialogChannels({ ipcMain, isTrustedFrameUrl: isAllowedFrameUrl, dialogs: dialog });
@@ -530,25 +549,7 @@ void app.whenReady().then(() => {
     registerNativeMenuChannels({
         ipcMain,
         isTrustedFrameUrl: isAllowedFrameUrl,
-        onProjectState: (state) => {
-            windowCloseCoordinator.updateProject(state);
-            const window = mainWindow;
-            if (window !== undefined && !window.isDestroyed()) {
-                window.setTitle(`${state.title} — Sourdaw`);
-                window.setDocumentEdited(state.dirty);
-            }
-            if (process.platform === 'darwin') {
-                Menu.setApplicationMenu(
-                    Menu.buildFromTemplate(
-                        createApplicationMenuTemplate({
-                            appName: 'Sourdaw',
-                            send: nativeMenuAction,
-                            recentProjects: state.recentProjects,
-                        })
-                    )
-                );
-            }
-        },
+        onProjectState: (state) => nativeMenuProjectStateController.apply(state),
         onSaveResult: (result) => windowCloseCoordinator.resolveSave(result),
         editTargetForSender: (sender) =>
             typeof sender === 'object' &&

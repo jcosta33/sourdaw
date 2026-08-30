@@ -39,6 +39,7 @@ type SourdawNativeMenuAction =
     | 'project:import-midi'
     | 'project:open-recent'
     | 'project:save'
+    | 'project:discard'
     | 'project:export-audio'
     | 'project:export-file'
     | 'edit:undo'

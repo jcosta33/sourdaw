@@ -469,6 +469,20 @@ describe('createPluginWindowHost', () => {
         expect(owner.isDestroyed()).toBe(true);
     });
 
+    it('leaves a cancelled dirty owner close untouched', async () => {
+        const owner = createFakeOwnerWindow();
+        const detachOpenEditors = vi.fn((): Promise<void> => Promise.resolve());
+        interceptOwnerWindowTeardown(owner, detachOpenEditors, () => false);
+
+        const stopped = owner.emitClose();
+        await settled();
+
+        expect(stopped).toBe(false);
+        expect(detachOpenEditors).not.toHaveBeenCalled();
+        expect(owner.hide).not.toHaveBeenCalled();
+        expect(owner.destroy).not.toHaveBeenCalled();
+    });
+
     /**
      * Intercepting the owner must not swallow a title-bar close of an editor.
      */

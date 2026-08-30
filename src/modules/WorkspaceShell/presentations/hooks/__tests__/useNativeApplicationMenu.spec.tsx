@@ -14,6 +14,7 @@ const desktop = vi.hoisted(() => ({
 const projectState = vi.hoisted(() => ({ dirty: false }));
 const projectActions = vi.hoisted(() => ({
     saveProject: vi.fn(async () => true),
+    discardProjectChanges: vi.fn(async () => true),
     newProject: vi.fn(),
     pickAndImportProjectFile: vi.fn(async () => true),
     exportProjectFile: vi.fn(async () => undefined),
@@ -74,6 +75,7 @@ describe('useNativeApplicationMenu', () => {
         desktop.edit.mockClear();
         projectState.dirty = false;
         projectActions.saveProject.mockClear();
+        projectActions.discardProjectChanges.mockClear();
         projectActions.newProject.mockClear();
         projectActions.loadRecentProject.mockClear();
         arrangement.zoomTimelineBy.mockClear();
@@ -179,6 +181,29 @@ describe('useNativeApplicationMenu', () => {
 
         await vi.waitFor(() => expect(projectActions.saveProject).toHaveBeenCalledTimes(1));
         expect(desktop.saveResult).not.toHaveBeenCalled();
+    });
+
+    it('returns a correlated clean result after discarding a close request', async () => {
+        renderHook(() =>
+            useNativeApplicationMenu({
+                projectId: 'project',
+                name: 'Song',
+                createdAt: 1,
+                updatedAt: 2,
+                dirty: true,
+                loading: false,
+                keyRoot: 0,
+                scaleName: 'chromatic',
+                tuning: { name: 'Equal Temperament', frequencies: [] },
+                productionBrief: {} as never,
+                initialized: true,
+            })
+        );
+
+        desktop.listener?.({ action: 'project:discard', requestId: 7 });
+
+        await vi.waitFor(() => expect(projectActions.discardProjectChanges).toHaveBeenCalledTimes(1));
+        expect(desktop.saveResult).toHaveBeenCalledWith({ requestId: 7, saved: true, dirty: false });
     });
 
     it('keeps New and Open Recent in place when save succeeds but a concurrent edit remains dirty', async () => {

@@ -1,5 +1,6 @@
 // Project/useCases — public contract surface for cross-module project access.
 export { newProject } from './projectPersistence/newProject';
+export { discardProjectChanges } from './projectPersistence/discardProjectChanges';
 export { captureProjectTransitionAuthority } from './projectPersistence/captureProjectTransitionAuthority';
 export { saveProject } from './projectPersistence/saveProject/saveProject';
 export { markDirty } from './projectPersistence/saveProject/markDirty';

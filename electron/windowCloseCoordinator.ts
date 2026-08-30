@@ -10,10 +10,11 @@ export type SaveResult = {
 };
 
 type CloseDecision = 'save' | 'discard' | 'cancel';
+type CloseOperation = Extract<CloseDecision, 'save' | 'discard'>;
 
 type CreateWindowCloseCoordinatorInput = {
     readonly ask: (title: string) => Promise<CloseDecision>;
-    readonly send: (requestId: number) => void;
+    readonly send: (operation: CloseOperation, requestId: number) => void;
 };
 
 /** Main-process state only: a disposable projection of renderer project state. */
@@ -22,6 +23,7 @@ export const createWindowCloseCoordinator = ({ ask, send }: CreateWindowCloseCoo
     let phase: 'idle' | 'deciding' | 'saving' | 'approved' | 'closing' = 'idle';
     let pendingSave: { readonly requestId: number; readonly settle: (result: SaveResult) => void } | undefined;
     let nextRequestId = 1;
+    let generation = 0;
 
     const updateProject = (next: ProjectCloseState): void => {
         project = next;
@@ -51,21 +53,24 @@ export const createWindowCloseCoordinator = ({ ask, send }: CreateWindowCloseCoo
             phase = 'approved';
             return true;
         }
+        const requestGeneration = generation;
         phase = 'deciding';
         let decision: CloseDecision;
         try {
             decision = await ask(project.title);
         } catch {
+            if (requestGeneration !== generation) {
+                return false;
+            }
             phase = 'idle';
+            return false;
+        }
+        if (requestGeneration !== generation) {
             return false;
         }
         if (decision === 'cancel') {
             phase = 'idle';
             return false;
-        }
-        if (decision === 'discard') {
-            phase = 'approved';
-            return true;
         }
         const requestId = nextRequestId;
         nextRequestId += 1;
@@ -75,15 +80,21 @@ export const createWindowCloseCoordinator = ({ ask, send }: CreateWindowCloseCoo
             result = await new Promise<SaveResult>((resolve, reject) => {
                 pendingSave = { requestId, settle: resolve };
                 try {
-                    send(requestId);
+                    send(decision, requestId);
                 } catch (error) {
                     pendingSave = undefined;
                     reject(error);
                 }
             });
         } catch {
+            if (requestGeneration !== generation) {
+                return false;
+            }
             phase = 'idle';
             pendingSave = undefined;
+            return false;
+        }
+        if (requestGeneration !== generation) {
             return false;
         }
         pendingSave = undefined;
@@ -107,6 +118,7 @@ export const createWindowCloseCoordinator = ({ ask, send }: CreateWindowCloseCoo
             phase = 'closing';
         },
         resetForWindow: (): void => {
+            generation += 1;
             cancelPending();
             phase = 'idle';
             pendingSave = undefined;

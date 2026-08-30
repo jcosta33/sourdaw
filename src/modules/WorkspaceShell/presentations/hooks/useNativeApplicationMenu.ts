@@ -7,6 +7,7 @@ import { startOnboardingTour } from '#/modules/Onboarding/useCases';
 import { projectStore } from '#/modules/Project/stores';
 import {
     exportProjectFile,
+    discardProjectChanges,
     getRecentProjects,
     loadRecentProject,
     newProject,
@@ -83,6 +84,17 @@ const runMenuAction = async (intent: NativeMenuIntent): Promise<void> => {
                 await desktopNativeMenu().saveResult({
                     requestId: intent.requestId,
                     saved,
+                    dirty: projectStore.value?.dirty === true,
+                });
+            }
+            return;
+        }
+        case 'project:discard': {
+            const discarded = await discardProjectChanges();
+            if (intent.requestId !== undefined) {
+                await desktopNativeMenu().saveResult({
+                    requestId: intent.requestId,
+                    saved: discarded,
                     dirty: projectStore.value?.dirty === true,
                 });
             }

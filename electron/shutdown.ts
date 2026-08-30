@@ -153,13 +153,18 @@ export const createQuitHandler = (
 ): ((event: PreventableEvent) => void) => {
     let started = false;
     let checkingPermission = false;
+    let finalExitAllowed = false;
 
     return (event) => {
+        if (finalExitAllowed) {
+            finalExitAllowed = false;
+            return;
+        }
+        event.preventDefault();
         if (started || checkingPermission) {
             return;
         }
         checkingPermission = true;
-        event.preventDefault();
         void canQuit()
             .then((allowed) => {
                 if (allowed) {
@@ -167,6 +172,7 @@ export const createQuitHandler = (
                     checkingPermission = false;
                     void run().then((outcome) => {
                         report(outcome);
+                        finalExitAllowed = true;
                         exit(outcome.status === 'timed-out' ? 1 : 0);
                     });
                     return;

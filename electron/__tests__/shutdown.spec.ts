@@ -194,6 +194,73 @@ describe('the before-quit handler', () => {
         expect(exit).toHaveBeenCalledTimes(1);
     });
 
+    it('prevents every repeated quit while close permission is pending', async () => {
+        let resolvePermission: ((allowed: boolean) => void) | undefined;
+        const canQuit = vi.fn(
+            () =>
+                new Promise<boolean>((resolve) => {
+                    resolvePermission = resolve;
+                })
+        );
+        const run = vi.fn(async () => completed);
+        const handler = createQuitHandler(run, { canQuit, exit: () => undefined, report: () => undefined });
+        const first = { preventDefault: vi.fn() };
+        const second = { preventDefault: vi.fn() };
+
+        handler(first);
+        handler(second);
+        resolvePermission?.(true);
+
+        await vi.waitFor(() => expect(run).toHaveBeenCalledTimes(1));
+        expect(first.preventDefault).toHaveBeenCalledTimes(1);
+        expect(second.preventDefault).toHaveBeenCalledTimes(1);
+        expect(canQuit).toHaveBeenCalledTimes(1);
+    });
+
+    it('prevents every repeated quit while the shutdown cascade is pending', async () => {
+        let finishRun: ((outcome: ShutdownOutcome) => void) | undefined;
+        const run = vi.fn(
+            () =>
+                new Promise<ShutdownOutcome>((resolve) => {
+                    finishRun = resolve;
+                })
+        );
+        const handler = createQuitHandler(run, { exit: () => undefined, report: () => undefined });
+        const first = { preventDefault: vi.fn() };
+        const second = { preventDefault: vi.fn() };
+
+        handler(first);
+        await vi.waitFor(() => expect(run).toHaveBeenCalledTimes(1));
+        handler(second);
+        finishRun?.(completed);
+
+        await vi.waitFor(() => expect(second.preventDefault).toHaveBeenCalledTimes(1));
+        expect(run).toHaveBeenCalledTimes(1);
+    });
+
+    it.each([
+        ['denies', async () => false],
+        ['rejects', async () => Promise.reject(new Error('permission failed'))],
+    ])('prevents quit and stays open when close permission %s', async (_case, canQuitImplementation) => {
+        const run = vi.fn(async () => completed);
+        const exit = vi.fn();
+        const canQuit = vi.fn(canQuitImplementation);
+        const handler = createQuitHandler(run, { canQuit, exit, report: () => undefined });
+        const event = { preventDefault: vi.fn() };
+
+        handler(event);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        const retry = { preventDefault: vi.fn() };
+        handler(retry);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        expect(event.preventDefault).toHaveBeenCalledTimes(1);
+        expect(retry.preventDefault).toHaveBeenCalledTimes(1);
+        expect(canQuit).toHaveBeenCalledTimes(2);
+        expect(run).not.toHaveBeenCalled();
+        expect(exit).not.toHaveBeenCalled();
+    });
+
     it('reports every outcome the shell did not expect', async () => {
         const report = vi.fn();
         const handler = createQuitHandler(async () => ({ status: 'failed', reason: 'lock poisoned' }), {
