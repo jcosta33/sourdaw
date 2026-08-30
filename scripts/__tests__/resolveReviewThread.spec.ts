@@ -13,12 +13,15 @@ import {
 import {
     inspectReviewThread,
     parseResolveReviewThreadArgs,
+    publishReviewResolutionChildLaunchMarker,
+    readPersistedReviewResolutionChildLaunchMarker,
     resolveReviewThread,
     deleteReply,
     deletePendingReview,
     submitReview,
     recoverPullRequestReviewResolutionLock,
     withPullRequestReviewResolutionLock,
+    type PersistedReviewResolutionChildLaunchMarker,
     type ResolveReviewThreadPort,
 } from '../resolveReviewThread.ts';
 
@@ -1091,6 +1094,40 @@ describe('review thread resolution', () => {
         }
     });
 
+    it('publishes child-marker PID binding by atomic rename, so readers see either the old full marker or the new full marker', () => {
+        const markerRoot = mkdtempSync(join(tmpdir(), 'sourdaw-review-marker-publication-'));
+        const markerPath = join(markerRoot, 'child-marker.json');
+        const token = '11111111-1111-4111-8111-111111111111';
+        try {
+            publishReviewResolutionChildLaunchMarker(markerPath, token, null);
+            let seenDuringPublish: PersistedReviewResolutionChildLaunchMarker | undefined;
+            let temporaryPathSeen: string | undefined;
+            publishReviewResolutionChildLaunchMarker(markerPath, token, 4321, (temporaryPath) => {
+                temporaryPathSeen = temporaryPath;
+                seenDuringPublish = readPersistedReviewResolutionChildLaunchMarker({ path: markerPath, token });
+                expect(JSON.parse(readFileSync(temporaryPath, 'utf8'))).toEqual({
+                    version: 1,
+                    token,
+                    pid: 4321,
+                });
+                expect(temporaryPath).not.toBe(markerPath);
+            });
+            expect(seenDuringPublish).toEqual({
+                version: 1,
+                token,
+                pid: null,
+            });
+            expect(temporaryPathSeen).toBeDefined();
+            expect(readPersistedReviewResolutionChildLaunchMarker({ path: markerPath, token })).toEqual({
+                version: 1,
+                token,
+                pid: 4321,
+            });
+        } finally {
+            rmSync(markerRoot, { recursive: true, force: true });
+        }
+    });
+
     it('rejects a forged preset child marker before creating the PR lock', async () => {
         const repository = createTemporaryGitRepository();
         const snapshotRoot = mkdtempSync(join(tmpdir(), 'sourdaw-review-resolve-forged-marker-'));
@@ -1120,6 +1157,45 @@ describe('review thread resolution', () => {
         } finally {
             child.kill('SIGKILL');
             await waitForExit(child).catch(() => undefined);
+            rmSync(snapshotRoot, { recursive: true, force: true });
+            rmSync(repository, { recursive: true, force: true });
+        }
+    }, 10_000);
+
+    it('rejects a valid-looking inherited child marker whose persisted PID names a different detached process', async () => {
+        const repository = createTemporaryGitRepository();
+        const snapshotRoot = mkdtempSync(join(tmpdir(), 'sourdaw-review-resolve-inherited-marker-'));
+        const markerRoot = mkdtempSync(join(tmpdir(), 'sourdaw-review-resolve-inherited-marker-file-'));
+        const entryPath = writeResolveReviewSnapshot(snapshotRoot);
+        const token = '22222222-2222-4222-8222-222222222222';
+        const markerPath = join(markerRoot, 'child-marker.json');
+        publishReviewResolutionChildLaunchMarker(markerPath, token, 999999);
+        const child = spawn(process.execPath, [entryPath, '42', '--thread', threadId, '--head', head], {
+            cwd: repository,
+            env: {
+                ...process.env,
+                SOURDAW_TEST_PRIMARY_ROOT: repository,
+                SOURDAW_REVIEW_RESOLUTION_CHILD: JSON.stringify({ path: markerPath, token }),
+            },
+            stdio: ['ignore', 'ignore', 'pipe'],
+            shell: false,
+            detached: true,
+        });
+        let stderr = '';
+        child.stderr?.setEncoding('utf8');
+        child.stderr?.on('data', (chunk: string) => {
+            stderr += chunk;
+        });
+        try {
+            await waitForProcessExitWithoutReviewResolutionLock(child, repository, 42);
+            await waitForExit(child);
+            expect(child.exitCode).toBe(1);
+            expect(stderr).toMatch(/detached launcher marker is invalid/i);
+            expect(readLockOid(repository, 42)).toBeUndefined();
+        } finally {
+            child.kill('SIGKILL');
+            await waitForExit(child).catch(() => undefined);
+            rmSync(markerRoot, { recursive: true, force: true });
             rmSync(snapshotRoot, { recursive: true, force: true });
             rmSync(repository, { recursive: true, force: true });
         }

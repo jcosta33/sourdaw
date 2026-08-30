@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { spawn, spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { isAbsolute, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -142,7 +142,7 @@ type ReviewResolutionChildLaunchMarker = {
     token: string;
 };
 
-type PersistedReviewResolutionChildLaunchMarker = {
+export type PersistedReviewResolutionChildLaunchMarker = {
     version: 1;
     token: string;
     pid: number | null;
@@ -191,7 +191,7 @@ function parseReviewResolutionChildLaunchMarker(value: string): ReviewResolution
     return { path: parsed.path, token: parsed.token };
 }
 
-function readPersistedReviewResolutionChildLaunchMarker(
+export function readPersistedReviewResolutionChildLaunchMarker(
     marker: ReviewResolutionChildLaunchMarker
 ): PersistedReviewResolutionChildLaunchMarker {
     let parsed: unknown;
@@ -221,13 +221,26 @@ function readPersistedReviewResolutionChildLaunchMarker(
     };
 }
 
-function writePersistedReviewResolutionChildLaunchMarker(path: string, token: string, pid: number | null): void {
+export function publishReviewResolutionChildLaunchMarker(
+    path: string,
+    token: string,
+    pid: number | null,
+    beforePublish: ((temporaryPath: string) => void) | undefined = undefined
+): void {
     const persisted: PersistedReviewResolutionChildLaunchMarker = {
         version: REVIEW_RESOLUTION_CHILD_MARKER_VERSION,
         token,
         pid,
     };
-    writeFileSync(path, JSON.stringify(persisted), { encoding: 'utf8', mode: 0o600 });
+    const temporaryPath = `${path}.${randomUUID()}.tmp`;
+    try {
+        writeFileSync(temporaryPath, JSON.stringify(persisted), { encoding: 'utf8', mode: 0o600, flag: 'wx' });
+        beforePublish?.(temporaryPath);
+        renameSync(temporaryPath, path);
+    } catch (error) {
+        rmSync(temporaryPath, { force: true });
+        throw error;
+    }
 }
 
 function createReviewResolutionChildLaunchMarker(): {
@@ -238,14 +251,14 @@ function createReviewResolutionChildLaunchMarker(): {
     const root = mkdtempSync(join(tmpdir(), 'sourdaw-review-resolve-'));
     const path = join(root, 'child-marker.json');
     const token = randomUUID();
-    writePersistedReviewResolutionChildLaunchMarker(path, token, null);
+    publishReviewResolutionChildLaunchMarker(path, token, null);
     return {
         envValue: JSON.stringify({ path, token }),
         bindChildPid: (pid) => {
             if (!Number.isSafeInteger(pid) || pid <= 0) {
                 invalidReviewResolutionChildMarker();
             }
-            writePersistedReviewResolutionChildLaunchMarker(path, token, pid);
+            publishReviewResolutionChildLaunchMarker(path, token, pid);
         },
         cleanup: () => {
             rmSync(root, { recursive: true, force: true });
