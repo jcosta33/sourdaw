@@ -29,6 +29,7 @@ export { restorePluginState } from './pluginLifecycle/restorePluginState';
 export { activateExternalPlugin } from './pluginLifecycle/activateExternalPlugin';
 export { clearLoadedExternalPlugins } from './pluginLifecycle/clearLoadedExternalPlugins';
 export { resetExternalPluginRuntimeForGraphRebuild } from './pluginLifecycle/resetExternalPluginRuntimeForGraphRebuild';
+export { beginProjectSessionPluginRetirement } from './pluginLifecycle/beginProjectSessionPluginRetirement';
 
 export { findPluginByName } from './pluginScan/queries';
 export { findSupportedPlugin } from './pluginScan/findSupportedPlugin';

@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 
 import { projectLoadFailureStore } from '#/modules/Project/stores';
 
+import { isKeyboardEditableTarget } from '../../useCases/isKeyboardEditableTarget';
 import { handleKeydown } from '../../useCases/keyboardShortcutActions/handleKeyboardShortcut/handleKeydown';
 import { handleKeyup } from '../../useCases/keyboardShortcutActions/handleKeyboardShortcut/handleKeyup';
 
@@ -47,12 +48,7 @@ export const useGlobalKeyboardShortcuts = (): void => {
             //     FINDING-inventory-decisions-backlog.md (#21 residual).
             //   • Mixer — has no keyboard Delete of its own, so gating it would
             //     disable delete with no replacement (same finding).
-            const isCanvasEditor = target.closest('[data-canvas-editor]') !== null;
-            const isInput =
-                isCanvasEditor ||
-                target.tagName === 'INPUT' ||
-                target.tagName === 'TEXTAREA' ||
-                target.isContentEditable;
+            const isInput = isKeyboardEditableTarget(target);
 
             const shouldPreventDefault = handleKeydown({
                 key: event.key,

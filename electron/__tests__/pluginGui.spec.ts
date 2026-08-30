@@ -13,6 +13,7 @@ import {
     createIntervalRunLoopPump,
     createPluginWindowHost,
     interceptOwnerWindowTeardown,
+    OWNER_EDITOR_DETACH_TIMEOUT_MS,
     registerPluginWindowHost,
     type CreateEditorWindowRequest,
     type EditorSize,
@@ -500,6 +501,153 @@ describe('createPluginWindowHost', () => {
         expect(ownerDestroyedInsideTheEvent).toBe(false);
         expect(windowAliveAtReport).toEqual([true, false]);
         expect(owner.isDestroyed()).toBe(true);
+    });
+
+    it('leaves a cancelled dirty owner close untouched', async () => {
+        const owner = createFakeOwnerWindow();
+        const detachOpenEditors = vi.fn((): Promise<void> => Promise.resolve());
+        interceptOwnerWindowTeardown(owner, detachOpenEditors, () => false);
+
+        const stopped = owner.emitClose();
+        await settled();
+
+        expect(stopped).toBe(false);
+        expect(detachOpenEditors).not.toHaveBeenCalled();
+        expect(owner.hide).not.toHaveBeenCalled();
+        expect(owner.destroy).not.toHaveBeenCalled();
+    });
+
+    it('restores an owner when close authority changes while editor detach is pending', async () => {
+        const owner = createFakeOwnerWindow();
+        let proceed = true;
+        let firstDetach = true;
+        const onCancelled = vi.fn();
+        let releaseDetach: (() => void) | undefined;
+        const detachOpenEditors = vi.fn(() => {
+            if (!firstDetach) {
+                return Promise.resolve();
+            }
+            return new Promise<void>((resolve) => {
+                releaseDetach = resolve;
+            });
+        });
+        const { destroyAfterEditorsDetach } = interceptOwnerWindowTeardown(
+            owner,
+            detachOpenEditors,
+            () => proceed,
+            onCancelled
+        );
+
+        const teardown = destroyAfterEditorsDetach();
+        await settled();
+        proceed = false;
+        firstDetach = false;
+        releaseDetach?.();
+
+        await expect(teardown).resolves.toBe(false);
+        expect(owner.destroy).not.toHaveBeenCalled();
+        expect(owner.show).toHaveBeenCalledTimes(1);
+        expect(onCancelled).toHaveBeenCalledTimes(1);
+
+        proceed = true;
+        await expect(destroyAfterEditorsDetach()).resolves.toBe(true);
+        expect(owner.destroy).toHaveBeenCalledTimes(1);
+    });
+
+    it('upgrades an in-flight close teardown to forced crash destruction', async () => {
+        const owner = createFakeOwnerWindow();
+        let proceed = true;
+        let releaseDetach: (() => void) | undefined;
+        const onCancelled = vi.fn();
+        const detachOpenEditors = vi.fn(
+            () =>
+                new Promise<void>((resolve) => {
+                    releaseDetach = resolve;
+                })
+        );
+        const { destroyAfterEditorsDetach } = interceptOwnerWindowTeardown(
+            owner,
+            detachOpenEditors,
+            () => proceed,
+            onCancelled
+        );
+
+        const normalClose = destroyAfterEditorsDetach();
+        await settled();
+        proceed = false;
+        const crashDestroy = destroyAfterEditorsDetach(true);
+        releaseDetach?.();
+
+        await expect(Promise.all([normalClose, crashDestroy])).resolves.toEqual([true, true]);
+        expect(owner.destroy).toHaveBeenCalledTimes(1);
+        expect(owner.show).not.toHaveBeenCalled();
+        expect(onCancelled).not.toHaveBeenCalled();
+    });
+
+    it.each([
+        ['approved close', false],
+        ['forced crash', true],
+    ])('destroys the hidden owner after a never-settling detach on %s', async (_case, force) => {
+        const owner = createFakeOwnerWindow();
+        let expireDetach!: () => void;
+        const cancelDeadline = vi.fn();
+        const timers = {
+            setTimer: vi.fn((callback: () => void) => {
+                expireDetach = callback;
+                return { cancel: cancelDeadline };
+            }),
+        };
+        let rejectDetach!: (error: Error) => void;
+        const detachOpenEditors = vi.fn(
+            () =>
+                new Promise<void>((_resolve, reject) => {
+                    rejectDetach = reject;
+                })
+        );
+        const { destroyAfterEditorsDetach } = interceptOwnerWindowTeardown(
+            owner,
+            detachOpenEditors,
+            () => true,
+            undefined,
+            undefined,
+            undefined,
+            { timers }
+        );
+
+        const teardown = destroyAfterEditorsDetach(force);
+        await settled();
+        expect(owner.hide).toHaveBeenCalledOnce();
+        expect(owner.destroy).not.toHaveBeenCalled();
+        expect(timers.setTimer).toHaveBeenCalledWith(expect.any(Function), OWNER_EDITOR_DETACH_TIMEOUT_MS);
+
+        expireDetach();
+        await expect(teardown).resolves.toBe(true);
+        expect(owner.destroy).toHaveBeenCalledOnce();
+        expect(owner.isDestroyed()).toBe(true);
+
+        rejectDetach(new Error('late detach failure'));
+        await settled();
+        expect(owner.destroy).toHaveBeenCalledOnce();
+    });
+
+    it.each([
+        ['approved', true, false, true],
+        ['forced', false, true, true],
+        ['authority-invalidated', false, false, false],
+    ])('handles a rejected editor detach for %s teardown', async (_case, proceed, force, destroys) => {
+        const owner = createFakeOwnerWindow();
+        const onCancelled = vi.fn();
+        const { destroyAfterEditorsDetach } = interceptOwnerWindowTeardown(
+            owner,
+            async () => Promise.reject(new Error('editor detach failed')),
+            () => proceed,
+            onCancelled
+        );
+
+        await expect(destroyAfterEditorsDetach(force)).resolves.toBe(destroys);
+        expect(owner.destroy).toHaveBeenCalledTimes(destroys ? 1 : 0);
+        expect(owner.show).toHaveBeenCalledTimes(destroys ? 0 : 1);
+        expect(onCancelled).toHaveBeenCalledTimes(destroys ? 0 : 1);
     });
 
     /**
