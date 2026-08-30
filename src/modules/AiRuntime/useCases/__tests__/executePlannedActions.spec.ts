@@ -367,7 +367,7 @@ describe('executePlannedActions', () => {
                 actions: [{ ...receiptAction(postCommitFixture), label: 'Render retained section' }],
                 receipt,
                 warning: renderPendingEffect.reason,
-                warningDetails: observation.warningDetails,
+                warningDetails: observation.warningDetails ? [...observation.warningDetails] : undefined,
             };
         });
 
