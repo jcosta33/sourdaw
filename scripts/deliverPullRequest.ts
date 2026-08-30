@@ -1083,8 +1083,12 @@ function shouldRestorePreArmedDeliveryReceiptAuthorityAfterFinalObservation(pull
     return pullRequest.state === 'CLOSED' || (pullRequest.state === 'OPEN' && pullRequest.mergeable !== 'UNKNOWN');
 }
 
-function restorePreparedDeliveryReceiptAuthorityBeforeClosedRetry(number: number, port: DeliveryPort): void {
+function restoreDeliveryReceiptAuthorityBeforeClosedRetry(number: number, port: DeliveryPort): void {
     const current = port.readDeliveryReceiptAuthority(number);
+    if (current?.phase === 'legacy') {
+        persistDeliveryReceiptAuthority(number, { phase: 'released', receiptId: current.receiptId }, port);
+        return;
+    }
     if (current?.phase !== 'prepared' || current.postMergeValidation === undefined) {
         return;
     }
@@ -1477,6 +1481,21 @@ function validatePreparedBodylessPersistedMergedRecoveryReceipt(
     validateReceiptPayloadAgainstPreparedPostMergeValidation(pullRequest.number, payload, validation, 'recovery');
 }
 
+function validateLegacyPersistedMergedRecoveryReceipt(
+    pullRequest: PullRequestSnapshot,
+    payload: DeliveryReceiptPayload
+): void {
+    if (payload.schemaVersion !== 1) {
+        fail(`PR #${pullRequest.number} delivery receipt changed during recovery`);
+    }
+    if (payload.bodySha256 !== bodySha256(pullRequest.body)) {
+        fail(`PR #${pullRequest.number} delivery receipt changed during recovery`);
+    }
+    if ((payload.closingIssue ?? undefined) !== trackerCompletionTarget(pullRequest)) {
+        fail(`PR #${pullRequest.number} delivery receipt changed during recovery`);
+    }
+}
+
 function readCompatibleBodylessPersistedMergedRecoveryReceipt(
     pullRequest: PullRequestSnapshot,
     port: DeliveryPort,
@@ -1505,11 +1524,7 @@ function readPersistedMergedRecoveryReceipt(
             pullRequest,
             port,
             authority.receiptId,
-            (_lineage, _receipt, payload) => {
-                if (payload.schemaVersion !== 1) {
-                    fail(`PR #${pullRequest.number} delivery receipt changed during recovery`);
-                }
-            }
+            (_lineage, _receipt, payload) => validateLegacyPersistedMergedRecoveryReceipt(pullRequest, payload)
         );
     }
     if (authority.phase === 'released') {
@@ -1739,11 +1754,11 @@ function deliverPullRequestWithCiAdmission(
     port.fetch();
     const rawInitial = port.pullRequest(number);
     if (rawInitial.state === 'CLOSED') {
-        restorePreparedDeliveryReceiptAuthorityBeforeClosedRetry(number, port);
+        restoreDeliveryReceiptAuthorityBeforeClosedRetry(number, port);
     }
     const initial = resolveStructuralMergeability(rawInitial, port);
     if (initial.state === 'CLOSED') {
-        restorePreparedDeliveryReceiptAuthorityBeforeClosedRetry(number, port);
+        restoreDeliveryReceiptAuthorityBeforeClosedRetry(number, port);
     }
     if (initial.state === 'MERGED') {
         validateBaseBranch(initial);
