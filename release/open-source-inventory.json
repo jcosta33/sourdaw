@@ -132,7 +132,7 @@
                 "sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4:LICENSE",
                 "sha256:c148064afc3d904d474c5f20ee39052ff86085a02d148552ce59f4d0ebd7aeb9:NOTICE",
                 "sha256:03be9429f428e7f8f427a01a79317eef00dd6ab5dc2ffb130c4a6300f579fead:public/legal/DEPENDENCY-LICENSES.txt",
-                "sha256:6837548576b9222491baae6b1485298569037b63123b23d2aaed76bdbfa4d07f:release/dependency-license-proofs.json"
+                "sha256:1f93ad1e6024f11cd8fe2e05b97b32d64c55fdb901bc2025dbb136700c8ab50d:release/dependency-license-proofs.json"
             ],
             "licenses": ["Apache-2.0", "per-package terms:public/legal/DEPENDENCY-LICENSES.txt"],
             "productSurfaces": [
@@ -1131,7 +1131,7 @@
                 "sha256:200e032a1b2c9bbcfeef4fcd5f6a6bedba7a19eebebc51e3ac5e11def43a7efe:public/icon.png",
                 "sha256:200e032a1b2c9bbcfeef4fcd5f6a6bedba7a19eebebc51e3ac5e11def43a7efe:sourdaw.png",
                 "tree-sha256:fa5dd4f455fd2a2176fb9c3a166b2a002104ac9528bb94e517aac35910cbebc2:public/logo-parts",
-                "tree-sha256:8fe3c665aea8a08574ae36e3ed4568ceb921a5efc825584e1577f02eb663f69c:build/icons"
+                "tree-sha256:296936aec862140877137df4f5cdc57306b70a24804fa89100d4aa905b019dc2:build/icons"
             ],
             "licenses": ["Apache-2.0"],
             "productSurfaces": ["application icons", "brand logo", "release screenshots"],

@@ -53,7 +53,7 @@
             },
             {
                 "path": "electron-builder.yml",
-                "sha256": "7bd6b91b280c621afb9e85f91332c04a026d75f60911d7daa866c84fc45c363f"
+                "sha256": "4ae43ed8914a152334e111eff309daaf330d8ef3bc408f20d87b9eac387310ed"
             },
             {
                 "path": "package.json",
