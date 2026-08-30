@@ -183,6 +183,31 @@ describe('useNativeApplicationMenu', () => {
         expect(desktop.saveResult).not.toHaveBeenCalled();
     });
 
+    it('reports a correlated save as dirty when a concurrent edit remains live', async () => {
+        projectState.dirty = true;
+        renderHook(() =>
+            useNativeApplicationMenu({
+                projectId: 'project',
+                name: 'Song',
+                createdAt: 1,
+                updatedAt: 2,
+                dirty: true,
+                loading: false,
+                keyRoot: 0,
+                scaleName: 'chromatic',
+                tuning: { name: 'Equal Temperament', frequencies: [] },
+                productionBrief: {} as never,
+                initialized: true,
+            })
+        );
+
+        desktop.listener?.({ action: 'project:save', requestId: 8 });
+
+        await vi.waitFor(() =>
+            expect(desktop.saveResult).toHaveBeenCalledWith({ requestId: 8, saved: true, dirty: true })
+        );
+    });
+
     it('returns a correlated clean result after discarding a close request', async () => {
         renderHook(() =>
             useNativeApplicationMenu({

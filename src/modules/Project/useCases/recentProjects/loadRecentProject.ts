@@ -16,7 +16,15 @@ import { runProjectLoadTransaction } from '../projectPersistence/helpers/runProj
  */
 export type LoadRecentProjectOutcome = 'committed' | 'not-found' | 'failed' | 'aborted';
 
-export async function loadRecentProject(key: string): Promise<LoadRecentProjectOutcome> {
+type LoadRecentProjectOptions = {
+    /** A recovery path may only accept a load whose CRDT snapshot compacted. */
+    readonly requireDurable?: boolean;
+};
+
+export async function loadRecentProject(
+    key: string,
+    { requireDurable = false }: LoadRecentProjectOptions = {}
+): Promise<LoadRecentProjectOutcome> {
     const transaction = runProjectLoadTransaction();
     let raw: string | null;
     try {
@@ -56,7 +64,7 @@ export async function loadRecentProject(key: string): Promise<LoadRecentProjectO
         transaction,
     });
     if (result.status === 'committed') {
-        return 'committed';
+        return requireDurable && !result.durable ? 'failed' : 'committed';
     }
     // Not 'aborted': that tells the caller a successor owns the project now and
     // it should do nothing. A failed replacement means the previous session is

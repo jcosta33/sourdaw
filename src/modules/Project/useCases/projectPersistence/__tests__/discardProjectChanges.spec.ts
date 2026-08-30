@@ -65,7 +65,7 @@ describe('discardProjectChanges', () => {
 
         await expect(discardProjectChanges()).resolves.toBe(true);
 
-        expect(load.loadRecentProject).toHaveBeenCalledWith('sourdaw:project:10');
+        expect(load.loadRecentProject).toHaveBeenCalledWith('sourdaw:project:10', { requireDurable: true });
         expect(create.newProject).not.toHaveBeenCalled();
         expect(state.project?.dirty).toBe(false);
     });
@@ -127,6 +127,54 @@ describe('discardProjectChanges', () => {
         expect(state.project?.identityPersistencePending).toBe(true);
         expect(notifications.notifyUser).toHaveBeenCalledWith(
             'The replacement project could not be persisted. Reload Sourdaw to recover it; close was cancelled.',
+            'error'
+        );
+    });
+
+    it('accepts an already durable clean replacement without a second compaction', async () => {
+        recent.getRecentProjects.mockReturnValue([]);
+        snapshot.readNamedProjectJson.mockResolvedValue(null);
+        create.newProject.mockImplementation(async () => {
+            state.project = {
+                projectId: 'replacement-project',
+                createdAt: 11,
+                dirty: false,
+                identityPersistencePending: false,
+            };
+            return true;
+        });
+        crdt.compactProject.mockRejectedValue(new Error('must not be called'));
+
+        await expect(discardProjectChanges()).resolves.toBe(true);
+
+        expect(crdt.compactProject).not.toHaveBeenCalled();
+    });
+
+    it('fails closed when the replacement changes during the required compaction', async () => {
+        recent.getRecentProjects.mockReturnValue([]);
+        snapshot.readNamedProjectJson.mockResolvedValue(null);
+        create.newProject.mockImplementation(async () => {
+            state.project = {
+                projectId: 'replacement-project',
+                createdAt: 11,
+                dirty: false,
+                identityPersistencePending: true,
+            };
+            return true;
+        });
+        crdt.compactProject.mockImplementation(async () => {
+            state.project = {
+                projectId: 'newer-project',
+                createdAt: 12,
+                dirty: false,
+                identityPersistencePending: false,
+            };
+        });
+
+        await expect(discardProjectChanges()).resolves.toBe(false);
+
+        expect(notifications.notifyUser).toHaveBeenCalledWith(
+            'The replacement project changed before it was persisted. Reload Sourdaw to recover it; close was cancelled.',
             'error'
         );
     });

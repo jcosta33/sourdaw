@@ -42,6 +42,14 @@ export const createWindowCloseCoordinator = ({ ask, send }: CreateWindowCloseCoo
         pendingSave.settle({ requestId: pendingSave.requestId, saved: false, dirty: true });
     };
 
+    const clearWindowAuthority = (): void => {
+        generation += 1;
+        cancelPending();
+        project = { title: 'Sourdaw', dirty: false };
+        phase = 'idle';
+        pendingSave = undefined;
+    };
+
     const requestClose = async (): Promise<boolean> => {
         if (phase === 'approved' || phase === 'closing') {
             return true;
@@ -105,6 +113,7 @@ export const createWindowCloseCoordinator = ({ ask, send }: CreateWindowCloseCoo
             phase = 'idle';
             return false;
         }
+        project = { ...project, dirty: false };
         phase = 'approved';
         return true;
     };
@@ -117,12 +126,8 @@ export const createWindowCloseCoordinator = ({ ask, send }: CreateWindowCloseCoo
         markClosing: (): void => {
             phase = 'closing';
         },
-        resetForWindow: (): void => {
-            generation += 1;
-            cancelPending();
-            phase = 'idle';
-            pendingSave = undefined;
-        },
+        resetForWindow: clearWindowAuthority,
+        clearForNoWindow: clearWindowAuthority,
         cancelPending,
     };
 };

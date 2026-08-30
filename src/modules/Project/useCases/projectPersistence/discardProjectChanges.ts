@@ -31,7 +31,7 @@ export async function discardProjectChanges(): Promise<boolean> {
     }
 
     if (snapshot !== null) {
-        const restored = (await loadRecentProject(snapshotKey)) === 'committed';
+        const restored = (await loadRecentProject(snapshotKey, { requireDurable: true })) === 'committed';
         if (restored && projectStore.value?.dirty === false) {
             return true;
         }
@@ -66,12 +66,14 @@ export async function discardProjectChanges(): Promise<boolean> {
         );
     }
 
-    try {
-        await compactProject();
-    } catch {
-        return notifyDiscardFailure(
-            'The replacement project could not be persisted. Reload Sourdaw to recover it; close was cancelled.'
-        );
+    if (replacement.identityPersistencePending) {
+        try {
+            await compactProject();
+        } catch {
+            return notifyDiscardFailure(
+                'The replacement project could not be persisted. Reload Sourdaw to recover it; close was cancelled.'
+            );
+        }
     }
 
     const current = projectStore.value;

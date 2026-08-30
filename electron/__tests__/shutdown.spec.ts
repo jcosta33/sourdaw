@@ -147,6 +147,18 @@ describe('plugin command admission before the cascade', () => {
             /'before-quit',\s*createQuitHandler\(\s*\(\)\s*:\s*Promise<ShutdownOutcome>\s*=>\s*runBeforeQuitCascade\(\{[\s\S]*?refusePluginCommands:\s*\(\)\s*=>\s*pluginCommandAdmission\.refusePluginCommands\(\)/u
         );
     });
+
+    it('clears close authority when a renderer crash exhausts its recreation budget', () => {
+        expect(mainSource).toMatch(
+            /recreateTimestamps\.length\s*>=\s*MAX_RECREATES[\s\S]*?windowCloseCoordinator\.clearForNoWindow\(\);[\s\S]*?mainWindow\s*=\s*undefined/u
+        );
+    });
+
+    it('wires approved renderer quiescence before the native quit cascade', () => {
+        expect(mainSource).toMatch(
+            /canQuit:\s*\(\)\s*=>\s*windowCloseCoordinator\.requestClose\(\),\s*beforeRun:\s*quiesceApprovedMainWindow/u
+        );
+    });
 });
 
 describe('the before-quit handler', () => {
@@ -236,6 +248,30 @@ describe('the before-quit handler', () => {
 
         await vi.waitFor(() => expect(second.preventDefault).toHaveBeenCalledTimes(1));
         expect(run).toHaveBeenCalledTimes(1);
+    });
+
+    it('waits for renderer quiescence before the native cascade and prevents repeated quit meanwhile', async () => {
+        let releaseQuiesce: (() => void) | undefined;
+        const beforeRun = vi.fn(
+            () =>
+                new Promise<void>((resolve) => {
+                    releaseQuiesce = resolve;
+                })
+        );
+        const run = vi.fn(async () => completed);
+        const handler = createQuitHandler(run, { beforeRun, exit: () => undefined, report: () => undefined });
+        const first = { preventDefault: vi.fn() };
+        const repeated = { preventDefault: vi.fn() };
+
+        handler(first);
+        await vi.waitFor(() => expect(beforeRun).toHaveBeenCalledTimes(1));
+        handler(repeated);
+
+        expect(run).not.toHaveBeenCalled();
+        expect(repeated.preventDefault).toHaveBeenCalledTimes(1);
+
+        releaseQuiesce?.();
+        await vi.waitFor(() => expect(run).toHaveBeenCalledTimes(1));
     });
 
     it.each([

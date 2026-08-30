@@ -233,6 +233,7 @@ describe('replaceProjectData', () => {
         expect(result.status).toBe('committed');
         if (result.status === 'committed') {
             expect(result.degraded).toBe(false);
+            expect(result.durable).toBe(true);
         }
         expect(mockStopPlayback).toHaveBeenCalled();
         expect(mockResetAudioGraph).toHaveBeenCalled();
@@ -336,11 +337,24 @@ describe('replaceProjectData', () => {
         expect(result.status).toBe('committed');
         if (result.status === 'committed') {
             expect(result.degraded).toBe(true);
+            expect(result.durable).toBe(true);
         }
         expect(mockNotifyUser).toHaveBeenCalledWith(
             'Project loaded with recovery errors. Save a new copy before closing.',
             'warning'
         );
+    });
+
+    it('reports a committed replacement as non-durable only when CRDT snapshot compaction fails', async () => {
+        mockCompactProject.mockRejectedValueOnce(new Error('snapshot persistence failed'));
+
+        const result = await replaceProjectData({
+            context: 'loadRecentProject',
+            data: makeData(),
+            transaction: makeTransaction(),
+        });
+
+        expect(result).toMatchObject({ status: 'committed', degraded: true, durable: false });
     });
 
     it('aborts when embedded buffer import returns null', async () => {

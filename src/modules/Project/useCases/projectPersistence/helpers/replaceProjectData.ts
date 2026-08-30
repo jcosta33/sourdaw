@@ -49,7 +49,7 @@ type ReplaceProjectDataInput = {
 
 type ProjectReplacementResult =
     | { status: 'aborted' }
-    | { status: 'committed'; degraded: boolean }
+    | { status: 'committed'; degraded: boolean; durable: boolean }
     /** The authority switch happened and then the load threw: the incoming
      * project never arrived and the previous one is already gone. Distinct from
      * `aborted`, which means the previous session is still there. */
@@ -377,11 +377,13 @@ export async function replaceProjectData({
         logger.error(new Error(`[${context}] Committed embedded audio buffer persistence threw`, { cause: error }));
     }
 
+    let durable = true;
     if (transaction.isCurrent()) {
         try {
             await compactProject();
         } catch (error) {
             degraded = true;
+            durable = false;
             logger.error(new Error(`[${context}] Initial CRDT snapshot persistence failed`, { cause: error }));
         }
     }
@@ -398,5 +400,5 @@ export async function replaceProjectData({
         });
     }
 
-    return { status: 'committed', degraded };
+    return { status: 'committed', degraded, durable };
 }

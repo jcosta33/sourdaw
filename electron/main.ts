@@ -162,6 +162,37 @@ const nativeMenuProjectStateController = createNativeMenuProjectStateController(
     rebuildApplicationMenu: rebuildMacApplicationMenu,
 });
 
+const quiesceApprovedMainWindow = async (): Promise<void> => {
+    const window = mainWindow;
+    if (window === undefined) {
+        return;
+    }
+    try {
+        if (!window.isDestroyed()) {
+            if (destroyMainWindowAfterEditorsDetach !== undefined) {
+                await destroyMainWindowAfterEditorsDetach();
+            } else {
+                window.hide();
+                window.destroy();
+            }
+        }
+    } catch (error) {
+        console.error('[shell] failed to quiesce the renderer before shutdown:', error);
+        try {
+            if (!window.isDestroyed()) {
+                window.hide();
+                window.destroy();
+            }
+        } catch (destroyError) {
+            console.error('[shell] failed to force renderer teardown before shutdown:', destroyError);
+        }
+    } finally {
+        if (mainWindow === window) {
+            mainWindow = undefined;
+        }
+    }
+};
+
 const attachWebContentsPolicy = (window: BrowserWindow): void => {
     window.webContents.on('will-navigate', (event, url) => {
         if (!isAllowedNavigation(url)) {
@@ -598,6 +629,7 @@ app.on(
                 }
             },
             canQuit: () => windowCloseCoordinator.requestClose(),
+            beforeRun: quiesceApprovedMainWindow,
         }
     )
 );
@@ -645,6 +677,7 @@ app.on('render-process-gone', (_event, contents, details) => {
     recreateTimestamps = recreateTimestamps.filter((at) => now - at < RECREATE_WINDOW_MS);
     if (recreateTimestamps.length >= MAX_RECREATES) {
         destroyCrashedWindow();
+        windowCloseCoordinator.clearForNoWindow();
         mainWindow = undefined;
         console.error(
             `[shell] renderer crashed ${String(recreateTimestamps.length + 1)} times within ${String(RECREATE_WINDOW_MS / 1000)}s, not recreating`

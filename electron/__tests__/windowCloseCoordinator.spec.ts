@@ -66,6 +66,33 @@ describe('window close coordinator', () => {
         expect(coordinator.permitsClose()).toBe(false);
     });
 
+    it('forgets an approved dirty project before a replacement window closes', async () => {
+        let coordinator: ReturnType<typeof createWindowCloseCoordinator>;
+        const send = vi.fn((_operation: 'save' | 'discard', requestId: number) => {
+            coordinator.resolveSave({ requestId, saved: true, dirty: false });
+        });
+        const ask = vi.fn(async () => 'save' as const);
+        coordinator = createWindowCloseCoordinator({ ask, send });
+        coordinator.updateProject({ title: 'Dirty song', dirty: true });
+
+        await expect(coordinator.requestClose()).resolves.toBe(true);
+        coordinator.resetForWindow();
+
+        await expect(coordinator.requestClose()).resolves.toBe(true);
+        expect(ask).toHaveBeenCalledTimes(1);
+    });
+
+    it('clears cached dirty state when the renderer window is gone', async () => {
+        const ask = vi.fn(async () => 'cancel' as const);
+        const coordinator = createWindowCloseCoordinator({ ask, send: vi.fn() });
+        coordinator.updateProject({ title: 'Crashed song', dirty: true });
+
+        coordinator.clearForNoWindow();
+
+        await expect(coordinator.requestClose()).resolves.toBe(true);
+        expect(ask).not.toHaveBeenCalled();
+    });
+
     it('does not open a second prompt while a save is in flight', async () => {
         let resolveDialog: ((answer: 'save' | 'discard' | 'cancel') => void) | undefined;
         const ask = vi.fn(

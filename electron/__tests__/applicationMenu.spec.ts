@@ -3,6 +3,23 @@ import { describe, expect, it, vi } from 'vitest';
 import { createApplicationMenuTemplate } from '../applicationMenu.js';
 
 describe('createApplicationMenuTemplate', () => {
+    it.each([
+        ['File', 'Save', 'CommandOrControl+S', { action: 'project:save' }],
+        ['Edit', 'Undo', 'CommandOrControl+Z', { action: 'edit:undo' }],
+        ['Edit', 'Cut', 'CommandOrControl+X', { action: 'edit:cut' }],
+        ['Edit', 'Paste', 'CommandOrControl+V', { action: 'edit:paste' }],
+    ])('routes %s > %s with its product intent and accelerator', (menuLabel, itemLabel, accelerator, intent) => {
+        const send = vi.fn();
+        const template = createApplicationMenuTemplate({ appName: 'Sourdaw', send });
+        const menu = template.find((item) => item.label === menuLabel);
+        const item = menu?.submenu?.find((candidate) => candidate.label === itemLabel);
+
+        expect(item).toMatchObject({ accelerator });
+        item?.click?.();
+
+        expect(send).toHaveBeenCalledWith(intent);
+    });
+
     it('uses custom edit actions and routes every DAW command through the renderer', () => {
         const send = vi.fn();
         const template = createApplicationMenuTemplate({ appName: 'Sourdaw', send });

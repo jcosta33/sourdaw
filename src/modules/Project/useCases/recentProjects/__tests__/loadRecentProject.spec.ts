@@ -6,7 +6,7 @@ import {
     prepareCachedAudioBuffersFromIdb,
     resetAudioGraph,
 } from '#/modules/AudioEngine/useCases';
-import { resetCrdtProjectAuthority, startCrdtAutoSave } from '#/modules/CrdtDocument/useCases';
+import { compactProject, resetCrdtProjectAuthority, startCrdtAutoSave } from '#/modules/CrdtDocument/useCases';
 import { ensureTrackStrips } from '#/modules/Transport/useCases';
 
 import { CURRENT_PROJECT_VERSION } from '../../../models/ProjectData';
@@ -161,6 +161,13 @@ describe('loadRecentProject', () => {
         await expect(loadRecentProject('crdt-persist-failure')).resolves.toBe('committed');
 
         expect(startCrdtAutoSave).toHaveBeenCalledOnce();
+    });
+
+    it('rejects a committed load for durability-sensitive recovery when CRDT compaction fails', async () => {
+        vi.mocked(readNamedProjectJson).mockResolvedValue(validProject);
+        vi.mocked(compactProject).mockRejectedValueOnce(new Error('snapshot persistence failed'));
+
+        await expect(loadRecentProject('durability-required', { requireDurable: true })).resolves.toBe('failed');
     });
 
     it('does not falsify a committed load when recent-project publication throws', async () => {

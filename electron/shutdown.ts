@@ -133,6 +133,8 @@ export type QuitDependencies = {
     readonly report: (outcome: ShutdownOutcome) => void;
     /** Resolves false when a renderer-owned dirty-project prompt was cancelled or save failed. */
     readonly canQuit?: () => Promise<boolean>;
+    /** Quiesces the approved renderer session before native shutdown drains the host. */
+    readonly beforeRun?: () => Promise<void>;
 };
 
 /**
@@ -149,7 +151,7 @@ export type QuitDependencies = {
  */
 export const createQuitHandler = (
     run: () => Promise<ShutdownOutcome>,
-    { exit, report, canQuit = async () => true }: QuitDependencies
+    { exit, report, canQuit = async () => true, beforeRun = async () => undefined }: QuitDependencies
 ): ((event: PreventableEvent) => void) => {
     let started = false;
     let checkingPermission = false;
@@ -170,11 +172,14 @@ export const createQuitHandler = (
                 if (allowed) {
                     started = true;
                     checkingPermission = false;
-                    void run().then((outcome) => {
-                        report(outcome);
-                        finalExitAllowed = true;
-                        exit(outcome.status === 'timed-out' ? 1 : 0);
-                    });
+                    void beforeRun()
+                        .catch(() => undefined)
+                        .then(run)
+                        .then((outcome) => {
+                            report(outcome);
+                            finalExitAllowed = true;
+                            exit(outcome.status === 'timed-out' ? 1 : 0);
+                        });
                     return;
                 }
                 checkingPermission = false;
