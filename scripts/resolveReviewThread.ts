@@ -1371,10 +1371,14 @@ function deletePendingReviewSafely(
     allowedAttachedThreadIds: string[] = []
 ): void {
     const allowedThreadIds = new Set(allowedAttachedThreadIds);
-    const attachedThreadIds = [...new Set(port.inspectAttachedReviewThreadIds(number, reviewId, context.expectedHead))].sort();
+    const attachedThreadIds = [
+        ...new Set(port.inspectAttachedReviewThreadIds(number, reviewId, context.expectedHead)),
+    ].sort();
     const unsafeThreadIds = attachedThreadIds.filter((threadId) => !allowedThreadIds.has(threadId));
     if (unsafeThreadIds.length > 0) {
-        fail(`pending author review ${reviewId} still has attached review-thread comments on ${unsafeThreadIds.join(', ')}`);
+        fail(
+            `pending author review ${reviewId} still has attached review-thread comments on ${unsafeThreadIds.join(', ')}`
+        );
     }
     port.deletePendingReview(reviewId);
 }
@@ -1911,6 +1915,9 @@ export function inspectReviewThread(number: number, requestedThreadId: string, g
                 pullRequestId,
                 head,
                 thread: inspectThreadComments(
+                    number,
+                    pullRequestId,
+                    head,
                     requestedThreadId,
                     selected.isResolved,
                     selected.resolvedBy?.id,
@@ -1997,6 +2004,9 @@ function inspectAttachedReviewThreadIds(number: number, reviewId: string, expect
             };
             if (
                 inspectThreadComments(
+                    number,
+                    pullRequestId,
+                    expectedHead,
                     thread.id,
                     thread.isResolved,
                     thread.resolvedBy?.id,
@@ -2087,6 +2097,9 @@ function inspectPendingReviews(
     }
 }
 function inspectThreadComments(
+    number: number,
+    pullRequestId: string,
+    expectedHead: string,
     threadId: string,
     isResolved: unknown,
     resolvedByNodeId: unknown,
@@ -2102,19 +2115,44 @@ function inspectThreadComments(
     const comments: ReviewComment[] = [];
     for (;;) {
         const connection = cursor === undefined ? 'comments(first:100)' : 'comments(first:100,after:$cursor)';
-        const query = `query($threadId:ID!${cursor === undefined ? '' : ',$cursor:String!'}){node(id:$threadId){... on PullRequestReviewThread{id ${connection}{nodes{id fullDatabaseId body author{login __typename ... on Bot{id}} pullRequestReview{id state body commit{oid} author{login __typename ... on Bot{id}}}} pageInfo{hasNextPage endCursor}}}}}`;
-        const fields = ['-F', `threadId=${threadId}`];
+        const query = `query($owner:String!,$name:String!,$number:Int!,$threadId:ID!${cursor === undefined ? '' : ',$cursor:String!'}){repository(owner:$owner,name:$name){pullRequest(number:$number){id headRefOid}} node(id:$threadId){... on PullRequestReviewThread{id ${connection}{nodes{id fullDatabaseId body author{login __typename ... on Bot{id}} pullRequestReview{id state body commit{oid} author{login __typename ... on Bot{id}}}} pageInfo{hasNextPage endCursor}}}}}`;
+        const [owner, name] = REQUIRED_REPOSITORY.split('/');
+        if (owner === undefined || name === undefined) {
+            fail(`invalid GitHub repository: ${REQUIRED_REPOSITORY}`);
+        }
+        const fields = [
+            '-F',
+            `owner=${owner}`,
+            '-F',
+            `name=${name}`,
+            '-F',
+            `number=${number}`,
+            '-F',
+            `threadId=${threadId}`,
+        ];
         if (cursor !== undefined) {
             fields.push('-F', `cursor=${cursor}`);
         }
         const response = graphql(gh, query, fields, `review comments for thread ${threadId}`) as {
             data?: {
+                repository?: {
+                    pullRequest?: {
+                        id?: unknown;
+                        headRefOid?: unknown;
+                    } | null;
+                };
                 node?: {
                     id?: unknown;
                     comments?: { nodes?: unknown; pageInfo?: { hasNextPage?: unknown; endCursor?: unknown } };
                 } | null;
             };
         };
+        assertExpectedPullRequestSnapshot(
+            response.data?.repository?.pullRequest,
+            pullRequestId,
+            expectedHead,
+            `pull-request head changed while reading review comments for thread ${threadId}`
+        );
         const thread = response.data?.node;
         if (
             thread?.id !== threadId ||
@@ -2154,6 +2192,19 @@ function inspectThreadComments(
         rootAuthorType: root?.authorType ?? null,
         comments,
     };
+}
+function assertExpectedPullRequestSnapshot(
+    pullRequest: { id?: unknown; headRefOid?: unknown } | null | undefined,
+    expectedPullRequestId: string,
+    expectedHead: string,
+    label: string
+): void {
+    if (pullRequest?.id !== expectedPullRequestId || typeof pullRequest.headRefOid !== 'string') {
+        fail(label);
+    }
+    if (canonicalGitObjectId(pullRequest.headRefOid, label) !== expectedHead) {
+        fail(label);
+    }
 }
 function toReviewComment(value: unknown): ReviewComment {
     const comment = value as {
