@@ -47,11 +47,9 @@ export const WORKFLOW_ACTION_TOOL_NAMES: ReadonlySet<string> = new Set([
     'automateTrackGainRange',
     'automateSendRange',
     'muteTrack',
-    'unmuteTrack',
     'setTrackPan',
     'removeTrack',
     'soloTrack',
-    'unsoloTrack',
     'setDeviceParameter',
 ]);
 
