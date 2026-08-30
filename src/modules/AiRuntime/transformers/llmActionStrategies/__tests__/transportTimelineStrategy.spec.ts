@@ -175,6 +175,49 @@ function bridgePunchCall({
     });
 }
 
+type BooleanNoOpCallName = Extract<TransportTimelineCallName, 'setPlayback' | 'setPunchEnabled'>;
+
+type BooleanNoOpCase<Name extends BooleanNoOpCallName> = {
+    [CallName in Name]: {
+        arguments: Record<string, unknown>;
+        context: ProjectContext;
+        name: CallName;
+        reason: string;
+    };
+}[Name];
+
+const booleanNoOpCases = [
+    {
+        arguments: { enabled: false },
+        context: { ...projectContext, punchInEnabled: false },
+        name: 'setPunchEnabled',
+        reason: 'Requested Transport Punch In/Out state already matches project state',
+    },
+    {
+        arguments: { enabled: true },
+        context: { ...projectContext, punchInEnabled: true },
+        name: 'setPunchEnabled',
+        reason: 'Requested Transport Punch In/Out state already matches project state',
+    },
+    {
+        arguments: { playing: false },
+        context: { ...projectContext, isPlaying: false },
+        name: 'setPlayback',
+        reason: 'Requested playback state already matches the current transport state',
+    },
+    {
+        arguments: { playing: true },
+        context: { ...projectContext, isPlaying: true },
+        name: 'setPlayback',
+        reason: 'Requested playback state already matches the current transport state',
+    },
+] as const satisfies readonly BooleanNoOpCase<BooleanNoOpCallName>[];
+
+const activePunchTransportContexts = [
+    { context: { ...projectContext, isPlaying: true }, label: 'playing' },
+    { context: { ...projectContext, isRecording: true }, label: 'recording' },
+] satisfies readonly { context: ProjectContext; label: string }[];
+
 describe('transportTimelineStrategy', () => {
     it('registers the complete transport and timeline family exactly once', () => {
         expect([...transportTimelineStrategyRegistry.keys()]).toEqual([
@@ -287,6 +330,36 @@ describe('transportTimelineStrategy', () => {
                 index: 0,
                 name: testCase.name,
                 reason: 'Requested punch endpoint already matches project state',
+            });
+        }
+    });
+
+    it('rejects both boolean no-op polarities for playback and punch enablement', () => {
+        for (const testCase of booleanNoOpCases) {
+            expect(
+                bridgeTransportTimelineToolCall({
+                    call: { name: testCase.name, arguments: testCase.arguments },
+                    context: testCase.context,
+                    index: 0,
+                    projectPunchRegion: createPunchRegionPatch,
+                })
+            ).toEqual({ index: 0, name: testCase.name, reason: testCase.reason });
+        }
+    });
+
+    it('rejects punch enablement while either playback or recording is active', () => {
+        for (const activeTransport of activePunchTransportContexts) {
+            expect(
+                bridgeTransportTimelineToolCall({
+                    call: { name: 'setPunchEnabled', arguments: { enabled: true } },
+                    context: activeTransport.context,
+                    index: 0,
+                    projectPunchRegion: createPunchRegionPatch,
+                })
+            ).toEqual({
+                index: 0,
+                name: 'setPunchEnabled',
+                reason: 'Transport Punch In/Out can change only while transport is stopped',
             });
         }
     });
