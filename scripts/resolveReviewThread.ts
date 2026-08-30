@@ -230,7 +230,7 @@ export function resolveReviewThread(
             assertReviewEnvelopeReceipt(
                 updatedReview,
                 updateReviewClientMutationId(canonicalReview.id),
-                updatedReview.state,
+                canonicalReview.state,
                 resolutionReviewBody(context, canonicalReviewCommitOid),
                 canonicalReviewCommitOid,
                 'update review body'
@@ -246,7 +246,7 @@ export function resolveReviewThread(
                 true
             );
             canonicalReply = canonical.marker;
-            canonicalReview = updatedReview;
+            canonicalReview = canonical.review;
         } else if (
             canonicalReview.body !==
             resolutionReviewBody(context, requireReviewCommitOid(canonicalReview, `Done reply ${canonicalReply.id}`))
@@ -933,18 +933,31 @@ function reconcilePendingReviewsForReply(
     if (thread === null) {
         fail(`review thread ${context.threadId} was not found on this pull request`);
     }
-    const canonical = managedReplyMarkers(thread, context, ['PENDING', 'COMMENTED'], true).find(
+    const currentHeadCommentedReply = managedReplyMarkers(thread, context, ['COMMENTED'], false).find(
         (candidate) => candidate.currentHead
     );
-    const keepReviewId =
-        canonical?.review.state === 'PENDING' &&
-        canonical.review.body ===
-            resolutionReviewBody(context, requireReviewCommitOid(canonical.review, `Done reply ${canonical.marker.id}`))
-            ? canonical.review.id
-            : undefined;
+    const managedPendingReviewIds = new Set(
+        managedReplyMarkers(thread, context, ['PENDING'], true).map((candidate) => candidate.review.id)
+    );
+    const currentHeadPendingReply = managedReplyMarkers(thread, context, ['PENDING'], true).find(
+        (candidate) => candidate.currentHead
+    );
+    let keepReviewId: string | undefined;
+    if (currentHeadCommentedReply === undefined && currentHeadPendingReply !== undefined) {
+        const currentHeadPendingReplyCommitOid = requireReviewCommitOid(
+            currentHeadPendingReply.review,
+            `Done reply ${currentHeadPendingReply.marker.id}`
+        );
+        if (currentHeadPendingReply.review.body === resolutionReviewBody(context, currentHeadPendingReplyCommitOid)) {
+            keepReviewId = currentHeadPendingReply.review.id;
+        }
+    }
     let deleted = false;
     for (const review of pendingReviews) {
-        if (!isExactPendingReview(review, context) || review.id === keepReviewId) {
+        if (review.id === keepReviewId) {
+            continue;
+        }
+        if (!managedPendingReviewIds.has(review.id) && !isExactPendingReview(review, context)) {
             continue;
         }
         port.deletePendingReview(review.id);

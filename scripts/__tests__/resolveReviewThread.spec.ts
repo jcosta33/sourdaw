@@ -110,6 +110,7 @@ type Input = {
     replyReceiptReviewId?: string;
     failUpdateReviewBodyIds?: string[];
     updateClientMutationId?: string;
+    updateReceiptState?: ReviewState;
 };
 function fakePort(input: Input = {}) {
     const calls: string[] = [];
@@ -432,7 +433,7 @@ function fakePort(input: Input = {}) {
             }
             return {
                 id: currentReviewId,
-                state: review.state,
+                state: input.updateReceiptState ?? review.state,
                 body: review.body,
                 commitOid: review.commitOid,
                 authorNodeId: review.authorNodeId,
@@ -453,7 +454,7 @@ function fakePort(input: Input = {}) {
             review.body = body;
             return {
                 id: currentReviewId,
-                state: review.state,
+                state: input.updateReceiptState ?? review.state,
                 body: review.body,
                 commitOid: review.commitOid,
                 authorNodeId: review.authorNodeId,
@@ -1755,6 +1756,60 @@ describe('review thread resolution', () => {
                 }),
             ])
         );
+    });
+    it('retires a stale attached pending Done marker beside a current COMMENTED marker on unresolved retry', () => {
+        const { port, calls, authorNodeId, state } = fakePort({
+            heads: [movedHead, movedHead, movedHead, movedHead, movedHead],
+            existingReplyCount: 1,
+            existingReplyReviewBody: pendingReviewBody(movedHead),
+            existingReplyReviewCommitOid: movedHead,
+            addExactPendingReplyMarker: true,
+        });
+        expect(resolveReviewThread(42, threadId, movedHead, authorNodeId, port)).toBe(
+            `review-thread-resolved:42:${threadId}`
+        );
+        expect(calls).toEqual([
+            'inspect:1',
+            'inspect:2',
+            'deleteReview:PRR_pending_reply',
+            'inspect:3',
+            'inspect:4',
+            `resolve:${threadId}`,
+            'inspect:5',
+            `log:review-thread-resolved:42:${threadId}`,
+        ]);
+        expect(state().comments.filter((comment) => comment.body === 'Done')).toEqual([
+            expect.objectContaining({ id: replyId, reviewId }),
+        ]);
+        expect(state().reviews).toEqual([
+            expect.objectContaining({
+                id: reviewId,
+                state: 'COMMENTED',
+                commitOid: movedHead,
+                body: resolutionReviewSummary(pullRequestId, threadId, movedHead),
+            }),
+        ]);
+    });
+    it('fails closed on an unresolved backfill receipt that reports COMMENTED before inspection confirms submission', () => {
+        const { port, calls, authorNodeId } = fakePort({
+            existingReplyCount: 1,
+            existingReplyReviewState: 'PENDING',
+            existingReplyReviewBody: '',
+            updateReceiptState: 'COMMENTED',
+        });
+        expect(() => resolveReviewThread(42, threadId, head, authorNodeId, port)).toThrow(
+            /update review body returned an invalid result/i
+        );
+        expect(
+            calls.filter(
+                (call) =>
+                    call.startsWith('submitReview:') ||
+                    call.startsWith('delete:') ||
+                    call.startsWith('deleteReview:') ||
+                    call.startsWith('resolve:') ||
+                    call.startsWith('log:')
+            )
+        ).toEqual([]);
     });
     it('reuses the canonical pending review and deletes duplicate script-owned pending reviews before replying', () => {
         const { port, calls, authorNodeId, state } = fakePort({ existingPendingReviewCount: 2 });
