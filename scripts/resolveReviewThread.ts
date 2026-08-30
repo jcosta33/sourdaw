@@ -2193,10 +2193,24 @@ function parseReviewResolutionLockOwner(contents: string, number: number): Revie
         }
         ownerFence = { kind: 'pgid', pgid: value.pgid };
     }
+    const hasLegacyUnjournaled = 'legacyUnjournaled' in value;
+    if (value.version !== 4 && hasLegacyUnjournaled) {
+        fail(label);
+    }
     let mutation: ReviewResolutionLockMutation;
     let legacyUnjournaled: true | undefined;
     if (value.version === 3 || value.version === 4) {
         mutation = parseReviewResolutionLockMutation((value as { mutation?: unknown }).mutation, label);
+        if (value.version === 4 && hasLegacyUnjournaled) {
+            if (
+                (value as { legacyUnjournaled?: unknown }).legacyUnjournaled !== true ||
+                mutation.phase !== 'idle' ||
+                mutation.epoch !== 0
+            ) {
+                fail(label);
+            }
+            legacyUnjournaled = true;
+        }
     } else {
         mutation = { phase: 'idle', epoch: 0 };
         legacyUnjournaled = true;

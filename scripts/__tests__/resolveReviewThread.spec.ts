@@ -1214,7 +1214,8 @@ function writeLockOwnerBlob(
     ownerFence: ReviewResolutionLockOwnerFence = {
         kind: 'pgid',
         pgid: pid,
-    }
+    },
+    legacyUnjournaled?: unknown
 ): string {
     return gitCapture(
         repository,
@@ -1227,6 +1228,7 @@ function writeLockOwnerBlob(
             head: currentHead,
             token: '11111111-1111-4111-8111-111111111111',
             mutation,
+            ...(legacyUnjournaled === undefined ? {} : { legacyUnjournaled }),
         })
     );
 }
@@ -1672,6 +1674,8 @@ describe('review thread resolution', () => {
         try {
             expect(() =>
                 withPullRequestReviewResolutionLock(repository, 42, threadId, head, () => {
+                    const previousOwnerOid = readLockOid(repository, 42);
+                    expect(previousOwnerOid).toBeDefined();
                     expect(() =>
                         resolveReviewThread(42, `${threadId}_other`, head, AUTHOR_BOT_NODE_ID, {
                             ...fakePort().port,
@@ -1685,7 +1689,7 @@ describe('review thread resolution', () => {
                                 ),
                         })
                     ).toThrow(
-                        /already being resolved by process group.*exact previous owner [0-9a-f]{40}.*pnpm review:resolve:recover 42 --owner [0-9a-f]{40}/i
+                        `review resolution on PR #42 is already being resolved by process group ${readProcessGroupId(process.pid)}; exact previous owner ${previousOwnerOid}; recover with pnpm review:resolve:recover 42 --owner ${previousOwnerOid}`
                     );
                     expect(withPullRequestReviewResolutionLock(repository, 43, threadId, head, () => 'other-pr')).toBe(
                         'other-pr'
@@ -2058,7 +2062,8 @@ describe('review thread resolution', () => {
                     dispose() {},
                 };
                 const port = shellPort(session, repository);
-                expect(() =>
+                let failure: Error | undefined;
+                try {
                     withPullRequestReviewResolutionLock(repository, 42, threadId, head, () => {
                         if (failingMutation === 'createPendingReview') {
                             port.createPendingReview(
@@ -2073,9 +2078,16 @@ describe('review thread resolution', () => {
                             return;
                         }
                         port.resolve(threadId);
-                    })
-                ).toThrow(new RegExp(`recover with pnpm review:resolve:recover 42 --owner [0-9a-f]{40}`));
+                    });
+                } catch (error) {
+                    failure = error as Error;
+                }
                 expect(statSync(fakeGh.calledPath).isFile()).toBe(true);
+                const preservedOid = readLockOid(repository, 42);
+                expect(preservedOid).toBeDefined();
+                expect(failure?.message).toContain(
+                    `recover with pnpm review:resolve:recover 42 --owner ${preservedOid}`
+                );
                 const owner = readLockOwner(repository, 42);
                 expect(owner).toMatchObject({
                     threadId,
@@ -2666,6 +2678,49 @@ describe('review thread resolution', () => {
         }
     });
 
+    it('preserves the H1 submit-replay lock after an H2 receipt names the author as a non-Bot', () => {
+        const repository = createTemporaryGitRepository();
+        const mutation = {
+            phase: 'submitReview' as const,
+            epoch: 1,
+            reviewId,
+            body: resolutionReviewSummary(pullRequestId, threadId, head),
+        };
+        const { port, calls } = fakePort({
+            heads: [movedHead],
+            existingReplyCount: 1,
+            existingReplyReviewState: 'PENDING',
+            existingReplyReviewBody: resolutionReviewSummary(pullRequestId, threadId, head),
+            existingReplyReviewCommitOid: head,
+            expectedAttachedReviewThreadInspectionHead: movedHead,
+            expectedPullRequestReviewInspectionPullRequestId: pullRequestId,
+            expectedPullRequestReviewInspectionHead: movedHead,
+            submitReceiptAuthorNodeId: AUTHOR_BOT_NODE_ID,
+            submitReceiptAuthorType: 'User',
+        });
+        try {
+            const originalOid = writeLockOwnerBlob(repository, 999999, head, mutation);
+            updateLock(repository, 42, originalOid);
+
+            expect(() =>
+                recoverPullRequestReviewResolutionLock(repository, 42, originalOid, (owner) =>
+                    recoverReviewResolutionLockOwnerState(42, owner, port)
+                )
+            ).toThrow(/submit review returned an invalid result/i);
+            const preservedOid = readLockOid(repository, 42);
+            expect(preservedOid).toBeDefined();
+            expect(preservedOid).not.toBe(originalOid);
+            expect(requireLockOwner(repository, 42)).toMatchObject({ threadId, head, mutation });
+            expect(calls).toEqual([
+                'inspect:1',
+                `inspectAttachedReviewThreads:42:${reviewId}:${pullRequestId}:${movedHead}`,
+                `submitReview:${reviewId}`,
+            ]);
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
     it('preserves the recovery lock when H1 submit recovery cannot prove the historical review at H2', () => {
         const repository = createTemporaryGitRepository();
         try {
@@ -2954,7 +3009,8 @@ describe('review thread resolution', () => {
             };
             const port = shellPort(session, repository);
             let readOidAttempts = 0;
-            expect(() =>
+            let failure: Error | undefined;
+            try {
                 withPullRequestReviewResolutionLock(
                     repository,
                     42,
@@ -2972,11 +3028,16 @@ describe('review thread resolution', () => {
                             return readLockOid(repository, 42);
                         },
                     }
-                )
-            ).toThrow(
-                /ownership could not be re-read after failure: simulated owner OID reread failure; review resolution on PR #42 preserved exact lock owner [0-9a-f]{40} after replyDone epoch 1; recover with pnpm review:resolve:recover 42 --owner [0-9a-f]{40}/i
-            );
+                );
+            } catch (error) {
+                failure = error as Error;
+            }
             expect(statSync(fakeGh.calledPath).isFile()).toBe(true);
+            const preservedOid = readLockOid(repository, 42);
+            expect(preservedOid).toBeDefined();
+            expect(failure?.message).toBe(
+                `reply mutation transport lost; review resolution on PR #42 ownership could not be re-read after failure: simulated owner OID reread failure; review resolution on PR #42 preserved exact lock owner ${preservedOid} after replyDone epoch 1; recover with pnpm review:resolve:recover 42 --owner ${preservedOid}`
+            );
             expect(readLockOwner(repository, 42)).toMatchObject({
                 threadId,
                 head,
@@ -2999,7 +3060,8 @@ describe('review thread resolution', () => {
             };
             const port = shellPort(session, repository);
             let replacementOwnerOid: string | undefined;
-            expect(() =>
+            let failure: Error | undefined;
+            try {
                 withPullRequestReviewResolutionLock(repository, 42, threadId, head, () => {
                     try {
                         port.replyDone(threadId, reviewId);
@@ -3010,11 +3072,14 @@ describe('review thread resolution', () => {
                         updateLock(repository, 42, replacementOwnerOid, currentOwnerOid);
                         throw error;
                     }
-                })
-            ).toThrow(
-                /reply mutation transport lost; review resolution on PR #42 lock ownership changed after replyDone epoch 1; newer lock owner [0-9a-f]{40} preserved/i
-            );
+                });
+            } catch (error) {
+                failure = error as Error;
+            }
             expect(replacementOwnerOid).toBeDefined();
+            expect(failure?.message).toBe(
+                `reply mutation transport lost; review resolution on PR #42 lock ownership changed after replyDone epoch 1; newer lock owner ${replacementOwnerOid} preserved`
+            );
             expect(statSync(fakeGh.calledPath).isFile()).toBe(true);
             expect(readLockOid(repository, 42)).toBe(replacementOwnerOid);
             expect(readLockOwner(repository, 42)).toMatchObject({
@@ -3052,22 +3117,26 @@ describe('review thread resolution', () => {
                 inspectAttachedReviewThreadIds: inspectionPort.port.inspectAttachedReviewThreadIds,
                 log: inspectionPort.port.log,
             };
-            expect(() =>
+            let failure: Error | undefined;
+            try {
                 recoverPullRequestReviewResolutionLock(
                     repository,
                     42,
                     ownerOid,
                     (owner) => recoverReviewResolutionLockOwnerState(42, owner, port),
                     () => false
-                )
-            ).toThrow(
-                /unreconciled in-flight replyDone mutation from epoch 1; retry recovery after GitHub state changes; review resolution on PR #42 preserved exact lock owner [0-9a-f]{40} after replyDone epoch 1; recover with pnpm review:resolve:recover 42 --owner [0-9a-f]{40}/i
-            );
+                );
+            } catch (error) {
+                failure = error as Error;
+            }
             expect(inspectionPort.calls).toEqual(['inspect:1']);
             expect(() => statSync(fakeGh.calledPath)).toThrow();
             const preservedOid = readLockOid(repository, 42);
             expect(preservedOid).toBeDefined();
             expect(preservedOid).not.toBe(ownerOid);
+            expect(failure?.message).toBe(
+                `review resolution on PR #42 has an unreconciled in-flight replyDone mutation from epoch 1; retry recovery after GitHub state changes; review resolution on PR #42 preserved exact lock owner ${preservedOid} after replyDone epoch 1; recover with pnpm review:resolve:recover 42 --owner ${preservedOid}`
+            );
             expect(requireLockOwner(repository, 42)).toMatchObject({
                 threadId,
                 head,
@@ -3134,6 +3203,97 @@ describe('review thread resolution', () => {
             rmSync(repository, { recursive: true, force: true });
         }
     }, 10_000);
+
+    it('keeps claimed legacy v2 owners fail closed across consecutive recovery attempts', () => {
+        const repository = createTemporaryGitRepository();
+        const { port } = fakePort();
+        try {
+            const originalOid = writeLegacyLockOwnerBlob(repository, 2, 999999, 999999);
+            updateLock(repository, 42, originalOid);
+
+            let firstError: Error | undefined;
+            try {
+                recoverPullRequestReviewResolutionLock(
+                    repository,
+                    42,
+                    originalOid,
+                    (owner) => recoverReviewResolutionLockOwnerState(42, owner, port),
+                    () => false
+                );
+            } catch (error) {
+                firstError = error as Error;
+            }
+            const firstClaimedOid = readLockOid(repository, 42);
+            expect(firstClaimedOid).toBeDefined();
+            expect(firstClaimedOid).not.toBe(originalOid);
+            expect(firstError?.message).toBe(
+                `review-resolution recovery refuses an unjournaled legacy v2 lock owner without positive landed-mutation proof; review resolution on PR #42 preserved exact lock owner ${firstClaimedOid} after idle epoch 0; recover with pnpm review:resolve:recover 42 --owner ${firstClaimedOid}`
+            );
+            expect(requireLockOwner(repository, 42)).toMatchObject({ legacyUnjournaled: true, threadId, head });
+
+            let secondError: Error | undefined;
+            try {
+                recoverPullRequestReviewResolutionLock(
+                    repository,
+                    42,
+                    firstClaimedOid!,
+                    (owner) => recoverReviewResolutionLockOwnerState(42, owner, port),
+                    () => false
+                );
+            } catch (error) {
+                secondError = error as Error;
+            }
+            const secondClaimedOid = readLockOid(repository, 42);
+            expect(secondClaimedOid).toBeDefined();
+            expect(secondClaimedOid).toBe(firstClaimedOid);
+            expect(secondError?.message).toBe(
+                `review-resolution recovery refuses an unjournaled legacy v2 lock owner without positive landed-mutation proof; review resolution on PR #42 preserved exact lock owner ${secondClaimedOid} after idle epoch 0; recover with pnpm review:resolve:recover 42 --owner ${secondClaimedOid}`
+            );
+            expect(requireLockOwner(repository, 42)).toMatchObject({ legacyUnjournaled: true, threadId, head });
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
+    it('rejects forged or inconsistent legacy-un-journaled v4 lock owners', () => {
+        const repository = createTemporaryGitRepository();
+        try {
+            const malformedOwners = [
+                writeLockOwnerBlob(repository, 999999, head, { phase: 'idle', epoch: 0 }, undefined, false),
+                writeLockOwnerBlob(
+                    repository,
+                    999998,
+                    head,
+                    { phase: 'replyDone', epoch: 1, reviewId },
+                    undefined,
+                    true
+                ),
+                gitCapture(
+                    repository,
+                    ['hash-object', '-w', '--stdin'],
+                    JSON.stringify({
+                        version: 3,
+                        pid: 999997,
+                        pgid: 999997,
+                        threadId,
+                        head,
+                        token: '11111111-1111-4111-8111-111111111111',
+                        mutation: { phase: 'idle', epoch: 0 },
+                        legacyUnjournaled: true,
+                    })
+                ),
+            ];
+            for (const ownerOid of malformedOwners) {
+                updateLock(repository, 42, ownerOid);
+                expect(() =>
+                    recoverPullRequestReviewResolutionLock(repository, 42, ownerOid, () => 'reconciled')
+                ).toThrow(/lock ownership is malformed/i);
+                gitCapture(repository, ['update-ref', '-d', reviewResolutionLockRef(42), ownerOid]);
+            }
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
 
     it('keeps a legacy v3 non-idle PGID owner live until its descendant exits and preserves the recovery mutation', async () => {
         const repository = createTemporaryGitRepository();
@@ -3366,7 +3526,8 @@ describe('review thread resolution', () => {
             const staleOwnerOid = writeLockOwnerBlob(repository, 999998);
             updateLock(repository, 42, staleOwnerOid);
             let replacementOwnerOid: string | undefined;
-            expect(() =>
+            let failure: Error | undefined;
+            try {
                 recoverPullRequestReviewResolutionLock(
                     repository,
                     42,
@@ -3379,9 +3540,12 @@ describe('review thread resolution', () => {
                         return 'reconciled';
                     },
                     () => false
-                )
-            ).toThrow(
-                /lock ownership changed before release; review resolution on PR #42 lock ownership changed after idle epoch 0; newer lock owner [0-9a-f]{40} preserved/i
+                );
+            } catch (error) {
+                failure = error as Error;
+            }
+            expect(failure?.message).toBe(
+                `review resolution on PR #42 lock ownership changed before release; review resolution on PR #42 lock ownership changed after idle epoch 0; newer lock owner ${replacementOwnerOid} preserved`
             );
             expect(readLockOid(repository, 42)).toBe(replacementOwnerOid);
         } finally {
