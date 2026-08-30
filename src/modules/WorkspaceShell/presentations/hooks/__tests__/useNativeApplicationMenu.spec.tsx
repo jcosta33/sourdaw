@@ -413,7 +413,7 @@ describe('useNativeApplicationMenu', () => {
         pianoRoll.remove();
     });
 
-    it('falls through canvas Undo to the DAW undo stack without leaking unsupported canvas paste to arrangement clips', async () => {
+    it('falls through canvas Undo to the DAW undo stack', async () => {
         renderHook(() =>
             useNativeApplicationMenu({
                 projectId: 'project',
@@ -436,15 +436,46 @@ describe('useNativeApplicationMenu', () => {
         pianoRoll.focus();
 
         desktop.listener?.({ action: 'edit:undo' });
-        desktop.listener?.({ action: 'edit:paste' });
 
         await Promise.resolve();
         expect(command.undo).toHaveBeenCalledOnce();
-        expect(command.executeAppAction).not.toHaveBeenCalledWith({ type: 'pasteClip' });
+        expect(command.executeAppAction).not.toHaveBeenCalled();
         expect(commandInterface.dispatchCanvasEditorCommand).toHaveBeenNthCalledWith(1, pianoRoll, 'edit:undo');
-        expect(commandInterface.dispatchCanvasEditorCommand).toHaveBeenNthCalledWith(2, pianoRoll, 'edit:paste');
         pianoRoll.remove();
     });
+
+    it.each(['edit:cut', 'edit:copy', 'edit:paste'] as const)(
+        'does not reinterpret unsupported canvas %s as arrangement clip editing',
+        async (action) => {
+            renderHook(() =>
+                useNativeApplicationMenu({
+                    projectId: 'project',
+                    name: 'Song',
+                    createdAt: 1,
+                    updatedAt: 2,
+                    dirty: false,
+                    loading: false,
+                    keyRoot: 0,
+                    scaleName: 'chromatic',
+                    tuning: { name: 'Equal Temperament', frequencies: [] },
+                    productionBrief: {} as never,
+                    initialized: true,
+                })
+            );
+            const pianoRoll = document.createElement('div');
+            pianoRoll.tabIndex = 0;
+            pianoRoll.setAttribute('data-canvas-editor', '');
+            document.body.append(pianoRoll);
+            pianoRoll.focus();
+
+            desktop.listener?.({ action });
+
+            await Promise.resolve();
+            expect(commandInterface.dispatchCanvasEditorCommand).toHaveBeenCalledWith(pianoRoll, action);
+            expect(command.executeAppAction).not.toHaveBeenCalled();
+            pianoRoll.remove();
+        }
+    );
 
     it('keeps a legacy project close-authoritative with the same snapshot key after canonical identity migration', () => {
         projectState.projectId = undefined;

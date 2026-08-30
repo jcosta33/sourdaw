@@ -393,7 +393,6 @@ const createWindow = (): BrowserWindow => {
         },
         () => {
             notifyCurrentWindowDestroying({
-                owner: window,
                 isCurrentWindow: () => mainWindow === window,
                 notify: () => {
                     acknowledgeRendererSessionDestroying(window);

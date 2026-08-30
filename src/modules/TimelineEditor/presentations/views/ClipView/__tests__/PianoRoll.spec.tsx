@@ -260,6 +260,10 @@ describe('PianoRoll', () => {
         expect(onSelectedNoteIdsChange).toHaveBeenLastCalledWith(new Set(['note-1']));
         expect(dispatchCanvasEditorCommand(canvas, 'edit:deselect-all')).toBe(true);
         expect(onSelectedNoteIdsChange).toHaveBeenLastCalledWith(new Set());
+        expect(dispatchCanvasEditorCommand(canvas, 'edit:undo')).toBe(false);
+        expect(dispatchCanvasEditorCommand(canvas, 'edit:cut')).toBe(false);
+        expect(dispatchCanvasEditorCommand(canvas, 'edit:copy')).toBe(false);
+        expect(dispatchCanvasEditorCommand(canvas, 'edit:paste')).toBe(false);
     });
 
     it('reports the initial beat width to the parent on mount', () => {
