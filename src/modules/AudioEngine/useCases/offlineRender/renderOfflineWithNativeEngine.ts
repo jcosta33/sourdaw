@@ -35,6 +35,14 @@
  *     or the runtime, and falling back would hide it behind a second render
  *     that silently succeeded.
  *
+ * A clip whose loop expansion is past the strip's remaining native clip
+ * capacity is a third case, and it is neither: `admitNativeClipExpansion`
+ * leaves it out and warns, the same verdict on the same numbers that
+ * `projectLiveGraphProgramme` reaches for the live session. Declining instead
+ * would be defensible on its own, but the two paths are meant to be one render,
+ * and a ceiling only the export honours is a bounce that does not match what
+ * the engineer heard.
+ *
  * Cancellation (`checkCancel`) propagates from either phase — a cancelled
  * export must not fall back into a second, uncancelled render.
  *
@@ -51,7 +59,6 @@ import { defaultTransportState, type TempoMapStoreState, transportStore } from '
 import { automationSlewTickSecondsForGrain } from '#/utils/automationSlew';
 
 import {
-    type AudioGraphClipFade,
     type AudioGraphCommand,
     type AudioGraphParameterWrite,
     type AudioGraphStripParameterTarget,
@@ -66,10 +73,11 @@ import {
 import { audioBufferCache } from '../../stores/audioBufferCache';
 import { getCompensationDelay } from '../latencyCompensation/compensation/getCompensationDelay';
 
+import { admitNativeClipExpansion, MAX_NATIVE_TRACK_CLIPS } from './admitNativeClipExpansion';
 import { checkCancel } from './checkCancel';
-import { MICRO_FADE_SECONDS } from './constants';
 import { convertRecordedAutomationEvents } from './convertRecordedAutomationEvents';
 import { createAutomationRecorder, type AutomationRecorder } from './createAutomationRecorder';
+import { projectNativeClipFade } from './projectNativeClipFade';
 import { projectOfflineAudioClipPlaybacks } from './projectOfflineAudioClipPlaybacks';
 import { resolveOutputTarget } from './resolveOutputTarget';
 import { resolveTrackClipsWithComping } from './resolveTrackClipsWithComping';
@@ -139,21 +147,6 @@ function seamFaderValue(recorded: number, vcaMultiplier: number): number {
 /** Pan node-domain (−1…1) back to the seam's −50…50 project scale. */
 function seamPanValue(recorded: number): number {
     return recorded * 50;
-}
-
-function clipFade(input: {
-    fadeIn?: Readonly<{ userEndSec?: number }>;
-    fadeOut?: Readonly<{ userStartSec?: number }>;
-}): AudioGraphClipFade {
-    return {
-        ...(input.fadeIn
-            ? { fadeIn: input.fadeIn.userEndSec === undefined ? {} : { reachesFullAt: input.fadeIn.userEndSec } }
-            : {}),
-        ...(input.fadeOut
-            ? { fadeOut: input.fadeOut.userStartSec === undefined ? {} : { beginsAt: input.fadeOut.userStartSec } }
-            : {}),
-        microFadeSeconds: MICRO_FADE_SECONDS,
-    };
 }
 
 export async function renderOfflineWithNativeEngine(
@@ -350,6 +343,11 @@ export async function renderOfflineWithNativeEngine(
             }
         }
 
+        // What the native strip has left to hold, counted down across the
+        // track's clips — the same countdown the live producer runs, because
+        // the two schedule the same expansion into the same ceiling.
+        let remainingClipSlots = MAX_NATIVE_TRACK_CLIPS;
+
         for (const clip of resolveTrackClipsWithComping(track.id, track.clips)) {
             if (clip.muted || clip.endBeat <= regionStartBeat) {
                 continue;
@@ -389,6 +387,16 @@ export async function renderOfflineWithNativeEngine(
                 projectBeatToSeconds,
                 resolveTempoAtBeat: resolveClipTempo,
             });
+            const expansion = admitNativeClipExpansion({ iterations: playbacks.length, remainingClipSlots });
+            if (!expansion.admitted) {
+                warn(
+                    `Clip "${clip.name || clip.id}" on track "${track.name}" was left out of the export because ` +
+                        `${expansion.reason}.`
+                );
+                continue;
+            }
+            remainingClipSlots -= playbacks.length;
+
             for (const playback of playbacks) {
                 commands.push({
                     kind: 'schedule-clip',
@@ -400,7 +408,7 @@ export async function renderOfflineWithNativeEngine(
                         durationSeconds: playback.playDuration,
                         playbackRate: playback.playbackRate,
                         gain: playback.clipGainValue,
-                        fade: clipFade(playback),
+                        fade: projectNativeClipFade(playback),
                     },
                 });
             }

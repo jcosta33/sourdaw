@@ -177,8 +177,8 @@ mod tests {
                 1,
                 TimelineClip::new(
                     7,
-                    vec![0.5; 1024],
-                    vec![0.5; 1024],
+                    vec![0.5; 1024].into(),
+                    vec![0.5; 1024].into(),
                     placement,
                     ClipPlayback::at_gain(1.0),
                 ),
@@ -247,8 +247,8 @@ mod tests {
                 1,
                 TimelineClip::new(
                     7,
-                    vec![1.0; 8],
-                    Vec::new(),
+                    vec![1.0; 8].into(),
+                    [].into(),
                     placement,
                     ClipPlayback::at_gain(1.0),
                 ),

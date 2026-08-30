@@ -110,7 +110,7 @@ export type NativeGraphWireCommand =
     | Readonly<{ kind: 'write-parameter'; target: AudioGraphStripParameterTarget; write: AudioGraphParameterWrite }>
     | Readonly<{ kind: 'write-device-parameter'; target: AudioGraphDeviceParameterTarget; write: AudioGraphStepWrite }>
     | Readonly<{ kind: 'schedule-clip'; playback: NativeGraphWireClipPlayback }>
-    | Readonly<{ kind: 'set-transport'; playing: boolean; positionSeconds: number }>
+    | Readonly<{ kind: 'set-transport'; playing: boolean; positionSeconds: number; locate?: boolean }>
     | Readonly<{ kind: 'set-monitor-shadow'; shadowed: boolean }>;
 
 /** `GraphBatchPayload` in `graph.rs`. */
@@ -209,7 +209,15 @@ export function serializeAudioGraphCommand(command: AudioGraphCommand): NativeGr
         case 'schedule-clip':
             return { kind: 'schedule-clip', playback: serializePlayback(command.playback) };
         case 'set-transport':
-            return { kind: 'set-transport', playing: command.playing, positionSeconds: command.positionSeconds };
+            return {
+                kind: 'set-transport',
+                playing: command.playing,
+                positionSeconds: command.positionSeconds,
+                // Absence is the contract's meaning of "this is a locate", and
+                // the native default matches it, so only the withheld locate
+                // travels — the same law `replaceTopology` follows.
+                ...(command.locate === false ? { locate: false } : {}),
+            };
         case 'set-monitor-shadow':
             return { kind: 'set-monitor-shadow', shadowed: command.shadowed };
     }
