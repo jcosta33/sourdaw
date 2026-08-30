@@ -161,6 +161,10 @@ export function selectRetainedSectionRenderManualReviews(
             ) {
                 continue;
             }
+            const receipts = run.receipts.filter(({ workId }) => workId === continuation.batchId);
+            if (receipts.length !== 1 || receipts[0]?.receiptIdentity !== continuation.receiptIdentity) {
+                continue;
+            }
             const recoveries = (state?.pendingEffectRecoveryLedger ?? []).filter(
                 (candidate) => candidate.runId === run.runId && candidate.batchId === continuation.batchId
             );

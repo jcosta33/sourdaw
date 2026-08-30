@@ -105,6 +105,14 @@ function createReviewObligation(input?: { commands?: string[]; effectCommandIds?
         completesRun: false,
         committedAt: 2,
     });
+    agentRunLifecycle.recordCommittedWork({
+        runId: 'run-review',
+        workId: 'batch-review',
+        receiptIdentity: '1:run-review:batch-review:partially-committed',
+        committedRevision: 'revision-original',
+        completesRun: false,
+        committedAt: 2,
+    });
     agentRunLifecycle.recordPendingEffectContinuation({
         runId: 'run-review',
         continuation: {
@@ -122,6 +130,7 @@ function createReviewObligation(input?: { commands?: string[]; effectCommandIds?
             serializedBatch: commandBatch.serialized,
             authority: commandBatch.authority,
             lastError: 'Review the exact retained render evidence.',
+            sourceRevision: 'revision-original',
         },
         recordedAt: 3,
     });
@@ -319,6 +328,18 @@ describe('settleRetainedSectionRenderManualReview', () => {
         );
     });
 
+    it('reports cleanup failure when an exact discarded artifact cannot be disposed', () => {
+        const review = createReviewObligation();
+        mocks.disposeExact.mockReturnValueOnce(false);
+
+        expect(() =>
+            settleRetainedSectionRenderManualReview({ binding: review.binding, disposition: 'discarded' })
+        ).toThrow('one or more retained artifacts could not be discarded');
+
+        expect(readAgentRunState().runs[0]?.pendingEffectContinuations).toEqual([]);
+        expect(mocks.disposeExact).toHaveBeenCalledTimes(2);
+    });
+
     it('keeps both artifacts and the exact obligation when durable persistence fails', () => {
         const review = createReviewObligation();
         const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementationOnce(() => {
@@ -346,6 +367,18 @@ describe('settleRetainedSectionRenderManualReview', () => {
             'job',
             (binding: ReviewBinding) => {
                 binding.commands[0]!.jobs[0]!.endBeat = 15;
+            },
+        ],
+        [
+            'removed job',
+            (binding: ReviewBinding) => {
+                binding.commands[0]!.jobs.pop();
+            },
+        ],
+        [
+            'job tail',
+            (binding: ReviewBinding) => {
+                binding.commands[0]!.jobs[0]!.tailSeconds = 2;
             },
         ],
         [

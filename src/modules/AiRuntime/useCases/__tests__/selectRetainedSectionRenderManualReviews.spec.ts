@@ -76,6 +76,7 @@ function createFixture(input?: {
     effectCommandIds?: string[];
     envelopeRunId?: string;
     envelopeBatchId?: string;
+    includeReceipt?: boolean;
 }) {
     const commandBatch = compileVersionedCommandBatchEnvelope({
         runId: input?.envelopeRunId ?? 'run-review',
@@ -111,6 +112,17 @@ function createFixture(input?: {
             {
                 runId: 'run-review',
                 revisions: { committed: 'revision-later' },
+                receipts:
+                    input?.includeReceipt === false
+                        ? []
+                        : [
+                              {
+                                  workId: 'batch-review',
+                                  receiptIdentity: continuation.receiptIdentity,
+                                  revertGroupId: null,
+                                  committedAt: 1,
+                              },
+                          ],
                 pendingEffectContinuations: [continuation],
             } as AgentRunState['runs'][number],
         ],
@@ -168,6 +180,24 @@ describe('selectRetainedSectionRenderManualReviews', () => {
             ['command-b', 'job-outro', 'available'],
         ]);
         expect(artifacts.getExact).toHaveBeenCalledWith({ job: verse, sourceRevision: 'revision-original' });
+    });
+
+    it('hides promoted recovery until the matching run receipt is projected', () => {
+        const { state, continuation } = createFixture({ includeReceipt: false });
+
+        expect(selectRetainedSectionRenderManualReviews(state)).toEqual([]);
+        expect(artifacts.getExact).not.toHaveBeenCalled();
+
+        state.runs[0]!.receipts = [
+            {
+                workId: continuation.batchId,
+                receiptIdentity: continuation.receiptIdentity,
+                revertGroupId: null,
+                committedAt: 1,
+            },
+        ];
+
+        expect(selectRetainedSectionRenderManualReviews(state)).toHaveLength(1);
     });
 
     it('looks up artifacts by the continuation source revision rather than the batch base revision', () => {

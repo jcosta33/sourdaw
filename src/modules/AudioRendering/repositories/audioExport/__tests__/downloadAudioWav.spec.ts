@@ -16,6 +16,7 @@ describe('downloadAudioWav', () => {
 
     it('downloads the exact WAV bytes through an attached anchor and defers cleanup until a later task', async () => {
         const createElement = vi.spyOn(document, 'createElement');
+        const appendChild = vi.spyOn(document.body, 'appendChild');
         const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
         const bytes = new Uint8Array([82, 73, 70, 70]);
 
@@ -35,7 +36,9 @@ describe('downloadAudioWav', () => {
         expect(new Uint8Array(await blob.arrayBuffer())).toEqual(bytes);
         expect(anchor.href).toBe('blob:retained-render');
         expect(anchor.download).toBe('retained-chorus.wav');
+        expect(appendChild).toHaveBeenCalledExactlyOnceWith(anchor);
         expect(click).toHaveBeenCalledOnce();
+        expect(appendChild.mock.invocationCallOrder[0]).toBeLessThan(click.mock.invocationCallOrder[0]!);
         expect(anchor.parentNode).toBe(document.body);
         expect(URL.revokeObjectURL).not.toHaveBeenCalled();
 

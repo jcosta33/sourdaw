@@ -182,6 +182,15 @@ const devicePendingEffect = {
     state: 'pending',
 } satisfies NonNullable<BatchExecutionObservation['warningDetails']>[number]['pendingEffect'];
 
+const renderPendingEffect = {
+    commandId: postCommitFixture.command.commandId,
+    kind: 'external-effect',
+    operation: 'renderProjectSections',
+    reason: 'renderer unavailable',
+    remediation: 'reconcile',
+    state: 'pending',
+} satisfies NonNullable<BatchExecutionObservation['warningDetails']>[number]['pendingEffect'];
+
 function partiallyCommittedObservation(): BatchExecutionObservation {
     return {
         status: 'committed-with-warning',
@@ -317,6 +326,62 @@ describe('executePlannedActions', () => {
             ],
             workLeases: [expect.objectContaining({ workId: receipt.batchId, terminalState: 'orphaned' })],
         });
+    });
+
+    it('promotes render-only recovery with the exact finalized project revision', async () => {
+        const observation: BatchExecutionObservation = {
+            status: 'committed-with-warning',
+            actions: [receiptAction(postCommitFixture)],
+            warning: renderPendingEffect.reason,
+            warningDetails: [
+                {
+                    kind: 'external-effect',
+                    commandId: renderPendingEffect.commandId,
+                    message: renderPendingEffect.reason,
+                    pendingEffect: renderPendingEffect,
+                },
+            ],
+        };
+        const receipt = await createReceipt(postCommitFixture, observation);
+        agentRunLifecycle.create({
+            runId: receipt.runId,
+            request: 'Render the retained section.',
+            mode: 'apply',
+            createdRevision: 'revision-R1',
+            createdAt: 100,
+        });
+        agentRunLifecycle.recordCommittedWork({
+            runId: receipt.runId,
+            workId: 'prior-batch',
+            receiptIdentity: 'receipt-prior-batch',
+            committedRevision: 'revision-R1',
+            completesRun: false,
+            committedAt: 101,
+        });
+        vi.mocked(executeVersionedCommandBatchEnvelope).mockImplementation(async ({ options }) => {
+            const preparation = options?.onProjectCommitCheckpoint?.({ receipt });
+            options?.onProjectCommitFinalized?.({ receipt, revision: 'revision-R2' });
+            preparation?.promote({ receipt });
+            return {
+                status: 'committed-with-warning',
+                actions: [{ ...receiptAction(postCommitFixture), label: 'Render retained section' }],
+                receipt,
+                warning: renderPendingEffect.reason,
+                warningDetails: observation.warningDetails,
+            };
+        });
+
+        await expect(
+            executePlannedActions({
+                commandBatch: postCommitFixture.commandBatch,
+                prompt: 'Render the retained section.',
+                actions: postCommitFixture.actions,
+                projectRevision: 'revision-1',
+            })
+        ).resolves.toMatchObject({ status: 'committed' });
+
+        expect(agentRunLifecycle.get(receipt.runId)?.pendingEffectContinuations[0]?.sourceRevision).toBe('revision-R2');
+        expect(readAgentRunState().pendingEffectRecoveryLedger?.[0]?.sourceRevision).toBe('revision-R2');
     });
 
     it('removes a prepared recovery capsule when the owning project checkpoint aborts', async () => {

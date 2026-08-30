@@ -68,6 +68,14 @@ function createObligation() {
         completesRun: false,
         committedAt: 2,
     });
+    agentRunLifecycle.recordCommittedWork({
+        runId: 'run-hydrate-review',
+        workId: 'batch-hydrate-review',
+        receiptIdentity: '1:run-hydrate-review:batch-hydrate-review:partially-committed',
+        committedRevision: 'revision-source',
+        completesRun: false,
+        committedAt: 2,
+    });
     agentRunLifecycle.recordPendingEffectContinuation({
         runId: 'run-hydrate-review',
         continuation: {
@@ -315,6 +323,37 @@ describe('retained section render review hydration', () => {
             completesRun: false,
             committedAt: 1,
         });
+
+        agentRunLifecycle.recordReceiptSaga({
+            runId: 'run-receipt-review',
+            receipt,
+            actions: [action],
+            committedRevision: 'revision-receipt-commit',
+            completesRun: true,
+            commandBatch,
+        });
+
+        expect(agentRunLifecycle.get('run-receipt-review')?.pendingEffectContinuations[0]?.sourceRevision).toBe(
+            'revision-receipt-commit'
+        );
+        expect(readAgentRunState().pendingEffectRecoveryLedger?.[0]?.sourceRevision).toBe('revision-receipt-commit');
+
+        agentRunLifecycle.clear();
+        agentRunLifecycle.create({
+            runId: 'run-receipt-review',
+            request: 'Review the ordinary retained render receipt.',
+            mode: 'macro',
+            createdRevision: 'revision-before-receipt',
+            createdAt: 1,
+        });
+        agentRunLifecycle.recordCommittedWork({
+            runId: 'run-receipt-review',
+            workId: 'prior-work',
+            receiptIdentity: 'receipt-prior-work',
+            committedRevision: 'revision-prior-work',
+            completesRun: false,
+            committedAt: 1,
+        });
         let finalizedRevision: string | undefined;
         const preparation = prepareAgentRunPendingEffectContinuation({
             runId: 'run-receipt-review',
@@ -337,6 +376,13 @@ describe('retained section render review hydration', () => {
             'revision-receipt-commit'
         );
         expect(readAgentRunState().pendingEffectRecoveryLedger?.[0]?.sourceRevision).toBe('revision-receipt-commit');
+        agentRunLifecycle.requirePendingEffectManualRepair({
+            runId: 'run-receipt-review',
+            batchId: 'batch-receipt-review',
+            reason: 'Review the exact retained evidence.',
+            requiredAt: 2,
+        });
+        expect(selectRetainedSectionRenderManualReviews(readAgentRunState())).toEqual([]);
 
         agentRunLifecycle.recordReceiptSaga({
             runId: 'run-receipt-review',
@@ -347,16 +393,12 @@ describe('retained section render review hydration', () => {
             commandBatch,
         });
 
+        expect(selectRetainedSectionRenderManualReviews(readAgentRunState())).toHaveLength(1);
+
         expect(agentRunLifecycle.get('run-receipt-review')?.pendingEffectContinuations[0]?.sourceRevision).toBe(
             'revision-receipt-commit'
         );
         expect(readAgentRunState().pendingEffectRecoveryLedger?.[0]?.sourceRevision).toBe('revision-receipt-commit');
-        agentRunLifecycle.requirePendingEffectManualRepair({
-            runId: 'run-receipt-review',
-            batchId: 'batch-receipt-review',
-            reason: 'Review the exact retained evidence.',
-            requiredAt: 2,
-        });
         const serializedState = JSON.stringify(readAgentRunState());
 
         restartFrom(serializedState);
