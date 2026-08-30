@@ -512,6 +512,8 @@ vi.mock('../registerGlobalErrorHandlers', () => ({
 // dependency bootstrap.ts pulls in is already mocked by the time it runs.
 import '../bootstrap';
 
+const raveModelBootCalls = [...initRaveModelsMock.mock.calls];
+
 function getDurableAssetOwnerRecoveryAfterProjectLoad(): DurableAssetOwnerRecoveryAfterProjectLoad {
     const dependencyCall = setProjectIdentityTransitionDependenciesMock.mock.calls.at(0);
     if (!dependencyCall) {
@@ -864,6 +866,6 @@ describe('bootstrap', () => {
         // Without this call raveStore.models stays empty forever, which would
         // withhold the RAVE palette entries permanently rather than gating them
         // on real model presence.
-        expect(initRaveModelsMock).toHaveBeenCalledExactlyOnceWith();
+        expect(raveModelBootCalls).toEqual([[]]);
     });
 });
