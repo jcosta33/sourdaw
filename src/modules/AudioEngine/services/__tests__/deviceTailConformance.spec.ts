@@ -169,6 +169,14 @@ const OFF_GRAPH_TAIL_ATTESTATION: Record<string, { file: string; consumes: strin
         file: 'src/modules/PluginHost/useCases/faustEngine/dsp/tape-delay.dsp',
         consumes: 'hslider("feedback"',
     },
+    'faust-rhodes': {
+        file: 'src/modules/PluginHost/useCases/faustEngine/dsp/rhodes.dsp',
+        consumes: 'hslider("body_decay"',
+    },
+    'faust-supersaw-unison': {
+        file: 'src/modules/Synth/useCases/dsp/supersaw-unison.dsp',
+        consumes: 'hslider("release"',
+    },
     // `ampRelease` on the descriptor reaches the engine as snake_case.
     fermenter: { file: 'crates/daw-dsp/src/fermenter/layer.rs', consumes: '"amp_release"' },
     'builtin-crumbs': { file: 'crates/daw-dsp/src/crumbs/engine.rs', consumes: 'CrumbsParam::Release' },
