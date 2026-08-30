@@ -43,13 +43,21 @@ function isTemplateCreate(value: unknown): value is TemplateCreate {
     return typeof value === 'function';
 }
 
+function isModuleExports(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null;
+}
+
 function templateCreateFunctions(): Array<{ fileName: string; create: TemplateCreate }> {
     return Object.entries(templateFileModules).map(([fileName, module]) => {
+        if (!isModuleExports(module)) {
+            throw new Error(`${fileName} must be an eager template module`);
+        }
         const creates = Object.values(module).filter(isTemplateCreate);
-        if (creates.length !== 1) {
+        const [create] = creates;
+        if (create === undefined || creates.length !== 1) {
             throw new Error(`${fileName} must export exactly one template create function, found ${creates.length}`);
         }
-        return { fileName, create: creates[0] };
+        return { fileName, create };
     });
 }
 
