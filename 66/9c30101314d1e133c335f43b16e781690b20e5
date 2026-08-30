@@ -1,0 +1,61 @@
+src/modules/AudioEngine/useCases/offlineRender/renderOfflineWithNativeEngine.ts
+  s_4f908a5afb6b58::t_b40f1d46abb86e 38-39
+  s_78ea72ae66d911::t_23df94a8ec8f8b 390
+crates/sourdaw-native/src/state.rs
+  s_4f908a5afb6b58::t_d34f9a9bc861ca 211-217,219-220
+src/modules/AudioEngine/useCases/offlineRender/admitNativeClipExpansion.ts
+  s_4f908a5afb6b58::t_8e023a6f3fb11a 10-15,48,52
+src/modules/AudioEngine/useCases/livePlayback/projectLiveGraphProgramme.ts
+  s_4f908a5afb6b58::t_6a3c3311eecba3 56-59
+  s_78ea72ae66d911::t_3cfa3263ac5a44 294
+crates/sourdaw-native/src/commands/graph.rs
+  s_4f908a5afb6b58::t_4b34c4c9ef6928 3362-3396
+  s_4f908a5afb6b58::t_dce14b80869700 2277-2286,2288
+  s_4f908a5afb6b58::t_0ed09e66d2c935 2144-2147
+  s_4f908a5afb6b58::t_5a5be4605b1b07 161
+  s_4f908a5afb6b58::t_99cc1bc30cc9b0 2857-2858,3361,3403-3404,4631-4632
+crates/daw-engine/src/lib.rs
+  s_4f908a5afb6b58::t_6af277cf2183b2 631-633,638-639
+crates/daw-engine/src/timeline.rs
+  s_4f908a5afb6b58::t_ed5fee858c0d5d 13-14
+  s_4f908a5afb6b58::t_0d24e7f7ad9537 826-831,833-837,840,842,848-849,852-853
+  s_78ea72ae66d911::t_b71a04d34533d6 2608,2612,2636-2637,2652-2653,2716-2717,2774-2775,2854-2855,2985-2986,3031-3032,3053,3057,3103-3109,3120-3121
+src/modules/AudioEngine/useCases/livePlayback/__tests__/projectLiveGraphProgramme.spec.ts
+  s_4f908a5afb6b58::t_81b7e9c88ed977 368-371
+  s_4f908a5afb6b58::t_d8ac8e997b1091 334,336-337
+  s_78ea72ae66d911::t_cbf8010dfb8539 361
+crates/daw-engine/src/audio_thread.rs
+  s_4f908a5afb6b58::t_28a359b6ad47f9 1069-1070
+crates/daw-engine/src/offline.rs
+  s_4f908a5afb6b58::t_2fe8e35999589f 180-181,250-251
+crates/daw-engine/src/scheduler.rs
+  s_4f908a5afb6b58::t_a5f0ddf15e931f 5349-5350,5366-5367,5390-5391,5416-5417,5448-5449,5459-5460,5833-5834,5944-5945,6406-6407,6743,6750
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeLiveGraphSession.spec.ts
+  s_78ea72ae66d911::t_a8e59ffd376ca6 311,327
+src/modules/AudioEngine/useCases/livePlayback/__tests__/projectLiveGraphProgrammeParity.spec.ts
+  s_78ea72ae66d911::t_4d5c436c539d0d 485-486,488-492,494,496-497,502-503,507-508,512,721,723,738,740
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "669c30101314d1e133c335f43b16e781690b20e5",
+  "prompts": {},
+  "sessions": {
+    "s_4f908a5afb6b58": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fcb92ba4-bf56-47a4-8b57-803f335a449e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_78ea72ae66d911": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-ad2bc1f2db0179a78",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
