@@ -10,6 +10,8 @@ const desktop = vi.hoisted(() => ({
     projectState: vi.fn(async () => undefined),
     saveResult: vi.fn(async () => undefined),
     edit: vi.fn(async () => undefined),
+    listenSessionQuiesce: vi.fn(() => () => undefined),
+    sessionQuiesced: vi.fn(async () => undefined),
 }));
 const projectState = vi.hoisted(() => ({
     projectId: 'project' as string | undefined,
@@ -23,6 +25,7 @@ const crdt = vi.hoisted(() => ({
 }));
 const projectActions = vi.hoisted(() => ({
     saveProject: vi.fn(async () => true),
+    quiesceProjectSession: vi.fn(async () => true),
     discardProjectChanges: vi.fn(async () => true),
     newProject: vi.fn(),
     pickAndImportProjectFile: vi.fn(async () => true),
@@ -89,6 +92,8 @@ const workspace = vi.hoisted(() => ({
         projectState: desktop.projectState,
         saveResult: desktop.saveResult,
         edit: desktop.edit,
+        listenSessionQuiesce: desktop.listenSessionQuiesce,
+        sessionQuiesced: desktop.sessionQuiesced,
     })),
 }));
 vi.mock('#/modules/WorkspaceShell/useCases', () => ({

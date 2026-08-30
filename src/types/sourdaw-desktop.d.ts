@@ -131,5 +131,7 @@ type SourdawDesktopBridge = {
             readonly revision: string;
         }) => Promise<void>;
         readonly edit: (operation: 'undo' | 'redo' | 'cut' | 'copy' | 'paste' | 'selectAll') => Promise<void>;
+        readonly listenSessionQuiesce: (callback: (requestId: number) => void) => () => void;
+        readonly sessionQuiesced: (requestId: number, quiesced: boolean) => Promise<void>;
     };
 };

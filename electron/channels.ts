@@ -53,6 +53,10 @@ export const NATIVE_MENU_PROJECT_STATE_CHANNEL = 'sourdaw:native-menu:project-st
 export const NATIVE_MENU_SAVE_RESULT_CHANNEL = 'sourdaw:native-menu:save-result';
 /** Renderer → main narrow native text-edit operation for its own webContents. */
 export const NATIVE_EDIT_CHANNEL = 'sourdaw:native-menu:edit';
+/** Main → renderer request to quiesce the disposable project session before its window closes. */
+export const RENDERER_SESSION_QUIESCE_CHANNEL = 'sourdaw:renderer-session:quiesce';
+/** Renderer → main correlated acknowledgement of project-session quiescence. */
+export const RENDERER_SESSION_QUIESCED_CHANNEL = 'sourdaw:renderer-session:quiesced';
 
 /** A filter in an open or save dialog. */
 export type DialogFilter = {
@@ -194,6 +198,7 @@ export type SourdawBridge = {
             readonly durabilityPending: boolean;
             readonly projectKey: string;
             readonly revision: string;
+            readonly rendererReady?: boolean;
             readonly recentProjects: readonly { readonly key: string; readonly name: string }[];
         }) => Promise<void>;
         readonly saveResult: (result: {
@@ -204,5 +209,7 @@ export type SourdawBridge = {
             readonly revision: string;
         }) => Promise<void>;
         readonly edit: (operation: 'undo' | 'redo' | 'cut' | 'copy' | 'paste' | 'selectAll') => Promise<void>;
+        readonly listenSessionQuiesce: (callback: (requestId: number) => void) => () => void;
+        readonly sessionQuiesced: (requestId: number, quiesced: boolean) => Promise<void>;
     };
 };

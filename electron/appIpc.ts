@@ -28,6 +28,7 @@ import {
     NATIVE_EDIT_CHANNEL,
     NATIVE_MENU_PROJECT_STATE_CHANNEL,
     NATIVE_MENU_SAVE_RESULT_CHANNEL,
+    RENDERER_SESSION_QUIESCED_CHANNEL,
 } from './channels.js';
 import { commandChannel } from './commands.js';
 import { asPositionalArguments, withTrustedSender, withTrustedSenderEvent, type IpcMainLike } from './router.js';
@@ -334,6 +335,10 @@ export type RegisterNativeMenuChannelsInput = {
     readonly onProjectState: (state: NativeMenuProjectState, sender: unknown) => void;
     readonly onSaveResult: (result: NativeMenuSaveResult) => void;
     readonly editTargetForSender: (sender: unknown) => NativeEditTarget | null;
+    readonly onSessionQuiesced: (
+        result: { readonly requestId: number; readonly quiesced: boolean },
+        sender: unknown
+    ) => void;
 };
 
 const nativeMenuProjectState = (value: unknown): NativeMenuProjectState => {
@@ -392,6 +397,19 @@ const nativeMenuSaveResult = (value: unknown): NativeMenuSaveResult => {
     };
 };
 
+const rendererSessionQuiesced = (value: unknown): { readonly requestId: number; readonly quiesced: boolean } => {
+    const result = asRecord(value);
+    if (
+        typeof result.requestId !== 'number' ||
+        !Number.isSafeInteger(result.requestId) ||
+        result.requestId < 1 ||
+        typeof result.quiesced !== 'boolean'
+    ) {
+        throw new TypeError('renderer session quiesce result is invalid');
+    }
+    return { requestId: result.requestId, quiesced: result.quiesced };
+};
+
 /** The entire renderer-facing native menu surface: validated projections and text editing only. */
 export const registerNativeMenuChannels = ({
     ipcMain,
@@ -399,11 +417,18 @@ export const registerNativeMenuChannels = ({
     onProjectState,
     onSaveResult,
     editTargetForSender,
+    onSessionQuiesced,
 }: RegisterNativeMenuChannelsInput): void => {
     ipcMain.handle(
         NATIVE_MENU_PROJECT_STATE_CHANNEL,
         withTrustedSenderEvent('nativeMenu.projectState', isTrustedFrameUrl, (event, value) =>
             onProjectState(nativeMenuProjectState(value), event.sender)
+        )
+    );
+    ipcMain.handle(
+        RENDERER_SESSION_QUIESCED_CHANNEL,
+        withTrustedSenderEvent('rendererSession.quiesced', isTrustedFrameUrl, (event, value) =>
+            onSessionQuiesced(rendererSessionQuiesced(value), event.sender)
         )
     );
     ipcMain.handle(

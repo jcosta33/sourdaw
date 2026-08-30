@@ -16,6 +16,7 @@ import {
     pickAndImportProjectFile,
     recentProjectChanges,
     saveProject,
+    quiesceProjectSession,
 } from '#/modules/Project/useCases';
 import {
     openExportDialog,
@@ -253,10 +254,14 @@ export const useNativeApplicationMenu = (project: ProjectStoreState): void => {
             }
             void runMenuAction(intent);
         });
+        const unlistenSessionQuiesce = menu.listenSessionQuiesce((requestId) => {
+            void quiesceProjectSession().then((quiesced) => menu.sessionQuiesced(requestId, quiesced));
+        });
         const unsubscribeRecentProjects = recentProjectChanges.subscribe(publishProjectState);
         const unsubscribeCrdt = subscribeToCrdtChanges(publishProjectState);
         return () => {
             unlisten();
+            unlistenSessionQuiesce();
             unsubscribeRecentProjects();
             unsubscribeCrdt();
         };

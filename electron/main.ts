@@ -38,6 +38,7 @@ import { createApplicationMenuTemplate, type NativeMenuIntent } from './applicat
 import {
     EVENT_CHANNEL,
     NATIVE_MENU_ACTION_CHANNEL,
+    RENDERER_SESSION_QUIESCE_CHANNEL,
     STREAM_CHANNEL,
     WINDOW_MAXIMIZED_CHANGED_CHANNEL,
 } from './channels.js';
@@ -58,6 +59,7 @@ import {
 import { APP_ENTRY_URL, APP_ORIGIN, handleAppProtocol, registerAppScheme, resolveContentRoots } from './protocol.js';
 import { createRendererCrashRecovery } from './rendererCrashRecovery.js';
 import { createRendererSessionLifecycle } from './rendererSessionLifecycle.js';
+import { completeMacCloseAfterSessionQuiesce, createRendererSessionQuiescer } from './rendererSessionQuiescer.js';
 import { registerCommandRouter } from './router.js';
 import { createScanSupervisor, type ScanSupervisor } from './scan.js';
 import { applyPermissionPolicy, decideWindowOpen, isNavigationAllowed, trustedFrameGuard } from './security.js';
@@ -115,10 +117,13 @@ const isAllowedFrameUrl = trustedFrameGuard(allowedOrigins);
 let mainWindow: BrowserWindow | undefined;
 let pluginWindowHost: PluginWindowHost | undefined;
 let destroyMainWindowAfterEditorsDetach: ((force?: boolean) => Promise<boolean>) | undefined;
+let closeSessionQuiescedWindow: BrowserWindow | undefined;
 const rendererSessionLifecycle = createRendererSessionLifecycle();
+const rendererSessionQuiescer = createRendererSessionQuiescer(RENDERER_SESSION_QUIESCE_CHANNEL);
 
 const createAndActivateWindow = (): BrowserWindow => {
     rendererSessionLifecycle.startWindow();
+    closeSessionQuiescedWindow = undefined;
     const window = createWindow();
     mainWindow = window;
     nativeMenuActionDispatcher.registerWindow(window);
@@ -189,12 +194,20 @@ const nativeMenuProjectStateController = createNativeMenuProjectStateController(
 
 const quiesceApprovedMainWindow = async (): Promise<boolean> => {
     const window = mainWindow;
-    if (window === undefined) {
+    if (window === undefined || window.isDestroyed()) {
         return true;
     }
     let destroyed = false;
     try {
         if (!window.isDestroyed()) {
+            if (!(await rendererSessionQuiescer.request(window))) {
+                rendererSessionLifecycle.cancelTeardown();
+                return false;
+            }
+            if (!windowCloseCoordinator.permitsClose()) {
+                rendererSessionLifecycle.cancelTeardown();
+                return false;
+            }
             if (destroyMainWindowAfterEditorsDetach !== undefined) {
                 destroyed = await destroyMainWindowAfterEditorsDetach();
             } else {
@@ -312,6 +325,19 @@ const createWindow = (): BrowserWindow => {
     window.on('unmaximize', () => window.webContents.send(WINDOW_MAXIMIZED_CHANGED_CHANNEL, false));
     window.on('close', (event) => {
         if (windowCloseCoordinator.permitsClose()) {
+            if (process.platform === 'darwin' && closeSessionQuiescedWindow !== window) {
+                event.preventDefault();
+                void completeMacCloseAfterSessionQuiesce({
+                    request: () => rendererSessionQuiescer.request(window),
+                    shouldProceed: () => windowCloseCoordinator.permitsClose() && !window.isDestroyed(),
+                    close: () => {
+                        closeSessionQuiescedWindow = window;
+                        window.close();
+                    },
+                    cancel: () => rendererSessionLifecycle.cancelTeardown(),
+                });
+                return;
+            }
             rendererSessionLifecycle.approveTeardown();
             nativeMenuActionDispatcher.clearPending(window);
             if (destroyMainWindowAfterEditorsDetach === undefined) {
@@ -642,6 +668,15 @@ void app.whenReady().then(() => {
             nativeMenuActionDispatcher.rendererReady(senderWindow);
         },
         onSaveResult: (result) => windowCloseCoordinator.resolveSave(result),
+        onSessionQuiesced: (result, sender) => {
+            const senderWindow =
+                typeof sender === 'object' && sender !== null
+                    ? BrowserWindow.fromWebContents(sender as WebContents)
+                    : null;
+            if (senderWindow !== null) {
+                rendererSessionQuiescer.resolve(senderWindow, result.requestId, result.quiesced);
+            }
+        },
         editTargetForSender: (sender) =>
             typeof sender === 'object' &&
             sender !== null &&

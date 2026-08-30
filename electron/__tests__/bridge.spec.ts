@@ -31,6 +31,8 @@ import {
     NATIVE_MENU_ACTION_CHANNEL,
     NATIVE_MENU_PROJECT_STATE_CHANNEL,
     NATIVE_MENU_SAVE_RESULT_CHANNEL,
+    RENDERER_SESSION_QUIESCE_CHANNEL,
+    RENDERER_SESSION_QUIESCED_CHANNEL,
 } from '../channels.js';
 import { commandChannel, DENIED_COMMANDS } from '../commands.js';
 
@@ -91,7 +93,14 @@ describe('the published surface', () => {
             'minimize',
             'toggleMaximize',
         ]);
-        expect(Object.keys(bridge.nativeMenu).sort()).toEqual(['edit', 'listen', 'projectState', 'saveResult']);
+        expect(Object.keys(bridge.nativeMenu).sort()).toEqual([
+            'edit',
+            'listen',
+            'listenSessionQuiesce',
+            'projectState',
+            'saveResult',
+            'sessionQuiesced',
+        ]);
     });
 
     it('publishes the platform synchronously, so chrome gating needs no round trip', () => {
@@ -124,6 +133,7 @@ describe('the published surface', () => {
                 [VOICE_DICTATION_TERMINAL_CHANNEL, 1],
                 [WINDOW_MAXIMIZED_CHANGED_CHANNEL, 1],
                 [NATIVE_MENU_ACTION_CHANNEL, 1],
+                [RENDERER_SESSION_QUIESCE_CHANNEL, 1],
             ])
         );
     });
@@ -152,10 +162,15 @@ describe('native menu transport', () => {
         await bridge.nativeMenu.projectState(state);
         await bridge.nativeMenu.saveResult(result);
         await bridge.nativeMenu.edit('paste');
+        await bridge.nativeMenu.sessionQuiesced(3, true);
 
         expect(fake.invoke).toHaveBeenNthCalledWith(1, NATIVE_MENU_PROJECT_STATE_CHANNEL, state);
         expect(fake.invoke).toHaveBeenNthCalledWith(2, NATIVE_MENU_SAVE_RESULT_CHANNEL, result);
         expect(fake.invoke).toHaveBeenNthCalledWith(3, NATIVE_EDIT_CHANNEL, 'paste');
+        expect(fake.invoke).toHaveBeenNthCalledWith(4, RENDERER_SESSION_QUIESCED_CHANNEL, {
+            requestId: 3,
+            quiesced: true,
+        });
     });
 
     it('delivers only validated intents from main', () => {
