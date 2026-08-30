@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { createVerifiedBatchReceipt } from '#/modules/Command/useCases';
+
+import { AiProposalInvalidatedError } from '../../../errors/AiProposalInvalidatedError';
+import { type PendingAppActionConfirmation } from '../../../stores/pendingActionConfirmationStore';
 import { settleConfirmedCommandExecution } from '../settleConfirmedCommandExecution';
 
 const mocks = vi.hoisted(() => ({
@@ -31,7 +35,8 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('#/infra/logger/appLogger', () => ({ logger: { error: mocks.loggerError } }));
-vi.mock('#/modules/Command/useCases', () => ({
+vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
     parseVersionedCommandBatchEnvelope: vi.fn(() => ({ status: 'valid', envelope: { commands: [] } })),
 }));
 vi.mock('../../../stores/chatStore', () => ({ updateChatMessage: mocks.message }));
@@ -88,51 +93,208 @@ vi.mock('../settleConfirmedBatchOutcome', () => ({ settleConfirmedBatchOutcome: 
 vi.mock('../settleVerifiedBatchReplay', () => ({ settleVerifiedBatchReplay: mocks.settleReplay }));
 
 type Input = Parameters<typeof settleConfirmedCommandExecution>[0];
+type ReadyAdmission = Input['executionAdmission'];
+type CompletedFlight = Extract<Input['executionFlight'], { status: 'completed' }>;
+type CompletedBatchResult = CompletedFlight['batchResult'];
+type AddDeviceAction = Extract<PendingAppActionConfirmation['actions'][number], { type: 'addDevice' }>;
 
-const receipt = {
-    batchId: 'batch-1',
+const action = {
+    type: 'addDevice',
+    payload: {
+        trackId: 'track-a',
+        deviceType: 'builtin-compressor',
+        deviceId: 'device-a',
+        expectedDeviceIds: [],
+        expectedFrozen: false,
+    },
+} satisfies AddDeviceAction;
+
+const batchEnvelope = {
     schemaVersion: 1,
     runId: 'run-1',
-    outcome: 'committed',
-    pendingEffects: [],
-};
+    batchId: 'batch-1',
+    projectId: 'project-1',
+    baseRevision: 'revision-1',
+    idempotencyKey: 'key-1',
+    intent: 'Add an effect',
+    mode: 'commit',
+    scope: { targetIds: ['track-a'], targetRanges: [], protectedTargetIds: [], protectedRanges: [] },
+    preconditions: [],
+    commands: [
+        {
+            schemaVersion: 1,
+            commandId: 'command-1',
+            issuedAt: 0,
+            operation: 'addDevice',
+            arguments: action.payload,
+            argumentsDigest: 'digest-1',
+            groupId: 'batch-1',
+            dependencyIds: [],
+            reason: 'Add an effect',
+            expectedEffect: 'A compressor is added.',
+            objectReferences: [{ argument: 'trackId', id: 'track-a', scope: 'stable' }],
+            time: [],
+            parameterUnits: [],
+            seed: null,
+            normalizedProjectRevision: 'revision-1',
+            availableDeviceVersions: {},
+            applicationAssignedIds: [],
+        },
+    ],
+    postconditions: [],
+    dependencies: [],
+    batchLocalBindings: [],
+    grants: {
+        allowedOperationPrefixes: ['addDevice'],
+        create: false,
+        delete: false,
+        routing: false,
+        tempo: false,
+        master: false,
+        file: false,
+        audioUpload: false,
+        remoteGeneration: false,
+        autoCommit: false,
+    },
+    budgets: {
+        maxCommands: 1,
+        maxCreatedTracks: 0,
+        maxDeletedObjects: 0,
+        maxAffectedTracks: 1,
+        maxAffectedClips: 0,
+        maxAutomationPoints: 0,
+        maxImportedAssets: 0,
+        maxRenderJobs: 0,
+    },
+} satisfies Parameters<typeof createVerifiedBatchReceipt>[0]['envelope'];
+
+const commandBatch = {
+    serialized: 'serialized',
+    authority: {
+        projectId: 'project-1',
+        baseRevision: 'revision-1',
+        scope: { targetIds: ['track-a'], targetRanges: [], protectedTargetIds: [], protectedRanges: [] },
+        grants: batchEnvelope.grants,
+        budgets: batchEnvelope.budgets,
+    },
+} satisfies ReadyAdmission['commandBatch'];
+
+const confirmation = {
+    id: 'confirmation-1',
+    runId: 'run-1',
+    prompt: 'Add an effect',
+    assistantMessageId: 'assistant-1',
+    actionLabels: ['Add compressor'],
+    affectedIds: ['track-a'],
+    protectedUnchanged: [],
+    risk: null,
+    executedActions: [],
+    status: 'proposed',
+    error: null,
+    followUpProjectRevision: null,
+    followUpStatus: null,
+    createdAt: 0,
+    resolvedAt: null,
+    kind: 'app_actions',
+    projectRevision: 'revision-1',
+    actions: [action],
+    approvalSnapshot: {
+        actions: [action],
+        actionLabels: ['Add compressor'],
+        commandBatch,
+        protectedUnchanged: [],
+    },
+    executionMode: 'atomic',
+    groupId: 'batch-1',
+    groupLabel: 'Batch',
+} satisfies PendingAppActionConfirmation;
+
+function createReceipt(result: Parameters<typeof createVerifiedBatchReceipt>[0]['result']) {
+    return createVerifiedBatchReceipt({
+        contentHash: 'content-hash',
+        envelope: batchEnvelope,
+        observedBaseRevision: 'revision-1',
+        resultingRevision: 'revision-1',
+        result,
+    });
+}
+
+function createCompletedBatchResult(
+    status: 'committed' | 'committed-with-warning' | 'no-op' | 'idempotent-replay'
+): CompletedBatchResult {
+    const result =
+        status === 'committed-with-warning'
+            ? {
+                  status,
+                  actions: [
+                      {
+                          action,
+                          label: 'Add compressor',
+                          receipt: {
+                              commandId: 'command-1',
+                              schemaVersion: 1,
+                              applicationAssigned: { ids: [], timestamps: [] },
+                          },
+                      },
+                  ],
+                  warning: 'effect pending',
+              }
+            : { status, actions: [] };
+    return { ...result, receipt: createReceipt(result) } satisfies CompletedBatchResult;
+}
+
+function createTerminalFailureBatchResult(status: 'failed' | 'conflicted' | 'rejected'): CompletedBatchResult {
+    const result = { status, reason: 'precondition failed', actions: [] };
+    return { ...result, receipt: createReceipt(result) } satisfies CompletedBatchResult;
+}
+
+function createAmbiguousBatchResult(): CompletedBatchResult {
+    const result = { status: 'ambiguous', reason: 'partial write', actions: [] };
+    return { ...result, receipt: createReceipt(result) } satisfies CompletedBatchResult;
+}
+
+function createCancelledBatchResult(): CompletedBatchResult {
+    const result = { status: 'cancelled', reason: 'cancelled', actions: [] };
+    return { ...result, receipt: createReceipt(result) } satisfies CompletedBatchResult;
+}
 
 function createInput(executionFlight: Input['executionFlight']): Input {
     return {
         executionAdmission: {
-            confirmation: {
-                id: 'confirmation-1',
-                runId: 'run-1',
-                assistantMessageId: 'assistant-1',
-                projectRevision: 'revision-1',
-                actions: [],
-                approvalSnapshot: { actions: [] },
-            },
-            commandBatch: { serialized: 'serialized', authority: 'authority' },
+            status: 'ready',
+            confirmation,
+            commandBatch,
             approvedBatchId: 'batch-1',
             trackedWorkLease: null,
             commandBudget: null,
             priorVerifiedBatchReceipt: null,
             recoveringPendingEffects: false,
-        } as Input['executionAdmission'],
+        } satisfies ReadyAdmission,
         executionFlight,
-    };
+    } satisfies Input;
 }
 
-function completedFlight(batchResult: object, overrides: object = {}): Input['executionFlight'] {
+function createCompletedFlight(
+    batchResult: CompletedBatchResult,
+    input: {
+        committedProjectRevision?: string | null;
+        abortSignal?: AbortSignal;
+        cancellationTriggeredByInvalidation?: boolean;
+    } = {}
+): CompletedFlight {
     return {
         status: 'completed',
         batchResult,
         group: { groupId: 'batch-1', groupLabel: 'Batch' },
-        committedProjectRevision: 'revision-1',
+        committedProjectRevision:
+            input.committedProjectRevision === undefined ? 'revision-1' : input.committedProjectRevision,
         finalizationEvidenceFailure: null,
         canRebindSectionRenderArtifacts: true,
         isProjectMutationAuthorized: () => true,
         renderJobAttempts: 0,
-        cancellationTriggeredByInvalidation: false,
-        abortSignal: new AbortController().signal,
-        ...overrides,
-    } as Input['executionFlight'];
+        cancellationTriggeredByInvalidation: input.cancellationTriggeredByInvalidation ?? false,
+        abortSignal: input.abortSignal ?? new AbortController().signal,
+    } satisfies CompletedFlight;
 }
 
 beforeEach(() => {
@@ -147,7 +309,10 @@ describe('settleConfirmedCommandExecution', () => {
         );
 
         expect(result).toEqual({ status: 'failed', reason: 'flight failed' });
-        expect(mocks.recordFailure).toHaveBeenCalled();
+        expect(mocks.recordFailure).toHaveBeenCalledWith(
+            confirmation,
+            expect.objectContaining({ category: 'internal', knownDomain: false })
+        );
         expect(mocks.settleResources).toHaveBeenCalledWith({
             confirmationId: 'confirmation-1',
             disposition: 'discard',
@@ -156,7 +321,9 @@ describe('settleConfirmedCommandExecution', () => {
 
     it('retains a committed change when finalization evidence is absent', async () => {
         const result = await settleConfirmedCommandExecution(
-            createInput(completedFlight({ status: 'committed', receipt }, { committedProjectRevision: null }))
+            createInput(
+                createCompletedFlight(createCompletedBatchResult('committed'), { committedProjectRevision: null })
+            )
         );
 
         expect(result).toEqual({ status: 'failed', durableCommit: true, reason: expect.any(String) });
@@ -165,16 +332,17 @@ describe('settleConfirmedCommandExecution', () => {
     });
 
     it('delegates idempotent replay to verified replay settlement', async () => {
-        await settleConfirmedCommandExecution(createInput(completedFlight({ status: 'idempotent-replay', receipt })));
+        const batchResult = createCompletedBatchResult('idempotent-replay');
+        await settleConfirmedCommandExecution(createInput(createCompletedFlight(batchResult)));
 
-        expect(mocks.settleReplay).toHaveBeenCalledWith(expect.objectContaining({ receipt }));
+        expect(mocks.settleReplay).toHaveBeenCalledWith(expect.objectContaining({ receipt: batchResult.receipt }));
     });
 
     it('cancels a user-aborted confirmed batch without invalidating the proposal', async () => {
         const controller = new AbortController();
         controller.abort();
         const result = await settleConfirmedCommandExecution(
-            createInput(completedFlight({ status: 'cancelled', receipt }, { abortSignal: controller.signal }))
+            createInput(createCompletedFlight(createCancelledBatchResult(), { abortSignal: controller.signal }))
         );
 
         expect(result).toEqual({ status: 'cancelled' });
@@ -184,7 +352,7 @@ describe('settleConfirmedCommandExecution', () => {
 
     it('completes a no-op batch and discards temporary resources', async () => {
         const result = await settleConfirmedCommandExecution(
-            createInput(completedFlight({ status: 'no-op', receipt }))
+            createInput(createCompletedFlight(createCompletedBatchResult('no-op')))
         );
 
         expect(result).toEqual({ status: 'executed' });
@@ -197,7 +365,7 @@ describe('settleConfirmedCommandExecution', () => {
 
     it('retains resources after an ambiguous batch outcome', async () => {
         const result = await settleConfirmedCommandExecution(
-            createInput(completedFlight({ status: 'ambiguous', reason: 'partial write', receipt }))
+            createInput(createCompletedFlight(createAmbiguousBatchResult()))
         );
 
         expect(result).toEqual({ status: 'failed', reason: 'partial write' });
@@ -209,7 +377,9 @@ describe('settleConfirmedCommandExecution', () => {
     });
 
     it('delegates committed batches to committed outcome settlement', async () => {
-        await settleConfirmedCommandExecution(createInput(completedFlight({ status: 'committed', receipt })));
+        await settleConfirmedCommandExecution(
+            createInput(createCompletedFlight(createCompletedBatchResult('committed')))
+        );
 
         expect(mocks.settleBatchOutcome).toHaveBeenCalledWith(
             expect.objectContaining({ batchResult: expect.objectContaining({ status: 'committed' }) })
@@ -218,7 +388,7 @@ describe('settleConfirmedCommandExecution', () => {
 
     it('delegates committed batches with warnings to committed outcome settlement', async () => {
         await settleConfirmedCommandExecution(
-            createInput(completedFlight({ status: 'committed-with-warning', receipt, warning: 'effect pending' }))
+            createInput(createCompletedFlight(createCompletedBatchResult('committed-with-warning')))
         );
 
         expect(mocks.settleBatchOutcome).toHaveBeenCalledWith(
@@ -226,19 +396,31 @@ describe('settleConfirmedCommandExecution', () => {
         );
     });
 
-    it('records an ordinary non-committed failure after discarding resources', async () => {
+    it.each([
+        ['failed', 'project'],
+        ['conflicted', 'conflict'],
+        ['rejected', 'authorization'],
+    ] as const)('records %s completed results with the %s failure category', async (status, category) => {
         const result = await settleConfirmedCommandExecution(
-            createInput(completedFlight({ status: 'failed', reason: 'precondition failed', receipt }))
+            createInput(createCompletedFlight(createTerminalFailureBatchResult(status)))
         );
 
         expect(result).toEqual({ status: 'failed', reason: 'precondition failed' });
-        expect(mocks.recordFailure).toHaveBeenCalledWith(
-            expect.anything(),
-            expect.objectContaining({ category: 'project' })
-        );
+        expect(mocks.recordFailure).toHaveBeenCalledWith(confirmation, expect.objectContaining({ category }));
         expect(mocks.settleResources).toHaveBeenCalledWith({
             confirmationId: 'confirmation-1',
             disposition: 'discard',
         });
+    });
+
+    it('records proposal invalidation as a known domain conflict', async () => {
+        await settleConfirmedCommandExecution(
+            createInput({ status: 'failed', error: new AiProposalInvalidatedError('proposal invalidated') })
+        );
+
+        expect(mocks.recordFailure).toHaveBeenCalledWith(
+            confirmation,
+            expect.objectContaining({ category: 'conflict', knownDomain: true })
+        );
     });
 });
