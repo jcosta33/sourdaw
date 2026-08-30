@@ -42,7 +42,9 @@ const getTracks = (state: { tracks: Track[] } | null): Track[] => state?.tracks 
 const Sep = (): ReactElement => <div className="mx-0.5 h-5 w-px shrink-0 daw-seam" />;
 
 export const TransportBar = (): ReactElement => {
-    const moreContainerRef = useRef<HTMLDivElement>(null);
+    const moreContainerRef = useRef<HTMLElement>(null);
+    const moreOpenRef = useRef(false);
+    const closingMoreForFullModeRef = useRef(false);
     const [moreOpen, setMoreOpen] = useState(false);
     const {
         sidebarOpen,
@@ -98,7 +100,9 @@ export const TransportBar = (): ReactElement => {
             return undefined;
         }
         const observer = new ResizeObserver(([entry]) => {
-            if (entry !== undefined && entry.contentRect.width > 1199) {
+            if (entry !== undefined && entry.contentRect.width > 1199 && moreOpenRef.current) {
+                closingMoreForFullModeRef.current = true;
+                moreOpenRef.current = false;
                 setMoreOpen(false);
             }
         });
@@ -106,9 +110,15 @@ export const TransportBar = (): ReactElement => {
         return () => observer.disconnect();
     }, []);
 
+    const setMorePopoverOpen = (open: boolean): void => {
+        moreOpenRef.current = open;
+        setMoreOpen(open);
+    };
+
     return (
         <Stack
             as="header"
+            ref={moreContainerRef}
             shrink={false}
             className="transport-bar h-(--spacing-transport-height) border-b border-black transition-colors duration-300 relative z-50"
             style={{
@@ -125,7 +135,6 @@ export const TransportBar = (): ReactElement => {
         >
             {/* ── ROW 1: Meta Layer (Project, AI Copilot, Layout) ── */}
             <div
-                ref={moreContainerRef}
                 className={cn(
                     'transport-bar__title-row desktop-titlebar-region min-h-[40px] px-2',
                     framelessChrome && 'desktop-titlebar-region--frameless',
@@ -272,7 +281,7 @@ export const TransportBar = (): ReactElement => {
                     <UndoRedoButtons canUndo={undoState.canUndo} canRedo={undoState.canRedo} />
                 </Row>
                 <div className="transport-bar__action-more">
-                    <Popover open={moreOpen} onOpenChange={setMoreOpen}>
+                    <Popover open={moreOpen} onOpenChange={setMorePopoverOpen}>
                         <PopoverTrigger asChild>
                             <Button variant="ghost" size="icon-sm" aria-label="More transport controls">
                                 <Ellipsis className="size-3.5" aria-hidden="true" />
@@ -281,7 +290,14 @@ export const TransportBar = (): ReactElement => {
                         <PopoverContent
                             align="end"
                             aria-label="More transport controls"
-                            onCloseAutoFocus={(event) => event.preventDefault()}
+                            onCloseAutoFocus={(event) => {
+                                if (!closingMoreForFullModeRef.current) {
+                                    return;
+                                }
+                                closingMoreForFullModeRef.current = false;
+                                event.preventDefault();
+                                moreContainerRef.current?.querySelector<HTMLElement>('[aria-label="Stop"]')?.focus();
+                            }}
                         >
                             <div className="space-y-2">
                                 <TempoEditor />
