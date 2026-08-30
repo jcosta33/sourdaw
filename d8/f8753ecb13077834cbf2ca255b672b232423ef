@@ -1,0 +1,28 @@
+electron/shellComposition.ts
+  s_ae074277795b45::t_ea15fe57983235 1,40-41
+  s_ae074277795b45::t_767448d272175e 4,6-11,14-39,42-46
+  s_ae074277795b45::t_cd236233105cd3 2-3
+  s_ae074277795b45::t_434acbff642c78 5,12-13
+electron/__tests__/shellComposition.spec.ts
+  s_ae074277795b45::t_767448d272175e 1-44
+electron/main.ts
+  s_ae074277795b45::t_434acbff642c78 192
+  s_ae074277795b45::t_c647655e539986 77-82,189-191,193-194,384-391,757,802
+  s_ae074277795b45::t_cd236233105cd3 83
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "d8f8753ecb13077834cbf2ca255b672b232423ef",
+  "prompts": {},
+  "sessions": {
+    "s_ae074277795b45": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04ab5-5234-7100-be1c-76ebfaba88d3",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
