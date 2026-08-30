@@ -1,4 +1,4 @@
-import { change, clone, from, merge, type Doc } from '@automerge/automerge';
+import { change, clone, from, getHeads, merge, type Doc } from '@automerge/automerge';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import {
@@ -131,6 +131,52 @@ describe('Yeast collaboration storage', () => {
             { ...createProcessor('left'), name: 'Left edited' },
             { ...createProcessor('right'), bypassed: true },
         ]);
+    });
+
+    it('does not change the document when processor params are logically unchanged', () => {
+        const peer = createPeer(from<RootDocument>({}));
+        const storage = createStorage();
+        configureAutomergeStoragePort(peer.port);
+        storage.set(createState([{ ...createProcessor('processor'), params: { zeta: 1, alpha: 2 } }]));
+        flushAutomergeStorageWrites();
+        const headsBeforeNoOp = getHeads(peer.getDoc());
+
+        storage.set(createState([{ ...createProcessor('processor'), params: { zeta: 1, alpha: 2 } }]));
+        flushAutomergeStorageWrites();
+
+        expect(getHeads(peer.getDoc())).toEqual(headsBeforeNoOp);
+    });
+
+    it('merges concurrent edits to different params on one processor', () => {
+        const baseline = createBaseline(
+            createState([{ ...createProcessor('processor'), params: { rate: 1, depth: 2 } }])
+        );
+        const leftPeer = createPeer(clone(baseline));
+        const rightPeer = createPeer(clone(baseline));
+        const leftStorage = createStorage();
+        const rightStorage = createStorage();
+
+        configureAutomergeStoragePort(leftPeer.port);
+        leftStorage.hydrate();
+        leftStorage.set(createState([{ ...createProcessor('processor'), params: { rate: 9, depth: 2 } }]));
+        flushAutomergeStorageWrites();
+
+        configureAutomergeStoragePort(rightPeer.port);
+        rightStorage.hydrate();
+        rightStorage.set(createState([{ ...createProcessor('processor'), params: { rate: 1, depth: 8 } }]));
+        flushAutomergeStorageWrites();
+
+        for (const merged of [
+            merge(clone(leftPeer.getDoc()), rightPeer.getDoc()),
+            merge(clone(rightPeer.getDoc()), leftPeer.getDoc()),
+        ]) {
+            const mergedPeer = createPeer(merged);
+            const mergedStorage = createStorage();
+            configureAutomergeStoragePort(mergedPeer.port);
+            mergedStorage.hydrate();
+
+            expect(mergedStorage.get()?.processors[0]?.params).toEqual({ rate: 9, depth: 8 });
+        }
     });
 
     it('rebases a pending local edit over a newly hydrated remote processor', () => {

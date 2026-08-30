@@ -269,16 +269,36 @@ function replaceIfChanged(target: MutableRecord, key: string, value: unknown): v
     }
 }
 
+function syncProcessorParams(target: MutableRecord, params: Record<string, number> | undefined): void {
+    if (!params) {
+        if (Object.hasOwn(target, 'params')) {
+            delete target.params;
+        }
+        return;
+    }
+
+    const current = target.params;
+    if (!isRecord(current)) {
+        target.params = params;
+        return;
+    }
+
+    for (const key of Object.keys(current)) {
+        if (!Object.hasOwn(params, key)) {
+            delete current[key];
+        }
+    }
+    for (const [key, value] of Object.entries(params)) {
+        replaceIfChanged(current, key, value);
+    }
+}
+
 function syncProcessorValue(target: MutableRecord, processor: YeastProcessorInfo): void {
     replaceIfChanged(target, 'id', processor.id);
     replaceIfChanged(target, 'type', processor.type);
     replaceIfChanged(target, 'name', processor.name);
     replaceIfChanged(target, 'bypassed', processor.bypassed);
-    if (processor.params) {
-        replaceIfChanged(target, 'params', processor.params);
-    } else if (Object.hasOwn(target, 'params')) {
-        delete target.params;
-    }
+    syncProcessorParams(target, processor.params);
 }
 
 function syncProcessorEntities(current: MutableRecord, desiredProcessors: readonly YeastProcessorInfo[]): void {
