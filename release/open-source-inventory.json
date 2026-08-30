@@ -946,7 +946,7 @@
                 "tracked-set-sha256:f7da3b228ba9f5f5a665bebb82d060ffd8a0cdec72b687e0196ef8a4231fa525:grand-boule-live-runtime",
                 "tracked-set-sha256:6d662c1d0415575782f398aa1df2f4cc213c029730336b3daaf94ff7ef4c35f4:grand-boule-project-state",
                 "tracked-set-sha256:c24bb1c0672ac22d04c8d36c344bbf3c0efdc315ec8317af1d1674eaeb0cbd89:grand-boule-offline-composition",
-                "tracked-set-sha256:20a0794aece85e0db5570e4320126e0a3b8e5e45b42f5a31a10ad5a302ca60f9:grand-boule-release-proof"
+                "tracked-set-sha256:851cea2a7778031a7ec94a5b181494cd48b67ee41c74e5eca644e0de74d23f36:grand-boule-release-proof"
             ],
             "licenses": ["Apache-2.0"],
             "productSurfaces": ["Grand Boule source, browser WASM, and desktop runtime"],
@@ -1128,10 +1128,10 @@
                 "sha256:517fc1306f4c8efaf3c10ef65745658d014ad68725c5f8218877d36288d64cf4:public/favicon.ico",
                 "sha256:0f5f1435a632f0fac52ed7cf59f60387be55a597235bdee96df2fa2ac1cddbbb:public/icon-192.png",
                 "sha256:c2da95a42f825cc8cb0ed208ae4441bfc4400e84548723c5b1b96526de53eef7:public/icon-transparent.png",
-                "sha256:f0520cf9febf63733577684160316901499a16b89c469fbbfc7a62613376a447:public/icon.png",
-                "sha256:f0520cf9febf63733577684160316901499a16b89c469fbbfc7a62613376a447:sourdaw.png",
+                "sha256:200e032a1b2c9bbcfeef4fcd5f6a6bedba7a19eebebc51e3ac5e11def43a7efe:public/icon.png",
+                "sha256:200e032a1b2c9bbcfeef4fcd5f6a6bedba7a19eebebc51e3ac5e11def43a7efe:sourdaw.png",
                 "tree-sha256:fa5dd4f455fd2a2176fb9c3a166b2a002104ac9528bb94e517aac35910cbebc2:public/logo-parts",
-                "tree-sha256:2192dad880ac845c75c42e8c170185a2e5f3e66e4bcc9203bdf8d5a81b03939f:build/icons"
+                "tree-sha256:8fe3c665aea8a08574ae36e3ed4568ceb921a5efc825584e1577f02eb663f69c:build/icons"
             ],
             "licenses": ["Apache-2.0"],
             "productSurfaces": ["application icons", "brand logo", "release screenshots"],
