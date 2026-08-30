@@ -268,7 +268,7 @@ export type AgentRunErrorCause = { kind: 'known-domain' | 'unknown-internal'; so
 
 export const AGENT_RUN_SAGA_SCHEMA_VERSION = 1 as const;
 export type AgentRunSagaStepState =
-    'pending' | 'external-pending' | 'committed' | 'compensated' | 'uncompensated' | 'manual-repair';
+    'pending' | 'external-pending' | 'committed' | 'compensated' | 'uncompensated' | 'manual-repair' | 'reviewed';
 export type AgentRunSagaStep = {
     stepId: string;
     order: number;
@@ -278,6 +278,8 @@ export type AgentRunSagaStep = {
     state: AgentRunSagaStepState;
     compensation: { available: boolean; attempts: number; lastError: string | null };
     relatedArtifactIds: string[];
+    /** A terminal manual review is not evidence that the external effect completed. */
+    manualReviewDisposition?: 'accepted' | 'discarded' | 'missing-evidence';
     updatedAt: number;
 };
 export type AgentRunSaga = { schemaVersion: typeof AGENT_RUN_SAGA_SCHEMA_VERSION; steps: AgentRunSagaStep[] };
@@ -391,6 +393,8 @@ export type AgentRunPendingEffectContinuation = {
     serializedBatch: string;
     authority: AgentRunCommandBatchAuthority;
     lastError: string | null;
+    /** Exact post-commit revision for retained render evidence; absent only on legacy capsules. */
+    sourceRevision?: string;
 };
 
 export type AgentRunPendingEffectRecovery = AgentRunPendingEffectContinuation & {

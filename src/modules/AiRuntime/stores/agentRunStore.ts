@@ -274,6 +274,7 @@ function readPendingEffectContinuation(value: unknown): AgentRunPendingEffectCon
             : null;
     const authority = readCommandBatchAuthority(value.authority);
     const lastError = readNullableString(value.lastError);
+    const sourceRevision = value.sourceRevision === undefined ? undefined : readString(value.sourceRevision);
     if (
         batchId === null ||
         effects === null ||
@@ -283,11 +284,18 @@ function readPendingEffectContinuation(value: unknown): AgentRunPendingEffectCon
         serializedBatch === null ||
         authority === null ||
         lastError === undefined ||
+        sourceRevision === null ||
         (value.recovery !== 'reconcile-batch' && value.recovery !== 'manual-repair')
     ) {
         return null;
     }
     const recoveryPolicy = getPendingEffectRecoveryPolicy(effects);
+    const carriesOnlySectionRenderEffects = effects.every(
+        (effect) => effect.kind === 'external-effect' && effect.operation === 'renderProjectSections'
+    );
+    if (sourceRevision !== undefined && !carriesOnlySectionRenderEffects) {
+        return null;
+    }
     return {
         batchId,
         effects,
@@ -296,6 +304,7 @@ function readPendingEffectContinuation(value: unknown): AgentRunPendingEffectCon
         serializedBatch,
         authority,
         lastError: lastError ?? (recoveryPolicy.recovery === 'manual-repair' ? recoveryPolicy.reason : null),
+        ...(sourceRevision === undefined ? {} : { sourceRevision }),
     };
 }
 
@@ -586,6 +595,7 @@ function readSagaStep(value: unknown): AgentRunSagaStep | null {
         'compensated',
         'uncompensated',
         'manual-repair',
+        'reviewed',
     ];
     const lastError = readNullableString(value.compensation.lastError);
     const attempts = readNonNegativeInteger(value.compensation.attempts);
@@ -604,6 +614,18 @@ function readSagaStep(value: unknown): AgentRunSagaStep | null {
     ) {
         return null;
     }
+    const manualReviewDisposition =
+        value.manualReviewDisposition === 'accepted' ||
+        value.manualReviewDisposition === 'discarded' ||
+        value.manualReviewDisposition === 'missing-evidence'
+            ? value.manualReviewDisposition
+            : undefined;
+    if (
+        (value.state === 'reviewed' && manualReviewDisposition === undefined) ||
+        (value.state !== 'reviewed' && value.manualReviewDisposition !== undefined)
+    ) {
+        return null;
+    }
     return {
         stepId,
         order,
@@ -613,6 +635,7 @@ function readSagaStep(value: unknown): AgentRunSagaStep | null {
         state: value.state as AgentRunSagaStep['state'],
         compensation: { available: value.compensation.available, attempts, lastError },
         relatedArtifactIds,
+        ...(manualReviewDisposition ? { manualReviewDisposition } : {}),
         updatedAt,
     };
 }

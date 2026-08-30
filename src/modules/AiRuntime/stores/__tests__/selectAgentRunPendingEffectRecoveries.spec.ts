@@ -79,6 +79,7 @@ function createRetainedRenderRecovery() {
             receiptIdentity,
             recovery: 'reconcile-batch',
             serializedBatch: '{"batch":"render-owner"}',
+            sourceRevision: COMMITTED_REVISION,
         },
         recordedAt: 3,
     });

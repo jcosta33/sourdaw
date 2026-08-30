@@ -179,6 +179,53 @@ function isPendingEffectRecovery(
     return recovery.runId === input.runId && recovery.batchId === input.batchId;
 }
 
+function hasSamePendingEffectManualReviewBinding(
+    continuation: AgentRunPendingEffectContinuation,
+    recovery: AgentRunPendingEffectRecovery
+): boolean {
+    return (
+        recovery.checkpoint === 'durable' &&
+        recovery.batchId === continuation.batchId &&
+        recovery.receiptIdentity === continuation.receiptIdentity &&
+        recovery.serializedBatch === continuation.serializedBatch &&
+        recovery.recovery === continuation.recovery &&
+        recovery.lastError === continuation.lastError &&
+        recovery.sourceRevision === continuation.sourceRevision &&
+        JSON.stringify(recovery.authority) === JSON.stringify(continuation.authority) &&
+        JSON.stringify(recovery.effects) === JSON.stringify(continuation.effects)
+    );
+}
+
+function getExactPendingEffectManualReviewSagaStepIds(
+    run: AgentRun,
+    continuation: AgentRunPendingEffectContinuation
+): Set<string> | null {
+    const expectedStepIds = new Set(
+        continuation.effects.map(({ commandId }) => `effect:${continuation.batchId}:${commandId}`)
+    );
+    if (continuation.effects.length === 0 || expectedStepIds.size !== continuation.effects.length) {
+        return null;
+    }
+    const targetedSteps = run.saga.steps.filter(({ stepId }) => stepId.startsWith(`effect:${continuation.batchId}:`));
+    if (targetedSteps.length !== expectedStepIds.size) {
+        return null;
+    }
+    for (const stepId of expectedStepIds) {
+        const matchingSteps = targetedSteps.filter((step) => step.stepId === stepId);
+        if (
+            matchingSteps.length !== 1 ||
+            matchingSteps[0]?.owner !== 'external-effect' ||
+            matchingSteps[0].workId !== continuation.batchId ||
+            matchingSteps[0].receiptIdentity !== continuation.receiptIdentity ||
+            matchingSteps[0].state !== 'manual-repair' ||
+            matchingSteps[0].manualReviewDisposition !== undefined
+        ) {
+            return null;
+        }
+    }
+    return expectedStepIds;
+}
+
 function createLegacyAgentRunPlan(input: {
     summary: string;
     commandIds: string[];
@@ -213,7 +260,7 @@ function createLegacyAgentRunPlan(input: {
         stoppingConditions: ['Stop if the persisted project revision is no longer current.'],
         alternatives: [],
         needsUserDecision: false,
-    };
+    } satisfies AgentRunPlan;
 }
 
 function clearAgentRuns(): void {
@@ -668,7 +715,24 @@ function applyAgentRunReceiptSagaProjection(
     const manualRecovery = [matchingContinuation, matchingRecovery].find(
         (recovery) => recovery?.receiptIdentity === projection.receiptIdentity && recovery.recovery === 'manual-repair'
     );
+    const projectedExternalSteps = projection.sagaSteps.filter(
+        (step) => step.owner === 'external-effect' && step.workId === projection.work.workId
+    );
+    const hasSettledExactManualReview =
+        projectedExternalSteps.length > 0 &&
+        projectedExternalSteps.every((step) => {
+            const existing = run.saga.steps.filter((candidate) => candidate.stepId === step.stepId);
+            return (
+                existing.length === 1 &&
+                existing[0]?.receiptIdentity === projection.receiptIdentity &&
+                existing[0].state === 'reviewed' &&
+                existing[0].manualReviewDisposition !== undefined
+            );
+        });
     const projectedSagaSteps = projection.sagaSteps.map((step) => {
+        if (hasSettledExactManualReview && step.owner === 'external-effect' && step.workId === projection.work.workId) {
+            return structuredClone(run.saga.steps.find((candidate) => candidate.stepId === step.stepId)!);
+        }
         if (!manualRecovery || step.owner !== 'external-effect' || step.workId !== projection.work.workId) {
             return step;
         }
@@ -689,10 +753,19 @@ function applyAgentRunReceiptSagaProjection(
     ].sort((left, right) => left.order - right.order);
     let pendingEffectContinuations = run.pendingEffectContinuations;
     let nextPendingEffectRecoveryLedger = pendingEffectRecoveryLedger;
-    if (projection.pendingEffectContinuation) {
+    if (projection.pendingEffectContinuation && !hasSettledExactManualReview) {
         const continuation = manualRecovery
             ? structuredClone(manualRecovery)
             : structuredClone(projection.pendingEffectContinuation);
+        const requiresExactRenderRevision =
+            continuation.sourceRevision === undefined &&
+            continuation.effects.length > 0 &&
+            continuation.effects.every(
+                (effect) => effect.kind === 'external-effect' && effect.operation === 'renderProjectSections'
+            );
+        const sourceRevision = requiresExactRenderRevision
+            ? projection.work.committedRevision
+            : continuation.sourceRevision;
         const continuationWithoutRecoveryIdentity = {
             authority: continuation.authority,
             batchId: continuation.batchId,
@@ -701,6 +774,7 @@ function applyAgentRunReceiptSagaProjection(
             receiptIdentity: continuation.receiptIdentity,
             recovery: continuation.recovery,
             serializedBatch: continuation.serializedBatch,
+            ...(sourceRevision === undefined ? {} : { sourceRevision }),
         } satisfies AgentRunPendingEffectContinuation;
         pendingEffectContinuations = [
             ...run.pendingEffectContinuations.filter((continuation) => continuation.batchId !== projection.work.workId),
@@ -716,7 +790,7 @@ function applyAgentRunReceiptSagaProjection(
                 checkpoint: 'durable' as const,
             },
         ];
-    } else if (projection.completesPendingEffectContinuation) {
+    } else if (projection.completesPendingEffectContinuation || hasSettledExactManualReview) {
         pendingEffectContinuations = run.pendingEffectContinuations.filter(
             (continuation) => continuation.batchId !== projection.work.workId
         );
@@ -1094,6 +1168,17 @@ function requireAgentRunPendingEffectManualRepair(input: {
     const recovery = getPendingEffectRecoveryLedger(state).find((candidate) =>
         isPendingEffectRecovery(candidate, input)
     );
+    if (!continuation && !recovery) {
+        const settledSteps = run.saga.steps.filter(
+            (step) => step.owner === 'external-effect' && step.workId === input.batchId
+        );
+        if (
+            settledSteps.length > 0 &&
+            settledSteps.every((step) => step.state === 'reviewed' && step.manualReviewDisposition !== undefined)
+        ) {
+            return structuredClone(run);
+        }
+    }
     if (!continuation || !recovery || recovery.checkpoint !== 'durable') {
         throw new Error(`Unknown durable pending effect continuation: ${input.batchId}`);
     }
@@ -1249,6 +1334,129 @@ function completeAgentRunPendingEffectContinuation(input: {
     runs[index] = next;
     persistAgentRunState(withPendingEffectRecoveryLedger({ ...state, runs }, pendingEffectRecoveryLedger));
     return structuredClone(next);
+}
+
+function settleAgentRunPendingEffectManualReview(input: {
+    runId: string;
+    batchId: string;
+    receiptIdentity: string;
+    sourceRevision: string;
+    disposition: 'accepted' | 'discarded' | 'missing-evidence';
+    settledAt?: number;
+}): AgentRun | null {
+    const settledAt = input.settledAt ?? Date.now();
+    const state = readAgentRunState();
+    const runIndex = state.runs.findIndex((run) => run.runId === input.runId);
+    if (runIndex < 0) {
+        const matchingRecoveries = getPendingEffectRecoveryLedger(state).filter(
+            (candidate) => candidate.runId === input.runId && candidate.batchId === input.batchId
+        );
+        const recovery = matchingRecoveries[0];
+        if (
+            matchingRecoveries.length !== 1 ||
+            !recovery ||
+            recovery.checkpoint !== 'durable' ||
+            recovery.receiptIdentity !== input.receiptIdentity ||
+            recovery.sourceRevision !== input.sourceRevision ||
+            recovery.recovery !== 'manual-repair' ||
+            recovery.effects.length === 0 ||
+            recovery.effects.some(
+                (effect) =>
+                    effect.kind !== 'external-effect' ||
+                    effect.operation !== 'renderProjectSections' ||
+                    effect.remediation !== 'manual-repair'
+            )
+        ) {
+            throw new Error('The exact manual-review obligation is stale or unavailable.');
+        }
+        const pendingEffectRecoveryLedger = getPendingEffectRecoveryLedger(state).filter(
+            (candidate) => candidate !== recovery
+        );
+        try {
+            persistAgentRunState(withPendingEffectRecoveryLedger(state, pendingEffectRecoveryLedger));
+        } catch (error) {
+            try {
+                persistAgentRunState(state);
+            } catch {
+                // The original durable capsule remains authoritative when restoring the live cache also fails.
+            }
+            throw error;
+        }
+        return null;
+    }
+    const run = state.runs[runIndex]!;
+    const continuation = run.pendingEffectContinuations.find((candidate) => candidate.batchId === input.batchId);
+    const recovery = getPendingEffectRecoveryLedger(state).find((candidate) =>
+        isPendingEffectRecovery(candidate, input)
+    );
+    if (
+        !continuation ||
+        !recovery ||
+        !hasSamePendingEffectManualReviewBinding(continuation, recovery) ||
+        continuation.receiptIdentity !== input.receiptIdentity ||
+        recovery.receiptIdentity !== input.receiptIdentity ||
+        continuation.recovery !== 'manual-repair' ||
+        continuation.sourceRevision !== input.sourceRevision ||
+        continuation.effects.some(
+            (effect) =>
+                effect.kind !== 'external-effect' ||
+                effect.operation !== 'renderProjectSections' ||
+                effect.remediation !== 'manual-repair'
+        )
+    ) {
+        throw new Error('The exact manual-review obligation is stale or unavailable.');
+    }
+    const targetStepIds = getExactPendingEffectManualReviewSagaStepIds(run, continuation);
+    if (!targetStepIds) {
+        throw new Error('The exact manual-review obligation is stale or unavailable.');
+    }
+    const pendingEffectContinuations = run.pendingEffectContinuations.filter(
+        (candidate) => candidate.batchId !== input.batchId
+    );
+    const steps = run.saga.steps.map((step) =>
+        targetStepIds.has(step.stepId)
+            ? { ...step, state: 'reviewed' as const, manualReviewDisposition: input.disposition, updatedAt: settledAt }
+            : step
+    );
+    const remainingManualResumeWorkIds = run.manualResume.workIds.filter((workId) => workId !== input.batchId);
+    const hasRecoveryObligation =
+        steps.some(
+            (step) =>
+                step.state === 'pending' ||
+                step.state === 'external-pending' ||
+                step.state === 'uncompensated' ||
+                step.state === 'manual-repair'
+        ) ||
+        pendingEffectContinuations.length > 0 ||
+        run.workLeases.some((lease) => lease.terminalState === null) ||
+        run.temporaryAssets.some((asset) => asset.status !== 'released') ||
+        remainingManualResumeWorkIds.length > 0;
+    const runs = [...state.runs];
+    runs[runIndex] = {
+        ...run,
+        updatedAt: settledAt,
+        phase: reduceAgentRunTransition(run.phase, { type: 'pending-effect-completed', hasRecoveryObligation }),
+        pendingEffectContinuations,
+        manualResume:
+            remainingManualResumeWorkIds.length > 0
+                ? { ...run.manualResume, required: true, workIds: remainingManualResumeWorkIds }
+                : { required: false, reason: null, workIds: [], requiredAt: null },
+        saga: { schemaVersion: 1, steps },
+    } satisfies AgentRun;
+    const pendingEffectRecoveryLedger = getPendingEffectRecoveryLedger(state).filter(
+        (candidate) => !isPendingEffectRecovery(candidate, input)
+    );
+    try {
+        persistAgentRunState(withPendingEffectRecoveryLedger({ ...state, runs }, pendingEffectRecoveryLedger));
+    } catch (error) {
+        try {
+            persistAgentRunState(state);
+        } catch {
+            // The original durable state remains authoritative even when restoring the live cache also cannot persist.
+        }
+        throw error;
+    }
+    return structuredClone(runs[runIndex]);
 }
 
 function hasExactlySettledPendingEffectContinuation(
@@ -2010,6 +2218,7 @@ export const agentRunLifecycle = {
     failPendingEffectContinuation: failAgentRunPendingEffectContinuation,
     requirePendingEffectManualRepair: requireAgentRunPendingEffectManualRepair,
     completePendingEffectContinuation: completeAgentRunPendingEffectContinuation,
+    settlePendingEffectManualReview: settleAgentRunPendingEffectManualReview,
     recordSagaStep: recordAgentRunSagaStep,
     recordSagaCompensation: recordAgentRunSagaCompensation,
     recordApplicationToolEvidence: recordAgentRunApplicationToolEvidence,

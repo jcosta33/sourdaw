@@ -8,6 +8,7 @@ import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { useStore } from '#/infra/store/useStore';
+import { agentSectionRenderArtifactStore } from '#/modules/AudioRendering/stores';
 import { capabilityStore } from '#/modules/BrowserAi/stores';
 import { cn } from '#/utils/Styles/cn';
 
@@ -23,9 +24,15 @@ import { confirmPendingChatActions } from '../../useCases/confirmPendingChatActi
 import { agentRunControls } from '../../useCases/getAgentRunControlProjection';
 import { isLlmAvailable } from '../../useCases/llmOrchestration/backendResolution/isLlmAvailable';
 import { recoverAgentRunPendingEffects } from '../../useCases/recoverAgentRunPendingEffects';
+import { selectRetainedSectionRenderManualReviews } from '../../useCases/selectRetainedSectionRenderManualReviews';
 import { sendChatMessage } from '../../useCases/sendChatMessage';
 import { AgentRunDecisionControls } from '../components/AgentRunDecisionControls';
 import { ChatComposer } from '../components/ChatComposer';
+
+import {
+    RetainedSectionRenderManualReview,
+    type RetainedSectionRenderPreviewCoordinator,
+} from './RetainedSectionRenderManualReview';
 
 /**
  * Strict allow-list of markdown-derived HTML elements rendered from streamed,
@@ -256,6 +263,26 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
 
     const [inputValue, setInputValue] = useState('');
     const [decisionStatusMessage, setDecisionStatusMessage] = useState<string | null>(null);
+    const [retainedReviewStatusMessage, setRetainedReviewStatusMessage] = useState<string | null>(null);
+    const activeRetainedPreviewRef = useRef<{ ownerId: string; stop: () => void } | null>(null);
+    const [retainedPreviewCoordinator] = useState<RetainedSectionRenderPreviewCoordinator>(() => ({
+        stopOther: (ownerId) => {
+            const active = activeRetainedPreviewRef.current;
+            if (active === null || active.ownerId === ownerId) {
+                return;
+            }
+            activeRetainedPreviewRef.current = null;
+            active.stop();
+        },
+        register: (ownerId, stop) => {
+            activeRetainedPreviewRef.current = { ownerId, stop };
+        },
+        release: (ownerId) => {
+            if (activeRetainedPreviewRef.current?.ownerId === ownerId) {
+                activeRetainedPreviewRef.current = null;
+            }
+        },
+    }));
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -266,10 +293,12 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
         enableReasoning: false,
     });
     const agentRunState = useStore(agentRunStore, { schemaVersion: 1, runs: [] });
+    useStore(agentSectionRenderArtifactStore, { artifacts: [] });
     const capabilityState = useStore(capabilityStore, { phase: 'idle' });
     const decisionRuns = agentRunState.schemaVersion === 1 ? agentRunControls.listDecisions() : [];
     const pendingEffectContinuations = selectAgentRunPendingEffectRecoveries(agentRunState);
     const preparedStemManualRepairs = selectPreparedStemImportManualRepairs(agentRunState);
+    const retainedSectionRenderManualReviews = selectRetainedSectionRenderManualReviews(agentRunState);
     const [executionMode, setExecutionMode] = useState<AgentExecutionMode>(
         chatState?.chatMode === 'prompt' ? 'apply' : 'explain'
     );
@@ -346,7 +375,8 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
     if (
         chatState.messages.length === 0 &&
         pendingEffectContinuations.length === 0 &&
-        preparedStemManualRepairs.length === 0
+        preparedStemManualRepairs.length === 0 &&
+        retainedSectionRenderManualReviews.length === 0
     ) {
         chatPanelContent = (
             <Stack align="center" justify="center" className="h-full text-center px-6 opacity-60">
@@ -371,6 +401,21 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
                 ))}
                 {pendingEffectContinuations.map((continuation) => {
                     const manualRepairRequired = continuation.recovery === 'manual-repair';
+                    const renderOnlyManualReview =
+                        manualRepairRequired &&
+                        continuation.effects.length > 0 &&
+                        continuation.effects.every(
+                            (effect) =>
+                                effect.kind === 'external-effect' && effect.operation === 'renderProjectSections'
+                        ) &&
+                        retainedSectionRenderManualReviews.some(
+                            (review) =>
+                                review.binding.runId === continuation.runId &&
+                                review.binding.batchId === continuation.batchId
+                        );
+                    if (renderOnlyManualReview) {
+                        return null;
+                    }
                     const hasGenericEffect = continuation.effects.some(({ kind }) => kind === 'external-effect');
                     const repairsCurrentRuntime = continuation.effects.some(
                         ({ kind, remediation }) => kind === 'runtime-graph' && remediation === 'repair'
@@ -434,6 +479,14 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
                         </div>
                     );
                 })}
+                {retainedSectionRenderManualReviews.map((review) => (
+                    <RetainedSectionRenderManualReview
+                        key={`${review.binding.runId}:${review.binding.batchId}`}
+                        review={review}
+                        onStatus={setRetainedReviewStatusMessage}
+                        previewCoordinator={retainedPreviewCoordinator}
+                    />
+                ))}
                 {preparedStemManualRepairs.map((recovery) => (
                     <div
                         key={`${recovery.runId}:${recovery.batchId}:prepared-stems`}
@@ -503,6 +556,16 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
                     void handleResumeDecision(runId, alternativeId);
                 }}
             />
+            {retainedReviewStatusMessage !== null ? (
+                <p
+                    role="status"
+                    aria-live="polite"
+                    aria-atomic="true"
+                    className="shrink-0 border-b border-border/50 bg-surface-inset px-4 py-2 text-xs text-muted-foreground"
+                >
+                    {retainedReviewStatusMessage}
+                </p>
+            ) : null}
             {/* Scrollable message list. aria-live announces streamed assistant
                 output for screen-reader users during the long (30–90s) planning
                 pass; aria-busy signals that generation is in progress. */}
