@@ -137,7 +137,7 @@ type CiAdmissionMode = 'advisory' | 'required';
 
 const ACTIVE_CI_ADMISSION_MODE: CiAdmissionMode = 'advisory';
 
-export type DeliveryReceiptAuthorityPhase = 'prepared' | 'merge-authorized' | 'terminal';
+export type DeliveryReceiptAuthorityPhase = 'released' | 'prepared' | 'merge-authorized' | 'terminal';
 
 export class DeliveryMergeRejectedError extends Error {
     constructor(message: string) {
@@ -179,15 +179,22 @@ type CurrentPersistedPreparedDeliveryReceiptAuthority = CurrentPersistedDelivery
     postMergeValidation?: PersistedPreparedPostMergeValidation;
 };
 
+type CurrentPersistedReleasedDeliveryReceiptAuthority = CurrentPersistedDeliveryReceiptAuthorityBase & {
+    phase: 'released';
+};
+
 type CurrentPersistedTerminalDeliveryReceiptAuthority = CurrentPersistedDeliveryReceiptAuthorityBase & {
     phase: 'merge-authorized' | 'terminal';
 };
 
 type CurrentPersistedDeliveryReceiptAuthority =
-    CurrentPersistedPreparedDeliveryReceiptAuthority | CurrentPersistedTerminalDeliveryReceiptAuthority;
+    | CurrentPersistedReleasedDeliveryReceiptAuthority
+    | CurrentPersistedPreparedDeliveryReceiptAuthority
+    | CurrentPersistedTerminalDeliveryReceiptAuthority;
 
 export type PersistedDeliveryReceiptAuthority =
     | LegacyPersistedDeliveryReceiptAuthority
+    | CurrentPersistedReleasedDeliveryReceiptAuthority
     | CurrentPersistedPreparedDeliveryReceiptAuthority
     | CurrentPersistedTerminalDeliveryReceiptAuthority;
 
@@ -197,6 +204,7 @@ type StoredLegacyDeliveryReceiptAuthority = {
 };
 
 type StoredCurrentDeliveryReceiptAuthority =
+    | ({ version: 2 } & CurrentPersistedReleasedDeliveryReceiptAuthority)
     | ({ version: 2 } & CurrentPersistedPreparedDeliveryReceiptAuthority)
     | ({ version: 2 } & CurrentPersistedTerminalDeliveryReceiptAuthority);
 
@@ -214,7 +222,9 @@ function isFrozenPersistedDeliveryReceiptAuthority(
     return (
         authority !== undefined &&
         authority.phase !== 'legacy' &&
-        (authority.phase !== 'prepared' || authority.postMergeValidation !== undefined)
+        (authority.phase === 'merge-authorized' ||
+            authority.phase === 'terminal' ||
+            (authority.phase === 'prepared' && authority.postMergeValidation !== undefined))
     );
 }
 
@@ -902,6 +912,9 @@ function assertCanonicalDeliveryReceipt(
 }
 
 function deliveryReceiptAuthorityPhaseRank(phase: DeliveryReceiptAuthorityPhase): number {
+    if (phase === 'released') {
+        return -1;
+    }
     if (phase === 'prepared') {
         return 0;
     }
@@ -961,6 +974,13 @@ function mergePersistedDeliveryReceiptAuthority(
         return next;
     }
     const receiptBody = next.receiptBody ?? current.receiptBody;
+    if (current.phase === 'released' && next.phase === 'released') {
+        return {
+            phase: 'released',
+            receiptId: current.receiptId,
+            ...(receiptBody === undefined ? {} : { receiptBody }),
+        };
+    }
     if (current.phase === 'prepared' && next.phase === 'prepared') {
         return {
             phase: 'prepared',
@@ -1015,6 +1035,16 @@ function persistPreparedDeliveryReceiptAuthority(
     );
 }
 
+function releasedDeliveryReceiptAuthority(
+    authority: Pick<CurrentPersistedDeliveryReceiptAuthority, 'receiptId' | 'receiptBody'>
+): CurrentPersistedReleasedDeliveryReceiptAuthority {
+    return {
+        phase: 'released',
+        receiptId: authority.receiptId,
+        ...(authority.receiptBody === undefined ? {} : { receiptBody: authority.receiptBody }),
+    };
+}
+
 function preparedDeliveryReceiptAuthority(
     receipt: Pick<DeliveryReceiptComment, 'id' | 'body'>,
     postMergeValidation?: PersistedPreparedPostMergeValidation
@@ -1056,13 +1086,7 @@ function restorePreparedDeliveryReceiptAuthorityBeforeClosedRetry(number: number
     if (current?.phase !== 'prepared' || current.postMergeValidation === undefined) {
         return;
     }
-    const beforeArming: PersistedDeliveryReceiptAuthority =
-        current.receiptBody === undefined
-            ? {
-                  phase: 'prepared',
-                  receiptId: current.receiptId,
-              }
-            : preparedDeliveryReceiptAuthority({ id: current.receiptId, body: current.receiptBody });
+    const beforeArming = releasedDeliveryReceiptAuthority(current);
     restorePreArmedDeliveryReceiptAuthority(number, beforeArming, current, port);
 }
 
@@ -1443,6 +1467,9 @@ function readPersistedMergedRecoveryReceipt(
                 }
             }
         );
+    }
+    if (authority.phase === 'released') {
+        fail(`PR #${pullRequest.number} delivery receipt authority cannot be proven`);
     }
     const preparedPostMergeValidation = authority.phase === 'prepared' ? authority.postMergeValidation : undefined;
     if (authority.phase === 'prepared') {
@@ -2707,7 +2734,10 @@ function parseDeliveryReceiptAuthority(contents: string, number: number): Delive
         !keys.includes('version') ||
         authority.version !== 2 ||
         !keys.includes('phase') ||
-        (authority.phase !== 'prepared' && authority.phase !== 'merge-authorized' && authority.phase !== 'terminal') ||
+        (authority.phase !== 'released' &&
+            authority.phase !== 'prepared' &&
+            authority.phase !== 'merge-authorized' &&
+            authority.phase !== 'terminal') ||
         !keys.includes('receiptId') ||
         typeof authority.receiptId !== 'string' ||
         authority.receiptId === '' ||
