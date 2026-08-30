@@ -4,7 +4,8 @@
  * Everything the backend does *between* the contract and the wire is pinned
  * here: material registered before the probe, the render-nothing mapping
  * probe naming the committed history through its session key (#2225),
- * refusal-with-rollback, wire-fed reports, the interleaved-bytes round
+ * refusal-with-rollback, the one refusal this backend owns rather than the
+ * wire's, wire-fed reports, the interleaved-bytes round
  * trip, the line between a batch refusal, which resolves, and a seam
  * fault, which throws — and the linear-traffic law the session exists for.
  * What the wire's far side does with those payloads is the null test's
@@ -251,6 +252,47 @@ describe('createNativeOfflineGraphBackend', () => {
             application: 'not-applied',
             reason: 'register_timeline_sample "take-1": PCM payload holds zero frames',
         });
+    });
+
+    it('refuses a batch carrying the monitor gate before any of it crosses the wire', async () => {
+        // The native mapper accepts `set-monitor-shadow` because the live path
+        // needs it, so a bounce that forwarded it would accept-and-ignore a
+        // command the contract says a backend with no monitor must refuse.
+        const transport = scriptedTransport();
+        const backend = createNativeOfflineGraphBackend({ sampleRate: SAMPLE_RATE, transport });
+
+        const refused = await backend.apply({
+            schemaVersion: 1,
+            commands: [
+                TRACK_STRIP,
+                { kind: 'set-monitor-shadow', shadowed: true },
+                clipCommand('take-1', stereoBuffer([0.5], [0.5])),
+            ],
+        });
+
+        expect(refused).toEqual({
+            acceptance: 'rejected',
+            application: 'not-applied',
+            reason: 'native/offline cannot apply "set-monitor-shadow": an offline render has no monitor to shadow: its output is the file, not a speaker',
+        });
+        // Whole: the strip beside it never mapped, and the clip's material
+        // never reached the pool — the refusal precedes both.
+        expect(transport.maps).toHaveLength(0);
+        expect(transport.registered).toHaveLength(0);
+
+        // And the guard names one kind rather than closing the backend: the
+        // same commands without the gate still apply.
+        const accepted = await backend.apply({
+            schemaVersion: 1,
+            commands: [TRACK_STRIP, clipCommand('take-1', stereoBuffer([0.5], [0.5]))],
+        });
+
+        expect(accepted.application).toBe('applied');
+        expect(transport.maps).toHaveLength(1);
+        expect(transport.maps[0]!.batch.commands.map((command) => command.kind)).toEqual([
+            'create-track-strip',
+            'schedule-clip',
+        ]);
     });
 
     it('hands back the reports the wire answered and keeps the revision counter its own', async () => {
