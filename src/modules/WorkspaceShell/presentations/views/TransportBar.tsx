@@ -115,7 +115,12 @@ export const TransportBar = (): ReactElement => {
                 onDoubleClick={toggleMaximizeOnTitlebarDoubleClick}
             >
                 <Row gap={1} className="transport-bar__title-project min-w-0">
-                    <Row gap={0} shrink={false} data-testid="project-menu-control">
+                    <Row
+                        gap={0}
+                        shrink={false}
+                        className="transport-bar__project-menu-control"
+                        data-testid="project-menu-control"
+                    >
                         <ProjectName name={project.name} dirty={project.dirty} />
                         <RecentProjectsMenu />
                     </Row>

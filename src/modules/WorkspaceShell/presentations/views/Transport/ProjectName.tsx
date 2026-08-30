@@ -53,7 +53,7 @@ export const ProjectName = ({ name, dirty }: ProjectNameProps): ReactElement => 
                     size="bare"
                     type="button"
                     data-testid="project-name"
-                    className="daw-readout-well group flex h-6 shrink-0 cursor-pointer items-center gap-1 rounded-l-sm rounded-r-none border-r-0 px-2.5 text-xs font-medium text-foreground/80 transition-colors hover:bg-white/[0.04] hover:brightness-[1.06] hover:text-foreground"
+                    className="transport-bar__project-name daw-readout-well group flex h-6 shrink-0 cursor-pointer items-center gap-1 rounded-l-sm rounded-r-none border-r-0 px-2.5 text-xs font-medium text-foreground/80 transition-colors hover:bg-white/[0.04] hover:brightness-[1.06] hover:text-foreground"
                     onClick={() => {
                         setEditing(true);
                         setValue(name);

@@ -137,13 +137,13 @@
         grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto;
     }
 
-    .transport-bar__title-project > [data-testid='project-menu-control'] {
+    .transport-bar__project-menu-control {
         min-width: 0;
         max-width: 11rem;
         flex-shrink: 1;
     }
 
-    .transport-bar__title-project [data-testid='project-name'] {
+    .transport-bar__project-name {
         min-width: 0;
         max-width: calc(100% - 1.5rem);
         flex-shrink: 1;
@@ -176,7 +176,7 @@
         display: inline-flex;
     }
 
-    .transport-bar__title-project > [data-testid='project-menu-control'] {
+    .transport-bar__project-menu-control {
         max-width: 7.5rem;
     }
 }
