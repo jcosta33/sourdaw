@@ -1,3 +1,4 @@
+import { parse as parsePersistedValue } from 'superjson';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { logger } from '#/infra/logger/appLogger';
@@ -54,7 +55,7 @@ import {
 import { type ActionHandler, type AppAction, type AppActionType } from '#/utils/handlerContract';
 
 import { MISSING_EXACT_CHECKPOINT_RECOVERY_REASON } from '../../models/GetPendingEffectRecoveryPolicy';
-import { readAgentRunState } from '../../stores/agentRunStore';
+import { agentRunStore, readAgentRunState, sanitizeAgentRunState } from '../../stores/agentRunStore';
 import { aiActionHistoryStore, clearAiHistory } from '../../stores/aiActionHistoryStore';
 import { chatStore, stopGenerating } from '../../stores/chatStore';
 import {
@@ -3862,6 +3863,54 @@ describe('confirmPendingChatActions transaction admission', () => {
                 serializedBatch: commandBatch.serialized,
             }),
         ]);
+
+        const persistedState = window.localStorage.getItem('sourdaw-agent-runs');
+        if (!persistedState) {
+            throw new Error('Expected mixed pending-effect recovery to be persisted.');
+        }
+        agentRunLifecycle.clear();
+        const reloadedState = sanitizeAgentRunState(parsePersistedValue(persistedState));
+        if (!agentRunStore.trySet(reloadedState)) {
+            throw new Error('Expected mixed pending-effect recovery to reload.');
+        }
+        const verifiedReceipt = createPendingRuntimeGraphBatchResult(commandBatch).receipt;
+        const readReceipt = vi
+            .spyOn(commandUseCases, 'getVersionedCommandBatchIdempotentReplay')
+            .mockResolvedValue(verifiedReceipt);
+        const replayBatch = vi.spyOn(commandUseCases, 'executeVersionedCommandBatchEnvelope');
+        await expect(recoverAgentRunPendingEffects({ runId, batchId })).resolves.toEqual({
+            status: 'failed',
+            reason: 'Generic pending-effect recovery cannot execute receipt-bound section renders. The original confirmation is required and may be unavailable after reload.',
+        });
+        expect(readReceipt).toHaveBeenCalledWith({
+            authority: commandBatch.authority,
+            serialized: commandBatch.serialized,
+        });
+        expect(replayBatch).not.toHaveBeenCalled();
+        readReceipt.mockRestore();
+        replayBatch.mockRestore();
+        expect(agentRunLifecycle.get(runId)).toMatchObject({
+            phase: 'partially-completed',
+            pendingEffectContinuations: [
+                expect.objectContaining({
+                    batchId,
+                    recovery: 'manual-repair',
+                    effects: [
+                        expect.objectContaining({ commandId: addDeviceEnvelope.commandId }),
+                        expect.objectContaining({ commandId: renderEnvelope.commandId, remediation: 'manual-repair' }),
+                        expect.objectContaining({
+                            commandId: secondRenderEnvelope.commandId,
+                            remediation: 'manual-repair',
+                        }),
+                    ],
+                }),
+            ],
+            saga: {
+                steps: expect.arrayContaining([
+                    expect.objectContaining({ owner: 'external-effect', state: 'manual-repair' }),
+                ]),
+            },
+        });
     });
 
     it('requires manual recovery when an ownerless mutation lands during a two-job render', async () => {

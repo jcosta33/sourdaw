@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
     getRecovery: vi.fn(),
     getReceipt: vi.fn(),
     logError: vi.fn(),
+    parseBatch: vi.fn(),
     recordRecovery: vi.fn(),
     requireManualRepair: vi.fn(),
 }));
@@ -20,6 +21,7 @@ vi.mock('#/infra/logger/appLogger', () => ({ logger: { error: mocks.logError } }
 vi.mock('#/modules/Command/useCases', () => ({
     executeVersionedCommandBatchEnvelope: mocks.executeBatch,
     getVersionedCommandBatchIdempotentReplay: mocks.getReceipt,
+    parseVersionedCommandBatchEnvelope: mocks.parseBatch,
 }));
 
 vi.mock('../agentRunLifecycle', () => ({
@@ -79,6 +81,17 @@ function manualizedRuntimeGraphEffect(receiptEffect: AgentRunPendingEffect): Age
     };
 }
 
+function synthesizedRenderEffect(commandId: string): AgentRunPendingEffect {
+    return {
+        commandId,
+        kind: 'external-effect',
+        operation: 'renderProjectSections',
+        reason: 'The final project revision is unavailable.',
+        remediation: 'manual-repair',
+        state: 'pending',
+    };
+}
+
 function configureManualizedRuntimeGraphProof(input?: {
     checkpoint?: 'prepared' | 'durable';
     continuationEffects?: AgentRunPendingEffect[];
@@ -87,11 +100,13 @@ function configureManualizedRuntimeGraphProof(input?: {
     recovery?: 'reconcile-batch' | 'manual-repair';
 }): void {
     const receiptEffect = runtimeGraphReceiptEffect();
+    const receiptEffects = input?.receiptEffects ?? [receiptEffect];
+    const continuationEffects = input?.continuationEffects ?? [manualizedRuntimeGraphEffect(receiptEffect)];
     const recovery = renderRecovery();
     mocks.getRecovery.mockReturnValue({
         ...recovery,
         checkpoint: input?.checkpoint ?? 'durable',
-        effects: input?.continuationEffects ?? [manualizedRuntimeGraphEffect(receiptEffect)],
+        effects: continuationEffects,
         lastError: input?.lastError ?? MISSING_EXACT_CHECKPOINT_RECOVERY_REASON,
         recovery: input?.recovery ?? 'manual-repair',
     });
@@ -100,7 +115,21 @@ function configureManualizedRuntimeGraphProof(input?: {
         runId: 'run-render-recovery',
         batchId: 'batch-render-recovery',
         outcome: 'partially-committed',
-        pendingEffects: input?.receiptEffects ?? [receiptEffect],
+        pendingEffects: receiptEffects,
+    });
+    const commandsById = new Map(
+        [...receiptEffects, ...continuationEffects].map(({ commandId, operation }) => [
+            commandId,
+            { commandId, operation },
+        ])
+    );
+    mocks.parseBatch.mockReturnValue({
+        status: 'valid',
+        envelope: {
+            runId: 'run-render-recovery',
+            batchId: 'batch-render-recovery',
+            commands: [...commandsById.values()],
+        },
     });
 }
 
@@ -114,6 +143,14 @@ describe('recoverAgentRunPendingEffects', () => {
             batchId: 'batch-render-recovery',
             outcome: 'partially-committed',
             pendingEffects: [renderRecovery().effects[0]],
+        });
+        mocks.parseBatch.mockReturnValue({
+            status: 'valid',
+            envelope: {
+                runId: 'run-render-recovery',
+                batchId: 'batch-render-recovery',
+                commands: [{ commandId: 'command-render', operation: 'renderProjectSections' }],
+            },
         });
     });
     it('refuses a still-pending generic section-render recovery before execution', async () => {
@@ -327,6 +364,178 @@ describe('recoverAgentRunPendingEffects', () => {
             reason: manualRepairReason,
             preserveEffects: false,
         });
+        expect(mocks.executeBatch).not.toHaveBeenCalled();
+    });
+
+    it('admits receipt-backed runtime work followed by uniquely authorized synthesized renders', async () => {
+        const manualRepairReason =
+            'Generic pending-effect recovery cannot execute receipt-bound section renders. The original confirmation is required and may be unavailable after reload.';
+        const receiptEffect = runtimeGraphReceiptEffect();
+        const firstRender = synthesizedRenderEffect('command-render-first');
+        const secondRender = synthesizedRenderEffect('command-render-second');
+        configureManualizedRuntimeGraphProof({
+            continuationEffects: [manualizedRuntimeGraphEffect(receiptEffect), firstRender, secondRender],
+            receiptEffects: [receiptEffect],
+        });
+
+        await expect(
+            recoverAgentRunPendingEffects({ runId: 'run-render-recovery', batchId: 'batch-render-recovery' })
+        ).resolves.toEqual({ status: 'failed', reason: manualRepairReason });
+
+        expect(mocks.requireManualRepair).toHaveBeenCalledWith({
+            runId: 'run-render-recovery',
+            batchId: 'batch-render-recovery',
+            reason: manualRepairReason,
+            preserveEffects: false,
+        });
+        expect(mocks.executeBatch).not.toHaveBeenCalled();
+    });
+
+    it.each([
+        [
+            'a missing authorized render',
+            () => {
+                const receiptEffect = runtimeGraphReceiptEffect();
+                configureManualizedRuntimeGraphProof({
+                    continuationEffects: [
+                        manualizedRuntimeGraphEffect(receiptEffect),
+                        synthesizedRenderEffect('command-render-first'),
+                    ],
+                    receiptEffects: [receiptEffect],
+                });
+                mocks.parseBatch.mockReturnValue({
+                    status: 'valid',
+                    envelope: {
+                        runId: 'run-render-recovery',
+                        batchId: 'batch-render-recovery',
+                        commands: [
+                            { commandId: 'command-runtime', operation: 'addDevice' },
+                            { commandId: 'command-render-first', operation: 'renderProjectSections' },
+                            { commandId: 'command-render-second', operation: 'renderProjectSections' },
+                        ],
+                    },
+                });
+            },
+        ],
+        [
+            'a duplicate render obligation',
+            () => {
+                const receiptEffect = runtimeGraphReceiptEffect();
+                const render = synthesizedRenderEffect('command-render');
+                configureManualizedRuntimeGraphProof({
+                    continuationEffects: [manualizedRuntimeGraphEffect(receiptEffect), render, { ...render }],
+                    receiptEffects: [receiptEffect],
+                });
+            },
+        ],
+        [
+            'reordered render obligations',
+            () => {
+                const receiptEffect = runtimeGraphReceiptEffect();
+                configureManualizedRuntimeGraphProof({
+                    continuationEffects: [
+                        manualizedRuntimeGraphEffect(receiptEffect),
+                        synthesizedRenderEffect('command-render-second'),
+                        synthesizedRenderEffect('command-render-first'),
+                    ],
+                    receiptEffects: [receiptEffect],
+                });
+                mocks.parseBatch.mockReturnValue({
+                    status: 'valid',
+                    envelope: {
+                        runId: 'run-render-recovery',
+                        batchId: 'batch-render-recovery',
+                        commands: [
+                            { commandId: 'command-runtime', operation: 'addDevice' },
+                            { commandId: 'command-render-first', operation: 'renderProjectSections' },
+                            { commandId: 'command-render-second', operation: 'renderProjectSections' },
+                        ],
+                    },
+                });
+            },
+        ],
+        [
+            'an ambiguous serialized command id',
+            () => {
+                const receiptEffect = runtimeGraphReceiptEffect();
+                configureManualizedRuntimeGraphProof({
+                    continuationEffects: [
+                        manualizedRuntimeGraphEffect(receiptEffect),
+                        synthesizedRenderEffect('command-render'),
+                    ],
+                    receiptEffects: [receiptEffect],
+                });
+                mocks.parseBatch.mockReturnValue({
+                    status: 'valid',
+                    envelope: {
+                        runId: 'run-render-recovery',
+                        batchId: 'batch-render-recovery',
+                        commands: [
+                            { commandId: 'command-runtime', operation: 'addDevice' },
+                            { commandId: 'command-render', operation: 'renderProjectSections' },
+                            { commandId: 'command-render', operation: 'renderProjectSections' },
+                        ],
+                    },
+                });
+            },
+        ],
+        [
+            'a non-render extra',
+            () => {
+                const receiptEffect = runtimeGraphReceiptEffect();
+                const extra = synthesizedRenderEffect('command-analysis');
+                Reflect.set(extra, 'operation', 'analyzeProject');
+                configureManualizedRuntimeGraphProof({
+                    continuationEffects: [manualizedRuntimeGraphEffect(receiptEffect), extra],
+                    receiptEffects: [receiptEffect],
+                });
+            },
+        ],
+        [
+            'a render with wrong remediation',
+            () => {
+                const receiptEffect = runtimeGraphReceiptEffect();
+                const extra = synthesizedRenderEffect('command-render');
+                Reflect.set(extra, 'remediation', 'reconcile');
+                configureManualizedRuntimeGraphProof({
+                    continuationEffects: [manualizedRuntimeGraphEffect(receiptEffect), extra],
+                    receiptEffects: [receiptEffect],
+                });
+            },
+        ],
+        [
+            'an unauthorized render command id',
+            () => {
+                const receiptEffect = runtimeGraphReceiptEffect();
+                configureManualizedRuntimeGraphProof({
+                    continuationEffects: [
+                        manualizedRuntimeGraphEffect(receiptEffect),
+                        synthesizedRenderEffect('command-render-unknown'),
+                    ],
+                    receiptEffects: [receiptEffect],
+                });
+                mocks.parseBatch.mockReturnValue({
+                    status: 'valid',
+                    envelope: {
+                        runId: 'run-render-recovery',
+                        batchId: 'batch-render-recovery',
+                        commands: [{ commandId: 'command-runtime', operation: 'addDevice' }],
+                    },
+                });
+            },
+        ],
+    ])('rejects synthesized render recovery with %s', async (_label, configureProof) => {
+        configureProof();
+
+        await expect(
+            recoverAgentRunPendingEffects({ runId: 'run-render-recovery', batchId: 'batch-render-recovery' })
+        ).resolves.toEqual({ status: 'failed', reason: PENDING_EFFECT_PROOF_MISMATCH_REASON });
+        expect(mocks.failRecovery).toHaveBeenCalledWith({
+            runId: 'run-render-recovery',
+            batchId: 'batch-render-recovery',
+            reason: PENDING_EFFECT_PROOF_MISMATCH_REASON,
+        });
+        expect(mocks.requireManualRepair).not.toHaveBeenCalled();
         expect(mocks.executeBatch).not.toHaveBeenCalled();
     });
 
