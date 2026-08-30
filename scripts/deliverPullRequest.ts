@@ -1508,6 +1508,9 @@ function assertCompleteDeliveryReceiptProof(
     if (!Array.isArray(proof.commentIds) || proof.commentIds.some((commentId) => typeof commentId !== 'string')) {
         fail(`PR #${number} delivery receipt authority cannot be proven`);
     }
+    if (new Set(proof.commentIds).size !== proof.commentIds.length) {
+        fail(`PR #${number} delivery receipt authority cannot be proven`);
+    }
     if (
         !Array.isArray(proof.editedCommentIds) ||
         proof.editedCommentIds.some((commentId) => typeof commentId !== 'string') ||
@@ -1534,17 +1537,16 @@ function assertCompleteDeliveryReceiptProof(
         }
         return;
     }
-    if (
-        proof.latestCommentId === undefined ||
-        proof.commentIds.at(-1) !== proof.latestCommentId ||
-        comments.at(-1)?.id !== proof.latestCommentId
-    ) {
+    if (proof.latestCommentId !== undefined && !commentIdSet.has(proof.latestCommentId)) {
         fail(`PR #${number} delivery receipt authority cannot be proven`);
     }
-    for (let index = 0; index < proof.commentIds.length; index += 1) {
-        if (comments[index]?.id !== proof.commentIds[index]) {
+    const restCommentIds = comments.map((comment) => comment.id);
+    for (const commentId of restCommentIds) {
+        if (!commentIdSet.has(commentId)) {
             fail(`PR #${number} delivery receipt authority cannot be proven`);
         }
+    }
+    for (let index = 0; index < comments.length; index += 1) {
         const comment = comments[index];
         if (
             comment !== undefined &&
@@ -2485,7 +2487,7 @@ function readDeliveryReceiptProofFromGithub(
     repository: { owner: string; name: string },
     shell: Pick<ShellRunner, 'capture'>
 ): DeliveryReceiptProof {
-    const query = `query($owner:String!,$name:String!,$number:Int!,$cursor:String){repository(owner:$owner,name:$name){pullRequest(number:$number){comments(first:${ROLLUP_PAGE_SIZE},after:$cursor,orderBy:{field:CREATED_AT,direction:ASC}){totalCount pageInfo{hasNextPage endCursor} nodes{id lastEditedAt}}}}}`;
+    const query = `query($owner:String!,$name:String!,$number:Int!,$cursor:String){repository(owner:$owner,name:$name){pullRequest(number:$number){comments(first:${ROLLUP_PAGE_SIZE},after:$cursor,orderBy:{field:UPDATED_AT,direction:ASC}){totalCount pageInfo{hasNextPage endCursor} nodes{id lastEditedAt}}}}}`;
     const readPage = (cursor: string | null) => {
         const response = parseJson<DeliveryReceiptProofResponse>(
             shell.capture('gh', [
@@ -2540,7 +2542,6 @@ function readDeliveryReceiptProofFromGithub(
     const commentIds: string[] = [];
     const editedCommentIds: string[] = [];
     const seenCommentIds = new Set<string>();
-    const consumedCursors = new Set<string>();
     const emittedCursors = new Set<string>();
     let cursor: string | null = null;
     while (true) {
@@ -2574,15 +2575,11 @@ function readDeliveryReceiptProofFromGithub(
         if (commentIds.length >= expectedTotalCount) {
             fail(`cannot inspect delivery receipts for PR #${number}`);
         }
-        if (emittedCursors.has(page.pageInfo.endCursor) || consumedCursors.has(page.pageInfo.endCursor)) {
+        if (emittedCursors.has(page.pageInfo.endCursor)) {
             fail(`cannot inspect delivery receipts for PR #${number}`);
         }
         emittedCursors.add(page.pageInfo.endCursor);
         cursor = page.pageInfo.endCursor;
-        if (consumedCursors.has(cursor)) {
-            fail(`cannot inspect delivery receipts for PR #${number}`);
-        }
-        consumedCursors.add(cursor);
         page = readPage(cursor);
     }
     if (commentIds.length !== expectedTotalCount) {

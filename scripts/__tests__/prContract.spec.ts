@@ -187,6 +187,46 @@ describe('pull-request contract', () => {
         );
     });
 
+    it.each([
+        [
+            'unsupported hidden v3 receipt',
+            [
+                'Delivery receipt for PR #2495.',
+                '',
+                '- Head: `3fc61d12acb110faba1a15e251268a1a7d09be9d`',
+                `- Pull request body SHA-256: \`${'a'.repeat(64)}\``,
+                '- Closing issue: #2406',
+                '',
+                '<!-- sourdaw-delivery-receipt:v3',
+                'pull-request: 2495',
+                'head: 3fc61d12acb110faba1a15e251268a1a7d09be9d',
+                `body-sha256: ${'a'.repeat(64)}`,
+                'closing-issue: 2406',
+                '-->',
+            ].join('\n'),
+        ],
+        [
+            'misplaced legacy v1 marker after visible text',
+            [
+                'Delivery receipt for PR #2495.',
+                '',
+                '- Head: `3fc61d12acb110faba1a15e251268a1a7d09be9d`',
+                `- Pull request body SHA-256: \`${'a'.repeat(64)}\``,
+                '- Closing issue: #2406',
+                '',
+                '<!-- sourdaw-delivery-receipt:v1',
+                'pull-request: 2495',
+                'head: 3fc61d12acb110faba1a15e251268a1a7d09be9d',
+                `body-sha256: ${'a'.repeat(64)}`,
+                'closing-issue: 2406',
+                '-->',
+            ].join('\n'),
+        ],
+        ['reserved namespace in ordinary text', 'ordinary note about sourdaw-delivery-receipt:v9 receipts'],
+    ])('fails closed on reserved delivery receipt markers: %s', (_label, malformedReceipt) => {
+        expect(() => parseDeliveryReceipt(malformedReceipt)).toThrow(/unsupported delivery receipt/);
+    });
+
     it.each(['unstable', 'skipped'] as const)(
         'round-trips an advisory delivery receipt that records a %s aggregate CI state',
         (observedCiState) => {

@@ -171,6 +171,8 @@ const CLOSING_RELATIONSHIP_PATTERN =
     /^(?:close(?:s|d)?|fix(?:es|ed)?|resolve(?:s|d)?):?\s+(?:#([1-9][0-9]*)|([\w.-]+\/[\w.-]+)#([1-9][0-9]*))$/i;
 const RELATED_RELATIONSHIP_PATTERN = /^Related #([1-9][0-9]*)$/;
 const CANONICAL_CLOSING_RELATIONSHIP_PATTERN = /^Closes (?:#([1-9][0-9]*)|([\w.-]+\/[\w.-]+)#([1-9][0-9]*))$/;
+const DELIVERY_RECEIPT_NAMESPACE = 'sourdaw-delivery-receipt:';
+const DELIVERY_RECEIPT_MARKER_PREFIX = `<!-- ${DELIVERY_RECEIPT_NAMESPACE}`;
 const DELIVERY_RECEIPT_V1_PREFIX = '<!-- sourdaw-delivery-receipt:v1';
 const DELIVERY_RECEIPT_V1_PATTERN =
     /^<!-- sourdaw-delivery-receipt:v1\npull-request: ([1-9][0-9]*)\nhead: ([A-Za-z0-9._-]{1,128})\nbody-sha256: ([0-9a-f]{64})\nclosing-issue: (none|[1-9][0-9]*)\n-->$/;
@@ -349,9 +351,15 @@ export function parseDeliveryReceipt(body: string): DeliveryReceiptPayload | und
         return payload;
     }
 
-    const receiptIndex = body.indexOf(DELIVERY_RECEIPT_V2_PREFIX);
-    if (receiptIndex < 0) {
+    const reservedNamespaceIndex = body.indexOf(DELIVERY_RECEIPT_NAMESPACE);
+    if (reservedNamespaceIndex < 0) {
         return undefined;
+    }
+
+    const reservedMarkerIndex = body.indexOf(DELIVERY_RECEIPT_MARKER_PREFIX);
+    const receiptIndex = body.indexOf(DELIVERY_RECEIPT_V2_PREFIX);
+    if (receiptIndex < 0 || reservedMarkerIndex !== receiptIndex) {
+        fail('unsupported delivery receipt');
     }
     const hiddenReceipt = body.slice(receiptIndex);
     const match = DELIVERY_RECEIPT_V2_PATTERN.exec(hiddenReceipt);

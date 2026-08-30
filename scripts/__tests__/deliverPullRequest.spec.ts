@@ -105,7 +105,7 @@ function persistedPostMergeValidation(
 
 const body = relationshipBody('None.');
 const ORDERED_RECEIPT_PROOF_QUERY_FRAGMENT =
-    'comments(first:100,after:$cursor,orderBy:{field:CREATED_AT,direction:ASC}){totalCount pageInfo{hasNextPage endCursor} nodes{id lastEditedAt}}';
+    'comments(first:100,after:$cursor,orderBy:{field:UPDATED_AT,direction:ASC}){totalCount pageInfo{hasNextPage endCursor} nodes{id lastEditedAt}}';
 const ORDERED_RECEIPT_PROOF_QUERY = `query=query($owner:String!,$name:String!,$number:Int!,$cursor:String){repository(owner:$owner,name:$name){pullRequest(number:$number){${ORDERED_RECEIPT_PROOF_QUERY_FRAGMENT}}}}`;
 
 type MergeSettings = {
@@ -7040,11 +7040,7 @@ describe('delivery shell boundary', () => {
                         ],
                     ]);
                 }
-                if (
-                    joined.includes(
-                        'comments(first:100,after:$cursor,orderBy:{field:CREATED_AT,direction:ASC}){totalCount pageInfo{hasNextPage endCursor} nodes{id lastEditedAt}}'
-                    )
-                ) {
+                if (joined.includes(ORDERED_RECEIPT_PROOF_QUERY_FRAGMENT)) {
                     return shellDeliveryReceiptProofResponse([
                         'IC_author_note',
                         'IC_foreign_copy',
@@ -7095,11 +7091,7 @@ describe('delivery shell boundary', () => {
             capture: (_command, args) => {
                 captures.push({ command: 'gh', args });
                 const joined = args.join(' ');
-                if (
-                    joined.includes(
-                        'comments(first:100,after:$cursor,orderBy:{field:CREATED_AT,direction:ASC}){totalCount pageInfo{hasNextPage endCursor} nodes{id lastEditedAt}}'
-                    )
-                ) {
+                if (joined.includes(ORDERED_RECEIPT_PROOF_QUERY_FRAGMENT)) {
                     if (joined.includes('cursor=cursor-1')) {
                         return shellDeliveryReceiptProofResponse(['IC_receipt_older', 'IC_receipt_newest'], {
                             totalCount: 4,
@@ -7155,17 +7147,13 @@ describe('delivery shell boundary', () => {
         ]);
     });
 
-    it('requests GraphQL receipt proof in created-at ascending order', () => {
+    it('requests GraphQL receipt proof in updated-at ascending order', () => {
         const captures: string[] = [];
         const port = shellPort('jcosta33/sourdaw', {
             capture: (_command, args) => {
                 const joined = args.join(' ');
                 captures.push(joined);
-                if (
-                    joined.includes(
-                        'comments(first:100,after:$cursor,orderBy:{field:CREATED_AT,direction:ASC}){totalCount pageInfo{hasNextPage endCursor} nodes{id lastEditedAt}}'
-                    )
-                ) {
+                if (joined.includes(ORDERED_RECEIPT_PROOF_QUERY_FRAGMENT)) {
                     return shellDeliveryReceiptProofResponse([]);
                 }
                 throw new Error(`unexpected capture: ${joined}`);
@@ -7179,16 +7167,64 @@ describe('delivery shell boundary', () => {
         ]);
     });
 
+    it('keeps the receipt proof query on the live-supported UPDATED_AT enum path', () => {
+        expect(ORDERED_RECEIPT_PROOF_QUERY).toContain('field:UPDATED_AT');
+        expect(ORDERED_RECEIPT_PROOF_QUERY).not.toContain('field:CREATED_AT');
+    });
+
+    it('accepts a reordered GraphQL receipt proof when the REST comment lineage is complete and unedited', () => {
+        const closes = relationshipBody('Closes #2372');
+        const visibleReceipt = visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful');
+        const { port, calls, tracker } = fakePort({
+            primary: [pullRequest({ state: 'MERGED', body: closes, mergedByActorNodeId: AUTHOR_BOT_NODE_ID })],
+            dependentSets: [[]],
+            receipts: [
+                {
+                    id: 'IC_author_note',
+                    body: 'ordinary author note',
+                    authorNodeId: AUTHOR_BOT_NODE_ID,
+                    authorLogin: 'renamed-author[bot]',
+                    authorType: 'Bot',
+                    createdAt: '2026-08-21T00:00:00Z',
+                    updatedAt: '2026-08-21T00:00:00Z',
+                },
+                {
+                    id: 'IC_visible_receipt',
+                    body: visibleReceipt,
+                    authorNodeId: AUTHOR_BOT_NODE_ID,
+                    authorLogin: 'renamed-author[bot]',
+                    authorType: 'Bot',
+                    createdAt: '2026-08-21T00:00:01Z',
+                    updatedAt: '2026-08-21T00:00:01Z',
+                },
+            ],
+            persistedReceiptAuthority: {
+                phase: 'merge-authorized',
+                receiptId: 'IC_visible_receipt',
+                receiptBody: visibleReceipt,
+                postMergeValidation: persistedPostMergeValidation('head', closes, 2372),
+            },
+            deliveryReceiptProof: {
+                totalCount: 2,
+                latestCommentId: 'IC_visible_receipt',
+                commentIds: ['IC_visible_receipt', 'IC_author_note'],
+                editedCommentIds: [],
+            },
+        });
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls).toContain('complete:2372');
+        expect(calls).toContain('receipt-authority:read:merge-authorized:IC_visible_receipt');
+        expect(calls).toContain('receipt-authority:write:terminal:IC_visible_receipt');
+    });
+
     it('fails shellPort receipt proof when GraphQL cursors cycle across later pages even if the final count could still be reached', () => {
         let cursorOneReads = 0;
         const port = shellPort('jcosta33/sourdaw', {
             capture: (_command, args) => {
                 const joined = args.join(' ');
-                if (
-                    joined.includes(
-                        'comments(first:100,after:$cursor,orderBy:{field:CREATED_AT,direction:ASC}){totalCount pageInfo{hasNextPage endCursor} nodes{id lastEditedAt}}'
-                    )
-                ) {
+                if (joined.includes(ORDERED_RECEIPT_PROOF_QUERY_FRAGMENT)) {
                     if (joined.includes('cursor=cursor-2')) {
                         return shellDeliveryReceiptProofResponse(['IC_c'], {
                             totalCount: 4,
