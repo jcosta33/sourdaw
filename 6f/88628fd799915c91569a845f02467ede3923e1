@@ -1,0 +1,23 @@
+src/modules/AiRuntime/useCases/agentRunLifecycle.ts
+  s_a40848e8f8cca9::t_d006791c3a8989 1375-1384
+src/modules/AiRuntime/stores/__tests__/retainedSectionRenderReviewHydration.spec.ts
+  s_a40848e8f8cca9::t_1980cc001f2fea 109-122,146,165-175,177-187,190-262
+  s_a40848e8f8cca9::t_4afa1ce89383d5 176,188-189
+  s_a40848e8f8cca9::t_ff25845e43465a 263
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "6f88628fd799915c91569a845f02467ede3923e1",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
