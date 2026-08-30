@@ -6,7 +6,7 @@ import { isAiRuntimeConfigurationChangedError } from '../../errors/AiRuntimeConf
 import { type AgentExecutionMode, type AgentTrustCeiling } from '../../models/AgentExecutionMode';
 import { type AgentRunBudgets, type AgentRunDecisionResume, type AgentRunWorkLease } from '../../models/AgentRun';
 import { type ApplicationToolReceipt } from '../../models/ApplicationOwnedTool';
-import { type RunnableAiBackend } from '../../models/LlmOrchestrationTypes';
+import { type AiBackendPreference, type RunnableAiBackend } from '../../models/LlmOrchestrationTypes';
 import { type ModelProviderName } from '../../models/ModelProviderProtocol';
 import { getCloudProviderInfo } from '../../repositories/cloudLlm/getCloudProviderInfo';
 import { getActiveModelId } from '../../repositories/webLlm/getActiveModelId';
@@ -39,7 +39,7 @@ type PromptChatRequestOptions = {
 
 type PromptChatRequestInput = {
     userText: string;
-    requestedRoute: string;
+    requestedRoute: AiBackendPreference;
     backend: RunnableAiBackend;
     interactionMode: Exclude<AgentExecutionMode, 'explain'>;
     options: PromptChatRequestOptions | undefined;
