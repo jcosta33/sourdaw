@@ -16,6 +16,7 @@
  *   is a silent ~3.57x size penalty on exactly the payloads (plugin state,
  *   audio) that are already the largest thing the shell moves.
  */
+import { isNativeMenuIntent, type NativeMenuIntent } from './applicationMenu.js';
 import {
     DIALOG_MESSAGE_CHANNEL,
     DIALOG_OPEN_CHANNEL,
@@ -35,6 +36,10 @@ import {
     WINDOW_MAXIMIZED_CHANGED_CHANNEL,
     WINDOW_MINIMIZE_CHANNEL,
     WINDOW_TOGGLE_MAXIMIZE_CHANNEL,
+    NATIVE_EDIT_CHANNEL,
+    NATIVE_MENU_ACTION_CHANNEL,
+    NATIVE_MENU_PROJECT_STATE_CHANNEL,
+    NATIVE_MENU_SAVE_RESULT_CHANNEL,
     type SourdawBridge,
 } from './channels.js';
 import { commandChannel, isExposedCommand } from './commands.js';
@@ -183,6 +188,7 @@ export const createSourdawBridge = (
     const streamListeners = new Map<string, (payload: unknown) => void>();
     const voiceTerminalListeners = new Map<string, Set<(event: string, payload: unknown) => void>>();
     const maximizedListeners = new Set<(maximized: boolean) => void>();
+    const nativeMenuListeners = new Set<(intent: NativeMenuIntent) => void>();
     let nextStreamId = 0;
     const voiceActivation = createVoiceActivation(ipc, voiceDocument);
 
@@ -234,6 +240,16 @@ export const createSourdawBridge = (
         }
         for (const listener of [...maximizedListeners]) {
             listener(maximized);
+        }
+    });
+
+    ipc.on(NATIVE_MENU_ACTION_CHANNEL, (_event, ...args) => {
+        const [intent] = args;
+        if (!isNativeMenuIntent(intent)) {
+            return;
+        }
+        for (const listener of [...nativeMenuListeners]) {
+            listener(intent);
         }
     });
 
@@ -399,6 +415,22 @@ export const createSourdawBridge = (
                 return () => {
                     maximizedListeners.delete(callback);
                 };
+            },
+        },
+
+        nativeMenu: {
+            listen: (callback) => {
+                nativeMenuListeners.add(callback);
+                return () => nativeMenuListeners.delete(callback);
+            },
+            projectState: async (state) => {
+                await ipc.invoke(NATIVE_MENU_PROJECT_STATE_CHANNEL, state);
+            },
+            saveResult: async (result) => {
+                await ipc.invoke(NATIVE_MENU_SAVE_RESULT_CHANNEL, result);
+            },
+            edit: async (operation) => {
+                await ipc.invoke(NATIVE_EDIT_CHANNEL, operation);
             },
         },
     };

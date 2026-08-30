@@ -11,6 +11,8 @@
  * collision impossible to introduce by picking a plausible word.
  */
 
+import type { NativeMenuIntent } from './applicationMenu.js';
+
 /** Main → renderer: one pushed event, as `(name, payload)`. */
 export const EVENT_CHANNEL = 'sourdaw:event';
 
@@ -42,6 +44,15 @@ export const WINDOW_CLOSE_CHANNEL = 'sourdaw:window:close';
 export const WINDOW_IS_MAXIMIZED_CHANNEL = 'sourdaw:window:is-maximized';
 /** Main → renderer: the window entered or left the maximized state, as a boolean. */
 export const WINDOW_MAXIMIZED_CHANGED_CHANNEL = 'sourdaw:window:maximized-changed';
+
+/** Main → renderer native-menu intent, always one validated product action. */
+export const NATIVE_MENU_ACTION_CHANNEL = 'sourdaw:native-menu:action';
+/** Renderer → main disposable title/dirty projection for the owning BrowserWindow. */
+export const NATIVE_MENU_PROJECT_STATE_CHANNEL = 'sourdaw:native-menu:project-state';
+/** Renderer → main correlated result of a close-prompt save request. */
+export const NATIVE_MENU_SAVE_RESULT_CHANNEL = 'sourdaw:native-menu:save-result';
+/** Renderer → main narrow native text-edit operation for its own webContents. */
+export const NATIVE_EDIT_CHANNEL = 'sourdaw:native-menu:edit';
 
 /** A filter in an open or save dialog. */
 export type DialogFilter = {
@@ -174,5 +185,19 @@ export type SourdawBridge = {
         readonly isMaximized: () => Promise<boolean>;
         /** Subscribe to maximize/restore transitions. Returns the unsubscribe function. */
         readonly listenMaximized: (callback: (maximized: boolean) => void) => () => void;
+    };
+    nativeMenu: {
+        readonly listen: (callback: (intent: NativeMenuIntent) => void) => () => void;
+        readonly projectState: (state: {
+            readonly title: string;
+            readonly dirty: boolean;
+            readonly recentProjects: readonly { readonly key: string; readonly name: string }[];
+        }) => Promise<void>;
+        readonly saveResult: (result: {
+            readonly requestId: number;
+            readonly saved: boolean;
+            readonly dirty: boolean;
+        }) => Promise<void>;
+        readonly edit: (operation: 'undo' | 'redo' | 'cut' | 'copy' | 'paste' | 'selectAll') => Promise<void>;
     };
 };

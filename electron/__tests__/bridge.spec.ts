@@ -27,6 +27,7 @@ import {
     WINDOW_MAXIMIZED_CHANGED_CHANNEL,
     WINDOW_MINIMIZE_CHANNEL,
     WINDOW_TOGGLE_MAXIMIZE_CHANNEL,
+    NATIVE_MENU_ACTION_CHANNEL,
 } from '../channels.js';
 import { commandChannel, DENIED_COMMANDS } from '../commands.js';
 
@@ -70,6 +71,7 @@ describe('the published surface', () => {
             'invokeBinary',
             'invokeBinaryResponse',
             'listen',
+            'nativeMenu',
             'paths',
             'platform',
             'stream',
@@ -86,6 +88,7 @@ describe('the published surface', () => {
             'minimize',
             'toggleMaximize',
         ]);
+        expect(Object.keys(bridge.nativeMenu).sort()).toEqual(['edit', 'listen', 'projectState', 'saveResult']);
     });
 
     it('publishes the platform synchronously, so chrome gating needs no round trip', () => {
@@ -117,8 +120,23 @@ describe('the published surface', () => {
                 [STREAM_CHANNEL, 1],
                 [VOICE_DICTATION_TERMINAL_CHANNEL, 1],
                 [WINDOW_MAXIMIZED_CHANGED_CHANNEL, 1],
+                [NATIVE_MENU_ACTION_CHANNEL, 1],
             ])
         );
+    });
+});
+
+describe('native menu transport', () => {
+    it('delivers only validated intents from main', () => {
+        const fake = fakeIpc();
+        const listener = vi.fn();
+        createSourdawBridge(fake.ipc).nativeMenu.listen(listener);
+
+        fake.push(NATIVE_MENU_ACTION_CHANNEL, { action: 'edit:undo' });
+        fake.push(NATIVE_MENU_ACTION_CHANNEL, { action: 'unknown' });
+        fake.push(NATIVE_MENU_ACTION_CHANNEL, 'edit:undo');
+
+        expect(listener).toHaveBeenCalledExactlyOnceWith({ action: 'edit:undo' });
     });
 });
 

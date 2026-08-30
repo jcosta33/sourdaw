@@ -131,6 +131,8 @@ export type QuitDependencies = {
     /** End the process. Called after the cascade settles or the deadline passes. */
     readonly exit: (code: number) => void;
     readonly report: (outcome: ShutdownOutcome) => void;
+    /** Resolves false when a renderer-owned dirty-project prompt was cancelled or save failed. */
+    readonly canQuit?: () => Promise<boolean>;
 };
 
 /**
@@ -147,19 +149,32 @@ export type QuitDependencies = {
  */
 export const createQuitHandler = (
     run: () => Promise<ShutdownOutcome>,
-    { exit, report }: QuitDependencies
+    { exit, report, canQuit = async () => true }: QuitDependencies
 ): ((event: PreventableEvent) => void) => {
     let started = false;
+    let checkingPermission = false;
 
     return (event) => {
-        if (started) {
+        if (started || checkingPermission) {
             return;
         }
-        started = true;
+        checkingPermission = true;
         event.preventDefault();
-        void run().then((outcome) => {
-            report(outcome);
-            exit(outcome.status === 'timed-out' ? 1 : 0);
-        });
+        void canQuit()
+            .then((allowed) => {
+                if (allowed) {
+                    started = true;
+                    checkingPermission = false;
+                    void run().then((outcome) => {
+                        report(outcome);
+                        exit(outcome.status === 'timed-out' ? 1 : 0);
+                    });
+                    return;
+                }
+                checkingPermission = false;
+            })
+            .catch(() => {
+                checkingPermission = false;
+            });
     };
 };

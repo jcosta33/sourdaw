@@ -13,6 +13,7 @@ import {
     registerDialogChannels,
     registerPathChannels,
     registerScanCommand,
+    registerNativeMenuChannels,
     registerWindowControlChannels,
     SCAN_COMMAND,
     type NativeDialogs,
@@ -28,6 +29,9 @@ import {
     WINDOW_IS_MAXIMIZED_CHANNEL,
     WINDOW_MINIMIZE_CHANNEL,
     WINDOW_TOGGLE_MAXIMIZE_CHANNEL,
+    NATIVE_EDIT_CHANNEL,
+    NATIVE_MENU_PROJECT_STATE_CHANNEL,
+    NATIVE_MENU_SAVE_RESULT_CHANNEL,
 } from '../channels.js';
 import { commandChannel } from '../commands.js';
 
@@ -115,6 +119,67 @@ describe('the scan command', () => {
         await expect(handler?.(APP_FRAME, '/a')).rejects.toThrow(/positional array/u);
         await expect(handler?.(APP_FRAME, [['/a'], 'yes'])).rejects.toThrow(/retry_quarantined/u);
         expect(scan).not.toHaveBeenCalled();
+    });
+});
+
+describe('native menu channels', () => {
+    it('accepts only trusted projected state and restricts editing to the sending webContents', async () => {
+        const { ipcMain, handlers } = collectingIpc();
+        const onProjectState = vi.fn();
+        const onSaveResult = vi.fn();
+        const editTarget = {
+            undo: vi.fn(),
+            redo: vi.fn(),
+            cut: vi.fn(),
+            copy: vi.fn(),
+            paste: vi.fn(),
+            selectAll: vi.fn(),
+        };
+        registerNativeMenuChannels({
+            ipcMain,
+            isTrustedFrameUrl,
+            onProjectState,
+            onSaveResult,
+            editTargetForSender: (sender) => (sender === 'sender' ? editTarget : null),
+        });
+        const frame = { ...APP_FRAME, sender: 'sender' };
+
+        await handlers.get(NATIVE_MENU_PROJECT_STATE_CHANNEL)?.(frame, {
+            title: 'Song',
+            dirty: true,
+            recentProjects: [],
+        });
+        await handlers.get(NATIVE_MENU_SAVE_RESULT_CHANNEL)?.(frame, { requestId: 2, saved: true, dirty: false });
+        await handlers.get(NATIVE_EDIT_CHANNEL)?.(frame, 'copy');
+        await handlers.get(NATIVE_EDIT_CHANNEL)?.(frame, 'undo');
+        await handlers.get(NATIVE_EDIT_CHANNEL)?.(frame, 'redo');
+
+        expect(onProjectState).toHaveBeenCalledWith({ title: 'Song', dirty: true, recentProjects: [] });
+        expect(onSaveResult).toHaveBeenCalledWith({ requestId: 2, saved: true, dirty: false });
+        expect(editTarget.copy).toHaveBeenCalledTimes(1);
+        expect(editTarget.undo).toHaveBeenCalledTimes(1);
+        expect(editTarget.redo).toHaveBeenCalledTimes(1);
+        expect(() => handlers.get(NATIVE_EDIT_CHANNEL)?.(FOREIGN_FRAME, 'copy')).toThrow(/not the application/u);
+        expect(() => handlers.get(NATIVE_EDIT_CHANNEL)?.(frame, 'reload')).toThrow(/invalid/u);
+    });
+
+    it('rejects projected recent projects that do not match the renderer contract', () => {
+        const { ipcMain, handlers } = collectingIpc();
+        registerNativeMenuChannels({
+            ipcMain,
+            isTrustedFrameUrl,
+            onProjectState: vi.fn(),
+            onSaveResult: vi.fn(),
+            editTargetForSender: () => null,
+        });
+        const projectState = handlers.get(NATIVE_MENU_PROJECT_STATE_CHANNEL);
+
+        expect(() =>
+            projectState?.(APP_FRAME, { title: 'Song', dirty: false, recentProjects: 'not-an-array' })
+        ).toThrow(/invalid/u);
+        expect(() =>
+            projectState?.(APP_FRAME, { title: 'Song', dirty: false, recentProjects: [{ key: 'recent' }] })
+        ).toThrow(/recent project is invalid/u);
     });
 });
 

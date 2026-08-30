@@ -816,7 +816,8 @@ const ownersInTeardown = new WeakSet<object>();
 
 export const interceptOwnerWindowTeardown = (
     owner: OwnerWindow,
-    detachOpenEditors: () => Promise<void>
+    detachOpenEditors: () => Promise<void>,
+    shouldProceed: () => boolean = () => true
 ): { readonly destroyAfterEditorsDetach: () => Promise<void> } => {
     let inFlight: Promise<void> | undefined;
 
@@ -839,6 +840,9 @@ export const interceptOwnerWindowTeardown = (
     };
 
     owner.on('close', (event) => {
+        if (!shouldProceed()) {
+            return;
+        }
         event.preventDefault();
         void destroyAfterEditorsDetach();
     });

@@ -30,10 +30,17 @@ import {
     registerDialogChannels,
     registerPathChannels,
     registerScanCommand,
+    registerNativeMenuChannels,
     registerWindowControlChannels,
     SCAN_COMMAND,
 } from './appIpc.js';
-import { EVENT_CHANNEL, STREAM_CHANNEL, WINDOW_MAXIMIZED_CHANGED_CHANNEL } from './channels.js';
+import { createApplicationMenuTemplate, type NativeMenuIntent } from './applicationMenu.js';
+import {
+    EVENT_CHANNEL,
+    NATIVE_MENU_ACTION_CHANNEL,
+    STREAM_CHANNEL,
+    WINDOW_MAXIMIZED_CHANGED_CHANNEL,
+} from './channels.js';
 import { EXPOSED_COMMANDS } from './commands.js';
 import { createCommandStream, createEventForwarder } from './events.js';
 import { bindMainWindowOwnerTeardown, destroyCrashedMainWindow } from './mainWindowTeardown.js';
@@ -54,6 +61,7 @@ import { createQuitHandler, runBeforeQuitCascade, type ShutdownOutcome } from '.
 import { systemTimers } from './timers.js';
 import { registerVoiceDictation } from './voiceDictation.js';
 import { getWindowChromeOptions } from './windowChrome.js';
+import { createWindowCloseCoordinator } from './windowCloseCoordinator.js';
 
 import type { WebContents } from 'electron';
 
@@ -104,6 +112,35 @@ let mainWindow: BrowserWindow | undefined;
 let pluginWindowHost: PluginWindowHost | undefined;
 let destroyMainWindowAfterEditorsDetach: (() => Promise<void>) | undefined;
 
+const nativeMenuAction = (intent: NativeMenuIntent): void => {
+    rendererTarget()?.send(NATIVE_MENU_ACTION_CHANNEL, intent);
+};
+
+const windowCloseCoordinator = createWindowCloseCoordinator({
+    ask: async (title) => {
+        const window = mainWindow;
+        if (window === undefined || window.isDestroyed()) {
+            return 'cancel';
+        }
+        const answer = await dialog.showMessageBox(window, {
+            type: 'warning',
+            buttons: ['Save', 'Don’t Save', 'Cancel'],
+            defaultId: 0,
+            cancelId: 2,
+            message: `Do you want to save the changes you made to “${title}”?`,
+            detail: 'Your changes will be lost if you do not save them.',
+        });
+        if (answer.response === 0) {
+            return 'save';
+        }
+        if (answer.response === 1) {
+            return 'discard';
+        }
+        return 'cancel';
+    },
+    send: (requestId) => nativeMenuAction({ action: 'project:save', requestId }),
+});
+
 const attachWebContentsPolicy = (window: BrowserWindow): void => {
     window.webContents.on('will-navigate', (event, url) => {
         if (!isAllowedNavigation(url)) {
@@ -145,6 +182,7 @@ const attachWebContentsPolicy = (window: BrowserWindow): void => {
 };
 
 const createWindow = (): BrowserWindow => {
+    windowCloseCoordinator.resetForWindow();
     const window = new BrowserWindow({
         width: 1440,
         height: 900,
@@ -178,9 +216,23 @@ const createWindow = (): BrowserWindow => {
     // window reports its own transitions so a recreated window is wired fresh.
     window.on('maximize', () => window.webContents.send(WINDOW_MAXIMIZED_CHANGED_CHANNEL, true));
     window.on('unmaximize', () => window.webContents.send(WINDOW_MAXIMIZED_CHANGED_CHANNEL, false));
+    window.on('close', (event) => {
+        if (windowCloseCoordinator.permitsClose()) {
+            windowCloseCoordinator.markClosing();
+            return;
+        }
+        event.preventDefault();
+        void windowCloseCoordinator.requestClose().then((approved) => {
+            if (approved && !window.isDestroyed()) {
+                window.close();
+            }
+        });
+    });
     attachWebContentsPolicy(window);
     void window.loadURL(entryUrl);
-    destroyMainWindowAfterEditorsDetach = bindMainWindowOwnerTeardown(window, pluginWindowHost);
+    destroyMainWindowAfterEditorsDetach = bindMainWindowOwnerTeardown(window, pluginWindowHost, () =>
+        windowCloseCoordinator.permitsClose()
+    );
     return window;
 };
 
@@ -449,6 +501,10 @@ void app.whenReady().then(() => {
     // chrome, menu included.
     if (process.platform === 'linux') {
         Menu.setApplicationMenu(null);
+    } else if (process.platform === 'darwin') {
+        Menu.setApplicationMenu(
+            Menu.buildFromTemplate(createApplicationMenuTemplate({ appName: 'Sourdaw', send: nativeMenuAction }))
+        );
     }
 
     registerDialogChannels({ ipcMain, isTrustedFrameUrl: isAllowedFrameUrl, dialogs: dialog });
@@ -469,6 +525,41 @@ void app.whenReady().then(() => {
         windowForSender: (sender) =>
             typeof sender === 'object' && sender !== null && 'id' in sender
                 ? BrowserWindow.fromWebContents(sender as WebContents)
+                : null,
+    });
+    registerNativeMenuChannels({
+        ipcMain,
+        isTrustedFrameUrl: isAllowedFrameUrl,
+        onProjectState: (state) => {
+            windowCloseCoordinator.updateProject(state);
+            const window = mainWindow;
+            if (window !== undefined && !window.isDestroyed()) {
+                window.setTitle(`${state.title} — Sourdaw`);
+                window.setDocumentEdited(state.dirty);
+            }
+            if (process.platform === 'darwin') {
+                Menu.setApplicationMenu(
+                    Menu.buildFromTemplate(
+                        createApplicationMenuTemplate({
+                            appName: 'Sourdaw',
+                            send: nativeMenuAction,
+                            recentProjects: state.recentProjects,
+                        })
+                    )
+                );
+            }
+        },
+        onSaveResult: (result) => windowCloseCoordinator.resolveSave(result),
+        editTargetForSender: (sender) =>
+            typeof sender === 'object' &&
+            sender !== null &&
+            'undo' in sender &&
+            'redo' in sender &&
+            'cut' in sender &&
+            'copy' in sender &&
+            'paste' in sender &&
+            'selectAll' in sender
+                ? (sender as WebContents)
                 : null,
     });
     startNativeSurface();
@@ -505,6 +596,7 @@ app.on(
                     console.error(`[shell] shutdown ${outcome.status}: ${JSON.stringify(outcome)}`);
                 }
             },
+            canQuit: () => windowCloseCoordinator.requestClose(),
         }
     )
 );

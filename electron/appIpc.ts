@@ -25,6 +25,9 @@ import {
     WINDOW_IS_MAXIMIZED_CHANNEL,
     WINDOW_MINIMIZE_CHANNEL,
     WINDOW_TOGGLE_MAXIMIZE_CHANNEL,
+    NATIVE_EDIT_CHANNEL,
+    NATIVE_MENU_PROJECT_STATE_CHANNEL,
+    NATIVE_MENU_SAVE_RESULT_CHANNEL,
 } from './channels.js';
 import { commandChannel } from './commands.js';
 import { asPositionalArguments, withTrustedSender, withTrustedSenderEvent, type IpcMainLike } from './router.js';
@@ -294,5 +297,116 @@ export const registerWindowControlChannels = ({
             isTrustedFrameUrl,
             (event) => windowForSender(event.sender)?.isMaximized() ?? false
         )
+    );
+};
+
+export type NativeEditTarget = {
+    readonly undo: () => void;
+    readonly redo: () => void;
+    readonly cut: () => void;
+    readonly copy: () => void;
+    readonly paste: () => void;
+    readonly selectAll: () => void;
+};
+
+export type NativeMenuProjectState = {
+    readonly title: string;
+    readonly dirty: boolean;
+    readonly recentProjects: readonly { readonly key: string; readonly name: string }[];
+};
+
+export type NativeMenuSaveResult = {
+    readonly requestId: number;
+    readonly saved: boolean;
+    readonly dirty: boolean;
+};
+
+export type RegisterNativeMenuChannelsInput = {
+    readonly ipcMain: IpcMainLike;
+    readonly isTrustedFrameUrl: TrustGuard;
+    readonly onProjectState: (state: NativeMenuProjectState) => void;
+    readonly onSaveResult: (result: NativeMenuSaveResult) => void;
+    readonly editTargetForSender: (sender: unknown) => NativeEditTarget | null;
+};
+
+const nativeMenuProjectState = (value: unknown): NativeMenuProjectState => {
+    const state = asRecord(value);
+    if (typeof state.title !== 'string' || typeof state.dirty !== 'boolean' || !Array.isArray(state.recentProjects)) {
+        throw new TypeError('native menu project state is invalid');
+    }
+    const recentProjects = state.recentProjects.map((entry) => {
+        const project = asRecord(entry);
+        if (typeof project.key !== 'string' || typeof project.name !== 'string') {
+            throw new TypeError('native menu recent project is invalid');
+        }
+        return { key: project.key, name: project.name };
+    });
+    return { title: state.title, dirty: state.dirty, recentProjects };
+};
+
+const nativeMenuSaveResult = (value: unknown): NativeMenuSaveResult => {
+    const result = asRecord(value);
+    if (
+        typeof result.requestId !== 'number' ||
+        !Number.isSafeInteger(result.requestId) ||
+        result.requestId < 1 ||
+        typeof result.saved !== 'boolean' ||
+        typeof result.dirty !== 'boolean'
+    ) {
+        throw new TypeError('native menu save result is invalid');
+    }
+    return { requestId: result.requestId, saved: result.saved, dirty: result.dirty };
+};
+
+/** The entire renderer-facing native menu surface: validated projections and text editing only. */
+export const registerNativeMenuChannels = ({
+    ipcMain,
+    isTrustedFrameUrl,
+    onProjectState,
+    onSaveResult,
+    editTargetForSender,
+}: RegisterNativeMenuChannelsInput): void => {
+    ipcMain.handle(
+        NATIVE_MENU_PROJECT_STATE_CHANNEL,
+        withTrustedSender('nativeMenu.projectState', isTrustedFrameUrl, (value) =>
+            onProjectState(nativeMenuProjectState(value))
+        )
+    );
+    ipcMain.handle(
+        NATIVE_MENU_SAVE_RESULT_CHANNEL,
+        withTrustedSender('nativeMenu.saveResult', isTrustedFrameUrl, (value) =>
+            onSaveResult(nativeMenuSaveResult(value))
+        )
+    );
+    ipcMain.handle(
+        NATIVE_EDIT_CHANNEL,
+        withTrustedSenderEvent('nativeMenu.edit', isTrustedFrameUrl, (event, operation) => {
+            const target = editTargetForSender(event.sender);
+            if (target === null) {
+                return;
+            }
+            switch (operation) {
+                case 'undo':
+                    target.undo();
+                    return;
+                case 'redo':
+                    target.redo();
+                    return;
+                case 'cut':
+                    target.cut();
+                    return;
+                case 'copy':
+                    target.copy();
+                    return;
+                case 'paste':
+                    target.paste();
+                    return;
+                case 'selectAll':
+                    target.selectAll();
+                    return;
+                default:
+                    throw new TypeError('native edit operation is invalid');
+            }
+        })
     );
 };
