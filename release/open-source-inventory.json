@@ -1901,6 +1901,7 @@
                 "src/modules/Arrangement/repositories/presets/faustEffectPresets.ts",
                 "src/modules/Arrangement/repositories/presets/faustInstrumentPresets.ts",
                 "src/modules/PluginHost/useCases/faustEngine/builtinDSP.ts",
+                "src/modules/Project/useCases/projectTemplates/templateFiles/hipHopTrap.ts",
                 "src/modules/TimelineEditor/presentations/views/Inspector/layouts/FaustInstrumentLayout.tsx"
             ]
         },

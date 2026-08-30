@@ -75,11 +75,21 @@ export async function createAmbientTemplate(): Promise<void> {
         deviceType: 'levain',
         deviceName: 'Warm Pad',
     });
+    // Instrument chain inlined from factory preset 'factory-faust-fm-pad' (faustInstrumentPresets).
     const shimmerPad = createInstrumentTrack({
         name: 'Shimmer Pad',
         parentId: padsFolder.id,
-        deviceType: 'factory-faust-fm-pad',
-        deviceName: 'Shimmer',
+        deviceType: 'faust-fm-synth',
+        deviceName: 'Shimmer Pad',
+        deviceParams: { ratio: 7, index: 1.5, attack: 0.8, decay: 0.5, sustain: 0.7, release: 3.0, gain: 0.35 },
+        extraDevices: [
+            { type: 'faust-zita-rev1-reverb', name: 'Space', params: { decay_time: 8, damping: 6000, dry_wet: 0.5 } },
+            {
+                type: 'builtin-chorus',
+                name: 'Width',
+                params: { 'chorus-rate': 0.3, 'chorus-depth': 6, 'chorus-feedback': 0.2, 'chorus-mix': 0.3 },
+            },
+        ],
     });
     addSend({ from: warmPad, to: cathedralReverb, level: 0.6 });
     addSend({ from: warmPad, to: ambientTapeDelay, level: 0.3 });
@@ -87,11 +97,21 @@ export async function createAmbientTemplate(): Promise<void> {
     addSend({ from: shimmerPad, to: ambientTapeDelay, level: 0.35 });
 
     const melodicFolder = createFolder({ name: 'Melodic' });
+    // Instrument chain inlined from factory preset 'factory-faust-fm-dx-bells' (faustInstrumentPresets).
     const bell = createInstrumentTrack({
         name: 'Bell',
         parentId: melodicFolder.id,
-        deviceType: 'factory-faust-fm-dx-bells',
+        deviceType: 'faust-fm-synth',
         deviceName: 'DX Bells',
+        deviceParams: { ratio: 14, index: 4, attack: 0.001, decay: 2.0, sustain: 0, release: 1.0, gain: 0.45 },
+        extraDevices: [
+            { type: 'faust-zita-rev1-reverb', name: 'Hall', params: { decay_time: 3, damping: 6000, dry_wet: 0.3 } },
+            {
+                type: 'builtin-chorus',
+                name: 'Shimmer',
+                params: { 'chorus-rate': 0.4, 'chorus-depth': 5, 'chorus-feedback': 0.2, 'chorus-mix': 0.2 },
+            },
+        ],
     });
     const ambientPiano = createInstrumentTrack({
         name: 'Keys',
