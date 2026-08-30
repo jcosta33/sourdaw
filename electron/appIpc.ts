@@ -312,6 +312,7 @@ export type NativeEditTarget = {
 export type NativeMenuProjectState = {
     readonly title: string;
     readonly dirty: boolean;
+    readonly durabilityPending: boolean;
     readonly recentProjects: readonly { readonly key: string; readonly name: string }[];
 };
 
@@ -331,7 +332,12 @@ export type RegisterNativeMenuChannelsInput = {
 
 const nativeMenuProjectState = (value: unknown): NativeMenuProjectState => {
     const state = asRecord(value);
-    if (typeof state.title !== 'string' || typeof state.dirty !== 'boolean' || !Array.isArray(state.recentProjects)) {
+    if (
+        typeof state.title !== 'string' ||
+        typeof state.dirty !== 'boolean' ||
+        typeof state.durabilityPending !== 'boolean' ||
+        !Array.isArray(state.recentProjects)
+    ) {
         throw new TypeError('native menu project state is invalid');
     }
     const recentProjects = state.recentProjects.map((entry) => {
@@ -341,7 +347,7 @@ const nativeMenuProjectState = (value: unknown): NativeMenuProjectState => {
         }
         return { key: project.key, name: project.name };
     });
-    return { title: state.title, dirty: state.dirty, recentProjects };
+    return { title: state.title, dirty: state.dirty, durabilityPending: state.durabilityPending, recentProjects };
 };
 
 const nativeMenuSaveResult = (value: unknown): NativeMenuSaveResult => {

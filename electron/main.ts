@@ -630,6 +630,7 @@ app.on(
             },
             canQuit: () => windowCloseCoordinator.requestClose(),
             beforeRun: quiesceApprovedMainWindow,
+            timers: systemTimers,
         }
     )
 );

@@ -11,7 +11,7 @@ const desktop = vi.hoisted(() => ({
     saveResult: vi.fn(async () => undefined),
     edit: vi.fn(async () => undefined),
 }));
-const projectState = vi.hoisted(() => ({ dirty: false }));
+const projectState = vi.hoisted(() => ({ dirty: false, identityPersistencePending: false }));
 const projectActions = vi.hoisted(() => ({
     saveProject: vi.fn(async () => true),
     discardProjectChanges: vi.fn(async () => true),
@@ -20,6 +20,7 @@ const projectActions = vi.hoisted(() => ({
     exportProjectFile: vi.fn(async () => undefined),
     getRecentProjects: vi.fn(() => []),
     loadRecentProject: vi.fn(async () => 'committed'),
+    recentProjectChanges: { subscribe: vi.fn((_listener: () => void) => () => undefined) },
 }));
 
 vi.mock('#/utils/desktopBridge', () => ({
@@ -40,18 +41,19 @@ vi.mock('#/utils/desktopBridge', () => ({
 vi.mock('#/modules/Project/stores', () => ({
     projectStore: {
         get value() {
-            return { dirty: projectState.dirty };
+            return { dirty: projectState.dirty, identityPersistencePending: projectState.identityPersistencePending };
         },
     },
 }));
 vi.mock('#/modules/Project/useCases', () => projectActions);
+vi.mock('#/modules/Arrangement/stores', () => ({ trackStore: { value: { tracks: [] } } }));
 const arrangement = vi.hoisted(() => ({
     clearClipSelection: vi.fn(),
     selectAllClips: vi.fn(),
     zoomTimelineBy: vi.fn(),
 }));
 vi.mock('#/modules/Arrangement/useCases', () => arrangement);
-vi.mock('#/modules/WorkspaceShell/useCases', () => ({
+const workspace = vi.hoisted(() => ({
     openExportDialog: vi.fn(),
     openPreferencesDialog: vi.fn(),
     toggleInspector: vi.fn(),
@@ -64,8 +66,13 @@ vi.mock('#/modules/WorkspaceShell/useCases', () => ({
     zoomToFit: vi.fn(),
     zoomToSelection: vi.fn(),
 }));
+vi.mock('#/modules/WorkspaceShell/useCases', () => ({
+    ...workspace,
+}));
 const command = vi.hoisted(() => ({ executeAppAction: vi.fn(async () => undefined), undo: vi.fn(), redo: vi.fn() }));
 vi.mock('#/modules/Command/useCases', () => command);
+const onboarding = vi.hoisted(() => ({ startOnboardingTour: vi.fn() }));
+vi.mock('#/modules/Onboarding/useCases', () => onboarding);
 
 describe('useNativeApplicationMenu', () => {
     beforeEach(() => {
@@ -74,11 +81,22 @@ describe('useNativeApplicationMenu', () => {
         desktop.saveResult.mockClear();
         desktop.edit.mockClear();
         projectState.dirty = false;
+        projectState.identityPersistencePending = false;
         projectActions.saveProject.mockClear();
         projectActions.discardProjectChanges.mockClear();
         projectActions.newProject.mockClear();
         projectActions.loadRecentProject.mockClear();
+        projectActions.recentProjectChanges.subscribe.mockClear();
         arrangement.zoomTimelineBy.mockClear();
+        arrangement.clearClipSelection.mockClear();
+        arrangement.selectAllClips.mockClear();
+        command.executeAppAction.mockClear();
+        command.undo.mockClear();
+        command.redo.mockClear();
+        onboarding.startOnboardingTour.mockClear();
+        for (const action of Object.values(workspace)) {
+            action.mockClear();
+        }
     });
 
     it('projects the active project and routes text editing through the narrow native capability', async () => {
@@ -101,6 +119,7 @@ describe('useNativeApplicationMenu', () => {
         expect(desktop.projectState).toHaveBeenCalledWith({
             title: 'Song',
             dirty: true,
+            durabilityPending: false,
             recentProjects: [],
         });
         const input = document.createElement('input');
@@ -231,6 +250,32 @@ describe('useNativeApplicationMenu', () => {
         expect(desktop.saveResult).toHaveBeenCalledWith({ requestId: 7, saved: true, dirty: false });
     });
 
+    it('keeps a clean replacement close-blocking until its identity persistence finishes', async () => {
+        projectState.identityPersistencePending = true;
+        renderHook(() =>
+            useNativeApplicationMenu({
+                projectId: 'project',
+                name: 'Song',
+                createdAt: 1,
+                updatedAt: 2,
+                dirty: false,
+                identityPersistencePending: true,
+                loading: false,
+                keyRoot: 0,
+                scaleName: 'chromatic',
+                tuning: { name: 'Equal Temperament', frequencies: [] },
+                productionBrief: {} as never,
+                initialized: true,
+            })
+        );
+
+        desktop.listener?.({ action: 'project:discard', requestId: 7 });
+
+        await vi.waitFor(() =>
+            expect(desktop.saveResult).toHaveBeenCalledWith({ requestId: 7, saved: true, dirty: true })
+        );
+    });
+
     it('keeps New and Open Recent in place when save succeeds but a concurrent edit remains dirty', async () => {
         projectState.dirty = true;
         renderHook(() =>
@@ -255,5 +300,105 @@ describe('useNativeApplicationMenu', () => {
         await vi.waitFor(() => expect(projectActions.saveProject).toHaveBeenCalledTimes(2));
         expect(projectActions.newProject).not.toHaveBeenCalled();
         expect(projectActions.loadRecentProject).not.toHaveBeenCalled();
+    });
+
+    it('routes every renderer-owned command family through its public action or use-case seam', async () => {
+        renderHook(() =>
+            useNativeApplicationMenu({
+                projectId: 'project',
+                name: 'Song',
+                createdAt: 1,
+                updatedAt: 2,
+                dirty: false,
+                loading: false,
+                keyRoot: 0,
+                scaleName: 'chromatic',
+                tuning: { name: 'Equal Temperament', frequencies: [] },
+                productionBrief: {} as never,
+                initialized: true,
+            })
+        );
+
+        desktop.listener?.({ action: 'edit:select-all' });
+        desktop.listener?.({ action: 'edit:deselect-all' });
+        desktop.listener?.({ action: 'project:import-audio' });
+        desktop.listener?.({ action: 'project:import-midi' });
+        desktop.listener?.({ action: 'project:import-project' });
+        desktop.listener?.({ action: 'project:export-audio' });
+        desktop.listener?.({ action: 'project:export-file' });
+        desktop.listener?.({ action: 'view:preferences' });
+        desktop.listener?.({ action: 'view:toggle-sidebar' });
+        desktop.listener?.({ action: 'view:toggle-mixer' });
+        desktop.listener?.({ action: 'view:toggle-inspector' });
+        desktop.listener?.({ action: 'view:toggle-track-list' });
+        desktop.listener?.({ action: 'view:toggle-virtual-keyboard' });
+        desktop.listener?.({ action: 'view:toggle-automation' });
+        desktop.listener?.({ action: 'view:toggle-chat' });
+        desktop.listener?.({ action: 'view:zoom-fit' });
+        desktop.listener?.({ action: 'view:zoom-selection' });
+        desktop.listener?.({ action: 'help:show-tour' });
+
+        await vi.waitFor(() => expect(command.executeAppAction).toHaveBeenCalledWith({ type: 'importMidiFile' }));
+        expect(command.executeAppAction).toHaveBeenCalledWith({ type: 'importAudioFile' });
+        expect(arrangement.selectAllClips).toHaveBeenCalledWith([]);
+        expect(arrangement.clearClipSelection).toHaveBeenCalledTimes(1);
+        expect(projectActions.pickAndImportProjectFile).toHaveBeenCalledTimes(1);
+        expect(projectActions.exportProjectFile).toHaveBeenCalledTimes(1);
+        expect(workspace.openExportDialog).toHaveBeenCalledTimes(1);
+        expect(workspace.openPreferencesDialog).toHaveBeenCalledTimes(1);
+        expect(workspace.toggleSidebar).toHaveBeenCalledTimes(1);
+        expect(workspace.toggleMixer).toHaveBeenCalledTimes(1);
+        expect(workspace.toggleInspector).toHaveBeenCalledTimes(1);
+        expect(workspace.toggleTrackList).toHaveBeenCalledTimes(1);
+        expect(workspace.toggleVirtualKeyboard).toHaveBeenCalledTimes(1);
+        expect(workspace.toggleAutomationPanel).toHaveBeenCalledTimes(1);
+        expect(workspace.toggleChatPanel).toHaveBeenCalledTimes(1);
+        expect(workspace.zoomToFit).toHaveBeenCalledTimes(1);
+        expect(workspace.zoomToSelection).toHaveBeenCalledTimes(1);
+        expect(onboarding.startOnboardingTour).toHaveBeenCalledTimes(1);
+    });
+
+    it('refreshes recent projects, replaces a rerendered listener, and detaches it on unmount', () => {
+        let refreshRecentProjects: (() => void) | undefined;
+        projectActions.recentProjectChanges.subscribe.mockImplementation((listener: () => void) => {
+            refreshRecentProjects = listener;
+            return () => {
+                refreshRecentProjects = undefined;
+            };
+        });
+        projectActions.getRecentProjects.mockReturnValue([{ key: 'recent-1', name: 'First' }]);
+        const { rerender, unmount } = renderHook(
+            ({ updatedAt }) =>
+                useNativeApplicationMenu({
+                    projectId: 'project',
+                    name: 'Song',
+                    createdAt: 1,
+                    updatedAt,
+                    dirty: false,
+                    loading: false,
+                    keyRoot: 0,
+                    scaleName: 'chromatic',
+                    tuning: { name: 'Equal Temperament', frequencies: [] },
+                    productionBrief: {} as never,
+                    initialized: true,
+                }),
+            { initialProps: { updatedAt: 2 } }
+        );
+
+        rerender({ updatedAt: 3 });
+        desktop.listener?.({ action: 'project:export-audio' });
+        expect(workspace.openExportDialog).toHaveBeenCalledTimes(1);
+        projectActions.getRecentProjects.mockReturnValue([{ key: 'recent-2', name: 'Second' }]);
+        refreshRecentProjects?.();
+        expect(desktop.projectState).toHaveBeenLastCalledWith({
+            title: 'Song',
+            dirty: false,
+            durabilityPending: false,
+            recentProjects: [{ key: 'recent-2', name: 'Second' }],
+        });
+
+        unmount();
+        expect(desktop.listener).toBeUndefined();
+        expect(refreshRecentProjects).toBeUndefined();
     });
 });

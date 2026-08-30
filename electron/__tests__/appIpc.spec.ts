@@ -147,6 +147,7 @@ describe('native menu channels', () => {
         await handlers.get(NATIVE_MENU_PROJECT_STATE_CHANNEL)?.(frame, {
             title: 'Song',
             dirty: true,
+            durabilityPending: false,
             recentProjects: [],
         });
         await handlers.get(NATIVE_MENU_SAVE_RESULT_CHANNEL)?.(frame, { requestId: 2, saved: true, dirty: false });
@@ -154,7 +155,12 @@ describe('native menu channels', () => {
         await handlers.get(NATIVE_EDIT_CHANNEL)?.(frame, 'undo');
         await handlers.get(NATIVE_EDIT_CHANNEL)?.(frame, 'redo');
 
-        expect(onProjectState).toHaveBeenCalledWith({ title: 'Song', dirty: true, recentProjects: [] });
+        expect(onProjectState).toHaveBeenCalledWith({
+            title: 'Song',
+            dirty: true,
+            durabilityPending: false,
+            recentProjects: [],
+        });
         expect(onSaveResult).toHaveBeenCalledWith({ requestId: 2, saved: true, dirty: false });
         expect(editTarget.copy).toHaveBeenCalledTimes(1);
         expect(editTarget.undo).toHaveBeenCalledTimes(1);
@@ -175,11 +181,24 @@ describe('native menu channels', () => {
         const projectState = handlers.get(NATIVE_MENU_PROJECT_STATE_CHANNEL);
 
         expect(() =>
-            projectState?.(APP_FRAME, { title: 'Song', dirty: false, recentProjects: 'not-an-array' })
+            projectState?.(APP_FRAME, {
+                title: 'Song',
+                dirty: false,
+                durabilityPending: false,
+                recentProjects: 'not-an-array',
+            })
         ).toThrow(/invalid/u);
         expect(() =>
-            projectState?.(APP_FRAME, { title: 'Song', dirty: false, recentProjects: [{ key: 'recent' }] })
+            projectState?.(APP_FRAME, {
+                title: 'Song',
+                dirty: false,
+                durabilityPending: false,
+                recentProjects: [{ key: 'recent' }],
+            })
         ).toThrow(/recent project is invalid/u);
+        expect(() => projectState?.(APP_FRAME, { title: 'Song', dirty: false, recentProjects: [] })).toThrow(
+            /invalid/u
+        );
     });
 });
 

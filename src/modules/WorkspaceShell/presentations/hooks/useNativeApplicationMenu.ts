@@ -12,6 +12,7 @@ import {
     loadRecentProject,
     newProject,
     pickAndImportProjectFile,
+    recentProjectChanges,
     saveProject,
 } from '#/modules/Project/useCases';
 import {
@@ -84,7 +85,8 @@ const runMenuAction = async (intent: NativeMenuIntent): Promise<void> => {
                 await desktopNativeMenu().saveResult({
                     requestId: intent.requestId,
                     saved,
-                    dirty: projectStore.value?.dirty === true,
+                    dirty:
+                        projectStore.value?.dirty === true || projectStore.value?.identityPersistencePending === true,
                 });
             }
             return;
@@ -95,7 +97,8 @@ const runMenuAction = async (intent: NativeMenuIntent): Promise<void> => {
                 await desktopNativeMenu().saveResult({
                     requestId: intent.requestId,
                     saved: discarded,
-                    dirty: projectStore.value?.dirty === true,
+                    dirty:
+                        projectStore.value?.dirty === true || projectStore.value?.identityPersistencePending === true,
                 });
             }
             return;
@@ -163,7 +166,7 @@ const runMenuAction = async (intent: NativeMenuIntent): Promise<void> => {
             await executeAppAction({ type: 'pasteClip' });
             return;
         case 'edit:select-all':
-            selectAllClips(allClipIds);
+            selectAllClips(allClipIds());
             return;
         case 'edit:deselect-all':
             clearClipSelection();
@@ -189,13 +192,22 @@ export const useNativeApplicationMenu = (project: ProjectStoreState): void => {
             return undefined;
         }
         const menu = desktopNativeMenu();
-        void menu.projectState({
-            title: project.name,
-            dirty: project.dirty,
-            recentProjects: getRecentProjects().map(({ key, name }) => ({ key, name })),
-        });
-        return menu.listen((intent) => {
+        const publishProjectState = (): void => {
+            void menu.projectState({
+                title: project.name,
+                dirty: project.dirty,
+                durabilityPending: project.identityPersistencePending === true,
+                recentProjects: getRecentProjects().map(({ key, name }) => ({ key, name })),
+            });
+        };
+        publishProjectState();
+        const unlisten = menu.listen((intent) => {
             void runMenuAction(intent);
         });
-    }, [project.name, project.dirty, project.updatedAt]);
+        const unsubscribeRecentProjects = recentProjectChanges.subscribe(publishProjectState);
+        return () => {
+            unlisten();
+            unsubscribeRecentProjects();
+        };
+    }, [project.name, project.dirty, project.identityPersistencePending, project.updatedAt]);
 };

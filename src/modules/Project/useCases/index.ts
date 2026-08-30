@@ -39,7 +39,7 @@ export { runProjectLoadTransaction } from './projectPersistence/helpers/runProje
 
 export { verifyAudioBufferReferences } from './projectPersistence/helpers/verifyAudioBufferReferences';
 
-export { getRecentProjects } from './recentProjects/helpers';
+export { getRecentProjects, recentProjectChanges } from './recentProjects/helpers';
 export { loadRecentProject } from './recentProjects/loadRecentProject';
 
 export { isNativeProjectRuntimeAvailable } from './isNativeProjectRuntimeAvailable'; // export-runtime check (ADR 0011 W4)

@@ -23,7 +23,7 @@ export const createNativeMenuProjectStateController = ({
         const window = getWindow();
         if (window !== undefined && !window.isDestroyed()) {
             window.setTitle(`${state.title} — Sourdaw`);
-            window.setDocumentEdited(state.dirty);
+            window.setDocumentEdited(state.dirty || state.durabilityPending);
         }
         rebuildApplicationMenu(state.recentProjects);
     },

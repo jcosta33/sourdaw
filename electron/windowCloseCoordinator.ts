@@ -1,6 +1,8 @@
 export type ProjectCloseState = {
     readonly title: string;
     readonly dirty: boolean;
+    /** A clean replacement is not safe to discard until its identity snapshot persists. */
+    readonly durabilityPending?: boolean;
 };
 
 export type SaveResult = {
@@ -19,7 +21,7 @@ type CreateWindowCloseCoordinatorInput = {
 
 /** Main-process state only: a disposable projection of renderer project state. */
 export const createWindowCloseCoordinator = ({ ask, send }: CreateWindowCloseCoordinatorInput) => {
-    let project: ProjectCloseState = { title: 'Sourdaw', dirty: false };
+    let project: ProjectCloseState = { title: 'Sourdaw', dirty: false, durabilityPending: false };
     let phase: 'idle' | 'deciding' | 'saving' | 'approved' | 'closing' = 'idle';
     let pendingSave: { readonly requestId: number; readonly settle: (result: SaveResult) => void } | undefined;
     let nextRequestId = 1;
@@ -42,12 +44,16 @@ export const createWindowCloseCoordinator = ({ ask, send }: CreateWindowCloseCoo
         pendingSave.settle({ requestId: pendingSave.requestId, saved: false, dirty: true });
     };
 
-    const clearWindowAuthority = (): void => {
+    const invalidateWindowRequests = (): void => {
         generation += 1;
         cancelPending();
-        project = { title: 'Sourdaw', dirty: false };
         phase = 'idle';
         pendingSave = undefined;
+    };
+
+    const clearWindowAuthority = (): void => {
+        invalidateWindowRequests();
+        project = { title: 'Sourdaw', dirty: false, durabilityPending: false };
     };
 
     const requestClose = async (): Promise<boolean> => {
@@ -57,7 +63,7 @@ export const createWindowCloseCoordinator = ({ ask, send }: CreateWindowCloseCoo
         if (phase !== 'idle') {
             return false;
         }
-        if (!project.dirty) {
+        if (!project.dirty && project.durabilityPending !== true) {
             phase = 'approved';
             return true;
         }
@@ -113,7 +119,7 @@ export const createWindowCloseCoordinator = ({ ask, send }: CreateWindowCloseCoo
             phase = 'idle';
             return false;
         }
-        project = { ...project, dirty: false };
+        project = { ...project, dirty: false, durabilityPending: false };
         phase = 'approved';
         return true;
     };
@@ -126,7 +132,11 @@ export const createWindowCloseCoordinator = ({ ask, send }: CreateWindowCloseCoo
         markClosing: (): void => {
             phase = 'closing';
         },
-        resetForWindow: clearWindowAuthority,
+        // A replacement renderer must not erase the dirty authority it failed
+        // to persist before crashing. A successful clean close already clears
+        // it above, so a later normal window starts clean without special-case
+        // state.
+        resetForWindow: invalidateWindowRequests,
         clearForNoWindow: clearWindowAuthority,
         cancelPending,
     };

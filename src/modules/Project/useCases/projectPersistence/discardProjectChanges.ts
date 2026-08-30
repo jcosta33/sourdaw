@@ -7,6 +7,7 @@ import { projectStore } from '../../stores/projectStore';
 import { getRecentProjects } from '../recentProjects/helpers';
 import { loadRecentProject } from '../recentProjects/loadRecentProject';
 
+import { captureProjectTransitionAuthority } from './captureProjectTransitionAuthority';
 import { newProject } from './newProject';
 
 const notifyDiscardFailure = (message: string): false => {
@@ -23,11 +24,25 @@ export async function discardProjectChanges(): Promise<boolean> {
 
     const snapshotKey = `${NAMED_PROJECT_KEY_PREFIX}${project.createdAt}`;
     const hasRecentEntry = getRecentProjects().some((entry) => entry.key === snapshotKey);
+    const transitionAuthority = captureProjectTransitionAuthority();
+    const transitionWasCurrent = transitionAuthority.isCurrent();
+    const stillOwnsDiscard = (): boolean => {
+        const current = projectStore.value;
+        return current === project && (!transitionWasCurrent || transitionAuthority.isCurrent());
+    };
     let snapshot: string | null;
     try {
         snapshot = await readNamedProjectJson(snapshotKey);
     } catch {
         return notifyDiscardFailure('Could not verify the last saved project state. Your changes were not discarded.');
+    }
+
+    // Snapshot IO yields. Never let a stale close request replace the project a
+    // musician selected while that read was in flight.
+    if (!stillOwnsDiscard()) {
+        return notifyDiscardFailure(
+            'The active project changed before its saved state was verified. Close was cancelled.'
+        );
     }
 
     if (snapshot !== null) {
@@ -50,6 +65,10 @@ export async function discardProjectChanges(): Promise<boolean> {
                 : 'Could not create a fresh project. Your changes were not discarded.'
         );
     };
+
+    if (!stillOwnsDiscard()) {
+        return notifyDiscardFailure('The active project changed before it could be replaced. Close was cancelled.');
+    }
 
     try {
         if (!(await newProject())) {

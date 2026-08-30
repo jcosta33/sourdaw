@@ -66,6 +66,29 @@ describe('window close coordinator', () => {
         expect(coordinator.permitsClose()).toBe(false);
     });
 
+    it('re-prompts after a failed discard leaves a clean but non-durable replacement', async () => {
+        const ask = vi.fn(async () => 'discard' as const);
+        const send = vi.fn();
+        const coordinator = createWindowCloseCoordinator({ ask, send });
+        coordinator.updateProject({ title: 'Dirty song', dirty: true });
+
+        const first = coordinator.requestClose();
+        await Promise.resolve();
+        coordinator.resolveSave({ requestId: 1, saved: false, dirty: true });
+        await expect(first).resolves.toBe(false);
+
+        // The failed discard activated a clean replacement, but its first
+        // snapshot failed. It remains close-blocking until made durable.
+        coordinator.updateProject({ title: 'Untitled Project', dirty: false, durabilityPending: true });
+        const second = coordinator.requestClose();
+        await Promise.resolve();
+
+        expect(ask).toHaveBeenCalledTimes(2);
+        expect(send).toHaveBeenLastCalledWith('discard', 2);
+        coordinator.resolveSave({ requestId: 2, saved: false, dirty: true });
+        await expect(second).resolves.toBe(false);
+    });
+
     it('forgets an approved dirty project before a replacement window closes', async () => {
         let coordinator: ReturnType<typeof createWindowCloseCoordinator>;
         const send = vi.fn((_operation: 'save' | 'discard', requestId: number) => {
@@ -91,6 +114,20 @@ describe('window close coordinator', () => {
 
         await expect(coordinator.requestClose()).resolves.toBe(true);
         expect(ask).not.toHaveBeenCalled();
+    });
+
+    it('preserves dirty authority across a renderer-crash replacement but clears it only when no window remains', async () => {
+        const ask = vi.fn(async () => 'cancel' as const);
+        const coordinator = createWindowCloseCoordinator({ ask, send: vi.fn() });
+        coordinator.updateProject({ title: 'Crashed song', dirty: true });
+
+        coordinator.resetForWindow();
+        await expect(coordinator.requestClose()).resolves.toBe(false);
+        expect(ask).toHaveBeenCalledWith('Crashed song');
+
+        coordinator.clearForNoWindow();
+        await expect(coordinator.requestClose()).resolves.toBe(true);
+        expect(ask).toHaveBeenCalledTimes(1);
     });
 
     it('does not open a second prompt while a save is in flight', async () => {

@@ -191,6 +191,7 @@ export type SourdawBridge = {
         readonly projectState: (state: {
             readonly title: string;
             readonly dirty: boolean;
+            readonly durabilityPending: boolean;
             readonly recentProjects: readonly { readonly key: string; readonly name: string }[];
         }) => Promise<void>;
         readonly saveResult: (result: {

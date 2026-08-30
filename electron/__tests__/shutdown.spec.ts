@@ -274,6 +274,26 @@ describe('the before-quit handler', () => {
         await vi.waitFor(() => expect(run).toHaveBeenCalledTimes(1));
     });
 
+    it('force-quits when renderer quiescence never settles and never starts native shutdown while it is interactive', async () => {
+        const { timers, fire } = manualTimers();
+        const beforeRun = vi.fn(() => new Promise<void>(() => undefined));
+        const run = vi.fn(async () => completed);
+        const exit = vi.fn();
+        const handler = createQuitHandler(run, { beforeRun, timers, exit, report: () => undefined });
+        const first = { preventDefault: vi.fn() };
+        const repeated = { preventDefault: vi.fn() };
+
+        handler(first);
+        await vi.waitFor(() => expect(beforeRun).toHaveBeenCalledTimes(1));
+        handler(repeated);
+        fire();
+
+        await vi.waitFor(() => expect(exit).toHaveBeenCalledWith(1));
+        expect(run).not.toHaveBeenCalled();
+        expect(first.preventDefault).toHaveBeenCalledTimes(1);
+        expect(repeated.preventDefault).toHaveBeenCalledTimes(1);
+    });
+
     it.each([
         ['denies', async () => false],
         ['rejects', async () => Promise.reject(new Error('permission failed'))],

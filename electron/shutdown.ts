@@ -32,7 +32,7 @@
  * at all.
  */
 
-import type { Timers } from './timers.js';
+import { systemTimers, type Timers } from './timers.js';
 
 /** How long the cascade gets before the shell stops waiting for it. */
 export const SHUTDOWN_DEADLINE_MS = 5_000;
@@ -135,6 +135,43 @@ export type QuitDependencies = {
     readonly canQuit?: () => Promise<boolean>;
     /** Quiesces the approved renderer session before native shutdown drains the host. */
     readonly beforeRun?: () => Promise<void>;
+    /** Shared clock so renderer quiescence cannot outlive the shutdown deadline. */
+    readonly timers?: Timers;
+};
+
+const runAfterQuiesceWithinDeadline = async (
+    run: () => Promise<ShutdownOutcome>,
+    beforeRun: () => Promise<void>,
+    timers: Timers
+): Promise<ShutdownOutcome> => {
+    let expired = false;
+    let deadlineTimer: { readonly cancel: () => void } | undefined;
+    const deadline = new Promise<ShutdownOutcome>((resolve) => {
+        deadlineTimer = timers.setTimer(() => {
+            expired = true;
+            resolve({ status: 'timed-out', deadlineMs: SHUTDOWN_DEADLINE_MS });
+        }, SHUTDOWN_DEADLINE_MS);
+    });
+    const sequence = (async (): Promise<ShutdownOutcome> => {
+        try {
+            await beforeRun();
+        } catch {
+            // The shell's force-destroy fallback failed. The native cascade is
+            // still safer than leaving plugin admission open.
+        }
+        // A late editor teardown must never begin native shutdown after the
+        // deadline has already force-quit the process.
+        if (expired) {
+            return new Promise<ShutdownOutcome>(() => undefined);
+        }
+        return run();
+    })();
+
+    try {
+        return await Promise.race([sequence, deadline]);
+    } finally {
+        deadlineTimer?.cancel();
+    }
 };
 
 /**
@@ -151,7 +188,13 @@ export type QuitDependencies = {
  */
 export const createQuitHandler = (
     run: () => Promise<ShutdownOutcome>,
-    { exit, report, canQuit = async () => true, beforeRun = async () => undefined }: QuitDependencies
+    {
+        exit,
+        report,
+        canQuit = async () => true,
+        beforeRun = async () => undefined,
+        timers = systemTimers,
+    }: QuitDependencies
 ): ((event: PreventableEvent) => void) => {
     let started = false;
     let checkingPermission = false;
@@ -172,14 +215,11 @@ export const createQuitHandler = (
                 if (allowed) {
                     started = true;
                     checkingPermission = false;
-                    void beforeRun()
-                        .catch(() => undefined)
-                        .then(run)
-                        .then((outcome) => {
-                            report(outcome);
-                            finalExitAllowed = true;
-                            exit(outcome.status === 'timed-out' ? 1 : 0);
-                        });
+                    void runAfterQuiesceWithinDeadline(run, beforeRun, timers).then((outcome) => {
+                        report(outcome);
+                        finalExitAllowed = true;
+                        exit(outcome.status === 'timed-out' ? 1 : 0);
+                    });
                     return;
                 }
                 checkingPermission = false;

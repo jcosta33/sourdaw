@@ -17,10 +17,11 @@ describe('native menu project-state controller', () => {
             rebuildApplicationMenu,
         });
 
-        controller.apply({ title: 'First mix', dirty: false, recentProjects: [] });
+        controller.apply({ title: 'First mix', dirty: false, durabilityPending: false, recentProjects: [] });
         controller.apply({
             title: 'Final mix',
             dirty: true,
+            durabilityPending: false,
             recentProjects: [{ key: 'sourdaw:project:10', name: 'Final mix' }],
         });
 
@@ -29,8 +30,26 @@ describe('native menu project-state controller', () => {
         expect(updateCloseState).toHaveBeenLastCalledWith({
             title: 'Final mix',
             dirty: true,
+            durabilityPending: false,
             recentProjects: [{ key: 'sourdaw:project:10', name: 'Final mix' }],
         });
         expect(rebuildApplicationMenu).toHaveBeenLastCalledWith([{ key: 'sourdaw:project:10', name: 'Final mix' }]);
+    });
+
+    it('keeps a clean replacement visibly edited while its identity snapshot is pending', () => {
+        const window = {
+            isDestroyed: () => false,
+            setTitle: vi.fn(),
+            setDocumentEdited: vi.fn(),
+        };
+        const controller = createNativeMenuProjectStateController({
+            updateCloseState: vi.fn(),
+            getWindow: () => window,
+            rebuildApplicationMenu: vi.fn(),
+        });
+
+        controller.apply({ title: 'Untitled Project', dirty: false, durabilityPending: true, recentProjects: [] });
+
+        expect(window.setDocumentEdited).toHaveBeenCalledWith(true);
     });
 });

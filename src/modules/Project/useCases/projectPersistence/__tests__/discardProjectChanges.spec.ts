@@ -16,6 +16,7 @@ const load = vi.hoisted(() => ({ loadRecentProject: vi.fn() }));
 const create = vi.hoisted(() => ({ newProject: vi.fn() }));
 const crdt = vi.hoisted(() => ({ compactProject: vi.fn() }));
 const notifications = vi.hoisted(() => ({ notifyUser: vi.fn() }));
+const transitionAuthority = vi.hoisted(() => ({ current: true }));
 
 vi.mock('../../../stores/projectStore', () => ({
     projectStore: {
@@ -31,6 +32,9 @@ vi.mock('../../recentProjects/helpers', () => recent);
 vi.mock('../../../repositories/project/readNamedProjectJson', () => snapshot);
 vi.mock('../../recentProjects/loadRecentProject', () => load);
 vi.mock('../newProject', () => create);
+vi.mock('../captureProjectTransitionAuthority', () => ({
+    captureProjectTransitionAuthority: () => ({ isCurrent: () => transitionAuthority.current }),
+}));
 vi.mock('#/modules/CrdtDocument/useCases', () => crdt);
 vi.mock('#/utils/Notification/notifyUser', () => notifications);
 
@@ -48,6 +52,7 @@ describe('discardProjectChanges', () => {
         create.newProject.mockReset();
         crdt.compactProject.mockReset();
         notifications.notifyUser.mockClear();
+        transitionAuthority.current = true;
     });
 
     it('restores an orphaned named snapshot without consulting the recent-project index as authority', async () => {
@@ -68,6 +73,34 @@ describe('discardProjectChanges', () => {
         expect(load.loadRecentProject).toHaveBeenCalledWith('sourdaw:project:10', { requireDurable: true });
         expect(create.newProject).not.toHaveBeenCalled();
         expect(state.project?.dirty).toBe(false);
+    });
+
+    it('fails closed when a newer project edit takes ownership while the snapshot read is pending', async () => {
+        let resolveSnapshot: ((value: string | null) => void) | undefined;
+        recent.getRecentProjects.mockReturnValue([]);
+        snapshot.readNamedProjectJson.mockImplementation(
+            () =>
+                new Promise<string | null>((resolve) => {
+                    resolveSnapshot = resolve;
+                })
+        );
+
+        const discard = discardProjectChanges();
+        state.project = {
+            // The same identity is not enough: the later edit is a new store
+            // publication and must not be discarded by the stale request.
+            projectId: 'original-project',
+            createdAt: 10,
+            dirty: true,
+            identityPersistencePending: false,
+        };
+        transitionAuthority.current = false;
+        resolveSnapshot?.('{"version":2}');
+
+        await expect(discard).resolves.toBe(false);
+        expect(load.loadRecentProject).not.toHaveBeenCalled();
+        expect(create.newProject).not.toHaveBeenCalled();
+        expect(state.project?.dirty).toBe(true);
     });
 
     it('replaces a never-explicitly-saved project with a clean blank project', async () => {
