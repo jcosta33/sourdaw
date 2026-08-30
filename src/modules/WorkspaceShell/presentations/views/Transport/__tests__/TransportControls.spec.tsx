@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
@@ -187,6 +187,25 @@ describe('TransportControls', () => {
     });
 
     describe('overdub button (conditional on showOverdub)', () => {
+        it('routes every compact settings action through its owning use case', () => {
+            renderWithTooltip(<TransportControls {...defaultProps} showOverdub={true} />);
+            openTransportSettings();
+            const settings = within(screen.getByRole('dialog', { name: 'Transport settings' }));
+
+            fireEvent.click(settings.getByRole('button', { name: 'Overdub' }));
+            fireEvent.click(settings.getByRole('button', { name: 'Metronome' }));
+            fireEvent.click(settings.getByRole('button', { name: 'Punch in/out' }));
+            fireEvent.click(settings.getByRole('button', { name: 'Count-in' }));
+
+            expect(mocks.toggleOverdub).toHaveBeenCalledTimes(1);
+            expect(mocks.toggleMetronome).toHaveBeenCalledTimes(1);
+            expect(mocks.executeAppAction).toHaveBeenCalledWith({
+                type: 'setPunchEnabled',
+                payload: { enabled: true },
+            });
+            expect(mocks.toggleCountIn).toHaveBeenCalledTimes(1);
+        });
+
         it('does not render the overdub button when showOverdub is false', () => {
             renderWithTooltip(<TransportControls {...defaultProps} showOverdub={false} />);
             expect(screen.queryByLabelText('Overdub')).not.toBeInTheDocument();

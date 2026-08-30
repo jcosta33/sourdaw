@@ -141,4 +141,28 @@ test.describe('Responsive transport bar', () => {
         await page.setViewportSize({ width: 683, height: 900 });
         await expect(page.getByRole('button', { name: 'Punch recording settings' })).toBeVisible();
     });
+
+    test('reconciles transport disclosures across responsive transitions', async ({ page }) => {
+        test.setTimeout(120_000);
+        await page.setViewportSize({ width: 1440, height: 900 });
+        await setupWorkspace(page);
+        await launch_new_project(page);
+
+        await page.getByRole('button', { name: 'Transport settings' }).click();
+        await expect(page.getByRole('dialog', { name: 'Transport settings' })).toHaveCount(1);
+        await page.setViewportSize({ width: 1024, height: 900 });
+        await expect(page.getByRole('dialog', { name: 'Transport settings' })).toHaveCount(1);
+        await page.setViewportSize({ width: 1440, height: 900 });
+        await expect(page.getByRole('dialog', { name: 'Transport settings' })).toHaveCount(1);
+        await page.keyboard.press('Escape');
+
+        await page.setViewportSize({ width: 819, height: 900 });
+        await page.getByRole('button', { name: 'More transport controls' }).click();
+        await expect(page.getByRole('dialog', { name: 'More transport controls' })).toHaveCount(1);
+        await page.setViewportSize({ width: 1440, height: 900 });
+        await expect(page.getByRole('dialog', { name: 'More transport controls' })).toHaveCount(0);
+        await page.setViewportSize({ width: 819, height: 900 });
+        await page.getByRole('button', { name: 'More transport controls' }).click();
+        await expect(page.getByRole('dialog', { name: 'More transport controls' })).toHaveCount(1);
+    });
 });

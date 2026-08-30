@@ -1,4 +1,4 @@
-import { type MouseEvent, type ReactElement } from 'react';
+import { type MouseEvent, type ReactElement, useEffect, useRef, useState } from 'react';
 
 import { Ellipsis } from 'lucide-react';
 
@@ -42,6 +42,8 @@ const getTracks = (state: { tracks: Track[] } | null): Track[] => state?.tracks 
 const Sep = (): ReactElement => <div className="mx-0.5 h-5 w-px shrink-0 daw-seam" />;
 
 export const TransportBar = (): ReactElement => {
+    const moreContainerRef = useRef<HTMLDivElement>(null);
+    const [moreOpen, setMoreOpen] = useState(false);
     const {
         sidebarOpen,
         inspectorOpen,
@@ -87,6 +89,23 @@ export const TransportBar = (): ReactElement => {
         void windowChromeControls().toggleMaximize();
     };
 
+    useEffect(() => {
+        const container = moreContainerRef.current;
+        if (container === null) {
+            return undefined;
+        }
+        if (typeof ResizeObserver === 'undefined') {
+            return undefined;
+        }
+        const observer = new ResizeObserver(([entry]) => {
+            if (entry !== undefined && entry.contentRect.width > 1199) {
+                setMoreOpen(false);
+            }
+        });
+        observer.observe(container);
+        return () => observer.disconnect();
+    }, []);
+
     return (
         <Stack
             as="header"
@@ -106,6 +125,7 @@ export const TransportBar = (): ReactElement => {
         >
             {/* ── ROW 1: Meta Layer (Project, AI Copilot, Layout) ── */}
             <div
+                ref={moreContainerRef}
                 className={cn(
                     'transport-bar__title-row desktop-titlebar-region min-h-[40px] px-2',
                     framelessChrome && 'desktop-titlebar-region--frameless',
@@ -252,13 +272,17 @@ export const TransportBar = (): ReactElement => {
                     <UndoRedoButtons canUndo={undoState.canUndo} canRedo={undoState.canRedo} />
                 </Row>
                 <div className="transport-bar__action-more">
-                    <Popover>
+                    <Popover open={moreOpen} onOpenChange={setMoreOpen}>
                         <PopoverTrigger asChild>
                             <Button variant="ghost" size="icon-sm" aria-label="More transport controls">
                                 <Ellipsis className="size-3.5" aria-hidden="true" />
                             </Button>
                         </PopoverTrigger>
-                        <PopoverContent align="end" aria-label="More transport controls">
+                        <PopoverContent
+                            align="end"
+                            aria-label="More transport controls"
+                            onCloseAutoFocus={(event) => event.preventDefault()}
+                        >
                             <div className="space-y-2">
                                 <TempoEditor />
                                 <PunchRecordingControls />
