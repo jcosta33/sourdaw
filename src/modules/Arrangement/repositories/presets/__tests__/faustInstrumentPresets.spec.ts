@@ -15,6 +15,38 @@ const FM_SYNTH_RETIRED_PRESET_KEYS: ReadonlySet<string> = new Set([
     'release',
 ]);
 
+/**
+ * The envelope keys every shipped additive preset still authors. The additive
+ * DSP hardcodes its ADSR, so these never reached the audio; they stay authored
+ * until the DSP grows real envelope controls or the presets drop the dead keys
+ * (follow-up filed from #3172's widened compile scan).
+ */
+const ADDITIVE_SYNTH_RETIRED_PRESET_KEYS: ReadonlySet<string> = new Set(['attack', 'decay', 'sustain', 'release']);
+
+/**
+ * The ground truth an authored preset key is checked against.
+ *
+ * A Faust device is checked against the registration scan — the addresses the
+ * compiled node actually accepts — whether or not a TS-side descriptor exists,
+ * because a descriptor-less Faust voice (hammond-b3, minimoog-lead, …) still
+ * has that real contract. A faust- device with no registration has no address
+ * table to compare keys against (a preset naming an unregistered device is a
+ * device-resolution defect, not a stray-key one). Native `builtin-*` devices
+ * have no Faust compiler in the loop, so their own TS descriptor is the
+ * legitimate ground truth; a device with neither has nothing to compare
+ * against.
+ */
+function realParamIdsOf(deviceType: string, realIdsByDevice: Map<string, Set<string>>): Set<string> | null {
+    if (deviceType.startsWith('faust-')) {
+        return realIdsByDevice.get(deviceType) ?? null;
+    }
+    const descriptor = getPluginById(deviceType);
+    if (!descriptor || descriptor.parameters.length === 0) {
+        return null;
+    }
+    return new Set(descriptor.parameters.map((parameter) => parameter.id));
+}
+
 describe('faustInstrumentPresets', () => {
     it('exports a non-empty preset array', () => {
         expect(FAUST_INSTRUMENT_PRESETS.length).toBeGreaterThan(0);
@@ -77,28 +109,22 @@ describe('faustInstrumentPresets', () => {
         const unknownKeysByDevice: string[] = [];
         for (const preset of FAUST_INSTRUMENT_PRESETS) {
             for (const device of preset.devices) {
-                const descriptor = getPluginById(device.type);
-                if (!descriptor || descriptor.parameters.length === 0) {
-                    // Faust instrument voices (hammond-b3, minimoog-lead, …)
-                    // declare no TS-side descriptor at all: a Faust-native
-                    // parameter space this check has no declared contract to
-                    // compare against.
+                const realIds = realParamIdsOf(device.type, realIdsByDevice);
+                if (!realIds) {
                     continue;
                 }
-                // Faust effects (the ones this finding is about) are checked
-                // against the compiled node's real registered addresses;
-                // native `builtin-*` devices (chorus, distortion, …) have no
-                // Faust compiler in the loop, so their own TS descriptor is
-                // legitimate ground truth and isn't in `builtinDSP.ts` at all.
-                const realIds = device.type.startsWith('faust-')
-                    ? (realIdsByDevice.get(device.type) ?? new Set<string>())
-                    : new Set(descriptor.parameters.map((parameter) => parameter.id));
                 for (const paramId of Object.keys(device.parameterValues)) {
                     if (device.type === 'faust-fm-synth' && FM_SYNTH_RETIRED_PRESET_KEYS.has(paramId)) {
                         // Excluded by name, not by skipping the device: the
                         // fm-synth descriptor declares `gain` now, so `gain`
                         // and any key added after it stay under this guard
                         // while the retired set's migration stays #3155's.
+                        continue;
+                    }
+                    if (device.type === 'faust-additive-synth' && ADDITIVE_SYNTH_RETIRED_PRESET_KEYS.has(paramId)) {
+                        // Same shape as the fm-synth guard above: excluded by
+                        // name, not by skipping the device, so a new additive
+                        // key that misses the DSP still goes red here.
                         continue;
                     }
                     if (!realIds.has(paramId)) {

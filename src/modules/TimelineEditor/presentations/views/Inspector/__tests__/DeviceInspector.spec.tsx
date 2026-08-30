@@ -258,6 +258,47 @@ describe('DeviceInspector', () => {
         );
     });
 
+    it('should resolve every declared control for a faust-supersaw-unison device from the real registry', async () => {
+        // Same contract for the third Faust instrument descriptor: the
+        // descriptor declares every input control the compiled supersaw node
+        // exposes, including the note-level freq and gate (#3172). Run against
+        // the real registry (the module mock's importActual), not a
+        // hand-built descriptor, so the case fails if the descriptor's
+        // parameters revert to a partial set or to [].
+        const actual = await vi.importActual<typeof import('#/modules/Arrangement/useCases')>(
+            '#/modules/Arrangement/useCases'
+        );
+        mockGetBuiltinPlugins.mockImplementation(actual.getBuiltinPlugins);
+        render(
+            <DeviceInspector
+                device={makeDevice({
+                    id: 'device-supersaw',
+                    name: 'Supersaw Unison',
+                    type: 'faust-supersaw-unison',
+                    parameterValues: { detune: 20 },
+                })}
+                trackId="track-1"
+                onBack={mockOnBack}
+            />
+        );
+        expect(screen.getByTestId('generic-layout').getAttribute('data-param-ids')).toBe(
+            [
+                'lfo_rate',
+                'lfo_depth',
+                'detune',
+                'center_mix',
+                'cutoff',
+                'resonance',
+                'attack',
+                'decay',
+                'sustain',
+                'release',
+                'freq',
+                'gate',
+            ].join(',')
+        );
+    });
+
     it('should match a builtin plugin by display name', () => {
         mockGetBuiltinPlugins.mockReturnValue([
             { id: 'other', name: 'Test Device', parameters: [{ id: 'p1', name: 'One', automatable: true }] },
