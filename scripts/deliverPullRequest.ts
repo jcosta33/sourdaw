@@ -1607,7 +1607,11 @@ function ensureDeliveryReceipt(
         receipt =
             historical === undefined ? undefined : tryStableHistoricalDeliveryReceipt(pullRequest, port, expected);
     }
-    if (receipt === undefined && currentPersistedAuthority?.receiptBody === expectedBody) {
+    if (
+        receipt === undefined &&
+        currentPersistedAuthority?.phase !== 'released' &&
+        currentPersistedAuthority?.receiptBody === expectedBody
+    ) {
         try {
             receipt = readExactDeliveryReceipt(pullRequest, port, currentPersistedAuthority.receiptId);
         } catch {
