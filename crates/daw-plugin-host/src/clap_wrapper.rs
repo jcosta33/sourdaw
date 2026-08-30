@@ -1497,9 +1497,12 @@ impl ClapWrapper {
         Some((width, height))
     }
 
-    /// Install the wake fired for every plugin-initiated ask this host answers
-    /// off the calling thread. First install wins; a second call reports
-    /// `false`.
+    /// Install the wake fired for this host's `[main-thread]` asks, answered off
+    /// the calling thread. First install wins; a second call reports `false`.
+    ///
+    /// The install also gates the `[thread-safe]` asks' acceptance — the drain
+    /// thread that answers them serves exactly the instances the native engine
+    /// took, which is exactly where this is installed.
     pub fn set_plugin_host_request_notifier(&self, notifier: PluginHostRequestNotifier) -> bool {
         self.host_state.set_request_notifier(notifier)
     }

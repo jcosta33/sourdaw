@@ -1,20 +1,18 @@
 //! Push path for the asks a hosted plugin makes from inside its own callbacks.
 //!
-//! A plugin resizes its editor by calling `clap_host_gui.request_resize()`,
-//! reports that its own state changed by calling `clap_host_state.mark_dirty()`,
-//! and announces that its parameter contract moved by calling
-//! `clap_host_params.rescan()`. Inside any of those the host may touch neither a
-//! window server nor the project and may not re-enter the plugin, so the backend
-//! records the ask and wakes this watcher.
+//! A plugin reports that its own state changed by calling
+//! `clap_host_state.mark_dirty()` and announces that its parameter contract
+//! moved by calling `clap_host_params.rescan()`. Inside either the host may
+//! touch neither the project nor re-enter the plugin, so the backend records
+//! the ask and wakes this watcher.
 //!
 //! The watcher is a dedicated non-RT thread that blocks in `recv()` until a
 //! plugin actually asks, then carries the follow-up out through the
-//! `SharedHostedPlugin` control seam: a recorded editor size is replayed at the
-//! host window seam the editor was opened with, a recorded state change becomes
-//! a `plugin-state-dirty` event the project's dirty tracking listens for, and a
+//! `SharedHostedPlugin` control seam: a recorded state change becomes a
+//! `plugin-state-dirty` event the project's dirty tracking listens for, and a
 //! rescan re-enumerates the parameter contract and becomes
-//! `plugin-parameters-rescanned`. Same shape as the latency watcher, and for the
-//! same reason — nothing polls, so an idle session does no work at all.
+//! `plugin-parameters-rescanned`. Same shape as the latency watcher, and for
+//! the same reason — nothing polls, so an idle session does no work at all.
 //!
 //! ## What may be routed through this wake
 //!
@@ -22,14 +20,12 @@
 //! ask belongs here only if the thread a plugin may raise it on is one that may
 //! allocate — and CLAP does not supply that wholesale, it is a check each ask
 //! must be made against by its own annotation. `mark_dirty` and `params.rescan`
-//! are `[main-thread]` and pass it. `params.request_flush` is `[thread-safe]`,
-//! so a plugin may raise it from inside `process()`; it fails the check and does
-//! not come here at all, being recorded as a flag and answered by the
-//! parameter-event drain — see [`crate::host::plugin_parameter_events`].
-//!
-//! `gui.request_resize` is also `[thread-safe]`, and it does reach this wake
-//! through `request_editor_resize`. That predates the check and is not addressed
-//! here.
+//! are `[main-thread]` and pass it. `params.request_flush` and
+//! `gui.request_resize` are `[thread-safe]`, so a plugin may raise either from
+//! inside `process()`; both fail the check and do not come here at all, being
+//! recorded as a flag or a size slot plus a process-wide hint and answered by
+//! the parameter-event drain — see [`crate::host::plugin_parameter_events`] and
+//! [`apply_pending_editor_resizes`].
 //!
 //! It serves engine-owned instances only, which is where the wake is installed.
 //! An instance the native engine never took records a state change nothing
@@ -40,9 +36,9 @@
 
 use crate::events::{EventSink, EventSinkExt};
 use crate::host::native_bridge::SharedHostedPlugin;
-use crate::host::runtime_for_instance;
+use crate::host::{all_engine_runtimes, retry_unreached_instance, runtime_for_instance};
 use crate::state::EnginePluginInstanceData;
-use daw_plugin_host::{AudioPlugin, PluginHostRequest};
+use daw_plugin_host::{signal_pending_editor_resize, AudioPlugin, PluginHostRequest};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::mpsc::{channel, Sender};
@@ -58,6 +54,17 @@ pub const PLUGIN_PARAMETERS_RESCANNED_EVENT: &str = "plugin-parameters-rescanned
 /// How long a follow-up may wait for the RT path to release the plugin. Matches
 /// the timeout every other control-path command uses.
 const CONTROL_TIMEOUT: Duration = Duration::from_secs(2);
+
+/// How long applying one editor resize may wait for the audio thread to release
+/// an instance.
+///
+/// Sized for the audio thread holding the seam for the length of a block, not
+/// for a plugin command of unbounded duration — the same reasoning, and the same
+/// figure, as the flush and tail legs of the drain tick this runs on: that tick
+/// also feeds every plugin's knob edits to the renderer, so one instance
+/// mid-`open_gui` must not hold it. An instance this could not get into raises
+/// the hint again for the next tick instead.
+const DRAIN_CONTROL_TIMEOUT: Duration = Duration::from_millis(50);
 
 /// Payload of `plugin-state-dirty`. snake_case on the wire, matching the other
 /// plugin DTOs.
@@ -187,24 +194,44 @@ pub fn state_dirty_payload(
     }
 }
 
-/// Replay the size the plugin asked for at the window its editor is drawn into.
+/// Apply the editor sizes plugins asked for, at the window seams their editors
+/// are drawn into.
+///
+/// Called from the parameter-event drain's tick, once it has taken the hint the
+/// recording side raised. The hint names no instance — it cannot, because
+/// `gui.request_resize` is `[thread-safe]` and may be raised from the audio
+/// thread — so this visits every engine-owned instance and lets each backend
+/// answer for itself: [`AudioPlugin::apply_pending_editor_resize`] takes the
+/// newest recorded size and moves the host window, and an instance with nothing
+/// recorded applies nothing.
 ///
 /// Nothing is emitted: the answer to a resize is the window changing size, and
-/// the frontend neither asked for it nor owns that window. Reports whether the
-/// follow-up reached the plugin, which is what decides a retry.
-fn apply_editor_resize(runtime: &SharedHostedPlugin, instance_id: &str) -> Result<(), String> {
-    let applied = runtime.with_control(CONTROL_TIMEOUT, |plugin| {
-        Ok(plugin.apply_pending_editor_resize())
-    });
+/// the frontend neither asked for it nor owns that window.
+///
+/// Coalescing is newest-wins and always was: the recorded slot holds one size,
+/// so a burst of asks leaves the last one standing, exactly as the channel this
+/// replaces left it — every queued follow-up read the slot at drain time too,
+/// so only the newest size was ever applied. The recorded ask survives a visit
+/// that could not reach the plugin, and an instance still accepting public
+/// control raises the hint again for the next tick; that retry is unbounded
+/// while the instance lives, which is the flush and tail legs' rule, and costs
+/// nothing once the ask is applied because taking the slot cleared it.
+pub fn apply_pending_editor_resizes(engine_plugins: &EnginePlugins) {
+    for (instance_id, runtime) in all_engine_runtimes(engine_plugins, "editor resize") {
+        let applied = runtime.try_with_control(DRAIN_CONTROL_TIMEOUT, |plugin| {
+            Ok(plugin.apply_pending_editor_resize())
+        });
 
-    if let Err(error) = &applied {
-        eprintln!(
-            "[Plugin] editor resize failed for instance {}: {}",
-            instance_id, error
-        );
+        if let Err(error) = &applied {
+            retry_unreached_instance(
+                &runtime,
+                &instance_id,
+                "editor resize",
+                error,
+                signal_pending_editor_resize,
+            );
+        }
     }
-
-    applied.map(|_| ())
 }
 
 /// Re-enumerate the plugin's parameters and tell the frontend its metadata moved.
@@ -333,9 +360,6 @@ pub fn start(events: Arc<dyn EventSink>, engine_plugins: EnginePlugins) {
                 let again = serve_queued_request(
                     queued,
                     |instance_id, request| match request {
-                        PluginHostRequest::EditorResize => {
-                            apply_editor_resize(&runtime, instance_id)
-                        }
                         PluginHostRequest::StateDirty => {
                             report_state_change(&runtime, instance_id, &*events)
                         }
@@ -400,22 +424,6 @@ mod tests {
         .expect("payload serialises");
 
         assert_eq!(json, r#"{"instance_id":"inst-7"}"#);
-    }
-
-    /// An instance mid-unload refuses public control, and the resize follow-up
-    /// has to survive that: the plugin is going away, and the watcher thread
-    /// serves every other instance.
-    #[test]
-    fn a_resize_for_an_unloading_instance_is_dropped_rather_than_fatal() {
-        let wrapper =
-            ClapWrapper::new_engine_owned_command_fixture("Request Fixture", vec![], true);
-        let runtime = SharedHostedPlugin::new(wrapper.into());
-        runtime.begin_unload();
-
-        assert!(
-            apply_editor_resize(&runtime, "inst-1").is_err(),
-            "an instance that refuses public control cannot have been resized"
-        );
     }
 
     /// The wake is spent by the attempt that failed, and only a wake drains the
