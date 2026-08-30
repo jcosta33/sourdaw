@@ -16,6 +16,7 @@ import { agentRunLifecycle } from './agentRunLifecycle';
 import { agentRunWorkLease } from './agentRunWorkLease';
 import { agentRunCancellation } from './cancelAgentRun';
 import { executePlannedActions } from './executePlannedActions';
+import { getProjectCommitFinalizationWarning } from './getProjectCommitFinalizationWarning';
 import { issueAgentCommandApprovalBinding } from './issueAgentCommandApprovalBinding';
 import { notifyAiChange } from './notifyAiChange';
 import { recordAgentRunReceiptSaga } from './recordAgentRunReceiptSaga';
@@ -44,10 +45,6 @@ type ExecutePromptActionGroupResult = {
 const TERMINAL_RUN_PHASES = new Set<AgentRunPhase>(['completed', 'failed', 'cancelled', 'partially-completed']);
 const AGENT_RUN_PERSISTENCE_WARNING =
     'Agent run recovery state could not be persisted after execution. The verified command receipt remains authoritative.';
-
-function getFinalizationEvidenceWarning(reason: string): string {
-    return `The project change is durably committed, but its finalization evidence is unavailable: ${reason}. Do not replay these actions. Inspect the current project state before further automation.`;
-}
 
 function getErrorMessage(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
@@ -451,7 +448,7 @@ export async function executePromptActionGroup(
             receiptIdentity,
             warnings: [
                 execution.status === 'committed' && execution.finalizationEvidenceFailure
-                    ? getFinalizationEvidenceWarning(execution.finalizationEvidenceFailure)
+                    ? getProjectCommitFinalizationWarning(execution.finalizationEvidenceFailure)
                     : null,
                 leaseSettlement.warning,
                 receiptPersistenceWarning,

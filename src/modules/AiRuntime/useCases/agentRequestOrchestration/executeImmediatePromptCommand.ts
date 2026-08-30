@@ -6,15 +6,12 @@ import { agentRunLifecycle } from '../agentRunLifecycle';
 import { agentRunWorkLease } from '../agentRunWorkLease';
 import { agentRunCancellation } from '../cancelAgentRun';
 import { executePlannedActions } from '../executePlannedActions';
+import { getProjectCommitFinalizationWarning } from '../getProjectCommitFinalizationWarning';
 import { recordAgentRunReceiptSaga } from '../recordAgentRunReceiptSaga';
 
 import { AGENT_RUN_PERSISTENCE_WARNING, settleAgentRunWorkLeaseSafely } from './settleAgentRunWorkLeaseSafely';
 
 import type { generateGroupId, parseVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
-
-function getFinalizationEvidenceWarning(reason: string): string {
-    return `The project change is durably committed, but its finalization evidence is unavailable: ${reason}. Do not replay these actions. Inspect the current project state before further automation.`;
-}
 
 type ExecuteInput = Parameters<typeof executePlannedActions>[0];
 type CommandExecutionInput = Extract<ExecuteInput, { commandBatch: unknown }>;
@@ -183,7 +180,7 @@ export async function executeImmediatePromptCommand(
             receiptWarnings.push(`AI history or notification reporting warning: ${execution.reportingWarning}`);
         }
         if (execution.finalizationEvidenceFailure) {
-            receiptWarnings.push(getFinalizationEvidenceWarning(execution.finalizationEvidenceFailure));
+            receiptWarnings.push(getProjectCommitFinalizationWarning(execution.finalizationEvidenceFailure));
         }
         const runPersistenceWarning = tryRecordCommittedAgentRunWork({
             runId,

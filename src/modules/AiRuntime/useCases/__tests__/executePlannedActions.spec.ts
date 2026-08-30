@@ -410,6 +410,11 @@ describe('executePlannedActions', () => {
             finalizationEvidenceFailure: 'revision capture failed at commit',
         });
         expect(result).not.toHaveProperty('committedRevision');
+        expect(notifyAiChange).toHaveBeenCalledWith(
+            'The project change is durably committed, but its finalization evidence is unavailable: revision capture failed at commit. Do not replay these actions. Inspect the current project state before further automation.',
+            ['muteTrack']
+        );
+        expect(notifyAiChange).not.toHaveBeenCalledWith('Executed: Mute vocals', expect.anything());
     });
 
     it('removes a prepared recovery capsule when the owning project checkpoint aborts', async () => {

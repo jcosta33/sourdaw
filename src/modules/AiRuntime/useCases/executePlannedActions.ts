@@ -9,6 +9,7 @@ import { type AppAction } from '#/utils/handlerContract';
 
 import { AiProposalInvalidatedError } from '../errors/AiProposalInvalidatedError';
 
+import { getProjectCommitFinalizationWarning } from './getProjectCommitFinalizationWarning';
 import { getVerifiedBatchReplayDisposition } from './getVerifiedBatchReplayDisposition';
 import { notifyAiChange } from './notifyAiChange';
 import { prepareAgentRunPendingEffectContinuation } from './prepareAgentRunPendingEffectContinuation';
@@ -190,7 +191,9 @@ export async function executePlannedActions(input: ExecutePlannedActionsInput): 
     }
 
     try {
-        let successSummary = `${input.successVerb ?? 'Executed'}: ${input.prompt}`;
+        let successSummary = finalizationEvidenceFailure
+            ? getProjectCommitFinalizationWarning(finalizationEvidenceFailure)
+            : `${input.successVerb ?? 'Executed'}: ${input.prompt}`;
         if (commitWarning) {
             successSummary = `${successSummary}. Committed with follow-up warning: ${commitWarning}`;
         }
