@@ -177,6 +177,9 @@ type Input = {
     throwAfterCreatePendingReview?: boolean;
     throwInspectAfterCreatePendingReview?: boolean;
     createClientMutationId?: string;
+    createReceiptBody?: string;
+    createReceiptState?: ReviewState;
+    createReceiptCommitOid?: string | null;
     throwAfterReply?: boolean;
     concurrentReplyOnThrow?: boolean;
     concurrentReplyBeforeConvergence?: boolean;
@@ -187,6 +190,7 @@ type Input = {
     throwAfterSubmitWithState?: boolean;
     throwAfterSubmitWithoutState?: boolean;
     submitClientMutationId?: string;
+    submitReceiptState?: ReviewState;
     submitReceiptAuthorNodeId?: string | null;
     submitReceiptAuthorType?: string | null;
     failDelete?: boolean;
@@ -584,9 +588,9 @@ function fakePort(input: Input = {}) {
             }
             return {
                 id,
-                state: 'PENDING',
-                body,
-                commitOid,
+                state: input.createReceiptState ?? 'PENDING',
+                body: input.createReceiptBody ?? body,
+                commitOid: input.createReceiptCommitOid ?? commitOid,
                 authorNodeId: input.createReceiptAuthorNodeId ?? AUTHOR_BOT_NODE_ID,
                 authorLogin,
                 authorType: input.createReceiptAuthorType ?? 'Bot',
@@ -642,7 +646,7 @@ function fakePort(input: Input = {}) {
             }
             return {
                 id: input.submitReceiptReviewId ?? currentReviewId,
-                state: input.updateReceiptState ?? review.state,
+                state: input.submitReceiptState ?? review.state,
                 body: input.submitReceiptBody ?? review.body,
                 commitOid: input.submitReceiptCommitOid ?? review.commitOid,
                 authorNodeId: input.submitReceiptAuthorNodeId ?? review.authorNodeId,
@@ -3703,7 +3707,9 @@ describe('review thread resolution', () => {
                         },
                     }
                 )
-            ).toThrow(/lock ownership changed before recovery/i);
+            ).toThrow(
+                `review resolution on PR #42 lock ownership changed before recovery; current lock owner ${replacementOwnerOid}; recover with pnpm review:resolve:recover 42 --owner ${replacementOwnerOid}`
+            );
             expect(reconcileCalled).toBe(false);
             expect(readLockOid(repository, 42)).toBe(replacementOwnerOid);
             expect(requireLockOwner(repository, 42)).toMatchObject({
@@ -3713,6 +3719,30 @@ describe('review thread resolution', () => {
                 head,
                 mutation: { phase: 'idle', epoch: 0 },
             });
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
+    it('reports the canonical current owner when recovery is invoked with a stale owner OID', () => {
+        const repository = createTemporaryGitRepository();
+        try {
+            const staleOwnerOid = writeLockOwnerBlob(repository, 999999);
+            const currentOwnerOid = writeLockOwnerBlob(repository, 1_000_000);
+            updateLock(repository, 42, currentOwnerOid);
+
+            expect(() =>
+                recoverPullRequestReviewResolutionLock(
+                    repository,
+                    42,
+                    staleOwnerOid,
+                    () => 'must not reconcile',
+                    () => false
+                )
+            ).toThrow(
+                `review resolution on PR #42 lock ownership changed before recovery; current lock owner ${currentOwnerOid}; recover with pnpm review:resolve:recover 42 --owner ${currentOwnerOid}`
+            );
+            expect(readLockOid(repository, 42)).toBe(currentOwnerOid);
         } finally {
             rmSync(repository, { recursive: true, force: true });
         }
@@ -6468,6 +6498,9 @@ describe('review thread resolution', () => {
     it.each([
         ['wrong immutable actor ID', { submitReceiptAuthorNodeId: REVIEWER_BOT_NODE_ID }],
         ['non-Bot type', { submitReceiptAuthorType: 'User' as const }],
+        ['wrong body', { submitReceiptBody: 'wrong body' }],
+        ['wrong state', { submitReceiptState: 'PENDING' as const }],
+        ['wrong commit OID', { submitReceiptCommitOid: movedHead }],
     ])('rejects a submit-review receipt with %s before resolve or log', (_case, overrides) => {
         const { port, authorNodeId, calls } = fakePort({
             existingReplyCount: 1,
@@ -6499,6 +6532,9 @@ describe('review thread resolution', () => {
     it.each([
         ['wrong immutable actor ID', { createReceiptAuthorNodeId: REVIEWER_BOT_NODE_ID }],
         ['non-Bot type', { createReceiptAuthorType: 'User' as const }],
+        ['wrong body', { createReceiptBody: 'wrong body' }],
+        ['wrong state', { createReceiptState: 'COMMENTED' as const }],
+        ['wrong commit OID', { createReceiptCommitOid: movedHead }],
     ])('rejects a create-pending-review receipt with %s before reply submit resolve or log', (_case, overrides) => {
         const { port, authorNodeId, calls } = fakePort(overrides);
         expect(() => resolveReviewThread(42, threadId, head, authorNodeId, port)).toThrow(

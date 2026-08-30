@@ -1264,7 +1264,10 @@ describe('package scripts and gitignore', () => {
         }
     });
 
-    it('runs dead-holder review-resolution recovery through the trusted bootstrap and deletes the exact stale ref', async () => {
+    it.each([
+        ['journaled v4 owner', true],
+        ['legacy v2 owner', false],
+    ] as const)('runs dead-holder %s recovery through the trusted bootstrap', async (_label, expectsRecovery) => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-review-resolution-recovery-'));
         const reviewThreadId = 'PRRT_kwDOExample';
         const reviewHead = 'a'.repeat(40);
@@ -1278,14 +1281,26 @@ describe('package scripts and gitignore', () => {
             const ownerOid = execFileSync('git', ['hash-object', '-w', '--stdin'], {
                 cwd: root,
                 encoding: 'utf8',
-                input: JSON.stringify({
-                    version: 2,
-                    pid: 999999,
-                    pgid: 999999,
-                    threadId: reviewThreadId,
-                    head: uppercaseReviewHead,
-                    token: validToken,
-                }),
+                input: JSON.stringify(
+                    expectsRecovery
+                        ? {
+                              version: 4,
+                              pid: 999999,
+                              ownerFence: { kind: 'pgid', pgid: 999999 },
+                              threadId: reviewThreadId,
+                              head: uppercaseReviewHead,
+                              token: validToken,
+                              mutation: { phase: 'idle', epoch: 0 },
+                          }
+                        : {
+                              version: 2,
+                              pid: 999999,
+                              pgid: 999999,
+                              threadId: reviewThreadId,
+                              head: uppercaseReviewHead,
+                              token: validToken,
+                          }
+                ),
             }).trim();
             runGit(root, ['update-ref', ref, ownerOid, '0'.repeat(ownerOid.length)]);
 
@@ -1349,24 +1364,30 @@ describe('package scripts and gitignore', () => {
                                 if (child.error !== undefined) {
                                     throw child.error;
                                 }
-                                expect(child.status).toBe(0);
-                                expect(child.stdout.trim()).toBe(
-                                    `review-resolution-lock-recovered:42:${reviewThreadId}:${reviewHead}:${reviewHead}:unresolved:0`
-                                );
+                                expect(child.status).toBe(expectsRecovery ? 0 : 1);
+                                if (expectsRecovery) {
+                                    expect(child.stdout.trim()).toBe(
+                                        `review-resolution-lock-recovered:42:${reviewThreadId}:${reviewHead}:${reviewHead}:unresolved:0`
+                                    );
+                                } else {
+                                    expect(child.stderr).toMatch(/refuses an unjournaled legacy v2 lock owner/i);
+                                }
                                 return child.status ?? 1;
                             }
                         ),
                 }
             );
 
-            expect(result).toBe(0);
-            expect(
-                spawnSync('git', ['rev-parse', '--verify', '--quiet', ref], {
-                    cwd: root,
-                    encoding: 'utf8',
-                    shell: false,
-                }).status
-            ).toBe(1);
+            expect(result).toBe(expectsRecovery ? 0 : 1);
+            const currentOid = spawnSync('git', ['rev-parse', '--verify', '--quiet', ref], {
+                cwd: root,
+                encoding: 'utf8',
+                shell: false,
+            });
+            expect(currentOid.status).toBe(expectsRecovery ? 1 : 0);
+            if (!expectsRecovery) {
+                expect(currentOid.stdout.trim()).not.toBe(ownerOid);
+            }
         } finally {
             rmSync(root, { recursive: true, force: true });
         }

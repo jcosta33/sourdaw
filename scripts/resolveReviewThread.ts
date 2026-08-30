@@ -2930,7 +2930,9 @@ export function recoverPullRequestReviewResolutionLock<Value>(
     }
     const expectedOid = reviewResolutionLockObjectId(expectedOwnerOid, number);
     if (currentOwnerOid !== expectedOid) {
-        return fail(`${pullRequestReviewResolutionLockScope(number)} lock ownership changed before recovery`);
+        return fail(
+            `${pullRequestReviewResolutionLockScope(number)} lock ownership changed before recovery; current lock owner ${currentOwnerOid}; recover with ${reviewResolutionRecoveryCommand(number, currentOwnerOid)}`
+        );
     }
     const owner = readReviewResolutionLockOwner(primaryRoot, currentOwnerOid, number);
     if (ownerFenceIsLive(owner.ownerFence)) {
@@ -3000,7 +3002,13 @@ function claimRecoveringPullRequestReviewResolutionLock(
     };
     const claimedOid = writeReviewResolutionLockOwner(primaryRoot, claimedOwner, number);
     if (!updateRef(primaryRoot, [ref, claimedOid, currentOwnerOid])) {
-        fail(`${pullRequestReviewResolutionLockScope(number)} lock ownership changed before recovery`);
+        const winningOwnerOid = readReviewResolutionLockOid(primaryRoot, ref, number);
+        if (winningOwnerOid === undefined) {
+            fail(`${pullRequestReviewResolutionLockScope(number)} lock is not held after recovery claim`);
+        }
+        fail(
+            `${pullRequestReviewResolutionLockScope(number)} lock ownership changed before recovery; current lock owner ${winningOwnerOid}; recover with ${reviewResolutionRecoveryCommand(number, winningOwnerOid)}`
+        );
     }
     return { oid: claimedOid, owner: claimedOwner };
 }
