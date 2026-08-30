@@ -96,6 +96,7 @@ function compileBatch(
         batchId?: string;
         expectedGain?: number;
         gain?: number;
+        idempotencyKey?: string;
         runId?: string;
     } = {}
 ) {
@@ -117,7 +118,7 @@ function compileBatch(
         baseRevision,
         batchId: input.batchId ?? 'batch-idempotency',
         commands: [JSON.stringify(command)],
-        idempotencyKey: 'client-request-1',
+        idempotencyKey: input.idempotencyKey ?? 'client-request-1',
         intent: 'Set vocal gain',
         mode: 'commit',
         projectId: 'project-idempotency',
@@ -1358,6 +1359,7 @@ describe('command batch idempotency', () => {
 
     it('does not run retained effects or finalize when the project advances before recovery', async () => {
         clearHandlerRegistry();
+        projectDocument.unrelated = { value: false };
         const gainStorage = createAutomergeStorage<{ value: number }>('root', 'trackGain');
         const unrelatedStorage = createAutomergeStorage<{ value: boolean }>('root', 'unrelated');
         expect(gainStorage.hydrate?.()).toBe(true);
@@ -1408,6 +1410,7 @@ describe('command batch idempotency', () => {
         });
         await vi.waitFor(() => expect(leaseStarted).toHaveBeenCalledOnce());
         unrelatedStorage.set({ value: true });
+        flushAutomergeStorageWrites();
         expect(commandProjectRevisionPort.capture()).not.toBe(pendingProjectRevision);
         lease.resolve(true);
 
@@ -1766,10 +1769,12 @@ describe('command batch idempotency', () => {
         expect(retainedEvidence).toHaveBeenCalledExactlyOnceWith();
         expect(evictedEvidence).toEqual({
             status: 'failed',
+            disposition: 'retryable',
             reason: 'Approved section render artifact is no longer retained.',
         });
         expect(unavailableAuthority).toEqual({
             status: 'failed',
+            disposition: 'retryable',
             reason: 'Only the authoritative collaboration host can finalize recovery',
         });
         expect(replay).toMatchObject({ pendingEffects: [], outcome: 'committed' });
@@ -1802,6 +1807,13 @@ describe('command batch idempotency', () => {
         if (first.status !== 'committed-with-warning') {
             throw new Error('Expected a durable pending-effect receipt');
         }
+        commandBatchIdempotencyPort.setRepository({
+            lookup: () => Promise.resolve({ status: 'missing' }),
+            claim: () => Promise.resolve({ status: 'claimed' }),
+            complete: () => Promise.resolve(),
+            tryAcquireRecoveryLease: () => Promise.resolve(true),
+            release: () => Promise.resolve(),
+        });
         const expectedProjectRevision = commandProjectRevisionPort.capture();
 
         if (failure === 'denied initial authority') {
@@ -1957,6 +1969,7 @@ describe('command batch idempotency', () => {
 
         await expect(finalization).resolves.toEqual({
             status: 'failed',
+            disposition: 'retryable',
             reason: 'Approved section render artifact is no longer retained.',
         });
         expect(mutationCount).toBe(mutationCountBeforeFinalization);
@@ -2563,10 +2576,13 @@ describe('command batch idempotency', () => {
             authority: batch.authority,
             confirmed: true,
             serialized: batch.serialized,
-            onProjectCommitPrepared: () => {
-                throw new Error('project commit observer unavailable');
+            options: {
+                onCommitted: () => {
+                    throw new Error('project commit observer unavailable');
+                },
+                onProjectCommitFinalized,
+                onProjectCommitFinalizationUnavailable,
             },
-            options: { onProjectCommitFinalized, onProjectCommitFinalizationUnavailable },
         });
 
         expect(result).toMatchObject({
@@ -2687,7 +2703,10 @@ describe('command batch idempotency', () => {
             onProjectCommitFinalized: vi.fn(),
             onProjectCommitFinalizationUnavailable: vi.fn(),
         };
-        const rejectedBatch = compileBatch({ batchId: 'finalization-rejected' });
+        const rejectedBatch = compileBatch({
+            batchId: 'finalization-rejected',
+            idempotencyKey: 'finalization-rejected',
+        });
         const rejected = await executeVersionedCommandBatchEnvelope({
             authority: rejectedBatch.authority,
             serialized: rejectedBatch.serialized,
@@ -2695,7 +2714,10 @@ describe('command batch idempotency', () => {
         });
         expect(callbacks.onProjectCommitFinalized).not.toHaveBeenCalled();
         expect(callbacks.onProjectCommitFinalizationUnavailable).not.toHaveBeenCalled();
-        const cancelledBatch = compileBatch({ batchId: 'finalization-cancelled' });
+        const cancelledBatch = compileBatch({
+            batchId: 'finalization-cancelled',
+            idempotencyKey: 'finalization-cancelled',
+        });
         const cancelled = await executeVersionedCommandBatchEnvelope({
             authority: cancelledBatch.authority,
             confirmed: true,
@@ -2704,7 +2726,10 @@ describe('command batch idempotency', () => {
         });
         expect(callbacks.onProjectCommitFinalized).not.toHaveBeenCalled();
         expect(callbacks.onProjectCommitFinalizationUnavailable).not.toHaveBeenCalled();
-        const replayBatch = compileBatch({ batchId: 'finalization-replay' });
+        const replayBatch = compileBatch({
+            batchId: 'finalization-replay',
+            idempotencyKey: 'finalization-replay',
+        });
         await executeVersionedCommandBatchEnvelope({
             authority: replayBatch.authority,
             confirmed: true,
