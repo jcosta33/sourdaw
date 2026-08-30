@@ -1154,6 +1154,7 @@
                 "src/modules/AiRuntime/useCases/agentReference/getSharedVocalFxBusesPromptScope.ts",
                 "src/modules/Arrangement/models/DeviceParameter.ts",
                 "src/modules/Arrangement/models/PluginDescriptors/FaustEffectDescriptors.ts",
+                "src/modules/Arrangement/models/PluginDescriptors/FaustInstrumentDescriptors.ts",
                 "src/modules/Arrangement/repositories/presets/expandedPresets.ts",
                 "src/modules/Arrangement/repositories/presets/faustEffectPresets.ts",
                 "src/modules/Arrangement/repositories/presets/faustInstrumentPresets.ts",
@@ -1868,6 +1869,7 @@
         {
             "value": "Rhodes",
             "paths": [
+                "src/modules/Arrangement/models/PluginDescriptors/FaustInstrumentDescriptors.ts",
                 "src/modules/Arrangement/repositories/presets/expandedPresets.ts",
                 "src/modules/Arrangement/repositories/presets/faustInstrumentPresets.ts",
                 "src/modules/ContentBrowser/presentations/views/Sidebar/InstrumentsTab.tsx",
