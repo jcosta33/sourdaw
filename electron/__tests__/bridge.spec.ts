@@ -164,14 +164,14 @@ describe('native menu transport', () => {
 
         await bridge.nativeMenu.projectState(state);
         await bridge.nativeMenu.saveResult(result);
-        await bridge.nativeMenu.sessionQuiesced(3, true);
+        await bridge.nativeMenu.sessionQuiesced({ requestId: 3, outcome: 'success' });
         await bridge.nativeMenu.sessionQuiesceStarted(3);
 
         expect(fake.invoke).toHaveBeenNthCalledWith(1, NATIVE_MENU_PROJECT_STATE_CHANNEL, state);
         expect(fake.invoke).toHaveBeenNthCalledWith(2, NATIVE_MENU_SAVE_RESULT_CHANNEL, result);
         expect(fake.invoke).toHaveBeenNthCalledWith(3, RENDERER_SESSION_QUIESCED_CHANNEL, {
             requestId: 3,
-            quiesced: true,
+            outcome: 'success',
         });
         expect(fake.invoke).toHaveBeenNthCalledWith(4, RENDERER_SESSION_QUIESCE_STARTED_CHANNEL, { requestId: 3 });
     });

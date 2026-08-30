@@ -29,6 +29,7 @@ import {
     NATIVE_MENU_SAVE_RESULT_CHANNEL,
     RENDERER_SESSION_QUIESCED_CHANNEL,
     RENDERER_SESSION_QUIESCE_STARTED_CHANNEL,
+    type RendererSessionQuiesceResult,
 } from './channels.js';
 import { commandChannel } from './commands.js';
 import { asPositionalArguments, withTrustedSender, withTrustedSenderEvent, type IpcMainLike } from './router.js';
@@ -325,10 +326,7 @@ export type RegisterNativeMenuChannelsInput = {
     readonly isTrustedFrameUrl: TrustGuard;
     readonly onProjectState: (state: NativeMenuProjectState, sender: unknown) => void;
     readonly onSaveResult: (result: NativeMenuSaveResult) => void;
-    readonly onSessionQuiesced: (
-        result: { readonly requestId: number; readonly quiesced: boolean },
-        sender: unknown
-    ) => void;
+    readonly onSessionQuiesced: (result: RendererSessionQuiesceResult, sender: unknown) => void;
     readonly onSessionQuiesceStarted: (requestId: number, sender: unknown) => boolean;
 };
 
@@ -388,17 +386,22 @@ const nativeMenuSaveResult = (value: unknown): NativeMenuSaveResult => {
     };
 };
 
-const rendererSessionQuiesced = (value: unknown): { readonly requestId: number; readonly quiesced: boolean } => {
+const rendererSessionQuiesced = (value: unknown): RendererSessionQuiesceResult => {
     const result = asRecord(value);
+    const keys = Object.keys(result);
+    const outcome = result.outcome;
     if (
+        keys.length !== 2 ||
+        !keys.includes('requestId') ||
+        !keys.includes('outcome') ||
         typeof result.requestId !== 'number' ||
         !Number.isSafeInteger(result.requestId) ||
         result.requestId < 1 ||
-        typeof result.quiesced !== 'boolean'
+        (outcome !== 'success' && outcome !== 'rejected' && outcome !== 'terminal')
     ) {
         throw new TypeError('renderer session quiesce result is invalid');
     }
-    return { requestId: result.requestId, quiesced: result.quiesced };
+    return { requestId: result.requestId, outcome };
 };
 
 const rendererSessionRequestId = (value: unknown): number => {

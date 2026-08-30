@@ -461,8 +461,8 @@ export const createSourdawBridge = (
                 rendererSessionCancelListeners.add(callback);
                 return () => rendererSessionCancelListeners.delete(callback);
             },
-            sessionQuiesced: async (requestId, quiesced) => {
-                await ipc.invoke(RENDERER_SESSION_QUIESCED_CHANNEL, { requestId, quiesced });
+            sessionQuiesced: async (result) => {
+                await ipc.invoke(RENDERER_SESSION_QUIESCED_CHANNEL, result);
             },
             sessionQuiesceStarted: async (requestId) => {
                 const accepted = await ipc.invoke(RENDERER_SESSION_QUIESCE_STARTED_CHANNEL, { requestId });

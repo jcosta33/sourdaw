@@ -38,8 +38,8 @@ const crdt = vi.hoisted(() => ({
 }));
 const projectActions = vi.hoisted(() => ({
     saveProject: vi.fn(async () => true),
-    quiesceProjectSession: vi.fn(async () => true),
-    cancelProjectSessionQuiesce: vi.fn(async () => false),
+    quiesceProjectSession: vi.fn(async () => 'success' as const),
+    cancelProjectSessionQuiesce: vi.fn(async () => 'rejected' as const),
     discardProjectChanges: vi.fn(async () => true),
     newProject: vi.fn(),
     pickAndImportProjectFile: vi.fn(async () => true),
@@ -147,9 +147,12 @@ describe('useNativeApplicationMenu', () => {
         desktop.sessionQuiesceStarted.mockReset().mockResolvedValue(true);
         projectActions.quiesceProjectSession
             .mockReset()
-            .mockImplementation(async (_requestId: number, begin?: () => Promise<boolean>) =>
-                begin === undefined ? true : begin()
-            );
+            .mockImplementation(async (_requestId: number, begin?: () => Promise<boolean>) => {
+                if (begin === undefined) {
+                    return 'success' as const;
+                }
+                return (await begin()) ? ('success' as const) : ('rejected' as const);
+            });
         projectState.dirty = false;
         projectState.projectId = 'project';
         projectState.createdAt = 1;
@@ -161,7 +164,7 @@ describe('useNativeApplicationMenu', () => {
         projectActions.saveProject.mockResolvedValue(true);
         projectActions.discardProjectChanges.mockReset();
         projectActions.discardProjectChanges.mockResolvedValue(true);
-        projectActions.cancelProjectSessionQuiesce.mockReset().mockResolvedValue(false);
+        projectActions.cancelProjectSessionQuiesce.mockReset().mockResolvedValue('rejected');
         projectActions.newProject.mockClear();
         projectActions.loadRecentProject.mockClear();
         projectActions.recentProjectChanges.subscribe.mockClear();
@@ -182,7 +185,7 @@ describe('useNativeApplicationMenu', () => {
         projectActions.quiesceProjectSession.mockImplementationOnce(
             async (_requestId: number, begin: () => Promise<boolean>) => {
                 await begin();
-                return false;
+                return 'rejected' as const;
             }
         );
         renderHook(() =>
@@ -204,7 +207,9 @@ describe('useNativeApplicationMenu', () => {
 
         desktop.sessionListener?.(41);
 
-        await vi.waitFor(() => expect(desktop.sessionQuiesced).toHaveBeenCalledWith(41, false));
+        await vi.waitFor(() =>
+            expect(desktop.sessionQuiesced).toHaveBeenCalledWith({ requestId: 41, outcome: 'rejected' })
+        );
         expect(projectActions.quiesceProjectSession).toHaveBeenCalledTimes(1);
         expect(desktop.sessionQuiesceStarted).toHaveBeenCalledWith(41);
     });
@@ -230,8 +235,36 @@ describe('useNativeApplicationMenu', () => {
 
         desktop.sessionListener?.(42);
 
-        await vi.waitFor(() => expect(desktop.sessionQuiesced).toHaveBeenCalledWith(42, false));
+        await vi.waitFor(() =>
+            expect(desktop.sessionQuiesced).toHaveBeenCalledWith({ requestId: 42, outcome: 'rejected' })
+        );
         expect(projectActions.quiesceProjectSession).toHaveBeenCalledWith(42, expect.any(Function));
+    });
+
+    it('forwards a correlated terminal result when renderer runtime repair fails', async () => {
+        projectActions.quiesceProjectSession.mockResolvedValueOnce('terminal');
+        renderHook(() =>
+            useNativeApplicationMenu({
+                name: 'Song',
+                projectId: 'project',
+                createdAt: 1,
+                dirty: false,
+                identityPersistencePending: false,
+                loading: false,
+                updatedAt: 1,
+                keyRoot: 0,
+                scaleName: 'chromatic',
+                tuning: { name: 'Equal Temperament', frequencies: [] },
+                productionBrief: {} as never,
+                initialized: true,
+            })
+        );
+
+        desktop.sessionListener?.(43);
+
+        await vi.waitFor(() =>
+            expect(desktop.sessionQuiesced).toHaveBeenCalledWith({ requestId: 43, outcome: 'terminal' })
+        );
     });
 
     it('routes a correlated renderer-session cancellation through the Project use case', async () => {
@@ -255,7 +288,7 @@ describe('useNativeApplicationMenu', () => {
         desktop.sessionCancelListener?.(42);
 
         await vi.waitFor(() => expect(projectActions.cancelProjectSessionQuiesce).toHaveBeenCalledWith(42));
-        expect(desktop.sessionQuiesced).toHaveBeenCalledWith(42, false);
+        expect(desktop.sessionQuiesced).toHaveBeenCalledWith({ requestId: 42, outcome: 'rejected' });
     });
 
     it('does not reopen a pending retirement on AppShell unmount', () => {

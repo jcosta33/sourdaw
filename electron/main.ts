@@ -71,7 +71,7 @@ import { registerCommandRouter } from './router.js';
 import { createScanSupervisor, type ScanSupervisor } from './scan.js';
 import { applyPermissionPolicy, decideWindowOpen, isNavigationAllowed, trustedFrameGuard } from './security.js';
 import { createShellComposition, requestApprovedWindowClose } from './shellComposition.js';
-import { runBeforeQuitCascade, type ShutdownOutcome } from './shutdown.js';
+import { runBeforeQuitCascade, type QuitPreparationOutcome, type ShutdownOutcome } from './shutdown.js';
 import { systemTimers } from './timers.js';
 import { registerVoiceDictation } from './voiceDictation.js';
 import { getWindowChromeOptions } from './windowChrome.js';
@@ -188,15 +188,19 @@ const nativeMenuProjectStateController = createNativeMenuProjectStateController(
     rebuildApplicationMenu: rebuildMacApplicationMenu,
 });
 
-const quiesceApprovedMainWindow = async (): Promise<boolean | 'timed-out'> => {
+const quiesceApprovedMainWindow = async (): Promise<QuitPreparationOutcome> => {
     const window = mainWindow;
     if (window === undefined || window.isDestroyed()) {
-        return true;
+        return 'success';
     }
     let destroyed = false;
     try {
         if (!window.isDestroyed()) {
-            if (!(await rendererSessionQuiescer.request(window))) {
+            const outcome = await rendererSessionQuiescer.request(window);
+            if (outcome !== 'success') {
+                if (outcome === 'terminal') {
+                    return 'terminal';
+                }
                 if (
                     isApprovedRendererTerminal({
                         owner: window,
@@ -204,19 +208,19 @@ const quiesceApprovedMainWindow = async (): Promise<boolean | 'timed-out'> => {
                         permitsClose: () => windowCloseCoordinator.permitsClose(),
                     })
                 ) {
-                    return true;
+                    return 'success';
                 }
                 rendererSessionLifecycle.cancelTeardown();
                 if (windowCloseCoordinator.permitsClose() && rendererSessionQuiescer.timedOut(window)) {
                     return 'timed-out';
                 }
-                return false;
+                return 'rejected';
             }
             if (destroyMainWindowAfterEditorsDetach !== undefined) {
                 destroyed = await destroyMainWindowAfterEditorsDetach();
             } else {
                 if (!windowCloseCoordinator.permitsClose()) {
-                    return false;
+                    return 'rejected';
                 }
                 window.hide();
                 windowCloseCoordinator.markClosing();
@@ -228,7 +232,7 @@ const quiesceApprovedMainWindow = async (): Promise<boolean | 'timed-out'> => {
         if (!quiesced) {
             rendererSessionLifecycle.cancelTeardown();
         }
-        return quiesced;
+        return quiesced ? 'success' : 'rejected';
     } catch (error) {
         console.error('[shell] failed to quiesce the renderer before shutdown:', error);
         try {
@@ -244,7 +248,7 @@ const quiesceApprovedMainWindow = async (): Promise<boolean | 'timed-out'> => {
         if (!quiesced) {
             rendererSessionLifecycle.cancelTeardown();
         }
-        return quiesced;
+        return quiesced ? 'success' : 'rejected';
     } finally {
         if ((destroyed || window.isDestroyed()) && mainWindow === window) {
             mainWindow = undefined;
@@ -735,7 +739,7 @@ void app.whenReady().then(() => {
                     ? BrowserWindow.fromWebContents(sender as WebContents)
                     : null;
             if (senderWindow !== null) {
-                rendererSessionQuiescer.resolve(senderWindow, result.requestId, result.quiesced);
+                rendererSessionQuiescer.resolve(senderWindow, result);
             }
         },
         onSessionQuiesceStarted: (requestId, sender) => {

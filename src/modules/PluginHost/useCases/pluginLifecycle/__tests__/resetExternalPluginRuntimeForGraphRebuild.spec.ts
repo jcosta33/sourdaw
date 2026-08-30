@@ -156,6 +156,48 @@ describe('resetExternalPluginRuntimeForGraphRebuild', () => {
         expect(mocks.loadPlugin).toHaveBeenCalledOnce();
     });
 
+    it('waits for a pre-admitted activation before bulk retirement and leaves no late instance behind', async () => {
+        const admittedLoad =
+            Promise.withResolvers<
+                Pick<
+                    PluginInstance,
+                    'instance_id' | 'parameters' | 'latency_samples' | 'latency_ms' | 'engine_plugin_id'
+                >
+            >();
+        const bulkUnload = Promise.withResolvers<[string[], string[]]>();
+        mocks.loadPlugin.mockReturnValueOnce(admittedLoad.promise);
+        mocks.unloadPlugin.mockReturnValueOnce(bulkUnload.promise);
+
+        const activation = activateExternalPlugin({
+            engineSampleRate: 48_000,
+            pluginId: 'compressor',
+            instanceId: 'pre-admitted-instance',
+        });
+        await vi.waitFor(() => expect(mocks.loadPlugin).toHaveBeenCalledOnce());
+
+        const retirement = await beginProjectSessionPluginRetirement();
+        const retiring = retirement.retire();
+        await Promise.resolve();
+        expect(mocks.unloadPlugin).not.toHaveBeenCalled();
+
+        admittedLoad.resolve({
+            instance_id: 'pre-admitted-instance',
+            parameters: [],
+            latency_samples: 0,
+            latency_ms: 3,
+            engine_plugin_id: 1002,
+        });
+        await expect(activation).resolves.toMatchObject({ status: 'failed', stage: 'attach' });
+        await vi.waitFor(() => expect(mocks.unloadPlugin).toHaveBeenCalledOnce());
+        bulkUnload.resolve([['pre-admitted-instance'], []]);
+        await retiring;
+
+        expect(loadedExternalInstances.has('pre-admitted-instance')).toBe(false);
+        expect(externalPluginActivationTasks.has('pre-admitted-instance')).toBe(false);
+        expect(externalPluginActivationOutcomes.has('pre-admitted-instance')).toBe(false);
+        retirement.reopen();
+    });
+
     it('waits for an already-active rebuild before acquiring the project-session retirement fence', async () => {
         const activeUnload = Promise.withResolvers<[string[], string[]]>();
         mocks.unloadPlugin.mockReturnValueOnce(activeUnload.promise);

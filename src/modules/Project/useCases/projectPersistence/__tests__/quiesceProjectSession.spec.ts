@@ -46,7 +46,7 @@ describe('quiesceProjectSession', () => {
                 order.push('commit');
                 return true;
             })
-        ).resolves.toBe(true);
+        ).resolves.toBe('success');
 
         expect(order).toEqual(['stop', 'commit', 'graph', 'plugins']);
     });
@@ -55,7 +55,7 @@ describe('quiesceProjectSession', () => {
         runtime.stopPlayback.mockRejectedValueOnce(new Error('transport unavailable'));
         let { quiesceProjectSession } = await import('../quiesceProjectSession');
 
-        await expect(quiesceProjectSession(1)).resolves.toBe(false);
+        await expect(quiesceProjectSession(1)).resolves.toBe('rejected');
         expect(runtime.resetAudioGraph).not.toHaveBeenCalled();
 
         vi.resetModules();
@@ -65,11 +65,11 @@ describe('quiesceProjectSession', () => {
         runtime.repairRuntimeGraphFromProject.mockResolvedValue(undefined);
         ({ quiesceProjectSession } = await import('../quiesceProjectSession'));
 
-        await expect(quiesceProjectSession(1)).resolves.toBe(false);
+        await expect(quiesceProjectSession(1)).resolves.toBe('rejected');
         expect(runtime.repairRuntimeGraphFromProject).toHaveBeenCalledOnce();
         expect(runtime.reopen).toHaveBeenCalledOnce();
         runtime.unloadPlugin.mockResolvedValue(undefined);
-        await expect(quiesceProjectSession(2)).resolves.toBe(true);
+        await expect(quiesceProjectSession(2)).resolves.toBe('success');
         expect(runtime.resetAudioGraph).toHaveBeenCalledTimes(2);
     });
 
@@ -80,10 +80,10 @@ describe('quiesceProjectSession', () => {
 
         await expect(
             quiesceProjectSession(1, async () => Promise.reject(new Error('main window replaced')))
-        ).resolves.toBe(false);
+        ).resolves.toBe('rejected');
         expect(runtime.resetAudioGraph).not.toHaveBeenCalled();
 
-        await expect(quiesceProjectSession(2, async () => true)).resolves.toBe(true);
+        await expect(quiesceProjectSession(2, async () => true)).resolves.toBe('success');
         expect(runtime.resetAudioGraph).toHaveBeenCalledTimes(1);
     });
 
@@ -105,8 +105,8 @@ describe('quiesceProjectSession', () => {
         const cancelling = cancelProjectSessionQuiesce(7);
         releasePlugin();
 
-        await expect(quiescing).resolves.toBe(false);
-        await expect(cancelling).resolves.toBe(false);
+        await expect(quiescing).resolves.toBe('rejected');
+        await expect(cancelling).resolves.toBe('rejected');
         expect(runtime.repairRuntimeGraphFromProject).toHaveBeenCalledOnce();
     });
 
@@ -123,15 +123,15 @@ describe('quiesceProjectSession', () => {
         const { cancelProjectSessionQuiesce } = await import('../cancelProjectSessionQuiesce');
         const { quiesceProjectSession } = await import('../quiesceProjectSession');
 
-        await expect(quiesceProjectSession(11, async () => true)).resolves.toBe(true);
+        await expect(quiesceProjectSession(11, async () => true)).resolves.toBe('success');
         const cancelling = cancelProjectSessionQuiesce(11);
-        await expect(quiesceProjectSession(12, async () => true)).resolves.toBe(false);
-        await expect(cancelProjectSessionQuiesce(10)).resolves.toBe(false);
+        await expect(quiesceProjectSession(12, async () => true)).resolves.toBe('rejected');
+        await expect(cancelProjectSessionQuiesce(10)).resolves.toBe('rejected');
         expect(runtime.repairRuntimeGraphFromProject).toHaveBeenCalledOnce();
 
         releaseRepair();
-        await expect(cancelling).resolves.toBe(false);
-        await expect(quiesceProjectSession(12, async () => true)).resolves.toBe(true);
+        await expect(cancelling).resolves.toBe('rejected');
+        await expect(quiesceProjectSession(12, async () => true)).resolves.toBe('success');
     });
 
     it('publishes the Project recovery-failure surface and keeps close admission locked when repair also fails', async () => {
@@ -141,8 +141,8 @@ describe('quiesceProjectSession', () => {
         const { projectLoadFailureStore } = await import('../../../stores/projectLoadFailureStore');
         const { quiesceProjectSession } = await import('../quiesceProjectSession');
 
-        await expect(quiesceProjectSession(21, async () => true)).resolves.toBe(false);
+        await expect(quiesceProjectSession(21, async () => true)).resolves.toBe('terminal');
         expect(projectLoadFailureStore.value?.message).toMatch(/could not safely restore/u);
-        await expect(quiesceProjectSession(22, async () => true)).resolves.toBe(false);
+        await expect(quiesceProjectSession(22, async () => true)).resolves.toBe('terminal');
     });
 });

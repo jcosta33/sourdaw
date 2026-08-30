@@ -34,7 +34,7 @@ describe('project-session plugin retirement integration', () => {
         const { quiesceProjectSession } = await import('../quiesceProjectSession');
         const { activateExternalPlugin } = await import('#/modules/PluginHost/useCases');
 
-        await expect(quiesceProjectSession(94, async () => true)).resolves.toBe(true);
+        await expect(quiesceProjectSession(94, async () => true)).resolves.toBe('success');
         const activation = activateExternalPlugin({
             engineSampleRate: 48_000,
             pluginId: 'compressor',

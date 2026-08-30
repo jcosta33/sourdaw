@@ -19,15 +19,15 @@ describe('renderer session quiescer', () => {
 
         const first = quiescer.request(window);
         expect(window.webContents.send).toHaveBeenCalledWith('renderer:quiesce', 1);
-        quiescer.resolve(window, 2, true);
-        quiescer.resolve(window, 1, true);
-        await expect(first).resolves.toBe(true);
-        await expect(quiescer.request(window)).resolves.toBe(true);
+        quiescer.resolve(window, { requestId: 2, outcome: 'success' });
+        quiescer.resolve(window, { requestId: 1, outcome: 'success' });
+        await expect(first).resolves.toBe('success');
+        await expect(quiescer.request(window)).resolves.toBe('success');
 
         const secondWindow = { isDestroyed: () => false, webContents: { send: vi.fn() } };
         const second = quiescer.request(secondWindow);
         timeout?.();
-        await expect(second).resolves.toBe(false);
+        await expect(second).resolves.toBe('rejected');
         expect(RENDERER_SESSION_QUIESCE_TIMEOUT_MS).toBe(5_000);
     });
 
@@ -45,12 +45,12 @@ describe('renderer session quiescer', () => {
         expect(quiescer.start(window, 1)).toBe(true);
         quiescer.cancel(); // A revision revoke cannot manufacture success.
         timeout?.();
-        await expect(started).resolves.toBe(false);
-        quiescer.resolve(window, 1, true); // late completion is harmless
+        await expect(started).resolves.toBe('rejected');
+        quiescer.resolve(window, { requestId: 1, outcome: 'success' }); // late completion is harmless
 
         const revoked = quiescer.request(window);
         quiescer.cancel();
-        await expect(revoked).resolves.toBe(false);
+        await expect(revoked).resolves.toBe('rejected');
         expect(quiescer.start(window, 2)).toBe(false);
     });
 
@@ -69,7 +69,7 @@ describe('renderer session quiescer', () => {
         quiescer.cancel();
         expect(window.webContents.send).toHaveBeenLastCalledWith('renderer:cancel', 1);
         timeout?.();
-        await expect(revoked).resolves.toBe(false);
+        await expect(revoked).resolves.toBe('rejected');
     });
 
     it('holds later requests until a queued successful teardown acknowledges correlated cancellation', async () => {
@@ -78,18 +78,18 @@ describe('renderer session quiescer', () => {
 
         const completed = quiescer.request(window);
         expect(quiescer.start(window, 1)).toBe(true);
-        quiescer.resolve(window, 1, true); // Final success is queued before authority revokes.
-        await expect(completed).resolves.toBe(true);
+        quiescer.resolve(window, { requestId: 1, outcome: 'success' }); // Final success is queued before authority revokes.
+        await expect(completed).resolves.toBe('success');
 
         quiescer.cancel();
         expect(window.webContents.send).toHaveBeenLastCalledWith('renderer:cancel', 1);
-        await expect(quiescer.request(window)).resolves.toBe(false);
+        await expect(quiescer.request(window)).resolves.toBe('rejected');
 
-        quiescer.resolve(window, 1, false); // Renderer repaired the exact cancelled request.
+        quiescer.resolve(window, { requestId: 1, outcome: 'rejected' }); // Renderer repaired the exact cancelled request.
         const retry = quiescer.request(window);
         expect(window.webContents.send).toHaveBeenLastCalledWith('renderer:quiesce', 2);
-        quiescer.resolve(window, 2, false);
-        await expect(retry).resolves.toBe(false);
+        quiescer.resolve(window, { requestId: 2, outcome: 'rejected' });
+        await expect(retry).resolves.toBe('rejected');
     });
 
     it('settles a destroyed window request without recovery and immediately admits its replacement', async () => {
@@ -103,21 +103,21 @@ describe('renderer session quiescer', () => {
         destroyed.value = true;
         quiescer.finalize(window);
 
-        await expect(pending).resolves.toBe(false);
+        await expect(pending).resolves.toBe('rejected');
         expect(window.webContents.send).not.toHaveBeenCalledWith('renderer:cancel', 1);
 
         const next = quiescer.request(replacement);
         expect(replacement.webContents.send).toHaveBeenCalledWith('renderer:quiesce', 2);
-        quiescer.resolve(replacement, 2, false);
-        await expect(next).resolves.toBe(false);
+        quiescer.resolve(replacement, { requestId: 2, outcome: 'rejected' });
+        await expect(next).resolves.toBe('rejected');
     });
 
     it('does not let native editor detach/window close begin before renderer project runtime quiesces', async () => {
-        let release!: (quiesced: boolean) => void;
+        let release!: (outcome: 'success') => void;
         const order: string[] = [];
         const close = completeMacCloseAfterSessionQuiesce({
             request: () =>
-                new Promise<boolean>((resolve) => {
+                new Promise<'success'>((resolve) => {
                     release = resolve;
                 }),
             shouldProceed: () => true,
@@ -126,7 +126,7 @@ describe('renderer session quiescer', () => {
         });
 
         expect(order).toEqual([]);
-        release(true);
+        release('success');
         await close;
         expect(order).toEqual(['editor-detach-and-window-close']);
     });
@@ -136,7 +136,7 @@ describe('renderer session quiescer', () => {
         await completeMacCloseAfterSessionQuiesce({
             request: async () => {
                 order.push('request');
-                return true;
+                return 'success' as const;
             },
             shouldProceed: () => false,
             close: () => order.push('close'),
@@ -144,5 +144,50 @@ describe('renderer session quiescer', () => {
         });
 
         expect(order).toEqual(['cancel']);
+    });
+
+    it('never treats a terminal renderer result as truthy Close approval', async () => {
+        const close = vi.fn();
+        const cancel = vi.fn();
+
+        await completeMacCloseAfterSessionQuiesce({
+            request: async () => 'terminal',
+            shouldProceed: () => true,
+            close,
+            cancel,
+        });
+
+        expect(close).not.toHaveBeenCalled();
+        expect(cancel).toHaveBeenCalledOnce();
+    });
+
+    it('requires exact correlation before accepting a terminal renderer result', async () => {
+        const window = { isDestroyed: () => false, webContents: { send: vi.fn() } };
+        const quiescer = createRendererSessionQuiescer('renderer:quiesce', 'renderer:cancel');
+        const result = quiescer.request(window);
+
+        expect(quiescer.start(window, 1)).toBe(true);
+        quiescer.resolve(window, { requestId: 2, outcome: 'terminal' });
+        await Promise.resolve();
+        expect(window.webContents.send).toHaveBeenCalledOnce();
+
+        quiescer.resolve(window, { requestId: 1, outcome: 'terminal' });
+        await expect(result).resolves.toBe('terminal');
+        await expect(quiescer.request(window)).resolves.toBe('terminal');
+    });
+
+    it('cancels Close when renderer quiescence is reversibly rejected', async () => {
+        const close = vi.fn();
+        const cancel = vi.fn();
+
+        await completeMacCloseAfterSessionQuiesce({
+            request: async () => 'rejected',
+            shouldProceed: () => true,
+            close,
+            cancel,
+        });
+
+        expect(close).not.toHaveBeenCalled();
+        expect(cancel).toHaveBeenCalledOnce();
     });
 });

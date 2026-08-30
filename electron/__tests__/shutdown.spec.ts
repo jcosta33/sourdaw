@@ -230,10 +230,10 @@ describe('the before-quit handler', () => {
         let rendererPresent = true;
         const beforeRun = vi.fn(
             () =>
-                new Promise<boolean>((resolve) => {
+                new Promise<'success'>((resolve) => {
                     releaseQuiesce = () => {
                         rendererPresent = false;
-                        resolve(true);
+                        resolve('success');
                     };
                 })
         );
@@ -258,7 +258,7 @@ describe('the before-quit handler', () => {
 
     it('force-quits when renderer quiescence never settles and never starts native shutdown while it is interactive', async () => {
         const { timers, fire } = manualTimers();
-        const beforeRun = vi.fn(() => new Promise<boolean>(() => undefined));
+        const beforeRun = vi.fn(() => new Promise<'success'>(() => undefined));
         const run = vi.fn(async () => completed);
         const exit = vi.fn();
         const handler = createQuitHandler(run, { beforeRun, timers, exit, report: () => undefined });
@@ -291,7 +291,7 @@ describe('the before-quit handler', () => {
 
         const revokedExit = vi.fn();
         const revoked = createQuitHandler(run, {
-            beforeRun: async () => false,
+            beforeRun: async () => 'rejected',
             exit: revokedExit,
             report: () => undefined,
         });
@@ -300,8 +300,27 @@ describe('the before-quit handler', () => {
         expect(revokedExit).not.toHaveBeenCalled();
     });
 
+    it('bounds forced native shutdown after an approved renderer reports a terminal quarantined runtime', async () => {
+        const { timers, fire } = manualTimers();
+        const run = vi.fn(() => new Promise<ShutdownOutcome>(() => undefined));
+        const exit = vi.fn();
+        const handler = createQuitHandler(run, {
+            beforeRun: async () => 'terminal',
+            timers,
+            exit,
+            report: () => undefined,
+        });
+
+        handler({ preventDefault: () => undefined });
+
+        await vi.waitFor(() => expect(run).toHaveBeenCalledOnce());
+        fire();
+        await vi.waitFor(() => expect(exit).toHaveBeenCalledWith(1));
+        expect(run).toHaveBeenCalledOnce();
+    });
+
     it('keeps the app open when delayed renderer quiescence loses close authority, then permits a fresh quit', async () => {
-        const beforeRun = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+        const beforeRun = vi.fn().mockResolvedValueOnce('rejected').mockResolvedValueOnce('success');
         const run = vi.fn(async () => completed);
         const exit = vi.fn();
         const handler = createQuitHandler(run, { beforeRun, exit, report: () => undefined });

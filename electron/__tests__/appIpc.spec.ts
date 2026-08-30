@@ -263,25 +263,37 @@ describe('native menu channels', () => {
         const frame = { ...APP_FRAME, sender: 'renderer' };
 
         expect(handlers.get(RENDERER_SESSION_QUIESCE_STARTED_CHANNEL)?.(frame, { requestId: 4 })).toBe(true);
-        await handlers.get(RENDERER_SESSION_QUIESCED_CHANNEL)?.(frame, { requestId: 4, quiesced: false });
+        const quiesced = handlers.get(RENDERER_SESSION_QUIESCED_CHANNEL);
+        await quiesced?.(frame, { requestId: 4, outcome: 'success' });
+        await quiesced?.(frame, { requestId: 5, outcome: 'rejected' });
+        await quiesced?.(frame, { requestId: 6, outcome: 'terminal' });
         expect(onSessionQuiesceStarted).toHaveBeenCalledWith(4, 'renderer');
-        expect(onSessionQuiesced).toHaveBeenCalledWith({ requestId: 4, quiesced: false }, 'renderer');
+        expect(onSessionQuiesced).toHaveBeenNthCalledWith(1, { requestId: 4, outcome: 'success' }, 'renderer');
+        expect(onSessionQuiesced).toHaveBeenNthCalledWith(2, { requestId: 5, outcome: 'rejected' }, 'renderer');
+        expect(onSessionQuiesced).toHaveBeenNthCalledWith(3, { requestId: 6, outcome: 'terminal' }, 'renderer');
 
         for (const requestId of [0, 1.5, undefined]) {
             expect(() => handlers.get(RENDERER_SESSION_QUIESCE_STARTED_CHANNEL)?.(frame, { requestId })).toThrow(
                 /invalid/u
             );
             expect(() =>
-                handlers.get(RENDERER_SESSION_QUIESCED_CHANNEL)?.(frame, { requestId, quiesced: true })
+                handlers.get(RENDERER_SESSION_QUIESCED_CHANNEL)?.(frame, { requestId, outcome: 'success' })
             ).toThrow(/invalid/u);
         }
         expect(() =>
-            handlers.get(RENDERER_SESSION_QUIESCED_CHANNEL)?.(frame, { requestId: 5, quiesced: 'yes' })
+            handlers.get(RENDERER_SESSION_QUIESCED_CHANNEL)?.(frame, { requestId: 5, outcome: 'yes' })
+        ).toThrow(/invalid/u);
+        expect(() =>
+            handlers.get(RENDERER_SESSION_QUIESCED_CHANNEL)?.(frame, {
+                requestId: 5,
+                outcome: 'terminal',
+                quiesced: true,
+            })
         ).toThrow(/invalid/u);
         expect(() => handlers.get(RENDERER_SESSION_QUIESCE_STARTED_CHANNEL)?.(FOREIGN_FRAME, { requestId: 4 })).toThrow(
             /not the application/u
         );
-        expect(onSessionQuiesced).toHaveBeenCalledTimes(1);
+        expect(onSessionQuiesced).toHaveBeenCalledTimes(3);
     });
 });
 

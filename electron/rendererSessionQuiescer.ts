@@ -1,5 +1,7 @@
 import { systemTimers, type TimerHandle, type Timers } from './timers.js';
 
+import type { RendererSessionQuiesceOutcome, RendererSessionQuiesceResult } from './channels.js';
+
 /** A window-close wait must never strand the app behind a renderer that stopped responding. */
 export const RENDERER_SESSION_QUIESCE_TIMEOUT_MS = 5_000;
 
@@ -22,12 +24,13 @@ export const createRendererSessionQuiescer = (
               readonly requestId: number;
               readonly timer: TimerHandle;
               started: boolean;
-              readonly settle: (quiesced: boolean) => void;
+              readonly settle: (outcome: RendererSessionQuiesceOutcome) => void;
           }
         | undefined;
     let recovering: { readonly window: RendererSessionWindow; readonly requestId: number } | undefined;
     let acknowledgedSuccess: { readonly window: RendererSessionWindow; readonly requestId: number } | undefined;
     let timedOutWindow: RendererSessionWindow | undefined;
+    let terminalWindow: RendererSessionWindow | undefined;
 
     const requestRecovery = (window: RendererSessionWindow, requestId: number): void => {
         recovering = { window, requestId };
@@ -48,17 +51,20 @@ export const createRendererSessionQuiescer = (
             return;
         }
         if (!pending.started) {
-            pending.settle(false);
+            pending.settle('rejected');
             return;
         }
         requestRecovery(pending.window, pending.requestId);
-        pending.settle(false);
+        pending.settle('rejected');
     };
 
     return {
-        request: (window: RendererSessionWindow): Promise<boolean> => {
+        request: (window: RendererSessionWindow): Promise<RendererSessionQuiesceOutcome> => {
+            if (terminalWindow === window) {
+                return Promise.resolve('terminal');
+            }
             if (acknowledgedSuccess?.window === window) {
-                return Promise.resolve(true);
+                return Promise.resolve('success');
             }
             if (
                 window.isDestroyed() ||
@@ -66,43 +72,51 @@ export const createRendererSessionQuiescer = (
                 recovering !== undefined ||
                 acknowledgedSuccess !== undefined
             ) {
-                return Promise.resolve(false);
+                return Promise.resolve('rejected');
             }
             const currentRequestId = requestId;
             requestId += 1;
-            return new Promise<boolean>((resolve) => {
+            return new Promise<RendererSessionQuiesceOutcome>((resolve) => {
                 let timer: TimerHandle | undefined;
-                const settle = (quiesced: boolean): void => {
+                const settle = (outcome: RendererSessionQuiesceOutcome): void => {
                     timer?.cancel();
                     pending = undefined;
-                    resolve(quiesced);
+                    resolve(outcome);
                 };
                 timer = timers.setTimer(() => {
                     if (pending?.requestId === currentRequestId && pending.started) {
                         timedOutWindow = pending.window;
                         requestRecovery(pending.window, currentRequestId);
                     }
-                    settle(false);
+                    settle('rejected');
                 }, RENDERER_SESSION_QUIESCE_TIMEOUT_MS);
                 pending = { window, requestId: currentRequestId, timer, started: false, settle };
                 try {
                     window.webContents.send(channel, currentRequestId);
                 } catch {
-                    settle(false);
+                    settle('rejected');
                 }
             });
         },
-        resolve: (window: RendererSessionWindow, completedRequestId: number, quiesced: boolean): void => {
-            if (pending?.window === window && pending.requestId === completedRequestId) {
+        resolve: (window: RendererSessionWindow, result: RendererSessionQuiesceResult): void => {
+            if (pending?.window === window && pending.requestId === result.requestId) {
                 timedOutWindow = undefined;
-                if (quiesced) {
-                    acknowledgedSuccess = { window, requestId: completedRequestId };
+                if (result.outcome === 'success') {
+                    acknowledgedSuccess = { window, requestId: result.requestId };
+                } else if (result.outcome === 'terminal') {
+                    terminalWindow = window;
                 }
-                pending.settle(quiesced);
+                pending.settle(result.outcome);
                 return;
             }
-            if (recovering?.window === window && recovering.requestId === completedRequestId && quiesced === false) {
-                recovering = undefined;
+            if (recovering?.window === window && recovering.requestId === result.requestId) {
+                if (result.outcome === 'rejected') {
+                    recovering = undefined;
+                } else if (result.outcome === 'terminal') {
+                    terminalWindow = window;
+                    recovering = undefined;
+                    timedOutWindow = undefined;
+                }
             }
         },
         start: (window: RendererSessionWindow, startedRequestId: number): boolean => {
@@ -116,12 +130,15 @@ export const createRendererSessionQuiescer = (
             if (timedOutWindow === window) {
                 timedOutWindow = undefined;
             }
+            if (terminalWindow === window) {
+                terminalWindow = undefined;
+            }
             // A destroyed renderer cannot repair or complete its outstanding
             // request. Settling it directly is safe: there is no session left
             // to restore, and a replacement window must be able to admit its
             // own close request immediately.
             if (pending?.window === window) {
-                pending.settle(false);
+                pending.settle('rejected');
             }
             if (acknowledgedSuccess?.window === window) {
                 acknowledgedSuccess = undefined;
@@ -142,7 +159,7 @@ export const completeMacCloseAfterSessionQuiesce = async ({
     close,
     cancel,
 }: {
-    readonly request: () => Promise<boolean>;
+    readonly request: () => Promise<RendererSessionQuiesceOutcome>;
     readonly shouldProceed: () => boolean;
     readonly close: () => void;
     readonly cancel: () => void;
@@ -151,7 +168,7 @@ export const completeMacCloseAfterSessionQuiesce = async ({
         cancel();
         return;
     }
-    if (!(await request()) || !shouldProceed()) {
+    if ((await request()) !== 'success' || !shouldProceed()) {
         cancel();
         return;
     }

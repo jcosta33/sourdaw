@@ -29,7 +29,7 @@ describe('Electron shell composition policies', () => {
 
     it('composes quit with both permission and renderer quiescence', async () => {
         const canQuit = vi.fn(async () => true);
-        const beforeRun = vi.fn(async () => true);
+        const beforeRun = vi.fn(async () => 'success' as const);
         const run = vi.fn(async () => ({ status: 'completed' as const, report: undefined }));
         const handler = composeQuitHandler(run, { canQuit, beforeRun, exit: vi.fn(), report: vi.fn() });
         handler({ preventDefault: vi.fn() });
@@ -49,7 +49,7 @@ describe('Electron shell composition policies', () => {
         const buildMenu = vi.fn(() => ({ menu: true }));
         const setMenu = vi.fn();
         const canQuit = vi.fn(async () => true);
-        const beforeRun = vi.fn(async () => true);
+        const beforeRun = vi.fn(async () => 'success' as const);
         const runShutdown = vi.fn(async () => ({ status: 'completed' as const, report: undefined }));
         const composition = createShellComposition({
             isMac: true,

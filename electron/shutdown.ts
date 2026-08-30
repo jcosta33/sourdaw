@@ -34,6 +34,8 @@
 
 import { systemTimers, type Timers } from './timers.js';
 
+import type { RendererSessionQuiesceOutcome } from './channels.js';
+
 /** How long the cascade gets before the shell stops waiting for it. */
 export const SHUTDOWN_DEADLINE_MS = 5_000;
 
@@ -134,15 +136,17 @@ export type QuitDependencies = {
     /** Resolves false when a renderer-owned dirty-project prompt was cancelled or save failed. */
     readonly canQuit?: () => Promise<boolean>;
     /** Quiesces the approved renderer session before native shutdown drains the host. */
-    /** False means renderer authority changed while quiescing; leave the app open. */
-    readonly beforeRun?: () => Promise<boolean | 'timed-out'>;
+    /** Rejection means renderer authority changed while quiescing; leave the app open. */
+    readonly beforeRun?: () => Promise<QuitPreparationOutcome>;
     /** Shared clock so renderer quiescence cannot outlive the shutdown deadline. */
     readonly timers?: Timers;
 };
 
+export type QuitPreparationOutcome = RendererSessionQuiesceOutcome | 'timed-out';
+
 const runAfterQuiesceWithinDeadline = async (
     run: () => Promise<ShutdownOutcome>,
-    beforeRun: () => Promise<boolean | 'timed-out'>,
+    beforeRun: () => Promise<QuitPreparationOutcome>,
     timers: Timers
 ): Promise<ShutdownOutcome | undefined> => {
     let expired = false;
@@ -159,9 +163,13 @@ const runAfterQuiesceWithinDeadline = async (
             if (quiesced === 'timed-out') {
                 return { status: 'timed-out', deadlineMs: SHUTDOWN_DEADLINE_MS };
             }
-            if (!quiesced) {
+            if (quiesced === 'rejected') {
                 return undefined;
             }
+            // A terminal renderer has already quarantined its project runtime
+            // and cannot be made interactive again. Quit was approved before
+            // this request, so continue into the native cascade under the same
+            // deadline instead of stranding the process behind failed repair.
         } catch {
             // The shell's force-destroy fallback failed. The native cascade is
             // still safer than leaving plugin admission open.
@@ -195,7 +203,13 @@ const runAfterQuiesceWithinDeadline = async (
  */
 export const createQuitHandler = (
     run: () => Promise<ShutdownOutcome>,
-    { exit, report, canQuit = async () => true, beforeRun = async () => true, timers = systemTimers }: QuitDependencies
+    {
+        exit,
+        report,
+        canQuit = async () => true,
+        beforeRun = async () => 'success',
+        timers = systemTimers,
+    }: QuitDependencies
 ): ((event: PreventableEvent) => void) => {
     let started = false;
     let checkingPermission = false;

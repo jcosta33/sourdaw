@@ -59,7 +59,14 @@ export const RENDERER_SESSION_QUIESCED_CHANNEL = 'sourdaw:renderer-session:quies
 export const RENDERER_SESSION_QUIESCE_STARTED_CHANNEL = 'sourdaw:renderer-session:quiesce-started';
 /** Main → renderer cancellation of a started drain that lost close authority. */
 export const RENDERER_SESSION_QUIESCE_CANCEL_CHANNEL = 'sourdaw:renderer-session:quiesce-cancel';
-/** Main → renderer acknowledgement that its native owner is now destroying. */
+
+/** Exact terminal state of one correlated renderer-session retirement request. */
+export type RendererSessionQuiesceOutcome = 'success' | 'rejected' | 'terminal';
+
+export type RendererSessionQuiesceResult = {
+    readonly requestId: number;
+    readonly outcome: RendererSessionQuiesceOutcome;
+};
 
 /** A filter in an open or save dialog. */
 export type DialogFilter = {
@@ -213,7 +220,7 @@ export type SourdawBridge = {
         }) => Promise<void>;
         readonly listenSessionQuiesce: (callback: (requestId: number) => void) => () => void;
         readonly listenSessionQuiesceCancel: (callback: (requestId: number) => void) => () => void;
-        readonly sessionQuiesced: (requestId: number, quiesced: boolean) => Promise<void>;
+        readonly sessionQuiesced: (result: RendererSessionQuiesceResult) => Promise<void>;
         readonly sessionQuiesceStarted: (requestId: number) => Promise<boolean>;
     };
 };
