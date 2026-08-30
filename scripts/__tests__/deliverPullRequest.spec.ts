@@ -6130,6 +6130,84 @@ describe('delivery shell boundary', () => {
         ]);
     });
 
+    it('fails shellPort receipt proof when GraphQL cursors cycle across later pages even if the final count could still be reached', () => {
+        let cursorOneReads = 0;
+        const port = shellPort('jcosta33/sourdaw', {
+            capture: (_command, args) => {
+                const joined = args.join(' ');
+                if (
+                    joined.includes(
+                        'comments(first:100,after:$cursor){totalCount pageInfo{hasNextPage endCursor} nodes{id}}'
+                    )
+                ) {
+                    if (joined.includes('cursor=cursor-2')) {
+                        return shellDeliveryReceiptProofResponse(['IC_c'], {
+                            totalCount: 4,
+                            hasNextPage: true,
+                            endCursor: 'cursor-1',
+                        });
+                    }
+                    if (joined.includes('cursor=cursor-1')) {
+                        cursorOneReads += 1;
+                        return cursorOneReads === 1
+                            ? shellDeliveryReceiptProofResponse(['IC_b'], {
+                                  totalCount: 4,
+                                  hasNextPage: true,
+                                  endCursor: 'cursor-2',
+                              })
+                            : shellDeliveryReceiptProofResponse(['IC_d'], {
+                                  totalCount: 4,
+                              });
+                    }
+                    return shellDeliveryReceiptProofResponse(['IC_a'], {
+                        totalCount: 4,
+                        hasNextPage: true,
+                        endCursor: 'cursor-1',
+                    });
+                }
+                throw new Error(`unexpected capture: ${joined}`);
+            },
+            run: () => undefined,
+        });
+
+        expect(() => port.deliveryReceiptProof(42)).toThrow(/cannot inspect delivery receipts for PR #42/i);
+    });
+
+    it('fails shellPort receipt proof when a continuing GraphQL page adds no unseen comment ids even if a later page would finish the count', () => {
+        const port = shellPort('jcosta33/sourdaw', {
+            capture: (_command, args) => {
+                const joined = args.join(' ');
+                if (
+                    joined.includes(
+                        'comments(first:100,after:$cursor){totalCount pageInfo{hasNextPage endCursor} nodes{id}}'
+                    )
+                ) {
+                    if (joined.includes('cursor=cursor-2')) {
+                        return shellDeliveryReceiptProofResponse(['IC_b', 'IC_c'], {
+                            totalCount: 3,
+                        });
+                    }
+                    if (joined.includes('cursor=cursor-1')) {
+                        return shellDeliveryReceiptProofResponse([], {
+                            totalCount: 3,
+                            hasNextPage: true,
+                            endCursor: 'cursor-2',
+                        });
+                    }
+                    return shellDeliveryReceiptProofResponse(['IC_a'], {
+                        totalCount: 3,
+                        hasNextPage: true,
+                        endCursor: 'cursor-1',
+                    });
+                }
+                throw new Error(`unexpected capture: ${joined}`);
+            },
+            run: () => undefined,
+        });
+
+        expect(() => port.deliveryReceiptProof(42)).toThrow(/cannot inspect delivery receipts for PR #42/i);
+    });
+
     it.each([
         {
             merger: 'foreign',

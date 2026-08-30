@@ -2210,17 +2210,21 @@ function readDeliveryReceiptProofFromGithub(
     const expectedTotalCount = page.totalCount;
     const commentIds: string[] = [];
     const seenCommentIds = new Set<string>();
+    const consumedCursors = new Set<string>();
+    const emittedCursors = new Set<string>();
     let cursor: string | null = null;
     while (true) {
         if (page.totalCount !== expectedTotalCount) {
             fail(`cannot inspect delivery receipts for PR #${number}`);
         }
+        let pageContributed = 0;
         for (const commentId of page.commentIds) {
             if (seenCommentIds.has(commentId)) {
                 fail(`cannot inspect delivery receipts for PR #${number}`);
             }
             seenCommentIds.add(commentId);
             commentIds.push(commentId);
+            pageContributed += 1;
         }
         if (commentIds.length > expectedTotalCount) {
             fail(`cannot inspect delivery receipts for PR #${number}`);
@@ -2228,13 +2232,24 @@ function readDeliveryReceiptProofFromGithub(
         if (!page.pageInfo.hasNextPage) {
             break;
         }
+        if (cursor !== null && pageContributed === 0) {
+            fail(`cannot inspect delivery receipts for PR #${number}`);
+        }
         if (page.pageInfo.endCursor === null || page.pageInfo.endCursor === cursor) {
             fail(`cannot inspect delivery receipts for PR #${number}`);
         }
         if (commentIds.length >= expectedTotalCount) {
             fail(`cannot inspect delivery receipts for PR #${number}`);
         }
+        if (emittedCursors.has(page.pageInfo.endCursor) || consumedCursors.has(page.pageInfo.endCursor)) {
+            fail(`cannot inspect delivery receipts for PR #${number}`);
+        }
+        emittedCursors.add(page.pageInfo.endCursor);
         cursor = page.pageInfo.endCursor;
+        if (consumedCursors.has(cursor)) {
+            fail(`cannot inspect delivery receipts for PR #${number}`);
+        }
+        consumedCursors.add(cursor);
         page = readPage(cursor);
     }
     if (commentIds.length !== expectedTotalCount) {
