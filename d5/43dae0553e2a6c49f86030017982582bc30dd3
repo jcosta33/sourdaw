@@ -1,0 +1,37 @@
+src/modules/AiRuntime/presentations/views/ChatPanel.tsx
+  s_a40848e8f8cca9::t_6a8fe5b829b4d9 11,296
+src/modules/AudioRendering/stores/index.ts
+  s_a40848e8f8cca9::t_6a8fe5b829b4d9 1
+src/modules/AiRuntime/useCases/__tests__/selectRetainedSectionRenderManualReviews.spec.ts
+  s_a40848e8f8cca9::t_13427df437e2f7 238-248
+src/modules/AiRuntime/presentations/views/__tests__/ChatPanel.spec.tsx
+  s_a40848e8f8cca9::t_0ecd68b21472a8 956,960-961
+  s_a40848e8f8cca9::t_d2f6e5bda54f29 145,242-244,266,913-927,929-949,951-955,957-959,962-964
+  s_a40848e8f8cca9::t_d721b284496eb6 928,950
+  s_a40848e8f8cca9::t_3613fecdf0cc87 965
+src/modules/AiRuntime/useCases/agentRunLifecycle.ts
+  s_a40848e8f8cca9::t_6a8fe5b829b4d9 718-731,733-735,756,793
+src/modules/AiRuntime/stores/__tests__/retainedSectionRenderReviewHydration.spec.ts
+  s_a40848e8f8cca9::t_427076a810dee4 151-267
+src/modules/AiRuntime/useCases/__tests__/settleRetainedSectionRenderManualReview.spec.ts
+  s_a40848e8f8cca9::t_13427df437e2f7 227-254
+src/modules/AiRuntime/useCases/selectRetainedSectionRenderManualReviews.ts
+  s_a40848e8f8cca9::t_700e2cf6dd1e87 36-48,179-183,185
+  s_a40848e8f8cca9::t_6a8fe5b829b4d9 178,184,186
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "d543dae0553e2a6c49f86030017982582bc30dd3",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
