@@ -1,0 +1,22 @@
+scripts/checkReleaseInventory.ts
+  s_ae074277795b45::t_57cec665bad143 35-36,38
+  s_ae074277795b45::t_6bf0643dfee767 22,1939-1943,1995-1997,2003-2008,2017-2019,2021-2028,2077-2078,2140-2142,2158-2162,2172-2175,2252-2261
+scripts/__tests__/checkReleaseInventory.spec.ts
+  s_ae074277795b45::t_6bf0643dfee767 207-209,215-217,220-225,244-246,249,254-257,264-266,269-272,432-439,442-444,516-524
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "5d1e4109a7ec90efad071582e2dba721a25c5229",
+  "prompts": {},
+  "sessions": {
+    "s_ae074277795b45": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04ab5-5234-7100-be1c-76ebfaba88d3",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
