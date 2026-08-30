@@ -597,6 +597,10 @@ describe('settleConfirmedCommandExecution', () => {
 
     it('retains a committed change when finalization evidence is absent', async () => {
         const batchResult = createCommittedBatchResult();
+        const recoveryConfirmation = {
+            ...confirmation,
+            groupId: 'confirmation-group-2',
+        } satisfies PendingAppActionConfirmation;
         const resourceRetention = createDeferred<void>();
         mocks.retainResources.mockImplementationOnce(() => resourceRetention.promise);
         const resultPromise = settleConfirmedCommandExecution(
@@ -604,7 +608,8 @@ describe('settleConfirmedCommandExecution', () => {
                 createCompletedFlight(batchResult, {
                     committedProjectRevision: 'revision-2',
                     finalizationEvidenceFailure: 'finalization evidence is unavailable',
-                })
+                }),
+                { confirmation: recoveryConfirmation }
             )
         );
         const settlement = observeSettlement(resultPromise);
@@ -612,11 +617,11 @@ describe('settleConfirmedCommandExecution', () => {
         await Promise.resolve();
 
         expect(settlement.isSettled()).toBe(false);
-        expect(mocks.recordCommittedRecoveryFailure).toHaveBeenCalledWith(confirmation, {
+        expect(mocks.recordCommittedRecoveryFailure).toHaveBeenCalledWith(recoveryConfirmation, {
             category: 'internal',
             retriable: false,
             receipt: batchResult.receipt,
-            actions: confirmation.actions,
+            actions: recoveryConfirmation.actions,
             commandBatch,
             revertGroupId: 'batch-1',
             committedRevision: 'revision-2',
