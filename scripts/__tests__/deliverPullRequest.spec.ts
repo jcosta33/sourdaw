@@ -2213,7 +2213,7 @@ describe('pull-request delivery', () => {
                 pullRequest({ body: closesX, mergeable: 'UNKNOWN' }),
                 new Error('PR #42 merge recovery became unreadable'),
                 pullRequest({ body: closesX, mergeable: 'UNKNOWN' }),
-                pullRequest({ state: 'CLOSED', body: closesX, mergeable: 'UNKNOWN' }),
+                pullRequest({ state: 'CLOSED', headRefOid: nextHead, body: closesY, mergeable: 'UNKNOWN' }),
                 pullRequest({ headRefOid: nextHead, body: closesY }),
                 pullRequest({ headRefOid: nextHead, body: closesY }),
             ],
@@ -2263,6 +2263,43 @@ describe('pull-request delivery', () => {
             receiptId: 'IC_delivery_42_2',
             receiptBody: visibleDeliveryReceiptBody(42, nextHead, closesY, 2373, 'successful'),
         });
+    });
+
+    it('recovers a merged PR from the newest public trailing same-key legacy v1 when no persisted receipt authority remains', () => {
+        const closes = relationshipBody('Closes #2372');
+        const currentVisible = visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful');
+        const { port, calls, tracker } = fakePort({
+            primary: [pullRequest({ state: 'MERGED', body: relationshipBody('None.') })],
+            receipts: [
+                {
+                    id: 'IC_visible_v2',
+                    body: currentVisible,
+                    authorNodeId: AUTHOR_BOT_NODE_ID,
+                    authorLogin: 'renamed-author[bot]',
+                    authorType: 'Bot',
+                    createdAt: '2026-08-21T00:00:00.000Z',
+                    updatedAt: '2026-08-21T00:00:00.000Z',
+                },
+                {
+                    id: 'IC_trailing_v1',
+                    body: deliveryReceiptBody(42, 'head', closes, 2372),
+                    authorNodeId: AUTHOR_BOT_NODE_ID,
+                    authorLogin: 'renamed-author[bot]',
+                    authorType: 'Bot',
+                    createdAt: '2026-08-21T00:00:01.000Z',
+                    updatedAt: '2026-08-21T00:00:01.000Z',
+                },
+            ],
+            deliveryReceiptProof: { totalCount: 2, latestCommentId: 'IC_trailing_v1' },
+        });
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls).toContain('receipt-proof:42:2:IC_trailing_v1');
+        expect(calls).toContain('receipt-authority:write:merge-authorized:IC_trailing_v1');
+        expect(calls).toContain('receipt-authority:write:terminal:IC_trailing_v1');
+        expect(calls).toContain('complete:2372');
+        expect(calls).not.toContain('add-receipt:42');
     });
 
     it('restores the pre-final-fetch prepared authority when an UNKNOWN refresh discovers a corrected OPEN MERGEABLE head, then lets that head deliver on retry', () => {
@@ -2632,7 +2669,7 @@ describe('pull-request delivery', () => {
         });
     });
 
-    it('disarms retained authority from a raw CLOSED UNKNOWN retry before a refresh reveals a reopened new head, then lets that head deliver', () => {
+    it('disarms retained authority from a raw CLOSED UNKNOWN retry before a reopened new head can appear, then lets that head deliver', () => {
         const closes = relationshipBody('Closes #2372');
         const nextHead = 'reopened-head';
         const { port, calls, tracker, persistedReceiptAuthority, receipts } = fakePort({
@@ -2643,7 +2680,6 @@ describe('pull-request delivery', () => {
                 new Error('PR #42 merge recovery became unreadable'),
                 pullRequest({ state: 'CLOSED', body: closes, mergeable: 'UNKNOWN' }),
                 pullRequest({ state: 'OPEN', headRefOid: nextHead, body: closes, mergeable: 'MERGEABLE' }),
-                pullRequest({ state: 'OPEN', headRefOid: nextHead, body: closes }),
                 pullRequest({ state: 'OPEN', headRefOid: nextHead, body: closes }),
             ],
             dependentSets: [[], [], []],
@@ -2673,7 +2709,7 @@ describe('pull-request delivery', () => {
             },
         });
 
-        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/headRefOid changed during delivery/i);
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/PR #42 is closed/i);
         expect(calls).not.toContain(`merge:42:${nextHead}`);
         expect(persistedReceiptAuthority()).toEqual({
             phase: 'prepared',
@@ -2694,7 +2730,7 @@ describe('pull-request delivery', () => {
         });
     });
 
-    it('disarms retained authority from a raw CLOSED UNKNOWN retry before an unreadable refresh, so a later new head can deliver', () => {
+    it('disarms retained authority from a raw CLOSED UNKNOWN retry without trusting an unreadable refresh, so a later new head can deliver', () => {
         const closesX = relationshipBody('Closes #2372');
         const closesY = relationshipBody('Closes #2373');
         const nextHead = 'reopened-head';
@@ -2705,7 +2741,6 @@ describe('pull-request delivery', () => {
                 pullRequest({ body: closesX, mergeable: 'UNKNOWN' }),
                 new Error('PR #42 merge recovery became unreadable'),
                 pullRequest({ state: 'CLOSED', body: closesX, mergeable: 'UNKNOWN' }),
-                new Error('PR #42 closed retry refresh became unreadable'),
                 pullRequest({ state: 'OPEN', headRefOid: nextHead, body: closesY }),
                 pullRequest({ state: 'OPEN', headRefOid: nextHead, body: closesY }),
             ],
@@ -2736,7 +2771,7 @@ describe('pull-request delivery', () => {
             },
         });
 
-        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/closed retry refresh became unreadable/i);
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/PR #42 is closed/i);
         expect(persistedReceiptAuthority()).toEqual({
             phase: 'prepared',
             receiptId: 'IC_delivery_42_1',

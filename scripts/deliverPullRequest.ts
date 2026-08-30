@@ -312,23 +312,23 @@ function refreshStructuralMergeability(
 ): PullRequestSnapshot {
     let pullRequest = initial;
     observe?.(pullRequest);
-    if (pullRequest.state === 'MERGED') {
+    if (pullRequest.state === 'MERGED' || pullRequest.state === 'CLOSED') {
         return pullRequest;
     }
     for (
         let refreshes = 0;
-        pullRequest.state !== 'MERGED' &&
+        pullRequest.state === 'OPEN' &&
         pullRequest.mergeable === 'UNKNOWN' &&
         refreshes < STRUCTURAL_MERGEABILITY_REFRESH_LIMIT;
         refreshes += 1
     ) {
         const refreshed = port.pullRequest(initial.number);
         observe?.(refreshed);
+        if (refreshed.state === 'MERGED' || refreshed.state === 'CLOSED') {
+            return refreshed;
+        }
         validateStablePullRequest(initial, refreshed);
         pullRequest = refreshed;
-        if (pullRequest.state === 'MERGED') {
-            return pullRequest;
-        }
     }
     return pullRequest;
 }
@@ -1293,7 +1293,6 @@ function newestCanonicalDeliveryReceiptForKey(
     key: string,
     pullRequest: Pick<PullRequestSnapshot, 'number' | 'headRefOid'>
 ): DeliveryReceiptComment {
-    let newestLegacyReceipt: DeliveryReceiptComment | undefined;
     for (let index = lineage.length - 1; index >= 0; index -= 1) {
         const comment = lineage[index];
         if (comment === undefined) {
@@ -1303,13 +1302,7 @@ function newestCanonicalDeliveryReceiptForKey(
         if (deliveryReceiptKey(payload) !== key) {
             continue;
         }
-        if (payload.schemaVersion !== 1) {
-            return comment;
-        }
-        newestLegacyReceipt ??= comment;
-    }
-    if (newestLegacyReceipt !== undefined) {
-        return newestLegacyReceipt;
+        return comment;
     }
     fail(`PR #${pullRequest.number} delivery receipt authority cannot be proven`);
     throw new Error('unreachable');
