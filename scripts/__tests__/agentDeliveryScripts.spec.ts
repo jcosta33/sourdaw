@@ -116,8 +116,21 @@ function writeRawRef(root: string, ref: string, contents: string): void {
     writeFileSync(path, contents);
 }
 
-function deliveryReceiptProof(totalCount: number, latestCommentId: string | undefined): DeliveryReceiptProof {
-    return { totalCount, latestCommentId };
+type CompleteDeliveryReceiptProof = DeliveryReceiptProof & {
+    commentIds: string[];
+    editedCommentIds: string[];
+};
+
+function deliveryReceiptProof(
+    comments: DeliveryReceiptComment[],
+    editedCommentIds: string[] = []
+): CompleteDeliveryReceiptProof {
+    return {
+        totalCount: comments.length,
+        latestCommentId: comments.at(-1)?.id,
+        commentIds: comments.map((comment) => comment.id),
+        editedCommentIds,
+    };
 }
 
 function pullRequestSnapshot(overrides: Partial<PullRequestSnapshot> = {}): PullRequestSnapshot {
@@ -618,7 +631,7 @@ describe('package scripts and gitignore', () => {
                 dependentAfter = { ...dependentAfter, baseRefName: baseBranch };
             },
             deliveryReceipts: () => (receipt === undefined ? [] : [receipt]),
-            deliveryReceiptProof: () => deliveryReceiptProof(receipt === undefined ? 0 : 1, receipt?.id),
+            deliveryReceiptProof: () => deliveryReceiptProof(receipt === undefined ? [] : [receipt]),
             addDeliveryReceipt: (_number, body) => {
                 receiptBody = body;
                 receipt = deliveryReceiptComment(body);
@@ -1786,7 +1799,7 @@ describe('package scripts and gitignore', () => {
             merge: () => undefined,
             retarget: () => undefined,
             deliveryReceipts: () => [],
-            deliveryReceiptProof: () => deliveryReceiptProof(0, undefined),
+            deliveryReceiptProof: () => deliveryReceiptProof([]),
             addDeliveryReceipt: () => expect.fail('delivery domain should be injected in this coordinator test'),
             readDeliveryReceiptAuthority: () => undefined,
             writeDeliveryReceiptAuthority: () => undefined,
