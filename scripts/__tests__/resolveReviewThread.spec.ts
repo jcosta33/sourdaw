@@ -23,6 +23,7 @@ import {
     submitReview,
     recoverPullRequestReviewResolutionLock,
     withPullRequestReviewResolutionLock,
+    type ReviewResolutionLockOwner,
     type ResolveReviewThreadPort,
 } from '../resolveReviewThread.ts';
 
@@ -885,6 +886,126 @@ function createBlockingCreateReviewGhExecutable(): {
     return { root: executableRoot, executable, createCalledPath, artifactVisiblePath, queryLogPath };
 }
 
+function createFailingReplyDoneGhExecutable(): {
+    root: string;
+    executable: string;
+    replyCalledPath: string;
+} {
+    const root = mkdtempSync(join(tmpdir(), 'resolve-review-thread-failing-reply-gh-'));
+    const executable = join(root, 'gh');
+    const replyCalledPath = join(root, 'reply-called');
+    writeFileSync(
+        executable,
+        [
+            `#!${process.execPath}`,
+            'const fs = require("node:fs");',
+            `const replyCalledPath = ${JSON.stringify(replyCalledPath)};`,
+            'const args = process.argv.slice(2);',
+            "if (args[0] !== 'api' || args[1] !== 'graphql') { console.error(`unexpected gh args ${JSON.stringify(args)}`); process.exit(1); }",
+            'const queryArg = args.find((value) => value.startsWith("query="));',
+            "if (queryArg === undefined) { console.error('missing query'); process.exit(1); }",
+            'const query = queryArg.slice("query=".length);',
+            "if (query.includes('addPullRequestReviewThreadReply(input:{pullRequestReviewId:$reviewId,pullRequestReviewThreadId:$threadId,body:$body,clientMutationId:$clientMutationId})')) {",
+            "  fs.writeFileSync(replyCalledPath, '1');",
+            "  console.error('reply mutation transport lost');",
+            '  process.exit(1);',
+            '}',
+            'console.error(`unexpected query ${query}`);',
+            'process.exit(1);',
+        ].join('\n'),
+        { encoding: 'utf8', mode: 0o700 }
+    );
+    chmodSync(executable, 0o700);
+    return { root, executable, replyCalledPath };
+}
+
+function createBlockingReplyDoneGhExecutable(): {
+    root: string;
+    executable: string;
+    replyCalledPath: string;
+    artifactVisiblePath: string;
+    queryLogPath: string;
+} {
+    const executableRoot = mkdtempSync(join(tmpdir(), 'resolve-review-thread-blocked-reply-gh-'));
+    const executable = join(executableRoot, 'gh');
+    const replyCalledPath = join(executableRoot, 'reply-called');
+    const artifactVisiblePath = join(executableRoot, 'artifact-visible');
+    const queryLogPath = join(executableRoot, 'queries.log');
+    const pendingReviewBody = resolutionReviewSummary(pullRequestId, threadId, head);
+    const visibleCommentPage = commentPage(
+        [
+            root,
+            {
+                id: replyId,
+                fullDatabaseId: '9223372036854775808',
+                body: 'Done',
+                author: { id: AUTHOR_BOT_NODE_ID, login: 'renamed-author', __typename: 'Bot' },
+                pullRequestReview: {
+                    id: reviewId,
+                    state: 'PENDING',
+                    body: pendingReviewBody,
+                    commit: { oid: head },
+                    author: { id: AUTHOR_BOT_NODE_ID, login: 'renamed-author', __typename: 'Bot' },
+                },
+            },
+        ],
+        false,
+        null,
+        threadId,
+        head
+    );
+    writeFileSync(
+        executable,
+        [
+            `#!${process.execPath}`,
+            'const sleeper = new Int32Array(new SharedArrayBuffer(4));',
+            'const fs = require("node:fs");',
+            `const replyCalledPath = ${JSON.stringify(replyCalledPath)};`,
+            `const artifactVisiblePath = ${JSON.stringify(artifactVisiblePath)};`,
+            `const queryLogPath = ${JSON.stringify(queryLogPath)};`,
+            `const threadPageBody = ${JSON.stringify(threadPage([{ id: threadId, isResolved: false, resolvedBy: null }], false, null, head))};`,
+            `const emptyCommentPage = ${JSON.stringify(commentPage([root], false, null, threadId, head))};`,
+            `const visibleCommentPage = ${JSON.stringify(visibleCommentPage)};`,
+            `const threadResolutionBody = ${JSON.stringify(threadResolutionPage(threadId, head))};`,
+            `const visibleReviewPage = ${JSON.stringify(
+                reviewPage(
+                    [
+                        {
+                            id: reviewId,
+                            state: 'PENDING',
+                            body: pendingReviewBody,
+                            commit: { oid: head },
+                            author: { id: AUTHOR_BOT_NODE_ID, login: 'renamed-author', __typename: 'Bot' },
+                        },
+                    ],
+                    false,
+                    null,
+                    head
+                )
+            )};`,
+            'const args = process.argv.slice(2);',
+            "if (args[0] !== 'api' || args[1] !== 'graphql') { console.error(`unexpected gh args ${JSON.stringify(args)}`); process.exit(1); }",
+            'const queryArg = args.find((value) => value.startsWith("query="));',
+            "if (queryArg === undefined) { console.error('missing query'); process.exit(1); }",
+            'const query = queryArg.slice("query=".length);',
+            "if (query.includes('reviewThreads(first:100')) { fs.appendFileSync(queryLogPath, 'threads\\n'); process.stdout.write(threadPageBody); process.exit(0); }",
+            "if (query.includes('comments(first:100')) { fs.appendFileSync(queryLogPath, 'comments\\n'); process.stdout.write(fs.existsSync(artifactVisiblePath) ? visibleCommentPage : emptyCommentPage); process.exit(0); }",
+            "if (query.includes('reviews(first:100')) { fs.appendFileSync(queryLogPath, 'reviews\\n'); process.stdout.write(visibleReviewPage); process.exit(0); }",
+            "if (query.includes('node(id:$threadId){... on PullRequestReviewThread{id isResolved resolvedBy{id login __typename}}')) { fs.appendFileSync(queryLogPath, 'threadResolution\\n'); process.stdout.write(threadResolutionBody); process.exit(0); }",
+            "if (query.includes('addPullRequestReviewThreadReply(input:{pullRequestReviewId:$reviewId,pullRequestReviewThreadId:$threadId,body:$body,clientMutationId:$clientMutationId})')) {",
+            "  fs.appendFileSync(queryLogPath, 'replyDone\\n');",
+            "  fs.writeFileSync(replyCalledPath, '1');",
+            '  for (;;) Atomics.wait(sleeper, 0, 0, 1000);',
+            '}',
+            'console.error(`unexpected query ${query}`);',
+            'process.exit(1);',
+        ].join('\n'),
+        { encoding: 'utf8', mode: 0o700 }
+    );
+    chmodSync(executable, 0o700);
+    return { root: executableRoot, executable, replyCalledPath, artifactVisiblePath, queryLogPath };
+}
+
 function reviewResolutionLockRef(number: number): string {
     return `refs/sourdaw/review-resolution/pr-${number}`;
 }
@@ -971,6 +1092,14 @@ function readLockOwner(
         token: string;
         mutation?: { phase?: string; epoch?: number; reviewId?: string; replyId?: string; body?: string };
     };
+}
+
+function requireLockOwner(repository: string, number: number): ReviewResolutionLockOwner {
+    const owner = readLockOwner(repository, number);
+    if (owner === undefined) {
+        throw new Error(`review-resolution lock owner for PR #${number} is unreadable`);
+    }
+    return owner as ReviewResolutionLockOwner;
 }
 
 function writeLockOwnerBlob(
@@ -1263,6 +1392,32 @@ function writeDetachedCreatePhaseSnapshot(snapshotRoot: string): string {
     return workerPath;
 }
 
+function writeDetachedReplyPhaseSnapshot(snapshotRoot: string): string {
+    writeResolveReviewSnapshot(snapshotRoot);
+    const workerPath = join(snapshotRoot, 'reply-phase-worker.mjs');
+    writeFileSync(
+        workerPath,
+        [
+            "import { shellPort, withPullRequestReviewResolutionLock } from './scripts/resolveReviewThread.ts';",
+            "import { authenticateRole, assertRequiredRepository, REQUIRED_REPOSITORY } from './scripts/githubAppIdentity.ts';",
+            'const primaryRoot = process.env.SOURDAW_TEST_PRIMARY_ROOT;',
+            "if (typeof primaryRoot !== 'string' || primaryRoot.trim() === '') throw new Error('missing test primary root');",
+            'const auth = await authenticateRole();',
+            'try {',
+            '  assertRequiredRepository(REQUIRED_REPOSITORY);',
+            '  const port = shellPort(auth.session, primaryRoot);',
+            `  withPullRequestReviewResolutionLock(primaryRoot, 42, ${JSON.stringify(threadId)}, ${JSON.stringify(head)}, () => {`,
+            `    port.replyDone(${JSON.stringify(threadId)}, ${JSON.stringify(reviewId)});`,
+            '  });',
+            '} finally {',
+            '  auth.session.dispose();',
+            '}',
+        ].join('\n'),
+        { encoding: 'utf8', mode: 0o600 }
+    );
+    return workerPath;
+}
+
 describe('review thread resolution', () => {
     it('serializes one review-resolution mutation per PR, refuses same-PR different-thread contenders, and releases after failure', () => {
         const repository = createTemporaryGitRepository();
@@ -1322,6 +1477,97 @@ describe('review thread resolution', () => {
                 mutation: { phase: mutation.phase },
             });
         } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
+    it('preserves the exact PR lock owner when owner OID reread fails after a non-idle mutation throws', () => {
+        const repository = createTemporaryGitRepository();
+        const fakeGh = createFailingReplyDoneGhExecutable();
+        try {
+            const session: GhSession = {
+                configDir: repository,
+                env: { SOURDAW_TRUSTED_GH_PATH: fakeGh.executable },
+                dispose() {},
+            };
+            const port = shellPort(session, repository);
+            let readOidAttempts = 0;
+            expect(() =>
+                withPullRequestReviewResolutionLock(
+                    repository,
+                    42,
+                    threadId,
+                    head,
+                    () => {
+                        port.replyDone(threadId, reviewId);
+                    },
+                    {
+                        readOid: () => {
+                            readOidAttempts += 1;
+                            if (readOidAttempts === 1) {
+                                throw new Error('simulated owner OID reread failure');
+                            }
+                            return readLockOid(repository, 42);
+                        },
+                    }
+                )
+            ).toThrow(
+                /ownership could not be re-read after failure: simulated owner OID reread failure; review resolution on PR #42 preserved exact lock owner [0-9a-f]{40} after replyDone epoch 1; recover with pnpm review:resolve:recover 42 --owner [0-9a-f]{40}/i
+            );
+            expect(statSync(fakeGh.replyCalledPath).isFile()).toBe(true);
+            expect(readLockOwner(repository, 42)).toMatchObject({
+                threadId,
+                head,
+                mutation: { phase: 'replyDone', epoch: 1, reviewId },
+            });
+        } finally {
+            rmSync(fakeGh.root, { recursive: true, force: true });
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
+    it('preserves the exact PR lock owner when owner blob reread fails after a non-idle mutation throws', () => {
+        const repository = createTemporaryGitRepository();
+        const fakeGh = createFailingReplyDoneGhExecutable();
+        try {
+            const session: GhSession = {
+                configDir: repository,
+                env: { SOURDAW_TRUSTED_GH_PATH: fakeGh.executable },
+                dispose() {},
+            };
+            const port = shellPort(session, repository);
+            let readOwnerAttempts = 0;
+            expect(() =>
+                withPullRequestReviewResolutionLock(
+                    repository,
+                    42,
+                    threadId,
+                    head,
+                    () => {
+                        port.replyDone(threadId, reviewId);
+                    },
+                    {
+                        readOid: () => readLockOid(repository, 42),
+                        readOwner: () => {
+                            readOwnerAttempts += 1;
+                            if (readOwnerAttempts === 1) {
+                                throw new Error('simulated owner blob reread failure');
+                            }
+                            return requireLockOwner(repository, 42);
+                        },
+                    }
+                )
+            ).toThrow(
+                /ownership could not be re-read after failure: simulated owner blob reread failure; review resolution on PR #42 preserved exact lock owner [0-9a-f]{40} after replyDone epoch 1; recover with pnpm review:resolve:recover 42 --owner [0-9a-f]{40}/i
+            );
+            expect(statSync(fakeGh.replyCalledPath).isFile()).toBe(true);
+            expect(readLockOwner(repository, 42)).toMatchObject({
+                threadId,
+                head,
+                mutation: { phase: 'replyDone', epoch: 1, reviewId },
+            });
+        } finally {
+            rmSync(fakeGh.root, { recursive: true, force: true });
             rmSync(repository, { recursive: true, force: true });
         }
     });
@@ -2015,6 +2261,110 @@ describe('review thread resolution', () => {
             await expect(
                 runRecoverReviewResolutionLockCli(['42', '--owner', phasedOwnerOid], recoverDependencies)
             ).rejects.toThrow(/unreconciled in-flight createPendingReview mutation/i);
+            expect(readLockOid(repository, 42)).toBe(phasedOwnerOid);
+
+            writeFileSync(fakeGh.artifactVisiblePath, '1');
+            const logs: string[] = [];
+            const originalLog = console.log;
+            console.log = (message?: unknown) => {
+                logs.push(typeof message === 'string' ? message : JSON.stringify(message));
+            };
+            try {
+                await expect(
+                    runRecoverReviewResolutionLockCli(['42', '--owner', phasedOwnerOid], recoverDependencies)
+                ).resolves.toBe(0);
+            } finally {
+                console.log = originalLog;
+            }
+            expect(logs).toEqual([`review-resolution-lock-recovered:42:${threadId}:${head}:${head}:unresolved:1`]);
+            expect(readLockOid(repository, 42)).toBeUndefined();
+        } finally {
+            if (ownerPgid !== undefined) {
+                try {
+                    process.kill(-ownerPgid, 'SIGKILL');
+                } catch {
+                    // Best-effort cleanup for a worker group already gone.
+                }
+            }
+            launcher.kill('SIGKILL');
+            await waitForExit(launcher).catch(() => undefined);
+            rmSync(fakeGh.root, { recursive: true, force: true });
+            rmSync(snapshotRoot, { recursive: true, force: true });
+            rmSync(repository, { recursive: true, force: true });
+        }
+    }, 10_000);
+
+    it('keeps the exact review-resolution lock after a real detached reply call dies before its artifact is visible, then recovers once the reply appears', async () => {
+        const repository = createTemporaryGitRepository();
+        const snapshotRoot = mkdtempSync(join(tmpdir(), 'sourdaw-review-resolve-reply-phase-'));
+        const entryPath = writeDetachedReplyPhaseSnapshot(snapshotRoot);
+        const fakeGh = createBlockingReplyDoneGhExecutable();
+        const launcher = spawn(process.execPath, [entryPath, '42', '--thread', threadId, '--head', head], {
+            cwd: repository,
+            env: {
+                ...process.env,
+                SOURDAW_TEST_PRIMARY_ROOT: repository,
+                SOURDAW_TEST_TRUSTED_GIT_PATH: trustedGitPath,
+                SOURDAW_TEST_TRUSTED_GH_PATH: fakeGh.executable,
+            },
+            stdio: ['ignore', 'ignore', 'pipe'],
+            shell: false,
+            detached: true,
+        });
+        let stderr = '';
+        launcher.stderr?.setEncoding('utf8');
+        launcher.stderr?.on('data', (chunk: string) => {
+            stderr += chunk;
+        });
+        let ownerPgid: number | undefined;
+        try {
+            const lock = await waitForReviewResolutionLock(repository, 42);
+            ownerPgid = lock.owner.pgid;
+            await waitForFileText(fakeGh.queryLogPath, /^replyDone$/m);
+            await waitForPath(fakeGh.replyCalledPath);
+            const phasedOwnerOid = readLockOid(repository, 42);
+            if (phasedOwnerOid === undefined) {
+                throw new Error('review-resolution lock disappeared before recovery');
+            }
+            expect(readLockOwner(repository, 42)).toMatchObject({
+                threadId,
+                head,
+                mutation: { phase: 'replyDone', epoch: 1, reviewId },
+            });
+
+            process.kill(-lock.owner.pgid, 'SIGKILL');
+            await waitForExit(launcher);
+            await waitForProcessGroupGone(lock.owner.pgid);
+            expect(launcher.signalCode).toBe('SIGKILL');
+            expect(stderr).toBe('');
+
+            const recoverDependencies = {
+                trustedPrimaryRoot: () => repository,
+                authenticateAuthor: async () => ({
+                    minted: { actorNodeId: AUTHOR_BOT_NODE_ID },
+                    session: {
+                        configDir: repository,
+                        env: { SOURDAW_TRUSTED_GH_PATH: fakeGh.executable },
+                        dispose() {},
+                    },
+                }),
+                repositoryName: () => REQUIRED_REPOSITORY,
+                gh: (session: GhSession, primaryRoot: string) => (args: string[]) =>
+                    executableCapture(fakeGh.executable, args, primaryRoot, session.env),
+                inspectThread: inspectReviewThread,
+                recoverLock: (primaryRoot, number, expectedOwnerOid, reconcile) =>
+                    recoverPullRequestReviewResolutionLock(
+                        primaryRoot,
+                        number,
+                        expectedOwnerOid,
+                        reconcile,
+                        () => false
+                    ),
+            } satisfies Parameters<typeof runRecoverReviewResolutionLockCli>[1];
+
+            await expect(
+                runRecoverReviewResolutionLockCli(['42', '--owner', phasedOwnerOid], recoverDependencies)
+            ).rejects.toThrow(/unreconciled in-flight replyDone mutation/i);
             expect(readLockOid(repository, 42)).toBe(phasedOwnerOid);
 
             writeFileSync(fakeGh.artifactVisiblePath, '1');

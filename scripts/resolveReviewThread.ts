@@ -176,6 +176,11 @@ type ActiveReviewResolutionLock = {
     oid: string;
     owner: ReviewResolutionLockOwner;
 };
+type ReviewResolutionLockInspectionPort = {
+    readOid?: (primaryRoot: string, ref: string, number: number) => string | undefined;
+    readOwner?: (primaryRoot: string, oid: string, number: number) => ReviewResolutionLockOwner;
+    release?: (primaryRoot: string, ref: string, oid: string, number: number) => void;
+};
 const REVIEW_RESOLUTION_CHILD_ENV = 'SOURDAW_REVIEW_RESOLUTION_CHILD';
 const REVIEW_RESOLUTION_CHILD_MARKER_VERSION = 1;
 const TRUSTED_GIT_PATH_ENV = 'SOURDAW_TRUSTED_GIT_PATH';
@@ -2174,13 +2179,39 @@ function preserveReviewResolutionLockFailure(
     );
 }
 
+function preserveReviewResolutionLockAfterInspectionFailure(
+    number: number,
+    active: ActiveReviewResolutionLock,
+    error: unknown,
+    inspectionError: unknown
+): never {
+    return preserveReviewResolutionLockFailure(
+        number,
+        active,
+        new Error(
+            `${errorMessage(error)}; ${pullRequestReviewResolutionLockScope(number)} ownership could not be re-read after failure: ${errorMessage(inspectionError)}`,
+            originalErrorOptions(error)
+        )
+    );
+}
+
+function popActiveReviewResolutionLockIfPresent(lock: ActiveReviewResolutionLock): void {
+    if (activeReviewResolutionLocks.at(-1) === lock) {
+        popActiveReviewResolutionLock(lock);
+    }
+}
+
 export function withPullRequestReviewResolutionLock<Value>(
     primaryRoot: string,
     number: number,
     threadId: string,
     expectedHead: string,
-    operation: () => Value
+    operation: () => Value,
+    port: ReviewResolutionLockInspectionPort = {}
 ): Value {
+    const readOid = port.readOid ?? readReviewResolutionLockOid;
+    const readOwner = port.readOwner ?? readReviewResolutionLockOwner;
+    const release = port.release ?? releasePullRequestReviewResolutionLock;
     const lock = acquirePullRequestReviewResolutionLock(
         primaryRoot,
         number,
@@ -2197,27 +2228,38 @@ export function withPullRequestReviewResolutionLock<Value>(
     };
     pushActiveReviewResolutionLock(active);
     try {
-        return operation();
+        const result = operation();
+        popActiveReviewResolutionLock(active);
+        release(primaryRoot, active.ref, active.oid, number);
+        return result;
     } catch (error) {
-        const currentOwnerOid = readReviewResolutionLockOid(primaryRoot, active.ref, number);
+        let currentOwnerOid: string | undefined;
+        try {
+            currentOwnerOid = readOid(primaryRoot, active.ref, number);
+        } catch (inspectionError) {
+            popActiveReviewResolutionLockIfPresent(active);
+            return preserveReviewResolutionLockAfterInspectionFailure(number, active, error, inspectionError);
+        }
         if (currentOwnerOid === undefined) {
-            popActiveReviewResolutionLock(active);
+            popActiveReviewResolutionLockIfPresent(active);
             return fail(`${pullRequestReviewResolutionLockScope(number)} lock is not held`);
         }
+        let currentOwner: ReviewResolutionLockOwner;
+        try {
+            currentOwner = readOwner(primaryRoot, currentOwnerOid, number);
+        } catch (inspectionError) {
+            popActiveReviewResolutionLockIfPresent(active);
+            return preserveReviewResolutionLockAfterInspectionFailure(number, active, error, inspectionError);
+        }
         active.oid = currentOwnerOid;
-        active.owner = readReviewResolutionLockOwner(primaryRoot, currentOwnerOid, number);
+        active.owner = currentOwner;
         if (active.owner.mutation.phase === 'idle') {
-            popActiveReviewResolutionLock(active);
-            releasePullRequestReviewResolutionLock(primaryRoot, active.ref, active.oid, number);
+            popActiveReviewResolutionLockIfPresent(active);
+            release(primaryRoot, active.ref, active.oid, number);
             throw error;
         }
-        popActiveReviewResolutionLock(active);
+        popActiveReviewResolutionLockIfPresent(active);
         return preserveReviewResolutionLockFailure(number, active, error);
-    } finally {
-        if (activeReviewResolutionLocks.at(-1) === active) {
-            popActiveReviewResolutionLock(active);
-            releasePullRequestReviewResolutionLock(primaryRoot, active.ref, active.oid, number);
-        }
     }
 }
 
