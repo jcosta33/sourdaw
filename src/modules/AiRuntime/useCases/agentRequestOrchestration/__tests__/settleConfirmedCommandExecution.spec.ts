@@ -662,6 +662,47 @@ describe('settleConfirmedCommandExecution', () => {
         });
     });
 
+    it('awaits stale no-op resource cleanup before reporting cancellation', async () => {
+        const resourceCleanup = createDeferred<void>();
+        mocks.settleLease.mockReturnValueOnce({ accepted: false, warning: 'work lease was replaced' });
+        mocks.settleResources.mockImplementationOnce(() => resourceCleanup.promise);
+        let settled = false;
+        const resultPromise = settleConfirmedCommandExecution(
+            createInput(createCompletedFlight(createNoOpBatchResult()), { trackedWorkLease })
+        );
+        const settlement = resultPromise.then(() => {
+            settled = true;
+        });
+
+        await Promise.resolve();
+
+        expect(settled).toBe(false);
+        expect(mocks.status).not.toHaveBeenCalled();
+        expect(mocks.message).not.toHaveBeenCalled();
+        expect(mocks.completeNoOp).not.toHaveBeenCalled();
+        expect(mocks.settleResources).toHaveBeenCalledWith({
+            confirmationId: 'confirmation-1',
+            disposition: 'discard',
+        });
+
+        resourceCleanup.resolve(undefined);
+
+        await expect(resultPromise).resolves.toEqual({ status: 'cancelled' });
+        await settlement;
+
+        expect(mocks.status).toHaveBeenCalledWith({
+            confirmationId: 'confirmation-1',
+            status: 'cancelled',
+            error: 'work lease was replaced',
+        });
+        expect(mocks.message).toHaveBeenCalledWith('assistant-1', {
+            pendingActionConfirmationStatus: 'cancelled',
+            error: 'work lease was replaced',
+            content:
+                'No project changes were needed after confirmation, but the run was already cancelled or replaced. work lease was replaced',
+        });
+    });
+
     it('retains resources after an ambiguous batch outcome', async () => {
         const result = await settleConfirmedCommandExecution(
             createInput(createCompletedFlight(createAmbiguousBatchResult()))
