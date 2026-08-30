@@ -6208,6 +6208,41 @@ describe('delivery shell boundary', () => {
         expect(() => port.deliveryReceiptProof(42)).toThrow(/cannot inspect delivery receipts for PR #42/i);
     });
 
+    it('fails shellPort receipt proof when GraphQL pages repeat a comment id across pages', () => {
+        const port = shellPort('jcosta33/sourdaw', {
+            capture: (_command, args) => {
+                const joined = args.join(' ');
+                if (
+                    joined.includes(
+                        'comments(first:100,after:$cursor){totalCount pageInfo{hasNextPage endCursor} nodes{id}}'
+                    )
+                ) {
+                    if (joined.includes('cursor=cursor-2')) {
+                        return shellDeliveryReceiptProofResponse(['IC_b'], {
+                            totalCount: 3,
+                        });
+                    }
+                    if (joined.includes('cursor=cursor-1')) {
+                        return shellDeliveryReceiptProofResponse(['IC_a'], {
+                            totalCount: 3,
+                            hasNextPage: true,
+                            endCursor: 'cursor-2',
+                        });
+                    }
+                    return shellDeliveryReceiptProofResponse(['IC_a'], {
+                        totalCount: 3,
+                        hasNextPage: true,
+                        endCursor: 'cursor-1',
+                    });
+                }
+                throw new Error(`unexpected capture: ${joined}`);
+            },
+            run: () => undefined,
+        });
+
+        expect(() => port.deliveryReceiptProof(42)).toThrow(/cannot inspect delivery receipts for PR #42/i);
+    });
+
     it.each([
         {
             merger: 'foreign',
