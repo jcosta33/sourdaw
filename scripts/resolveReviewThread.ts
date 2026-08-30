@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
@@ -85,9 +85,12 @@ export type ReviewResolutionReceipt = {
     resolvedByType: string;
     clientMutationId: string;
 };
-type ReviewResolutionLockOwner = {
-    version: 1;
+export type ReviewResolutionLockOwner = {
+    version: 2;
     pid: number;
+    pgid: number;
+    threadId: string;
+    head: string;
     token: string;
 };
 export type ResolveReviewThreadPort = {
@@ -99,7 +102,12 @@ export type ResolveReviewThreadPort = {
     resolve: (threadId: string) => ReviewResolutionReceipt;
     deleteReply: (replyId: string) => void;
     deletePendingReview: (reviewId: string) => void;
-    serializeReviewThreadMutation: <Value>(number: number, threadId: string, operation: () => Value) => Value;
+    serializeReviewThreadMutation: <Value>(
+        number: number,
+        threadId: string,
+        expectedHead: string,
+        operation: () => Value
+    ) => Value;
     log: (message: string) => void;
 };
 export type ResolveReviewThreadArgs = { number?: number; threadId?: string; head?: string; help: boolean };
@@ -117,6 +125,11 @@ type ManagedReplyMarker = {
     review: PullRequestReview;
     currentHead: boolean;
 };
+type ReviewResolutionExecutionFence = {
+    pid: number;
+    pgid: number;
+};
+const REVIEW_RESOLUTION_CHILD_ENV = 'SOURDAW_REVIEW_RESOLUTION_CHILD';
 
 export function parseResolveReviewThreadArgs(args: string[]): ResolveReviewThreadArgs {
     if (args[0] === '--help') {
@@ -155,7 +168,7 @@ export function resolveReviewThread(
     if (!isAuthorBotNodeId(authorNodeId)) {
         fail(`authenticated author actor ${authorNodeId} is not ${AUTHOR_BOT_NODE_ID}`);
     }
-    return port.serializeReviewThreadMutation(number, threadId, () =>
+    return port.serializeReviewThreadMutation(number, threadId, expectedHead, () =>
         resolveReviewThreadWithinMutation(number, threadId, expectedHead, port)
     );
 }
@@ -1388,8 +1401,8 @@ export function shellPort(session: GhSession, cwd: string = process.cwd()): Reso
         resolve: (id) => resolveThread(id, gh),
         deleteReply: (id) => deleteReply(id, gh),
         deletePendingReview: (id) => deletePendingReview(id, gh),
-        serializeReviewThreadMutation: (number, _threadId, operation) =>
-            withPullRequestReviewResolutionLock(primaryRoot, number, operation),
+        serializeReviewThreadMutation: (number, threadId, expectedHead, operation) =>
+            withPullRequestReviewResolutionLock(primaryRoot, number, threadId, expectedHead, operation),
         log: (message) => console.log(message),
     };
 }
@@ -1426,20 +1439,37 @@ function parseReviewResolutionLockOwner(contents: string, number: number): Revie
     if (
         typeof value !== 'object' ||
         value === null ||
-        Object.keys(value).length !== 3 ||
+        Object.keys(value).length !== 6 ||
         !('version' in value) ||
-        value.version !== 1 ||
+        value.version !== 2 ||
         !('pid' in value) ||
         typeof value.pid !== 'number' ||
         !Number.isSafeInteger(value.pid) ||
         value.pid <= 0 ||
+        !('pgid' in value) ||
+        typeof value.pgid !== 'number' ||
+        !Number.isSafeInteger(value.pgid) ||
+        value.pgid <= 0 ||
+        !('threadId' in value) ||
+        typeof value.threadId !== 'string' ||
+        value.threadId.trim() === '' ||
+        !('head' in value) ||
+        typeof value.head !== 'string' ||
+        !/^[0-9a-f]{40}$/iu.test(value.head) ||
         !('token' in value) ||
         typeof value.token !== 'string' ||
         !REVIEW_RESOLUTION_LOCK_TOKEN_PATTERN.test(value.token)
     ) {
         fail(`${scope} lock ownership is malformed`);
     }
-    return { version: 1, pid: value.pid, token: value.token };
+    return {
+        version: 2,
+        pid: value.pid,
+        pgid: value.pgid,
+        threadId: value.threadId,
+        head: value.head,
+        token: value.token,
+    };
 }
 
 function reviewResolutionLockObjectId(value: string, number: number): string {
@@ -1495,33 +1525,13 @@ function updateReviewResolutionLockRef(primaryRoot: string, args: string[]): boo
     return result.status === 0;
 }
 
-function acquirePullRequestReviewResolutionLock(primaryRoot: string, number: number): { ref: string; oid: string } {
-    const ref = pullRequestReviewResolutionLockRef(number);
-    const owner: ReviewResolutionLockOwner = { version: 1, pid: process.pid, token: randomUUID() };
-    const oid = writeReviewResolutionLockOwner(primaryRoot, owner, number);
-    if (updateReviewResolutionLockRef(primaryRoot, [ref, oid, '0'.repeat(oid.length)])) {
-        return { ref, oid };
-    }
-
-    const previousOid = readReviewResolutionLockOid(primaryRoot, ref, number);
-    if (previousOid === undefined) {
-        return fail(`${pullRequestReviewResolutionLockScope(number)} lock could not be acquired`);
-    }
-    const previousOwner = readReviewResolutionLockOwner(primaryRoot, previousOid, number);
-    return fail(
-        `${pullRequestReviewResolutionLockScope(number)} is already being resolved by process ${previousOwner.pid}`
-    );
+function currentReviewResolutionExecutionFence(): ReviewResolutionExecutionFence {
+    return { pid: process.pid, pgid: process.pid };
 }
 
-function releasePullRequestReviewResolutionLock(primaryRoot: string, ref: string, oid: string, number: number): void {
-    if (!updateReviewResolutionLockRef(primaryRoot, ['-d', ref, oid])) {
-        fail(`${pullRequestReviewResolutionLockScope(number)} lock ownership changed before release`);
-    }
-}
-
-function isLiveProcess(pid: number): boolean {
+function isLiveProcessGroup(pgid: number): boolean {
     try {
-        process.kill(pid, 0);
+        process.kill(-pgid, 0);
         return true;
     } catch (error) {
         if (error instanceof Error && 'code' in error && error.code === 'ESRCH') {
@@ -1534,12 +1544,57 @@ function isLiveProcess(pid: number): boolean {
     }
 }
 
+function acquirePullRequestReviewResolutionLock(
+    primaryRoot: string,
+    number: number,
+    threadId: string,
+    expectedHead: string,
+    executionFence: ReviewResolutionExecutionFence
+): { ref: string; oid: string } {
+    const ref = pullRequestReviewResolutionLockRef(number);
+    const owner: ReviewResolutionLockOwner = {
+        version: 2,
+        pid: executionFence.pid,
+        pgid: executionFence.pgid,
+        threadId,
+        head: expectedHead,
+        token: randomUUID(),
+    };
+    const oid = writeReviewResolutionLockOwner(primaryRoot, owner, number);
+    if (updateReviewResolutionLockRef(primaryRoot, [ref, oid, '0'.repeat(oid.length)])) {
+        return { ref, oid };
+    }
+
+    const previousOid = readReviewResolutionLockOid(primaryRoot, ref, number);
+    if (previousOid === undefined) {
+        return fail(`${pullRequestReviewResolutionLockScope(number)} lock could not be acquired`);
+    }
+    const previousOwner = readReviewResolutionLockOwner(primaryRoot, previousOid, number);
+    return fail(
+        `${pullRequestReviewResolutionLockScope(number)} is already being resolved by process group ${previousOwner.pgid}`
+    );
+}
+
+function releasePullRequestReviewResolutionLock(primaryRoot: string, ref: string, oid: string, number: number): void {
+    if (!updateReviewResolutionLockRef(primaryRoot, ['-d', ref, oid])) {
+        fail(`${pullRequestReviewResolutionLockScope(number)} lock ownership changed before release`);
+    }
+}
+
 export function withPullRequestReviewResolutionLock<Value>(
     primaryRoot: string,
     number: number,
+    threadId: string,
+    expectedHead: string,
     operation: () => Value
 ): Value {
-    const lock = acquirePullRequestReviewResolutionLock(primaryRoot, number);
+    const lock = acquirePullRequestReviewResolutionLock(
+        primaryRoot,
+        number,
+        threadId,
+        expectedHead,
+        currentReviewResolutionExecutionFence()
+    );
     try {
         return operation();
     } finally {
@@ -1551,8 +1606,8 @@ export function recoverPullRequestReviewResolutionLock<Value>(
     primaryRoot: string,
     number: number,
     expectedOwnerOid: string,
-    reconcile: () => Value,
-    processIsLive: (pid: number) => boolean = isLiveProcess
+    reconcile: (owner: ReviewResolutionLockOwner) => Value,
+    processGroupIsLive: (pgid: number) => boolean = isLiveProcessGroup
 ): Value {
     const ref = pullRequestReviewResolutionLockRef(number);
     const currentOwnerOid = readReviewResolutionLockOid(primaryRoot, ref, number);
@@ -1564,10 +1619,12 @@ export function recoverPullRequestReviewResolutionLock<Value>(
         return fail(`${pullRequestReviewResolutionLockScope(number)} lock ownership changed before recovery`);
     }
     const owner = readReviewResolutionLockOwner(primaryRoot, currentOwnerOid, number);
-    if (processIsLive(owner.pid)) {
-        return fail(`${pullRequestReviewResolutionLockScope(number)} lock is still held by live process ${owner.pid}`);
+    if (processGroupIsLive(owner.pgid)) {
+        return fail(
+            `${pullRequestReviewResolutionLockScope(number)} lock is still held by live process group ${owner.pgid}`
+        );
     }
-    const reconciled = reconcile();
+    const reconciled = reconcile(owner);
     if (!updateReviewResolutionLockRef(primaryRoot, ['-d', ref, expectedOid])) {
         return fail(`${pullRequestReviewResolutionLockScope(number)} lock ownership changed before recovery`);
     }
@@ -2095,6 +2152,27 @@ export function deleteReply(replyId: string, gh: Gh): void {
         fail(`delete review reply returned an invalid result for ${replyId}`);
     }
 }
+
+async function runResolveReviewThreadInDetachedProcess(args: string[]): Promise<number> {
+    const child = spawn(process.execPath, [fileURLToPath(import.meta.url), ...args], {
+        cwd: process.cwd(),
+        env: { ...process.env, [REVIEW_RESOLUTION_CHILD_ENV]: '1' },
+        stdio: 'inherit',
+        shell: false,
+        detached: true,
+    });
+    return await new Promise<number>((resolve, reject) => {
+        child.once('error', reject);
+        child.once('close', (code, signal) => {
+            if (code === null) {
+                reject(new Error(`review:resolve terminated by ${signal ?? 'unknown signal'}`));
+                return;
+            }
+            resolve(code);
+        });
+    });
+}
+
 async function main(): Promise<number> {
     const parsed = parseResolveReviewThreadArgs(process.argv.slice(2));
     if (parsed.help) {
@@ -2103,6 +2181,9 @@ async function main(): Promise<number> {
     }
     if (parsed.number === undefined || parsed.threadId === undefined || parsed.head === undefined) {
         fail(usage);
+    }
+    if (process.env[REVIEW_RESOLUTION_CHILD_ENV] !== '1') {
+        return await runResolveReviewThreadInDetachedProcess(process.argv.slice(2));
     }
     const cwd = process.cwd();
     assertTrustedExecutingBlob(
