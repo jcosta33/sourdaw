@@ -1,0 +1,55 @@
+src/modules/WorkspaceShell/presentations/hooks/useNativeApplicationMenu.ts
+  s_ae074277795b45::t_f5006b7da9c695 76
+src/modules/Project/useCases/projectPersistence/quiesceProjectSession.ts
+  s_ae074277795b45::t_35a782c9f6f324 3,38,41-51
+electron/mainWindowTeardown.ts
+  s_ae074277795b45::t_3e49a7d1387296 14-15,25-26
+electron/__tests__/bridge.spec.ts
+  s_ae074277795b45::t_411512b93bc1fe 174,176-190
+  s_ae074277795b45::t_4588b6ba753385 169,173
+  s_ae074277795b45::t_a00ded5fcf2fd3 175
+electron/rendererSessionQuiescer.ts
+  s_ae074277795b45::t_28720a32e19a5e 46,87
+src/modules/Project/useCases/projectPersistence/__tests__/quiesceProjectSession.spec.ts
+  s_ae074277795b45::t_33e98ea98236d9 61
+  s_ae074277795b45::t_878b7c9b0924ce 3-8,10-13,23,43,54,57-59
+electron/__tests__/appIpc.spec.ts
+  s_ae074277795b45::t_247d62d45413c5 34-35,127,250-264,266-282
+  s_ae074277795b45::t_a600338cc1d621 265
+  s_ae074277795b45::t_33d1a07fd248fb 283-285
+src/modules/WorkspaceShell/presentations/hooks/__tests__/useNativeApplicationMenu.spec.tsx
+  s_ae074277795b45::t_4588b6ba753385 230,263-266
+  s_ae074277795b45::t_7b5e696e4a30ff 122-124,197
+  s_ae074277795b45::t_8ce16d74f1e364 180-196,198-204
+electron/__tests__/rendererSessionQuiescer.spec.ts
+  s_ae074277795b45::t_7b5e696e4a30ff 32,44,46
+electron/pluginGui.ts
+  s_ae074277795b45::t_3e49a7d1387296 823-824,881
+electron/applicationMenu.ts
+  s_ae074277795b45::t_2e4320e554422c 42-52,87-118
+  s_ae074277795b45::t_44ff850559afa6 119
+electron/__tests__/mainWindowTeardown.spec.ts
+  s_ae074277795b45::t_5af8969acf23a4 118-149
+electron/main.ts
+  s_ae074277795b45::t_3e49a7d1387296 374-375
+  s_ae074277795b45::t_f5006b7da9c695 37,142-145
+electron/__tests__/applicationMenu.spec.ts
+  s_ae074277795b45::t_e2c5ec8b4e66b6 3,70-76,88-106
+  s_ae074277795b45::t_a3bce4fb0f479b 66-67,85-87
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "8111cad50fbd85c6c66ef5213bcf971d10616fd0",
+  "prompts": {},
+  "sessions": {
+    "s_ae074277795b45": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04ab5-5234-7100-be1c-76ebfaba88d3",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
