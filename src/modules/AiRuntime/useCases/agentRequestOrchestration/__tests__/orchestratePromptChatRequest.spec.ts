@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { type ModelProviderResult } from '../../../models/ModelProviderProtocol';
 import { type ProviderAttemptAdmission } from '../../llmOrchestration/inference';
 import { type planPromptActions } from '../../planPromptActions';
 import { orchestratePromptChatRequest } from '../orchestratePromptChatRequest';
@@ -22,6 +23,7 @@ const mocks = vi.hoisted(() => ({
     normalizeAgentFailure: vi.fn(),
     planPromptActions: vi.fn(),
     persistPromptActionConfirmation: vi.fn(),
+    recordAgentProviderUsage: vi.fn(),
     recordError: vi.fn(),
     reserveBudget: vi.fn(),
     reserveBudgetBatch: vi.fn(),
@@ -82,7 +84,7 @@ vi.mock('../../cancelAgentRun', () => ({
 
 vi.mock('../../describePendingActionConfirmation', () => ({ describePendingActionConfirmation: vi.fn() }));
 vi.mock('../../planPromptActions', () => ({ planPromptActions: mocks.planPromptActions }));
-vi.mock('../../recordAgentProviderUsage', () => ({ recordAgentProviderUsage: vi.fn() }));
+vi.mock('../../recordAgentProviderUsage', () => ({ recordAgentProviderUsage: mocks.recordAgentProviderUsage }));
 vi.mock('../executeImmediatePromptCommand', () => ({
     executeImmediatePromptCommand: mocks.executeImmediatePromptCommand,
 }));
@@ -99,6 +101,39 @@ vi.mock('../settleAgentRunWorkLeaseSafely', () => ({
     AGENT_RUN_STALE_COMPLETION_WARNING: 'stale completion warning',
     settleAgentRunWorkLeaseSafely: mocks.settleSafely,
 }));
+
+function createProviderAttempt(
+    backend: Extract<ProviderAttemptAdmission['backend'], 'cloud' | 'webllm'>
+): ProviderAttemptAdmission {
+    const provider = backend === 'cloud' ? 'openai' : 'webllm';
+    return {
+        backend,
+        provider,
+        correlationId: `${backend}-provider-attempt`,
+        request: {
+            schemaVersion: 2,
+            runId: 'agent-run-fixture',
+            requestId: `${backend}-provider-attempt`,
+            correlationId: `${backend}-provider-attempt`,
+            cancellationGeneration: 0,
+            operation: 'tools',
+            modality: 'text',
+            messages: [],
+            stream: false,
+            limits: { maxOutputTokens: 256 },
+            controls: { cache: 'provider-default', reasoning: 'provider-default' },
+            budget: { maxInputTokens: 1_024, maxOutputTokens: 256, maxTotalTokens: 1_280 },
+            dataPolicy: backend === 'cloud' ? 'remote-allowed' : 'local-only',
+        },
+        estimatedTotalTokens: 256,
+        estimate: {
+            method: 'compiled-provider-request-utf8-byte-token-ceiling-v1',
+            inputTokenCeiling: 128,
+            outputTokenCeiling: 128,
+            totalTokenCeiling: 256,
+        },
+    };
+}
 
 describe('orchestratePromptChatRequest', () => {
     const releaseProviderCancellation = vi.fn();
@@ -187,6 +222,9 @@ describe('orchestratePromptChatRequest', () => {
                 error: 'Planning provider failed',
             })
         );
+        expect(mocks.settleSafely.mock.invocationCallOrder[0]).toBeLessThan(
+            mocks.appendChatMessage.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY
+        );
         expect(releaseProviderCancellation).toHaveBeenCalledOnce();
     });
 
@@ -218,33 +256,7 @@ describe('orchestratePromptChatRequest', () => {
     });
 
     it('denies provider and local work admissions without materializing or dispatching a plan', async () => {
-        const providerAttempt = {
-            backend: 'cloud',
-            provider: 'openai',
-            correlationId: 'provider-attempt',
-            request: {
-                schemaVersion: 2,
-                runId: 'agent-run-fixture',
-                requestId: 'provider-attempt',
-                correlationId: 'provider-attempt',
-                cancellationGeneration: 0,
-                operation: 'tools',
-                modality: 'text',
-                messages: [],
-                stream: false,
-                limits: { maxOutputTokens: 256 },
-                controls: { cache: 'provider-default', reasoning: 'provider-default' },
-                budget: { maxInputTokens: 1_024, maxOutputTokens: 256, maxTotalTokens: 1_280 },
-                dataPolicy: 'remote-allowed',
-            },
-            estimatedTotalTokens: 256,
-            estimate: {
-                method: 'compiled-provider-request-utf8-byte-token-ceiling-v1',
-                inputTokenCeiling: 128,
-                outputTokenCeiling: 128,
-                totalTokenCeiling: 256,
-            },
-        } satisfies ProviderAttemptAdmission;
+        const providerAttempt = createProviderAttempt('cloud');
         mocks.reserveBudget.mockReturnValue({ status: 'hard-limit-reached', reason: 'remoteTokens' });
         mocks.reserveBudgetBatch.mockReturnValue({ status: 'hard-limit-reached', reason: 'storageBytes' });
         mocks.planPromptActions.mockImplementation(async (input: PlanPromptActionsInput) => {
@@ -269,7 +281,11 @@ describe('orchestratePromptChatRequest', () => {
         });
 
         expect(mocks.reserveBudget).toHaveBeenCalledWith(
-            expect.objectContaining({ category: 'remoteTokens', attemptId: 'provider-attempt', estimate: 256 })
+            expect.objectContaining({
+                category: 'remoteTokens',
+                attemptId: providerAttempt.correlationId,
+                estimate: providerAttempt.estimatedTotalTokens,
+            })
         );
         expect(mocks.reserveBudgetBatch).toHaveBeenCalledWith(
             expect.objectContaining({
@@ -284,6 +300,136 @@ describe('orchestratePromptChatRequest', () => {
         expect(mocks.executePromptCommandPreview).not.toHaveBeenCalled();
         expect(mocks.persistPromptActionConfirmation).not.toHaveBeenCalled();
         expect(mocks.executeImmediatePromptCommand).not.toHaveBeenCalled();
+    });
+
+    it.each([
+        { backend: 'cloud' as const, expectedCategory: 'remoteTokens' },
+        { backend: 'webllm' as const, expectedCategory: 'localAnalysis' },
+    ])('admits a $backend provider attempt in its $expectedCategory budget category', async (expectation) => {
+        const providerAttempt = createProviderAttempt(expectation.backend);
+        let admittedRunId: string | undefined;
+        mocks.reserveBudget.mockReturnValue({ status: 'reserved' });
+        mocks.planPromptActions.mockImplementation(async (input: PlanPromptActionsInput) => {
+            admittedRunId = input.streamIdentity?.runId;
+            expect(input.onProviderAttempt?.(providerAttempt)).toEqual({ status: 'admitted' });
+            return {
+                context: {},
+                result: { actions: [] },
+                projectRevision: 'revision-planned',
+            };
+        });
+
+        await orchestratePromptChatRequest({
+            userText: 'plan a command',
+            requestedRoute: 'auto',
+            backend: 'webllm',
+            interactionMode: 'apply',
+            options: undefined,
+        });
+
+        expect(admittedRunId).toBeDefined();
+        expect(mocks.reserveBudget).toHaveBeenCalledWith({
+            runId: admittedRunId,
+            attemptId: providerAttempt.correlationId,
+            category: expectation.expectedCategory,
+            estimate: providerAttempt.estimatedTotalTokens,
+            provenance: 'versioned-estimate',
+            estimateMethod: providerAttempt.estimate.method,
+        });
+    });
+
+    it('admits local work with the exact reserved local, download, and storage estimates', async () => {
+        let admittedRunId: string | undefined;
+        mocks.reserveBudgetBatch.mockReturnValue({ status: 'reserved' });
+        mocks.planPromptActions.mockImplementation(async (input: PlanPromptActionsInput) => {
+            admittedRunId = input.streamIdentity?.runId;
+            expect(input.onLocalWorkAttempt?.({ analysisCount: 2, downloadBytes: 4, storageBytes: 8 })).toBe(true);
+            return {
+                context: {},
+                result: { actions: [] },
+                projectRevision: 'revision-planned',
+            };
+        });
+
+        await orchestratePromptChatRequest({
+            userText: 'prepare stems',
+            requestedRoute: 'auto',
+            backend: 'webllm',
+            interactionMode: 'apply',
+            options: undefined,
+        });
+
+        expect(admittedRunId).toBeDefined();
+        expect(mocks.reserveBudgetBatch).toHaveBeenCalledWith({
+            runId: admittedRunId,
+            attempts: [
+                {
+                    attemptId: 'stem-preparation:localAnalysis',
+                    category: 'localAnalysis',
+                    estimate: 2,
+                    provenance: 'versioned-estimate',
+                },
+                {
+                    attemptId: 'stem-preparation:downloadBytes',
+                    category: 'downloadBytes',
+                    estimate: 4,
+                    provenance: 'versioned-estimate',
+                },
+                {
+                    attemptId: 'stem-preparation:storageBytes',
+                    category: 'storageBytes',
+                    estimate: 8,
+                    provenance: 'versioned-estimate',
+                },
+            ],
+        });
+    });
+
+    it('forwards a provider result to usage accounting with its admitted run identity', async () => {
+        const providerResult = {
+            schemaVersion: 2,
+            provider: 'webllm',
+            model: 'fixture-model',
+            correlationId: 'provider-result-correlation',
+            status: 'complete',
+            output: { text: 'fixture response', reasoning: '', toolCalls: [], structuredOutput: null },
+            usage: {
+                inputTokens: 128,
+                outputTokens: 64,
+                cachedInputTokens: null,
+                reasoningTokens: null,
+                provenance: 'provider-reported',
+            },
+            finishReason: 'stop',
+            partialOutputDisposition: 'none',
+            failure: null,
+            ignoredProviderEvents: [],
+        } satisfies ModelProviderResult;
+        let admittedRunId: string | undefined;
+        mocks.planPromptActions.mockImplementation(async (input: PlanPromptActionsInput) => {
+            admittedRunId = input.streamIdentity?.runId;
+            input.onProviderResult?.(providerResult);
+            return {
+                context: {},
+                result: { actions: [] },
+                projectRevision: 'revision-planned',
+            };
+        });
+
+        await orchestratePromptChatRequest({
+            userText: 'inspect the mix',
+            requestedRoute: 'auto',
+            backend: 'webllm',
+            interactionMode: 'apply',
+            options: undefined,
+        });
+
+        expect(admittedRunId).toBeDefined();
+        expect(mocks.recordAgentProviderUsage).toHaveBeenCalledWith(
+            admittedRunId,
+            providerResult,
+            providerResult.correlationId
+        );
     });
 
     it('cancels an aborted completed plan before materialization and releases provider cancellation once', async () => {
