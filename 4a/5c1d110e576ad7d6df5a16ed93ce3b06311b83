@@ -1,0 +1,49 @@
+src/modules/WorkspaceShell/presentations/hooks/__tests__/useNativeApplicationMenu.spec.tsx
+  s_ae074277795b45::t_12f7ee7442059d 596-630
+  s_ae074277795b45::t_1a34cbdc2b0d2f 14-19,40,109
+  s_ae074277795b45::t_baff5091e96cf1 171-202,594
+  s_ae074277795b45::t_dce6a7cbf50153 558,560-562
+  s_ae074277795b45::t_612758799ef800 595
+src/modules/Project/useCases/projectPersistence/saveProject/saveProject.ts
+  s_ae074277795b45::t_dcec294e48ad8e 80,136,145-146
+electron/__tests__/windowCloseCoordinator.spec.ts
+  s_ae074277795b45::t_72e0b4e087ac42 71-74,389-476
+electron/__tests__/applicationMenu.spec.ts
+  s_ae074277795b45::t_f4775ef2246c0c 7-10,12-13,15,17,19-32
+  s_ae074277795b45::t_4d95ec6ff0ceba 39
+electron/nativeMenuActionDispatcher.ts
+  s_ae074277795b45::t_d5b53121cc41fd 18-23
+electron/__tests__/bridge.spec.ts
+  s_ae074277795b45::t_b4831cac4fbbc9 30,32-33,133-160
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.spec.ts
+  s_ae074277795b45::t_61046369b4a531 217-244
+electron/windowCloseCoordinator.ts
+  s_ae074277795b45::t_dd65aaa173a88e 205
+  s_ae074277795b45::t_921195767d82c0 1-5,32,36-41,49
+  s_ae074277795b45::t_51cd464ad308a8 153-175,179
+  s_ae074277795b45::t_1b05df0351cfbd 48,64,73-74
+electron/__tests__/nativeMenuActionDispatcher.spec.ts
+  s_ae074277795b45::t_a84a93b09e3f5c 138-175
+  s_ae074277795b45::t_fc97d935564add 137
+src/modules/WorkspaceShell/presentations/hooks/useNativeApplicationMenu.ts
+  s_ae074277795b45::t_f77d29f63e0af7 71-80,86,112-113,131-132,142,240,261-268
+  s_ae074277795b45::t_4df0c124195d3f 101,246,248-251
+  s_ae074277795b45::t_9b6eabfce4f9c8 116-118,135-136
+  s_ae074277795b45::t_231c07e564c4c6 122-123
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "4a5c1d110e576ad7d6df5a16ed93ce3b06311b83",
+  "prompts": {},
+  "sessions": {
+    "s_ae074277795b45": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04ab5-5234-7100-be1c-76ebfaba88d3",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
