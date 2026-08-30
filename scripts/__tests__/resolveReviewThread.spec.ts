@@ -570,8 +570,8 @@ function fakePort(input: Input = {}) {
             }
             deleteReviewById(id);
         },
-        inspectAttachedReviewThreadIds: (number, id, expectedHead) => {
-            calls.push(`inspectAttachedReviewThreads:${number}:${id}:${expectedHead}`);
+        inspectAttachedReviewThreadIds: (number, id, expectedPullRequestId, expectedHead) => {
+            calls.push(`inspectAttachedReviewThreads:${number}:${id}:${expectedPullRequestId}:${expectedHead}`);
             const attachedThreadIds = new Set(input.attachedReviewThreadIdsByReviewId?.[id] ?? []);
             if (comments.some((comment) => comment.reviewId === id)) {
                 attachedThreadIds.add(threadId);
@@ -621,12 +621,20 @@ function commentPage(
     endCursor: string | null,
     currentThreadId: string = threadId,
     pageHead: string = head,
-    currentPullRequestId: string = pullRequestId
+    currentPullRequestId: string = pullRequestId,
+    threadState: {
+        isResolved?: boolean;
+        resolvedBy?: { id?: string; login?: string; __typename?: string } | null;
+    } = { isResolved: false, resolvedBy: null }
 ) {
     return JSON.stringify({
         data: {
             repository: { pullRequest: { id: currentPullRequestId, headRefOid: pageHead } },
-            node: { id: currentThreadId, comments: { nodes, pageInfo: { hasNextPage, endCursor } } },
+            node: {
+                id: currentThreadId,
+                ...threadState,
+                comments: { nodes, pageInfo: { hasNextPage, endCursor } },
+            },
         },
     });
 }
@@ -673,7 +681,10 @@ function createTemporaryGitRepository(): string {
     return directory;
 }
 
-function createFakeGhExecutable(responsesByKey: Record<string, string>): { root: string; executable: string } {
+function createFakeGhExecutable(responsesByKey: Record<string, string | string[]>): {
+    root: string;
+    executable: string;
+} {
     const root = mkdtempSync(join(tmpdir(), 'resolve-review-thread-gh-'));
     const executable = join(root, 'gh');
     writeFileSync(
@@ -681,6 +692,8 @@ function createFakeGhExecutable(responsesByKey: Record<string, string>): { root:
         [
             `#!${process.execPath}`,
             `const responses = ${JSON.stringify(responsesByKey)};`,
+            `const countsPath = ${JSON.stringify(join(root, 'counts.json'))};`,
+            'const fs = require("node:fs");',
             'const args = process.argv.slice(2);',
             "if (args[0] !== 'api' || args[1] !== 'graphql') {",
             '  console.error(`unexpected gh args ${JSON.stringify(args)}`);',
@@ -704,6 +717,15 @@ function createFakeGhExecutable(responsesByKey: Record<string, string>): { root:
             "else if (query.includes('reviewThreads(first:100')) key = `threads:${fields.get('cursor') ?? ''}`;",
             'const response = responses[key];',
             'if (response === undefined) { console.error(`unexpected key ${key}`); process.exit(1); }',
+            'if (Array.isArray(response)) {',
+            '  const counts = fs.existsSync(countsPath) ? JSON.parse(fs.readFileSync(countsPath, "utf8")) : {};',
+            '  const count = typeof counts[key] === "number" ? counts[key] : 0;',
+            '  const current = response[Math.min(count, response.length - 1)];',
+            '  counts[key] = count + 1;',
+            '  fs.writeFileSync(countsPath, JSON.stringify(counts));',
+            '  process.stdout.write(current);',
+            '  process.exit(0);',
+            '}',
             'process.stdout.write(response);',
         ].join('\n'),
         { encoding: 'utf8', mode: 0o700 }
@@ -1920,6 +1942,51 @@ describe('review thread resolution', () => {
             })
         ).toThrow(/head changed while reading review comments/i);
     });
+    it('rejects a requested-thread comment page whose pull-request node changes even when the head stays the same', () => {
+        let call = 0;
+        expect(() =>
+            inspectReviewThread(42, threadId, () => {
+                call += 1;
+                if (call === 1) {
+                    return threadPage([{ id: threadId, isResolved: false, resolvedBy: null }], false, null, movedHead);
+                }
+                return commentPage([root], false, null, threadId, movedHead, 'PR_kwDOOtherPullRequest');
+            })
+        ).toThrow(/head changed while reading review comments/i);
+    });
+    it('rejects a same-head resolve-state drift between the outer thread page and inner comment snapshot', () => {
+        let call = 0;
+        expect(() =>
+            inspectReviewThread(42, threadId, () => {
+                call += 1;
+                if (call === 1) {
+                    return threadPage(
+                        [
+                            {
+                                id: threadId,
+                                isResolved: true,
+                                resolvedBy: {
+                                    id: AUTHOR_BOT_NODE_ID,
+                                    login: 'renamed-author',
+                                    __typename: 'User',
+                                },
+                            },
+                        ],
+                        false,
+                        null,
+                        movedHead
+                    );
+                }
+                if (call === 2) {
+                    return commentPage([root], false, null, threadId, movedHead, pullRequestId, {
+                        isResolved: false,
+                        resolvedBy: null,
+                    });
+                }
+                return reviewPage([], false, null, movedHead);
+            })
+        ).toThrow(/changed while reading review comments/i);
+    });
     it.each([
         ['repeated', 'comments-1'],
         ['empty', ''],
@@ -2710,7 +2777,7 @@ describe('review thread resolution', () => {
             `review-thread-resolved:42:${threadId}`
         );
         expect(calls.filter((call) => call.startsWith('inspectAttachedReviewThreads:'))).toEqual([
-            `inspectAttachedReviewThreads:42:PRR_stale_pending:${movedHead}`,
+            `inspectAttachedReviewThreads:42:PRR_stale_pending:${pullRequestId}:${movedHead}`,
         ]);
         expect(calls.filter((call) => call.startsWith('deleteReview:'))).toEqual(['deleteReview:PRR_stale_pending']);
         expect(calls.filter((call) => call.startsWith('createReview:'))).toEqual([`createReview:${pullRequestId}`]);
@@ -2737,7 +2804,7 @@ describe('review thread resolution', () => {
             `pending author review PRR_stale_pending still has attached review-thread comments on ${otherThreadId}`
         );
         expect(calls.filter((call) => call.startsWith('inspectAttachedReviewThreads:'))).toEqual([
-            `inspectAttachedReviewThreads:42:PRR_stale_pending:${movedHead}`,
+            `inspectAttachedReviewThreads:42:PRR_stale_pending:${pullRequestId}:${movedHead}`,
         ]);
         expect(calls.filter((call) => call.startsWith('deleteReview:'))).toEqual([]);
         expect(calls.filter((call) => call.startsWith('createReview:'))).toEqual([]);
@@ -2763,7 +2830,7 @@ describe('review thread resolution', () => {
             `pending author review PRR_attached_pending still has attached review-thread comments on ${otherThreadId}`
         );
         expect(calls.filter((call) => call.startsWith('inspectAttachedReviewThreads:'))).toEqual([
-            `inspectAttachedReviewThreads:42:PRR_attached_pending:${movedHead}`,
+            `inspectAttachedReviewThreads:42:PRR_attached_pending:${pullRequestId}:${movedHead}`,
         ]);
         expect(calls.filter((call) => call.startsWith('deleteReview:'))).toEqual([]);
         expect(calls.filter((call) => call.startsWith('reply:'))).toEqual([]);
@@ -2793,7 +2860,7 @@ describe('review thread resolution', () => {
             `pending author review PRR_other_thread_pending still has attached review-thread comments on ${otherThreadId}`
         );
         expect(calls.filter((call) => call.startsWith('inspectAttachedReviewThreads:'))).toEqual([
-            `inspectAttachedReviewThreads:42:PRR_other_thread_pending:${movedHead}`,
+            `inspectAttachedReviewThreads:42:PRR_other_thread_pending:${pullRequestId}:${movedHead}`,
         ]);
         expect(calls.filter((call) => call.startsWith('deleteReview:'))).toEqual([]);
         expect(calls.filter((call) => call.startsWith('resolve:'))).toEqual([]);
@@ -2921,6 +2988,167 @@ describe('review thread resolution', () => {
                     log: (message) => calls.push(`log:${message}`),
                 })
             ).toThrow(/head changed while reading review comments/i);
+            expect(calls).toEqual([]);
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+            rmSync(fakeGh.root, { recursive: true, force: true });
+        }
+    });
+    it('fails before deletion when the shell-backed attachment scanner sees a different pull-request node at the same head', () => {
+        const repository = createTemporaryGitRepository();
+        const fakeGh = createFakeGhExecutable({
+            'threads:': [
+                threadPage([{ id: threadId, isResolved: false, resolvedBy: null }], false, null, movedHead),
+                JSON.stringify({
+                    data: {
+                        repository: {
+                            pullRequest: {
+                                id: 'PR_kwDOOtherPullRequest',
+                                headRefOid: movedHead,
+                                reviewThreads: {
+                                    nodes: [{ id: threadId, isResolved: false, resolvedBy: null }],
+                                    pageInfo: { hasNextPage: false, endCursor: null },
+                                },
+                            },
+                        },
+                    },
+                }),
+            ],
+            [`comments:${threadId}:`]: [
+                commentPage([root], false, null, threadId, movedHead),
+                commentPage([root], false, null, threadId, movedHead, 'PR_kwDOOtherPullRequest'),
+            ],
+            'reviews:': reviewPage(
+                [
+                    {
+                        id: 'PRR_stale_pending',
+                        state: 'PENDING',
+                        body: resolutionReviewSummary(pullRequestId, threadId, head),
+                        commit: { oid: head },
+                        author: { id: AUTHOR_BOT_NODE_ID, login: 'renamed-author', __typename: 'Bot' },
+                    },
+                ],
+                false,
+                null,
+                movedHead
+            ),
+        });
+        const basePort = shellPort(
+            {
+                configDir: repository,
+                env: { SOURDAW_TRUSTED_GH_PATH: fakeGh.executable },
+                dispose() {},
+            },
+            repository
+        );
+        const calls: string[] = [];
+        try {
+            expect(() =>
+                resolveReviewThread(42, threadId, movedHead, AUTHOR_BOT_NODE_ID, {
+                    ...basePort,
+                    createPendingReview: () => {
+                        calls.push('createPendingReview');
+                        throw new Error('unexpected create');
+                    },
+                    deletePendingReview: (id) => {
+                        calls.push(`deleteReview:${id}`);
+                    },
+                    replyDone: () => {
+                        calls.push('replyDone');
+                        throw new Error('unexpected reply');
+                    },
+                    serializeReviewThreadMutation: (_number, _threadId, _expectedHead, operation) => operation(),
+                    log: (message) => calls.push(`log:${message}`),
+                })
+            ).toThrow(/pull-request changed while reading review threads/i);
+            expect(calls).toEqual([]);
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+            rmSync(fakeGh.root, { recursive: true, force: true });
+        }
+    });
+    it('fails closed when a same-head inner snapshot shows the thread became unresolved before completed-resolution success', () => {
+        const repository = createTemporaryGitRepository();
+        const linkedReply = {
+            id: replyId,
+            fullDatabaseId: '9223372036854775808',
+            body: 'Done',
+            author: { id: AUTHOR_BOT_NODE_ID, login: 'renamed-author', __typename: 'Bot' },
+            pullRequestReview: {
+                id: reviewId,
+                state: 'COMMENTED',
+                body: resolutionReviewSummary(pullRequestId, threadId, movedHead),
+                commit: { oid: movedHead },
+                author: { id: AUTHOR_BOT_NODE_ID, login: 'renamed-author', __typename: 'Bot' },
+            },
+        };
+        const fakeGh = createFakeGhExecutable({
+            'threads:': threadPage(
+                [
+                    {
+                        id: threadId,
+                        isResolved: true,
+                        resolvedBy: { id: AUTHOR_BOT_NODE_ID, login: 'renamed-author', __typename: 'User' },
+                    },
+                ],
+                false,
+                null,
+                movedHead
+            ),
+            [`comments:${threadId}:`]: commentPage(
+                [root, linkedReply],
+                false,
+                null,
+                threadId,
+                movedHead,
+                pullRequestId,
+                { isResolved: false, resolvedBy: null }
+            ),
+            'reviews:': reviewPage([], false, null, movedHead),
+        });
+        const basePort = shellPort(
+            {
+                configDir: repository,
+                env: { SOURDAW_TRUSTED_GH_PATH: fakeGh.executable },
+                dispose() {},
+            },
+            repository
+        );
+        const calls: string[] = [];
+        try {
+            expect(() =>
+                resolveReviewThread(42, threadId, movedHead, AUTHOR_BOT_NODE_ID, {
+                    ...basePort,
+                    createPendingReview: () => {
+                        calls.push('createPendingReview');
+                        throw new Error('unexpected create');
+                    },
+                    updateReviewBody: () => {
+                        calls.push('updateReviewBody');
+                        throw new Error('unexpected update');
+                    },
+                    submitReview: () => {
+                        calls.push('submitReview');
+                        throw new Error('unexpected submit');
+                    },
+                    replyDone: () => {
+                        calls.push('replyDone');
+                        throw new Error('unexpected reply');
+                    },
+                    resolve: () => {
+                        calls.push('resolve');
+                        throw new Error('unexpected resolve');
+                    },
+                    deletePendingReview: (id) => {
+                        calls.push(`deleteReview:${id}`);
+                    },
+                    deleteReply: (id) => {
+                        calls.push(`deleteReply:${id}`);
+                    },
+                    serializeReviewThreadMutation: (_number, _threadId, _expectedHead, operation) => operation(),
+                    log: (message) => calls.push(`log:${message}`),
+                })
+            ).toThrow(/changed while reading review comments/i);
             expect(calls).toEqual([]);
         } finally {
             rmSync(repository, { recursive: true, force: true });
@@ -3201,7 +3429,7 @@ describe('review thread resolution', () => {
         expect(calls).toEqual([
             'inspect:1',
             'inspect:2',
-            `inspectAttachedReviewThreads:42:PRR_pending_reply:${movedHead}`,
+            `inspectAttachedReviewThreads:42:PRR_pending_reply:${pullRequestId}:${movedHead}`,
             'deleteReview:PRR_pending_reply',
             'inspect:3',
             'inspect:4',

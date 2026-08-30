@@ -98,7 +98,12 @@ export type ReviewResolutionLockOwner = {
 };
 export type ResolveReviewThreadPort = {
     inspect: (number: number, threadId: string) => ReviewThreadInspection;
-    inspectAttachedReviewThreadIds: (number: number, reviewId: string, expectedHead: string) => string[];
+    inspectAttachedReviewThreadIds: (
+        number: number,
+        reviewId: string,
+        expectedPullRequestId: string,
+        expectedHead: string
+    ) => string[];
     createPendingReview: (pullRequestId: string, commitOid: string, body: string) => ReviewEnvelopeReceipt;
     replyDone: (threadId: string, reviewId: string) => ReviewReply;
     submitReview: (reviewId: string, body: string) => ReviewEnvelopeReceipt;
@@ -1372,7 +1377,7 @@ function deletePendingReviewSafely(
 ): void {
     const allowedThreadIds = new Set(allowedAttachedThreadIds);
     const attachedThreadIds = [
-        ...new Set(port.inspectAttachedReviewThreadIds(number, reviewId, context.expectedHead)),
+        ...new Set(port.inspectAttachedReviewThreadIds(number, reviewId, context.pullRequestId, context.expectedHead)),
     ].sort();
     const unsafeThreadIds = attachedThreadIds.filter((threadId) => !allowedThreadIds.has(threadId));
     if (unsafeThreadIds.length > 0) {
@@ -1570,8 +1575,8 @@ export function shellPort(session: GhSession, cwd: string = process.cwd()): Reso
     const gh = (args: string[]) => spawnCapture('gh', args, { cwd: primaryRoot, env: session.env });
     return {
         inspect: (number, id) => inspectReviewThread(number, id, gh),
-        inspectAttachedReviewThreadIds: (number, reviewId, expectedHead) =>
-            inspectAttachedReviewThreadIds(number, reviewId, expectedHead, gh),
+        inspectAttachedReviewThreadIds: (number, reviewId, expectedPullRequestId, expectedHead) =>
+            inspectAttachedReviewThreadIds(number, reviewId, expectedPullRequestId, expectedHead, gh),
         createPendingReview: (pullRequestId, commitOid, body) =>
             createPendingReview(pullRequestId, commitOid, body, gh),
         replyDone: (id, reviewId) => mutationReply(id, reviewId, gh),
@@ -1923,10 +1928,13 @@ export function inspectReviewThread(number: number, requestedThreadId: string, g
                     pullRequestId,
                     head,
                     requestedThreadId,
-                    selected.isResolved,
-                    selected.resolvedBy?.id,
-                    selected.resolvedBy?.login,
-                    selected.resolvedBy?.__typename,
+                    threadResolutionSnapshot(
+                        requestedThreadId,
+                        selected.isResolved,
+                        selected.resolvedBy?.id,
+                        selected.resolvedBy?.login,
+                        selected.resolvedBy?.__typename
+                    ),
                     gh
                 ),
                 pendingReviews: inspectPendingReviews(number, pullRequestId, head, gh),
@@ -1948,7 +1956,13 @@ export function inspectReviewThread(number: number, requestedThreadId: string, g
         cursor = next;
     }
 }
-function inspectAttachedReviewThreadIds(number: number, reviewId: string, expectedHead: string, gh: Gh): string[] {
+function inspectAttachedReviewThreadIds(
+    number: number,
+    reviewId: string,
+    expectedPullRequestId: string,
+    expectedHead: string,
+    gh: Gh
+): string[] {
     const [owner, name] = REQUIRED_REPOSITORY.split('/');
     if (owner === undefined || name === undefined) {
         fail(`invalid GitHub repository: ${REQUIRED_REPOSITORY}`);
@@ -1979,10 +1993,13 @@ function inspectAttachedReviewThreadIds(number: number, reviewId: string, expect
         if (typeof pullRequest?.id !== 'string' || typeof pullRequest.headRefOid !== 'string') {
             fail(`cannot read current head for PR #${number}`);
         }
+        if (pullRequest.id !== expectedPullRequestId) {
+            fail(`pull-request changed while reading review threads for PR #${number}`);
+        }
         if (pullRequestId === undefined) {
             pullRequestId = pullRequest.id;
         } else if (pullRequestId !== pullRequest.id) {
-            fail(`pull-request head changed while reading review threads for PR #${number}`);
+            fail(`pull-request changed while reading review threads for PR #${number}`);
         }
         if (
             canonicalGitObjectId(pullRequest.headRefOid, `cannot read current head for PR #${number}`) !== expectedHead
@@ -2012,10 +2029,13 @@ function inspectAttachedReviewThreadIds(number: number, reviewId: string, expect
                     pullRequestId,
                     expectedHead,
                     thread.id,
-                    thread.isResolved,
-                    thread.resolvedBy?.id,
-                    thread.resolvedBy?.login,
-                    thread.resolvedBy?.__typename,
+                    threadResolutionSnapshot(
+                        thread.id,
+                        thread.isResolved,
+                        thread.resolvedBy?.id,
+                        thread.resolvedBy?.login,
+                        thread.resolvedBy?.__typename
+                    ),
                     gh
                 ).comments.some((comment) => comment.reviewId === reviewId)
             ) {
@@ -2105,21 +2125,21 @@ function inspectThreadComments(
     pullRequestId: string,
     expectedHead: string,
     threadId: string,
-    isResolved: unknown,
-    resolvedByNodeId: unknown,
-    resolvedByLogin: unknown,
-    resolvedByType: unknown,
+    expectedResolution: {
+        isResolved: boolean;
+        resolvedByNodeId: string | null;
+        resolvedByLogin: string | null;
+        resolvedByType: string | null;
+    },
     gh: Gh
 ): ReviewThread {
-    if (typeof isResolved !== 'boolean') {
-        fail(`invalid review thread ${threadId}`);
-    }
     let cursor: string | undefined;
     const cursors = new Set<string>();
     const comments: ReviewComment[] = [];
+    let currentResolution = expectedResolution;
     for (;;) {
         const connection = cursor === undefined ? 'comments(first:100)' : 'comments(first:100,after:$cursor)';
-        const query = `query($owner:String!,$name:String!,$number:Int!,$threadId:ID!${cursor === undefined ? '' : ',$cursor:String!'}){repository(owner:$owner,name:$name){pullRequest(number:$number){id headRefOid}} node(id:$threadId){... on PullRequestReviewThread{id ${connection}{nodes{id fullDatabaseId body author{login __typename ... on Bot{id}} pullRequestReview{id state body commit{oid} author{login __typename ... on Bot{id}}}} pageInfo{hasNextPage endCursor}}}}}`;
+        const query = `query($owner:String!,$name:String!,$number:Int!,$threadId:ID!${cursor === undefined ? '' : ',$cursor:String!'}){repository(owner:$owner,name:$name){pullRequest(number:$number){id headRefOid}} node(id:$threadId){... on PullRequestReviewThread{id isResolved resolvedBy{id login __typename} ${connection}{nodes{id fullDatabaseId body author{login __typename ... on Bot{id}} pullRequestReview{id state body commit{oid} author{login __typename ... on Bot{id}}}} pageInfo{hasNextPage endCursor}}}}}`;
         const [owner, name] = REQUIRED_REPOSITORY.split('/');
         if (owner === undefined || name === undefined) {
             fail(`invalid GitHub repository: ${REQUIRED_REPOSITORY}`);
@@ -2147,6 +2167,8 @@ function inspectThreadComments(
                 };
                 node?: {
                     id?: unknown;
+                    isResolved?: unknown;
+                    resolvedBy?: { id?: unknown; login?: unknown; __typename?: unknown } | null;
                     comments?: { nodes?: unknown; pageInfo?: { hasNextPage?: unknown; endCursor?: unknown } };
                 } | null;
             };
@@ -2160,11 +2182,20 @@ function inspectThreadComments(
         const thread = response.data?.node;
         if (
             thread?.id !== threadId ||
+            typeof thread.isResolved !== 'boolean' ||
             !Array.isArray(thread.comments?.nodes) ||
             typeof thread.comments.pageInfo?.hasNextPage !== 'boolean'
         ) {
             fail(`invalid review comments for thread ${threadId}`);
         }
+        currentResolution = threadResolutionSnapshot(
+            threadId,
+            thread.isResolved,
+            thread.resolvedBy?.id,
+            thread.resolvedBy?.login,
+            thread.resolvedBy?.__typename
+        );
+        assertMatchingThreadResolutionSnapshot(threadId, expectedResolution, currentResolution);
         for (const value of thread.comments.nodes) {
             const comment = toReviewComment(value);
             if (comments.some((current) => current.id === comment.id)) {
@@ -2185,10 +2216,10 @@ function inspectThreadComments(
     const root = comments[0];
     return {
         id: threadId,
-        isResolved,
-        resolvedByNodeId: typeof resolvedByNodeId === 'string' ? resolvedByNodeId : null,
-        resolvedByLogin: typeof resolvedByLogin === 'string' ? resolvedByLogin : null,
-        resolvedByType: typeof resolvedByType === 'string' ? resolvedByType : null,
+        isResolved: currentResolution.isResolved,
+        resolvedByNodeId: currentResolution.resolvedByNodeId,
+        resolvedByLogin: currentResolution.resolvedByLogin,
+        resolvedByType: currentResolution.resolvedByType,
         rootCommentId: root?.id ?? null,
         rootCommentFullDatabaseId: root?.fullDatabaseId ?? null,
         rootAuthorNodeId: root?.authorNodeId ?? null,
@@ -2196,6 +2227,52 @@ function inspectThreadComments(
         rootAuthorType: root?.authorType ?? null,
         comments,
     };
+}
+function threadResolutionSnapshot(
+    threadId: string,
+    isResolved: unknown,
+    resolvedByNodeId: unknown,
+    resolvedByLogin: unknown,
+    resolvedByType: unknown
+): {
+    isResolved: boolean;
+    resolvedByNodeId: string | null;
+    resolvedByLogin: string | null;
+    resolvedByType: string | null;
+} {
+    if (typeof isResolved !== 'boolean') {
+        fail(`invalid review thread ${threadId}`);
+    }
+    return {
+        isResolved,
+        resolvedByNodeId: typeof resolvedByNodeId === 'string' ? resolvedByNodeId : null,
+        resolvedByLogin: typeof resolvedByLogin === 'string' ? resolvedByLogin : null,
+        resolvedByType: typeof resolvedByType === 'string' ? resolvedByType : null,
+    };
+}
+function assertMatchingThreadResolutionSnapshot(
+    threadId: string,
+    expected: {
+        isResolved: boolean;
+        resolvedByNodeId: string | null;
+        resolvedByLogin: string | null;
+        resolvedByType: string | null;
+    },
+    current: {
+        isResolved: boolean;
+        resolvedByNodeId: string | null;
+        resolvedByLogin: string | null;
+        resolvedByType: string | null;
+    }
+): void {
+    if (
+        expected.isResolved !== current.isResolved ||
+        expected.resolvedByNodeId !== current.resolvedByNodeId ||
+        expected.resolvedByLogin !== current.resolvedByLogin ||
+        expected.resolvedByType !== current.resolvedByType
+    ) {
+        fail(`review thread ${threadId} changed while reading review comments`);
+    }
 }
 function assertExpectedPullRequestSnapshot(
     pullRequest: { id?: unknown; headRefOid?: unknown } | null | undefined,
