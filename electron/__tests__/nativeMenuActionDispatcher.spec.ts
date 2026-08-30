@@ -8,16 +8,16 @@ import {
 } from '../nativeMenuActionDispatcher.js';
 
 type NativeMenuActionWindowFixture = NativeMenuActionWindow & {
-    readonly send: ReturnType<typeof vi.fn>;
+    readonly send: NativeMenuActionWindow['webContents']['send'];
     destroyed: boolean;
 };
 
 const makeWindow = (): NativeMenuActionWindowFixture => {
     const window: NativeMenuActionWindowFixture = {
         destroyed: false,
-        send: vi.fn(),
+        send: vi.fn<NativeMenuActionWindow['webContents']['send']>(),
         isDestroyed: () => window.destroyed,
-        webContents: { send: (...args: Parameters<typeof window.send>) => window.send(...args) },
+        webContents: { send: (channel, intent) => window.send(channel, intent) },
     };
     return window;
 };
