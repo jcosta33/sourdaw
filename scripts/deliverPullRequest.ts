@@ -2207,16 +2207,41 @@ function readDeliveryReceiptProofFromGithub(
         };
     };
     let page = readPage(null);
-    const commentIds = [...page.commentIds];
-    while (page.pageInfo.hasNextPage && page.pageInfo.endCursor !== null && commentIds.length < page.totalCount) {
-        page = readPage(page.pageInfo.endCursor);
-        commentIds.push(...page.commentIds);
+    const expectedTotalCount = page.totalCount;
+    const commentIds: string[] = [];
+    const seenCommentIds = new Set<string>();
+    let cursor: string | null = null;
+    while (true) {
+        if (page.totalCount !== expectedTotalCount) {
+            fail(`cannot inspect delivery receipts for PR #${number}`);
+        }
+        for (const commentId of page.commentIds) {
+            if (seenCommentIds.has(commentId)) {
+                fail(`cannot inspect delivery receipts for PR #${number}`);
+            }
+            seenCommentIds.add(commentId);
+            commentIds.push(commentId);
+        }
+        if (commentIds.length > expectedTotalCount) {
+            fail(`cannot inspect delivery receipts for PR #${number}`);
+        }
+        if (!page.pageInfo.hasNextPage) {
+            break;
+        }
+        if (page.pageInfo.endCursor === null || page.pageInfo.endCursor === cursor) {
+            fail(`cannot inspect delivery receipts for PR #${number}`);
+        }
+        if (commentIds.length >= expectedTotalCount) {
+            fail(`cannot inspect delivery receipts for PR #${number}`);
+        }
+        cursor = page.pageInfo.endCursor;
+        page = readPage(cursor);
     }
-    if (commentIds.length !== page.totalCount) {
+    if (commentIds.length !== expectedTotalCount) {
         fail(`cannot inspect delivery receipts for PR #${number}`);
     }
     return {
-        totalCount: page.totalCount,
+        totalCount: expectedTotalCount,
         latestCommentId: commentIds.at(-1),
         commentIds,
     };

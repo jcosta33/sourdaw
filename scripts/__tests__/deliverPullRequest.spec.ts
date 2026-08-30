@@ -400,17 +400,17 @@ function deliveryReceiptProofForIds(commentIds: string[]): DeliveryReceiptProof 
 
 function shellDeliveryReceiptProofResponse(
     commentIds: string[],
-    pageInfo?: { hasNextPage?: boolean; endCursor?: string | null }
+    options?: { hasNextPage?: boolean; endCursor?: string | null; totalCount?: number }
 ) {
     return JSON.stringify({
         data: {
             repository: {
                 pullRequest: {
                     comments: {
-                        totalCount: commentIds.length,
+                        totalCount: options?.totalCount ?? commentIds.length,
                         pageInfo: {
-                            hasNextPage: pageInfo?.hasNextPage ?? false,
-                            endCursor: pageInfo?.endCursor ?? null,
+                            hasNextPage: options?.hasNextPage ?? false,
+                            endCursor: options?.endCursor ?? null,
                         },
                         nodes: commentIds.map((id) => ({ id })),
                     },
@@ -6064,6 +6064,72 @@ describe('delivery shell boundary', () => {
         ]);
     });
 
+    it('reads a stable multi-page GraphQL receipt proof to the final page before trusting the sequence', () => {
+        const captures: Array<{ command: string; args: string[] }> = [];
+        const port = shellPort('jcosta33/sourdaw', {
+            capture: (_command, args) => {
+                captures.push({ command: 'gh', args });
+                const joined = args.join(' ');
+                if (
+                    joined.includes(
+                        'comments(first:100,after:$cursor){totalCount pageInfo{hasNextPage endCursor} nodes{id}}'
+                    )
+                ) {
+                    if (joined.includes('cursor=cursor-1')) {
+                        return shellDeliveryReceiptProofResponse(['IC_receipt_older', 'IC_receipt_newest'], {
+                            totalCount: 4,
+                        });
+                    }
+                    return shellDeliveryReceiptProofResponse(['IC_author_note', 'IC_foreign_copy'], {
+                        totalCount: 4,
+                        hasNextPage: true,
+                        endCursor: 'cursor-1',
+                    });
+                }
+                throw new Error(`unexpected capture: ${joined}`);
+            },
+            run: () => undefined,
+        });
+
+        expect(port.deliveryReceiptProof(42)).toEqual(
+            deliveryReceiptProofForIds(['IC_author_note', 'IC_foreign_copy', 'IC_receipt_older', 'IC_receipt_newest'])
+        );
+        expect(captures).toEqual([
+            {
+                command: 'gh',
+                args: [
+                    'api',
+                    'graphql',
+                    '-f',
+                    'query=query($owner:String!,$name:String!,$number:Int!,$cursor:String){repository(owner:$owner,name:$name){pullRequest(number:$number){comments(first:100,after:$cursor){totalCount pageInfo{hasNextPage endCursor} nodes{id}}}}}',
+                    '-f',
+                    'owner=jcosta33',
+                    '-f',
+                    'name=sourdaw',
+                    '-F',
+                    'number=42',
+                ],
+            },
+            {
+                command: 'gh',
+                args: [
+                    'api',
+                    'graphql',
+                    '-f',
+                    'query=query($owner:String!,$name:String!,$number:Int!,$cursor:String){repository(owner:$owner,name:$name){pullRequest(number:$number){comments(first:100,after:$cursor){totalCount pageInfo{hasNextPage endCursor} nodes{id}}}}}',
+                    '-f',
+                    'owner=jcosta33',
+                    '-f',
+                    'name=sourdaw',
+                    '-F',
+                    'number=42',
+                    '-f',
+                    'cursor=cursor-1',
+                ],
+            },
+        ]);
+    });
+
     it.each([
         {
             merger: 'foreign',
@@ -6721,6 +6787,57 @@ describe('delivery shell boundary', () => {
             })
         ).toThrow(/delivery receipt authority cannot be proven|delivery receipt changed during recovery/i);
         expect(effects).toEqual([]);
+    });
+
+    it('fails shellPort receipt proof when the first GraphQL page already reaches totalCount but still claims another page', () => {
+        const port = shellPort('jcosta33/sourdaw', {
+            capture: (_command, args) => {
+                const joined = args.join(' ');
+                if (
+                    joined.includes(
+                        'comments(first:100,after:$cursor){totalCount pageInfo{hasNextPage endCursor} nodes{id}}'
+                    )
+                ) {
+                    return shellDeliveryReceiptProofResponse(['IC_x'], {
+                        totalCount: 1,
+                        hasNextPage: true,
+                        endCursor: 'cursor-1',
+                    });
+                }
+                throw new Error(`unexpected capture: ${joined}`);
+            },
+            run: () => undefined,
+        });
+
+        expect(() => port.deliveryReceiptProof(42)).toThrow(/cannot inspect delivery receipts for PR #42/i);
+    });
+
+    it('fails shellPort receipt proof when a later GraphQL page changes totalCount', () => {
+        const port = shellPort('jcosta33/sourdaw', {
+            capture: (_command, args) => {
+                const joined = args.join(' ');
+                if (
+                    joined.includes(
+                        'comments(first:100,after:$cursor){totalCount pageInfo{hasNextPage endCursor} nodes{id}}'
+                    )
+                ) {
+                    if (joined.includes('cursor=cursor-1')) {
+                        return shellDeliveryReceiptProofResponse(['IC_y'], {
+                            totalCount: 3,
+                        });
+                    }
+                    return shellDeliveryReceiptProofResponse(['IC_x'], {
+                        totalCount: 2,
+                        hasNextPage: true,
+                        endCursor: 'cursor-1',
+                    });
+                }
+                throw new Error(`unexpected capture: ${joined}`);
+            },
+            run: () => undefined,
+        });
+
+        expect(() => port.deliveryReceiptProof(42)).toThrow(/cannot inspect delivery receipts for PR #42/i);
     });
 
     /**
