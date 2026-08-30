@@ -229,6 +229,30 @@ describe('selectOfflineRenderEngine — the choice and its reason (#2225)', () =
         expect(selection).toEqual({ engine: 'native/offline', transport: stubTransport });
     });
 
+    it('hands a project whose extra is a bus-to-bus send to the native engine', async () => {
+        mocks.availability = { available: true, transport: stubTransport };
+        const { renderableTracks, scheduledTracks } = cleanProject();
+        const verb = createTrack({ id: 'bus-2', name: 'Verb', kind: 'bus' });
+        const project = {
+            scheduledTracks,
+            renderableTracks: [
+                ...renderableTracks.map((track) =>
+                    track.kind === 'bus'
+                        ? {
+                              ...track,
+                              sends: [{ busId: 'bus-2', level: 0.4, preFader: false }] as Track['sends'],
+                          }
+                        : track
+                ),
+                verb,
+            ],
+        };
+
+        const selection = await selectOfflineRenderEngine(project);
+
+        expect(selection).toEqual({ engine: 'native/offline', transport: stubTransport });
+    });
+
     describe('content gates — a shape the native engine refuses degrades instead', () => {
         /**
          * One case per clause of `contentGateReason`. The expected text is the
@@ -303,20 +327,6 @@ describe('selectOfflineRenderEngine — the choice and its reason (#2225)', () =
                     return { renderableTracks: [track], scheduledTracks: [track] };
                 },
                 reason: 'clip "clip-a" on track "Stretched A" is time-stretched (#2219)',
-            },
-            {
-                name: 'a send configured on a bus',
-                project: () => {
-                    const source = createTrack({
-                        id: 'bus-1',
-                        name: 'Cue',
-                        kind: 'bus',
-                        sends: [{ busId: 'bus-2', level: 0.4, preFader: false }] as Track['sends'],
-                    });
-                    const target = createTrack({ id: 'bus-2', name: 'Verb', kind: 'bus' });
-                    return { renderableTracks: [source, target], scheduledTracks: [] };
-                },
-                reason: 'bus "Cue" carries a send, which the native bus strip has no tap for',
             },
             {
                 name: 'a bus routed into a track',
