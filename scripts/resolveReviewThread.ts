@@ -1,6 +1,9 @@
 #!/usr/bin/env node
 import { spawn, spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { isAbsolute, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
@@ -132,6 +135,18 @@ type ReviewResolutionExecutionFence = {
     pgid: number;
 };
 const REVIEW_RESOLUTION_CHILD_ENV = 'SOURDAW_REVIEW_RESOLUTION_CHILD';
+const REVIEW_RESOLUTION_CHILD_MARKER_VERSION = 1;
+
+type ReviewResolutionChildLaunchMarker = {
+    path: string;
+    token: string;
+};
+
+type PersistedReviewResolutionChildLaunchMarker = {
+    version: 1;
+    token: string;
+    pid: number | null;
+};
 
 function canonicalGitObjectId(value: string, label: string, lengths: number[] = [40]): string {
     const trimmed = value.trim();
@@ -142,6 +157,100 @@ function canonicalGitObjectId(value: string, label: string, lengths: number[] = 
         fail(label);
     }
     return trimmed.toLowerCase();
+}
+
+function invalidReviewResolutionChildMarker(): never {
+    fail('review:resolve detached launcher marker is invalid');
+}
+
+function isPositiveSafeInteger(value: unknown): value is number {
+    return typeof value === 'number' && Number.isSafeInteger(value) && value > 0;
+}
+
+function parseReviewResolutionChildLaunchMarker(value: string): ReviewResolutionChildLaunchMarker {
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(value) as unknown;
+    } catch {
+        invalidReviewResolutionChildMarker();
+    }
+    if (
+        typeof parsed !== 'object' ||
+        parsed === null ||
+        !('path' in parsed) ||
+        typeof parsed.path !== 'string' ||
+        parsed.path.trim() === '' ||
+        !isAbsolute(parsed.path) ||
+        normalize(parsed.path) !== parsed.path ||
+        !('token' in parsed) ||
+        typeof parsed.token !== 'string' ||
+        !REVIEW_RESOLUTION_LOCK_TOKEN_PATTERN.test(parsed.token)
+    ) {
+        invalidReviewResolutionChildMarker();
+    }
+    return { path: parsed.path, token: parsed.token };
+}
+
+function readPersistedReviewResolutionChildLaunchMarker(
+    marker: ReviewResolutionChildLaunchMarker
+): PersistedReviewResolutionChildLaunchMarker {
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(readFileSync(marker.path, 'utf8')) as unknown;
+    } catch {
+        invalidReviewResolutionChildMarker();
+    }
+    const pid = typeof parsed === 'object' && parsed !== null && 'pid' in parsed ? parsed.pid : undefined;
+    if (
+        typeof parsed !== 'object' ||
+        parsed === null ||
+        Object.keys(parsed).length !== 3 ||
+        !('version' in parsed) ||
+        parsed.version !== REVIEW_RESOLUTION_CHILD_MARKER_VERSION ||
+        !('token' in parsed) ||
+        parsed.token !== marker.token ||
+        pid === undefined ||
+        (pid !== null && !isPositiveSafeInteger(pid))
+    ) {
+        invalidReviewResolutionChildMarker();
+    }
+    return {
+        version: REVIEW_RESOLUTION_CHILD_MARKER_VERSION,
+        token: marker.token,
+        pid,
+    };
+}
+
+function writePersistedReviewResolutionChildLaunchMarker(path: string, token: string, pid: number | null): void {
+    const persisted: PersistedReviewResolutionChildLaunchMarker = {
+        version: REVIEW_RESOLUTION_CHILD_MARKER_VERSION,
+        token,
+        pid,
+    };
+    writeFileSync(path, JSON.stringify(persisted), { encoding: 'utf8', mode: 0o600 });
+}
+
+function createReviewResolutionChildLaunchMarker(): {
+    envValue: string;
+    bindChildPid: (pid: number) => void;
+    cleanup: () => void;
+} {
+    const root = mkdtempSync(join(tmpdir(), 'sourdaw-review-resolve-'));
+    const path = join(root, 'child-marker.json');
+    const token = randomUUID();
+    writePersistedReviewResolutionChildLaunchMarker(path, token, null);
+    return {
+        envValue: JSON.stringify({ path, token }),
+        bindChildPid: (pid) => {
+            if (!Number.isSafeInteger(pid) || pid <= 0) {
+                invalidReviewResolutionChildMarker();
+            }
+            writePersistedReviewResolutionChildLaunchMarker(path, token, pid);
+        },
+        cleanup: () => {
+            rmSync(root, { recursive: true, force: true });
+        },
+    };
 }
 
 export function parseResolveReviewThreadArgs(args: string[]): ResolveReviewThreadArgs {
@@ -1564,6 +1673,30 @@ function currentReviewResolutionExecutionFence(): ReviewResolutionExecutionFence
     return { pid, pgid: currentProcessGroupId(pid) };
 }
 
+async function assertDetachedReviewResolutionChild(markerValue: string): Promise<void> {
+    if (process.platform === 'win32') {
+        fail('review-resolution lock requires POSIX process-group fencing');
+    }
+    const marker = parseReviewResolutionChildLaunchMarker(markerValue);
+    const { pid, pgid } = currentReviewResolutionExecutionFence();
+    if (pid !== pgid) {
+        fail('review:resolve must run in its own detached POSIX process group');
+    }
+    for (let attempt = 0; attempt < 50; attempt += 1) {
+        const persisted = readPersistedReviewResolutionChildLaunchMarker(marker);
+        if (persisted.pid === null) {
+            await new Promise((resolve) => setTimeout(resolve, 10));
+            continue;
+        }
+        if (persisted.pid !== pid) {
+            invalidReviewResolutionChildMarker();
+        }
+        rmSync(marker.path, { force: true });
+        return;
+    }
+    invalidReviewResolutionChildMarker();
+}
+
 function isLiveProcessGroup(pgid: number): boolean {
     try {
         process.kill(-pgid, 0);
@@ -2199,23 +2332,32 @@ export function deleteReply(replyId: string, gh: Gh): void {
 }
 
 async function runResolveReviewThreadInDetachedProcess(args: string[]): Promise<number> {
-    const child = spawn(process.execPath, [fileURLToPath(import.meta.url), ...args], {
-        cwd: process.cwd(),
-        env: { ...process.env, [REVIEW_RESOLUTION_CHILD_ENV]: '1' },
-        stdio: 'inherit',
-        shell: false,
-        detached: true,
-    });
-    return await new Promise<number>((resolve, reject) => {
-        child.once('error', reject);
-        child.once('close', (code, signal) => {
-            if (code === null) {
-                reject(new Error(`review:resolve terminated by ${signal ?? 'unknown signal'}`));
-                return;
-            }
-            resolve(code);
+    const marker = createReviewResolutionChildLaunchMarker();
+    try {
+        const child = spawn(process.execPath, [fileURLToPath(import.meta.url), ...args], {
+            cwd: process.cwd(),
+            env: { ...process.env, [REVIEW_RESOLUTION_CHILD_ENV]: marker.envValue },
+            stdio: 'inherit',
+            shell: false,
+            detached: true,
         });
-    });
+        if (child.pid === undefined) {
+            fail('review:resolve detached launcher could not determine the child process');
+        }
+        marker.bindChildPid(child.pid);
+        return await new Promise<number>((resolve, reject) => {
+            child.once('error', reject);
+            child.once('close', (code, signal) => {
+                if (code === null) {
+                    reject(new Error(`review:resolve terminated by ${signal ?? 'unknown signal'}`));
+                    return;
+                }
+                resolve(code);
+            });
+        });
+    } finally {
+        marker.cleanup();
+    }
 }
 
 async function main(): Promise<number> {
@@ -2227,9 +2369,11 @@ async function main(): Promise<number> {
     if (parsed.number === undefined || parsed.threadId === undefined || parsed.head === undefined) {
         fail(usage);
     }
-    if (process.env[REVIEW_RESOLUTION_CHILD_ENV] !== '1') {
+    const childMarker = process.env[REVIEW_RESOLUTION_CHILD_ENV];
+    if (childMarker === undefined) {
         return await runResolveReviewThreadInDetachedProcess(process.argv.slice(2));
     }
+    await assertDetachedReviewResolutionChild(childMarker);
     const cwd = process.cwd();
     assertTrustedExecutingBlob(
         'scripts/resolveReviewThread.ts',

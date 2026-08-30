@@ -785,6 +785,23 @@ async function waitForReviewResolutionLock(
     throw new Error(`review-resolution lock for PR #${number} did not appear`);
 }
 
+async function waitForProcessExitWithoutReviewResolutionLock(
+    child: ReturnType<typeof spawn>,
+    repository: string,
+    number: number
+): Promise<void> {
+    for (let attempt = 0; attempt < 200; attempt += 1) {
+        if (readLockOid(repository, number) !== undefined) {
+            throw new Error(`unexpected review-resolution lock for PR #${number}`);
+        }
+        if (child.exitCode !== null || child.signalCode !== null) {
+            return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    throw new Error(`process did not exit before creating a review-resolution lock for PR #${number}`);
+}
+
 function writeResolveReviewSnapshot(snapshotRoot: string): string {
     const scriptsRoot = join(snapshotRoot, 'scripts');
     mkdirSync(scriptsRoot, { recursive: true });
@@ -1073,6 +1090,40 @@ describe('review thread resolution', () => {
             rmSync(repository, { recursive: true, force: true });
         }
     });
+
+    it('rejects a forged preset child marker before creating the PR lock', async () => {
+        const repository = createTemporaryGitRepository();
+        const snapshotRoot = mkdtempSync(join(tmpdir(), 'sourdaw-review-resolve-forged-marker-'));
+        const entryPath = writeResolveReviewSnapshot(snapshotRoot);
+        const child = spawn(process.execPath, [entryPath, '42', '--thread', threadId, '--head', head], {
+            cwd: repository,
+            env: {
+                ...process.env,
+                SOURDAW_TEST_PRIMARY_ROOT: repository,
+                SOURDAW_REVIEW_RESOLUTION_CHILD: '1',
+            },
+            stdio: ['ignore', 'ignore', 'pipe'],
+            shell: false,
+            detached: true,
+        });
+        let stderr = '';
+        child.stderr?.setEncoding('utf8');
+        child.stderr?.on('data', (chunk: string) => {
+            stderr += chunk;
+        });
+        try {
+            await waitForProcessExitWithoutReviewResolutionLock(child, repository, 42);
+            await waitForExit(child);
+            expect(child.exitCode).toBe(1);
+            expect(stderr).toMatch(/detached launcher marker is invalid/i);
+            expect(readLockOid(repository, 42)).toBeUndefined();
+        } finally {
+            child.kill('SIGKILL');
+            await waitForExit(child).catch(() => undefined);
+            rmSync(snapshotRoot, { recursive: true, force: true });
+            rmSync(repository, { recursive: true, force: true });
+        }
+    }, 10_000);
 
     it('launches review:resolve in a detached worker group and keeps recovery fenced until that group exits', async () => {
         const repository = createTemporaryGitRepository();
