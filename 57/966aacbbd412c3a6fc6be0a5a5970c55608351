@@ -1,0 +1,23 @@
+tests/e2e/transportResponsive.spec.ts
+  s_ae074277795b45::t_9ada50bf4354df 165
+src/modules/WorkspaceShell/presentations/views/TransportBar.tsx
+  s_ae074277795b45::t_78133dde8d5e07 325-330
+  s_ae074277795b45::t_24e7b1a1d012c7 1,40,60-67,73,77-78,125,128-129,142,159-170,334-338
+  s_ae074277795b45::t_63a36835885e97 171-172
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "57966aacbbd412c3a6fc6be0a5a5970c55608351",
+  "prompts": {},
+  "sessions": {
+    "s_ae074277795b45": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04ab5-5234-7100-be1c-76ebfaba88d3",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
