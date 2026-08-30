@@ -18,6 +18,7 @@ import {
     publishReviewResolutionChildLaunchMarker,
     readPersistedReviewResolutionChildLaunchMarker,
     runResolveReviewThreadCli,
+    currentWindowsProcessTreeFence,
     reviewResolutionOwnerFenceIsLive,
     resolveReviewThread,
     shellPort,
@@ -212,6 +213,7 @@ type Input = {
     existingPendingReviewIds?: readonly string[];
     existingPendingReviewBody?: string;
     existingPendingReviewCommitOid?: string;
+    expectedAttachedReviewThreadInspectionHead?: string;
     createReceiptAuthorNodeId?: string | null;
     createReceiptAuthorType?: string | null;
     addExactForeignPendingReview?: boolean;
@@ -714,6 +716,12 @@ function fakePort(input: Input = {}) {
         },
         inspectAttachedReviewThreadIds: (number, id, expectedPullRequestId, expectedHead) => {
             calls.push(`inspectAttachedReviewThreads:${number}:${id}:${expectedPullRequestId}:${expectedHead}`);
+            if (
+                typeof input.expectedAttachedReviewThreadInspectionHead === 'string' &&
+                expectedHead !== input.expectedAttachedReviewThreadInspectionHead
+            ) {
+                throw new Error(`unexpected attachment inspection head ${expectedHead}`);
+            }
             const attachedThreadIds = new Set(input.attachedReviewThreadIdsByReviewId?.[id] ?? []);
             if (comments.some((comment) => comment.reviewId === id)) {
                 attachedThreadIds.add(threadId);
@@ -1801,7 +1809,7 @@ describe('review thread resolution', () => {
     it.each([
         ['ESRCH', false],
         ['EPERM', true],
-    ] as const)('treats injected Windows PID liveness %s as %s', (code, expected) => {
+    ] as const)('treats POSIX PID liveness %s as %s', (code, expected) => {
         const error = new Error(code) as NodeJS.ErrnoException;
         error.code = code;
         expect(
@@ -1819,7 +1827,7 @@ describe('review thread resolution', () => {
         ).toBe(expected);
     });
 
-    it('propagates unexpected injected Windows PID liveness failures', () => {
+    it('propagates unexpected POSIX PID liveness failures', () => {
         const failure = new Error('probe exploded');
         expect(() =>
             reviewResolutionOwnerFenceIsLive(
@@ -1836,7 +1844,26 @@ describe('review thread resolution', () => {
         ).toThrow(failure);
     });
 
-    it('treats a dead Windows root with a live descendant, PID reuse, or unavailable inspection as still live', () => {
+    it('fails closed for legacy Windows PID owners even when the root PID is gone', () => {
+        const error = new Error('missing root process') as NodeJS.ErrnoException;
+        error.code = 'ESRCH';
+        expect(
+            reviewResolutionOwnerFenceIsLive(
+                {
+                    kind: 'pid',
+                    pid: 1234,
+                },
+                {
+                    platform: 'win32',
+                    probe: () => {
+                        throw error;
+                    },
+                }
+            )
+        ).toBe(true);
+    });
+
+    it('fails closed for a Windows process-tree owner when the root is absent, reused, or inspection is unavailable', () => {
         const ownerFence = {
             kind: 'win32-process-tree' as const,
             version: 1 as const,
@@ -1850,6 +1877,17 @@ describe('review thread resolution', () => {
                         pid: 4101,
                         parentPid: 4100,
                         startedAt: '2026-08-30T12:00:01.000000+000',
+                    },
+                ],
+            })
+        ).toBe(true);
+        expect(
+            reviewResolutionOwnerFenceIsLive(ownerFence, {
+                inspectWindowsProcessRows: () => [
+                    {
+                        pid: 4102,
+                        parentPid: 4101,
+                        startedAt: '2026-08-30T12:00:02.000000+000',
                     },
                 ],
             })
@@ -1872,7 +1910,7 @@ describe('review thread resolution', () => {
         ).toBe(true);
     });
 
-    it('admits a dead Windows process tree only when both the root and its descendants are gone', () => {
+    it('keeps root-absent Windows process-tree locks unrecoverable because current process rows cannot prove the original tree is gone', () => {
         expect(
             reviewResolutionOwnerFenceIsLive(
                 {
@@ -1885,7 +1923,92 @@ describe('review thread resolution', () => {
                     inspectWindowsProcessRows: () => [],
                 }
             )
-        ).toBe(false);
+        ).toBe(true);
+    });
+
+    it('uses the exact trusted PowerShell path and root CreationDate when building a Windows process-tree fence', () => {
+        const calls: { executable: string; args: string[]; envPath: string | undefined }[] = [];
+        const env: NodeJS.ProcessEnv = { SOURDAW_TRUSTED_POWERSHELL_PATH: trustedPowerShellPath };
+        const fence = currentWindowsProcessTreeFence(4321, env, ((executable, args, options) => {
+            calls.push({
+                executable,
+                args: [...(args ?? [])],
+                envPath: options?.env?.SOURDAW_TRUSTED_POWERSHELL_PATH,
+            });
+            return {
+                pid: 0,
+                output: [],
+                stdout: '{"ProcessId":4321,"ParentProcessId":17,"CreationDate":"2026-08-30T12:34:56.000000+000"}',
+                stderr: '',
+                status: 0,
+                signal: null,
+            } as ReturnType<typeof spawnSync>;
+        }) as typeof spawnSync);
+        expect(fence).toEqual({
+            kind: 'win32-process-tree',
+            version: 1,
+            rootPid: 4321,
+            rootStartedAt: '2026-08-30T12:34:56.000000+000',
+        });
+        expect(calls).toEqual([
+            {
+                executable: trustedPowerShellPath,
+                args: [
+                    '-NoProfile',
+                    '-NonInteractive',
+                    '-Command',
+                    'Get-CimInstance Win32_Process -Filter "ProcessId = 4321" | Select-Object ProcessId,ParentProcessId,CreationDate | ConvertTo-Json -Compress',
+                ],
+                envPath: trustedPowerShellPath,
+            },
+        ]);
+    });
+
+    it('uses the exact trusted PowerShell path for full Windows process-tree liveness queries', () => {
+        const calls: { executable: string; args: string[]; envPath: string | undefined }[] = [];
+        expect(
+            reviewResolutionOwnerFenceIsLive(
+                {
+                    kind: 'win32-process-tree',
+                    version: 1,
+                    rootPid: 4400,
+                    rootStartedAt: '2026-08-30T12:00:00.000000+000',
+                },
+                {
+                    platform: 'win32',
+                    windowsProcessQueryEnv: {
+                        SOURDAW_TRUSTED_POWERSHELL_PATH: trustedPowerShellPath,
+                    },
+                    runWindowsProcessQuery: ((executable, args, options) => {
+                        calls.push({
+                            executable,
+                            args: [...(args ?? [])],
+                            envPath: options?.env?.SOURDAW_TRUSTED_POWERSHELL_PATH,
+                        });
+                        return {
+                            pid: 0,
+                            output: [],
+                            stdout: '[]',
+                            stderr: '',
+                            status: 0,
+                            signal: null,
+                        } as ReturnType<typeof spawnSync>;
+                    }) as typeof spawnSync,
+                }
+            )
+        ).toBe(true);
+        expect(calls).toEqual([
+            {
+                executable: trustedPowerShellPath,
+                args: [
+                    '-NoProfile',
+                    '-NonInteractive',
+                    '-Command',
+                    'Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,CreationDate | ConvertTo-Json -Compress',
+                ],
+                envPath: trustedPowerShellPath,
+            },
+        ]);
     });
 
     it.each([
@@ -2947,7 +3070,7 @@ describe('review thread resolution', () => {
         }
     });
 
-    it('keeps a dead Windows root fenced while its detached child tree is still live, then admits recovery after the child exits', () => {
+    it('does not recover a root-absent Windows process-tree lock after a child exits', () => {
         const repository = createTemporaryGitRepository();
         try {
             const ownerOid = writeLockOwnerBlob(
@@ -3005,34 +3128,20 @@ describe('review thread resolution', () => {
             ).toThrow(/still held by live Windows process tree rooted at process 4001/i);
 
             childLive = false;
-            expect(
+            expect(() =>
                 recoverPullRequestReviewResolutionLock(
                     repository,
                     42,
                     ownerOid,
-                    (owner) => {
-                        expect(owner.ownerFence).toEqual(currentExecutionFence.ownerFence);
-                        return {
-                            owner,
-                            inspection: {
-                                pullRequestId,
-                                head: owner.head,
-                                thread: { id: owner.threadId, isResolved: false },
-                                pendingReviews: [],
-                            },
-                        };
-                    },
+                    () => 'reconciled',
                     (ownerFence) =>
                         reviewResolutionOwnerFenceIsLive(ownerFence, {
                             inspectWindowsProcessRows: () => [],
                         }),
                     { platform: 'win32', executionFence: currentExecutionFence }
                 )
-            ).toMatchObject({
-                owner: { threadId, head, ownerFence: currentExecutionFence.ownerFence },
-                inspection: { head, thread: { id: threadId, isResolved: false }, pendingReviews: [] },
-            });
-            expect(readLockOid(repository, 42)).toBeUndefined();
+            ).toThrow(/Windows root-absent recovery is unavailable/i);
+            expect(readLockOid(repository, 42)).toBe(ownerOid);
         } finally {
             rmSync(repository, { recursive: true, force: true });
         }
@@ -5360,13 +5469,14 @@ describe('review thread resolution', () => {
             existingReplyCount: 1,
             existingReplyReviewBody: '',
             existingReplyReviewCommitOid: head,
+            expectedAttachedReviewThreadInspectionHead: movedHead,
         });
         expect(resolveReviewThread(42, threadId, movedHead, authorNodeId, port)).toBe(
             `review-thread-resolved:42:${threadId}`
         );
         expect(calls).toEqual([
             'inspect:1',
-            `inspectAttachedReviewThreads:42:${reviewId}:${pullRequestId}:${head}`,
+            `inspectAttachedReviewThreads:42:${reviewId}:${pullRequestId}:${movedHead}`,
             `updateReview:${reviewId}`,
             'inspect:2',
             `log:review-thread-resolved:42:${threadId}`,
@@ -5656,7 +5766,7 @@ describe('review thread resolution', () => {
         );
         expect(calls).toEqual([
             'inspect:1',
-            `inspectAttachedReviewThreads:42:${reviewId}:${pullRequestId}:${head}`,
+            `inspectAttachedReviewThreads:42:${reviewId}:${pullRequestId}:${movedHead}`,
             `updateReview:${reviewId}`,
             'inspect:2',
             `submitReview:${reviewId}`,

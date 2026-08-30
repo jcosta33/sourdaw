@@ -274,14 +274,18 @@ type ReviewResolutionChildValidationPort = {
     sleep?: (ms: number) => Promise<void>;
 };
 type ReviewResolutionLivenessProbe = (target: number) => void;
+type WindowsProcessQueryRunner = typeof spawnSync;
 type WindowsProcessRow = {
     pid: number;
     parentPid: number;
     startedAt: string;
 };
 type ReviewResolutionOwnerFenceLivenessPort = {
+    platform?: NodeJS.Platform;
     probe?: ReviewResolutionLivenessProbe;
     inspectWindowsProcessRows?: () => WindowsProcessRow[] | undefined;
+    runWindowsProcessQuery?: WindowsProcessQueryRunner;
+    windowsProcessQueryEnv?: NodeJS.ProcessEnv;
 };
 
 function canonicalGitObjectId(value: string, label: string, lengths: number[] = [40]): string {
@@ -627,13 +631,7 @@ function resolveReviewThreadWithinMutation(
                     );
                     if (stalePendingReplyReview.body.trim() === '') {
                         reviewUpdateAttempted = true;
-                        assertExclusiveBackfillReviewAttachment(
-                            number,
-                            stalePendingReplyReview.id,
-                            context,
-                            port,
-                            stalePendingReplyCommitOid
-                        );
+                        assertExclusiveBackfillReviewAttachment(number, stalePendingReplyReview.id, context, port);
                         const updatedReview = port.updateReviewBody(
                             stalePendingReplyReview.id,
                             resolutionReviewBody(context, stalePendingReplyCommitOid)
@@ -770,13 +768,7 @@ function resolveReviewThreadWithinMutation(
         if (canonicalReview.body.trim() === '') {
             reviewUpdateAttempted = true;
             const canonicalReviewCommitOid = requireReviewCommitOid(canonicalReview, `Done reply ${canonicalReply.id}`);
-            assertExclusiveBackfillReviewAttachment(
-                number,
-                canonicalReview.id,
-                context,
-                port,
-                canonicalReviewCommitOid
-            );
+            assertExclusiveBackfillReviewAttachment(number, canonicalReview.id, context, port);
             const updatedReview = port.updateReviewBody(
                 canonicalReview.id,
                 resolutionReviewBody(context, canonicalReviewCommitOid)
@@ -1551,7 +1543,7 @@ function repairManagedCommentedReviewEnvelopes(
         }
         const reviewCommitOid = requireReviewCommitOid(candidate.review, `Done reply ${candidate.marker.id}`);
         const expectedBody = resolutionReviewBody(context, reviewCommitOid);
-        assertExclusiveBackfillReviewAttachment(number, candidate.review.id, context, port, reviewCommitOid);
+        assertExclusiveBackfillReviewAttachment(number, candidate.review.id, context, port);
         beforeUpdate?.();
         const updatedReview = port.updateReviewBody(candidate.review.id, expectedBody);
         assertReviewEnvelopeReceipt(
@@ -2384,7 +2376,7 @@ function reviewResolutionOwnerFenceLabel(ownerFence: ReviewResolutionLockOwnerFe
     if (ownerFence.kind === 'pid') {
         return `process ${ownerFence.pid}`;
     }
-    return `Windows process tree rooted at process ${ownerFence.rootPid}`;
+    return `Windows process tree rooted at process ${ownerFence.rootPid}; Windows root-absent recovery is unavailable`;
 }
 
 function signalReviewResolutionLivenessTarget(target: number): void {
@@ -2418,9 +2410,10 @@ function isLiveProcessId(
 
 function readTrustedWindowsProcessRows(
     command: string,
-    env: NodeJS.ProcessEnv = process.env
+    env: NodeJS.ProcessEnv = process.env,
+    runWindowsProcessQuery: WindowsProcessQueryRunner = spawnSync
 ): WindowsProcessRow[] | undefined {
-    const result = spawnSync(
+    const result = runWindowsProcessQuery(
         trustedReviewResolutionPowerShellPath(env),
         ['-NoProfile', '-NonInteractive', '-Command', command],
         {
@@ -2473,20 +2466,26 @@ function parseWindowsProcessRows(output: string): WindowsProcessRow[] | undefine
     return normalized;
 }
 
-function inspectLiveWindowsProcesses(env: NodeJS.ProcessEnv = process.env): WindowsProcessRow[] | undefined {
+function inspectLiveWindowsProcesses(
+    env: NodeJS.ProcessEnv = process.env,
+    runWindowsProcessQuery: WindowsProcessQueryRunner = spawnSync
+): WindowsProcessRow[] | undefined {
     return readTrustedWindowsProcessRows(
         'Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,CreationDate | ConvertTo-Json -Compress',
-        env
+        env,
+        runWindowsProcessQuery
     );
 }
 
-function currentWindowsProcessTreeFence(
+export function currentWindowsProcessTreeFence(
     pid: number,
-    env: NodeJS.ProcessEnv = process.env
+    env: NodeJS.ProcessEnv = process.env,
+    runWindowsProcessQuery: WindowsProcessQueryRunner = spawnSync
 ): ReviewResolutionLockOwnerFence {
     const rows = readTrustedWindowsProcessRows(
         `Get-CimInstance Win32_Process -Filter "ProcessId = ${pid}" | Select-Object ProcessId,ParentProcessId,CreationDate | ConvertTo-Json -Compress`,
-        env
+        env,
+        runWindowsProcessQuery
     );
     const current = rows?.[0];
     if (rows === undefined || rows.length !== 1 || current?.pid !== pid) {
@@ -2500,59 +2499,43 @@ function currentWindowsProcessTreeFence(
     };
 }
 
-function hasLiveWindowsDescendantProcess(rows: ReadonlyMap<number, WindowsProcessRow>, rootPid: number): boolean {
-    for (const row of rows.values()) {
-        if (row.pid === rootPid) {
-            continue;
-        }
-        let parentPid = row.parentPid;
-        const visited = new Set<number>([row.pid]);
-        while (parentPid > 0) {
-            if (parentPid === rootPid) {
-                return true;
-            }
-            if (visited.has(parentPid)) {
-                break;
-            }
-            visited.add(parentPid);
-            const parent = rows.get(parentPid);
-            if (parent === undefined) {
-                break;
-            }
-            parentPid = parent.parentPid;
-        }
-    }
-    return false;
-}
-
 function isLiveWindowsProcessTree(
     ownerFence: Extract<ReviewResolutionLockOwnerFence, { kind: 'win32-process-tree' }>,
-    inspect: () => WindowsProcessRow[] | undefined = inspectLiveWindowsProcesses
+    inspect: () => WindowsProcessRow[] | undefined = () => inspectLiveWindowsProcesses()
 ): boolean {
     const rows = inspect();
     if (rows === undefined) {
         return true;
     }
-    const rowsByPid = new Map(rows.map((row) => [row.pid, row]));
-    const root = rowsByPid.get(ownerFence.rootPid);
-    if (root !== undefined) {
+    if (rows.some((row) => row.pid === ownerFence.rootPid)) {
         return true;
     }
-    return hasLiveWindowsDescendantProcess(rowsByPid, ownerFence.rootPid);
+    // Win32_Process exposes only the current parent relation. Once the root exits,
+    // its children can be reparented and no remaining row can prove membership in
+    // this lock's original tree. Do not infer membership from time or a missing
+    // parent: Windows root-absent lock recovery stays unavailable.
+    return true;
 }
 
 export function reviewResolutionOwnerFenceIsLive(
     ownerFence: ReviewResolutionLockOwnerFence,
     port: ReviewResolutionOwnerFenceLivenessPort = {}
 ): boolean {
+    const platform = port.platform ?? process.platform;
     const probe = port.probe ?? signalReviewResolutionLivenessTarget;
     if (ownerFence.kind === 'pgid') {
         return isLiveProcessGroup(ownerFence.pgid, probe);
     }
     if (ownerFence.kind === 'pid') {
+        if (platform === 'win32') {
+            return true;
+        }
         return isLiveProcessId(ownerFence.pid, probe);
     }
-    return isLiveWindowsProcessTree(ownerFence, port.inspectWindowsProcessRows);
+    const inspectWindowsProcessRows =
+        port.inspectWindowsProcessRows ??
+        (() => inspectLiveWindowsProcesses(port.windowsProcessQueryEnv, port.runWindowsProcessQuery));
+    return isLiveWindowsProcessTree(ownerFence, inspectWindowsProcessRows);
 }
 
 function writeReviewResolutionLockOwner(primaryRoot: string, owner: ReviewResolutionLockOwner, number: number): string {
