@@ -1,7 +1,9 @@
 import { serializeMidiStateForClips } from '#/modules/MIDI/useCases';
 import { createHandler } from '#/utils/createHandler';
+import { type GeneratedMidiStateGuard } from '#/utils/handlerContract';
 
 import { collectTrackClipIds } from '../../services/collectTrackClipIds';
+import { serializeClipScopedAutomationLanes } from '../../useCases/clip/serializeClipScopedAutomationLanes';
 import { duplicateTrack } from '../../useCases/duplicateTrack';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { publishTrackAdded } from '../../useCases/publishTrackAdded';
@@ -21,7 +23,7 @@ function ensureTargetTrackId(action: DuplicateTrackAction): string {
 // Guards for duplicates this handler creates, keyed by action so the
 // describe-time inverse is finalized with the created entity once execute
 // lands — the handleAddTrack/handleCreateBus pattern.
-const pendingDuplicateGuards = new WeakMap<object, { entityJson: string; midiByClipIdJson: string }>();
+const pendingDuplicateGuards = new WeakMap<object, GeneratedMidiStateGuard>();
 
 export const handleDuplicateTrack = createHandler<'duplicateTrack'>({
     materializeCommandArguments: (action) => {
@@ -54,12 +56,16 @@ export const handleDuplicateTrack = createHandler<'duplicateTrack'>({
             // value predates its own step that copies devices, sends, and
             // clips, and isGeneratedMidiStateCurrent compares the guard
             // against the store shape. Satellite state copied from the source
-            // (envelopes, warp, clip automation) makes the comparison fail —
-            // undo then refuses with a conflict instead of corrupting.
+            // (clip-scoped automation lanes) makes the comparison fail unless
+            // the guard expects exactly what the duplication cloned onto the
+            // copies' new clip ids — requiring absence would make the
+            // duplicate's own undo conflict on what it itself created.
             const committed = getTrackStoreState()?.tracks.find((candidate) => candidate.id === track.id);
             if (committed) {
+                const clipIds = collectTrackClipIds(committed);
                 guard.entityJson = JSON.stringify(committed);
-                guard.midiByClipIdJson = serializeMidiStateForClips(collectTrackClipIds(committed));
+                guard.midiByClipIdJson = serializeMidiStateForClips(clipIds);
+                guard.clipAutomationLanesJson = serializeClipScopedAutomationLanes(clipIds);
             }
         }
         return {
