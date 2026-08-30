@@ -1,0 +1,21 @@
+scripts/__tests__/deliverPullRequest.spec.ts
+  s_ae074277795b45::t_4961f4d0831d15 299,302-308,327-331,1483-1622,2415-2442,2452-2456,2460-2474,2734-2736,2805-2806
+scripts/deliverPullRequest.ts
+  s_ae074277795b45::t_2a6fbf30e628b3 37-38,117,124-131,170-172,231,248-294,949,952,969-970,1036,1040-1042,1047-1051,1053,1055
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "ae48716a457c36d373e9a04fd8329940b66f3766",
+  "prompts": {},
+  "sessions": {
+    "s_ae074277795b45": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04ab5-5234-7100-be1c-76ebfaba88d3",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
