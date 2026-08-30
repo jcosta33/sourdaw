@@ -242,6 +242,27 @@ describe('pluginLifecycleScheduler', () => {
         await expect(second).rejects.toBe(successorFailure);
     });
 
+    it('wraps a queued operation that throws a non-Error value synchronously', async () => {
+        const prior = Promise.withResolvers<never>();
+        const priorFailure = new Error('prior operation failed');
+        const thrownValue = 'thrown without an Error wrapper';
+        const first = pluginLifecycleScheduler.schedule('queued-sync-throw', () => prior.promise);
+        const second = pluginLifecycleScheduler.schedule('queued-sync-throw', (): Promise<never> => {
+            // eslint-disable-next-line @typescript-eslint/only-throw-error -- intentionally throws a non-Error value to pin the scheduler's sync-throw normalization
+            throw thrownValue;
+        });
+
+        prior.reject(priorFailure);
+        await expect(first).rejects.toBe(priorFailure);
+
+        const secondFailure = await second.catch((error: unknown) => error);
+        if (!(secondFailure instanceof Error)) {
+            throw new Error('Expected the queued sync throw to reject as a wrapped Error');
+        }
+        expect(secondFailure.message).toBe('Plugin lifecycle operation failed');
+        expect(secondFailure.cause).toBe(thrownValue);
+    });
+
     it('keeps a mixed fulfilled-and-rejected chain serial', async () => {
         const order: string[] = [];
         const firstTurn = Promise.withResolvers<void>();
