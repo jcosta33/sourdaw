@@ -1059,7 +1059,61 @@ describe('package scripts and gitignore', () => {
         }
     });
 
-    it('requires a trusted ps binding only for non-Windows review-resolution commands and reports invalid commands before binding', () => {
+    it('binds a trusted powershell path for Windows review-resolution commands without requiring ps', () => {
+        const fixtureRoot = mkdtempSync(join(tmpdir(), 'sourdaw-split-trusted-win32-tools-'));
+        const primary = join(fixtureRoot, 'primary');
+        const gitBin = join(fixtureRoot, 'git-bin');
+        const ghBin = join(fixtureRoot, 'gh-bin');
+        const powerShellBin = join(fixtureRoot, 'powershell-bin');
+        const gitWrapper = join(gitBin, 'git');
+        const ghWrapper = join(ghBin, 'gh');
+        const powerShellWrapper = join(powerShellBin, 'powershell.exe');
+        const realGit = execFileSync('/usr/bin/which', ['git'], { encoding: 'utf8' }).trim();
+        const realGh = execFileSync('/usr/bin/which', ['gh'], { encoding: 'utf8' }).trim();
+        try {
+            trustedPublishFixture(primary, 'primary');
+            mkdirSync(gitBin);
+            mkdirSync(ghBin);
+            mkdirSync(powerShellBin);
+            writeFileSync(gitWrapper, `#!/bin/sh\nexec ${JSON.stringify(realGit)} "$@"\n`);
+            writeFileSync(ghWrapper, `#!/bin/sh\nexec ${JSON.stringify(realGh)} "$@"\n`);
+            writeFileSync(powerShellWrapper, '#!/bin/sh\nexit 0\n');
+            chmodSync(gitWrapper, 0o700);
+            chmodSync(ghWrapper, 0o700);
+            chmodSync(powerShellWrapper, 0o700);
+
+            const binding = resolveTrustedLauncherBinding(
+                primary,
+                {
+                    PATH: [gitBin, ghBin, powerShellBin].join(delimiter),
+                },
+                'review:resolve',
+                'win32'
+            );
+
+            expect(binding.primaryRoot).toBe(realpathSync(primary));
+            expect(binding.gitPath).toBe(realpathSync(gitWrapper));
+            expect(binding.ghPath).toBe(realpathSync(ghWrapper));
+            expect(binding.psPath).toBeUndefined();
+            expect(binding.powershellPath).toBe(realpathSync(powerShellWrapper));
+
+            const env = trustedSnapshotEnv({
+                commit: 'a'.repeat(40),
+                sources: new Map(),
+                launcher: binding,
+            });
+
+            expect(env.SOURDAW_TRUSTED_POWERSHELL_PATH).toBe(binding.powershellPath);
+            expect(env.SOURDAW_TRUSTED_PS_PATH).toBeUndefined();
+            expect(env.PATH).toBe(
+                [...new Set([gitBin, ghBin, powerShellBin, dirname(process.execPath)])].join(delimiter)
+            );
+        } finally {
+            rmSync(fixtureRoot, { recursive: true, force: true });
+        }
+    });
+
+    it('requires a trusted ps binding on non-Windows review-resolution commands and trusted powershell on Windows, and reports invalid commands before binding', () => {
         const fixtureRoot = mkdtempSync(join(tmpdir(), 'sourdaw-bootstrap-command-gating-'));
         const primary = join(fixtureRoot, 'primary');
         const gitBin = join(fixtureRoot, 'git-bin');
@@ -1086,18 +1140,18 @@ describe('package scripts and gitignore', () => {
             });
             expect(resolveTrustedLauncherBinding(primary, { PATH: path }, 'lane:publish').psPath).toBeUndefined();
             expect(resolveTrustedLauncherBinding(primary, { PATH: path }, 'issue:reconcile').psPath).toBeUndefined();
-            expect(
-                resolveTrustedLauncherBinding(primary, { PATH: path }, 'review:resolve', 'win32').psPath
-            ).toBeUndefined();
-            expect(
-                resolveTrustedLauncherBinding(primary, { PATH: path }, 'review:resolve:recover', 'win32').psPath
-            ).toBeUndefined();
             expect(() => resolveTrustedLauncherBinding(primary, { PATH: path }, 'review:resolve')).toThrow(
                 /cannot resolve trusted ps executable/i
             );
             expect(() => resolveTrustedLauncherBinding(primary, { PATH: path }, 'review:resolve:recover')).toThrow(
                 /cannot resolve trusted ps executable/i
             );
+            expect(() => resolveTrustedLauncherBinding(primary, { PATH: path }, 'review:resolve', 'win32')).toThrow(
+                /cannot resolve trusted powershell executable/i
+            );
+            expect(() =>
+                resolveTrustedLauncherBinding(primary, { PATH: path }, 'review:resolve:recover', 'win32')
+            ).toThrow(/cannot resolve trusted powershell executable/i);
 
             const result = spawnSync(
                 process.execPath,
@@ -1372,12 +1426,13 @@ describe('package scripts and gitignore', () => {
         ['review:resolve', 'scripts/resolveReviewThread.ts', 'runResolveReviewThreadCli'],
         ['review:resolve:recover', 'scripts/recoverReviewResolutionLock.ts', 'runRecoverReviewResolutionLockCli'],
     ] as const)(
-        'passes a Windows no-ps launcher into the generated %s snapshot dependencies',
+        'passes a Windows powershell launcher without ps into the generated %s snapshot dependencies',
         async (command, entryPath, runner) => {
             const root = mkdtempSync(join(tmpdir(), 'sourdaw-trusted-review-win32-deps-'));
             const recordPath = join(root, 'trusted-launcher.json');
             const gitPath = execFileSync('/usr/bin/which', ['git'], { encoding: 'utf8' }).trim();
             const ghPath = execFileSync('/usr/bin/which', ['gh'], { encoding: 'utf8' }).trim();
+            const powershellPath = join(root, 'powershell.exe');
             try {
                 await expect(
                     executeTrustedSnapshot(command, ['42', '--record', recordPath], {
@@ -1399,6 +1454,7 @@ describe('package scripts and gitignore', () => {
                             commonDir: '/repo/.git',
                             gitPath,
                             ghPath,
+                            powershellPath,
                         },
                     })
                 ).resolves.toBe(0);
@@ -1407,6 +1463,7 @@ describe('package scripts and gitignore', () => {
                     primaryRoot: '/repo',
                     gitPath,
                     ghPath,
+                    powershellPath,
                 });
             } finally {
                 rmSync(root, { recursive: true, force: true });

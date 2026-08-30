@@ -66,6 +66,7 @@ process.env.SOURDAW_TRUSTED_GIT_PATH = trustedGitPath;
 const trustedGhPath = process.env.SOURDAW_TRUSTED_GH_PATH ?? process.execPath;
 const trustedPsPath = process.env.SOURDAW_TRUSTED_PS_PATH ?? systemPsPath();
 process.env.SOURDAW_TRUSTED_PS_PATH = trustedPsPath;
+const trustedPowerShellPath = process.env.SOURDAW_TRUSTED_POWERSHELL_PATH ?? '/trusted/powershell.exe';
 type ReviewRecord = {
     id: string;
     body: string;
@@ -89,8 +90,11 @@ type TestLockOwnerRecord = {
     pid: number;
     ownerFence?: {
         kind: string;
+        version?: number;
         pid?: number;
         pgid?: number;
+        rootPid?: number;
+        rootStartedAt?: string;
     };
     pgid?: number;
     threadId: string;
@@ -1265,21 +1269,6 @@ async function waitForProcessGroupGone(pgid: number): Promise<void> {
     throw new Error(`process group ${pgid} did not exit`);
 }
 
-async function waitForProcessGone(pid: number): Promise<void> {
-    for (let attempt = 0; attempt < 200; attempt += 1) {
-        try {
-            process.kill(pid, 0);
-        } catch (error) {
-            if (error instanceof Error && 'code' in error && error.code === 'ESRCH') {
-                return;
-            }
-            throw error;
-        }
-        await new Promise((resolve) => setTimeout(resolve, 10));
-    }
-    throw new Error(`process ${pid} did not exit`);
-}
-
 function readProcessGroupId(pid: number): number {
     const result = spawnSync('ps', ['-o', 'pgid=', '-p', String(pid)], {
         encoding: 'utf8',
@@ -1770,10 +1759,19 @@ describe('review thread resolution', () => {
         }
     });
 
-    it('uses exact PID fencing for Windows lock ownership without requiring a trusted ps path', () => {
+    it('accepts injected Windows process-tree fencing without requiring a trusted ps path', () => {
         const repository = createTemporaryGitRepository();
         try {
             withTemporaryEnvironment({ SOURDAW_TRUSTED_PS_PATH: undefined }, () => {
+                const executionFence = {
+                    pid: process.pid,
+                    ownerFence: {
+                        kind: 'win32-process-tree' as const,
+                        version: 1 as const,
+                        rootPid: process.pid,
+                        rootStartedAt: '2026-08-30T12:00:00.000000+000',
+                    },
+                };
                 expect(
                     withPullRequestReviewResolutionLock(
                         repository,
@@ -1783,14 +1781,14 @@ describe('review thread resolution', () => {
                         () => {
                             expect(requireLockOwner(repository, 42)).toMatchObject({
                                 pid: process.pid,
-                                ownerFence: { kind: 'pid', pid: process.pid },
+                                ownerFence: executionFence.ownerFence,
                                 threadId,
                                 head,
                                 mutation: { phase: 'idle', epoch: 0 },
                             });
                             return 'ok';
                         },
-                        { platform: 'win32' }
+                        { platform: 'win32', executionFence }
                     )
                 ).toBe('ok');
             });
@@ -1812,8 +1810,10 @@ describe('review thread resolution', () => {
                     kind: 'pid',
                     pid: 1234,
                 },
-                () => {
-                    throw error;
+                {
+                    probe: () => {
+                        throw error;
+                    },
                 }
             )
         ).toBe(expected);
@@ -1827,11 +1827,65 @@ describe('review thread resolution', () => {
                     kind: 'pid',
                     pid: 1234,
                 },
-                () => {
-                    throw failure;
+                {
+                    probe: () => {
+                        throw failure;
+                    },
                 }
             )
         ).toThrow(failure);
+    });
+
+    it('treats a dead Windows root with a live descendant, PID reuse, or unavailable inspection as still live', () => {
+        const ownerFence = {
+            kind: 'win32-process-tree' as const,
+            version: 1 as const,
+            rootPid: 4100,
+            rootStartedAt: '2026-08-30T12:00:00.000000+000',
+        };
+        expect(
+            reviewResolutionOwnerFenceIsLive(ownerFence, {
+                inspectWindowsProcessRows: () => [
+                    {
+                        pid: 4101,
+                        parentPid: 4100,
+                        startedAt: '2026-08-30T12:00:01.000000+000',
+                    },
+                ],
+            })
+        ).toBe(true);
+        expect(
+            reviewResolutionOwnerFenceIsLive(ownerFence, {
+                inspectWindowsProcessRows: () => [
+                    {
+                        pid: 4100,
+                        parentPid: 1,
+                        startedAt: '2026-08-30T13:00:00.000000+000',
+                    },
+                ],
+            })
+        ).toBe(true);
+        expect(
+            reviewResolutionOwnerFenceIsLive(ownerFence, {
+                inspectWindowsProcessRows: () => undefined,
+            })
+        ).toBe(true);
+    });
+
+    it('admits a dead Windows process tree only when both the root and its descendants are gone', () => {
+        expect(
+            reviewResolutionOwnerFenceIsLive(
+                {
+                    kind: 'win32-process-tree',
+                    version: 1,
+                    rootPid: 4200,
+                    rootStartedAt: '2026-08-30T12:00:00.000000+000',
+                },
+                {
+                    inspectWindowsProcessRows: () => [],
+                }
+            )
+        ).toBe(false);
     });
 
     it.each([
@@ -2893,30 +2947,12 @@ describe('review thread resolution', () => {
         }
     });
 
-    it('uses the detached child PID as the Windows recovery fence so a live child blocks and its exit unlocks recovery', async () => {
+    it('keeps a dead Windows root fenced while its detached child tree is still live, then admits recovery after the child exits', () => {
         const repository = createTemporaryGitRepository();
-        const holder = spawn(
-            process.execPath,
-            [
-                '--input-type=module',
-                '--eval',
-                [
-                    "import { spawn } from 'node:child_process';",
-                    "const child = spawn('bash', ['-lc', 'sleep 30'], { stdio: 'ignore' });",
-                    "if (child.pid === undefined) throw new Error('missing child pid');",
-                    'console.log(JSON.stringify({ parentPid: process.pid, childPid: child.pid }));',
-                    'setInterval(() => {}, 1000);',
-                ].join('\n'),
-            ],
-            { detached: true, stdio: ['ignore', 'pipe', 'ignore'] }
-        );
-        let childPid: number | undefined;
         try {
-            const recorded = JSON.parse(await readFirstStdoutLine(holder)) as { parentPid: number; childPid: number };
-            childPid = recorded.childPid;
             const ownerOid = writeLockOwnerBlob(
                 repository,
-                childPid,
+                4001,
                 head,
                 {
                     phase: 'replyDone',
@@ -2924,29 +2960,58 @@ describe('review thread resolution', () => {
                     reviewId,
                 },
                 {
-                    kind: 'pid',
-                    pid: childPid,
+                    kind: 'win32-process-tree',
+                    version: 1,
+                    rootPid: 4001,
+                    rootStartedAt: '2026-08-30T12:00:00.000000+000',
                 }
             );
             updateLock(repository, 42, ownerOid);
+            let childLive = true;
+            const currentExecutionFence = {
+                pid: process.pid,
+                ownerFence: {
+                    kind: 'win32-process-tree' as const,
+                    version: 1 as const,
+                    rootPid: process.pid,
+                    rootStartedAt: '2026-08-30T12:05:00.000000+000',
+                },
+            };
 
             expect(() =>
-                recoverPullRequestReviewResolutionLock(repository, 42, ownerOid, () => 'reconciled', undefined, {
-                    platform: 'win32',
-                })
-            ).toThrow(`review resolution on PR #42 lock is still held by live process ${childPid}`);
+                recoverPullRequestReviewResolutionLock(
+                    repository,
+                    42,
+                    ownerOid,
+                    () => 'reconciled',
+                    (ownerFence) =>
+                        reviewResolutionOwnerFenceIsLive(ownerFence, {
+                            inspectWindowsProcessRows: () =>
+                                childLive
+                                    ? [
+                                          {
+                                              pid: 4002,
+                                              parentPid: 4001,
+                                              startedAt: '2026-08-30T12:00:01.000000+000',
+                                          },
+                                      ]
+                                    : [],
+                        }),
+                    {
+                        platform: 'win32',
+                        executionFence: currentExecutionFence,
+                    }
+                )
+            ).toThrow(/still held by live Windows process tree rooted at process 4001/i);
 
-            process.kill(childPid, 'SIGKILL');
-            await waitForProcessGone(childPid);
-
-            expect(holder.exitCode).toBeNull();
+            childLive = false;
             expect(
                 recoverPullRequestReviewResolutionLock(
                     repository,
                     42,
                     ownerOid,
                     (owner) => {
-                        expect(owner.ownerFence).toEqual({ kind: 'pid', pid: process.pid });
+                        expect(owner.ownerFence).toEqual(currentExecutionFence.ownerFence);
                         return {
                             owner,
                             inspection: {
@@ -2957,27 +3022,21 @@ describe('review thread resolution', () => {
                             },
                         };
                     },
-                    undefined,
-                    { platform: 'win32' }
+                    (ownerFence) =>
+                        reviewResolutionOwnerFenceIsLive(ownerFence, {
+                            inspectWindowsProcessRows: () => [],
+                        }),
+                    { platform: 'win32', executionFence: currentExecutionFence }
                 )
             ).toMatchObject({
-                owner: { threadId, head, ownerFence: { kind: 'pid', pid: process.pid } },
+                owner: { threadId, head, ownerFence: currentExecutionFence.ownerFence },
                 inspection: { head, thread: { id: threadId, isResolved: false }, pendingReviews: [] },
             });
             expect(readLockOid(repository, 42)).toBeUndefined();
         } finally {
-            if (childPid !== undefined) {
-                try {
-                    process.kill(childPid, 'SIGKILL');
-                } catch {
-                    // Best-effort cleanup for a child already gone.
-                }
-            }
-            holder.kill('SIGKILL');
-            await waitForExit(holder).catch(() => undefined);
             rmSync(repository, { recursive: true, force: true });
         }
-    }, 10_000);
+    });
 
     it('recovers a quiescent PR-scoped review-resolution lock only after reconciliation and fences owner changes', () => {
         const repository = createTemporaryGitRepository();
@@ -3520,7 +3579,7 @@ describe('review thread resolution', () => {
         }
     });
 
-    it('accepts a Windows detached child marker and launcher capability without a ps path', async () => {
+    it('accepts a Windows detached child marker with trusted powershell and no ps path', async () => {
         const markerRoot = mkdtempSync(join(tmpdir(), 'sourdaw-review-win32-child-marker-'));
         const markerPath = join(markerRoot, 'child-marker.json');
         const capabilityPath = join(markerRoot, 'bootstrap-capability.json');
@@ -3535,6 +3594,7 @@ describe('review thread resolution', () => {
                         primaryRoot: markerRoot,
                         gitPath: trustedGitPath,
                         ghPath: trustedGhPath,
+                        powershellPath: trustedPowerShellPath,
                     },
                 }),
                 { encoding: 'utf8', mode: 0o600 }
@@ -3546,8 +3606,10 @@ describe('review thread resolution', () => {
                     executionFence: {
                         pid: process.pid,
                         ownerFence: {
-                            kind: 'pid',
-                            pid: process.pid,
+                            kind: 'win32-process-tree',
+                            version: 1,
+                            rootPid: process.pid,
+                            rootStartedAt: '2026-08-30T12:00:00.000000+000',
                         },
                     },
                     sleep: async () => undefined,
@@ -3556,6 +3618,7 @@ describe('review thread resolution', () => {
                 primaryRoot: markerRoot,
                 gitPath: trustedGitPath,
                 ghPath: trustedGhPath,
+                powershellPath: trustedPowerShellPath,
             });
             expect(existsSync(markerPath)).toBe(false);
         } finally {
@@ -5092,6 +5155,56 @@ describe('review thread resolution', () => {
             }
         },
         10_000
+    );
+    it.each([
+        ['relative', 'powershell.exe'],
+        [
+            'non-normalized',
+            `${dirname(trustedPowerShellPath)}/../${basename(dirname(trustedPowerShellPath))}/${basename(trustedPowerShellPath)}`,
+        ],
+    ])(
+        'rejects a Windows detached launcher capability carrying a %s powershell path before lock acquisition',
+        async (_label, powershellPath) => {
+            const markerRoot = mkdtempSync(join(tmpdir(), 'sourdaw-review-resolve-invalid-powershell-marker-'));
+            const markerPath = join(markerRoot, 'child-marker.json');
+            const capabilityPath = join(markerRoot, 'bootstrap-capability.json');
+            const token = '99999999-1111-4111-8111-111111111111';
+            try {
+                writeFileSync(
+                    capabilityPath,
+                    JSON.stringify({
+                        version: 1,
+                        token,
+                        trustedLauncher: {
+                            primaryRoot: markerRoot,
+                            gitPath: trustedGitPath,
+                            ghPath: trustedGhPath,
+                            powershellPath,
+                        },
+                    }),
+                    { encoding: 'utf8', mode: 0o600 }
+                );
+                publishReviewResolutionChildLaunchMarker(markerPath, token, process.pid, capabilityPath);
+                await expect(
+                    assertDetachedReviewResolutionChild(JSON.stringify({ path: markerPath, token }), {
+                        platform: 'win32',
+                        executionFence: {
+                            pid: process.pid,
+                            ownerFence: {
+                                kind: 'win32-process-tree',
+                                version: 1,
+                                rootPid: process.pid,
+                                rootStartedAt: '2026-08-30T12:00:00.000000+000',
+                            },
+                        },
+                        sleep: async () => undefined,
+                    })
+                ).rejects.toThrow(/protected primary checkout launcher/i);
+                expect(existsSync(markerPath)).toBe(true);
+            } finally {
+                rmSync(markerRoot, { recursive: true, force: true });
+            }
+        }
     );
     it.each([
         ['wrong head', { heads: [movedHead] }],

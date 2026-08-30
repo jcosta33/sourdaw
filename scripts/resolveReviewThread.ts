@@ -133,6 +133,12 @@ export type ReviewResolutionLockOwnerFence =
     | {
           kind: 'pid';
           pid: number;
+      }
+    | {
+          kind: 'win32-process-tree';
+          version: 1;
+          rootPid: number;
+          rootStartedAt: string;
       };
 export type ReviewResolutionLockOwner = {
     version: 4;
@@ -148,6 +154,7 @@ export type ReviewResolutionTrustedLauncher = {
     gitPath: string;
     ghPath: string;
     psPath?: string;
+    powershellPath?: string;
 };
 export type ReviewResolutionRecoveryClock = {
     now: () => number;
@@ -233,6 +240,7 @@ export const REVIEW_RESOLUTION_CHILD_ENV = 'SOURDAW_REVIEW_RESOLUTION_CHILD';
 const REVIEW_RESOLUTION_CHILD_MARKER_VERSION = 1;
 const TRUSTED_GIT_PATH_ENV = 'SOURDAW_TRUSTED_GIT_PATH';
 const TRUSTED_PS_PATH_ENV = 'SOURDAW_TRUSTED_PS_PATH';
+const TRUSTED_POWERSHELL_PATH_ENV = 'SOURDAW_TRUSTED_POWERSHELL_PATH';
 const TRUSTED_ORIGIN_COMMIT_ENV = 'SOURDAW_TRUSTED_ORIGIN_COMMIT';
 const activeReviewResolutionLocks: ActiveReviewResolutionLock[] = [];
 const systemReviewResolutionRecoveryClock: ReviewResolutionRecoveryClock = { now: () => Date.now() };
@@ -266,6 +274,15 @@ type ReviewResolutionChildValidationPort = {
     sleep?: (ms: number) => Promise<void>;
 };
 type ReviewResolutionLivenessProbe = (target: number) => void;
+type WindowsProcessRow = {
+    pid: number;
+    parentPid: number;
+    startedAt: string;
+};
+type ReviewResolutionOwnerFenceLivenessPort = {
+    probe?: ReviewResolutionLivenessProbe;
+    inspectWindowsProcessRows?: () => WindowsProcessRow[] | undefined;
+};
 
 function canonicalGitObjectId(value: string, label: string, lengths: number[] = [40]): string {
     const trimmed = value.trim();
@@ -299,6 +316,13 @@ export function assertTrustedReviewResolutionLauncher(
         typeof value === 'object' && value !== null && 'psPath' in value && typeof value.psPath === 'string'
             ? value.psPath
             : undefined;
+    const powershellPath =
+        typeof value === 'object' &&
+        value !== null &&
+        'powershellPath' in value &&
+        typeof value.powershellPath === 'string'
+            ? value.powershellPath
+            : undefined;
     if (
         typeof value !== 'object' ||
         value === null ||
@@ -318,7 +342,12 @@ export function assertTrustedReviewResolutionLauncher(
         !isAbsolute(value.ghPath) ||
         normalize(value.ghPath) !== value.ghPath ||
         (platform !== 'win32' && psPath === undefined) ||
-        (psPath !== undefined && (psPath.trim() === '' || !isAbsolute(psPath) || normalize(psPath) !== psPath))
+        (platform === 'win32' && powershellPath === undefined) ||
+        (psPath !== undefined && (psPath.trim() === '' || !isAbsolute(psPath) || normalize(psPath) !== psPath)) ||
+        (powershellPath !== undefined &&
+            (powershellPath.trim() === '' ||
+                !isAbsolute(powershellPath) ||
+                normalize(powershellPath) !== powershellPath))
     ) {
         fail(label);
     }
@@ -327,6 +356,7 @@ export function assertTrustedReviewResolutionLauncher(
         gitPath: value.gitPath,
         ghPath: value.ghPath,
         ...(psPath === undefined ? {} : { psPath }),
+        ...(powershellPath === undefined ? {} : { powershellPath }),
     };
 }
 
@@ -2093,6 +2123,20 @@ function trustedReviewResolutionPsPath(env: NodeJS.ProcessEnv = process.env): st
     return trustedPath;
 }
 
+function trustedReviewResolutionPowerShellPath(env: NodeJS.ProcessEnv = process.env): string {
+    const trustedPath = env[TRUSTED_POWERSHELL_PATH_ENV];
+    if (typeof trustedPath !== 'string' || trustedPath.trim() === '') {
+        fail('review-resolution lock requires launcher-resolved trusted powershell path');
+    }
+    if (!isAbsolute(trustedPath)) {
+        fail('trusted powershell executable path is not absolute');
+    }
+    if (normalize(trustedPath) !== trustedPath) {
+        fail('trusted powershell executable path is not normalized');
+    }
+    return trustedPath;
+}
+
 function reviewResolutionLockGit(
     primaryRoot: string,
     args: string[],
@@ -2308,11 +2352,39 @@ function parseReviewResolutionLockOwnerFence(
         }
         return { kind: 'pid', pid };
     }
+    if ((value as { kind: string }).kind === 'win32-process-tree') {
+        const version = (value as { version?: unknown }).version;
+        const rootPid = (value as { rootPid?: unknown }).rootPid;
+        const rootStartedAt = (value as { rootStartedAt?: unknown }).rootStartedAt;
+        if (
+            version !== 1 ||
+            !isPositiveSafeInteger(rootPid) ||
+            typeof rootStartedAt !== 'string' ||
+            rootStartedAt.trim() === '' ||
+            'pid' in value ||
+            'pgid' in value ||
+            (ownerPid !== undefined && rootPid !== ownerPid)
+        ) {
+            fail(label);
+        }
+        return {
+            kind: 'win32-process-tree',
+            version: 1,
+            rootPid,
+            rootStartedAt,
+        };
+    }
     return fail(label);
 }
 
 function reviewResolutionOwnerFenceLabel(ownerFence: ReviewResolutionLockOwnerFence): string {
-    return ownerFence.kind === 'pgid' ? `process group ${ownerFence.pgid}` : `process ${ownerFence.pid}`;
+    if (ownerFence.kind === 'pgid') {
+        return `process group ${ownerFence.pgid}`;
+    }
+    if (ownerFence.kind === 'pid') {
+        return `process ${ownerFence.pid}`;
+    }
+    return `Windows process tree rooted at process ${ownerFence.rootPid}`;
 }
 
 function signalReviewResolutionLivenessTarget(target: number): void {
@@ -2344,13 +2416,143 @@ function isLiveProcessId(
     return isLiveReviewResolutionTarget(pid, probe);
 }
 
+function readTrustedWindowsProcessRows(
+    command: string,
+    env: NodeJS.ProcessEnv = process.env
+): WindowsProcessRow[] | undefined {
+    const result = spawnSync(
+        trustedReviewResolutionPowerShellPath(env),
+        ['-NoProfile', '-NonInteractive', '-Command', command],
+        {
+            encoding: 'utf8',
+            shell: false,
+            env,
+            maxBuffer: 8 * 1024 * 1024,
+        }
+    );
+    if (result.error !== undefined || result.status !== 0 || result.stdout.trim() === '') {
+        return undefined;
+    }
+    return parseWindowsProcessRows(result.stdout);
+}
+
+function parseWindowsProcessRows(output: string): WindowsProcessRow[] | undefined {
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(output) as unknown;
+    } catch {
+        return undefined;
+    }
+    const rows = Array.isArray(parsed) ? parsed : [parsed];
+    const normalized: WindowsProcessRow[] = [];
+    const seen = new Set<number>();
+    for (const row of rows) {
+        if (
+            typeof row !== 'object' ||
+            row === null ||
+            !isPositiveSafeInteger((row as { ProcessId?: unknown }).ProcessId) ||
+            typeof (row as { ParentProcessId?: unknown }).ParentProcessId !== 'number' ||
+            !Number.isSafeInteger((row as { ParentProcessId: number }).ParentProcessId) ||
+            (row as { ParentProcessId: number }).ParentProcessId < 0 ||
+            typeof (row as { CreationDate?: unknown }).CreationDate !== 'string' ||
+            (row as { CreationDate: string }).CreationDate.trim() === ''
+        ) {
+            return undefined;
+        }
+        const pid = (row as { ProcessId: number }).ProcessId;
+        if (seen.has(pid)) {
+            return undefined;
+        }
+        seen.add(pid);
+        normalized.push({
+            pid,
+            parentPid: (row as { ParentProcessId: number }).ParentProcessId,
+            startedAt: (row as { CreationDate: string }).CreationDate,
+        });
+    }
+    return normalized;
+}
+
+function inspectLiveWindowsProcesses(env: NodeJS.ProcessEnv = process.env): WindowsProcessRow[] | undefined {
+    return readTrustedWindowsProcessRows(
+        'Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,CreationDate | ConvertTo-Json -Compress',
+        env
+    );
+}
+
+function currentWindowsProcessTreeFence(
+    pid: number,
+    env: NodeJS.ProcessEnv = process.env
+): ReviewResolutionLockOwnerFence {
+    const rows = readTrustedWindowsProcessRows(
+        `Get-CimInstance Win32_Process -Filter "ProcessId = ${pid}" | Select-Object ProcessId,ParentProcessId,CreationDate | ConvertTo-Json -Compress`,
+        env
+    );
+    const current = rows?.[0];
+    if (rows === undefined || rows.length !== 1 || current?.pid !== pid) {
+        fail('review-resolution lock could not determine the current Windows process identity');
+    }
+    return {
+        kind: 'win32-process-tree',
+        version: 1,
+        rootPid: pid,
+        rootStartedAt: current.startedAt,
+    };
+}
+
+function hasLiveWindowsDescendantProcess(rows: ReadonlyMap<number, WindowsProcessRow>, rootPid: number): boolean {
+    for (const row of rows.values()) {
+        if (row.pid === rootPid) {
+            continue;
+        }
+        let parentPid = row.parentPid;
+        const visited = new Set<number>([row.pid]);
+        while (parentPid > 0) {
+            if (parentPid === rootPid) {
+                return true;
+            }
+            if (visited.has(parentPid)) {
+                break;
+            }
+            visited.add(parentPid);
+            const parent = rows.get(parentPid);
+            if (parent === undefined) {
+                break;
+            }
+            parentPid = parent.parentPid;
+        }
+    }
+    return false;
+}
+
+function isLiveWindowsProcessTree(
+    ownerFence: Extract<ReviewResolutionLockOwnerFence, { kind: 'win32-process-tree' }>,
+    inspect: () => WindowsProcessRow[] | undefined = inspectLiveWindowsProcesses
+): boolean {
+    const rows = inspect();
+    if (rows === undefined) {
+        return true;
+    }
+    const rowsByPid = new Map(rows.map((row) => [row.pid, row]));
+    const root = rowsByPid.get(ownerFence.rootPid);
+    if (root !== undefined) {
+        return true;
+    }
+    return hasLiveWindowsDescendantProcess(rowsByPid, ownerFence.rootPid);
+}
+
 export function reviewResolutionOwnerFenceIsLive(
     ownerFence: ReviewResolutionLockOwnerFence,
-    probe: ReviewResolutionLivenessProbe = signalReviewResolutionLivenessTarget
+    port: ReviewResolutionOwnerFenceLivenessPort = {}
 ): boolean {
-    return ownerFence.kind === 'pgid'
-        ? isLiveProcessGroup(ownerFence.pgid, probe)
-        : isLiveProcessId(ownerFence.pid, probe);
+    const probe = port.probe ?? signalReviewResolutionLivenessTarget;
+    if (ownerFence.kind === 'pgid') {
+        return isLiveProcessGroup(ownerFence.pgid, probe);
+    }
+    if (ownerFence.kind === 'pid') {
+        return isLiveProcessId(ownerFence.pid, probe);
+    }
+    return isLiveWindowsProcessTree(ownerFence, port.inspectWindowsProcessRows);
 }
 
 function writeReviewResolutionLockOwner(primaryRoot: string, owner: ReviewResolutionLockOwner, number: number): string {
@@ -2423,10 +2625,7 @@ function currentReviewResolutionExecutionFence(
     if (platform === 'win32') {
         return {
             pid,
-            ownerFence: {
-                kind: 'pid',
-                pid,
-            },
+            ownerFence: currentWindowsProcessTreeFence(pid),
         };
     }
     return {
@@ -2446,10 +2645,20 @@ function assertReviewResolutionExecutionFence(
         fail('review-resolution lock reported an invalid execution PID');
     }
     if (platform === 'win32') {
-        if (executionFence.ownerFence.kind !== 'pid' || executionFence.ownerFence.pid !== executionFence.pid) {
+        if (executionFence.ownerFence.kind === 'pid' && executionFence.ownerFence.pid === executionFence.pid) {
+            return executionFence;
+        }
+        if (
+            executionFence.ownerFence.kind === 'win32-process-tree' &&
+            executionFence.ownerFence.version === 1 &&
+            executionFence.ownerFence.rootPid === executionFence.pid &&
+            executionFence.ownerFence.rootStartedAt.trim() !== ''
+        ) {
+            return executionFence;
+        }
+        {
             fail('review-resolution lock requires exact PID fencing on Windows');
         }
-        return executionFence;
     }
     if (executionFence.ownerFence.kind !== 'pgid' || !isPositiveSafeInteger(executionFence.ownerFence.pgid)) {
         fail('review-resolution lock requires POSIX process-group fencing');
