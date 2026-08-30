@@ -1227,25 +1227,27 @@ function writeLockOwnerBlob(
     },
     legacyUnjournaled?: unknown
 ): string {
-    const journaledMutation =
-        mutation.phase === 'createPendingReview'
-            ? {
-                  ...mutation,
-                  pullRequestId: mutation.pullRequestId ?? pullRequestId,
-                  body: mutation.body ?? resolutionReviewSummary(pullRequestId, threadId, currentHead),
-                  reviewCommitOid: mutation.reviewCommitOid ?? currentHead,
-              }
-            : mutation.phase === 'replyDone'
-              ? {
-                    ...mutation,
-                    reviewState: 'PENDING' as const,
-                    body: mutation.body ?? resolutionReviewSummary(pullRequestId, threadId, currentHead),
-                    reviewCommitOid: mutation.reviewCommitOid ?? currentHead,
-                }
-              : (mutation.phase === 'submitReview' || mutation.phase === 'updateReviewBody') &&
-                  mutation.reviewCommitOid === undefined
-                ? { ...mutation, reviewCommitOid: currentHead }
-                : mutation;
+    let journaledMutation = mutation;
+    if (mutation.phase === 'createPendingReview') {
+        journaledMutation = {
+            ...mutation,
+            pullRequestId: mutation.pullRequestId ?? pullRequestId,
+            body: mutation.body ?? resolutionReviewSummary(pullRequestId, threadId, currentHead),
+            reviewCommitOid: mutation.reviewCommitOid ?? currentHead,
+        };
+    } else if (mutation.phase === 'replyDone') {
+        journaledMutation = {
+            ...mutation,
+            reviewState: 'PENDING' as const,
+            body: mutation.body ?? resolutionReviewSummary(pullRequestId, threadId, currentHead),
+            reviewCommitOid: mutation.reviewCommitOid ?? currentHead,
+        };
+    } else if (
+        (mutation.phase === 'submitReview' || mutation.phase === 'updateReviewBody') &&
+        mutation.reviewCommitOid === undefined
+    ) {
+        journaledMutation = { ...mutation, reviewCommitOid: currentHead };
+    }
     return gitCapture(
         repository,
         ['hash-object', '-w', '--stdin'],
@@ -1872,7 +1874,7 @@ describe('review thread resolution', () => {
         }
     });
 
-    it('accepts injected Windows process-tree fencing without requiring a trusted ps path', () => {
+    it('refuses Windows lock acquisition before creating a root-absent process-tree owner', () => {
         const repository = createTemporaryGitRepository();
         try {
             withTemporaryEnvironment({ SOURDAW_TRUSTED_PS_PATH: undefined }, () => {
@@ -1885,25 +1887,12 @@ describe('review thread resolution', () => {
                         rootStartedAt: '2026-08-30T12:00:00.000000+000',
                     },
                 };
-                expect(
-                    withPullRequestReviewResolutionLock(
-                        repository,
-                        42,
-                        threadId,
-                        head,
-                        () => {
-                            expect(requireLockOwner(repository, 42)).toMatchObject({
-                                pid: process.pid,
-                                ownerFence: executionFence.ownerFence,
-                                threadId,
-                                head,
-                                mutation: { phase: 'idle', epoch: 0 },
-                            });
-                            return 'ok';
-                        },
-                        { platform: 'win32', executionFence }
-                    )
-                ).toBe('ok');
+                expect(() =>
+                    withPullRequestReviewResolutionLock(repository, 42, threadId, head, () => 'unexpected operation', {
+                        platform: 'win32',
+                        executionFence,
+                    })
+                ).toThrow(/acquisition is unavailable on Windows/i);
             });
             expect(readLockOid(repository, 42)).toBeUndefined();
         } finally {
@@ -3506,7 +3495,7 @@ describe('review thread resolution', () => {
                 )
             ).toThrow(/refuses an unjournaled legacy v2 lock owner/i);
             expect(readLockOid(repository, 42)).toBeDefined();
-            expect(requireLockOwner(repository, 42)).toMatchObject({ legacyUnjournaled: true, threadId, head });
+            expect(requireLockOwner(repository, 42)).toMatchObject({ version: 2, threadId, head });
         } finally {
             if (descendantPid !== undefined) {
                 try {
@@ -3542,11 +3531,11 @@ describe('review thread resolution', () => {
             }
             const firstClaimedOid = readLockOid(repository, 42);
             expect(firstClaimedOid).toBeDefined();
-            expect(firstClaimedOid).not.toBe(originalOid);
+            expect(firstClaimedOid).toBe(originalOid);
             expect(firstError?.message).toBe(
-                `review-resolution recovery refuses an unjournaled legacy v2 lock owner without positive landed-mutation proof; review resolution on PR #42 preserved exact lock owner ${firstClaimedOid} after idle epoch 0; recover with pnpm review:resolve:recover 42 --owner ${firstClaimedOid}`
+                'review-resolution recovery refuses an unjournaled legacy v2 lock owner without positive landed-mutation proof'
             );
-            expect(requireLockOwner(repository, 42)).toMatchObject({ legacyUnjournaled: true, threadId, head });
+            expect(requireLockOwner(repository, 42)).toMatchObject({ version: 2, threadId, head });
 
             let secondError: Error | undefined;
             try {
@@ -3562,11 +3551,9 @@ describe('review thread resolution', () => {
             }
             const secondClaimedOid = readLockOid(repository, 42);
             expect(secondClaimedOid).toBeDefined();
-            expect(secondClaimedOid).toBe(firstClaimedOid);
-            expect(secondError?.message).toBe(
-                `review-resolution recovery refuses an unjournaled legacy v2 lock owner without positive landed-mutation proof; review resolution on PR #42 preserved exact lock owner ${secondClaimedOid} after idle epoch 0; recover with pnpm review:resolve:recover 42 --owner ${secondClaimedOid}`
-            );
-            expect(requireLockOwner(repository, 42)).toMatchObject({ legacyUnjournaled: true, threadId, head });
+            expect(secondClaimedOid).toBe(originalOid);
+            expect(secondError?.message).toBe(firstError?.message);
+            expect(requireLockOwner(repository, 42)).toMatchObject({ version: 2, threadId, head });
         } finally {
             rmSync(repository, { recursive: true, force: true });
         }

@@ -178,7 +178,6 @@ type CurrentReviewResolutionLockOwner = {
     head: string;
     token: string;
     mutation: ReviewResolutionLockMutation;
-    legacyUnjournaled?: true;
 };
 type LegacyReviewResolutionLockOwner = {
     version: 2 | 3 | 4;
@@ -2253,26 +2252,21 @@ function parseReviewResolutionLockOwner(contents: string, number: number): Revie
     };
     if (value.version === 5) {
         const mutation = parseReviewResolutionLockMutation((value as { mutation?: unknown }).mutation, label);
-        if (
-            hasLegacyUnjournaled &&
-            ((value as { legacyUnjournaled?: unknown }).legacyUnjournaled !== true ||
-                mutation.phase !== 'idle' ||
-                mutation.epoch !== 0)
-        ) {
+        if (hasLegacyUnjournaled) {
             fail(label);
         }
         return {
             version: 5,
             ...common,
             mutation,
-            ...(hasLegacyUnjournaled ? { legacyUnjournaled: true } : {}),
         };
     }
     if (value.version === 2) {
         return {
-            version: 5,
+            version: 2,
             ...common,
             mutation: { phase: 'idle', epoch: 0 },
+            legacyMutation: true,
             legacyUnjournaled: true,
         };
     }
@@ -2285,14 +2279,6 @@ function parseReviewResolutionLockOwner(contents: string, number: number): Revie
             mutation.epoch !== 0)
     ) {
         fail(label);
-    }
-    if (value.version === 4 && hasLegacyUnjournaled) {
-        return {
-            version: 5,
-            ...common,
-            mutation: { phase: 'idle', epoch: 0 },
-            legacyUnjournaled: true,
-        };
     }
     return {
         version: value.version,
@@ -2939,7 +2925,7 @@ function replaceActiveReviewResolutionLockMutation(
     mutation: ReviewResolutionLockMutation,
     number: number
 ): void {
-    const nextOwner: ReviewResolutionLockOwner = {
+    const nextOwner: CurrentReviewResolutionLockOwner = {
         ...active.owner,
         mutation,
     };
@@ -2997,8 +2983,12 @@ function acquirePullRequestReviewResolutionLock(
     number: number,
     threadId: string,
     expectedHead: string,
-    executionFence: ReviewResolutionExecutionFence
+    executionFence: ReviewResolutionExecutionFence,
+    platform: NodeJS.Platform
 ): { ref: string; oid: string } {
+    if (platform === 'win32') {
+        fail('review-resolution lock acquisition is unavailable on Windows without a durable quiescence fence');
+    }
     const ref = pullRequestReviewResolutionLockRef(number);
     const owner: CurrentReviewResolutionLockOwner = {
         version: 5,
@@ -3102,14 +3092,17 @@ export function withPullRequestReviewResolutionLock<Value>(
         assertReviewResolutionExecutionFence(
             port.executionFence ?? currentReviewResolutionExecutionFence(platform),
             platform
-        )
+        ),
+        platform
     );
+    const activeOwner = readReviewResolutionLockOwner(primaryRoot, lock.oid, number);
+    assertV5ReviewResolutionLockOwner(activeOwner);
     const active: ActiveReviewResolutionLock = {
         primaryRoot,
         number,
         ref: lock.ref,
         oid: lock.oid,
-        owner: readReviewResolutionLockOwner(primaryRoot, lock.oid, number),
+        owner: activeOwner,
     };
     pushActiveReviewResolutionLock(active);
     try {
@@ -3152,7 +3145,7 @@ export function recoverPullRequestReviewResolutionLock<Value>(
     port: ReviewResolutionLockRecoveryPort = {}
 ): Value {
     const ref = pullRequestReviewResolutionLockRef(number);
-    const currentOwnerOid = readReviewResolutionLockOid(primaryRoot, ref, number);
+    let currentOwnerOid = readReviewResolutionLockOid(primaryRoot, ref, number);
     if (currentOwnerOid === undefined) {
         return fail(`${pullRequestReviewResolutionLockScope(number)} lock is not held`);
     }
@@ -3162,11 +3155,37 @@ export function recoverPullRequestReviewResolutionLock<Value>(
             `${pullRequestReviewResolutionLockScope(number)} lock ownership changed before recovery; current lock owner ${currentOwnerOid}; recover with ${reviewResolutionRecoveryCommand(number, currentOwnerOid)}`
         );
     }
-    const owner = readReviewResolutionLockOwner(primaryRoot, currentOwnerOid, number);
+    let owner = readReviewResolutionLockOwner(primaryRoot, currentOwnerOid, number);
     if (ownerFenceIsLive(owner.ownerFence)) {
         return fail(
             `${pullRequestReviewResolutionLockScope(number)} lock is still held by live ${reviewResolutionOwnerFenceLabel(owner.ownerFence)}`
         );
+    }
+    if (owner.version === 3 || owner.version === 4) {
+        if (owner.mutation.phase !== 'idle') {
+            fail(`review-resolution recovery refuses legacy v${owner.version} lock owner without a v5 replay receipt`);
+        }
+        const upgradedOwner: CurrentReviewResolutionLockOwner = {
+            version: 5,
+            pid: owner.pid,
+            ownerFence: owner.ownerFence,
+            threadId: owner.threadId,
+            head: owner.head,
+            token: owner.token,
+            mutation: { phase: 'idle', epoch: 0 },
+        };
+        const upgradedOid = writeReviewResolutionLockOwner(primaryRoot, upgradedOwner, number);
+        if (!updateReviewResolutionLockRef(primaryRoot, [ref, upgradedOid, currentOwnerOid])) {
+            const winningOwnerOid = readReviewResolutionLockOid(primaryRoot, ref, number);
+            if (winningOwnerOid === undefined) {
+                fail(`${pullRequestReviewResolutionLockScope(number)} lock is not held after legacy upgrade`);
+            }
+            fail(
+                `${pullRequestReviewResolutionLockScope(number)} lock ownership changed before recovery; current lock owner ${winningOwnerOid}; recover with ${reviewResolutionRecoveryCommand(number, winningOwnerOid)}`
+            );
+        }
+        owner = upgradedOwner;
+        currentOwnerOid = upgradedOid;
     }
     assertV5ReviewResolutionLockOwner(owner);
     const platform = port.platform ?? process.platform;
@@ -3808,6 +3827,7 @@ export function assertRecoverableReviewResolutionLockOwner(
     port: ResolveReviewThreadPort,
     _primaryRoot: string = process.cwd()
 ): void {
+    assertV5ReviewResolutionLockOwner(owner);
     const thread = inspection.thread;
     if (thread === null || thread.id !== owner.threadId) {
         fail(`review thread ${owner.threadId} was not found on this pull request`);
@@ -3884,7 +3904,7 @@ function exactRecoveredReplyMarkersAtOwnerHead(
 
 function assertExactRecoveredMutationAfterHeadDrift(
     number: number,
-    owner: ReviewResolutionLockOwner,
+    owner: CurrentReviewResolutionLockOwner,
     inspection: ReviewThreadInspection,
     context: ResolutionReviewContext,
     thread: ReviewThread
@@ -3918,7 +3938,7 @@ function assertExactRecoveredMutationAfterHeadDrift(
 
 function hasRecoveredReviewResolutionMutation(
     number: number,
-    owner: ReviewResolutionLockOwner,
+    owner: CurrentReviewResolutionLockOwner,
     inspection: ReviewThreadInspection,
     context: ResolutionReviewContext,
     thread: ReviewThread,
@@ -4006,7 +4026,7 @@ function hasRecoveredReviewResolutionMutation(
 
 function continueRecoveredReviewResolution(
     number: number,
-    owner: ReviewResolutionLockOwner,
+    owner: CurrentReviewResolutionLockOwner,
     port: ResolveReviewThreadPort
 ): ReviewThreadInspection {
     resolveReviewThreadWithinMutation(number, owner.threadId, owner.head, port);
@@ -4028,7 +4048,7 @@ function inspectReviewResolutionRecovery(
 }
 
 function assertMutationPhaseOwner(
-    owner: ReviewResolutionLockOwner
+    owner: CurrentReviewResolutionLockOwner
 ): Exclude<ReviewResolutionLockMutation, { phase: 'idle' }> {
     if (owner.mutation.phase === 'idle') {
         fail('review-resolution recovery requires an active mutation phase');
@@ -4038,7 +4058,7 @@ function assertMutationPhaseOwner(
 
 function requireReplayableHistoricalReviewBodyUpdate(
     number: number,
-    owner: ReviewResolutionLockOwner,
+    owner: CurrentReviewResolutionLockOwner,
     inspection: ReviewThreadInspection,
     context: ResolutionReviewContext,
     mutation: Extract<ReviewResolutionLockMutation, { phase: 'updateReviewBody' }>,
@@ -4065,7 +4085,7 @@ function requireReplayableHistoricalReviewBodyUpdate(
 
 function requireReplayableHistoricalReviewSubmission(
     number: number,
-    owner: ReviewResolutionLockOwner,
+    owner: CurrentReviewResolutionLockOwner,
     inspection: ReviewThreadInspection,
     context: ResolutionReviewContext,
     mutation: Extract<ReviewResolutionLockMutation, { phase: 'submitReview' }>,
@@ -4138,11 +4158,6 @@ export function recoverReviewResolutionLockOwnerState(
     _clock: ReviewResolutionRecoveryClock = systemReviewResolutionRecoveryClock
 ): ReviewThreadInspection {
     assertV5ReviewResolutionLockOwner(owner);
-    if (owner.legacyUnjournaled === true) {
-        fail(
-            'review-resolution recovery refuses an unjournaled legacy v2 lock owner without positive landed-mutation proof'
-        );
-    }
     let inspection = inspectReviewResolutionRecovery(number, owner, port);
     if (owner.mutation.phase === 'idle') {
         return inspection;

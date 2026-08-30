@@ -1386,7 +1386,7 @@ describe('package scripts and gitignore', () => {
             });
             expect(currentOid.status).toBe(expectsRecovery ? 1 : 0);
             if (!expectsRecovery) {
-                expect(currentOid.stdout.trim()).not.toBe(ownerOid);
+                expect(currentOid.stdout.trim()).toBe(ownerOid);
             }
         } finally {
             rmSync(root, { recursive: true, force: true });
