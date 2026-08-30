@@ -1,8 +1,12 @@
 import { dispatchFocusedNativeMenuIntent } from './applicationMenu.js';
 import { createQuitHandler, type PreventableEvent, type QuitDependencies, type ShutdownOutcome } from './shutdown.js';
 
-import type { NativeMenuIntent, NativeTextEditTarget, NativeResponderEditAction } from './applicationMenu.js';
-import type { MenuItemConstructorOptions } from 'electron';
+import type {
+    ApplicationMenuTemplateItem,
+    NativeMenuIntent,
+    NativeTextEditTarget,
+    NativeResponderEditAction,
+} from './applicationMenu.js';
 
 export const installMacApplicationMenu = <Menu>({
     isMac,
@@ -11,9 +15,9 @@ export const installMacApplicationMenu = <Menu>({
     template,
 }: {
     readonly isMac: boolean;
-    readonly build: (template: MenuItemConstructorOptions[]) => Menu;
+    readonly build: (template: ApplicationMenuTemplateItem[]) => Menu;
     readonly set: (menu: Menu) => void;
-    readonly template: MenuItemConstructorOptions[];
+    readonly template: ApplicationMenuTemplateItem[];
 }): void => {
     if (isMac) {
         set(build(template));
@@ -64,7 +68,7 @@ export const createShellComposition = <Menu>({
     lifecycle,
 }: {
     readonly isMac: boolean;
-    readonly buildMenu: (template: MenuItemConstructorOptions[]) => Menu;
+    readonly buildMenu: (template: ApplicationMenuTemplateItem[]) => Menu;
     readonly setMenu: (menu: Menu) => void;
     readonly getMainTarget: () => NativeTextEditTarget | undefined;
     readonly isMainTargetFocused: () => boolean;
@@ -89,7 +93,7 @@ export const createShellComposition = <Menu>({
         }
         dispatchMenuIntent(intent);
     },
-    installMenu: (template: MenuItemConstructorOptions[]): void =>
+    installMenu: (template: ApplicationMenuTemplateItem[]): void =>
         installMacApplicationMenu({ isMac, build: buildMenu, set: setMenu, template }),
     beforeQuit: composeQuitHandler(runShutdown, quitDependencies),
     shouldRecreateAfterCrash: (): boolean => shouldRecreateRendererAfterCrash(lifecycle),
@@ -115,7 +119,7 @@ export const createProductionShellComposition = <Menu>({
     lifecycle,
 }: {
     readonly isMac: boolean;
-    readonly buildMenu: (template: MenuItemConstructorOptions[]) => Menu;
+    readonly buildMenu: (template: ApplicationMenuTemplateItem[]) => Menu;
     readonly setMenu: (menu: Menu) => void;
     readonly getMainWindow: () => ProductionShellWindow | undefined;
     readonly getFocusedWindow: () => unknown;

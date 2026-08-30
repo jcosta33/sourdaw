@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useNativeApplicationMenu } from '../useNativeApplicationMenu';
 
 type NativeMenuIntent = Parameters<Parameters<SourdawDesktopBridge['nativeMenu']['listen']>[0]>[0];
+type ProjectUseCases = typeof import('#/modules/Project/useCases');
 
 const desktop = vi.hoisted(() => ({
     listener: undefined as ((intent: NativeMenuIntent) => void) | undefined,
@@ -49,13 +50,13 @@ const crdt = vi.hoisted(() => ({
 }));
 const projectActions = vi.hoisted(() => ({
     saveProject: vi.fn(async () => true),
-    quiesceProjectSession: vi.fn(async () => 'success' as const),
-    cancelProjectSessionQuiesce: vi.fn(async () => 'rejected' as const),
+    quiesceProjectSession: vi.fn<ProjectUseCases['quiesceProjectSession']>(async () => 'success'),
+    cancelProjectSessionQuiesce: vi.fn<ProjectUseCases['cancelProjectSessionQuiesce']>(async () => 'rejected'),
     discardProjectChanges: vi.fn(async () => true),
     newProject: vi.fn(),
     pickAndImportProjectFile: vi.fn(async () => true),
     exportProjectFile: vi.fn(async () => undefined),
-    getRecentProjects: vi.fn(() => []),
+    getRecentProjects: vi.fn<ProjectUseCases['getRecentProjects']>(() => []),
     getProjectSnapshotKey: vi.fn((createdAt: number) => `sourdaw:project:${createdAt}`),
     loadRecentProject: vi.fn(async () => 'committed'),
     recentProjectChanges: { subscribe: vi.fn((_listener: () => void) => () => undefined) },
@@ -130,8 +131,33 @@ const workspace = vi.hoisted(() => ({
         sessionQuiesceStarted: desktop.sessionQuiesceStarted,
     })),
 }));
-vi.mock('#/modules/WorkspaceShell/useCases', () => ({
-    ...workspace,
+vi.mock('../../../useCases/dialogs/openExportDialog', () => ({ openExportDialog: workspace.openExportDialog }));
+vi.mock('../../../useCases/dialogs/openPreferencesDialog', () => ({
+    openPreferencesDialog: workspace.openPreferencesDialog,
+}));
+vi.mock('../../../useCases/nativeApplicationMenu', () => ({
+    nativeApplicationMenu: workspace.nativeApplicationMenu,
+}));
+vi.mock('../../../useCases/togglePanel/panelToggles/toggleAutomationPanel', () => ({
+    toggleAutomationPanel: workspace.toggleAutomationPanel,
+}));
+vi.mock('../../../useCases/togglePanel/panelToggles/toggleChatPanel', () => ({
+    toggleChatPanel: workspace.toggleChatPanel,
+}));
+vi.mock('../../../useCases/togglePanel/panelToggles/toggleInspector', () => ({
+    toggleInspector: workspace.toggleInspector,
+}));
+vi.mock('../../../useCases/togglePanel/panelToggles/toggleMixer', () => ({ toggleMixer: workspace.toggleMixer }));
+vi.mock('../../../useCases/togglePanel/panelToggles/toggleSidebar', () => ({ toggleSidebar: workspace.toggleSidebar }));
+vi.mock('../../../useCases/togglePanel/panelToggles/toggleTrackList', () => ({
+    toggleTrackList: workspace.toggleTrackList,
+}));
+vi.mock('../../../useCases/togglePanel/panelToggles/toggleVirtualKeyboard', () => ({
+    toggleVirtualKeyboard: workspace.toggleVirtualKeyboard,
+}));
+vi.mock('../../../useCases/togglePanel/zoomOperations/zoomToFit', () => ({ zoomToFit: workspace.zoomToFit }));
+vi.mock('../../../useCases/togglePanel/zoomOperations/zoomToSelection', () => ({
+    zoomToSelection: workspace.zoomToSelection,
 }));
 const command = vi.hoisted(() => ({ executeAppAction: vi.fn(async () => undefined), undo: vi.fn(), redo: vi.fn() }));
 vi.mock('#/modules/Command/useCases', () => command);
@@ -210,9 +236,12 @@ describe('useNativeApplicationMenu', () => {
 
     it('acknowledges one renderer-session quiesce request with the exact result and request id', async () => {
         projectActions.quiesceProjectSession.mockImplementationOnce(
-            async (_requestId: number, begin: () => Promise<boolean>) => {
+            async (_requestId: number, begin?: () => Promise<boolean>) => {
+                if (begin === undefined) {
+                    return 'rejected';
+                }
                 await begin();
-                return 'rejected' as const;
+                return 'rejected';
             }
         );
         renderHook(() =>
@@ -1252,7 +1281,7 @@ describe('useNativeApplicationMenu', () => {
                 refreshRecentProjects = undefined;
             };
         });
-        projectActions.getRecentProjects.mockReturnValue([{ key: 'recent-1', name: 'First' }]);
+        projectActions.getRecentProjects.mockReturnValue([{ key: 'recent-1', name: 'First', updatedAt: 1 }]);
         const { rerender, unmount } = renderHook(
             ({ updatedAt }) =>
                 useNativeApplicationMenu({
@@ -1274,7 +1303,7 @@ describe('useNativeApplicationMenu', () => {
         rerender({ updatedAt: 3 });
         desktop.listener?.({ action: 'project:export-audio' });
         expect(workspace.openExportDialog).toHaveBeenCalledTimes(1);
-        projectActions.getRecentProjects.mockReturnValue([{ key: 'recent-2', name: 'Second' }]);
+        projectActions.getRecentProjects.mockReturnValue([{ key: 'recent-2', name: 'Second', updatedAt: 2 }]);
         refreshRecentProjects?.();
         expect(desktop.projectState).toHaveBeenLastCalledWith({
             title: 'Song',

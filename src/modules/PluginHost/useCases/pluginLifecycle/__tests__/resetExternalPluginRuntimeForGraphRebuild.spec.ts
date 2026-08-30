@@ -156,6 +156,24 @@ describe('resetExternalPluginRuntimeForGraphRebuild', () => {
         expect(mocks.loadPlugin).toHaveBeenCalledOnce();
     });
 
+    it('keeps project-session activation fenced when native bulk retirement rejects', async () => {
+        mocks.unloadPlugin.mockRejectedValueOnce(new Error('native unload failed'));
+        const retirement = await beginProjectSessionPluginRetirement();
+
+        await expect(retirement.retire()).rejects.toThrow('native unload failed');
+        const activation = activateExternalPlugin({
+            engineSampleRate: 48_000,
+            pluginId: 'compressor',
+            instanceId: 'after-failed-retirement',
+        });
+        await Promise.resolve();
+        expect(mocks.loadPlugin).not.toHaveBeenCalled();
+
+        retirement.reopen();
+        await activation;
+        expect(mocks.loadPlugin).toHaveBeenCalledOnce();
+    });
+
     it('waits for a pre-admitted activation before bulk retirement and leaves no late instance behind', async () => {
         const admittedLoad =
             Promise.withResolvers<

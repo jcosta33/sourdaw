@@ -4,7 +4,6 @@ export { discardProjectChanges } from './projectPersistence/discardProjectChange
 export { getProjectSnapshotKey } from './projectPersistence/getProjectSnapshotKey';
 export { quiesceProjectSession } from './projectPersistence/quiesceProjectSession';
 export { cancelProjectSessionQuiesce } from './projectPersistence/cancelProjectSessionQuiesce';
-export type { ProjectSessionQuiesceOutcome } from './projectPersistence/projectSessionQuiesceOutcome';
 export { captureProjectTransitionAuthority } from './projectPersistence/captureProjectTransitionAuthority';
 export { saveProject } from './projectPersistence/saveProject/saveProject';
 export { markDirty } from './projectPersistence/saveProject/markDirty';

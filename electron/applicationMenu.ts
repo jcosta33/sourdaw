@@ -1,5 +1,3 @@
-import type { MenuItemConstructorOptions } from 'electron';
-
 export const NATIVE_MENU_ACTIONS = [
     'project:new',
     'project:import-project',
@@ -56,6 +54,29 @@ export type NativeTextEditTarget = {
 };
 
 export type NativeRecentProject = { readonly key: string; readonly name: string };
+
+type NativeMenuRole =
+    | 'about'
+    | 'services'
+    | 'hide'
+    | 'hideOthers'
+    | 'unhide'
+    | 'quit'
+    | 'close'
+    | 'togglefullscreen'
+    | 'minimize'
+    | 'zoom'
+    | 'front';
+
+/** Platform-neutral menu description consumed by the Electron composition adapter. */
+export type ApplicationMenuTemplateItem = {
+    readonly label?: string;
+    readonly role?: NativeMenuRole;
+    readonly type?: 'separator';
+    readonly accelerator?: string;
+    readonly click?: () => void;
+    readonly submenu?: ApplicationMenuTemplateItem[];
+};
 
 const nativeMenuActions = new Set<NativeMenuAction>(NATIVE_MENU_ACTIONS);
 
@@ -201,7 +222,7 @@ export const createApplicationMenuTemplate = ({
     appName,
     send,
     recentProjects = [],
-}: CreateApplicationMenuTemplateInput): MenuItemConstructorOptions[] => [
+}: CreateApplicationMenuTemplateInput): ApplicationMenuTemplateItem[] => [
     {
         label: appName,
         submenu: [

@@ -20,20 +20,19 @@ import {
     quiesceProjectSession,
     cancelProjectSessionQuiesce,
 } from '#/modules/Project/useCases';
-import {
-    openExportDialog,
-    openPreferencesDialog,
-    toggleInspector,
-    toggleTrackList,
-    toggleVirtualKeyboard,
-    toggleAutomationPanel,
-    toggleChatPanel,
-    toggleMixer,
-    toggleSidebar,
-    zoomToFit,
-    zoomToSelection,
-    nativeApplicationMenu,
-} from '#/modules/WorkspaceShell/useCases';
+
+import { openExportDialog } from '../../useCases/dialogs/openExportDialog';
+import { openPreferencesDialog } from '../../useCases/dialogs/openPreferencesDialog';
+import { nativeApplicationMenu } from '../../useCases/nativeApplicationMenu';
+import { toggleAutomationPanel } from '../../useCases/togglePanel/panelToggles/toggleAutomationPanel';
+import { toggleChatPanel } from '../../useCases/togglePanel/panelToggles/toggleChatPanel';
+import { toggleInspector } from '../../useCases/togglePanel/panelToggles/toggleInspector';
+import { toggleMixer } from '../../useCases/togglePanel/panelToggles/toggleMixer';
+import { toggleSidebar } from '../../useCases/togglePanel/panelToggles/toggleSidebar';
+import { toggleTrackList } from '../../useCases/togglePanel/panelToggles/toggleTrackList';
+import { toggleVirtualKeyboard } from '../../useCases/togglePanel/panelToggles/toggleVirtualKeyboard';
+import { zoomToFit } from '../../useCases/togglePanel/zoomOperations/zoomToFit';
+import { zoomToSelection } from '../../useCases/togglePanel/zoomOperations/zoomToSelection';
 
 import type { ProjectStoreState } from '#/modules/Project/stores';
 
