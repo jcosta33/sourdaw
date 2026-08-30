@@ -1,0 +1,52 @@
+src/modules/Project/useCases/projectPersistence/__tests__/quiesceProjectSession.spec.ts
+  s_ae074277795b45::t_a079fbcafe3604 24-31
+electron/appIpc.ts
+  s_ae074277795b45::t_4934954980c791 32,343,415-422,431,439-442
+  s_ae074277795b45::t_d78a91aa6a0b75 443-444
+electron/channels.ts
+  s_ae074277795b45::t_823e8962bdc6b5 60-61,216
+electron/__tests__/bridge.spec.ts
+  s_ae074277795b45::t_6b02f1790f27ae 36,103,168,177
+  s_ae074277795b45::t_b33211f5e493fb 146
+electron/__tests__/rendererSessionQuiescer.spec.ts
+  s_ae074277795b45::t_32c354737aef3c 32-54
+electron/rendererSessionQuiescer.ts
+  s_ae074277795b45::t_5297827d9a533f 18,46-50,63-68
+  s_ae074277795b45::t_238583a6e20414 27-29
+  s_ae074277795b45::t_adcb63fda2b928 69
+src/modules/WorkspaceShell/presentations/hooks/__tests__/useNativeApplicationMenu.spec.tsx
+  s_ae074277795b45::t_af3719eab9db77 176-177
+  s_ae074277795b45::t_334f34dcfedbc4 21,104,124,178
+  s_ae074277795b45::t_296fc4b98ee0c1 153-156
+electron/bridge.ts
+  s_ae074277795b45::t_2e66d1af93998a 45,456-461
+  s_ae074277795b45::t_d3bc0014fd937f 462
+electron/main.ts
+  s_ae074277795b45::t_040feb02aedb16 688-694
+  s_ae074277795b45::t_109aac5963e8c1 365-369
+src/types/sourdaw-desktop.d.ts
+  s_ae074277795b45::t_823e8962bdc6b5 136
+src/modules/Project/useCases/projectPersistence/quiesceProjectSession.ts
+  s_ae074277795b45::t_f5bf27805555bf 6
+  s_ae074277795b45::t_0837feea702267 7-8,12,19,26-29
+src/modules/WorkspaceShell/presentations/hooks/useNativeApplicationMenu.ts
+  s_ae074277795b45::t_fe021f51ce774f 258-260
+electron/__tests__/appIpc.spec.ts
+  s_ae074277795b45::t_d84c0a93e3d43e 144,207,261
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "a82dd673b4e7e25b68a3e4c623971f373904da01",
+  "prompts": {},
+  "sessions": {
+    "s_ae074277795b45": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04ab5-5234-7100-be1c-76ebfaba88d3",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
