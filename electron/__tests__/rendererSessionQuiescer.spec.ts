@@ -22,8 +22,10 @@ describe('renderer session quiescer', () => {
         quiescer.resolve(window, 2, true);
         quiescer.resolve(window, 1, true);
         await expect(first).resolves.toBe(true);
+        await expect(quiescer.request(window)).resolves.toBe(true);
 
-        const second = quiescer.request(window);
+        const secondWindow = { isDestroyed: () => false, webContents: { send: vi.fn() } };
+        const second = quiescer.request(secondWindow);
         timeout?.();
         await expect(second).resolves.toBe(false);
         expect(RENDERER_SESSION_QUIESCE_TIMEOUT_MS).toBe(5_000);

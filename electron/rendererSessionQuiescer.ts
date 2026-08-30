@@ -57,6 +57,9 @@ export const createRendererSessionQuiescer = (
 
     return {
         request: (window: RendererSessionWindow): Promise<boolean> => {
+            if (acknowledgedSuccess?.window === window) {
+                return Promise.resolve(true);
+            }
             if (
                 window.isDestroyed() ||
                 pending !== undefined ||

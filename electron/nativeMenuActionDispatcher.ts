@@ -16,6 +16,8 @@ type CreateNativeMenuActionDispatcherInput = {
 
 const canQueueForWindowlessRenderer = (intent: NativeMenuIntent): boolean =>
     intent.action === 'project:new' ||
+    intent.action === 'project:import-project' ||
+    intent.action === 'view:preferences' ||
     (intent.action === 'project:open-recent' && intent.recentKey !== undefined) ||
     ((intent.action === 'project:save' || intent.action === 'project:discard') &&
         intent.requestId !== undefined &&
