@@ -1,0 +1,52 @@
+electron/main.ts
+  s_ae074277795b45::t_343132c5c29640 187-191,328,338-341,672
+  s_ae074277795b45::t_6e74951d3c2e65 63,826-830
+electron/__tests__/nativeMenuActionDispatcher.spec.ts
+  s_ae074277795b45::t_84d84855095214 16-34,59,83,112,132,152,181,214,241,270
+src/modules/Project/useCases/projectPersistence/__tests__/quiesceProjectSession.spec.ts
+  s_ae074277795b45::t_b9557563aa49b6 11,23,29,31,35-44
+electron/__tests__/windowCloseCoordinator.spec.ts
+  s_ae074277795b45::t_784b5489eb2fda 310,334
+  s_ae074277795b45::t_83cef90670aaa2 338
+  s_ae074277795b45::t_4feb11d8cfb861 6-20
+electron/__tests__/bridge.spec.ts
+  s_ae074277795b45::t_e7e33b73001638 211-224
+electron/nativeMenuActionDispatcher.ts
+  s_ae074277795b45::t_343132c5c29640 68-71
+electron/__tests__/rendererSessionQuiescer.spec.ts
+  s_ae074277795b45::t_e2b6b27c4d1113 50-64
+src/modules/Project/useCases/projectPersistence/quiesceProjectSession.ts
+  s_ae074277795b45::t_343132c5c29640 7-17,21,24-32
+electron/__tests__/rendererWindowActivation.spec.ts
+  s_ae074277795b45::t_6e74951d3c2e65 1-21
+src/modules/WorkspaceShell/presentations/hooks/useNativeApplicationMenu.ts
+  s_ae074277795b45::t_343132c5c29640 274
+src/modules/WorkspaceShell/presentations/hooks/__tests__/useNativeApplicationMenu.spec.tsx
+  s_ae074277795b45::t_cb0288a4e175de 149-173
+  s_ae074277795b45::t_fe05f7c1fcfbda 174-198
+  s_ae074277795b45::t_0b19de8bbe8504 10,14-19,116,120-122
+electron/rendererWindowActivation.ts
+  s_ae074277795b45::t_6e74951d3c2e65 1-16
+electron/windowCloseCoordinator.ts
+  s_ae074277795b45::t_343132c5c29640 44,60,137-138,256-257
+  s_ae074277795b45::t_fbe1d7c3cf291f 61,136
+  s_ae074277795b45::t_dc94fe3580bf7f 125-126
+electron/rendererSessionQuiescer.ts
+  s_ae074277795b45::t_fa3e4be654bf4b 73-80
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "0091c86ad9adf930534aba451f756ec1759ae092",
+  "prompts": {},
+  "sessions": {
+    "s_ae074277795b45": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04ab5-5234-7100-be1c-76ebfaba88d3",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
