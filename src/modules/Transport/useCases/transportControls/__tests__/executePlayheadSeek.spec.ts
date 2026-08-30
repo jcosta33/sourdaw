@@ -48,6 +48,7 @@ vi.mock('#/modules/MIDI/useCases', () => ({ resetMidiState: mockResetMidiState }
 vi.mock('#/infra/logger/appLogger', () => ({ logger: mockLogger }));
 
 import { executePlayheadSeek } from '../executePlayheadSeek';
+import { recordingLifecycle } from '../recordingLifecycle';
 
 describe('executePlayheadSeek', () => {
     beforeEach(() => {
@@ -95,6 +96,26 @@ describe('executePlayheadSeek', () => {
         await executePlayheadSeek(8);
         expect(mockStopActiveRecording).toHaveBeenCalledTimes(1);
         expect(mockUpdateTransportState).toHaveBeenCalledExactlyOnceWith({ playheadPosition: 8 });
+    });
+
+    it('cancels an armed count-in before seeking even though recording has not engaged', async () => {
+        // During count-in `isRecording` is still false, so the recording gate
+        // alone would skip the teardown and leave the armed wake holding the
+        // beat the count-in counted to. Pause and stop cancel the same trap
+        // through `stopActiveRecording`; the seek must route through it too.
+        vi.useFakeTimers();
+        try {
+            recordingLifecycle.setCountInTimerId(setTimeout(() => undefined, 2000));
+            mockGetTransportState.mockReturnValue({ isPlaying: false, isRecording: false });
+
+            await executePlayheadSeek(32);
+
+            expect(mockStopActiveRecording).toHaveBeenCalledTimes(1);
+            expect(mockUpdateTransportState).toHaveBeenCalledExactlyOnceWith({ playheadPosition: 32 });
+        } finally {
+            recordingLifecycle.setCountInTimerId(null);
+            vi.useRealTimers();
+        }
     });
 
     it('still seeks even when recording teardown fails', async () => {
