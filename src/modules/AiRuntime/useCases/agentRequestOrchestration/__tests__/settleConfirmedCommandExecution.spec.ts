@@ -209,6 +209,23 @@ const confirmation = {
     groupLabel: 'Batch',
 } satisfies PendingAppActionConfirmation;
 
+const trackedWorkLease = {
+    leaseId: 'lease-1',
+    runId: 'run-1',
+    workId: 'work-1',
+    attempt: 1,
+    ownerKind: 'command',
+    cancellationGeneration: 0,
+    idempotencyKey: 'key-1',
+    receiptIdentity: 'receipt-1',
+    cleanupOwner: 'command',
+    idempotent: true,
+    retriable: false,
+    claimedAt: 0,
+    terminalState: null,
+    settledAt: null,
+} satisfies NonNullable<ReadyAdmission['trackedWorkLease']>;
+
 function createReceipt(result: Parameters<typeof createVerifiedBatchReceipt>[0]['result']) {
     return createVerifiedBatchReceipt({
         contentHash: 'content-hash',
@@ -264,6 +281,11 @@ function createExecutedWithWarningBatchResult(): Extract<CompletedBatchResult, {
         ...result,
         receipt: createReceipt(result),
     } satisfies Extract<CompletedBatchResult, { status: 'executed-with-warning' }>;
+}
+
+function createExecutedBatchResult(): CompletedBatchResult {
+    const result = { status: 'executed', actions: createEmptyActions() } satisfies Parameters<typeof createReceipt>[0];
+    return { ...result, receipt: createReceipt(result) } satisfies CompletedBatchResult;
 }
 
 function createNoOpBatchResult(): CompletedBatchResult {
@@ -322,6 +344,82 @@ function createCancelledBatchResult(): CompletedBatchResult {
     >[0];
     return { ...result, receipt: createReceipt(result) } satisfies CompletedBatchResult;
 }
+
+type LeaseSettlementCase = {
+    status: CompletedBatchResult['status'];
+    createBatchResult: () => CompletedBatchResult;
+    terminalState: 'completed' | 'cancelled' | 'failed';
+    evidence: 'none' | 'verified-command-receipt';
+};
+
+const trackedLeaseSettlementCases = {
+    'idempotent-replay': {
+        status: 'idempotent-replay',
+        createBatchResult: createIdempotentReplayBatchResult,
+        terminalState: 'completed',
+        evidence: 'verified-command-receipt',
+    },
+    committed: {
+        status: 'committed',
+        createBatchResult: createCommittedBatchResult,
+        terminalState: 'completed',
+        evidence: 'verified-command-receipt',
+    },
+    'committed-with-warning': {
+        status: 'committed-with-warning',
+        createBatchResult: createCommittedWithWarningBatchResult,
+        terminalState: 'completed',
+        evidence: 'verified-command-receipt',
+    },
+    executed: {
+        status: 'executed',
+        createBatchResult: createExecutedBatchResult,
+        terminalState: 'completed',
+        evidence: 'verified-command-receipt',
+    },
+    'executed-with-warning': {
+        status: 'executed-with-warning',
+        createBatchResult: createExecutedWithWarningBatchResult,
+        terminalState: 'completed',
+        evidence: 'verified-command-receipt',
+    },
+    'no-op': {
+        status: 'no-op',
+        createBatchResult: createNoOpBatchResult,
+        terminalState: 'completed',
+        evidence: 'none',
+    },
+    ambiguous: {
+        status: 'ambiguous',
+        createBatchResult: createAmbiguousBatchResult,
+        terminalState: 'failed',
+        evidence: 'none',
+    },
+    failed: {
+        status: 'failed',
+        createBatchResult: createFailedBatchResult,
+        terminalState: 'failed',
+        evidence: 'none',
+    },
+    conflicted: {
+        status: 'conflicted',
+        createBatchResult: createConflictedBatchResult,
+        terminalState: 'failed',
+        evidence: 'none',
+    },
+    rejected: {
+        status: 'rejected',
+        createBatchResult: createRejectedBatchResult,
+        terminalState: 'failed',
+        evidence: 'none',
+    },
+    cancelled: {
+        status: 'cancelled',
+        createBatchResult: createCancelledBatchResult,
+        terminalState: 'cancelled',
+        evidence: 'none',
+    },
+} satisfies Record<CompletedBatchResult['status'], LeaseSettlementCase>;
 
 function createInput(
     executionFlight: Input['executionFlight'],
@@ -460,36 +558,33 @@ describe('settleConfirmedCommandExecution', () => {
         );
     });
 
-    it('settles a warned runtime result with authoritative receipt evidence', async () => {
-        const trackedWorkLease = {
-            leaseId: 'lease-1',
-            runId: 'run-1',
-            workId: 'work-1',
-            attempt: 1,
-            ownerKind: 'command',
-            cancellationGeneration: 0,
-            idempotencyKey: 'key-1',
-            receiptIdentity: 'receipt-1',
-            cleanupOwner: 'command',
-            idempotent: true,
-            retriable: false,
-            claimedAt: 0,
-            terminalState: null,
-            settledAt: null,
-        } satisfies NonNullable<ReadyAdmission['trackedWorkLease']>;
+    it.each(Object.values(trackedLeaseSettlementCases))(
+        'settles $status results with the exact work-lease contract',
+        async ({ status, createBatchResult, terminalState, evidence }) => {
+            const batchResult = createBatchResult();
+
+            await settleConfirmedCommandExecution(
+                createInput(createCompletedFlight(batchResult), { trackedWorkLease })
+            );
+
+            expect(batchResult.status).toBe(status);
+            expect(mocks.settleLease).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    lease: trackedWorkLease,
+                    terminalState,
+                    evidence,
+                })
+            );
+        }
+    );
+
+    it('forwards the authoritative receipt warning for a warned runtime result', async () => {
         mocks.settleLease.mockReturnValueOnce({ accepted: false, warning: 'authoritative receipt warning' });
 
         await settleConfirmedCommandExecution(
             createInput(createCompletedFlight(createExecutedWithWarningBatchResult()), { trackedWorkLease })
         );
 
-        expect(mocks.settleLease).toHaveBeenCalledWith(
-            expect.objectContaining({
-                lease: trackedWorkLease,
-                terminalState: 'completed',
-                evidence: 'verified-command-receipt',
-            })
-        );
         expect(mocks.settleBatchOutcome).toHaveBeenCalledWith(
             expect.objectContaining({
                 trackedLeaseSettlement: { accepted: false, warning: 'authoritative receipt warning' },
