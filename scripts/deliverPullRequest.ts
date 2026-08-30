@@ -1053,19 +1053,17 @@ function shouldRestorePreArmedDeliveryReceiptAuthorityAfterFinalObservation(pull
 
 function restorePreparedDeliveryReceiptAuthorityBeforeClosedRetry(number: number, port: DeliveryPort): void {
     const current = port.readDeliveryReceiptAuthority(number);
-    if (
-        current?.phase !== 'prepared' ||
-        current.postMergeValidation === undefined ||
-        current.receiptBody === undefined
-    ) {
+    if (current?.phase !== 'prepared' || current.postMergeValidation === undefined) {
         return;
     }
-    restorePreArmedDeliveryReceiptAuthority(
-        number,
-        preparedDeliveryReceiptAuthority({ id: current.receiptId, body: current.receiptBody }),
-        current,
-        port
-    );
+    const beforeArming: PersistedDeliveryReceiptAuthority =
+        current.receiptBody === undefined
+            ? {
+                  phase: 'prepared',
+                  receiptId: current.receiptId,
+              }
+            : preparedDeliveryReceiptAuthority({ id: current.receiptId, body: current.receiptBody });
+    restorePreArmedDeliveryReceiptAuthority(number, beforeArming, current, port);
 }
 
 function withRestorablePreArmedDeliveryReceiptAuthority<Result>(

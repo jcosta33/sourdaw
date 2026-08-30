@@ -3051,6 +3051,62 @@ describe('pull-request delivery', () => {
         expect(calls.filter((call) => call.startsWith('retarget:'))).toHaveLength(0);
     });
 
+    it('releases a bodyless prepared authority after CLOSED, then lets a reopened new head and body deliver', () => {
+        const bodyX = relationshipBody('Closes #2372');
+        const bodyY = relationshipBody('Closes #2373');
+        const nextHead = 'reopened-head';
+        const storedReceiptBody = visibleDeliveryReceiptBody(42, 'head', bodyX, 2372, 'successful');
+        const { port, calls, tracker, persistedReceiptAuthority, receipts } = fakePort({
+            primary: [
+                pullRequest({ state: 'CLOSED', body: bodyX }),
+                pullRequest({ headRefOid: nextHead, body: bodyY }),
+                pullRequest({ headRefOid: nextHead, body: bodyY }),
+            ],
+            dependentSets: [[], []],
+            persistedReceiptAuthority: {
+                phase: 'prepared',
+                receiptId: 'IC_prepared_bodyless',
+                postMergeValidation: {
+                    headRefOid: 'head',
+                    headRefName: 'feat/gate',
+                    baseRefName: 'main',
+                    bodySha256: createHash('sha256').update(bodyX).digest('hex'),
+                    trackerTarget: 2372,
+                },
+            },
+            receipts: [
+                {
+                    id: 'IC_prepared_bodyless',
+                    body: storedReceiptBody,
+                    authorNodeId: AUTHOR_BOT_NODE_ID,
+                    authorLogin: 'renamed-author[bot]',
+                    authorType: 'Bot',
+                    createdAt: '2026-08-21T00:00:00Z',
+                    updatedAt: '2026-08-21T00:00:00Z',
+                },
+            ],
+        });
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/PR #42 is closed/i);
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'prepared',
+            receiptId: 'IC_prepared_bodyless',
+        });
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(1);
+        expect(receipts.map(({ id }) => id)).toEqual(['IC_prepared_bodyless', 'IC_delivery_42_2']);
+        expect(calls).toContain(`merge:42:${nextHead}`);
+        expect(calls).toContain('complete:2373');
+        expect(calls).not.toContain('complete:2372');
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'terminal',
+            receiptId: 'IC_delivery_42_2',
+            receiptBody: visibleDeliveryReceiptBody(42, nextHead, bodyY, 2373, 'successful'),
+        });
+    });
+
     it('fails closed when a bodyless prepared authority names X but its stored post-merge validation belongs to Y', () => {
         const bodyX = relationshipBody('Closes #2372');
         const bodyY = relationshipBody('Closes #2373');
@@ -3092,6 +3148,57 @@ describe('pull-request delivery', () => {
         expect(() => deliverPullRequest(42, port, tracker)).toThrow(/delivery receipt changed during recovery/i);
         expect(calls.filter((call) => call.startsWith('complete:'))).toHaveLength(0);
         expect(calls.filter((call) => call.startsWith('retarget:'))).toHaveLength(0);
+    });
+
+    it('preserves bodyless prepared merged recovery when the PR is already merged', () => {
+        const closes = relationshipBody('Closes #2372');
+        const storedReceiptBody = visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful');
+        const { port, calls, tracker, persistedReceiptAuthority } = fakePort({
+            primary: [
+                pullRequest({
+                    state: 'MERGED',
+                    body: closes,
+                    mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
+                }),
+            ],
+            dependentSets: [[]],
+            persistedReceiptAuthority: {
+                phase: 'prepared',
+                receiptId: 'IC_prepared_bodyless',
+                postMergeValidation: {
+                    headRefOid: 'head',
+                    headRefName: 'feat/gate',
+                    baseRefName: 'main',
+                    bodySha256: createHash('sha256').update(closes).digest('hex'),
+                    trackerTarget: 2372,
+                },
+            },
+            receipts: [
+                {
+                    id: 'IC_prepared_bodyless',
+                    body: storedReceiptBody,
+                    authorNodeId: AUTHOR_BOT_NODE_ID,
+                    authorLogin: 'renamed-author[bot]',
+                    authorType: 'Bot',
+                    createdAt: '2026-08-21T00:00:00Z',
+                    updatedAt: '2026-08-21T00:00:00Z',
+                },
+            ],
+            deliveryReceiptProof: { totalCount: 1, latestCommentId: 'IC_prepared_bodyless' },
+        });
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls).toContain('receipt-proof:42:1:IC_prepared_bodyless');
+        expect(calls).toContain('receipt-authority:write:merge-authorized:IC_prepared_bodyless');
+        expect(calls).toContain('receipt-authority:write:terminal:IC_prepared_bodyless');
+        expect(calls).toContain('complete:2372');
+        expect(calls).not.toContain('add-receipt:42');
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'terminal',
+            receiptId: 'IC_prepared_bodyless',
+            receiptBody: storedReceiptBody,
+        });
     });
 
     it('fails closed when prepared merged recovery only differs on receipt closingIssue versus stored trackerTarget', () => {
