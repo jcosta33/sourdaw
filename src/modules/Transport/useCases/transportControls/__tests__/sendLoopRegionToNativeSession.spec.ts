@@ -32,8 +32,13 @@ type MapsUpdate = (input: {
     transportMaps: { loopRegion: { enabled: boolean; startSeconds: number; endSeconds: number } | null };
 }) => Promise<{ outcome: 'updated' } | { outcome: 'declined'; reason: string }>;
 
+type Reposition = (input: {
+    positionSeconds: number;
+}) => Promise<{ outcome: 'repositioned' } | { outcome: 'declined'; reason: string }>;
+
 const mocks = vi.hoisted(() => ({
     updateTransportMaps: vi.fn<MapsUpdate>(),
+    reposition: vi.fn<Reposition>(),
     isNativeLiveGraphSessionHeld: vi.fn<() => boolean>(),
     logger: { debug: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
@@ -42,6 +47,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     startNativeLiveGraphSession: vi.fn(),
     isNativeLiveGraphSessionHeld: mocks.isNativeLiveGraphSessionHeld,
     updateNativeLiveGraphSessionTransportMaps: mocks.updateTransportMaps,
+    repositionNativeLiveGraphSession: mocks.reposition,
 }));
 vi.mock('#/infra/logger/appLogger', () => ({ logger: mocks.logger }));
 
@@ -69,6 +75,7 @@ function playingWithLoop(overrides?: Partial<TransportState>): void {
         ...overrides,
     });
     mocks.updateTransportMaps.mockClear();
+    mocks.reposition.mockClear();
     mocks.logger.debug.mockClear();
     mocks.logger.warn.mockClear();
 }
@@ -79,6 +86,8 @@ beforeEach(() => {
     unsubscribe?.();
     mocks.updateTransportMaps.mockReset();
     mocks.updateTransportMaps.mockResolvedValue({ outcome: 'updated' });
+    mocks.reposition.mockReset();
+    mocks.reposition.mockResolvedValue({ outcome: 'repositioned' });
     mocks.isNativeLiveGraphSessionHeld.mockReturnValue(true);
     mocks.logger.debug.mockClear();
     mocks.logger.warn.mockClear();
@@ -174,9 +183,33 @@ describe('loop gestures during playback', () => {
     });
 });
 
-describe('loop gestures while no native session is held', () => {
-    it('send nothing, because the next play carries the region with the maps', () => {
+describe('loop gestures while playing before the native session is held', () => {
+    it('still queues the maps write behind start, because isPlaying is already true', () => {
         playingWithLoop();
+        mocks.isNativeLiveGraphSessionHeld.mockReturnValue(false);
+
+        toggleLoop();
+
+        // Play sets isPlaying before the start await assigns the backend. A
+        // maps write in that window must still queue so start does not install
+        // a stale snapshot while previous has already advanced.
+        expect(mocks.updateTransportMaps).toHaveBeenCalledOnce();
+        expect(sentLoopRegion()).toEqual({ enabled: false, startSeconds: 2, endSeconds: 4 });
+        expect(mocks.reposition).not.toHaveBeenCalled();
+    });
+});
+
+describe('loop gestures while neither playing nor a native session is held', () => {
+    it('send nothing, because the next play carries the region with the maps', () => {
+        transportStore.set({
+            ...defaultTransportState,
+            tempo: 120,
+            isPlaying: false,
+            isLooping: true,
+            loopStart: 4,
+            loopEnd: 8,
+        });
+        mocks.updateTransportMaps.mockClear();
         mocks.isNativeLiveGraphSessionHeld.mockReturnValue(false);
 
         toggleLoop();
@@ -185,9 +218,6 @@ describe('loop gestures while no native session is held', () => {
         restoreLoopRegion({ loopStart: 0, loopEnd: 4, isLooping: true });
         setLoopEnabled(true);
 
-        // A parked engine renders no frame, so its seam is unobservable; each of
-        // these would spend a bridge round trip moving a transport nobody is
-        // listening to.
         expect(mocks.updateTransportMaps).not.toHaveBeenCalled();
     });
 });

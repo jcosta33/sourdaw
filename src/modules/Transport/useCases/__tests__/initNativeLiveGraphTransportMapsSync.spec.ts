@@ -6,12 +6,15 @@
  * missed every other writer — `addTempoChange` never touches `transportStore`,
  * and a CRDT `fromCrdt` hydrate writes the stores without going through a
  * gesture. The store boundary is the subject: if a maps-relevant `set` while
- * a native session is held does not reach `updateNativeLiveGraphSessionTransportMaps`,
- * the native session keeps the pair play was pressed with.
+ * playing or while a native session is held does not reach
+ * `updateNativeLiveGraphSessionTransportMaps`, the native session keeps the
+ * pair play was pressed with.
  *
  * `updateNativeLiveGraphSessionTransportMaps` is the double. The projected
  * maps are real, because "the function was called" would pass for a send that
- * restated the stale pair.
+ * restated the stale pair. Tempo and meter writes also locate the rolling
+ * session so `song_pos_beats` stays on the UI beat after the maps replace the
+ * beat↔seconds integral.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -19,6 +22,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 
 import { defaultTransportState, type TransportState } from '../../models/TransportState';
+import { playheadPositionRef } from '../../stores/playheadPositionRef';
 import { tempoMapStore } from '../../stores/tempoMapStore';
 import { timeSignatureMapStore } from '../../stores/timeSignatureMapStore';
 import { transportStore } from '../../stores/transportStore';
@@ -36,6 +40,10 @@ type EngineTransportMaps = {
 type MapsUpdate = (input: {
     transportMaps: EngineTransportMaps;
 }) => Promise<{ outcome: 'updated' } | { outcome: 'declined'; reason: string }>;
+
+type Reposition = (input: {
+    positionSeconds: number;
+}) => Promise<{ outcome: 'repositioned' } | { outcome: 'declined'; reason: string }>;
 
 type TestDoc = {
     [key: string]: unknown;
@@ -66,6 +74,7 @@ function configure_fake_crdt_port(): void {
 
 const mocks = vi.hoisted(() => ({
     updateTransportMaps: vi.fn<MapsUpdate>(),
+    reposition: vi.fn<Reposition>(),
     isNativeLiveGraphSessionHeld: vi.fn<() => boolean>(),
     logger: { debug: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
@@ -74,6 +83,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     startNativeLiveGraphSession: vi.fn(),
     isNativeLiveGraphSessionHeld: mocks.isNativeLiveGraphSessionHeld,
     updateNativeLiveGraphSessionTransportMaps: mocks.updateTransportMaps,
+    repositionNativeLiveGraphSession: mocks.reposition,
 }));
 vi.mock('#/infra/logger/appLogger', () => ({ logger: mocks.logger }));
 
@@ -94,6 +104,8 @@ describe('without observing the stores', () => {
     beforeEach(() => {
         mocks.updateTransportMaps.mockReset();
         mocks.updateTransportMaps.mockResolvedValue({ outcome: 'updated' });
+        mocks.reposition.mockReset();
+        mocks.reposition.mockResolvedValue({ outcome: 'repositioned' });
         mocks.isNativeLiveGraphSessionHeld.mockReturnValue(true);
         tempoMapStore.set({ changes: [] });
         timeSignatureMapStore.set({ changes: [] });
@@ -125,8 +137,11 @@ describe('initNativeLiveGraphTransportMapsSync', () => {
         transportStore.set({ ...defaultTransportState });
         tempoMapStore.set({ changes: [] });
         timeSignatureMapStore.set({ changes: [] });
+        playheadPositionRef.current = 0;
         mocks.updateTransportMaps.mockReset();
         mocks.updateTransportMaps.mockResolvedValue({ outcome: 'updated' });
+        mocks.reposition.mockReset();
+        mocks.reposition.mockResolvedValue({ outcome: 'repositioned' });
         mocks.isNativeLiveGraphSessionHeld.mockReturnValue(true);
         mocks.logger.debug.mockClear();
         mocks.logger.warn.mockClear();
@@ -145,6 +160,7 @@ describe('initNativeLiveGraphTransportMapsSync', () => {
             changes: [{ id: 'tempo-0', beat: 0, tempo: 120, curve: 'instant' }],
         });
         mocks.updateTransportMaps.mockClear();
+        mocks.reposition.mockClear();
 
         addTempoChange(8, 60);
 
@@ -157,6 +173,7 @@ describe('initNativeLiveGraphTransportMapsSync', () => {
     it('sends the projected loop region when a CRDT-like store set writes loop fields during playback', () => {
         playingTransport();
         mocks.updateTransportMaps.mockClear();
+        mocks.reposition.mockClear();
 
         transportStore.set({
             ...transportStore.value!,
@@ -166,6 +183,7 @@ describe('initNativeLiveGraphTransportMapsSync', () => {
         });
 
         expect(sentMaps()?.loopRegion).toEqual({ enabled: true, startSeconds: 2, endSeconds: 4 });
+        expect(mocks.reposition).not.toHaveBeenCalled();
     });
 
     it('sends the projected tempo when setTempo writes transport.tempo on an empty map during playback', () => {
@@ -175,6 +193,22 @@ describe('initNativeLiveGraphTransportMapsSync', () => {
         setTempo({ bpm: 90 });
 
         expect(sentMaps()?.tempo).toEqual([{ startSeconds: 0, beatsPerMinute: 90 }]);
+    });
+
+    it('relocates the rolling session to the current beat after setTempo changes the maps', () => {
+        playingTransport({ tempo: 120 });
+        playheadPositionRef.current = 8;
+        mocks.updateTransportMaps.mockClear();
+        mocks.reposition.mockClear();
+
+        setTempo({ bpm: 60 });
+
+        expect(mocks.updateTransportMaps).toHaveBeenCalledOnce();
+        expect(mocks.reposition).toHaveBeenCalledOnce();
+        expect(mocks.reposition).toHaveBeenCalledWith({ positionSeconds: 8 });
+        expect(mocks.updateTransportMaps.mock.invocationCallOrder[0]).toBeLessThan(
+            mocks.reposition.mock.invocationCallOrder[0]!
+        );
     });
 
     it('sends the projected loop and tempo when a live CRDT hydrate clears isPlaying but a session is held', () => {
@@ -238,8 +272,24 @@ describe('initNativeLiveGraphTransportMapsSync', () => {
         expect(mocks.updateTransportMaps).not.toHaveBeenCalled();
     });
 
-    it('does not send maps-relevant writes when no native session is held', () => {
+    it('sends maps-relevant writes while playing even when no native session is held yet', () => {
         playingTransport();
+        mocks.isNativeLiveGraphSessionHeld.mockReturnValue(false);
+        mocks.updateTransportMaps.mockClear();
+
+        transportStore.set({
+            ...transportStore.value!,
+            isLooping: true,
+            loopStart: 4,
+            loopEnd: 8,
+        });
+
+        expect(mocks.updateTransportMaps).toHaveBeenCalledOnce();
+        expect(sentMaps()?.loopRegion).toEqual({ enabled: true, startSeconds: 2, endSeconds: 4 });
+    });
+
+    it('does not send maps-relevant writes when neither playing nor a native session is held', () => {
+        transportStore.set({ ...defaultTransportState, tempo: 120, isPlaying: false });
         mocks.isNativeLiveGraphSessionHeld.mockReturnValue(false);
         mocks.updateTransportMaps.mockClear();
 

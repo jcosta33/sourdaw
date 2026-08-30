@@ -3,11 +3,11 @@
  * (#3105, #3109).
  *
  * Called from `initNativeLiveGraphTransportMapsSync` whenever a maps-relevant
- * store write lands while a native session is held — loop fields on
- * `transportStore`, or a change to `tempoMapStore` / `timeSignatureMapStore`.
- * The region and maps are read back out of those stores rather than passed
- * down, so every writer (gesture, tempo use case, CRDT hydrate) shares one
- * projection of what the transport now says.
+ * store write lands while playing or while a native session is held — loop
+ * fields on `transportStore`, or a change to `tempoMapStore` /
+ * `timeSignatureMapStore`. The region and maps are read back out of those
+ * stores rather than passed down, so every writer (gesture, tempo use case,
+ * CRDT hydrate) shares one projection of what the transport now says.
  *
  * `projectEngineTransportMaps` is that projection, and reusing it is the point:
  * loop bounds are authored in beats and the engine is addressed in seconds, so
@@ -15,12 +15,13 @@
  * any other way would sit at a different second than the tempo map the engine
  * is already following puts it at.
  *
- * ── Only while a session is held ──────────────────────────────────────────
+ * ── Queue without requiring a backend ─────────────────────────────────────
  *
- * A parked engine renders no frame at all, so its loop seam is unobservable
- * until play rolls it — but a session can stay held while parked, and a CRDT
- * hydrate can clear `isPlaying` without stopping that session. The gate is
- * whether this process holds a native backend, not the transport's `isPlaying`.
+ * The observer decides when to call this. Play sets `isPlaying` before the
+ * start await assigns the backend, and a maps write in that window must still
+ * queue behind start. This helper therefore does not gate on session held —
+ * `updateNativeLiveGraphSessionTransportMaps` declines if its worker still
+ * sees no backend.
  *
  * ── Fired, never awaited ──────────────────────────────────────────────────
  *
@@ -31,18 +32,11 @@
  */
 
 import { logger } from '#/infra/logger/appLogger';
-import {
-    isNativeLiveGraphSessionHeld,
-    updateNativeLiveGraphSessionTransportMaps,
-} from '#/modules/AudioEngine/useCases';
+import { updateNativeLiveGraphSessionTransportMaps } from '#/modules/AudioEngine/useCases';
 
 import { projectEngineTransportMaps } from '../tempoMap/projectEngineTransportMaps';
 
 export function sendLoopRegionToNativeSession(): void {
-    if (!isNativeLiveGraphSessionHeld()) {
-        return;
-    }
-
     Promise.resolve(updateNativeLiveGraphSessionTransportMaps({ transportMaps: projectEngineTransportMaps() }))
         .then((result) => {
             if (result.outcome === 'declined') {
