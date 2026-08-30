@@ -174,7 +174,7 @@ describe('plugin command admission before the cascade', () => {
             /canQuit:\s*async\s*\(\)\s*=>\s*\{[\s\S]*?windowCloseCoordinator\.requestClose\(\)[\s\S]*?rendererSessionLifecycle\.approveTeardown\(\)[\s\S]*?\},\s*beforeRun:\s*quiesceApprovedMainWindow/u
         );
         expect(mainSource).toMatch(
-            /const quiesceApprovedMainWindow[\s\S]*?finally\s*\{[\s\S]*?mainWindow\s*===\s*window[\s\S]*?mainWindow\s*=\s*undefined/u
+            /const quiesceApprovedMainWindow[\s\S]*?await destroyMainWindowAfterEditorsDetach\(\)[\s\S]*?const quiesced\s*=\s*destroyed \|\| window\.isDestroyed\(\)[\s\S]*?rendererSessionLifecycle\.cancelTeardown\(\)[\s\S]*?finally\s*\{[\s\S]*?destroyed \|\| window\.isDestroyed\(\)[\s\S]*?mainWindow\s*===\s*window/u
         );
     });
 });
@@ -273,10 +273,10 @@ describe('the before-quit handler', () => {
         let rendererPresent = true;
         const beforeRun = vi.fn(
             () =>
-                new Promise<void>((resolve) => {
+                new Promise<boolean>((resolve) => {
                     releaseQuiesce = () => {
                         rendererPresent = false;
-                        resolve();
+                        resolve(true);
                     };
                 })
         );
@@ -301,7 +301,7 @@ describe('the before-quit handler', () => {
 
     it('force-quits when renderer quiescence never settles and never starts native shutdown while it is interactive', async () => {
         const { timers, fire } = manualTimers();
-        const beforeRun = vi.fn(() => new Promise<void>(() => undefined));
+        const beforeRun = vi.fn(() => new Promise<boolean>(() => undefined));
         const run = vi.fn(async () => completed);
         const exit = vi.fn();
         const handler = createQuitHandler(run, { beforeRun, timers, exit, report: () => undefined });
@@ -317,6 +317,23 @@ describe('the before-quit handler', () => {
         expect(run).not.toHaveBeenCalled();
         expect(first.preventDefault).toHaveBeenCalledTimes(1);
         expect(repeated.preventDefault).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps the app open when delayed renderer quiescence loses close authority, then permits a fresh quit', async () => {
+        const beforeRun = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+        const run = vi.fn(async () => completed);
+        const exit = vi.fn();
+        const handler = createQuitHandler(run, { beforeRun, exit, report: () => undefined });
+
+        handler({ preventDefault: () => undefined });
+        await vi.waitFor(() => expect(beforeRun).toHaveBeenCalledTimes(1));
+        await Promise.resolve();
+        expect(run).not.toHaveBeenCalled();
+        expect(exit).not.toHaveBeenCalled();
+
+        handler({ preventDefault: () => undefined });
+        await vi.waitFor(() => expect(exit).toHaveBeenCalledWith(0));
+        expect(run).toHaveBeenCalledTimes(1);
     });
 
     it.each([

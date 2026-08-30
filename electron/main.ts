@@ -113,7 +113,7 @@ const isAllowedFrameUrl = trustedFrameGuard(allowedOrigins);
 
 let mainWindow: BrowserWindow | undefined;
 let pluginWindowHost: PluginWindowHost | undefined;
-let destroyMainWindowAfterEditorsDetach: (() => Promise<void>) | undefined;
+let destroyMainWindowAfterEditorsDetach: ((force?: boolean) => Promise<boolean>) | undefined;
 const rendererSessionLifecycle = createRendererSessionLifecycle();
 
 const createAndActivateWindow = (): BrowserWindow => {
@@ -184,32 +184,49 @@ const nativeMenuProjectStateController = createNativeMenuProjectStateController(
     rebuildApplicationMenu: rebuildMacApplicationMenu,
 });
 
-const quiesceApprovedMainWindow = async (): Promise<void> => {
+const quiesceApprovedMainWindow = async (): Promise<boolean> => {
     const window = mainWindow;
     if (window === undefined) {
-        return;
+        return true;
     }
+    let destroyed = false;
     try {
         if (!window.isDestroyed()) {
             if (destroyMainWindowAfterEditorsDetach !== undefined) {
-                await destroyMainWindowAfterEditorsDetach();
+                destroyed = await destroyMainWindowAfterEditorsDetach();
             } else {
+                if (!windowCloseCoordinator.permitsClose()) {
+                    return false;
+                }
                 window.hide();
+                windowCloseCoordinator.markClosing();
                 window.destroy();
+                destroyed = true;
             }
         }
+        const quiesced = destroyed || window.isDestroyed();
+        if (!quiesced) {
+            rendererSessionLifecycle.cancelTeardown();
+        }
+        return quiesced;
     } catch (error) {
         console.error('[shell] failed to quiesce the renderer before shutdown:', error);
         try {
-            if (!window.isDestroyed()) {
+            if (!window.isDestroyed() && windowCloseCoordinator.permitsClose()) {
                 window.hide();
                 window.destroy();
+                destroyed = true;
             }
         } catch (destroyError) {
             console.error('[shell] failed to force renderer teardown before shutdown:', destroyError);
         }
+        const quiesced = destroyed || window.isDestroyed();
+        if (!quiesced) {
+            rendererSessionLifecycle.cancelTeardown();
+        }
+        return quiesced;
     } finally {
-        if (mainWindow === window) {
+        if ((destroyed || window.isDestroyed()) && mainWindow === window) {
             mainWindow = undefined;
         }
     }
@@ -293,8 +310,10 @@ const createWindow = (): BrowserWindow => {
     window.on('close', (event) => {
         if (windowCloseCoordinator.permitsClose()) {
             rendererSessionLifecycle.approveTeardown();
-            windowCloseCoordinator.markClosing();
             nativeMenuActionDispatcher.clearPending(window);
+            if (destroyMainWindowAfterEditorsDetach === undefined) {
+                windowCloseCoordinator.markClosing();
+            }
             return;
         }
         event.preventDefault();
@@ -306,8 +325,12 @@ const createWindow = (): BrowserWindow => {
     });
     attachWebContentsPolicy(window);
     void window.loadURL(entryUrl);
-    destroyMainWindowAfterEditorsDetach = bindMainWindowOwnerTeardown(window, pluginWindowHost, () =>
-        windowCloseCoordinator.permitsClose()
+    destroyMainWindowAfterEditorsDetach = bindMainWindowOwnerTeardown(
+        window,
+        pluginWindowHost,
+        () => windowCloseCoordinator.permitsClose(),
+        () => rendererSessionLifecycle.cancelTeardown(),
+        () => windowCloseCoordinator.markClosing()
     );
     return window;
 };

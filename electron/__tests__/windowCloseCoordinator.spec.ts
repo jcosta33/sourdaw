@@ -42,6 +42,25 @@ describe('window close coordinator', () => {
         await expect(approval).resolves.toBe(false);
     });
 
+    it('cancels a save request when a successor project revision arrives before its result', async () => {
+        const send = vi.fn();
+        const coordinator = createWindowCloseCoordinator({ ask: async () => 'save', send });
+        coordinator.updateProject({ title: 'Project A', dirty: true, projectId: 'project-a', revision: 'revision-1' });
+
+        const close = coordinator.requestClose();
+        await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+        coordinator.updateProject({ title: 'Project B', dirty: true, projectId: 'project-b', revision: 'revision-2' });
+        coordinator.resolveSave({ requestId: 1, saved: true, dirty: false });
+
+        await expect(close).resolves.toBe(false);
+        expect(coordinator.permitsClose()).toBe(false);
+        expect(send).toHaveBeenCalledWith(
+            'save',
+            1,
+            expect.objectContaining({ projectId: 'project-a', revision: 'revision-1' })
+        );
+    });
+
     it('settles an in-flight request when its renderer window is reset', async () => {
         const coordinator = createWindowCloseCoordinator({ ask: async () => 'save', send: vi.fn() });
         coordinator.updateProject({ title: 'Dirty song', dirty: true });

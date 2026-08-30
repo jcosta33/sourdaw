@@ -9,6 +9,9 @@ export const createRendererSessionLifecycle = () => {
         approveTeardown(): void {
             teardownApproved = true;
         },
+        cancelTeardown(): void {
+            teardownApproved = false;
+        },
         shouldRecreateAfterCrash(): boolean {
             return !teardownApproved;
         },

@@ -9,15 +9,19 @@ import { interceptOwnerWindowTeardown, type OwnerWindow, type PluginWindowHost }
 export const bindMainWindowOwnerTeardown = (
     owner: OwnerWindow,
     host: PluginWindowHost | undefined,
-    shouldProceed?: () => boolean
-): (() => Promise<void>) | undefined => {
+    shouldProceed?: () => boolean,
+    onCancelled?: () => void,
+    onDestroying?: () => void
+): ((force?: boolean) => Promise<boolean>) | undefined => {
     if (host === undefined) {
         return undefined;
     }
     const { destroyAfterEditorsDetach } = interceptOwnerWindowTeardown(
         owner,
         () => host.detachOpenEditors(),
-        shouldProceed
+        shouldProceed,
+        onCancelled,
+        onDestroying
     );
     return destroyAfterEditorsDetach;
 };
@@ -31,13 +35,13 @@ export const bindMainWindowOwnerTeardown = (
  */
 export const destroyCrashedMainWindow = (
     crashedWindow: OwnerWindow,
-    destroyAfterEditorsDetach: (() => Promise<void>) | undefined
+    destroyAfterEditorsDetach: ((force?: boolean) => Promise<boolean>) | undefined
 ): void => {
     if (crashedWindow.isDestroyed()) {
         return;
     }
     if (destroyAfterEditorsDetach !== undefined) {
-        void destroyAfterEditorsDetach();
+        void destroyAfterEditorsDetach(true);
         return;
     }
     crashedWindow.destroy();

@@ -45,8 +45,9 @@ export const createWindowCloseCoordinator = ({ ask, send }: CreateWindowCloseCoo
         }
         // A dialog decision is about a particular piece of project truth. A
         // new project or an edit while it is open needs a fresh decision.
-        if (phase === 'deciding' && changedRevision) {
+        if ((phase === 'deciding' || phase === 'saving') && changedRevision) {
             generation += 1;
+            cancelPending();
             phase = 'idle';
         }
     };

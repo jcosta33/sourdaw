@@ -249,11 +249,37 @@ describe('useNativeApplicationMenu', () => {
             })
         );
 
-        desktop.listener?.({ action: 'project:save', requestId: 8 });
+        desktop.listener?.({ action: 'project:save', requestId: 8, projectId: 'project', revision: 'revision-1' });
 
         await vi.waitFor(() =>
             expect(desktop.saveResult).toHaveBeenCalledWith({ requestId: 8, saved: true, dirty: true })
         );
+    });
+
+    it('rejects a correlated save when its expected renderer authority is stale', async () => {
+        renderHook(() =>
+            useNativeApplicationMenu({
+                projectId: 'project',
+                name: 'Song',
+                createdAt: 1,
+                updatedAt: 2,
+                dirty: true,
+                loading: false,
+                keyRoot: 0,
+                scaleName: 'chromatic',
+                tuning: { name: 'Equal Temperament', frequencies: [] },
+                productionBrief: {} as never,
+                initialized: true,
+            })
+        );
+        crdt.captureProjectRevision.mockReturnValue('revision-2');
+
+        desktop.listener?.({ action: 'project:save', requestId: 8, projectId: 'project', revision: 'revision-1' });
+
+        await vi.waitFor(() =>
+            expect(desktop.saveResult).toHaveBeenCalledWith({ requestId: 8, saved: false, dirty: true })
+        );
+        expect(projectActions.saveProject).not.toHaveBeenCalled();
     });
 
     it('reports a clean correlated save only after project identity persistence is durable', async () => {
@@ -279,7 +305,7 @@ describe('useNativeApplicationMenu', () => {
             })
         );
 
-        desktop.listener?.({ action: 'project:save', requestId: 9 });
+        desktop.listener?.({ action: 'project:save', requestId: 9, projectId: 'project', revision: 'revision-1' });
 
         await vi.waitFor(() =>
             expect(desktop.saveResult).toHaveBeenCalledWith({ requestId: 9, saved: true, dirty: false })

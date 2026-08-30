@@ -84,6 +84,16 @@ const runMenuAction = async (intent: NativeMenuIntent): Promise<void> => {
             await pickAndImportProjectFile();
             return;
         case 'project:save': {
+            if (
+                intent.requestId !== undefined &&
+                (intent.projectId === undefined ||
+                    intent.revision === undefined ||
+                    projectStore.value?.projectId !== intent.projectId ||
+                    captureProjectRevision() !== intent.revision)
+            ) {
+                await desktopNativeMenu().saveResult({ requestId: intent.requestId, saved: false, dirty: true });
+                return;
+            }
             const saved = await saveProject();
             if (intent.requestId !== undefined) {
                 await desktopNativeMenu().saveResult({

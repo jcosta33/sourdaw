@@ -20,4 +20,13 @@ describe('renderer session lifecycle', () => {
 
         expect(lifecycle.shouldRecreateAfterCrash()).toBe(true);
     });
+
+    it('allows crash recovery again when approved teardown is cancelled', () => {
+        const lifecycle = createRendererSessionLifecycle();
+        lifecycle.approveTeardown();
+
+        lifecycle.cancelTeardown();
+
+        expect(lifecycle.shouldRecreateAfterCrash()).toBe(true);
+    });
 });

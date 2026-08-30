@@ -225,6 +225,7 @@ export type PluginWindowHost = {
 export type OwnerWindow = {
     readonly on: (event: 'close', listener: (event: PreventableEditorEvent) => void) => unknown;
     readonly hide: () => void;
+    readonly show?: () => void;
     readonly destroy: () => void;
     readonly isDestroyed: () => boolean;
 };
@@ -817,22 +818,40 @@ const ownersInTeardown = new WeakSet<object>();
 export const interceptOwnerWindowTeardown = (
     owner: OwnerWindow,
     detachOpenEditors: () => Promise<void>,
-    shouldProceed: () => boolean = () => true
-): { readonly destroyAfterEditorsDetach: () => Promise<void> } => {
-    let inFlight: Promise<void> | undefined;
+    shouldProceed: () => boolean = () => true,
+    onCancelled?: () => void,
+    onDestroying?: () => void
+): { readonly destroyAfterEditorsDetach: (force?: boolean) => Promise<boolean> } => {
+    let inFlight: Promise<boolean> | undefined;
 
-    const destroyAfterEditorsDetach = (): Promise<void> => {
+    const destroyAfterEditorsDetach = (force = false): Promise<boolean> => {
         if (inFlight !== undefined) {
             return inFlight;
         }
         ownersInTeardown.add(owner);
         inFlight = (async () => {
+            let destroyed = false;
             try {
                 owner.hide();
                 await detachOpenEditors();
-            } finally {
+                // A dirty/revision projection can arrive while a plugin editor
+                // drains. The original close approval is no longer authority
+                // to destroy this renderer session.
+                if (!force && !shouldProceed()) {
+                    owner.show?.();
+                    onCancelled?.();
+                    return false;
+                }
                 if (!owner.isDestroyed()) {
+                    onDestroying?.();
                     owner.destroy();
+                    destroyed = true;
+                }
+                return true;
+            } finally {
+                if (!destroyed) {
+                    ownersInTeardown.delete(owner);
+                    inFlight = undefined;
                 }
             }
         })();
