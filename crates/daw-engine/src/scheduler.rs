@@ -29,7 +29,7 @@ use triple_buffer::{Input, Output};
 /// (`GraphRegistry` in `sourdaw-native`): how far the engine has provably
 /// consumed what control pushed.
 ///
-/// The two fields are written together at the end of one callback, after
+/// The fields are written together at the end of one callback, after
 /// `update_graph` and every `process_block` of that callback, so one snapshot
 /// is coherent by construction and carries this happens-before guarantee:
 /// **every write from a fenced batch numbered at or below `batches_applied`,
@@ -42,6 +42,15 @@ use triple_buffer::{Input, Output};
 /// rolling, because parameters advance on every rendered block. The echo may
 /// lag (it is read between callbacks), so a consumer may under-release —
 /// never over-release.
+///
+/// A loop region breaks the playhead's monotonicity, and with it that
+/// guarantee's reach: the playhead is pinned below the region's end forever, so
+/// a stamp the engine consumed on every pass would never be provably consumed
+/// once. [`Self::loop_wraps`] and [`Self::last_wrap_frame`] carry the seam the
+/// playhead alone cannot state, and they are on *this* snapshot rather than
+/// read from the cursor's channel because the ledger's proof compares them
+/// against `batches_applied`: two channels read at two moments would be two
+/// engines as far as the proof is concerned.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct GraphProgressSnapshot {
     /// Fenced batches ([`GraphCommand::BeginBatch`]) applied whole, in order.
@@ -51,6 +60,15 @@ pub struct GraphProgressSnapshot {
     /// The absolute frame the last rendered block ended on while playing, or
     /// stood on while stopped.
     pub playhead_frame: u64,
+    /// Loop seams closed since the engine started, monotonic — the same count
+    /// [`TransportPositionSnapshot::loop_wraps`] reports, echoed here beside
+    /// the batch horizon it has to be compared against.
+    pub loop_wraps: u64,
+    /// The frame the block walk had reached when the seam numbered
+    /// `loop_wraps` closed, so **every queued write stamped strictly below it
+    /// was consumed by the pass that seam ended** — the wrap's mirror of
+    /// `playhead_frame`. Zero until the first seam.
+    pub last_wrap_frame: u64,
 }
 
 pub struct GraphProgressReader {
@@ -77,10 +95,11 @@ pub(crate) fn graph_progress_channel() -> (Input<GraphProgressSnapshot>, GraphPr
 /// cursor's. This channel answers only "where is the transport", and it is
 /// free to say so in whatever terms the cursor needs.
 ///
-/// `loop_wraps` counts the seams the engine closed itself. The control thread
-/// owns the automation window and cannot see a wrap in the frame number alone
-/// — a wrap and an ordinary locate look identical after the fact — so the
-/// count is what tells it to re-arm the window for another pass.
+/// `loop_wraps` counts the seams the engine closed itself, so a cursor can tell
+/// a position that went backwards on purpose from one that jumped: a wrap and
+/// an ordinary locate look identical in the frame number alone. The ledger asks
+/// the same question of its own snapshot ([`GraphProgressSnapshot::loop_wraps`])
+/// rather than of this one, for the reason stated there.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct TransportPositionSnapshot {
     pub playing: bool,
@@ -1281,6 +1300,9 @@ pub struct AudioScheduler {
     /// Loop seams this engine has closed, for
     /// [`TransportPositionSnapshot::loop_wraps`].
     loop_wraps: u64,
+    /// The frame the walk had reached when the seam numbered `loop_wraps`
+    /// closed, for [`GraphProgressSnapshot::last_wrap_frame`].
+    last_wrap_frame: u64,
     midi_rt_diagnostics: ActiveMidiRtDiagnostics,
     midi_rt_diagnostics_tx: Input<ActiveMidiRtDiagnosticsSnapshot>,
     timeline_rt_diagnostics_tx: Input<TimelineRtDiagnosticsSnapshot>,
@@ -1365,6 +1387,7 @@ impl AudioScheduler {
             transport_maps: None,
             loop_region: LoopRegion::default(),
             loop_wraps: 0,
+            last_wrap_frame: 0,
             midi_rt_diagnostics: ActiveMidiRtDiagnostics::new(),
             midi_rt_diagnostics_tx,
             timeline_rt_diagnostics_tx,
@@ -1395,6 +1418,8 @@ impl AudioScheduler {
         GraphProgressSnapshot {
             batches_applied: self.batches_applied,
             playhead_frame: self.playhead_frames,
+            loop_wraps: self.loop_wraps,
+            last_wrap_frame: self.last_wrap_frame,
         }
     }
 
@@ -2489,6 +2514,11 @@ impl AudioScheduler {
     /// consume cannot be replayed from here — the graph holds a window, not a
     /// curve — so `loop_wraps` is published for the control thread that owns
     /// the curve to re-arm it.
+    ///
+    /// `next` is recorded with the seam because it is the one frame nothing can
+    /// recover afterwards: the span just rendered walked every frame below it,
+    /// while the published playhead is already back at the loop start by the
+    /// time any snapshot is read.
     fn advance_playhead(&mut self, block_start: u64, span_frames: usize) {
         if !self.transport.is_playing {
             return;
@@ -2498,6 +2528,7 @@ impl AudioScheduler {
             Some(end) if block_start < end && next >= end => {
                 self.playhead_frames = self.loop_region.start_frame;
                 self.loop_wraps = self.loop_wraps.wrapping_add(1);
+                self.last_wrap_frame = next;
             }
             _ => self.playhead_frames = next,
         }
@@ -6776,6 +6807,47 @@ mod timeline_tests {
             "and the level it set carries across the seam"
         );
         assert_eq!(harness.scheduler.transport_position().loop_wraps, 1);
+    }
+
+    /// The ledger's release evidence across a seam. The published playhead is
+    /// back at the loop start the moment a pass ends, so it can never prove a
+    /// stamp inside the region was consumed; `last_wrap_frame` states the frame
+    /// the closing pass walked to, which is exactly that proof.
+    #[test]
+    fn the_progress_echo_reports_the_frame_each_loop_seam_walked_to() {
+        const LOOP_END: u64 = 1_024;
+
+        let mut harness = Harness::new(16);
+        harness.send(GraphCommand::SetLoopRegion(LoopRegion {
+            enabled: true,
+            start_frame: 0,
+            end_frame: LOOP_END,
+        }));
+        harness.playing();
+
+        // Nothing has wrapped yet, so there is no seam to report.
+        harness.render(512);
+        let before = harness.scheduler.graph_progress();
+        assert_eq!(before.loop_wraps, 0);
+        assert_eq!(before.last_wrap_frame, 0);
+
+        harness.render(512);
+        let closed = harness.scheduler.graph_progress();
+        assert_eq!(closed.loop_wraps, 1);
+        assert_eq!(
+            closed.last_wrap_frame, LOOP_END,
+            "the pass walked to the region's end before the seam closed"
+        );
+        assert_eq!(
+            closed.playhead_frame, 0,
+            "and the playhead alone proves nothing about the region it just walked"
+        );
+
+        // The seam is not a one-off: every pass restates the frame it reached.
+        harness.render(LOOP_END as usize);
+        let again = harness.scheduler.graph_progress();
+        assert_eq!(again.loop_wraps, 2);
+        assert_eq!(again.last_wrap_frame, LOOP_END);
     }
 
     /// The position channel is the cursor's, and separate from the ledger's on

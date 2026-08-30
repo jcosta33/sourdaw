@@ -5,6 +5,7 @@ import { logger } from '#/infra/logger/appLogger';
 import { resumeEngine, requestMicPermission } from '#/modules/AudioEngine/useCases';
 import { syncKneadToEngine } from '#/modules/Knead/useCases';
 import { finishProjectLoading, loadProject, saveProject } from '#/modules/Project/useCases';
+import { syncTransportMapsToNativeSession } from '#/modules/Transport/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { useAppInitialization } from '../useAppInitialization';
@@ -53,6 +54,7 @@ vi.mock('#/modules/Synth/useCases', () => ({ registerProSynthInstruments: vi.fn(
 vi.mock('#/modules/Transport/useCases', () => ({
     ensureTrackStrips: vi.fn(),
     getTransportState: vi.fn(() => transportStateMock.current),
+    syncTransportMapsToNativeSession: vi.fn(() => vi.fn()),
 }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
 const mockPreferencesValueHolder: { current: Record<string, unknown> | null } = { current: { uiScale: 1 } };
@@ -238,6 +240,22 @@ describe('useAppInitialization — knead engine subscription teardown', () => {
         // it to land before tearing down.
         await waitFor(() => {
             expect(syncKneadToEngine).toHaveBeenCalledTimes(1);
+        });
+        expect(unsubscribe).not.toHaveBeenCalled();
+
+        unmount();
+
+        expect(unsubscribe).toHaveBeenCalledTimes(1);
+    });
+
+    it('unsubscribes the transport-maps→native-session sync on unmount instead of leaking the subscription', async () => {
+        const unsubscribe = vi.fn();
+        vi.mocked(syncTransportMapsToNativeSession).mockReturnValue(unsubscribe);
+
+        const { unmount } = renderHook(() => useAppInitialization());
+
+        await waitFor(() => {
+            expect(syncTransportMapsToNativeSession).toHaveBeenCalledTimes(1);
         });
         expect(unsubscribe).not.toHaveBeenCalled();
 
