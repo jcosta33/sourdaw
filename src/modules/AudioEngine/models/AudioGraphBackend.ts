@@ -466,6 +466,21 @@ export type AudioGraphSetTransportCommand = Readonly<{
     playing: boolean;
     /** Absolute position on the backend's clock. */
     positionSeconds: number;
+    /**
+     * Whether this write is also a locate. Absent means it is.
+     *
+     * A locate is destructive: the backend seeks, and a seek drops every mixer
+     * write already queued at or past the frame it lands on. A strip states its
+     * fader, its pan and each send level as writes at frame 0, so a transport
+     * write that locates to the session head *after* those strips were built
+     * erases the mix they declared — which is what a second batch that only
+     * needs to start playback would otherwise do.
+     *
+     * `false` says "roll from where you already stand". The position still
+     * travels and must still be truthful, because the backend reports it; only
+     * the seek is withheld.
+     */
+    locate?: boolean;
 }>;
 
 /**

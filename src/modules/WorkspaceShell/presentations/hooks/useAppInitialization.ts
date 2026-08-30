@@ -6,6 +6,7 @@ import {
     getAudioContext,
     setMasterGainValue,
     resumeEngine,
+    syncNativeTimelineSamples,
 } from '#/modules/AudioEngine/useCases';
 import { syncKneadToEngine } from '#/modules/Knead/useCases';
 import { initWebMidi } from '#/modules/MIDI/useCases';
@@ -22,14 +23,16 @@ const FIRST_LOAD_HINT_DELAY_MS = 3000;
 
 export const useAppInitialization = (): void => {
     useEffect(() => {
-        // syncKneadToEngine and syncTransportMapsToNativeSession each subscribe
-        // to a store and return an unsubscribe. Both are created inside the
-        // async boot sequence, so we hold them in a closure and tear them down
-        // on cleanup. `disposed` covers the race where the effect unmounts
-        // before the async work registers the subscriptions — in that case we
-        // unsubscribe as soon as they land.
+        // syncKneadToEngine, syncTransportMapsToNativeSession and
+        // syncNativeTimelineSamples each subscribe to a store and return an
+        // unsubscribe. All are created inside the async boot sequence, so we
+        // hold them in a closure and tear them down on cleanup. `disposed`
+        // covers the race where the effect unmounts before the async work
+        // registers the subscriptions — in that case we unsubscribe as soon as
+        // they land.
         let unsubscribeKnead: (() => void) | null = null;
         let unsubscribeTransportMaps: (() => void) | null = null;
+        let unsubscribeTimelineSamples: (() => void) | null = null;
         let disposed = false;
 
         void (async () => {
@@ -37,11 +40,17 @@ export const useAppInitialization = (): void => {
                 await initializeAudioEngine();
                 unsubscribeKnead = syncKneadToEngine();
                 unsubscribeTransportMaps = syncTransportMapsToNativeSession();
+                // Subscribed before `loadProject`, so the project's material
+                // reaches the native sample pool as it lands rather than at
+                // the first play gesture (#3068).
+                unsubscribeTimelineSamples = syncNativeTimelineSamples();
                 if (disposed) {
                     unsubscribeKnead();
                     unsubscribeKnead = null;
                     unsubscribeTransportMaps();
                     unsubscribeTransportMaps = null;
+                    unsubscribeTimelineSamples();
+                    unsubscribeTimelineSamples = null;
                 }
                 const transport = getTransportState();
                 if (transport) {
@@ -67,6 +76,10 @@ export const useAppInitialization = (): void => {
             if (unsubscribeTransportMaps) {
                 unsubscribeTransportMaps();
                 unsubscribeTransportMaps = null;
+            }
+            if (unsubscribeTimelineSamples) {
+                unsubscribeTimelineSamples();
+                unsubscribeTimelineSamples = null;
             }
         };
     }, []);

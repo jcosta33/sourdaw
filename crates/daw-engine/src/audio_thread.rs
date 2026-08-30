@@ -1066,8 +1066,8 @@ mod shadow_monitor_tests {
             1,
             TimelineClip::new(
                 7,
-                vec![MATERIAL_SAMPLE; frames],
-                vec![MATERIAL_SAMPLE; frames],
+                vec![MATERIAL_SAMPLE; frames].into(),
+                vec![MATERIAL_SAMPLE; frames].into(),
                 ClipPlacement {
                     start_frame: 0,
                     source_offset_frames: 0,
