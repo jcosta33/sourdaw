@@ -195,6 +195,16 @@ const FIRST_GRAPH_EFFECT_ID: usize = 2_000_000;
 /// twice over.
 const MAX_OFFLINE_RENDER_FRAMES: usize = 48_000 * 600;
 
+/// Create-*-strip plus set-track-output, then the per-strip send, device, and
+/// clip slots a maximal topology batch fills.
+const MAX_STRIP_TOPOLOGY_COMMANDS: usize =
+    2 + MAX_TRACK_SENDS + MAX_TRACK_DEVICES + MAX_TRACK_CLIPS;
+
+/// One queue fill of `write-parameter` (fader, pan, mute, solo, and each send
+/// level) plus one `write-device-parameter` fill per device slot.
+const MAX_STRIP_AUTOMATION_COMMANDS: usize = (4 + MAX_TRACK_SENDS) * AUTOMATION_QUEUE_CAPACITY
+    + MAX_TRACK_DEVICES * DEVICE_PARAM_QUEUE_CAPACITY;
+
 /// The most commands one batch may carry.
 ///
 /// The batch arrives from the renderer and sizes two rings that live as long
@@ -202,10 +212,12 @@ const MAX_OFFLINE_RENDER_FRAMES: usize = 48_000 * 600;
 /// ring from the batch it is handed, and the retirement ring with it. Neither
 /// shrinks again, so an unbounded array is an unbounded resident allocation
 /// bought by one message. The ceiling is what a maximal project genuinely
-/// needs — every strip created, routed, sent, filled with devices and clips —
-/// so it can refuse a hostile batch without ever meeting an honest one.
+/// needs — every strip created, routed, sent, filled with devices and clips,
+/// plus a full `write-parameter` and `write-device-parameter` queue fill per
+/// mixer and device target — so it can refuse a hostile batch without ever
+/// meeting an honest one.
 const MAX_BATCH_COMMANDS: usize = (MAX_TIMELINE_TRACKS + MAX_TIMELINE_BUSES)
-    * (2 + MAX_TRACK_SENDS + MAX_TRACK_DEVICES + MAX_TRACK_CLIPS);
+    * (MAX_STRIP_TOPOLOGY_COMMANDS + MAX_STRIP_AUTOMATION_COMMANDS);
 
 // ── Wire payloads (hand-maintained mirror of AudioGraphBackend.ts) ─────────
 
@@ -2573,13 +2585,43 @@ struct MappingSessionKeyPayload {
     revision: u64,
 }
 
+/// Replay already-accepted history onto a fresh registry, one ceiling-sized
+/// chunk at a time. Concatenated session history can exceed what a single
+/// honest batch may carry; packing it into one `GraphBatchPayload` would
+/// refuse commands this process already took. Each chunk is at most
+/// [`MAX_BATCH_COMMANDS`] so the incoming batch still meets the same ceiling.
+fn replay_prior_commands(
+    mut commands: Vec<GraphCommandPayload>,
+    registry: &mut GraphRegistry,
+    samples: &HashMap<String, TimelineSample>,
+    sample_rate: f32,
+) -> Result<(), String> {
+    while !commands.is_empty() {
+        let rest = if commands.len() > MAX_BATCH_COMMANDS {
+            commands.split_off(MAX_BATCH_COMMANDS)
+        } else {
+            Vec::new()
+        };
+        let replay = GraphBatchPayload {
+            schema_version: 1,
+            correlation: None,
+            replace_topology: false,
+            commands,
+        };
+        map_batch(&replay, registry, samples, sample_rate)
+            .map_err(|reason| format!("{PRIOR_FAULT_PREFIX}: {reason}"))?;
+        commands = rest;
+    }
+    Ok(())
+}
+
 /// Map one batch against the graph a prior command sequence built — the
 /// report wire of the offline seam, with nothing rendered.
 ///
 /// This is how `createNativeOfflineGraphBackend.ts` gets strip reports and
 /// refusals from the mapping that owns them instead of restating them
 /// TS-side: `prior` is the backend's already-committed wire commands
-/// (replayed as one synthetic batch onto a fresh registry, exactly the graph
+/// (replayed in ceiling-sized chunks onto a fresh registry, exactly the graph
 /// its next render would rebuild), `batch` is the incoming batch mapped
 /// against that carried registry. The split is what scopes the result: the
 /// reports cover only the strips the *incoming* batch touched, and a refusal
@@ -2670,14 +2712,7 @@ pub async fn map_graph_batch(
         None => {
             let mut registry = GraphRegistry::default();
             if !prior_commands.is_empty() {
-                let replay = GraphBatchPayload {
-                    schema_version: 1,
-                    correlation: None,
-                    replace_topology: false,
-                    commands: prior_commands,
-                };
-                map_batch(&replay, &mut registry, &samples, sample_rate as f32)
-                    .map_err(|reason| format!("{PRIOR_FAULT_PREFIX}: {reason}"))?;
+                replay_prior_commands(prior_commands, &mut registry, &samples, sample_rate as f32)?;
             }
             registry
         }
@@ -5152,6 +5187,47 @@ mod tests {
             "every admitted command owes at least its own op, got {}",
             mapped.ops.len()
         );
+    }
+
+    /// A maximal honest batch also carries mixer and device automation — one
+    /// queue fill of `write-parameter` / `write-device-parameter` per strip
+    /// target — so the ceiling is that product, not topology commands alone.
+    #[test]
+    fn max_batch_commands_includes_one_automation_fill_per_strip() {
+        let topology = 2 + MAX_TRACK_SENDS + MAX_TRACK_DEVICES + MAX_TRACK_CLIPS;
+        let automation = (4 + MAX_TRACK_SENDS) * AUTOMATION_QUEUE_CAPACITY
+            + MAX_TRACK_DEVICES * DEVICE_PARAM_QUEUE_CAPACITY;
+        assert_eq!(
+            MAX_BATCH_COMMANDS,
+            (MAX_TIMELINE_TRACKS + MAX_TIMELINE_BUSES) * (topology + automation)
+        );
+    }
+
+    /// Session-replay concatenation packs already-accepted history into one
+    /// `GraphBatchPayload`. Each original batch can sit under the ceiling
+    /// while the concatenated prior does not — that is a transport fault for
+    /// commands the process already took. Chunking the replay under the
+    /// per-batch ceiling maps them; raising the ceiling to cover all history
+    /// would unbounded-size the process-lifetime rings.
+    #[test]
+    fn map_graph_batch_replays_a_prior_past_the_command_ceiling() {
+        let state = AppState::default();
+        let transport = json!({ "kind": "set-transport", "playing": false, "positionSeconds": 0 });
+        let prior: Vec<Value> = (0..=MAX_BATCH_COMMANDS)
+            .map(|_| transport.clone())
+            .collect();
+
+        let result = block_on_test(map_graph_batch(
+            json!(prior),
+            json!({ "schemaVersion": 1, "commands": [transport] }),
+            48_000.0,
+            None,
+            &state,
+        ))
+        .expect("a prior one command past the ceiling must still replay");
+
+        assert_eq!(result["acceptance"], "accepted", "got: {result}");
+        assert_eq!(result["application"], "applied", "got: {result}");
     }
 
     /// The engine bootstrap must not run under the engine mutex: it waits on a
