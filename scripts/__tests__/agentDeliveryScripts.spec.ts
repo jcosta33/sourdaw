@@ -1031,9 +1031,13 @@ describe('package scripts and gitignore', () => {
             chmodSync(ghWrapper, 0o700);
             chmodSync(psWrapper, 0o700);
 
-            const binding = resolveTrustedLauncherBinding(primary, {
-                PATH: [gitBin, ghBin, psBin].join(delimiter),
-            });
+            const binding = resolveTrustedLauncherBinding(
+                primary,
+                {
+                    PATH: [gitBin, ghBin, psBin].join(delimiter),
+                },
+                'review:resolve'
+            );
 
             expect(binding.primaryRoot).toBe(realpathSync(primary));
             expect(binding.gitPath).toBe(realpathSync(gitWrapper));
@@ -1050,6 +1054,58 @@ describe('package scripts and gitignore', () => {
             expect(env.SOURDAW_TRUSTED_GH_PATH).toBe(binding.ghPath);
             expect(env.SOURDAW_TRUSTED_PS_PATH).toBe(binding.psPath);
             expect(env.PATH).toBe([...new Set([gitBin, ghBin, psBin, dirname(process.execPath)])].join(delimiter));
+        } finally {
+            rmSync(fixtureRoot, { recursive: true, force: true });
+        }
+    });
+
+    it('requires a trusted ps binding only for review-resolution commands and reports invalid commands before binding', () => {
+        const fixtureRoot = mkdtempSync(join(tmpdir(), 'sourdaw-bootstrap-command-gating-'));
+        const primary = join(fixtureRoot, 'primary');
+        const gitBin = join(fixtureRoot, 'git-bin');
+        const ghBin = join(fixtureRoot, 'gh-bin');
+        const gitWrapper = join(gitBin, 'git');
+        const ghWrapper = join(ghBin, 'gh');
+        const realGit = execFileSync('/usr/bin/which', ['git'], { encoding: 'utf8' }).trim();
+        const realGh = execFileSync('/usr/bin/which', ['gh'], { encoding: 'utf8' }).trim();
+        try {
+            trustedPublishFixture(primary, 'primary');
+            mkdirSync(gitBin);
+            mkdirSync(ghBin);
+            writeFileSync(gitWrapper, `#!/bin/sh\nexec ${JSON.stringify(realGit)} "$@"\n`);
+            writeFileSync(ghWrapper, `#!/bin/sh\nexec ${JSON.stringify(realGh)} "$@"\n`);
+            chmodSync(gitWrapper, 0o700);
+            chmodSync(ghWrapper, 0o700);
+
+            const path = [gitBin, ghBin].join(delimiter);
+            expect(resolveTrustedLauncherBinding(primary, { PATH: path }, 'deliver')).toMatchObject({
+                primaryRoot: realpathSync(primary),
+                gitPath: realpathSync(gitWrapper),
+                ghPath: realpathSync(ghWrapper),
+                psPath: undefined,
+            });
+            expect(resolveTrustedLauncherBinding(primary, { PATH: path }, 'lane:publish').psPath).toBeUndefined();
+            expect(resolveTrustedLauncherBinding(primary, { PATH: path }, 'issue:reconcile').psPath).toBeUndefined();
+            expect(() => resolveTrustedLauncherBinding(primary, { PATH: path }, 'review:resolve')).toThrow(
+                /cannot resolve trusted ps executable/i
+            );
+            expect(() => resolveTrustedLauncherBinding(primary, { PATH: path }, 'review:resolve:recover')).toThrow(
+                /cannot resolve trusted ps executable/i
+            );
+
+            const result = spawnSync(
+                process.execPath,
+                [join(import.meta.dirname, '../trustedGithubWriteBootstrap.ts'), 'not-a-command'],
+                {
+                    cwd: primary,
+                    env: { ...process.env, PATH: '' },
+                    encoding: 'utf8',
+                    shell: false,
+                }
+            );
+            expect(result.status).toBe(1);
+            expect(result.stderr).toMatch(/usage: trustedGithubWriteBootstrap\.ts/i);
+            expect(result.stderr).not.toMatch(/trusted ps executable|protected primary checkout/i);
         } finally {
             rmSync(fixtureRoot, { recursive: true, force: true });
         }
@@ -1255,6 +1311,56 @@ describe('package scripts and gitignore', () => {
             rmSync(root, { recursive: true, force: true });
         }
     });
+
+    it.each([
+        ['review:resolve', 'scripts/resolveReviewThread.ts', 'runResolveReviewThreadCli'],
+        ['review:resolve:recover', 'scripts/recoverReviewResolutionLock.ts', 'runRecoverReviewResolutionLockCli'],
+    ] as const)(
+        'passes the trusted ps path into the generated %s snapshot dependencies',
+        async (command, entryPath, runner) => {
+            const root = mkdtempSync(join(tmpdir(), 'sourdaw-trusted-review-ps-deps-'));
+            const psBin = join(root, 'trusted-bin');
+            const recordPath = join(root, 'trusted-ps-path.txt');
+            const psPath = join(psBin, 'ps');
+            const gitPath = execFileSync('/usr/bin/which', ['git'], { encoding: 'utf8' }).trim();
+            const ghPath = execFileSync('/usr/bin/which', ['gh'], { encoding: 'utf8' }).trim();
+            try {
+                mkdirSync(psBin, { recursive: true });
+                writeFileSync(psPath, '#!/bin/sh\nexit 0\n', { mode: 0o700 });
+                chmodSync(psPath, 0o700);
+
+                await expect(
+                    executeTrustedSnapshot(command, ['42', '--record', recordPath], {
+                        commit: 'a'.repeat(40),
+                        sources: new Map([
+                            [
+                                entryPath,
+                                [
+                                    "import { writeFileSync } from 'node:fs';",
+                                    `export async function ${runner}(_args, dependencies) {`,
+                                    '  const trustedLauncher = dependencies?.trustedLauncher;',
+                                    "  writeFileSync(process.argv.at(-1), trustedLauncher?.psPath ?? 'missing', 'utf8');",
+                                    '  return 0;',
+                                    '}',
+                                ].join('\n'),
+                            ],
+                        ]),
+                        launcher: {
+                            primaryRoot: '/repo',
+                            commonDir: '/repo/.git',
+                            gitPath,
+                            ghPath,
+                            psPath,
+                        },
+                    })
+                ).resolves.toBe(0);
+
+                expect(readFileSync(recordPath, 'utf8')).toBe(psPath);
+            } finally {
+                rmSync(root, { recursive: true, force: true });
+            }
+        }
+    );
 
     it('should import the snapshot entry without direct execution and invoke its runner once with exact args', async () => {
         const fixtureRoot = mkdtempSync(join(tmpdir(), 'sourdaw-trusted-entry-import-'));

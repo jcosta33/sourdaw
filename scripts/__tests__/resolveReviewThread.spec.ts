@@ -1,7 +1,7 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { delimiter, join } from 'node:path';
+import { basename, delimiter, dirname, join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
@@ -1695,6 +1695,54 @@ describe('review thread resolution', () => {
     });
 
     it.each([
+        ['relative', 'ps', /trusted ps executable path is not absolute/i],
+        [
+            'non-normalized',
+            `${dirname(trustedPsPath)}/../${basename(dirname(trustedPsPath))}/${basename(trustedPsPath)}`,
+            /trusted ps executable path is not normalized/i,
+        ],
+    ])('fails closed on a %s trusted ps path for review-resolution lock operations', (_label, psPath, error) => {
+        const repository = createTemporaryGitRepository();
+        try {
+            withTemporaryEnvironment({ SOURDAW_TRUSTED_PS_PATH: psPath }, () => {
+                expect(() => withPullRequestReviewResolutionLock(repository, 42, threadId, head, () => 'ok')).toThrow(
+                    error
+                );
+                const ownerOid = writeLockOwnerBlob(repository, 999999);
+                updateLock(repository, 42, ownerOid);
+                expect(() =>
+                    recoverPullRequestReviewResolutionLock(
+                        repository,
+                        42,
+                        ownerOid,
+                        () => ({
+                            pullRequestId,
+                            head,
+                            thread: {
+                                id: threadId,
+                                isResolved: false,
+                                resolvedByNodeId: null,
+                                resolvedByLogin: null,
+                                resolvedByType: null,
+                                rootCommentId: null,
+                                rootCommentFullDatabaseId: null,
+                                rootAuthorNodeId: null,
+                                rootAuthorLogin: null,
+                                rootAuthorType: null,
+                                comments: [],
+                            },
+                            pendingReviews: [],
+                        }),
+                        () => false
+                    )
+                ).toThrow(error);
+            });
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
+    it.each([
         ['create', 'createPendingReview', { phase: 'createPendingReview', epoch: 1 }],
         [
             'submit',
@@ -1852,6 +1900,38 @@ describe('review thread resolution', () => {
             });
             expectCanonicalResolutionReview(state().reviews[0]!);
             expect(readLockOid(repository, 42)).toBeUndefined();
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
+    it('preserves an absent create-pending-review recovery when only a stale commented Done marker is visible', () => {
+        const repository = createTemporaryGitRepository();
+        const { port, calls } = fakePort({
+            existingReplyCount: 1,
+            existingReplyReviewCommitOid: movedHead,
+            existingReplyReviewBody: pendingReviewBody(movedHead),
+        });
+        try {
+            const ownerOid = writeLockOwnerBlob(repository, 999999, head, {
+                phase: 'createPendingReview',
+                epoch: 1,
+            });
+            updateLock(repository, 42, ownerOid);
+            expect(() =>
+                recoverPullRequestReviewResolutionLock(repository, 42, ownerOid, (owner) =>
+                    recoverReviewResolutionLockOwnerState(42, owner, port)
+                )
+            ).toThrow(/unreconciled in-flight createPendingReview/i);
+            expect(calls).toEqual(['inspect:1']);
+            const preservedOwnerOid = readLockOid(repository, 42);
+            expect(preservedOwnerOid).toBeDefined();
+            expect(preservedOwnerOid).not.toBe(ownerOid);
+            expect(requireLockOwner(repository, 42)).toMatchObject({
+                threadId,
+                head,
+                mutation: { phase: 'createPendingReview', epoch: 1 },
+            });
         } finally {
             rmSync(repository, { recursive: true, force: true });
         }
@@ -4528,6 +4608,62 @@ describe('review thread resolution', () => {
             /protected primary checkout launcher/i
         );
     });
+    it.each([
+        ['reviewer actor', REVIEWER_BOT_NODE_ID],
+        ['unexpected actor', 'BOT_other'],
+    ])(
+        'rejects recovery when authenticateAuthor returns a %s before repository or lock work',
+        async (_label, actorNodeId) => {
+            const repository = createTemporaryGitRepository();
+            try {
+                const ownerOid = writeLockOwnerBlob(repository, 999999);
+                updateLock(repository, 42, ownerOid);
+                const calls: string[] = [];
+                const session: GhSession = { configDir: repository, env: {}, dispose() {} };
+                await expect(
+                    runRecoverReviewResolutionLockCli(['42', '--owner', ownerOid], {
+                        trustedPrimaryRoot: () => {
+                            calls.push('trustedPrimaryRoot');
+                            return repository;
+                        },
+                        authenticateAuthor: async () => {
+                            calls.push('authenticateAuthor');
+                            return { minted: { actorNodeId }, session };
+                        },
+                        repositoryName: () => {
+                            calls.push('repositoryName');
+                            return REQUIRED_REPOSITORY;
+                        },
+                        gh: () => {
+                            calls.push('gh');
+                            return () => '';
+                        },
+                        inspectThread: () => {
+                            calls.push('inspectThread');
+                            return {
+                                pullRequestId,
+                                head,
+                                thread: null,
+                                pendingReviews: [],
+                            };
+                        },
+                        createPort: () => {
+                            calls.push('createPort');
+                            return fakePort().port;
+                        },
+                        recoverLock: <Value>() => {
+                            calls.push('recoverLock');
+                            return 'recovered' as Value;
+                        },
+                    })
+                ).rejects.toThrow(/minted actor .* is not/i);
+                expect(calls).toEqual(['trustedPrimaryRoot', 'authenticateAuthor']);
+                expect(readLockOid(repository, 42)).toBe(ownerOid);
+            } finally {
+                rmSync(repository, { recursive: true, force: true });
+            }
+        }
+    );
     it('refuses direct review-resolution execution even with forged trusted-launcher env and no bootstrap capability', async () => {
         await withTemporaryEnvironmentAsync(
             {
@@ -4546,6 +4682,75 @@ describe('review thread resolution', () => {
             }
         );
     });
+    it.each([
+        ['relative', 'ps'],
+        [
+            'non-normalized',
+            `${dirname(trustedPsPath)}/../${basename(dirname(trustedPsPath))}/${basename(trustedPsPath)}`,
+        ],
+    ])(
+        'rejects a detached launcher capability carrying a %s ps path before lock acquisition',
+        async (_label, psPath) => {
+            const repository = createTemporaryGitRepository();
+            const snapshotRoot = mkdtempSync(join(tmpdir(), 'sourdaw-review-resolve-invalid-ps-capability-'));
+            const markerRoot = mkdtempSync(join(tmpdir(), 'sourdaw-review-resolve-invalid-ps-marker-'));
+            const entryPath = writeResolveReviewSnapshot(snapshotRoot);
+            const token = '11111111-1111-4111-8111-111111111111';
+            const markerPath = join(markerRoot, 'child-marker.json');
+            const capabilityPath = join(markerRoot, 'bootstrap-capability.json');
+            writeFileSync(
+                capabilityPath,
+                JSON.stringify({
+                    version: 1,
+                    token,
+                    trustedLauncher: {
+                        primaryRoot: repository,
+                        gitPath: trustedGitPath,
+                        ghPath: trustedGhPath,
+                        psPath,
+                    },
+                }),
+                { encoding: 'utf8', mode: 0o600 }
+            );
+            publishReviewResolutionChildLaunchMarker(markerPath, token, null, capabilityPath);
+            const child = spawn(process.execPath, [entryPath, '42', '--thread', threadId, '--head', head], {
+                cwd: repository,
+                env: {
+                    ...process.env,
+                    SOURDAW_TEST_PRIMARY_ROOT: repository,
+                    SOURDAW_TEST_TRUSTED_GIT_PATH: trustedGitPath,
+                    SOURDAW_TRUSTED_ORIGIN_COMMIT: head,
+                    SOURDAW_REVIEW_RESOLUTION_CHILD: JSON.stringify({ path: markerPath, token }),
+                },
+                stdio: ['ignore', 'ignore', 'pipe'],
+                shell: false,
+                detached: true,
+            });
+            let stderr = '';
+            child.stderr?.setEncoding('utf8');
+            child.stderr?.on('data', (chunk: string) => {
+                stderr += chunk;
+            });
+            try {
+                if (child.pid === undefined) {
+                    throw new Error('child pid is unavailable');
+                }
+                publishReviewResolutionChildLaunchMarker(markerPath, token, child.pid, capabilityPath);
+                await waitForProcessExitWithoutReviewResolutionLock(child, repository, 42);
+                await waitForExit(child);
+                expect(child.exitCode).toBe(1);
+                expect(stderr).toMatch(/protected primary checkout launcher/i);
+                expect(readLockOid(repository, 42)).toBeUndefined();
+            } finally {
+                child.kill('SIGKILL');
+                await waitForExit(child).catch(() => undefined);
+                rmSync(markerRoot, { recursive: true, force: true });
+                rmSync(snapshotRoot, { recursive: true, force: true });
+                rmSync(repository, { recursive: true, force: true });
+            }
+        },
+        10_000
+    );
     it.each([
         ['wrong head', { heads: [movedHead] }],
         ['wrong author', { rootAuthorNodeId: 'BOT_other' }],

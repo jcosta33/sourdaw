@@ -2061,6 +2061,9 @@ function trustedReviewResolutionPsPath(env: NodeJS.ProcessEnv = process.env): st
     if (!isAbsolute(trustedPath)) {
         fail('trusted ps executable path is not absolute');
     }
+    if (normalize(trustedPath) !== trustedPath) {
+        fail('trusted ps executable path is not normalized');
+    }
     return trustedPath;
 }
 
@@ -3226,8 +3229,10 @@ function normalizedRecoveryMutationPhase(phase: ReviewResolutionLockMutation['ph
     return phase;
 }
 
-function hasVisibleManagedReply(thread: ReviewThread, context: ResolutionReviewContext): boolean {
-    return managedReplyMarkers(thread, context, ['PENDING', 'COMMENTED'], true).length > 0;
+function hasVisibleManagedReplyAtCurrentHead(thread: ReviewThread, context: ResolutionReviewContext): boolean {
+    return managedReplyMarkers(thread, context, ['PENDING', 'COMMENTED'], true).some(
+        (candidate) => candidate.currentHead
+    );
 }
 
 function hasVisibleRecoveredReply(thread: ReviewThread, context: ResolutionReviewContext, reviewId: string): boolean {
@@ -3320,7 +3325,7 @@ function hasRecoveredReviewResolutionMutation(
                         review.commitOid === owner.head &&
                         review.body === resolutionReviewBody(context, owner.head) &&
                         isAuthorBotActor(review.authorNodeId, review.authorType)
-                ) || hasVisibleManagedReply(thread, context)
+                ) || hasVisibleManagedReplyAtCurrentHead(thread, context)
             );
         case 'createPendingReviewSettlement':
             return (
@@ -3330,7 +3335,7 @@ function hasRecoveredReviewResolutionMutation(
                         review.commitOid === owner.head &&
                         review.body === resolutionReviewBody(context, owner.head) &&
                         isAuthorBotActor(review.authorNodeId, review.authorType)
-                ) || hasVisibleManagedReply(thread, context)
+                ) || hasVisibleManagedReplyAtCurrentHead(thread, context)
             );
         case 'replyDone':
             return hasVisibleRecoveredReply(thread, context, mutation.reviewId);

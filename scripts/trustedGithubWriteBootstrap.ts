@@ -33,7 +33,7 @@ export type TrustedLauncherBinding = {
     commonDir: string;
     gitPath: string;
     ghPath: string;
-    psPath: string;
+    psPath?: string;
 };
 
 /**
@@ -771,7 +771,7 @@ export function trustedSnapshotEnv(
         ...new Set([
             dirname(launcher.gitPath),
             dirname(launcher.ghPath),
-            dirname(launcher.psPath),
+            ...(launcher.psPath === undefined ? [] : [dirname(launcher.psPath)]),
             dirname(process.execPath),
         ]),
     ].join(delimiter);
@@ -779,7 +779,9 @@ export function trustedSnapshotEnv(
     env[TRUSTED_COMMON_DIR_ENV] = launcher.commonDir;
     env[TRUSTED_GIT_PATH_ENV] = launcher.gitPath;
     env[TRUSTED_GH_PATH_ENV] = launcher.ghPath;
-    env[TRUSTED_PS_PATH_ENV] = launcher.psPath;
+    if (launcher.psPath !== undefined) {
+        env[TRUSTED_PS_PATH_ENV] = launcher.psPath;
+    }
     env[TRUSTED_ORIGIN_COMMIT_ENV] = snapshot.commit;
     return env;
 }
@@ -851,7 +853,8 @@ function repositoryCommonDir(checkoutRoot: string, gitPath: string): string {
 
 export function resolveTrustedLauncherBinding(
     launcherRoot: string,
-    parent: NodeJS.ProcessEnv = process.env
+    parent: NodeJS.ProcessEnv = process.env,
+    command?: TrustedGithubWriteCommand
 ): TrustedLauncherBinding {
     const root = realpathSync(launcherRoot);
     const gitPath = resolveTrustedExecutable('git', parent);
@@ -865,8 +868,12 @@ export function resolveTrustedLauncherBinding(
         commonDir,
         gitPath,
         ghPath: resolveTrustedExecutable('gh', parent),
-        psPath: resolveTrustedExecutable('ps', parent),
+        psPath: commandRequiresTrustedPs(command) ? resolveTrustedExecutable('ps', parent) : undefined,
     };
+}
+
+function commandRequiresTrustedPs(command: TrustedGithubWriteCommand | undefined): boolean {
+    return command === 'review:resolve' || command === 'review:resolve:recover';
 }
 
 function defaultPort(binding: TrustedLauncherBinding): TrustedSourcePort {
@@ -902,8 +909,8 @@ function parseCommand(value: string | undefined): TrustedGithubWriteCommand {
 async function main(): Promise<number> {
     const executingFile = fileURLToPath(import.meta.url);
     const launcherRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
-    const binding = resolveTrustedLauncherBinding(launcherRoot);
     const command = parseCommand(process.argv[2]);
+    const binding = resolveTrustedLauncherBinding(launcherRoot, process.env, command);
     const port = defaultPort(binding);
     const commit = port.resolveOriginMain();
     const originBootstrap = port.readOriginSource(commit, BOOTSTRAP_PATH);
