@@ -317,13 +317,14 @@ impl Vst3HostState {
 
     /// Record that the plugin's own state changed, then wake the observer.
     ///
-    /// One release store and a lock-free read of the wake, nothing else — the
+    /// The flag store is lock-free and allocation-free — one release store, the
     /// same discipline as the CLAP side's
     /// [`HostCallbackState::mark_state_dirty`](crate::clap_host::HostCallbackState::mark_state_dirty).
-    /// VST3 binds the controller this arrives from to the UI thread, but a
-    /// plugin that calls `setDirty` from somewhere else costs this host
-    /// nothing here: no I/O, no locks, no allocation, and the control path
-    /// consumes the flag through [`Self::take_state_dirty`].
+    /// The wake itself may allocate, and may: `setDirty` reaches this host
+    /// through `IComponentHandler2` — the controller's interface, which VST3
+    /// binds to the UI thread (mirroring CLAP's main-thread `mark_dirty`) — so
+    /// a spec-violating caller pays one bounded allocation, and the control
+    /// path consumes the flag through [`Self::take_state_dirty`].
     pub fn mark_state_dirty(&self) {
         self.state_dirty.store(true, Ordering::Release);
         if let Some(notify) = self.request_notifier.get() {
@@ -563,10 +564,11 @@ impl IComponentHandler2Trait for Vst3ComponentHandler {
     ///
     /// Flag and wake, nothing else: the wake reaches the project's dirty mark
     /// only from the control path, and this call arrives from inside the
-    /// plugin. The same discipline as the CLAP `mark_dirty` callback — one
-    /// atomic store, then a lock-free read of the wake; VST3 binds this
-    /// interface to the controller's UI thread, but a plugin that calls from
-    /// another thread costs this host nothing here.
+    /// plugin. The same seam as the CLAP `mark_dirty` callback — the flag
+    /// store is one lock-free, allocation-free atomic store; the wake itself
+    /// may allocate, and may, because VST3 binds this interface to the
+    /// controller's UI thread (mirroring CLAP's main-thread `mark_dirty`) — a
+    /// spec-violating caller pays one bounded allocation, and nothing more.
     ///
     /// `state == false` says the plugin is no longer dirty. It records
     /// nothing: the seam is one-way, like CLAP's `mark_dirty`, which has no
