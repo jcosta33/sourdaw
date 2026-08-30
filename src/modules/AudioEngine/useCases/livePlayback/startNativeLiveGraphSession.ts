@@ -5,9 +5,11 @@
  * the first batch (#1984), so *this* is the start. What the engine gains from
  * running is plugin hosting — `load_plugin` takes its engine-owned branch only
  * while an engine exists, and otherwise warns that the instance will not
- * process audio. What it does not gain is the mix: the batch carries no
- * `schedule-clip` (see `projectLiveGraphTopology`), so the engine renders
- * silence and Web Audio remains the live product path.
+ * process audio. What it does not gain is the mix: a session starts with its
+ * monitor shadowed, so whatever the batch schedules the engine contributes
+ * true zeros at the device and Web Audio remains the live product path. Today
+ * the batch also carries no `schedule-clip` (see `projectLiveGraphTopology`);
+ * the shadow is what keeps the engine inaudible once it does.
  *
  * ── Declining is an outcome, not a failure ────────────────────────────────
  *
@@ -39,8 +41,20 @@ import { createNativeLiveGraphBackend } from '../../repositories/nativeGraph/cre
 import { probeNativeGraphTransport } from '../../repositories/nativeGraph/probeNativeGraphTransport';
 
 import { nativeLiveGraphSession, queueOnNativeLiveGraphSession } from './nativeLiveGraphSessionState';
-import { projectLiveGraphTopology } from './projectLiveGraphTopology';
+import { projectLiveGraphTopology, type LiveGraphMonitorMode } from './projectLiveGraphTopology';
 import { startNativeEnginePlayheadFeed } from './startNativeEnginePlayheadFeed';
+
+/**
+ * What a session runs at unless a caller asks for the cutover.
+ *
+ * Shadowed is the safe state and the one this slice exists to make available:
+ * the engine renders whatever it is given, block-accurately, and none of it
+ * reaches the speakers, so a real programme can be scheduled onto it while Web
+ * Audio remains the path a musician hears. Nothing in the app asks for
+ * `audible` yet — that request *is* the cutover, and it belongs to the slice
+ * that makes it.
+ */
+const DEFAULT_MONITOR: LiveGraphMonitorMode = 'shadowed';
 
 export type StartNativeLiveGraphSessionInput = Readonly<{
     /** Where playback begins, on the engine's clock. */
@@ -53,6 +67,14 @@ export type StartNativeLiveGraphSessionInput = Readonly<{
      * module owns the shape the engine reads, not what the timeline says.
      */
     transportMaps: EngineTransportMaps;
+    /**
+     * Whether this session's engine may reach the speakers.
+     *
+     * Absent means {@link DEFAULT_MONITOR}. An explicit `audible` is the
+     * cutover, and it is the only thing that lets this engine become the
+     * audible one.
+     */
+    monitor?: LiveGraphMonitorMode;
 }>;
 
 export type NativeLiveGraphSessionResult =
@@ -151,9 +173,11 @@ export function startNativeLiveGraphSession(
         // session. A parked transport advances no playhead at all
         // (`advance_playhead` returns on `!is_playing`), so nothing can be
         // rendered ahead of the region that governs it.
+        const monitor = input.monitor ?? DEFAULT_MONITOR;
         const commands = projectLiveGraphTopology({
             ...topology,
             transport: { playing: false, positionSeconds: input.positionSeconds },
+            monitor,
         });
 
         const backend = createNativeLiveGraphBackend({ transport: availability.transport });
@@ -176,7 +200,15 @@ export function startNativeLiveGraphSession(
         // that was already working.
         nativeLiveGraphSession.backend?.dispose();
         nativeLiveGraphSession.backend = backend;
-        nativeLiveGraphSession.carriesAudio = commands.some((command) => command.kind === 'schedule-clip');
+        // Both halves, and both are needed. What was scheduled is read off the
+        // batch actually sent, so the day the producer emits clips nothing has
+        // to be remembered here; whether any of it can be heard is the monitor
+        // mode, and a shadowed engine writes true zeros at the device however
+        // full its timeline is.
+        const shadowed = monitor === 'shadowed';
+        const schedulesClips = commands.some((command) => command.kind === 'schedule-clip');
+        nativeLiveGraphSession.monitorShadowed = shadowed;
+        nativeLiveGraphSession.audibleCarrier = schedulesClips && !shadowed;
         // The topology went out parked (see the batch above), so this session
         // has not rolled yet whatever the one it replaced was doing.
         nativeLiveGraphSession.rolling = false;

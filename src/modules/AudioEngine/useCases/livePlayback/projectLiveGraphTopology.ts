@@ -11,18 +11,24 @@
  * ── What this slice produces, and what it deliberately does not ───────────
  *
  * **Topology**: one strip per live track and bus, carrying its mixer state and
- * its device chain in project order, then its output route and its sends. That
- * is the whole batch.
+ * its device chain in project order, then its output route and its sends.
+ *
+ * **A monitor mode**, ahead of all of it. It is not topology, but it belongs
+ * in this batch and only here: the batch applies whole at one block boundary,
+ * so an engine can never render a block holding this session's material
+ * without also holding the mode that says whether that material may be heard.
  *
  * **No programme.** No `schedule-clip` is emitted, and that is a scope
  * decision with an audible consequence worth stating: an engine holding this
  * topology and no clips renders silence
  * (`crates/daw-engine/src/audio_thread.rs` — `process_block` on an engine with
  * nothing scheduled), so applying it cannot double the Web Audio path, which
- * stays the live product path. What starting the engine *does* change is
- * plugin hosting: `load_plugin` takes its engine-owned branch only while an
- * engine runs, and until one does it warns that the plugin will not process
- * audio (`crates/sourdaw-native/src/commands/plugins.rs`).
+ * stays the live product path. The shadow monitor is what keeps that true once
+ * the programme does arrive, rather than leaving it a property of an empty
+ * timeline. What starting the engine *does* change is plugin hosting:
+ * `load_plugin` takes its engine-owned branch only while an engine runs, and
+ * until one does it warns that the plugin will not process audio
+ * (`crates/sourdaw-native/src/commands/plugins.rs`).
  *
  * **No tempo or time signature.** `set-transport` here carries `playing` and
  * the song position and nothing else — the field split the native transport
@@ -59,6 +65,16 @@ export type LiveGraphTransportState = Readonly<{
     positionSeconds: number;
 }>;
 
+/**
+ * Whether this session's engine is allowed to reach the speakers.
+ *
+ * `shadowed` is a rendering engine that contributes nothing audible — the
+ * state a native session runs in while Web Audio is the product path, and the
+ * one that makes scheduling a real programme safe before the cutover.
+ * `audible` is the cutover itself.
+ */
+export type LiveGraphMonitorMode = 'shadowed' | 'audible';
+
 export type LiveGraphTopologyInput = Readonly<{
     /** Every track and bus the live engine builds a strip for, in project order. */
     stripTracks: readonly Track[];
@@ -71,6 +87,8 @@ export type LiveGraphTopologyInput = Readonly<{
     /** A track's VCA group master as a plain multiplier; absent means `1`. */
     vcaMultiplierByTrackId: ReadonlyMap<string, number>;
     transport: LiveGraphTransportState;
+    /** Whether this session's engine may reach the speakers at all. */
+    monitor: LiveGraphMonitorMode;
 }>;
 
 /**
@@ -160,12 +178,17 @@ function routingCommands(input: {
 }
 
 /**
- * One batch's worth of commands, in application order: every strip before any
- * route, because a send names a bus that has to exist by the time it is read,
- * and the transport last, because a topology is what it is meant to play.
+ * One batch's worth of commands, in application order: the monitor mode first,
+ * because nothing after it may be audible before it is stated; then every strip
+ * before any route, because a send names a bus that has to exist by the time it
+ * is read; and the transport last, because a topology is what it is meant to
+ * play.
+ *
+ * The batch applies whole, at one block boundary, so the engine never renders a
+ * block holding this session's material without also holding its monitor mode.
  */
 export function projectLiveGraphTopology(input: LiveGraphTopologyInput): readonly AudioGraphCommand[] {
-    const { stripTracks, soloGatedTrackIds, vcaMultiplierByTrackId, transport } = input;
+    const { stripTracks, soloGatedTrackIds, vcaMultiplierByTrackId, transport, monitor } = input;
 
     const busStripIds = new Set(stripTracks.filter((track) => track.kind === 'bus').map((track) => track.id));
     const trackStripIds = new Set(stripTracks.filter((track) => track.kind !== 'bus').map((track) => track.id));
@@ -176,6 +199,7 @@ export function projectLiveGraphTopology(input: LiveGraphTopologyInput): readonl
     const routes = stripTracks.flatMap((track) => routingCommands({ track, busStripIds, trackStripIds }));
 
     return [
+        { kind: 'set-monitor-shadow', shadowed: monitor === 'shadowed' },
         ...strips,
         ...routes,
         {

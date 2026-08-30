@@ -468,6 +468,30 @@ export type AudioGraphSetTransportCommand = Readonly<{
     positionSeconds: number;
 }>;
 
+/**
+ * Shadow the backend's monitor: keep rendering, contribute nothing to the
+ * output a listener hears.
+ *
+ * A session mode, deliberately not the master fader. The master fader is
+ * project truth that a save and a bounce both read; this says only whether
+ * *this* backend's audio is currently allowed to reach the speakers, so a
+ * second engine can hold a live programme — rendering it block-accurately,
+ * advancing its own playhead, walking its own loop seams — while another one
+ * remains the audible path. Lifting it is the cutover.
+ *
+ * Silence means true zeros at the output, not a small gain, so a leak is
+ * something a test can assert the absence of exactly. The change lands at the
+ * next block boundary with no ramp, which makes a cutover from a non-zero
+ * programme a step; a backend that wants to declick it owns that.
+ *
+ * A backend with no monitor to shadow — an offline render is one — refuses
+ * this rather than accepting it and doing nothing.
+ */
+export type AudioGraphSetMonitorShadowCommand = Readonly<{
+    kind: 'set-monitor-shadow';
+    shadowed: boolean;
+}>;
+
 export type AudioGraphCommand =
     | AudioGraphCreateTrackStripCommand
     | AudioGraphCreateBusStripCommand
@@ -479,7 +503,8 @@ export type AudioGraphCommand =
     | AudioGraphWriteParameterCommand
     | AudioGraphWriteDeviceParameterCommand
     | AudioGraphScheduleClipCommand
-    | AudioGraphSetTransportCommand;
+    | AudioGraphSetTransportCommand
+    | AudioGraphSetMonitorShadowCommand;
 
 /**
  * The correlation a graph write carries, shared with the live delta protocol
