@@ -91,12 +91,13 @@ function persistedPostMergeValidation(
     headRefOid: string,
     pullRequestBody: string,
     trackerTarget: number,
-    options: { headRefName?: string; baseRefName?: string } = {}
+    options: { headRefName?: string; baseRefName?: string; title?: string } = {}
 ) {
     return {
         headRefOid,
         headRefName: options.headRefName ?? 'feat/gate',
         baseRefName: options.baseRefName ?? 'main',
+        title: options.title ?? 'feat(delivery): add gate',
         bodySha256: createHash('sha256').update(pullRequestBody).digest('hex'),
         trackerTarget,
     };
@@ -660,7 +661,7 @@ function fakePort(input: FakeInput = {}) {
             return [...lastDependents];
         },
         repositoryDeletesMergedBranches: () => input.deletesMergedBranches ?? false,
-        merge: (number, head) => {
+        merge: (number, head, _hasDependents, _expectedTitle) => {
             calls.push(`merge:${number}:${head}`);
             if (lastPrimary === undefined) {
                 throw new Error('merge requires a primary snapshot');
@@ -902,7 +903,6 @@ describe('pull-request delivery', () => {
             label: 'closing target drift',
             mergedPrimaryAfterMerge: {
                 body: relationshipBody('Closes #9999'),
-                title: 'feat(delivery): post-merge retarget race',
             },
             authorizedBody: relationshipBody('Related #2372'),
             error: /body changed during delivery/,
@@ -936,6 +936,21 @@ describe('pull-request delivery', () => {
         expect(calls).toContain('merge:42:head');
         expect(calls).not.toContain('retarget:43:main');
         expect(calls.some((call) => call.startsWith('complete:'))).toBe(false);
+    });
+
+    it('refuses to merge when the reviewed title drifts before the final open snapshot', () => {
+        const closes = relationshipBody('Closes #2372');
+        const { port, calls, tracker } = fakePort({
+            primary: [
+                pullRequest({ body: closes }),
+                pullRequest({ body: closes, title: 'feat(delivery): renamed gate' }),
+            ],
+        });
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/title changed during delivery/i);
+        expect(calls).not.toContain('merge:42:head');
+        expect(calls.filter((call) => call.startsWith('complete:'))).toHaveLength(0);
+        expect(calls.filter((call) => call.startsWith('retarget:'))).toHaveLength(0);
     });
 
     it('fails closed when an UNKNOWN initial refresh becomes a merged author-App head with only a live seeded receipt and no persisted authority', () => {
@@ -1947,13 +1962,7 @@ describe('pull-request delivery', () => {
                 phase: 'merge-authorized',
                 receiptId: 'IC_delivery_42_1',
                 receiptBody: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'),
-                postMergeValidation: {
-                    headRefOid: 'head',
-                    headRefName: 'feat/gate',
-                    baseRefName: 'main',
-                    bodySha256: createHash('sha256').update(closes).digest('hex'),
-                    trackerTarget: 2372,
-                },
+                postMergeValidation: persistedPostMergeValidation('head', closes, 2372),
             });
             expect(calls.filter((call) => call === 'retarget:43:main')).toHaveLength(0);
             expect(calls.filter((call) => call.startsWith('complete:'))).toHaveLength(0);
@@ -1983,13 +1992,7 @@ describe('pull-request delivery', () => {
                 phase: 'terminal',
                 receiptId: 'IC_terminal_validated',
                 receiptBody,
-                postMergeValidation: {
-                    headRefOid: 'head',
-                    headRefName: 'feat/gate',
-                    baseRefName: 'main',
-                    bodySha256: createHash('sha256').update(closes).digest('hex'),
-                    trackerTarget: 2372,
-                },
+                postMergeValidation: persistedPostMergeValidation('head', closes, 2372),
             },
             receipts: [
                 {
@@ -2012,13 +2015,7 @@ describe('pull-request delivery', () => {
             phase: 'terminal',
             receiptId: 'IC_terminal_validated',
             receiptBody,
-            postMergeValidation: {
-                headRefOid: 'head',
-                headRefName: 'feat/gate',
-                baseRefName: 'main',
-                bodySha256: createHash('sha256').update(closes).digest('hex'),
-                trackerTarget: 2372,
-            },
+            postMergeValidation: persistedPostMergeValidation('head', closes, 2372),
         });
     });
 
@@ -2047,13 +2044,7 @@ describe('pull-request delivery', () => {
             phase: 'prepared',
             receiptId: 'IC_delivery_42_1',
             receiptBody: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'),
-            postMergeValidation: {
-                headRefOid: 'head',
-                headRefName: 'feat/gate',
-                baseRefName: 'main',
-                bodySha256: createHash('sha256').update(closes).digest('hex'),
-                trackerTarget: 2372,
-            },
+            postMergeValidation: persistedPostMergeValidation('head', closes, 2372),
         });
         expect(calls).not.toContain('receipt-authority:write:merge-authorized:IC_delivery_42_1');
         expect(calls.filter((call) => call === 'complete:2372')).toHaveLength(0);
@@ -2083,13 +2074,7 @@ describe('pull-request delivery', () => {
                 phase: 'prepared',
                 receiptId: 'IC_frozen_x',
                 receiptBody: receiptBodyX,
-                postMergeValidation: {
-                    headRefOid: 'head',
-                    headRefName: 'feat/gate',
-                    baseRefName: 'main',
-                    bodySha256: createHash('sha256').update(closesX).digest('hex'),
-                    trackerTarget: 2372,
-                },
+                postMergeValidation: persistedPostMergeValidation('head', closesX, 2372),
             },
             receipts: [
                 {
@@ -2122,13 +2107,7 @@ describe('pull-request delivery', () => {
             phase: 'prepared',
             receiptId: 'IC_stale_y',
             receiptBody: receiptBodyY,
-            postMergeValidation: {
-                headRefOid: 'head',
-                headRefName: 'feat/gate',
-                baseRefName: 'main',
-                bodySha256: createHash('sha256').update(closesY).digest('hex'),
-                trackerTarget: 2373,
-            },
+            postMergeValidation: persistedPostMergeValidation('head', closesY, 2373),
         });
 
         expect(() => deliverPullRequest(42, port, tracker)).toThrow(/body changed during delivery/i);
@@ -2168,13 +2147,7 @@ describe('pull-request delivery', () => {
             phase: 'prepared',
             receiptId: 'IC_delivery_42_1',
             receiptBody: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'),
-            postMergeValidation: {
-                headRefOid: 'head',
-                headRefName: 'feat/gate',
-                baseRefName: 'main',
-                bodySha256: createHash('sha256').update(closes).digest('hex'),
-                trackerTarget: 2372,
-            },
+            postMergeValidation: persistedPostMergeValidation('head', closes, 2372),
         });
         expect(calls).toContain('receipt-authority:write:prepared:IC_delivery_42_1');
         expect(calls).not.toContain('receipt-authority:write:terminal:IC_delivery_42_1');
@@ -2218,13 +2191,7 @@ describe('pull-request delivery', () => {
             phase: 'prepared',
             receiptId: 'IC_delivery_42_1',
             receiptBody: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'),
-            postMergeValidation: {
-                headRefOid: 'head',
-                headRefName: 'feat/gate',
-                baseRefName: 'main',
-                bodySha256: createHash('sha256').update(closes).digest('hex'),
-                trackerTarget: 2372,
-            },
+            postMergeValidation: persistedPostMergeValidation('head', closes, 2372),
         });
         expect(calls).toContain('receipt-authority:write:prepared:IC_delivery_42_1');
         expect(calls).not.toContain('merge:42:head');
@@ -2582,13 +2549,7 @@ describe('pull-request delivery', () => {
             phase: 'prepared',
             receiptId: 'IC_delivery_42_1',
             receiptBody: visibleDeliveryReceiptBody(42, 'head', closesX, 2372, 'successful'),
-            postMergeValidation: {
-                headRefOid: 'head',
-                headRefName: 'feat/gate',
-                baseRefName: 'main',
-                bodySha256: createHash('sha256').update(closesX).digest('hex'),
-                trackerTarget: 2372,
-            },
+            postMergeValidation: persistedPostMergeValidation('head', closesX, 2372),
         });
 
         expect(() => deliverPullRequest(42, port, tracker)).toThrow(/PR #42 is closed/i);
@@ -2754,13 +2715,7 @@ describe('pull-request delivery', () => {
             phase: 'prepared',
             receiptId: 'IC_delivery_42_1',
             receiptBody: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'),
-            postMergeValidation: {
-                headRefOid: 'head',
-                headRefName: 'feat/gate',
-                baseRefName: 'main',
-                bodySha256: createHash('sha256').update(closes).digest('hex'),
-                trackerTarget: 2372,
-            },
+            postMergeValidation: persistedPostMergeValidation('head', closes, 2372),
         });
 
         deliverPullRequest(42, port, tracker);
@@ -2863,13 +2818,7 @@ describe('pull-request delivery', () => {
             phase: 'prepared',
             receiptId: 'IC_delivery_42_1',
             receiptBody: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'),
-            postMergeValidation: {
-                headRefOid: 'head',
-                headRefName: 'feat/gate',
-                baseRefName: 'main',
-                bodySha256: createHash('sha256').update(closes).digest('hex'),
-                trackerTarget: 2372,
-            },
+            postMergeValidation: persistedPostMergeValidation('head', closes, 2372),
         });
 
         deliverPullRequest(42, port, tracker);
@@ -2916,13 +2865,7 @@ describe('pull-request delivery', () => {
             phase: 'prepared',
             receiptId: 'IC_delivery_42_1',
             receiptBody: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'),
-            postMergeValidation: {
-                headRefOid: 'head',
-                headRefName: 'feat/gate',
-                baseRefName: 'main',
-                bodySha256: createHash('sha256').update(closes).digest('hex'),
-                trackerTarget: 2372,
-            },
+            postMergeValidation: persistedPostMergeValidation('head', closes, 2372),
         });
         expect(calls).not.toContain('complete:2372');
 
@@ -2968,13 +2911,7 @@ describe('pull-request delivery', () => {
             phase: 'prepared',
             receiptId: 'IC_delivery_42_1',
             receiptBody: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'),
-            postMergeValidation: {
-                headRefOid: 'head',
-                headRefName: 'feat/gate',
-                baseRefName: 'main',
-                bodySha256: createHash('sha256').update(closes).digest('hex'),
-                trackerTarget: 2372,
-            },
+            postMergeValidation: persistedPostMergeValidation('head', closes, 2372),
         });
 
         deliverPullRequest(42, port, tracker);
@@ -3020,13 +2957,7 @@ describe('pull-request delivery', () => {
             phase: 'prepared',
             receiptId: 'IC_delivery_42_1',
             receiptBody: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'),
-            postMergeValidation: {
-                headRefOid: 'head',
-                headRefName: 'feat/gate',
-                baseRefName: 'main',
-                bodySha256: createHash('sha256').update(closes).digest('hex'),
-                trackerTarget: 2372,
-            },
+            postMergeValidation: persistedPostMergeValidation('head', closes, 2372),
         });
         expect(calls).not.toContain('complete:2372');
 
@@ -3128,13 +3059,7 @@ describe('pull-request delivery', () => {
             phase: 'prepared',
             receiptId: 'IC_delivery_42_1',
             receiptBody: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'),
-            postMergeValidation: {
-                headRefOid: 'head',
-                headRefName: 'feat/gate',
-                baseRefName: 'main',
-                bodySha256: createHash('sha256').update(closes).digest('hex'),
-                trackerTarget: 2372,
-            },
+            postMergeValidation: persistedPostMergeValidation('head', closes, 2372),
         });
         expect(calls).not.toContain('complete:2372');
 
@@ -3177,13 +3102,7 @@ describe('pull-request delivery', () => {
             phase: 'prepared',
             receiptId: 'IC_delivery_42_1',
             receiptBody: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'),
-            postMergeValidation: {
-                headRefOid: 'head',
-                headRefName: 'feat/gate',
-                baseRefName: 'main',
-                bodySha256: createHash('sha256').update(closes).digest('hex'),
-                trackerTarget: 2372,
-            },
+            postMergeValidation: persistedPostMergeValidation('head', closes, 2372),
         });
 
         deliverPullRequest(42, port, tracker);
@@ -3236,6 +3155,7 @@ describe('pull-request delivery', () => {
                 headRefOid: hostileHead,
                 headRefName: 'feat/hostile',
                 baseRefName: 'main',
+                title: 'feat(delivery): add gate',
                 bodySha256: createHash('sha256').update(closes).digest('hex'),
                 trackerTarget: 2372,
             },
@@ -3311,13 +3231,7 @@ describe('pull-request delivery', () => {
             phase: 'prepared',
             receiptId: 'IC_delivery_42_1',
             receiptBody: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'),
-            postMergeValidation: {
-                headRefOid: 'head',
-                headRefName: 'feat/gate',
-                baseRefName: 'main',
-                bodySha256: createHash('sha256').update(closes).digest('hex'),
-                trackerTarget: 2372,
-            },
+            postMergeValidation: persistedPostMergeValidation('head', closes, 2372),
         });
 
         deliverPullRequest(42, port, tracker);
@@ -3365,13 +3279,7 @@ describe('pull-request delivery', () => {
             phase: 'prepared',
             receiptId: 'IC_delivery_42_1',
             receiptBody: visibleDeliveryReceiptBody(42, 'head', staleBody, 2372, 'successful'),
-            postMergeValidation: {
-                headRefOid: 'head',
-                headRefName: 'feat/gate',
-                baseRefName: 'main',
-                bodySha256: createHash('sha256').update(staleBody).digest('hex'),
-                trackerTarget: 2372,
-            },
+            postMergeValidation: persistedPostMergeValidation('head', staleBody, 2372),
         });
 
         deliverPullRequest(42, port, tracker);
@@ -3419,13 +3327,7 @@ describe('pull-request delivery', () => {
             phase: 'prepared',
             receiptId: 'IC_delivery_42_1',
             receiptBody: visibleDeliveryReceiptBody(42, 'head', staleBody, 2372, 'successful'),
-            postMergeValidation: {
-                headRefOid: 'head',
-                headRefName: 'feat/gate',
-                baseRefName: 'main',
-                bodySha256: createHash('sha256').update(staleBody).digest('hex'),
-                trackerTarget: 2372,
-            },
+            postMergeValidation: persistedPostMergeValidation('head', staleBody, 2372),
         });
 
         deliverPullRequest(42, port, tracker);
@@ -3519,13 +3421,7 @@ describe('pull-request delivery', () => {
             phase: 'prepared',
             receiptId: 'IC_delivery_42_1',
             receiptBody: visibleDeliveryReceiptBody(42, 'head', closesX, 2372, 'successful'),
-            postMergeValidation: {
-                headRefOid: 'head',
-                headRefName: 'feat/gate',
-                baseRefName: 'main',
-                bodySha256: createHash('sha256').update(closesX).digest('hex'),
-                trackerTarget: 2372,
-            },
+            postMergeValidation: persistedPostMergeValidation('head', closesX, 2372),
         });
 
         expect(() => deliverPullRequest(42, port, tracker)).toThrow(/PR #42 is closed/i);
@@ -3582,13 +3478,7 @@ describe('pull-request delivery', () => {
             phase: 'prepared',
             receiptId: 'IC_delivery_42_1',
             receiptBody: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'),
-            postMergeValidation: {
-                headRefOid: 'head',
-                headRefName: 'feat/gate',
-                baseRefName: 'main',
-                bodySha256: createHash('sha256').update(closes).digest('hex'),
-                trackerTarget: 2372,
-            },
+            postMergeValidation: persistedPostMergeValidation('head', closes, 2372),
         });
 
         expect(() => deliverPullRequest(42, port, tracker)).toThrow(/PR #42 is closed/i);
@@ -3645,13 +3535,7 @@ describe('pull-request delivery', () => {
             phase: 'prepared',
             receiptId: 'IC_delivery_42_1',
             receiptBody: visibleDeliveryReceiptBody(42, 'head', closesX, 2372, 'successful'),
-            postMergeValidation: {
-                headRefOid: 'head',
-                headRefName: 'feat/gate',
-                baseRefName: 'main',
-                bodySha256: createHash('sha256').update(closesX).digest('hex'),
-                trackerTarget: 2372,
-            },
+            postMergeValidation: persistedPostMergeValidation('head', closesX, 2372),
         });
 
         expect(() => deliverPullRequest(42, port, tracker)).toThrow(/PR #42 is closed/i);
@@ -3697,13 +3581,7 @@ describe('pull-request delivery', () => {
             phase: 'prepared',
             receiptId: 'IC_delivery_42_1',
             receiptBody: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'),
-            postMergeValidation: {
-                headRefOid: 'head',
-                headRefName: 'feat/gate',
-                baseRefName: 'main',
-                bodySha256: createHash('sha256').update(closes).digest('hex'),
-                trackerTarget: 2372,
-            },
+            postMergeValidation: persistedPostMergeValidation('head', closes, 2372),
         });
         expect(calls).toContain('merge:42:head');
         expect(calls).not.toContain('receipt-authority:write:merge-authorized:IC_delivery_42_1');
@@ -3859,7 +3737,7 @@ describe('pull-request delivery', () => {
         expect(calls).not.toContain('PR #42 was already merged; repaired 0 remaining dependent(s)');
     });
 
-    it('replays prepared merged recovery from the stored body digest even after a title-only edit', () => {
+    it('fails closed when prepared merged recovery sees a title-only edit after receipt arming', () => {
         const closes = relationshipBody('Closes #2372');
         const receiptBody = visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful');
         const { port, calls, tracker } = fakePort({
@@ -3880,6 +3758,7 @@ describe('pull-request delivery', () => {
                     headRefOid: 'head',
                     headRefName: 'feat/gate',
                     baseRefName: 'main',
+                    title: 'feat(delivery): add gate',
                     bodySha256: createHash('sha256').update(closes).digest('hex'),
                     trackerTarget: 2372,
                 },
@@ -3897,11 +3776,11 @@ describe('pull-request delivery', () => {
             ],
         });
 
-        deliverPullRequest(42, port, tracker);
-
-        expect(calls).toContain('complete:2372');
-        expect(calls).toContain('receipt-authority:write:merge-authorized:IC_prepared');
-        expect(calls).toContain('receipt-authority:write:terminal:IC_prepared');
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/title changed during delivery/i);
+        expect(calls.filter((call) => call.startsWith('complete:'))).toHaveLength(0);
+        expect(calls.filter((call) => call.startsWith('retarget:'))).toHaveLength(0);
+        expect(calls).not.toContain('receipt-authority:write:merge-authorized:IC_prepared');
+        expect(calls).not.toContain('receipt-authority:write:terminal:IC_prepared');
     });
 
     it('fails closed when a prepared authority receipt body names X but its stored post-merge validation belongs to Y', () => {
@@ -3943,7 +3822,9 @@ describe('pull-request delivery', () => {
             deliveryReceiptProof: { totalCount: 1, latestCommentId: 'IC_x' },
         });
 
-        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/delivery receipt changed during recovery/i);
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(
+            /delivery receipt changed during recovery|delivery receipt authority cannot be proven/i
+        );
         expect(calls.filter((call) => call.startsWith('complete:'))).toHaveLength(0);
         expect(calls.filter((call) => call.startsWith('retarget:'))).toHaveLength(0);
     });
@@ -4050,13 +3931,7 @@ describe('pull-request delivery', () => {
             persistedReceiptAuthority: {
                 phase: 'prepared',
                 receiptId: 'IC_prepared_bodyless',
-                postMergeValidation: {
-                    headRefOid: 'head',
-                    headRefName: 'feat/gate',
-                    baseRefName: 'main',
-                    bodySha256: createHash('sha256').update(bodyX).digest('hex'),
-                    trackerTarget: 2372,
-                },
+                postMergeValidation: persistedPostMergeValidation('head', bodyX, 2372),
             },
             receipts: [
                 {
@@ -4088,13 +3963,7 @@ describe('pull-request delivery', () => {
             phase: 'terminal',
             receiptId: 'IC_delivery_42_2',
             receiptBody: visibleDeliveryReceiptBody(42, nextHead, bodyY, 2373, 'successful'),
-            postMergeValidation: {
-                headRefOid: nextHead,
-                headRefName: 'feat/gate',
-                baseRefName: 'main',
-                bodySha256: createHash('sha256').update(bodyY).digest('hex'),
-                trackerTarget: 2373,
-            },
+            postMergeValidation: persistedPostMergeValidation(nextHead, bodyY, 2373),
         });
     });
 
@@ -4114,13 +3983,7 @@ describe('pull-request delivery', () => {
             persistedReceiptAuthority: {
                 phase: 'prepared',
                 receiptId: 'IC_prepared_bodyless',
-                postMergeValidation: {
-                    headRefOid: 'head',
-                    headRefName: 'feat/gate',
-                    baseRefName: 'main',
-                    bodySha256: createHash('sha256').update(closes).digest('hex'),
-                    trackerTarget: 2372,
-                },
+                postMergeValidation: persistedPostMergeValidation('head', closes, 2372),
             },
             receipts: [
                 {
@@ -4168,6 +4031,7 @@ describe('pull-request delivery', () => {
                     headRefOid: 'head',
                     headRefName: 'feat/gate',
                     baseRefName: 'main',
+                    title: 'feat(delivery): add gate',
                     bodySha256: createHash('sha256').update(bodyY).digest('hex'),
                     trackerTarget: 2373,
                 },
@@ -4186,10 +4050,63 @@ describe('pull-request delivery', () => {
             deliveryReceiptProof: { totalCount: 1, latestCommentId: 'IC_x' },
         });
 
-        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/delivery receipt changed during recovery/i);
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(
+            /delivery receipt changed during recovery|delivery receipt authority cannot be proven/i
+        );
         expect(calls.filter((call) => call.startsWith('complete:'))).toHaveLength(0);
         expect(calls.filter((call) => call.startsWith('retarget:'))).toHaveLength(0);
     });
+
+    it.each([
+        ['merge-authorized', 'IC_bodyless_merge_authorized'],
+        ['terminal', 'IC_bodyless_terminal'],
+    ] as const)(
+        'fails closed when a bodyless %s authority names X but its retained post-merge validation belongs to Y',
+        (phase, receiptId) => {
+            const bodyX = relationshipBody('Closes #2372');
+            const bodyY = relationshipBody('Closes #2373');
+            const receiptBodyX = visibleDeliveryReceiptBody(42, 'head', bodyX, 2372, 'successful');
+            const { port, calls, tracker } = fakePort({
+                primary: [
+                    pullRequest({
+                        state: 'MERGED',
+                        body: bodyY,
+                        mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
+                    }),
+                ],
+                dependentSets: [[]],
+                persistedReceiptAuthority: {
+                    phase,
+                    receiptId,
+                    postMergeValidation: {
+                        headRefOid: 'head',
+                        headRefName: 'feat/gate',
+                        baseRefName: 'main',
+                        title: 'feat(delivery): add gate',
+                        bodySha256: createHash('sha256').update(bodyY).digest('hex'),
+                        trackerTarget: 2373,
+                    },
+                },
+                receipts: [
+                    {
+                        id: receiptId,
+                        body: receiptBodyX,
+                        authorNodeId: AUTHOR_BOT_NODE_ID,
+                        authorLogin: 'renamed-author[bot]',
+                        authorType: 'Bot',
+                        createdAt: '2026-08-21T00:00:00Z',
+                        updatedAt: '2026-08-21T00:00:00Z',
+                    },
+                ],
+                deliveryReceiptProof: { totalCount: 1, latestCommentId: receiptId },
+            });
+
+            expect(() => deliverPullRequest(42, port, tracker)).toThrow(/delivery receipt changed during recovery/i);
+            expect(calls.filter((call) => call.startsWith('complete:'))).toHaveLength(0);
+            expect(calls.filter((call) => call.startsWith('retarget:'))).toHaveLength(0);
+            expect(calls).not.toContain(`receipt-authority:write:terminal:${receiptId}`);
+        }
+    );
 
     it('re-arms a released bodyful authority during a later OPEN delivery, then recovers from merged state with fresh post-merge validation', () => {
         const closes = relationshipBody('Closes #2372');
@@ -4210,13 +4127,7 @@ describe('pull-request delivery', () => {
                 phase: 'prepared',
                 receiptId: 'IC_rearm_bodyful',
                 receiptBody: storedReceiptBody,
-                postMergeValidation: {
-                    headRefOid: 'head',
-                    headRefName: 'feat/gate',
-                    baseRefName: 'main',
-                    bodySha256: createHash('sha256').update(closes).digest('hex'),
-                    trackerTarget: 2372,
-                },
+                postMergeValidation: persistedPostMergeValidation('head', closes, 2372),
             },
             receipts: [
                 {
@@ -4253,13 +4164,7 @@ describe('pull-request delivery', () => {
             phase: 'prepared',
             receiptId: 'IC_rearm_bodyful',
             receiptBody: storedReceiptBody,
-            postMergeValidation: {
-                headRefOid: 'head',
-                headRefName: 'feat/gate',
-                baseRefName: 'main',
-                bodySha256: createHash('sha256').update(closes).digest('hex'),
-                trackerTarget: 2372,
-            },
+            postMergeValidation: persistedPostMergeValidation('head', closes, 2372),
         });
 
         deliverPullRequest(42, port, tracker);
@@ -4273,13 +4178,7 @@ describe('pull-request delivery', () => {
             phase: 'terminal',
             receiptId: 'IC_rearm_bodyful',
             receiptBody: storedReceiptBody,
-            postMergeValidation: {
-                headRefOid: 'head',
-                headRefName: 'feat/gate',
-                baseRefName: 'main',
-                bodySha256: createHash('sha256').update(closes).digest('hex'),
-                trackerTarget: 2372,
-            },
+            postMergeValidation: persistedPostMergeValidation('head', closes, 2372),
         });
     });
 
@@ -4297,13 +4196,7 @@ describe('pull-request delivery', () => {
                 phase: 'prepared',
                 receiptId: 'IC_released_v2',
                 receiptBody: storedReceiptBody,
-                postMergeValidation: {
-                    headRefOid: 'head',
-                    headRefName: 'feat/gate',
-                    baseRefName: 'main',
-                    bodySha256: createHash('sha256').update(closes).digest('hex'),
-                    trackerTarget: 2372,
-                },
+                postMergeValidation: persistedPostMergeValidation('head', closes, 2372),
             },
             receipts: [
                 {
@@ -4348,13 +4241,7 @@ describe('pull-request delivery', () => {
             phase: 'terminal',
             receiptId: 'IC_delivery_42_3',
             receiptBody: storedReceiptBody,
-            postMergeValidation: {
-                headRefOid: 'head',
-                headRefName: 'feat/gate',
-                baseRefName: 'main',
-                bodySha256: createHash('sha256').update(closes).digest('hex'),
-                trackerTarget: 2372,
-            },
+            postMergeValidation: persistedPostMergeValidation('head', closes, 2372),
         });
     });
 
@@ -4373,13 +4260,7 @@ describe('pull-request delivery', () => {
             persistedReceiptAuthority: {
                 phase: 'prepared',
                 receiptId: 'IC_prepared_bodyless',
-                postMergeValidation: {
-                    headRefOid: 'head',
-                    headRefName: 'feat/gate',
-                    baseRefName: 'main',
-                    bodySha256: createHash('sha256').update(closes).digest('hex'),
-                    trackerTarget: 2372,
-                },
+                postMergeValidation: persistedPostMergeValidation('head', closes, 2372),
             },
             receipts: [
                 {
@@ -4406,13 +4287,7 @@ describe('pull-request delivery', () => {
             phase: 'terminal',
             receiptId: 'IC_prepared_bodyless',
             receiptBody: storedReceiptBody,
-            postMergeValidation: {
-                headRefOid: 'head',
-                headRefName: 'feat/gate',
-                baseRefName: 'main',
-                bodySha256: createHash('sha256').update(closes).digest('hex'),
-                trackerTarget: 2372,
-            },
+            postMergeValidation: persistedPostMergeValidation('head', closes, 2372),
         });
     });
 
@@ -4433,10 +4308,7 @@ describe('pull-request delivery', () => {
                 receiptId: 'IC_prepared',
                 receiptBody,
                 postMergeValidation: {
-                    headRefOid: 'head',
-                    headRefName: 'feat/gate',
-                    baseRefName: 'main',
-                    bodySha256: createHash('sha256').update(related).digest('hex'),
+                    ...persistedPostMergeValidation('head', related, 2372),
                     trackerTarget: null,
                 },
             },
@@ -4454,7 +4326,9 @@ describe('pull-request delivery', () => {
             deliveryReceiptProof: { totalCount: 1, latestCommentId: 'IC_prepared' },
         });
 
-        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/delivery receipt changed during recovery/i);
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(
+            /delivery receipt changed during recovery|delivery receipt authority cannot be proven/i
+        );
         expect(calls.filter((call) => call.startsWith('complete:'))).toHaveLength(0);
         expect(calls.filter((call) => call.startsWith('retarget:'))).toHaveLength(0);
     });
@@ -5252,13 +5126,7 @@ describe('pull-request delivery', () => {
                 phase: 'prepared',
                 receiptId: 'IC_frozen_success',
                 receiptBody,
-                postMergeValidation: {
-                    headRefOid: 'head',
-                    headRefName: 'feat/gate',
-                    baseRefName: 'main',
-                    bodySha256: createHash('sha256').update(closes).digest('hex'),
-                    trackerTarget: 2372,
-                },
+                postMergeValidation: persistedPostMergeValidation('head', closes, 2372),
             },
             receipts: [
                 {
@@ -5794,13 +5662,7 @@ describe('pull-request delivery', () => {
             phase: 'terminal',
             receiptId: 'IC_delivery_42_2',
             receiptBody: requiredDeliveryReceiptBody(42, 'head', closesY, 2373),
-            postMergeValidation: {
-                headRefOid: 'head',
-                headRefName: 'feat/gate',
-                baseRefName: 'main',
-                bodySha256: createHash('sha256').update(closesY).digest('hex'),
-                trackerTarget: 2373,
-            },
+            postMergeValidation: persistedPostMergeValidation('head', closesY, 2373),
         });
     });
 
@@ -5834,13 +5696,7 @@ describe('pull-request delivery', () => {
                 phase: 'terminal',
                 receiptId: 'IC_delivery_42_2',
                 receiptBody: visibleDeliveryReceiptBody(42, 'head', closes, 2372, observedCiState),
-                postMergeValidation: {
-                    headRefOid: 'head',
-                    headRefName: 'feat/gate',
-                    baseRefName: 'main',
-                    bodySha256: createHash('sha256').update(closes).digest('hex'),
-                    trackerTarget: 2372,
-                },
+                postMergeValidation: persistedPostMergeValidation('head', closes, 2372),
             });
         }
     );
@@ -5873,13 +5729,7 @@ describe('pull-request delivery', () => {
             phase: 'prepared',
             receiptId: 'IC_delivery_42_2',
             receiptBody: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'unstable'),
-            postMergeValidation: {
-                headRefOid: 'head',
-                headRefName: 'feat/gate',
-                baseRefName: 'main',
-                bodySha256: createHash('sha256').update(closes).digest('hex'),
-                trackerTarget: 2372,
-            },
+            postMergeValidation: persistedPostMergeValidation('head', closes, 2372),
         });
         expect(calls).not.toContain('complete:2372');
 
@@ -5894,13 +5744,7 @@ describe('pull-request delivery', () => {
             phase: 'terminal',
             receiptId: 'IC_delivery_42_2',
             receiptBody: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'unstable'),
-            postMergeValidation: {
-                headRefOid: 'head',
-                headRefName: 'feat/gate',
-                baseRefName: 'main',
-                bodySha256: createHash('sha256').update(closes).digest('hex'),
-                trackerTarget: 2372,
-            },
+            postMergeValidation: persistedPostMergeValidation('head', closes, 2372),
         });
     });
 
@@ -8859,7 +8703,7 @@ describe('delivery shell boundary', () => {
         expect(port.reviewState(42, 'head')).toEqual({ latestReviewerStateOnHead: 'APPROVED', unresolvedThreads: 0 });
         expect(port.dependents('feat/gate')).toEqual([stacked()]);
         expect(port.repositoryDeletesMergedBranches()).toBe(false);
-        port.merge(42, 'head', false);
+        port.merge(42, 'head', false, 'feat(delivery): add gate');
         port.retarget(43, 'main');
 
         expect(
@@ -8878,6 +8722,8 @@ describe('delivery shell boundary', () => {
                 'sha=head',
                 '-f',
                 'merge_method=squash',
+                '-f',
+                'commit_title=feat(delivery): add gate',
             ],
         });
         expect(runs).toContainEqual({

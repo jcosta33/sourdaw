@@ -84,7 +84,7 @@ export type DeliveryPort = CheckEvidencePort & {
     reviewState: (number: number, expectedHead: string) => ReviewState;
     dependents: (baseBranch: string) => StackedPullRequest[];
     repositoryDeletesMergedBranches: () => boolean;
-    merge: (number: number, expectedHead: string, hasDependents: boolean) => void;
+    merge: (number: number, expectedHead: string, hasDependents: boolean, expectedTitle?: string) => void;
     retarget: (number: number, baseBranch: string) => void;
     deliveryReceipts: (number: number) => DeliveryReceiptComment[];
     deliveryReceiptProof: (number: number) => DeliveryReceiptProof;
@@ -169,6 +169,7 @@ export type PersistedPreparedPostMergeValidation = {
     baseRefName: string;
     bodySha256: string;
     trackerTarget: number | null;
+    title?: string;
 };
 
 type PersistedDeliveryReceiptAuthorityBase = {
@@ -620,7 +621,7 @@ function validateBaseBranch(pullRequest: PullRequestSnapshot): void {
 }
 
 function validateStablePullRequest(before: PullRequestSnapshot, after: PullRequestSnapshot): void {
-    const fields: Array<keyof PullRequestSnapshot> = ['headRefOid', 'headRefName', 'baseRefName', 'body'];
+    const fields: Array<keyof PullRequestSnapshot> = ['headRefOid', 'headRefName', 'baseRefName', 'title', 'body'];
     for (const field of fields) {
         if (before[field] !== after[field]) {
             fail(`PR #${before.number} ${field} changed during delivery`);
@@ -641,13 +642,14 @@ function bodySha256(body: string | null): string {
 }
 
 function persistedPreparedPostMergeValidation(
-    pullRequest: Pick<PullRequestSnapshot, 'headRefOid' | 'headRefName' | 'baseRefName' | 'body'>,
+    pullRequest: Pick<PullRequestSnapshot, 'headRefOid' | 'headRefName' | 'baseRefName' | 'title' | 'body'>,
     trackerTarget: number | undefined
 ): PersistedPreparedPostMergeValidation {
     return {
         headRefOid: pullRequest.headRefOid,
         headRefName: pullRequest.headRefName,
         baseRefName: pullRequest.baseRefName,
+        title: pullRequest.title,
         bodySha256: bodySha256(pullRequest.body),
         trackerTarget: trackerTarget ?? null,
     };
@@ -658,8 +660,14 @@ function validatePostMergeSnapshot(
     merged: PullRequestSnapshot,
     number: number
 ): void {
+    if (expected.title === undefined) {
+        fail(`PR #${number} delivery receipt authority cannot be proven`);
+    }
     validateAuthorAppMerger(merged);
     validateBaseBranch(merged);
+    if (expected.title !== merged.title) {
+        fail(`PR #${number} title changed during delivery`);
+    }
     if (expected.bodySha256 !== bodySha256(merged.body)) {
         fail(`PR #${number} body changed during delivery`);
     }
@@ -942,6 +950,7 @@ function samePreparedPostMergeValidation(
         left?.headRefOid === right?.headRefOid &&
         left?.headRefName === right?.headRefName &&
         left?.baseRefName === right?.baseRefName &&
+        left?.title === right?.title &&
         left?.bodySha256 === right?.bodySha256 &&
         left?.trackerTarget === right?.trackerTarget
     );
@@ -1574,6 +1583,18 @@ function compatibleBodylessPersistedMergedRecoveryReceipt(
     if (storedPayload.schemaVersion === 1) {
         fail(`PR #${pullRequest.number} delivery receipt changed during recovery`);
     }
+    if (authority.phase !== 'released') {
+        const validation = authority.postMergeValidation;
+        if (validation === undefined) {
+            fail(`PR #${pullRequest.number} delivery receipt authority cannot be proven`);
+        }
+        validateReceiptPayloadAgainstPreparedPostMergeValidation(
+            pullRequest.number,
+            storedPayload,
+            validation,
+            'recovery'
+        );
+    }
     const authoritative = newestLogicalDeliveryReceiptAuthority(lineage, pullRequest);
     const authoritativePayload = assertDeliveryReceiptForHead(authoritative, pullRequest);
     if (
@@ -1583,21 +1604,6 @@ function compatibleBodylessPersistedMergedRecoveryReceipt(
         fail(`PR #${pullRequest.number} delivery receipt changed during recovery`);
     }
     return stored;
-}
-
-function validatePreparedBodylessPersistedMergedRecoveryReceipt(
-    pullRequest: Pick<PullRequestSnapshot, 'number'>,
-    authority: CurrentPersistedPreparedDeliveryReceiptAuthority,
-    payload: DeliveryReceiptPayload
-): void {
-    const validation = authority.postMergeValidation;
-    if (validation === undefined) {
-        fail(`PR #${pullRequest.number} delivery receipt authority is not merge-authorized`);
-    }
-    if (payload.schemaVersion === 1) {
-        fail(`PR #${pullRequest.number} delivery receipt changed during recovery`);
-    }
-    validateReceiptPayloadAgainstPreparedPostMergeValidation(pullRequest.number, payload, validation, 'recovery');
 }
 
 function validateLegacyPersistedMergedRecoveryReceipt(
@@ -1624,11 +1630,8 @@ function readCompatibleBodylessPersistedMergedRecoveryReceipt(
         pullRequest,
         port,
         authority.receiptId,
-        (lineage, _receipt, payload) => {
+        (lineage, _receipt, _payload) => {
             compatibleBodylessPersistedMergedRecoveryReceipt(lineage, authority, pullRequest);
-            if (authority.phase === 'prepared') {
-                validatePreparedBodylessPersistedMergedRecoveryReceipt(pullRequest, authority, payload);
-            }
         }
     );
 }
@@ -2008,7 +2011,7 @@ function deliverPullRequestWithCiAdmission(
             }
         );
     try {
-        port.merge(number, finalSnapshot.headRefOid, finalDependents.length > 0);
+        port.merge(number, finalSnapshot.headRefOid, finalDependents.length > 0, finalSnapshot.title);
     } catch (error) {
         if (error instanceof DeliveryMergeRejectedError) {
             tryRestorePreArmedDeliveryReceiptAuthorityAfterMergeFailure(
@@ -2616,23 +2619,25 @@ export function shellPort(
         },
         repositoryDeletesMergedBranches: () =>
             shell.capture('gh', ['api', `repos/${repository}`, '--jq', '.delete_branch_on_merge']) === 'true',
-        merge: (number, expectedHead, hasDependents) => {
+        merge: (number, expectedHead, hasDependents, expectedTitle) => {
             const policy = repositoryMergePolicy(repository, shell);
             if (hasDependents && policy.deletesMergedBranches) {
                 fail('automatic merged-branch deletion must be disabled before delivering a stacked PR');
             }
+            const mergeArgs = [
+                'api',
+                '--method',
+                'PUT',
+                `repos/${repository}/pulls/${number}/merge`,
+                '-f',
+                `sha=${expectedHead}`,
+                '-f',
+                `merge_method=${policy.method}`,
+                ...(expectedTitle === undefined ? [] : ['-f', `commit_title=${expectedTitle}`]),
+            ];
             let response: string;
             try {
-                response = shell.capture('gh', [
-                    'api',
-                    '--method',
-                    'PUT',
-                    `repos/${repository}/pulls/${number}/merge`,
-                    '-f',
-                    `sha=${expectedHead}`,
-                    '-f',
-                    `merge_method=${policy.method}`,
-                ]);
+                response = shell.capture('gh', mergeArgs);
             } catch (error) {
                 const rejection = classifyGithubMergeRejection(number, error);
                 if (rejection !== undefined) {
@@ -2800,10 +2805,13 @@ function deliveryLockObjectId(value: string, number: number): string {
 }
 
 function isPersistedPreparedPostMergeValidation(value: unknown): value is PersistedPreparedPostMergeValidation {
+    const allowedKeys = new Set(['headRefOid', 'headRefName', 'baseRefName', 'title', 'bodySha256', 'trackerTarget']);
+    const keys = typeof value === 'object' && value !== null ? Object.keys(value) : [];
     return (
         typeof value === 'object' &&
         value !== null &&
-        Object.keys(value).length === 5 &&
+        (keys.length === 5 || keys.length === 6) &&
+        keys.every((key) => allowedKeys.has(key)) &&
         'headRefOid' in value &&
         typeof value.headRefOid === 'string' &&
         value.headRefOid !== '' &&
@@ -2816,6 +2824,7 @@ function isPersistedPreparedPostMergeValidation(value: unknown): value is Persis
         'bodySha256' in value &&
         typeof value.bodySha256 === 'string' &&
         /^[0-9a-f]{64}$/u.test(value.bodySha256) &&
+        (!('title' in value) || (typeof value.title === 'string' && value.title !== '')) &&
         'trackerTarget' in value &&
         (value.trackerTarget === null ||
             (typeof value.trackerTarget === 'number' &&
