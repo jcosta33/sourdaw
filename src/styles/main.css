@@ -177,6 +177,16 @@
     }
 }
 
+@container (max-width: 479px) {
+    .transport-bar__playhead {
+        display: none;
+    }
+
+    .transport-bar__action-row {
+        grid-template-columns: auto 1fr auto;
+    }
+}
+
 /* ── DAW-specific utilities ────────────────────────────────────────────── */
 @utility panel-raised {
     background: var(--color-bg-panel);

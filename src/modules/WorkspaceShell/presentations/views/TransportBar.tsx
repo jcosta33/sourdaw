@@ -202,11 +202,13 @@ export const TransportBar = (): ReactElement => {
                 }}
             >
                 <Row gap={1} className="transport-bar__action-left min-w-0">
-                    <PlayheadDisplay
-                        tempo={transport.tempo}
-                        numerator={transport.timeSignatureNumerator}
-                        timeDisplayMode={timeDisplayMode}
-                    />
+                    <span className="transport-bar__playhead">
+                        <PlayheadDisplay
+                            tempo={transport.tempo}
+                            numerator={transport.timeSignatureNumerator}
+                            timeDisplayMode={timeDisplayMode}
+                        />
+                    </span>
                     <span className="transport-bar__action-detail transport-bar__full-or-compact">
                         <Sep />
                         <TempoEditor />

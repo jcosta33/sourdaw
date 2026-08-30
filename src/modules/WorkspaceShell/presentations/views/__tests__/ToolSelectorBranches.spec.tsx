@@ -73,11 +73,11 @@ describe('ToolSelector — radio group structure', () => {
         fireEvent.click(screen.getByRole('button', { name: /Editing tools:/ }));
 
         const select = screen.getByRole('radio', { name: 'Select (S)' });
-        fireEvent.keyDown(select, { key: 'ArrowRight' });
+        fireEvent.keyDown(select, { key: 'ArrowDown' });
         expect(mockedSetEditingTool).toHaveBeenLastCalledWith('cut');
         expect(screen.getByRole('radio', { name: 'Cut (C)' })).toHaveFocus();
 
-        fireEvent.keyDown(screen.getByRole('radio', { name: 'Cut (C)' }), { key: 'ArrowLeft' });
+        fireEvent.keyDown(screen.getByRole('radio', { name: 'Cut (C)' }), { key: 'ArrowUp' });
         expect(mockedSetEditingTool).toHaveBeenLastCalledWith('select');
     });
 

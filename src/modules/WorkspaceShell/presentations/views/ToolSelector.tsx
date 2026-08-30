@@ -30,18 +30,22 @@ const TOOL_ICONS: Record<EditingTool, ReactElement> = {
 
 const TOOLS: EditingTool[] = ['select', 'cut', 'draw', 'automation', 'stretch', 'marquee'];
 
-const selectToolOnArrowKey = (event: KeyboardEvent<HTMLButtonElement>, tool: EditingTool): void => {
-    if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') {
+const moveToolRadio = (event: KeyboardEvent<HTMLButtonElement>, tool: EditingTool, select: boolean): void => {
+    const nextKey = select ? 'ArrowDown' : 'ArrowRight';
+    const previousKey = select ? 'ArrowUp' : 'ArrowLeft';
+    if (event.key !== nextKey && event.key !== previousKey) {
         return;
     }
-    const direction = event.key === 'ArrowRight' ? 1 : -1;
+    const direction = event.key === nextKey ? 1 : -1;
     event.preventDefault();
     const index = TOOLS.indexOf(tool);
     const nextTool = TOOLS[(index + direction + TOOLS.length) % TOOLS.length];
     if (nextTool === undefined) {
         return;
     }
-    setEditingTool(nextTool);
+    if (select) {
+        setEditingTool(nextTool);
+    }
     const radios = event.currentTarget
         .closest('[role="radiogroup"]')
         ?.querySelectorAll<HTMLButtonElement>('[role="radio"]');
@@ -90,7 +94,7 @@ export const ToolSelector = ({ rippleEditing, onToggleRipple, compact = false }:
                                     aria-checked={activeTool === tool}
                                     tabIndex={activeTool === tool ? 0 : -1}
                                     onClick={() => setEditingTool(tool)}
-                                    onKeyDown={(event) => selectToolOnArrowKey(event, tool)}
+                                    onKeyDown={(event) => moveToolRadio(event, tool, true)}
                                 >
                                     {TOOL_ICONS[tool]}
                                     {TOOL_LABELS[tool]}
@@ -127,7 +131,7 @@ export const ToolSelector = ({ rippleEditing, onToggleRipple, compact = false }:
                             aria-label={TOOL_LABELS[tool]}
                             data-testid={`tool-${tool}`}
                             onClick={() => setEditingTool(tool)}
-                            onKeyDown={(event) => selectToolOnArrowKey(event, tool)}
+                            onKeyDown={(event) => moveToolRadio(event, tool, false)}
                         >
                             {TOOL_ICONS[tool]}
                         </Button>

@@ -84,11 +84,11 @@ describe('SoloModeSelector — compact keyboard behavior', () => {
         renderCompact();
         fireEvent.click(screen.getByRole('button', { name: 'Solo mode: SIP' }));
         const sip = screen.getByRole('radio', { name: /SIP/ });
-        fireEvent.keyDown(sip, { key: 'ArrowRight' });
+        fireEvent.keyDown(sip, { key: 'ArrowDown' });
         expect(mockedSetSoloMode).toHaveBeenLastCalledWith('afl');
         expect(screen.getByRole('radio', { name: /AFL/ })).toHaveFocus();
 
-        fireEvent.keyDown(screen.getByRole('radio', { name: /AFL/ }), { key: 'ArrowLeft' });
+        fireEvent.keyDown(screen.getByRole('radio', { name: /AFL/ }), { key: 'ArrowUp' });
         expect(mockedSetSoloMode).toHaveBeenLastCalledWith('sip');
     });
 

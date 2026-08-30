@@ -26,18 +26,22 @@ const SOLO_MODES: { value: SoloMode; label: string; description: string }[] = [
     },
 ];
 
-const selectSoloModeOnArrowKey = (event: KeyboardEvent<HTMLButtonElement>, mode: SoloMode): void => {
-    if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') {
+const moveSoloModeRadio = (event: KeyboardEvent<HTMLButtonElement>, mode: SoloMode, select: boolean): void => {
+    const nextKey = select ? 'ArrowDown' : 'ArrowRight';
+    const previousKey = select ? 'ArrowUp' : 'ArrowLeft';
+    if (event.key !== nextKey && event.key !== previousKey) {
         return;
     }
-    const direction = event.key === 'ArrowRight' ? 1 : -1;
+    const direction = event.key === nextKey ? 1 : -1;
     event.preventDefault();
     const index = SOLO_MODES.findIndex((option) => option.value === mode);
     const next = SOLO_MODES[(index + direction + SOLO_MODES.length) % SOLO_MODES.length];
     if (next === undefined) {
         return;
     }
-    setSoloMode(next.value);
+    if (select) {
+        setSoloMode(next.value);
+    }
     const radios = event.currentTarget
         .closest('[role="radiogroup"]')
         ?.querySelectorAll<HTMLButtonElement>('[role="radio"]');
@@ -75,7 +79,7 @@ export const SoloModeSelector = ({ soloMode, compact = false }: SoloModeSelector
                                 aria-checked={soloMode === message.value}
                                 tabIndex={soloMode === message.value ? 0 : -1}
                                 onClick={() => setSoloMode(message.value)}
-                                onKeyDown={(event) => selectSoloModeOnArrowKey(event, message.value)}
+                                onKeyDown={(event) => moveSoloModeRadio(event, message.value, true)}
                             >
                                 {message.label} — {message.description}
                             </Button>
@@ -99,7 +103,7 @@ export const SoloModeSelector = ({ soloMode, compact = false }: SoloModeSelector
                             tabIndex={soloMode === message.value ? 0 : -1}
                             data-testid={`solo-mode-${message.value}`}
                             onClick={() => setSoloMode(message.value)}
-                            onKeyDown={(event) => selectSoloModeOnArrowKey(event, message.value)}
+                            onKeyDown={(event) => moveSoloModeRadio(event, message.value, false)}
                             className={soloMode === message.value ? 'text-[var(--color-state-solo)]' : ''}
                         >
                             {message.label}

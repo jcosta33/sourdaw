@@ -407,45 +407,26 @@ export const TransportControls = ({
                     <TooltipContent>Count-in</TooltipContent>
                 </Tooltip>
             </span>
-            <span className="transport-bar__full-only">
-                <Popover>
-                    <Tooltip>
-                        <TooltipTrigger asChild>
-                            <PopoverTrigger asChild>
-                                <Button
-                                    variant="ghost"
-                                    size="icon-sm"
-                                    aria-label="Transport settings"
-                                    data-testid="transport-settings"
-                                >
-                                    <SlidersHorizontal className="size-3.5" aria-hidden="true" />
-                                </Button>
-                            </PopoverTrigger>
-                        </TooltipTrigger>
-                        <TooltipContent>Transport settings</TooltipContent>
-                    </Tooltip>
-                    <PopoverContent align="center" aria-label="Transport settings">
-                        {renderSettingsContent(false)}
-                    </PopoverContent>
-                </Popover>
-            </span>
-            <span className="transport-bar__compact-only">
-                <Popover>
-                    <Tooltip>
-                        <TooltipTrigger asChild>
-                            <PopoverTrigger asChild>
-                                <Button variant="ghost" size="icon-sm" aria-label="Transport settings">
-                                    <SlidersHorizontal className="size-3.5" aria-hidden="true" />
-                                </Button>
-                            </PopoverTrigger>
-                        </TooltipTrigger>
-                        <TooltipContent>Transport settings</TooltipContent>
-                    </Tooltip>
-                    <PopoverContent align="center" aria-label="Transport settings">
-                        {renderSettingsContent(true)}
-                    </PopoverContent>
-                </Popover>
-            </span>
+            <Popover>
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <PopoverTrigger asChild>
+                            <Button
+                                variant="ghost"
+                                size="icon-sm"
+                                aria-label="Transport settings"
+                                data-testid="transport-settings"
+                            >
+                                <SlidersHorizontal className="size-3.5" aria-hidden="true" />
+                            </Button>
+                        </PopoverTrigger>
+                    </TooltipTrigger>
+                    <TooltipContent>Transport settings</TooltipContent>
+                </Tooltip>
+                <PopoverContent align="center" aria-label="Transport settings">
+                    {renderSettingsContent(true)}
+                </PopoverContent>
+            </Popover>
         </DawTransportCluster>
     );
 };
