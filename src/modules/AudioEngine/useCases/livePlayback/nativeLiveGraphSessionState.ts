@@ -18,17 +18,30 @@ import { type AudioGraphBackend } from '../../models/AudioGraphBackend';
 export type NativeLiveGraphSession = {
     backend: AudioGraphBackend | null;
     /**
-     * Whether the topology this session sent actually gives the engine
-     * something to sound.
+     * Whether this session's engine is the one a musician is actually hearing.
      *
-     * Derived from the batch, never declared: today `projectLiveGraphTopology`
-     * emits no `schedule-clip`, so the engine renders silence and Web Audio is
-     * what a musician hears. Anything that must follow the audible transport
-     * — the playback cursor above all — reads this rather than assuming a
-     * running engine is the one making the sound, and starts following the
-     * engine on the first run whose topology carries audio.
+     * Two independent conditions, and both have to hold: the topology has to
+     * schedule something (an engine with no clips has nothing to sound), and
+     * the monitor has to be open (a shadowed engine writes true zeros at the
+     * device however full its timeline is). Naming it for the conclusion
+     * rather than for either half is deliberate — the earlier `carriesAudio`
+     * asked only whether clips were scheduled, and the day a shadowed session
+     * schedules a real programme that reading is wrong in the direction that
+     * moves the playback cursor onto an engine nobody can hear.
+     *
+     * Anything that must follow the audible transport — the playback cursor
+     * above all — reads this rather than assuming a running engine is the one
+     * making the sound.
      */
-    carriesAudio: boolean;
+    audibleCarrier: boolean;
+    /**
+     * Whether this session left the engine's monitor shadowed.
+     *
+     * Held because it is a live mode rather than a property of the batch: the
+     * cutover lifts it on a session that is already rolling, and
+     * {@link audibleCarrier} has to be recomputed when it does.
+     */
+    monitorShadowed: boolean;
     /**
      * Whether this session left the engine's transport rendering.
      *
@@ -47,7 +60,11 @@ export type NativeLiveGraphSession = {
 
 export const nativeLiveGraphSession: NativeLiveGraphSession = {
     backend: null,
-    carriesAudio: false,
+    audibleCarrier: false,
+    // Shadowed until a session says otherwise: the safe state is the silent
+    // one, so a reader that runs before any session started cannot conclude
+    // the native engine is audible.
+    monitorShadowed: true,
     rolling: false,
     pending: Promise.resolve(),
 };
