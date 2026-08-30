@@ -1372,7 +1372,16 @@ function settleAgentRunPendingEffectManualReview(input: {
         const pendingEffectRecoveryLedger = getPendingEffectRecoveryLedger(state).filter(
             (candidate) => candidate !== recovery
         );
-        persistAgentRunState(withPendingEffectRecoveryLedger(state, pendingEffectRecoveryLedger));
+        try {
+            persistAgentRunState(withPendingEffectRecoveryLedger(state, pendingEffectRecoveryLedger));
+        } catch (error) {
+            try {
+                persistAgentRunState(state);
+            } catch {
+                // The original durable capsule remains authoritative when restoring the live cache also fails.
+            }
+            throw error;
+        }
         return null;
     }
     const run = state.runs[runIndex]!;

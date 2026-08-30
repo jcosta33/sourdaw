@@ -106,6 +106,20 @@ function restartFrom(serializedState: string): void {
     agentRunStore.set(sanitizeAgentRunState(JSON.parse(serializedState)));
 }
 
+function evictReviewOwnerAndRestart(): void {
+    createObligation();
+    for (let index = 0; index < 50; index += 1) {
+        agentRunLifecycle.create({
+            runId: `run-capacity-${String(index)}`,
+            request: 'Fill bounded run history.',
+            mode: 'explain',
+            createdRevision: 'revision-source',
+            createdAt: 10 + index,
+        });
+    }
+    restartFrom(JSON.stringify(readAgentRunState()));
+}
+
 describe('retained section render review hydration', () => {
     beforeEach(() => {
         agentRunLifecycle.clear();
@@ -129,18 +143,7 @@ describe('retained section render review hydration', () => {
     });
 
     it('keeps an evicted review owner actionable from its durable capsule after restart', () => {
-        createObligation();
-        for (let index = 0; index < 50; index += 1) {
-            agentRunLifecycle.create({
-                runId: `run-capacity-${String(index)}`,
-                request: 'Fill bounded run history.',
-                mode: 'explain',
-                createdRevision: 'revision-source',
-                createdAt: 10 + index,
-            });
-        }
-        const serializedState = JSON.stringify(readAgentRunState());
-        restartFrom(serializedState);
+        evictReviewOwnerAndRestart();
 
         expect(readAgentRunState().runs.some(({ runId }) => runId === 'run-hydrate-review')).toBe(false);
         const review = selectRetainedSectionRenderManualReviews(readAgentRunState())[0];
@@ -157,6 +160,105 @@ describe('retained section render review hydration', () => {
 
         expect(readAgentRunState().pendingEffectRecoveryLedger).toBeUndefined();
         expect(selectRetainedSectionRenderManualReviews(readAgentRunState())).toEqual([]);
+    });
+
+    it.each(['accepted', 'discarded', 'missing-evidence'] as const)(
+        'restores an ownerless %s review when atomic ledger persistence fails',
+        (disposition) => {
+            evictReviewOwnerAndRestart();
+            if (disposition === 'missing-evidence') {
+                mocks.getExact.mockReturnValue(null);
+            }
+            const review = selectRetainedSectionRenderManualReviews(readAgentRunState())[0];
+            if (!review) {
+                throw new Error('Expected an ownerless review.');
+            }
+            const durableBefore = JSON.stringify(readAgentRunState());
+            const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementationOnce(() => {
+                throw new DOMException('Quota exceeded', 'QuotaExceededError');
+            });
+
+            expect(() => settleRetainedSectionRenderManualReview({ binding: review.binding, disposition })).toThrow(
+                'could not be persisted locally'
+            );
+
+            expect(readAgentRunState().pendingEffectRecoveryLedger).toHaveLength(1);
+            expect(selectRetainedSectionRenderManualReviews(readAgentRunState())).toHaveLength(1);
+            expect(mocks.disposeExact).not.toHaveBeenCalled();
+            expect(setItem).toHaveBeenCalledTimes(2);
+            expect(setItem.mock.calls[1]?.[1]).toContain('batch-hydrate-review');
+            setItem.mockRestore();
+            restartFrom(durableBefore);
+            expect(readAgentRunState().pendingEffectRecoveryLedger).toHaveLength(1);
+            expect(selectRetainedSectionRenderManualReviews(readAgentRunState())).toHaveLength(1);
+        }
+    );
+
+    it('disposes every exact artifact for an ownerless discarded review', () => {
+        evictReviewOwnerAndRestart();
+        const review = selectRetainedSectionRenderManualReviews(readAgentRunState())[0];
+        if (!review) {
+            throw new Error('Expected an ownerless discarded review.');
+        }
+
+        settleRetainedSectionRenderManualReview({ binding: review.binding, disposition: 'discarded' });
+
+        expect(mocks.disposeExact).toHaveBeenCalledTimes(review.jobs.length);
+        expect(readAgentRunState().pendingEffectRecoveryLedger).toBeUndefined();
+    });
+
+    it('does not project an ownerless prepared capsule even when it carries a source revision', () => {
+        evictReviewOwnerAndRestart();
+        const state = readAgentRunState();
+        state.pendingEffectRecoveryLedger![0]!.checkpoint = 'prepared';
+        agentRunStore.set(state);
+        const serialized = JSON.stringify(readAgentRunState());
+        restartFrom(serialized);
+
+        expect(selectRetainedSectionRenderManualReviews(readAgentRunState())).toEqual([]);
+        expect(readAgentRunState().pendingEffectRecoveryLedger).toHaveLength(1);
+        expect(readAgentRunState().pendingEffectRecoveryLedger?.[0]).toMatchObject({
+            checkpoint: 'prepared',
+            sourceRevision: 'revision-source',
+        });
+    });
+
+    it('settles one ownerless review without removing an unrelated durable capsule after restart', () => {
+        evictReviewOwnerAndRestart();
+        const state = readAgentRunState();
+        const first = state.pendingEffectRecoveryLedger![0]!;
+        const parsed = parseVersionedCommandBatchEnvelope(first.serializedBatch, first.authority);
+        if (parsed.status === 'invalid') {
+            throw new Error(parsed.reason);
+        }
+        const secondBatch = compileVersionedCommandBatchEnvelope({
+            runId: 'run-second-orphan',
+            batchId: 'batch-second-orphan',
+            projectId: 'project-review',
+            baseRevision: 'revision-source',
+            intent: 'Review second retained evidence',
+            commands: parsed.envelope.commands.map(serializeVersionedCommandEnvelope),
+        });
+        state.pendingEffectRecoveryLedger!.push({
+            ...structuredClone(first),
+            runId: 'run-second-orphan',
+            batchId: 'batch-second-orphan',
+            receiptIdentity: '2:run-second-orphan:batch-second-orphan:partially-committed',
+            serializedBatch: secondBatch.serialized,
+            authority: secondBatch.authority,
+        });
+        restartFrom(JSON.stringify(state));
+        const reviews = selectRetainedSectionRenderManualReviews(readAgentRunState());
+        expect(reviews).toHaveLength(2);
+
+        settleRetainedSectionRenderManualReview({ binding: reviews[0]!.binding, disposition: 'accepted' });
+        restartFrom(JSON.stringify(readAgentRunState()));
+
+        expect(readAgentRunState().pendingEffectRecoveryLedger).toHaveLength(1);
+        expect(selectRetainedSectionRenderManualReviews(readAgentRunState())).toHaveLength(1);
+        expect(selectRetainedSectionRenderManualReviews(readAgentRunState())[0]?.binding.runId).toBe(
+            'run-second-orphan'
+        );
     });
 
     it('preserves reviewed disposition and never resurrects a settled review after restart', () => {
