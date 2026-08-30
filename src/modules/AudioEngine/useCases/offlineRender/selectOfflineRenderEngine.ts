@@ -29,8 +29,10 @@
  *     (`bus-send-unsupported`). Refused mid-render it would still fall back,
  *     but only after building the whole graph twice, and this file is where
  *     the promise above says that answer is decided.
- *   - **Bus → track routing** — `daw-engine` refuses it outright (the routing
- *     constraint recorded in `AudioGraphBackend`'s header).
+ *   - **Bus → track routing** — a bus routed at an ordinary (non-master)
+ *     track is still gated here. A bus whose resolved target is the master
+ *     track is a mapper-accepted edge into the master strip, so the default
+ *     bus output is not this gate.
  *
  * Mute, pan and solo on a bus are not a gate: the native strip holds them
  * (`SetBusMute` / `SetBusSoloGate` / `BusPan`, #3103), and the offline
@@ -104,8 +106,12 @@ function contentGateReason(input: SelectOfflineRenderEngineInput): string | null
         if (track.kind !== 'bus') {
             continue;
         }
-        const target = resolveOutputTarget({ outputId: track.outputId, busStripIds: busIds, trackStripIds: trackIds });
-        if (target.kind === 'track') {
+        const target = resolveOutputTarget({
+            outputId: track.outputId,
+            busStripIds: busIds,
+            trackStripIds: trackIds,
+        });
+        if (target.kind === 'track' && target.trackId !== 'master') {
             return `bus "${track.name}" routes into a track, which the native engine refuses`;
         }
     }
