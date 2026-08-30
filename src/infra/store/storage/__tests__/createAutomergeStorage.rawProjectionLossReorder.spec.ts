@@ -89,7 +89,7 @@ describe('createAutomergeStorage raw projection loss reordering', () => {
         ).toEqual([]);
     });
 
-    it('reports a loss when duplicated raw rows project to a single row', () => {
+    it('reports a loss when the projected array holds fewer rows than the raw slot', () => {
         registerSanitizedSlot('points', (value) => {
             const seenBeats = new Set<number>();
             return (value as AutomationPoint[]).filter((point) => {
@@ -139,9 +139,9 @@ describe('createAutomergeStorage raw projection loss reordering', () => {
             return [...rows.filter((row) => row.curve !== undefined), ...rows.filter((row) => row.curve === undefined)];
         });
 
-        // First-fit claiming wastes the only row wide enough for the second
-        // raw item on the first one, although swapping the assignment places
-        // both rows, so no content was lost.
+        // Both rows survive with their exact content, only emitted in
+        // swapped order; exact-content claiming matches rows by canonical
+        // content, so neither order nor width plays a role here.
         expect(
             findSlotLosses('curves', [
                 { beat: 148, value: 0.25 },
@@ -165,5 +165,57 @@ describe('createAutomergeStorage raw projection loss reordering', () => {
         // projected row can contain an undefined raw row, so the duplicate is
         // a loss.
         expect(findSlotLosses('points', [undefined, undefined])).toEqual(['points']);
+    });
+
+    it('reports no loss when a later row must re-route an earlier one to its second match', () => {
+        registerSanitizedSlot('widened', (value) => {
+            const rows = value as Array<{ beat: number; value: number; curve?: string; tension?: number }>;
+            const tensioned = rows.find((row) => row.tension !== undefined);
+            return [
+                { ...tensioned, eased: true },
+                { beat: 2, value: 9 },
+                { beat: 1, value: 1, curve: 'linear', easing: 'half' },
+                { beat: 1, value: 1, curve: 'spline' },
+            ];
+        });
+
+        // The tensioned row's only match is the eased row the curve-only row
+        // already holds; placing the last row needs the curve-only row to
+        // re-route to its second match (the easing row) while the augmenting
+        // search is running. Marking a candidate as visited on a probe that
+        // rejected it would block the free spline row the bare row needs.
+        expect(
+            findSlotLosses('widened', [
+                { beat: 1, value: 1, curve: 'linear' },
+                { beat: 1, value: 1, curve: 'linear', tension: 0 },
+                { beat: 1, value: 1 },
+            ])
+        ).toEqual([]);
+    });
+
+    it('reports no loss when default-widened rows overlap enough to starve greedy claiming', () => {
+        registerSanitizedSlot('defaults', (value) =>
+            (value as AutomationPoint[]).map((point) => ({ ...point, tension: 0 }))
+        );
+
+        // Every projected row gains a key, so no exact twins exist and the
+        // whole set reaches the matching; the curved row fits only its own
+        // widened row, so the bare row can only be placed by pushing the
+        // curved row's owner onward.
+        expect(
+            findSlotLosses('defaults', [
+                { beat: 1, value: 1, curve: 'x' },
+                { beat: 1, value: 1 },
+            ])
+        ).toEqual([]);
+    });
+
+    it('reports a loss when a raw negative zero round-trips to its positive twin', () => {
+        registerSanitizedSlot('points', (value) => JSON.parse(JSON.stringify(value)) as unknown);
+
+        // `-0` and `0` share the canonical key `'0'`, so only the containment
+        // predicate — `Object.is(-0, 0)` is false — can reject the claimed
+        // twin; a pre-pass that trusted the key alone would mask the loss.
+        expect(findSlotLosses('points', [-0])).toEqual(['points']);
     });
 });

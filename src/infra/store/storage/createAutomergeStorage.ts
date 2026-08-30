@@ -355,28 +355,31 @@ function canonicalProjectionKey(value: unknown): string {
  * The check recurs synchronously on every document-origin projection (sync,
  * load, merge, branch switch), and sanitized output is quarantined rather
  * than written back, so the raw slot never converges to projected order —
- * the cost is paid again on every projection. Two passes keep it
- * near-linear:
+ * the cost is paid again on every projection. Two passes shape it:
  *
  * The exact pre-pass claims without probing: projected items are bucketed by
  * canonical key and each raw item consumes one bucketed twin. Serialization
- * is linear in content, so slots holding thousands of rows — automation
- * points, trim points, ghost points routinely do — pay a small constant
- * multiple of one positional walk rather than a scan that multiplies both
- * array lengths. Only the containment predicate decides the contract,
- * so a claimed twin is one the predicate confirms; serialization alone can
- * collide (NaN and null both serialize as `null`). A confirmed twin is
- * deep-equal content, and containment is transitive, so claiming it never
- * turns a matchable remainder unmatchable.
+ * is linear in serialized content, so a slot whose rows the sanitizer
+ * rebuilds into canonical twins of the raw rows pays a small multiple of one
+ * positional walk, however many rows it holds — automation points, trim
+ * points, ghost points routinely hold thousands. Only the containment
+ * predicate decides the contract, so a claimed twin is one the predicate
+ * confirms; serialization alone can collide (NaN and null both serialize as
+ * `null`). A confirmed twin is deep-equal content, and containment is
+ * transitive, so claiming it never turns a matchable remainder unmatchable.
  *
  * The ambiguous residue — raw items with no twin left — runs a complete
  * matching against the unclaimed projected items. Greedy first-fit is not
  * enough there: a narrow raw item can waste the only projected item wide
- * enough for a later one even though a distinct assignment exists. Live
- * residue is empty or a handful of rows, so the matching's bound rides on
- * residue size, never on the product of both array lengths. Canonical
- * sort-and-compare of whole arrays would also be too strict: per-item
- * containment tolerates keys `projected` gained.
+ * enough for a later one even though a distinct assignment exists. The
+ * matching's cost rides on residue size times pool size times probe cost,
+ * and each probe is linear in row size. Dropping or adding a key preserves
+ * containment but changes the canonical key, so a row-rebuilding sanitizer
+ * sends every deviant row to the residue — and a document whose row shapes
+ * drifted across builds can send all of them, degrading the pass toward the
+ * product of both array lengths. Canonical sort-and-compare of whole arrays
+ * would also be too strict: per-item containment tolerates keys `projected`
+ * gained.
  */
 function projectionContainsDistinctItems(raw: readonly unknown[], projected: readonly unknown[]): boolean {
     const unclaimedTwinsByKey = new Map<string, unknown[]>();
@@ -436,10 +439,13 @@ function projectionMatchesAmbiguousItems(
             if (visited[candidateIndex] === 1) {
                 continue;
             }
-            visited[candidateIndex] = 1;
             if (!projectionPreservesRawValue(item, unclaimedProjected[candidateIndex])) {
                 continue;
             }
+            // Only a candidate the probe accepted is visited: a rejected
+            // candidate is no edge for this item, and marking it would block
+            // a free candidate an outer item still has an edge to.
+            visited[candidateIndex] = 1;
             const owner = matchedRawByProjected[candidateIndex];
             if (owner === unclaimedProjectedSlot || tryMatch(owner, visited)) {
                 matchedRawByProjected[candidateIndex] = item;
