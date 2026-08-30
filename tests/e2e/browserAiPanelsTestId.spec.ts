@@ -1,6 +1,10 @@
 import { expect, test, type Page } from '@playwright/test';
 
+import { KOKORO_MODEL_ARTIFACT } from '../../src/modules/BrowserAi/models/KokoroArtifactManifest';
+
 import { launch_new_project, setupWorkspace } from './e2eUtils';
+
+const KOKORO_DOWNLOAD_URL = KOKORO_MODEL_ARTIFACT.url;
 
 /**
  * E2E coverage gap: the BrowserAi module renders ModelManagerPanel and
@@ -10,13 +14,12 @@ import { launch_new_project, setupWorkspace } from './e2eUtils';
  * visible, or counted buttons in the Generate panel.
  *
  * This spec asserts a real, in-browser state transition on ModelManagerPanel.
- * The assertion is chosen for determinism in Playwright's headless Chromium:
- * it does not depend on WebGPU, a model download completing, or any network
- * result. Clicking a model's Download button runs `downloadModel`, whose
- * repository calls `updateModelStatus(modelId, { status: 'downloading', ... })`
- * synchronously — before any `fetch`. The store flip re-renders the row from a
- * Download button into a progress bar, observable as an `aria-label` that did
- * not exist before the click.
+ * The Kokoro artifact URL is routed and aborted (the modelManagerAdmission
+ * pattern), so the click's fetch fails deterministically and no request
+ * leaves the runner. The row settles in the terminal 'error' state — a
+ * download-failed badge plus a Retry button, with the progress bar unmounted —
+ * which is what the assertions read; nothing here depends on WebGPU or on
+ * how long the transient 'downloading' state stays on screen.
  */
 
 async function openPreferences(page: Page): Promise<void> {
@@ -46,31 +49,38 @@ test.describe('BrowserAi panels — ModelManagerPanel state change', () => {
         ).toBeVisible();
     });
 
-    test('clicking Download moves the Kokoro model row from a download button to a progress bar', async ({ page }) => {
+    test('clicking Download moves the Kokoro model row to the download-failed retry state', async ({ page }) => {
         // Initial state: on a fresh project OPFS is empty, so initBrowserAi
         // resolves the Kokoro model to 'not-downloaded' and the row renders a
-        // Download button. No progress bar exists yet.
+        // Download button. No progress bar or failure surface exists yet.
         const downloadButton = page.getByRole('button', { name: /Download Kokoro-82M \(q8f16\)/ });
         await expect(downloadButton).toBeVisible();
         await expect(page.getByRole('progressbar', { name: /Downloading Kokoro-82M \(q8f16\):/ })).toHaveCount(0);
+        await expect(page.getByLabel('Kokoro-82M (q8f16) download failed')).toHaveCount(0);
 
-        // State change: the click drives downloadModel → updateModelStatus(
-        // { status: 'downloading', downloadProgress: 0 }) synchronously, before
-        // any network I/O. The store flip re-renders the row as a progress bar.
+        // Intercept the artifact URL so the click's fetch deterministically
+        // fails instead of egressing to huggingface.co — the same route-abort
+        // modelManagerAdmission installs for this URL.
+        await page.route(KOKORO_DOWNLOAD_URL, (route) => route.abort('failed'));
+
+        // State change: the click drives downloadModel, whose fetch is aborted
+        // by the route. After the download manager's bounded retries exhaust,
+        // updateModelStatus lands the row in the 'error' state.
         await downloadButton.click();
 
-        // The download button is replaced by a progress bar labelled with the
-        // model name and a percentage. This element was absent before the click
-        // — a genuine state transition, observed via its accessible name.
-        const progressBar = page.getByRole('progressbar', {
-            name: /Downloading Kokoro-82M \(q8f16\):/,
-        });
-        await expect(progressBar).toBeVisible();
-        // The store flip seeds downloadProgress at 0, so the initial readout is
-        // 0%. Asserting the value (not just presence) ties the readout to the
-        // 'downloading' state that the click produced.
-        await expect(progressBar).toHaveAttribute('aria-valuenow', '0');
-        await expect(page.getByText('0%', { exact: true })).toBeVisible();
+        // The terminal aborted-path presentation, matching what
+        // modelManagerAdmission asserts for the same route: the row shows a
+        // download-failed badge and a Retry button. The 15s allowance covers
+        // the download manager's three attempts and their backoff.
+        const failedBadge = page.getByLabel('Kokoro-82M (q8f16) download failed');
+        const retryButton = page.getByRole('button', { name: 'Retry downloading Kokoro-82M (q8f16)' });
+        await expect(failedBadge).toBeVisible({ timeout: 15_000 });
+        await expect(retryButton).toBeVisible();
+
+        // The failed row no longer offers the download button or the in-flight
+        // progress bar — both left with the states that preceded the failure.
+        await expect(downloadButton).toHaveCount(0);
+        await expect(page.getByRole('progressbar', { name: /Downloading Kokoro-82M \(q8f16\):/ })).toHaveCount(0);
     });
 
     test('CapabilityReportPanel surfaces a resolved capability verdict after boot detection', async ({ page }) => {
