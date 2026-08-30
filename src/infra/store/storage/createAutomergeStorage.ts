@@ -297,6 +297,18 @@ function getInboundSanitizerKey(docId: string, key: string): string {
     return `${docId}\u0000${key}`;
 }
 
+/**
+ * Whether `projected` still contains everything the raw slot held.
+ *
+ * Array containment is order-insensitive: inbound sanitizers legitimately
+ * normalize row order (the automation sanitizer sorts each lane's points by
+ * beat on entry, since `AutomationPoint` carries no id and the CRDT
+ * reconciler whole-array-replaces such rows), and order is not content — the
+ * detector's contract is content loss, not positional drift. Every raw item
+ * must still be contained by a DISTINCT projected item, so a raw duplicate
+ * with no second projected counterpart is a loss; extras in `projected` never
+ * are.
+ */
 function projectionPreservesRawValue(raw: unknown, projected: unknown): boolean {
     if (Object.is(raw, projected)) {
         return true;
@@ -305,7 +317,7 @@ function projectionPreservesRawValue(raw: unknown, projected: unknown): boolean 
         return (
             Array.isArray(projected) &&
             projected.length >= raw.length &&
-            raw.every((item, index) => projectionPreservesRawValue(item, projected[index]))
+            projectionContainsDistinctItems(raw, projected)
         );
     }
     if (typeof raw !== 'object' || raw === null || typeof projected !== 'object' || projected === null) {
@@ -316,6 +328,27 @@ function projectionPreservesRawValue(raw: unknown, projected: unknown): boolean 
         ([key, value]) =>
             Object.hasOwn(projectedRecord, key) && projectionPreservesRawValue(value, projectedRecord[key])
     );
+}
+
+/**
+ * Greedy first-fit containment of every raw item in a distinct projected item:
+ * each raw item claims the first unclaimed projected item that recursively
+ * contains it. First-fit keeps the scan O(n·m), which real slots — at most a
+ * few hundred rows — never feel; canonical sort-and-compare would instead be
+ * too strict, since per-item containment tolerates keys `projected` gained.
+ */
+function projectionContainsDistinctItems(raw: readonly unknown[], projected: readonly unknown[]): boolean {
+    const claimed = Array.from({ length: projected.length }, () => false);
+    return raw.every((item) => {
+        const matchIndex = projected.findIndex(
+            (candidate, index) => !claimed[index] && projectionPreservesRawValue(item, candidate)
+        );
+        if (matchIndex === -1) {
+            return false;
+        }
+        claimed[matchIndex] = true;
+        return true;
+    });
 }
 
 export function findAutomergeStorageRawProjectionLosses(input: {
