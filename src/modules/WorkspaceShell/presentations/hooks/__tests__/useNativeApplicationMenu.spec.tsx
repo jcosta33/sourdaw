@@ -28,6 +28,8 @@ const desktop = vi.hoisted(() => ({
 }));
 const projectState = vi.hoisted(() => ({
     available: true,
+    reads: 0,
+    afterRead: undefined as (() => void) | undefined,
     projectId: 'project' as string | undefined,
     name: 'Song',
     createdAt: 1,
@@ -62,10 +64,11 @@ const projectActions = vi.hoisted(() => ({
 vi.mock('#/modules/Project/stores', () => ({
     projectStore: {
         get value() {
+            projectState.reads += 1;
             if (!projectState.available) {
                 return null;
             }
-            return {
+            const snapshot = {
                 projectId: projectState.projectId,
                 name: projectState.name,
                 createdAt: projectState.createdAt,
@@ -73,6 +76,8 @@ vi.mock('#/modules/Project/stores', () => ({
                 identityPersistencePending: projectState.identityPersistencePending,
                 loading: projectState.loading,
             };
+            projectState.afterRead?.();
+            return snapshot;
         },
     },
 }));
@@ -169,6 +174,8 @@ describe('useNativeApplicationMenu', () => {
             });
         projectState.dirty = false;
         projectState.available = true;
+        projectState.reads = 0;
+        projectState.afterRead = undefined;
         projectState.projectId = 'project';
         projectState.name = 'Song';
         projectState.createdAt = 1;
@@ -444,6 +451,7 @@ describe('useNativeApplicationMenu', () => {
             })
         );
         desktop.projectState.mockClear();
+        projectState.reads = 0;
 
         projectState.projectId = 'project-b';
         projectState.name = 'Live Song';
@@ -451,9 +459,19 @@ describe('useNativeApplicationMenu', () => {
         projectState.dirty = true;
         projectState.identityPersistencePending = true;
         projectState.loading = true;
+        projectState.afterRead = () => {
+            projectState.projectId = 'project-c';
+            projectState.name = 'Torn Song';
+            projectState.createdAt = 43;
+            projectState.dirty = false;
+            projectState.identityPersistencePending = false;
+            projectState.loading = false;
+        };
         crdt.captureProjectRevision.mockReturnValue('revision-2');
         crdt.subscriber?.();
 
+        expect(projectState.reads).toBe(1);
+        expect(desktop.projectState).toHaveBeenCalledTimes(1);
         expect(desktop.projectState).toHaveBeenCalledWith({
             title: 'Live Song',
             dirty: true,
@@ -485,7 +503,8 @@ describe('useNativeApplicationMenu', () => {
             })
         );
 
-        expect(desktop.projectState).toHaveBeenCalledWith({
+        expect(desktop.projectState).toHaveBeenCalledTimes(1);
+        expect(desktop.projectState).toHaveBeenNthCalledWith(1, {
             title: 'Sourdaw',
             dirty: true,
             durabilityPending: true,
@@ -494,6 +513,33 @@ describe('useNativeApplicationMenu', () => {
             rendererReady: false,
             recentProjects: [],
         });
+    });
+
+    it('still runs a non-edit native action while a native text input owns focus', async () => {
+        renderHook(() =>
+            useNativeApplicationMenu({
+                projectId: 'project',
+                name: 'Song',
+                createdAt: 1,
+                updatedAt: 1,
+                dirty: false,
+                loading: false,
+                keyRoot: 0,
+                scaleName: 'chromatic',
+                tuning: { name: 'Equal Temperament', frequencies: [] },
+                productionBrief: {} as never,
+                initialized: true,
+            })
+        );
+        const input = document.createElement('input');
+        document.body.append(input);
+        input.focus();
+
+        desktop.listener?.({ action: 'project:save' });
+
+        await vi.waitFor(() => expect(projectActions.saveProject).toHaveBeenCalledOnce());
+        expect(commandInterface.dispatchCanvasEditorCommand).not.toHaveBeenCalled();
+        input.remove();
     });
 
     it('routes handled native selection commands to the focused canvas editor owned-command seam', async () => {
