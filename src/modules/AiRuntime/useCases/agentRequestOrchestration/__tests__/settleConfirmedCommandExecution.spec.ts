@@ -677,7 +677,10 @@ describe('settleConfirmedCommandExecution', () => {
             );
 
             expect(result).toEqual({ status: 'failed', reason: 'precondition failed' });
-            expect(mocks.recordFailure).toHaveBeenCalledWith(confirmation, expect.objectContaining({ category }));
+            expect(mocks.recordFailure).toHaveBeenCalledWith(confirmation, {
+                category,
+                retriable: false,
+            });
             expect(mocks.settleResources).toHaveBeenCalledWith({
                 confirmationId: 'confirmation-1',
                 disposition: 'discard',
