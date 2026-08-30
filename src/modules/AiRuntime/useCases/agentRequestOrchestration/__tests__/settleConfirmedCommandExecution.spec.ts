@@ -450,6 +450,7 @@ function createInput(
     input: {
         confirmation?: ReadyAdmission['confirmation'];
         trackedWorkLease?: NonNullable<ReadyAdmission['trackedWorkLease']>;
+        priorVerifiedBatchReceipt?: NonNullable<ReadyAdmission['priorVerifiedBatchReceipt']>;
         recoveringPendingEffects?: boolean;
     } = {}
 ): Input {
@@ -461,7 +462,7 @@ function createInput(
             approvedBatchId: 'batch-1',
             trackedWorkLease: input.trackedWorkLease ?? null,
             commandBudget: null,
-            priorVerifiedBatchReceipt: null,
+            priorVerifiedBatchReceipt: input.priorVerifiedBatchReceipt ?? null,
             recoveringPendingEffects: input.recoveringPendingEffects ?? false,
         } satisfies ReadyAdmission,
         executionFlight,
@@ -596,7 +597,9 @@ describe('settleConfirmedCommandExecution', () => {
 
     it('retains a committed change when finalization evidence is absent', async () => {
         const batchResult = createCommittedBatchResult();
-        const result = await settleConfirmedCommandExecution(
+        const resourceRetention = createDeferred<void>();
+        mocks.retainResources.mockImplementationOnce(() => resourceRetention.promise);
+        const resultPromise = settleConfirmedCommandExecution(
             createInput(
                 createCompletedFlight(batchResult, {
                     committedProjectRevision: 'revision-2',
@@ -604,9 +607,11 @@ describe('settleConfirmedCommandExecution', () => {
                 })
             )
         );
+        const settlement = observeSettlement(resultPromise);
 
-        expect(result).toEqual({ status: 'failed', durableCommit: true, reason: expect.any(String) });
-        expect(mocks.createFinalizationFailure).toHaveBeenCalled();
+        await Promise.resolve();
+
+        expect(settlement.isSettled()).toBe(false);
         expect(mocks.recordCommittedRecoveryFailure).toHaveBeenCalledWith(confirmation, {
             category: 'internal',
             retriable: false,
@@ -617,6 +622,103 @@ describe('settleConfirmedCommandExecution', () => {
             committedRevision: 'revision-2',
         });
         expect(mocks.retainResources).toHaveBeenCalledWith('confirmation-1');
+
+        resourceRetention.resolve(undefined);
+
+        await expect(resultPromise).resolves.toEqual({
+            status: 'failed',
+            durableCommit: true,
+            reason: 'finalization evidence is unavailable',
+        });
+        await settlement.completion;
+        expect(mocks.createFinalizationFailure).toHaveBeenCalledWith('finalization evidence is unavailable');
+    });
+
+    it('awaits retention for a stale lease after finalization evidence is unavailable', async () => {
+        const batchResult = createCommittedBatchResult();
+        const resourceRetention = createDeferred<void>();
+        mocks.settleLease.mockReturnValueOnce({ accepted: false, warning: 'work lease was replaced' });
+        mocks.retainResources.mockImplementationOnce(() => resourceRetention.promise);
+        const resultPromise = settleConfirmedCommandExecution(
+            createInput(
+                createCompletedFlight(batchResult, {
+                    committedProjectRevision: 'revision-2',
+                    finalizationEvidenceFailure: 'finalization evidence is unavailable',
+                }),
+                { trackedWorkLease }
+            )
+        );
+        const settlement = observeSettlement(resultPromise);
+
+        await Promise.resolve();
+
+        expect(settlement.isSettled()).toBe(false);
+        expect(mocks.retainResources).toHaveBeenCalledWith('confirmation-1');
+
+        resourceRetention.resolve(undefined);
+
+        await expect(resultPromise).resolves.toEqual({
+            status: 'failed',
+            durableCommit: true,
+            reason: 'finalization evidence is unavailable work lease was replaced',
+        });
+        await settlement.completion;
+    });
+
+    it('awaits retention for an ambiguous pending-effect recovery', async () => {
+        const priorVerifiedBatchReceipt = createCommittedBatchResult().receipt;
+        const resourceRetention = createDeferred<void>();
+        mocks.retainResources.mockImplementationOnce(() => resourceRetention.promise);
+        const resultPromise = settleConfirmedCommandExecution(
+            createInput(createCompletedFlight(createAmbiguousBatchResult()), {
+                recoveringPendingEffects: true,
+                priorVerifiedBatchReceipt,
+            })
+        );
+        const settlement = observeSettlement(resultPromise);
+
+        await Promise.resolve();
+
+        expect(settlement.isSettled()).toBe(false);
+        expect(mocks.retainResources).toHaveBeenCalledWith('confirmation-1');
+
+        resourceRetention.resolve(undefined);
+
+        await expect(resultPromise).resolves.toEqual({
+            status: 'failed',
+            durableCommit: true,
+            receipt: priorVerifiedBatchReceipt,
+            reason: 'partial write',
+        });
+        await settlement.completion;
+    });
+
+    it('awaits retention for a failed pending-effect recovery', async () => {
+        const priorVerifiedBatchReceipt = createCommittedBatchResult().receipt;
+        const resourceRetention = createDeferred<void>();
+        mocks.retainResources.mockImplementationOnce(() => resourceRetention.promise);
+        const resultPromise = settleConfirmedCommandExecution(
+            createInput(createCompletedFlight(createFailedBatchResult()), {
+                recoveringPendingEffects: true,
+                priorVerifiedBatchReceipt,
+            })
+        );
+        const settlement = observeSettlement(resultPromise);
+
+        await Promise.resolve();
+
+        expect(settlement.isSettled()).toBe(false);
+        expect(mocks.retainResources).toHaveBeenCalledWith('confirmation-1');
+
+        resourceRetention.resolve(undefined);
+
+        await expect(resultPromise).resolves.toEqual({
+            status: 'failed',
+            durableCommit: true,
+            receipt: priorVerifiedBatchReceipt,
+            reason: 'precondition failed',
+        });
+        await settlement.completion;
     });
 
     it('delegates idempotent replay to verified replay settlement', async () => {
