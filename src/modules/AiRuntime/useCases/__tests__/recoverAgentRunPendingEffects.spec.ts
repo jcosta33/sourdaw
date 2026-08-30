@@ -267,7 +267,14 @@ describe('recoverAgentRunPendingEffects', () => {
     });
 
     it('admits a provisional repair when the final runtime-graph receipt also requires repair', async () => {
-        const receiptEffect = { ...runtimeGraphReceiptEffect(), remediation: 'repair' as const };
+        const receiptEffect: AgentRunPendingEffect = {
+            commandId: 'command-runtime',
+            kind: 'runtime-graph',
+            operation: 'addDevice',
+            reason: 'runtime graph revision is stale',
+            remediation: 'repair',
+            state: 'pending',
+        };
         configureManualizedRuntimeGraphProof({
             continuationEffects: [manualizedRuntimeGraphEffect(receiptEffect)],
             receiptEffects: [receiptEffect],
@@ -289,8 +296,22 @@ describe('recoverAgentRunPendingEffects', () => {
     it('admits an exact effect beside one manualized runtime-graph effect without executing', async () => {
         const manualRepairReason =
             'Generic pending-effect recovery cannot execute receipt-bound section renders. The original confirmation is required and may be unavailable after reload.';
-        const exactEffect = renderRecovery().effects[0];
-        const receiptRuntimeEffect = runtimeGraphReceiptEffect();
+        const exactEffect: AgentRunPendingEffect = {
+            commandId: 'command-render',
+            kind: 'external-effect',
+            operation: 'renderProjectSections',
+            reason: 'renderer unavailable',
+            remediation: 'reconcile',
+            state: 'pending',
+        };
+        const receiptRuntimeEffect: AgentRunPendingEffect = {
+            commandId: 'command-runtime',
+            kind: 'runtime-graph',
+            operation: 'addDevice',
+            reason: 'runtime graph revision is stale',
+            remediation: 'retry',
+            state: 'pending',
+        };
         configureManualizedRuntimeGraphProof({
             continuationEffects: [exactEffect, manualizedRuntimeGraphEffect(receiptRuntimeEffect)],
             receiptEffects: [exactEffect, receiptRuntimeEffect],
@@ -454,6 +475,19 @@ describe('recoverAgentRunPendingEffects', () => {
                 const receiptEffect = runtimeGraphReceiptEffect();
                 const continuationEffect = manualizedRuntimeGraphEffect(receiptEffect);
                 Reflect.set(continuationEffect, 'state', 'settled');
+                configureManualizedRuntimeGraphProof({
+                    continuationEffects: [continuationEffect],
+                    receiptEffects: [receiptEffect],
+                });
+            },
+            PENDING_EFFECT_PROOF_MISMATCH_REASON,
+        ],
+        [
+            'wrong receipt state',
+            () => {
+                const receiptEffect = runtimeGraphReceiptEffect();
+                const continuationEffect = manualizedRuntimeGraphEffect(receiptEffect);
+                Reflect.set(receiptEffect, 'state', 'settled');
                 configureManualizedRuntimeGraphProof({
                     continuationEffects: [continuationEffect],
                     receiptEffects: [receiptEffect],
