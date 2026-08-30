@@ -204,16 +204,25 @@ function decodePngFixture(png: Buffer): { height: number; pixels: Buffer; width:
     }
     const filtered = inflateSync(Buffer.concat(idat));
     const stride = width * 4;
+    if (filtered.length !== (stride + 1) * height) {
+        throw new Error('PNG fixture pixel data has the wrong length');
+    }
     const pixels = Buffer.alloc(stride * height);
     for (let y = 0; y < height; y += 1) {
         const inputRow = y * (stride + 1);
         const outputRow = y * stride;
         const filter = filtered[inputRow];
+        if (filter === undefined) {
+            throw new Error('PNG fixture pixel data is truncated');
+        }
         for (let x = 0; x < stride; x += 1) {
             const value = filtered[inputRow + 1 + x];
-            const left = x >= 4 ? pixels[outputRow + x - 4] : 0;
-            const above = y > 0 ? pixels[outputRow - stride + x] : 0;
-            const upperLeft = y > 0 && x >= 4 ? pixels[outputRow - stride + x - 4] : 0;
+            if (value === undefined) {
+                throw new Error('PNG fixture pixel data is truncated');
+            }
+            const left = x >= 4 ? pixels[outputRow + x - 4]! : 0;
+            const above = y > 0 ? pixels[outputRow - stride + x]! : 0;
+            const upperLeft = y > 0 && x >= 4 ? pixels[outputRow - stride + x - 4]! : 0;
             let predictor = 0;
             if (filter === 1) {
                 predictor = left;
@@ -232,29 +241,35 @@ function decodePngFixture(png: Buffer): { height: number; pixels: Buffer; width:
 
 function mutatePngPixel(png: Buffer, x: number, y: number, color: Rgba): Buffer {
     const decoded = decodePngFixture(png);
+    if (x < 0 || x >= decoded.width || y < 0 || y >= decoded.height) {
+        throw new Error('PNG fixture pixel coordinate is out of bounds');
+    }
     const offset = (y * decoded.width + x) * 4;
     for (let channel = 0; channel < 4; channel += 1) {
-        decoded.pixels[offset + channel] = color[channel];
+        decoded.pixels[offset + channel] = color[channel]!;
     }
     return rgbaPng(decoded.width, decoded.height, (pixelX, pixelY) => {
         const pixelOffset = (pixelY * decoded.width + pixelX) * 4;
         return [
-            decoded.pixels[pixelOffset],
-            decoded.pixels[pixelOffset + 1],
-            decoded.pixels[pixelOffset + 2],
-            decoded.pixels[pixelOffset + 3],
+            decoded.pixels[pixelOffset]!,
+            decoded.pixels[pixelOffset + 1]!,
+            decoded.pixels[pixelOffset + 2]!,
+            decoded.pixels[pixelOffset + 3]!,
         ];
     });
 }
 
 function incrementPngPixelChannel(png: Buffer, x: number, y: number, channel: number): Buffer {
     const decoded = decodePngFixture(png);
+    if (x < 0 || x >= decoded.width || y < 0 || y >= decoded.height) {
+        throw new Error('PNG fixture pixel coordinate is out of bounds');
+    }
     const offset = (y * decoded.width + x) * 4;
     const color: Rgba = [
-        decoded.pixels[offset],
-        decoded.pixels[offset + 1],
-        decoded.pixels[offset + 2],
-        decoded.pixels[offset + 3],
+        decoded.pixels[offset]!,
+        decoded.pixels[offset + 1]!,
+        decoded.pixels[offset + 2]!,
+        decoded.pixels[offset + 3]!,
     ];
     const changed: Rgba = [
         channel === 0 ? (color[0] + 1) & 0xff : color[0],
@@ -414,9 +429,19 @@ function readIcoFixtureFrames(container: Buffer): readonly IcoFixtureFrame[] {
     const frames: IcoFixtureFrame[] = [];
     for (let index = 0; index < count; index += 1) {
         const offset = 6 + index * 16;
-        const size = container[offset] === 0 ? 256 : container[offset];
+        if (offset + 16 > container.length) {
+            throw new Error('ICO fixture frame directory is truncated');
+        }
+        const sizeByte = container[offset];
+        if (sizeByte === undefined) {
+            throw new Error('ICO fixture frame directory is truncated');
+        }
+        const size = sizeByte === 0 ? 256 : sizeByte;
         const length = container.readUInt32LE(offset + 8);
         const payloadOffset = container.readUInt32LE(offset + 12);
+        if (payloadOffset > container.length || length > container.length - payloadOffset) {
+            throw new Error('ICO fixture frame payload is truncated');
+        }
         frames.push({ payload: container.subarray(payloadOffset, payloadOffset + length), size });
     }
     return frames;
@@ -488,7 +513,15 @@ function flipPngChunkCrc(png: Buffer, chunkType: string): Buffer {
         const length = changed.readUInt32BE(offset);
         const type = changed.toString('ascii', offset + 4, offset + 8);
         if (type === chunkType) {
-            changed[offset + 8 + length] ^= 0xff;
+            const crcOffset = offset + 8 + length;
+            if (crcOffset >= changed.length) {
+                throw new Error(`PNG fixture ${chunkType} chunk is truncated`);
+            }
+            const crcByte = changed[crcOffset];
+            if (crcByte === undefined) {
+                throw new Error(`PNG fixture ${chunkType} chunk is truncated`);
+            }
+            changed[crcOffset] = crcByte ^ 0xff;
             return changed;
         }
         offset += 12 + length;

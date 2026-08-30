@@ -19,7 +19,7 @@ import {
 } from 'node:fs';
 import { extname, posix, relative, resolve, win32 } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { inflateSync, type Inflate, type InputType, type ZlibOptions } from 'node:zlib';
+import { inflateSync } from 'node:zlib';
 
 import { assertGeneratedRegionMatches } from '../crates/daw-dsp/benches/wasm/renderTable.mjs';
 import { DDSP_ARTIFACTS, DDSP_CHECKPOINT_VERSION } from '../src/modules/BrowserAi/models/DdspArtifactManifest.ts';
@@ -32,8 +32,10 @@ import { DEPENDENCY_LICENSE_REPORT_PATH } from './dependencyLicenseReport.ts';
 import { parseJsonWithUniqueKeys } from './strictJson.ts';
 import { wasmArtifacts, type WasmManifest } from './wasm-artifacts.ts';
 
+type OwnerInflateResult = { buffer: Buffer; engine: { bytesWritten: number } };
+
 declare module 'node:zlib' {
-    function inflateSync(buffer: InputType, options: ZlibOptions & { info: true }): { buffer: Buffer; engine: Inflate };
+    function inflateSync(buffer: Buffer, options: { info: true; maxOutputLength: number }): OwnerInflateResult;
 }
 
 export const RETENTION_CLASSES = [
@@ -1934,7 +1936,11 @@ function decodeOwnerRgbaPng(data: Buffer, label: string): DecodedRgbaPng {
             offset = end;
             break;
         } else {
-            if ((typeBytes[0] & 0x20) === 0 && type !== 'PLTE') {
+            const typeFirstByte = typeBytes[0];
+            if (typeFirstByte === undefined) {
+                throw new Error(`owner visual asset ${label} PNG chunk type is truncated`);
+            }
+            if ((typeFirstByte & 0x20) === 0 && type !== 'PLTE') {
                 throw new Error(`owner visual asset ${label} PNG has unknown critical chunk ${type}`);
             }
             if (type === 'PLTE' && imageDataStarted) {
@@ -1986,14 +1992,20 @@ function decodeOwnerRgbaPng(data: Buffer, label: string): DecodedRgbaPng {
         const inputRow = y * (stride + 1);
         const outputRow = y * stride;
         const filter = filtered[inputRow];
+        if (filter === undefined) {
+            throw new Error(`owner visual asset ${label} PNG pixel data is truncated`);
+        }
         if (filter > 4) {
             throw new Error(`owner visual asset ${label} PNG uses an invalid row filter`);
         }
         for (let x = 0; x < stride; x += 1) {
             const value = filtered[inputRow + 1 + x];
-            const left = x >= 4 ? pixels[outputRow + x - 4] : 0;
-            const above = y > 0 ? pixels[outputRow - stride + x] : 0;
-            const upperLeft = y > 0 && x >= 4 ? pixels[outputRow - stride + x - 4] : 0;
+            if (value === undefined) {
+                throw new Error(`owner visual asset ${label} PNG pixel data is truncated`);
+            }
+            const left = x >= 4 ? pixels[outputRow + x - 4]! : 0;
+            const above = y > 0 ? pixels[outputRow - stride + x]! : 0;
+            const upperLeft = y > 0 && x >= 4 ? pixels[outputRow - stride + x - 4]! : 0;
             const predictor = pngFilterPredictor(filter, left, above, upperLeft);
             pixels[outputRow + x] = (value + predictor) & 0xff;
         }
@@ -2002,8 +2014,18 @@ function decodeOwnerRgbaPng(data: Buffer, label: string): DecodedRgbaPng {
 }
 
 function rgbaPixel(image: DecodedRgbaPng, x: number, y: number): readonly [number, number, number, number] {
+    if (x < 0 || x >= image.width || y < 0 || y >= image.height) {
+        throw new Error('owner visual asset pixel coordinate is out of bounds');
+    }
     const offset = (y * image.width + x) * 4;
-    return [image.pixels[offset], image.pixels[offset + 1], image.pixels[offset + 2], image.pixels[offset + 3]];
+    const red = image.pixels[offset];
+    const green = image.pixels[offset + 1];
+    const blue = image.pixels[offset + 2];
+    const alpha = image.pixels[offset + 3];
+    if (red === undefined || green === undefined || blue === undefined || alpha === undefined) {
+        throw new Error('owner visual asset pixel data is truncated');
+    }
+    return [red, green, blue, alpha];
 }
 
 function assertCanonicalOwnerIcon(root: string): void {
@@ -2052,8 +2074,8 @@ function assertCanonicalOwnerIcon(root: string): void {
             evidence.writeUInt16BE(x, 0);
             evidence.writeUInt16BE(y, 2);
             for (let channel = 0; channel < 4; channel += 1) {
-                evidence[4 + channel] = source[channel];
-                evidence[8 + channel] = target[channel];
+                evidence[4 + channel] = source[channel]!;
+                evidence[8 + channel] = target[channel]!;
             }
             partialEdgeHash.update(evidence);
         }
@@ -2115,6 +2137,9 @@ function decodeOwnerLegacyArgb(payload: Buffer, type: 'ic04' | 'ic05', size: num
             throw new Error(`owner visual asset build/icons/icon.icns ${type} ARGB data is truncated`);
         }
         const code = payload[input];
+        if (code === undefined) {
+            throw new Error(`owner visual asset build/icons/icon.icns ${type} ARGB data is truncated`);
+        }
         input += 1;
         const count = code < 0x80 ? code + 1 : code - 0x7d;
         if (output + count > expectedBytes) {
@@ -2130,7 +2155,11 @@ function decodeOwnerLegacyArgb(payload: Buffer, type: 'ic04' | 'ic05', size: num
             if (input >= payload.length) {
                 throw new Error(`owner visual asset build/icons/icon.icns ${type} ARGB data is truncated`);
             }
-            channels.fill(payload[input], output, output + count);
+            const repeatedValue = payload[input];
+            if (repeatedValue === undefined) {
+                throw new Error(`owner visual asset build/icons/icon.icns ${type} ARGB data is truncated`);
+            }
+            channels.fill(repeatedValue, output, output + count);
             input += 1;
         }
         output += count;
@@ -2140,10 +2169,10 @@ function decodeOwnerLegacyArgb(payload: Buffer, type: 'ic04' | 'ic05', size: num
     }
     const pixels = Buffer.alloc(expectedBytes);
     for (let index = 0; index < pixelCount; index += 1) {
-        const alpha = channels[index];
-        const red = channels[pixelCount + index];
-        const green = channels[pixelCount * 2 + index];
-        const blue = channels[pixelCount * 3 + index];
+        const alpha = channels[index]!;
+        const red = channels[pixelCount + index]!;
+        const green = channels[pixelCount * 2 + index]!;
+        const blue = channels[pixelCount * 3 + index]!;
         if (alpha === 255 && red === 12 && green === 10 && blue === 0) {
             throw new Error(`owner visual asset build/icons/icon.icns ${type} frame contains #0c0a00 seam pixels`);
         }
@@ -2220,8 +2249,16 @@ function assertOwnerIcoFrames(root: string): void {
     const frames: Array<{ end: number; size: number; start: number }> = [];
     for (let index = 0; index < count; index += 1) {
         const offset = 6 + index * 16;
-        const width = data[offset] === 0 ? 256 : data[offset];
-        const height = data[offset + 1] === 0 ? 256 : data[offset + 1];
+        if (offset + 16 > data.length) {
+            throw new Error('owner visual asset build/icons/icon.ico has an invalid frame directory');
+        }
+        const widthByte = data[offset];
+        const heightByte = data[offset + 1];
+        if (widthByte === undefined || heightByte === undefined) {
+            throw new Error('owner visual asset build/icons/icon.ico has an invalid frame directory');
+        }
+        const width = widthByte === 0 ? 256 : widthByte;
+        const height = heightByte === 0 ? 256 : heightByte;
         const planes = data.readUInt16LE(offset + 4);
         const bitDepth = data.readUInt16LE(offset + 6);
         const length = data.readUInt32LE(offset + 8);
