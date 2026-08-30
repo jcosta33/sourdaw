@@ -1,0 +1,19 @@
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/settleConfirmedCommandExecution.spec.ts
+  s_a40848e8f8cca9::t_a49b2d03415b7e 256-266,503-505,508,510-512,522-526,728-730,733-735,737,744-748,810-812,815,817-819,828-832
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "078e61d7afea56734d509e4813369ad2cb23e79a",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
