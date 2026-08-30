@@ -11,6 +11,7 @@ export function recordAgentRunPendingEffectContinuation(input: {
     runId: string;
     receipt: VerifiedBatchReceipt;
     commandBatch: CommandBatch;
+    sourceRevision?: string;
     recordedAt?: number;
 }): void {
     if (input.receipt.pendingEffects.length === 0) {
@@ -19,6 +20,9 @@ export function recordAgentRunPendingEffectContinuation(input: {
     agentRunLifecycle.recordPendingEffectContinuation({
         runId: input.runId,
         recordedAt: input.recordedAt ?? Date.now(),
-        continuation: createAgentRunPendingEffectContinuation(input),
+        continuation: {
+            ...createAgentRunPendingEffectContinuation(input),
+            ...(input.sourceRevision === undefined ? {} : { sourceRevision: input.sourceRevision }),
+        },
     });
 }

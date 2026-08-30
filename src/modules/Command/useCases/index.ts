@@ -25,6 +25,7 @@ export { compileVersionedCommandBatchEnvelope } from './compileVersionedCommandB
 export { issueCommandApprovalBinding } from './issueCommandApprovalBinding';
 export { createVersionedCommandReceipt } from './createVersionedCommandReceipt';
 export { createVerifiedBatchReceipt } from './createVerifiedBatchReceipt';
+export { getVerifiedBatchReceiptIdentity } from './getVerifiedBatchReceiptIdentity';
 export { getAppActionExecutionPolicy } from './getAppActionExecutionPolicy';
 export { getAppActionStaticAuthority } from './getAppActionStaticAuthority';
 export { getAgentActionRiskPolicy } from './getAgentActionRiskPolicy';

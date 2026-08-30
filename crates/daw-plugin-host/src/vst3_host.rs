@@ -4,8 +4,10 @@
 //! A VST3 plugin talks back to its host through three objects it never
 //! allocates: `IHostApplication` (identity, and the factory for the shared
 //! objects the format lets a plugin ask the host for), `IPlugInterfaceSupport`
-//! (which optional host interfaces exist), and `IComponentHandler` (parameter
-//! gestures and restart requests). All three live here, together with
+//! (which optional host interfaces exist), and `IComponentHandler` — extended
+//! by `IComponentHandler2`, whose `setDirty` is how an edit the plugin made
+//! behind the host's back reaches the project's dirty mark — for parameter
+//! gestures and restart requests. All three live here, together with
 //! [`Vst3HostState`] — the record of everything a plugin has told the host that
 //! the host has not acted on yet.
 //!
@@ -14,7 +16,8 @@
 //! What each object may do is set by the thread VST3 binds it to, and the two
 //! groups differ:
 //!
-//! * `IComponentHandler` is the *controller's* handler, and the format binds the
+//! * `IComponentHandler` — with its `IComponentHandler2` extension — is the
+//!   *controller's* handler, and the format binds the
 //!   controller to the UI thread. Its methods are still written lock-free and
 //!   allocation-free — a plugin that ignores that rule and edits from its
 //!   processor then costs this host nothing, which is why the gesture and
@@ -28,7 +31,9 @@
 //! Sourdaw's own audio thread reaches none of this.
 
 use crate::parameter_events::{PluginParameterEvent, PluginParameterEventQueue};
-use crate::traits::{HostParameterUpdate, LatencyChangeNotifier};
+use crate::traits::{
+    HostParameterUpdate, LatencyChangeNotifier, PluginHostRequest, PluginHostRequestNotifier,
+};
 use std::collections::BTreeMap;
 use std::ffi::{c_void, CStr, CString};
 use std::sync::atomic::{
@@ -39,13 +44,14 @@ use vst3::com_scrape_types::Guid;
 use vst3::Steinberg::Linux::IRunLoop;
 use vst3::Steinberg::Vst::{
     IAttributeList, IAttributeListTrait, IAttributeList_::AttrID, IComponentHandler,
-    IComponentHandlerTrait, IHostApplication, IHostApplicationTrait, IMessage, IMessageTrait,
-    IParamValueQueue, IParameterChanges, IPlugInterfaceSupport, IPlugInterfaceSupportTrait,
-    ParamID, ParamValue, RestartFlags_, String128,
+    IComponentHandler2, IComponentHandler2Trait, IComponentHandlerTrait, IHostApplication,
+    IHostApplicationTrait, IMessage, IMessageTrait, IParamValueQueue, IParameterChanges,
+    IPlugInterfaceSupport, IPlugInterfaceSupportTrait, ParamID, ParamValue, RestartFlags_,
+    String128,
 };
 use vst3::Steinberg::{
     int32, kInvalidArgument, kNotImplemented, kResultFalse, kResultOk, tresult, uint32, FIDString,
-    FUnknown, IBStream, IPlugFrame, IPlugView, TUID,
+    FUnknown, IBStream, IPlugFrame, IPlugView, TBool, TUID,
 };
 use vst3::{Class, ComPtr, ComWrapper, Interface};
 
@@ -259,7 +265,14 @@ pub struct Vst3HostState {
     /// Recorded rather than ignored: a flag nobody handles and nobody counted is
     /// a behaviour difference with no evidence of itself.
     unhandled_restart_flags: AtomicI32,
+    /// Whether the plugin has reported a state change that has not been
+    /// consumed. Set from the plugin's own `setDirty`; cleared on the control
+    /// path.
+    state_dirty: AtomicBool,
     latency_notifier: OnceLock<LatencyChangeNotifier>,
+    /// The wake fired for every plugin-initiated ask this host may only answer
+    /// off the calling thread.
+    request_notifier: OnceLock<PluginHostRequestNotifier>,
     gestures: ParameterGestureQueue,
     /// The plugin's own edits on their way *out* to the host's observers.
     ///
@@ -278,7 +291,9 @@ impl Default for Vst3HostState {
             parameter_values_dirty: AtomicBool::new(false),
             parameter_titles_dirty: AtomicBool::new(false),
             unhandled_restart_flags: AtomicI32::new(0),
+            state_dirty: AtomicBool::new(false),
             latency_notifier: OnceLock::new(),
+            request_notifier: OnceLock::new(),
             gestures: ParameterGestureQueue::new(),
             parameter_events: Arc::new(PluginParameterEventQueue::default()),
             deferred_messages: std::array::from_fn(|_| DeferredMessage::new()),
@@ -291,6 +306,35 @@ impl Vst3HostState {
     /// install wins, so the wake cannot be hijacked mid-life.
     pub fn set_latency_notifier(&self, notifier: LatencyChangeNotifier) -> bool {
         self.latency_notifier.set(notifier).is_ok()
+    }
+
+    /// Install the wake fired for every plugin-initiated ask this host answers
+    /// off the calling thread. First install wins; a second call changes
+    /// nothing and reports `false`, so the wake cannot be hijacked mid-life.
+    pub fn set_request_notifier(&self, notifier: PluginHostRequestNotifier) -> bool {
+        self.request_notifier.set(notifier).is_ok()
+    }
+
+    /// Record that the plugin's own state changed, then wake the observer.
+    ///
+    /// The flag store is lock-free and allocation-free — one release store, the
+    /// same discipline as the CLAP side's
+    /// [`HostCallbackState::mark_state_dirty`](crate::clap_host::HostCallbackState::mark_state_dirty).
+    /// The wake itself may allocate, and may: `setDirty` reaches this host
+    /// through `IComponentHandler2` — the controller's interface, which VST3
+    /// binds to the UI thread (mirroring CLAP's main-thread `mark_dirty`) — so
+    /// a spec-violating caller pays one bounded allocation, and the control
+    /// path consumes the flag through [`Self::take_state_dirty`].
+    pub fn mark_state_dirty(&self) {
+        self.state_dirty.store(true, Ordering::Release);
+        if let Some(notify) = self.request_notifier.get() {
+            notify(PluginHostRequest::StateDirty);
+        }
+    }
+
+    /// Atomically read-and-clear the state-dirty flag.
+    pub fn take_state_dirty(&self) -> bool {
+        self.state_dirty.swap(false, Ordering::AcqRel)
     }
 
     pub fn take_latency_dirty(&self) -> bool {
@@ -480,7 +524,7 @@ impl Vst3ComponentHandler {
 }
 
 impl Class for Vst3ComponentHandler {
-    type Interfaces = (IComponentHandler,);
+    type Interfaces = (IComponentHandler, IComponentHandler2);
 }
 
 impl IComponentHandlerTrait for Vst3ComponentHandler {
@@ -510,6 +554,46 @@ impl IComponentHandlerTrait for Vst3ComponentHandler {
     unsafe fn restartComponent(&self, flags: int32) -> tresult {
         self.state.record_restart(flags);
         kResultOk
+    }
+}
+
+impl IComponentHandler2Trait for Vst3ComponentHandler {
+    /// The plugin's own state changed somewhere `performEdit` does not cover —
+    /// a preset loaded inside its editor, a mode switched behind a button — so
+    /// the project holding it has unsaved changes.
+    ///
+    /// Flag and wake, nothing else: the wake reaches the project's dirty mark
+    /// only from the control path, and this call arrives from inside the
+    /// plugin. The same seam as the CLAP `mark_dirty` callback — the flag
+    /// store is one lock-free, allocation-free atomic store; the wake itself
+    /// may allocate, and may, because VST3 binds this interface to the
+    /// controller's UI thread (mirroring CLAP's main-thread `mark_dirty`) — a
+    /// spec-violating caller pays one bounded allocation, and nothing more.
+    ///
+    /// `state == false` says the plugin is no longer dirty. It records
+    /// nothing: the seam is one-way, like CLAP's `mark_dirty`, which has no
+    /// inverse. The project's dirty state aggregates every edit the session
+    /// made, and one plugin's "clean" cannot unmark the others' unsaved work.
+    unsafe fn setDirty(&self, state: TBool) -> tresult {
+        if state != 0 {
+            self.state.mark_state_dirty();
+        }
+        kResultOk
+    }
+
+    /// The remaining methods of the interface name services this host does not
+    /// offer; `kNotImplemented` is the SDK's answer for those, and telling a
+    /// plugin the truth beats having it wait on an open that never comes.
+    unsafe fn requestOpenEditor(&self, _name: FIDString) -> tresult {
+        kNotImplemented
+    }
+
+    unsafe fn startGroupEdit(&self) -> tresult {
+        kNotImplemented
+    }
+
+    unsafe fn finishGroupEdit(&self) -> tresult {
+        kNotImplemented
     }
 }
 
@@ -574,6 +658,7 @@ impl IPlugInterfaceSupportTrait for Vst3HostApplication {
         }
         let supported = [
             IComponentHandler::IID,
+            IComponentHandler2::IID,
             IHostApplication::IID,
             IPlugInterfaceSupport::IID,
             IParameterChanges::IID,
@@ -907,6 +992,8 @@ impl Default for Vst3HostContext {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{Arc, Mutex};
+    use vst3::com_scrape_types::Unknown;
 
     fn drained(state: &Vst3HostState) -> Vec<HostParameterUpdate> {
         let mut buffer = [HostParameterUpdate::default(); MAX_PARAMETER_GESTURES];
@@ -1137,6 +1224,115 @@ mod tests {
         );
     }
 
+    /// A context whose state records every request its wake was told about,
+    /// the way the native watcher does.
+    fn context_with_request_log() -> (Vst3HostContext, Arc<Mutex<Vec<PluginHostRequest>>>) {
+        let context = Vst3HostContext::new();
+        let requests = Arc::new(Mutex::new(Vec::new()));
+        let recorded = Arc::clone(&requests);
+        assert!(context.state.set_request_notifier(Box::new(move |request| {
+            recorded.lock().expect("request log").push(request);
+        })));
+        (context, requests)
+    }
+
+    /// The route a real controller takes to `setDirty`: the handler the host
+    /// handed it through `setComponentHandler`, queried for
+    /// `IComponentHandler2` like any plugin does.
+    fn handler2(context: &Vst3HostContext) -> ComPtr<IComponentHandler2> {
+        let queried = unsafe {
+            IComponentHandler::query_interface(
+                context.component_handler(),
+                &IComponentHandler2::IID,
+            )
+        };
+        let raw = queried.expect("the handler answers queryInterface for IComponentHandler2");
+        unsafe { ComPtr::from_raw(raw as *mut IComponentHandler2) }
+            .expect("the queried pointer is an IComponentHandler2")
+    }
+
+    /// #2913: the handler the controller holds exposed no
+    /// `IComponentHandler2`, so a plugin's `setDirty` — the edit its own
+    /// editor made — never reached the project's dirty mark, and
+    /// close-without-save lost the edit. The ask must reach the control path
+    /// exactly as the CLAP `mark_dirty` callback's does.
+    #[test]
+    fn a_plugins_set_dirty_reaches_the_control_path_as_a_state_dirty_request() {
+        let (context, requests) = context_with_request_log();
+        let handler2 = handler2(&context);
+
+        assert!(!context.state.take_state_dirty(), "flag starts clear");
+        assert_eq!(unsafe { handler2.setDirty(1) }, kResultOk);
+
+        assert_eq!(
+            requests.lock().expect("request log").as_slice(),
+            [PluginHostRequest::StateDirty],
+            "the control path is woken for exactly this ask"
+        );
+        assert!(context.state.take_state_dirty(), "the edit is recorded");
+        assert!(
+            !context.state.take_state_dirty(),
+            "taking the flag clears it, so one edit marks the project dirty once"
+        );
+
+        // Clearing must re-arm rather than disarm, or only a session's first
+        // plugin edit would ever reach the project.
+        assert_eq!(unsafe { handler2.setDirty(1) }, kResultOk);
+        assert!(
+            context.state.take_state_dirty(),
+            "an edit made after the last one was consumed is recorded in its turn"
+        );
+    }
+
+    /// `setDirty(false)` says the plugin is no longer dirty — not that an edit
+    /// happened. The seam is one-way, like CLAP's `mark_dirty`, which has no
+    /// inverse: the project's dirty state aggregates every edit the session
+    /// made, and one plugin's "clean" cannot unmark the others' unsaved work.
+    #[test]
+    fn a_clean_report_neither_wakes_nor_flags() {
+        let (context, requests) = context_with_request_log();
+        let handler2 = handler2(&context);
+
+        assert_eq!(unsafe { handler2.setDirty(0) }, kResultOk);
+
+        assert!(requests.lock().expect("request log").is_empty());
+        assert!(!context.state.take_state_dirty());
+    }
+
+    /// The flag is the record and the wake is a nudge, so a plugin whose
+    /// instance never got a wake must still have its edit recorded.
+    #[test]
+    fn a_set_dirty_is_recorded_with_no_wake_installed() {
+        let context = Vst3HostContext::new();
+        let handler2 = handler2(&context);
+
+        assert_eq!(unsafe { handler2.setDirty(1) }, kResultOk);
+
+        assert!(context.state.take_state_dirty());
+    }
+
+    /// The rest of `IComponentHandler2` names services this host does not
+    /// offer. `kNotImplemented` is the SDK's answer for a method a host does
+    /// not serve, and none of them may record anything: a flag no control path
+    /// drains is a leak that reads like an implemented callback.
+    #[test]
+    fn the_unimplemented_handler2_methods_answer_not_implemented_and_record_nothing() {
+        let (context, requests) = context_with_request_log();
+        let handler2 = handler2(&context);
+
+        unsafe {
+            assert_eq!(
+                handler2.requestOpenEditor(std::ptr::null()),
+                kNotImplemented
+            );
+            assert_eq!(handler2.startGroupEdit(), kNotImplemented);
+            assert_eq!(handler2.finishGroupEdit(), kNotImplemented);
+        }
+
+        assert!(requests.lock().expect("request log").is_empty());
+        assert!(!context.state.take_state_dirty());
+    }
+
     #[test]
     fn the_host_names_itself_to_the_plugin() {
         let mut name: String128 = [0; 128];
@@ -1192,6 +1388,15 @@ mod tests {
         let supported = as_tuid(&IComponentHandler::IID);
         assert_eq!(
             unsafe { application.isPlugInterfaceSupported(&supported) },
+            kResultOk
+        );
+
+        // `IComponentHandler2` is the interface `setDirty` arrives through. A
+        // plugin that asks before using it must be told it exists, or it will
+        // never make the call however well the handler implements it.
+        let handler2 = as_tuid(&IComponentHandler2::IID);
+        assert_eq!(
+            unsafe { application.isPlugInterfaceSupported(&handler2) },
             kResultOk
         );
 

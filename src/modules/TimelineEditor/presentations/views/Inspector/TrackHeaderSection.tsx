@@ -42,101 +42,97 @@ export const TrackHeaderSection = ({ track }: TrackHeaderSectionProps): ReactEle
         }
         setEditingName(false);
     };
-    const renderIife_16 = () => {
-        if (track.kind !== 'folder') {
-            const renderIife_17 = () => {
-                if (isFreezing) {
-                    return (
-                        <Stack gap={1.5} className="min-w-32">
-                            <Row justify="between">
-                                <span className="text-[9px] font-bold text-primary animate-pulse uppercase tracking-wider">
-                                    Freezing...
-                                </span>
-                                <span className="text-[10px] text-muted-foreground tabular-nums">
-                                    {Math.round((track.freezeState.renderProgress ?? 0) * 100)}%
-                                </span>
+    const freezeButtonIcon = (): ReactElement => {
+        if (isStale) {
+            return <RefreshCw className="size-3" />;
+        }
+        if (track.frozen) {
+            return <Zap className="size-3" />;
+        }
+        return <Snowflake className="size-3" />;
+    };
+    const freezeButtonLabel = (): string => {
+        if (isStale) {
+            return 'Update Freeze';
+        }
+        if (track.frozen) {
+            return 'Unfreeze';
+        }
+        return 'Freeze';
+    };
+
+    const renderFreezeStatus = (): ReactElement => {
+        if (isFreezing) {
+            return (
+                <Stack gap={1.5} className="min-w-32">
+                    <Row justify="between">
+                        <span className="text-[9px] font-bold text-primary animate-pulse uppercase tracking-wider">
+                            Freezing...
+                        </span>
+                        <span className="text-[10px] text-muted-foreground tabular-nums">
+                            {Math.round((track.freezeState.renderProgress ?? 0) * 100)}%
+                        </span>
+                    </Row>
+                    <DawMeterBar
+                        value={(track.freezeState.renderProgress ?? 0) * 100}
+                        size="sm"
+                        fillClassName="bg-primary"
+                    />
+                    <Button
+                        variant="ghost"
+                        size="xs"
+                        className="h-5 text-[9px] hover:bg-destructive/10 hover:text-destructive"
+                        onClick={() => cancelFreezeTrack(track.id)}
+                    >
+                        Cancel
+                    </Button>
+                </Stack>
+            );
+        }
+        return (
+            <>
+                {isStale ? (
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            <Row
+                                gap={1}
+                                className="px-1.5 py-0.5 rounded bg-state-warning/20 border border-state-warning/30 text-state-warning cursor-help"
+                            >
+                                <AlertCircle className="size-3" />
+                                <span className="text-[10px] font-bold uppercase tracking-tight">Stale</span>
                             </Row>
-                            <DawMeterBar
-                                value={(track.freezeState.renderProgress ?? 0) * 100}
-                                size="sm"
-                                fillClassName="bg-primary"
-                            />
-                            <Button
-                                variant="ghost"
-                                size="xs"
-                                className="h-5 text-[9px] hover:bg-destructive/10 hover:text-destructive"
-                                onClick={() => cancelFreezeTrack(track.id)}
-                            >
-                                Cancel
-                            </Button>
-                        </Stack>
-                    );
-                } else {
-                    const renderIife_18 = () => {
-                        if (isStale) {
-                            return <RefreshCw className="size-3" />;
+                        </TooltipTrigger>
+                        <TooltipContent>Content has changed since freeze. Update required.</TooltipContent>
+                    </Tooltip>
+                ) : null}
+                <Button
+                    variant={track.frozen || isStale ? 'secondary' : 'ghost'}
+                    size="xs"
+                    className={cn(
+                        'h-6 gap-1.5 px-2',
+                        isStale && 'border-state-warning/40 text-state-warning hover:bg-state-warning/10'
+                    )}
+                    onClick={() => {
+                        if (track.frozen || isStale) {
+                            void unfreezeTrack(track.id);
+                        } else {
+                            void freezeTrack(track.id);
                         }
-                        if (track.frozen) {
-                            return <Zap className="size-3" />;
-                        }
-                        return <Snowflake className="size-3" />;
-                    };
-                    const renderIife_19 = () => {
-                        if (isStale) {
-                            return 'Update Freeze';
-                        }
-                        if (track.frozen) {
-                            return 'Unfreeze';
-                        }
-                        return 'Freeze';
-                    };
+                    }}
+                    aria-pressed={track.frozen || isStale}
+                >
+                    {freezeButtonIcon()}
+                    <span className="text-[10px] font-medium">{freezeButtonLabel()}</span>
+                </Button>
+            </>
+        );
+    };
 
-                    return (
-                        <>
-                            {isStale ? (
-                                <Tooltip>
-                                    <TooltipTrigger asChild>
-                                        <Row
-                                            gap={1}
-                                            className="px-1.5 py-0.5 rounded bg-state-warning/20 border border-state-warning/30 text-state-warning cursor-help"
-                                        >
-                                            <AlertCircle className="size-3" />
-                                            <span className="text-[10px] font-bold uppercase tracking-tight">
-                                                Stale
-                                            </span>
-                                        </Row>
-                                    </TooltipTrigger>
-                                    <TooltipContent>Content has changed since freeze. Update required.</TooltipContent>
-                                </Tooltip>
-                            ) : null}
-                            <Button
-                                variant={track.frozen || isStale ? 'secondary' : 'ghost'}
-                                size="xs"
-                                className={cn(
-                                    'h-6 gap-1.5 px-2',
-                                    isStale && 'border-state-warning/40 text-state-warning hover:bg-state-warning/10'
-                                )}
-                                onClick={() => {
-                                    if (track.frozen || isStale) {
-                                        void unfreezeTrack(track.id);
-                                    } else {
-                                        void freezeTrack(track.id);
-                                    }
-                                }}
-                                aria-pressed={track.frozen || isStale}
-                            >
-                                {renderIife_18()}
-                                <span className="text-[10px] font-medium">{renderIife_19()}</span>
-                            </Button>
-                        </>
-                    );
-                }
-            };
-
-            return <Row gap={2}>{renderIife_17()}</Row>;
-        } else {
+    const renderFreezeControls = (): ReactElement | null => {
+        if (track.kind === 'folder') {
             return null;
         }
+        return <Row gap={2}>{renderFreezeStatus()}</Row>;
     };
 
     return (
@@ -177,7 +173,7 @@ export const TrackHeaderSection = ({ track }: TrackHeaderSectionProps): ReactEle
                         <span className="text-[10px] font-medium text-foreground capitalize">{track.kind}</span>
                     </Row>
 
-                    {renderIife_16()}
+                    {renderFreezeControls()}
                 </Row>
 
                 <Stack gap={1.5} className="pt-1">

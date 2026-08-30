@@ -120,6 +120,15 @@
 //! transport write leaves plugin-visible tempo and time signature untouched;
 //! the engine re-derives the beat position from the tempo it already holds.
 //!
+//! A `set-transport` is also a **locate** unless it says otherwise, and a
+//! locate is destructive by design: it seeks, and a seek cancels every queued
+//! mixer write stamped at or past the frame it lands on
+//! (`RampedParam::cancel_from`). Strip creation states a fader, a pan and each
+//! send level as writes stamped at frame 0, so a transport write that locates
+//! to the session head after those strips were built erases the mix they
+//! declared. A producer that only needs to start or stop playback from where
+//! the engine already stands therefore sends `locate: false`.
+//!
 //! ## Known deviations, recorded rather than silent
 //!
 //! - `smoothed` writes (Web Audio `setTargetAtTime`) have no native
@@ -149,7 +158,7 @@ use daw_engine::GraphBatchError;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 /// Headroom the fader allows above unity, in decibels — the mirror of
 /// `FADER_HEADROOM_DB` in `src/utils/audioLevelLaw.ts`, the definition of
@@ -220,6 +229,13 @@ pub struct GraphBatchPayload {
     pub commands: Vec<GraphCommandPayload>,
 }
 
+/// A `set-transport` that does not say otherwise is a locate — the meaning the
+/// field's absence carried before it existed, so every producer written against
+/// the older shape keeps behaving exactly as it did.
+fn locate_unless_told_otherwise() -> bool {
+    true
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum GraphCommandPayload {
@@ -279,7 +295,29 @@ pub enum GraphCommandPayload {
     SetTransport {
         playing: bool,
         position_seconds: f64,
+        /// Whether this write is also a *locate*. Absent means it is, which is
+        /// what every producer that moves the playhead wants and what the
+        /// field's absence has always meant.
+        ///
+        /// A producer sets it `false` to say "roll from where you already
+        /// stand". That is not a convenience: a locate cancels every queued
+        /// mixer write stamped at or past its frame (see the mapping arm), so a
+        /// second transport write that merely starts playback would erase the
+        /// fader, pan and send levels an earlier batch queued at frame 0. The
+        /// position still travels, because `SetTransportPlayback` carries it
+        /// and it must stay truthful; only the seek is withheld.
+        #[serde(default = "locate_unless_told_otherwise")]
+        locate: bool,
     },
+    /// The session-level shadow monitor gate
+    /// ([`GraphCommand::SetMonitorShadow`]): the engine keeps rendering and
+    /// contributes nothing to the OS output. It travels with the topology
+    /// rather than as a start parameter because the engine has no start call
+    /// to carry one — `apply_graph_commands` boots it lazily on the first
+    /// batch — and because the cutover has to be expressible on a session
+    /// that is already rolling.
+    #[serde(rename_all = "camelCase")]
+    SetMonitorShadow { shadowed: bool },
 }
 
 #[derive(Debug, Deserialize)]
@@ -1804,7 +1842,12 @@ fn map_command(
         GraphCommandPayload::SetTransport {
             playing,
             position_seconds,
+            locate,
         } => {
+            // Validated whether or not it is used: a position this side cannot
+            // put on the frame grid is malformed however the producer means it
+            // to be read, and refusing only when the seek is wanted would let
+            // one shape of the command carry a number the other refuses.
             let frame =
                 seconds_to_frames(*position_seconds, sample_rate, "set-transport position")?;
             // Playback state lands before the locate: a play→stop edge holds
@@ -1818,10 +1861,20 @@ fn map_command(
                 is_playing: *playing,
                 song_pos_seconds: *position_seconds,
             });
-            ops.push(GraphCommand::SeekFrames(frame));
-            // The ledger mirrors the locate it just queued: the engine's seek
-            // drops every queued write stamped at or past the target.
-            budgets.apply_seek(frame);
+            if *locate {
+                ops.push(GraphCommand::SeekFrames(frame));
+                // The ledger mirrors the locate it just queued: the engine's
+                // seek drops every queued write stamped at or past the target.
+                budgets.apply_seek(frame);
+            }
+            Ok(())
+        }
+
+        GraphCommandPayload::SetMonitorShadow { shadowed } => {
+            // Nothing to validate and nothing to charge: the gate addresses no
+            // strip, holds no stamp and queues no write. It is a mode the
+            // callback reads at the device boundary.
+            ops.push(GraphCommand::SetMonitorShadow(*shadowed));
             Ok(())
         }
     }
@@ -2065,10 +2118,21 @@ fn map_schedule_clip(
             begins_at: Some(at),
         }) => {
             let at = seconds_to_frames(*at, sample_rate, "fadeOut beginsAt")?;
-            if at > clip_end_frame {
+            // A producer states the clip's end as one quantity of seconds; this
+            // arm reconstructs it as two roundings, `round(start) +
+            // round(length)`. The two disagree by exactly one frame whenever
+            // both fractional parts sit below a half and still sum past it, so
+            // a fade-out pinned to the end of its own clip lands one frame past
+            // that reconstruction through arithmetic alone. One frame is the
+            // widest that split can be, so absorb it and keep refusing anything
+            // farther out, which is a fade genuinely outside its sound.
+            if at > clip_end_frame.saturating_add(1) {
                 return Err("schedule-clip: fadeOut begins after the clip ends".to_string());
             }
-            Some(frames_u32(clip_end_frame - at, "fadeOut span")?)
+            Some(frames_u32(
+                clip_end_frame.saturating_sub(at),
+                "fadeOut span",
+            )?)
         }
     };
 
@@ -2077,8 +2141,10 @@ fn map_schedule_clip(
         native_track_id,
         TimelineClip::new(
             clip_id,
-            sample.left.clone(),
-            sample.right.clone(),
+            // Shared, never copied: a take comped into forty regions, or looped
+            // across an arrangement, is forty clips over one allocation.
+            Arc::clone(&sample.left),
+            Arc::clone(&sample.right),
             ClipPlacement {
                 start_frame,
                 source_offset_frames,
@@ -2208,18 +2274,19 @@ pub async fn register_timeline_sample(
     };
     let frames = pcm_frame_count(pcm.len(), channels)?;
     let bytes_per_frame = 4 * channels;
-    let mut left = Vec::with_capacity(frames);
-    let mut right = if channels == 2 {
-        Vec::with_capacity(frames)
+    // Collected straight into the shared channels every clip over this material
+    // will hold, so registration allocates each one exactly once.
+    let left: Arc<[f32]> = pcm
+        .chunks_exact(bytes_per_frame)
+        .map(|frame| f32::from_le_bytes([frame[0], frame[1], frame[2], frame[3]]))
+        .collect();
+    let right: Arc<[f32]> = if channels == 2 {
+        pcm.chunks_exact(bytes_per_frame)
+            .map(|frame| f32::from_le_bytes([frame[4], frame[5], frame[6], frame[7]]))
+            .collect()
     } else {
-        Vec::new()
+        Arc::from([])
     };
-    for frame in pcm.chunks_exact(bytes_per_frame) {
-        left.push(f32::from_le_bytes([frame[0], frame[1], frame[2], frame[3]]));
-        if channels == 2 {
-            right.push(f32::from_le_bytes([frame[4], frame[5], frame[6], frame[7]]));
-        }
-    }
 
     let mut samples = state
         .timeline_samples
@@ -2787,8 +2854,8 @@ mod tests {
         samples.insert(
             "source-a".to_string(),
             TimelineSample {
-                left: vec![0.5; 48_000],
-                right: vec![0.5; 48_000],
+                left: vec![0.5; 48_000].into(),
+                right: vec![0.5; 48_000].into(),
                 sample_rate: 48_000.0,
             },
         );
@@ -2802,6 +2869,93 @@ mod tests {
     fn batch(commands: Value) -> GraphBatchPayload {
         serde_json::from_value(json!({ "schemaVersion": 1, "commands": commands }))
             .expect("the test batch should deserialize")
+    }
+
+    /// How many locates a mapping queued. `GraphCommand` carries no `Debug`, so
+    /// the shape is counted rather than printed.
+    fn seek_count(ops: &[GraphCommand]) -> usize {
+        ops.iter()
+            .filter(|op| matches!(op, GraphCommand::SeekFrames(_)))
+            .count()
+    }
+
+    /// The shape every producer written before the field existed still sends.
+    #[test]
+    fn a_transport_write_locates_unless_it_says_otherwise() {
+        let mut registry = GraphRegistry::default();
+        let mapped = map_batch(
+            &batch(json!([
+                { "kind": "set-transport", "playing": true, "positionSeconds": 2.0 }
+            ])),
+            &mut registry,
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("an ordinary transport write should map");
+
+        assert!(
+            matches!(
+                mapped.ops.as_slice(),
+                [
+                    GraphCommand::SetTransportPlayback {
+                        is_playing: true,
+                        ..
+                    },
+                    GraphCommand::SeekFrames(96_000)
+                ]
+            ),
+            "an unqualified set-transport is a locate at its own position"
+        );
+    }
+
+    /// The live session's roll (`rollNativeTransport`), which follows a topology
+    /// batch that already parked the engine where playback is to start. The
+    /// locate it does not need is one that would cancel every fader, pan and
+    /// send level that topology queued at frame 0.
+    #[test]
+    fn a_transport_write_that_does_not_locate_queues_no_seek() {
+        let mut registry = GraphRegistry::default();
+        let mapped = map_batch(
+            &batch(json!([
+                { "kind": "set-transport", "playing": true, "positionSeconds": 2.0, "locate": false }
+            ])),
+            &mut registry,
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("a non-locating transport write should map");
+
+        assert_eq!(seek_count(&mapped.ops), 0, "no locate was asked for");
+        assert!(
+            matches!(
+                mapped.ops.as_slice(),
+                [GraphCommand::SetTransportPlayback {
+                    is_playing: true,
+                    song_pos_seconds
+                }] if (*song_pos_seconds - 2.0).abs() < f64::EPSILON
+            ),
+            "the playback state and its position still travel; only the seek is withheld"
+        );
+    }
+
+    /// Withholding the seek must not withhold the validation: a position that
+    /// cannot be put on the frame grid is malformed either way.
+    #[test]
+    fn a_non_locating_transport_write_still_refuses_an_unmappable_position() {
+        let mut registry = GraphRegistry::default();
+        let refused = map_batch(
+            &batch(json!([
+                { "kind": "set-transport", "playing": true, "positionSeconds": -1.0, "locate": false }
+            ])),
+            &mut registry,
+            &sample_pool(),
+            48_000.0,
+        );
+
+        assert!(
+            refused.is_err(),
+            "a position the grid cannot hold is refused whether or not it is used"
+        );
     }
 
     fn clip_and_gain_batch() -> GraphBatchPayload {
@@ -2971,6 +3125,34 @@ mod tests {
         )));
     }
 
+    /// The shadow monitor gate crosses the wire as itself: a session mode the
+    /// engine reads at the device boundary, carrying no strip and no stamp. It
+    /// must not be mapped onto the master fader — that is project truth a
+    /// bounce and a save both read, and a monitor mode is neither.
+    #[test]
+    fn the_monitor_shadow_gate_maps_onto_the_engine_command_and_nothing_else() {
+        for shadowed in [true, false] {
+            let batch = batch(json!([
+                { "kind": "set-monitor-shadow", "shadowed": shadowed }
+            ]));
+
+            let mut registry = GraphRegistry::default();
+            let mapped = map_batch(&batch, &mut registry, &sample_pool(), 48_000.0)
+                .expect("the monitor gate should map without a strip");
+
+            assert!(mapped.ops.iter().any(
+                |op| matches!(op, GraphCommand::SetMonitorShadow(value) if *value == shadowed)
+            ));
+            assert!(!mapped.ops.iter().any(|op| matches!(
+                op,
+                GraphCommand::AutomateParam {
+                    target: AutomationTarget::MasterGain,
+                    ..
+                }
+            )));
+        }
+    }
+
     #[test]
     fn a_bus_routed_at_a_track_maps_onto_a_bus_to_track_edge() {
         let batch = batch(json!([
@@ -3129,14 +3311,97 @@ mod tests {
         assert!(refusal.contains("unknown sample 'nowhere'"));
     }
 
+    /// A clip whose start and length each round *down* by 0.4 of a frame, so
+    /// the end stated as one quantity of seconds rounds one frame past the end
+    /// this mapper reconstructs from the two: 0.0113 s and 0.9113 s land on
+    /// frames 542 and 43_742 at 48 kHz, while their sum lands on 44_285 rather
+    /// than 44_284.
+    fn clip_with_fade_out_at(begins_at: f64) -> GraphBatchPayload {
+        batch(json!([
+            { "kind": "create-track-strip", "trackId": "t1", "name": "T", "state": strip_state(1.0),
+              "devices": [], "honorMuted": true, "contributesAudio": true },
+            { "kind": "schedule-clip", "playback": {
+                "trackId": "t1", "source": { "sourceId": "source-a" },
+                "startTime": 0.0113, "sourceOffsetSeconds": 0, "durationSeconds": 0.9113,
+                "playbackRate": 1, "gain": 1,
+                "fade": { "fadeOut": { "beginsAt": begins_at }, "microFadeSeconds": 0 } } }
+        ]))
+    }
+
+    #[test]
+    fn a_fade_out_on_the_clips_own_end_survives_the_rounding_split() {
+        let mapped = map_batch(
+            &clip_with_fade_out_at(0.9226),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("a fade-out pinned to the clip's own end must map");
+
+        assert!(mapped.ops.iter().any(|op| matches!(
+            op,
+            GraphCommand::AddClip(_, clip) if clip.playback().fade.fade_out_frames == Some(0)
+        )));
+    }
+
+    #[test]
+    fn a_fade_out_two_frames_past_the_clip_end_still_refuses() {
+        // 44_286 frames — one frame farther than any rounding split can reach.
+        let refusal = map_batch(
+            &clip_with_fade_out_at(44_286.0 / 48_000.0),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect_err("a fade-out genuinely past the clip must refuse");
+
+        assert!(refusal.contains("fadeOut begins after the clip ends"));
+    }
+
+    #[test]
+    fn scheduling_one_sample_many_times_shares_its_material_instead_of_copying_it() {
+        // A take becomes many clips through ordinary editing — comp regions,
+        // gap fills, loop passes — and a mapper that handed each one its own
+        // copy would multiply the take's PCM by the number of edits made to it.
+        let clips: Vec<Value> = (0..8)
+            .map(|index| {
+                json!({ "kind": "schedule-clip", "playback": {
+                    "trackId": "t1", "source": { "sourceId": "source-a" },
+                    "startTime": index, "sourceOffsetSeconds": 0, "durationSeconds": 0.5,
+                    "playbackRate": 1, "gain": 1, "fade": { "microFadeSeconds": 0 } } })
+            })
+            .collect();
+        let batch = batch(json!([
+            { "kind": "create-track-strip", "trackId": "t1", "name": "T", "state": strip_state(1.0),
+              "devices": [], "honorMuted": true, "contributesAudio": true },
+            clips[0], clips[1], clips[2], clips[3], clips[4], clips[5], clips[6], clips[7]
+        ]));
+        let samples = sample_pool();
+
+        let mapped = map_batch(&batch, &mut GraphRegistry::default(), &samples, 48_000.0)
+            .expect("eight clips over one sample should map");
+
+        let scheduled = mapped
+            .ops
+            .iter()
+            .filter(|op| matches!(op, GraphCommand::AddClip(..)))
+            .count();
+        assert_eq!(scheduled, 8);
+        // The pool's own handle plus one per scheduled clip. A copy would leave
+        // the pool holding its material alone.
+        let material = &samples["source-a"];
+        assert_eq!(Arc::strong_count(&material.left), 9);
+        assert_eq!(Arc::strong_count(&material.right), 9);
+    }
+
     #[test]
     fn material_at_another_rate_is_rate_converted_not_stretched() {
         let mut samples = HashMap::new();
         samples.insert(
             "half-rate".to_string(),
             TimelineSample {
-                left: vec![0.5; 24_000],
-                right: Vec::new(),
+                left: vec![0.5; 24_000].into(),
+                right: [].into(),
                 sample_rate: 24_000.0,
             },
         );
@@ -4363,8 +4628,8 @@ mod tests {
 
         let samples = state.timeline_samples.lock().expect("sample lock");
         let sample = samples.get("s1").expect("the sample is registered");
-        assert_eq!(sample.left, vec![0.1, 0.2]);
-        assert_eq!(sample.right, vec![-0.1, -0.2]);
+        assert_eq!(*sample.left, [0.1, 0.2]);
+        assert_eq!(*sample.right, [-0.1, -0.2]);
         drop(samples);
 
         let refused = block_on_test(register_timeline_sample(

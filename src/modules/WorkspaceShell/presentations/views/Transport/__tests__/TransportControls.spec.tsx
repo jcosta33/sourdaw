@@ -58,7 +58,7 @@ describe('TransportControls', () => {
         vi.clearAllMocks();
     });
 
-    describe('status announcement (renderIife_14)', () => {
+    describe('status announcement (statusAnnouncement)', () => {
         it('announces Stopped when neither playing nor recording', () => {
             renderWithTooltip(<TransportControls {...defaultProps} />);
             expect(screen.getByText('Stopped')).toBeInTheDocument();
@@ -76,10 +76,10 @@ describe('TransportControls', () => {
         });
     });
 
-    describe('record button label (renderIife_15)', () => {
+    describe('record button label (recordButtonLabel)', () => {
         it('labels the record tooltip "Record" when idle and no tracks armed', () => {
             const { container } = renderWithTooltip(<TransportControls {...defaultProps} />);
-            // renderIife_15 returns 'Record'; tooltip renders it as a text node.
+            // recordButtonLabel returns 'Record'; tooltip renders it as a text node.
             expect(container.textContent).toContain('Record (R)');
         });
 

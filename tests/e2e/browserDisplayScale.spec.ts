@@ -1,6 +1,8 @@
 import { expect, test, type Frame, type FrameLocator, type Locator, type Page } from '@playwright/test';
 import { stringify as superjsonStringify } from 'superjson';
 
+import { LAUNCH_SCREEN_FIRST_PAINT_TIMEOUT_MS } from './e2eUtils';
+
 type Box = { x: number; y: number; width: number; height: number };
 type RecentProject = { key: string; name: string; updatedAt: number };
 
@@ -349,7 +351,9 @@ test('browser display scale preserves viewport geometry and interactions at 50%,
 
     const frame = await findApplicationFrame(page);
     const app = page.frameLocator('iframe[title="Sourdaw"]');
-    await expect(app.getByLabel('Sourdaw — start a project')).toBeVisible();
+    await expect(app.getByLabel('Sourdaw — start a project')).toBeVisible({
+        timeout: LAUNCH_SCREEN_FIRST_PAINT_TIMEOUT_MS,
+    });
     await app.locator('#launch-new-project').click();
     await expect(app.getByRole('group', { name: 'Playback controls' })).toBeVisible({ timeout: 30_000 });
     await app.getByRole('button', { name: /Add blank MIDI track/ }).click();

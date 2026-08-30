@@ -2,8 +2,8 @@
 //!
 //! `AudioPlugin` is what the application asks of *any* loaded plugin;
 //! `HostedPluginRuntime` is the extra surface the shared RT/control runtime
-//! owner (`SharedHostedPlugin` in `sourdaw-native`) drives. CLAP is the only
-//! implementation today. A second format implements these two traits and plugs
+//! owner (`SharedHostedPlugin` in `sourdaw-native`) drives. CLAP and VST3 both
+//! implement them today. A new format implements these two traits and plugs
 //! into the runtime owner without either of them changing.
 //!
 //! The value types below live here rather than in `clap_wrapper` because they

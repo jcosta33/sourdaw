@@ -35,7 +35,7 @@ describe('the native engine playhead feed', () => {
     beforeEach(() => {
         stopNativeEnginePlayheadFeed();
         nativeEnginePlayheadFeed.inFlightEpoch = null;
-        nativeLiveGraphSession.carriesAudio = true;
+        nativeLiveGraphSession.audibleCarrier = true;
         vi.mocked(animationScheduler.register).mockClear();
         vi.mocked(animationScheduler.unregister).mockClear();
         vi.mocked(getEngineTransportPosition).mockReset();
@@ -151,13 +151,13 @@ describe('the native engine playhead feed', () => {
         expect(readNativeEnginePlayheadSeconds()).toBe(1.5);
     });
 
-    it('refuses to answer while the session topology carries no audio', async () => {
+    it('refuses to answer while the session is not the audible carrier', async () => {
         vi.mocked(getEngineTransportPosition).mockResolvedValue(rollingAt(3.25));
         startNativeEnginePlayheadFeed();
         pollNativeEnginePlayheadOnce();
         await vi.waitFor(() => expect(nativeEnginePlayheadFeed.reading).not.toBeNull());
 
-        nativeLiveGraphSession.carriesAudio = false;
+        nativeLiveGraphSession.audibleCarrier = false;
 
         // The engine is running and rolling, but it is not what a musician
         // hears; a cursor drawn from it would leave the mix.
