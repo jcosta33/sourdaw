@@ -214,6 +214,8 @@ type Input = {
     existingPendingReviewBody?: string;
     existingPendingReviewCommitOid?: string;
     expectedAttachedReviewThreadInspectionHead?: string;
+    expectedPullRequestReviewInspectionPullRequestId?: string;
+    expectedPullRequestReviewInspectionHead?: string;
     createReceiptAuthorNodeId?: string | null;
     createReceiptAuthorType?: string | null;
     addExactForeignPendingReview?: boolean;
@@ -540,7 +542,19 @@ function fakePort(input: Input = {}) {
                     })),
             };
         },
-        inspectPullRequestReview: (_number, id) => {
+        inspectPullRequestReview: (_number, id, expectedPullRequestId, expectedHead) => {
+            if (
+                input.expectedPullRequestReviewInspectionPullRequestId !== undefined &&
+                expectedPullRequestId !== input.expectedPullRequestReviewInspectionPullRequestId
+            ) {
+                throw new Error(`unexpected review inspection pull request ${expectedPullRequestId}`);
+            }
+            if (
+                input.expectedPullRequestReviewInspectionHead !== undefined &&
+                expectedHead !== input.expectedPullRequestReviewInspectionHead
+            ) {
+                throw new Error(`unexpected review inspection head ${expectedHead}`);
+            }
             const review = reviewById(id);
             if (review === undefined) {
                 return null;
@@ -2544,6 +2558,8 @@ describe('review thread resolution', () => {
             existingReplyReviewBody: '',
             existingReplyReviewCommitOid: head,
             expectedAttachedReviewThreadInspectionHead: movedHead,
+            expectedPullRequestReviewInspectionPullRequestId: pullRequestId,
+            expectedPullRequestReviewInspectionHead: movedHead,
         });
         try {
             const ownerOid = writeLockOwnerBlob(repository, 999999, head, {
@@ -2584,6 +2600,7 @@ describe('review thread resolution', () => {
         ['state', { updateReceiptState: 'COMMENTED' }],
         ['historical commit', { updateReceiptCommitOid: movedHead }],
         ['author actor', { updateReceiptAuthorNodeId: REVIEWER_BOT_NODE_ID }],
+        ['author type', { updateReceiptAuthorNodeId: AUTHOR_BOT_NODE_ID, updateReceiptAuthorType: 'User' }],
     ] as const)('preserves the recovery lock after a malformed update-review-body %s receipt', (_label, input) => {
         const repository = createTemporaryGitRepository();
         const { port, calls } = fakePort({
