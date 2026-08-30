@@ -229,32 +229,6 @@ export function resolveReviewThread(
                 }
             }
             if (pendingReview === undefined) {
-                const stalePendingReview = findStaleManagedPendingReview(working.pendingReviews, context);
-                if (stalePendingReview !== undefined) {
-                    reviewSubmitAttempted = true;
-                    const stalePendingReviewCommitOid = requireReviewCommitOid(
-                        stalePendingReview,
-                        `pending review ${stalePendingReview.id}`
-                    );
-                    const submittedStalePendingReview = port.submitReview(
-                        stalePendingReview.id,
-                        resolutionReviewBody(context, stalePendingReviewCommitOid)
-                    );
-                    assertReviewEnvelopeReceipt(
-                        submittedStalePendingReview,
-                        submitReviewClientMutationId(stalePendingReview.id),
-                        'COMMENTED',
-                        resolutionReviewBody(context, stalePendingReviewCommitOid),
-                        stalePendingReviewCommitOid,
-                        'submit review'
-                    );
-                    working = port.inspect(number, threadId);
-                    assertExpectedHeadAfterMutation(working.head, expectedHead);
-                    assertResolvableThread(working.thread, threadId);
-                    pendingReview = convergePendingReviews(working.pendingReviews, context, port);
-                }
-            }
-            if (pendingReview === undefined) {
                 pendingReviewCreateAttempted = true;
                 const created = port.createPendingReview(
                     working.pullRequestId,
@@ -1041,23 +1015,6 @@ function isExactPendingReview(review: PullRequestReview, context: ResolutionRevi
         review.body === resolutionReviewBody(context, context.expectedHead) &&
         review.commitOid === context.expectedHead &&
         isAuthorBotActor(review.authorNodeId, review.authorType)
-    );
-}
-function isManagedPendingReview(review: PullRequestReview, context: ResolutionReviewContext): boolean {
-    return (
-        review.state === 'PENDING' &&
-        typeof review.commitOid === 'string' &&
-        review.commitOid !== '' &&
-        review.body === resolutionReviewBody(context, review.commitOid) &&
-        isAuthorBotActor(review.authorNodeId, review.authorType)
-    );
-}
-function findStaleManagedPendingReview(
-    pendingReviews: PullRequestReview[],
-    context: ResolutionReviewContext
-): PullRequestReview | undefined {
-    return pendingReviews.find(
-        (review) => isManagedPendingReview(review, context) && review.commitOid !== context.expectedHead
     );
 }
 function convergePendingReviews(

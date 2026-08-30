@@ -257,10 +257,13 @@ function fakePort(input: Input = {}) {
         }
         return `PRR_created_${reviews.length}`;
     }
-    function hasAuthorPendingReview(): boolean {
+    function hasAuthorPendingReview(commitOid: string): boolean {
         return reviews.some(
             (review) =>
-                review.state === 'PENDING' && review.authorNodeId === AUTHOR_BOT_NODE_ID && review.authorType === 'Bot'
+                review.state === 'PENDING' &&
+                review.authorNodeId === AUTHOR_BOT_NODE_ID &&
+                review.authorType === 'Bot' &&
+                review.commitOid === commitOid
         );
     }
     const port: ResolveReviewThreadPort = {
@@ -377,7 +380,7 @@ function fakePort(input: Input = {}) {
         },
         createPendingReview: (currentPullRequestId, commitOid, body) => {
             calls.push(`createReview:${currentPullRequestId}`);
-            if (hasAuthorPendingReview()) {
+            if (hasAuthorPendingReview(commitOid)) {
                 throw new Error('pending review already exists');
             }
             const id = nextReviewId();
@@ -1682,15 +1685,12 @@ describe('review thread resolution', () => {
             `createReview:${pullRequestId}`,
             `createReview:${pullRequestId}`,
         ]);
-        expect(calls.filter((call) => call.startsWith('submitReview:'))).toEqual([
-            `submitReview:${reviewId}`,
-            'submitReview:PRR_created_1',
-        ]);
+        expect(calls.filter((call) => call.startsWith('submitReview:'))).toEqual(['submitReview:PRR_created_1']);
         expect(state().reviews).toEqual(
             expect.arrayContaining([
                 expect.objectContaining({
                     id: reviewId,
-                    state: 'COMMENTED',
+                    state: 'PENDING',
                     commitOid: head,
                     body: resolutionReviewSummary(pullRequestId, threadId, head),
                 }),
@@ -1816,7 +1816,7 @@ describe('review thread resolution', () => {
             `submitReview:${reviewId}`,
         ]);
     });
-    it('submits an old-head author pending review before staging a new current-head review', () => {
+    it('leaves an old-head unattached author pending review pending while staging a new current-head review', () => {
         const { port, authorNodeId, state, calls } = fakePort({
             heads: [movedHead, movedHead, movedHead, movedHead, movedHead, movedHead, movedHead, movedHead],
             existingPendingReviewCount: 1,
@@ -1827,21 +1827,37 @@ describe('review thread resolution', () => {
         );
         expect(calls.filter((call) => call.startsWith('deleteReview:'))).toEqual([]);
         expect(calls.filter((call) => call.startsWith('createReview:'))).toEqual([`createReview:${pullRequestId}`]);
-        expect(calls.filter((call) => call.startsWith('submitReview:'))).toEqual([
-            `submitReview:${reviewId}`,
-            'submitReview:PRR_created_1',
-        ]);
+        expect(calls.filter((call) => call.startsWith('submitReview:'))).toEqual(['submitReview:PRR_created_1']);
         expect(state().reviews).toEqual(
             expect.arrayContaining([
                 expect.objectContaining({
                     id: reviewId,
-                    state: 'COMMENTED',
+                    state: 'PENDING',
                     commitOid: head,
                     body: resolutionReviewSummary(pullRequestId, threadId, head),
                 }),
                 expect.objectContaining({ id: 'PRR_created_1', state: 'COMMENTED', commitOid: movedHead }),
             ])
         );
+    });
+    it('does not publish a stale unattached pending review when the head drifts before the new-head draft is inspected', () => {
+        const newerHead = 'c'.repeat(40);
+        const { port, authorNodeId, state, calls } = fakePort({
+            heads: [movedHead, newerHead],
+            existingPendingReviewCount: 1,
+            existingPendingReviewCommitOid: head,
+        });
+        expect(() => resolveReviewThread(42, threadId, movedHead, authorNodeId, port)).toThrow(/head moved/i);
+        expect(calls.filter((call) => call.startsWith('submitReview:'))).toEqual([]);
+        expect(calls.filter((call) => call.startsWith('createReview:'))).toEqual([`createReview:${pullRequestId}`]);
+        expect(
+            calls.filter((call) => call.startsWith('reply:') || call.startsWith('resolve:') || call.startsWith('log:'))
+        ).toEqual([]);
+        expect(state().reviews).toEqual([
+            expect.objectContaining({ id: reviewId, state: 'PENDING', commitOid: head }),
+            expect.objectContaining({ id: 'PRR_created_1', state: 'PENDING', commitOid: movedHead }),
+        ]);
+        expect(state().reviews.filter((review) => review.state === 'COMMENTED')).toEqual([]);
     });
     it('rejects a stale attached pending Done marker linked to a foreign Bot review without submit delete or reuse', () => {
         const { port, authorNodeId, calls } = fakePort({
