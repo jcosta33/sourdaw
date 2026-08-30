@@ -280,6 +280,15 @@ pub enum GraphCommandPayload {
         playing: bool,
         position_seconds: f64,
     },
+    /// The session-level shadow monitor gate
+    /// ([`GraphCommand::SetMonitorShadow`]): the engine keeps rendering and
+    /// contributes nothing to the OS output. It travels with the topology
+    /// rather than as a start parameter because the engine has no start call
+    /// to carry one — `apply_graph_commands` boots it lazily on the first
+    /// batch — and because the cutover has to be expressible on a session
+    /// that is already rolling.
+    #[serde(rename_all = "camelCase")]
+    SetMonitorShadow { shadowed: bool },
 }
 
 #[derive(Debug, Deserialize)]
@@ -1824,6 +1833,14 @@ fn map_command(
             budgets.apply_seek(frame);
             Ok(())
         }
+
+        GraphCommandPayload::SetMonitorShadow { shadowed } => {
+            // Nothing to validate and nothing to charge: the gate addresses no
+            // strip, holds no stamp and queues no write. It is a mode the
+            // callback reads at the device boundary.
+            ops.push(GraphCommand::SetMonitorShadow(*shadowed));
+            Ok(())
+        }
     }
 }
 
@@ -2969,6 +2986,34 @@ mod tests {
                 write: AutomationWrite::Replace(event),
             } if event.value == 0.4
         )));
+    }
+
+    /// The shadow monitor gate crosses the wire as itself: a session mode the
+    /// engine reads at the device boundary, carrying no strip and no stamp. It
+    /// must not be mapped onto the master fader — that is project truth a
+    /// bounce and a save both read, and a monitor mode is neither.
+    #[test]
+    fn the_monitor_shadow_gate_maps_onto_the_engine_command_and_nothing_else() {
+        for shadowed in [true, false] {
+            let batch = batch(json!([
+                { "kind": "set-monitor-shadow", "shadowed": shadowed }
+            ]));
+
+            let mut registry = GraphRegistry::default();
+            let mapped = map_batch(&batch, &mut registry, &sample_pool(), 48_000.0)
+                .expect("the monitor gate should map without a strip");
+
+            assert!(mapped.ops.iter().any(
+                |op| matches!(op, GraphCommand::SetMonitorShadow(value) if *value == shadowed)
+            ));
+            assert!(!mapped.ops.iter().any(|op| matches!(
+                op,
+                GraphCommand::AutomateParam {
+                    target: AutomationTarget::MasterGain,
+                    ..
+                }
+            )));
+        }
     }
 
     #[test]
