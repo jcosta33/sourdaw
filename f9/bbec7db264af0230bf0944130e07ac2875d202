@@ -1,0 +1,14 @@
+.agents/decisions/0040-crdt-slot-sanitizers-are-projections.md
+  h_1228e573df1f42 13,16,50-51,57-58
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "f9bbec7db264af0230bf0944130e07ac2875d202",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
