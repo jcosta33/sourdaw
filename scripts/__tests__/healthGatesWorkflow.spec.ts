@@ -511,6 +511,13 @@ function assertJobGraph(candidate: UnknownRecord): void {
     if (gateNeeds.length !== GATE_MEMBERS.length) {
         throw new Error('gate must depend on exactly the pinned member list');
     }
+    const unit = jobAt(candidate, 'unit');
+    if (unit['continue-on-error'] !== undefined) {
+        throw new Error('pull-request unit must not continue on error');
+    }
+    if (stepNamed(unit, 'Run shard')['continue-on-error'] !== undefined) {
+        throw new Error('pull-request unit Run shard must not continue on error');
+    }
 }
 
 function assertNightlySecurityGraph(candidate: UnknownRecord): void {
@@ -1115,6 +1122,11 @@ describe('health gates workflow contract', () => {
         stepNamed(jobAt(permissiveNightlyUnit, 'unit'), 'Run shard')['continue-on-error'] = true;
         expect(() => assertNightlySecurityGraph(permissiveNightlyUnit)).toThrow(
             'nightly unit Run shard must not continue on error'
+        );
+        const permissivePullRequestUnit = asRecord(structuredClone(workflow), 'permissive pull-request unit');
+        stepNamed(jobAt(permissivePullRequestUnit, 'unit'), 'Run shard')['continue-on-error'] = true;
+        expect(() => assertJobGraph(permissivePullRequestUnit)).toThrow(
+            'pull-request unit Run shard must not continue on error'
         );
     });
 

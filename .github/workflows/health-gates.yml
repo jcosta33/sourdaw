@@ -325,7 +325,6 @@ jobs:
       # default of two exists for the agent resource guard, not for CI.
       - name: Run shard
         id: run_shard
-        continue-on-error: true
         env:
           VITEST_MAX_WORKERS: 4
         run: pnpm run test:run --shard=${{ matrix.shard }}/4
@@ -679,8 +678,9 @@ jobs:
     # pending.
     #
     # The unit suite remains outside this summary: `main` still carries a baseline
-    # failure, and continue-on-error keeps the shards visible without deciding
-    # merge. Promote it once `main` is green and deterministic.
+    # failure. Failed shards must conclude as failed checks so the waiver is
+    # visible; they still do not decide merge. Promote unit into this job once
+    # `main` is green and deterministic.
     #
     # End-to-end, CodeQL, the history secret scan, and Browser AI WebGPU admission
     # run on the nightly train. They are not skip-passed here.
