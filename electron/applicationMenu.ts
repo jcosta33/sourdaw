@@ -1,60 +1,6 @@
 import type { MenuItemConstructorOptions } from 'electron';
 
-export type NativeMenuAction =
-    | 'project:new'
-    | 'project:import-project'
-    | 'project:import-audio'
-    | 'project:import-midi'
-    | 'project:open-recent'
-    | 'project:save'
-    | 'project:discard'
-    | 'project:export-audio'
-    | 'project:export-file'
-    | 'edit:undo'
-    | 'edit:redo'
-    | 'edit:cut'
-    | 'edit:copy'
-    | 'edit:paste'
-    | 'edit:select-all'
-    | 'edit:deselect-all'
-    | 'view:toggle-sidebar'
-    | 'view:toggle-mixer'
-    | 'view:toggle-inspector'
-    | 'view:toggle-track-list'
-    | 'view:toggle-virtual-keyboard'
-    | 'view:toggle-automation'
-    | 'view:toggle-chat'
-    | 'view:preferences'
-    | 'view:zoom-fit'
-    | 'view:zoom-selection'
-    | 'view:zoom-in'
-    | 'view:zoom-out'
-    | 'help:show-tour';
-
-export type NativeMenuIntent = {
-    readonly action: NativeMenuAction;
-    readonly requestId?: number;
-    readonly recentKey?: string;
-    readonly projectKey?: string;
-    readonly revision?: string;
-};
-
-export type NativeTextEditOperation = 'undo' | 'redo' | 'cut' | 'copy' | 'paste' | 'selectAll';
-
-export type NativeResponderEditAction = 'undo:' | 'redo:' | 'cut:' | 'copy:' | 'paste:' | 'selectAll:';
-
-export type NativeTextEditTarget = {
-    readonly undo: () => void;
-    readonly redo: () => void;
-    readonly cut: () => void;
-    readonly copy: () => void;
-    readonly paste: () => void;
-    readonly selectAll: () => void;
-};
-
-export type NativeRecentProject = { readonly key: string; readonly name: string };
-
-const nativeMenuActions = new Set<NativeMenuAction>([
+export const NATIVE_MENU_ACTIONS = [
     'project:new',
     'project:import-project',
     'project:import-audio',
@@ -84,7 +30,34 @@ const nativeMenuActions = new Set<NativeMenuAction>([
     'view:zoom-in',
     'view:zoom-out',
     'help:show-tour',
-]);
+] as const;
+
+export type NativeMenuAction = (typeof NATIVE_MENU_ACTIONS)[number];
+
+export type NativeMenuIntent = {
+    readonly action: NativeMenuAction;
+    readonly requestId?: number;
+    readonly recentKey?: string;
+    readonly projectKey?: string;
+    readonly revision?: string;
+};
+
+export type NativeTextEditOperation = 'undo' | 'redo' | 'cut' | 'copy' | 'paste' | 'selectAll';
+
+export type NativeResponderEditAction = 'undo:' | 'redo:' | 'cut:' | 'copy:' | 'paste:' | 'selectAll:';
+
+export type NativeTextEditTarget = {
+    readonly undo: () => void;
+    readonly redo: () => void;
+    readonly cut: () => void;
+    readonly copy: () => void;
+    readonly paste: () => void;
+    readonly selectAll: () => void;
+};
+
+export type NativeRecentProject = { readonly key: string; readonly name: string };
+
+const nativeMenuActions = new Set<NativeMenuAction>(NATIVE_MENU_ACTIONS);
 
 /**
  * Electron's edit roles consume menu clicks before the renderer can route DAW

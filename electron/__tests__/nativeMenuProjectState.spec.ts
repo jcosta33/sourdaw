@@ -70,6 +70,46 @@ describe('native menu project-state controller', () => {
         expect(rebuildApplicationMenu).toHaveBeenCalledTimes(3);
     });
 
+    it('rebuilds when recent projects keep their entries but change order', () => {
+        const rebuildApplicationMenu = vi.fn();
+        const controller = createNativeMenuProjectStateController({
+            updateCloseState: vi.fn(),
+            getWindow: () => undefined,
+            rebuildApplicationMenu,
+        });
+        const state = {
+            title: 'Song',
+            dirty: false,
+            durabilityPending: false,
+            projectKey: 'song',
+            revision: '1',
+        };
+
+        controller.apply({
+            ...state,
+            recentProjects: [
+                { key: 'a', name: 'A' },
+                { key: 'b', name: 'B' },
+            ],
+        });
+        controller.apply({
+            ...state,
+            recentProjects: [
+                { key: 'b', name: 'B' },
+                { key: 'a', name: 'A' },
+            ],
+        });
+
+        expect(rebuildApplicationMenu).toHaveBeenNthCalledWith(1, [
+            { key: 'a', name: 'A' },
+            { key: 'b', name: 'B' },
+        ]);
+        expect(rebuildApplicationMenu).toHaveBeenNthCalledWith(2, [
+            { key: 'b', name: 'B' },
+            { key: 'a', name: 'A' },
+        ]);
+    });
+
     it('keeps a clean replacement visibly edited while its identity snapshot is pending', () => {
         const window = {
             isDestroyed: () => false,

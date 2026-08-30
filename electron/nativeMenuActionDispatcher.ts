@@ -14,7 +14,7 @@ type CreateNativeMenuActionDispatcherInput = {
     readonly createWindow: () => NativeMenuActionWindow;
 };
 
-const canQueueForWindowlessRenderer = (intent: NativeMenuIntent): boolean =>
+export const canQueueForWindowlessRenderer = (intent: NativeMenuIntent): boolean =>
     intent.action === 'project:new' ||
     intent.action === 'project:import-project' ||
     intent.action === 'view:preferences' ||

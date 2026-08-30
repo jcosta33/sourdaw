@@ -136,12 +136,13 @@ describe('quiesceProjectSession', () => {
 
     it('publishes the Project recovery-failure surface and keeps close admission locked when repair also fails', async () => {
         runtime.stopPlayback.mockResolvedValue(undefined);
-        runtime.unloadPlugin.mockRejectedValueOnce(new Error('unload failed'));
+        runtime.unloadPlugin.mockRejectedValue(new Error('unload failed'));
         runtime.repairRuntimeGraphFromProject.mockRejectedValueOnce(new Error('repair failed'));
         const { projectLoadFailureStore } = await import('../../../stores/projectLoadFailureStore');
         const { quiesceProjectSession } = await import('../quiesceProjectSession');
 
         await expect(quiesceProjectSession(21, async () => true)).resolves.toBe('terminal');
+        expect(runtime.retire).toHaveBeenCalledTimes(2);
         expect(projectLoadFailureStore.value?.message).toMatch(/could not safely restore/u);
         await expect(quiesceProjectSession(22, async () => true)).resolves.toBe('terminal');
     });

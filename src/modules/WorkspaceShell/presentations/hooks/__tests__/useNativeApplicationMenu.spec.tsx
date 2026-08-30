@@ -164,6 +164,8 @@ describe('useNativeApplicationMenu', () => {
         projectActions.saveProject.mockResolvedValue(true);
         projectActions.discardProjectChanges.mockReset();
         projectActions.discardProjectChanges.mockResolvedValue(true);
+        projectActions.pickAndImportProjectFile.mockReset();
+        projectActions.pickAndImportProjectFile.mockResolvedValue(true);
         projectActions.cancelProjectSessionQuiesce.mockReset().mockResolvedValue('rejected');
         projectActions.newProject.mockClear();
         projectActions.loadRecentProject.mockClear();
@@ -212,6 +214,32 @@ describe('useNativeApplicationMenu', () => {
         );
         expect(projectActions.quiesceProjectSession).toHaveBeenCalledTimes(1);
         expect(desktop.sessionQuiesceStarted).toHaveBeenCalledWith(41);
+    });
+
+    it('maps successful renderer retirement to the exact correlated success wire result', async () => {
+        projectActions.quiesceProjectSession.mockResolvedValueOnce('success');
+        renderHook(() =>
+            useNativeApplicationMenu({
+                name: 'Song',
+                projectId: 'project',
+                createdAt: 1,
+                dirty: false,
+                identityPersistencePending: false,
+                loading: false,
+                updatedAt: 1,
+                keyRoot: 0,
+                scaleName: 'chromatic',
+                tuning: { name: 'Equal Temperament', frequencies: [] },
+                productionBrief: {} as never,
+                initialized: true,
+            })
+        );
+
+        desktop.sessionListener?.(44);
+
+        await vi.waitFor(() =>
+            expect(desktop.sessionQuiesced).toHaveBeenCalledWith({ requestId: 44, outcome: 'success' })
+        );
     });
 
     it('returns a failed final quiesce reply when main rejects the destructive-start handshake', async () => {
@@ -972,6 +1000,53 @@ describe('useNativeApplicationMenu', () => {
 
         await vi.waitFor(() => expect(projectActions.loadRecentProject).toHaveBeenCalledWith('recent-project'));
         expect(projectActions.saveProject).toHaveBeenCalledTimes(2);
+    });
+
+    it('preserves project transition order across hook rerenders and includes Import Project', async () => {
+        const order: string[] = [];
+        let releaseNewProject: (() => void) | undefined;
+        projectActions.newProject.mockImplementation(
+            () =>
+                new Promise<void>((resolve) => {
+                    order.push('new:start');
+                    releaseNewProject = () => {
+                        order.push('new:end');
+                        resolve();
+                    };
+                })
+        );
+        projectActions.pickAndImportProjectFile.mockImplementation(async () => {
+            order.push('import');
+            return true;
+        });
+        const { rerender } = renderHook(
+            ({ updatedAt }) =>
+                useNativeApplicationMenu({
+                    projectId: 'project',
+                    name: 'Song',
+                    createdAt: 1,
+                    updatedAt,
+                    dirty: false,
+                    loading: false,
+                    keyRoot: 0,
+                    scaleName: 'chromatic',
+                    tuning: { name: 'Equal Temperament', frequencies: [] },
+                    productionBrief: {} as never,
+                    initialized: true,
+                }),
+            { initialProps: { updatedAt: 2 } }
+        );
+
+        desktop.listener?.({ action: 'project:new' });
+        await vi.waitFor(() => expect(projectActions.newProject).toHaveBeenCalledOnce());
+        rerender({ updatedAt: 3 });
+        desktop.listener?.({ action: 'project:import-project' });
+        expect(projectActions.pickAndImportProjectFile).not.toHaveBeenCalled();
+
+        releaseNewProject?.();
+
+        await vi.waitFor(() => expect(projectActions.pickAndImportProjectFile).toHaveBeenCalledOnce());
+        expect(order).toEqual(['new:start', 'new:end', 'import']);
     });
 
     it('routes every renderer-owned command family through its public action or use-case seam', async () => {

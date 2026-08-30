@@ -30,11 +30,14 @@ export const requestApprovedWindowClose = ({
     readonly close: () => void;
 }): void => {
     event.preventDefault();
-    void requestClose().then((approved) => {
-        if (approved) {
-            close();
-        }
-    });
+    void requestClose().then(
+        (approved) => {
+            if (approved) {
+                close();
+            }
+        },
+        () => undefined
+    );
 };
 
 export const composeQuitHandler = (

@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 
 import { trackStore } from '#/modules/Arrangement/stores';
 import { clearClipSelection, selectAllClips, zoomTimelineBy } from '#/modules/Arrangement/useCases';
@@ -217,6 +217,8 @@ const runMenuAction = async (intent: NativeMenuIntent): Promise<void> => {
 
 /** Binds macOS menu intents to existing renderer-owned product operations. */
 export const useNativeApplicationMenu = (project: ProjectStoreState): void => {
+    const projectTransition = useRef(Promise.resolve());
+
     useEffect(() => {
         const menu = nativeApplicationMenu();
         if (menu === undefined) {
@@ -234,10 +236,13 @@ export const useNativeApplicationMenu = (project: ProjectStoreState): void => {
             });
         };
         publishProjectState();
-        let transition = Promise.resolve();
         const unlisten = menu.listen((intent) => {
-            if (intent.action === 'project:new' || intent.action === 'project:open-recent') {
-                transition = transition.then(() => runMenuAction(intent));
+            if (
+                intent.action === 'project:new' ||
+                intent.action === 'project:open-recent' ||
+                intent.action === 'project:import-project'
+            ) {
+                projectTransition.current = projectTransition.current.then(() => runMenuAction(intent));
                 return;
             }
             void runMenuAction(intent);

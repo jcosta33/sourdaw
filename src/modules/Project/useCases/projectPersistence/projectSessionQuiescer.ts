@@ -19,6 +19,21 @@ let recovery: Promise<ProjectSessionQuiesceOutcome> | undefined;
 let recoveryFailed = false;
 let pluginRetirement: Awaited<ReturnType<typeof beginProjectSessionPluginRetirement>> | undefined;
 
+const quarantineFailedRuntime = async (): Promise<void> => {
+    try {
+        pluginRetirement = await beginProjectSessionPluginRetirement();
+    } catch {
+        pluginRetirement = undefined;
+        return;
+    }
+    try {
+        await pluginRetirement.retire();
+    } catch {
+        // Terminal remains terminal. Keep the quarantine fence closed even
+        // when native bulk retirement itself cannot complete.
+    }
+};
+
 const repair = async (): Promise<ProjectSessionQuiesceOutcome> => {
     pluginRetirement?.reopen();
     pluginRetirement = undefined;
@@ -28,11 +43,7 @@ const repair = async (): Promise<ProjectSessionQuiesceOutcome> => {
         recoveryFailed = true;
         // Repair itself could not establish a fresh runtime boundary. Hold the
         // PluginHost admission fence closed until reload replaces this session.
-        try {
-            pluginRetirement = await beginProjectSessionPluginRetirement();
-        } catch {
-            pluginRetirement = undefined;
-        }
+        await quarantineFailedRuntime();
         const projectName = projectStore.value?.name ?? 'this project';
         projectLoadFailureStore.set({
             projectName,

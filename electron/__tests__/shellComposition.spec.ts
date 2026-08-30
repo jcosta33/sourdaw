@@ -46,11 +46,15 @@ describe('Electron shell composition policies', () => {
 
     const productionComposition = ({
         focused = 'main',
+        canQuit = vi.fn(async () => true),
+        exit = vi.fn(),
         quiesceBeforeQuit = vi.fn(async () => 'success' as const),
         runShutdown = vi.fn(async () => ({ status: 'completed' as const, report: undefined })),
         lifecycle = createRendererSessionLifecycle(),
     }: {
         focused?: 'main' | 'plugin';
+        canQuit?: ReturnType<typeof vi.fn<() => Promise<boolean>>>;
+        exit?: ReturnType<typeof vi.fn<(code: number) => void>>;
         quiesceBeforeQuit?: ReturnType<typeof vi.fn<() => Promise<'success'>>>;
         runShutdown?: ReturnType<typeof vi.fn<() => Promise<{ status: 'completed'; report: undefined }>>>;
         lifecycle?: ReturnType<typeof createRendererSessionLifecycle>;
@@ -77,15 +81,24 @@ describe('Electron shell composition policies', () => {
             menuDispatcher: { dispatch: dispatchMenuIntent },
             runShutdown,
             quit: {
-                canQuit: vi.fn(async () => true),
+                canQuit,
                 quiesceBeforeQuit,
-                exit: vi.fn(),
+                exit,
                 report: vi.fn(),
             },
             lifecycle,
         });
 
-        return { composition, dispatchMenuIntent, editTarget, responder, quiesceBeforeQuit, runShutdown };
+        return {
+            composition,
+            dispatchMenuIntent,
+            editTarget,
+            responder,
+            canQuit,
+            exit,
+            quiesceBeforeQuit,
+            runShutdown,
+        };
     };
 
     it('applies a main-focused Edit action and dispatches its renderer intent', () => {
@@ -142,5 +155,34 @@ describe('Electron shell composition policies', () => {
         const { composition } = productionComposition({ lifecycle });
 
         expect(composition.shouldRecreateAfterCrash()).toBe(false);
+    });
+
+    it('stops before renderer quiesce and shutdown when close authority is denied', async () => {
+        const canQuit = vi.fn(async () => false);
+        const { composition, exit, quiesceBeforeQuit, runShutdown } = productionComposition({ canQuit });
+        const preventDefault = vi.fn();
+
+        composition.beforeQuit({ preventDefault });
+
+        await vi.waitFor(() => expect(canQuit).toHaveBeenCalledOnce());
+        await Promise.resolve();
+        expect(preventDefault).toHaveBeenCalledOnce();
+        expect(quiesceBeforeQuit).not.toHaveBeenCalled();
+        expect(runShutdown).not.toHaveBeenCalled();
+        expect(exit).not.toHaveBeenCalled();
+    });
+
+    it.each([
+        ['denial', async () => false],
+        ['rejection', async () => Promise.reject(new Error('close authority failed'))],
+    ])('prevents Close after approval %s without closing the window', async (_case, requestClose) => {
+        const event = { preventDefault: vi.fn() };
+        const close = vi.fn();
+
+        requestApprovedWindowClose({ event, requestClose, close });
+
+        await vi.waitFor(() => expect(event.preventDefault).toHaveBeenCalledOnce());
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(close).not.toHaveBeenCalled();
     });
 });

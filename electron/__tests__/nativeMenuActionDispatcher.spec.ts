@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { createNativeMenuActionDispatcher, type NativeMenuActionWindow } from '../nativeMenuActionDispatcher.js';
+import { NATIVE_MENU_ACTIONS, type NativeMenuAction, type NativeMenuIntent } from '../applicationMenu.js';
+import {
+    canQueueForWindowlessRenderer,
+    createNativeMenuActionDispatcher,
+    type NativeMenuActionWindow,
+} from '../nativeMenuActionDispatcher.js';
 
 const makeWindow = (): NativeMenuActionWindow & { readonly send: ReturnType<typeof vi.fn>; destroyed: boolean } => {
     const window = {
@@ -13,6 +18,29 @@ const makeWindow = (): NativeMenuActionWindow & { readonly send: ReturnType<type
 };
 
 describe('native menu action dispatcher', () => {
+    const queueableActions = new Set<NativeMenuAction>([
+        'project:new',
+        'project:import-project',
+        'project:open-recent',
+        'project:save',
+        'project:discard',
+        'view:preferences',
+    ]);
+
+    const windowlessIntent = (action: NativeMenuAction): NativeMenuIntent => {
+        if (action === 'project:open-recent') {
+            return { action, recentKey: 'recent' };
+        }
+        if (action === 'project:save' || action === 'project:discard') {
+            return { action, requestId: 1, projectKey: 'project', revision: 'revision-1' };
+        }
+        return { action };
+    };
+
+    it.each(NATIVE_MENU_ACTIONS)('pins the exact windowless queue policy for %s', (action) => {
+        expect(canQueueForWindowlessRenderer(windowlessIntent(action))).toBe(queueableActions.has(action));
+    });
+
     it('keeps startup, Dock, and crash-recovery windows unready until the hydrated projection says ready', () => {
         for (const kind of ['startup', 'Dock', 'crash recovery']) {
             const window = makeWindow();
