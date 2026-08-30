@@ -1,0 +1,22 @@
+release/open-source-inventory.json
+  s_ae074277795b45::t_1ed5522b0286c8 1131-1132
+  s_ae074277795b45::t_815ebd553c4f8f 1134
+build/icons/android/values/ic_launcher_background.xml
+  s_ae074277795b45::t_ec2b13cdff5daf 3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "a54434c20b600e513bec7466a73f2672b401537e",
+  "prompts": {},
+  "sessions": {
+    "s_ae074277795b45": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04ab5-5234-7100-be1c-76ebfaba88d3",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
