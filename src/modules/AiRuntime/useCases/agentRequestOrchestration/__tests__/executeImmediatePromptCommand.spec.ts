@@ -21,6 +21,7 @@ const mocks = vi.hoisted(() => ({
     captureProjectRevision: vi.fn(),
     executePlannedActions: vi.fn(),
     recordReceiptSaga: vi.fn(),
+    recordError: vi.fn(),
     transitionPhase: vi.fn(),
     claimLease: vi.fn(),
     settleLease: vi.fn(),
@@ -37,7 +38,7 @@ vi.mock('../../agentRunLifecycle', () => ({
     agentRunLifecycle: {
         transitionPhase: mocks.transitionPhase,
         updateBatchStatus: vi.fn(),
-        recordError: vi.fn(),
+        recordError: mocks.recordError,
     },
 }));
 vi.mock('../../agentRunWorkLease', () => ({
@@ -172,6 +173,50 @@ describe('executeImmediatePromptCommand', () => {
 
         expect(mocks.recordReceiptSaga).toHaveBeenCalledOnce();
         expect(mocks.recordReceiptSaga.mock.calls[0]?.[0]).not.toHaveProperty('committedRevision');
+        expect(mocks.captureProjectRevision).not.toHaveBeenCalled();
+    });
+
+    it('shows and persists unavailable exact commit provenance without completing the run', async () => {
+        const { commandBatch, parsedCommandBatch, receipt } = await createFixture();
+        mocks.executePlannedActions.mockResolvedValue({
+            status: 'committed',
+            actions: [{ actionType: 'setTempo', label: 'Set tempo' }],
+            receipt,
+            finalizationEvidenceFailure: 'revision capture failed at commit',
+        });
+
+        await expect(
+            executeImmediatePromptCommand({
+                runId: 'run-immediate',
+                prompt: 'Set tempo',
+                actions: [action],
+                assistantMessageId: 'assistant-immediate',
+                abortController: new AbortController(),
+                projectRevision: 'revision-R1',
+                executionMode: 'atomic',
+                group: generateGroupId('Set tempo'),
+                commandBatch,
+                parsedCommandBatch,
+                onExecutionSettlementWarning: vi.fn(),
+            })
+        ).resolves.toBe(receipt);
+
+        expect(mocks.recordReceiptSaga).toHaveBeenCalledWith(expect.objectContaining({ completesRun: false }));
+        expect(mocks.recordReceiptSaga.mock.calls[0]?.[0]).not.toHaveProperty('committedRevision');
+        expect(mocks.recordError).toHaveBeenCalledWith(
+            expect.objectContaining({
+                runId: 'run-immediate',
+                error: expect.objectContaining({ category: 'internal', workId: 'batch-immediate' }),
+            })
+        );
+        expect(mocks.updateChatMessage).toHaveBeenCalledWith(
+            'assistant-immediate',
+            expect.objectContaining({
+                error: expect.stringContaining(
+                    'finalization evidence is unavailable: revision capture failed at commit'
+                ),
+            })
+        );
         expect(mocks.captureProjectRevision).not.toHaveBeenCalled();
     });
 });

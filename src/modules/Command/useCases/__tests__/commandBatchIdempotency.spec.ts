@@ -2484,7 +2484,7 @@ describe('command batch idempotency', () => {
         let successfulCaptures = 0;
         let failedCaptures = 0;
         const captureRevision = vi.fn(() => {
-            if (mutationCount >= 1) {
+            if (mutationCount >= 1 && failedCaptures === 0) {
                 failedCaptures += 1;
                 throw new Error('final revision capture unavailable');
             }
@@ -2509,6 +2509,8 @@ describe('command batch idempotency', () => {
             });
             expect(successfulCaptures).toBeGreaterThan(0);
             expect(failedCaptures).toBe(1);
+            expect(captureRevision()).toBe(revision(2));
+            expect(onProjectCommitFinalized).not.toHaveBeenCalled();
         } finally {
             commandProjectRevisionPort.setProvider(() => projectRevisionOverride ?? revision(mutationCount));
         }

@@ -8,6 +8,7 @@ import { type AppAction } from '#/utils/handlerContract';
 
 import { type AgentRunPhase, type AgentRunWorkTerminalState } from '../models/AgentRun';
 
+import { normalizeAgentFailure } from './agentErrorAndSaga';
 import { createStemImportConfirmationResourceLease } from './agentReference/createStemImportConfirmationResourceLease';
 import { preparedStemImportResources } from './agentReference/registerPreparedStemImportResources';
 import { settleAgentRunWorkLeaseSafely } from './agentRequestOrchestration/settleAgentRunWorkLeaseSafely';
@@ -43,6 +44,10 @@ type ExecutePromptActionGroupResult = {
 const TERMINAL_RUN_PHASES = new Set<AgentRunPhase>(['completed', 'failed', 'cancelled', 'partially-completed']);
 const AGENT_RUN_PERSISTENCE_WARNING =
     'Agent run recovery state could not be persisted after execution. The verified command receipt remains authoritative.';
+
+function getFinalizationEvidenceWarning(reason: string): string {
+    return `The project change is durably committed, but its finalization evidence is unavailable: ${reason}. Do not replay these actions. Inspect the current project state before further automation.`;
+}
 
 function getErrorMessage(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
@@ -405,7 +410,10 @@ export async function executePromptActionGroup(
             ...(execution.status === 'committed' && execution.committedRevision
                 ? { committedRevision: execution.committedRevision }
                 : {}),
-            completesRun: leaseSettlement.accepted && leaseSettlement.warning === null,
+            completesRun:
+                leaseSettlement.accepted &&
+                leaseSettlement.warning === null &&
+                execution.finalizationEvidenceFailure === undefined,
         });
         const resourcePromotionWarning = await completeCommittedImportedStemPromotion();
         if ((!leaseSettlement.accepted || leaseSettlement.warning !== null) && receiptPersistenceWarning === null) {
@@ -419,12 +427,36 @@ export async function executePromptActionGroup(
                 );
             }
         }
+        if (execution.status === 'committed' && execution.finalizationEvidenceFailure) {
+            try {
+                agentRunLifecycle.recordError({
+                    runId: input.runId,
+                    error: normalizeAgentFailure({
+                        category: 'internal',
+                        source: 'command-execution',
+                        related: {
+                            workIds: [execution.receipt.batchId],
+                            receiptIdentities: [receiptIdentity],
+                        },
+                        knownDomain: true,
+                    }),
+                    terminal: true,
+                });
+            } catch (error) {
+                logger.error(new Error('Prompt command finalization warning could not be persisted', { cause: error }));
+            }
+        }
         reportCommittedWarning({
             executionKind: execution.status === 'committed' ? 'project' : 'runtime',
             receiptIdentity,
-            warnings: [leaseSettlement.warning, receiptPersistenceWarning, resourcePromotionWarning].filter(
-                (warning): warning is string => warning !== null
-            ),
+            warnings: [
+                execution.status === 'committed' && execution.finalizationEvidenceFailure
+                    ? getFinalizationEvidenceWarning(execution.finalizationEvidenceFailure)
+                    : null,
+                leaseSettlement.warning,
+                receiptPersistenceWarning,
+                resourcePromotionWarning,
+            ].filter((warning): warning is string => warning !== null),
             actionTypes: execution.actions.map((entry) => entry.actionType),
         });
         return { status: execution.status };

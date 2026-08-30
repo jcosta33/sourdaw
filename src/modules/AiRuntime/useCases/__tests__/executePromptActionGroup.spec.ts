@@ -849,6 +849,38 @@ describe('executePromptActionGroup', () => {
         recordReceiptSaga.mockRestore();
     });
 
+    it('persists and reports unavailable exact commit provenance without completing the run', async () => {
+        const fixture = getBatchFixtures().stem;
+        seedRun(fixture);
+        mocks.projectRevision.value = 'revision-R3';
+        mocks.executePlannedActions.mockResolvedValue({
+            status: 'committed',
+            actions: [{ actionType: 'importStemSet', label: 'Import stems' }],
+            receipt: committedReceipt(fixture),
+            finalizationEvidenceFailure: 'revision capture failed at commit',
+        });
+
+        await expect(
+            executePromptActionGroup({
+                actions: fixture.actions,
+                prompt: 'Import stems',
+                projectRevision: 'revision-1',
+                ...admitted(fixture),
+            })
+        ).resolves.toEqual({ status: 'committed' });
+
+        const run = agentRunLifecycle.get(RUN_ID);
+        expect(run).toMatchObject({
+            phase: 'partially-completed',
+            revisions: { committed: null },
+            errors: [expect.objectContaining({ category: 'internal', workId: BATCH_ID })],
+        });
+        expect(mocks.notifyAiChange).toHaveBeenCalledWith(
+            expect.stringContaining('finalization evidence is unavailable: revision capture failed at commit'),
+            ['importStemSet']
+        );
+    });
+
     it('exposes manual repair instead of a reconcile-batch continuation for a manual-repair receipt', async () => {
         const fixture = getBatchFixtures().stem;
         const effect = pendingEffect(fixture, 'manual-repair');

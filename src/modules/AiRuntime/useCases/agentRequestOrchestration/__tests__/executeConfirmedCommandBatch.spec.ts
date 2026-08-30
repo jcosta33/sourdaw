@@ -914,6 +914,55 @@ describe('executeConfirmedCommandBatch', () => {
     });
 
     it.each([
+        ['section name', { sectionName: 'Wrong section' }],
+        ['start beat', { startBeat: 4 }],
+    ])('does not rebind a fresh render artifact with the wrong %s', async (_label, mutation) => {
+        const fixture = createRenderBatchFixture();
+        const verseArtifact = createRenderArtifact({
+            ...fixture.jobs[0]!,
+            ...mutation,
+            renderedAt: Date.now() + 1,
+            sourceRevision: 'revision-before-command',
+        });
+        const chorusArtifact = createRenderArtifact({
+            ...fixture.jobs[1]!,
+            renderedAt: Date.now() + 2,
+            sourceRevision: 'revision-before-command',
+        });
+        mocks.getArtifacts.mockReturnValueOnce([]).mockReturnValueOnce([verseArtifact, chorusArtifact]);
+        mocks.executeBatch.mockImplementation(async (input) => {
+            try {
+                input.options?.onProjectCommitFinalized?.({
+                    receipt: fixture.receipt,
+                    revision: 'revision-checkpoint',
+                });
+            } catch (error) {
+                input.options?.onProjectCommitFinalizationUnavailable?.({
+                    reason: error instanceof Error ? error.message : String(error),
+                });
+            }
+            return fixture.batchResult;
+        });
+
+        const result = await executeConfirmedCommandBatch({
+            confirmation: fixture.confirmation,
+            commandBatch: fixture.commandBatch,
+            approvedBatchId: 'batch-render',
+            trackedWorkLease: lease,
+            priorVerifiedBatchReceipt: null,
+            recoveringPendingEffects: false,
+        });
+
+        expect(result).toMatchObject({
+            status: 'completed',
+            canRebindSectionRenderArtifacts: false,
+            finalizationEvidenceFailure:
+                'Exactly one fresh section render artifact is required for committed job render-verse.',
+        });
+        expect(mocks.rebindArtifacts).not.toHaveBeenCalled();
+    });
+
+    it.each([
         [
             'missing artifact',
             createRenderBatchFixture(),

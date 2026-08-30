@@ -91,6 +91,22 @@ describe('retained section render review artifacts', () => {
         expect(agentSectionRenderArtifactStore.value?.artifacts).toEqual([artifact]);
     });
 
+    it.each([
+        ['section name', { ...job, sectionName: 'Chorus' }],
+        ['start beat', { ...job, startBeat: 4 }],
+    ])('rejects %s drift for lookup, export, and disposal', async (_label, staleJob) => {
+        agentSectionRenderArtifactStore.set({ artifacts: [artifact] });
+
+        expect(getExactAgentSectionRenderArtifact({ job: staleJob, sourceRevision: 'revision-1' })).toBeNull();
+        await expect(
+            exportExactAgentSectionRenderArtifactAsWav({ job: staleJob, sourceRevision: 'revision-1' })
+        ).rejects.toThrow('The exact retained section render is unavailable.');
+        expect(disposeExactAgentSectionRenderArtifact({ job: staleJob, sourceRevision: 'revision-1' })).toBe(false);
+        expect(encode).not.toHaveBeenCalled();
+        expect(download).not.toHaveBeenCalled();
+        expect(agentSectionRenderArtifactStore.value?.artifacts).toEqual([artifact]);
+    });
+
     it('fails closed for duplicate, expired, and evicted exact artifact evidence', () => {
         agentSectionRenderArtifactStore.set({ artifacts: [artifact, { ...artifact }] });
         expect(getExactAgentSectionRenderArtifact({ job, sourceRevision: 'revision-1' })).toBeNull();

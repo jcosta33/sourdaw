@@ -761,6 +761,27 @@ describe('ChatPanel', () => {
                                   },
                               ],
                           },
+                          {
+                              runId: 'run-unrelated-review',
+                              revisions: { created: null, planned: null, approved: null, committed: null },
+                              pendingEffectContinuations: [
+                                  {
+                                      batchId: 'batch-other-run-repair',
+                                      effects: [
+                                          {
+                                              commandId: 'command-other-run',
+                                              kind: 'external-effect',
+                                              operation: 'renderProjectSections',
+                                              reason: 'Another run still requires manual repair.',
+                                              remediation: 'manual-repair',
+                                              state: 'pending',
+                                          },
+                                      ],
+                                      recovery: 'manual-repair',
+                                      lastError: null,
+                                  },
+                              ],
+                          },
                       ],
                   }
                 : chatState
@@ -776,7 +797,10 @@ describe('ChatPanel', () => {
         expect(screen.getByRole('list', { name: 'Pending effects for batch batch-generic-repair' })).toHaveTextContent(
             'publishRender: Publication evidence must be inspected manually.'
         );
-        expect(screen.getByText('Manual repair required')).toBeInTheDocument();
+        expect(
+            screen.getByRole('list', { name: 'Pending effects for batch batch-other-run-repair' })
+        ).toHaveTextContent('renderProjectSections: Another run still requires manual repair.');
+        expect(screen.getAllByText('Manual repair required')).toHaveLength(2);
         selectReview.mockRestore();
     });
 

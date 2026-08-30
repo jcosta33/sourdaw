@@ -12,6 +12,10 @@ import { AGENT_RUN_PERSISTENCE_WARNING, settleAgentRunWorkLeaseSafely } from './
 
 import type { generateGroupId, parseVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
 
+function getFinalizationEvidenceWarning(reason: string): string {
+    return `The project change is durably committed, but its finalization evidence is unavailable: ${reason}. Do not replay these actions. Inspect the current project state before further automation.`;
+}
+
 type ExecuteInput = Parameters<typeof executePlannedActions>[0];
 type CommandExecutionInput = Extract<ExecuteInput, { commandBatch: unknown }>;
 type ParsedCommandBatch = Extract<ReturnType<typeof parseVersionedCommandBatchEnvelope>, { status: 'valid' }>;
@@ -178,6 +182,9 @@ export async function executeImmediatePromptCommand(
         if (execution.reportingWarning) {
             receiptWarnings.push(`AI history or notification reporting warning: ${execution.reportingWarning}`);
         }
+        if (execution.finalizationEvidenceFailure) {
+            receiptWarnings.push(getFinalizationEvidenceWarning(execution.finalizationEvidenceFailure));
+        }
         const runPersistenceWarning = tryRecordCommittedAgentRunWork({
             runId,
             receipt: execution.receipt,
@@ -185,13 +192,32 @@ export async function executeImmediatePromptCommand(
             commandBatch,
             revertGroupId: group.groupId,
             ...(execution.committedRevision ? { committedRevision: execution.committedRevision } : {}),
-            completesRun: commandLeaseSettlement.accepted,
+            completesRun: commandLeaseSettlement.accepted && execution.finalizationEvidenceFailure === undefined,
         });
         if (runPersistenceWarning) {
             receiptWarnings.push(runPersistenceWarning);
         }
         if (commandLeasePersistenceWarning && !runPersistenceWarning) {
             receiptWarnings.push(commandLeasePersistenceWarning);
+        }
+        if (execution.finalizationEvidenceFailure && commandLeaseSettlement.accepted) {
+            tryRecordTerminalFailure({
+                runId,
+                error: normalizeAgentFailure({
+                    category: 'internal',
+                    source: 'command-execution',
+                    related: {
+                        targetIds: [...parsedCommandBatch.envelope.scope.targetIds],
+                        commandIds: parsedCommandBatch.envelope.commands.map((command) => command.commandId),
+                        workIds: [parsedCommandBatch.envelope.batchId],
+                        receiptIdentities: [
+                            `${execution.receipt.schemaVersion}:${execution.receipt.runId}:${execution.receipt.batchId}:${execution.receipt.outcome}`,
+                        ],
+                    },
+                    knownDomain: true,
+                }),
+                terminal: true,
+            });
         }
         const actionSummary = execution.actions
             .map((entry) => `- **${entry.actionType.replaceAll('_', ' ')}**: ${entry.label}`)

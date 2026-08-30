@@ -383,6 +383,35 @@ describe('executePlannedActions', () => {
         expect(readAgentRunState().pendingEffectRecoveryLedger?.[0]?.sourceRevision).toBe('revision-R2');
     });
 
+    it('reports unavailable exact commit provenance without sampling a later project revision', async () => {
+        const receipt = await createReceipt(projectFixture, {
+            status: 'committed',
+            actions: [receiptAction(projectFixture)],
+        });
+        vi.mocked(captureProjectRevision).mockReturnValue('revision-R3');
+        vi.mocked(executeVersionedCommandBatchEnvelope).mockImplementation(async ({ options }) => {
+            options?.onProjectCommitFinalizationUnavailable?.({ reason: 'revision capture failed at commit' });
+            return {
+                status: 'committed',
+                actions: [{ ...receiptAction(projectFixture), label: 'Mute vocals' }],
+                receipt,
+            };
+        });
+
+        const result = await executePlannedActions({
+            commandBatch: projectFixture.commandBatch,
+            prompt: 'Mute vocals',
+            actions: projectFixture.actions,
+            projectRevision: 'revision-1',
+        });
+
+        expect(result).toMatchObject({
+            status: 'committed',
+            finalizationEvidenceFailure: 'revision capture failed at commit',
+        });
+        expect(result).not.toHaveProperty('committedRevision');
+    });
+
     it('removes a prepared recovery capsule when the owning project checkpoint aborts', async () => {
         const receipt = await createReceipt(postCommitFixture, partiallyCommittedObservation());
         expect(receipt.pendingEffects).toEqual([devicePendingEffect]);

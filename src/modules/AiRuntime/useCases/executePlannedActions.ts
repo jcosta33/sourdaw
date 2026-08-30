@@ -51,6 +51,7 @@ type ExecutePlannedActionsResult =
           actions: ExecutedAction[];
           commitWarning?: string;
           committedRevision?: string;
+          finalizationEvidenceFailure?: string;
           receipt?: VerifiedBatchReceipt;
           reportingWarning?: string;
       }
@@ -78,6 +79,7 @@ export async function executePlannedActions(input: ExecutePlannedActionsInput): 
     const group = input.group ?? generateGroupId(input.prompt);
     let revisionInvalidated = false;
     let finalizedProjectRevision: string | undefined;
+    let finalizationEvidenceFailure: string | undefined;
 
     function shouldExecute(): boolean {
         revisionInvalidated = captureProjectRevision() !== input.projectRevision;
@@ -100,6 +102,9 @@ export async function executePlannedActions(input: ExecutePlannedActionsInput): 
         },
         onProjectCommitFinalized: ({ revision }: { revision: string }) => {
             finalizedProjectRevision = revision;
+        },
+        onProjectCommitFinalizationUnavailable: ({ reason }: { reason: string }) => {
+            finalizationEvidenceFailure = reason;
         },
     };
     const batchResult = await executeVersionedCommandBatchEnvelope({
@@ -216,6 +221,7 @@ export async function executePlannedActions(input: ExecutePlannedActionsInput): 
         actions,
         ...(commitWarning ? { commitWarning } : {}),
         ...(finalizedProjectRevision ? { committedRevision: finalizedProjectRevision } : {}),
+        ...(finalizationEvidenceFailure ? { finalizationEvidenceFailure } : {}),
         receipt,
         ...(reportingWarning ? { reportingWarning } : {}),
     };

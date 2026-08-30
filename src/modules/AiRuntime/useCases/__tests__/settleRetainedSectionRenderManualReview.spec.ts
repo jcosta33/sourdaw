@@ -382,6 +382,18 @@ describe('settleRetainedSectionRenderManualReview', () => {
             },
         ],
         [
+            'job section name',
+            (binding: ReviewBinding) => {
+                binding.commands[0]!.jobs[0]!.sectionName = 'Wrong section';
+            },
+        ],
+        [
+            'job start beat',
+            (binding: ReviewBinding) => {
+                binding.commands[0]!.jobs[0]!.startBeat = 4;
+            },
+        ],
+        [
             'receipt',
             (binding: ReviewBinding) => {
                 binding.receiptIdentity = 'wrong-receipt';
