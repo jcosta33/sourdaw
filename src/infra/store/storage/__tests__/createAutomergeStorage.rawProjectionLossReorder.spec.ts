@@ -149,4 +149,21 @@ describe('createAutomergeStorage raw projection loss reordering', () => {
             ])
         ).toEqual([]);
     });
+
+    it('reports no loss when undefined rows survive sanitization verbatim', () => {
+        registerSanitizedSlot('points', (value) => [...(value as unknown[])]);
+
+        // `undefined` is a representable value in an `unknown[]` slot; it must
+        // claim its projected twin like any other row, not read as "no row".
+        expect(findSlotLosses('points', [undefined, undefined])).toEqual([]);
+    });
+
+    it('reports a loss when duplicated undefined rows project to one row plus an unrelated row', () => {
+        registerSanitizedSlot('points', (value) => [(value as unknown[])[0], { beat: 999, value: 1 }]);
+
+        // The padding row keeps the length guard satisfied (2 >= 2); only one
+        // projected row can contain an undefined raw row, so the duplicate is
+        // a loss.
+        expect(findSlotLosses('points', [undefined, undefined])).toEqual(['points']);
+    });
 });

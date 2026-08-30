@@ -392,12 +392,14 @@ function projectionContainsDistinctItems(raw: readonly unknown[], projected: rea
     const ambiguousRaw: unknown[] = [];
     for (const item of raw) {
         const twins = unclaimedTwinsByKey.get(canonicalProjectionKey(item));
-        const twin = twins?.pop();
-        if (twin !== undefined && projectionPreservesRawValue(item, twin)) {
-            continue;
-        }
-        if (twin !== undefined) {
-            twins?.push(twin);
+        // Bucket occupancy, not the popped value, decides whether a twin
+        // exists: `undefined` is a representable value and must be claimable.
+        if (twins !== undefined && twins.length > 0) {
+            const twin = twins.pop();
+            if (projectionPreservesRawValue(item, twin)) {
+                continue;
+            }
+            twins.push(twin);
         }
         ambiguousRaw.push(item);
     }
@@ -406,6 +408,13 @@ function projectionContainsDistinctItems(raw: readonly unknown[], projected: rea
     }
     return projectionMatchesAmbiguousItems(ambiguousRaw, [...unclaimedTwinsByKey.values()].flat());
 }
+
+/**
+ * Identity sentinel for a projected slot no raw item has claimed. `undefined`
+ * cannot serve: it is a representable value in `unknown[]`, and a matched raw
+ * row of `undefined` would read the slot as free again.
+ */
+const unclaimedProjectedSlot = Symbol('unclaimedProjectedSlot');
 
 /**
  * Complete bipartite matching over the containment relation between the
@@ -418,7 +427,10 @@ function projectionMatchesAmbiguousItems(
     ambiguousRaw: readonly unknown[],
     unclaimedProjected: readonly unknown[]
 ): boolean {
-    const matchedRawByProjected: unknown[] = Array.from({ length: unclaimedProjected.length }, () => undefined);
+    const matchedRawByProjected: unknown[] = Array.from(
+        { length: unclaimedProjected.length },
+        () => unclaimedProjectedSlot
+    );
     const tryMatch = (item: unknown, visited: Uint8Array): boolean => {
         for (let candidateIndex = 0; candidateIndex < unclaimedProjected.length; candidateIndex += 1) {
             if (visited[candidateIndex] === 1) {
@@ -429,7 +441,7 @@ function projectionMatchesAmbiguousItems(
                 continue;
             }
             const owner = matchedRawByProjected[candidateIndex];
-            if (owner === undefined || tryMatch(owner, visited)) {
+            if (owner === unclaimedProjectedSlot || tryMatch(owner, visited)) {
                 matchedRawByProjected[candidateIndex] = item;
                 return true;
             }
