@@ -8,6 +8,7 @@ import {
 } from './githubAppIdentity.ts';
 import { fail } from './prContract.ts';
 import {
+    assertRecoverableReviewResolutionLockOwner,
     inspectReviewThread,
     recoverPullRequestReviewResolutionLock,
     type ReviewResolutionLockOwner,
@@ -99,10 +100,12 @@ export function parseRecoverReviewResolutionLockArgs(args: string[]): RecoverRev
 }
 
 function recoverySummary(number: number, owner: ReviewResolutionLockOwner, inspection: ReviewThreadInspection): string {
-    if (inspection.thread?.id !== owner.threadId) {
+    assertRecoverableReviewResolutionLockOwner(number, owner, inspection);
+    const thread = inspection.thread;
+    if (thread === null) {
         fail(`review thread ${owner.threadId} was not found on this pull request`);
     }
-    const resolutionState = inspection.thread.isResolved ? 'resolved' : 'unresolved';
+    const resolutionState = thread.isResolved ? 'resolved' : 'unresolved';
     return `review-resolution-lock-recovered:${number}:${owner.threadId}:${owner.head}:${inspection.head}:${resolutionState}:${inspection.pendingReviews.length}`;
 }
 

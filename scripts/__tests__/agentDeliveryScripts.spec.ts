@@ -612,7 +612,7 @@ describe('package scripts and gitignore', () => {
         expect(pkg.scripts['lane:publish']).toBe('node scripts/trustedGithubWriteBootstrap.ts lane:publish');
         expect(pkg.scripts['review:prepare']).toBe('node scripts/prepareReview.ts');
         expect(pkg.scripts['review:publish']).toBe('node scripts/publishReview.ts');
-        expect(pkg.scripts['review:resolve']).toBe('node scripts/resolveReviewThread.ts');
+        expect(pkg.scripts['review:resolve']).toBe('node scripts/trustedGithubWriteBootstrap.ts review:resolve');
         expect(pkg.scripts['review:resolve:recover']).toBe(
             'node scripts/trustedGithubWriteBootstrap.ts review:resolve:recover'
         );
@@ -1045,25 +1045,28 @@ describe('package scripts and gitignore', () => {
      * `lane:publish` and `issue:reconcile` decide no merge, so neither reads a workflow. A launcher
      * that read one for every command would make them fail over a file and a parser they never use.
      */
-    it.each(['lane:publish', 'issue:reconcile'] as const)('reads no gating workflow for %s', async (command) => {
-        const originReads: string[] = [];
-        let gateWorkflow: unknown = 'unset';
+    it.each(['lane:publish', 'issue:reconcile', 'review:resolve', 'review:resolve:recover'] as const)(
+        'reads no gating workflow for %s',
+        async (command) => {
+            const originReads: string[] = [];
+            let gateWorkflow: unknown = 'unset';
 
-        await runTrustedGithubWriteCommand(command, [], {
-            resolveOriginMain: () => 'pinned-sha',
-            readOriginSource: (_commit, path) => {
-                originReads.push(path);
-                return 'trusted';
-            },
-            executeSnapshot: async (_command, _args, snapshot) => {
-                gateWorkflow = snapshot.gateWorkflow;
-                return 0;
-            },
-        });
+            await runTrustedGithubWriteCommand(command, [], {
+                resolveOriginMain: () => 'pinned-sha',
+                readOriginSource: (_commit, path) => {
+                    originReads.push(path);
+                    return 'trusted';
+                },
+                executeSnapshot: async (_command, _args, snapshot) => {
+                    gateWorkflow = snapshot.gateWorkflow;
+                    return 0;
+                },
+            });
 
-        expect(originReads).toEqual([...trustedDependencyPaths(command)]);
-        expect(gateWorkflow).toBeUndefined();
-    });
+            expect(originReads).toEqual([...trustedDependencyPaths(command)]);
+            expect(gateWorkflow).toBeUndefined();
+        }
+    );
 
     it('binds the launcher to the primary checkout instead of a worktree alias', () => {
         const fixtureRoot = mkdtempSync(join(tmpdir(), 'sourdaw-launcher-root-'));
@@ -1081,7 +1084,13 @@ describe('package scripts and gitignore', () => {
     });
 
     it('keeps the loader inside its own trusted closure', () => {
-        for (const command of ['deliver', 'issue:reconcile', 'lane:publish', 'review:resolve:recover'] as const) {
+        for (const command of [
+            'deliver',
+            'issue:reconcile',
+            'lane:publish',
+            'review:resolve',
+            'review:resolve:recover',
+        ] as const) {
             expect(trustedDependencyPaths(command)).toContain(BOOTSTRAP_PATH);
         }
     });

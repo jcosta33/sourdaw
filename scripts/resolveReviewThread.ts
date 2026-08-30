@@ -88,13 +88,28 @@ export type ReviewResolutionReceipt = {
     resolvedByType: string;
     clientMutationId: string;
 };
+export type ReviewResolutionLockMutation =
+    | { phase: 'idle'; epoch: number }
+    | { phase: 'createPendingReview'; epoch: number }
+    | { phase: 'replyDone'; epoch: number; reviewId: string }
+    | { phase: 'submitReview'; epoch: number; reviewId: string; body: string }
+    | { phase: 'updateReviewBody'; epoch: number; reviewId: string; body: string }
+    | { phase: 'resolveThread'; epoch: number }
+    | { phase: 'deleteReply'; epoch: number; replyId: string }
+    | { phase: 'deletePendingReview'; epoch: number; reviewId: string };
+type ReviewResolutionLockMutationUpdate = ReviewResolutionLockMutation extends infer Mutation
+    ? Mutation extends { epoch: number }
+        ? Omit<Mutation, 'epoch'>
+        : never
+    : never;
 export type ReviewResolutionLockOwner = {
-    version: 2;
+    version: 3;
     pid: number;
     pgid: number;
     threadId: string;
     head: string;
     token: string;
+    mutation: ReviewResolutionLockMutation;
 };
 export type ResolveReviewThreadPort = {
     inspect: (number: number, threadId: string) => ReviewThreadInspection;
@@ -140,8 +155,17 @@ type ReviewResolutionExecutionFence = {
     pid: number;
     pgid: number;
 };
+type ActiveReviewResolutionLock = {
+    primaryRoot: string;
+    number: number;
+    ref: string;
+    oid: string;
+    owner: ReviewResolutionLockOwner;
+};
 const REVIEW_RESOLUTION_CHILD_ENV = 'SOURDAW_REVIEW_RESOLUTION_CHILD';
 const REVIEW_RESOLUTION_CHILD_MARKER_VERSION = 1;
+const TRUSTED_GIT_PATH_ENV = 'SOURDAW_TRUSTED_GIT_PATH';
+const activeReviewResolutionLocks: ActiveReviewResolutionLock[] = [];
 
 type ReviewResolutionChildLaunchMarker = {
     path: string;
@@ -566,7 +590,19 @@ function resolveReviewThreadWithinMutation(
         resolutionReceipt = resolveReceipt;
         const verified = port.inspect(number, threadId);
         assertExpectedHeadAfterMutation(verified.head, expectedHead);
-        assertFinalResolution(verified.thread, threadId, replyId, context);
+        assertFinalResolution(
+            verified.thread,
+            threadId,
+            replyId,
+            context,
+            threadResolutionSnapshot(
+                threadId,
+                true,
+                resolutionReceipt.resolvedByNodeId,
+                resolutionReceipt.resolvedByLogin,
+                resolutionReceipt.resolvedByType
+            )
+        );
     } catch (error) {
         compensateResolution(
             number,
@@ -1523,7 +1559,13 @@ function assertFinalResolution(
     thread: ReviewThread | null,
     threadId: string,
     replyId: string,
-    context: ResolutionReviewContext
+    context: ResolutionReviewContext,
+    expectedResolution: {
+        isResolved: boolean;
+        resolvedByNodeId: string | null;
+        resolvedByLogin: string | null;
+        resolvedByType: string | null;
+    }
 ): void {
     if (
         thread?.id !== threadId ||
@@ -1535,6 +1577,18 @@ function assertFinalResolution(
     if (!hasExpectedReply(thread, replyId)) {
         fail(`review reply receipt ${replyId} is not present on thread ${threadId}`);
     }
+    assertMatchingThreadResolutionSnapshot(
+        threadId,
+        expectedResolution,
+        threadResolutionSnapshot(
+            threadId,
+            thread.isResolved,
+            thread.resolvedByNodeId,
+            thread.resolvedByLogin,
+            thread.resolvedByType
+        ),
+        'resolution confirmation'
+    );
     assertCommentedResolutionReply(requireOneReplyMarker(thread, threadId), context);
 }
 function assertResolvableThread(thread: ReviewThread | null, expectedThreadId: string): void {
@@ -1577,14 +1631,79 @@ export function shellPort(session: GhSession, cwd: string = process.cwd()): Reso
         inspect: (number, id) => inspectReviewThread(number, id, gh),
         inspectAttachedReviewThreadIds: (number, reviewId, expectedPullRequestId, expectedHead) =>
             inspectAttachedReviewThreadIds(number, reviewId, expectedPullRequestId, expectedHead, gh),
-        createPendingReview: (pullRequestId, commitOid, body) =>
-            createPendingReview(pullRequestId, commitOid, body, gh),
-        replyDone: (id, reviewId) => mutationReply(id, reviewId, gh),
-        submitReview: (reviewId, body) => submitReview(reviewId, body, gh),
-        updateReviewBody: (reviewId, body) => updateReviewBody(reviewId, body, gh),
-        resolve: (id) => resolveThread(id, gh),
-        deleteReply: (id) => deleteReply(id, gh),
-        deletePendingReview: (id) => deletePendingReview(id, gh),
+        createPendingReview: (pullRequestId, commitOid, body) => {
+            const active = activeReviewResolutionLocks.at(-1);
+            if (active === undefined) {
+                fail('pending review creation is not fenced by the active review-resolution lock');
+            }
+            advanceActiveReviewResolutionLockMutation(primaryRoot, active.number, { phase: 'createPendingReview' });
+            return createPendingReview(pullRequestId, commitOid, body, gh);
+        },
+        replyDone: (id, reviewId) => {
+            const active = activeReviewResolutionLocks.at(-1);
+            if (active === undefined) {
+                fail('review reply creation is not fenced by the active review-resolution lock');
+            }
+            advanceActiveReviewResolutionLockMutation(primaryRoot, active.number, {
+                phase: 'replyDone',
+                reviewId,
+            });
+            return mutationReply(id, reviewId, gh);
+        },
+        submitReview: (reviewId, body) => {
+            const active = activeReviewResolutionLocks.at(-1);
+            if (active === undefined) {
+                fail('review submission is not fenced by the active review-resolution lock');
+            }
+            advanceActiveReviewResolutionLockMutation(primaryRoot, active.number, {
+                phase: 'submitReview',
+                reviewId,
+                body,
+            });
+            return submitReview(reviewId, body, gh);
+        },
+        updateReviewBody: (reviewId, body) => {
+            const active = activeReviewResolutionLocks.at(-1);
+            if (active === undefined) {
+                fail('review body update is not fenced by the active review-resolution lock');
+            }
+            advanceActiveReviewResolutionLockMutation(primaryRoot, active.number, {
+                phase: 'updateReviewBody',
+                reviewId,
+                body,
+            });
+            return updateReviewBody(reviewId, body, gh);
+        },
+        resolve: (id) => {
+            const active = activeReviewResolutionLocks.at(-1);
+            if (active === undefined) {
+                fail('thread resolution is not fenced by the active review-resolution lock');
+            }
+            advanceActiveReviewResolutionLockMutation(primaryRoot, active.number, { phase: 'resolveThread' });
+            return resolveThread(id, gh);
+        },
+        deleteReply: (id) => {
+            const active = activeReviewResolutionLocks.at(-1);
+            if (active === undefined) {
+                fail('review reply deletion is not fenced by the active review-resolution lock');
+            }
+            advanceActiveReviewResolutionLockMutation(primaryRoot, active.number, {
+                phase: 'deleteReply',
+                replyId: id,
+            });
+            return deleteReply(id, gh);
+        },
+        deletePendingReview: (id) => {
+            const active = activeReviewResolutionLocks.at(-1);
+            if (active === undefined) {
+                fail('pending review deletion is not fenced by the active review-resolution lock');
+            }
+            advanceActiveReviewResolutionLockMutation(primaryRoot, active.number, {
+                phase: 'deletePendingReview',
+                reviewId: id,
+            });
+            return deletePendingReview(id, gh);
+        },
         serializeReviewThreadMutation: (number, threadId, expectedHead, operation) =>
             withPullRequestReviewResolutionLock(primaryRoot, number, threadId, expectedHead, operation),
         log: (message) => console.log(message),
@@ -1603,11 +1722,28 @@ function pullRequestReviewResolutionLockRef(number: number): string {
     return `refs/sourdaw/review-resolution/pr-${number}`;
 }
 
-function reviewResolutionLockGit(primaryRoot: string, args: string[], input?: string) {
-    return spawnSync('git', args, {
+function trustedReviewResolutionGitPath(env: NodeJS.ProcessEnv = process.env): string {
+    const trustedPath = env[TRUSTED_GIT_PATH_ENV];
+    if (typeof trustedPath !== 'string' || trustedPath.trim() === '') {
+        fail('review-resolution lock requires launcher-resolved trusted git path');
+    }
+    if (!isAbsolute(trustedPath)) {
+        fail('trusted git executable path is not absolute');
+    }
+    return trustedPath;
+}
+
+function reviewResolutionLockGit(
+    primaryRoot: string,
+    args: string[],
+    input?: string,
+    env: NodeJS.ProcessEnv = process.env
+) {
+    return spawnSync(trustedReviewResolutionGitPath(env), args, {
         cwd: primaryRoot,
         encoding: 'utf8',
         shell: false,
+        env,
         ...(input === undefined ? {} : { input }),
     });
 }
@@ -1623,9 +1759,8 @@ function parseReviewResolutionLockOwner(contents: string, number: number): Revie
     if (
         typeof value !== 'object' ||
         value === null ||
-        Object.keys(value).length !== 6 ||
         !('version' in value) ||
-        value.version !== 2 ||
+        (value.version !== 2 && value.version !== 3) ||
         !('pid' in value) ||
         typeof value.pid !== 'number' ||
         !Number.isSafeInteger(value.pid) ||
@@ -1647,13 +1782,57 @@ function parseReviewResolutionLockOwner(contents: string, number: number): Revie
         fail(`${scope} lock ownership is malformed`);
     }
     return {
-        version: 2,
+        version: 3,
         pid: value.pid,
         pgid: value.pgid,
         threadId: value.threadId,
         head: canonicalGitObjectId(value.head, `${scope} lock ownership is malformed`),
         token: value.token,
+        mutation:
+            value.version === 3
+                ? parseReviewResolutionLockMutation(
+                      (value as { mutation?: unknown }).mutation,
+                      `${scope} lock ownership is malformed`
+                  )
+                : { phase: 'idle', epoch: 0 },
     };
+}
+
+function parseReviewResolutionLockMutation(value: unknown, label: string): ReviewResolutionLockMutation {
+    if (typeof value !== 'object' || value === null || typeof (value as { phase?: unknown }).phase !== 'string') {
+        fail(label);
+    }
+    const epoch = (value as { epoch?: unknown }).epoch;
+    if (typeof epoch !== 'number' || !Number.isSafeInteger(epoch) || epoch < 0) {
+        fail(label);
+    }
+    const phase = (value as { phase: string }).phase;
+    if (phase === 'idle' || phase === 'createPendingReview' || phase === 'resolveThread') {
+        return { phase, epoch };
+    }
+    if (phase === 'replyDone' || phase === 'deletePendingReview') {
+        const reviewId = (value as { reviewId?: unknown }).reviewId;
+        if (typeof reviewId !== 'string' || reviewId.trim() === '') {
+            fail(label);
+        }
+        return { phase, epoch, reviewId };
+    }
+    if (phase === 'deleteReply') {
+        const replyId = (value as { replyId?: unknown }).replyId;
+        if (typeof replyId !== 'string' || replyId.trim() === '') {
+            fail(label);
+        }
+        return { phase, epoch, replyId };
+    }
+    if (phase === 'submitReview' || phase === 'updateReviewBody') {
+        const reviewId = (value as { reviewId?: unknown }).reviewId;
+        const body = (value as { body?: unknown }).body;
+        if (typeof reviewId !== 'string' || reviewId.trim() === '' || typeof body !== 'string') {
+            fail(label);
+        }
+        return { phase, epoch, reviewId, body };
+    }
+    return fail(label);
 }
 
 function reviewResolutionLockObjectId(value: string, number: number): string {
@@ -1731,6 +1910,46 @@ function currentReviewResolutionExecutionFence(): ReviewResolutionExecutionFence
     return { pid, pgid: currentProcessGroupId(pid) };
 }
 
+function pushActiveReviewResolutionLock(lock: ActiveReviewResolutionLock): void {
+    activeReviewResolutionLocks.push(lock);
+}
+
+function popActiveReviewResolutionLock(lock: ActiveReviewResolutionLock): void {
+    const current = activeReviewResolutionLocks.pop();
+    if (current !== lock) {
+        fail('review-resolution lock stack corrupted');
+    }
+}
+
+function currentActiveReviewResolutionLock(primaryRoot: string, number: number): ActiveReviewResolutionLock {
+    const current = activeReviewResolutionLocks.at(-1);
+    if (current === undefined || current.primaryRoot !== primaryRoot || current.number !== number) {
+        fail(`${pullRequestReviewResolutionLockScope(number)} mutation is not fenced by the active lock owner`);
+    }
+    return current;
+}
+
+function advanceActiveReviewResolutionLockMutation(
+    primaryRoot: string,
+    number: number,
+    mutation: ReviewResolutionLockMutationUpdate
+): void {
+    const active = currentActiveReviewResolutionLock(primaryRoot, number);
+    const nextOwner: ReviewResolutionLockOwner = {
+        ...active.owner,
+        mutation: {
+            ...mutation,
+            epoch: active.owner.mutation.epoch + 1,
+        },
+    };
+    const nextOid = writeReviewResolutionLockOwner(primaryRoot, nextOwner, number);
+    if (!updateReviewResolutionLockRef(primaryRoot, [active.ref, nextOid, active.oid])) {
+        fail(`${pullRequestReviewResolutionLockScope(number)} lock ownership changed before mutation`);
+    }
+    active.oid = nextOid;
+    active.owner = nextOwner;
+}
+
 async function assertDetachedReviewResolutionChild(markerValue: string): Promise<void> {
     if (process.platform === 'win32') {
         fail('review-resolution lock requires POSIX process-group fencing');
@@ -1779,12 +1998,13 @@ function acquirePullRequestReviewResolutionLock(
 ): { ref: string; oid: string } {
     const ref = pullRequestReviewResolutionLockRef(number);
     const owner: ReviewResolutionLockOwner = {
-        version: 2,
+        version: 3,
         pid: executionFence.pid,
         pgid: executionFence.pgid,
         threadId,
         head: expectedHead,
         token: randomUUID(),
+        mutation: { phase: 'idle', epoch: 0 },
     };
     const oid = writeReviewResolutionLockOwner(primaryRoot, owner, number);
     if (updateReviewResolutionLockRef(primaryRoot, [ref, oid, '0'.repeat(oid.length)])) {
@@ -1821,10 +2041,19 @@ export function withPullRequestReviewResolutionLock<Value>(
         expectedHead,
         currentReviewResolutionExecutionFence()
     );
+    const active: ActiveReviewResolutionLock = {
+        primaryRoot,
+        number,
+        ref: lock.ref,
+        oid: lock.oid,
+        owner: readReviewResolutionLockOwner(primaryRoot, lock.oid, number),
+    };
+    pushActiveReviewResolutionLock(active);
     try {
         return operation();
     } finally {
-        releasePullRequestReviewResolutionLock(primaryRoot, lock.ref, lock.oid, number);
+        popActiveReviewResolutionLock(active);
+        releasePullRequestReviewResolutionLock(primaryRoot, active.ref, active.oid, number);
     }
 }
 
@@ -2280,7 +2509,7 @@ function assertMatchingThreadResolutionSnapshot(
         resolvedByLogin: string | null;
         resolvedByType: string | null;
     },
-    phase: 'review comments' | 'reviews' = 'review comments'
+    phase: 'review comments' | 'reviews' | 'resolution confirmation' = 'review comments'
 ): void {
     if (
         expected.isResolved !== current.isResolved ||
@@ -2351,6 +2580,89 @@ function assertThreadResolutionAfterReviewInspection(
             thread.resolvedBy?.__typename
         ),
         'reviews'
+    );
+}
+export function assertRecoverableReviewResolutionLockOwner(
+    number: number,
+    owner: ReviewResolutionLockOwner,
+    inspection: ReviewThreadInspection
+): void {
+    const thread = inspection.thread;
+    if (thread === null || thread.id !== owner.threadId) {
+        fail(`review thread ${owner.threadId} was not found on this pull request`);
+    }
+    const mutation = owner.mutation;
+    if (mutation.phase === 'idle') {
+        return;
+    }
+    const context = resolutionReviewContext(inspection.pullRequestId, owner.threadId, owner.head);
+    switch (mutation.phase) {
+        case 'createPendingReview':
+            if (
+                inspection.pendingReviews.some(
+                    (review) =>
+                        review.state === 'PENDING' &&
+                        review.commitOid === owner.head &&
+                        review.body === resolutionReviewBody(context, owner.head) &&
+                        isAuthorBotActor(review.authorNodeId, review.authorType)
+                )
+            ) {
+                return;
+            }
+            break;
+        case 'replyDone':
+            if (
+                managedReplyMarkers(thread, context, ['PENDING', 'COMMENTED'], true).some(
+                    (candidate) => candidate.review.id === mutation.reviewId
+                )
+            ) {
+                return;
+            }
+            break;
+        case 'submitReview':
+            if (
+                thread.comments.some(
+                    (comment) =>
+                        comment.reviewId === mutation.reviewId &&
+                        comment.reviewState === 'COMMENTED' &&
+                        comment.reviewBody === mutation.body
+                )
+            ) {
+                return;
+            }
+            break;
+        case 'updateReviewBody':
+            if (
+                inspection.pendingReviews.some(
+                    (review) => review.id === mutation.reviewId && review.body === mutation.body
+                ) ||
+                thread.comments.some(
+                    (comment) => comment.reviewId === mutation.reviewId && comment.reviewBody === mutation.body
+                )
+            ) {
+                return;
+            }
+            break;
+        case 'resolveThread':
+            if (thread.isResolved && isAuthorResolutionActor(thread.resolvedByNodeId, thread.resolvedByType)) {
+                return;
+            }
+            break;
+        case 'deleteReply':
+            if (thread.comments.every((comment) => comment.id !== mutation.replyId)) {
+                return;
+            }
+            break;
+        case 'deletePendingReview':
+            if (inspection.pendingReviews.every((review) => review.id !== mutation.reviewId)) {
+                return;
+            }
+            break;
+        default:
+            fail(`${pullRequestReviewResolutionLockScope(number)} lock ownership is malformed`);
+    }
+    fail(
+        `${pullRequestReviewResolutionLockScope(number)} has an unreconciled in-flight ${mutation.phase} mutation from epoch ${mutation.epoch}; retry recovery after GitHub state settles`
     );
 }
 function assertExpectedPullRequestSnapshot(
@@ -2702,8 +3014,8 @@ async function runResolveReviewThreadInDetachedProcess(args: string[]): Promise<
     }
 }
 
-async function main(): Promise<number> {
-    const parsed = parseResolveReviewThreadArgs(process.argv.slice(2));
+export async function runResolveReviewThreadCli(args: string[]): Promise<number> {
+    const parsed = parseResolveReviewThreadArgs(args);
     if (parsed.help) {
         console.log(`Usage: ${usage.slice('usage: '.length)}`);
         return 0;
@@ -2713,7 +3025,7 @@ async function main(): Promise<number> {
     }
     const childMarker = process.env[REVIEW_RESOLUTION_CHILD_ENV];
     if (childMarker === undefined) {
-        return await runResolveReviewThreadInDetachedProcess(process.argv.slice(2));
+        return await runResolveReviewThreadInDetachedProcess(args);
     }
     await assertDetachedReviewResolutionChild(childMarker);
     const cwd = process.cwd();
@@ -2745,6 +3057,10 @@ async function main(): Promise<number> {
     } finally {
         auth.session.dispose();
     }
+}
+
+async function main(): Promise<number> {
+    return await runResolveReviewThreadCli(process.argv.slice(2));
 }
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
     void main().then(

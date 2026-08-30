@@ -1,7 +1,7 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { delimiter, join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
@@ -34,6 +34,18 @@ const rootId = 'PRRC_root';
 const replyId = 'PRRC_reply';
 const reviewId = 'PRR_resolution';
 type ReviewState = 'PENDING' | 'COMMENTED' | 'APPROVED';
+function systemGitPath(): string {
+    const result = spawnSync('bash', ['-lc', 'command -v git'], { encoding: 'utf8', shell: false });
+    if (result.error !== undefined) {
+        throw result.error;
+    }
+    if (result.status !== 0) {
+        throw new Error(result.stderr || result.stdout || 'could not resolve git');
+    }
+    return result.stdout.trim();
+}
+const trustedGitPath = process.env.SOURDAW_TRUSTED_GIT_PATH ?? systemGitPath();
+process.env.SOURDAW_TRUSTED_GIT_PATH = trustedGitPath;
 type ReviewRecord = {
     id: string;
     body: string;
@@ -52,6 +64,28 @@ type CommentRecord = {
     authorType: string | null;
     reviewId: string | null;
 };
+function withTemporaryEnvironment<Value>(overrides: Record<string, string | undefined>, operation: () => Value): Value {
+    const previous = new Map<string, string | undefined>();
+    for (const [key, value] of Object.entries(overrides)) {
+        previous.set(key, process.env[key]);
+        if (value === undefined) {
+            delete process.env[key];
+            continue;
+        }
+        process.env[key] = value;
+    }
+    try {
+        return operation();
+    } finally {
+        for (const [key, value] of previous) {
+            if (value === undefined) {
+                delete process.env[key];
+                continue;
+            }
+            process.env[key] = value;
+        }
+    }
+}
 function resolutionReviewSummary(currentPullRequestId: string, currentThreadId: string, currentHead: string): string {
     return [
         'Resolved this review thread after applying the requested changes.',
@@ -88,6 +122,7 @@ type Input = {
     initialResolvedByNodeId?: string | null;
     initialResolvedByType?: string | null;
     resolvedByNodeIdAfterResolve?: string | null;
+    resolvedByLoginAfterResolve?: string | null;
     resolvedByTypeAfterResolve?: string | null;
     existingReplyCount?: number;
     deleteReplyAfterResolve?: boolean;
@@ -350,8 +385,14 @@ function fakePort(input: Input = {}) {
                 resolvedByLogin = 'renamed-author';
                 resolvedByType = 'User';
             }
-            if (resolveCalled && input.resolvedByNodeIdAfterResolve !== undefined) {
-                resolvedByNodeId = input.resolvedByNodeIdAfterResolve;
+            if (
+                resolveCalled &&
+                (input.resolvedByNodeIdAfterResolve !== undefined ||
+                    input.resolvedByLoginAfterResolve !== undefined ||
+                    input.resolvedByTypeAfterResolve !== undefined)
+            ) {
+                resolvedByNodeId = input.resolvedByNodeIdAfterResolve ?? resolvedByNodeId;
+                resolvedByLogin = input.resolvedByLoginAfterResolve ?? resolvedByLogin;
                 resolvedByType = input.resolvedByTypeAfterResolve ?? 'User';
             }
             if (resolveCalled && input.deleteReplyAfterResolve) {
@@ -793,17 +834,26 @@ function readLockOid(repository: string, number: number): string | undefined {
     return result.stdout.trim();
 }
 
-function writeLockOwnerBlob(repository: string, pid: number, currentHead: string = head): string {
+function writeLockOwnerBlob(
+    repository: string,
+    pid: number,
+    currentHead: string = head,
+    mutation: { phase: string; epoch: number; reviewId?: string; replyId?: string; body?: string } = {
+        phase: 'idle',
+        epoch: 0,
+    }
+): string {
     return gitCapture(
         repository,
         ['hash-object', '-w', '--stdin'],
         JSON.stringify({
-            version: 2,
+            version: 3,
             pid,
             pgid: pid,
             threadId,
             head: currentHead,
             token: '11111111-1111-4111-8111-111111111111',
+            mutation,
         })
     );
 }
@@ -1257,6 +1307,185 @@ describe('review thread resolution', () => {
                 runRecoverReviewResolutionLockCli(['42', '--owner', ownerOid], recoverDependencies)
             ).rejects.toThrow(/review thread .* was not found|head changed while reconciling/i);
             expect(readLockOid(repository, 42)).toBe(ownerOid);
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
+    it('keeps the PR lock fenced when recovery cannot yet prove a delayed create-pending-review mutation landed, then recovers once the artifact is visible', async () => {
+        const repository = createTemporaryGitRepository();
+        try {
+            const ownerOid = writeLockOwnerBlob(repository, 999999, head, {
+                phase: 'createPendingReview',
+                epoch: 1,
+            });
+            updateLock(repository, 42, ownerOid);
+            const session: GhSession = { configDir: repository, env: {}, dispose() {} };
+            const inspections = [
+                {
+                    pullRequestId,
+                    head,
+                    thread: {
+                        id: threadId,
+                        isResolved: false,
+                        resolvedByNodeId: null,
+                        resolvedByLogin: null,
+                        resolvedByType: null,
+                        rootCommentId: null,
+                        rootCommentFullDatabaseId: null,
+                        rootAuthorNodeId: null,
+                        rootAuthorLogin: null,
+                        rootAuthorType: null,
+                        comments: [],
+                    },
+                    pendingReviews: [],
+                },
+                {
+                    pullRequestId,
+                    head,
+                    thread: {
+                        id: threadId,
+                        isResolved: false,
+                        resolvedByNodeId: null,
+                        resolvedByLogin: null,
+                        resolvedByType: null,
+                        rootCommentId: null,
+                        rootCommentFullDatabaseId: null,
+                        rootAuthorNodeId: null,
+                        rootAuthorLogin: null,
+                        rootAuthorType: null,
+                        comments: [],
+                    },
+                    pendingReviews: [
+                        {
+                            id: reviewId,
+                            state: 'PENDING',
+                            body: resolutionReviewSummary(pullRequestId, threadId, head),
+                            commitOid: head,
+                            authorNodeId: AUTHOR_BOT_NODE_ID,
+                            authorLogin: 'renamed-author',
+                            authorType: 'Bot',
+                        },
+                    ],
+                },
+            ];
+            const recoverDependencies = {
+                trustedPrimaryRoot: () => repository,
+                authenticateAuthor: async () => ({
+                    minted: { actorNodeId: AUTHOR_BOT_NODE_ID },
+                    session,
+                }),
+                repositoryName: () => REQUIRED_REPOSITORY,
+                gh: () => () => '',
+                inspectThread: () => inspections.shift()!,
+                recoverLock: recoverPullRequestReviewResolutionLock,
+            } satisfies Parameters<typeof runRecoverReviewResolutionLockCli>[1];
+
+            await expect(
+                runRecoverReviewResolutionLockCli(['42', '--owner', ownerOid], recoverDependencies)
+            ).rejects.toThrow(/unreconciled in-flight createPendingReview mutation/i);
+            expect(readLockOid(repository, 42)).toBe(ownerOid);
+
+            const logs: string[] = [];
+            const originalLog = console.log;
+            console.log = (message?: unknown) => {
+                logs.push(String(message));
+            };
+            try {
+                await expect(
+                    runRecoverReviewResolutionLockCli(['42', '--owner', ownerOid], recoverDependencies)
+                ).resolves.toBe(0);
+            } finally {
+                console.log = originalLog;
+            }
+            expect(logs).toEqual([`review-resolution-lock-recovered:42:${threadId}:${head}:${head}:unresolved:1`]);
+            expect(readLockOid(repository, 42)).toBeUndefined();
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
+    it('uses the launcher-resolved trusted Git path for review-resolution lock operations and ignores a hostile PATH git', () => {
+        const repository = createTemporaryGitRepository();
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-review-resolution-trusted-git-'));
+        const hostileBin = join(root, 'hostile');
+        const hostileMarker = join(root, 'hostile-entered');
+        try {
+            mkdirSync(hostileBin);
+            writeFileSync(
+                join(hostileBin, 'git'),
+                `#!/bin/sh\nprintf entered > ${JSON.stringify(hostileMarker)}\nexit 91\n`
+            );
+            chmodSync(join(hostileBin, 'git'), 0o700);
+            withTemporaryEnvironment(
+                {
+                    PATH: `${hostileBin}${delimiter}${process.env.PATH ?? ''}`,
+                    SOURDAW_TRUSTED_GIT_PATH: trustedGitPath,
+                },
+                () => {
+                    expect(withPullRequestReviewResolutionLock(repository, 42, threadId, head, () => 'ok')).toBe('ok');
+                }
+            );
+            const ownerOid = writeLockOwnerBlob(repository, 999999);
+            updateLock(repository, 42, ownerOid);
+            withTemporaryEnvironment(
+                {
+                    PATH: `${hostileBin}${delimiter}${process.env.PATH ?? ''}`,
+                    SOURDAW_TRUSTED_GIT_PATH: trustedGitPath,
+                },
+                () => {
+                    expect(
+                        recoverPullRequestReviewResolutionLock(
+                            repository,
+                            42,
+                            ownerOid,
+                            () => ({
+                                pullRequestId,
+                                head,
+                                thread: {
+                                    id: threadId,
+                                    isResolved: false,
+                                    resolvedByNodeId: null,
+                                    resolvedByLogin: null,
+                                    resolvedByType: null,
+                                    rootCommentId: null,
+                                    rootCommentFullDatabaseId: null,
+                                    rootAuthorNodeId: null,
+                                    rootAuthorLogin: null,
+                                    rootAuthorType: null,
+                                    comments: [],
+                                },
+                                pendingReviews: [],
+                            }),
+                            () => false
+                        )
+                    ).toMatchObject({ head, thread: { id: threadId, isResolved: false } });
+                }
+            );
+            expect(() => statSync(hostileMarker)).toThrow();
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
+    it('fails closed when the trusted Git binding is absent for review-resolution lock operations', () => {
+        const repository = createTemporaryGitRepository();
+        try {
+            withTemporaryEnvironment({ SOURDAW_TRUSTED_GIT_PATH: undefined }, () => {
+                expect(() => withPullRequestReviewResolutionLock(repository, 42, threadId, head, () => 'ok')).toThrow(
+                    /trusted git path/i
+                );
+                expect(() =>
+                    recoverPullRequestReviewResolutionLock(
+                        repository,
+                        42,
+                        'a'.repeat(40),
+                        () => 'recovered',
+                        () => false
+                    )
+                ).toThrow(/trusted git path/i);
+            });
         } finally {
             rmSync(repository, { recursive: true, force: true });
         }
@@ -2352,6 +2581,17 @@ describe('review thread resolution', () => {
         expect(calls.filter((call) => call.startsWith('unresolve:'))).toEqual([]);
         expect(state().resolved).toBe(true);
     });
+    it.each([
+        ['node ID', { resolvedByNodeIdAfterResolve: 'BOT_other' }, /not resolved by/i],
+        ['login', { resolvedByLoginAfterResolve: 'other-author' }, /changed while reading resolution confirmation/i],
+        ['typename', { resolvedByTypeAfterResolve: 'Bot' }, /not resolved by/i],
+    ])('rejects terminal same-isResolved resolvedBy %s drift before success', (_case, input, pattern) => {
+        const { port, calls, authorNodeId, state } = fakePort(input);
+        expect(() => resolveReviewThread(42, threadId, head, authorNodeId, port)).toThrow(pattern);
+        expect(calls.filter((call) => call.startsWith('log:'))).toEqual([]);
+        expect(calls.filter((call) => call.startsWith('unresolve:'))).toEqual([]);
+        expect(state().resolved).toBe(true);
+    });
     it('does not unresolve a same-identity resolution after its final head check fails', () => {
         const { port, calls, authorNodeId, state } = fakePort({
             heads: [head, head, head, head, head, movedHead],
@@ -3310,7 +3550,6 @@ describe('review thread resolution', () => {
                     deleteReply: (id) => {
                         calls.push(`deleteReply:${id}`);
                     },
-                    serializeReviewThreadMutation: (_number, _threadId, _expectedHead, operation) => operation(),
                     log: (message) => calls.push(`log:${message}`),
                 })
             ).toThrow(/stop after create[\s\S]*ambiguous review reply mutation/i);
