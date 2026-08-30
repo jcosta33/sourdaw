@@ -11,6 +11,7 @@ import {
     runRecoverReviewResolutionLockCli,
 } from '../recoverReviewResolutionLock.ts';
 import {
+    assertRecoverableReviewResolutionLockOwner,
     inspectReviewThread,
     parseResolveReviewThreadArgs,
     publishReviewResolutionChildLaunchMarker,
@@ -1076,7 +1077,14 @@ function readLockOwner(
           threadId: string;
           head: string;
           token: string;
-          mutation?: { phase?: string; epoch?: number; reviewId?: string; replyId?: string; body?: string };
+          mutation?: {
+              phase?: string;
+              epoch?: number;
+              reviewId?: string;
+              replyId?: string;
+              body?: string;
+              dispatchState?: string;
+          };
       }
     | undefined {
     const oid = readLockOid(repository, number);
@@ -1090,7 +1098,14 @@ function readLockOwner(
         threadId: string;
         head: string;
         token: string;
-        mutation?: { phase?: string; epoch?: number; reviewId?: string; replyId?: string; body?: string };
+        mutation?: {
+            phase?: string;
+            epoch?: number;
+            reviewId?: string;
+            replyId?: string;
+            body?: string;
+            dispatchState?: string;
+        };
     };
 }
 
@@ -1106,7 +1121,14 @@ function writeLockOwnerBlob(
     repository: string,
     pid: number,
     currentHead: string = head,
-    mutation: { phase: string; epoch: number; reviewId?: string; replyId?: string; body?: string } = {
+    mutation: {
+        phase: string;
+        epoch: number;
+        reviewId?: string;
+        replyId?: string;
+        body?: string;
+        dispatchState?: string;
+    } = {
         phase: 'idle',
         epoch: 0,
     }
@@ -1137,7 +1159,14 @@ function updateLock(repository: string, number: number, nextOid: string, previou
 function setLockMutation(
     repository: string,
     number: number,
-    mutation: { phase: string; epoch: number; reviewId?: string; replyId?: string; body?: string }
+    mutation: {
+        phase: string;
+        epoch: number;
+        reviewId?: string;
+        replyId?: string;
+        body?: string;
+        dispatchState?: string;
+    }
 ): string {
     const currentOid = readLockOid(repository, number);
     if (currentOid === undefined) {
@@ -1476,6 +1505,174 @@ describe('review thread resolution', () => {
                 head,
                 mutation: { phase: mutation.phase },
             });
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
+    it('releases a quiescent pre-dispatch review-resolution lock without waiting for mutation evidence', () => {
+        const repository = createTemporaryGitRepository();
+        try {
+            const ownerOid = writeLockOwnerBlob(repository, 999999, head, {
+                phase: 'createPendingReview',
+                epoch: 1,
+                dispatchState: 'prepared',
+            });
+            updateLock(repository, 42, ownerOid);
+            expect(
+                recoverPullRequestReviewResolutionLock(repository, 42, ownerOid, (owner) => ({
+                    owner,
+                    inspection: {
+                        pullRequestId,
+                        head: owner.head,
+                        thread: { id: owner.threadId, isResolved: false },
+                        pendingReviews: [],
+                    },
+                }))
+            ).toMatchObject({
+                owner: {
+                    threadId,
+                    head,
+                    mutation: { phase: 'createPendingReview', epoch: 1, dispatchState: 'prepared' },
+                },
+                inspection: {
+                    head,
+                    thread: { id: threadId, isResolved: false },
+                    pendingReviews: [],
+                },
+            });
+            expect(readLockOid(repository, 42)).toBeUndefined();
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
+    it('keeps a dispatched submit-review lock until exact COMMENTED evidence appears, then releases it', () => {
+        const repository = createTemporaryGitRepository();
+        try {
+            const mutation = {
+                phase: 'submitReview',
+                epoch: 1,
+                reviewId,
+                body: resolutionReviewSummary(pullRequestId, threadId, head),
+                dispatchState: 'dispatched',
+            } as const;
+            const ownerOid = writeLockOwnerBlob(repository, 999999, head, mutation);
+            updateLock(repository, 42, ownerOid);
+            expect(() =>
+                recoverPullRequestReviewResolutionLock(repository, 42, ownerOid, (owner) => {
+                    const inspection = {
+                        pullRequestId,
+                        head: owner.head,
+                        thread: {
+                            id: owner.threadId,
+                            isResolved: false,
+                            resolvedByNodeId: null,
+                            resolvedByLogin: null,
+                            resolvedByType: null,
+                            rootCommentId: rootId,
+                            rootCommentFullDatabaseId: '9223372036854775807',
+                            rootAuthorNodeId: REVIEWER_BOT_NODE_ID,
+                            rootAuthorLogin: 'renamed-reviewer',
+                            rootAuthorType: 'Bot',
+                            comments: [
+                                {
+                                    id: rootId,
+                                    fullDatabaseId: '9223372036854775807',
+                                    body: 'review',
+                                    authorNodeId: REVIEWER_BOT_NODE_ID,
+                                    authorLogin: 'renamed-reviewer',
+                                    authorType: 'Bot',
+                                    reviewId: null,
+                                    reviewState: null,
+                                    reviewBody: null,
+                                    reviewCommitOid: null,
+                                    reviewAuthorNodeId: null,
+                                    reviewAuthorLogin: null,
+                                    reviewAuthorType: null,
+                                },
+                            ],
+                        },
+                        pendingReviews: [
+                            {
+                                id: reviewId,
+                                state: 'PENDING',
+                                body: resolutionReviewSummary(pullRequestId, threadId, head),
+                                commitOid: head,
+                                authorNodeId: AUTHOR_BOT_NODE_ID,
+                                authorLogin: 'renamed-author',
+                                authorType: 'Bot',
+                            },
+                        ],
+                    };
+                    assertRecoverableReviewResolutionLockOwner(42, owner, inspection);
+                    return inspection;
+                })
+            ).toThrow(/unreconciled in-flight submitReview mutation from epoch 1/i);
+            expect(readLockOid(repository, 42)).toBe(ownerOid);
+
+            expect(
+                recoverPullRequestReviewResolutionLock(repository, 42, ownerOid, (owner) => {
+                    const inspection = {
+                        pullRequestId,
+                        head: owner.head,
+                        thread: {
+                            id: owner.threadId,
+                            isResolved: false,
+                            resolvedByNodeId: null,
+                            resolvedByLogin: null,
+                            resolvedByType: null,
+                            rootCommentId: rootId,
+                            rootCommentFullDatabaseId: '9223372036854775807',
+                            rootAuthorNodeId: REVIEWER_BOT_NODE_ID,
+                            rootAuthorLogin: 'renamed-reviewer',
+                            rootAuthorType: 'Bot',
+                            comments: [
+                                {
+                                    id: rootId,
+                                    fullDatabaseId: '9223372036854775807',
+                                    body: 'review',
+                                    authorNodeId: REVIEWER_BOT_NODE_ID,
+                                    authorLogin: 'renamed-reviewer',
+                                    authorType: 'Bot',
+                                    reviewId: null,
+                                    reviewState: null,
+                                    reviewBody: null,
+                                    reviewCommitOid: null,
+                                    reviewAuthorNodeId: null,
+                                    reviewAuthorLogin: null,
+                                    reviewAuthorType: null,
+                                },
+                                {
+                                    id: replyId,
+                                    fullDatabaseId: '9223372036854775808',
+                                    body: 'Done',
+                                    authorNodeId: AUTHOR_BOT_NODE_ID,
+                                    authorLogin: 'renamed-author',
+                                    authorType: 'Bot',
+                                    reviewId,
+                                    reviewState: 'COMMENTED',
+                                    reviewBody: resolutionReviewSummary(pullRequestId, threadId, head),
+                                    reviewCommitOid: head,
+                                    reviewAuthorNodeId: AUTHOR_BOT_NODE_ID,
+                                    reviewAuthorLogin: 'renamed-author',
+                                    reviewAuthorType: 'Bot',
+                                },
+                            ],
+                        },
+                        pendingReviews: [],
+                    };
+                    assertRecoverableReviewResolutionLockOwner(42, owner, inspection);
+                    return inspection;
+                })
+            ).toMatchObject({
+                thread: {
+                    id: threadId,
+                    comments: [{ id: rootId }, { id: replyId, reviewState: 'COMMENTED', reviewId }],
+                },
+                pendingReviews: [],
+            });
+            expect(readLockOid(repository, 42)).toBeUndefined();
         } finally {
             rmSync(repository, { recursive: true, force: true });
         }

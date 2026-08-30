@@ -88,15 +88,43 @@ export type ReviewResolutionReceipt = {
     resolvedByType: string;
     clientMutationId: string;
 };
+type ReviewResolutionLockMutationDispatchState = 'prepared' | 'dispatched' | 'noEffect';
 export type ReviewResolutionLockMutation =
     | { phase: 'idle'; epoch: number }
-    | { phase: 'createPendingReview'; epoch: number }
-    | { phase: 'replyDone'; epoch: number; reviewId: string }
-    | { phase: 'submitReview'; epoch: number; reviewId: string; body: string }
-    | { phase: 'updateReviewBody'; epoch: number; reviewId: string; body: string }
-    | { phase: 'resolveThread'; epoch: number }
-    | { phase: 'deleteReply'; epoch: number; replyId: string }
-    | { phase: 'deletePendingReview'; epoch: number; reviewId: string };
+    | { phase: 'createPendingReview'; epoch: number; dispatchState: ReviewResolutionLockMutationDispatchState }
+    | {
+          phase: 'replyDone';
+          epoch: number;
+          reviewId: string;
+          dispatchState: ReviewResolutionLockMutationDispatchState;
+      }
+    | {
+          phase: 'submitReview';
+          epoch: number;
+          reviewId: string;
+          body: string;
+          dispatchState: ReviewResolutionLockMutationDispatchState;
+      }
+    | {
+          phase: 'updateReviewBody';
+          epoch: number;
+          reviewId: string;
+          body: string;
+          dispatchState: ReviewResolutionLockMutationDispatchState;
+      }
+    | { phase: 'resolveThread'; epoch: number; dispatchState: ReviewResolutionLockMutationDispatchState }
+    | {
+          phase: 'deleteReply';
+          epoch: number;
+          replyId: string;
+          dispatchState: ReviewResolutionLockMutationDispatchState;
+      }
+    | {
+          phase: 'deletePendingReview';
+          epoch: number;
+          reviewId: string;
+          dispatchState: ReviewResolutionLockMutationDispatchState;
+      };
 type ReviewResolutionLockMutationUpdate = ReviewResolutionLockMutation extends infer Mutation
     ? Mutation extends { epoch: number }
         ? Omit<Mutation, 'epoch'>
@@ -1760,7 +1788,10 @@ export function shellPort(session: GhSession, cwd: string = process.cwd()): Reso
         (command, args, directory) => spawnCapture(command, args, { cwd: directory }),
         cwd
     );
-    const gh = (args: string[]) => spawnCapture('gh', args, { cwd: primaryRoot, env: session.env });
+    const gh = (args: string[]) => {
+        markActiveReviewResolutionLockMutationDispatched(primaryRoot);
+        return spawnCapture('gh', args, { cwd: primaryRoot, env: session.env });
+    };
     return {
         inspect: (number, id) => inspectReviewThread(number, id, gh),
         inspectAttachedReviewThreadIds: (number, reviewId, expectedPullRequestId, expectedHead) =>
@@ -1770,7 +1801,10 @@ export function shellPort(session: GhSession, cwd: string = process.cwd()): Reso
             if (active === undefined) {
                 fail('pending review creation is not fenced by the active review-resolution lock');
             }
-            advanceActiveReviewResolutionLockMutation(primaryRoot, active.number, { phase: 'createPendingReview' });
+            advanceActiveReviewResolutionLockMutation(primaryRoot, active.number, {
+                phase: 'createPendingReview',
+                dispatchState: 'prepared',
+            });
             return createPendingReview(pullRequestId, commitOid, body, gh);
         },
         replyDone: (id, reviewId) => {
@@ -1781,6 +1815,7 @@ export function shellPort(session: GhSession, cwd: string = process.cwd()): Reso
             advanceActiveReviewResolutionLockMutation(primaryRoot, active.number, {
                 phase: 'replyDone',
                 reviewId,
+                dispatchState: 'prepared',
             });
             return mutationReply(id, reviewId, gh);
         },
@@ -1793,6 +1828,7 @@ export function shellPort(session: GhSession, cwd: string = process.cwd()): Reso
                 phase: 'submitReview',
                 reviewId,
                 body,
+                dispatchState: 'prepared',
             });
             return submitReview(reviewId, body, gh);
         },
@@ -1805,6 +1841,7 @@ export function shellPort(session: GhSession, cwd: string = process.cwd()): Reso
                 phase: 'updateReviewBody',
                 reviewId,
                 body,
+                dispatchState: 'prepared',
             });
             return updateReviewBody(reviewId, body, gh);
         },
@@ -1813,7 +1850,10 @@ export function shellPort(session: GhSession, cwd: string = process.cwd()): Reso
             if (active === undefined) {
                 fail('thread resolution is not fenced by the active review-resolution lock');
             }
-            advanceActiveReviewResolutionLockMutation(primaryRoot, active.number, { phase: 'resolveThread' });
+            advanceActiveReviewResolutionLockMutation(primaryRoot, active.number, {
+                phase: 'resolveThread',
+                dispatchState: 'prepared',
+            });
             return resolveThread(id, gh);
         },
         deleteReply: (id) => {
@@ -1824,6 +1864,7 @@ export function shellPort(session: GhSession, cwd: string = process.cwd()): Reso
             advanceActiveReviewResolutionLockMutation(primaryRoot, active.number, {
                 phase: 'deleteReply',
                 replyId: id,
+                dispatchState: 'prepared',
             });
             return deleteReply(id, gh);
         },
@@ -1835,6 +1876,7 @@ export function shellPort(session: GhSession, cwd: string = process.cwd()): Reso
             advanceActiveReviewResolutionLockMutation(primaryRoot, active.number, {
                 phase: 'deletePendingReview',
                 reviewId: id,
+                dispatchState: 'prepared',
             });
             return deletePendingReview(id, gh);
         },
@@ -1941,22 +1983,23 @@ function parseReviewResolutionLockMutation(value: unknown, label: string): Revie
         fail(label);
     }
     const phase = (value as { phase: string }).phase;
+    const dispatchState = parseReviewResolutionLockMutationDispatchState(value, phase, label);
     if (phase === 'idle' || phase === 'createPendingReview' || phase === 'resolveThread') {
-        return { phase, epoch };
+        return phase === 'idle' ? { phase, epoch } : { phase, epoch, dispatchState };
     }
     if (phase === 'replyDone' || phase === 'deletePendingReview') {
         const reviewId = (value as { reviewId?: unknown }).reviewId;
         if (typeof reviewId !== 'string' || reviewId.trim() === '') {
             fail(label);
         }
-        return { phase, epoch, reviewId };
+        return { phase, epoch, reviewId, dispatchState };
     }
     if (phase === 'deleteReply') {
         const replyId = (value as { replyId?: unknown }).replyId;
         if (typeof replyId !== 'string' || replyId.trim() === '') {
             fail(label);
         }
-        return { phase, epoch, replyId };
+        return { phase, epoch, replyId, dispatchState };
     }
     if (phase === 'submitReview' || phase === 'updateReviewBody') {
         const reviewId = (value as { reviewId?: unknown }).reviewId;
@@ -1964,7 +2007,25 @@ function parseReviewResolutionLockMutation(value: unknown, label: string): Revie
         if (typeof reviewId !== 'string' || reviewId.trim() === '' || typeof body !== 'string') {
             fail(label);
         }
-        return { phase, epoch, reviewId, body };
+        return { phase, epoch, reviewId, body, dispatchState };
+    }
+    return fail(label);
+}
+
+function parseReviewResolutionLockMutationDispatchState(
+    value: unknown,
+    phase: string,
+    label: string
+): ReviewResolutionLockMutationDispatchState {
+    if (phase === 'idle') {
+        return 'dispatched';
+    }
+    const raw = (value as { dispatchState?: unknown }).dispatchState;
+    if (raw === undefined) {
+        return 'dispatched';
+    }
+    if (raw === 'prepared' || raw === 'dispatched' || raw === 'noEffect') {
+        return raw;
     }
     return fail(label);
 }
@@ -2069,12 +2130,26 @@ function advanceActiveReviewResolutionLockMutation(
     mutation: ReviewResolutionLockMutationUpdate
 ): void {
     const active = currentActiveReviewResolutionLock(primaryRoot, number);
-    const nextOwner: ReviewResolutionLockOwner = {
-        ...active.owner,
-        mutation: {
+    replaceActiveReviewResolutionLockMutation(
+        primaryRoot,
+        active,
+        {
             ...mutation,
             epoch: active.owner.mutation.epoch + 1,
         },
+        number
+    );
+}
+
+function replaceActiveReviewResolutionLockMutation(
+    primaryRoot: string,
+    active: ActiveReviewResolutionLock,
+    mutation: ReviewResolutionLockMutation,
+    number: number
+): void {
+    const nextOwner: ReviewResolutionLockOwner = {
+        ...active.owner,
+        mutation,
     };
     const nextOid = writeReviewResolutionLockOwner(primaryRoot, nextOwner, number);
     if (!updateReviewResolutionLockRef(primaryRoot, [active.ref, nextOid, active.oid])) {
@@ -2082,6 +2157,26 @@ function advanceActiveReviewResolutionLockMutation(
     }
     active.oid = nextOid;
     active.owner = nextOwner;
+}
+
+function markActiveReviewResolutionLockMutationDispatched(primaryRoot: string): void {
+    const active = activeReviewResolutionLocks.at(-1);
+    if (active === undefined || active.primaryRoot !== primaryRoot) {
+        return;
+    }
+    const mutation = active.owner.mutation;
+    if (mutation.phase === 'idle' || mutation.dispatchState !== 'prepared') {
+        return;
+    }
+    replaceActiveReviewResolutionLockMutation(
+        primaryRoot,
+        active,
+        {
+            ...mutation,
+            dispatchState: 'dispatched',
+        },
+        active.number
+    );
 }
 
 async function assertDetachedReviewResolutionChild(markerValue: string): Promise<ReviewResolutionTrustedLauncher> {
@@ -2799,6 +2894,9 @@ export function assertRecoverableReviewResolutionLockOwner(
     }
     const mutation = owner.mutation;
     if (mutation.phase === 'idle') {
+        return;
+    }
+    if (mutation.dispatchState === 'prepared' || mutation.dispatchState === 'noEffect') {
         return;
     }
     const context = resolutionReviewContext(inspection.pullRequestId, owner.threadId, owner.head);
