@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { type DeviceWriteTargetResolution } from '#/modules/Arrangement/stores';
 
 import { type CrustPatch } from '../../../models/CrustPatch';
-import { crustStore, defaultCrustState } from '../../../stores/crustStore';
+import { crustStore, defaultCrustState, setCrustParam } from '../../../stores/crustStore';
 import { paramBatcher } from '../helpers';
 import { setCrustParamWithAudio } from '../setCrustParamWithAudio';
 
@@ -75,7 +75,8 @@ describe('setCrustParamWithAudio style → algorithm store sync', () => {
         ['punchy', 'punchy'],
         ['loud', 'wall'],
     ] as const)('should map style %s to store algorithm %s without a second engine flush', (style, algorithm) => {
-        expect(crustStore.value?.patch.algorithm).toBe('transparent');
+        setCrustParam('algorithm', 'aggressive');
+        expect(crustStore.value?.patch.algorithm).toBe('aggressive');
 
         setCrustParamWithAudio(DEVICE_ID, 'style', style);
 
