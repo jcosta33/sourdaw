@@ -1,0 +1,29 @@
+tests/e2e/transportResponsive.spec.ts
+  s_ae074277795b45::t_2a791c4bb8a9e2 153,155,176-219
+  s_ae074277795b45::t_18771508aa8913 220
+src/modules/WorkspaceShell/presentations/views/TransportBar.tsx
+  s_ae074277795b45::t_f754b5d4008ab5 50-55,57,65-66,68,123-132,136-137,143-150,193,207,209-215,229-238,268-275,291,294-297,299,301-325,327-330
+  s_ae074277795b45::t_fe55f9d08a410f 40-49,56
+src/styles/main.css
+  s_ae074277795b45::t_6e676abf383377 119
+src/modules/WorkspaceShell/presentations/views/Transport/TransportControls.tsx
+  s_ae074277795b45::t_547cbc95ee6399 40,183,323,341,370,372,390,392,409
+  s_ae074277795b45::t_9d016859d01252 410
+  s_ae074277795b45::t_2446c9a326c510 324-338
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "32937510ca30dccca771f56cfbed2fda48a4c9d5",
+  "prompts": {},
+  "sessions": {
+    "s_ae074277795b45": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04ab5-5234-7100-be1c-76ebfaba88d3",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
