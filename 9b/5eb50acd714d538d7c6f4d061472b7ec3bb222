@@ -1,0 +1,53 @@
+src/modules/WorkspaceShell/presentations/views/TransportBar.tsx
+  s_ae074277795b45::t_b9661225d7c9ed 126-140,252
+src/modules/WorkspaceShell/presentations/views/Transport/__tests__/TransportControls.spec.tsx
+  s_ae074277795b45::t_6f90900322b9bb 42-46
+src/modules/WorkspaceShell/presentations/views/__tests__/ToolSelectorBranches.spec.tsx
+  s_ae074277795b45::t_e59fb49e83c076 66-93
+tests/e2e/transportResponsive.spec.ts
+  s_ae074277795b45::t_135b3379bd25ef 102-108,131-139,141
+  s_ae074277795b45::t_3eaeff617a73a7 140,142
+  s_ae074277795b45::t_9f87b997ac51f8 143
+src/modules/WorkspaceShell/presentations/views/ToolSelector.tsx
+  s_ae074277795b45::t_92c3cf3e36acae 34,37
+  s_ae074277795b45::t_522f06f509fc44 1,33,35-36,38-44,48-51,91,93,126,130
+  s_ae074277795b45::t_47d943adcdf40d 45-47
+src/modules/WorkspaceShell/presentations/views/PromptBar.tsx
+  s_ae074277795b45::t_522f06f509fc44 134,136-137,139
+src/modules/WorkspaceShell/presentations/views/Transport/__tests__/SoloModeSelectorBranches.spec.tsx
+  s_ae074277795b45::t_e59fb49e83c076 4-5,74-98,100
+  s_ae074277795b45::t_a2b5829c8b1bfc 99
+  s_ae074277795b45::t_6dd72c6e4a863e 101
+src/modules/WorkspaceShell/presentations/views/__tests__/TransportBar.spec.tsx
+  s_ae074277795b45::t_47d943adcdf40d 394-396,403-405
+  s_ae074277795b45::t_8c9f80a6e026cc 446-447
+  s_ae074277795b45::t_6f90900322b9bb 169-176,279,288
+src/modules/WorkspaceShell/presentations/views/Transport/__tests__/PanelToggles.spec.tsx
+  s_ae074277795b45::t_fbb55ba1515f1d 199-223
+src/modules/WorkspaceShell/presentations/views/Transport/ProjectName.tsx
+  s_ae074277795b45::t_522f06f509fc44 28,30
+src/styles/main.css
+  s_ae074277795b45::t_21b1f74eaed0b5 137,153-156,161,168,170-172
+src/modules/WorkspaceShell/presentations/views/__tests__/PromptBar.spec.tsx
+  s_ae074277795b45::t_da5d6c41040311 138-154
+src/modules/WorkspaceShell/presentations/views/Transport/SoloModeSelector.tsx
+  s_ae074277795b45::t_47d943adcdf40d 41-43
+  s_ae074277795b45::t_522f06f509fc44 1,29,31-32,34-40,44-47,76,78,99,102
+  s_ae074277795b45::t_92c3cf3e36acae 30,33
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "9b5eb50acd714d538d7c6f4d061472b7ec3bb222",
+  "prompts": {},
+  "sessions": {
+    "s_ae074277795b45": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04ab5-5234-7100-be1c-76ebfaba88d3",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
