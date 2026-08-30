@@ -485,6 +485,31 @@ describe('settleConfirmedCommandExecution', () => {
         });
     });
 
+    it('preserves stale-lease failed-flight cleanup without recording a second failure', async () => {
+        mocks.settleLease.mockReturnValueOnce({ accepted: false, warning: 'work lease was replaced' });
+
+        const result = await settleConfirmedCommandExecution(
+            createInput({ status: 'failed', error: new Error('flight failed') }, { trackedWorkLease })
+        );
+
+        expect(result).toEqual({ status: 'failed', reason: 'flight failed' });
+        expect(mocks.recordFailure).not.toHaveBeenCalled();
+        expect(mocks.status).toHaveBeenCalledWith({
+            confirmationId: 'confirmation-1',
+            status: 'failed',
+            error: 'flight failed work lease was replaced',
+        });
+        expect(mocks.message).toHaveBeenCalledWith('assistant-1', {
+            pendingActionConfirmationStatus: 'failed',
+            error: 'flight failed work lease was replaced',
+            content: 'Failed to execute confirmed actions atomically:\n\nflight failed work lease was replaced',
+        });
+        expect(mocks.settleResources).toHaveBeenCalledWith({
+            confirmationId: 'confirmation-1',
+            disposition: 'discard',
+        });
+    });
+
     it('retains a committed change when finalization evidence is absent', async () => {
         const result = await settleConfirmedCommandExecution(
             createInput(createCompletedFlight(createCommittedBatchResult(), { committedProjectRevision: null }))
