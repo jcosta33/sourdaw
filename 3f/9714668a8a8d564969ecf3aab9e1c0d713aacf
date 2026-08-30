@@ -1,0 +1,53 @@
+electron/main.ts
+  s_ae074277795b45::t_051c71d65d9ef0 41,124-127
+electron/bridge.ts
+  s_ae074277795b45::t_027029164a6bd2 43,196,270-278,460-462
+  s_ae074277795b45::t_32fe1a36e913d4 463
+electron/rendererSessionQuiescer.ts
+  s_ae074277795b45::t_24847faffec140 13-14,16-17
+  s_ae074277795b45::t_051c71d65d9ef0 11-12,15,36-41,59-68
+  s_ae074277795b45::t_e8d08211942cbc 35
+src/modules/Project/useCases/projectPersistence/projectSessionQuiesceCancellation.ts
+  s_ae074277795b45::t_38ea2c912928b6 1-12
+src/modules/Project/useCases/index.ts
+  s_ae074277795b45::t_38ea2c912928b6 6
+electron/__tests__/rendererSessionQuiescer.spec.ts
+  s_ae074277795b45::t_fc7bb03f1dd214 55-72
+electron/__tests__/bridge.spec.ts
+  s_ae074277795b45::t_49a351d15425d4 100
+  s_ae074277795b45::t_fc7bb03f1dd214 34,139,245-255
+  s_ae074277795b45::t_c6c6a96c91dcaf 256
+src/modules/Project/useCases/projectPersistence/quiesceProjectSession.ts
+  s_ae074277795b45::t_38ea2c912928b6 5-6,22,43
+  s_ae074277795b45::t_d986a11cd78214 44-47
+src/types/sourdaw-desktop.d.ts
+  s_ae074277795b45::t_ce09b29a5bdcd4 134
+src/modules/Project/useCases/projectPersistence/__tests__/quiesceProjectSession.spec.ts
+  s_ae074277795b45::t_b987c5d5792abe 77-97
+  s_ae074277795b45::t_32649960bc7242 98
+src/modules/Project/useCases/projectPersistence/cancelProjectSessionQuiesce.ts
+  s_ae074277795b45::t_38ea2c912928b6 1-6
+src/modules/WorkspaceShell/presentations/hooks/useNativeApplicationMenu.ts
+  s_ae074277795b45::t_d986a11cd78214 20,242-244,250
+src/modules/WorkspaceShell/presentations/hooks/__tests__/useNativeApplicationMenu.spec.tsx
+  s_ae074277795b45::t_fc7bb03f1dd214 11,20-25,42,109,126,130,147,217-228
+  s_ae074277795b45::t_2b0630c6e00301 229-239
+electron/channels.ts
+  s_ae074277795b45::t_ce09b29a5bdcd4 60-61,214
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "3f9714668a8a8d564969ecf3aab9e1c0d713aacf",
+  "prompts": {},
+  "sessions": {
+    "s_ae074277795b45": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04ab5-5234-7100-be1c-76ebfaba88d3",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
