@@ -1,0 +1,31 @@
+src/modules/WorkspaceShell/presentations/hooks/__tests__/useNativeApplicationMenu.spec.tsx
+  s_ae074277795b45::t_630a244e249ecc 30,65-67,171,468-493
+  s_ae074277795b45::t_5a573060cab369 494-496
+  s_79ef0fa469710e::t_e33e2d7cf85d6e 497-498
+src/modules/WorkspaceShell/presentations/hooks/useNativeApplicationMenu.ts
+  s_ae074277795b45::t_1044c06a83b118 42-45,70,77,102,107-108,123,127-128,235
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "aa541e0124c2f5ded9d9357366fb47b1979ceda9",
+  "prompts": {},
+  "sessions": {
+    "s_79ef0fa469710e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0518f-6f56-7543-a4a9-7e18372de615",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ae074277795b45": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04ab5-5234-7100-be1c-76ebfaba88d3",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
