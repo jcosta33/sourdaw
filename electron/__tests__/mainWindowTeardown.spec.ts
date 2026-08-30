@@ -115,6 +115,35 @@ describe('main window owner teardown wiring', () => {
         expect(owner.destroy).not.toHaveBeenCalled();
     });
 
+    it('does not let the later plugin-owner listener detach on a cancelled non-macOS close', async () => {
+        const owner = createOwnerStub();
+        const detachOpenEditors = vi.fn((): Promise<void> => Promise.resolve());
+        let permitted = false;
+        // This models the earlier main-process close listener. It retains the
+        // native event while the dirty-project coordinator is deciding.
+        owner.on('close', (event) => event.preventDefault());
+        bindMainWindowOwnerTeardown(
+            owner,
+            createHostStub(detachOpenEditors),
+            () => permitted,
+            undefined,
+            undefined,
+            () => permitted
+        );
+
+        expect(owner.emitClose()).toBe(true);
+        await settled();
+        expect(detachOpenEditors).not.toHaveBeenCalled();
+        expect(owner.hide).not.toHaveBeenCalled();
+        expect(owner.destroy).not.toHaveBeenCalled();
+
+        permitted = true;
+        expect(owner.emitClose()).toBe(true);
+        await settled();
+        expect(detachOpenEditors).toHaveBeenCalledOnce();
+        expect(owner.destroy).toHaveBeenCalledOnce();
+    });
+
     it('does not let the later plugin-owner listener tear down on the original Darwin close event', async () => {
         const owner = createOwnerStub();
         const detachOpenEditors = vi.fn((): Promise<void> => Promise.resolve());

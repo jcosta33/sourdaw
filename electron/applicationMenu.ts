@@ -117,6 +117,30 @@ export const applyNativeTextEdit = (target: NativeTextEditTarget, action: Native
     return true;
 };
 
+/**
+ * A custom application Edit item belongs to the focused native window. A
+ * hosted plugin editor must keep its platform responder chain; the DAW
+ * renderer must not receive that editor's menu command.
+ */
+export const dispatchFocusedNativeMenuIntent = ({
+    intent,
+    isMainWindowFocused,
+    target,
+    send,
+}: {
+    readonly intent: NativeMenuIntent;
+    readonly isMainWindowFocused: boolean;
+    readonly target: NativeTextEditTarget;
+    readonly send: (intent: NativeMenuIntent) => void;
+}): boolean => {
+    if (!isMainWindowFocused) {
+        return false;
+    }
+    applyNativeTextEdit(target, intent.action);
+    send(intent);
+    return true;
+};
+
 export const isNativeMenuIntent = (value: unknown): value is NativeMenuIntent => {
     if (
         typeof value !== 'object' ||

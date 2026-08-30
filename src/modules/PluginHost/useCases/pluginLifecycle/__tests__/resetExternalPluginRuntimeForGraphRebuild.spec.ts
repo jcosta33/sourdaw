@@ -162,6 +162,17 @@ describe('resetExternalPluginRuntimeForGraphRebuild', () => {
         const activeRebuild = resetExternalPluginRuntimeForGraphRebuild();
         const retirement = beginProjectSessionPluginRetirement();
 
+        await vi.waitFor(() => expect(mocks.unloadPlugin).toHaveBeenCalledOnce());
+        let retirementAcquired = false;
+        void retirement.then(() => {
+            retirementAcquired = true;
+        });
+        await Promise.resolve();
+        expect(retirementAcquired).toBe(false);
+        // The session fence cannot begin its own bulk unload while the active
+        // graph rebuild still owns the lifecycle fence.
+        expect(mocks.unloadPlugin).toHaveBeenCalledOnce();
+
         activeUnload.resolve([[], []]);
         await activeRebuild;
         const sessionRetirement = await retirement;

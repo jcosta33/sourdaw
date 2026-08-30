@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { applyNativeTextEdit, createApplicationMenuTemplate } from '../applicationMenu.js';
+import {
+    applyNativeTextEdit,
+    createApplicationMenuTemplate,
+    dispatchFocusedNativeMenuIntent,
+} from '../applicationMenu.js';
 
 describe('createApplicationMenuTemplate', () => {
     it.each([
@@ -104,6 +108,30 @@ describe('createApplicationMenuTemplate', () => {
         expect(target.undo).toHaveBeenCalledOnce();
         expect(target.paste).toHaveBeenCalledOnce();
         expect(target.selectAll).toHaveBeenCalledOnce();
+    });
+
+    it('keeps Edit commands with the focused hosted plugin window', () => {
+        const target = {
+            undo: vi.fn(),
+            redo: vi.fn(),
+            cut: vi.fn(),
+            copy: vi.fn(),
+            paste: vi.fn(),
+            selectAll: vi.fn(),
+        };
+        const send = vi.fn();
+
+        expect(
+            dispatchFocusedNativeMenuIntent({
+                intent: { action: 'edit:copy' },
+                isMainWindowFocused: false,
+                target,
+                send,
+            })
+        ).toBe(false);
+
+        expect(target.copy).not.toHaveBeenCalled();
+        expect(send).not.toHaveBeenCalled();
     });
 
     it('routes an Open Recent click with its exact saved-project key', () => {

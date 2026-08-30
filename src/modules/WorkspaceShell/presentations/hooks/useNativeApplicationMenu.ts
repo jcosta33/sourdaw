@@ -3,7 +3,7 @@ import { useEffect } from 'react';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { clearClipSelection, selectAllClips, zoomTimelineBy } from '#/modules/Arrangement/useCases';
 import { executeAppAction, redo, undo } from '#/modules/Command/useCases';
-import { isKeyboardEditableTarget } from '#/modules/CommandInterface/useCases';
+import { dispatchCanvasEditorCommand, isNativeTextEditableTarget } from '#/modules/CommandInterface/useCases';
 import { captureProjectRevision, subscribeToCrdtChanges } from '#/modules/CrdtDocument/useCases';
 import { startOnboardingTour } from '#/modules/Onboarding/useCases';
 import { projectStore } from '#/modules/Project/stores';
@@ -71,8 +71,13 @@ const reportCloseResult = async (
 
 const runMenuAction = async (intent: NativeMenuIntent): Promise<void> => {
     const { action } = intent;
-    if (action.startsWith('edit:') && isKeyboardEditableTarget(document.activeElement)) {
-        return;
+    if (action.startsWith('edit:')) {
+        if (isNativeTextEditableTarget(document.activeElement)) {
+            return;
+        }
+        if (dispatchCanvasEditorCommand(document.activeElement, action)) {
+            return;
+        }
     }
     switch (action) {
         case 'project:new':

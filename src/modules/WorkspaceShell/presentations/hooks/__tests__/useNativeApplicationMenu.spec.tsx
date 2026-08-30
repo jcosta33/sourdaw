@@ -125,12 +125,17 @@ vi.mock('#/modules/WorkspaceShell/useCases', () => ({
 }));
 const command = vi.hoisted(() => ({ executeAppAction: vi.fn(async () => undefined), undo: vi.fn(), redo: vi.fn() }));
 vi.mock('#/modules/Command/useCases', () => command);
+const commandInterface = vi.hoisted(() => ({
+    dispatchCanvasEditorCommand: vi.fn(
+        (target: Element | null) => target instanceof HTMLElement && target.closest('[data-canvas-editor]') !== null
+    ),
+}));
 vi.mock('#/modules/CommandInterface/useCases', () => ({
-    isKeyboardEditableTarget: (target: Element | null) =>
+    isNativeTextEditableTarget: (target: Element | null) =>
         target instanceof HTMLInputElement ||
         target instanceof HTMLTextAreaElement ||
-        (target instanceof HTMLElement &&
-            (target.isContentEditable || target.closest('[data-canvas-editor]') !== null)),
+        (target instanceof HTMLElement && target.isContentEditable),
+    dispatchCanvasEditorCommand: commandInterface.dispatchCanvasEditorCommand,
 }));
 const onboarding = vi.hoisted(() => ({ startOnboardingTour: vi.fn() }));
 vi.mock('#/modules/Onboarding/useCases', () => onboarding);
@@ -175,6 +180,7 @@ describe('useNativeApplicationMenu', () => {
         command.executeAppAction.mockClear();
         command.undo.mockClear();
         command.redo.mockClear();
+        commandInterface.dispatchCanvasEditorCommand.mockClear();
         onboarding.startOnboardingTour.mockClear();
         for (const action of Object.values(workspace)) {
             action.mockClear();
@@ -371,7 +377,7 @@ describe('useNativeApplicationMenu', () => {
         input.remove();
     });
 
-    it('leaves native Edit commands to the focused canvas editor', async () => {
+    it('routes native Edit commands to the focused canvas editor owned-command seam', async () => {
         renderHook(() =>
             useNativeApplicationMenu({
                 projectId: 'project',
@@ -399,6 +405,10 @@ describe('useNativeApplicationMenu', () => {
         desktop.listener?.({ action: 'edit:select-all' });
 
         await Promise.resolve();
+        expect(commandInterface.dispatchCanvasEditorCommand).toHaveBeenNthCalledWith(1, pianoRoll, 'edit:cut');
+        expect(commandInterface.dispatchCanvasEditorCommand).toHaveBeenNthCalledWith(2, pianoRoll, 'edit:copy');
+        expect(commandInterface.dispatchCanvasEditorCommand).toHaveBeenNthCalledWith(3, pianoRoll, 'edit:paste');
+        expect(commandInterface.dispatchCanvasEditorCommand).toHaveBeenNthCalledWith(4, pianoRoll, 'edit:select-all');
         expect(command.executeAppAction).not.toHaveBeenCalled();
         expect(arrangement.selectAllClips).not.toHaveBeenCalled();
         pianoRoll.remove();

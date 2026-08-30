@@ -34,7 +34,11 @@ import {
     registerWindowControlChannels,
     SCAN_COMMAND,
 } from './appIpc.js';
-import { applyNativeTextEdit, createApplicationMenuTemplate, type NativeMenuIntent } from './applicationMenu.js';
+import {
+    createApplicationMenuTemplate,
+    dispatchFocusedNativeMenuIntent,
+    type NativeMenuIntent,
+} from './applicationMenu.js';
 import {
     EVENT_CHANNEL,
     NATIVE_MENU_ACTION_CHANNEL,
@@ -71,6 +75,7 @@ import { systemTimers } from './timers.js';
 import { registerVoiceDictation } from './voiceDictation.js';
 import { getWindowChromeOptions } from './windowChrome.js';
 import { createWindowCloseCoordinator } from './windowCloseCoordinator.js';
+import { askToSaveBeforeClose } from './windowCloseDialog.js';
 
 import type { WebContents } from 'electron';
 
@@ -145,10 +150,18 @@ const nativeMenuActionDispatcher = createNativeMenuActionDispatcher({
 
 const nativeMenuAction = (intent: NativeMenuIntent): void => {
     const window = mainWindow;
-    if (window !== undefined && !window.isDestroyed()) {
-        applyNativeTextEdit(window.webContents, intent.action);
+    if (window === undefined || window.isDestroyed()) {
+        return;
     }
-    nativeMenuActionDispatcher.dispatch(intent);
+    // A BaseWindow plugin editor can own native focus without being a
+    // BrowserWindow. Leave its responder chain alone rather than applying or
+    // forwarding an Edit operation to the renderer behind it.
+    dispatchFocusedNativeMenuIntent({
+        intent,
+        isMainWindowFocused: BaseWindow.getFocusedWindow() === window,
+        target: window.webContents,
+        send: (next) => nativeMenuActionDispatcher.dispatch(next),
+    });
 };
 
 const acknowledgeRendererSessionDestroying = (window: BrowserWindow): void => {
@@ -171,27 +184,7 @@ const rebuildMacApplicationMenu = (
 };
 
 const windowCloseCoordinator = createWindowCloseCoordinator({
-    ask: async (title) => {
-        const window = mainWindow;
-        if (window === undefined || window.isDestroyed()) {
-            return 'cancel';
-        }
-        const answer = await dialog.showMessageBox(window, {
-            type: 'warning',
-            buttons: ['Save', 'Don’t Save', 'Cancel'],
-            defaultId: 0,
-            cancelId: 2,
-            message: `Do you want to save the changes you made to “${title}”?`,
-            detail: 'Your changes will be lost if you do not save them.',
-        });
-        if (answer.response === 0) {
-            return 'save';
-        }
-        if (answer.response === 1) {
-            return 'discard';
-        }
-        return 'cancel';
-    },
+    ask: (title) => askToSaveBeforeClose({ window: mainWindow, dialog, title }),
     send: (operation, requestId, expected) =>
         nativeMenuAction({
             action: operation === 'save' ? 'project:save' : 'project:discard',
@@ -389,7 +382,9 @@ const createWindow = (): BrowserWindow => {
             acknowledgeRendererSessionDestroying(window);
             windowCloseCoordinator.markClosing();
         },
-        () => process.platform !== 'darwin' || closeSessionQuiescedWindow === window
+        () =>
+            windowCloseCoordinator.permitsClose() &&
+            (process.platform !== 'darwin' || closeSessionQuiescedWindow === window)
     );
     return window;
 };

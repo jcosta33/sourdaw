@@ -107,6 +107,13 @@ export const createRendererSessionQuiescer = (
             return true;
         },
         finalize: (window: RendererSessionWindow): void => {
+            // A destroyed renderer cannot repair or complete its outstanding
+            // request. Settling it directly is safe: there is no session left
+            // to restore, and a replacement window must be able to admit its
+            // own close request immediately.
+            if (pending?.window === window) {
+                pending.settle(false);
+            }
             if (acknowledgedSuccess?.window === window) {
                 acknowledgedSuccess = undefined;
             }

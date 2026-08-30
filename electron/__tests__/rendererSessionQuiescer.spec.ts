@@ -90,6 +90,26 @@ describe('renderer session quiescer', () => {
         await expect(retry).resolves.toBe(false);
     });
 
+    it('settles a destroyed window request without recovery and immediately admits its replacement', async () => {
+        const destroyed = { value: false };
+        const window = { isDestroyed: () => destroyed.value, webContents: { send: vi.fn() } };
+        const replacement = { isDestroyed: () => false, webContents: { send: vi.fn() } };
+        const quiescer = createRendererSessionQuiescer('renderer:quiesce', 'renderer:cancel');
+
+        const pending = quiescer.request(window);
+        expect(quiescer.start(window, 1)).toBe(true);
+        destroyed.value = true;
+        quiescer.finalize(window);
+
+        await expect(pending).resolves.toBe(false);
+        expect(window.webContents.send).not.toHaveBeenCalledWith('renderer:cancel', 1);
+
+        const next = quiescer.request(replacement);
+        expect(replacement.webContents.send).toHaveBeenCalledWith('renderer:quiesce', 2);
+        quiescer.resolve(replacement, 2, false);
+        await expect(next).resolves.toBe(false);
+    });
+
     it('does not let native editor detach/window close begin before renderer project runtime quiesces', async () => {
         let release!: (quiesced: boolean) => void;
         const order: string[] = [];

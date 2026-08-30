@@ -8,12 +8,8 @@ export async function beginProjectSessionPluginRetirement(): Promise<{
     readonly retire: () => Promise<void>;
     readonly reopen: () => void;
 }> {
-    const activeRebuild = pluginLifecycleScheduler.currentRebuildCompletion();
-    if (activeRebuild) {
-        await activeRebuild;
-    }
+    const rebuild = await pluginLifecycleScheduler.beginRebuildAfterCurrent();
     externalPluginActivationEpoch.current += 1;
-    const rebuild = pluginLifecycleScheduler.beginRebuild();
     const admittedActivations = [...externalPluginActivationTasks.values()];
     let reopened = false;
     return {
