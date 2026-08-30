@@ -12,6 +12,7 @@ import { stopPlayheadScheduler } from '../playheadScheduler/stopPlayheadSchedule
 import { secondsBetweenBeats } from '../secondsBetweenBeats';
 
 import { panicYeastRuntime } from './panicYeastRuntime';
+import { recordingLifecycle } from './recordingLifecycle';
 import { stopActiveRecording } from './stopActiveRecording';
 
 export function executePlayheadSeek(beat: number): Promise<void> {
@@ -92,7 +93,14 @@ export function executePlayheadSeek(beat: number): Promise<void> {
         return yeastPanic;
     }
 
-    if (!wasRecording) {
+    // A start that is armed but not yet recording must fall through to the
+    // teardown too. During a count-in `isRecording` is still false, and the
+    // armed wake holds the beat the count-in counted to — left alive it would
+    // open the take back there after the seek moved the playhead on. Pause and
+    // stop cancel the same trap through `stopActiveRecording`, so the seek
+    // routes through it as well, inheriting this path's ordering: the armed
+    // start is dead before the seek commits its beat.
+    if (!wasRecording && !recordingLifecycle.hasPendingRecordingStart()) {
         return finishSeek();
     }
 
