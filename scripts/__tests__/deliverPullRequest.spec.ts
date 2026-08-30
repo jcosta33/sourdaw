@@ -471,6 +471,7 @@ type FakeInput = {
     dependentSets?: StackedPullRequest[][];
     dirty?: boolean;
     headCheckRuns?: HeadCheckRun[] | Error;
+    headCheckRunReads?: Array<HeadCheckRun[] | Error>;
     gateRequiredCheckNames?: ReadonlySet<string> | Error;
     deletesMergedBranches?: boolean;
     failAddReceiptOnce?: boolean;
@@ -575,6 +576,7 @@ function fakePort(input: FakeInput = {}) {
     const primary = [...(input.primary ?? [pullRequest(), pullRequest()])];
     const reviewStates = [...(input.reviewStates ?? [])];
     const dependentSets = input.dependentSets?.map((set) => [...set]) ?? [[stacked()], [stacked()]];
+    const headCheckRunReads = input.headCheckRunReads?.map((entry) => (entry instanceof Error ? entry : [...entry]));
     const pullRequests = new Map<number, PullRequestSnapshot>();
     for (const set of dependentSets) {
         for (const dependent of set) {
@@ -634,20 +636,21 @@ function fakePort(input: FakeInput = {}) {
             return required;
         },
         /**
-         * Unreadable unless the case under test supplies the head's own check runs, so a delivery
-         * that reads check evidence it has no business reading — a dependent's, or an already-merged
-         * pull request's — throws instead of quietly passing.
+         * The primary head defaults to one successful Gate run so advisory delivery cases that do not
+         * care about CI observation still exercise a complete snapshot. Cases that need an unreadable
+         * or non-success snapshot supply it explicitly, and any non-primary read still throws.
          */
         headCheckRuns: (number, headRefOid) => {
             calls.push(`checks:${number}:${headRefOid}`);
-            const runs = number === 42 ? input.headCheckRuns : undefined;
+            const runs =
+                number === 42 ? (headCheckRunReads?.shift() ?? input.headCheckRuns ?? [checkRun()]) : undefined;
             if (runs === undefined) {
                 throw new Error(`PR #${number} check rollup is unreadable`);
             }
             if (runs instanceof Error) {
                 throw runs;
             }
-            return runs;
+            return structuredClone(runs);
         },
         reviewState: (number, expectedHead) => {
             calls.push(`review:${number}:${expectedHead}`);
@@ -979,7 +982,7 @@ describe('pull-request delivery', () => {
         expect(calls).not.toContain('merge-title:feat(delivery): retitled in UI');
     });
 
-    it('cuts over an UNKNOWN initial refresh that becomes a merged author-App head with one exact legacy v1 receipt and no persisted authority', () => {
+    it('fails closed when an UNKNOWN initial refresh becomes a merged author-App head with no persisted receipt authority', () => {
         const closes = relationshipBody('Closes #2372');
         const child = stacked();
         const seededReceipt: DeliveryReceiptComment = {
@@ -1005,17 +1008,16 @@ describe('pull-request delivery', () => {
             receipts: [seededReceipt],
         });
 
-        deliverPullRequest(42, port, tracker);
-
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/delivery receipt authority cannot be proven/i);
         expect(calls.filter((call) => call === 'review:42:head')).toHaveLength(0);
-        expect(calls.filter((call) => call === 'receipts:42')).toHaveLength(2);
-        expect(calls).toContain('receipt-proof:42:1:IC_seeded_x');
-        expect(calls).toContain('receipt-authority:write:merge-authorized:IC_seeded_x');
+        expect(calls.filter((call) => call === 'receipts:42')).toHaveLength(0);
+        expect(calls).not.toContain('receipt-proof:42:1:IC_seeded_x');
+        expect(calls).not.toContain('receipt-authority:write:merge-authorized:IC_seeded_x');
         expect(calls).not.toContain('merge:42:head');
-        expect(calls).toContain('retarget:43:main');
-        expect(calls).toContain('complete:2372');
-        expect(calls).toContain('receipt-authority:write:terminal:IC_seeded_x');
-        expect(calls).toContain('PR #42 was already merged; repaired 1 remaining dependent(s)');
+        expect(calls).not.toContain('retarget:43:main');
+        expect(calls).not.toContain('complete:2372');
+        expect(calls).not.toContain('receipt-authority:write:terminal:IC_seeded_x');
+        expect(calls).not.toContain('PR #42 was already merged; repaired 1 remaining dependent(s)');
         expect(receipts.map((receipt) => receipt.body)).toEqual([deliveryReceiptBody(42, 'head', closes, 2372)]);
     });
 
@@ -1560,20 +1562,15 @@ describe('pull-request delivery', () => {
         expect(calls.filter((call) => call.startsWith('receipt-authority:write:terminal:'))).toHaveLength(0);
     });
 
-    it('cuts over a single exact legacy v1 merged receipt with no persisted authority, then resumes after a dependent-repair crash', () => {
+    it('fails closed when a merged head shows one visible receipt but no persisted authority anchors it against deleted newer comments', () => {
         const closes = relationshipBody('Closes #2372');
-        const child = stacked();
-        const { port, calls, tracker, persistedReceiptAuthority } = fakePort({
-            primary: [
-                pullRequest({ state: 'MERGED', body: closes, mergedByActorNodeId: AUTHOR_BOT_NODE_ID }),
-                pullRequest({ state: 'MERGED', body: closes, mergedByActorNodeId: AUTHOR_BOT_NODE_ID }),
-            ],
-            dependentSets: [[child], [child], []],
-            failRetargetOnce: 43,
+        const { port, calls, tracker } = fakePort({
+            primary: [pullRequest({ state: 'MERGED', body: closes, mergedByActorNodeId: AUTHOR_BOT_NODE_ID })],
+            dependentSets: [[]],
             receipts: [
                 {
-                    id: 'IC_v1_only',
-                    body: deliveryReceiptBody(42, 'head', closes, 2372),
+                    id: 'IC_v2_only',
+                    body: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'),
                     authorNodeId: AUTHOR_BOT_NODE_ID,
                     authorLogin: 'renamed-author[bot]',
                     authorType: 'Bot',
@@ -1581,26 +1578,15 @@ describe('pull-request delivery', () => {
                     updatedAt: '2026-08-21T00:00:00Z',
                 },
             ],
-            deliveryReceiptProof: { totalCount: 1, latestCommentId: 'IC_v1_only' },
+            deliveryReceiptProof: { totalCount: 1, latestCommentId: 'IC_v2_only' },
         });
 
-        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/retarget 43 failed/i);
-        expect(calls).toContain('receipt-authority:write:merge-authorized:IC_v1_only');
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/delivery receipt authority cannot be proven/i);
+        expect(calls).not.toContain('receipt-proof:42:1:IC_v2_only');
         expect(calls.filter((call) => call.startsWith('complete:'))).toHaveLength(0);
-        expect(persistedReceiptAuthority()).toEqual({
-            phase: 'merge-authorized',
-            receiptId: 'IC_v1_only',
-            receiptBody: deliveryReceiptBody(42, 'head', closes, 2372),
-            postMergeValidation: persistedPostMergeValidation('head', closes, 2372),
-        });
-
-        deliverPullRequest(42, port, tracker);
-
-        expect(calls).toContain('receipt-authority:read:merge-authorized:IC_v1_only');
-        expect(calls).toContain('retarget:43:main');
-        expect(calls).toContain('complete:2372');
-        expect(calls).toContain('receipt-authority:write:terminal:IC_v1_only');
-        expect(calls).toContain('PR #42 was already merged; repaired 1 remaining dependent(s)');
+        expect(calls.filter((call) => call.startsWith('receipt-authority:write:'))).toHaveLength(0);
+        expect(calls.filter((call) => call.startsWith('retarget:'))).toHaveLength(0);
+        expect(calls).not.toContain('PR #42 was already merged; repaired 0 remaining dependent(s)');
     });
 
     it('fails closed when comments once held A then B but merged recovery can only see surviving A with no persisted authority', () => {
@@ -2703,7 +2689,7 @@ describe('pull-request delivery', () => {
         });
 
         expect(() => deliverPullRequest(42, port, tracker)).toThrow(/delivery receipt authority cannot be proven/i);
-        expect(calls).toContain('receipt-proof:42:2:IC_trailing_v1');
+        expect(calls).not.toContain('receipt-proof:42:2:IC_trailing_v1');
         expect(calls).not.toContain('receipt-authority:write:merge-authorized:IC_trailing_v1');
         expect(calls).not.toContain('receipt-authority:write:terminal:IC_trailing_v1');
         expect(calls.filter((call) => call.startsWith('complete:'))).toHaveLength(0);
@@ -2816,6 +2802,10 @@ describe('pull-request delivery', () => {
         'restores the pre-final-fetch prepared authority when the final fetch throws before any snapshot, so a later $label retry can deliver',
         ({ retryHead, retryBody, retryMergeStateStatus, expectedIssue, expectedCiState }) => {
             const closes = relationshipBody('Closes #2372');
+            const retryHeadCheckRuns =
+                retryMergeStateStatus === 'UNSTABLE'
+                    ? supersededRunCheckRuns()
+                    : ([checkRun()] satisfies HeadCheckRun[]);
             const { port, calls, tracker, persistedReceiptAuthority, receipts } = fakePort({
                 primary: [
                     pullRequest({ headRefOid: 'head', body: closes, mergeStateStatus: 'CLEAN' }),
@@ -2825,6 +2815,10 @@ describe('pull-request delivery', () => {
                     pullRequest({ headRefOid: retryHead, body: retryBody, mergeStateStatus: retryMergeStateStatus }),
                 ],
                 dependentSets: [[], []],
+                headCheckRunReads:
+                    retryMergeStateStatus === 'UNSTABLE'
+                        ? [[checkRun()], retryHeadCheckRuns, retryHeadCheckRuns]
+                        : undefined,
             });
 
             expect(() => deliverPullRequest(42, port, tracker)).toThrow(/final fetch failed before any snapshot/i);
@@ -4587,7 +4581,7 @@ describe('pull-request delivery', () => {
         });
 
         expect(() => deliverPullRequest(42, port, tracker)).toThrow(/delivery receipt authority cannot be proven/i);
-        expect(calls).toContain('receipt-proof:42:2:IC_second');
+        expect(calls).not.toContain('receipt-proof:42:2:IC_second');
         expect(calls).not.toContain('receipt-authority:write:merge-authorized:IC_second');
         expect(calls).not.toContain('receipt-authority:write:terminal:IC_second');
         expect(calls).not.toContain('complete:2373');
@@ -5621,61 +5615,78 @@ describe('pull-request delivery', () => {
     });
 
     it.each([
-        { ciState: 'successful', mergeStateStatus: 'CLEAN' },
-        { ciState: 'failed', mergeStateStatus: 'BLOCKED' },
-        { ciState: 'pending', mergeStateStatus: 'UNKNOWN' },
-        { ciState: 'absent', mergeStateStatus: '' },
-        { ciState: 'unstable', mergeStateStatus: 'UNSTABLE' },
-        { ciState: 'malformed', mergeStateStatus: 'not-a-github-state' },
-        { ciState: 'unavailable', mergeStateStatus: 'UNAVAILABLE' },
-    ])('merges with $ciState CI evidence while CI admission is advisory', ({ mergeStateStatus }) => {
-        const forbiddenCiRead = new Error('advisory delivery must not read CI evidence');
+        { ciState: 'successful', mergeStateStatus: 'BLOCKED', headCheckRuns: [checkRun()] },
+        { ciState: 'failed', mergeStateStatus: 'CLEAN', headCheckRuns: [checkRun({ conclusion: 'FAILURE' })] },
+        {
+            ciState: 'pending',
+            mergeStateStatus: 'CLEAN',
+            headCheckRuns: [checkRun({ status: 'IN_PROGRESS', conclusion: null })],
+        },
+        { ciState: 'absent', mergeStateStatus: 'BLOCKED', headCheckRuns: [] as HeadCheckRun[] },
+        {
+            ciState: 'cancelled',
+            mergeStateStatus: 'CLEAN',
+            headCheckRuns: [checkRun({ name: 'Lint', conclusion: 'CANCELLED' }), checkRun()],
+        },
+        { ciState: 'unstable', mergeStateStatus: 'CLEAN', headCheckRuns: supersededRunCheckRuns() },
+        {
+            ciState: 'malformed',
+            mergeStateStatus: 'CLEAN',
+            headCheckRuns: [checkRun({ status: 'COMPLETED', conclusion: null })],
+        },
+        { ciState: 'unavailable', mergeStateStatus: 'CLEAN', headCheckRuns: new Error('check rollup offline') },
+    ])('merges with $ciState CI evidence while CI admission is advisory', ({ mergeStateStatus, headCheckRuns }) => {
+        const forbiddenGateRead = new Error('advisory delivery must not read gated workflow evidence');
         const { port, calls } = fakePort({
             primary: [pullRequest({ mergeStateStatus }), pullRequest({ mergeStateStatus })],
-            gateRequiredCheckNames: forbiddenCiRead,
-            headCheckRuns: forbiddenCiRead,
+            gateRequiredCheckNames: forbiddenGateRead,
+            headCheckRuns,
         });
 
         deliverPullRequest(42, port);
 
         expect(calls).toContain('merge:42:head');
         expect(calls).not.toContain('gate-required-check-names');
-        expect(calls.filter((call) => call.startsWith('checks:'))).toEqual([]);
+        expect(calls.filter((call) => call.startsWith('checks:'))).not.toEqual([]);
     });
 
     it.each([
-        { ciState: 'successful', mergeStateStatus: 'CLEAN' },
-        { ciState: 'failed', mergeStateStatus: 'BLOCKED' },
-        { ciState: 'pending', mergeStateStatus: 'UNKNOWN' },
-        { ciState: 'absent', mergeStateStatus: '' },
-        { ciState: 'unstable', mergeStateStatus: 'UNSTABLE' },
-        { ciState: 'malformed', mergeStateStatus: 'not-a-github-state' },
-        { ciState: 'unavailable', mergeStateStatus: 'UNAVAILABLE' },
-    ])('writes advisory delivery receipts with the normalized $ciState CI state', ({ ciState, mergeStateStatus }) => {
-        const { port, receipts } = fakePort({
-            primary: [pullRequest({ mergeStateStatus }), pullRequest({ mergeStateStatus })],
-        });
+        { ciState: 'successful', mergeStateStatus: 'BLOCKED', headCheckRuns: [checkRun()] },
+        { ciState: 'failed', mergeStateStatus: 'CLEAN', headCheckRuns: [checkRun({ conclusion: 'FAILURE' })] },
+        {
+            ciState: 'pending',
+            mergeStateStatus: 'CLEAN',
+            headCheckRuns: [checkRun({ status: 'IN_PROGRESS', conclusion: null })],
+        },
+        { ciState: 'absent', mergeStateStatus: 'BLOCKED', headCheckRuns: [] as HeadCheckRun[] },
+        {
+            ciState: 'cancelled',
+            mergeStateStatus: 'CLEAN',
+            headCheckRuns: [checkRun({ name: 'Lint', conclusion: 'CANCELLED' }), checkRun()],
+        },
+        { ciState: 'unstable', mergeStateStatus: 'CLEAN', headCheckRuns: supersededRunCheckRuns() },
+        {
+            ciState: 'malformed',
+            mergeStateStatus: 'CLEAN',
+            headCheckRuns: [checkRun({ status: 'COMPLETED', conclusion: null })],
+        },
+        { ciState: 'unavailable', mergeStateStatus: 'CLEAN', headCheckRuns: new Error('check rollup offline') },
+    ])(
+        'writes advisory delivery receipts with the normalized $ciState CI state from head-check evidence',
+        ({ ciState, mergeStateStatus, headCheckRuns }) => {
+            const { port, receipts } = fakePort({
+                primary: [pullRequest({ mergeStateStatus }), pullRequest({ mergeStateStatus })],
+                headCheckRuns,
+            });
 
-        deliverPullRequest(42, port);
+            deliverPullRequest(42, port);
 
-        expect(receipts).toHaveLength(1);
-        expect(receipts[0]?.body).toContain('Delivery receipt for PR #42.');
-        expect(receipts[0]?.body).toContain('- CI admission: advisory');
-        expect(receipts[0]?.body).toContain(`- Observed CI state: ${ciState}`);
-    });
-
-    it('writes advisory delivery receipts with unstable observed CI state when GitHub reports UNSTABLE', () => {
-        const { port, receipts } = fakePort({
-            primary: [pullRequest({ mergeStateStatus: 'UNSTABLE' }), pullRequest({ mergeStateStatus: 'UNSTABLE' })],
-        });
-
-        deliverPullRequest(42, port);
-
-        expect(receipts).toHaveLength(1);
-        expect(receipts[0]?.body).toContain('- Observed CI state: unstable');
-        expect(receipts[0]?.body).not.toContain('- Observed CI state: failed');
-        expect(receipts[0]?.body).not.toContain('- Observed CI state: cancelled');
-    });
+            expect(receipts).toHaveLength(1);
+            expect(receipts[0]?.body).toContain('Delivery receipt for PR #42.');
+            expect(receipts[0]?.body).toContain('- CI admission: advisory');
+            expect(receipts[0]?.body).toContain(`- Observed CI state: ${ciState}`);
+        }
+    );
 
     it('restores required-CI authority after a final unreadable rollup so a changed receipt body can deliver on retry', () => {
         const closesX = relationshipBody('Closes #2372');
@@ -5688,6 +5699,7 @@ describe('pull-request delivery', () => {
                 pullRequest({ body: closesY, mergeStateStatus: 'CLEAN' }),
             ],
             dependentSets: [[], []],
+            headCheckRunReads: [new Error('PR #42 check rollup is unreadable')],
         });
 
         expect(() => deliverPullRequestWithRequiredCi(42, port, tracker)).toThrow(/check rollup is unreadable/);
@@ -5726,12 +5738,17 @@ describe('pull-request delivery', () => {
         'replaces the staged advisory receipt when the final same-head snapshot drifts to $finalMergeStateStatus',
         ({ finalMergeStateStatus, observedCiState }) => {
             const closes = relationshipBody('Closes #2372');
+            const finalHeadCheckRuns =
+                finalMergeStateStatus === 'UNSTABLE'
+                    ? supersededRunCheckRuns()
+                    : ([checkRun({ conclusion: 'FAILURE' })] satisfies HeadCheckRun[]);
             const { port, calls, receipts, persistedReceiptAuthority, tracker } = fakePort({
                 primary: [
                     pullRequest({ body: closes, mergeStateStatus: 'CLEAN' }),
                     pullRequest({ body: closes, mergeStateStatus: finalMergeStateStatus }),
                 ],
                 dependentSets: [[], []],
+                headCheckRunReads: [[checkRun()], finalHeadCheckRuns],
             });
 
             deliverPullRequest(42, port, tracker);
@@ -5759,6 +5776,7 @@ describe('pull-request delivery', () => {
                 pullRequest({ body: closes, mergeStateStatus: 'UNSTABLE' }),
             ],
             dependentSets: [[], []],
+            headCheckRunReads: [[checkRun()], supersededRunCheckRuns()],
         });
         const originalMerge = port.merge;
         let failMergeOnce = true;
@@ -6164,7 +6182,7 @@ describe('pull-request delivery', () => {
 
         expect(calls.filter((call) => call === 'retarget:44:main')).toHaveLength(2);
         expect(calls).toContain('PR #42 was already merged; repaired 1 remaining dependent(s)');
-        expect(calls.filter((call) => call.startsWith('checks:'))).toEqual([]);
+        expect(calls.filter((call) => call.startsWith('checks:'))).toEqual(['checks:42:head', 'checks:42:head']);
     });
 
     it.each([
