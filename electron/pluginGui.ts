@@ -49,7 +49,9 @@
  *
  * The window registry lives here, in the `editors` map, and nowhere else: the
  * addon probes and addresses windows by label through the callbacks, so a
- * label is free again the moment the platform reports the window closed.
+ * label answers the existence probe as gone from the moment the OS asks to end
+ * its window — a reopen racing that teardown must not be refused — and is free
+ * for a new window the moment the platform reports the old one closed.
  */
 import type { BaseWindow } from 'electron';
 
@@ -743,7 +745,12 @@ export const createPluginWindowHost = (deps: PluginWindowHostDeps): PluginWindow
 
     return {
         create,
-        exists: (label) => editors.has(label),
+        // The addon asks this as "is this editor still open?", and the one
+        // window that must not answer yes is the one whose OS close is being
+        // torn down: hidden, unaddressable, and already reported. Answering
+        // "exists" there is what makes a reopen racing that teardown refuse
+        // "already open" for a window the user watched disappear.
+        exists: (label) => openEditor(label) !== undefined,
         setSize: (request) => {
             const record = openEditor(request.label);
             if (record === undefined) {

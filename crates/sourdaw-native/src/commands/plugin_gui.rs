@@ -229,10 +229,12 @@ fn open_editor_or_release_host_window<Plugin: AudioPlugin + ?Sized>(
 /// 3. Create a bare native window (no WebView) through the shell's window host,
 ///    owned by the DAW window (Windows owner / macOS child window / X11
 ///    transient-for) so it floats above the DAW and nothing else
-/// 4. Extract the native window handle (NSView/HWND/X11)
-/// 5. Give the plugin the host's window resizer, then pass the handle to
+/// 4. Retire a stale record — a recorded window the shell no longer has — and
+///    with it the editor behind it, so the new editor opens onto a clean plugin
+/// 5. Extract the native window handle (NSView/HWND/X11)
+/// 6. Give the plugin the host's window resizer, then pass the handle to
 ///    `open_gui`, which runs that format's editor lifecycle
-/// 6. Publish the window and resize it to the plugin's preferred size
+/// 7. Publish the window and resize it to the plugin's preferred size
 pub async fn open_plugin_gui(
     instance_id: String,
     windows_host: &dyn PluginWindowHost,
@@ -277,8 +279,9 @@ pub async fn open_plugin_gui(
 
     // 2. Already open? The recorded label is the only way to ask: a label names one
     // opening, so there is nothing to derive and hand the shell. Recorded but
-    // gone from the shell is a stale entry the publish below replaces.
-    let open_window_label = {
+    // gone from the shell is a stale entry — an editor the OS has already ended
+    // whose reset has not run — that step 4 below claims and replaces.
+    let mut open_window_label = {
         let windows = state
             .plugin_windows
             .lock()
@@ -300,7 +303,21 @@ pub async fn open_plugin_gui(
     let plugin_window: Arc<dyn PluginEditorWindow> =
         Arc::from(windows_host.create_editor_window(&window_label, &plugin_name, &instance_id)?);
 
-    // 4. Extract the native window handle
+    // 4. Retire the stale record this open's check identified, and with it the
+    // editor behind it. See `retire_stale_editor_for_reopen`; here, because a
+    // create that succeeded is the shell answering, so the "no window" that
+    // named this record stale was an answer rather than an unreachable host —
+    // and an unreachable host must not have a live editor closed on its say-so.
+    if let Some(stale_label) = open_window_label.take() {
+        if let Err(error) =
+            retire_stale_editor_for_reopen(&instance_id, &stale_label, windows_host, state)
+        {
+            plugin_window.destroy();
+            return Err(error);
+        }
+    }
+
+    // 5. Extract the native window handle
     let handle_ptr = match plugin_window.native_handle_ptr() {
         Ok(handle_ptr) => handle_ptr,
         Err(error) => {
@@ -309,7 +326,7 @@ pub async fn open_plugin_gui(
         }
     };
 
-    // 5. Give the plugin the host window — how to resize it, and what scale it
+    // 6. Give the plugin the host window — how to resize it, and what scale it
     //    runs at — then open its GUI.
     let resize_window = editor_window_resizer(&plugin_window);
     let scale_factor = plugin_window.scale_factor();
@@ -451,11 +468,12 @@ fn publish_engine_gui_window_with_lifecycle_checks(
 /// Record the window that just opened, but only if nothing claimed this
 /// instance's editor while it was opening.
 ///
-/// A compare-and-swap against what this open's own already-open check saw. The
-/// OS-close reset claims by removing the record, and it can do that in the gap
-/// between that check and here — for the opening it was reported against, which
-/// was legitimately still recorded. Its teardown then closes the plugin's GUI,
-/// and this window would be shown over an editor that is already dead.
+/// A compare-and-swap against what this open last left recorded: what its own
+/// already-open check saw, or the empty record its stale-window retirement
+/// left. The OS-close reset claims by removing the record, and it can do that
+/// in the gap between those points — for the opening it was reported against,
+/// which was legitimately still recorded. Its teardown then closes the plugin's
+/// GUI, and this window would be shown over an editor that is already dead.
 ///
 /// So a claim raised after this opening began loses the window: the open is
 /// refused, its caller tears down what it built, and the user gets a refusal
@@ -484,6 +502,29 @@ fn publish_plugin_gui_window_in_label_order(
     insert_label()?;
     show_window();
     Ok(())
+}
+
+/// Claim one recorded editor window by removing its record, and say whether
+/// this claimant was the one that removed it.
+///
+/// A label names one opening, so a compare-and-remove against the recorded
+/// label decides which claimant owns an editor's teardown when two race for
+/// one — the OS-close reset's report, or a reopen replacing a window the shell
+/// has already ended. The loser finds the record changed and touches nothing:
+/// not the record, not the plugin's GUI.
+fn remove_recorded_editor_window(
+    windows: &mut HashMap<String, String>,
+    instance_id: &str,
+    window_label: &str,
+) -> bool {
+    let is_this_window = windows
+        .get(instance_id)
+        .map(|label| label == window_label)
+        .unwrap_or(false);
+    if is_this_window {
+        windows.remove(instance_id);
+    }
+    is_this_window
 }
 
 /// Reset "GUI open" bookkeeping after the OS reports the plugin window is
@@ -539,16 +580,7 @@ pub fn reset_plugin_gui_state_after_os_close(
     // state a concurrent open also writes — decides which report owns this
     // teardown.
     let removed_this_window = match state.plugin_windows.lock() {
-        Ok(mut windows) => {
-            let is_this_window = windows
-                .get(instance_id)
-                .map(|label| label == window_label)
-                .unwrap_or(false);
-            if is_this_window {
-                windows.remove(instance_id);
-            }
-            is_this_window
-        }
+        Ok(mut windows) => remove_recorded_editor_window(&mut windows, instance_id, window_label),
         Err(_) => false,
     };
 
@@ -602,6 +634,45 @@ fn close_owning_plugin_gui(
             lend_on_ui_thread(windows_host, plugin, |plugin| plugin.close_gui())
         });
     }
+}
+
+/// Claim a recorded editor whose window the shell no longer has, and close the
+/// editor behind it, so the reopen racing the OS-close reset opens rather than
+/// collides.
+///
+/// The OS close is stopped and the window hidden on the shell's own thread, but
+/// the reset its report schedules runs here only after the report crosses the
+/// shell — and a reopen clicked into that gap finds the record still present
+/// under a window that is already gone. Opening over the editor behind that
+/// record fails inside the plugin, so the reopen claims the record instead —
+/// the same compare-and-remove the reset claims with, which is what makes the
+/// two safe against each other: whichever claims first owns the teardown, and
+/// the late report then finds a newer label recorded and changes nothing,
+/// exactly as a report for an editor a reopen already replaced does.
+///
+/// A claim that loses refuses, like the publish-time claim below: a record that
+/// changed under this opening means someone else's teardown or opening owns the
+/// editor now, and showing this window over either would put it on screen over
+/// an editor this open does not control.
+fn retire_stale_editor_for_reopen(
+    instance_id: &str,
+    stale_label: &str,
+    windows_host: &dyn PluginWindowHost,
+    state: &AppState,
+) -> Result<(), String> {
+    let removed_stale_record = {
+        let mut windows = state
+            .plugin_windows
+            .lock()
+            .map_err(|e| format!("Failed to lock plugin_windows: {}", e))?;
+        remove_recorded_editor_window(&mut windows, instance_id, stale_label)
+    };
+    if !removed_stale_record {
+        return Err("Plugin editor state changed while its window was opening".to_string());
+    }
+
+    close_owning_plugin_gui(instance_id, windows_host, state);
+    Ok(())
 }
 
 fn cleanup_opened_engine_gui_after_rejected_lifecycle(
@@ -1182,6 +1253,105 @@ mod tests {
             [windows.thread_id, windows.thread_id],
             "an OS close must reach the plugin on the shell's thread too"
         );
+    }
+
+    /// The race of #2917. The shell hides a window the OS is closing the moment
+    /// it stops the close, but the reset its report schedules runs here only
+    /// after the report crosses the shell — and a reopen clicked into that gap
+    /// found the recorded window still present and was refused for an editor
+    /// the user had already watched disappear. The reopen must open instead:
+    /// it claims the stale record, closes the editor behind it, and opens its
+    /// own — and the report landing late names an opening that was replaced,
+    /// so it may not touch the editor now on screen.
+    #[test]
+    fn a_reopen_racing_the_os_close_reset_opens_rather_than_refusing() {
+        let state = AppState::default();
+        let gui_threads =
+            insert_engine_owned_fixture_watching_gui_threads(&state, "engine-owned-fixture", true);
+        let windows = DedicatedUiWindowHost::start();
+        crate::block_on_test(open_plugin_gui(
+            "engine-owned-fixture".to_string(),
+            &windows,
+            &state,
+        ))
+        .expect("the fixture editor should open");
+        let closed_label = state
+            .plugin_windows
+            .lock()
+            .expect("plugin_windows lock")
+            .get("engine-owned-fixture")
+            .cloned()
+            .expect("the open must have recorded a window");
+
+        // The OS ends the window while the report that schedules the reset is
+        // still crossing to this side: the shell answers the existence probe
+        // "gone" from the moment it stops the close, but nothing here has
+        // reset yet.
+        windows.os_closed(&closed_label);
+
+        let reopened = crate::block_on_test(open_plugin_gui(
+            "engine-owned-fixture".to_string(),
+            &windows,
+            &state,
+        ))
+        .expect("a reopen inside the OS-close gap must open the editor, not refuse it");
+
+        assert!(reopened.is_open);
+        assert_eq!(
+            recorded_threads(&gui_threads),
+            [windows.thread_id, windows.thread_id, windows.thread_id],
+            "the reopen must close the stale editor and open its own on the shell's thread, \
+             like every other editor call"
+        );
+
+        let events = RecordingEventSink::default();
+        reset_plugin_gui_state_after_os_close(
+            "engine-owned-fixture",
+            &closed_label,
+            &windows,
+            &state,
+            &events,
+        );
+
+        assert_ne!(
+            state
+                .plugin_windows
+                .lock()
+                .expect("plugin_windows lock")
+                .get("engine-owned-fixture")
+                .map(String::as_str),
+            Some(closed_label.as_str()),
+            "the reopened editor keeps its record"
+        );
+        assert!(
+            events.events().is_empty(),
+            "a report for an opening the reopen replaced must not tell the frontend the live \
+             editor closed"
+        );
+    }
+
+    /// The refusal the already-open check exists for — a recorded window the
+    /// shell still holds — must survive the stale-record retirement, which may
+    /// only ever take down an editor whose window is already gone.
+    #[test]
+    fn an_editor_whose_window_is_still_live_refuses_a_second_open() {
+        let state = AppState::default();
+        insert_engine_owned_fixture(&state, "engine-owned-fixture", true);
+        let windows = DedicatedUiWindowHost::start();
+        crate::block_on_test(open_plugin_gui(
+            "engine-owned-fixture".to_string(),
+            &windows,
+            &state,
+        ))
+        .expect("the fixture editor should open");
+
+        let refused = crate::block_on_test(open_plugin_gui(
+            "engine-owned-fixture".to_string(),
+            &windows,
+            &state,
+        ));
+
+        assert_eq!(refused.err().as_deref(), Some("Plugin GUI is already open"));
     }
 
     /// One instance failing to close its editor used to abandon every instance

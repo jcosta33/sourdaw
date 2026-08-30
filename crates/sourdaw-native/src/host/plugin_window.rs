@@ -259,7 +259,13 @@ pub fn apply_editor_size_on_ui_thread<Ui: UiThread + ?Sized>(
 /// Creates and addresses the native windows plugin editors are drawn into, and
 /// is the thread they live on.
 pub trait PluginWindowHost: UiThread {
-    /// Whether a window with this label already exists.
+    /// Whether the shell still holds a live window for this label, which is the
+    /// question the open path asks as "is this editor still open?".
+    ///
+    /// A window whose OS close is being torn down answers false: it is hidden
+    /// and unaddressable from the moment the close is stopped, and an open
+    /// racing that teardown must not read it as an editor still being open —
+    /// the refusal that produces is for a window the user watched disappear.
     fn window_exists(&self, label: &str) -> bool;
 
     /// Create a hidden, bare native window for one plugin editor.
@@ -358,6 +364,9 @@ pub mod testing {
         pub thread_id: ThreadId,
         thread: Mutex<Option<JoinHandle<()>>>,
         editor_resizable: Arc<Mutex<Option<bool>>>,
+        /// The labels this shell still holds windows for, which is the whole of
+        /// what [`Self::window_exists`] answers from.
+        held_windows: Mutex<std::collections::HashSet<String>>,
     }
 
     impl DedicatedUiWindowHost {
@@ -384,7 +393,23 @@ pub mod testing {
                 thread_id,
                 thread: Mutex::new(Some(thread)),
                 editor_resizable: Arc::new(Mutex::new(None)),
+                held_windows: Mutex::new(std::collections::HashSet::new()),
             }
+        }
+
+        /// The OS ended this window — a title-bar close, or the owner-destroy
+        /// cascade — without the addon asking for it.
+        ///
+        /// The real shell stops that close and hides the window on its own
+        /// thread, and answers the existence probe "gone" from that moment,
+        /// while the report whose reset tears the plugin's editor down is still
+        /// crossing to this side. This is that moment: the probe stops
+        /// admitting the label, and nothing else changes.
+        pub fn os_closed(&self, label: &str) {
+            self.held_windows
+                .lock()
+                .expect("held windows")
+                .remove(label);
         }
     }
 
@@ -442,22 +467,34 @@ pub mod testing {
     }
 
     impl PluginWindowHost for DedicatedUiWindowHost {
-        fn window_exists(&self, _label: &str) -> bool {
-            false
+        fn window_exists(&self, label: &str) -> bool {
+            self.held_windows
+                .lock()
+                .expect("held windows")
+                .contains(label)
         }
 
         fn create_editor_window(
             &self,
-            _label: &str,
+            label: &str,
             _title: &str,
             _instance_id: &str,
         ) -> Result<Box<dyn PluginEditorWindow>, String> {
+            self.held_windows
+                .lock()
+                .expect("held windows")
+                .insert(label.to_string());
             Ok(Box::new(BareEditorWindow {
                 resizable: Arc::clone(&self.editor_resizable),
             }))
         }
 
-        fn destroy_window(&self, _label: &str) {}
+        fn destroy_window(&self, label: &str) {
+            self.held_windows
+                .lock()
+                .expect("held windows")
+                .remove(label);
+        }
 
         fn hide_window(&self, _label: &str) {}
 
