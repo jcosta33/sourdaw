@@ -1,0 +1,24 @@
+src/modules/AiRuntime/useCases/__tests__/agentRunLifecycle.spec.ts
+  s_a40848e8f8cca9::t_81d8714e5fbd2c 183-230
+src/modules/AiRuntime/useCases/__tests__/recoverAgentRunPendingEffects.spec.ts
+  s_a40848e8f8cca9::t_81d8714e5fbd2c 3,58-103,303-306,308-318,320-333,335-351,353-362,364-375,377-386,388-402,404-413,415-424,426,428-431,433-436
+  s_a40848e8f8cca9::t_726dd8247c9715 307,319,334,352,363,376,387,403,414,425,427,432,437
+src/modules/AiRuntime/useCases/agentRunLifecycle.ts
+  s_a40848e8f8cca9::t_81d8714e5fbd2c 1550-1554
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "e76d0fcc97b39b536e7c107f84be649b2de5af42",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
