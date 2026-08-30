@@ -102,9 +102,6 @@ function recoverySummary(number: number, owner: ReviewResolutionLockOwner, inspe
     if (inspection.thread?.id !== owner.threadId) {
         fail(`review thread ${owner.threadId} was not found on this pull request`);
     }
-    if (inspection.head !== owner.head) {
-        fail(`pull-request head changed while reconciling review thread ${owner.threadId} on PR #${number}`);
-    }
     const resolutionState = inspection.thread.isResolved ? 'resolved' : 'unresolved';
     return `review-resolution-lock-recovered:${number}:${owner.threadId}:${owner.head}:${inspection.head}:${resolutionState}:${inspection.pendingReviews.length}`;
 }

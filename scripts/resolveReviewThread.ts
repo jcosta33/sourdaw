@@ -148,6 +148,11 @@ export type PersistedReviewResolutionChildLaunchMarker = {
     pid: number | null;
 };
 
+type ReviewResolutionChildMarkerPublicationPort = {
+    beforePublish?: (temporaryPath: string, targetPath: string) => void;
+    publish?: (temporaryPath: string, targetPath: string) => void;
+};
+
 function canonicalGitObjectId(value: string, label: string, lengths: number[] = [40]): string {
     const trimmed = value.trim();
     const valid =
@@ -225,7 +230,7 @@ export function publishReviewResolutionChildLaunchMarker(
     path: string,
     token: string,
     pid: number | null,
-    beforePublish: ((temporaryPath: string) => void) | undefined = undefined
+    port: ReviewResolutionChildMarkerPublicationPort = {}
 ): void {
     const persisted: PersistedReviewResolutionChildLaunchMarker = {
         version: REVIEW_RESOLUTION_CHILD_MARKER_VERSION,
@@ -233,10 +238,11 @@ export function publishReviewResolutionChildLaunchMarker(
         pid,
     };
     const temporaryPath = `${path}.${randomUUID()}.tmp`;
+    const publish = port.publish ?? ((source, target) => renameSync(source, target));
     try {
         writeFileSync(temporaryPath, JSON.stringify(persisted), { encoding: 'utf8', mode: 0o600, flag: 'wx' });
-        beforePublish?.(temporaryPath);
-        renameSync(temporaryPath, path);
+        port.beforePublish?.(temporaryPath, path);
+        publish(temporaryPath, path);
     } catch (error) {
         rmSync(temporaryPath, { force: true });
         throw error;

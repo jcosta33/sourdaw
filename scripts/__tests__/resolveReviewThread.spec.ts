@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -1050,6 +1050,60 @@ describe('review thread resolution', () => {
         }
     });
 
+    it('recovers the exact dead owner after the PR head advances and records both original and current heads', async () => {
+        const repository = createTemporaryGitRepository();
+        try {
+            const ownerOid = writeLockOwnerBlob(repository, 999999, head);
+            updateLock(repository, 42, ownerOid);
+            const session: GhSession = { configDir: repository, env: {}, dispose() {} };
+            const recoverDependencies = {
+                trustedPrimaryRoot: () => repository,
+                authenticateAuthor: async () => ({
+                    minted: { actorNodeId: AUTHOR_BOT_NODE_ID },
+                    session,
+                }),
+                repositoryName: () => REQUIRED_REPOSITORY,
+                gh: () => () => '',
+                inspectThread: () => ({
+                    pullRequestId,
+                    head: movedHead,
+                    thread: {
+                        id: threadId,
+                        isResolved: false,
+                        resolvedByNodeId: null,
+                        resolvedByLogin: null,
+                        resolvedByType: null,
+                        rootCommentId: null,
+                        rootCommentFullDatabaseId: null,
+                        rootAuthorNodeId: null,
+                        rootAuthorLogin: null,
+                        rootAuthorType: null,
+                        comments: [],
+                    },
+                    pendingReviews: [],
+                }),
+                recoverLock: recoverPullRequestReviewResolutionLock,
+            } satisfies Parameters<typeof runRecoverReviewResolutionLockCli>[1];
+
+            const logs: string[] = [];
+            const originalLog = console.log;
+            console.log = (message?: unknown) => {
+                logs.push(String(message));
+            };
+            try {
+                await expect(
+                    runRecoverReviewResolutionLockCli(['42', '--owner', ownerOid], recoverDependencies)
+                ).resolves.toBe(0);
+            } finally {
+                console.log = originalLog;
+            }
+            expect(logs).toEqual([`review-resolution-lock-recovered:42:${threadId}:${head}:${movedHead}:unresolved:0`]);
+            expect(readLockOid(repository, 42)).toBeUndefined();
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
     it('keeps the exact owner ref when recovery inspection is missing the bound thread or head', async () => {
         const repository = createTemporaryGitRepository();
         try {
@@ -1094,7 +1148,7 @@ describe('review thread resolution', () => {
         }
     });
 
-    it('publishes child-marker PID binding by atomic rename, so readers see either the old full marker or the new full marker', () => {
+    it('publishes child-marker PID binding through the injected atomic publish step, so readers see either the old full marker or the new full marker', () => {
         const markerRoot = mkdtempSync(join(tmpdir(), 'sourdaw-review-marker-publication-'));
         const markerPath = join(markerRoot, 'child-marker.json');
         const token = '11111111-1111-4111-8111-111111111111';
@@ -1102,15 +1156,29 @@ describe('review thread resolution', () => {
             publishReviewResolutionChildLaunchMarker(markerPath, token, null);
             let seenDuringPublish: PersistedReviewResolutionChildLaunchMarker | undefined;
             let temporaryPathSeen: string | undefined;
-            publishReviewResolutionChildLaunchMarker(markerPath, token, 4321, (temporaryPath) => {
-                temporaryPathSeen = temporaryPath;
-                seenDuringPublish = readPersistedReviewResolutionChildLaunchMarker({ path: markerPath, token });
-                expect(JSON.parse(readFileSync(temporaryPath, 'utf8'))).toEqual({
-                    version: 1,
-                    token,
-                    pid: 4321,
-                });
-                expect(temporaryPath).not.toBe(markerPath);
+            let publishCallCount = 0;
+            publishReviewResolutionChildLaunchMarker(markerPath, token, 4321, {
+                beforePublish: (temporaryPath, targetPath) => {
+                    temporaryPathSeen = temporaryPath;
+                    expect(targetPath).toBe(markerPath);
+                    seenDuringPublish = readPersistedReviewResolutionChildLaunchMarker({ path: markerPath, token });
+                    expect(JSON.parse(readFileSync(temporaryPath, 'utf8'))).toEqual({
+                        version: 1,
+                        token,
+                        pid: 4321,
+                    });
+                    expect(temporaryPath).not.toBe(markerPath);
+                },
+                publish: (temporaryPath, targetPath) => {
+                    publishCallCount += 1;
+                    expect(targetPath).toBe(markerPath);
+                    expect(readPersistedReviewResolutionChildLaunchMarker({ path: markerPath, token })).toEqual({
+                        version: 1,
+                        token,
+                        pid: null,
+                    });
+                    renameSync(temporaryPath, targetPath);
+                },
             });
             expect(seenDuringPublish).toEqual({
                 version: 1,
@@ -1118,6 +1186,7 @@ describe('review thread resolution', () => {
                 pid: null,
             });
             expect(temporaryPathSeen).toBeDefined();
+            expect(publishCallCount).toBe(1);
             expect(readPersistedReviewResolutionChildLaunchMarker({ path: markerPath, token })).toEqual({
                 version: 1,
                 token,
