@@ -5346,8 +5346,8 @@ mod timeline_tests {
             track_id,
             TimelineClip::new(
                 clip_id,
-                vec![value; frames],
-                Vec::new(),
+                vec![value; frames].into(),
+                [].into(),
                 placement(0, 0, frames as u64),
                 ClipPlayback::at_gain(1.0),
             ),
@@ -5363,8 +5363,8 @@ mod timeline_tests {
             1,
             TimelineClip::new(
                 9,
-                vec![1.0; 8],
-                Vec::new(),
+                vec![1.0; 8].into(),
+                [].into(),
                 placement(3, 0, 2),
                 ClipPlayback::at_gain(1.0),
             ),
@@ -5387,8 +5387,8 @@ mod timeline_tests {
             1,
             TimelineClip::new(
                 9,
-                vec![1.0; 8],
-                Vec::new(),
+                vec![1.0; 8].into(),
+                [].into(),
                 placement(3, 0, 4),
                 ClipPlayback::at_gain(1.0),
             ),
@@ -5413,8 +5413,8 @@ mod timeline_tests {
             1,
             TimelineClip::new(
                 9,
-                vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0],
-                Vec::new(),
+                vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0].into(),
+                [].into(),
                 placement(0, 2, 3),
                 ClipPlayback::at_gain(1.0),
             ),
@@ -5445,8 +5445,8 @@ mod timeline_tests {
             1,
             TimelineClip::new(
                 9,
-                vec![1.0; 2],
-                vec![0.25; 2],
+                vec![1.0; 2].into(),
+                vec![0.25; 2].into(),
                 placement(0, 0, 2),
                 ClipPlayback::at_gain(1.0),
             ),
@@ -5456,8 +5456,8 @@ mod timeline_tests {
             2,
             TimelineClip::new(
                 8,
-                vec![0.5; 2],
-                Vec::new(),
+                vec![0.5; 2].into(),
+                [].into(),
                 placement(0, 0, 2),
                 ClipPlayback::at_gain(1.0),
             ),
@@ -5830,8 +5830,8 @@ mod timeline_tests {
             1,
             TimelineClip::new(
                 10,
-                vec![1.0; 4],
-                Vec::new(),
+                vec![1.0; 4].into(),
+                [].into(),
                 placement(0, 0, 4),
                 ClipPlayback::at_gain(1.0),
             ),
@@ -5941,8 +5941,8 @@ mod timeline_tests {
             1,
             TimelineClip::new(
                 9,
-                vec![1.0; 4],
-                vec![0.0; 4],
+                vec![1.0; 4].into(),
+                vec![0.0; 4].into(),
                 placement(0, 0, 4),
                 ClipPlayback::at_gain(1.0),
             ),
@@ -6403,8 +6403,8 @@ mod timeline_tests {
                 1,
                 TimelineClip::new(
                     9,
-                    vec![0.5; 64],
-                    Vec::new(),
+                    vec![0.5; 64].into(),
+                    [].into(),
                     placement(0, 0, 64),
                     ClipPlayback::at_gain(1.0),
                 ),
@@ -6740,14 +6740,14 @@ mod timeline_tests {
     /// frame, so a rendered buffer reads back as the sequence of frames the
     /// engine actually played.
     fn track_with_frame_stamped_clip(harness: &mut Harness, track_id: usize, frames: usize) {
-        let material: Vec<f32> = (0..frames).map(|frame| (frame + 1) as f32).collect();
+        let material: Arc<[f32]> = (0..frames).map(|frame| (frame + 1) as f32).collect();
         harness.send(GraphCommand::AddTrack(TimelineTrack::new(track_id)));
         harness.send(GraphCommand::AddClip(
             track_id,
             TimelineClip::new(
                 1,
                 material,
-                Vec::new(),
+                [].into(),
                 placement(0, 0, frames as u64),
                 ClipPlayback::at_gain(1.0),
             ),

@@ -26,6 +26,9 @@ vi.mock('../../../repositories/transport/updateTransportState', () => ({
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     resumeEngine: vi.fn(),
     startNativeLiveGraphSession: vi.fn(),
+    // The rate the native session is told to place its programme on. A device
+    // rate is all `startPlayback` reads, so a live context is not needed here.
+    getAudioContext: (): { sampleRate: number } => ({ sampleRate: 48_000 }),
 }));
 vi.mock('#/utils/Notification/notifyUser', () => ({
     notifyUser: vi.fn(),
