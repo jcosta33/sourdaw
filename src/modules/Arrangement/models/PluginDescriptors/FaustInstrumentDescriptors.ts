@@ -110,6 +110,10 @@ const FAUST_INSTRUMENT_DESCRIPTOR_DATA: PluginDescriptor[] = [
         category: 'instrument',
         hasCustomUI: false,
         tail: { kind: 'decaySeconds', parameterId: 'release', defaultSeconds: 0.5 },
+        // The note-level freq and gate sit after the timbre and envelope
+        // controls, copied from the registration bound for bound like every
+        // entry here. This DSP's freq ceiling is 12000, not the 10000 rhodes
+        // and fm-synth declare, because its .dsp says 12000.
         parameters: [
             fp('lfo_rate', 'faust-supersaw-unison', 'LFO Rate', 0.1, 20, 5, 'Hz'),
             fp('lfo_depth', 'faust-supersaw-unison', 'LFO Depth', 0, 1, 0),
@@ -121,6 +125,8 @@ const FAUST_INSTRUMENT_DESCRIPTOR_DATA: PluginDescriptor[] = [
             fp('decay', 'faust-supersaw-unison', 'Decay', 0.01, 5, 0.3, 's', 'log'),
             fp('sustain', 'faust-supersaw-unison', 'Sustain', 0, 1, 0.8),
             fp('release', 'faust-supersaw-unison', 'Release', 0.01, 10, 0.5, 's', 'log'),
+            fp('freq', 'faust-supersaw-unison', 'Freq', 20, 12000, 440, 'Hz'),
+            fp('gate', 'faust-supersaw-unison', 'Gate', 0, 1, 0),
         ],
     },
 ];
