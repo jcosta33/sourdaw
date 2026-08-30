@@ -1,0 +1,53 @@
+src/modules/WorkspaceShell/presentations/hooks/useNativeApplicationMenu.ts
+  s_ae074277795b45::t_e4318e2429f3a9 6,74
+  s_ae074277795b45::t_1fea4a0ddea120 22,209-210
+src/modules/Project/useCases/projectPersistence/__tests__/quiesceProjectSession.spec.ts
+  s_ae074277795b45::t_cfe1a190304672 141
+  s_ae074277795b45::t_b1b2fde652553e 8-10,18-20,29-34,70,136-140,142-146
+  s_ae074277795b45::t_f58be98bf72903 147
+src/modules/WorkspaceShell/presentations/hooks/__tests__/useNativeApplicationMenu.spec.tsx
+  s_ae074277795b45::t_62fdbb75c7f41e 120-126,319-349
+  s_ae074277795b45::t_bca73c529c8d87 43,158
+  s_ae074277795b45::t_a3c0bdc0715458 350-351
+src/modules/Project/useCases/projectPersistence/releaseProjectSessionPluginRetirement.ts
+  s_ae074277795b45::t_f146cb17bddc99 1-6
+src/modules/PluginHost/useCases/index.ts
+  s_ae074277795b45::t_b3dbbe002da439 32
+src/modules/PluginHost/useCases/pluginLifecycle/beginProjectSessionPluginRetirement.ts
+  s_ae074277795b45::t_b3dbbe002da439 1-30
+src/modules/Project/useCases/index.ts
+  s_ae074277795b45::t_f146cb17bddc99 7
+src/modules/CommandInterface/useCases/index.ts
+  s_ae074277795b45::t_e4318e2429f3a9 6
+src/modules/CommandInterface/presentations/views/keyboardShortcutsContract.ts
+  s_ae074277795b45::t_e4318e2429f3a9 51
+  s_ae074277795b45::t_2a19cf2ce19c57 5
+src/modules/Project/useCases/projectPersistence/projectSessionQuiescer.ts
+  s_ae074277795b45::t_f146cb17bddc99 2,5,7,17-18,21-22,26,30-34,68,70,89,96-98
+  s_ae074277795b45::t_11d6e1c19ee9fb 6
+  s_ae074277795b45::t_b676dbab10e7f7 27-29
+  s_ae074277795b45::t_07ec64efd447a7 99
+src/modules/CommandInterface/useCases/isKeyboardEditableTarget.ts
+  s_ae074277795b45::t_e4318e2429f3a9 1-8
+src/modules/PluginHost/useCases/pluginLifecycle/__tests__/resetExternalPluginRuntimeForGraphRebuild.spec.ts
+  s_ae074277795b45::t_eb8ddb7fe2df1e 130-131,134-156
+  s_ae074277795b45::t_c769dd6352adba 9
+  s_ae074277795b45::t_11ac260972c06a 132-133
+  s_ae074277795b45::t_b48ddc7ea319f0 157-158
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "b6889e00a6e76e255594928d1bf19458545fef29",
+  "prompts": {},
+  "sessions": {
+    "s_ae074277795b45": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04ab5-5234-7100-be1c-76ebfaba88d3",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
