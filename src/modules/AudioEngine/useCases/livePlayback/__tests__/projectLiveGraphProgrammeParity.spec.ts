@@ -482,33 +482,34 @@ function fixtureTracks(leg: 'live' | 'export', extraTracks: readonly Track[] = [
 }
 
 /**
- * A track carrying a loop whose expansion is past what one clip may cost the
- * native timeline, and an ordinary neighbour on the same strip.
+ * A track carrying a loop whose expansion needs more native clip slots than a
+ * strip has, and an ordinary neighbour on the same strip.
  *
- * Sixteen passes over 45 seconds of stereo material is 277 MiB of native
- * allocation (#3134). Both producers must leave the loop out and keep the
- * neighbour, and the two renders must still agree — a budget honoured on one
- * leg only is a bounce that is not the mix the engineer monitored.
+ * Eight beats at a 1/256-beat loop length is 2048 iterations against the
+ * strip's 1024 slots, and the engine's answer to the 1025th `schedule-clip` is
+ * to refuse the whole batch. Both producers must leave the loop out and keep
+ * the neighbour, and the two renders must still agree — a ceiling honoured on
+ * one leg only is a bounce that is not the mix the engineer monitored.
  */
-function overBudgetTrack(): Track {
+function slotOverflowTrack(): Track {
     return createTrack({
-        id: 'track-runaway',
-        name: 'Runaway',
+        id: 'track-overflow',
+        name: 'Overflow',
         gain: 0.5,
         pan: -6,
         clips: [
             audioClip({
-                id: 'clip-runaway',
-                trackId: 'track-runaway',
+                id: 'clip-overflow',
+                trackId: 'track-overflow',
                 startBeat: 0,
                 endBeat: 8,
                 loopEnabled: true,
-                loopLength: 0.5,
-                audioBufferId: 'mat-big',
+                loopLength: 1 / 256,
+                audioBufferId: 'mat-b',
             }),
             audioClip({
                 id: 'clip-neighbour',
-                trackId: 'track-runaway',
+                trackId: 'track-overflow',
                 startBeat: 1,
                 endBeat: 3,
                 audioBufferId: 'mat-a',
@@ -664,8 +665,6 @@ describe('live and export projections render one project the same way (#3068)', 
             ['mat-a', createMaterial(2, 220)],
             ['mat-b', createMaterial(1.25, 330)],
             ['bake-1', createMaterial(BAKE_SECONDS, 110)],
-            // Long enough that a loop over it passes the per-clip budget.
-            ['mat-big', createMaterial(45, 110)],
         ]);
     });
 
@@ -719,9 +718,9 @@ describe('live and export projections render one project the same way (#3068)', 
     );
 
     it.runIf(nativeAddonPresent)(
-        'drops a clip past the native material budget on both legs, and still renders them alike',
+        'drops a clip past the strip’s native clip slots on both legs, and still renders them alike',
         async () => {
-            const extraTracks = [overBudgetTrack()];
+            const extraTracks = [slotOverflowTrack()];
             const exportWarnings: string[] = [];
             const [exportLeft, exportRight] = await renderExportLeg({
                 extraTracks,
@@ -736,9 +735,9 @@ describe('live and export projections render one project the same way (#3068)', 
             // And they agree by both leaving the loop out while both keep its
             // neighbour — not by both silencing a track the arrangement asks
             // for, which would satisfy the equality just as well.
-            expect(exportWarnings).toEqual([expect.stringContaining('clip-runaway')]);
+            expect(exportWarnings).toEqual([expect.stringContaining('clip-overflow')]);
             const liveSources = projectLiveSessionCommands({ extraTracks }).flatMap((command) =>
-                command.kind === 'schedule-clip' && command.playback.trackId === 'track-runaway'
+                command.kind === 'schedule-clip' && command.playback.trackId === 'track-overflow'
                     ? [command.playback.source.sourceId]
                     : []
             );

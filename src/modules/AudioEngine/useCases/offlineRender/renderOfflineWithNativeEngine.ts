@@ -35,8 +35,8 @@
  *     or the runtime, and falling back would hide it behind a second render
  *     that silently succeeded.
  *
- * A clip whose loop expansion is past what one clip may cost the native
- * timeline is a third case, and it is neither: `admitNativeClipExpansion`
+ * A clip whose loop expansion is past the strip's remaining native clip
+ * capacity is a third case, and it is neither: `admitNativeClipExpansion`
  * leaves it out and warns, the same verdict on the same numbers that
  * `projectLiveGraphProgramme` reaches for the live session. Declining instead
  * would be defensible on its own, but the two paths are meant to be one render,
@@ -387,11 +387,7 @@ export async function renderOfflineWithNativeEngine(
                 projectBeatToSeconds,
                 resolveTempoAtBeat: resolveClipTempo,
             });
-            const expansion = admitNativeClipExpansion({
-                iterations: playbacks.length,
-                buffer,
-                remainingClipSlots,
-            });
+            const expansion = admitNativeClipExpansion({ iterations: playbacks.length, remainingClipSlots });
             if (!expansion.admitted) {
                 warn(
                     `Clip "${clip.name || clip.id}" on track "${track.name}" was left out of the export because ` +

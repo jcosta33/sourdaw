@@ -53,10 +53,10 @@
  * refused by name.
  *
  * A clip whose loop expansion does not fit its strip's remaining native clip
- * capacity is dropped whole, and so is one whose expansion allocates past the
- * native material budget. Both verdicts come from `admitNativeClipExpansion`,
- * which the export leg asks the same questions of: a ceiling applied on one
- * side only is a clip that plays in the bounce and is silent here.
+ * capacity is dropped whole. The verdict comes from
+ * `admitNativeClipExpansion`, which the export leg asks the same question of: a
+ * ceiling applied on one side only is a clip that plays in the bounce and is
+ * silent here.
  *
  * MIDI is out of this slice (#3122): an instrument renders on the Web Audio
  * path, so a MIDI clip is skipped here rather than turned into a rest.
@@ -291,11 +291,7 @@ export function projectLiveGraphProgramme(input: LiveGraphProgrammeInput): LiveG
                 );
                 continue;
             }
-            const expansion = admitNativeClipExpansion({
-                iterations: projected.length,
-                buffer,
-                remainingClipSlots,
-            });
+            const expansion = admitNativeClipExpansion({ iterations: projected.length, remainingClipSlots });
             if (!expansion.admitted) {
                 excludeClip(`clip "${clipLabel}" on track "${track.name}": ${expansion.reason}`);
                 continue;

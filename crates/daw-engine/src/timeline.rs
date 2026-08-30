@@ -10,6 +10,8 @@
 //! the callback. Removal hands ownership back over the scheduler's retirement
 //! channel (ADR 0020), so nothing is freed here either.
 
+use std::sync::Arc;
+
 use crate::audio_thread::MAX_CALLBACK_FRAMES;
 use triple_buffer::{Input, Output};
 
@@ -821,26 +823,34 @@ impl ClipPlayback {
     }
 }
 
-/// One audio clip on a track, owning its source material.
+/// One audio clip on a track, *referencing* its source material.
 ///
-/// Built on the control thread and moved into the graph, because the two
-/// sample vectors are the only large allocation the timeline holds.
+/// The channels are shared rather than owned, because one take becomes many
+/// clips: every loop pass, comp region and gap fill over a source is its own
+/// clip, and a clip that owned a copy would multiply the take's PCM by the
+/// number of edits made to it. Sharing makes that cost a pointer.
+///
+/// Nothing on the audio thread ever drops one. A removed clip — and a track
+/// removed with its clips inside it — leaves through the retirement ring as a
+/// [`RetiredTimelineObject`], and the reclaimer thread runs the destructor, so
+/// the reference count is released off the callback like every other
+/// deallocation the graph does.
 pub struct TimelineClip {
     clip_id: usize,
-    left: Vec<f32>,
+    left: Arc<[f32]>,
     /// Empty for a mono source, which is played to both outputs.
-    right: Vec<f32>,
+    right: Arc<[f32]>,
     placement: ClipPlacement,
     playback: ClipPlayback,
 }
 
 impl TimelineClip {
-    /// Build a clip on the control thread. `right` may be empty for mono
-    /// material.
+    /// Build a clip on the control thread over material the caller already
+    /// holds. `right` may be empty for mono material.
     pub fn new(
         clip_id: usize,
-        left: Vec<f32>,
-        right: Vec<f32>,
+        left: Arc<[f32]>,
+        right: Arc<[f32]>,
         placement: ClipPlacement,
         playback: ClipPlayback,
     ) -> Box<Self> {
@@ -2595,11 +2605,11 @@ mod tests {
 
     #[test]
     fn a_trimmed_clip_renders_the_window_its_placement_names_and_keeps_its_material() {
-        let material = vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0];
+        let material: Arc<[f32]> = [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0].into();
         let mut clip = TimelineClip::new(
             9,
             material,
-            Vec::new(),
+            [].into(),
             placement(0, 2, 3),
             ClipPlayback::at_gain(1.0),
         );
@@ -2623,8 +2633,8 @@ mod tests {
     fn a_placement_reaching_past_its_material_renders_silence_rather_than_stale_samples() {
         let clip = TimelineClip::new(
             9,
-            vec![1.0, 1.0],
-            Vec::new(),
+            vec![1.0, 1.0].into(),
+            [].into(),
             placement(0, 0, 6),
             ClipPlayback::at_gain(1.0),
         );
@@ -2639,8 +2649,8 @@ mod tests {
     fn a_clip_sums_into_the_span_it_names_and_leaves_the_rest_of_the_block_alone() {
         let clip = TimelineClip::new(
             9,
-            vec![1.0; 8],
-            Vec::new(),
+            vec![1.0; 8].into(),
+            [].into(),
             placement(3, 0, 2),
             ClipPlayback::at_gain(0.5),
         );
@@ -2703,8 +2713,8 @@ mod tests {
                 1,
                 TimelineClip::new(
                     9,
-                    vec![1.0; 8],
-                    Vec::new(),
+                    vec![1.0; 8].into(),
+                    [].into(),
                     placement(0, 0, 8),
                     ClipPlayback::at_gain(1.0)
                 )
@@ -2761,8 +2771,8 @@ mod tests {
                 track_id,
                 TimelineClip::new(
                     9,
-                    vec![value; frames as usize],
-                    Vec::new(),
+                    vec![value; frames as usize].into(),
+                    [].into(),
                     placement(0, 0, frames),
                     ClipPlayback::at_gain(1.0),
                 )
@@ -2841,8 +2851,8 @@ mod tests {
                 1,
                 TimelineClip::new(
                     9,
-                    vec![1.0; 4],
-                    vec![0.0; 4],
+                    vec![1.0; 4].into(),
+                    vec![0.0; 4].into(),
                     placement(0, 0, 4),
                     ClipPlayback::at_gain(1.0),
                 )
@@ -2972,8 +2982,8 @@ mod tests {
     fn a_clip_fades_both_edges_at_the_anti_click_floor_it_was_given() {
         let mut clip = TimelineClip::new(
             9,
-            vec![1.0; 8],
-            Vec::new(),
+            vec![1.0; 8].into(),
+            [].into(),
             placement(0, 0, 8),
             ClipPlayback::anti_click(1.0, 2),
         );
@@ -3018,8 +3028,8 @@ mod tests {
         // suppresses that edge and the renderer must honour it.
         let clip = TimelineClip::new(
             9,
-            vec![1.0; 8],
-            Vec::new(),
+            vec![1.0; 8].into(),
+            [].into(),
             placement(0, 0, 8),
             ClipPlayback {
                 gain: 1.0,
@@ -3040,11 +3050,11 @@ mod tests {
 
     #[test]
     fn a_clip_rate_reads_its_material_faster_or_slower_across_the_span_it_names() {
-        let material = vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0];
+        let material: Arc<[f32]> = [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0].into();
         let mut clip = TimelineClip::new(
             9,
             material,
-            Vec::new(),
+            [].into(),
             placement(0, 0, 4),
             ClipPlayback {
                 gain: 1.0,
@@ -3090,7 +3100,13 @@ mod tests {
         assert!(graph
             .add_clip(
                 1,
-                TimelineClip::new(9, vec![1.0; 4], Vec::new(), placement(0, 0, 4), stalled)
+                TimelineClip::new(
+                    9,
+                    vec![1.0; 4].into(),
+                    [].into(),
+                    placement(0, 0, 4),
+                    stalled
+                )
             )
             .is_some());
         assert_eq!(graph.diagnostics().invalid_clip_playbacks, 1);
@@ -3101,8 +3117,8 @@ mod tests {
                 1,
                 TimelineClip::new(
                     9,
-                    vec![1.0; 4],
-                    Vec::new(),
+                    vec![1.0; 4].into(),
+                    [].into(),
                     placement(0, 0, 4),
                     ClipPlayback::at_gain(1.0)
                 )

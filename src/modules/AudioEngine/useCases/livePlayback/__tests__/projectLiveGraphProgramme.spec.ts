@@ -331,10 +331,10 @@ describe('projectLiveGraphProgramme', () => {
 });
 
 /**
- * The two ceilings a producer owes the engine, and the one it owes the machine.
+ * The one ceiling a producer owes the engine: a strip holds `MAX_TRACK_CLIPS`.
  *
- * A `schedule-clip` past either is a refusal, and a refusal is whole-batch — so
- * what these hold is that one pathological clip costs itself and nothing else.
+ * A `schedule-clip` past it is a refusal, and a refusal is whole-batch — so what
+ * these hold is that one pathological clip costs itself and nothing else.
  */
 describe('projectLiveGraphProgramme — what one clip may cost', () => {
     /** A clip that expands into `iterations` loop passes of one beat each. */
@@ -358,48 +358,17 @@ describe('projectLiveGraphProgramme — what one clip may cost', () => {
     }
 
     it('carries a one-bar loop dragged across a four-minute arrangement, which is ordinary arranging', () => {
-        // 120 iterations of two seconds of 48 kHz stereo float: 88 MiB, well
-        // inside what one clip may cost.
+        // 120 loop passes over one take, well inside the strip's 1024 slots.
         const programme = programmeFor([loopingClip({ id: 'ordinary', startBeat: 0, iterations: 120 })]);
 
         expect(programme.playbacksByStripId.get('audio-1')).toHaveLength(120);
         expect(programme.exclusions).toEqual([]);
     });
 
-    it('excludes the clip, not the session, when one loop’s expansion allocates past the budget', () => {
-        // Every `schedule-clip` copies the sample's whole PCM into the engine
-        // (#3134), so an expansion multiplies its material: twelve passes over
-        // a minute of stereo material is 264 MiB. The neighbour is here to
-        // prove the cost lands on the clip alone.
-        const programme = programmeFor(
-            [
-                loopingClip({ id: 'runaway', startBeat: 0, iterations: 12 }),
-                audioClip({
-                    id: 'neighbour',
-                    trackId: 'audio-1',
-                    startBeat: 100,
-                    endBeat: 102,
-                    audioBufferId: 'mat-1',
-                }),
-            ],
-            60
-        );
-
-        expect(programme.playbacksByStripId.get('audio-1')).toHaveLength(1);
-        expect(programme.playbacksByStripId.get('audio-1')?.[0]?.startTime).toBe(100 * SECONDS_PER_BEAT);
-        expect(programme.exclusions).toEqual([
-            {
-                stripId: 'audio-1',
-                subjectId: 'runaway',
-                reason: expect.stringContaining('past the 256 MiB'),
-            },
-        ]);
-    });
-
-    it('plays a single take however long it is, because one copy is what playing it costs', () => {
-        // Twenty minutes of stereo material is 440 MiB — past the budget on its
-        // own — but nothing looped it, and the engine must hold that copy to
-        // sound the clip at all.
+    it('carries a long take whatever its material costs, because the engine shares one copy of it', () => {
+        // Twenty minutes of stereo material, scheduled whole. The engine holds
+        // that allocation once for every clip cut from it (`TimelineClip` takes
+        // an `Arc<[f32]>`), so length is not a producer's business.
         const programme = programmeFor(
             [audioClip({ id: 'long-take', trackId: 'audio-1', startBeat: 0, endBeat: 2, audioBufferId: 'mat-1' })],
             1_200

@@ -628,14 +628,15 @@ impl EngineHandle {
     }
 
     /// Place a clip on a track. `right` may be empty for mono material, which
-    /// plays to both outputs. The vectors are the clip's source material and
-    /// are never written to again: an edit moves the placement instead.
+    /// plays to both outputs. The channels are shared source material and are
+    /// never written to again: an edit moves the placement instead, and every
+    /// other clip cut from the same take holds this same allocation.
     pub fn add_clip(
         &mut self,
         track_id: usize,
         clip_id: usize,
-        left: Vec<f32>,
-        right: Vec<f32>,
+        left: Arc<[f32]>,
+        right: Arc<[f32]>,
         placement: ClipPlacement,
         playback: ClipPlayback,
     ) -> Result<(), String> {

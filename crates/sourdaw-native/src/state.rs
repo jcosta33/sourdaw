@@ -208,9 +208,16 @@ pub struct AppState {
 /// own convention, and `sample_rate` is the *material's* rate — a clip
 /// scheduled onto an engine running at a different rate is converted at the
 /// clip's `playback_rate` (rate conversion, not time stretch).
+///
+/// The channels are shared, not owned: one registration allocates the PCM once
+/// and every clip scheduled over it holds the same allocation. Material is
+/// immutable once registered — re-registering an id replaces the whole sample —
+/// so there is nothing for sharing to race against, and the clips a project
+/// makes of one take (loop passes, comp regions, gap fills) cost a pointer each
+/// instead of a copy each.
 pub struct TimelineSample {
-    pub left: Vec<f32>,
-    pub right: Vec<f32>,
+    pub left: Arc<[f32]>,
+    pub right: Arc<[f32]>,
     pub sample_rate: f32,
 }
 

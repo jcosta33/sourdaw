@@ -158,7 +158,7 @@ use daw_engine::GraphBatchError;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 /// Headroom the fader allows above unity, in decibels — the mirror of
 /// `FADER_HEADROOM_DB` in `src/utils/audioLevelLaw.ts`, the definition of
@@ -2141,8 +2141,10 @@ fn map_schedule_clip(
         native_track_id,
         TimelineClip::new(
             clip_id,
-            sample.left.clone(),
-            sample.right.clone(),
+            // Shared, never copied: a take comped into forty regions, or looped
+            // across an arrangement, is forty clips over one allocation.
+            Arc::clone(&sample.left),
+            Arc::clone(&sample.right),
             ClipPlacement {
                 start_frame,
                 source_offset_frames,
@@ -2272,18 +2274,19 @@ pub async fn register_timeline_sample(
     };
     let frames = pcm_frame_count(pcm.len(), channels)?;
     let bytes_per_frame = 4 * channels;
-    let mut left = Vec::with_capacity(frames);
-    let mut right = if channels == 2 {
-        Vec::with_capacity(frames)
+    // Collected straight into the shared channels every clip over this material
+    // will hold, so registration allocates each one exactly once.
+    let left: Arc<[f32]> = pcm
+        .chunks_exact(bytes_per_frame)
+        .map(|frame| f32::from_le_bytes([frame[0], frame[1], frame[2], frame[3]]))
+        .collect();
+    let right: Arc<[f32]> = if channels == 2 {
+        pcm.chunks_exact(bytes_per_frame)
+            .map(|frame| f32::from_le_bytes([frame[4], frame[5], frame[6], frame[7]]))
+            .collect()
     } else {
-        Vec::new()
+        Arc::from([])
     };
-    for frame in pcm.chunks_exact(bytes_per_frame) {
-        left.push(f32::from_le_bytes([frame[0], frame[1], frame[2], frame[3]]));
-        if channels == 2 {
-            right.push(f32::from_le_bytes([frame[4], frame[5], frame[6], frame[7]]));
-        }
-    }
 
     let mut samples = state
         .timeline_samples
@@ -2851,8 +2854,8 @@ mod tests {
         samples.insert(
             "source-a".to_string(),
             TimelineSample {
-                left: vec![0.5; 48_000],
-                right: vec![0.5; 48_000],
+                left: vec![0.5; 48_000].into(),
+                right: vec![0.5; 48_000].into(),
                 sample_rate: 48_000.0,
             },
         );
@@ -3356,13 +3359,49 @@ mod tests {
     }
 
     #[test]
+    fn scheduling_one_sample_many_times_shares_its_material_instead_of_copying_it() {
+        // A take becomes many clips through ordinary editing — comp regions,
+        // gap fills, loop passes — and a mapper that handed each one its own
+        // copy would multiply the take's PCM by the number of edits made to it.
+        let clips: Vec<Value> = (0..8)
+            .map(|index| {
+                json!({ "kind": "schedule-clip", "playback": {
+                    "trackId": "t1", "source": { "sourceId": "source-a" },
+                    "startTime": index, "sourceOffsetSeconds": 0, "durationSeconds": 0.5,
+                    "playbackRate": 1, "gain": 1, "fade": { "microFadeSeconds": 0 } } })
+            })
+            .collect();
+        let batch = batch(json!([
+            { "kind": "create-track-strip", "trackId": "t1", "name": "T", "state": strip_state(1.0),
+              "devices": [], "honorMuted": true, "contributesAudio": true },
+            clips[0], clips[1], clips[2], clips[3], clips[4], clips[5], clips[6], clips[7]
+        ]));
+        let samples = sample_pool();
+
+        let mapped = map_batch(&batch, &mut GraphRegistry::default(), &samples, 48_000.0)
+            .expect("eight clips over one sample should map");
+
+        let scheduled = mapped
+            .ops
+            .iter()
+            .filter(|op| matches!(op, GraphCommand::AddClip(..)))
+            .count();
+        assert_eq!(scheduled, 8);
+        // The pool's own handle plus one per scheduled clip. A copy would leave
+        // the pool holding its material alone.
+        let material = &samples["source-a"];
+        assert_eq!(Arc::strong_count(&material.left), 9);
+        assert_eq!(Arc::strong_count(&material.right), 9);
+    }
+
+    #[test]
     fn material_at_another_rate_is_rate_converted_not_stretched() {
         let mut samples = HashMap::new();
         samples.insert(
             "half-rate".to_string(),
             TimelineSample {
-                left: vec![0.5; 24_000],
-                right: Vec::new(),
+                left: vec![0.5; 24_000].into(),
+                right: [].into(),
                 sample_rate: 24_000.0,
             },
         );
@@ -4589,8 +4628,8 @@ mod tests {
 
         let samples = state.timeline_samples.lock().expect("sample lock");
         let sample = samples.get("s1").expect("the sample is registered");
-        assert_eq!(sample.left, vec![0.1, 0.2]);
-        assert_eq!(sample.right, vec![-0.1, -0.2]);
+        assert_eq!(*sample.left, [0.1, 0.2]);
+        assert_eq!(*sample.right, [-0.1, -0.2]);
         drop(samples);
 
         let refused = block_on_test(register_timeline_sample(

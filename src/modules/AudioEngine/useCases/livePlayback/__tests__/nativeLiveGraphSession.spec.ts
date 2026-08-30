@@ -308,7 +308,7 @@ describe('startNativeLiveGraphSession', () => {
                 {
                     stripId: 'audio-1',
                     subjectId: 'runaway',
-                    reason: 'its 12 loop iterations allocate 264 MiB of material',
+                    reason: 'its expansion needs 2 of the 0 native clip slots the strip has left',
                 },
             ],
         };
@@ -324,7 +324,7 @@ describe('startNativeLiveGraphSession', () => {
             .map(([message]) => message)
             .find((message) => message.includes('runaway'));
         expect(warning).toContain('audio-1');
-        expect(warning).toContain('its 12 loop iterations allocate 264 MiB of material');
+        expect(warning).toContain('its expansion needs 2 of the 0 native clip slots the strip has left');
         // The drop cost that clip and nothing else — the rest still reached the
         // engine in the same batch.
         expect(appliedBatches()[0]?.commands).toContainEqual(expect.objectContaining({ kind: 'schedule-clip' }));
