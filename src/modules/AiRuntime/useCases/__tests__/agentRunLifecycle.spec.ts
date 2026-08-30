@@ -242,7 +242,7 @@ describe('agentRunLifecycle', () => {
             receiptIdentity: '1:run-render-review:batch-render-review:partially-committed',
             sourceRevision: 'heads-render-review',
             disposition: 'accepted',
-            reviewedAt: 4,
+            settledAt: 4,
         });
 
         expect(() =>

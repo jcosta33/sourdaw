@@ -165,9 +165,13 @@ function getFirstParsedJobs(parsed: ReturnType<typeof parseVersionedCommandBatch
     return jobs;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 function getFirstParsedJob(parsed: ReturnType<typeof parseVersionedCommandBatchEnvelope>): Record<string, unknown> {
     const job = getFirstParsedJobs(parsed)[0];
-    if (typeof job !== 'object' || job === null || Array.isArray(job)) {
+    if (!isRecord(job)) {
         throw new Error('Expected a parsed render job record.');
     }
     return job;

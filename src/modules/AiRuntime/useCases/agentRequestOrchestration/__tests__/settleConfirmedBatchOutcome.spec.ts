@@ -23,7 +23,7 @@ const mocks = vi.hoisted(() => ({
     pushHistory: vi.fn(),
     recordExecution: vi.fn(),
     recordReceipt: vi.fn(() => ({ warning: null, effectsPending: false })),
-    requireManualRepair: vi.fn(() => null),
+    requireManualRepair: vi.fn((..._args: unknown[]): string | null => null),
     updateConfirmation: vi.fn(),
     updateFollowUp: vi.fn(),
     updateMessage: vi.fn(),
