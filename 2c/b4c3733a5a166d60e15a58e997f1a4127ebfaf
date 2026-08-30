@@ -1,0 +1,29 @@
+src/modules/WorkspaceShell/presentations/hooks/useNativeApplicationMenu.ts
+  s_ae074277795b45::t_7afb7f8a7a3569 24-35
+  s_ae074277795b45::t_5fe23662716e37 23
+src/modules/WorkspaceShell/presentations/hooks/__tests__/useNativeApplicationMenu.spec.tsx
+  s_ae074277795b45::t_7afb7f8a7a3569 7,53-54,59
+  s_ae074277795b45::t_e145aa551cbf86 134-160,239-242,244,1284,1306
+electron/shellComposition.ts
+  s_ae074277795b45::t_aaa2d3f181c3bb 4-9,18,20,71,96,122
+src/modules/PluginHost/useCases/pluginLifecycle/__tests__/resetExternalPluginRuntimeForGraphRebuild.spec.ts
+  s_ae074277795b45::t_e3cbcdc5c7b97f 159-176
+electron/applicationMenu.ts
+  s_ae074277795b45::t_aaa2d3f181c3bb 58-80,225
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "2cb4c3733a5a166d60e15a58e997f1a4127ebfaf",
+  "prompts": {},
+  "sessions": {
+    "s_ae074277795b45": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04ab5-5234-7100-be1c-76ebfaba88d3",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
