@@ -1,0 +1,20 @@
+src/modules/Command/useCases/__tests__/commandBatchIdempotency.spec.ts
+  s_a40848e8f8cca9::t_eac5cbf7486db8 99,121,1362,1772,1777,1810-1816,1972,2579-2584,2706-2709,2717-2720,2729-2732
+  s_a40848e8f8cca9::t_41a1912e602aed 1413
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "79f61556e6ac474536df4549bd65491f01a57d22",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
