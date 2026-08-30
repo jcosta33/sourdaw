@@ -1,0 +1,41 @@
+electron/mainWindowTeardown.ts
+  s_ae074277795b45::t_e9b80dea9b3c9b 31-43
+electron/__tests__/applicationMenu.spec.ts
+  s_ae074277795b45::t_33ee20f0f8a54f 113-120,134,142-144,146-147,149
+electron/main.ts
+  s_ae074277795b45::t_e9b80dea9b3c9b 53-57,157-160,395-402
+  s_ae074277795b45::t_198de8a8f19319 218,228-230
+electron/rendererSessionQuiescer.ts
+  s_ae074277795b45::t_198de8a8f19319 30,79,94,113-115,131
+electron/__tests__/shutdown.spec.ts
+  s_ae074277795b45::t_8846bb7b989540 279-302
+electron/shutdown.ts
+  s_ae074277795b45::t_198de8a8f19319 138,145,159-161
+electron/__tests__/mainWindowTeardown.spec.ts
+  s_ae074277795b45::t_289206d4e25436 11-15,222-232
+  s_ae074277795b45::t_522b81fc4213e4 233
+electron/__tests__/nativeMenuActionDispatcher.spec.ts
+  s_ae074277795b45::t_289206d4e25436 64-93
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/PianoRoll.spec.tsx
+  s_ae074277795b45::t_9a6bebb239c895 22-23,25-28,66,68,253,255-262
+  s_ae074277795b45::t_6743b7fa2efe82 24
+  s_ae074277795b45::t_5b718cb90136ef 207,254
+  s_ae074277795b45::t_02c5d4adf20823 4
+  s_ae074277795b45::t_07e0f34297924d 263-264
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "7e51127d895ecb73b04174b75d4feaab69e2a452",
+  "prompts": {},
+  "sessions": {
+    "s_ae074277795b45": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04ab5-5234-7100-be1c-76ebfaba88d3",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
