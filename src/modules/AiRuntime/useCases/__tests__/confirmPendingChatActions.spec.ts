@@ -3873,7 +3873,11 @@ describe('confirmPendingChatActions transaction admission', () => {
         if (!agentRunStore.trySet(reloadedState)) {
             throw new Error('Expected mixed pending-effect recovery to reload.');
         }
-        const verifiedReceipt = createPendingRuntimeGraphBatchResult(commandBatch).receipt;
+        const verifiedBatchResult = createPendingRuntimeGraphBatchResult(commandBatch);
+        if (!('receipt' in verifiedBatchResult)) {
+            throw new Error('Expected the mixed recovery fixture to carry its verified receipt.');
+        }
+        const verifiedReceipt = verifiedBatchResult.receipt;
         const readReceipt = vi
             .spyOn(commandUseCases, 'getVersionedCommandBatchIdempotentReplay')
             .mockResolvedValue(verifiedReceipt);
