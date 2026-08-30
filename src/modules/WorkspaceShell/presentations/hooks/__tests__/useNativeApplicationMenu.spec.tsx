@@ -9,7 +9,6 @@ const desktop = vi.hoisted(() => ({
     listener: undefined as ((intent: NativeMenuIntent) => void) | undefined,
     sessionListener: undefined as ((requestId: number) => void) | undefined,
     sessionCancelListener: undefined as ((requestId: number) => void) | undefined,
-    sessionDestroyingListener: undefined as (() => void) | undefined,
     projectState: vi.fn(async () => undefined),
     saveResult: vi.fn(async () => undefined),
     listenSessionQuiesce: vi.fn((listener: (requestId: number) => void) => {
@@ -22,12 +21,6 @@ const desktop = vi.hoisted(() => ({
         desktop.sessionCancelListener = listener;
         return () => {
             desktop.sessionCancelListener = undefined;
-        };
-    }),
-    listenSessionWindowDestroying: vi.fn((listener: () => void) => {
-        desktop.sessionDestroyingListener = listener;
-        return () => {
-            desktop.sessionDestroyingListener = undefined;
         };
     }),
     sessionQuiesced: vi.fn(async () => undefined),
@@ -47,7 +40,6 @@ const projectActions = vi.hoisted(() => ({
     saveProject: vi.fn(async () => true),
     quiesceProjectSession: vi.fn(async () => true),
     cancelProjectSessionQuiesce: vi.fn(async () => false),
-    releaseProjectSessionPluginRetirement: vi.fn(),
     discardProjectChanges: vi.fn(async () => true),
     newProject: vi.fn(),
     pickAndImportProjectFile: vi.fn(async () => true),
@@ -115,7 +107,6 @@ const workspace = vi.hoisted(() => ({
         saveResult: desktop.saveResult,
         listenSessionQuiesce: desktop.listenSessionQuiesce,
         listenSessionQuiesceCancel: desktop.listenSessionQuiesceCancel,
-        listenSessionWindowDestroying: desktop.listenSessionWindowDestroying,
         sessionQuiesced: desktop.sessionQuiesced,
         sessionQuiesceStarted: desktop.sessionQuiesceStarted,
     })),
@@ -148,12 +139,10 @@ describe('useNativeApplicationMenu', () => {
         desktop.listener = undefined;
         desktop.sessionListener = undefined;
         desktop.sessionCancelListener = undefined;
-        desktop.sessionDestroyingListener = undefined;
         desktop.projectState.mockClear();
         desktop.saveResult.mockClear();
         desktop.listenSessionQuiesce.mockClear();
         desktop.listenSessionQuiesceCancel.mockClear();
-        desktop.listenSessionWindowDestroying.mockClear();
         desktop.sessionQuiesced.mockClear();
         desktop.sessionQuiesceStarted.mockReset().mockResolvedValue(true);
         projectActions.quiesceProjectSession
@@ -173,7 +162,6 @@ describe('useNativeApplicationMenu', () => {
         projectActions.discardProjectChanges.mockReset();
         projectActions.discardProjectChanges.mockResolvedValue(true);
         projectActions.cancelProjectSessionQuiesce.mockReset().mockResolvedValue(false);
-        projectActions.releaseProjectSessionPluginRetirement.mockClear();
         projectActions.newProject.mockClear();
         projectActions.loadRecentProject.mockClear();
         projectActions.recentProjectChanges.subscribe.mockClear();
@@ -289,30 +277,6 @@ describe('useNativeApplicationMenu', () => {
         );
 
         unmount();
-        expect(projectActions.releaseProjectSessionPluginRetirement).not.toHaveBeenCalled();
-    });
-
-    it('reopens a successful retirement only after native destruction acknowledgement', () => {
-        renderHook(() =>
-            useNativeApplicationMenu({
-                name: 'Song',
-                projectId: 'project',
-                createdAt: 1,
-                dirty: false,
-                identityPersistencePending: false,
-                loading: false,
-                updatedAt: 1,
-                keyRoot: 0,
-                scaleName: 'chromatic',
-                tuning: { name: 'Equal Temperament', frequencies: [] },
-                productionBrief: {} as never,
-                initialized: true,
-            })
-        );
-
-        desktop.sessionDestroyingListener?.();
-
-        expect(projectActions.releaseProjectSessionPluginRetirement).toHaveBeenCalledOnce();
     });
 
     it('republishes renderer readiness when Project hydration changes loading state', () => {

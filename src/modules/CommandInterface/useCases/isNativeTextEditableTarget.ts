@@ -3,6 +3,7 @@ export function isNativeTextEditableTarget(target: Element | null): boolean {
     return (
         target instanceof HTMLInputElement ||
         target instanceof HTMLTextAreaElement ||
-        (target instanceof HTMLElement && target.isContentEditable)
+        (target instanceof HTMLElement &&
+            (target.isContentEditable === true || target.getAttribute('contenteditable') === 'true'))
     );
 }

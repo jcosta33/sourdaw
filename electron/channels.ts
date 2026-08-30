@@ -60,7 +60,6 @@ export const RENDERER_SESSION_QUIESCE_STARTED_CHANNEL = 'sourdaw:renderer-sessio
 /** Main → renderer cancellation of a started drain that lost close authority. */
 export const RENDERER_SESSION_QUIESCE_CANCEL_CHANNEL = 'sourdaw:renderer-session:quiesce-cancel';
 /** Main → renderer acknowledgement that its native owner is now destroying. */
-export const RENDERER_SESSION_WINDOW_DESTROYING_CHANNEL = 'sourdaw:renderer-session:window-destroying';
 
 /** A filter in an open or save dialog. */
 export type DialogFilter = {
@@ -214,7 +213,6 @@ export type SourdawBridge = {
         }) => Promise<void>;
         readonly listenSessionQuiesce: (callback: (requestId: number) => void) => () => void;
         readonly listenSessionQuiesceCancel: (callback: (requestId: number) => void) => () => void;
-        readonly listenSessionWindowDestroying: (callback: () => void) => () => void;
         readonly sessionQuiesced: (requestId: number, quiesced: boolean) => Promise<void>;
         readonly sessionQuiesceStarted: (requestId: number) => Promise<boolean>;
     };

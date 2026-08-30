@@ -12,6 +12,7 @@ import {
     bindMainWindowOwnerTeardown,
     destroyCrashedMainWindow,
     notifyCurrentWindowDestroying,
+    isApprovedRendererTerminal,
 } from '../mainWindowTeardown.js';
 
 import type { OwnerWindow, PluginWindowHost, PreventableEditorEvent } from '../pluginGui.js';
@@ -230,5 +231,17 @@ describe('main window owner teardown wiring', () => {
         current = true;
         notifyCurrentWindowDestroying({ isCurrentWindow: () => current, notify });
         expect(notify).toHaveBeenCalledOnce();
+    });
+
+    it('treats an approved crashed renderer as terminal but preserves authority-revoked renderer recovery', () => {
+        const owner = createOwnerStub();
+        const replacement = createOwnerStub();
+
+        expect(isApprovedRendererTerminal({ owner, currentWindow: () => replacement, permitsClose: () => true })).toBe(
+            true
+        );
+        expect(isApprovedRendererTerminal({ owner, currentWindow: () => replacement, permitsClose: () => false })).toBe(
+            false
+        );
     });
 });

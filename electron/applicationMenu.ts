@@ -157,8 +157,10 @@ export const dispatchFocusedNativeMenuIntent = ({
     readonly sendToNativeResponder?: (action: NativeResponderEditAction) => void;
 }): boolean => {
     const responderAction = nativeResponderEditAction(intent.action);
-    if (responderAction !== undefined && !isMainWindowFocused) {
-        sendToNativeResponder?.(responderAction);
+    if (intent.action.startsWith('edit:') && !isMainWindowFocused) {
+        if (responderAction !== undefined) {
+            sendToNativeResponder?.(responderAction);
+        }
         return false;
     }
     if (responderAction !== undefined) {

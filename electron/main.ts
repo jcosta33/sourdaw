@@ -43,7 +43,6 @@ import {
     EVENT_CHANNEL,
     NATIVE_MENU_ACTION_CHANNEL,
     RENDERER_SESSION_QUIESCE_CANCEL_CHANNEL,
-    RENDERER_SESSION_WINDOW_DESTROYING_CHANNEL,
     RENDERER_SESSION_QUIESCE_CHANNEL,
     STREAM_CHANNEL,
     WINDOW_MAXIMIZED_CHANGED_CHANNEL,
@@ -53,6 +52,7 @@ import { createCommandStream, createEventForwarder } from './events.js';
 import {
     bindMainWindowOwnerTeardown,
     destroyCrashedMainWindow,
+    isApprovedRendererTerminal,
     notifyCurrentWindowDestroying,
 } from './mainWindowTeardown.js';
 import { loadNativeAddon, NATIVE_ADDON_PATH_ENV, resolveNativeAddonPath, type NativeHost } from './native.js';
@@ -174,12 +174,6 @@ const nativeMenuAction = (intent: NativeMenuIntent): void => {
     });
 };
 
-const acknowledgeRendererSessionDestroying = (window: BrowserWindow): void => {
-    if (!window.isDestroyed()) {
-        window.webContents.send(RENDERER_SESSION_WINDOW_DESTROYING_CHANNEL);
-    }
-};
-
 const rebuildMacApplicationMenu = (
     recentProjects: readonly { readonly key: string; readonly name: string }[] = []
 ): void => {
@@ -224,6 +218,15 @@ const quiesceApprovedMainWindow = async (): Promise<boolean | 'timed-out'> => {
     try {
         if (!window.isDestroyed()) {
             if (!(await rendererSessionQuiescer.request(window))) {
+                if (
+                    isApprovedRendererTerminal({
+                        owner: window,
+                        currentWindow: () => mainWindow,
+                        permitsClose: () => windowCloseCoordinator.permitsClose(),
+                    })
+                ) {
+                    return true;
+                }
                 rendererSessionLifecycle.cancelTeardown();
                 if (windowCloseCoordinator.permitsClose() && rendererSessionQuiescer.timedOut(window)) {
                     return 'timed-out';
@@ -237,7 +240,6 @@ const quiesceApprovedMainWindow = async (): Promise<boolean | 'timed-out'> => {
                     return false;
                 }
                 window.hide();
-                acknowledgeRendererSessionDestroying(window);
                 windowCloseCoordinator.markClosing();
                 window.destroy();
                 destroyed = true;
@@ -368,7 +370,6 @@ const createWindow = (): BrowserWindow => {
             rendererSessionLifecycle.approveTeardown();
             nativeMenuActionDispatcher.clearPending(window);
             if (destroyMainWindowAfterEditorsDetach === undefined) {
-                acknowledgeRendererSessionDestroying(window);
                 windowCloseCoordinator.markClosing();
             }
             return;
@@ -395,7 +396,6 @@ const createWindow = (): BrowserWindow => {
             notifyCurrentWindowDestroying({
                 isCurrentWindow: () => mainWindow === window,
                 notify: () => {
-                    acknowledgeRendererSessionDestroying(window);
                     windowCloseCoordinator.markClosing();
                 },
             });

@@ -19,7 +19,6 @@ import {
     saveProject,
     quiesceProjectSession,
     cancelProjectSessionQuiesce,
-    releaseProjectSessionPluginRetirement,
 } from '#/modules/Project/useCases';
 import {
     openExportDialog,
@@ -251,16 +250,12 @@ export const useNativeApplicationMenu = (project: ProjectStoreState): void => {
         const unlistenSessionQuiesceCancel = menu.listenSessionQuiesceCancel((requestId) => {
             void cancelProjectSessionQuiesce(requestId).then((quiesced) => menu.sessionQuiesced(requestId, quiesced));
         });
-        const unlistenSessionWindowDestroying = menu.listenSessionWindowDestroying(
-            releaseProjectSessionPluginRetirement
-        );
         const unsubscribeRecentProjects = recentProjectChanges.subscribe(publishProjectState);
         const unsubscribeCrdt = subscribeToCrdtChanges(publishProjectState);
         return () => {
             unlisten();
             unlistenSessionQuiesce();
             unlistenSessionQuiesceCancel();
-            unlistenSessionWindowDestroying();
             unsubscribeRecentProjects();
             unsubscribeCrdt();
         };

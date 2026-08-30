@@ -175,6 +175,31 @@ describe('createApplicationMenuTemplate', () => {
         expect(sendToNativeResponder).not.toHaveBeenCalled();
     });
 
+    it('consumes unsupported plugin-focused Edit commands without forwarding them to the DAW', () => {
+        const target = {
+            undo: vi.fn(),
+            redo: vi.fn(),
+            cut: vi.fn(),
+            copy: vi.fn(),
+            paste: vi.fn(),
+            selectAll: vi.fn(),
+        };
+        const send = vi.fn();
+        const sendToNativeResponder = vi.fn();
+
+        expect(
+            dispatchFocusedNativeMenuIntent({
+                intent: { action: 'edit:deselect-all' },
+                isMainWindowFocused: false,
+                target,
+                send,
+                sendToNativeResponder,
+            })
+        ).toBe(false);
+        expect(send).not.toHaveBeenCalled();
+        expect(sendToNativeResponder).not.toHaveBeenCalled();
+    });
+
     it('routes an Open Recent click with its exact saved-project key', () => {
         const send = vi.fn();
         const template = createApplicationMenuTemplate({

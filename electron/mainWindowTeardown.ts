@@ -41,6 +41,17 @@ export const notifyCurrentWindowDestroying = ({
     }
 };
 
+/** An approved renderer that crashed has no interactive session left to drain. */
+export const isApprovedRendererTerminal = ({
+    owner,
+    currentWindow,
+    permitsClose,
+}: {
+    readonly owner: OwnerWindow;
+    readonly currentWindow: () => OwnerWindow | undefined;
+    readonly permitsClose: () => boolean;
+}): boolean => permitsClose() && currentWindow() !== owner;
+
 /**
  * Destroy a crashed main window without CloseImmediately on parented editors.
  *

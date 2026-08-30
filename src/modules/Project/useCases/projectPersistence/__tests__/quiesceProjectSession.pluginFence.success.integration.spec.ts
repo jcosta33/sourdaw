@@ -20,8 +20,8 @@ vi.mock('#/modules/PluginHost/repositories/pluginBridge/onPluginLatencyChanged',
 }));
 vi.mock('#/infra/logger/appLogger', () => ({ logger: { warn: vi.fn() } }));
 
-describe('project-session plugin retirement release integration', () => {
-    it('admits an activation only after successful quiesce and trusted window-destroy release', async () => {
+describe('project-session plugin retirement integration', () => {
+    it('keeps late activation fenced after successful quiesce destroys the renderer', async () => {
         runtime.stopPlayback.mockResolvedValue(undefined);
         runtime.unloadPlugin.mockResolvedValue([[], []]);
         runtime.loadPlugin.mockResolvedValue({
@@ -32,7 +32,6 @@ describe('project-session plugin retirement release integration', () => {
             engine_plugin_id: 1,
         });
         const { quiesceProjectSession } = await import('../quiesceProjectSession');
-        const { releaseProjectSessionPluginRetirement } = await import('../releaseProjectSessionPluginRetirement');
         const { activateExternalPlugin } = await import('#/modules/PluginHost/useCases');
 
         await expect(quiesceProjectSession(94, async () => true)).resolves.toBe(true);
@@ -44,9 +43,8 @@ describe('project-session plugin retirement release integration', () => {
         await Promise.resolve();
         expect(runtime.loadPlugin).not.toHaveBeenCalled();
 
-        releaseProjectSessionPluginRetirement();
-
-        await expect(activation).resolves.toEqual({ status: 'active' });
-        expect(runtime.loadPlugin).toHaveBeenCalledOnce();
+        await Promise.resolve();
+        expect(runtime.loadPlugin).not.toHaveBeenCalled();
+        void activation.catch(() => undefined);
     });
 });

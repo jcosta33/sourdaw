@@ -144,9 +144,5 @@ describe('quiesceProjectSession', () => {
         await expect(quiesceProjectSession(21, async () => true)).resolves.toBe(false);
         expect(projectLoadFailureStore.value?.message).toMatch(/could not safely restore/u);
         await expect(quiesceProjectSession(22, async () => true)).resolves.toBe(false);
-        const { releaseProjectSessionPluginRetirement } = await import('../releaseProjectSessionPluginRetirement');
-        const reopenCount = runtime.reopen.mock.calls.length;
-        releaseProjectSessionPluginRetirement();
-        expect(runtime.reopen).toHaveBeenCalledTimes(reopenCount);
     });
 });
