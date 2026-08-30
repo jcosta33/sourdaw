@@ -240,6 +240,19 @@ function createEmptyActions(): [] {
     return [];
 }
 
+function createDeferred<T>(): {
+    promise: Promise<T>;
+    resolve: (value: T | PromiseLike<T>) => void;
+} {
+    let resolveDeferred: (value: T | PromiseLike<T>) => void = () => {
+        throw new Error('Expected the deferred promise resolver.');
+    };
+    const promise = new Promise<T>((resolve) => {
+        resolveDeferred = resolve;
+    });
+    return { promise, resolve: resolveDeferred };
+}
+
 function createCommittedBatchResult(): CompletedBatchResult {
     const result = { status: 'committed', actions: createEmptyActions() } satisfies Parameters<typeof createReceipt>[0];
     return { ...result, receipt: createReceipt(result) } satisfies CompletedBatchResult;
@@ -616,16 +629,36 @@ describe('settleConfirmedCommandExecution', () => {
         expect(mocks.invalidate).not.toHaveBeenCalled();
     });
 
-    it('completes a no-op batch and discards temporary resources', async () => {
-        const result = await settleConfirmedCommandExecution(
+    it('awaits no-op resource cleanup before reporting completion', async () => {
+        const resourceCleanup = createDeferred<void>();
+        mocks.settleResources.mockImplementationOnce(() => resourceCleanup.promise);
+        let settled = false;
+        const resultPromise = settleConfirmedCommandExecution(
             createInput(createCompletedFlight(createNoOpBatchResult()))
         );
+        const settlement = resultPromise.then(() => {
+            settled = true;
+        });
 
-        expect(result).toEqual({ status: 'executed' });
-        expect(mocks.completeNoOp).toHaveBeenCalled();
+        await Promise.resolve();
+
+        expect(settled).toBe(false);
+        expect(mocks.status).not.toHaveBeenCalled();
+        expect(mocks.message).not.toHaveBeenCalled();
+        expect(mocks.completeNoOp).toHaveBeenCalledWith(confirmation, undefined);
         expect(mocks.settleResources).toHaveBeenCalledWith({
             confirmationId: 'confirmation-1',
             disposition: 'discard',
+        });
+
+        resourceCleanup.resolve(undefined);
+
+        await expect(resultPromise).resolves.toEqual({ status: 'executed' });
+        await settlement;
+
+        expect(mocks.status).toHaveBeenCalledWith({
+            confirmationId: 'confirmation-1',
+            status: 'executed',
         });
     });
 
