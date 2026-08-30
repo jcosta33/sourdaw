@@ -537,6 +537,32 @@ describe('recoverAgentRunPendingEffects', () => {
                 });
             },
         ],
+        [
+            'an empty durable render reason',
+            () => {
+                const receiptEffect = runtimeGraphReceiptEffect();
+                const extra = synthesizedRenderEffect('command-render');
+                Reflect.set(extra, 'reason', '');
+                configureManualizedRuntimeGraphProof({
+                    continuationEffects: [receiptEffect, extra],
+                    receiptEffects: [receiptEffect],
+                    lastError: '',
+                });
+            },
+        ],
+        [
+            'a whitespace-only durable render reason',
+            () => {
+                const receiptEffect = runtimeGraphReceiptEffect();
+                const extra = synthesizedRenderEffect('command-render');
+                Reflect.set(extra, 'reason', '   ');
+                configureManualizedRuntimeGraphProof({
+                    continuationEffects: [receiptEffect, extra],
+                    receiptEffects: [receiptEffect],
+                    lastError: '   ',
+                });
+            },
+        ],
     ])('rejects synthesized render recovery with %s', async (_label, configureProof) => {
         configureProof();
 
