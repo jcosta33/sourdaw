@@ -168,6 +168,66 @@ export function resolveReviewThread(
         if (existingReply === undefined) {
             let pendingReview = convergePendingReviews(working.pendingReviews, context, port);
             if (pendingReview === undefined) {
+                const stalePendingReply = findStaleManagedPendingReply(working.thread, context);
+                if (stalePendingReply !== undefined) {
+                    let stalePendingReplyReview = stalePendingReply.review;
+                    const stalePendingReplyCommitOid = requireReviewCommitOid(
+                        stalePendingReplyReview,
+                        `Done reply ${stalePendingReply.marker.id}`
+                    );
+                    if (stalePendingReplyReview.body.trim() === '') {
+                        reviewUpdateAttempted = true;
+                        const updatedReview = port.updateReviewBody(
+                            stalePendingReplyReview.id,
+                            resolutionReviewBody(context, stalePendingReplyCommitOid)
+                        );
+                        assertReviewEnvelopeReceipt(
+                            updatedReview,
+                            updateReviewClientMutationId(stalePendingReplyReview.id),
+                            stalePendingReplyReview.state,
+                            resolutionReviewBody(context, stalePendingReplyCommitOid),
+                            stalePendingReplyCommitOid,
+                            'update review body'
+                        );
+                        working = port.inspect(number, threadId);
+                        assertExpectedHeadAfterMutation(working.head, expectedHead);
+                        assertResolvableThread(working.thread, threadId);
+                        const refreshedPendingReply = findManagedReplyMarkerByReviewId(
+                            working.thread,
+                            context,
+                            stalePendingReplyReview.id,
+                            ['PENDING', 'COMMENTED'],
+                            true
+                        );
+                        if (refreshedPendingReply === undefined) {
+                            fail(
+                                `Done reply ${stalePendingReply.marker.id} is no longer attached to a valid author review`
+                            );
+                        }
+                        stalePendingReplyReview = refreshedPendingReply.review;
+                    }
+                    if (stalePendingReplyReview.state === 'PENDING') {
+                        reviewSubmitAttempted = true;
+                        const submittedStalePendingReplyReview = port.submitReview(
+                            stalePendingReplyReview.id,
+                            resolutionReviewBody(context, stalePendingReplyCommitOid)
+                        );
+                        assertReviewEnvelopeReceipt(
+                            submittedStalePendingReplyReview,
+                            submitReviewClientMutationId(stalePendingReplyReview.id),
+                            'COMMENTED',
+                            resolutionReviewBody(context, stalePendingReplyCommitOid),
+                            stalePendingReplyCommitOid,
+                            'submit review'
+                        );
+                        working = port.inspect(number, threadId);
+                        assertExpectedHeadAfterMutation(working.head, expectedHead);
+                        assertResolvableThread(working.thread, threadId);
+                    }
+                    pendingReview = convergePendingReviews(working.pendingReviews, context, port);
+                }
+            }
+            if (pendingReview === undefined) {
                 const stalePendingReview = findStaleManagedPendingReview(working.pendingReviews, context);
                 if (stalePendingReview !== undefined) {
                     reviewSubmitAttempted = true;
@@ -823,6 +883,46 @@ function requireCanonicalManagedReplyMarker(
         fail(`review thread ${threadId} has no valid Done reply marker`);
     }
     return canonical;
+}
+function findManagedReplyMarkerByReviewId(
+    thread: ReviewThread | null,
+    context: ResolutionReviewContext,
+    reviewId: string,
+    allowedStates: string[],
+    allowEmptyBody: boolean
+): ManagedReplyMarker | undefined {
+    if (thread === null) {
+        return undefined;
+    }
+    return managedReplyMarkers(thread, context, allowedStates, allowEmptyBody).find(
+        (candidate) => candidate.review.id === reviewId
+    );
+}
+function findStaleManagedPendingReply(
+    thread: ReviewThread | null,
+    context: ResolutionReviewContext
+): ManagedReplyMarker | undefined {
+    if (thread === null) {
+        return undefined;
+    }
+    for (const marker of validatedReplyMarkers(thread)) {
+        const review = toReplyReviewOrNull(marker);
+        if (
+            review === null ||
+            review.state !== 'PENDING' ||
+            typeof review.commitOid !== 'string' ||
+            review.commitOid === '' ||
+            review.commitOid === context.expectedHead
+        ) {
+            continue;
+        }
+        return {
+            marker,
+            review: requireReplyReview(marker, context, ['PENDING'], true, null),
+            currentHead: false,
+        };
+    }
+    return undefined;
 }
 function hasExpectedReply(thread: ReviewThread, replyId: string): boolean {
     return thread.comments.some(
