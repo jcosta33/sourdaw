@@ -1,0 +1,32 @@
+src/modules/WorkspaceShell/presentations/views/Transport/SoloModeSelector.tsx
+  s_ae074277795b45::t_b96bbc08e728ea 29-32,35,42-44,82,106
+src/modules/WorkspaceShell/presentations/views/TransportBar.tsx
+  s_ae074277795b45::t_cb49092d977900 205-211
+src/modules/WorkspaceShell/presentations/views/Transport/TransportControls.tsx
+  s_ae074277795b45::t_cb49092d977900 410,429
+  s_ae074277795b45::t_a5ba3ccc00d53b 411-428
+src/styles/main.css
+  s_ae074277795b45::t_cb49092d977900 180-189
+src/modules/WorkspaceShell/presentations/views/ToolSelector.tsx
+  s_ae074277795b45::t_b96bbc08e728ea 33-36,39,46-48,97,134
+src/modules/WorkspaceShell/presentations/views/__tests__/ToolSelectorBranches.spec.tsx
+  s_ae074277795b45::t_fc5d356c6dfcc1 76,80
+src/modules/WorkspaceShell/presentations/views/Transport/__tests__/SoloModeSelectorBranches.spec.tsx
+  s_ae074277795b45::t_fc5d356c6dfcc1 87,91
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "b448c99dd90c12c6ccca9f664c159b292d7b776b",
+  "prompts": {},
+  "sessions": {
+    "s_ae074277795b45": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04ab5-5234-7100-be1c-76ebfaba88d3",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
