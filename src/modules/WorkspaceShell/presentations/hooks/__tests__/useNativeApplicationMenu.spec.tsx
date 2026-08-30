@@ -46,7 +46,20 @@ vi.mock('#/modules/Project/stores', () => ({
     },
 }));
 vi.mock('#/modules/Project/useCases', () => projectActions);
-vi.mock('#/modules/Arrangement/stores', () => ({ trackStore: { value: { tracks: [] } } }));
+const tracks = vi.hoisted(() => ({
+    value: [
+        {
+            clips: [{ id: 'clip-a' }, { id: 'clip-b' }],
+        },
+    ],
+}));
+vi.mock('#/modules/Arrangement/stores', () => ({
+    trackStore: {
+        get value() {
+            return { tracks: tracks.value };
+        },
+    },
+}));
 const arrangement = vi.hoisted(() => ({
     clearClipSelection: vi.fn(),
     selectAllClips: vi.fn(),
@@ -302,6 +315,31 @@ describe('useNativeApplicationMenu', () => {
         expect(projectActions.loadRecentProject).not.toHaveBeenCalled();
     });
 
+    it('creates a new project and opens the selected recent project after a clean save', async () => {
+        renderHook(() =>
+            useNativeApplicationMenu({
+                projectId: 'project',
+                name: 'Song',
+                createdAt: 1,
+                updatedAt: 2,
+                dirty: true,
+                loading: false,
+                keyRoot: 0,
+                scaleName: 'chromatic',
+                tuning: { name: 'Equal Temperament', frequencies: [] },
+                productionBrief: {} as never,
+                initialized: true,
+            })
+        );
+
+        desktop.listener?.({ action: 'project:new' });
+        desktop.listener?.({ action: 'project:open-recent', recentKey: 'recent-project' });
+
+        await vi.waitFor(() => expect(projectActions.newProject).toHaveBeenCalledTimes(1));
+        expect(projectActions.loadRecentProject).toHaveBeenCalledWith('recent-project');
+        expect(projectActions.saveProject).toHaveBeenCalledTimes(2);
+    });
+
     it('routes every renderer-owned command family through its public action or use-case seam', async () => {
         renderHook(() =>
             useNativeApplicationMenu({
@@ -340,7 +378,9 @@ describe('useNativeApplicationMenu', () => {
 
         await vi.waitFor(() => expect(command.executeAppAction).toHaveBeenCalledWith({ type: 'importMidiFile' }));
         expect(command.executeAppAction).toHaveBeenCalledWith({ type: 'importAudioFile' });
-        expect(arrangement.selectAllClips).toHaveBeenCalledWith([]);
+        const supplier = arrangement.selectAllClips.mock.calls[0]?.[0];
+        expect(supplier).toBeTypeOf('function');
+        expect(supplier?.()).toEqual(['clip-a', 'clip-b']);
         expect(arrangement.clearClipSelection).toHaveBeenCalledTimes(1);
         expect(projectActions.pickAndImportProjectFile).toHaveBeenCalledTimes(1);
         expect(projectActions.exportProjectFile).toHaveBeenCalledTimes(1);

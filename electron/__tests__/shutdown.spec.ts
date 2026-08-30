@@ -154,9 +154,18 @@ describe('plugin command admission before the cascade', () => {
         );
     });
 
+    it('does not recreate a renderer that crashes during approved close or quit teardown', () => {
+        expect(mainSource).toMatch(
+            /render-process-gone[\s\S]*?!rendererSessionLifecycle\.shouldRecreateAfterCrash\(\)[\s\S]*?destroyCrashedWindow\(\)[\s\S]*?mainWindow\s*=\s*undefined[\s\S]*?return;[\s\S]*?createAndActivateWindow\(\)/u
+        );
+    });
+
     it('wires approved renderer quiescence before the native quit cascade', () => {
         expect(mainSource).toMatch(
-            /canQuit:\s*\(\)\s*=>\s*windowCloseCoordinator\.requestClose\(\),\s*beforeRun:\s*quiesceApprovedMainWindow/u
+            /canQuit:\s*async\s*\(\)\s*=>\s*\{[\s\S]*?windowCloseCoordinator\.requestClose\(\)[\s\S]*?rendererSessionLifecycle\.approveTeardown\(\)[\s\S]*?\},\s*beforeRun:\s*quiesceApprovedMainWindow/u
+        );
+        expect(mainSource).toMatch(
+            /const quiesceApprovedMainWindow[\s\S]*?finally\s*\{[\s\S]*?mainWindow\s*===\s*window[\s\S]*?mainWindow\s*=\s*undefined/u
         );
     });
 });
@@ -252,13 +261,20 @@ describe('the before-quit handler', () => {
 
     it('waits for renderer quiescence before the native cascade and prevents repeated quit meanwhile', async () => {
         let releaseQuiesce: (() => void) | undefined;
+        let rendererPresent = true;
         const beforeRun = vi.fn(
             () =>
                 new Promise<void>((resolve) => {
-                    releaseQuiesce = resolve;
+                    releaseQuiesce = () => {
+                        rendererPresent = false;
+                        resolve();
+                    };
                 })
         );
-        const run = vi.fn(async () => completed);
+        const run = vi.fn(async () => {
+            expect(rendererPresent).toBe(false);
+            return completed;
+        });
         const handler = createQuitHandler(run, { beforeRun, exit: () => undefined, report: () => undefined });
         const first = { preventDefault: vi.fn() };
         const repeated = { preventDefault: vi.fn() };

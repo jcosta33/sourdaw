@@ -46,6 +46,7 @@ import { createCommandStream, createEventForwarder } from './events.js';
 import { bindMainWindowOwnerTeardown, destroyCrashedMainWindow } from './mainWindowTeardown.js';
 import { loadNativeAddon, NATIVE_ADDON_PATH_ENV, resolveNativeAddonPath, type NativeHost } from './native.js';
 import { forwardNativeEvent } from './nativeEventRouter.js';
+import { createNativeMenuActionDispatcher } from './nativeMenuActionDispatcher.js';
 import { createNativeMenuProjectStateController } from './nativeMenuProjectState.js';
 import { createPluginCommandAdmission } from './pluginCommandAdmission.js';
 import {
@@ -55,6 +56,7 @@ import {
     type PluginWindowHost,
 } from './pluginGui.js';
 import { APP_ENTRY_URL, APP_ORIGIN, handleAppProtocol, registerAppScheme, resolveContentRoots } from './protocol.js';
+import { createRendererSessionLifecycle } from './rendererSessionLifecycle.js';
 import { registerCommandRouter } from './router.js';
 import { createScanSupervisor, type ScanSupervisor } from './scan.js';
 import { applyPermissionPolicy, decideWindowOpen, isNavigationAllowed, trustedFrameGuard } from './security.js';
@@ -112,9 +114,24 @@ const isAllowedFrameUrl = trustedFrameGuard(allowedOrigins);
 let mainWindow: BrowserWindow | undefined;
 let pluginWindowHost: PluginWindowHost | undefined;
 let destroyMainWindowAfterEditorsDetach: (() => Promise<void>) | undefined;
+const rendererSessionLifecycle = createRendererSessionLifecycle();
+
+const createAndActivateWindow = (): BrowserWindow => {
+    rendererSessionLifecycle.startWindow();
+    const window = createWindow();
+    mainWindow = window;
+    return window;
+};
+
+const nativeMenuActionDispatcher = createNativeMenuActionDispatcher({
+    isMac: process.platform === 'darwin',
+    actionChannel: NATIVE_MENU_ACTION_CHANNEL,
+    getWindow: () => mainWindow,
+    createWindow: createAndActivateWindow,
+});
 
 const nativeMenuAction = (intent: NativeMenuIntent): void => {
-    rendererTarget()?.send(NATIVE_MENU_ACTION_CHANNEL, intent);
+    nativeMenuActionDispatcher.dispatch(intent);
 };
 
 const rebuildMacApplicationMenu = (
@@ -270,6 +287,7 @@ const createWindow = (): BrowserWindow => {
     window.on('unmaximize', () => window.webContents.send(WINDOW_MAXIMIZED_CHANGED_CHANNEL, false));
     window.on('close', (event) => {
         if (windowCloseCoordinator.permitsClose()) {
+            rendererSessionLifecycle.approveTeardown();
             windowCloseCoordinator.markClosing();
             return;
         }
@@ -580,7 +598,17 @@ void app.whenReady().then(() => {
     registerNativeMenuChannels({
         ipcMain,
         isTrustedFrameUrl: isAllowedFrameUrl,
-        onProjectState: (state) => nativeMenuProjectStateController.apply(state),
+        onProjectState: (state, sender) => {
+            const senderWindow =
+                typeof sender === 'object' && sender !== null
+                    ? BrowserWindow.fromWebContents(sender as WebContents)
+                    : null;
+            if (senderWindow !== mainWindow) {
+                return;
+            }
+            nativeMenuProjectStateController.apply(state);
+            nativeMenuActionDispatcher.rendererReady(senderWindow);
+        },
         onSaveResult: (result) => windowCloseCoordinator.resolveSave(result),
         editTargetForSender: (sender) =>
             typeof sender === 'object' &&
@@ -596,7 +624,7 @@ void app.whenReady().then(() => {
     });
     startNativeSurface();
 
-    mainWindow = createWindow();
+    createAndActivateWindow();
 });
 
 /**
@@ -628,7 +656,13 @@ app.on(
                     console.error(`[shell] shutdown ${outcome.status}: ${JSON.stringify(outcome)}`);
                 }
             },
-            canQuit: () => windowCloseCoordinator.requestClose(),
+            canQuit: async () => {
+                const approved = await windowCloseCoordinator.requestClose();
+                if (approved) {
+                    rendererSessionLifecycle.approveTeardown();
+                }
+                return approved;
+            },
             beforeRun: quiesceApprovedMainWindow,
             timers: systemTimers,
         }
@@ -674,6 +708,14 @@ app.on('render-process-gone', (_event, contents, details) => {
         destroyCrashedMainWindow(crashedWindow, destroyCrashed);
     };
 
+    if (!rendererSessionLifecycle.shouldRecreateAfterCrash()) {
+        destroyCrashedWindow();
+        if (mainWindow === crashedWindow) {
+            mainWindow = undefined;
+        }
+        return;
+    }
+
     const now = Date.now();
     recreateTimestamps = recreateTimestamps.filter((at) => now - at < RECREATE_WINDOW_MS);
     if (recreateTimestamps.length >= MAX_RECREATES) {
@@ -702,7 +744,7 @@ app.on('render-process-gone', (_event, contents, details) => {
     // platforms. Building the replacement first means that instant never
     // exists, and no ordering question about when Electron emits the event has
     // to be answered.
-    mainWindow = createWindow();
+    createAndActivateWindow();
     destroyCrashedWindow();
 });
 
@@ -723,6 +765,6 @@ app.on('window-all-closed', () => {
 
 app.on('activate', () => {
     if (mainWindow === undefined || mainWindow.isDestroyed()) {
-        mainWindow = createWindow();
+        createAndActivateWindow();
     }
 });

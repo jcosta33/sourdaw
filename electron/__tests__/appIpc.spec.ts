@@ -155,12 +155,15 @@ describe('native menu channels', () => {
         await handlers.get(NATIVE_EDIT_CHANNEL)?.(frame, 'undo');
         await handlers.get(NATIVE_EDIT_CHANNEL)?.(frame, 'redo');
 
-        expect(onProjectState).toHaveBeenCalledWith({
-            title: 'Song',
-            dirty: true,
-            durabilityPending: false,
-            recentProjects: [],
-        });
+        expect(onProjectState).toHaveBeenCalledWith(
+            {
+                title: 'Song',
+                dirty: true,
+                durabilityPending: false,
+                recentProjects: [],
+            },
+            'sender'
+        );
         expect(onSaveResult).toHaveBeenCalledWith({ requestId: 2, saved: true, dirty: false });
         expect(editTarget.copy).toHaveBeenCalledTimes(1);
         expect(editTarget.undo).toHaveBeenCalledTimes(1);

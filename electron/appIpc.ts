@@ -325,7 +325,7 @@ export type NativeMenuSaveResult = {
 export type RegisterNativeMenuChannelsInput = {
     readonly ipcMain: IpcMainLike;
     readonly isTrustedFrameUrl: TrustGuard;
-    readonly onProjectState: (state: NativeMenuProjectState) => void;
+    readonly onProjectState: (state: NativeMenuProjectState, sender: unknown) => void;
     readonly onSaveResult: (result: NativeMenuSaveResult) => void;
     readonly editTargetForSender: (sender: unknown) => NativeEditTarget | null;
 };
@@ -374,8 +374,8 @@ export const registerNativeMenuChannels = ({
 }: RegisterNativeMenuChannelsInput): void => {
     ipcMain.handle(
         NATIVE_MENU_PROJECT_STATE_CHANNEL,
-        withTrustedSender('nativeMenu.projectState', isTrustedFrameUrl, (value) =>
-            onProjectState(nativeMenuProjectState(value))
+        withTrustedSenderEvent('nativeMenu.projectState', isTrustedFrameUrl, (event, value) =>
+            onProjectState(nativeMenuProjectState(value), event.sender)
         )
     );
     ipcMain.handle(

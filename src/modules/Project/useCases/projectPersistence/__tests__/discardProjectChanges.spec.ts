@@ -14,7 +14,7 @@ const recent = vi.hoisted(() => ({ getRecentProjects: vi.fn() }));
 const snapshot = vi.hoisted(() => ({ readNamedProjectJson: vi.fn() }));
 const load = vi.hoisted(() => ({ loadRecentProject: vi.fn() }));
 const create = vi.hoisted(() => ({ newProject: vi.fn() }));
-const crdt = vi.hoisted(() => ({ compactProject: vi.fn() }));
+const crdt = vi.hoisted(() => ({ compactProject: vi.fn(), captureProjectRevision: vi.fn(() => 'revision-1') }));
 const notifications = vi.hoisted(() => ({ notifyUser: vi.fn() }));
 const transitionAuthority = vi.hoisted(() => ({ current: true }));
 
@@ -51,6 +51,8 @@ describe('discardProjectChanges', () => {
         load.loadRecentProject.mockReset();
         create.newProject.mockReset();
         crdt.compactProject.mockReset();
+        crdt.captureProjectRevision.mockReset();
+        crdt.captureProjectRevision.mockReturnValue('revision-1');
         notifications.notifyUser.mockClear();
         transitionAuthority.current = true;
     });
@@ -101,6 +103,27 @@ describe('discardProjectChanges', () => {
         expect(load.loadRecentProject).not.toHaveBeenCalled();
         expect(create.newProject).not.toHaveBeenCalled();
         expect(state.project?.dirty).toBe(true);
+    });
+
+    it('fails closed when CRDT truth changes without republishing an already-dirty project', async () => {
+        let resolveSnapshot: ((value: string | null) => void) | undefined;
+        recent.getRecentProjects.mockReturnValue([]);
+        snapshot.readNamedProjectJson.mockImplementation(
+            () =>
+                new Promise<string | null>((resolve) => {
+                    resolveSnapshot = resolve;
+                })
+        );
+
+        const discard = discardProjectChanges();
+        // `markDirty` short-circuits for an already-dirty project, so its
+        // metadata object and load authority legitimately remain unchanged.
+        crdt.captureProjectRevision.mockReturnValue('revision-after-edit');
+        resolveSnapshot?.('{"version":2}');
+
+        await expect(discard).resolves.toBe(false);
+        expect(load.loadRecentProject).not.toHaveBeenCalled();
+        expect(create.newProject).not.toHaveBeenCalled();
     });
 
     it('replaces a never-explicitly-saved project with a clean blank project', async () => {

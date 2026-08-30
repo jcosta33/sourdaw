@@ -1,4 +1,4 @@
-import { compactProject } from '#/modules/CrdtDocument/useCases';
+import { captureProjectRevision, compactProject } from '#/modules/CrdtDocument/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { NAMED_PROJECT_KEY_PREFIX } from '../../models/ProjectData';
@@ -26,9 +26,14 @@ export async function discardProjectChanges(): Promise<boolean> {
     const hasRecentEntry = getRecentProjects().some((entry) => entry.key === snapshotKey);
     const transitionAuthority = captureProjectTransitionAuthority();
     const transitionWasCurrent = transitionAuthority.isCurrent();
+    const projectRevision = captureProjectRevision();
     const stillOwnsDiscard = (): boolean => {
         const current = projectStore.value;
-        return current === project && (!transitionWasCurrent || transitionAuthority.isCurrent());
+        return (
+            current === project &&
+            (!transitionWasCurrent || transitionAuthority.isCurrent()) &&
+            captureProjectRevision() === projectRevision
+        );
     };
     let snapshot: string | null;
     try {

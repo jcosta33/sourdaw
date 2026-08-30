@@ -166,7 +166,7 @@ const runMenuAction = async (intent: NativeMenuIntent): Promise<void> => {
             await executeAppAction({ type: 'pasteClip' });
             return;
         case 'edit:select-all':
-            selectAllClips(allClipIds());
+            selectAllClips(allClipIds);
             return;
         case 'edit:deselect-all':
             clearClipSelection();
