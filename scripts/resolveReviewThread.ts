@@ -206,25 +206,20 @@ export function resolveReviewThread(
             repairManagedCommentedReviewEnvelopes(threadId, afterReply.thread, port, context, ['COMMENTED'], () => {
                 reviewUpdateAttempted = true;
             }) || reviewUpdateAttempted;
-        const pendingReviewDeleted = reconcilePendingReviewsForReply(
-            afterReply.pendingReviews,
-            afterReply.thread,
-            context,
-            port
-        );
-        reviewUpdateAttempted = pendingReviewDeleted || reviewUpdateAttempted;
-        const replySource = pendingReviewDeleted ? port.inspect(number, threadId) : afterReply;
-        if (pendingReviewDeleted) {
-            assertExpectedHeadAfterMutation(replySource.head, expectedHead);
-            assertResolvableThread(replySource.thread, threadId);
+        let replyInspection = reviewUpdateAttempted ? port.inspect(number, threadId) : afterReply;
+        if (reviewUpdateAttempted) {
+            assertExpectedHeadAfterMutation(replyInspection.head, expectedHead);
+            assertResolvableThread(replyInspection.thread, threadId);
         }
-        replyId = convergeReplyMarkers(threadId, replySource.thread, port, context, ['PENDING', 'COMMENTED']);
-        const converged = port.inspect(number, threadId);
-        assertExpectedHeadAfterMutation(converged.head, expectedHead);
-        assertResolvableThread(converged.thread, threadId);
-        const canonicalReply = requireOneReplyMarker(converged.thread, threadId);
-        replyId = canonicalReply.id;
-        let canonicalReview = requireReplyReview(canonicalReply, context, ['PENDING', 'COMMENTED'], true, expectedHead);
+        let canonical = requireCanonicalManagedReplyMarker(
+            replyInspection.thread!,
+            threadId,
+            context,
+            ['PENDING', 'COMMENTED'],
+            true
+        );
+        let canonicalReply = canonical.marker;
+        let canonicalReview = canonical.review;
         if (canonicalReview.body.trim() === '') {
             reviewUpdateAttempted = true;
             const canonicalReviewCommitOid = requireReviewCommitOid(canonicalReview, `Done reply ${canonicalReply.id}`);
@@ -232,7 +227,6 @@ export function resolveReviewThread(
                 canonicalReview.id,
                 resolutionReviewBody(context, canonicalReviewCommitOid)
             );
-            canonicalReview = updatedReview;
             assertReviewEnvelopeReceipt(
                 updatedReview,
                 updateReviewClientMutationId(canonicalReview.id),
@@ -241,6 +235,18 @@ export function resolveReviewThread(
                 canonicalReviewCommitOid,
                 'update review body'
             );
+            replyInspection = port.inspect(number, threadId);
+            assertExpectedHeadAfterMutation(replyInspection.head, expectedHead);
+            assertResolvableThread(replyInspection.thread, threadId);
+            canonical = requireCanonicalManagedReplyMarker(
+                replyInspection.thread!,
+                threadId,
+                context,
+                ['PENDING', 'COMMENTED'],
+                true
+            );
+            canonicalReply = canonical.marker;
+            canonicalReview = updatedReview;
         } else if (
             canonicalReview.body !==
             resolutionReviewBody(context, requireReviewCommitOid(canonicalReview, `Done reply ${canonicalReply.id}`))
@@ -249,18 +255,38 @@ export function resolveReviewThread(
         }
         if (canonicalReview.state === 'PENDING') {
             reviewSubmitAttempted = true;
-            const submittedReview = port.submitReview(canonicalReview.id, resolutionReviewBody(context, expectedHead));
+            const canonicalReviewCommitOid = requireReviewCommitOid(canonicalReview, `Done reply ${canonicalReply.id}`);
+            const submittedReview = port.submitReview(
+                canonicalReview.id,
+                resolutionReviewBody(context, canonicalReviewCommitOid)
+            );
             canonicalReview = submittedReview;
             assertReviewEnvelopeReceipt(
                 submittedReview,
                 submitReviewClientMutationId(canonicalReview.id),
                 'COMMENTED',
-                resolutionReviewBody(context, expectedHead),
-                expectedHead,
+                resolutionReviewBody(context, canonicalReviewCommitOid),
+                canonicalReviewCommitOid,
                 'submit review'
             );
+            replyInspection = port.inspect(number, threadId);
+            assertExpectedHeadAfterMutation(replyInspection.head, expectedHead);
+            assertResolvableThread(replyInspection.thread, threadId);
         }
-        const afterReview = reviewUpdateAttempted || reviewSubmitAttempted ? port.inspect(number, threadId) : converged;
+        const pendingReviewDeleted = reconcilePendingReviewsForReply(
+            replyInspection.pendingReviews,
+            replyInspection.thread,
+            context,
+            port
+        );
+        reviewUpdateAttempted = pendingReviewDeleted || reviewUpdateAttempted;
+        if (pendingReviewDeleted) {
+            replyInspection = port.inspect(number, threadId);
+            assertExpectedHeadAfterMutation(replyInspection.head, expectedHead);
+            assertResolvableThread(replyInspection.thread, threadId);
+        }
+        replyId = convergeReplyMarkers(threadId, replyInspection.thread, port, context, ['COMMENTED']);
+        const afterReview = port.inspect(number, threadId);
         assertExpectedHeadAfterMutation(afterReview.head, expectedHead);
         assertResolvableThread(afterReview.thread, threadId);
         assertCommentedResolutionReply(requireOneReplyMarker(afterReview.thread, threadId), context);
@@ -763,6 +789,11 @@ function requireCanonicalManagedReplyMarker(
     const managed = managedReplyMarkers(thread, context, allowedStates, allowEmptyBody);
     const canonical = managed[0];
     if (canonical === undefined) {
+        const markers = validatedReplyMarkers(thread);
+        const marker = markers[0];
+        if (marker !== undefined && markers.length === 1) {
+            requireReplyReview(marker, context, allowedStates, allowEmptyBody, null);
+        }
         fail(`review thread ${threadId} has no valid Done reply marker`);
     }
     return canonical;
@@ -989,41 +1020,38 @@ function repairCompletedResolution(
     if (updated) {
         thread = refresh();
     }
-    const pendingReviewDeleted = reconcilePendingReviewsForReply(working.pendingReviews, thread, context, port);
-    if (pendingReviewDeleted) {
-        thread = refresh();
-    }
-    let commentedReplies = managedReplyMarkers(thread, context, ['COMMENTED'], false);
-    let pendingReplies = managedReplyMarkers(thread, context, ['PENDING'], false);
-    const canonicalCommentedReply = commentedReplies[0];
-    const canonicalPendingReply = pendingReplies[0];
-    if (canonicalPendingReply !== undefined && canonicalCommentedReply === undefined) {
-        const reviewCommitOid = requireReviewCommitOid(
-            canonicalPendingReply.review,
-            `Done reply ${canonicalPendingReply.marker.id}`
-        );
-        const submittedReview = port.submitReview(
-            canonicalPendingReply.review.id,
-            resolutionReviewBody(context, reviewCommitOid)
-        );
+    const canonical = requireCanonicalManagedReplyMarker(
+        thread,
+        context.threadId,
+        context,
+        ['PENDING', 'COMMENTED'],
+        false
+    );
+    if (canonical.review.state === 'PENDING') {
+        const reviewCommitOid = requireReviewCommitOid(canonical.review, `Done reply ${canonical.marker.id}`);
+        const submittedReview = port.submitReview(canonical.review.id, resolutionReviewBody(context, reviewCommitOid));
         assertReviewEnvelopeReceipt(
             submittedReview,
-            submitReviewClientMutationId(canonicalPendingReply.review.id),
+            submitReviewClientMutationId(canonical.review.id),
             'COMMENTED',
             resolutionReviewBody(context, reviewCommitOid),
             reviewCommitOid,
             'submit review'
         );
         thread = refresh();
-        commentedReplies = managedReplyMarkers(thread, context, ['COMMENTED'], false);
-        pendingReplies = managedReplyMarkers(thread, context, ['PENDING'], false);
     }
-    const currentHeadCommentedReply = commentedReplies.find((candidate) => candidate.currentHead);
+    const pendingReviewDeleted = reconcilePendingReviewsForReply(working.pendingReviews, thread, context, port);
+    if (pendingReviewDeleted) {
+        thread = refresh();
+    }
+    const pendingReplies = managedReplyMarkers(thread, context, ['PENDING'], false);
+    const currentHeadCommentedReply = managedReplyMarkers(thread, context, ['COMMENTED'], false).find(
+        (candidate) => candidate.currentHead
+    );
     const managedPendingReviewIdsToDelete = new Set(
         pendingReplies
             .filter(
-                (candidate) =>
-                    currentHeadCommentedReply !== undefined || candidate.review.id !== canonicalPendingReply?.review.id
+                (candidate) => currentHeadCommentedReply !== undefined || candidate.review.id !== canonical.review.id
             )
             .map((candidate) => candidate.review.id)
     );
@@ -1503,12 +1531,12 @@ export function submitReview(reviewId: string, body: string, gh: Gh): ReviewEnve
     };
     const receipt = toPullRequestReview(response.data?.submitPullRequestReview?.pullRequestReview);
     const responseClientMutationId = response.data?.submitPullRequestReview?.clientMutationId;
-    if (receipt === null) {
+    if (receipt === null || responseClientMutationId !== clientMutationId) {
         fail(`submit review returned an invalid result for ${reviewId}`);
     }
     return {
         ...receipt,
-        clientMutationId: typeof responseClientMutationId === 'string' ? responseClientMutationId : '',
+        clientMutationId: responseClientMutationId,
     };
 }
 function updateReviewBody(reviewId: string, body: string, gh: Gh): ReviewEnvelopeReceipt {

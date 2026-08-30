@@ -786,6 +786,48 @@ describe('review thread resolution', () => {
             expect.arrayContaining(['-F', `reviewId=${reviewId}`, '-f', `clientMutationId=review-submit:${reviewId}`]),
         ]);
     });
+    it.each([
+        [
+            'null client mutation',
+            {
+                data: {
+                    submitPullRequestReview: {
+                        clientMutationId: null,
+                        pullRequestReview: {
+                            id: reviewId,
+                            state: 'COMMENTED',
+                            body: resolutionReviewSummary(pullRequestId, threadId, head),
+                            commit: { oid: head },
+                            author: { id: AUTHOR_BOT_NODE_ID, login: 'renamed-author', __typename: 'Bot' },
+                        },
+                    },
+                },
+            },
+        ],
+        [
+            'mismatched client mutation',
+            {
+                data: {
+                    submitPullRequestReview: {
+                        clientMutationId: 'wrong',
+                        pullRequestReview: {
+                            id: reviewId,
+                            state: 'COMMENTED',
+                            body: resolutionReviewSummary(pullRequestId, threadId, head),
+                            commit: { oid: head },
+                            author: { id: AUTHOR_BOT_NODE_ID, login: 'renamed-author', __typename: 'Bot' },
+                        },
+                    },
+                },
+            },
+        ],
+    ])('rejects a %s submit-review receipt', (_case, response) => {
+        expect(() =>
+            submitReview(reviewId, resolutionReviewSummary(pullRequestId, threadId, head), () =>
+                JSON.stringify(response)
+            )
+        ).toThrow(/submit review returned an invalid result/i);
+    });
     it('rejects a mixed-snapshot thread pagination head change before inspecting comments', () => {
         let call = 0;
         expect(() =>
@@ -1098,8 +1140,8 @@ describe('review thread resolution', () => {
             'inspect:2',
             `reply:${threadId}:${reviewId}`,
             'inspect:3',
-            'inspect:4',
             `submitReview:${reviewId}`,
+            'inspect:4',
             'inspect:5',
             `resolve:${threadId}`,
             'inspect:6',
@@ -1381,15 +1423,23 @@ describe('review thread resolution', () => {
             existingReplyReviewCommitOid: head,
         });
         expect(() => resolveReviewThread(42, threadId, movedHead, authorNodeId, port)).toThrow(/head moved/i);
-        expect(calls.filter((call) => call.startsWith('delete:'))).toEqual([`delete:${replyId}`]);
+        expect(calls.filter((call) => call.startsWith('delete:'))).toEqual([]);
         expect(calls.filter((call) => call.startsWith('deleteReview:'))).toEqual([]);
-        expect(state().comments.filter((comment) => comment.body === 'Done')).toEqual([
-            expect.objectContaining({ id: 'PRRC_created_1', reviewId: 'PRR_created_1' }),
-        ]);
+        expect(state().comments.filter((comment) => comment.body === 'Done')).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({ id: replyId, reviewId }),
+                expect.objectContaining({ id: 'PRRC_created_1', reviewId: 'PRR_created_1' }),
+            ])
+        );
         expect(state().reviews).toEqual(
             expect.arrayContaining([
                 expect.objectContaining({ id: reviewId, state: 'COMMENTED', commitOid: head }),
-                expect.objectContaining({ id: 'PRR_created_1', state: 'PENDING', commitOid: movedHead }),
+                expect.objectContaining({
+                    id: 'PRR_created_1',
+                    state: 'COMMENTED',
+                    commitOid: movedHead,
+                    body: resolutionReviewSummary(pullRequestId, threadId, movedHead),
+                }),
             ])
         );
     });
@@ -1478,7 +1528,6 @@ describe('review thread resolution', () => {
         const { port, authorNodeId, state, calls } = fakePort({
             throwAfterSubmitWithState: true,
             heads: [
-                head,
                 head,
                 head,
                 head,
@@ -1629,6 +1678,83 @@ describe('review thread resolution', () => {
         expect(state().comments.filter((comment) => comment.body === 'Done')).toEqual([
             expect.objectContaining({ id: replyId }),
         ]);
+    });
+    it('submits the current-head pending marker before retiring a stale commented marker on an unresolved thread', () => {
+        const { port, calls, authorNodeId, state } = fakePort({
+            existingReplyCount: 1,
+            existingReplyReviewCommitOid: movedHead,
+            existingReplyReviewBody: pendingReviewBody(movedHead),
+            addExactPendingReplyMarker: true,
+        });
+        expect(resolveReviewThread(42, threadId, head, authorNodeId, port)).toBe(
+            `review-thread-resolved:42:${threadId}`
+        );
+        expect(calls).toEqual([
+            'inspect:1',
+            'inspect:2',
+            `submitReview:PRR_pending_reply`,
+            'inspect:3',
+            'delete:PRRC_reply',
+            'inspect:4',
+            `resolve:${threadId}`,
+            'inspect:5',
+            `log:review-thread-resolved:42:${threadId}`,
+        ]);
+        expect(state().comments.filter((comment) => comment.body === 'Done')).toEqual([
+            expect.objectContaining({ id: 'PRRC_pending_reply', reviewId: 'PRR_pending_reply' }),
+        ]);
+        expect(state().reviews).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    id: reviewId,
+                    state: 'COMMENTED',
+                    commitOid: movedHead,
+                    body: resolutionReviewSummary(pullRequestId, threadId, movedHead),
+                }),
+                expect.objectContaining({
+                    id: 'PRR_pending_reply',
+                    state: 'COMMENTED',
+                    commitOid: head,
+                    body: resolutionReviewSummary(pullRequestId, threadId, head),
+                }),
+            ])
+        );
+    });
+    it('preserves the stale commented marker when current pending submission is lost on an unresolved thread', () => {
+        const { port, calls, authorNodeId, state } = fakePort({
+            existingReplyCount: 1,
+            existingReplyReviewCommitOid: movedHead,
+            existingReplyReviewBody: pendingReviewBody(movedHead),
+            addExactPendingReplyMarker: true,
+            throwAfterSubmitWithState: true,
+        });
+        expect(() => resolveReviewThread(42, threadId, head, authorNodeId, port)).toThrow(
+            /submit review transport lost[\s\S]*submitted review/i
+        );
+        expect(calls.filter((call) => call.startsWith('delete:') || call.startsWith('deleteReview:'))).toEqual([]);
+        expect(state().resolved).toBe(false);
+        expect(state().comments.filter((comment) => comment.body === 'Done')).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({ id: replyId, reviewId }),
+                expect.objectContaining({ id: 'PRRC_pending_reply', reviewId: 'PRR_pending_reply' }),
+            ])
+        );
+        expect(state().reviews).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    id: reviewId,
+                    state: 'COMMENTED',
+                    commitOid: movedHead,
+                    body: resolutionReviewSummary(pullRequestId, threadId, movedHead),
+                }),
+                expect.objectContaining({
+                    id: 'PRR_pending_reply',
+                    state: 'COMMENTED',
+                    commitOid: head,
+                    body: resolutionReviewSummary(pullRequestId, threadId, head),
+                }),
+            ])
+        );
     });
     it('reuses the canonical pending review and deletes duplicate script-owned pending reviews before replying', () => {
         const { port, calls, authorNodeId, state } = fakePort({ existingPendingReviewCount: 2 });
@@ -1864,6 +1990,35 @@ describe('review thread resolution', () => {
             ],
         });
     });
+    it('submits the current-head pending marker before retiring a stale commented marker on an already resolved thread', () => {
+        const { port, calls, authorNodeId, state } = fakePort({
+            isResolved: true,
+            initialResolvedByNodeId: AUTHOR_BOT_NODE_ID,
+            initialResolvedByType: 'User',
+            existingReplyCount: 1,
+            existingReplyReviewCommitOid: movedHead,
+            existingReplyReviewBody: pendingReviewBody(movedHead),
+            addPendingReplyMarkerToResolvedThread: true,
+        });
+        expect(resolveReviewThread(42, threadId, head, authorNodeId, port)).toBe(
+            `review-thread-resolved:42:${threadId}`
+        );
+        expect(calls).toEqual([
+            'inspect:1',
+            `submitReview:PRR_resolved_pending`,
+            'inspect:2',
+            'delete:PRRC_reply',
+            'inspect:3',
+            `log:review-thread-resolved:42:${threadId}`,
+        ]);
+        expect(state().comments.filter((comment) => comment.body === 'Done')).toEqual([
+            expect.objectContaining({ id: 'PRRC_resolved_pending', reviewId: 'PRR_resolved_pending' }),
+        ]);
+        expect(state().reviews).toEqual([
+            expect.objectContaining({ id: reviewId, state: 'COMMENTED', commitOid: movedHead }),
+            expect.objectContaining({ id: 'PRR_resolved_pending', state: 'COMMENTED', commitOid: head }),
+        ]);
+    });
     it('deletes duplicate current-head pending envelopes on a completed resolution and keeps one canonical Done marker', () => {
         const { port, calls, authorNodeId, state } = fakePort({
             isResolved: true,
@@ -1898,6 +2053,42 @@ describe('review thread resolution', () => {
         expect(state().reviews).toEqual([
             expect.objectContaining({ id: reviewId, state: 'COMMENTED', commitOid: head }),
         ]);
+    });
+    it('preserves duplicate pending Done markers on a completed resolution when canonical pending submission is lost', () => {
+        const { port, calls, authorNodeId, state } = fakePort({
+            isResolved: true,
+            initialResolvedByNodeId: AUTHOR_BOT_NODE_ID,
+            initialResolvedByType: 'User',
+            existingReplyCount: 1,
+            existingReplyReviewState: 'PENDING',
+            addPendingReplyMarkerToResolvedThread: true,
+            throwAfterSubmitWithState: true,
+        });
+        expect(() => resolveReviewThread(42, threadId, head, authorNodeId, port)).toThrow(
+            /submit review transport lost/i
+        );
+        expect(
+            calls.filter(
+                (call) => call.startsWith('delete:') || call.startsWith('deleteReview:') || call.startsWith('log:')
+            )
+        ).toEqual([]);
+        expect(state()).toMatchObject({
+            resolved: true,
+            comments: [
+                { id: rootId },
+                { id: replyId, body: 'Done', reviewId },
+                { id: 'PRRC_resolved_pending', body: 'Done', reviewId: 'PRR_resolved_pending' },
+            ],
+            reviews: [
+                {
+                    id: reviewId,
+                    state: 'COMMENTED',
+                    commitOid: head,
+                    body: resolutionReviewSummary(pullRequestId, threadId, head),
+                },
+                { id: 'PRR_resolved_pending', state: 'PENDING', commitOid: head },
+            ],
+        });
     });
     it('backfills an already resolved thread whose associated author review summary is empty', () => {
         const { port, calls, authorNodeId, state } = fakePort({
