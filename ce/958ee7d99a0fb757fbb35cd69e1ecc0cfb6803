@@ -1,0 +1,42 @@
+electron/__tests__/rendererSessionQuiescer.spec.ts
+  s_ae074277795b45::t_02fbd533e81848 73-92
+src/modules/Project/useCases/projectPersistence/cancelProjectSessionQuiesce.ts
+  s_ae074277795b45::t_fb1683856a1304 1,4-5
+src/modules/WorkspaceShell/presentations/hooks/__tests__/useNativeApplicationMenu.spec.tsx
+  s_ae074277795b45::t_b2ffdeb85eeeb2 42,135-137,149,166
+  s_ae074277795b45::t_c4a8bb24b02aba 167-171,218,221,241-242
+src/modules/Project/useCases/projectPersistence/quiesceProjectSession.ts
+  s_ae074277795b45::t_fb1683856a1304 1,5,8
+src/modules/Project/useCases/projectPersistence/projectSessionQuiescer.ts
+  s_ae074277795b45::t_fb1683856a1304 1-33,52-96
+  s_ae074277795b45::t_c9d5c351a263db 35,42,46
+  s_ae074277795b45::t_9869e62e5a0b13 34,36-41,43-45,47-51
+src/modules/WorkspaceShell/presentations/hooks/useNativeApplicationMenu.ts
+  s_ae074277795b45::t_d6824fdb821737 238,242-243
+electron/rendererSessionQuiescer.ts
+  s_ae074277795b45::t_46b1a982be8394 98-99,109-114
+  s_ae074277795b45::t_1fe75f1643c242 28-40,44-46,53-54,59-64,78,92-94,96-97
+  s_ae074277795b45::t_da211bbf50e499 115-116
+electron/main.ts
+  s_ae074277795b45::t_46b1a982be8394 331
+src/modules/Project/useCases/projectPersistence/__tests__/quiesceProjectSession.spec.ts
+  s_ae074277795b45::t_bdf031fe389ef2 34,47,57,60,70,74,91,93,97
+  s_ae074277795b45::t_02fbd533e81848 100-122
+  s_ae074277795b45::t_87e76bd3467068 123
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "ce958ee7d99a0fb757fbb35cd69e1ecc0cfb6803",
+  "prompts": {},
+  "sessions": {
+    "s_ae074277795b45": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04ab5-5234-7100-be1c-76ebfaba88d3",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
