@@ -229,21 +229,29 @@ function createCommittedBatchResult(): CompletedBatchResult {
 }
 
 function createCommittedWithWarningBatchResult(): CompletedBatchResult {
+    type CommittedWithWarningBatchResult = Extract<CompletedBatchResult, { status: 'committed-with-warning' }>;
+    const commandReceipt = {
+        commandId: 'command-1',
+        schemaVersion: 1,
+        applicationAssigned: { ids: [], timestamps: [] },
+    } satisfies NonNullable<CommittedWithWarningBatchResult['actions'][number]['receipt']>;
     const result = {
         status: 'committed-with-warning',
         actions: [
             {
                 action,
-                receipt: {
-                    commandId: 'command-1',
-                    schemaVersion: 1,
-                    applicationAssigned: { ids: [], timestamps: [] },
-                },
+                label: 'Add compressor',
+                receipt: commandReceipt,
             },
         ],
         warning: 'effect pending',
+    } satisfies Omit<CommittedWithWarningBatchResult, 'receipt'>;
+    const receiptObservation = {
+        status: 'committed-with-warning',
+        actions: [{ action, receipt: commandReceipt }],
+        warning: 'effect pending',
     } satisfies Parameters<typeof createReceipt>[0];
-    return { ...result, receipt: createReceipt(result) } satisfies CompletedBatchResult;
+    return { ...result, receipt: createReceipt(receiptObservation) } satisfies CompletedBatchResult;
 }
 
 function createNoOpBatchResult(): CompletedBatchResult {
