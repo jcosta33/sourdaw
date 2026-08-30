@@ -1,0 +1,19 @@
+electron/__tests__/nativeMenuActionDispatcher.spec.ts
+  s_ae074277795b45::t_7eb6ceda0d03b7 11,18,20
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "49a1108918cb969d13ba568ad71b858f76a5fe77",
+  "prompts": {},
+  "sessions": {
+    "s_ae074277795b45": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04ab5-5234-7100-be1c-76ebfaba88d3",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
