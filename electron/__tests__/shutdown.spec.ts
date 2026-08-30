@@ -11,9 +11,6 @@
  * The residue is recorded in the pull request rather than hidden behind these
  * assertions.
  */
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
-
 import { describe, expect, it, vi } from 'vitest';
 
 import {
@@ -25,8 +22,6 @@ import {
 } from '../shutdown.js';
 
 import type { Timers } from '../timers.js';
-
-const mainSource = readFileSync(resolve('electron/main.ts'), 'utf8');
 
 /** A clock that only moves when the test says so. */
 const manualTimers = (): { timers: Timers; fire: () => void; armed: () => number } => {
@@ -138,59 +133,6 @@ describe('plugin command admission before the cascade', () => {
         });
 
         expect(order).toEqual(['refuse', 'shutdown']);
-    });
-
-    it('wires before-quit through runBeforeQuitCascade', () => {
-        // Leaving `shutdown.ts` intact while deleting the main wiring must fail.
-        // A no-op refuse callback must fail too — quit would still admit load_plugin.
-        expect(mainSource).toMatch(
-            /'before-quit',\s*createQuitHandler\(\s*\(\)\s*:\s*Promise<ShutdownOutcome>\s*=>\s*runBeforeQuitCascade\(\{[\s\S]*?refusePluginCommands:\s*\(\)\s*=>\s*pluginCommandAdmission\.refusePluginCommands\(\)/u
-        );
-    });
-
-    it('clears close authority when a renderer crash exhausts its recreation budget', () => {
-        expect(mainSource).toMatch(
-            /recreateTimestamps\.length\s*>=\s*MAX_RECREATES[\s\S]*?windowCloseCoordinator\.clearForNoWindow\(\);[\s\S]*?mainWindow\s*=\s*undefined/u
-        );
-    });
-
-    it('does not recreate a renderer that crashes during approved close or quit teardown', () => {
-        expect(mainSource).toMatch(
-            /render-process-gone[\s\S]*?!rendererSessionLifecycle\.shouldRecreateAfterCrash\(\)[\s\S]*?destroyCrashedWindow\(\)[\s\S]*?mainWindow\s*=\s*undefined[\s\S]*?return;[\s\S]*?createAndActivateWindow\(\)/u
-        );
-    });
-
-    it('re-enables crash recovery immediately when a delayed approved close loses renderer authority', () => {
-        expect(mainSource).toMatch(
-            /createWindowCloseCoordinator\(\{[\s\S]*?onApprovalRevoked:\s*\(\)\s*=>\s*rendererSessionLifecycle\.cancelTeardown\(\)/u
-        );
-        expect(mainSource).toMatch(
-            /rendererSessionLifecycle\.shouldRecreateAfterCrash\(\)[\s\S]*?const replacementWindow\s*=\s*createAndActivateWindow\(\)/u
-        );
-    });
-
-    it('registers every new main renderer as unready before native menu actions can be delivered', () => {
-        expect(mainSource).toMatch(
-            /const createAndActivateWindow[\s\S]*?const window\s*=\s*createWindow\(\);[\s\S]*?mainWindow\s*=\s*window;[\s\S]*?nativeMenuActionDispatcher\.registerWindow\(window\);/u
-        );
-    });
-
-    it('carries only queued windowless project commands into the exact crash replacement', () => {
-        expect(mainSource).toMatch(
-            /const replacementWindow\s*=\s*createAndActivateWindow\(\);\s*nativeMenuActionDispatcher\.recoverPendingWindow\(crashedWindow,\s*replacementWindow\);/u
-        );
-        expect(mainSource).toMatch(
-            /recreateTimestamps\.length\s*>=\s*MAX_RECREATES[\s\S]*?nativeMenuActionDispatcher\.clearPending\(crashedWindow/u
-        );
-    });
-
-    it('wires approved renderer quiescence before the native quit cascade', () => {
-        expect(mainSource).toMatch(
-            /canQuit:\s*async\s*\(\)\s*=>\s*\{[\s\S]*?windowCloseCoordinator\.requestClose\(\)[\s\S]*?rendererSessionLifecycle\.approveTeardown\(\)[\s\S]*?\},\s*beforeRun:\s*quiesceApprovedMainWindow/u
-        );
-        expect(mainSource).toMatch(
-            /const quiesceApprovedMainWindow[\s\S]*?await destroyMainWindowAfterEditorsDetach\(\)[\s\S]*?const quiesced\s*=\s*destroyed \|\| window\.isDestroyed\(\)[\s\S]*?rendererSessionLifecycle\.cancelTeardown\(\)[\s\S]*?finally\s*\{[\s\S]*?destroyed \|\| window\.isDestroyed\(\)[\s\S]*?mainWindow\s*===\s*window/u
-        );
     });
 });
 

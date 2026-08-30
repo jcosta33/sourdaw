@@ -56,6 +56,7 @@ import {
     type PluginWindowHost,
 } from './pluginGui.js';
 import { APP_ENTRY_URL, APP_ORIGIN, handleAppProtocol, registerAppScheme, resolveContentRoots } from './protocol.js';
+import { createRendererCrashRecovery } from './rendererCrashRecovery.js';
 import { createRendererSessionLifecycle } from './rendererSessionLifecycle.js';
 import { registerCommandRouter } from './router.js';
 import { createScanSupervisor, type ScanSupervisor } from './scan.js';
@@ -713,7 +714,22 @@ app.on(
  */
 const MAX_RECREATES = 3;
 const RECREATE_WINDOW_MS = 60_000;
-let recreateTimestamps: number[] = [];
+const rendererCrashRecovery = createRendererCrashRecovery({
+    shouldRecreate: () => rendererSessionLifecycle.shouldRecreateAfterCrash(),
+    createReplacement: createAndActivateWindow,
+    clearPending: (window) => nativeMenuActionDispatcher.clearPending(window),
+    recoverPending: (crashed, replacement) => nativeMenuActionDispatcher.recoverPendingWindow(crashed, replacement),
+    clearCurrent: () => {
+        mainWindow = undefined;
+    },
+    clearForNoWindow: () => {
+        windowCloseCoordinator.clearForNoWindow();
+        mainWindow = undefined;
+    },
+    now: () => Date.now(),
+    maxRecreates: MAX_RECREATES,
+    recreateWindowMs: RECREATE_WINDOW_MS,
+});
 
 app.on('render-process-gone', (_event, contents, details) => {
     console.error(`[shell] render process gone: ${details.reason} (exitCode ${details.exitCode})`);
@@ -739,25 +755,8 @@ app.on('render-process-gone', (_event, contents, details) => {
         destroyCrashedMainWindow(crashedWindow, destroyCrashed);
     };
 
-    if (!rendererSessionLifecycle.shouldRecreateAfterCrash()) {
-        nativeMenuActionDispatcher.clearPending(crashedWindow ?? undefined);
-        destroyCrashedWindow();
-        if (mainWindow === crashedWindow) {
-            mainWindow = undefined;
-        }
-        return;
-    }
-
-    const now = Date.now();
-    recreateTimestamps = recreateTimestamps.filter((at) => now - at < RECREATE_WINDOW_MS);
-    if (recreateTimestamps.length >= MAX_RECREATES) {
-        nativeMenuActionDispatcher.clearPending(crashedWindow ?? undefined);
-        destroyCrashedWindow();
-        windowCloseCoordinator.clearForNoWindow();
-        mainWindow = undefined;
-        console.error(
-            `[shell] renderer crashed ${String(recreateTimestamps.length + 1)} times within ${String(RECREATE_WINDOW_MS / 1000)}s, not recreating`
-        );
+    rendererCrashRecovery.recover(crashedWindow, destroyCrashedWindow, () => {
+        console.error(`[shell] renderer crashed repeatedly, not recreating`);
         // Deliberately ends with no window. `showErrorBox` is modal, so the
         // user reads the reason first; afterwards `window-all-closed` quits on
         // Windows and Linux, and on macOS the app sits windowless, which is
@@ -766,20 +765,7 @@ app.on('render-process-gone', (_event, contents, details) => {
             'Sourdaw stopped responding',
             `The window crashed repeatedly (last reason: ${details.reason}). Sourdaw has stopped reopening it to avoid a crash loop. Quit and reopen the app; if it keeps happening, the log from this run is the place to start.`
         );
-        return;
-    }
-
-    recreateTimestamps.push(now);
-    // Replacement first, dead window second. `window-all-closed` quits the app
-    // everywhere but macOS, and destroying the only window is what raises it —
-    // so a destroy-then-create order leaves an instant with zero windows in
-    // which the recovery path quits instead of recovering, on two of the three
-    // platforms. Building the replacement first means that instant never
-    // exists, and no ordering question about when Electron emits the event has
-    // to be answered.
-    const replacementWindow = createAndActivateWindow();
-    nativeMenuActionDispatcher.recoverPendingWindow(crashedWindow, replacementWindow);
-    destroyCrashedWindow();
+    });
 });
 
 // A GPU or utility process can die without the session being lost. Record it
