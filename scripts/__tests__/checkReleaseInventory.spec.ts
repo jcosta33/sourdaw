@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
+    copyFileSync,
     closeSync,
     constants,
     existsSync,
@@ -19,6 +20,7 @@ import {
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { deflateSync } from 'node:zlib';
 
 import { describe, expect, it } from 'vitest';
 
@@ -41,6 +43,7 @@ import {
     assertDdspModelsReleaseInventory,
     assertGrandBouleReleaseInventory,
     assertGrandBouleReleasedInWasm,
+    assertOwnerVisualAssetIntegrity,
     assertProjectLicenseDistributionReleaseInventory,
     assertGrandBouleRustSourceAdmission,
     assertGrandBouleRustWasmBoundary,
@@ -112,6 +115,131 @@ const TVM_FFI_COMMIT = '3c35034fd1026011736e19a4e0e1ed0f22058c42';
 
 function sha256(value: string): string {
     return createHash('sha256').update(value).digest('hex');
+}
+
+type Rgba = readonly [red: number, green: number, blue: number, alpha: number];
+
+const ownerIconBackground: Rgba = [12, 10, 9, 255];
+const ownerIconMark: Rgba = [241, 165, 75, 255];
+const ownerIcnsFrames = ['ic04', 'ic05', 'ic07', 'ic08', 'ic09', 'ic10', 'ic11', 'ic12', 'ic13', 'ic14'] as const;
+const ownerIcoFrames = [16, 24, 32, 48, 64, 256] as const;
+
+function pngCrc32(value: Buffer): number {
+    let crc = 0xffffffff;
+    for (const byte of value) {
+        crc ^= byte;
+        for (let bit = 0; bit < 8; bit += 1) {
+            crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0);
+        }
+    }
+    return (crc ^ 0xffffffff) >>> 0;
+}
+
+function pngChunk(type: string, data: Buffer): Buffer {
+    const name = Buffer.from(type, 'ascii');
+    const length = Buffer.alloc(4);
+    length.writeUInt32BE(data.length);
+    const crc = Buffer.alloc(4);
+    crc.writeUInt32BE(pngCrc32(Buffer.concat([name, data])));
+    return Buffer.concat([length, name, data, crc]);
+}
+
+function rgbaPng(width: number, height: number, pixel: (x: number, y: number) => Rgba): Buffer {
+    const rows = Buffer.alloc((width * 4 + 1) * height);
+    for (let y = 0; y < height; y += 1) {
+        const row = y * (width * 4 + 1);
+        for (let x = 0; x < width; x += 1) {
+            const offset = row + 1 + x * 4;
+            const color = pixel(x, y);
+            rows[offset] = color[0];
+            rows[offset + 1] = color[1];
+            rows[offset + 2] = color[2];
+            rows[offset + 3] = color[3];
+        }
+    }
+    const header = Buffer.alloc(13);
+    header.writeUInt32BE(width, 0);
+    header.writeUInt32BE(height, 4);
+    header[8] = 8;
+    header[9] = 6;
+    return Buffer.concat([
+        Buffer.from('89504e470d0a1a0a', 'hex'),
+        pngChunk('IHDR', header),
+        pngChunk('IDAT', deflateSync(rows)),
+        pngChunk('IEND', Buffer.alloc(0)),
+    ]);
+}
+
+function icnsFixture(frames: readonly string[] = ownerIcnsFrames): Buffer {
+    const chunks = frames.map((frame) => {
+        const header = Buffer.alloc(8);
+        header.write(frame, 0, 'ascii');
+        header.writeUInt32BE(9, 4);
+        return Buffer.concat([header, Buffer.from([0])]);
+    });
+    const header = Buffer.alloc(8);
+    header.write('icns', 0, 'ascii');
+    header.writeUInt32BE(8 + chunks.reduce((total, chunk) => total + chunk.length, 0), 4);
+    return Buffer.concat([header, ...chunks]);
+}
+
+function icoFixture(frames: readonly number[] = ownerIcoFrames): Buffer {
+    const header = Buffer.alloc(6);
+    header.writeUInt16LE(1, 2);
+    header.writeUInt16LE(frames.length, 4);
+    const payloadOffset = 6 + frames.length * 16;
+    const entries = frames.map((size, index) => {
+        const entry = Buffer.alloc(16);
+        entry[0] = size === 256 ? 0 : size;
+        entry[1] = size === 256 ? 0 : size;
+        entry.writeUInt16LE(1, 4);
+        entry.writeUInt16LE(32, 6);
+        entry.writeUInt32LE(1, 8);
+        entry.writeUInt32LE(payloadOffset + index, 12);
+        return entry;
+    });
+    return Buffer.concat([header, ...entries, Buffer.alloc(frames.length)]);
+}
+
+function writeOwnerVisualAssetFixture(
+    root: string,
+    options: {
+        background?: Rgba;
+        canonicalAlpha?: number;
+        canonicalHeight?: number;
+        canonicalMarkOffset?: number;
+        canonicalWidth?: number;
+        icnsFrames?: readonly string[];
+        icoFrames?: readonly number[];
+    } = {}
+): void {
+    mkdirSync(join(root, 'public/logo-parts'), { recursive: true });
+    mkdirSync(join(root, 'build/icons/nested'), { recursive: true });
+    const width = options.canonicalWidth ?? 480;
+    const height = options.canonicalHeight ?? 480;
+    const markX = 66 + (options.canonicalMarkOffset ?? 0);
+    const background = options.background ?? ownerIconBackground;
+    const canonical = rgbaPng(width, height, (x, y) => {
+        if (x === markX && y === 24) {
+            return ownerIconMark;
+        }
+        if (x === 0 && y === 0 && options.canonicalAlpha !== undefined) {
+            return [background[0], background[1], background[2], options.canonicalAlpha];
+        }
+        return background;
+    });
+    const authority = rgbaPng(346, 427, (x, y) => (x === 0 && y === 0 ? ownerIconMark : [0, 0, 0, 0]));
+
+    writeFileSync(join(root, 'public/icon.png'), canonical);
+    writeFileSync(join(root, 'sourdaw.png'), canonical);
+    writeFileSync(join(root, 'public/icon-transparent.png'), authority);
+    copyFileSync(join(repositoryRoot, 'public/favicon.ico'), join(root, 'public/favicon.ico'));
+    copyFileSync(join(repositoryRoot, 'public/icon-192.png'), join(root, 'public/icon-192.png'));
+    writeFileSync(join(root, 'public/logo-parts/p00.png'), 'part');
+    writeFileSync(join(root, 'build/icons/icon.png'), canonical);
+    writeFileSync(join(root, 'build/icons/icon.icns'), icnsFixture(options.icnsFrames));
+    writeFileSync(join(root, 'build/icons/icon.ico'), icoFixture(options.icoFrames));
+    writeFileSync(join(root, 'build/icons/nested/icon.png'), canonical);
 }
 
 function expectedApacheTvmRawSource(path: string): string {
@@ -2579,22 +2707,9 @@ describe('release inventory', () => {
 
     it('binds owner-created visual assets and every derived rendition', () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-owner-assets-'));
-        mkdirSync(join(root, 'public/logo-parts'), { recursive: true });
-        mkdirSync(join(root, 'build/icons/nested'), { recursive: true });
-        for (const path of [
-            'public/favicon.ico',
-            'public/icon-192.png',
-            'public/icon-transparent.png',
-            'public/icon.png',
-            'sourdaw.png',
-            'public/logo-parts/p00.png',
-            'build/icons/icon.png',
-            'build/icons/nested/icon.png',
-        ]) {
-            writeFileSync(join(root, path), path);
-        }
 
         try {
+            writeOwnerVisualAssetFixture(root);
             const before = ownerVisualAssetReleaseInventoryContract(root);
             expect(before.kind).toBe('owner-created-asset');
             expect(before.paths).toEqual(OWNER_VISUAL_ASSET_PATHS);
@@ -2603,6 +2718,73 @@ describe('release inventory', () => {
 
             writeFileSync(join(root, 'build/icons/nested/icon.png'), 'changed');
             expect(ownerVisualAssetReleaseInventoryContract(root).digests).not.toEqual(before.digests);
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('rejects a canonical owner icon with the wrong opaque background', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-owner-assets-background-'));
+
+        try {
+            writeOwnerVisualAssetFixture(root, { background: [5, 4, 3, 255] });
+
+            expect(() => assertOwnerVisualAssetIntegrity(root)).toThrow(
+                'owner visual asset public/icon.png background must be opaque #0c0a09'
+            );
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it.each([
+        ['wrong geometry', { canonicalHeight: 1, canonicalWidth: 1 }, 'public/icon.png must be 480x480 RGBA'],
+        ['non-opaque pixels', { canonicalAlpha: 0 }, 'public/icon.png must be fully opaque'],
+        [
+            'misaligned bread mark',
+            { canonicalMarkOffset: 1 },
+            'public/icon.png mark does not align with public/icon-transparent.png',
+        ],
+    ])('rejects canonical owner icon %s', (_label, options, failure) => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-owner-assets-canonical-'));
+
+        try {
+            writeOwnerVisualAssetFixture(root, options);
+
+            expect(() => assertOwnerVisualAssetIntegrity(root)).toThrow(`owner visual asset ${failure}`);
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it.each(ownerIcnsFrames)('rejects an ICNS missing required %s frame', (missingFrame) => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-owner-assets-icns-'));
+
+        try {
+            writeOwnerVisualAssetFixture(root, {
+                icnsFrames: ownerIcnsFrames.filter((frame) => frame !== missingFrame),
+            });
+
+            expect(() => assertOwnerVisualAssetIntegrity(root)).toThrow(
+                `owner visual asset build/icons/icon.icns is missing frame ${missingFrame}`
+            );
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it.each([
+        ['missing', [16, 32, 48, 64, 256]],
+        ['unexpected', [16, 20, 32, 48, 64, 256]],
+    ] as const)('rejects an ICO with %s frame sizes', (_label, frames) => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-owner-assets-ico-'));
+
+        try {
+            writeOwnerVisualAssetFixture(root, { icoFrames: frames });
+
+            expect(() => assertOwnerVisualAssetIntegrity(root)).toThrow(
+                'owner visual asset build/icons/icon.ico frame sizes must be 16,24,32,48,64,256'
+            );
         } finally {
             rmSync(root, { recursive: true, force: true });
         }
