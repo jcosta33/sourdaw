@@ -19,22 +19,21 @@ export const pluginLifecycleScheduler = {
         }
 
         const previous = lifecycleTails.get(instanceId);
-        let result: Promise<Result>;
-        if (previous) {
-            result = previous.then(operation);
-        } else {
-            result = Promise.resolve().then(() => {
-                try {
-                    return operation();
-                } catch (error) {
-                    const failure =
-                        error instanceof Error
-                            ? error
-                            : new Error('Plugin lifecycle operation failed', { cause: error });
-                    throw failure;
-                }
-            });
-        }
+        // Ordering only: the successor waits for the prior's settlement with the
+        // prior's failure swallowed here, because serialization must order
+        // operations, not propagate one failure into cancelling the next. The
+        // failure stays the prior caller's own; the stored tail still rethrows
+        // after cleanup, so anyone awaiting it keeps seeing real outcomes.
+        const turn = previous ? previous.catch(() => undefined) : Promise.resolve();
+        const result = turn.then(() => {
+            try {
+                return operation();
+            } catch (error) {
+                const failure =
+                    error instanceof Error ? error : new Error('Plugin lifecycle operation failed', { cause: error });
+                throw failure;
+            }
+        });
 
         const callerResult = result.then((value) => value);
         const completion = result.then(
