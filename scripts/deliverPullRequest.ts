@@ -1662,9 +1662,14 @@ function readPersistedMergedRecoveryReceipt(
         fail(`PR #${pullRequest.number} delivery receipt changed during recovery`);
     }
     if (preparedPostMergeValidation !== undefined) {
+        const payload = assertDeliveryReceiptForHead(receipt, pullRequest);
+        if (payload.schemaVersion === 1) {
+            validateLegacyPersistedMergedRecoveryReceipt(pullRequest, payload);
+            return receipt;
+        }
         validateReceiptPayloadAgainstPreparedPostMergeValidation(
             pullRequest.number,
-            assertDeliveryReceiptForHead(receipt, pullRequest),
+            payload,
             preparedPostMergeValidation,
             'recovery'
         );
@@ -1884,10 +1889,15 @@ function deliverPullRequestWithCiAdmission(
         }
         const receipt = readPersistedMergedRecoveryReceipt(initial, port, receiptAuthority);
         const receiptPayload = assertDeliveryReceiptForHead(receipt, initial);
-        const recoveryPostMergeValidation =
-            receiptAuthority.phase === 'legacy' || receiptAuthority.phase === 'released'
-                ? undefined
-                : receiptAuthority.postMergeValidation;
+        let recoveryPostMergeValidation: PersistedPreparedPostMergeValidation | undefined;
+        if (receiptAuthority.phase === 'legacy') {
+            recoveryPostMergeValidation = persistedPreparedPostMergeValidation(
+                initial,
+                receiptPayload.closingIssue ?? undefined
+            );
+        } else if (receiptAuthority.phase !== 'released') {
+            recoveryPostMergeValidation = receiptAuthority.postMergeValidation;
+        }
         if (receiptAuthority?.phase !== 'terminal') {
             persistMergeAuthorizedDeliveryReceiptAuthority(number, receipt, recoveryPostMergeValidation, port);
         }
