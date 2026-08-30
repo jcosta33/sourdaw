@@ -11,7 +11,8 @@ export const bindMainWindowOwnerTeardown = (
     host: PluginWindowHost | undefined,
     shouldProceed?: () => boolean,
     onCancelled?: () => void,
-    onDestroying?: () => void
+    onDestroying?: () => void,
+    shouldInterceptClose?: () => boolean
 ): ((force?: boolean) => Promise<boolean>) | undefined => {
     if (host === undefined) {
         return undefined;
@@ -21,7 +22,8 @@ export const bindMainWindowOwnerTeardown = (
         () => host.detachOpenEditors(),
         shouldProceed,
         onCancelled,
-        onDestroying
+        onDestroying,
+        shouldInterceptClose
     );
     return destroyAfterEditorsDetach;
 };

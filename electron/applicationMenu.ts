@@ -39,6 +39,17 @@ export type NativeMenuIntent = {
     readonly revision?: string;
 };
 
+export type NativeTextEditOperation = 'undo' | 'redo' | 'cut' | 'copy' | 'paste' | 'selectAll';
+
+export type NativeTextEditTarget = {
+    readonly undo: () => void;
+    readonly redo: () => void;
+    readonly cut: () => void;
+    readonly copy: () => void;
+    readonly paste: () => void;
+    readonly selectAll: () => void;
+};
+
 export type NativeRecentProject = { readonly key: string; readonly name: string };
 
 const nativeMenuActions = new Set<NativeMenuAction>([
@@ -72,6 +83,39 @@ const nativeMenuActions = new Set<NativeMenuAction>([
     'view:zoom-out',
     'help:show-tour',
 ]);
+
+/**
+ * Electron's edit roles consume menu clicks before the renderer can route DAW
+ * editing. Main performs the native operation directly, then the renderer
+ * decides whether the same intent belongs to the DAW instead.
+ */
+export const nativeTextEditOperation = (action: NativeMenuAction): NativeTextEditOperation | undefined => {
+    switch (action) {
+        case 'edit:undo':
+            return 'undo';
+        case 'edit:redo':
+            return 'redo';
+        case 'edit:cut':
+            return 'cut';
+        case 'edit:copy':
+            return 'copy';
+        case 'edit:paste':
+            return 'paste';
+        case 'edit:select-all':
+            return 'selectAll';
+        default:
+            return undefined;
+    }
+};
+
+export const applyNativeTextEdit = (target: NativeTextEditTarget, action: NativeMenuAction): boolean => {
+    const operation = nativeTextEditOperation(action);
+    if (operation === undefined) {
+        return false;
+    }
+    target[operation]();
+    return true;
+};
 
 export const isNativeMenuIntent = (value: unknown): value is NativeMenuIntent => {
     if (

@@ -25,7 +25,6 @@ import {
     WINDOW_IS_MAXIMIZED_CHANNEL,
     WINDOW_MINIMIZE_CHANNEL,
     WINDOW_TOGGLE_MAXIMIZE_CHANNEL,
-    NATIVE_EDIT_CHANNEL,
     NATIVE_MENU_PROJECT_STATE_CHANNEL,
     NATIVE_MENU_SAVE_RESULT_CHANNEL,
     RENDERER_SESSION_QUIESCED_CHANNEL,
@@ -302,15 +301,6 @@ export const registerWindowControlChannels = ({
     );
 };
 
-export type NativeEditTarget = {
-    readonly undo: () => void;
-    readonly redo: () => void;
-    readonly cut: () => void;
-    readonly copy: () => void;
-    readonly paste: () => void;
-    readonly selectAll: () => void;
-};
-
 export type NativeMenuProjectState = {
     readonly title: string;
     readonly dirty: boolean;
@@ -335,7 +325,6 @@ export type RegisterNativeMenuChannelsInput = {
     readonly isTrustedFrameUrl: TrustGuard;
     readonly onProjectState: (state: NativeMenuProjectState, sender: unknown) => void;
     readonly onSaveResult: (result: NativeMenuSaveResult) => void;
-    readonly editTargetForSender: (sender: unknown) => NativeEditTarget | null;
     readonly onSessionQuiesced: (
         result: { readonly requestId: number; readonly quiesced: boolean },
         sender: unknown
@@ -426,7 +415,6 @@ export const registerNativeMenuChannels = ({
     isTrustedFrameUrl,
     onProjectState,
     onSaveResult,
-    editTargetForSender,
     onSessionQuiesced,
     onSessionQuiesceStarted,
 }: RegisterNativeMenuChannelsInput): void => {
@@ -453,36 +441,5 @@ export const registerNativeMenuChannels = ({
         withTrustedSender('nativeMenu.saveResult', isTrustedFrameUrl, (value) =>
             onSaveResult(nativeMenuSaveResult(value))
         )
-    );
-    ipcMain.handle(
-        NATIVE_EDIT_CHANNEL,
-        withTrustedSenderEvent('nativeMenu.edit', isTrustedFrameUrl, (event, operation) => {
-            const target = editTargetForSender(event.sender);
-            if (target === null) {
-                return;
-            }
-            switch (operation) {
-                case 'undo':
-                    target.undo();
-                    return;
-                case 'redo':
-                    target.redo();
-                    return;
-                case 'cut':
-                    target.cut();
-                    return;
-                case 'copy':
-                    target.copy();
-                    return;
-                case 'paste':
-                    target.paste();
-                    return;
-                case 'selectAll':
-                    target.selectAll();
-                    return;
-                default:
-                    throw new TypeError('native edit operation is invalid');
-            }
-        })
     );
 };

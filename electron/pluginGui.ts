@@ -820,7 +820,8 @@ export const interceptOwnerWindowTeardown = (
     detachOpenEditors: () => Promise<void>,
     shouldProceed: () => boolean = () => true,
     onCancelled?: () => void,
-    onDestroying?: () => void
+    onDestroying?: () => void,
+    shouldInterceptClose: () => boolean = shouldProceed
 ): { readonly destroyAfterEditorsDetach: (force?: boolean) => Promise<boolean> } => {
     let inFlight: Promise<boolean> | undefined;
     let forceDestroy = false;
@@ -877,7 +878,7 @@ export const interceptOwnerWindowTeardown = (
     };
 
     owner.on('close', (event) => {
-        if (!shouldProceed()) {
+        if (!shouldInterceptClose()) {
             return;
         }
         event.preventDefault();

@@ -43,25 +43,6 @@ const editableElement = (element: Element | null): boolean =>
     element instanceof HTMLTextAreaElement ||
     (element instanceof HTMLElement && element.isContentEditable);
 
-const nativeEditOperation = (action: string): 'undo' | 'redo' | 'cut' | 'copy' | 'paste' | 'selectAll' | undefined => {
-    switch (action) {
-        case 'edit:cut':
-            return 'cut';
-        case 'edit:copy':
-            return 'copy';
-        case 'edit:paste':
-            return 'paste';
-        case 'edit:select-all':
-            return 'selectAll';
-        case 'edit:undo':
-            return 'undo';
-        case 'edit:redo':
-            return 'redo';
-        default:
-            return undefined;
-    }
-};
-
 const allClipIds = (): string[] =>
     trackStore.value?.tracks.flatMap((track) => track.clips.map((clip) => clip.id)) ?? [];
 
@@ -92,9 +73,7 @@ const reportCloseResult = async (
 
 const runMenuAction = async (intent: NativeMenuIntent): Promise<void> => {
     const { action } = intent;
-    const edit = nativeEditOperation(action);
-    if (edit !== undefined && editableElement(document.activeElement)) {
-        await nativeApplicationMenu()?.edit(edit);
+    if (action.startsWith('edit:') && editableElement(document.activeElement)) {
         return;
     }
     switch (action) {

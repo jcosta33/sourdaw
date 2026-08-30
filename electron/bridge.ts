@@ -36,7 +36,6 @@ import {
     WINDOW_MAXIMIZED_CHANGED_CHANNEL,
     WINDOW_MINIMIZE_CHANNEL,
     WINDOW_TOGGLE_MAXIMIZE_CHANNEL,
-    NATIVE_EDIT_CHANNEL,
     NATIVE_MENU_ACTION_CHANNEL,
     NATIVE_MENU_PROJECT_STATE_CHANNEL,
     NATIVE_MENU_SAVE_RESULT_CHANNEL,
@@ -442,9 +441,6 @@ export const createSourdawBridge = (
             },
             saveResult: async (result) => {
                 await ipc.invoke(NATIVE_MENU_SAVE_RESULT_CHANNEL, result);
-            },
-            edit: async (operation) => {
-                await ipc.invoke(NATIVE_EDIT_CHANNEL, operation);
             },
             listenSessionQuiesce: (callback) => {
                 rendererSessionListeners.add(callback);

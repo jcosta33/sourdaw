@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { createApplicationMenuTemplate } from '../applicationMenu.js';
+import { applyNativeTextEdit, createApplicationMenuTemplate } from '../applicationMenu.js';
 
 describe('createApplicationMenuTemplate', () => {
     it.each([
@@ -63,10 +63,17 @@ describe('createApplicationMenuTemplate', () => {
     });
 
     it('keeps platform-owned application and window behaviors native', () => {
-        const template = createApplicationMenuTemplate({ appName: 'Sourdaw', send: vi.fn() });
+        const send = vi.fn();
+        const template = createApplicationMenuTemplate({ appName: 'Sourdaw', send });
 
         expect(template.map((item) => item.label)).toEqual(['Sourdaw', 'File', 'Edit', 'View', 'Window', 'Help']);
-        expect(template[0]?.submenu).toEqual(expect.arrayContaining([expect.objectContaining({ role: 'services' })]));
+        expect(template[0]?.submenu).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({ role: 'services' }),
+                expect.objectContaining({ role: 'quit' }),
+                expect.objectContaining({ label: 'Settings…', accelerator: 'CommandOrControl+,' }),
+            ])
+        );
         expect(template[4]?.submenu).toEqual(
             expect.arrayContaining([
                 expect.objectContaining({ role: 'minimize' }),
@@ -75,6 +82,28 @@ describe('createApplicationMenuTemplate', () => {
         );
         const file = template.find((item) => item.label === 'File');
         expect(file?.submenu).toEqual(expect.arrayContaining([expect.objectContaining({ role: 'close' })]));
+        const settings = template[0]?.submenu?.find((item) => item.label === 'Settings…');
+        settings?.click?.();
+        expect(send).toHaveBeenCalledWith({ action: 'view:preferences' });
+    });
+
+    it('executes editable native text operations from the main-process target', () => {
+        const target = {
+            undo: vi.fn(),
+            redo: vi.fn(),
+            cut: vi.fn(),
+            copy: vi.fn(),
+            paste: vi.fn(),
+            selectAll: vi.fn(),
+        };
+
+        expect(applyNativeTextEdit(target, 'edit:undo')).toBe(true);
+        expect(applyNativeTextEdit(target, 'edit:paste')).toBe(true);
+        expect(applyNativeTextEdit(target, 'edit:select-all')).toBe(true);
+        expect(applyNativeTextEdit(target, 'edit:deselect-all')).toBe(false);
+        expect(target.undo).toHaveBeenCalledOnce();
+        expect(target.paste).toHaveBeenCalledOnce();
+        expect(target.selectAll).toHaveBeenCalledOnce();
     });
 
     it('routes an Open Recent click with its exact saved-project key', () => {

@@ -10,7 +10,6 @@ const desktop = vi.hoisted(() => ({
     sessionListener: undefined as ((requestId: number) => void) | undefined,
     projectState: vi.fn(async () => undefined),
     saveResult: vi.fn(async () => undefined),
-    edit: vi.fn(async () => undefined),
     listenSessionQuiesce: vi.fn((listener: (requestId: number) => void) => {
         desktop.sessionListener = listener;
         return () => {
@@ -98,7 +97,6 @@ const workspace = vi.hoisted(() => ({
         },
         projectState: desktop.projectState,
         saveResult: desktop.saveResult,
-        edit: desktop.edit,
         listenSessionQuiesce: desktop.listenSessionQuiesce,
         sessionQuiesced: desktop.sessionQuiesced,
         sessionQuiesceStarted: desktop.sessionQuiesceStarted,
@@ -118,11 +116,12 @@ describe('useNativeApplicationMenu', () => {
         desktop.sessionListener = undefined;
         desktop.projectState.mockClear();
         desktop.saveResult.mockClear();
-        desktop.edit.mockClear();
         desktop.listenSessionQuiesce.mockClear();
         desktop.sessionQuiesced.mockClear();
         desktop.sessionQuiesceStarted.mockReset().mockResolvedValue(true);
-        projectActions.quiesceProjectSession.mockReset().mockResolvedValue(true);
+        projectActions.quiesceProjectSession
+            .mockReset()
+            .mockImplementation(async (begin?: () => Promise<boolean>) => (begin === undefined ? true : begin()));
         projectState.dirty = false;
         projectState.projectId = 'project';
         projectState.createdAt = 1;
@@ -178,6 +177,31 @@ describe('useNativeApplicationMenu', () => {
         expect(desktop.sessionQuiesceStarted).toHaveBeenCalledWith(41);
     });
 
+    it('returns a failed final quiesce reply when main rejects the destructive-start handshake', async () => {
+        desktop.sessionQuiesceStarted.mockResolvedValueOnce(false);
+        renderHook(() =>
+            useNativeApplicationMenu({
+                name: 'Song',
+                projectId: 'project',
+                createdAt: 1,
+                dirty: false,
+                identityPersistencePending: false,
+                loading: false,
+                updatedAt: 1,
+                keyRoot: 0,
+                scaleName: 'chromatic',
+                tuning: { name: 'Equal Temperament', frequencies: [] },
+                productionBrief: {} as never,
+                initialized: true,
+            })
+        );
+
+        desktop.sessionListener?.(42);
+
+        await vi.waitFor(() => expect(desktop.sessionQuiesced).toHaveBeenCalledWith(42, false));
+        expect(projectActions.quiesceProjectSession).toHaveBeenCalledWith(expect.any(Function));
+    });
+
     it('republishes renderer readiness when Project hydration changes loading state', () => {
         const project = (loading: boolean) => ({
             name: 'Song',
@@ -203,7 +227,7 @@ describe('useNativeApplicationMenu', () => {
         expect(desktop.projectState).toHaveBeenLastCalledWith(expect.objectContaining({ rendererReady: true }));
     });
 
-    it('projects the active project and routes text editing through the narrow native capability', async () => {
+    it('does not dispatch DAW edits while a native text field owns focus', async () => {
         renderHook(() =>
             useNativeApplicationMenu({
                 projectId: 'project',
@@ -236,9 +260,10 @@ describe('useNativeApplicationMenu', () => {
         desktop.listener?.({ action: 'edit:undo' });
         desktop.listener?.({ action: 'edit:redo' });
 
-        await vi.waitFor(() => expect(desktop.edit).toHaveBeenCalledWith('copy'));
-        expect(desktop.edit).toHaveBeenCalledWith('undo');
-        expect(desktop.edit).toHaveBeenCalledWith('redo');
+        await Promise.resolve();
+        expect(command.executeAppAction).not.toHaveBeenCalled();
+        expect(command.undo).not.toHaveBeenCalled();
+        expect(command.redo).not.toHaveBeenCalled();
         input.remove();
     });
 

@@ -27,7 +27,6 @@ import {
     WINDOW_MAXIMIZED_CHANGED_CHANNEL,
     WINDOW_MINIMIZE_CHANNEL,
     WINDOW_TOGGLE_MAXIMIZE_CHANNEL,
-    NATIVE_EDIT_CHANNEL,
     NATIVE_MENU_ACTION_CHANNEL,
     NATIVE_MENU_PROJECT_STATE_CHANNEL,
     NATIVE_MENU_SAVE_RESULT_CHANNEL,
@@ -95,7 +94,6 @@ describe('the published surface', () => {
             'toggleMaximize',
         ]);
         expect(Object.keys(bridge.nativeMenu).sort()).toEqual([
-            'edit',
             'listen',
             'listenSessionQuiesce',
             'projectState',
@@ -163,18 +161,33 @@ describe('native menu transport', () => {
 
         await bridge.nativeMenu.projectState(state);
         await bridge.nativeMenu.saveResult(result);
-        await bridge.nativeMenu.edit('paste');
         await bridge.nativeMenu.sessionQuiesced(3, true);
         await bridge.nativeMenu.sessionQuiesceStarted(3);
 
         expect(fake.invoke).toHaveBeenNthCalledWith(1, NATIVE_MENU_PROJECT_STATE_CHANNEL, state);
         expect(fake.invoke).toHaveBeenNthCalledWith(2, NATIVE_MENU_SAVE_RESULT_CHANNEL, result);
-        expect(fake.invoke).toHaveBeenNthCalledWith(3, NATIVE_EDIT_CHANNEL, 'paste');
-        expect(fake.invoke).toHaveBeenNthCalledWith(4, RENDERER_SESSION_QUIESCED_CHANNEL, {
+        expect(fake.invoke).toHaveBeenNthCalledWith(3, RENDERER_SESSION_QUIESCED_CHANNEL, {
             requestId: 3,
             quiesced: true,
         });
-        expect(fake.invoke).toHaveBeenNthCalledWith(5, RENDERER_SESSION_QUIESCE_STARTED_CHANNEL, { requestId: 3 });
+        expect(fake.invoke).toHaveBeenNthCalledWith(4, RENDERER_SESSION_QUIESCE_STARTED_CHANNEL, { requestId: 3 });
+    });
+
+    it.each([
+        [true, true],
+        [false, false],
+    ])('preserves the exact boolean quiesce-start acknowledgement %s', async (answer, expected) => {
+        const bridge = createSourdawBridge(
+            fakeIpc((channel) => (channel === RENDERER_SESSION_QUIESCE_STARTED_CHANNEL ? answer : undefined)).ipc
+        );
+
+        await expect(bridge.nativeMenu.sessionQuiesceStarted(8)).resolves.toBe(expected);
+    });
+
+    it('rejects a non-boolean quiesce-start acknowledgement', async () => {
+        const bridge = createSourdawBridge(fakeIpc(() => 'accepted').ipc);
+
+        await expect(bridge.nativeMenu.sessionQuiesceStarted(8)).rejects.toThrow(/invalid acknowledgement/u);
     });
 
     it('delivers only validated intents from main', () => {

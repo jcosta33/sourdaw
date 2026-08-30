@@ -29,9 +29,10 @@ import {
     WINDOW_IS_MAXIMIZED_CHANNEL,
     WINDOW_MINIMIZE_CHANNEL,
     WINDOW_TOGGLE_MAXIMIZE_CHANNEL,
-    NATIVE_EDIT_CHANNEL,
     NATIVE_MENU_PROJECT_STATE_CHANNEL,
     NATIVE_MENU_SAVE_RESULT_CHANNEL,
+    RENDERER_SESSION_QUIESCED_CHANNEL,
+    RENDERER_SESSION_QUIESCE_STARTED_CHANNEL,
 } from '../channels.js';
 import { commandChannel } from '../commands.js';
 
@@ -123,18 +124,10 @@ describe('the scan command', () => {
 });
 
 describe('native menu channels', () => {
-    it('accepts only trusted projected state and restricts editing to the sending webContents', async () => {
+    it('accepts only trusted projected state and correlated close replies', async () => {
         const { ipcMain, handlers } = collectingIpc();
         const onProjectState = vi.fn();
         const onSaveResult = vi.fn();
-        const editTarget = {
-            undo: vi.fn(),
-            redo: vi.fn(),
-            cut: vi.fn(),
-            copy: vi.fn(),
-            paste: vi.fn(),
-            selectAll: vi.fn(),
-        };
         registerNativeMenuChannels({
             ipcMain,
             isTrustedFrameUrl,
@@ -142,7 +135,6 @@ describe('native menu channels', () => {
             onSaveResult,
             onSessionQuiesced: vi.fn(),
             onSessionQuiesceStarted: vi.fn(() => true),
-            editTargetForSender: (sender) => (sender === 'sender' ? editTarget : null),
         });
         const frame = { ...APP_FRAME, sender: 'sender' };
 
@@ -161,12 +153,6 @@ describe('native menu channels', () => {
             projectKey: 'project',
             revision: 'revision-2',
         });
-        await handlers.get(NATIVE_EDIT_CHANNEL)?.(frame, 'copy');
-        await handlers.get(NATIVE_EDIT_CHANNEL)?.(frame, 'undo');
-        await handlers.get(NATIVE_EDIT_CHANNEL)?.(frame, 'redo');
-        await handlers.get(NATIVE_EDIT_CHANNEL)?.(frame, 'cut');
-        await handlers.get(NATIVE_EDIT_CHANNEL)?.(frame, 'paste');
-        await handlers.get(NATIVE_EDIT_CHANNEL)?.(frame, 'selectAll');
 
         expect(onProjectState).toHaveBeenCalledWith(
             {
@@ -186,14 +172,6 @@ describe('native menu channels', () => {
             projectKey: 'project',
             revision: 'revision-2',
         });
-        expect(editTarget.copy).toHaveBeenCalledTimes(1);
-        expect(editTarget.undo).toHaveBeenCalledTimes(1);
-        expect(editTarget.redo).toHaveBeenCalledTimes(1);
-        expect(editTarget.cut).toHaveBeenCalledTimes(1);
-        expect(editTarget.paste).toHaveBeenCalledTimes(1);
-        expect(editTarget.selectAll).toHaveBeenCalledTimes(1);
-        expect(() => handlers.get(NATIVE_EDIT_CHANNEL)?.(FOREIGN_FRAME, 'copy')).toThrow(/not the application/u);
-        expect(() => handlers.get(NATIVE_EDIT_CHANNEL)?.(frame, 'reload')).toThrow(/invalid/u);
     });
 
     it('rejects projected recent projects that do not match the renderer contract', () => {
@@ -205,7 +183,6 @@ describe('native menu channels', () => {
             onSaveResult: vi.fn(),
             onSessionQuiesced: vi.fn(),
             onSessionQuiesceStarted: vi.fn(() => true),
-            editTargetForSender: () => null,
         });
         const projectState = handlers.get(NATIVE_MENU_PROJECT_STATE_CHANNEL);
 
@@ -259,7 +236,6 @@ describe('native menu channels', () => {
             onSaveResult,
             onSessionQuiesced: vi.fn(),
             onSessionQuiesceStarted: vi.fn(() => true),
-            editTargetForSender: () => null,
         });
 
         expect(() =>
@@ -270,6 +246,42 @@ describe('native menu channels', () => {
             })
         ).toThrow(/invalid/u);
         expect(onSaveResult).not.toHaveBeenCalled();
+    });
+
+    it('validates both quiesce acknowledgements before calling their trusted callbacks', async () => {
+        const { ipcMain, handlers } = collectingIpc();
+        const onSessionQuiesced = vi.fn();
+        const onSessionQuiesceStarted = vi.fn(() => true);
+        registerNativeMenuChannels({
+            ipcMain,
+            isTrustedFrameUrl,
+            onProjectState: vi.fn(),
+            onSaveResult: vi.fn(),
+            onSessionQuiesced,
+            onSessionQuiesceStarted,
+        });
+        const frame = { ...APP_FRAME, sender: 'renderer' };
+
+        expect(handlers.get(RENDERER_SESSION_QUIESCE_STARTED_CHANNEL)?.(frame, { requestId: 4 })).toBe(true);
+        await handlers.get(RENDERER_SESSION_QUIESCED_CHANNEL)?.(frame, { requestId: 4, quiesced: false });
+        expect(onSessionQuiesceStarted).toHaveBeenCalledWith(4, 'renderer');
+        expect(onSessionQuiesced).toHaveBeenCalledWith({ requestId: 4, quiesced: false }, 'renderer');
+
+        for (const requestId of [0, 1.5, undefined]) {
+            expect(() => handlers.get(RENDERER_SESSION_QUIESCE_STARTED_CHANNEL)?.(frame, { requestId })).toThrow(
+                /invalid/u
+            );
+            expect(() =>
+                handlers.get(RENDERER_SESSION_QUIESCED_CHANNEL)?.(frame, { requestId, quiesced: true })
+            ).toThrow(/invalid/u);
+        }
+        expect(() =>
+            handlers.get(RENDERER_SESSION_QUIESCED_CHANNEL)?.(frame, { requestId: 5, quiesced: 'yes' })
+        ).toThrow(/invalid/u);
+        expect(() => handlers.get(RENDERER_SESSION_QUIESCE_STARTED_CHANNEL)?.(FOREIGN_FRAME, { requestId: 4 })).toThrow(
+            /not the application/u
+        );
+        expect(onSessionQuiesced).toHaveBeenCalledTimes(1);
     });
 });
 

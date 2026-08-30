@@ -43,10 +43,7 @@ export const createRendererSessionQuiescer = (channel: string, timers: Timers = 
                     pending = undefined;
                     resolve(quiesced);
                 };
-                timer = timers.setTimer(
-                    () => settle(pending?.requestId === currentRequestId && pending.started),
-                    RENDERER_SESSION_QUIESCE_TIMEOUT_MS
-                );
+                timer = timers.setTimer(() => settle(false), RENDERER_SESSION_QUIESCE_TIMEOUT_MS);
                 pending = { window, requestId: currentRequestId, timer, started: false, settle };
                 try {
                     window.webContents.send(channel, currentRequestId);
@@ -87,10 +84,7 @@ export const completeMacCloseAfterSessionQuiesce = async ({
         cancel();
         return;
     }
-    // Once the renderer confirms its live graph has been retired, it is an
-    // irrevocable session boundary. A late metadata projection cannot safely
-    // resurrect that graph, so finish the already-approved native close.
-    if (!(await request())) {
+    if (!(await request()) || !shouldProceed()) {
         cancel();
         return;
     }

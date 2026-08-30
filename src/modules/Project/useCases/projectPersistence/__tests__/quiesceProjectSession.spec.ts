@@ -1,8 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const runtime = vi.hoisted(() => ({ stopPlayback: vi.fn(), resetAudioGraph: vi.fn(), unloadPlugin: vi.fn() }));
+const runtime = vi.hoisted(() => ({
+    stopPlayback: vi.fn(),
+    resetAudioGraph: vi.fn(),
+    unloadPlugin: vi.fn(),
+    repairRuntimeGraphFromProject: vi.fn(),
+}));
 
-vi.mock('#/modules/Transport/useCases', () => ({ stopPlayback: runtime.stopPlayback }));
+vi.mock('#/modules/Transport/useCases', () => ({
+    stopPlayback: runtime.stopPlayback,
+    repairRuntimeGraphFromProject: runtime.repairRuntimeGraphFromProject,
+}));
 vi.mock('#/modules/AudioEngine/useCases', () => ({ resetAudioGraph: runtime.resetAudioGraph }));
 vi.mock('#/modules/PluginHost/useCases', () => ({ unloadPlugin: runtime.unloadPlugin }));
 
@@ -12,6 +20,7 @@ describe('quiesceProjectSession', () => {
         runtime.stopPlayback.mockReset();
         runtime.resetAudioGraph.mockReset();
         runtime.unloadPlugin.mockReset();
+        runtime.repairRuntimeGraphFromProject.mockReset();
     });
 
     it('stops playback, drops the live graph, then unloads project plugin instances', async () => {
@@ -31,7 +40,7 @@ describe('quiesceProjectSession', () => {
         expect(order).toEqual(['stop', 'commit', 'graph', 'plugins']);
     });
 
-    it('fails closed before destructive teardown, but completes the irreversible close after plugin unload rejection', async () => {
+    it('fails closed before destructive teardown and repairs the reusable runtime after plugin unload rejection', async () => {
         runtime.stopPlayback.mockRejectedValueOnce(new Error('transport unavailable'));
         let { quiesceProjectSession } = await import('../quiesceProjectSession');
 
@@ -42,11 +51,14 @@ describe('quiesceProjectSession', () => {
         runtime.stopPlayback.mockReset().mockResolvedValue(undefined);
         runtime.resetAudioGraph.mockReset();
         runtime.unloadPlugin.mockReset().mockRejectedValueOnce(new Error('plugin release failed'));
+        runtime.repairRuntimeGraphFromProject.mockResolvedValue(undefined);
         ({ quiesceProjectSession } = await import('../quiesceProjectSession'));
 
+        await expect(quiesceProjectSession()).resolves.toBe(false);
+        expect(runtime.repairRuntimeGraphFromProject).toHaveBeenCalledOnce();
+        runtime.unloadPlugin.mockResolvedValue(undefined);
         await expect(quiesceProjectSession()).resolves.toBe(true);
-        await expect(quiesceProjectSession()).resolves.toBe(true);
-        expect(runtime.resetAudioGraph).toHaveBeenCalledTimes(1);
+        expect(runtime.resetAudioGraph).toHaveBeenCalledTimes(2);
     });
 
     it('recovers from a rejected commitment handshake and lets a later Close retry', async () => {

@@ -34,7 +34,7 @@ import {
     registerWindowControlChannels,
     SCAN_COMMAND,
 } from './appIpc.js';
-import { createApplicationMenuTemplate, type NativeMenuIntent } from './applicationMenu.js';
+import { applyNativeTextEdit, createApplicationMenuTemplate, type NativeMenuIntent } from './applicationMenu.js';
 import {
     EVENT_CHANNEL,
     NATIVE_MENU_ACTION_CHANNEL,
@@ -139,6 +139,10 @@ const nativeMenuActionDispatcher = createNativeMenuActionDispatcher({
 });
 
 const nativeMenuAction = (intent: NativeMenuIntent): void => {
+    const window = mainWindow;
+    if (window !== undefined && !window.isDestroyed()) {
+        applyNativeTextEdit(window.webContents, intent.action);
+    }
     nativeMenuActionDispatcher.dispatch(intent);
 };
 
@@ -367,7 +371,8 @@ const createWindow = (): BrowserWindow => {
             rendererSessionQuiescer.cancel();
             rendererSessionLifecycle.cancelTeardown();
         },
-        () => windowCloseCoordinator.markClosing()
+        () => windowCloseCoordinator.markClosing(),
+        () => process.platform !== 'darwin' || closeSessionQuiescedWindow === window
     );
     return window;
 };
@@ -692,17 +697,6 @@ void app.whenReady().then(() => {
                     : null;
             return senderWindow !== null && rendererSessionQuiescer.start(senderWindow, requestId);
         },
-        editTargetForSender: (sender) =>
-            typeof sender === 'object' &&
-            sender !== null &&
-            'undo' in sender &&
-            'redo' in sender &&
-            'cut' in sender &&
-            'copy' in sender &&
-            'paste' in sender &&
-            'selectAll' in sender
-                ? (sender as WebContents)
-                : null,
     });
     startNativeSurface();
 

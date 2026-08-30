@@ -115,6 +115,38 @@ describe('main window owner teardown wiring', () => {
         expect(owner.destroy).not.toHaveBeenCalled();
     });
 
+    it('does not let the later plugin-owner listener tear down on the original Darwin close event', async () => {
+        const owner = createOwnerStub();
+        const detachOpenEditors = vi.fn((): Promise<void> => Promise.resolve());
+        let quiescedReentry = false;
+        // This models the main close listener, registered before the plugin
+        // owner listener. Its first event is stopped for renderer quiescence.
+        owner.on('close', (event) => {
+            if (!quiescedReentry) {
+                event.preventDefault();
+            }
+        });
+        bindMainWindowOwnerTeardown(
+            owner,
+            createHostStub(detachOpenEditors),
+            () => true,
+            undefined,
+            undefined,
+            () => quiescedReentry
+        );
+
+        expect(owner.emitClose()).toBe(true);
+        await settled();
+        expect(detachOpenEditors).not.toHaveBeenCalled();
+        expect(owner.destroy).not.toHaveBeenCalled();
+
+        quiescedReentry = true;
+        expect(owner.emitClose()).toBe(true);
+        await settled();
+        expect(detachOpenEditors).toHaveBeenCalledOnce();
+        expect(owner.destroy).toHaveBeenCalledOnce();
+    });
+
     it('destroys a crashed main window through the captured detach-first path after recovery rebinding', async () => {
         const crashedOwner = createOwnerStub();
         let releaseDetach!: () => void;

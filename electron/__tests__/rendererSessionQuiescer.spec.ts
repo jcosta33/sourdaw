@@ -29,7 +29,7 @@ describe('renderer session quiescer', () => {
         expect(RENDERER_SESSION_QUIESCE_TIMEOUT_MS).toBe(5_000);
     });
 
-    it('forces the irreversible close after a real timer expiry once graph retirement has started, and rejects a revoked pre-start request', async () => {
+    it('requires a final renderer acknowledgement after teardown starts, and rejects a revoked pre-start request', async () => {
         let timeout: (() => void) | undefined;
         const window = { isDestroyed: () => false, webContents: { send: vi.fn() } };
         const quiescer = createRendererSessionQuiescer('renderer:quiesce', {
@@ -41,9 +41,9 @@ describe('renderer session quiescer', () => {
 
         const started = quiescer.request(window);
         expect(quiescer.start(window, 1)).toBe(true);
-        quiescer.cancel(); // A revision revoke after commit cannot reopen the retired graph.
+        quiescer.cancel(); // A revision revoke cannot manufacture success.
         timeout?.();
-        await expect(started).resolves.toBe(true);
+        await expect(started).resolves.toBe(false);
         quiescer.resolve(window, 1, true); // late completion is harmless
 
         const revoked = quiescer.request(window);
