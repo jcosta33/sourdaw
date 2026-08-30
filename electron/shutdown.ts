@@ -135,14 +135,14 @@ export type QuitDependencies = {
     readonly canQuit?: () => Promise<boolean>;
     /** Quiesces the approved renderer session before native shutdown drains the host. */
     /** False means renderer authority changed while quiescing; leave the app open. */
-    readonly beforeRun?: () => Promise<boolean>;
+    readonly beforeRun?: () => Promise<boolean | 'timed-out'>;
     /** Shared clock so renderer quiescence cannot outlive the shutdown deadline. */
     readonly timers?: Timers;
 };
 
 const runAfterQuiesceWithinDeadline = async (
     run: () => Promise<ShutdownOutcome>,
-    beforeRun: () => Promise<boolean>,
+    beforeRun: () => Promise<boolean | 'timed-out'>,
     timers: Timers
 ): Promise<ShutdownOutcome | undefined> => {
     let expired = false;
@@ -156,6 +156,9 @@ const runAfterQuiesceWithinDeadline = async (
     const sequence = (async (): Promise<ShutdownOutcome | undefined> => {
         try {
             const quiesced = await beforeRun();
+            if (quiesced === 'timed-out') {
+                return { status: 'timed-out', deadlineMs: SHUTDOWN_DEADLINE_MS };
+            }
             if (!quiesced) {
                 return undefined;
             }

@@ -276,6 +276,30 @@ describe('the before-quit handler', () => {
         expect(repeated.preventDefault).toHaveBeenCalledTimes(1);
     });
 
+    it('forces the bounded quit outcome after an approved renderer quiesce timeout, but not after authority revocation', async () => {
+        const run = vi.fn(async () => completed);
+        const exit = vi.fn();
+        const timedOut = createQuitHandler(run, {
+            beforeRun: async () => 'timed-out',
+            exit,
+            report: () => undefined,
+        });
+
+        timedOut({ preventDefault: () => undefined });
+        await vi.waitFor(() => expect(exit).toHaveBeenCalledWith(1));
+        expect(run).not.toHaveBeenCalled();
+
+        const revokedExit = vi.fn();
+        const revoked = createQuitHandler(run, {
+            beforeRun: async () => false,
+            exit: revokedExit,
+            report: () => undefined,
+        });
+        revoked({ preventDefault: () => undefined });
+        await Promise.resolve();
+        expect(revokedExit).not.toHaveBeenCalled();
+    });
+
     it('keeps the app open when delayed renderer quiescence loses close authority, then permits a fresh quit', async () => {
         const beforeRun = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true);
         const run = vi.fn(async () => completed);

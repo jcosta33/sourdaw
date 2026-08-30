@@ -1,6 +1,7 @@
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { dispatchCanvasEditorCommand } from '#/modules/CommandInterface/useCases';
 import {
     setNoteVelocity,
     setNotePressure,
@@ -17,6 +18,13 @@ const { toolbarPropsRef, notePropertyLanePropsRef, contextMenuPropsRef } = vi.ho
     toolbarPropsRef: { current: null as Record<string, unknown> | null },
     notePropertyLanePropsRef: { current: null as Record<string, unknown> | null },
     contextMenuPropsRef: { current: null as Record<string, unknown> | null },
+}));
+const pianoRollStoreState = vi.hoisted(() => ({
+    midi: {
+        notesByClipId: {},
+        ccByClipId: {},
+        pitchBendByClipId: {},
+    },
 }));
 
 type NotePropertyLaneCapturedProps = {
@@ -51,14 +59,13 @@ vi.mock('#/utils/Styles/cn', () => ({
 }));
 
 vi.mock('#/modules/MIDI/stores', async (importOriginal) => {
-    const midiState = { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} };
     return {
         ...(await importOriginal<typeof import('#/modules/MIDI/stores')>()),
         midiStore: {
             get value() {
-                return midiState;
+                return pianoRollStoreState.midi;
             },
-            getSnapshot: () => midiState,
+            getSnapshot: () => pianoRollStoreState.midi,
             subscribe: vi.fn(() => () => {}),
             subscribeReact: vi.fn(() => () => {}),
         },
@@ -197,6 +204,7 @@ describe('PianoRoll', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
+        pianoRollStoreState.midi.notesByClipId = {};
         toolbarPropsRef.current = null;
         notePropertyLanePropsRef.current = null;
         contextMenuPropsRef.current = null;
@@ -240,6 +248,18 @@ describe('PianoRoll', () => {
         // The marked surface must be the focusable one — the gate keys off the
         // focused `event.target`, so a non-focusable marker would be inert.
         expect(canvas).toHaveAttribute('tabindex', '0');
+    });
+
+    it('handles native Select All and Deselect All at the real Piano Roll canvas boundary', () => {
+        pianoRollStoreState.midi.notesByClipId = { 'clip-1': [{ id: 'note-1' }] };
+        const onSelectedNoteIdsChange = vi.fn();
+        render(<PianoRoll {...defaultProps} onSelectedNoteIdsChange={onSelectedNoteIdsChange} />);
+        const canvas = screen.getByLabelText('Piano roll editor');
+
+        expect(dispatchCanvasEditorCommand(canvas, 'edit:select-all')).toBe(true);
+        expect(onSelectedNoteIdsChange).toHaveBeenLastCalledWith(new Set(['note-1']));
+        expect(dispatchCanvasEditorCommand(canvas, 'edit:deselect-all')).toBe(true);
+        expect(onSelectedNoteIdsChange).toHaveBeenLastCalledWith(new Set());
     });
 
     it('reports the initial beat width to the parent on mount', () => {

@@ -110,7 +110,14 @@ describe('createApplicationMenuTemplate', () => {
         expect(target.selectAll).toHaveBeenCalledOnce();
     });
 
-    it('keeps Edit commands with the focused hosted plugin native responder', () => {
+    it.each([
+        ['edit:undo', 'undo:'],
+        ['edit:redo', 'redo:'],
+        ['edit:cut', 'cut:'],
+        ['edit:copy', 'copy:'],
+        ['edit:paste', 'paste:'],
+        ['edit:select-all', 'selectAll:'],
+    ] as const)('keeps plugin-focused %s with the native responder selector %s', (action, responderAction) => {
         const target = {
             undo: vi.fn(),
             redo: vi.fn(),
@@ -124,7 +131,7 @@ describe('createApplicationMenuTemplate', () => {
 
         expect(
             dispatchFocusedNativeMenuIntent({
-                intent: { action: 'edit:copy' },
+                intent: { action },
                 isMainWindowFocused: false,
                 target,
                 send,
@@ -132,9 +139,14 @@ describe('createApplicationMenuTemplate', () => {
             })
         ).toBe(false);
 
+        expect(target.undo).not.toHaveBeenCalled();
+        expect(target.redo).not.toHaveBeenCalled();
+        expect(target.cut).not.toHaveBeenCalled();
         expect(target.copy).not.toHaveBeenCalled();
+        expect(target.paste).not.toHaveBeenCalled();
+        expect(target.selectAll).not.toHaveBeenCalled();
         expect(send).not.toHaveBeenCalled();
-        expect(sendToNativeResponder).toHaveBeenCalledWith('copy:');
+        expect(sendToNativeResponder).toHaveBeenCalledWith(responderAction);
     });
 
     it('still forwards a File command while a hosted plugin window owns focus', () => {

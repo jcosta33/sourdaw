@@ -61,6 +61,36 @@ describe('native menu action dispatcher', () => {
         expect(created.send).toHaveBeenCalledWith('native-menu-action', intent);
     });
 
+    it('creates and queues windowless File New and Open Recent actions before renderer readiness', () => {
+        let current: ReturnType<typeof makeWindow> | undefined;
+        const createWindow = vi.fn(() => {
+            current = makeWindow();
+            return current;
+        });
+        const dispatcher = createNativeMenuActionDispatcher({
+            isMac: true,
+            actionChannel: 'native-menu-action',
+            getWindow: () => current,
+            createWindow,
+        });
+
+        dispatcher.dispatch({ action: 'project:new' });
+        dispatcher.dispatch({ action: 'project:open-recent', recentKey: 'saved' });
+        const replacement = current;
+        if (replacement === undefined) {
+            throw new Error('Expected replacement window');
+        }
+        expect(createWindow).toHaveBeenCalledOnce();
+        expect(replacement.send).not.toHaveBeenCalled();
+
+        dispatcher.rendererReady(replacement, true);
+        expect(replacement.send).toHaveBeenNthCalledWith(1, 'native-menu-action', { action: 'project:new' });
+        expect(replacement.send).toHaveBeenNthCalledWith(2, 'native-menu-action', {
+            action: 'project:open-recent',
+            recentKey: 'saved',
+        });
+    });
+
     it('does not replay an action into a replacement renderer and never creates one for Edit or View commands', () => {
         let current: ReturnType<typeof makeWindow> | undefined;
         const createWindow = vi.fn(() => {

@@ -8,7 +8,11 @@
  */
 import { describe, expect, it, vi } from 'vitest';
 
-import { bindMainWindowOwnerTeardown, destroyCrashedMainWindow } from '../mainWindowTeardown.js';
+import {
+    bindMainWindowOwnerTeardown,
+    destroyCrashedMainWindow,
+    notifyCurrentWindowDestroying,
+} from '../mainWindowTeardown.js';
 
 import type { OwnerWindow, PluginWindowHost, PreventableEditorEvent } from '../pluginGui.js';
 
@@ -214,5 +218,17 @@ describe('main window owner teardown wiring', () => {
         destroyCrashedMainWindow(crashedOwner, undefined);
 
         expect(crashedOwner.destroy).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not let a delayed crashed-owner teardown mark its replacement closing', () => {
+        const notify = vi.fn();
+        let current = false;
+
+        notifyCurrentWindowDestroying({ isCurrentWindow: () => current, notify });
+        expect(notify).not.toHaveBeenCalled();
+
+        current = true;
+        notifyCurrentWindowDestroying({ isCurrentWindow: () => current, notify });
+        expect(notify).toHaveBeenCalledOnce();
     });
 });

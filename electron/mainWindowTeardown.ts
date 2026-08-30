@@ -28,6 +28,19 @@ export const bindMainWindowOwnerTeardown = (
     return destroyAfterEditorsDetach;
 };
 
+/** Ignore a delayed dying-window callback once a replacement owns the session. */
+export const notifyCurrentWindowDestroying = ({
+    isCurrentWindow,
+    notify,
+}: {
+    readonly isCurrentWindow: () => boolean;
+    readonly notify: () => void;
+}): void => {
+    if (isCurrentWindow()) {
+        notify();
+    }
+};
+
 /**
  * Destroy a crashed main window without CloseImmediately on parented editors.
  *

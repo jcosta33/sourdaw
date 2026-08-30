@@ -27,6 +27,7 @@ export const createRendererSessionQuiescer = (
         | undefined;
     let recovering: { readonly window: RendererSessionWindow; readonly requestId: number } | undefined;
     let acknowledgedSuccess: { readonly window: RendererSessionWindow; readonly requestId: number } | undefined;
+    let timedOutWindow: RendererSessionWindow | undefined;
 
     const requestRecovery = (window: RendererSessionWindow, requestId: number): void => {
         recovering = { window, requestId };
@@ -75,6 +76,7 @@ export const createRendererSessionQuiescer = (
                 };
                 timer = timers.setTimer(() => {
                     if (pending?.requestId === currentRequestId && pending.started) {
+                        timedOutWindow = pending.window;
                         requestRecovery(pending.window, currentRequestId);
                     }
                     settle(false);
@@ -89,6 +91,7 @@ export const createRendererSessionQuiescer = (
         },
         resolve: (window: RendererSessionWindow, completedRequestId: number, quiesced: boolean): void => {
             if (pending?.window === window && pending.requestId === completedRequestId) {
+                timedOutWindow = undefined;
                 if (quiesced) {
                     acknowledgedSuccess = { window, requestId: completedRequestId };
                 }
@@ -107,6 +110,9 @@ export const createRendererSessionQuiescer = (
             return true;
         },
         finalize: (window: RendererSessionWindow): void => {
+            if (timedOutWindow === window) {
+                timedOutWindow = undefined;
+            }
             // A destroyed renderer cannot repair or complete its outstanding
             // request. Settling it directly is safe: there is no session left
             // to restore, and a replacement window must be able to admit its
@@ -122,6 +128,7 @@ export const createRendererSessionQuiescer = (
             }
         },
         cancel,
+        timedOut: (window: RendererSessionWindow): boolean => timedOutWindow === window,
     };
 };
 
