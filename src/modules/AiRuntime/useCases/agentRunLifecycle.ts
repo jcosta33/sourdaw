@@ -715,7 +715,24 @@ function applyAgentRunReceiptSagaProjection(
     const manualRecovery = [matchingContinuation, matchingRecovery].find(
         (recovery) => recovery?.receiptIdentity === projection.receiptIdentity && recovery.recovery === 'manual-repair'
     );
+    const projectedExternalSteps = projection.sagaSteps.filter(
+        (step) => step.owner === 'external-effect' && step.workId === projection.work.workId
+    );
+    const hasSettledExactManualReview =
+        projectedExternalSteps.length > 0 &&
+        projectedExternalSteps.every((step) => {
+            const existing = run.saga.steps.filter((candidate) => candidate.stepId === step.stepId);
+            return (
+                existing.length === 1 &&
+                existing[0]?.receiptIdentity === projection.receiptIdentity &&
+                existing[0].state === 'reviewed' &&
+                existing[0].manualReviewDisposition !== undefined
+            );
+        });
     const projectedSagaSteps = projection.sagaSteps.map((step) => {
+        if (hasSettledExactManualReview && step.owner === 'external-effect' && step.workId === projection.work.workId) {
+            return structuredClone(run.saga.steps.find((candidate) => candidate.stepId === step.stepId)!);
+        }
         if (!manualRecovery || step.owner !== 'external-effect' || step.workId !== projection.work.workId) {
             return step;
         }
@@ -736,7 +753,7 @@ function applyAgentRunReceiptSagaProjection(
     ].sort((left, right) => left.order - right.order);
     let pendingEffectContinuations = run.pendingEffectContinuations;
     let nextPendingEffectRecoveryLedger = pendingEffectRecoveryLedger;
-    if (projection.pendingEffectContinuation) {
+    if (projection.pendingEffectContinuation && !hasSettledExactManualReview) {
         const continuation = manualRecovery
             ? structuredClone(manualRecovery)
             : structuredClone(projection.pendingEffectContinuation);
@@ -773,7 +790,7 @@ function applyAgentRunReceiptSagaProjection(
                 checkpoint: 'durable' as const,
             },
         ];
-    } else if (projection.completesPendingEffectContinuation) {
+    } else if (projection.completesPendingEffectContinuation || hasSettledExactManualReview) {
         pendingEffectContinuations = run.pendingEffectContinuations.filter(
             (continuation) => continuation.batchId !== projection.work.workId
         );

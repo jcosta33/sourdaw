@@ -235,6 +235,17 @@ describe('selectRetainedSectionRenderManualReviews', () => {
         expect(artifacts.getExact).not.toHaveBeenCalled();
     });
 
+    it('rejects a coherent committed-outcome binding before artifact lookup', () => {
+        const { state } = createFixture();
+        const committedIdentity = '1:run-review:batch-review:committed';
+        state.runs[0]!.receipts[0]!.receiptIdentity = committedIdentity;
+        state.runs[0]!.pendingEffectContinuations[0]!.receiptIdentity = committedIdentity;
+        state.pendingEffectRecoveryLedger![0]!.receiptIdentity = committedIdentity;
+
+        expect(selectRetainedSectionRenderManualReviews(state)).toEqual([]);
+        expect(artifacts.getExact).not.toHaveBeenCalled();
+    });
+
     it.each([
         [
             'matching receipts',

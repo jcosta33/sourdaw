@@ -142,6 +142,7 @@ const { confirmPendingChatActions } = await import('../../../useCases/confirmPen
 const { cancelPendingChatActions } = await import('../../../useCases/cancelPendingChatActions');
 const { recoverAgentRunPendingEffects } = await import('../../../useCases/recoverAgentRunPendingEffects');
 const { agentRunStore } = await import('#/modules/AiRuntime/stores/agentRunStore');
+const { agentSectionRenderArtifactStore } = await import('#/modules/AudioRendering/stores');
 const { capabilityStore, isWebGpuAvailable } = await import('#/modules/BrowserAi/stores');
 const { toggleChat } = await import('#/modules/AiRuntime/useCases/aiPanelActions/toggleChat');
 const { isLlmAvailable } =
@@ -238,6 +239,9 @@ describe('ChatPanel', () => {
             if (store === capabilityStore) {
                 return useRealStore(capabilityStore);
             }
+            if (store === agentSectionRenderArtifactStore) {
+                return useRealStore(agentSectionRenderArtifactStore);
+            }
             return chatState;
         });
         (agentRunControls.listDecisions as ReturnType<typeof vi.fn>).mockReturnValue([]);
@@ -259,6 +263,7 @@ describe('ChatPanel', () => {
         retainedPreviewMocks.getExact.mockImplementation(({ job }: { job: { jobId: string } }) => ({
             buffer: job.jobId.includes('verse') ? verseBuffer : chorusBuffer,
         }));
+        agentSectionRenderArtifactStore.set({ artifacts: [] });
     });
 
     it('should render without crashing', () => {
@@ -904,6 +909,59 @@ describe('ChatPanel', () => {
         expect(screen.getByRole('status')).toHaveTextContent('Preview audio for Chorus is unavailable.');
         selectReview.mockRestore();
     });
+
+    it.each(['expired', 'evicted'] as const)(
+        'updates retained review availability immediately when its artifact is %s',
+        (transition) => {
+            const review = createRetainedReview({
+                runId: 'run-live-review',
+                batchId: 'batch-live-review',
+                commandId: 'command-live-review',
+                jobId: 'job-live-review',
+                sectionName: 'Chorus',
+                buffer: chorusBuffer,
+            });
+            const availableArtifact = review.jobs[0]?.availability === 'available' ? review.jobs[0].artifact : null;
+            if (!availableArtifact) {
+                throw new Error('Expected an available retained artifact fixture.');
+            }
+            const freshArtifact = { ...availableArtifact, renderedAt: Date.now() };
+            const selectReview = vi.spyOn(retainedReviewProjection, 'selectRetainedSectionRenderManualReviews');
+            selectReview.mockImplementation(() => {
+                const artifact = agentSectionRenderArtifactStore.value?.artifacts[0];
+                const available = artifact !== undefined && Date.now() - artifact.renderedAt < 60_000;
+                return [
+                    {
+                        ...review,
+                        jobs: available
+                            ? review.jobs
+                            : [
+                                  {
+                                      commandId: review.jobs[0]!.commandId,
+                                      job: review.jobs[0]!.job,
+                                      availability: 'unavailable' as const,
+                                      reason: 'The exact retained render evidence is unavailable.',
+                                      warnings: [] as const,
+                                  },
+                              ],
+                    },
+                ];
+            });
+            agentSectionRenderArtifactStore.set({ artifacts: [freshArtifact] });
+            render(<ChatPanel />);
+            expect(screen.getByRole('button', { name: 'Play Chorus' })).toBeEnabled();
+
+            act(() => {
+                agentSectionRenderArtifactStore.set({
+                    artifacts: transition === 'expired' ? [{ ...freshArtifact, renderedAt: Date.now() - 60_001 }] : [],
+                });
+            });
+
+            expect(screen.getByText('The exact retained render evidence is unavailable.')).toBeInTheDocument();
+            expect(screen.queryByRole('button', { name: 'Play Chorus' })).not.toBeInTheDocument();
+            selectReview.mockRestore();
+        }
+    );
 
     it('should have correct accessibility attributes', () => {
         render(<ChatPanel />);

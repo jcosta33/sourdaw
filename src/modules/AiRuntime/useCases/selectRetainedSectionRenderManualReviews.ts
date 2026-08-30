@@ -33,6 +33,19 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+function hasExactPartiallyCommittedReceiptIdentity(identity: string, runId: string, batchId: string): boolean {
+    const [schemaVersion, receiptRunId, receiptBatchId, outcome, ...remainder] = identity.split(':');
+    return (
+        remainder.length === 0 &&
+        schemaVersion !== undefined &&
+        /^\d+$/.test(schemaVersion) &&
+        Number(schemaVersion) > 0 &&
+        receiptRunId === runId &&
+        receiptBatchId === batchId &&
+        outcome === 'partially-committed'
+    );
+}
+
 function hasSameValue(left: unknown, right: unknown): boolean {
     if (Object.is(left, right)) {
         return true;
@@ -162,7 +175,15 @@ export function selectRetainedSectionRenderManualReviews(
                 continue;
             }
             const receipts = run.receipts.filter(({ workId }) => workId === continuation.batchId);
-            if (receipts.length !== 1 || receipts[0]?.receiptIdentity !== continuation.receiptIdentity) {
+            if (
+                !hasExactPartiallyCommittedReceiptIdentity(
+                    continuation.receiptIdentity,
+                    run.runId,
+                    continuation.batchId
+                ) ||
+                receipts.length !== 1 ||
+                receipts[0]?.receiptIdentity !== continuation.receiptIdentity
+            ) {
                 continue;
             }
             const recoveries = (state?.pendingEffectRecoveryLedger ?? []).filter(

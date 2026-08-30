@@ -148,6 +148,123 @@ describe('retained section render review hydration', () => {
         expect(readAgentRunState().runs[0]?.pendingEffectContinuations).toEqual([]);
     });
 
+    it.each(['accepted', 'discarded', 'missing-evidence'] as const)(
+        'preserves %s review across exact receipt replay and hydration',
+        async (disposition) => {
+            const action = {
+                type: 'renderProjectSections' as const,
+                payload: { sectionIds: [job.sectionId], jobs: [structuredClone(job)] },
+            };
+            const command = migrateLegacyAppActionToVersionedCommandEnvelope({
+                action,
+                expectedEffect: 'Render exact review evidence',
+                normalizedProjectRevision: 'revision-source',
+            });
+            const commandBatch = compileVersionedCommandBatchEnvelope({
+                runId: 'run-replay-review',
+                batchId: 'batch-replay-review',
+                projectId: 'project-review',
+                baseRevision: 'revision-source',
+                intent: 'Review retained render evidence',
+                commands: [serializeVersionedCommandEnvelope({ ...command, commandId: 'command-replay-review' })],
+            });
+            const parsed = parseVersionedCommandBatchEnvelope(commandBatch.serialized, commandBatch.authority);
+            if (parsed.status === 'invalid') {
+                throw new Error(parsed.reason);
+            }
+            const commandEnvelope = parsed.envelope.commands[0];
+            if (!commandEnvelope) {
+                throw new Error('Expected the replay-bound render command.');
+            }
+            const pendingEffect = {
+                commandId: commandEnvelope.commandId,
+                kind: 'external-effect',
+                operation: 'renderProjectSections',
+                reason: 'The retained render requires review.',
+                remediation: 'reconcile',
+                state: 'pending',
+            } satisfies ReceiptPendingEffect;
+            const proof = await getVersionedCommandBatchCommitProof(commandBatch);
+            const receipt = createVerifiedBatchReceipt({
+                contentHash: proof.contentHash,
+                envelope: parsed.envelope,
+                observedBaseRevision: 'revision-source',
+                resultingRevision: 'revision-committed',
+                result: {
+                    status: 'committed-with-warning',
+                    warning: pendingEffect.reason,
+                    warningDetails: [
+                        {
+                            kind: 'external-effect',
+                            message: pendingEffect.reason,
+                            commandId: commandEnvelope.commandId,
+                            pendingEffect,
+                        },
+                    ],
+                    actions: [
+                        {
+                            action,
+                            receipt: createVersionedCommandReceipt({
+                                envelope: commandEnvelope,
+                                compensation: { available: false, strategy: 'none' },
+                            }),
+                        },
+                    ],
+                },
+            });
+            agentRunLifecycle.create({
+                runId: receipt.runId,
+                request: 'Review retained render replay.',
+                mode: 'macro',
+                createdRevision: 'revision-source',
+                createdAt: 1,
+            });
+            agentRunLifecycle.recordReceiptSaga({
+                runId: receipt.runId,
+                receipt,
+                actions: [action],
+                commandBatch,
+                committedRevision: 'revision-committed',
+                completesRun: false,
+            });
+            agentRunLifecycle.requirePendingEffectManualRepair({
+                runId: receipt.runId,
+                batchId: receipt.batchId,
+                reason: 'Review the retained evidence.',
+                requiredAt: 2,
+            });
+            if (disposition === 'missing-evidence') {
+                mocks.getExact.mockReturnValue(null);
+            }
+            const review = selectRetainedSectionRenderManualReviews(readAgentRunState())[0];
+            if (!review) {
+                throw new Error('Expected the exact replay review.');
+            }
+            settleRetainedSectionRenderManualReview({ binding: review.binding, disposition });
+
+            agentRunLifecycle.recordReceiptSaga({
+                runId: receipt.runId,
+                receipt,
+                actions: [action],
+                commandBatch,
+                committedRevision: 'revision-committed',
+                completesRun: false,
+            });
+            const serializedState = JSON.stringify(readAgentRunState());
+            restartFrom(serializedState);
+
+            const restarted = readAgentRunState();
+            expect(restarted.runs[0]?.saga.steps).toEqual(
+                expect.arrayContaining([
+                    expect.objectContaining({ state: 'reviewed', manualReviewDisposition: disposition }),
+                ])
+            );
+            expect(restarted.runs[0]?.pendingEffectContinuations).toEqual([]);
+            expect(restarted.pendingEffectRecoveryLedger).toBeUndefined();
+            expect(selectRetainedSectionRenderManualReviews(restarted)).toEqual([]);
+        }
+    );
+
     it('rejects reviewed steps without a disposition and non-reviewed steps carrying one', () => {
         agentRunLifecycle.create({
             runId: 'run-invalid-disposition',

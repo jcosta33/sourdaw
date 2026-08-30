@@ -224,6 +224,34 @@ describe('settleRetainedSectionRenderManualReview', () => {
         expect(mocks.disposeExact).not.toHaveBeenCalled();
     });
 
+    it('rejects missing-evidence settlement while every exact artifact remains available', () => {
+        const review = createReviewObligation();
+
+        expect(() =>
+            settleRetainedSectionRenderManualReview({ binding: review.binding, disposition: 'missing-evidence' })
+        ).toThrow('Missing evidence cannot be acknowledged while the exact retained render remains available.');
+
+        expect(readAgentRunState().runs[0]?.pendingEffectContinuations).toHaveLength(1);
+        expect(readAgentRunState().pendingEffectRecoveryLedger).toHaveLength(1);
+        expect(mocks.disposeExact).not.toHaveBeenCalled();
+    });
+
+    it.each(['accepted', 'discarded'] as const)(
+        'rejects %s settlement for mixed artifact availability without settling or disposal',
+        (disposition) => {
+            mocks.getExact.mockImplementation(({ job }) => (job.jobId === 'job-verse' ? artifactFor(job) : null));
+            const review = createReviewObligation();
+
+            expect(() => settleRetainedSectionRenderManualReview({ binding: review.binding, disposition })).toThrow(
+                'The exact retained render is no longer available.'
+            );
+
+            expect(readAgentRunState().runs[0]?.pendingEffectContinuations).toHaveLength(1);
+            expect(readAgentRunState().pendingEffectRecoveryLedger).toHaveLength(1);
+            expect(mocks.disposeExact).not.toHaveBeenCalled();
+        }
+    );
+
     it('settles the exact manual-review aggregate when the original batch has a non-render sibling', () => {
         const review = createReviewObligation({
             commands: [

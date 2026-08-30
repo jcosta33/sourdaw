@@ -8,6 +8,7 @@ import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { useStore } from '#/infra/store/useStore';
+import { agentSectionRenderArtifactStore } from '#/modules/AudioRendering/stores';
 import { capabilityStore } from '#/modules/BrowserAi/stores';
 import { cn } from '#/utils/Styles/cn';
 
@@ -292,6 +293,7 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
         enableReasoning: false,
     });
     const agentRunState = useStore(agentRunStore, { schemaVersion: 1, runs: [] });
+    useStore(agentSectionRenderArtifactStore, { artifacts: [] });
     const capabilityState = useStore(capabilityStore, { phase: 'idle' });
     const decisionRuns = agentRunState.schemaVersion === 1 ? agentRunControls.listDecisions() : [];
     const pendingEffectContinuations = selectAgentRunPendingEffectRecoveries(agentRunState);
