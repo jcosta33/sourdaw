@@ -328,6 +328,7 @@ const createWindow = (): BrowserWindow => {
     });
 
     window.once('ready-to-show', () => window.show());
+    window.once('closed', () => rendererSessionQuiescer.finalize(window));
     // The frameless chrome's maximize button mirrors the native state; each
     // window reports its own transitions so a recreated window is wired fresh.
     window.on('maximize', () => window.webContents.send(WINDOW_MAXIMIZED_CHANGED_CHANNEL, true));

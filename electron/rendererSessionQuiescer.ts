@@ -25,26 +25,43 @@ export const createRendererSessionQuiescer = (
               readonly settle: (quiesced: boolean) => void;
           }
         | undefined;
+    let recovering: { readonly window: RendererSessionWindow; readonly requestId: number } | undefined;
+    let acknowledgedSuccess: { readonly window: RendererSessionWindow; readonly requestId: number } | undefined;
+
+    const requestRecovery = (window: RendererSessionWindow, requestId: number): void => {
+        recovering = { window, requestId };
+        acknowledgedSuccess = undefined;
+        try {
+            window.webContents.send(cancelChannel, requestId);
+        } catch {
+            // A vanished renderer cannot acknowledge recovery; preserve the
+            // recovery lock rather than admitting a second teardown.
+        }
+    };
 
     const cancel = (): void => {
         if (pending === undefined) {
+            if (acknowledgedSuccess !== undefined) {
+                requestRecovery(acknowledgedSuccess.window, acknowledgedSuccess.requestId);
+            }
             return;
         }
         if (!pending.started) {
             pending.settle(false);
             return;
         }
-        try {
-            pending.window.webContents.send(cancelChannel, pending.requestId);
-        } catch {
-            // The final request timeout keeps the native window open if a
-            // disappearing renderer cannot acknowledge cancellation.
-        }
+        requestRecovery(pending.window, pending.requestId);
+        pending.settle(false);
     };
 
     return {
         request: (window: RendererSessionWindow): Promise<boolean> => {
-            if (window.isDestroyed() || pending !== undefined) {
+            if (
+                window.isDestroyed() ||
+                pending !== undefined ||
+                recovering !== undefined ||
+                acknowledgedSuccess !== undefined
+            ) {
                 return Promise.resolve(false);
             }
             const currentRequestId = requestId;
@@ -58,11 +75,7 @@ export const createRendererSessionQuiescer = (
                 };
                 timer = timers.setTimer(() => {
                     if (pending?.requestId === currentRequestId && pending.started) {
-                        try {
-                            pending.window.webContents.send(cancelChannel, currentRequestId);
-                        } catch {
-                            // The missing final acknowledgement still denies close.
-                        }
+                        requestRecovery(pending.window, currentRequestId);
                     }
                     settle(false);
                 }, RENDERER_SESSION_QUIESCE_TIMEOUT_MS);
@@ -76,7 +89,14 @@ export const createRendererSessionQuiescer = (
         },
         resolve: (window: RendererSessionWindow, completedRequestId: number, quiesced: boolean): void => {
             if (pending?.window === window && pending.requestId === completedRequestId) {
+                if (quiesced) {
+                    acknowledgedSuccess = { window, requestId: completedRequestId };
+                }
                 pending.settle(quiesced);
+                return;
+            }
+            if (recovering?.window === window && recovering.requestId === completedRequestId && quiesced === false) {
+                recovering = undefined;
             }
         },
         start: (window: RendererSessionWindow, startedRequestId: number): boolean => {
@@ -85,6 +105,14 @@ export const createRendererSessionQuiescer = (
             }
             pending.started = true;
             return true;
+        },
+        finalize: (window: RendererSessionWindow): void => {
+            if (acknowledgedSuccess?.window === window) {
+                acknowledgedSuccess = undefined;
+            }
+            if (recovering?.window === window) {
+                recovering = undefined;
+            }
         },
         cancel,
     };

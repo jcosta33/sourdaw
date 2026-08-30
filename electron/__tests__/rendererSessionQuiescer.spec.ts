@@ -70,6 +70,26 @@ describe('renderer session quiescer', () => {
         await expect(revoked).resolves.toBe(false);
     });
 
+    it('holds later requests until a queued successful teardown acknowledges correlated cancellation', async () => {
+        const window = { isDestroyed: () => false, webContents: { send: vi.fn() } };
+        const quiescer = createRendererSessionQuiescer('renderer:quiesce', 'renderer:cancel');
+
+        const completed = quiescer.request(window);
+        expect(quiescer.start(window, 1)).toBe(true);
+        quiescer.resolve(window, 1, true); // Final success is queued before authority revokes.
+        await expect(completed).resolves.toBe(true);
+
+        quiescer.cancel();
+        expect(window.webContents.send).toHaveBeenLastCalledWith('renderer:cancel', 1);
+        await expect(quiescer.request(window)).resolves.toBe(false);
+
+        quiescer.resolve(window, 1, false); // Renderer repaired the exact cancelled request.
+        const retry = quiescer.request(window);
+        expect(window.webContents.send).toHaveBeenLastCalledWith('renderer:quiesce', 2);
+        quiescer.resolve(window, 2, false);
+        await expect(retry).resolves.toBe(false);
+    });
+
     it('does not let native editor detach/window close begin before renderer project runtime quiesces', async () => {
         let release!: (quiesced: boolean) => void;
         const order: string[] = [];

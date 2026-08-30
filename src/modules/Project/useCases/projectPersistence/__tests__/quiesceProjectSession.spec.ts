@@ -31,7 +31,7 @@ describe('quiesceProjectSession', () => {
 
         const { quiesceProjectSession } = await import('../quiesceProjectSession');
         await expect(
-            quiesceProjectSession(async () => {
+            quiesceProjectSession(1, async () => {
                 order.push('commit');
                 return true;
             })
@@ -44,7 +44,7 @@ describe('quiesceProjectSession', () => {
         runtime.stopPlayback.mockRejectedValueOnce(new Error('transport unavailable'));
         let { quiesceProjectSession } = await import('../quiesceProjectSession');
 
-        await expect(quiesceProjectSession()).resolves.toBe(false);
+        await expect(quiesceProjectSession(1)).resolves.toBe(false);
         expect(runtime.resetAudioGraph).not.toHaveBeenCalled();
 
         vi.resetModules();
@@ -54,10 +54,10 @@ describe('quiesceProjectSession', () => {
         runtime.repairRuntimeGraphFromProject.mockResolvedValue(undefined);
         ({ quiesceProjectSession } = await import('../quiesceProjectSession'));
 
-        await expect(quiesceProjectSession()).resolves.toBe(false);
+        await expect(quiesceProjectSession(1)).resolves.toBe(false);
         expect(runtime.repairRuntimeGraphFromProject).toHaveBeenCalledOnce();
         runtime.unloadPlugin.mockResolvedValue(undefined);
-        await expect(quiesceProjectSession()).resolves.toBe(true);
+        await expect(quiesceProjectSession(2)).resolves.toBe(true);
         expect(runtime.resetAudioGraph).toHaveBeenCalledTimes(2);
     });
 
@@ -67,11 +67,11 @@ describe('quiesceProjectSession', () => {
         const { quiesceProjectSession } = await import('../quiesceProjectSession');
 
         await expect(
-            quiesceProjectSession(async () => Promise.reject(new Error('main window replaced')))
+            quiesceProjectSession(1, async () => Promise.reject(new Error('main window replaced')))
         ).resolves.toBe(false);
         expect(runtime.resetAudioGraph).not.toHaveBeenCalled();
 
-        await expect(quiesceProjectSession(async () => true)).resolves.toBe(true);
+        await expect(quiesceProjectSession(2, async () => true)).resolves.toBe(true);
         expect(runtime.resetAudioGraph).toHaveBeenCalledTimes(1);
     });
 
@@ -88,12 +88,37 @@ describe('quiesceProjectSession', () => {
         const { cancelProjectSessionQuiesce } = await import('../cancelProjectSessionQuiesce');
         const { quiesceProjectSession } = await import('../quiesceProjectSession');
 
-        const quiescing = quiesceProjectSession(async () => true);
+        const quiescing = quiesceProjectSession(7, async () => true);
         await vi.waitFor(() => expect(runtime.unloadPlugin).toHaveBeenCalledOnce());
-        cancelProjectSessionQuiesce();
+        const cancelling = cancelProjectSessionQuiesce(7);
         releasePlugin();
 
         await expect(quiescing).resolves.toBe(false);
+        await expect(cancelling).resolves.toBe(false);
         expect(runtime.repairRuntimeGraphFromProject).toHaveBeenCalledOnce();
+    });
+
+    it('ignores a stale cancellation and blocks retry until the matching cancelled teardown repairs', async () => {
+        runtime.stopPlayback.mockResolvedValue(undefined);
+        runtime.unloadPlugin.mockResolvedValue(undefined);
+        let releaseRepair!: () => void;
+        runtime.repairRuntimeGraphFromProject.mockImplementationOnce(
+            () =>
+                new Promise<void>((resolve) => {
+                    releaseRepair = resolve;
+                })
+        );
+        const { cancelProjectSessionQuiesce } = await import('../cancelProjectSessionQuiesce');
+        const { quiesceProjectSession } = await import('../quiesceProjectSession');
+
+        await expect(quiesceProjectSession(11, async () => true)).resolves.toBe(true);
+        const cancelling = cancelProjectSessionQuiesce(11);
+        await expect(quiesceProjectSession(12, async () => true)).resolves.toBe(false);
+        await expect(cancelProjectSessionQuiesce(10)).resolves.toBe(false);
+        expect(runtime.repairRuntimeGraphFromProject).toHaveBeenCalledOnce();
+
+        releaseRepair();
+        await expect(cancelling).resolves.toBe(false);
+        await expect(quiesceProjectSession(12, async () => true)).resolves.toBe(true);
     });
 });

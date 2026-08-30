@@ -235,12 +235,12 @@ export const useNativeApplicationMenu = (project: ProjectStoreState): void => {
             void runMenuAction(intent);
         });
         const unlistenSessionQuiesce = menu.listenSessionQuiesce((requestId) => {
-            void quiesceProjectSession(() => menu.sessionQuiesceStarted(requestId)).then((quiesced) =>
+            void quiesceProjectSession(requestId, () => menu.sessionQuiesceStarted(requestId)).then((quiesced) =>
                 menu.sessionQuiesced(requestId, quiesced)
             );
         });
-        const unlistenSessionQuiesceCancel = menu.listenSessionQuiesceCancel(() => {
-            cancelProjectSessionQuiesce();
+        const unlistenSessionQuiesceCancel = menu.listenSessionQuiesceCancel((requestId) => {
+            void cancelProjectSessionQuiesce(requestId).then((quiesced) => menu.sessionQuiesced(requestId, quiesced));
         });
         const unsubscribeRecentProjects = recentProjectChanges.subscribe(publishProjectState);
         const unsubscribeCrdt = subscribeToCrdtChanges(publishProjectState);

@@ -39,7 +39,7 @@ const crdt = vi.hoisted(() => ({
 const projectActions = vi.hoisted(() => ({
     saveProject: vi.fn(async () => true),
     quiesceProjectSession: vi.fn(async () => true),
-    cancelProjectSessionQuiesce: vi.fn(),
+    cancelProjectSessionQuiesce: vi.fn(async () => false),
     discardProjectChanges: vi.fn(async () => true),
     newProject: vi.fn(),
     pickAndImportProjectFile: vi.fn(async () => true),
@@ -132,7 +132,9 @@ describe('useNativeApplicationMenu', () => {
         desktop.sessionQuiesceStarted.mockReset().mockResolvedValue(true);
         projectActions.quiesceProjectSession
             .mockReset()
-            .mockImplementation(async (begin?: () => Promise<boolean>) => (begin === undefined ? true : begin()));
+            .mockImplementation(async (_requestId: number, begin?: () => Promise<boolean>) =>
+                begin === undefined ? true : begin()
+            );
         projectState.dirty = false;
         projectState.projectId = 'project';
         projectState.createdAt = 1;
@@ -144,7 +146,7 @@ describe('useNativeApplicationMenu', () => {
         projectActions.saveProject.mockResolvedValue(true);
         projectActions.discardProjectChanges.mockReset();
         projectActions.discardProjectChanges.mockResolvedValue(true);
-        projectActions.cancelProjectSessionQuiesce.mockClear();
+        projectActions.cancelProjectSessionQuiesce.mockReset().mockResolvedValue(false);
         projectActions.newProject.mockClear();
         projectActions.loadRecentProject.mockClear();
         projectActions.recentProjectChanges.subscribe.mockClear();
@@ -161,10 +163,12 @@ describe('useNativeApplicationMenu', () => {
     });
 
     it('acknowledges one renderer-session quiesce request with the exact result and request id', async () => {
-        projectActions.quiesceProjectSession.mockImplementationOnce(async (begin: () => Promise<boolean>) => {
-            await begin();
-            return false;
-        });
+        projectActions.quiesceProjectSession.mockImplementationOnce(
+            async (_requestId: number, begin: () => Promise<boolean>) => {
+                await begin();
+                return false;
+            }
+        );
         renderHook(() =>
             useNativeApplicationMenu({
                 name: 'Song',
@@ -211,10 +215,10 @@ describe('useNativeApplicationMenu', () => {
         desktop.sessionListener?.(42);
 
         await vi.waitFor(() => expect(desktop.sessionQuiesced).toHaveBeenCalledWith(42, false));
-        expect(projectActions.quiesceProjectSession).toHaveBeenCalledWith(expect.any(Function));
+        expect(projectActions.quiesceProjectSession).toHaveBeenCalledWith(42, expect.any(Function));
     });
 
-    it('routes a correlated renderer-session cancellation through the Project use case', () => {
+    it('routes a correlated renderer-session cancellation through the Project use case', async () => {
         renderHook(() =>
             useNativeApplicationMenu({
                 name: 'Song',
@@ -234,7 +238,8 @@ describe('useNativeApplicationMenu', () => {
 
         desktop.sessionCancelListener?.(42);
 
-        expect(projectActions.cancelProjectSessionQuiesce).toHaveBeenCalledOnce();
+        await vi.waitFor(() => expect(projectActions.cancelProjectSessionQuiesce).toHaveBeenCalledWith(42));
+        expect(desktop.sessionQuiesced).toHaveBeenCalledWith(42, false);
     });
 
     it('republishes renderer readiness when Project hydration changes loading state', () => {
