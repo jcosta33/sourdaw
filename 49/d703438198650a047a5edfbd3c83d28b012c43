@@ -1,0 +1,29 @@
+src/modules/AudioEngine/useCases/livePlayback/__tests__/primeNativeTimelineSamples.spec.ts
+  s_ae074277795b45::t_3a8d40554aec7a 128
+src/modules/AudioEngine/useCases/livePlayback/__tests__/syncNativeTimelineSamples.spec.ts
+  s_78ea72ae66d911::t_c38be297990f44 41,44,46,49
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "49d703438198650a047a5edfbd3c83d28b012c43",
+  "prompts": {},
+  "sessions": {
+    "s_78ea72ae66d911": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-ad2bc1f2db0179a78",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ae074277795b45": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04ab5-5234-7100-be1c-76ebfaba88d3",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
