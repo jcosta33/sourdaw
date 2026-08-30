@@ -156,6 +156,7 @@ export function resolveReviewThread(
     assertManagedReplyMarkersReadable(before.thread!, context, ['PENDING', 'COMMENTED'], true);
     let pendingReviewCreateAttempted = false;
     let pendingReviewCreated = false;
+    let pendingReviewDeleteAttempted = false;
     let replyAttempted = false;
     let replyCreated = false;
     let reviewUpdateAttempted = false;
@@ -227,6 +228,28 @@ export function resolveReviewThread(
                     }
                     pendingReview = convergePendingReviews(working.pendingReviews, context, port);
                 }
+            }
+            if (pendingReview === undefined) {
+                const staleUnattachedPendingReview = findRetirableStaleUnattachedPendingReview(
+                    working.pendingReviews,
+                    working.thread!,
+                    context
+                );
+                if (staleUnattachedPendingReview !== undefined) {
+                    pendingReviewDeleteAttempted = true;
+                    port.deletePendingReview(staleUnattachedPendingReview.id);
+                    working = port.inspect(number, threadId);
+                    assertExpectedHeadAfterMutation(working.head, expectedHead);
+                    assertResolvableThread(working.thread, threadId);
+                    assertManagedReplyMarkersReadable(working.thread!, context, ['PENDING', 'COMMENTED'], true);
+                    pendingReview = convergePendingReviews(working.pendingReviews, context, port);
+                }
+            }
+            if (
+                pendingReview === undefined &&
+                hasBlockingAuthorPendingReview(working.pendingReviews, working.thread!, context)
+            ) {
+                fail(`review thread ${threadId} has a non-reusable pending author review`);
             }
             if (pendingReview === undefined) {
                 pendingReviewCreateAttempted = true;
@@ -366,6 +389,7 @@ export function resolveReviewThread(
             context,
             pendingReviewCreateAttempted,
             pendingReviewCreated,
+            pendingReviewDeleteAttempted,
             replyAttempted,
             replyCreated,
             reviewUpdateAttempted,
@@ -392,6 +416,7 @@ function compensateResolution(
     context: ResolutionReviewContext,
     pendingReviewCreateAttempted: boolean,
     pendingReviewCreated: boolean,
+    pendingReviewDeleteAttempted: boolean,
     replyAttempted: boolean,
     replyCreated: boolean,
     reviewUpdateAttempted: boolean,
@@ -451,6 +476,8 @@ function compensateResolution(
             failures.push('ambiguous review reply mutation; refusing to delete an unverified comment');
         } else if (replyCreated) {
             failures.push('ambiguous review reply mutation; preserving Done reply evidence');
+        } else if (pendingReviewDeleteAttempted) {
+            failures.push('pending review deletion was attempted; preserving current pending review evidence');
         } else if (
             !pendingReviewCreated &&
             current.pendingReviews.some((review) => isExactPendingReview(review, context))
@@ -464,6 +491,7 @@ function compensateResolution(
         !current.thread?.isResolved &&
         resolutionReceipt === undefined &&
         !pendingReviewCreated &&
+        !pendingReviewDeleteAttempted &&
         !replyAttempted &&
         !reviewUpdateAttempted &&
         !reviewSubmitAttempted &&
@@ -1017,6 +1045,53 @@ function isExactPendingReview(review: PullRequestReview, context: ResolutionRevi
         isAuthorBotActor(review.authorNodeId, review.authorType)
     );
 }
+function isCanonicalAuthorPendingReview(review: PullRequestReview, context: ResolutionReviewContext): boolean {
+    return (
+        review.state === 'PENDING' &&
+        typeof review.commitOid === 'string' &&
+        review.commitOid !== '' &&
+        review.body === resolutionReviewBody(context, review.commitOid) &&
+        isAuthorBotActor(review.authorNodeId, review.authorType)
+    );
+}
+function attachedManagedReviewIds(thread: ReviewThread, context: ResolutionReviewContext): Set<string> {
+    return new Set(
+        managedReplyMarkers(thread, context, ['PENDING', 'COMMENTED'], true).map((candidate) => candidate.review.id)
+    );
+}
+function findRetirableStaleUnattachedPendingReview(
+    pendingReviews: PullRequestReview[],
+    thread: ReviewThread,
+    context: ResolutionReviewContext
+): PullRequestReview | undefined {
+    const attachedReviewIds = attachedManagedReviewIds(thread, context);
+    const authorPendingReviews = pendingReviews.filter((review) =>
+        isAuthorBotActor(review.authorNodeId, review.authorType)
+    );
+    if (authorPendingReviews.length !== 1) {
+        return undefined;
+    }
+    const [candidate] = authorPendingReviews;
+    if (
+        candidate === undefined ||
+        candidate.commitOid === context.expectedHead ||
+        attachedReviewIds.has(candidate.id) ||
+        !isCanonicalAuthorPendingReview(candidate, context)
+    ) {
+        return undefined;
+    }
+    return candidate;
+}
+function hasBlockingAuthorPendingReview(
+    pendingReviews: PullRequestReview[],
+    thread: ReviewThread,
+    context: ResolutionReviewContext
+): boolean {
+    const attachedReviewIds = attachedManagedReviewIds(thread, context);
+    return pendingReviews.some(
+        (review) => isAuthorBotActor(review.authorNodeId, review.authorType) && !attachedReviewIds.has(review.id)
+    );
+}
 function convergePendingReviews(
     pendingReviews: PullRequestReview[],
     context: ResolutionReviewContext,
@@ -1128,6 +1203,7 @@ function repairCompletedResolution(
         fail(`review thread ${context.threadId} was not found on this pull request`);
     }
     assertCompletedResolution(thread, context.threadId);
+    assertManagedReplyMarkersReadable(thread, context, ['PENDING', 'COMMENTED'], true);
     const refresh = (): ReviewThread => {
         working = port.inspect(number, context.threadId);
         assertExpectedHeadAfterMutation(working.head, context.expectedHead);
