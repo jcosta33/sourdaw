@@ -253,6 +253,17 @@ function createDeferred<T>(): {
     return { promise, resolve: resolveDeferred };
 }
 
+function observeSettlement<T>(promise: Promise<T>): {
+    isSettled: () => boolean;
+    completion: Promise<void>;
+} {
+    let settled = false;
+    const completion = promise.then(() => {
+        settled = true;
+    });
+    return { isSettled: () => settled, completion };
+}
+
 function createCommittedBatchResult(): CompletedBatchResult {
     const result = { status: 'committed', actions: createEmptyActions() } satisfies Parameters<typeof createReceipt>[0];
     return { ...result, receipt: createReceipt(result) } satisfies CompletedBatchResult;
@@ -489,11 +500,16 @@ beforeEach(() => {
 
 describe('settleConfirmedCommandExecution', () => {
     it('records a failed execution flight before releasing confirmation resources', async () => {
-        const result = await settleConfirmedCommandExecution(
+        const resourceCleanup = createDeferred<void>();
+        mocks.settleResources.mockImplementationOnce(() => resourceCleanup.promise);
+        const resultPromise = settleConfirmedCommandExecution(
             createInput({ status: 'failed', error: new Error('flight failed') })
         );
+        const settlement = observeSettlement(resultPromise);
 
-        expect(result).toEqual({ status: 'failed', reason: 'flight failed' });
+        await Promise.resolve();
+
+        expect(settlement.isSettled()).toBe(false);
         expect(mocks.recordFailure).toHaveBeenCalledWith(confirmation, {
             category: 'internal',
             retriable: false,
@@ -503,6 +519,11 @@ describe('settleConfirmedCommandExecution', () => {
             confirmationId: 'confirmation-1',
             disposition: 'discard',
         });
+
+        resourceCleanup.resolve(undefined);
+
+        await expect(resultPromise).resolves.toEqual({ status: 'failed', reason: 'flight failed' });
+        await settlement.completion;
     });
 
     it('preserves stale-lease failed-flight cleanup without recording a second failure', async () => {
@@ -704,17 +725,27 @@ describe('settleConfirmedCommandExecution', () => {
     });
 
     it('retains resources after an ambiguous batch outcome', async () => {
-        const result = await settleConfirmedCommandExecution(
+        const resourceCleanup = createDeferred<void>();
+        mocks.settleResources.mockImplementationOnce(() => resourceCleanup.promise);
+        const resultPromise = settleConfirmedCommandExecution(
             createInput(createCompletedFlight(createAmbiguousBatchResult()))
         );
+        const settlement = observeSettlement(resultPromise);
 
-        expect(result).toEqual({ status: 'failed', reason: 'partial write' });
+        await Promise.resolve();
+
+        expect(settlement.isSettled()).toBe(false);
         expect(mocks.recordFailure).toHaveBeenCalledWith(confirmation, {
             category: 'conflict',
             retriable: false,
             compensation: 'manual-repair',
         });
         expect(mocks.settleResources).toHaveBeenCalledWith({ confirmationId: 'confirmation-1', disposition: 'retain' });
+
+        resourceCleanup.resolve(undefined);
+
+        await expect(resultPromise).resolves.toEqual({ status: 'failed', reason: 'partial write' });
+        await settlement.completion;
     });
 
     it('delegates committed batches to committed outcome settlement', async () => {
@@ -776,11 +807,16 @@ describe('settleConfirmedCommandExecution', () => {
     ] as const)(
         'records %s completed results with the %s failure category',
         async (_status, category, createBatchResult) => {
-            const result = await settleConfirmedCommandExecution(
+            const resourceCleanup = createDeferred<void>();
+            mocks.settleResources.mockImplementationOnce(() => resourceCleanup.promise);
+            const resultPromise = settleConfirmedCommandExecution(
                 createInput(createCompletedFlight(createBatchResult()))
             );
+            const settlement = observeSettlement(resultPromise);
 
-            expect(result).toEqual({ status: 'failed', reason: 'precondition failed' });
+            await Promise.resolve();
+
+            expect(settlement.isSettled()).toBe(false);
             expect(mocks.recordFailure).toHaveBeenCalledWith(confirmation, {
                 category,
                 retriable: false,
@@ -789,6 +825,11 @@ describe('settleConfirmedCommandExecution', () => {
                 confirmationId: 'confirmation-1',
                 disposition: 'discard',
             });
+
+            resourceCleanup.resolve(undefined);
+
+            await expect(resultPromise).resolves.toEqual({ status: 'failed', reason: 'precondition failed' });
+            await settlement.completion;
         }
     );
 
