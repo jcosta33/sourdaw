@@ -11,7 +11,12 @@ const desktop = vi.hoisted(() => ({
     saveResult: vi.fn(async () => undefined),
     edit: vi.fn(async () => undefined),
 }));
-const projectState = vi.hoisted(() => ({ projectId: 'project', dirty: false, identityPersistencePending: false }));
+const projectState = vi.hoisted(() => ({
+    projectId: 'project' as string | undefined,
+    createdAt: 1,
+    dirty: false,
+    identityPersistencePending: false,
+}));
 const crdt = vi.hoisted(() => ({
     captureProjectRevision: vi.fn(() => 'revision-1'),
     subscribeToCrdtChanges: vi.fn(() => () => undefined),
@@ -32,6 +37,7 @@ vi.mock('#/modules/Project/stores', () => ({
         get value() {
             return {
                 projectId: projectState.projectId,
+                createdAt: projectState.createdAt,
                 dirty: projectState.dirty,
                 identityPersistencePending: projectState.identityPersistencePending,
             };
@@ -100,6 +106,7 @@ describe('useNativeApplicationMenu', () => {
         desktop.edit.mockClear();
         projectState.dirty = false;
         projectState.projectId = 'project';
+        projectState.createdAt = 1;
         projectState.identityPersistencePending = false;
         crdt.captureProjectRevision.mockClear();
         crdt.captureProjectRevision.mockReturnValue('revision-1');
@@ -159,6 +166,38 @@ describe('useNativeApplicationMenu', () => {
         expect(desktop.edit).toHaveBeenCalledWith('undo');
         expect(desktop.edit).toHaveBeenCalledWith('redo');
         input.remove();
+    });
+
+    it('keeps a legacy project close-authoritative until canonical identity migration republishes it', () => {
+        projectState.projectId = undefined;
+        const { rerender } = renderHook(
+            ({ projectId }) =>
+                useNativeApplicationMenu({
+                    projectId,
+                    name: 'Legacy Song',
+                    createdAt: 1,
+                    updatedAt: 2,
+                    dirty: true,
+                    loading: false,
+                    keyRoot: 0,
+                    scaleName: 'chromatic',
+                    tuning: { name: 'Equal Temperament', frequencies: [] },
+                    productionBrief: {} as never,
+                    initialized: true,
+                }),
+            { initialProps: { projectId: undefined as string | undefined } }
+        );
+
+        expect(desktop.projectState).toHaveBeenLastCalledWith(
+            expect.objectContaining({ projectId: 'created-at:1', revision: 'revision-1' })
+        );
+
+        projectState.projectId = 'migrated-project';
+        rerender({ projectId: 'migrated-project' });
+
+        expect(desktop.projectState).toHaveBeenLastCalledWith(
+            expect.objectContaining({ projectId: 'migrated-project', revision: 'revision-1' })
+        );
     });
 
     it('dispatches DAW clipboard editing through the typed action path when no text field owns focus', async () => {
@@ -516,11 +555,11 @@ describe('useNativeApplicationMenu', () => {
         desktop.listener?.({ action: 'project:new' });
         desktop.listener?.({ action: 'project:open-recent', recentKey: 'recent-project' });
 
-        await vi.waitFor(() => expect(projectActions.saveProject).toHaveBeenCalledTimes(2));
+        await vi.waitFor(() => expect(projectActions.saveProject).toHaveBeenCalledTimes(1));
         projectState.dirty = true;
-        for (const completeSave of completeSaves) {
-            completeSave();
-        }
+        completeSaves[0]?.();
+        await vi.waitFor(() => expect(projectActions.saveProject).toHaveBeenCalledTimes(2));
+        completeSaves[1]?.();
         // Await both post-save continuations: this assertion fails if the
         // live dirty check is removed from the transition guard.
         await Promise.resolve();
@@ -551,6 +590,43 @@ describe('useNativeApplicationMenu', () => {
 
         await vi.waitFor(() => expect(projectActions.newProject).toHaveBeenCalledTimes(1));
         expect(projectActions.loadRecentProject).toHaveBeenCalledWith('recent-project');
+        expect(projectActions.saveProject).toHaveBeenCalledTimes(2);
+    });
+
+    it('serializes native project transitions in menu delivery order', async () => {
+        let releaseNewProject: (() => void) | undefined;
+        projectActions.newProject.mockImplementation(
+            () =>
+                new Promise<void>((resolve) => {
+                    releaseNewProject = resolve;
+                })
+        );
+        renderHook(() =>
+            useNativeApplicationMenu({
+                projectId: 'project',
+                name: 'Song',
+                createdAt: 1,
+                updatedAt: 2,
+                dirty: false,
+                loading: false,
+                keyRoot: 0,
+                scaleName: 'chromatic',
+                tuning: { name: 'Equal Temperament', frequencies: [] },
+                productionBrief: {} as never,
+                initialized: true,
+            })
+        );
+
+        desktop.listener?.({ action: 'project:new' });
+        desktop.listener?.({ action: 'project:open-recent', recentKey: 'recent-project' });
+
+        await vi.waitFor(() => expect(projectActions.newProject).toHaveBeenCalledTimes(1));
+        expect(projectActions.saveProject).toHaveBeenCalledTimes(1);
+        expect(projectActions.loadRecentProject).not.toHaveBeenCalled();
+
+        releaseNewProject?.();
+
+        await vi.waitFor(() => expect(projectActions.loadRecentProject).toHaveBeenCalledWith('recent-project'));
         expect(projectActions.saveProject).toHaveBeenCalledTimes(2);
     });
 

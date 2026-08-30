@@ -4,17 +4,39 @@ import { createApplicationMenuTemplate } from '../applicationMenu.js';
 
 describe('createApplicationMenuTemplate', () => {
     it.each([
+        ['File', 'New Project', 'CommandOrControl+N', { action: 'project:new' }],
+        ['File', 'Import Project…', 'CommandOrControl+O', { action: 'project:import-project' }],
+        ['File', 'Import Audio…', undefined, { action: 'project:import-audio' }],
+        ['File', 'Import MIDI…', undefined, { action: 'project:import-midi' }],
         ['File', 'Save', 'CommandOrControl+S', { action: 'project:save' }],
+        ['File', 'Export Audio…', 'CommandOrControl+Shift+E', { action: 'project:export-audio' }],
+        ['File', 'Export Project File…', undefined, { action: 'project:export-file' }],
         ['Edit', 'Undo', 'CommandOrControl+Z', { action: 'edit:undo' }],
+        ['Edit', 'Redo', 'CommandOrControl+Shift+Z', { action: 'edit:redo' }],
         ['Edit', 'Cut', 'CommandOrControl+X', { action: 'edit:cut' }],
+        ['Edit', 'Copy', 'CommandOrControl+C', { action: 'edit:copy' }],
         ['Edit', 'Paste', 'CommandOrControl+V', { action: 'edit:paste' }],
+        ['Edit', 'Select All', 'CommandOrControl+A', { action: 'edit:select-all' }],
+        ['Edit', 'Deselect All', 'CommandOrControl+Shift+A', { action: 'edit:deselect-all' }],
+        ['View', 'Toggle Sidebar', undefined, { action: 'view:toggle-sidebar' }],
+        ['View', 'Toggle Mixer', undefined, { action: 'view:toggle-mixer' }],
+        ['View', 'Toggle Inspector', undefined, { action: 'view:toggle-inspector' }],
+        ['View', 'Toggle Track List', undefined, { action: 'view:toggle-track-list' }],
+        ['View', 'Toggle Virtual Keyboard', undefined, { action: 'view:toggle-virtual-keyboard' }],
+        ['View', 'Toggle Automation', undefined, { action: 'view:toggle-automation' }],
+        ['View', 'Toggle AI Chat', undefined, { action: 'view:toggle-chat' }],
+        ['View', 'Zoom In', 'CommandOrControl+=', { action: 'view:zoom-in' }],
+        ['View', 'Zoom Out', 'CommandOrControl+-', { action: 'view:zoom-out' }],
+        ['View', 'Zoom to Fit', undefined, { action: 'view:zoom-fit' }],
+        ['View', 'Zoom to Selection', undefined, { action: 'view:zoom-selection' }],
+        ['Help', 'Show Tour Again', undefined, { action: 'help:show-tour' }],
     ])('routes %s > %s with its product intent and accelerator', (menuLabel, itemLabel, accelerator, intent) => {
         const send = vi.fn();
         const template = createApplicationMenuTemplate({ appName: 'Sourdaw', send });
         const menu = template.find((item) => item.label === menuLabel);
         const item = menu?.submenu?.find((candidate) => candidate.label === itemLabel);
 
-        expect(item).toMatchObject({ accelerator });
+        expect(item?.accelerator).toBe(accelerator);
         item?.click?.();
 
         expect(send).toHaveBeenCalledWith(intent);

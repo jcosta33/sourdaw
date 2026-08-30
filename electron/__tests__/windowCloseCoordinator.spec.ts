@@ -68,7 +68,10 @@ describe('window close coordinator', () => {
 
         const close = coordinator.requestClose();
         await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1));
-        coordinator.updateProject({ title: 'Song', dirty: false, projectId: 'project-a', revision: 'revision-2' });
+        // Saving itself advances the CRDT revision before all durable writes
+        // settle. The matching correlated clean result may approve that exact
+        // successor even though its intermediate projection is still dirty.
+        coordinator.updateProject({ title: 'Song', dirty: true, projectId: 'project-a', revision: 'revision-2' });
         coordinator.resolveSave({
             requestId: 1,
             saved: true,
@@ -382,5 +385,93 @@ describe('window close coordinator', () => {
         resolvePrompt?.('save');
 
         await expect(close).resolves.toBe(false);
+    });
+
+    it('revokes an approved close when the same revision becomes close-blocking', async () => {
+        const coordinator = createWindowCloseCoordinator({ ask: async () => 'cancel', send: vi.fn() });
+        coordinator.updateProject({ title: 'Song', dirty: false, projectId: 'project-a', revision: 'revision-1' });
+
+        await expect(coordinator.requestClose()).resolves.toBe(true);
+        coordinator.updateProject({
+            title: 'Song',
+            dirty: false,
+            durabilityPending: true,
+            projectId: 'project-a',
+            revision: 'revision-1',
+        });
+
+        expect(coordinator.permitsClose()).toBe(false);
+    });
+
+    it('times out a renderer close operation, leaves the window open, and allows a later retry', async () => {
+        let timeout: (() => void) | undefined;
+        const timer = { cancel: vi.fn() };
+        const timers = {
+            setTimer: vi.fn((callback: () => void) => {
+                timeout = callback;
+                return timer;
+            }),
+        };
+        const send = vi.fn();
+        const coordinator = createWindowCloseCoordinator({ ask: async () => 'save', send, timers });
+        coordinator.updateProject({ title: 'Song', dirty: true, projectId: 'project-a', revision: 'revision-1' });
+
+        const first = coordinator.requestClose();
+        await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+        timeout?.();
+
+        await expect(first).resolves.toBe(false);
+        expect(timer.cancel).toHaveBeenCalledTimes(1);
+        expect(coordinator.permitsClose()).toBe(false);
+
+        const second = coordinator.requestClose();
+        await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(2));
+        coordinator.resolveSave({
+            requestId: 2,
+            saved: true,
+            dirty: false,
+            projectId: 'project-a',
+            revision: 'revision-1',
+        });
+        await expect(second).resolves.toBe(true);
+    });
+
+    it('cancels a close-operation deadline when a result or window reset settles it', async () => {
+        const timers: { callbacks: (() => void)[]; cancels: ReturnType<typeof vi.fn>[] } = {
+            callbacks: [],
+            cancels: [],
+        };
+        const coordinator = createWindowCloseCoordinator({
+            ask: async () => 'save',
+            send: vi.fn(),
+            timers: {
+                setTimer: (callback) => {
+                    const cancel = vi.fn();
+                    timers.callbacks.push(callback);
+                    timers.cancels.push(cancel);
+                    return { cancel };
+                },
+            },
+        });
+        coordinator.updateProject({ title: 'Song', dirty: true, projectId: 'project-a', revision: 'revision-1' });
+
+        const resolved = coordinator.requestClose();
+        await Promise.resolve();
+        coordinator.resolveSave({
+            requestId: 1,
+            saved: true,
+            dirty: false,
+            projectId: 'project-a',
+            revision: 'revision-1',
+        });
+        await expect(resolved).resolves.toBe(true);
+        expect(timers.cancels[0]).toHaveBeenCalledTimes(1);
+
+        coordinator.updateProject({ title: 'Song', dirty: true, projectId: 'project-a', revision: 'revision-2' });
+        const reset = coordinator.requestClose();
+        await Promise.resolve();
+        coordinator.resetForWindow();
+        await expect(reset).resolves.toBe(false);
+        expect(timers.cancels[1]).toHaveBeenCalledTimes(1);
     });
 });

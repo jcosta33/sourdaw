@@ -27,7 +27,10 @@ import {
     WINDOW_MAXIMIZED_CHANGED_CHANNEL,
     WINDOW_MINIMIZE_CHANNEL,
     WINDOW_TOGGLE_MAXIMIZE_CHANNEL,
+    NATIVE_EDIT_CHANNEL,
     NATIVE_MENU_ACTION_CHANNEL,
+    NATIVE_MENU_PROJECT_STATE_CHANNEL,
+    NATIVE_MENU_SAVE_RESULT_CHANNEL,
 } from '../channels.js';
 import { commandChannel, DENIED_COMMANDS } from '../commands.js';
 
@@ -127,6 +130,34 @@ describe('the published surface', () => {
 });
 
 describe('native menu transport', () => {
+    it('forwards exact renderer-owned native menu payloads on their narrow channels', async () => {
+        const fake = fakeIpc();
+        const bridge = createSourdawBridge(fake.ipc);
+        const state = {
+            title: 'Song',
+            dirty: true,
+            durabilityPending: false,
+            projectId: 'project-a',
+            revision: 'revision-1',
+            recentProjects: [{ key: 'project-a', name: 'Song' }],
+        } as const;
+        const result = {
+            requestId: 7,
+            saved: true,
+            dirty: false,
+            projectId: 'project-a',
+            revision: 'revision-2',
+        } as const;
+
+        await bridge.nativeMenu.projectState(state);
+        await bridge.nativeMenu.saveResult(result);
+        await bridge.nativeMenu.edit('paste');
+
+        expect(fake.invoke).toHaveBeenNthCalledWith(1, NATIVE_MENU_PROJECT_STATE_CHANNEL, state);
+        expect(fake.invoke).toHaveBeenNthCalledWith(2, NATIVE_MENU_SAVE_RESULT_CHANNEL, result);
+        expect(fake.invoke).toHaveBeenNthCalledWith(3, NATIVE_EDIT_CHANNEL, 'paste');
+    });
+
     it('delivers only validated intents from main', () => {
         const fake = fakeIpc();
         const listener = vi.fn();

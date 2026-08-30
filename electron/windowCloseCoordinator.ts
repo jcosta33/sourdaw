@@ -1,3 +1,8 @@
+import { systemTimers, type TimerHandle, type Timers } from './timers.js';
+
+/** Project persistence may cross CRDT and IndexedDB, but close cannot wait forever. */
+export const CLOSE_OPERATION_TIMEOUT_MS = 30_000;
+
 export type ProjectCloseState = {
     readonly title: string;
     readonly dirty: boolean;
@@ -24,17 +29,24 @@ type CreateWindowCloseCoordinatorInput = {
     readonly send: (operation: CloseOperation, requestId: number, expected: ProjectCloseState) => void;
     /** Immediately re-open crash recovery when an approved close loses authority. */
     readonly onApprovalRevoked?: () => void;
+    readonly timers?: Timers;
 };
 
 /** Main-process state only: a disposable projection of renderer project state. */
-export const createWindowCloseCoordinator = ({ ask, send, onApprovalRevoked }: CreateWindowCloseCoordinatorInput) => {
+export const createWindowCloseCoordinator = ({
+    ask,
+    send,
+    onApprovalRevoked,
+    timers = systemTimers,
+}: CreateWindowCloseCoordinatorInput) => {
     let project: ProjectCloseState = { title: 'Sourdaw', dirty: false, durabilityPending: false };
     let phase: 'idle' | 'deciding' | 'saving' | 'approved' | 'closing' = 'idle';
     let pendingSave:
         | {
               readonly requestId: number;
               readonly expected: ProjectCloseState;
-              successor: ProjectCloseState | undefined;
+              latestCandidate: ProjectCloseState | undefined;
+              readonly timer: TimerHandle;
               readonly settle: (result: SaveResult) => void;
           }
         | undefined;
@@ -49,7 +61,7 @@ export const createWindowCloseCoordinator = ({ ask, send, onApprovalRevoked }: C
     const updateProject = (next: ProjectCloseState): void => {
         const changedRevision = !sameProjectRevision(project, next);
         project = next;
-        if (phase === 'approved' && changedRevision) {
+        if (phase === 'approved' && (changedRevision || isCloseBlocking(next))) {
             generation += 1;
             phase = 'idle';
             onApprovalRevoked?.();
@@ -58,8 +70,8 @@ export const createWindowCloseCoordinator = ({ ask, send, onApprovalRevoked }: C
         // A dialog decision is about a particular piece of project truth. A
         // new project or an edit while it is open needs a fresh decision.
         if (phase === 'saving' && changedRevision && pendingSave !== undefined) {
-            if (next.projectId === pendingSave.expected.projectId && !isCloseBlocking(next)) {
-                pendingSave.successor = next;
+            if (next.projectId === pendingSave.expected.projectId) {
+                pendingSave.latestCandidate = next;
                 return;
             }
         }
@@ -138,10 +150,33 @@ export const createWindowCloseCoordinator = ({ ask, send, onApprovalRevoked }: C
         let result: SaveResult;
         try {
             result = await new Promise<SaveResult>((resolve, reject) => {
-                pendingSave = { requestId, expected: expectedProject, successor: undefined, settle: resolve };
+                let timer: TimerHandle | undefined;
+                const settle = (next: SaveResult): void => {
+                    timer?.cancel();
+                    resolve(next);
+                };
+                timer = timers.setTimer(
+                    () =>
+                        settle({
+                            requestId,
+                            saved: false,
+                            dirty: true,
+                            projectId: expectedProject.projectId,
+                            revision: expectedProject.revision,
+                        }),
+                    CLOSE_OPERATION_TIMEOUT_MS
+                );
+                pendingSave = {
+                    requestId,
+                    expected: expectedProject,
+                    latestCandidate: undefined,
+                    timer,
+                    settle,
+                };
                 try {
                     send(decision, requestId, expectedProject);
                 } catch (error) {
+                    timer.cancel();
                     pendingSave = undefined;
                     reject(error);
                 }
@@ -167,7 +202,7 @@ export const createWindowCloseCoordinator = ({ ask, send, onApprovalRevoked }: C
             result.dirty ||
             result.requestId !== requestId ||
             (result.projectId !== undefined && result.projectId !== expectedProject.projectId) ||
-            (activeSave?.successor !== undefined && activeSave.successor.revision !== result.revision)
+            (activeSave?.latestCandidate !== undefined && activeSave.latestCandidate.revision !== result.revision)
         ) {
             phase = 'idle';
             return false;

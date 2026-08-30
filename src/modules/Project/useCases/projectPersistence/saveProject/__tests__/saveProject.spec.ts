@@ -214,6 +214,34 @@ describe('saveProject', () => {
         expect(mocks.buildProjectData).toHaveBeenCalledOnce();
     });
 
+    it('clears a migrated project only after validating its post-migration identity', async () => {
+        mocks.projectStoreValue.value = {
+            ...makeProject(),
+            projectId: undefined,
+            identityPersistencePending: true,
+        };
+        mocks.projectStoreSet.mockImplementation((value) => {
+            mocks.projectStoreValue.value = value;
+        });
+        mocks.migrateActiveProjectIdentity.mockImplementation(async () => {
+            const current = mocks.projectStoreValue.value;
+            if (current !== null) {
+                mocks.projectStoreValue.value = { ...current, projectId: 'migrated-project' };
+            }
+            return true;
+        });
+
+        await expect(saveProject()).resolves.toBe(true);
+
+        expect(mocks.projectStoreSet).toHaveBeenLastCalledWith(
+            expect.objectContaining({
+                projectId: 'migrated-project',
+                dirty: false,
+                identityPersistencePending: false,
+            })
+        );
+    });
+
     it('does not record a recent-project entry when CRDT persistence rejects', async () => {
         mocks.persistCrdtProject.mockRejectedValue(new Error('disk full'));
 

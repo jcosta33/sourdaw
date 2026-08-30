@@ -135,6 +135,45 @@ describe('native menu action dispatcher', () => {
         expect(startup.send).not.toHaveBeenCalled();
     });
 
+    it('holds correlated close save and discard only for their exact registered unready renderer', () => {
+        const startup = makeWindow();
+        const dispatcher = createNativeMenuActionDispatcher({
+            isMac: true,
+            actionChannel: 'native-menu-action',
+            getWindow: () => startup,
+            createWindow: () => startup,
+        });
+        dispatcher.registerWindow(startup);
+
+        dispatcher.dispatch({
+            action: 'project:save',
+            requestId: 7,
+            projectId: 'project-a',
+            revision: 'revision-1',
+        });
+        dispatcher.dispatch({
+            action: 'project:discard',
+            requestId: 8,
+            projectId: 'project-a',
+            revision: 'revision-1',
+        });
+
+        expect(startup.send).not.toHaveBeenCalled();
+        dispatcher.rendererReady(startup);
+        expect(startup.send).toHaveBeenNthCalledWith(1, 'native-menu-action', {
+            action: 'project:save',
+            requestId: 7,
+            projectId: 'project-a',
+            revision: 'revision-1',
+        });
+        expect(startup.send).toHaveBeenNthCalledWith(2, 'native-menu-action', {
+            action: 'project:discard',
+            requestId: 8,
+            projectId: 'project-a',
+            revision: 'revision-1',
+        });
+    });
+
     it('does not carry unsupported project intents across an unready renderer crash', () => {
         let current: ReturnType<typeof makeWindow> | undefined;
         const dispatcher = createNativeMenuActionDispatcher({

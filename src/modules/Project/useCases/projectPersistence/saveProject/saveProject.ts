@@ -77,6 +77,7 @@ export async function saveProject(): Promise<boolean> {
         if (!current || current.createdAt !== project.createdAt) {
             throw new Error('[saveProject] Active project changed before persistence');
         }
+        const persistedProject = current;
 
         // Keep the project dirty until every durable write succeeds. The
         // timestamp belongs to the snapshot being built, so publish it before
@@ -132,7 +133,7 @@ export async function saveProject(): Promise<boolean> {
         if (captureProjectRevision() !== snapshotRevision) {
             throw new Error('[saveProject] Project changed during named snapshot persistence');
         }
-        addToRecentProjects(project.name, recentKey);
+        addToRecentProjects(persistedProject.name, recentKey);
 
         // A save clears dirty only when the complete project authority still
         // matches the revision captured above. Any edit or project identity
@@ -141,8 +142,8 @@ export async function saveProject(): Promise<boolean> {
         const latest = projectStore.value;
         if (
             agentProjectRepairStateStore.value === null &&
-            latest?.createdAt === project.createdAt &&
-            latest.projectId === project.projectId &&
+            latest?.createdAt === persistedProject.createdAt &&
+            latest.projectId === persistedProject.projectId &&
             captureProjectRevision() === snapshotRevision
         ) {
             // The CRDT snapshot and named project file above establish the
