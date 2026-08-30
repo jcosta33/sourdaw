@@ -58,6 +58,7 @@ function renderRecovery() {
 }
 
 const PROVISIONAL_DURABLE_EFFECT_REASON = 'Post-commit effect has not completed';
+const RENDER_FINALIZATION_REASON = 'The final project revision is unavailable.';
 const PENDING_EFFECT_PROOF_MISMATCH_REASON =
     'The durable project checkpoint does not match the retained pending-effect proof.';
 
@@ -86,7 +87,7 @@ function synthesizedRenderEffect(commandId: string): AgentRunPendingEffect {
         commandId,
         kind: 'external-effect',
         operation: 'renderProjectSections',
-        reason: 'The final project revision is unavailable.',
+        reason: RENDER_FINALIZATION_REASON,
         remediation: 'manual-repair',
         state: 'pending',
     };
@@ -376,7 +377,7 @@ describe('recoverAgentRunPendingEffects', () => {
         configureManualizedRuntimeGraphProof({
             continuationEffects: [receiptEffect, firstRender, secondRender],
             receiptEffects: [receiptEffect],
-            lastError: 'The final project revision is unavailable.',
+            lastError: RENDER_FINALIZATION_REASON,
         });
 
         await expect(
@@ -398,11 +399,9 @@ describe('recoverAgentRunPendingEffects', () => {
             () => {
                 const receiptEffect = runtimeGraphReceiptEffect();
                 configureManualizedRuntimeGraphProof({
-                    continuationEffects: [
-                        manualizedRuntimeGraphEffect(receiptEffect),
-                        synthesizedRenderEffect('command-render-first'),
-                    ],
+                    continuationEffects: [receiptEffect, synthesizedRenderEffect('command-render-first')],
                     receiptEffects: [receiptEffect],
+                    lastError: RENDER_FINALIZATION_REASON,
                 });
                 mocks.parseBatch.mockReturnValue({
                     status: 'valid',
@@ -424,8 +423,9 @@ describe('recoverAgentRunPendingEffects', () => {
                 const receiptEffect = runtimeGraphReceiptEffect();
                 const render = synthesizedRenderEffect('command-render');
                 configureManualizedRuntimeGraphProof({
-                    continuationEffects: [manualizedRuntimeGraphEffect(receiptEffect), render, { ...render }],
+                    continuationEffects: [receiptEffect, render, { ...render }],
                     receiptEffects: [receiptEffect],
+                    lastError: RENDER_FINALIZATION_REASON,
                 });
             },
         ],
@@ -435,11 +435,12 @@ describe('recoverAgentRunPendingEffects', () => {
                 const receiptEffect = runtimeGraphReceiptEffect();
                 configureManualizedRuntimeGraphProof({
                     continuationEffects: [
-                        manualizedRuntimeGraphEffect(receiptEffect),
+                        receiptEffect,
                         synthesizedRenderEffect('command-render-second'),
                         synthesizedRenderEffect('command-render-first'),
                     ],
                     receiptEffects: [receiptEffect],
+                    lastError: RENDER_FINALIZATION_REASON,
                 });
                 mocks.parseBatch.mockReturnValue({
                     status: 'valid',
@@ -460,11 +461,9 @@ describe('recoverAgentRunPendingEffects', () => {
             () => {
                 const receiptEffect = runtimeGraphReceiptEffect();
                 configureManualizedRuntimeGraphProof({
-                    continuationEffects: [
-                        manualizedRuntimeGraphEffect(receiptEffect),
-                        synthesizedRenderEffect('command-render'),
-                    ],
+                    continuationEffects: [receiptEffect, synthesizedRenderEffect('command-render')],
                     receiptEffects: [receiptEffect],
+                    lastError: RENDER_FINALIZATION_REASON,
                 });
                 mocks.parseBatch.mockReturnValue({
                     status: 'valid',
@@ -487,8 +486,9 @@ describe('recoverAgentRunPendingEffects', () => {
                 const extra = synthesizedRenderEffect('command-analysis');
                 Reflect.set(extra, 'operation', 'analyzeProject');
                 configureManualizedRuntimeGraphProof({
-                    continuationEffects: [manualizedRuntimeGraphEffect(receiptEffect), extra],
+                    continuationEffects: [receiptEffect, extra],
                     receiptEffects: [receiptEffect],
+                    lastError: RENDER_FINALIZATION_REASON,
                 });
             },
         ],
@@ -499,8 +499,9 @@ describe('recoverAgentRunPendingEffects', () => {
                 const extra = synthesizedRenderEffect('command-render');
                 Reflect.set(extra, 'remediation', 'reconcile');
                 configureManualizedRuntimeGraphProof({
-                    continuationEffects: [manualizedRuntimeGraphEffect(receiptEffect), extra],
+                    continuationEffects: [receiptEffect, extra],
                     receiptEffects: [receiptEffect],
+                    lastError: RENDER_FINALIZATION_REASON,
                 });
             },
         ],
@@ -509,11 +510,9 @@ describe('recoverAgentRunPendingEffects', () => {
             () => {
                 const receiptEffect = runtimeGraphReceiptEffect();
                 configureManualizedRuntimeGraphProof({
-                    continuationEffects: [
-                        manualizedRuntimeGraphEffect(receiptEffect),
-                        synthesizedRenderEffect('command-render-unknown'),
-                    ],
+                    continuationEffects: [receiptEffect, synthesizedRenderEffect('command-render-unknown')],
                     receiptEffects: [receiptEffect],
+                    lastError: RENDER_FINALIZATION_REASON,
                 });
                 mocks.parseBatch.mockReturnValue({
                     status: 'valid',
@@ -522,6 +521,19 @@ describe('recoverAgentRunPendingEffects', () => {
                         batchId: 'batch-render-recovery',
                         commands: [{ commandId: 'command-runtime', operation: 'addDevice' }],
                     },
+                });
+            },
+        ],
+        [
+            'a render with the wrong durable reason',
+            () => {
+                const receiptEffect = runtimeGraphReceiptEffect();
+                const extra = synthesizedRenderEffect('command-render');
+                Reflect.set(extra, 'reason', 'Different finalization failure.');
+                configureManualizedRuntimeGraphProof({
+                    continuationEffects: [receiptEffect, extra],
+                    receiptEffects: [receiptEffect],
+                    lastError: RENDER_FINALIZATION_REASON,
                 });
             },
         ],

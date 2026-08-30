@@ -99,13 +99,15 @@ function isIntentionalManualizedRuntimeGraphEffect(
     );
 }
 
-function isSynthesizedRenderManualRepair(effect: AgentRunPendingEffect): boolean {
+function isSynthesizedRenderManualRepair(effect: AgentRunPendingEffect, durableReason: string | null): boolean {
     return (
+        typeof durableReason === 'string' &&
+        durableReason.trim().length > 0 &&
         effect.kind === 'external-effect' &&
         effect.operation === 'renderProjectSections' &&
         effect.remediation === 'manual-repair' &&
         effect.state === 'pending' &&
-        effect.reason.trim().length > 0
+        effect.reason === durableReason
     );
 }
 
@@ -164,7 +166,8 @@ function hasIntentionalManualizedPendingEffectBinding(
     }
     const hasExactAuthorizedExtras = extraEffects.every(
         (effect, index) =>
-            effect.commandId === expectedExtraCommandIds[index] && isSynthesizedRenderManualRepair(effect)
+            effect.commandId === expectedExtraCommandIds[index] &&
+            isSynthesizedRenderManualRepair(effect, continuation.lastError)
     );
     return hasExactAuthorizedExtras;
 }
