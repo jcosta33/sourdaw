@@ -91,3 +91,60 @@ export const createShellComposition = <Menu>({
     beforeQuit: composeQuitHandler(runShutdown, quitDependencies),
     shouldRecreateAfterCrash: (): boolean => shouldRecreateRendererAfterCrash(lifecycle),
 });
+
+type ProductionShellWindow = {
+    readonly isDestroyed: () => boolean;
+    readonly webContents: NativeTextEditTarget;
+};
+
+/** Maps the live Electron ownership seams into the policy-only shell composition. */
+export const createProductionShellComposition = <Menu>({
+    isMac,
+    buildMenu,
+    setMenu,
+    getMainWindow,
+    getFocusedWindow,
+    sendToFirstResponder,
+    menuDispatcher,
+    runShutdown,
+    quit,
+    lifecycle,
+}: {
+    readonly isMac: boolean;
+    readonly buildMenu: (template: MenuItemConstructorOptions[]) => Menu;
+    readonly setMenu: (menu: Menu) => void;
+    readonly getMainWindow: () => ProductionShellWindow | undefined;
+    readonly getFocusedWindow: () => unknown;
+    readonly sendToFirstResponder: (action: NativeResponderEditAction) => void;
+    readonly menuDispatcher: { readonly dispatch: (intent: NativeMenuIntent) => void };
+    readonly runShutdown: () => Promise<ShutdownOutcome>;
+    readonly quit: Required<Pick<QuitDependencies, 'canQuit' | 'exit' | 'report'>> & {
+        readonly quiesceBeforeQuit: NonNullable<QuitDependencies['beforeRun']>;
+        readonly timers?: QuitDependencies['timers'];
+    };
+    readonly lifecycle: { readonly shouldRecreateAfterCrash: () => boolean };
+}) =>
+    createShellComposition({
+        isMac,
+        buildMenu,
+        setMenu,
+        getMainTarget: () => {
+            const window = getMainWindow();
+            return window === undefined || window.isDestroyed() ? undefined : window.webContents;
+        },
+        isMainTargetFocused: () => {
+            const window = getMainWindow();
+            return window !== undefined && !window.isDestroyed() && getFocusedWindow() === window;
+        },
+        sendToNativeResponder: isMac ? sendToFirstResponder : undefined,
+        dispatchMenuIntent: (intent) => menuDispatcher.dispatch(intent),
+        runShutdown,
+        quitDependencies: {
+            canQuit: quit.canQuit,
+            beforeRun: quit.quiesceBeforeQuit,
+            exit: quit.exit,
+            report: quit.report,
+            ...(quit.timers === undefined ? {} : { timers: quit.timers }),
+        },
+        lifecycle,
+    });

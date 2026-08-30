@@ -70,7 +70,7 @@ import { activateRendererWindow } from './rendererWindowActivation.js';
 import { registerCommandRouter } from './router.js';
 import { createScanSupervisor, type ScanSupervisor } from './scan.js';
 import { applyPermissionPolicy, decideWindowOpen, isNavigationAllowed, trustedFrameGuard } from './security.js';
-import { createShellComposition, requestApprovedWindowClose } from './shellComposition.js';
+import { createProductionShellComposition, requestApprovedWindowClose } from './shellComposition.js';
 import { runBeforeQuitCascade, type QuitPreparationOutcome, type ShutdownOutcome } from './shutdown.js';
 import { systemTimers } from './timers.js';
 import { registerVoiceDictation } from './voiceDictation.js';
@@ -149,7 +149,7 @@ const nativeMenuActionDispatcher = createNativeMenuActionDispatcher({
     createWindow: createAndActivateWindow,
 });
 
-let shellComposition: ReturnType<typeof createShellComposition<ReturnType<typeof Menu.buildFromTemplate>>>;
+let shellComposition: ReturnType<typeof createProductionShellComposition<ReturnType<typeof Menu.buildFromTemplate>>>;
 
 const nativeMenuAction = (intent: NativeMenuIntent): void => {
     shellComposition.sendMenuIntent(intent);
@@ -510,15 +510,14 @@ let nativeHost: NativeHost | undefined;
 let scanSupervisor: ScanSupervisor | undefined;
 const pluginCommandAdmission = createPluginCommandAdmission();
 
-shellComposition = createShellComposition({
+shellComposition = createProductionShellComposition({
     isMac: process.platform === 'darwin',
     buildMenu: (template) => Menu.buildFromTemplate(template),
     setMenu: (menu) => Menu.setApplicationMenu(menu),
-    getMainTarget: () => (mainWindow === undefined || mainWindow.isDestroyed() ? undefined : mainWindow.webContents),
-    isMainTargetFocused: () => BaseWindow.getFocusedWindow() === mainWindow,
-    sendToNativeResponder:
-        process.platform === 'darwin' ? (action) => Menu.sendActionToFirstResponder(action) : undefined,
-    dispatchMenuIntent: (intent) => nativeMenuActionDispatcher.dispatch(intent),
+    getMainWindow: () => mainWindow,
+    getFocusedWindow: () => BaseWindow.getFocusedWindow(),
+    sendToFirstResponder: (action) => Menu.sendActionToFirstResponder(action),
+    menuDispatcher: nativeMenuActionDispatcher,
     runShutdown: (): Promise<ShutdownOutcome> =>
         runBeforeQuitCascade({
             refusePluginCommands: () => pluginCommandAdmission.refusePluginCommands(),
@@ -526,7 +525,7 @@ shellComposition = createShellComposition({
             host: nativeHost,
             timers: systemTimers,
         }),
-    quitDependencies: {
+    quit: {
         exit: (code) => app.exit(code),
         report: (outcome) => {
             if (outcome.status !== 'completed') {
@@ -540,7 +539,7 @@ shellComposition = createShellComposition({
             }
             return approved;
         },
-        beforeRun: quiesceApprovedMainWindow,
+        quiesceBeforeQuit: quiesceApprovedMainWindow,
         timers: systemTimers,
     },
     lifecycle: rendererSessionLifecycle,

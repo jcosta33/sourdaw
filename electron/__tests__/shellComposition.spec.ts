@@ -1,11 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import { createRendererSessionLifecycle } from '../rendererSessionLifecycle.js';
 import {
     composeQuitHandler,
     installMacApplicationMenu,
     requestApprovedWindowClose,
     shouldRecreateRendererAfterCrash,
-    createShellComposition,
+    createProductionShellComposition,
 } from '../shellComposition.js';
 
 describe('Electron shell composition policies', () => {
@@ -43,41 +44,103 @@ describe('Electron shell composition policies', () => {
         expect(shouldRecreateRendererAfterCrash({ shouldRecreateAfterCrash: () => true })).toBe(true);
     });
 
-    it('composes production callbacks for focused Edit, Darwin menu, quit drain, and crash lifecycle', async () => {
+    const productionComposition = ({
+        focused = 'main',
+        quiesceBeforeQuit = vi.fn(async () => 'success' as const),
+        runShutdown = vi.fn(async () => ({ status: 'completed' as const, report: undefined })),
+        lifecycle = createRendererSessionLifecycle(),
+    }: {
+        focused?: 'main' | 'plugin';
+        quiesceBeforeQuit?: ReturnType<typeof vi.fn<() => Promise<'success'>>>;
+        runShutdown?: ReturnType<typeof vi.fn<() => Promise<{ status: 'completed'; report: undefined }>>>;
+        lifecycle?: ReturnType<typeof createRendererSessionLifecycle>;
+    } = {}) => {
+        const editTarget = {
+            undo: vi.fn(),
+            redo: vi.fn(),
+            cut: vi.fn(),
+            copy: vi.fn(),
+            paste: vi.fn(),
+            selectAll: vi.fn(),
+        };
+        const mainWindow = { isDestroyed: () => false, webContents: editTarget };
+        const pluginWindow = {};
         const dispatchMenuIntent = vi.fn();
         const responder = vi.fn();
-        const buildMenu = vi.fn(() => ({ menu: true }));
-        const setMenu = vi.fn();
-        const canQuit = vi.fn(async () => true);
-        const beforeRun = vi.fn(async () => 'success' as const);
-        const runShutdown = vi.fn(async () => ({ status: 'completed' as const, report: undefined }));
-        const composition = createShellComposition({
+        const composition = createProductionShellComposition({
             isMac: true,
-            buildMenu,
-            setMenu,
-            getMainTarget: () => ({
-                undo: vi.fn(),
-                redo: vi.fn(),
-                cut: vi.fn(),
-                copy: vi.fn(),
-                paste: vi.fn(),
-                selectAll: vi.fn(),
-            }),
-            isMainTargetFocused: () => false,
-            sendToNativeResponder: responder,
-            dispatchMenuIntent,
+            buildMenu: vi.fn(() => ({ menu: true })),
+            setMenu: vi.fn(),
+            getMainWindow: () => mainWindow,
+            getFocusedWindow: () => (focused === 'main' ? mainWindow : pluginWindow),
+            sendToFirstResponder: responder,
+            menuDispatcher: { dispatch: dispatchMenuIntent },
             runShutdown,
-            quitDependencies: { canQuit, beforeRun, exit: vi.fn(), report: vi.fn() },
-            lifecycle: { shouldRecreateAfterCrash: () => false },
+            quit: {
+                canQuit: vi.fn(async () => true),
+                quiesceBeforeQuit,
+                exit: vi.fn(),
+                report: vi.fn(),
+            },
+            lifecycle,
         });
+
+        return { composition, dispatchMenuIntent, editTarget, responder, quiesceBeforeQuit, runShutdown };
+    };
+
+    it('applies a main-focused Edit action and dispatches its renderer intent', () => {
+        const { composition, dispatchMenuIntent, editTarget, responder } = productionComposition();
+
         composition.sendMenuIntent({ action: 'edit:copy' });
+
+        expect(editTarget.copy).toHaveBeenCalledOnce();
+        expect(dispatchMenuIntent).toHaveBeenCalledWith({ action: 'edit:copy' });
+        expect(responder).not.toHaveBeenCalled();
+    });
+
+    it('routes plugin-focused Edit only through the native responder chain', () => {
+        const { composition, dispatchMenuIntent, editTarget, responder } = productionComposition({ focused: 'plugin' });
+
+        composition.sendMenuIntent({ action: 'edit:copy' });
+
         expect(responder).toHaveBeenCalledWith('copy:');
         expect(dispatchMenuIntent).not.toHaveBeenCalled();
-        composition.installMenu([]);
-        expect(setMenu).toHaveBeenCalledWith({ menu: true });
+        expect(editTarget.copy).not.toHaveBeenCalled();
+    });
+
+    it('dispatches non-Edit actions without applying native text editing', () => {
+        const { composition, dispatchMenuIntent, editTarget, responder } = productionComposition();
+
+        composition.sendMenuIntent({ action: 'view:toggle-mixer' });
+
+        expect(dispatchMenuIntent).toHaveBeenCalledWith({ action: 'view:toggle-mixer' });
+        expect(editTarget.copy).not.toHaveBeenCalled();
+        expect(responder).not.toHaveBeenCalled();
+    });
+
+    it('runs the required renderer quiesce before native shutdown on before-quit', async () => {
+        const order: string[] = [];
+        const quiesceBeforeQuit = vi.fn(async () => {
+            order.push('quiesce');
+            return 'success' as const;
+        });
+        const runShutdown = vi.fn(async () => {
+            order.push('shutdown');
+            return { status: 'completed' as const, report: undefined };
+        });
+        const { composition } = productionComposition({ quiesceBeforeQuit, runShutdown });
+
         composition.beforeQuit({ preventDefault: vi.fn() });
+
         await vi.waitFor(() => expect(runShutdown).toHaveBeenCalledOnce());
-        expect(beforeRun).toHaveBeenCalledBefore(runShutdown);
+        expect(order).toEqual(['quiesce', 'shutdown']);
+    });
+
+    it('uses the approved production lifecycle to suppress renderer crash recreation', () => {
+        const lifecycle = createRendererSessionLifecycle();
+        lifecycle.approveTeardown();
+        const { composition } = productionComposition({ lifecycle });
+
         expect(composition.shouldRecreateAfterCrash()).toBe(false);
     });
 });
