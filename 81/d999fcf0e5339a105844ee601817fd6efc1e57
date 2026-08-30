@@ -1,0 +1,49 @@
+electron/__tests__/nativeMenuActionDispatcher.spec.ts
+  s_ae074277795b45::t_2775bcf04d858e 1-72
+electron/__tests__/shutdown.spec.ts
+  s_ae074277795b45::t_545ccacce02597 167-168
+  s_ae074277795b45::t_3003bb4f98c0a2 157-162,166
+  s_ae074277795b45::t_767a568eda72b3 165
+  s_ae074277795b45::t_963bc4c97b8ae3 264,268-271,274-277
+electron/nativeMenuActionDispatcher.ts
+  s_ae074277795b45::t_2775bcf04d858e 1-61
+electron/appIpc.ts
+  s_ae074277795b45::t_109c620b0c7bf0 328,377-378
+src/modules/WorkspaceShell/presentations/hooks/useNativeApplicationMenu.ts
+  s_ae074277795b45::t_41adcda9c834ca 169
+electron/__tests__/rendererSessionLifecycle.spec.ts
+  s_ae074277795b45::t_785b58b7ea6500 1-23
+electron/main.ts
+  s_ae074277795b45::t_e92e74248da30a 601-611
+  s_ae074277795b45::t_20ee155cb327db 711-718
+  s_ae074277795b45::t_fc69a70af69524 290,627,659-665,747,768
+  s_ae074277795b45::t_ce1c5f8667842d 49,59,117-131,134
+src/modules/WorkspaceShell/presentations/hooks/__tests__/useNativeApplicationMenu.spec.tsx
+  s_ae074277795b45::t_ff30b5f7b9bdad 49-62,381-383
+  s_ae074277795b45::t_a16b8f75753015 318-342
+src/modules/Project/useCases/projectPersistence/discardProjectChanges.ts
+  s_ae074277795b45::t_41adcda9c834ca 1,29,32-36
+src/modules/Project/useCases/projectPersistence/__tests__/discardProjectChanges.spec.ts
+  s_ae074277795b45::t_617cb84a3f73c0 17,54-55,108-126
+  s_ae074277795b45::t_2e77dabe04d094 127-128
+electron/__tests__/appIpc.spec.ts
+  s_ae074277795b45::t_109c620b0c7bf0 158-166
+electron/rendererSessionLifecycle.ts
+  s_ae074277795b45::t_785b58b7ea6500 1-16
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "81d999fcf0e5339a105844ee601817fd6efc1e57",
+  "prompts": {},
+  "sessions": {
+    "s_ae074277795b45": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04ab5-5234-7100-be1c-76ebfaba88d3",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
