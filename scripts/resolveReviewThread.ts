@@ -1887,7 +1887,11 @@ export function inspectReviewThread(number: number, requestedThreadId: string, g
         if (typeof pullRequest?.id !== 'string' || typeof pullRequest.headRefOid !== 'string') {
             fail(`cannot read current head for PR #${number}`);
         }
-        pullRequestId = pullRequest.id;
+        if (pullRequestId === undefined) {
+            pullRequestId = pullRequest.id;
+        } else if (pullRequestId !== pullRequest.id) {
+            fail(`pull-request changed while reading review threads for PR #${number}`);
+        }
         const pageHead = canonicalGitObjectId(pullRequest.headRefOid, `cannot read current head for PR #${number}`);
         if (head === undefined) {
             head = pageHead;

@@ -77,6 +77,8 @@ type Input = {
     throwAfterSubmitWithState?: boolean;
     throwAfterSubmitWithoutState?: boolean;
     submitClientMutationId?: string;
+    submitReceiptAuthorNodeId?: string | null;
+    submitReceiptAuthorType?: string | null;
     failDelete?: boolean;
     failDeletePendingReview?: boolean;
     failUpdateReviewBody?: boolean;
@@ -100,6 +102,8 @@ type Input = {
     existingPendingReviewIds?: string[];
     existingPendingReviewBody?: string;
     existingPendingReviewCommitOid?: string;
+    createReceiptAuthorNodeId?: string | null;
+    createReceiptAuthorType?: string | null;
     addExactForeignPendingReview?: boolean;
     existingReplyReviewState?: ReviewState;
     existingReplyReviewBody?: string;
@@ -130,6 +134,8 @@ type Input = {
     failUpdateReviewBodyIds?: string[];
     updateClientMutationId?: string;
     updateReceiptState?: ReviewState;
+    updateReceiptAuthorNodeId?: string | null;
+    updateReceiptAuthorType?: string | null;
 };
 function fakePort(input: Input = {}) {
     const calls: string[] = [];
@@ -418,9 +424,9 @@ function fakePort(input: Input = {}) {
                 state: 'PENDING',
                 body,
                 commitOid,
-                authorNodeId: AUTHOR_BOT_NODE_ID,
+                authorNodeId: input.createReceiptAuthorNodeId ?? AUTHOR_BOT_NODE_ID,
                 authorLogin,
-                authorType: 'Bot',
+                authorType: input.createReceiptAuthorType ?? 'Bot',
                 clientMutationId: input.createClientMutationId ?? `review-create:${threadId}`,
             };
         },
@@ -476,9 +482,9 @@ function fakePort(input: Input = {}) {
                 state: input.updateReceiptState ?? review.state,
                 body: review.body,
                 commitOid: review.commitOid,
-                authorNodeId: review.authorNodeId,
+                authorNodeId: input.submitReceiptAuthorNodeId ?? review.authorNodeId,
                 authorLogin: review.authorLogin,
-                authorType: review.authorType,
+                authorType: input.submitReceiptAuthorType ?? review.authorType,
                 clientMutationId: input.submitClientMutationId ?? `review-submit:${currentReviewId}`,
             };
         },
@@ -497,9 +503,9 @@ function fakePort(input: Input = {}) {
                 state: input.updateReceiptState ?? review.state,
                 body: review.body,
                 commitOid: review.commitOid,
-                authorNodeId: review.authorNodeId,
+                authorNodeId: input.updateReceiptAuthorNodeId ?? review.authorNodeId,
                 authorLogin: review.authorLogin,
-                authorType: review.authorType,
+                authorType: input.updateReceiptAuthorType ?? review.authorType,
                 clientMutationId: input.updateClientMutationId ?? `review-update:${currentReviewId}`,
             };
         },
@@ -1628,6 +1634,31 @@ describe('review thread resolution', () => {
             })
         ).toThrow(/head changed while reading review threads/i);
     });
+    it('rejects a review-thread page whose pull-request node changes even when the head stays the same', () => {
+        let call = 0;
+        expect(() =>
+            inspectReviewThread(42, threadId, () => {
+                call += 1;
+                if (call === 1) {
+                    return threadPage([], true, 'threads-1', head);
+                }
+                return JSON.stringify({
+                    data: {
+                        repository: {
+                            pullRequest: {
+                                id: 'PR_kwDOOtherPullRequest',
+                                headRefOid: head,
+                                reviewThreads: {
+                                    nodes: [{ id: threadId, isResolved: false }],
+                                    pageInfo: { hasNextPage: false, endCursor: null },
+                                },
+                            },
+                        },
+                    },
+                });
+            })
+        ).toThrow(/pull-request changed while reading review threads/i);
+    });
     it('finds the requested thread on a later page and paginates its comments', () => {
         let call = 0;
         const calls: string[][] = [];
@@ -2558,8 +2589,42 @@ describe('review thread resolution', () => {
         );
         expect(calls.filter((call) => call.startsWith('resolve:') || call.startsWith('log:'))).toEqual([]);
     });
+    it.each([
+        ['wrong immutable actor ID', { submitReceiptAuthorNodeId: REVIEWER_BOT_NODE_ID }],
+        ['non-Bot type', { submitReceiptAuthorType: 'User' as const }],
+    ])('rejects a submit-review receipt with %s before resolve or log', (_case, overrides) => {
+        const { port, authorNodeId, calls } = fakePort({
+            existingReplyCount: 1,
+            existingReplyReviewState: 'PENDING',
+            existingReplyReviewBody: pendingReviewBody(head),
+            existingReplyReviewCommitOid: head,
+            ...overrides,
+        });
+        expect(() => resolveReviewThread(42, threadId, head, authorNodeId, port)).toThrow(
+            /submit review returned an invalid result/i
+        );
+        expect(calls.filter((call) => call.startsWith('resolve:') || call.startsWith('log:'))).toEqual([]);
+    });
     it('rejects a create-pending-review receipt with a mismatched clientMutationId before reply submit resolve or log', () => {
         const { port, authorNodeId, calls } = fakePort({ createClientMutationId: 'wrong' });
+        expect(() => resolveReviewThread(42, threadId, head, authorNodeId, port)).toThrow(
+            /create pending review returned an invalid result/i
+        );
+        expect(
+            calls.filter(
+                (call) =>
+                    call.startsWith('reply:') ||
+                    call.startsWith('submitReview:') ||
+                    call.startsWith('resolve:') ||
+                    call.startsWith('log:')
+            )
+        ).toEqual([]);
+    });
+    it.each([
+        ['wrong immutable actor ID', { createReceiptAuthorNodeId: REVIEWER_BOT_NODE_ID }],
+        ['non-Bot type', { createReceiptAuthorType: 'User' as const }],
+    ])('rejects a create-pending-review receipt with %s before reply submit resolve or log', (_case, overrides) => {
+        const { port, authorNodeId, calls } = fakePort(overrides);
         expect(() => resolveReviewThread(42, threadId, head, authorNodeId, port)).toThrow(
             /create pending review returned an invalid result/i
         );
@@ -3162,6 +3227,29 @@ describe('review thread resolution', () => {
             existingReplyReviewState: 'PENDING',
             existingReplyReviewBody: '',
             updateReceiptState: 'COMMENTED',
+        });
+        expect(() => resolveReviewThread(42, threadId, head, authorNodeId, port)).toThrow(
+            /update review body returned an invalid result/i
+        );
+        expect(
+            calls.filter(
+                (call) =>
+                    call.startsWith('submitReview:') ||
+                    call.startsWith('delete:') ||
+                    call.startsWith('deleteReview:') ||
+                    call.startsWith('resolve:') ||
+                    call.startsWith('log:')
+            )
+        ).toEqual([]);
+    });
+    it.each([
+        ['wrong immutable actor ID', { updateReceiptAuthorNodeId: REVIEWER_BOT_NODE_ID }],
+        ['non-Bot type', { updateReceiptAuthorType: 'User' as const }],
+    ])('rejects an update-review-body receipt with %s before submit resolve delete or log', (_case, overrides) => {
+        const { port, calls, authorNodeId } = fakePort({
+            existingReplyCount: 1,
+            existingReplyReviewBody: '',
+            ...overrides,
         });
         expect(() => resolveReviewThread(42, threadId, head, authorNodeId, port)).toThrow(
             /update review body returned an invalid result/i
