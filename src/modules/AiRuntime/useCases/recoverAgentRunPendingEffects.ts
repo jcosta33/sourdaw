@@ -98,7 +98,7 @@ function hasIntentionalManualizedRuntimeGraphBinding(
             effect.kind === 'runtime-graph' &&
             receiptEffect.kind === 'runtime-graph' &&
             effect.operation === receiptEffect.operation &&
-            (effect.reason === receiptEffect.reason ||
+            ((effect.reason === receiptEffect.reason && effect.reason !== PROVISIONAL_DURABLE_EFFECT_REASON) ||
                 (effect.reason === PROVISIONAL_DURABLE_EFFECT_REASON &&
                     receiptEffect.reason !== PROVISIONAL_DURABLE_EFFECT_REASON)) &&
             effect.remediation === 'repair' &&

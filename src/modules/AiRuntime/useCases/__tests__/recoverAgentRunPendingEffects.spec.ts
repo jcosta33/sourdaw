@@ -80,17 +80,20 @@ function manualizedRuntimeGraphEffect(receiptEffect: AgentRunPendingEffect): Age
 }
 
 function configureManualizedRuntimeGraphProof(input?: {
+    checkpoint?: 'prepared' | 'durable';
     continuationEffects?: AgentRunPendingEffect[];
     receiptEffects?: AgentRunPendingEffect[];
     lastError?: string | null;
+    recovery?: 'reconcile-batch' | 'manual-repair';
 }): void {
     const receiptEffect = runtimeGraphReceiptEffect();
     const recovery = renderRecovery();
     mocks.getRecovery.mockReturnValue({
         ...recovery,
+        checkpoint: input?.checkpoint ?? 'durable',
         effects: input?.continuationEffects ?? [manualizedRuntimeGraphEffect(receiptEffect)],
         lastError: input?.lastError ?? MISSING_EXACT_CHECKPOINT_RECOVERY_REASON,
-        recovery: 'manual-repair',
+        recovery: input?.recovery ?? 'manual-repair',
     });
     mocks.getReceipt.mockResolvedValue({
         schemaVersion: 2,
@@ -334,15 +337,10 @@ describe('recoverAgentRunPendingEffects', () => {
             'wrong continuation kind',
             () => {
                 const receiptEffect = runtimeGraphReceiptEffect();
+                const continuationEffect = manualizedRuntimeGraphEffect(receiptEffect);
+                Reflect.set(continuationEffect, 'kind', 'external-effect');
                 configureManualizedRuntimeGraphProof({
-                    continuationEffects: [
-                        {
-                            ...receiptEffect,
-                            kind: 'external-effect',
-                            reason: PROVISIONAL_DURABLE_EFFECT_REASON,
-                            remediation: 'manual-repair',
-                        },
-                    ],
+                    continuationEffects: [continuationEffect],
                     receiptEffects: [receiptEffect],
                 });
             },
@@ -352,9 +350,10 @@ describe('recoverAgentRunPendingEffects', () => {
             'wrong receipt kind',
             () => {
                 const receiptEffect = runtimeGraphReceiptEffect();
+                Reflect.set(receiptEffect, 'kind', 'external-effect');
                 configureManualizedRuntimeGraphProof({
-                    continuationEffects: [manualizedRuntimeGraphEffect(receiptEffect)],
-                    receiptEffects: [{ ...receiptEffect, kind: 'external-effect', remediation: 'reconcile' }],
+                    continuationEffects: [manualizedRuntimeGraphEffect(runtimeGraphReceiptEffect())],
+                    receiptEffects: [receiptEffect],
                 });
             },
             PENDING_EFFECT_PROOF_MISMATCH_REASON,
@@ -409,6 +408,19 @@ describe('recoverAgentRunPendingEffects', () => {
             PENDING_EFFECT_PROOF_MISMATCH_REASON,
         ],
         [
+            'wrong continuation state',
+            () => {
+                const receiptEffect = runtimeGraphReceiptEffect();
+                const continuationEffect = manualizedRuntimeGraphEffect(receiptEffect);
+                Reflect.set(continuationEffect, 'state', 'settled');
+                configureManualizedRuntimeGraphProof({
+                    continuationEffects: [continuationEffect],
+                    receiptEffects: [receiptEffect],
+                });
+            },
+            PENDING_EFFECT_PROOF_MISMATCH_REASON,
+        ],
+        [
             'receipt reason remains provisional',
             () => {
                 const receiptEffect = runtimeGraphReceiptEffect();
@@ -417,7 +429,17 @@ describe('recoverAgentRunPendingEffects', () => {
                     receiptEffects: [{ ...receiptEffect, reason: PROVISIONAL_DURABLE_EFFECT_REASON }],
                 });
             },
-            MISSING_EXACT_CHECKPOINT_RECOVERY_REASON,
+            PENDING_EFFECT_PROOF_MISMATCH_REASON,
+        ],
+        [
+            'prepared checkpoint',
+            () => configureManualizedRuntimeGraphProof({ checkpoint: 'prepared' }),
+            PENDING_EFFECT_PROOF_MISMATCH_REASON,
+        ],
+        [
+            'non-manual recovery policy',
+            () => configureManualizedRuntimeGraphProof({ recovery: 'reconcile-batch' }),
+            PENDING_EFFECT_PROOF_MISMATCH_REASON,
         ],
     ])('rejects the manualized runtime-graph exception with %s', async (_label, configureProof, expectedReason) => {
         configureProof();
