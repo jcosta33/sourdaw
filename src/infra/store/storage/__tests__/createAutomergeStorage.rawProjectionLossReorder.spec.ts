@@ -109,4 +109,44 @@ describe('createAutomergeStorage raw projection loss reordering', () => {
             ])
         ).toEqual(['points']);
     });
+
+    it('reports a loss when duplicated raw rows project to one row plus an unrelated row', () => {
+        registerSanitizedSlot('points', (value) => {
+            const seenBeats = new Set<number>();
+            const deduped = (value as AutomationPoint[]).filter((point) => {
+                if (seenBeats.has(point.beat)) {
+                    return false;
+                }
+                seenBeats.add(point.beat);
+                return true;
+            });
+            // The padding row keeps the length guard satisfied (2 >= 2), so
+            // only distinct-item claiming can report the lost duplicate.
+            return [...deduped, { beat: 999, value: 1 }];
+        });
+
+        expect(
+            findSlotLosses('points', [
+                { beat: 148, value: 0.25 },
+                { beat: 148, value: 0.25 },
+            ])
+        ).toEqual(['points']);
+    });
+
+    it('reports no loss when the wide row containing a narrow one is emitted first', () => {
+        registerSanitizedSlot('curves', (value) => {
+            const rows = value as Array<{ beat: number; value: number; curve?: string }>;
+            return [...rows.filter((row) => row.curve !== undefined), ...rows.filter((row) => row.curve === undefined)];
+        });
+
+        // First-fit claiming wastes the only row wide enough for the second
+        // raw item on the first one, although swapping the assignment places
+        // both rows, so no content was lost.
+        expect(
+            findSlotLosses('curves', [
+                { beat: 148, value: 0.25 },
+                { beat: 148, value: 0.25, curve: 'linear' },
+            ])
+        ).toEqual([]);
+    });
 });

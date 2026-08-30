@@ -331,24 +331,112 @@ function projectionPreservesRawValue(raw: unknown, projected: unknown): boolean 
 }
 
 /**
- * Greedy first-fit containment of every raw item in a distinct projected item:
- * each raw item claims the first unclaimed projected item that recursively
- * contains it. First-fit keeps the scan O(n·m), which real slots — at most a
- * few hundred rows — never feel; canonical sort-and-compare would instead be
- * too strict, since per-item containment tolerates keys `projected` gained.
+ * Deterministic identity for the exact-content pre-pass: a recursively
+ * key-sorted serialization, so equal content lands in one bucket regardless
+ * of key order. Cost is linear in the value's size.
+ */
+function canonicalProjectionKey(value: unknown): string {
+    if (typeof value !== 'object' || value === null) {
+        return JSON.stringify(value) ?? 'undefined';
+    }
+    if (Array.isArray(value)) {
+        return `[${value.map(canonicalProjectionKey).join(',')}]`;
+    }
+    const record = value as Readonly<Record<string, unknown>>;
+    return `{${Object.keys(record)
+        .toSorted()
+        .map((key) => `${JSON.stringify(key)}:${canonicalProjectionKey(record[key])}`)
+        .join(',')}}`;
+}
+
+/**
+ * Containment of every raw item in a DISTINCT projected item, decided exactly.
+ *
+ * The check recurs synchronously on every document-origin projection (sync,
+ * load, merge, branch switch), and sanitized output is quarantined rather
+ * than written back, so the raw slot never converges to projected order —
+ * the cost is paid again on every projection. Two passes keep it
+ * near-linear:
+ *
+ * The exact pre-pass claims without probing: projected items are bucketed by
+ * canonical key and each raw item consumes one bucketed twin. Serialization
+ * is linear in content, so slots holding thousands of rows — automation
+ * points, trim points, ghost points routinely do — pay a small constant
+ * multiple of one positional walk rather than a scan that multiplies both
+ * array lengths. Only the containment predicate decides the contract,
+ * so a claimed twin is one the predicate confirms; serialization alone can
+ * collide (NaN and null both serialize as `null`). A confirmed twin is
+ * deep-equal content, and containment is transitive, so claiming it never
+ * turns a matchable remainder unmatchable.
+ *
+ * The ambiguous residue — raw items with no twin left — runs a complete
+ * matching against the unclaimed projected items. Greedy first-fit is not
+ * enough there: a narrow raw item can waste the only projected item wide
+ * enough for a later one even though a distinct assignment exists. Live
+ * residue is empty or a handful of rows, so the matching's bound rides on
+ * residue size, never on the product of both array lengths. Canonical
+ * sort-and-compare of whole arrays would also be too strict: per-item
+ * containment tolerates keys `projected` gained.
  */
 function projectionContainsDistinctItems(raw: readonly unknown[], projected: readonly unknown[]): boolean {
-    const claimed = Array.from({ length: projected.length }, () => false);
-    return raw.every((item) => {
-        const matchIndex = projected.findIndex(
-            (candidate, index) => !claimed[index] && projectionPreservesRawValue(item, candidate)
-        );
-        if (matchIndex === -1) {
-            return false;
+    const unclaimedTwinsByKey = new Map<string, unknown[]>();
+    for (const item of projected) {
+        const key = canonicalProjectionKey(item);
+        const twins = unclaimedTwinsByKey.get(key);
+        if (twins) {
+            twins.push(item);
+        } else {
+            unclaimedTwinsByKey.set(key, [item]);
         }
-        claimed[matchIndex] = true;
+    }
+    const ambiguousRaw: unknown[] = [];
+    for (const item of raw) {
+        const twins = unclaimedTwinsByKey.get(canonicalProjectionKey(item));
+        const twin = twins?.pop();
+        if (twin !== undefined && projectionPreservesRawValue(item, twin)) {
+            continue;
+        }
+        if (twin !== undefined) {
+            twins?.push(twin);
+        }
+        ambiguousRaw.push(item);
+    }
+    if (ambiguousRaw.length === 0) {
         return true;
-    });
+    }
+    return projectionMatchesAmbiguousItems(ambiguousRaw, [...unclaimedTwinsByKey.values()].flat());
+}
+
+/**
+ * Complete bipartite matching over the containment relation between the
+ * ambiguous raw items and the projected items the exact pre-pass left
+ * unclaimed, via Kuhn's augmenting paths: every ambiguous raw item is
+ * matched to a distinct unclaimed projected item that recursively contains
+ * it, or the set is reported unmatchable.
+ */
+function projectionMatchesAmbiguousItems(
+    ambiguousRaw: readonly unknown[],
+    unclaimedProjected: readonly unknown[]
+): boolean {
+    const matchedRawByProjected: unknown[] = Array.from({ length: unclaimedProjected.length }, () => undefined);
+    const tryMatch = (item: unknown, visited: Uint8Array): boolean => {
+        for (let candidateIndex = 0; candidateIndex < unclaimedProjected.length; candidateIndex += 1) {
+            if (visited[candidateIndex] === 1) {
+                continue;
+            }
+            visited[candidateIndex] = 1;
+            if (!projectionPreservesRawValue(item, unclaimedProjected[candidateIndex])) {
+                continue;
+            }
+            const owner = matchedRawByProjected[candidateIndex];
+            if (owner === undefined || tryMatch(owner, visited)) {
+                matchedRawByProjected[candidateIndex] = item;
+                return true;
+            }
+        }
+        return false;
+    };
+    return ambiguousRaw.every((item) => tryMatch(item, new Uint8Array(unclaimedProjected.length)));
 }
 
 export function findAutomergeStorageRawProjectionLosses(input: {
