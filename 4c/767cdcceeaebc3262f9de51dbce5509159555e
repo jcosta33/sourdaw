@@ -1,0 +1,35 @@
+src/modules/CommandInterface/useCases/__tests__/isNativeTextEditableTarget.spec.ts
+  s_ae074277795b45::t_cde4857f575a92 1-12,14-31
+  s_ae074277795b45::t_915fec3588d140 13
+electron/__tests__/applicationMenu.spec.ts
+  s_ae074277795b45::t_3a3976e832ba2d 178-202
+electron/mainWindowTeardown.ts
+  s_ae074277795b45::t_53fa182d27c56a 44-54
+src/modules/CommandInterface/useCases/isNativeTextEditableTarget.ts
+  s_ae074277795b45::t_915fec3588d140 6-7
+electron/applicationMenu.ts
+  s_ae074277795b45::t_3a3976e832ba2d 160-163
+electron/main.ts
+  s_ae074277795b45::t_53fa182d27c56a 55,221-229
+electron/__tests__/mainWindowTeardown.spec.ts
+  s_ae074277795b45::t_53fa182d27c56a 15,235-245
+  s_ae074277795b45::t_b2faeefc204198 246
+src/modules/Project/useCases/projectPersistence/__tests__/quiesceProjectSession.pluginFence.success.integration.spec.ts
+  s_ae074277795b45::t_915fec3588d140 23-24,46-48
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "4c767cdcceeaebc3262f9de51dbce5509159555e",
+  "prompts": {},
+  "sessions": {
+    "s_ae074277795b45": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04ab5-5234-7100-be1c-76ebfaba88d3",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
