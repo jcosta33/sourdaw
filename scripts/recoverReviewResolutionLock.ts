@@ -95,7 +95,7 @@ export function parseRecoverReviewResolutionLockArgs(args: string[]): RecoverRev
     if (!Number.isSafeInteger(number)) {
         fail(usage);
     }
-    return { number, owner: args[2], help: false };
+    return { number, owner: args[2].toLowerCase(), help: false };
 }
 
 function recoverySummary(number: number, owner: ReviewResolutionLockOwner, inspection: ReviewThreadInspection): string {

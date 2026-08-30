@@ -1090,6 +1090,7 @@ describe('package scripts and gitignore', () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-review-resolution-recovery-'));
         const reviewThreadId = 'PRRT_kwDOExample';
         const reviewHead = 'a'.repeat(40);
+        const uppercaseReviewHead = reviewHead.toUpperCase();
         const ref = 'refs/sourdaw/review-resolution/pr-42';
         const validToken = '11111111-1111-4111-8111-111111111111';
         const gitPath = execFileSync('/usr/bin/which', ['git'], { encoding: 'utf8' }).trim();
@@ -1104,76 +1105,80 @@ describe('package scripts and gitignore', () => {
                     pid: 999999,
                     pgid: 999999,
                     threadId: reviewThreadId,
-                    head: reviewHead,
+                    head: uppercaseReviewHead,
                     token: validToken,
                 }),
             }).trim();
             runGit(root, ['update-ref', ref, ownerOid, '0'.repeat(ownerOid.length)]);
 
-            const result = await runTrustedGithubWriteCommand('review:resolve:recover', ['42', '--owner', ownerOid], {
-                resolveOriginMain: () => 'trusted-sha',
-                readOriginSource: (_commit, path) => readFileSync(join(import.meta.dirname, '../..', path), 'utf8'),
-                executeSnapshot: async (command, args, snapshot) =>
-                    executeTrustedSnapshot(
-                        command,
-                        args,
-                        {
-                            ...snapshot,
-                            launcher: {
-                                primaryRoot: root,
-                                commonDir: join(root, '.git'),
-                                gitPath,
-                                ghPath,
+            const result = await runTrustedGithubWriteCommand(
+                'review:resolve:recover',
+                ['42', '--owner', ownerOid.toUpperCase()],
+                {
+                    resolveOriginMain: () => 'trusted-sha',
+                    readOriginSource: (_commit, path) => readFileSync(join(import.meta.dirname, '../..', path), 'utf8'),
+                    executeSnapshot: async (command, args, snapshot) =>
+                        executeTrustedSnapshot(
+                            command,
+                            args,
+                            {
+                                ...snapshot,
+                                launcher: {
+                                    primaryRoot: root,
+                                    commonDir: join(root, '.git'),
+                                    gitPath,
+                                    ghPath,
+                                },
                             },
-                        },
-                        async (entryPath, runner, runnerArgs, currentSnapshot) => {
-                            const source = [
-                                "import { spawnSync } from 'node:child_process';",
-                                "import { dirname, join } from 'node:path';",
-                                "import { pathToFileURL } from 'node:url';",
-                                'const [entryPath, runner, ...args] = process.argv.slice(2);',
-                                'const loaded = await import(pathToFileURL(entryPath).href);',
-                                "const helper = await import(pathToFileURL(join(dirname(entryPath), 'resolveReviewThread.ts')).href);",
-                                'const result = await loaded[runner](args, {',
-                                `  trustedPrimaryRoot: () => { if (process.env.SOURDAW_TRUSTED_PRIMARY_ROOT !== ${JSON.stringify(root)}) throw new Error('missing trusted launcher binding'); return ${JSON.stringify(root)}; },`,
-                                `  authenticateAuthor: async () => ({ minted: { actorNodeId: ${JSON.stringify(AUTHOR_BOT_NODE_ID)} }, session: { env: {}, dispose() {} } }),`,
-                                `  repositoryName: () => ${JSON.stringify(REQUIRED_REPOSITORY)},`,
-                                "  gh: () => () => '',",
-                                `  inspectThread: (number, threadId) => ({ pullRequestId: 'PR_kwDOExamplePullRequest', head: ${JSON.stringify(reviewHead)}, thread: { id: threadId, isResolved: false, resolvedByNodeId: null, resolvedByLogin: null, resolvedByType: null, rootCommentId: null, rootCommentFullDatabaseId: null, rootAuthorNodeId: null, rootAuthorLogin: null, rootAuthorType: null, comments: [] }, pendingReviews: [] }),`,
-                                '  recoverLock: (primaryRoot, number, expectedOwnerOid, reconcile) => helper.recoverPullRequestReviewResolutionLock(primaryRoot, number, expectedOwnerOid, reconcile, () => false),',
-                                '});',
-                                "if (!Number.isSafeInteger(result)) throw new Error('runner returned invalid exit code');",
-                                'process.exitCode = result;',
-                            ].join('\n');
-                            const child = spawnSync(
-                                process.execPath,
-                                [
-                                    '--input-type=module',
-                                    '--eval',
-                                    source,
-                                    'trusted-review-recovery',
-                                    entryPath,
-                                    runner,
-                                    ...runnerArgs,
-                                ],
-                                {
-                                    cwd: process.cwd(),
-                                    env: trustedSnapshotEnv(currentSnapshot),
-                                    encoding: 'utf8',
-                                    shell: false,
+                            async (entryPath, runner, runnerArgs, currentSnapshot) => {
+                                const source = [
+                                    "import { spawnSync } from 'node:child_process';",
+                                    "import { dirname, join } from 'node:path';",
+                                    "import { pathToFileURL } from 'node:url';",
+                                    'const [entryPath, runner, ...args] = process.argv.slice(2);',
+                                    'const loaded = await import(pathToFileURL(entryPath).href);',
+                                    "const helper = await import(pathToFileURL(join(dirname(entryPath), 'resolveReviewThread.ts')).href);",
+                                    'const result = await loaded[runner](args, {',
+                                    `  trustedPrimaryRoot: () => { if (process.env.SOURDAW_TRUSTED_PRIMARY_ROOT !== ${JSON.stringify(root)}) throw new Error('missing trusted launcher binding'); return ${JSON.stringify(root)}; },`,
+                                    `  authenticateAuthor: async () => ({ minted: { actorNodeId: ${JSON.stringify(AUTHOR_BOT_NODE_ID)} }, session: { env: {}, dispose() {} } }),`,
+                                    `  repositoryName: () => ${JSON.stringify(REQUIRED_REPOSITORY)},`,
+                                    "  gh: () => () => '',",
+                                    `  inspectThread: (number, threadId) => ({ pullRequestId: 'PR_kwDOExamplePullRequest', head: ${JSON.stringify(reviewHead)}, thread: { id: threadId, isResolved: false, resolvedByNodeId: null, resolvedByLogin: null, resolvedByType: null, rootCommentId: null, rootCommentFullDatabaseId: null, rootAuthorNodeId: null, rootAuthorLogin: null, rootAuthorType: null, comments: [] }, pendingReviews: [] }),`,
+                                    '  recoverLock: (primaryRoot, number, expectedOwnerOid, reconcile) => helper.recoverPullRequestReviewResolutionLock(primaryRoot, number, expectedOwnerOid, reconcile, () => false),',
+                                    '});',
+                                    "if (!Number.isSafeInteger(result)) throw new Error('runner returned invalid exit code');",
+                                    'process.exitCode = result;',
+                                ].join('\n');
+                                const child = spawnSync(
+                                    process.execPath,
+                                    [
+                                        '--input-type=module',
+                                        '--eval',
+                                        source,
+                                        'trusted-review-recovery',
+                                        entryPath,
+                                        runner,
+                                        ...runnerArgs,
+                                    ],
+                                    {
+                                        cwd: process.cwd(),
+                                        env: trustedSnapshotEnv(currentSnapshot),
+                                        encoding: 'utf8',
+                                        shell: false,
+                                    }
+                                );
+                                if (child.error !== undefined) {
+                                    throw child.error;
                                 }
-                            );
-                            if (child.error !== undefined) {
-                                throw child.error;
+                                expect(child.status).toBe(0);
+                                expect(child.stdout.trim()).toBe(
+                                    `review-resolution-lock-recovered:42:${reviewThreadId}:${reviewHead}:${reviewHead}:unresolved:0`
+                                );
+                                return child.status ?? 1;
                             }
-                            expect(child.status).toBe(0);
-                            expect(child.stdout.trim()).toBe(
-                                `review-resolution-lock-recovered:42:${reviewThreadId}:${reviewHead}:${reviewHead}:unresolved:0`
-                            );
-                            return child.status ?? 1;
-                        }
-                    ),
-            });
+                        ),
+                }
+            );
 
             expect(result).toBe(0);
             expect(

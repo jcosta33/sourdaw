@@ -115,6 +115,8 @@ const usage = 'usage: pnpm review:resolve <pr-number> --thread <graphql-thread-n
 const RESOLUTION_REVIEW_SUMMARY = 'Resolved this review thread after applying the requested changes.';
 const REVIEW_RESOLUTION_LOCK_TOKEN_PATTERN =
     /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+const FORTY_HEX_PATTERN = /^[0-9a-f]{40}$/iu;
+const SIXTY_FOUR_HEX_PATTERN = /^[0-9a-f]{64}$/iu;
 type ResolutionReviewContext = {
     pullRequestId: string;
     threadId: string;
@@ -130,6 +132,17 @@ type ReviewResolutionExecutionFence = {
     pgid: number;
 };
 const REVIEW_RESOLUTION_CHILD_ENV = 'SOURDAW_REVIEW_RESOLUTION_CHILD';
+
+function canonicalGitObjectId(value: string, label: string, lengths: number[] = [40]): string {
+    const trimmed = value.trim();
+    const valid =
+        (lengths.includes(40) && FORTY_HEX_PATTERN.test(trimmed)) ||
+        (lengths.includes(64) && SIXTY_FOUR_HEX_PATTERN.test(trimmed));
+    if (!valid) {
+        fail(label);
+    }
+    return trimmed.toLowerCase();
+}
 
 export function parseResolveReviewThreadArgs(args: string[]): ResolveReviewThreadArgs {
     if (args[0] === '--help') {
@@ -147,7 +160,7 @@ export function parseResolveReviewThreadArgs(args: string[]): ResolveReviewThrea
         args[4] === undefined ||
         !/^[1-9][0-9]*$/.test(args[0]) ||
         !/^\S+$/.test(args[2]) ||
-        !/^[0-9a-f]{40}$/i.test(args[4])
+        !FORTY_HEX_PATTERN.test(args[4])
     ) {
         fail(usage);
     }
@@ -155,7 +168,7 @@ export function parseResolveReviewThreadArgs(args: string[]): ResolveReviewThrea
     if (!Number.isSafeInteger(number)) {
         fail(usage);
     }
-    return { number, threadId: args[2], head: args[4], help: false };
+    return { number, threadId: args[2], head: canonicalGitObjectId(args[4], usage), help: false };
 }
 
 export function resolveReviewThread(
@@ -168,8 +181,9 @@ export function resolveReviewThread(
     if (!isAuthorBotNodeId(authorNodeId)) {
         fail(`authenticated author actor ${authorNodeId} is not ${AUTHOR_BOT_NODE_ID}`);
     }
-    return port.serializeReviewThreadMutation(number, threadId, expectedHead, () =>
-        resolveReviewThreadWithinMutation(number, threadId, expectedHead, port)
+    const canonicalHead = canonicalGitObjectId(expectedHead, usage);
+    return port.serializeReviewThreadMutation(number, threadId, canonicalHead, () =>
+        resolveReviewThreadWithinMutation(number, threadId, canonicalHead, port)
     );
 }
 
@@ -611,12 +625,14 @@ function errorMessage(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
 }
 function assertExpectedHead(currentHead: string, expectedHead: string): void {
-    if (currentHead !== expectedHead) {
+    if (
+        canonicalGitObjectId(currentHead, 'supplied head does not match the current pull-request head') !== expectedHead
+    ) {
         fail('supplied head does not match the current pull-request head');
     }
 }
 function assertExpectedHeadAfterMutation(currentHead: string, expectedHead: string): void {
-    if (currentHead !== expectedHead) {
+    if (canonicalGitObjectId(currentHead, 'pull-request head moved after mutation; compensating') !== expectedHead) {
         fail('pull-request head moved after mutation; compensating');
     }
 }
@@ -649,13 +665,14 @@ function resolutionReviewContext(
     return {
         pullRequestId,
         threadId,
-        expectedHead,
+        expectedHead: canonicalGitObjectId(expectedHead, 'cannot read current pull-request head'),
     };
 }
 function resolutionReviewBody(context: ResolutionReviewContext, reviewHead: string): string {
+    const canonicalReviewHead = canonicalGitObjectId(reviewHead, 'resolution review body requires a valid review head');
     return [
         RESOLUTION_REVIEW_SUMMARY,
-        `<!-- sourdaw-review-resolve pull-request:${context.pullRequestId} thread:${context.threadId} head:${reviewHead} -->`,
+        `<!-- sourdaw-review-resolve pull-request:${context.pullRequestId} thread:${context.threadId} head:${canonicalReviewHead} -->`,
     ].join('\n\n');
 }
 function extractThreadIdFromBody(body: string): string {
@@ -753,7 +770,7 @@ function toRequiredReview(
         id: value.reviewId,
         state: value.reviewState,
         body: value.reviewBody,
-        commitOid: value.reviewCommitOid,
+        commitOid: canonicalGitObjectId(value.reviewCommitOid, `${label} has no commit OID`),
         authorNodeId: value.reviewAuthorNodeId ?? null,
         authorLogin: value.reviewAuthorLogin ?? null,
         authorType: value.reviewAuthorType ?? null,
@@ -781,7 +798,7 @@ function toReplyReviewOrNull(value: {
         id: value.reviewId,
         state: value.reviewState,
         body: value.reviewBody,
-        commitOid: value.reviewCommitOid,
+        commitOid: canonicalGitObjectId(value.reviewCommitOid, 'managed Done reply has no commit OID'),
         authorNodeId: value.reviewAuthorNodeId ?? null,
         authorLogin: value.reviewAuthorLogin ?? null,
         authorType: value.reviewAuthorType ?? null,
@@ -1467,18 +1484,14 @@ function parseReviewResolutionLockOwner(contents: string, number: number): Revie
         pid: value.pid,
         pgid: value.pgid,
         threadId: value.threadId,
-        head: value.head,
+        head: canonicalGitObjectId(value.head, `${scope} lock ownership is malformed`),
         token: value.token,
     };
 }
 
 function reviewResolutionLockObjectId(value: string, number: number): string {
     const scope = pullRequestReviewResolutionLockScope(number);
-    const oid = value.trim();
-    if (!/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u.test(oid)) {
-        fail(`${scope} lock object identity is malformed`);
-    }
-    return oid;
+    return canonicalGitObjectId(value, `${scope} lock object identity is malformed`, [40, 64]);
 }
 
 function writeReviewResolutionLockOwner(primaryRoot: string, owner: ReviewResolutionLockOwner, number: number): string {
@@ -1689,9 +1702,10 @@ export function inspectReviewThread(number: number, requestedThreadId: string, g
             fail(`cannot read current head for PR #${number}`);
         }
         pullRequestId = pullRequest.id;
+        const pageHead = canonicalGitObjectId(pullRequest.headRefOid, `cannot read current head for PR #${number}`);
         if (head === undefined) {
-            head = pullRequest.headRefOid;
-        } else if (head !== pullRequest.headRefOid) {
+            head = pageHead;
+        } else if (head !== pageHead) {
             fail(`pull-request head changed while reading review threads for PR #${number}`);
         }
         const threads = pullRequest.reviewThreads;
@@ -1773,7 +1787,15 @@ function inspectPendingReviews(
             };
         };
         const pullRequest = response.data?.repository?.pullRequest;
-        if (pullRequest?.id !== pullRequestId || pullRequest.headRefOid !== expectedHead) {
+        if (pullRequest?.id !== pullRequestId || typeof pullRequest.headRefOid !== 'string') {
+            fail(`pull-request head changed while reading reviews for PR #${number}`);
+        }
+        if (
+            canonicalGitObjectId(
+                pullRequest.headRefOid,
+                `pull-request head changed while reading reviews for PR #${number}`
+            ) !== expectedHead
+        ) {
             fail(`pull-request head changed while reading reviews for PR #${number}`);
         }
         const reviews = pullRequest.reviews;
@@ -1919,7 +1941,8 @@ function toPullRequestReview(value: unknown): PullRequestReview | null {
         id: review.id,
         state: review.state,
         body: review.body,
-        commitOid: typeof commitOid === 'string' ? commitOid : null,
+        commitOid:
+            typeof commitOid === 'string' ? canonicalGitObjectId(commitOid, 'invalid pull-request review') : null,
         authorNodeId: typeof review.author?.id === 'string' ? review.author.id : null,
         authorLogin: typeof review.author?.login === 'string' ? review.author.login : null,
         authorType: typeof review.author?.__typename === 'string' ? review.author.__typename : null,

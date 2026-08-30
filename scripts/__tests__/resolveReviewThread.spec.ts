@@ -676,7 +676,7 @@ function readLockOid(repository: string, number: number): string | undefined {
     return result.stdout.trim();
 }
 
-function writeLockOwnerBlob(repository: string, pid: number): string {
+function writeLockOwnerBlob(repository: string, pid: number, currentHead: string = head): string {
     return gitCapture(
         repository,
         ['hash-object', '-w', '--stdin'],
@@ -685,7 +685,7 @@ function writeLockOwnerBlob(repository: string, pid: number): string {
             pid,
             pgid: pid,
             threadId,
-            head,
+            head: currentHead,
             token: '11111111-1111-4111-8111-111111111111',
         })
     );
@@ -970,6 +970,61 @@ describe('review thread resolution', () => {
                 )
             ).toThrow(/ownership changed before recovery/i);
             expect(readLockOid(repository, 42)).not.toBe(staleOwnerOid);
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
+    it('accepts uppercase stale-lock inputs and reports lowercase canonical recovery state', async () => {
+        const repository = createTemporaryGitRepository();
+        try {
+            const uppercaseHead = head.toUpperCase();
+            const ownerOid = writeLockOwnerBlob(repository, 999999, uppercaseHead);
+            updateLock(repository, 42, ownerOid);
+            const session: GhSession = { configDir: repository, env: {}, dispose() {} };
+            const recoverDependencies = {
+                trustedPrimaryRoot: () => repository,
+                authenticateAuthor: async () => ({
+                    minted: { actorNodeId: AUTHOR_BOT_NODE_ID },
+                    session,
+                }),
+                repositoryName: () => REQUIRED_REPOSITORY,
+                gh: () => () => '',
+                inspectThread: () => ({
+                    pullRequestId,
+                    head,
+                    thread: {
+                        id: threadId,
+                        isResolved: false,
+                        resolvedByNodeId: null,
+                        resolvedByLogin: null,
+                        resolvedByType: null,
+                        rootCommentId: null,
+                        rootCommentFullDatabaseId: null,
+                        rootAuthorNodeId: null,
+                        rootAuthorLogin: null,
+                        rootAuthorType: null,
+                        comments: [],
+                    },
+                    pendingReviews: [],
+                }),
+                recoverLock: recoverPullRequestReviewResolutionLock,
+            } satisfies Parameters<typeof runRecoverReviewResolutionLockCli>[1];
+
+            const logs: string[] = [];
+            const originalLog = console.log;
+            console.log = (message?: unknown) => {
+                logs.push(String(message));
+            };
+            try {
+                await expect(
+                    runRecoverReviewResolutionLockCli(['42', '--owner', ownerOid.toUpperCase()], recoverDependencies)
+                ).resolves.toBe(0);
+            } finally {
+                console.log = originalLog;
+            }
+            expect(logs).toEqual([`review-resolution-lock-recovered:42:${threadId}:${head}:${head}:unresolved:0`]);
+            expect(readLockOid(repository, 42)).toBeUndefined();
         } finally {
             rmSync(repository, { recursive: true, force: true });
         }
@@ -1594,6 +1649,11 @@ describe('review thread resolution', () => {
             threadId,
             head,
         });
+        expect(parseResolveReviewThreadArgs(['42', '--thread', threadId, '--head', head.toUpperCase()])).toMatchObject({
+            number: 42,
+            threadId,
+            head,
+        });
         for (const args of [
             [],
             ['42', '--head', head, '--thread', threadId],
@@ -1605,6 +1665,10 @@ describe('review thread resolution', () => {
     it('parses review-resolution recovery arguments and refuses non-bootstrap execution by default', async () => {
         const ownerOid = 'a'.repeat(40);
         expect(parseRecoverReviewResolutionLockArgs(['42', '--owner', ownerOid])).toMatchObject({
+            number: 42,
+            owner: ownerOid,
+        });
+        expect(parseRecoverReviewResolutionLockArgs(['42', '--owner', ownerOid.toUpperCase()])).toMatchObject({
             number: 42,
             owner: ownerOid,
         });
@@ -1649,6 +1713,16 @@ describe('review thread resolution', () => {
         ]);
         expect(state().comments.find((comment) => comment.id === replyId)?.reviewId).toBe(reviewId);
         expectCanonicalResolutionReview(state().reviews[0]!);
+    });
+    it('accepts an uppercase head input and still writes lowercase public resolution records', () => {
+        const uppercaseHead = head.toUpperCase();
+        const { port, authorNodeId, state } = fakePort();
+        expect(resolveReviewThread(42, threadId, uppercaseHead, authorNodeId, port)).toBe(
+            `review-thread-resolved:42:${threadId}`
+        );
+        expectCanonicalResolutionReview(state().reviews[0]!, head);
+        expect(state().reviews[0]?.body).toContain(`head:${head}`);
+        expect(state().reviews[0]?.body).not.toContain(`head:${uppercaseHead}`);
     });
     it('rejects a mismatched reply client receipt before submit or resolve', () => {
         const { port, calls, authorNodeId } = fakePort({ replyClientMutationId: 'wrong' });
