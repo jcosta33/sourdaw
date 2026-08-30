@@ -98,6 +98,7 @@ export type ReviewResolutionLockOwner = {
 };
 export type ResolveReviewThreadPort = {
     inspect: (number: number, threadId: string) => ReviewThreadInspection;
+    inspectAttachedReviewThreadIds: (number: number, reviewId: string, expectedHead: string) => string[];
     createPendingReview: (pullRequestId: string, commitOid: string, body: string) => ReviewEnvelopeReceipt;
     replyDone: (threadId: string, reviewId: string) => ReviewReply;
     submitReview: (reviewId: string, body: string) => ReviewEnvelopeReceipt;
@@ -149,8 +150,10 @@ export type PersistedReviewResolutionChildLaunchMarker = {
 };
 
 type ReviewResolutionChildMarkerPublicationPort = {
-    beforePublish?: (temporaryPath: string, targetPath: string) => void;
-    publish?: (temporaryPath: string, targetPath: string) => void;
+    randomUuid?: () => string;
+    writeFileSync?: typeof writeFileSync;
+    renameSync?: typeof renameSync;
+    rmSync?: typeof rmSync;
 };
 
 function canonicalGitObjectId(value: string, label: string, lengths: number[] = [40]): string {
@@ -237,14 +240,15 @@ export function publishReviewResolutionChildLaunchMarker(
         token,
         pid,
     };
-    const temporaryPath = `${path}.${randomUUID()}.tmp`;
-    const publish = port.publish ?? ((source, target) => renameSync(source, target));
+    const temporaryPath = `${path}.${(port.randomUuid ?? randomUUID)()}.tmp`;
+    const write = port.writeFileSync ?? writeFileSync;
+    const move = port.renameSync ?? renameSync;
+    const remove = port.rmSync ?? rmSync;
     try {
-        writeFileSync(temporaryPath, JSON.stringify(persisted), { encoding: 'utf8', mode: 0o600, flag: 'wx' });
-        port.beforePublish?.(temporaryPath, path);
-        publish(temporaryPath, path);
+        write(temporaryPath, JSON.stringify(persisted), { encoding: 'utf8', mode: 0o600, flag: 'wx' });
+        move(temporaryPath, path);
     } catch (error) {
-        rmSync(temporaryPath, { force: true });
+        remove(temporaryPath, { force: true });
         throw error;
     }
 }
@@ -1286,6 +1290,12 @@ function retireRetirableStaleUnattachedPendingReview(
     if (stalePendingReview === undefined) {
         return { working, deleted: false };
     }
+    const attachedThreadIds = port.inspectAttachedReviewThreadIds(number, stalePendingReview.id, context.expectedHead);
+    if (attachedThreadIds.length > 0) {
+        fail(
+            `pending author review ${stalePendingReview.id} still has attached review-thread comments on ${attachedThreadIds.join(', ')}`
+        );
+    }
     port.deletePendingReview(stalePendingReview.id);
     const refreshed = port.inspect(number, threadId);
     assertExpectedHeadAfterMutation(refreshed.head, context.expectedHead);
@@ -1538,6 +1548,8 @@ export function shellPort(session: GhSession, cwd: string = process.cwd()): Reso
     const gh = (args: string[]) => spawnCapture('gh', args, { cwd: primaryRoot, env: session.env });
     return {
         inspect: (number, id) => inspectReviewThread(number, id, gh),
+        inspectAttachedReviewThreadIds: (number, reviewId, expectedHead) =>
+            inspectAttachedReviewThreadIds(number, reviewId, expectedHead, gh),
         createPendingReview: (pullRequestId, commitOid, body) =>
             createPendingReview(pullRequestId, commitOid, body, gh),
         replyDone: (id, reviewId) => mutationReply(id, reviewId, gh),
@@ -1898,6 +1910,88 @@ export function inspectReviewThread(number: number, requestedThreadId: string, g
                 thread: null,
                 pendingReviews: inspectPendingReviews(number, pullRequestId, head, gh),
             };
+        }
+        const next = threads.pageInfo.endCursor;
+        if (typeof next !== 'string' || next === '' || cursors.has(next)) {
+            fail(`invalid review-thread pagination for PR #${number}`);
+        }
+        cursors.add(next);
+        cursor = next;
+    }
+}
+function inspectAttachedReviewThreadIds(number: number, reviewId: string, expectedHead: string, gh: Gh): string[] {
+    const [owner, name] = REQUIRED_REPOSITORY.split('/');
+    if (owner === undefined || name === undefined) {
+        fail(`invalid GitHub repository: ${REQUIRED_REPOSITORY}`);
+    }
+    let cursor: string | undefined;
+    const cursors = new Set<string>();
+    const attachedThreadIds = new Set<string>();
+    let pullRequestId: string | undefined;
+    for (;;) {
+        const connection = cursor === undefined ? 'reviewThreads(first:100)' : 'reviewThreads(first:100,after:$cursor)';
+        const query = `query($owner:String!,$name:String!,$number:Int!${cursor === undefined ? '' : ',$cursor:String!'}){repository(owner:$owner,name:$name){pullRequest(number:$number){id headRefOid ${connection}{nodes{id isResolved resolvedBy{id login __typename}} pageInfo{hasNextPage endCursor}}}}}`;
+        const fields = ['-F', `owner=${owner}`, '-F', `name=${name}`, '-F', `number=${number}`];
+        if (cursor !== undefined) {
+            fields.push('-F', `cursor=${cursor}`);
+        }
+        const response = graphql(gh, query, fields, `review thread query for PR #${number}`) as {
+            data?: {
+                repository?: {
+                    pullRequest?: {
+                        id?: unknown;
+                        headRefOid?: unknown;
+                        reviewThreads?: { nodes?: unknown; pageInfo?: { hasNextPage?: unknown; endCursor?: unknown } };
+                    };
+                };
+            };
+        };
+        const pullRequest = response.data?.repository?.pullRequest;
+        if (typeof pullRequest?.id !== 'string' || typeof pullRequest.headRefOid !== 'string') {
+            fail(`cannot read current head for PR #${number}`);
+        }
+        if (pullRequestId === undefined) {
+            pullRequestId = pullRequest.id;
+        } else if (pullRequestId !== pullRequest.id) {
+            fail(`pull-request head changed while reading review threads for PR #${number}`);
+        }
+        if (
+            canonicalGitObjectId(pullRequest.headRefOid, `cannot read current head for PR #${number}`) !== expectedHead
+        ) {
+            fail(`pull-request head changed while reading review threads for PR #${number}`);
+        }
+        const threads = pullRequest.reviewThreads;
+        if (!Array.isArray(threads?.nodes) || typeof threads.pageInfo?.hasNextPage !== 'boolean') {
+            fail(`invalid review-thread page for PR #${number}`);
+        }
+        for (const candidate of threads.nodes) {
+            if (
+                typeof candidate !== 'object' ||
+                candidate === null ||
+                typeof (candidate as { id?: unknown }).id !== 'string'
+            ) {
+                fail(`invalid review-thread page for PR #${number}`);
+            }
+            const thread = candidate as {
+                id: string;
+                isResolved?: unknown;
+                resolvedBy?: { id?: unknown; login?: unknown; __typename?: unknown } | null;
+            };
+            if (
+                inspectThreadComments(
+                    thread.id,
+                    thread.isResolved,
+                    thread.resolvedBy?.id,
+                    thread.resolvedBy?.login,
+                    thread.resolvedBy?.__typename,
+                    gh
+                ).comments.some((comment) => comment.reviewId === reviewId)
+            ) {
+                attachedThreadIds.add(thread.id);
+            }
+        }
+        if (!threads.pageInfo.hasNextPage) {
+            return [...attachedThreadIds];
         }
         const next = threads.pageInfo.endCursor;
         if (typeof next !== 'string' || next === '' || cursors.has(next)) {

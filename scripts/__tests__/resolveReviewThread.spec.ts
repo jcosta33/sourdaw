@@ -21,7 +21,6 @@ import {
     submitReview,
     recoverPullRequestReviewResolutionLock,
     withPullRequestReviewResolutionLock,
-    type PersistedReviewResolutionChildLaunchMarker,
     type ResolveReviewThreadPort,
 } from '../resolveReviewThread.ts';
 
@@ -29,6 +28,7 @@ const head = 'a'.repeat(40);
 const movedHead = 'b'.repeat(40);
 const pullRequestId = 'PR_kwDOExamplePullRequest';
 const threadId = 'PRRT_kwDOExample';
+const otherThreadId = 'PRRT_kwDOOtherExample';
 const rootId = 'PRRC_root';
 const replyId = 'PRRC_reply';
 const reviewId = 'PRR_resolution';
@@ -118,6 +118,7 @@ type Input = {
     resolvedPendingReplyFullDatabaseId?: string;
     attachConcurrentManagedPendingReplyAfterLostCreate?: boolean;
     attachConcurrentManagedPendingReplyDuringPendingDelete?: boolean;
+    attachedReviewThreadIdsByReviewId?: Record<string, string[]>;
     concurrentCommentedReplyAfterReplyFailure?: boolean;
     concurrentResolveAfterReplyFailure?: boolean;
     concurrentCommentedResolvedStateOnCompensationInspect?: boolean;
@@ -555,6 +556,14 @@ function fakePort(input: Input = {}) {
                 pushReply('PRRC_delete_race', '9223372036854775814', reviewId);
             }
             deleteReviewById(id);
+        },
+        inspectAttachedReviewThreadIds: (number, id, expectedHead) => {
+            calls.push(`inspectAttachedReviewThreads:${number}:${id}:${expectedHead}`);
+            const attachedThreadIds = new Set(input.attachedReviewThreadIdsByReviewId?.[id] ?? []);
+            if (comments.some((comment) => comment.reviewId === id)) {
+                attachedThreadIds.add(threadId);
+            }
+            return [...attachedThreadIds];
         },
         serializeReviewThreadMutation: (_number, _threadId, _expectedHead, operation) => operation(),
         log: (message) => calls.push(`log:${message}`),
@@ -1148,45 +1157,37 @@ describe('review thread resolution', () => {
         }
     });
 
-    it('publishes child-marker PID binding through the injected atomic publish step, so readers see either the old full marker or the new full marker', () => {
+    it('publishes child-marker PID binding through the production temp-write then atomic rename path', () => {
         const markerRoot = mkdtempSync(join(tmpdir(), 'sourdaw-review-marker-publication-'));
         const markerPath = join(markerRoot, 'child-marker.json');
         const token = '11111111-1111-4111-8111-111111111111';
         try {
             publishReviewResolutionChildLaunchMarker(markerPath, token, null);
-            let seenDuringPublish: PersistedReviewResolutionChildLaunchMarker | undefined;
-            let temporaryPathSeen: string | undefined;
-            let publishCallCount = 0;
+            let renameCallCount = 0;
             publishReviewResolutionChildLaunchMarker(markerPath, token, 4321, {
-                beforePublish: (temporaryPath, targetPath) => {
-                    temporaryPathSeen = temporaryPath;
-                    expect(targetPath).toBe(markerPath);
-                    seenDuringPublish = readPersistedReviewResolutionChildLaunchMarker({ path: markerPath, token });
-                    expect(JSON.parse(readFileSync(temporaryPath, 'utf8'))).toEqual({
-                        version: 1,
-                        token,
-                        pid: 4321,
-                    });
-                    expect(temporaryPath).not.toBe(markerPath);
+                randomUuid: () => 'fixed-publication-id',
+                writeFileSync: (currentPath, data, options) => {
+                    expect(currentPath).toBe(`${markerPath}.fixed-publication-id.tmp`);
+                    writeFileSync(currentPath, data, options);
                 },
-                publish: (temporaryPath, targetPath) => {
-                    publishCallCount += 1;
+                renameSync: (temporaryPath, targetPath) => {
+                    renameCallCount += 1;
                     expect(targetPath).toBe(markerPath);
+                    expect(temporaryPath).toBe(`${markerPath}.fixed-publication-id.tmp`);
                     expect(readPersistedReviewResolutionChildLaunchMarker({ path: markerPath, token })).toEqual({
                         version: 1,
                         token,
                         pid: null,
                     });
+                    expect(JSON.parse(readFileSync(temporaryPath, 'utf8'))).toEqual({
+                        version: 1,
+                        token,
+                        pid: 4321,
+                    });
                     renameSync(temporaryPath, targetPath);
                 },
             });
-            expect(seenDuringPublish).toEqual({
-                version: 1,
-                token,
-                pid: null,
-            });
-            expect(temporaryPathSeen).toBeDefined();
-            expect(publishCallCount).toBe(1);
+            expect(renameCallCount).toBe(1);
             expect(readPersistedReviewResolutionChildLaunchMarker({ path: markerPath, token })).toEqual({
                 version: 1,
                 token,
@@ -2579,6 +2580,9 @@ describe('review thread resolution', () => {
         expect(resolveReviewThread(42, threadId, movedHead, authorNodeId, port)).toBe(
             `review-thread-resolved:42:${threadId}`
         );
+        expect(calls.filter((call) => call.startsWith('inspectAttachedReviewThreads:'))).toEqual([
+            `inspectAttachedReviewThreads:42:PRR_stale_pending:${movedHead}`,
+        ]);
         expect(calls.filter((call) => call.startsWith('deleteReview:'))).toEqual(['deleteReview:PRR_stale_pending']);
         expect(calls.filter((call) => call.startsWith('createReview:'))).toEqual([`createReview:${pullRequestId}`]);
         expect(calls.filter((call) => call.startsWith('submitReview:'))).toEqual([`submitReview:${reviewId}`]);
@@ -2590,6 +2594,31 @@ describe('review thread resolution', () => {
                 body: resolutionReviewSummary(pullRequestId, threadId, movedHead),
             }),
         ]);
+    });
+    it('preserves a stale pending author review when it is still attached on another thread', () => {
+        const { port, authorNodeId, state, calls } = fakePort({
+            heads: [movedHead, movedHead, movedHead],
+            existingPendingReviewCount: 1,
+            existingPendingReviewIds: ['PRR_stale_pending'],
+            existingPendingReviewCommitOid: head,
+            attachedReviewThreadIdsByReviewId: { PRR_stale_pending: [otherThreadId] },
+        });
+
+        expect(() => resolveReviewThread(42, threadId, movedHead, authorNodeId, port)).toThrow(
+            `pending author review PRR_stale_pending still has attached review-thread comments on ${otherThreadId}`
+        );
+        expect(calls.filter((call) => call.startsWith('inspectAttachedReviewThreads:'))).toEqual([
+            `inspectAttachedReviewThreads:42:PRR_stale_pending:${movedHead}`,
+        ]);
+        expect(calls.filter((call) => call.startsWith('deleteReview:'))).toEqual([]);
+        expect(calls.filter((call) => call.startsWith('createReview:'))).toEqual([]);
+        expect(state().reviews).toContainEqual(
+            expect.objectContaining({
+                id: 'PRR_stale_pending',
+                state: 'PENDING',
+                commitOid: head,
+            })
+        );
     });
     it('does not publish a stale unattached pending review when the head drifts before the new-head draft is inspected', () => {
         const newerHead = 'c'.repeat(40);
