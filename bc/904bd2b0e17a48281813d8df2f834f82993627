@@ -1,0 +1,63 @@
+src/modules/PluginHost/useCases/pluginLifecycle/beginProjectSessionPluginRetirement.ts
+  s_ae074277795b45::t_6cbcce4eecffdb 11
+electron/__tests__/rendererSessionQuiescer.spec.ts
+  s_ae074277795b45::t_79bb62175f219a 93-112
+src/modules/WorkspaceShell/presentations/hooks/__tests__/useNativeApplicationMenu.spec.tsx
+  s_ae074277795b45::t_0453a0aa122b10 134,137
+  s_ae074277795b45::t_0dd2a4bfd41fa7 128-132,138,183,380,408-411
+src/modules/CommandInterface/useCases/dispatchCanvasEditorCommand.ts
+  s_ae074277795b45::t_0453a0aa122b10 2-17
+  s_ae074277795b45::t_58c21268c96a48 1
+electron/__tests__/mainWindowTeardown.spec.ts
+  s_ae074277795b45::t_2b9d3b91677ec2 118-146
+electron/__tests__/windowCloseDialog.spec.ts
+  s_ae074277795b45::t_f8be569d3339a3 1-33
+electron/__tests__/applicationMenu.spec.ts
+  s_ae074277795b45::t_e7f020469b1c0b 3-7,113-130,134
+  s_ae074277795b45::t_ec859ab6e8ea75 131-133,135-136
+src/modules/Project/useCases/projectPersistence/__tests__/quiesceProjectSession.pluginFence.success.integration.spec.ts
+  s_ae074277795b45::t_716e37488f5c0c 1-33,36-52
+  s_ae074277795b45::t_f511472074007c 34-35
+src/modules/PluginHost/useCases/pluginLifecycle/serializePluginLifecycle.ts
+  s_ae074277795b45::t_6cbcce4eecffdb 63-75
+src/modules/TimelineEditor/presentations/views/ClipView/PianoRoll.tsx
+  s_ae074277795b45::t_2071bf2c38a4e1 12,333,335-348
+  s_ae074277795b45::t_6da21a3692a54c 20,334
+  s_ae074277795b45::t_17598c25917279 13-19,28,349-357
+electron/rendererSessionQuiescer.ts
+  s_ae074277795b45::t_79bb62175f219a 110-116
+src/modules/CommandInterface/useCases/isNativeTextEditableTarget.ts
+  s_ae074277795b45::t_3c0945201a51de 1-8
+src/modules/PluginHost/useCases/pluginLifecycle/__tests__/resetExternalPluginRuntimeForGraphRebuild.spec.ts
+  s_ae074277795b45::t_6cbcce4eecffdb 165-175
+electron/windowCloseDialog.ts
+  s_ae074277795b45::t_f8be569d3339a3 1-47
+src/modules/WorkspaceShell/presentations/hooks/useNativeApplicationMenu.ts
+  s_ae074277795b45::t_0453a0aa122b10 6,74-80
+src/modules/CommandInterface/useCases/index.ts
+  s_ae074277795b45::t_3c0945201a51de 7
+  s_ae074277795b45::t_0453a0aa122b10 8
+electron/applicationMenu.ts
+  s_ae074277795b45::t_e7f020469b1c0b 120-143
+electron/main.ts
+  s_ae074277795b45::t_e7f020469b1c0b 38-41,153-154,156-164
+  s_ae074277795b45::t_f8be569d3339a3 78,187
+  s_ae074277795b45::t_2b9d3b91677ec2 385-387
+  s_ae074277795b45::t_c72965491807bf 37
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "bc904bd2b0e17a48281813d8df2f834f82993627",
+  "prompts": {},
+  "sessions": {
+    "s_ae074277795b45": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04ab5-5234-7100-be1c-76ebfaba88d3",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
