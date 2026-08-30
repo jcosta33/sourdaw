@@ -61,7 +61,7 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
         fn();
         setCtxMenu(null);
     };
-    const renderIife_1 = () => {
+    const panReadout = (): string => {
         if (actions.displayPan === 0) {
             return 'C';
         }
@@ -70,78 +70,77 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
         }
         return `L${Math.abs(Math.round(actions.displayPan))}`;
     };
-    const renderIife_2 = () => {
-        if (ctxMenu) {
-            return (
-                <MixerPopupMenu
-                    ref={ctxRef}
-                    position="fixed"
-                    className="max-h-[70vh] overflow-y-auto"
-                    style={{ left: ctxMenu.x, top: ctxMenu.y }}
-                    role="menu"
-                >
-                    <MixerPopupOption role="menuitem" onClick={act(actions.toggleMute)}>
-                        {track.muted ? 'Unmute' : 'Mute'}
-                    </MixerPopupOption>
-                    <MixerPopupOption role="menuitem" onClick={act(() => actions.toggleSolo(true))}>
-                        {track.soloed ? 'Unsolo' : 'Solo'}
-                    </MixerPopupOption>
-                    <MixerPopupOption role="menuitem" onClick={act(actions.toggleSoloSafeFlag)}>
-                        {track.soloSafe ? 'Disable Solo Safe' : 'Solo Safe'}
-                    </MixerPopupOption>
-                    <MixerPopupOption role="menuitem" onClick={act(actions.toggleArm)}>
-                        {track.armed ? 'Disarm' : 'Arm for Recording'}
-                    </MixerPopupOption>
-                    <MixerPopupSeparator />
-                    <MixerPopupOption role="menuitem" onClick={act(() => setIsRenaming(true))}>
-                        Rename…
-                    </MixerPopupOption>
-                    <MixerPopupSeparator />
-                    <MixerPopupLabel>Color</MixerPopupLabel>
-                    <Row align="stretch" gap={1} className="px-3 py-1">
-                        {TRACK_COLOR_PRESETS.map((context) => (
-                            <DawSwatchButton
-                                key={context}
-                                color={context}
-                                active={context === track.color}
-                                onClick={act(() => actions.setColor(context))}
-                                aria-label={`Set color`}
-                            />
-                        ))}
-                    </Row>
-                    <MixerPopupSeparator />
-                    <MixerPopupLabel>VCA Group</MixerPopupLabel>
-                    {getVcaGroups().map((g) => (
-                        <MixerPopupOption
-                            key={g.id}
-                            active={track.vcaGroupId === g.id}
-                            role="menuitem"
-                            onClick={act(() => actions.toggleVca(g.id))}
-                        >
-                            {track.vcaGroupId === g.id ? `✓ ${g.name}` : g.name}
-                        </MixerPopupOption>
-                    ))}
-                    <MixerPopupOption role="menuitem" onClick={act(actions.createVcaAndAssign)}>
-                        + New VCA Group
-                    </MixerPopupOption>
-                    {track.vcaGroupId ? (
-                        <MixerPopupOption
-                            role="menuitem"
-                            className="text-muted-foreground"
-                            onClick={act(actions.removeFromVca)}
-                        >
-                            Remove from VCA
-                        </MixerPopupOption>
-                    ) : null}
-                    <MixerPopupSeparator />
-                    <MixerPopupOption role="menuitem" tone="danger" onClick={act(actions.removeWithConfirm)}>
-                        Remove Channel
-                    </MixerPopupOption>
-                </MixerPopupMenu>
-            );
-        } else {
+    const renderContextMenu = (): ReactElement | null => {
+        if (!ctxMenu) {
             return null;
         }
+        return (
+            <MixerPopupMenu
+                ref={ctxRef}
+                position="fixed"
+                className="max-h-[70vh] overflow-y-auto"
+                style={{ left: ctxMenu.x, top: ctxMenu.y }}
+                role="menu"
+            >
+                <MixerPopupOption role="menuitem" onClick={act(actions.toggleMute)}>
+                    {track.muted ? 'Unmute' : 'Mute'}
+                </MixerPopupOption>
+                <MixerPopupOption role="menuitem" onClick={act(() => actions.toggleSolo(true))}>
+                    {track.soloed ? 'Unsolo' : 'Solo'}
+                </MixerPopupOption>
+                <MixerPopupOption role="menuitem" onClick={act(actions.toggleSoloSafeFlag)}>
+                    {track.soloSafe ? 'Disable Solo Safe' : 'Solo Safe'}
+                </MixerPopupOption>
+                <MixerPopupOption role="menuitem" onClick={act(actions.toggleArm)}>
+                    {track.armed ? 'Disarm' : 'Arm for Recording'}
+                </MixerPopupOption>
+                <MixerPopupSeparator />
+                <MixerPopupOption role="menuitem" onClick={act(() => setIsRenaming(true))}>
+                    Rename…
+                </MixerPopupOption>
+                <MixerPopupSeparator />
+                <MixerPopupLabel>Color</MixerPopupLabel>
+                <Row align="stretch" gap={1} className="px-3 py-1">
+                    {TRACK_COLOR_PRESETS.map((context) => (
+                        <DawSwatchButton
+                            key={context}
+                            color={context}
+                            active={context === track.color}
+                            onClick={act(() => actions.setColor(context))}
+                            aria-label={`Set color`}
+                        />
+                    ))}
+                </Row>
+                <MixerPopupSeparator />
+                <MixerPopupLabel>VCA Group</MixerPopupLabel>
+                {getVcaGroups().map((g) => (
+                    <MixerPopupOption
+                        key={g.id}
+                        active={track.vcaGroupId === g.id}
+                        role="menuitem"
+                        onClick={act(() => actions.toggleVca(g.id))}
+                    >
+                        {track.vcaGroupId === g.id ? `✓ ${g.name}` : g.name}
+                    </MixerPopupOption>
+                ))}
+                <MixerPopupOption role="menuitem" onClick={act(actions.createVcaAndAssign)}>
+                    + New VCA Group
+                </MixerPopupOption>
+                {track.vcaGroupId ? (
+                    <MixerPopupOption
+                        role="menuitem"
+                        className="text-muted-foreground"
+                        onClick={act(actions.removeFromVca)}
+                    >
+                        Remove from VCA
+                    </MixerPopupOption>
+                ) : null}
+                <MixerPopupSeparator />
+                <MixerPopupOption role="menuitem" tone="danger" onClick={act(actions.removeWithConfirm)}>
+                    Remove Channel
+                </MixerPopupOption>
+            </MixerPopupMenu>
+        );
     };
 
     return (
@@ -334,7 +333,7 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                         bipolar
                     />
                 </div>
-                <MixerStripValue size="sm">{renderIife_1()}</MixerStripValue>
+                <MixerStripValue size="sm">{panReadout()}</MixerStripValue>
             </Stack>
             {/* MIDI FX */}
             <MidiFxSection track={track} />
@@ -345,7 +344,7 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
             {/* I/O */}
             <IOSection track={track} />
             {/* Context menu */}
-            {renderIife_2()}
+            {renderContextMenu()}
         </div>
     );
 };

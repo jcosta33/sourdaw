@@ -95,7 +95,7 @@ export const DeviceInspector = ({ device, trackId, onBack }: DeviceInspectorProp
     const parameters = plugin?.parameters ?? deriveParamsFromValues(device);
 
     const LayoutComponent = resolveDeviceLayout(device.type ?? '');
-    const renderIife_15 = () => {
+    const renderDeviceLayout = (): ReactElement => {
         if (LayoutComponent) {
             return <LayoutComponent device={device} trackId={trackId} parameters={parameters} />;
         }
@@ -124,7 +124,7 @@ export const DeviceInspector = ({ device, trackId, onBack }: DeviceInspectorProp
                 }
             />
             {/* ── Registry-based layout ── */}
-            {renderIife_15()}
+            {renderDeviceLayout()}
         </Stack>
     );
 };
