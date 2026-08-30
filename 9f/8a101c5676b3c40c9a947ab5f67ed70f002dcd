@@ -1,0 +1,22 @@
+src/modules/Project/useCases/projectPersistence/__tests__/discardProjectChanges.spec.ts
+  s_ae074277795b45::t_be1b7fc6db3a20 6-11,14,17,25-27,31,34,39-44,46,49,53-55,57-62,75,77-82,85,91,93,96,98,103-127,129
+src/modules/Project/useCases/projectPersistence/discardProjectChanges.ts
+  s_ae074277795b45::t_3a7a563351cbeb 1,5,12-16,25-31,33-38,41-44,54-55,57-58,60-86
+  s_ae074277795b45::t_a659f4b45abc4f 45-53,56,59
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "9f8a101c5676b3c40c9a947ab5f67ed70f002dcd",
+  "prompts": {},
+  "sessions": {
+    "s_ae074277795b45": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04ab5-5234-7100-be1c-76ebfaba88d3",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
