@@ -1,18 +1,27 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { type ProviderAttemptAdmission } from '../../llmOrchestration/inference';
+import { type planPromptActions } from '../../planPromptActions';
 import { orchestratePromptChatRequest } from '../orchestratePromptChatRequest';
+
+type PlanPromptActionsInput = Parameters<typeof planPromptActions>[0];
 
 const mocks = vi.hoisted(() => ({
     appendChatMessage: vi.fn(),
     bindAbortController: vi.fn(),
     captureProjectRevision: vi.fn(),
+    cancel: vi.fn(),
     claim: vi.fn(),
     create: vi.fn(),
+    executeImmediatePromptCommand: vi.fn(),
+    executePromptCommandPreview: vi.fn(),
     getActiveModelId: vi.fn(),
     getCloudProviderInfo: vi.fn(),
     loggerError: vi.fn(),
+    materializePromptCommandPlan: vi.fn(),
     normalizeAgentFailure: vi.fn(),
     planPromptActions: vi.fn(),
+    persistPromptActionConfirmation: vi.fn(),
     recordError: vi.fn(),
     reserveBudget: vi.fn(),
     reserveBudgetBatch: vi.fn(),
@@ -68,22 +77,31 @@ vi.mock('../../applicationOwnedToolLoop', () => ({
 }));
 
 vi.mock('../../cancelAgentRun', () => ({
-    agentRunCancellation: { bindAbortController: mocks.bindAbortController, cancel: vi.fn() },
+    agentRunCancellation: { bindAbortController: mocks.bindAbortController, cancel: mocks.cancel },
 }));
 
 vi.mock('../../describePendingActionConfirmation', () => ({ describePendingActionConfirmation: vi.fn() }));
 vi.mock('../../planPromptActions', () => ({ planPromptActions: mocks.planPromptActions }));
 vi.mock('../../recordAgentProviderUsage', () => ({ recordAgentProviderUsage: vi.fn() }));
-vi.mock('../executeImmediatePromptCommand', () => ({ executeImmediatePromptCommand: vi.fn() }));
-vi.mock('../executePromptCommandPreview', () => ({ executePromptCommandPreview: vi.fn() }));
-vi.mock('../materializePromptCommandPlan', () => ({ materializePromptCommandPlan: vi.fn() }));
-vi.mock('../persistPromptActionConfirmation', () => ({ persistPromptActionConfirmation: vi.fn() }));
+vi.mock('../executeImmediatePromptCommand', () => ({
+    executeImmediatePromptCommand: mocks.executeImmediatePromptCommand,
+}));
+vi.mock('../executePromptCommandPreview', () => ({
+    executePromptCommandPreview: mocks.executePromptCommandPreview,
+}));
+vi.mock('../materializePromptCommandPlan', () => ({
+    materializePromptCommandPlan: mocks.materializePromptCommandPlan,
+}));
+vi.mock('../persistPromptActionConfirmation', () => ({
+    persistPromptActionConfirmation: mocks.persistPromptActionConfirmation,
+}));
 vi.mock('../settleAgentRunWorkLeaseSafely', () => ({
     AGENT_RUN_STALE_COMPLETION_WARNING: 'stale completion warning',
     settleAgentRunWorkLeaseSafely: mocks.settleSafely,
 }));
 
 describe('orchestratePromptChatRequest', () => {
+    const releaseProviderCancellation = vi.fn();
     const providerLease = {
         runId: 'agent-run-fixture',
         workId: 'provider-planning',
@@ -95,7 +113,7 @@ describe('orchestratePromptChatRequest', () => {
         mocks.getActiveModelId.mockReturnValue('fixture-model');
         mocks.getCloudProviderInfo.mockReturnValue(null);
         mocks.claim.mockReturnValue({ status: 'claimed', lease: providerLease });
-        mocks.bindAbortController.mockReturnValue(vi.fn());
+        mocks.bindAbortController.mockReturnValue(releaseProviderCancellation);
         mocks.settleSafely.mockReturnValue({ accepted: true, warning: null });
         mocks.normalizeAgentFailure.mockReturnValue({ code: 'agent.fixture' });
     });
@@ -136,6 +154,13 @@ describe('orchestratePromptChatRequest', () => {
                 error: 'The requested command cannot be resolved.',
             })
         );
+        expect(mocks.settleSafely.mock.invocationCallOrder[0]).toBeLessThan(
+            mocks.recordError.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY
+        );
+        expect(mocks.settleSafely.mock.invocationCallOrder[0]).toBeLessThan(
+            mocks.appendChatMessage.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY
+        );
+        expect(releaseProviderCancellation).toHaveBeenCalledOnce();
     });
 
     it('settles failed provider planning before exposing the planning failure in chat', async () => {
@@ -162,6 +187,7 @@ describe('orchestratePromptChatRequest', () => {
                 error: 'Planning provider failed',
             })
         );
+        expect(releaseProviderCancellation).toHaveBeenCalledOnce();
     });
 
     it('does not claim a completed plan when provider settlement cannot retain it', async () => {
@@ -189,5 +215,160 @@ describe('orchestratePromptChatRequest', () => {
                 error: 'provider settlement warning',
             })
         );
+    });
+
+    it('denies provider and local work admissions without materializing or dispatching a plan', async () => {
+        const providerAttempt = {
+            backend: 'cloud',
+            provider: 'openai',
+            correlationId: 'provider-attempt',
+            request: {
+                schemaVersion: 2,
+                runId: 'agent-run-fixture',
+                requestId: 'provider-attempt',
+                correlationId: 'provider-attempt',
+                cancellationGeneration: 0,
+                operation: 'tools',
+                modality: 'text',
+                messages: [],
+                stream: false,
+                limits: { maxOutputTokens: 256 },
+                controls: { cache: 'provider-default', reasoning: 'provider-default' },
+                budget: { maxInputTokens: 1_024, maxOutputTokens: 256, maxTotalTokens: 1_280 },
+                dataPolicy: 'remote-allowed',
+            },
+            estimatedTotalTokens: 256,
+            estimate: {
+                method: 'compiled-provider-request-utf8-byte-token-ceiling-v1',
+                inputTokenCeiling: 128,
+                outputTokenCeiling: 128,
+                totalTokenCeiling: 256,
+            },
+        } satisfies ProviderAttemptAdmission;
+        mocks.reserveBudget.mockReturnValue({ status: 'hard-limit-reached', reason: 'remoteTokens' });
+        mocks.reserveBudgetBatch.mockReturnValue({ status: 'hard-limit-reached', reason: 'storageBytes' });
+        mocks.planPromptActions.mockImplementation(async (input: PlanPromptActionsInput) => {
+            expect(input.onProviderAttempt?.(providerAttempt)).toEqual({
+                status: 'rejected',
+                reason: 'remoteTokens',
+            });
+            expect(input.onLocalWorkAttempt?.({ analysisCount: 1, downloadBytes: 2, storageBytes: 3 })).toBe(false);
+            return {
+                context: {},
+                result: { actions: [], rejectionReason: 'Planning admissions were denied.' },
+                projectRevision: 'revision-planned',
+            };
+        });
+
+        await orchestratePromptChatRequest({
+            userText: 'prepare stems',
+            requestedRoute: 'auto',
+            backend: 'webllm',
+            interactionMode: 'apply',
+            options: undefined,
+        });
+
+        expect(mocks.reserveBudget).toHaveBeenCalledWith(
+            expect.objectContaining({ category: 'remoteTokens', attemptId: 'provider-attempt', estimate: 256 })
+        );
+        expect(mocks.reserveBudgetBatch).toHaveBeenCalledWith(
+            expect.objectContaining({
+                attempts: [
+                    expect.objectContaining({ category: 'localAnalysis', estimate: 1 }),
+                    expect.objectContaining({ category: 'downloadBytes', estimate: 2 }),
+                    expect.objectContaining({ category: 'storageBytes', estimate: 3 }),
+                ],
+            })
+        );
+        expect(mocks.materializePromptCommandPlan).not.toHaveBeenCalled();
+        expect(mocks.executePromptCommandPreview).not.toHaveBeenCalled();
+        expect(mocks.persistPromptActionConfirmation).not.toHaveBeenCalled();
+        expect(mocks.executeImmediatePromptCommand).not.toHaveBeenCalled();
+    });
+
+    it('cancels an aborted completed plan before materialization and releases provider cancellation once', async () => {
+        let activeAborter: AbortController | null = null;
+        mocks.setActiveAborter.mockImplementation((aborter: AbortController | null) => {
+            if (aborter instanceof AbortController) {
+                activeAborter = aborter;
+            }
+        });
+        mocks.planPromptActions.mockImplementation(async () => {
+            activeAborter?.abort();
+            return {
+                context: {},
+                result: { actions: [{ type: 'addTrack' }] },
+                projectRevision: 'revision-planned',
+            };
+        });
+
+        await orchestratePromptChatRequest({
+            userText: 'add a track',
+            requestedRoute: 'auto',
+            backend: 'webllm',
+            interactionMode: 'apply',
+            options: undefined,
+        });
+
+        expect(mocks.cancel).toHaveBeenCalledWith(
+            expect.objectContaining({ reason: 'User cancelled the run before planning completed.' })
+        );
+        expect(mocks.materializePromptCommandPlan).not.toHaveBeenCalled();
+        expect(mocks.executePromptCommandPreview).not.toHaveBeenCalled();
+        expect(mocks.persistPromptActionConfirmation).not.toHaveBeenCalled();
+        expect(mocks.executeImmediatePromptCommand).not.toHaveBeenCalled();
+        expect(releaseProviderCancellation).toHaveBeenCalledOnce();
+        expect(mocks.setActiveAborter).toHaveBeenLastCalledWith(null);
+        expect(mocks.setChatGenerating).toHaveBeenLastCalledWith(false);
+    });
+
+    it('maps a zero-action accepted plan to completed lifecycle and its exact terminal message', async () => {
+        mocks.planPromptActions.mockResolvedValue({
+            context: {},
+            result: { actions: [] },
+            projectRevision: 'revision-planned',
+        });
+
+        await orchestratePromptChatRequest({
+            userText: 'do nothing',
+            requestedRoute: 'auto',
+            backend: 'webllm',
+            interactionMode: 'apply',
+            options: undefined,
+        });
+
+        expect(mocks.transitionPhase).toHaveBeenNthCalledWith(1, expect.objectContaining({ phase: 'planning' }));
+        expect(mocks.transitionPhase).toHaveBeenNthCalledWith(2, expect.objectContaining({ phase: 'completed' }));
+        expect(mocks.appendChatMessage).toHaveBeenNthCalledWith(
+            2,
+            expect.objectContaining({
+                role: 'assistant',
+                content: 'No actions were matched or executed for your command.',
+                error: 'No actions matched',
+            })
+        );
+        expect(releaseProviderCancellation).toHaveBeenCalledOnce();
+    });
+
+    it('rejects a non-claimed provider lease before planning or cancellation registration', async () => {
+        mocks.claim.mockReturnValue({ status: 'already-settled' });
+
+        await expect(
+            orchestratePromptChatRequest({
+                userText: 'add a track',
+                requestedRoute: 'auto',
+                backend: 'webllm',
+                interactionMode: 'apply',
+                options: undefined,
+            })
+        ).rejects.toThrow('Agent provider work could not be claimed: already-settled');
+
+        expect(mocks.planPromptActions).not.toHaveBeenCalled();
+        expect(mocks.bindAbortController).not.toHaveBeenCalled();
+        expect(mocks.cancel).not.toHaveBeenCalled();
+        expect(mocks.materializePromptCommandPlan).not.toHaveBeenCalled();
+        expect(mocks.executePromptCommandPreview).not.toHaveBeenCalled();
+        expect(mocks.persistPromptActionConfirmation).not.toHaveBeenCalled();
+        expect(mocks.executeImmediatePromptCommand).not.toHaveBeenCalled();
     });
 });
