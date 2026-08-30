@@ -307,9 +307,11 @@ function validateStructuralMergeability(pullRequest: PullRequestSnapshot): void 
 
 function refreshStructuralMergeability(
     initial: PullRequestSnapshot,
-    port: Pick<DeliveryPort, 'pullRequest'>
+    port: Pick<DeliveryPort, 'pullRequest'>,
+    observe?: (pullRequest: PullRequestSnapshot) => void
 ): PullRequestSnapshot {
     let pullRequest = initial;
+    observe?.(pullRequest);
     if (pullRequest.state === 'MERGED') {
         return pullRequest;
     }
@@ -320,8 +322,10 @@ function refreshStructuralMergeability(
         refreshes < STRUCTURAL_MERGEABILITY_REFRESH_LIMIT;
         refreshes += 1
     ) {
-        pullRequest = port.pullRequest(initial.number);
-        validateStablePullRequest(initial, pullRequest);
+        const refreshed = port.pullRequest(initial.number);
+        observe?.(refreshed);
+        validateStablePullRequest(initial, refreshed);
+        pullRequest = refreshed;
         if (pullRequest.state === 'MERGED') {
             return pullRequest;
         }
@@ -704,7 +708,7 @@ function normalizeObservedCiState(mergeStateStatus: string): NonNullable<Deliver
         return 'absent';
     }
     if (mergeStateStatus === CHECKS_PENDING_MERGE_STATE) {
-        return 'failed';
+        return 'unstable';
     }
     if (mergeStateStatus === 'UNAVAILABLE') {
         return 'unavailable';
@@ -1051,6 +1055,42 @@ function withRestorablePreArmedDeliveryReceiptAuthority<Result>(
         return run();
     } catch (error) {
         restorePreArmedDeliveryReceiptAuthority(number, beforeArming, armed, port);
+        throw error;
+    }
+}
+
+function resolveFinalSnapshotWithRestorablePreparedAuthority(
+    number: number,
+    beforeArming: PersistedDeliveryReceiptAuthority | undefined,
+    armed: CurrentPersistedPreparedDeliveryReceiptAuthority,
+    port: DeliveryPort
+): PullRequestSnapshot {
+    let latest: PullRequestSnapshot | undefined;
+    let restored = false;
+    const restoreIfDefinitiveUnmerged = (pullRequest: PullRequestSnapshot): void => {
+        if (restored || (pullRequest.state !== 'OPEN' && pullRequest.state !== 'CLOSED')) {
+            return;
+        }
+        restorePreArmedDeliveryReceiptAuthority(number, beforeArming, armed, port);
+        restored = true;
+    };
+
+    try {
+        port.fetch();
+        const initial = port.pullRequest(number);
+        latest = initial;
+        const finalSnapshot = refreshStructuralMergeability(initial, port, (pullRequest) => {
+            latest = pullRequest;
+        });
+        latest = finalSnapshot;
+        if (finalSnapshot.state !== 'MERGED') {
+            validateStructuralMergeability(finalSnapshot);
+        }
+        return finalSnapshot;
+    } catch (error) {
+        if (latest !== undefined) {
+            restoreIfDefinitiveUnmerged(latest);
+        }
         throw error;
     }
 }
@@ -1632,23 +1672,12 @@ function deliverPullRequestWithCiAdmission(
     const finalFetchArmedAuthority = preparedDeliveryReceiptAuthority(receipt, preparedPostMergeValidation);
     persistPreparedDeliveryReceiptAuthority(number, receipt, port, preparedPostMergeValidation);
 
-    port.fetch();
-    const finalSnapshot = refreshStructuralMergeability(port.pullRequest(number), port);
-    if (
-        finalSnapshot.state !== 'MERGED' &&
-        finalSnapshot.state === 'OPEN' &&
-        finalSnapshot.mergeable === 'CONFLICTING'
-    ) {
-        restorePreArmedDeliveryReceiptAuthority(
-            number,
-            authorityBeforeFinalFetchArming,
-            finalFetchArmedAuthority,
-            port
-        );
-    }
-    if (finalSnapshot.state !== 'MERGED') {
-        validateStructuralMergeability(finalSnapshot);
-    }
+    const finalSnapshot = resolveFinalSnapshotWithRestorablePreparedAuthority(
+        number,
+        authorityBeforeFinalFetchArming,
+        finalFetchArmedAuthority,
+        port
+    );
     if (finalSnapshot.state === 'MERGED') {
         validatePostMergeSnapshot(preparedPostMergeValidation, finalSnapshot, number);
         const recoveredReceipt = readStableExactDeliveryReceipt(finalSnapshot, port, receipt.id);

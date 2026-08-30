@@ -454,7 +454,8 @@ function visibleDeliveryReceiptBody(
     head: string,
     pullRequestBody: string,
     closingIssue: number | undefined,
-    observedCiState: 'successful' | 'failed' | 'pending' | 'absent' | 'cancelled' | 'malformed' | 'unavailable'
+    observedCiState:
+        'successful' | 'failed' | 'pending' | 'absent' | 'cancelled' | 'unstable' | 'malformed' | 'unavailable'
 ): string {
     return composeDeliveryReceipt({
         pullRequest: pullRequestNumber,
@@ -1991,6 +1992,42 @@ describe('pull-request delivery', () => {
         expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(2);
         expect(receipts.map(({ id }) => id)).toEqual(['IC_delivery_42_1', 'IC_delivery_42_2']);
         expect(calls).toContain(`merge:42:${nextHead}`);
+        expect(calls).toContain('complete:2372');
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'terminal',
+            receiptId: 'IC_delivery_42_2',
+            receiptBody: visibleDeliveryReceiptBody(42, nextHead, closes, 2372, 'successful'),
+        });
+    });
+
+    it('restores the pre-final-fetch prepared authority when an UNKNOWN refresh discovers a corrected OPEN MERGEABLE head, then lets that head deliver on retry', () => {
+        const closes = relationshipBody('Closes #2372');
+        const nextHead = 'corrected-head';
+        const { port, calls, tracker, persistedReceiptAuthority, receipts } = fakePort({
+            primary: [
+                pullRequest({ headRefOid: 'head', body: closes }),
+                pullRequest({ headRefOid: 'head', body: closes, mergeable: 'UNKNOWN' }),
+                pullRequest({ headRefOid: nextHead, body: closes, mergeable: 'MERGEABLE' }),
+                pullRequest({ headRefOid: nextHead, body: closes }),
+                pullRequest({ headRefOid: nextHead, body: closes }),
+            ],
+            dependentSets: [[], []],
+        });
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/headRefOid changed during delivery/);
+        expect(calls).not.toContain('merge:42:head');
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'prepared',
+            receiptId: 'IC_delivery_42_1',
+            receiptBody: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'),
+        });
+        expect(calls).not.toContain('complete:2372');
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(2);
+        expect(receipts.map(({ id }) => id)).toEqual(['IC_delivery_42_1', 'IC_delivery_42_2']);
+        expect(calls.filter((call) => call.startsWith('merge:42:'))).toEqual([`merge:42:${nextHead}`]);
         expect(calls).toContain('complete:2372');
         expect(persistedReceiptAuthority()).toEqual({
             phase: 'terminal',
@@ -3649,7 +3686,7 @@ describe('pull-request delivery', () => {
         { ciState: 'failed', mergeStateStatus: 'BLOCKED' },
         { ciState: 'pending', mergeStateStatus: 'UNKNOWN' },
         { ciState: 'absent', mergeStateStatus: '' },
-        { ciState: 'failed', mergeStateStatus: 'UNSTABLE' },
+        { ciState: 'unstable', mergeStateStatus: 'UNSTABLE' },
         { ciState: 'malformed', mergeStateStatus: 'not-a-github-state' },
         { ciState: 'unavailable', mergeStateStatus: 'UNAVAILABLE' },
     ])('merges with $ciState CI evidence while CI admission is advisory', ({ mergeStateStatus }) => {
@@ -3672,7 +3709,7 @@ describe('pull-request delivery', () => {
         { ciState: 'failed', mergeStateStatus: 'BLOCKED' },
         { ciState: 'pending', mergeStateStatus: 'UNKNOWN' },
         { ciState: 'absent', mergeStateStatus: '' },
-        { ciState: 'failed', mergeStateStatus: 'UNSTABLE' },
+        { ciState: 'unstable', mergeStateStatus: 'UNSTABLE' },
         { ciState: 'malformed', mergeStateStatus: 'not-a-github-state' },
         { ciState: 'unavailable', mergeStateStatus: 'UNAVAILABLE' },
     ])('writes advisory delivery receipts with the normalized $ciState CI state', ({ ciState, mergeStateStatus }) => {
@@ -3688,7 +3725,7 @@ describe('pull-request delivery', () => {
         expect(receipts[0]?.body).toContain(`- Observed CI state: ${ciState}`);
     });
 
-    it('writes advisory delivery receipts with failed observed CI state when GitHub reports UNSTABLE', () => {
+    it('writes advisory delivery receipts with unstable observed CI state when GitHub reports UNSTABLE', () => {
         const { port, receipts } = fakePort({
             primary: [pullRequest({ mergeStateStatus: 'UNSTABLE' }), pullRequest({ mergeStateStatus: 'UNSTABLE' })],
         });
@@ -3696,7 +3733,8 @@ describe('pull-request delivery', () => {
         deliverPullRequest(42, port);
 
         expect(receipts).toHaveLength(1);
-        expect(receipts[0]?.body).toContain('- Observed CI state: failed');
+        expect(receipts[0]?.body).toContain('- Observed CI state: unstable');
+        expect(receipts[0]?.body).not.toContain('- Observed CI state: failed');
         expect(receipts[0]?.body).not.toContain('- Observed CI state: cancelled');
     });
 

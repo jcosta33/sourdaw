@@ -187,6 +187,23 @@ describe('pull-request contract', () => {
         );
     });
 
+    it('round-trips an advisory delivery receipt that records an unstable aggregate CI state', () => {
+        const payload = {
+            pullRequest: 2495,
+            head: '3fc61d12acb110faba1a15e251268a1a7d09be9d',
+            bodySha256: 'a'.repeat(64),
+            closingIssue: 2406,
+            ciAdmissionMode: 'advisory' as const,
+            observedCiState: 'unstable' as const,
+        };
+        const receipt = composeDeliveryReceipt(payload);
+
+        expect(receipt).toContain('- CI admission: advisory');
+        expect(receipt).toContain('- Observed CI state: unstable');
+        expect(receipt).toContain('observed-ci-state: unstable');
+        expect(parseDeliveryReceipt(receipt)).toEqual({ ...payload, schemaVersion: 2 });
+    });
+
     it('keeps parsing legacy v1 delivery receipts byte-for-byte', () => {
         const legacy = [
             '<!-- sourdaw-delivery-receipt:v1',

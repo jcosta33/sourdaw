@@ -153,7 +153,8 @@ export type DeliveryReceiptPayload = {
     bodySha256: string;
     closingIssue?: number;
     ciAdmissionMode?: 'advisory' | 'required';
-    observedCiState?: 'successful' | 'failed' | 'pending' | 'absent' | 'cancelled' | 'malformed' | 'unavailable';
+    observedCiState?:
+        'successful' | 'failed' | 'pending' | 'absent' | 'cancelled' | 'unstable' | 'malformed' | 'unavailable';
 };
 
 const CLOSING_REFERENCE_PATTERN =
@@ -167,7 +168,7 @@ const DELIVERY_RECEIPT_V1_PATTERN =
     /^<!-- sourdaw-delivery-receipt:v1\npull-request: ([1-9][0-9]*)\nhead: ([A-Za-z0-9._-]{1,128})\nbody-sha256: ([0-9a-f]{64})\nclosing-issue: (none|[1-9][0-9]*)\n-->$/;
 const DELIVERY_RECEIPT_V2_PREFIX = '<!-- sourdaw-delivery-receipt:v2';
 const DELIVERY_RECEIPT_V2_PATTERN =
-    /^<!-- sourdaw-delivery-receipt:v2\npull-request: ([1-9][0-9]*)\nhead: ([A-Za-z0-9._-]{1,128})\nbody-sha256: ([0-9a-f]{64})\nclosing-issue: (none|[1-9][0-9]*)(?:\nci-admission-mode: (advisory|required)(?:\nobserved-ci-state: (successful|failed|pending|absent|cancelled|malformed|unavailable))?)?\n-->$/;
+    /^<!-- sourdaw-delivery-receipt:v2\npull-request: ([1-9][0-9]*)\nhead: ([A-Za-z0-9._-]{1,128})\nbody-sha256: ([0-9a-f]{64})\nclosing-issue: (none|[1-9][0-9]*)(?:\nci-admission-mode: (advisory|required)(?:\nobserved-ci-state: (successful|failed|pending|absent|cancelled|unstable|malformed|unavailable))?)?\n-->$/;
 
 type ClosingReference = { issue: string; repository?: string };
 type IssueReference = ClosingReference & { label: 'Closes' | 'Related' };
