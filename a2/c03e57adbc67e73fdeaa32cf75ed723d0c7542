@@ -1,0 +1,58 @@
+src/modules/AudioEngine/useCases/offlineRender/admitNativeClipExpansion.ts
+  s_4f908a5afb6b58::t_20de20a76e707a 1-115
+src/modules/AudioEngine/useCases/livePlayback/projectLiveGraphProgramme.ts
+  s_4f908a5afb6b58::t_7551da48746d03 55-59
+  s_4f908a5afb6b58::t_15a7ea980b36b0 294-300
+  s_4f908a5afb6b58::t_ec20aab2aeb78c 72
+src/modules/AudioEngine/useCases/livePlayback/startNativeLiveGraphSession.ts
+  s_4f908a5afb6b58::t_2c4924aba40b3e 213-223,228
+src/modules/AudioEngine/useCases/livePlayback/__tests__/projectLiveGraphProgrammeParity.spec.ts
+  s_4f908a5afb6b58::t_58d496341cf860 408
+  s_4f908a5afb6b58::t_7f7a8161573f43 480,484-517
+  s_4f908a5afb6b58::t_2ee160f78b2cc0 566-567
+  s_4f908a5afb6b58::t_239c04af720942 549-553
+  s_4f908a5afb6b58::t_ec282d458f03f1 602-605,607
+  s_4f908a5afb6b58::t_7d8c1a4f68feb7 527-531,533
+  s_4f908a5afb6b58::t_3a80e5606a9fc9 732-738
+  s_4f908a5afb6b58::t_d9f5d8e2739c97 667-668
+  s_4f908a5afb6b58::t_c7ed58a97966c1 722-731,739-749
+  s_4f908a5afb6b58::t_fb1bd8160fd47f 518-519
+  s_4f908a5afb6b58::t_3707dd5ad94ef1 721
+crates/sourdaw-native/src/commands/graph.rs
+  s_4f908a5afb6b58::t_67c246cb1f5743 3313
+  s_4f908a5afb6b58::t_3f7fea505bb6aa 2121-2129,2132
+  s_4f908a5afb6b58::t_f8b2120d746a18 3311-3312,3314-3355
+  s_4f908a5afb6b58::t_0d88e9c96a1974 2133-2135,3356-3357
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeLiveGraphSession.spec.ts
+  s_4f908a5afb6b58::t_f68c408b4b9dfe 219-220
+  s_4f908a5afb6b58::t_ef9cbac578db4f 54-60
+  s_4f908a5afb6b58::t_ae94564726a9de 81-91
+  s_4f908a5afb6b58::t_71982f5c0337c3 61
+  s_4f908a5afb6b58::t_30b7e2f5f2435b 283-330
+  s_4f908a5afb6b58::t_5e248cd11d08c7 331-332
+src/modules/AudioEngine/useCases/offlineRender/renderOfflineWithNativeEngine.ts
+  s_4f908a5afb6b58::t_23f70e7871ec89 76
+  s_4f908a5afb6b58::t_394cd3a71c6d32 390-403
+  s_4f908a5afb6b58::t_723bba0c84a6db 346-350
+  s_4f908a5afb6b58::t_c170b085bff989 38-45
+src/modules/AudioEngine/useCases/livePlayback/__tests__/projectLiveGraphProgramme.spec.ts
+  s_4f908a5afb6b58::t_6745810d559442 51,53-58
+  s_4f908a5afb6b58::t_5999efe27f6022 353,356,360-363,365,369,371-386,391-395,399-404,411
+  s_4f908a5afb6b58::t_3f3dbf26511b38 405-410,440
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "a2c03e57adbc67e73fdeaa32cf75ed723d0c7542",
+  "prompts": {},
+  "sessions": {
+    "s_4f908a5afb6b58": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fcb92ba4-bf56-47a4-8b57-803f335a449e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
