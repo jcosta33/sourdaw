@@ -545,6 +545,28 @@ export function registerBuiltinFaustDSP(): void {
                 step: 0.01,
                 type: 'hslider',
             },
+
+            // Note-level controls the compiled node also exposes; copied from
+            // the .dsp so the registration covers every input control, not
+            // only the timbre block.
+            {
+                address: '/fm_synth/freq',
+                label: 'Freq',
+                min: 20,
+                max: 10000,
+                defaultValue: 440,
+                step: 0.1,
+                type: 'hslider',
+            },
+            {
+                address: '/fm_synth/gate',
+                label: 'Gate',
+                min: 0,
+                max: 1,
+                defaultValue: 0,
+                step: 1,
+                type: 'button',
+            },
         ],
         true
     );
@@ -583,6 +605,17 @@ export function registerBuiltinFaustDSP(): void {
                 type: 'hslider',
             },
             { address: '/Rhodes/gain', label: 'Gain', min: 0, max: 1, defaultValue: 0.5, step: 0.01, type: 'hslider' },
+            // Note-level controls the compiled node also exposes.
+            {
+                address: '/Rhodes/freq',
+                label: 'Freq',
+                min: 20,
+                max: 10000,
+                defaultValue: 440,
+                step: 0.1,
+                type: 'hslider',
+            },
+            { address: '/Rhodes/gate', label: 'Gate', min: 0, max: 1, defaultValue: 0, step: 1, type: 'button' },
         ],
         true
     );
