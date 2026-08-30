@@ -127,7 +127,13 @@ export function isGeneratedMidiStateCurrent({
     if (referencedByTrack) {
         return false;
     }
-    if (getAutomationLanes().some((lane) => lane.trackId === entityId)) {
+    // Track-scoped lanes (no clipId) are user-drawn state no generation
+    // writes, so any one of them still disqualifies undo. Clip-scoped lanes
+    // keyed to this track are governed by `clipAutomationLanesJson` above —
+    // a track duplicate clones the source's lanes onto the copies' clip ids,
+    // and the exact-match (or absence) leg there already refuses a lane the
+    // generation did not leave behind.
+    if (getAutomationLanes().some((lane) => lane.trackId === entityId && lane.clipId === undefined)) {
         return false;
     }
     if (takeLaneStore.value?.lanes.some((lane) => lane.trackId === entityId)) {

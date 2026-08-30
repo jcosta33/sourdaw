@@ -38,8 +38,11 @@ function isOwnedByRetryableSectionRenderFollowUp(
     continuation: AgentRunPendingEffectContinuation,
     committedRevision: string | null
 ): boolean {
+    // Read the retained effects, not `recovery`: that field is derived from the
+    // same policy that rates every retained section render manual-repair, so
+    // testing it here would refuse exactly the continuations this hides.
     return (
-        continuation.recovery !== 'manual-repair' &&
+        continuation.effects.every(({ remediation }) => remediation !== 'manual-repair') &&
         continuation.effects.length === 1 &&
         continuation.effects[0]?.kind === 'external-effect' &&
         continuation.effects[0].operation === 'renderProjectSections' &&

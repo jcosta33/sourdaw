@@ -181,9 +181,13 @@ describe('command batch idempotency', () => {
         runtimeEffectGate = null;
         runtimeEffectCount = 0;
         runtimeGain = 1;
-        projectDocument = { trackGain: { value: 1 }, trackPan: { value: 0 } };
+        // `unrelated` is the foreign-writer field the recovery cases advance to
+        // move the project outside the batch; its storage handle can only hydrate
+        // a field the document already carries.
+        projectDocument = { trackGain: { value: 1 }, trackPan: { value: 0 }, unrelated: { value: false } };
         const baseProjectDocument = structuredClone(projectDocument);
         const records = new Map<string, { contentHash: string; serializedReceipt?: string }>();
+        const recoveryLeases = new Set<string>();
         commandBatchIdempotencyPort.setRepository({
             lookup: ({ projectId, idempotencyKey, contentHash }) => {
                 const existing = records.get(`${projectId}:${idempotencyKey}`);
@@ -218,6 +222,22 @@ describe('command batch idempotency', () => {
                     return Promise.reject(new Error('durable store unavailable'));
                 }
                 records.set(`${projectId}:${idempotencyKey}`, { contentHash, serializedReceipt });
+                return Promise.resolve();
+            },
+            // Single-holder recovery lease, like the durable repository's. Without
+            // one the port answers `null` for every acquisition, and every caller
+            // that guards recovery on the lease stops at that guard instead of
+            // reaching the recovery branch it is being asked about.
+            tryAcquireRecoveryLease: ({ projectId, idempotencyKey }) => {
+                const key = `${projectId}:${idempotencyKey}`;
+                if (recoveryLeases.has(key)) {
+                    return Promise.resolve(false);
+                }
+                recoveryLeases.add(key);
+                return Promise.resolve(true);
+            },
+            release: ({ projectId, idempotencyKey }) => {
+                recoveryLeases.delete(`${projectId}:${idempotencyKey}`);
                 return Promise.resolve();
             },
         });
@@ -1764,12 +1784,16 @@ describe('command batch idempotency', () => {
         expect(finalized).toMatchObject({ status: 'finalized', receipt: { pendingEffects: [], outcome: 'committed' } });
         expect(alreadyFinalized).toMatchObject({ status: 'already-finalized', receipt: { pendingEffects: [] } });
         expect(retainedEvidence).toHaveBeenCalledExactlyOnceWith();
+        // Both are retryable: the caller's own evidence can be re-proven, and a
+        // replica becomes the authoritative host without any manual repair.
         expect(evictedEvidence).toEqual({
             status: 'failed',
+            disposition: 'retryable',
             reason: 'Approved section render artifact is no longer retained.',
         });
         expect(unavailableAuthority).toEqual({
             status: 'failed',
+            disposition: 'retryable',
             reason: 'Only the authoritative collaboration host can finalize recovery',
         });
         expect(replay).toMatchObject({ pendingEffects: [], outcome: 'committed' });
@@ -1957,6 +1981,7 @@ describe('command batch idempotency', () => {
 
         await expect(finalization).resolves.toEqual({
             status: 'failed',
+            disposition: 'retryable',
             reason: 'Approved section render artifact is no longer retained.',
         });
         expect(mutationCount).toBe(mutationCountBeforeFinalization);

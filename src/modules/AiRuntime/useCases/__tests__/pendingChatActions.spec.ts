@@ -22,6 +22,40 @@ import { confirmPendingChatActions } from '../confirmPendingChatActions';
 
 type ExecuteAppActionBatch = (typeof import('#/modules/Command/useCases'))['executeAppActionBatch'];
 type AppAction = Parameters<ExecuteAppActionBatch>[0][number];
+type BatchOutcome = Awaited<ReturnType<ExecuteAppActionBatch>>['status'];
+
+function createVerifiedTestReceipt(outcome: BatchOutcome) {
+    return {
+        schemaVersion: 1,
+        runId: 'test-run',
+        batchId: 'test-batch',
+        atomicity: 'atomic',
+        base: {
+            normalizedRevision: 'revision-1',
+            documentIdentityEpoch: null,
+            mutationEpoch: null,
+            documents: [],
+        },
+        observedBase: null,
+        resulting: null,
+        commandOutcomes: [],
+        affectedIds: [],
+        createdBindings: [],
+        errors: [],
+        links: { analysis: [], render: [] },
+        modelSummary: 'Verified test receipt',
+        outcome,
+        pendingEffects: [],
+        compensation: { available: false, commandIds: [] },
+        semanticDiff: null,
+        warnings: [],
+    };
+}
+
+type VerifiedTestReceipt = ReturnType<typeof createVerifiedTestReceipt>;
+type ProjectCommitFinalizationObserver = {
+    onProjectCommitFinalized?: (evidence: { receipt: VerifiedTestReceipt; revision: string }) => void;
+};
 
 const chatGenerationState = vi.hoisted(() => ({ value: false }));
 const projectMutationAuthorization = vi.hoisted(() => {
@@ -190,7 +224,13 @@ describe('pending chat action confirmation', () => {
             })
         );
         mocks.executeVersionedCommandBatchEnvelope.mockImplementation(
-            async ({ serialized, options }: { serialized: string; options?: Parameters<ExecuteAppActionBatch>[1] }) => {
+            async ({
+                serialized,
+                options,
+            }: {
+                serialized: string;
+                options?: Parameters<ExecuteAppActionBatch>[1] & ProjectCommitFinalizationObserver;
+            }) => {
                 const result = await mocks.executeAppActionBatch(approvedActionsByBatch.get(serialized) ?? [], options);
                 if (
                     result.status !== 'committed' &&
@@ -200,34 +240,15 @@ describe('pending chat action confirmation', () => {
                 ) {
                     return result;
                 }
-                return {
-                    ...result,
-                    receipt: {
-                        schemaVersion: 1,
-                        runId: 'test-run',
-                        batchId: 'test-batch',
-                        atomicity: 'atomic',
-                        base: {
-                            normalizedRevision: 'revision-1',
-                            documentIdentityEpoch: null,
-                            mutationEpoch: null,
-                            documents: [],
-                        },
-                        observedBase: null,
-                        resulting: null,
-                        commandOutcomes: [],
-                        affectedIds: [],
-                        createdBindings: [],
-                        errors: [],
-                        links: { analysis: [], render: [] },
-                        modelSummary: 'Verified test receipt',
-                        outcome: result.status,
-                        pendingEffects: [],
-                        compensation: { available: false, commandIds: [] },
-                        semanticDiff: null,
-                        warnings: [],
-                    },
-                };
+                const receipt = createVerifiedTestReceipt(result.status);
+                if (result.status === 'committed' || result.status === 'committed-with-warning') {
+                    // Only a durable project commit reaches a checkpoint. The real
+                    // executor reports that checkpoint's exact revision here, and
+                    // the confirmation path refuses to report a clean commit
+                    // without it.
+                    options?.onProjectCommitFinalized?.({ receipt, revision: mocks.projectRevision.value });
+                }
+                return { ...result, receipt };
             }
         );
         mocks.describeAction.mockReturnValue('Remove track');
@@ -260,18 +281,22 @@ describe('pending chat action confirmation', () => {
         expect(result).toEqual({ status: 'executed' });
         expect(projectMutationAuthorization.capture).toHaveBeenCalledOnce();
         expect(mocks.executeAppActionBatch.mock.calls[0]?.[0]).toEqual([pendingAction]);
+        // The undo group is the approved batch's own id, which the committed
+        // render retry admission matches against the envelope and receipt. The
+        // `generateGroupId` stand-in still answers `group-1`, so a regression
+        // back to a freshly generated group cannot pass here.
         expect(mocks.executeAppActionBatch.mock.calls[0]?.[1]).toMatchObject({
-            groupId: 'group-1',
+            groupId: 'confirm-1',
             groupLabel: 'delete drums',
             source: 'prompt',
             requireCompensation: false,
         });
         expect(typeof mocks.executeAppActionBatch.mock.calls[0]?.[1]?.shouldExecute).toBe('function');
         expect(mocks.pushAiActionGroup).toHaveBeenCalledWith({
-            id: 'group-1',
+            id: 'confirm-1',
             prompt: 'delete drums',
             actions: [{ kind: 'appAction', actionType: 'removeTrack', label: 'Remove track' }],
-            groupId: 'group-1',
+            groupId: 'confirm-1',
             timestamp: expect.any(Number),
             reverted: false,
             executionKind: 'project',
@@ -859,8 +884,8 @@ describe('pending chat action confirmation', () => {
         ]);
         expect(mocks.executeAppActionBatch.mock.calls[0]?.[0]).toEqual([pendingAction, secondPendingAction]);
         expect(mocks.executeAppActionBatch.mock.calls[0]?.[1]).toMatchObject({
-            groupId: 'group-1',
-            groupLabel: 'delete drums',
+            groupId: 'confirm-1',
+            groupLabel: 'delete drums and clip',
             source: 'prompt',
             requireCompensation: true,
         });

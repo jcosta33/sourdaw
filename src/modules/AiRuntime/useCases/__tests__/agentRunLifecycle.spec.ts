@@ -1,13 +1,28 @@
+import { parse as parsePersistedValue } from 'superjson';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { type AgentRunPendingEffect } from '../../models/AgentRun';
+import { type AgentRun, type AgentRunPendingEffect } from '../../models/AgentRun';
 import { MISSING_EXACT_CHECKPOINT_RECOVERY_REASON } from '../../models/GetPendingEffectRecoveryPolicy';
-import { agentRunStore, readAgentRunState } from '../../stores/agentRunStore';
+import { agentRunStore, readAgentRunState, sanitizeAgentRunState } from '../../stores/agentRunStore';
 import * as pendingActionConfirmationStore from '../../stores/pendingActionConfirmationStore';
 import { selectAgentRunPendingEffectRecoveries } from '../../stores/selectAgentRunPendingEffectRecoveries';
 import { requireSectionRenderManualRepair } from '../agentRequestOrchestration/requireSectionRenderManualRepair';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { createAgentSagaStep } from '../createAgentSagaStep';
+
+/**
+ * Seed the store the way a reload does — persisted bytes, parsed, then through
+ * the same sanitizer. `agentRunStore.hydrate()` cannot stand in for it: the
+ * local-storage adapter exposes no `hydrate`, so that call is inert and the
+ * store would keep whatever `clear()` last wrote.
+ */
+function reloadPersistedAgentRun(serializedState: string, runId: string): AgentRun | undefined {
+    const reloaded = sanitizeAgentRunState(parsePersistedValue(serializedState));
+    if (!agentRunStore.trySet(reloaded)) {
+        throw new Error('Expected the reloaded agent run state to be accepted.');
+    }
+    return reloaded.runs.find((run) => run.runId === runId);
+}
 
 type VerifiedPendingEffects = NonNullable<
     Parameters<typeof requireSectionRenderManualRepair>[0]['missingEffects']
@@ -269,6 +284,12 @@ describe('agentRunLifecycle', () => {
         }
         continuation.effects[0] = { ...continuation.effects[0]!, operation: 'setTrackGain' };
         durableRecovery.effects[0] = { ...durableRecovery.effects[0]!, operation: 'setTrackGain' };
+        // The recorded reason is stamped from the effects it was recorded with,
+        // and the projection prefers it over the policy. Clearing it is what
+        // makes this a genuine non-render continuation rather than a render one
+        // still carrying the render reason.
+        continuation.lastError = null;
+        durableRecovery.lastError = null;
 
         expect(selectAgentRunPendingEffectRecoveries(state)).toEqual([
             expect.objectContaining({
@@ -296,6 +317,8 @@ describe('agentRunLifecycle', () => {
             kind: 'runtime-graph',
             remediation: 'repair',
         };
+        continuation.lastError = null;
+        durableRecovery.lastError = null;
         const retryableFollowUp = vi
             .spyOn(pendingActionConfirmationStore, 'hasRetryableSectionRenderFollowUp')
             .mockReturnValue(true);
@@ -526,10 +549,8 @@ describe('agentRunLifecycle', () => {
                 throw new Error('Expected the manual render repair projection to be durable.');
             }
             agentRunLifecycle.clear();
-            window.localStorage.setItem('sourdaw-agent-runs', serializedState);
-            agentRunStore.hydrate();
 
-            const hydrated = agentRunLifecycle.get('run-render-review');
+            const hydrated = reloadPersistedAgentRun(serializedState, 'run-render-review');
             expect(hydrated?.saga.steps).toHaveLength(renderCount);
             expect(hydrated?.saga.steps).toEqual(
                 effects.map((effect, index) =>
@@ -550,7 +571,10 @@ describe('agentRunLifecycle', () => {
                 selectAgentRunPendingEffectRecoveries(readAgentRunState()).find(
                     ({ runId, batchId }) => runId === 'run-render-review' && batchId === 'batch-render-review'
                 )
-            ).toMatchObject({ checkpoint: 'durable', recovery: 'manual-repair', effects });
+                // The projection emits only durable ledger entries, so finding
+                // this one here is the durability evidence; `checkpoint` itself is
+                // ledger bookkeeping the public projection does not carry.
+            ).toMatchObject({ recovery: 'manual-repair', effects });
         }
     );
 
@@ -622,10 +646,8 @@ describe('agentRunLifecycle', () => {
             throw new Error('Expected the normalized render recovery to be durable.');
         }
         agentRunLifecycle.clear();
-        window.localStorage.setItem('sourdaw-agent-runs', serializedState);
-        agentRunStore.hydrate();
 
-        const hydrated = agentRunLifecycle.get('run-render-review');
+        const hydrated = reloadPersistedAgentRun(serializedState, 'run-render-review');
         expect(hydrated?.pendingEffectContinuations).toMatchObject([
             {
                 recovery: 'manual-repair',
@@ -644,7 +666,6 @@ describe('agentRunLifecycle', () => {
                 ({ runId, batchId }) => runId === 'run-render-review' && batchId === 'batch-render-review'
             )
         ).toMatchObject({
-            checkpoint: 'durable',
             recovery: 'manual-repair',
             effects: [
                 expect.objectContaining({
