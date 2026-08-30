@@ -792,6 +792,37 @@ describe('executePromptActionGroup', () => {
         });
     });
 
+    it('persists the finalized commit revision after deferred command completion despite later project mutation', async () => {
+        const fixture = getBatchFixtures().stem;
+        const receipt = committedReceipt(fixture);
+        let completeExecution: ((result: Awaited<ReturnType<typeof mocks.executePlannedActions>>) => void) | undefined;
+        mocks.executePlannedActions.mockImplementation(
+            () =>
+                new Promise((resolve) => {
+                    completeExecution = resolve;
+                })
+        );
+        seedRun(fixture);
+
+        const execution = executePromptActionGroup({
+            actions: fixture.actions,
+            prompt: 'Import stems',
+            projectRevision: 'revision-1',
+            ...admitted(fixture),
+        });
+        await vi.waitFor(() => expect(mocks.executePlannedActions).toHaveBeenCalledOnce());
+        mocks.projectRevision.value = 'revision-R3';
+        completeExecution?.({
+            status: 'committed',
+            actions: [{ actionType: 'importStemSet', label: 'Import stems' }],
+            receipt,
+            committedRevision: 'revision-R2',
+        });
+
+        await expect(execution).resolves.toEqual({ status: 'committed' });
+        expect(agentRunLifecycle.get(RUN_ID)?.revisions.committed).toBe('revision-R2');
+    });
+
     it('exposes manual repair instead of a reconcile-batch continuation for a manual-repair receipt', async () => {
         const fixture = getBatchFixtures().stem;
         const effect = pendingEffect(fixture, 'manual-repair');

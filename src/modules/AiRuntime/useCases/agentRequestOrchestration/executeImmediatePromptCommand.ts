@@ -185,7 +185,7 @@ export async function executeImmediatePromptCommand(
             actions,
             commandBatch,
             revertGroupId: group.groupId,
-            committedRevision: captureProjectRevision(),
+            committedRevision: execution.committedRevision ?? captureProjectRevision(),
             completesRun: commandLeaseSettlement.accepted,
         });
         if (runPersistenceWarning) {

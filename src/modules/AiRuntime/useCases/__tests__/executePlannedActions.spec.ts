@@ -371,15 +371,14 @@ describe('executePlannedActions', () => {
             };
         });
 
-        await expect(
-            executePlannedActions({
-                commandBatch: postCommitFixture.commandBatch,
-                prompt: 'Render the retained section.',
-                actions: postCommitFixture.actions,
-                projectRevision: 'revision-1',
-            })
-        ).resolves.toMatchObject({ status: 'committed' });
+        const result = await executePlannedActions({
+            commandBatch: postCommitFixture.commandBatch,
+            prompt: 'Render the retained section.',
+            actions: postCommitFixture.actions,
+            projectRevision: 'revision-1',
+        });
 
+        expect(result).toMatchObject({ status: 'committed', committedRevision: 'revision-R2' });
         expect(agentRunLifecycle.get(receipt.runId)?.pendingEffectContinuations[0]?.sourceRevision).toBe('revision-R2');
         expect(readAgentRunState().pendingEffectRecoveryLedger?.[0]?.sourceRevision).toBe('revision-R2');
     });

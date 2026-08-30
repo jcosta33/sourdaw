@@ -50,6 +50,7 @@ type ExecutePlannedActionsResult =
           status: 'committed';
           actions: ExecutedAction[];
           commitWarning?: string;
+          committedRevision?: string;
           receipt?: VerifiedBatchReceipt;
           reportingWarning?: string;
       }
@@ -214,6 +215,7 @@ export async function executePlannedActions(input: ExecutePlannedActionsInput): 
         status: 'committed',
         actions,
         ...(commitWarning ? { commitWarning } : {}),
+        ...(finalizedProjectRevision ? { committedRevision: finalizedProjectRevision } : {}),
         receipt,
         ...(reportingWarning ? { reportingWarning } : {}),
     };

@@ -403,7 +403,9 @@ export async function executePromptActionGroup(
             receipt: execution.receipt,
             actions: input.actions,
             commandBatch,
-            ...(execution.status === 'committed' ? { committedRevision: captureProjectRevision() } : {}),
+            ...(execution.status === 'committed'
+                ? { committedRevision: execution.committedRevision ?? captureProjectRevision() }
+                : {}),
             completesRun: leaseSettlement.accepted && leaseSettlement.warning === null,
         });
         const resourcePromotionWarning = await completeCommittedImportedStemPromotion();
