@@ -1,0 +1,53 @@
+src/modules/WorkspaceShell/presentations/views/Transport/__tests__/PanelToggles.spec.tsx
+  s_ae074277795b45::t_87599b00622e46 161-167,194
+  s_ae074277795b45::t_72513027b825fc 182-184
+  s_ae074277795b45::t_92cbbc116e9d94 159-160,168-181,185-193,195-198
+src/modules/WorkspaceShell/presentations/views/Transport/PanelToggles.tsx
+  s_ae074277795b45::t_bcc7ad7ad59482 66-71,83-88,91-96,99-104,107-112,115-120,124,131-136,139-144
+tests/e2e/transportResponsive.spec.ts
+  s_ae074277795b45::t_8607fd87474941 26
+  s_ae074277795b45::t_a1fcd3cf306ada 117
+  s_ae074277795b45::t_379699d693ac71 7,23-25,70-73,79,116,118-122
+src/modules/WorkspaceShell/presentations/views/__tests__/ToolSelectorBranches.spec.tsx
+  s_ae074277795b45::t_92cbbc116e9d94 4-5,51-63
+  s_ae074277795b45::t_82673aef523e05 1,64
+  s_ae074277795b45::t_d19418f62a1adb 65
+src/modules/WorkspaceShell/presentations/views/TransportBar.tsx
+  s_ae074277795b45::t_bcc7ad7ad59482 84
+src/modules/Onboarding/presentations/views/OnboardingTour.tsx
+  s_ae074277795b45::t_bcc7ad7ad59482 112-118
+src/modules/WorkspaceShell/presentations/views/__tests__/TransportBar.spec.tsx
+  s_ae074277795b45::t_92cbbc116e9d94 86-89,276-280
+  s_ae074277795b45::t_ae1ae913c1ab65 281-283
+  s_ab242b2dab84a5::t_d43be3bf4b58c3 284
+src/styles/main.css
+  s_ae074277795b45::t_bcc7ad7ad59482 136-152,178-181
+src/modules/Onboarding/presentations/views/__tests__/OnboardingTour.spec.tsx
+  s_ae074277795b45::t_92cbbc116e9d94 95-116
+src/modules/WorkspaceShell/presentations/views/ToolSelector.tsx
+  s_ae074277795b45::t_bcc7ad7ad59482 64-78
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "49e4a767e1bb85690737a883a08fcaad7027a3be",
+  "prompts": {},
+  "sessions": {
+    "s_ab242b2dab84a5": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a053f4-ab62-74d3-83f9-9ed42d1b0453",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ae074277795b45": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04ab5-5234-7100-be1c-76ebfaba88d3",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
