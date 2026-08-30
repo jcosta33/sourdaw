@@ -90,8 +90,12 @@ export type DeliveryPort = CheckEvidencePort & {
     deliveryReceiptProof: (number: number) => DeliveryReceiptProof;
     addDeliveryReceipt: (number: number, body: string) => DeliveryReceiptComment;
     readDeliveryReceiptAuthority: (number: number) => PersistedDeliveryReceiptAuthority | undefined;
-    writeDeliveryReceiptAuthority: (number: number, authority: PersistedDeliveryReceiptAuthority) => void;
-    clearDeliveryReceiptAuthority: (number: number) => void;
+    writeDeliveryReceiptAuthority: (
+        number: number,
+        authority: PersistedDeliveryReceiptAuthority,
+        expectedCurrent?: PersistedDeliveryReceiptAuthority
+    ) => void;
+    clearDeliveryReceiptAuthority: (number: number, expectedCurrent?: PersistedDeliveryReceiptAuthority) => void;
     log: (message: string) => void;
 };
 
@@ -1016,7 +1020,7 @@ function persistDeliveryReceiptAuthority(
     if (samePersistedDeliveryReceiptAuthority(current, next)) {
         return;
     }
-    port.writeDeliveryReceiptAuthority(number, next);
+    port.writeDeliveryReceiptAuthority(number, next, current);
 }
 
 function persistPreparedDeliveryReceiptAuthority(
@@ -1070,13 +1074,13 @@ function restorePreArmedDeliveryReceiptAuthority(
         return;
     }
     if (beforeArming === undefined || beforeArming.phase === 'legacy') {
-        port.clearDeliveryReceiptAuthority(number);
+        port.clearDeliveryReceiptAuthority(number, current);
         return;
     }
     if (samePersistedDeliveryReceiptAuthority(current, beforeArming)) {
         return;
     }
-    port.writeDeliveryReceiptAuthority(number, beforeArming);
+    port.writeDeliveryReceiptAuthority(number, beforeArming, current);
 }
 
 function replacePersistedDeliveryReceiptAuthorityIfUnchanged(
@@ -1084,16 +1088,11 @@ function replacePersistedDeliveryReceiptAuthorityIfUnchanged(
     expectedCurrent: CurrentPersistedDeliveryReceiptAuthority,
     next: CurrentPersistedDeliveryReceiptAuthority,
     port: DeliveryPort
-): boolean {
-    const current = port.readDeliveryReceiptAuthority(number);
-    if (!samePersistedDeliveryReceiptAuthority(current, expectedCurrent)) {
-        return false;
+): void {
+    if (samePersistedDeliveryReceiptAuthority(expectedCurrent, next)) {
+        return;
     }
-    if (samePersistedDeliveryReceiptAuthority(current, next)) {
-        return true;
-    }
-    port.writeDeliveryReceiptAuthority(number, next);
-    return true;
+    port.writeDeliveryReceiptAuthority(number, next, expectedCurrent);
 }
 
 function frozenDeliveryReceiptAuthorityHead(
@@ -3140,6 +3139,13 @@ function readDeliveryReceiptAuthority(
     primaryRoot: string,
     number: number
 ): PersistedDeliveryReceiptAuthority | undefined {
+    return readDeliveryReceiptAuthorityEntry(primaryRoot, number)?.authority;
+}
+
+function readDeliveryReceiptAuthorityEntry(
+    primaryRoot: string,
+    number: number
+): { oid: string; authority: PersistedDeliveryReceiptAuthority } | undefined {
     const oid = readOptionalDeliveryRefOid(
         primaryRoot,
         deliveryReceiptAuthorityRef(number),
@@ -3149,13 +3155,17 @@ function readDeliveryReceiptAuthority(
     if (oid === undefined) {
         return undefined;
     }
-    return toPersistedDeliveryReceiptAuthority(readDeliveryReceiptAuthorityBlob(primaryRoot, oid, number));
+    return {
+        oid,
+        authority: toPersistedDeliveryReceiptAuthority(readDeliveryReceiptAuthorityBlob(primaryRoot, oid, number)),
+    };
 }
 
 function writeDeliveryReceiptAuthority(
     primaryRoot: string,
     number: number,
-    authority: PersistedDeliveryReceiptAuthority
+    authority: PersistedDeliveryReceiptAuthority,
+    expectedCurrent?: PersistedDeliveryReceiptAuthority
 ): void {
     if (!isCurrentPersistedDeliveryReceiptAuthority(authority)) {
         fail(`PR #${number} delivery receipt authority is malformed`);
@@ -3175,8 +3185,16 @@ function writeDeliveryReceiptAuthority(
             ? {}
             : { postMergeValidation: authority.postMergeValidation }),
     };
+    const current = readDeliveryReceiptAuthorityEntry(primaryRoot, number);
+    if (expectedCurrent !== undefined && !samePersistedDeliveryReceiptAuthority(current?.authority, expectedCurrent)) {
+        fail(`PR #${number} delivery receipt authority could not be stored`);
+    }
+    if (samePersistedDeliveryReceiptAuthority(current?.authority, authority)) {
+        return;
+    }
     const oid = writeDeliveryReceiptAuthorityBlob(primaryRoot, stored, number);
-    if (!updateDeliveryLockRef(primaryRoot, [deliveryReceiptAuthorityRef(number), oid])) {
+    const expectedOldOid = current?.oid ?? '0'.repeat(oid.length);
+    if (!updateDeliveryLockRef(primaryRoot, ['--no-deref', deliveryReceiptAuthorityRef(number), oid, expectedOldOid])) {
         fail(`PR #${number} delivery receipt authority could not be stored`);
     }
     const verified = readDeliveryReceiptAuthority(primaryRoot, number);
@@ -3185,14 +3203,24 @@ function writeDeliveryReceiptAuthority(
     }
 }
 
-function clearDeliveryReceiptAuthority(primaryRoot: string, number: number): void {
+function clearDeliveryReceiptAuthority(
+    primaryRoot: string,
+    number: number,
+    expectedCurrent?: PersistedDeliveryReceiptAuthority
+): void {
     const ref = deliveryReceiptAuthorityRef(number);
-    const oid = readOptionalDeliveryRefOid(primaryRoot, ref, number, 'delivery receipt authority');
-    if (oid === undefined) {
+    const current = readDeliveryReceiptAuthorityEntry(primaryRoot, number);
+    if (expectedCurrent !== undefined && !samePersistedDeliveryReceiptAuthority(current?.authority, expectedCurrent)) {
+        fail(`PR #${number} delivery receipt authority could not be cleared`);
+    }
+    if (current === undefined) {
         return;
     }
-    if (!updateDeliveryLockRef(primaryRoot, ['-d', ref, oid])) {
+    if (!updateDeliveryLockRef(primaryRoot, ['--no-deref', '-d', ref, current.oid])) {
         fail(`PR #${number} delivery receipt authority could not be cleared`);
+    }
+    if (readDeliveryReceiptAuthority(primaryRoot, number) !== undefined) {
+        fail(`PR #${number} delivery receipt authority could not be verified`);
     }
 }
 

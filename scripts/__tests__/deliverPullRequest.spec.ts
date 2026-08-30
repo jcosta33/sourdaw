@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
@@ -528,6 +528,13 @@ function authorityTrace(authority: PersistedDeliveryReceiptAuthority | undefined
     return `${authority.phase}:${authority.receiptId}`;
 }
 
+function sameReceiptAuthority(
+    left: PersistedDeliveryReceiptAuthority | undefined,
+    right: PersistedDeliveryReceiptAuthority | undefined
+): boolean {
+    return JSON.stringify(left) === JSON.stringify(right);
+}
+
 function fakePort(input: FakeInput = {}) {
     const calls: string[] = [];
     const primary = [...(input.primary ?? [pullRequest(), pullRequest()])];
@@ -691,11 +698,17 @@ function fakePort(input: FakeInput = {}) {
             calls.push(`receipt-authority:read:${authorityTrace(persistedReceiptAuthority)}`);
             return persistedReceiptAuthority;
         },
-        writeDeliveryReceiptAuthority: (_number, authority) => {
+        writeDeliveryReceiptAuthority: (number, authority, expectedCurrent) => {
+            if (expectedCurrent !== undefined && !sameReceiptAuthority(persistedReceiptAuthority, expectedCurrent)) {
+                throw new Error(`PR #${number} delivery receipt authority could not be stored`);
+            }
             calls.push(`receipt-authority:write:${authorityTrace(authority)}`);
             persistedReceiptAuthority = authority;
         },
-        clearDeliveryReceiptAuthority: () => {
+        clearDeliveryReceiptAuthority: (number, expectedCurrent) => {
+            if (expectedCurrent !== undefined && !sameReceiptAuthority(persistedReceiptAuthority, expectedCurrent)) {
+                throw new Error(`PR #${number} delivery receipt authority could not be cleared`);
+            }
             calls.push(`receipt-authority:clear:${authorityTrace(persistedReceiptAuthority)}`);
             persistedReceiptAuthority = undefined;
         },
@@ -2870,16 +2883,22 @@ describe('pull-request delivery', () => {
             }
             return observed;
         };
-        port.writeDeliveryReceiptAuthority = (_number, authority) => {
+        port.writeDeliveryReceiptAuthority = (number, authority, expectedCurrent) => {
+            if (expectedCurrent !== undefined && !sameReceiptAuthority(currentAuthority, expectedCurrent)) {
+                throw new Error(`PR #${number} delivery receipt authority could not be stored`);
+            }
             calls.push(`receipt-authority:write:${authorityTrace(authority)}`);
             currentAuthority = authority;
         };
-        port.clearDeliveryReceiptAuthority = () => {
+        port.clearDeliveryReceiptAuthority = (number, expectedCurrent) => {
+            if (expectedCurrent !== undefined && !sameReceiptAuthority(currentAuthority, expectedCurrent)) {
+                throw new Error(`PR #${number} delivery receipt authority could not be cleared`);
+            }
             calls.push(`receipt-authority:clear:${authorityTrace(currentAuthority)}`);
             currentAuthority = undefined;
         };
 
-        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/delivery receipt changed during delivery/i);
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/delivery receipt authority could not be stored/i);
         expect(calls).not.toContain('receipt-authority:write:released:IC_delivery_42_1');
         expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(1);
         expect(calls.filter((call) => call === `merge:42:${nextHead}`)).toHaveLength(0);
@@ -6925,6 +6944,246 @@ describe('delivery shell boundary', () => {
             expect(secondPort.readDeliveryReceiptAuthority(42)).toEqual(authority);
         } finally {
             rmSync(primaryRoot, { recursive: true, force: true });
+        }
+    });
+
+    it('fails shellPort authority CAS when the ref changes before the expected-old update', () => {
+        const closes = relationshipBody('Closes #2372');
+        const primaryRoot = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-shell-port-'));
+        const wrapperRoot = mkdtempSync(join(tmpdir(), 'sourdaw-git-wrapper-'));
+        execFileSync('git', ['init', '--quiet'], { cwd: primaryRoot });
+        const currentAuthority: PersistedDeliveryReceiptAuthority = {
+            phase: 'prepared',
+            receiptId: 'IC_current',
+            receiptBody: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'),
+            postMergeValidation: {
+                headRefOid: 'head',
+                headRefName: 'feat/gate',
+                baseRefName: 'main',
+                bodySha256: createHash('sha256').update(closes).digest('hex'),
+                trackerTarget: 2372,
+            },
+        };
+        const nextAuthority: PersistedDeliveryReceiptAuthority = {
+            phase: 'released',
+            receiptId: 'IC_current',
+            receiptBody: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'),
+        };
+        const hostileAuthority: PersistedDeliveryReceiptAuthority = {
+            phase: 'terminal',
+            receiptId: 'IC_hostile',
+            receiptBody: visibleDeliveryReceiptBody(42, 'hostile-head', closes, 2372, 'successful'),
+        };
+        const currentOid = execFileSync('git', ['hash-object', '-w', '--stdin'], {
+            cwd: primaryRoot,
+            encoding: 'utf8',
+            input: JSON.stringify({ version: 2, ...currentAuthority }),
+        }).trim();
+        execFileSync('git', ['update-ref', 'refs/sourdaw/delivery-receipt/pr-42', currentOid], { cwd: primaryRoot });
+        const hostileOid = execFileSync('git', ['hash-object', '-w', '--stdin'], {
+            cwd: primaryRoot,
+            encoding: 'utf8',
+            input: JSON.stringify({ version: 2, ...hostileAuthority }),
+        }).trim();
+        const realGit = execFileSync('which', ['git'], { encoding: 'utf8' }).trim();
+        const wrapperPath = join(wrapperRoot, 'git');
+        writeFileSync(
+            wrapperPath,
+            [
+                '#!/usr/bin/env bash',
+                'set -euo pipefail',
+                `real_git=${JSON.stringify(realGit)}`,
+                `ref=${JSON.stringify('refs/sourdaw/delivery-receipt/pr-42')}`,
+                `replacement=${JSON.stringify(hostileOid)}`,
+                `marker=${JSON.stringify(join(wrapperRoot, 'stale-old-swapped'))}`,
+                'if [[ "${1:-}" == "update-ref" && "${2:-}" == "--no-deref" && "${3:-}" == "$ref" && ! -e "$marker" ]]; then',
+                '  : > "$marker"',
+                '  "$real_git" update-ref "$ref" "$replacement"',
+                'fi',
+                'exec "$real_git" "$@"',
+            ].join('\n')
+        );
+        chmodSync(wrapperPath, 0o755);
+        const previousPath = process.env.PATH;
+        process.env.PATH = `${wrapperRoot}:${previousPath ?? ''}`;
+
+        try {
+            const port = shellPort(
+                'jcosta33/sourdaw',
+                { capture: () => expect.fail('unexpected capture'), run: () => undefined },
+                { primaryRoot }
+            );
+
+            expect(() => port.writeDeliveryReceiptAuthority(42, nextAuthority, currentAuthority)).toThrow(
+                /delivery receipt authority could not be stored/i
+            );
+            expect(port.readDeliveryReceiptAuthority(42)).toEqual(hostileAuthority);
+        } finally {
+            process.env.PATH = previousPath;
+            rmSync(primaryRoot, { recursive: true, force: true });
+            rmSync(wrapperRoot, { recursive: true, force: true });
+        }
+    });
+
+    it('fails before merge when a shellPort authority ref changes immediately after the prepared-authority CAS succeeds', () => {
+        const closes = relationshipBody('Closes #2372');
+        const primaryRoot = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-shell-port-'));
+        const wrapperRoot = mkdtempSync(join(tmpdir(), 'sourdaw-git-wrapper-'));
+        execFileSync('git', ['init', '--quiet'], { cwd: primaryRoot });
+        const hostileAuthority = {
+            phase: 'terminal',
+            receiptId: 'IC_hostile',
+            receiptBody: visibleDeliveryReceiptBody(42, 'hostile-head', closes, 2372, 'successful'),
+        } satisfies PersistedDeliveryReceiptAuthority;
+        const hostileOid = execFileSync('git', ['hash-object', '-w', '--stdin'], {
+            cwd: primaryRoot,
+            encoding: 'utf8',
+            input: JSON.stringify({ version: 2, ...hostileAuthority }),
+        }).trim();
+        const realGit = execFileSync('which', ['git'], { encoding: 'utf8' }).trim();
+        const wrapperPath = join(wrapperRoot, 'git');
+        writeFileSync(
+            wrapperPath,
+            [
+                '#!/usr/bin/env bash',
+                'set -euo pipefail',
+                `real_git=${JSON.stringify(realGit)}`,
+                `ref=${JSON.stringify('refs/sourdaw/delivery-receipt/pr-42')}`,
+                `zero=${JSON.stringify('0'.repeat(40))}`,
+                `replacement=${JSON.stringify(hostileOid)}`,
+                `marker=${JSON.stringify(join(wrapperRoot, 'post-cas-swapped'))}`,
+                'if [[ "${1:-}" == "update-ref" && "${2:-}" == "--no-deref" && "${3:-}" == "$ref" && "${5:-}" == "$zero" && ! -e "$marker" ]]; then',
+                '  "$real_git" "$@"',
+                '  status=$?',
+                '  if [[ "$status" -eq 0 ]]; then',
+                '    : > "$marker"',
+                '    "$real_git" update-ref "$ref" "$replacement"',
+                '  fi',
+                '  exit "$status"',
+                'fi',
+                'exec "$real_git" "$@"',
+            ].join('\n')
+        );
+        chmodSync(wrapperPath, 0o755);
+        const previousPath = process.env.PATH;
+        process.env.PATH = `${wrapperRoot}:${previousPath ?? ''}`;
+        const captures: string[] = [];
+        const receipts: DeliveryReceiptComment[] = [];
+
+        try {
+            const port = shellPort(
+                'jcosta33/sourdaw',
+                {
+                    capture: (_command, args) => {
+                        const joined = args.join(' ');
+                        captures.push(joined);
+                        if (joined.includes('pr view 42')) {
+                            return JSON.stringify(shellPullRequest(pullRequest({ body: closes })));
+                        }
+                        if (joined.includes('query($owner:String!,$name:String!,$number:Int!){repository')) {
+                            return JSON.stringify({
+                                data: {
+                                    repository: {
+                                        pullRequest: {
+                                            reviews: {
+                                                nodes: [
+                                                    {
+                                                        state: 'APPROVED',
+                                                        submittedAt: '2026-08-21T00:00:00Z',
+                                                        author: {
+                                                            id: REVIEWER_BOT_NODE_ID,
+                                                            login: 'renamed-reviewer[bot]',
+                                                            __typename: 'Bot',
+                                                        },
+                                                        commit: { oid: 'head' },
+                                                    },
+                                                ],
+                                                pageInfo: { hasPreviousPage: false },
+                                            },
+                                            reviewThreads: { nodes: [], pageInfo: { hasNextPage: false } },
+                                        },
+                                    },
+                                },
+                            });
+                        }
+                        if (joined.includes('pulls?state=open')) {
+                            return JSON.stringify([[]]);
+                        }
+                        if (joined === 'api repos/jcosta33/sourdaw --jq .delete_branch_on_merge') {
+                            return 'false';
+                        }
+                        if (joined.includes('issues/42/comments?per_page=100')) {
+                            return JSON.stringify([
+                                receipts.map((receipt) => ({
+                                    node_id: receipt.id,
+                                    body: receipt.body,
+                                    user: {
+                                        node_id: receipt.authorNodeId,
+                                        login: receipt.authorLogin,
+                                        type: receipt.authorType,
+                                    },
+                                    created_at: receipt.createdAt,
+                                    updated_at: receipt.updatedAt,
+                                })),
+                            ]);
+                        }
+                        if (
+                            joined.includes(
+                                'comments(first:100,after:$cursor){totalCount pageInfo{hasNextPage endCursor} nodes{id lastEditedAt}}'
+                            )
+                        ) {
+                            return shellDeliveryReceiptProofResponse(receipts.map((receipt) => receipt.id));
+                        }
+                        if (joined.includes('POST repos/jcosta33/sourdaw/issues/42/comments')) {
+                            const body =
+                                args.find((argument) => argument.startsWith('body='))?.slice('body='.length) ?? '';
+                            const receipt = {
+                                id: 'IC_delivery_42_1',
+                                body,
+                                authorNodeId: AUTHOR_BOT_NODE_ID,
+                                authorLogin: 'renamed-author[bot]',
+                                authorType: 'Bot',
+                                createdAt: '2026-08-21T00:00:00Z',
+                                updatedAt: '2026-08-21T00:00:00Z',
+                            };
+                            receipts.push(receipt);
+                            return JSON.stringify({
+                                node_id: receipt.id,
+                                body: receipt.body,
+                                user: {
+                                    node_id: receipt.authorNodeId,
+                                    login: receipt.authorLogin,
+                                    type: receipt.authorType,
+                                },
+                                created_at: receipt.createdAt,
+                                updated_at: receipt.updatedAt,
+                            });
+                        }
+                        if (joined === 'api repos/jcosta33/sourdaw') {
+                            return mergeSettings({
+                                allow_merge_commit: false,
+                                allow_rebase_merge: false,
+                                allow_squash_merge: true,
+                                delete_branch_on_merge: false,
+                            });
+                        }
+                        if (joined.includes('/merge')) {
+                            captures.push('merge-attempted');
+                            return JSON.stringify({ merged: true, message: 'merged' });
+                        }
+                        throw new Error(`unexpected capture: ${joined}`);
+                    },
+                    run: () => undefined,
+                },
+                { primaryRoot }
+            );
+
+            expect(() => deliverPullRequest(42, port)).toThrow(/delivery receipt authority could not be verified/i);
+            expect(captures).not.toContain('merge-attempted');
+        } finally {
+            process.env.PATH = previousPath;
+            rmSync(primaryRoot, { recursive: true, force: true });
+            rmSync(wrapperRoot, { recursive: true, force: true });
         }
     });
 
