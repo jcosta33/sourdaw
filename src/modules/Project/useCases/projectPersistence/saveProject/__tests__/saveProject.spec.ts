@@ -187,6 +187,16 @@ describe('saveProject', () => {
         expect(key).not.toContain('My Song');
     });
 
+    it('clears identity persistence pending only after the exact project revision has saved', async () => {
+        mocks.projectStoreValue.value = { ...makeProject(), identityPersistencePending: true };
+
+        await expect(saveProject()).resolves.toBe(true);
+
+        expect(mocks.projectStoreSet).toHaveBeenLastCalledWith(
+            expect.objectContaining({ dirty: false, identityPersistencePending: false })
+        );
+    });
+
     it('finishes identity migration before building a versioned snapshot', async () => {
         let finishMigration: (() => void) | undefined;
         mocks.migrateActiveProjectIdentity.mockReturnValue(
@@ -202,6 +212,34 @@ describe('saveProject', () => {
         finishMigration?.();
         await expect(saving).resolves.toBe(true);
         expect(mocks.buildProjectData).toHaveBeenCalledOnce();
+    });
+
+    it('clears a migrated project only after validating its post-migration identity', async () => {
+        mocks.projectStoreValue.value = {
+            ...makeProject(),
+            projectId: undefined,
+            identityPersistencePending: true,
+        };
+        mocks.projectStoreSet.mockImplementation((value) => {
+            mocks.projectStoreValue.value = value;
+        });
+        mocks.migrateActiveProjectIdentity.mockImplementation(async () => {
+            const current = mocks.projectStoreValue.value;
+            if (current !== null) {
+                mocks.projectStoreValue.value = { ...current, projectId: 'migrated-project' };
+            }
+            return true;
+        });
+
+        await expect(saveProject()).resolves.toBe(true);
+
+        expect(mocks.projectStoreSet).toHaveBeenLastCalledWith(
+            expect.objectContaining({
+                projectId: 'migrated-project',
+                dirty: false,
+                identityPersistencePending: false,
+            })
+        );
     });
 
     it('does not record a recent-project entry when CRDT persistence rejects', async () => {
