@@ -494,6 +494,13 @@ expect(
 );
 expect(gitleaksHelper.includes('--ignore-gitleaks-allow'), 'secret scan must reject PR-authored gitleaks:allow annotations');
 expect(!/^\s*paths\s*=/mu.test(gitleaksConfig), 'trusted Gitleaks config must not contain path-wide allowlists');
+const rfc4122ExampleUuid = ['123e4567', 'e89b', '12d3', 'a456', '426614174000'].join('-');
+const rfc4122ExampleUuidSuccessor = ['123e4567', 'e89b', '12d3', 'a456', '426614174001'].join('-');
+expect(
+    gitleaksConfig.includes(`'''${rfc4122ExampleUuid}'''`) &&
+        gitleaksConfig.includes(`'''${rfc4122ExampleUuidSuccessor}'''`),
+    'trusted Gitleaks config must allowlist RFC 4122 example UUID token fixtures'
+);
 expect(gitleaksHelper.includes('--log-opts=--all'), 'secret scan must scan the full fetched git history, not only a PR diff');
 expect(gitleaksHelper.includes('--redact=100'), 'secret scan must redact secrets from logs and stdout');
 expect(
