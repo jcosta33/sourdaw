@@ -74,7 +74,13 @@ import { activateRendererWindow } from './rendererWindowActivation.js';
 import { registerCommandRouter } from './router.js';
 import { createScanSupervisor, type ScanSupervisor } from './scan.js';
 import { applyPermissionPolicy, decideWindowOpen, isNavigationAllowed, trustedFrameGuard } from './security.js';
-import { createQuitHandler, runBeforeQuitCascade, type ShutdownOutcome } from './shutdown.js';
+import {
+    composeQuitHandler,
+    installMacApplicationMenu,
+    requestApprovedWindowClose,
+    shouldRecreateRendererAfterCrash,
+} from './shellComposition.js';
+import { runBeforeQuitCascade, type ShutdownOutcome } from './shutdown.js';
 import { systemTimers } from './timers.js';
 import { registerVoiceDictation } from './voiceDictation.js';
 import { getWindowChromeOptions } from './windowChrome.js';
@@ -180,11 +186,12 @@ const rebuildMacApplicationMenu = (
     if (process.platform !== 'darwin') {
         return;
     }
-    Menu.setApplicationMenu(
-        Menu.buildFromTemplate(
-            createApplicationMenuTemplate({ appName: 'Sourdaw', send: nativeMenuAction, recentProjects })
-        )
-    );
+    installMacApplicationMenu({
+        isMac: true,
+        build: (template) => Menu.buildFromTemplate(template),
+        set: (menu) => Menu.setApplicationMenu(menu),
+        template: createApplicationMenuTemplate({ appName: 'Sourdaw', send: nativeMenuAction, recentProjects }),
+    });
 };
 
 const windowCloseCoordinator = createWindowCloseCoordinator({
@@ -374,11 +381,14 @@ const createWindow = (): BrowserWindow => {
             }
             return;
         }
-        event.preventDefault();
-        void windowCloseCoordinator.requestClose().then((approved) => {
-            if (approved && !window.isDestroyed()) {
-                window.close();
-            }
+        requestApprovedWindowClose({
+            event,
+            requestClose: () => windowCloseCoordinator.requestClose(),
+            close: () => {
+                if (!window.isDestroyed()) {
+                    window.close();
+                }
+            },
         });
     });
     attachWebContentsPolicy(window);
@@ -744,7 +754,7 @@ void app.whenReady().then(() => {
  */
 app.on(
     'before-quit',
-    createQuitHandler(
+    composeQuitHandler(
         (): Promise<ShutdownOutcome> =>
             runBeforeQuitCascade({
                 refusePluginCommands: () => pluginCommandAdmission.refusePluginCommands(),
@@ -789,7 +799,7 @@ app.on(
 const MAX_RECREATES = 3;
 const RECREATE_WINDOW_MS = 60_000;
 const rendererCrashRecovery = createRendererCrashRecovery({
-    shouldRecreate: () => rendererSessionLifecycle.shouldRecreateAfterCrash(),
+    shouldRecreate: () => shouldRecreateRendererAfterCrash(rendererSessionLifecycle),
     createReplacement: createAndActivateWindow,
     clearPending: (window) => nativeMenuActionDispatcher.clearPending(window),
     recoverPending: (crashed, replacement) => nativeMenuActionDispatcher.recoverPendingWindow(crashed, replacement),
