@@ -13,6 +13,7 @@ import {
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { createInterface } from 'node:readline';
+import { pathToFileURL } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 import { parseDocument } from 'yaml';
@@ -200,7 +201,7 @@ async function waitForLockContenderReady(contender: LockContender): Promise<Lock
 }
 
 async function contendForDeliveryLock(root: string): Promise<string[]> {
-    const moduleUrl = new URL('../deliverPullRequest.ts', import.meta.url).href;
+    const moduleUrl = pathToFileURL(join(import.meta.dirname, '../deliverPullRequest.ts')).href;
     const tsxImport = import.meta.resolve('tsx');
     const repositoryRoot = join(import.meta.dirname, '..', '..');
     const childSource = `
