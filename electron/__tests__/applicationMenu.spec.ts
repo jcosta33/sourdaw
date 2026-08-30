@@ -110,7 +110,7 @@ describe('createApplicationMenuTemplate', () => {
         expect(target.selectAll).toHaveBeenCalledOnce();
     });
 
-    it('keeps Edit commands with the focused hosted plugin window', () => {
+    it('keeps Edit commands with the focused hosted plugin native responder', () => {
         const target = {
             undo: vi.fn(),
             redo: vi.fn(),
@@ -120,6 +120,7 @@ describe('createApplicationMenuTemplate', () => {
             selectAll: vi.fn(),
         };
         const send = vi.fn();
+        const sendToNativeResponder = vi.fn();
 
         expect(
             dispatchFocusedNativeMenuIntent({
@@ -127,11 +128,39 @@ describe('createApplicationMenuTemplate', () => {
                 isMainWindowFocused: false,
                 target,
                 send,
+                sendToNativeResponder,
             })
         ).toBe(false);
 
         expect(target.copy).not.toHaveBeenCalled();
         expect(send).not.toHaveBeenCalled();
+        expect(sendToNativeResponder).toHaveBeenCalledWith('copy:');
+    });
+
+    it('still forwards a File command while a hosted plugin window owns focus', () => {
+        const target = {
+            undo: vi.fn(),
+            redo: vi.fn(),
+            cut: vi.fn(),
+            copy: vi.fn(),
+            paste: vi.fn(),
+            selectAll: vi.fn(),
+        };
+        const send = vi.fn();
+        const sendToNativeResponder = vi.fn();
+
+        expect(
+            dispatchFocusedNativeMenuIntent({
+                intent: { action: 'project:save' },
+                isMainWindowFocused: false,
+                target,
+                send,
+                sendToNativeResponder,
+            })
+        ).toBe(true);
+
+        expect(send).toHaveBeenCalledWith({ action: 'project:save' });
+        expect(sendToNativeResponder).not.toHaveBeenCalled();
     });
 
     it('routes an Open Recent click with its exact saved-project key', () => {

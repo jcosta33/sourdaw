@@ -1,5 +1,10 @@
 export type CanvasEditorCommand = Extract<SourdawNativeMenuAction, `edit:${string}`>;
 
+export type CanvasEditorCommandRequest = {
+    readonly action: CanvasEditorCommand;
+    handled: boolean;
+};
+
 export const CANVAS_EDITOR_COMMAND_EVENT = 'sourdaw:canvas-editor-command';
 
 /**
@@ -12,6 +17,7 @@ export const dispatchCanvasEditorCommand = (target: Element | null, action: Canv
     if (editor === null) {
         return false;
     }
-    editor.dispatchEvent(new CustomEvent<CanvasEditorCommand>(CANVAS_EDITOR_COMMAND_EVENT, { detail: action }));
-    return true;
+    const request: CanvasEditorCommandRequest = { action, handled: false };
+    editor.dispatchEvent(new CustomEvent<CanvasEditorCommandRequest>(CANVAS_EDITOR_COMMAND_EVENT, { detail: request }));
+    return request.handled;
 };

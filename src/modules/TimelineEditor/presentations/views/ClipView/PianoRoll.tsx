@@ -25,7 +25,7 @@ import { Row, Stack } from '#/components/layout';
 import { useStore } from '#/infra/store/useStore';
 import { useStoreSelector } from '#/infra/store/useStoreSelector';
 import { trackStore } from '#/modules/Arrangement/stores';
-import { CANVAS_EDITOR_COMMAND_EVENT } from '#/modules/CommandInterface/useCases';
+import { CANVAS_EDITOR_COMMAND_EVENT, isCanvasEditorCommandRequest } from '#/modules/CommandInterface/useCases';
 import { midiStore, stepRecordStore, type MidiStoreState } from '#/modules/MIDI/stores';
 import {
     setNoteVelocity,
@@ -339,8 +339,14 @@ export const PianoRoll = ({
             return undefined;
         }
         const handleNativeEdit = (event: Event): void => {
-            const action = event instanceof CustomEvent && typeof event.detail === 'string' ? event.detail : undefined;
-            if (action !== 'edit:select-all') {
+            const request =
+                event instanceof CustomEvent && isCanvasEditorCommandRequest(event.detail) ? event.detail : undefined;
+            if (request?.action === 'edit:deselect-all') {
+                onSelectedNoteIdsChange(new Set());
+                request.handled = true;
+                return;
+            }
+            if (request?.action !== 'edit:select-all') {
                 return;
             }
             const allIds = new Set(notes.map((note) => note.id));
@@ -350,6 +356,7 @@ export const PianoRoll = ({
                 }
             }
             onSelectedNoteIdsChange(allIds);
+            request.handled = true;
         };
         canvas.addEventListener(CANVAS_EDITOR_COMMAND_EVENT, handleNativeEdit);
         return () => canvas.removeEventListener(CANVAS_EDITOR_COMMAND_EVENT, handleNativeEdit);

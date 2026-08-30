@@ -6,3 +6,4 @@ export { resetShortcutMappings } from './resetShortcutMappings';
 export { isKeyboardEditableTarget } from './isKeyboardEditableTarget';
 export { isNativeTextEditableTarget } from './isNativeTextEditableTarget';
 export { CANVAS_EDITOR_COMMAND_EVENT, dispatchCanvasEditorCommand } from './dispatchCanvasEditorCommand';
+export { isCanvasEditorCommandRequest } from './isCanvasEditorCommandRequest';

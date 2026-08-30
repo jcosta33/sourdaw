@@ -41,6 +41,8 @@ export type NativeMenuIntent = {
 
 export type NativeTextEditOperation = 'undo' | 'redo' | 'cut' | 'copy' | 'paste' | 'selectAll';
 
+export type NativeResponderEditAction = 'undo:' | 'redo:' | 'cut:' | 'copy:' | 'paste:' | 'selectAll:';
+
 export type NativeTextEditTarget = {
     readonly undo: () => void;
     readonly redo: () => void;
@@ -117,6 +119,25 @@ export const applyNativeTextEdit = (target: NativeTextEditTarget, action: Native
     return true;
 };
 
+export const nativeResponderEditAction = (action: NativeMenuAction): NativeResponderEditAction | undefined => {
+    switch (nativeTextEditOperation(action)) {
+        case 'undo':
+            return 'undo:';
+        case 'redo':
+            return 'redo:';
+        case 'cut':
+            return 'cut:';
+        case 'copy':
+            return 'copy:';
+        case 'paste':
+            return 'paste:';
+        case 'selectAll':
+            return 'selectAll:';
+        default:
+            return undefined;
+    }
+};
+
 /**
  * A custom application Edit item belongs to the focused native window. A
  * hosted plugin editor must keep its platform responder chain; the DAW
@@ -127,16 +148,22 @@ export const dispatchFocusedNativeMenuIntent = ({
     isMainWindowFocused,
     target,
     send,
+    sendToNativeResponder,
 }: {
     readonly intent: NativeMenuIntent;
     readonly isMainWindowFocused: boolean;
     readonly target: NativeTextEditTarget;
     readonly send: (intent: NativeMenuIntent) => void;
+    readonly sendToNativeResponder?: (action: NativeResponderEditAction) => void;
 }): boolean => {
-    if (!isMainWindowFocused) {
+    const responderAction = nativeResponderEditAction(intent.action);
+    if (responderAction !== undefined && !isMainWindowFocused) {
+        sendToNativeResponder?.(responderAction);
         return false;
     }
-    applyNativeTextEdit(target, intent.action);
+    if (responderAction !== undefined) {
+        applyNativeTextEdit(target, intent.action);
+    }
     send(intent);
     return true;
 };

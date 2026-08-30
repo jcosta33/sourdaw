@@ -127,7 +127,10 @@ const command = vi.hoisted(() => ({ executeAppAction: vi.fn(async () => undefine
 vi.mock('#/modules/Command/useCases', () => command);
 const commandInterface = vi.hoisted(() => ({
     dispatchCanvasEditorCommand: vi.fn(
-        (target: Element | null) => target instanceof HTMLElement && target.closest('[data-canvas-editor]') !== null
+        (target: Element | null, action: string) =>
+            target instanceof HTMLElement &&
+            target.closest('[data-canvas-editor]') !== null &&
+            (action === 'edit:select-all' || action === 'edit:deselect-all')
     ),
 }));
 vi.mock('#/modules/CommandInterface/useCases', () => ({
@@ -377,7 +380,7 @@ describe('useNativeApplicationMenu', () => {
         input.remove();
     });
 
-    it('routes native Edit commands to the focused canvas editor owned-command seam', async () => {
+    it('routes handled native selection commands to the focused canvas editor owned-command seam', async () => {
         renderHook(() =>
             useNativeApplicationMenu({
                 projectId: 'project',
@@ -399,18 +402,47 @@ describe('useNativeApplicationMenu', () => {
         document.body.append(pianoRoll);
         pianoRoll.focus();
 
-        desktop.listener?.({ action: 'edit:cut' });
-        desktop.listener?.({ action: 'edit:copy' });
-        desktop.listener?.({ action: 'edit:paste' });
         desktop.listener?.({ action: 'edit:select-all' });
+        desktop.listener?.({ action: 'edit:deselect-all' });
 
         await Promise.resolve();
-        expect(commandInterface.dispatchCanvasEditorCommand).toHaveBeenNthCalledWith(1, pianoRoll, 'edit:cut');
-        expect(commandInterface.dispatchCanvasEditorCommand).toHaveBeenNthCalledWith(2, pianoRoll, 'edit:copy');
-        expect(commandInterface.dispatchCanvasEditorCommand).toHaveBeenNthCalledWith(3, pianoRoll, 'edit:paste');
-        expect(commandInterface.dispatchCanvasEditorCommand).toHaveBeenNthCalledWith(4, pianoRoll, 'edit:select-all');
+        expect(commandInterface.dispatchCanvasEditorCommand).toHaveBeenNthCalledWith(1, pianoRoll, 'edit:select-all');
+        expect(commandInterface.dispatchCanvasEditorCommand).toHaveBeenNthCalledWith(2, pianoRoll, 'edit:deselect-all');
         expect(command.executeAppAction).not.toHaveBeenCalled();
         expect(arrangement.selectAllClips).not.toHaveBeenCalled();
+        pianoRoll.remove();
+    });
+
+    it('falls through canvas Undo to the DAW undo stack without leaking unsupported canvas paste to arrangement clips', async () => {
+        renderHook(() =>
+            useNativeApplicationMenu({
+                projectId: 'project',
+                name: 'Song',
+                createdAt: 1,
+                updatedAt: 2,
+                dirty: false,
+                loading: false,
+                keyRoot: 0,
+                scaleName: 'chromatic',
+                tuning: { name: 'Equal Temperament', frequencies: [] },
+                productionBrief: {} as never,
+                initialized: true,
+            })
+        );
+        const pianoRoll = document.createElement('div');
+        pianoRoll.tabIndex = 0;
+        pianoRoll.setAttribute('data-canvas-editor', '');
+        document.body.append(pianoRoll);
+        pianoRoll.focus();
+
+        desktop.listener?.({ action: 'edit:undo' });
+        desktop.listener?.({ action: 'edit:paste' });
+
+        await Promise.resolve();
+        expect(command.undo).toHaveBeenCalledOnce();
+        expect(command.executeAppAction).not.toHaveBeenCalledWith({ type: 'pasteClip' });
+        expect(commandInterface.dispatchCanvasEditorCommand).toHaveBeenNthCalledWith(1, pianoRoll, 'edit:undo');
+        expect(commandInterface.dispatchCanvasEditorCommand).toHaveBeenNthCalledWith(2, pianoRoll, 'edit:paste');
         pianoRoll.remove();
     });
 

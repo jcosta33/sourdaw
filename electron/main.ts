@@ -161,6 +161,8 @@ const nativeMenuAction = (intent: NativeMenuIntent): void => {
         isMainWindowFocused: BaseWindow.getFocusedWindow() === window,
         target: window.webContents,
         send: (next) => nativeMenuActionDispatcher.dispatch(next),
+        sendToNativeResponder:
+            process.platform === 'darwin' ? (action) => Menu.sendActionToFirstResponder(action) : undefined,
     });
 };
 

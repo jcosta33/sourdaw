@@ -78,6 +78,13 @@ const runMenuAction = async (intent: NativeMenuIntent): Promise<void> => {
         if (dispatchCanvasEditorCommand(document.activeElement, action)) {
             return;
         }
+        if (document.activeElement?.closest('[data-canvas-editor]') !== null) {
+            // Canvas editors own their clipboard policy. Do not reinterpret an
+            // unsupported note clipboard command as arrangement clip editing.
+            if (action === 'edit:cut' || action === 'edit:copy' || action === 'edit:paste') {
+                return;
+            }
+        }
     }
     switch (action) {
         case 'project:new':
