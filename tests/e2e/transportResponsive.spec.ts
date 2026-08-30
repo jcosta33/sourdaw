@@ -150,9 +150,9 @@ test.describe('Responsive transport bar', () => {
 
         await page.getByRole('button', { name: 'Transport settings' }).click();
         await expect(page.getByRole('dialog', { name: 'Transport settings' })).toHaveCount(1);
-        await page.setViewportSize({ width: 1024, height: 900 });
+        await page.setViewportSize({ width: 1199, height: 900 });
         await expect(page.getByRole('dialog', { name: 'Transport settings' })).toHaveCount(1);
-        await page.setViewportSize({ width: 1440, height: 900 });
+        await page.setViewportSize({ width: 1200, height: 900 });
         await expect(page.getByRole('dialog', { name: 'Transport settings' })).toHaveCount(1);
         await page.keyboard.press('Escape');
 
@@ -172,5 +172,50 @@ test.describe('Responsive transport bar', () => {
         await page.setViewportSize({ width: 1199, height: 900 });
         await page.getByRole('button', { name: 'More transport controls' }).click();
         await expect(page.getByRole('dialog', { name: 'More transport controls' })).toHaveCount(1);
+    });
+
+    test('unmounts mode-specific disclosures at the compact boundary', async ({ page }) => {
+        test.setTimeout(120_000);
+        await page.setViewportSize({ width: 1440, height: 900 });
+        await setupWorkspace(page);
+        await launch_new_project(page);
+
+        await page.setViewportSize({ width: 1199, height: 900 });
+        await page.getByRole('button', { name: 'Project controls' }).click();
+        await expect(page.getByRole('dialog', { name: 'Project controls' })).toHaveCount(1);
+        await page.setViewportSize({ width: 1200, height: 900 });
+        await expect(page.getByRole('dialog', { name: 'Project controls' })).toHaveCount(0);
+        await expect(page.getByRole('button', { name: 'Stop' })).toBeFocused();
+
+        await page.setViewportSize({ width: 1199, height: 900 });
+        await page.getByRole('button', { name: 'View and panel controls' }).click();
+        await expect(page.getByRole('dialog', { name: 'View and panel controls' })).toHaveCount(1);
+        await page.setViewportSize({ width: 1200, height: 900 });
+        await expect(page.getByRole('dialog', { name: 'View and panel controls' })).toHaveCount(0);
+        await expect(page.getByRole('button', { name: 'Stop' })).toBeFocused();
+
+        await page.setViewportSize({ width: 1199, height: 900 });
+        await page.getByRole('button', { name: 'More transport controls' }).click();
+        await page.getByRole('button', { name: /Editing tools:/ }).click();
+        await expect(page.getByRole('dialog', { name: 'Editing tools' })).toHaveCount(1);
+        await page.setViewportSize({ width: 1200, height: 900 });
+        await expect(page.getByRole('dialog', { name: 'More transport controls' })).toHaveCount(0);
+        await expect(page.getByRole('dialog', { name: 'Editing tools' })).toHaveCount(0);
+        await expect(page.getByRole('button', { name: 'Stop' })).toBeFocused();
+
+        await page.setViewportSize({ width: 1199, height: 900 });
+        await page.getByRole('button', { name: 'More transport controls' }).click();
+        await page.getByRole('button', { name: /Solo mode:/ }).click();
+        await expect(page.getByRole('dialog', { name: 'Solo mode' })).toHaveCount(1);
+        await page.setViewportSize({ width: 1200, height: 900 });
+        await expect(page.getByRole('dialog', { name: 'More transport controls' })).toHaveCount(0);
+        await expect(page.getByRole('dialog', { name: 'Solo mode' })).toHaveCount(0);
+        await expect(page.getByRole('button', { name: 'Stop' })).toBeFocused();
+
+        await page.getByRole('button', { name: 'Punch recording settings' }).click();
+        await expect(page.getByRole('dialog', { name: 'Punch recording settings' })).toHaveCount(1);
+        await page.setViewportSize({ width: 1199, height: 900 });
+        await expect(page.getByRole('dialog', { name: 'Punch recording settings' })).toHaveCount(0);
+        await expect(page.getByRole('button', { name: 'Stop' })).toBeFocused();
     });
 });

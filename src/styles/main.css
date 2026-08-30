@@ -115,20 +115,11 @@
     min-width: 0;
 }
 
-.transport-bar__compact-only,
 .transport-bar__action-more {
-    display: none;
+    display: inline-flex;
 }
 
 @container (max-width: 1199px) {
-    .transport-bar__full-only {
-        display: none;
-    }
-
-    .transport-bar__compact-only {
-        display: inline-flex;
-    }
-
     .transport-bar__title-row {
         grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) auto;
     }
@@ -154,17 +145,6 @@
         width: 100%;
     }
 
-    .transport-bar__action-left .transport-bar__full-or-compact {
-        display: none;
-    }
-
-    .transport-bar__action-more {
-        display: inline-flex;
-    }
-
-    .transport-bar__action-right {
-        display: none;
-    }
 }
 
 @container (max-width: 739px) {

@@ -37,6 +37,7 @@ type TransportControlsProps = {
     punchInEnabled: boolean;
     countInEnabled: boolean;
     countInBars: number;
+    compact?: boolean;
 };
 
 type TransportSettingsContentProps = {
@@ -179,6 +180,7 @@ export const TransportControls = ({
     punchInEnabled,
     countInEnabled,
     countInBars,
+    compact = false,
 }: TransportControlsProps): ReactElement => {
     const setPunchEnabled = (): void => {
         void executeAppAction({
@@ -318,27 +320,25 @@ export const TransportControls = ({
                 <TooltipContent>Loop (L)</TooltipContent>
             </Tooltip>
 
-            {showOverdub ? (
-                <span className="transport-bar__full-only">
-                    <Tooltip>
-                        <TooltipTrigger asChild>
-                            <LatchButton
-                                active={overdubEnabled}
-                                variant="cyan"
-                                size="icon"
-                                aria-label="Overdub"
-                                aria-pressed={overdubEnabled}
-                                onClick={toggleOverdub}
-                            >
-                                <Layers className="size-3.5" aria-hidden="true" />
-                            </LatchButton>
-                        </TooltipTrigger>
-                        <TooltipContent>MIDI Overdub (+)</TooltipContent>
-                    </Tooltip>
-                </span>
+            {!compact && showOverdub ? (
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <LatchButton
+                            active={overdubEnabled}
+                            variant="cyan"
+                            size="icon"
+                            aria-label="Overdub"
+                            aria-pressed={overdubEnabled}
+                            onClick={toggleOverdub}
+                        >
+                            <Layers className="size-3.5" aria-hidden="true" />
+                        </LatchButton>
+                    </TooltipTrigger>
+                    <TooltipContent>MIDI Overdub (+)</TooltipContent>
+                </Tooltip>
             ) : null}
 
-            <span className="transport-bar__full-only">
+            {!compact ? (
                 <Tooltip>
                     <TooltipTrigger asChild>
                         <LatchButton
@@ -367,9 +367,9 @@ export const TransportControls = ({
                     </TooltipTrigger>
                     <TooltipContent>Metronome (M)</TooltipContent>
                 </Tooltip>
-            </span>
+            ) : null}
 
-            <span className="transport-bar__full-only">
+            {!compact ? (
                 <Tooltip>
                     <TooltipTrigger asChild>
                         <LatchButton
@@ -387,9 +387,9 @@ export const TransportControls = ({
                     </TooltipTrigger>
                     <TooltipContent>Punch In/Out (I)</TooltipContent>
                 </Tooltip>
-            </span>
+            ) : null}
 
-            <span className="transport-bar__full-only">
+            {!compact ? (
                 <Tooltip>
                     <TooltipTrigger asChild>
                         <LatchButton
@@ -406,8 +406,8 @@ export const TransportControls = ({
                     </TooltipTrigger>
                     <TooltipContent>Count-in</TooltipContent>
                 </Tooltip>
-            </span>
-            <Popover>
+            ) : null}
+            <Popover key="transport-settings">
                 <Tooltip>
                     <TooltipTrigger asChild>
                         <PopoverTrigger asChild>

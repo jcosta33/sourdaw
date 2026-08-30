@@ -37,6 +37,24 @@ import { UndoRedoButtons } from './Transport/UndoRedoButtons';
 import { WindowControls } from './Transport/WindowControls';
 
 const getTracks = (state: { tracks: Track[] } | null): Track[] => state?.tracks ?? [];
+const RESPONSIVE_DISCLOSURE_SELECTORS = [
+    '[role="dialog"][aria-label="Project controls"]',
+    '[role="dialog"][aria-label="View and panel controls"]',
+    '[role="dialog"][aria-label="More transport controls"]',
+    '[role="dialog"][aria-label="Punch recording settings"]',
+    '[role="dialog"][aria-label="Editing tools"]',
+    '[role="dialog"][aria-label="Solo mode"]',
+    '[role="dialog"][aria-label="Tempo map editor"]',
+    '[role="dialog"][aria-label="Missing media"]',
+    '[role="menu"][aria-label="Arrangement menu"]',
+];
+
+const hasResponsiveDisclosureOpen = (): boolean => {
+    if (typeof document === 'undefined') {
+        return false;
+    }
+    return RESPONSIVE_DISCLOSURE_SELECTORS.some((selector) => document.querySelector(selector) !== null);
+};
 
 /** Lit-edge separator that follows the NW light source model from the design system */
 const Sep = (): ReactElement => <div className="mx-0.5 h-5 w-px shrink-0 daw-seam" />;
@@ -44,8 +62,10 @@ const Sep = (): ReactElement => <div className="mx-0.5 h-5 w-px shrink-0 daw-sea
 export const TransportBar = (): ReactElement => {
     const moreContainerRef = useRef<HTMLElement>(null);
     const moreOpenRef = useRef(false);
-    const closingMoreForFullModeRef = useRef(false);
+    const compactModeRef = useRef(false);
+    const restoreFocusAfterModeChangeRef = useRef(false);
     const [moreOpen, setMoreOpen] = useState(false);
+    const [compactMode, setCompactMode] = useState(false);
     const {
         sidebarOpen,
         inspectorOpen,
@@ -100,15 +120,33 @@ export const TransportBar = (): ReactElement => {
             return undefined;
         }
         const observer = new ResizeObserver(([entry]) => {
-            if (entry !== undefined && entry.contentRect.width > 1199 && moreOpenRef.current) {
-                closingMoreForFullModeRef.current = true;
+            if (entry === undefined) {
+                return;
+            }
+            const nextCompactMode = entry.contentRect.width <= 1199;
+            if (nextCompactMode === compactModeRef.current) {
+                return;
+            }
+            const disclosureWasOpen = hasResponsiveDisclosureOpen();
+            compactModeRef.current = nextCompactMode;
+            if (moreOpenRef.current) {
                 moreOpenRef.current = false;
                 setMoreOpen(false);
             }
+            restoreFocusAfterModeChangeRef.current = disclosureWasOpen;
+            setCompactMode(nextCompactMode);
         });
         observer.observe(container);
         return () => observer.disconnect();
     }, []);
+
+    useEffect(() => {
+        if (!restoreFocusAfterModeChangeRef.current) {
+            return;
+        }
+        restoreFocusAfterModeChangeRef.current = false;
+        moreContainerRef.current?.querySelector<HTMLElement>('[aria-label="Stop"]')?.focus();
+    }, [compactMode]);
 
     const setMorePopoverOpen = (open: boolean): void => {
         moreOpenRef.current = open;
@@ -152,7 +190,7 @@ export const TransportBar = (): ReactElement => {
                     >
                         <ProjectName name={project.name} dirty={project.dirty} />
                         <RecentProjectsMenu />
-                        <span className="transport-bar__compact-only">
+                        {compactMode ? (
                             <Popover>
                                 <PopoverTrigger asChild>
                                     <Button variant="ghost" size="icon-sm" aria-label="Project controls">
@@ -166,13 +204,15 @@ export const TransportBar = (): ReactElement => {
                                     </div>
                                 </PopoverContent>
                             </Popover>
-                        </span>
+                        ) : null}
                     </Row>
-                    <span className="transport-bar__full-only contents">
-                        <Sep />
-                        <ArrangementSelector />
-                        <MissingMediaPanel />
-                    </span>
+                    {!compactMode ? (
+                        <>
+                            <Sep />
+                            <ArrangementSelector />
+                            <MissingMediaPanel />
+                        </>
+                    ) : null}
                 </Row>
 
                 <Row justify="center" gap={1} className="transport-bar__title-prompt min-w-0">
@@ -186,29 +226,16 @@ export const TransportBar = (): ReactElement => {
                 </Row>
 
                 <Row justify="end" gap={1} className="transport-bar__title-panels">
-                    <span className="transport-bar__full-only">
-                        <PanelToggles
-                            sidebarOpen={sidebarOpen}
-                            inspectorOpen={inspectorOpen}
-                            mixerOpen={mixerOpen}
-                            chatPanelOpen={chatPanelOpen}
-                            trackListOpen={trackListOpen}
-                            virtualKeyboardOpen={virtualKeyboardOpen}
-                            dualViewOpen={dualViewOpen}
-                        />
-                    </span>
-                    <span className="transport-bar__compact-only">
-                        <PanelToggles
-                            sidebarOpen={sidebarOpen}
-                            inspectorOpen={inspectorOpen}
-                            mixerOpen={mixerOpen}
-                            chatPanelOpen={chatPanelOpen}
-                            trackListOpen={trackListOpen}
-                            virtualKeyboardOpen={virtualKeyboardOpen}
-                            dualViewOpen={dualViewOpen}
-                            compact
-                        />
-                    </span>
+                    <PanelToggles
+                        sidebarOpen={sidebarOpen}
+                        inspectorOpen={inspectorOpen}
+                        mixerOpen={mixerOpen}
+                        chatPanelOpen={chatPanelOpen}
+                        trackListOpen={trackListOpen}
+                        virtualKeyboardOpen={virtualKeyboardOpen}
+                        dualViewOpen={dualViewOpen}
+                        compact={compactMode}
+                    />
                     {framelessChrome ? (
                         <>
                             <Sep />
@@ -238,12 +265,14 @@ export const TransportBar = (): ReactElement => {
                             timeDisplayMode={timeDisplayMode}
                         />
                     </span>
-                    <span className="transport-bar__action-detail transport-bar__full-or-compact">
-                        <Sep />
-                        <TempoEditor />
-                        <Sep />
-                        <PunchRecordingControls />
-                    </span>
+                    {!compactMode ? (
+                        <span className="transport-bar__action-detail">
+                            <Sep />
+                            <TempoEditor />
+                            <Sep />
+                            <PunchRecordingControls />
+                        </span>
+                    ) : null}
                 </Row>
 
                 <TransportControls
@@ -259,63 +288,46 @@ export const TransportBar = (): ReactElement => {
                     punchInEnabled={transport.punchInEnabled}
                     countInEnabled={transport.countInEnabled}
                     countInBars={transport.countInBars}
+                    compact={compactMode}
                 />
 
-                <Row justify="end" gap={1} className="transport-bar__action-right">
-                    <AutoScrollToggle />
-                    <Sep />
-                    <span className="transport-bar__full-only">
+                {!compactMode ? (
+                    <Row justify="end" gap={1} className="transport-bar__action-right">
+                        <AutoScrollToggle />
+                        <Sep />
                         <ToolSelector rippleEditing={rippleEditing} onToggleRipple={toggleRippleEditing} />
-                    </span>
-                    <span className="transport-bar__compact-only">
-                        <ToolSelector rippleEditing={rippleEditing} onToggleRipple={toggleRippleEditing} compact />
-                    </span>
-                    <Sep />
-                    <span className="transport-bar__full-only">
+                        <Sep />
                         <SoloModeSelector soloMode={soloMode} />
-                    </span>
-                    <span className="transport-bar__compact-only">
-                        <SoloModeSelector soloMode={soloMode} compact />
-                    </span>
-                    <Sep />
-                    <UndoRedoButtons canUndo={undoState.canUndo} canRedo={undoState.canRedo} />
-                </Row>
-                <div className="transport-bar__action-more">
-                    <Popover open={moreOpen} onOpenChange={setMorePopoverOpen}>
-                        <PopoverTrigger asChild>
-                            <Button variant="ghost" size="icon-sm" aria-label="More transport controls">
-                                <Ellipsis className="size-3.5" aria-hidden="true" />
-                            </Button>
-                        </PopoverTrigger>
-                        <PopoverContent
-                            align="end"
-                            aria-label="More transport controls"
-                            onCloseAutoFocus={(event) => {
-                                if (!closingMoreForFullModeRef.current) {
-                                    return;
-                                }
-                                closingMoreForFullModeRef.current = false;
-                                event.preventDefault();
-                                moreContainerRef.current?.querySelector<HTMLElement>('[aria-label="Stop"]')?.focus();
-                            }}
-                        >
-                            <div className="space-y-2">
-                                <TempoEditor />
-                                <PunchRecordingControls />
-                                <div className="flex items-center gap-1 border-t border-border-soft pt-2">
-                                    <AutoScrollToggle />
-                                    <ToolSelector
-                                        rippleEditing={rippleEditing}
-                                        onToggleRipple={toggleRippleEditing}
-                                        compact
-                                    />
-                                    <SoloModeSelector soloMode={soloMode} compact />
-                                    <UndoRedoButtons canUndo={undoState.canUndo} canRedo={undoState.canRedo} />
+                        <Sep />
+                        <UndoRedoButtons canUndo={undoState.canUndo} canRedo={undoState.canRedo} />
+                    </Row>
+                ) : (
+                    <div className="transport-bar__action-more">
+                        <Popover open={moreOpen} onOpenChange={setMorePopoverOpen}>
+                            <PopoverTrigger asChild>
+                                <Button variant="ghost" size="icon-sm" aria-label="More transport controls">
+                                    <Ellipsis className="size-3.5" aria-hidden="true" />
+                                </Button>
+                            </PopoverTrigger>
+                            <PopoverContent align="end" aria-label="More transport controls">
+                                <div className="space-y-2">
+                                    <TempoEditor />
+                                    <PunchRecordingControls />
+                                    <div className="flex items-center gap-1 border-t border-border-soft pt-2">
+                                        <AutoScrollToggle />
+                                        <ToolSelector
+                                            rippleEditing={rippleEditing}
+                                            onToggleRipple={toggleRippleEditing}
+                                            compact
+                                        />
+                                        <SoloModeSelector soloMode={soloMode} compact />
+                                        <UndoRedoButtons canUndo={undoState.canUndo} canRedo={undoState.canRedo} />
+                                    </div>
                                 </div>
-                            </div>
-                        </PopoverContent>
-                    </Popover>
-                </div>
+                            </PopoverContent>
+                        </Popover>
+                    </div>
+                )}
             </div>
         </Stack>
     );
