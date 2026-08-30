@@ -1,0 +1,59 @@
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/executeConfirmedCommandBatch.spec.ts
+  s_a40848e8f8cca9::t_20d6135e95e682 905,912,917-949
+  s_a40848e8f8cca9::t_c4b4153ad947e1 902-904
+  s_a40848e8f8cca9::t_c8a70daaa0cca1 906-911
+  s_a40848e8f8cca9::t_15aeea8ec4c285 913-916
+  s_deed16ec265976::t_fcc9f53d0fe7c9 901
+src/modules/AiRuntime/useCases/executePlannedActions.ts
+  s_a40848e8f8cca9::t_717ac9645f6bf2 54,82,106-108,224
+src/modules/AiRuntime/useCases/agentRequestOrchestration/executeImmediatePromptCommand.ts
+  s_a40848e8f8cca9::t_717ac9645f6bf2 15-18,185-187,195,203-218,220
+  s_a40848e8f8cca9::t_8dbd5a2d0c8434 219
+  s_a40848e8f8cca9::t_bb6d8ef7720803 221
+src/modules/AiRuntime/useCases/__tests__/executePromptActionGroup.spec.ts
+  s_a40848e8f8cca9::t_b35bb8e4e5d850 852-883
+src/modules/AiRuntime/useCases/executePromptActionGroup.ts
+  s_a40848e8f8cca9::t_8dbd5a2d0c8434 443
+  s_a40848e8f8cca9::t_717ac9645f6bf2 11,48-51,413-416,430-442,444-448,452-459
+src/modules/AiRuntime/presentations/views/__tests__/ChatPanel.spec.tsx
+  s_a40848e8f8cca9::t_8a373a30cf2f82 764-784
+  s_a40848e8f8cca9::t_c62d6d92130246 800-802
+  s_a40848e8f8cca9::t_42c8b54a106542 803
+src/modules/AiRuntime/useCases/__tests__/settleRetainedSectionRenderManualReview.spec.ts
+  s_a40848e8f8cca9::t_8a373a30cf2f82 384-395
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/executeImmediatePromptCommand.spec.ts
+  s_a40848e8f8cca9::t_b35bb8e4e5d850 24,41,178-219
+  s_a40848e8f8cca9::t_64a85a7c3b5fa9 220-221
+src/modules/Command/useCases/__tests__/commandBatchIdempotency.spec.ts
+  s_a40848e8f8cca9::t_4542cd9018e3cc 2487,2513
+  s_a40848e8f8cca9::t_f6e25eeabca73c 2512
+src/modules/AiRuntime/useCases/__tests__/executePlannedActions.spec.ts
+  s_a40848e8f8cca9::t_b35bb8e4e5d850 386-414
+src/modules/AudioRendering/useCases/__tests__/retainedSectionRenderArtifactReview.spec.ts
+  s_a40848e8f8cca9::t_8a373a30cf2f82 94-102,104-109
+  s_a40848e8f8cca9::t_c62d6d92130246 103
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "9ed0a3266eba90120e5319aa02c28a30ed896ace",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_deed16ec265976": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04ff2-2eed-7ea3-952d-2b0a647afae1",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
