@@ -4,6 +4,7 @@ import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 const effectiveWidths = [1440, 1024, 819, 683, 640, 512];
 const modifier = process.platform === 'darwin' ? 'Meta' : 'Control';
+const longProjectName = 'A maximum length dirty project name that must never cover the command prompt';
 
 test.describe('Responsive transport bar', () => {
     test('keeps topbar controls visible and non-overlapping at every supported effective width', async ({ page }) => {
@@ -19,6 +20,10 @@ test.describe('Responsive transport bar', () => {
             .getByRole('button', { name: /^Arm / })
             .first()
             .click();
+        await page.getByTestId('project-name').click();
+        await page.locator('input.daw-readout-well').fill(longProjectName);
+        await page.locator('input.daw-readout-well').press('Enter');
+        await expect(page.getByTitle('Unsaved changes')).toBeVisible();
 
         for (const width of effectiveWidths) {
             await page.setViewportSize({ width, height: 900 });
@@ -62,12 +67,16 @@ test.describe('Responsive transport bar', () => {
                 const escaped = controls
                     .filter((control) => control.left < headerBounds.left || control.right > headerBounds.right)
                     .map((control) => control.name);
-                return { headerHeight: headerBounds.height, intersections, escaped };
+                const verticallyEscaped = controls
+                    .filter((control) => control.top < headerBounds.top || control.bottom > headerBounds.bottom)
+                    .map((control) => control.name);
+                return { headerHeight: headerBounds.height, intersections, escaped, verticallyEscaped };
             });
 
             expect(geometry.headerHeight).toBe(88);
             expect(geometry.intersections, `${width}px overlaps`).toEqual([]);
             expect(geometry.escaped, `${width}px escape`).toEqual([]);
+            expect(geometry.verticallyEscaped, `${width}px vertical escape`).toEqual([]);
         }
 
         await page.setViewportSize({ width: 512, height: 900 });
@@ -104,5 +113,12 @@ test.describe('Responsive transport bar', () => {
         await expect(page.getByRole('button', { name: /Editing tools:/ })).toHaveCount(1);
         await expect(page.getByRole('button', { name: /Solo mode:/ })).toHaveCount(1);
         await expect(page.locator('button[aria-label="Undo"]:visible')).toHaveCount(1);
+
+        await page.keyboard.press('Escape');
+        await page.getByRole('button', { name: /Editing tools:/ }).click();
+        const tools = page.getByRole('radiogroup', { name: 'Editing tools' });
+        await expect(tools).toHaveCount(1);
+        await expect(tools.getByRole('radio')).toHaveCount(6);
+        await expect(tools.locator('[role="radio"][aria-checked="true"]')).toHaveCount(1);
     });
 });

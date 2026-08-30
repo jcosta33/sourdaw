@@ -83,7 +83,10 @@ vi.mock('../Transport/AutoScrollToggle', () => ({
 vi.mock('../Transport/PanelToggles', () => ({
     PanelToggles: () => (
         <div data-testid="panel-toggles">
-            <button data-testid="panel-toggle-button">Toggle</button>
+            <button data-testid="panel-toggle-button">
+                <svg data-testid="panel-toggle-icon" />
+                Toggle
+            </button>
         </div>
     ),
 }));
@@ -266,6 +269,15 @@ describe('TransportBar', () => {
         renderTransportBar();
 
         fireEvent.doubleClick(screen.getAllByTestId('panel-toggle-button')[0]);
+
+        expect(windowChromeMocks.toggleMaximize).not.toHaveBeenCalled();
+    });
+
+    it('does not toggle maximize when the double-click lands on an interactive SVG child', () => {
+        windowChromeMocks.frameless = true;
+        renderTransportBar();
+
+        fireEvent.doubleClick(screen.getAllByTestId('panel-toggle-icon')[0]);
 
         expect(windowChromeMocks.toggleMaximize).not.toHaveBeenCalled();
     });

@@ -81,7 +81,7 @@ export const TransportBar = (): ReactElement => {
             return;
         }
         const target = event.target;
-        if (target instanceof HTMLElement && target.closest(TITLEBAR_NO_DRAG_SELECTOR) !== null) {
+        if (target instanceof Element && target.closest(TITLEBAR_NO_DRAG_SELECTOR) !== null) {
             return;
         }
         void windowChromeControls().toggleMaximize();

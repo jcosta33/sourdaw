@@ -63,7 +63,12 @@ export const PanelToggles = ({
                 <Tooltip>
                     <TooltipTrigger asChild>
                         <PopoverTrigger asChild>
-                            <Button variant="ghost" size="icon-sm" aria-label="View and panel controls">
+                            <Button
+                                variant="ghost"
+                                size="icon-sm"
+                                aria-label="View and panel controls"
+                                data-onboarding="mixer-button"
+                            >
                                 <SlidersHorizontal className="size-3.5" aria-hidden="true" />
                             </Button>
                         </PopoverTrigger>
@@ -75,33 +80,68 @@ export const PanelToggles = ({
                         <p className="px-1 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-text-tertiary">
                             View
                         </p>
-                        <Button variant="ghost" size="sm" aria-pressed={trackListOpen} onClick={toggleTrackList}>
+                        <Button
+                            variant={trackListOpen ? 'secondary' : 'ghost'}
+                            size="sm"
+                            aria-pressed={trackListOpen}
+                            onClick={toggleTrackList}
+                        >
                             Track list
                         </Button>
-                        <Button variant="ghost" size="sm" aria-pressed={sidebarOpen} onClick={toggleSidebar}>
+                        <Button
+                            variant={sidebarOpen ? 'secondary' : 'ghost'}
+                            size="sm"
+                            aria-pressed={sidebarOpen}
+                            onClick={toggleSidebar}
+                        >
                             Browser
                         </Button>
-                        <Button variant="ghost" size="sm" aria-pressed={inspectorOpen} onClick={toggleInspector}>
+                        <Button
+                            variant={inspectorOpen ? 'secondary' : 'ghost'}
+                            size="sm"
+                            aria-pressed={inspectorOpen}
+                            onClick={toggleInspector}
+                        >
                             Inspector
                         </Button>
-                        <Button variant="ghost" size="sm" aria-pressed={dualViewOpen} onClick={toggleDualView}>
+                        <Button
+                            variant={dualViewOpen ? 'secondary' : 'ghost'}
+                            size="sm"
+                            aria-pressed={dualViewOpen}
+                            onClick={toggleDualView}
+                        >
                             Session + Arrangement View
                         </Button>
-                        <Button variant="ghost" size="sm" aria-pressed={mixerOpen} onClick={toggleMixer}>
+                        <Button
+                            variant={mixerOpen ? 'secondary' : 'ghost'}
+                            size="sm"
+                            aria-pressed={mixerOpen}
+                            onClick={toggleMixer}
+                        >
                             Bottom dock
                         </Button>
                         <Button
-                            variant="ghost"
+                            variant={virtualKeyboardOpen ? 'secondary' : 'ghost'}
                             size="sm"
                             aria-pressed={virtualKeyboardOpen}
                             onClick={toggleVirtualKeyboard}
                         >
                             Virtual keyboard
                         </Button>
-                        <Button variant="ghost" size="sm" aria-pressed={chatPanelOpen} onClick={toggleChatPanel}>
+                        <Button
+                            variant={chatPanelOpen ? 'secondary' : 'ghost'}
+                            size="sm"
+                            aria-pressed={chatPanelOpen}
+                            onClick={toggleChatPanel}
+                        >
                             AI chat
                         </Button>
-                        <Button variant="ghost" size="sm" aria-pressed={aiState.isPanelOpen} onClick={toggleAiPanel}>
+                        <Button
+                            variant={aiState.isPanelOpen ? 'secondary' : 'ghost'}
+                            size="sm"
+                            aria-pressed={aiState.isPanelOpen}
+                            onClick={toggleAiPanel}
+                        >
                             Generate
                         </Button>
                         <Button variant="ghost" size="sm" onClick={openPreferencesDialog}>

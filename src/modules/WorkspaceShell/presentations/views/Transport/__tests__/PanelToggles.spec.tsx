@@ -156,4 +156,44 @@ describe('PanelToggles', () => {
 
         expect(screen.queryByTestId('toggle-ableton-link')).not.toBeInTheDocument();
     });
+
+    it('uses the active panel treatment for every pressed compact row', () => {
+        vi.mocked(useStore).mockImplementation((store, defaultValue) => {
+            if (store === aiStore) {
+                return { isPanelOpen: true };
+            }
+            return defaultValue;
+        });
+
+        renderWithTooltip(
+            <PanelToggles
+                {...allClosed}
+                compact
+                sidebarOpen={true}
+                inspectorOpen={true}
+                mixerOpen={true}
+                chatPanelOpen={true}
+                trackListOpen={true}
+                virtualKeyboardOpen={true}
+                dualViewOpen={true}
+            />
+        );
+
+        const compactTrigger = screen.getByRole('button', { name: 'View and panel controls' });
+        expect(compactTrigger).toHaveAttribute('data-onboarding', 'mixer-button');
+        fireEvent.click(compactTrigger);
+
+        for (const name of [
+            'Track list',
+            'Browser',
+            'Inspector',
+            'Session + Arrangement View',
+            'Bottom dock',
+            'Virtual keyboard',
+            'AI chat',
+            'Generate',
+        ]) {
+            expect(screen.getByRole('button', { name })).toHaveAttribute('data-variant', 'secondary');
+        }
+    });
 });

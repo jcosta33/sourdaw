@@ -133,6 +133,23 @@
         grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) auto;
     }
 
+    .transport-bar__action-row {
+        grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto;
+    }
+
+    .transport-bar__title-project > [data-testid='project-menu-control'] {
+        min-width: 0;
+        max-width: 11rem;
+        flex-shrink: 1;
+    }
+
+    .transport-bar__title-project [data-testid='project-name'] {
+        min-width: 0;
+        max-width: calc(100% - 1.5rem);
+        flex-shrink: 1;
+        overflow: hidden;
+    }
+
     .transport-bar__action-left .transport-bar__full-or-compact {
         display: none;
     }
@@ -157,6 +174,10 @@
 
     .transport-bar__minimal-more {
         display: inline-flex;
+    }
+
+    .transport-bar__title-project > [data-testid='project-menu-control'] {
+        max-width: 7.5rem;
     }
 }
 

@@ -1,5 +1,7 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+import { TooltipProvider } from '#/components/ui/tooltip';
 
 vi.mock('../../../useCases/setEditingTool', () => ({
     setEditingTool: vi.fn(),
@@ -45,6 +47,21 @@ describe('ToolSelector — radio group structure', () => {
         expect(labels).toContain('Auto-draw');
         expect(labels).toContain('Stretch (T)');
         expect(labels).toContain('Marquee (E)');
+    });
+
+    it('keeps the compact tool choices in a labelled radiogroup', () => {
+        render(
+            <TooltipProvider>
+                <ToolSelector compact />
+            </TooltipProvider>
+        );
+
+        fireEvent.click(screen.getByRole('button', { name: /Editing tools:/ }));
+
+        const tools = screen.getByRole('radiogroup', { name: 'Editing tools' });
+        expect(tools).toBeInTheDocument();
+        expect(screen.getAllByRole('radio')).toHaveLength(6);
+        expect(within(tools).getByRole('radio', { checked: true })).toBeInTheDocument();
     });
 });
 

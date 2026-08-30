@@ -61,19 +61,21 @@ export const ToolSelector = ({ rippleEditing, onToggleRipple, compact = false }:
                         <p className="px-1 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-text-tertiary">
                             Editing tools
                         </p>
-                        {TOOLS.map((tool) => (
-                            <Button
-                                key={tool}
-                                variant={activeTool === tool ? 'secondary' : 'ghost'}
-                                size="sm"
-                                role="radio"
-                                aria-checked={activeTool === tool}
-                                onClick={() => setEditingTool(tool)}
-                            >
-                                {TOOL_ICONS[tool]}
-                                {TOOL_LABELS[tool]}
-                            </Button>
-                        ))}
+                        <div role="radiogroup" aria-label="Editing tools" className="grid gap-1">
+                            {TOOLS.map((tool) => (
+                                <Button
+                                    key={tool}
+                                    variant={activeTool === tool ? 'secondary' : 'ghost'}
+                                    size="sm"
+                                    role="radio"
+                                    aria-checked={activeTool === tool}
+                                    onClick={() => setEditingTool(tool)}
+                                >
+                                    {TOOL_ICONS[tool]}
+                                    {TOOL_LABELS[tool]}
+                                </Button>
+                            ))}
+                        </div>
                         {onToggleRipple !== null && onToggleRipple !== undefined ? (
                             <Button
                                 variant={rippleEditing ? 'secondary' : 'ghost'}
