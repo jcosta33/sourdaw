@@ -137,7 +137,7 @@
         display: none;
     }
 
-    .transport-bar__action-more {
+    .transport-bar__compact-more {
         display: inline-flex;
     }
 }
@@ -149,6 +149,14 @@
 
     .transport-bar__action-right {
         display: none;
+    }
+
+    .transport-bar__compact-more {
+        display: none;
+    }
+
+    .transport-bar__minimal-more {
+        display: inline-flex;
     }
 }
 

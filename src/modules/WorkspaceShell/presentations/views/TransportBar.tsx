@@ -229,7 +229,22 @@ export const TransportBar = (): ReactElement => {
                     <Sep />
                     <UndoRedoButtons canUndo={undoState.canUndo} canRedo={undoState.canRedo} />
                 </Row>
-                <div className="transport-bar__action-more">
+                <div className="transport-bar__action-more transport-bar__compact-more">
+                    <Popover>
+                        <PopoverTrigger asChild>
+                            <Button variant="ghost" size="icon-sm" aria-label="More transport controls">
+                                <Ellipsis className="size-3.5" aria-hidden="true" />
+                            </Button>
+                        </PopoverTrigger>
+                        <PopoverContent align="end" aria-label="More transport controls">
+                            <div className="space-y-2">
+                                <TempoEditor />
+                                <PunchRecordingControls />
+                            </div>
+                        </PopoverContent>
+                    </Popover>
+                </div>
+                <div className="transport-bar__action-more transport-bar__minimal-more">
                     <Popover>
                         <PopoverTrigger asChild>
                             <Button variant="ghost" size="icon-sm" aria-label="More transport controls">

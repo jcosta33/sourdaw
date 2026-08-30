@@ -3,6 +3,7 @@ import { expect, test } from '@playwright/test';
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 const effectiveWidths = [1440, 1024, 819, 683, 640, 512];
+const modifier = process.platform === 'darwin' ? 'Meta' : 'Control';
 
 test.describe('Responsive transport bar', () => {
     test('keeps topbar controls visible and non-overlapping at every supported effective width', async ({ page }) => {
@@ -10,6 +11,14 @@ test.describe('Responsive transport bar', () => {
         await page.setViewportSize({ width: 1440, height: 900 });
         await setupWorkspace(page);
         await launch_new_project(page);
+        await page.keyboard.press(`${modifier}+k`);
+        await page.getByPlaceholder('Type a command...', { exact: true }).fill('Add MIDI Track');
+        await page.getByRole('option', { name: 'Add MIDI Track' }).click();
+        await page
+            .getByRole('grid', { name: /Track list/i })
+            .getByRole('button', { name: /^Arm / })
+            .first()
+            .click();
 
         for (const width of effectiveWidths) {
             await page.setViewportSize({ width, height: 900 });
@@ -61,6 +70,7 @@ test.describe('Responsive transport bar', () => {
             expect(geometry.escaped, `${width}px escape`).toEqual([]);
         }
 
+        await page.setViewportSize({ width: 512, height: 900 });
         await page.getByRole('button', { name: 'More transport controls' }).click();
         await expect(page.getByRole('button', { name: 'Punch recording settings' })).toBeVisible();
         await expect(page.getByRole('button', { name: /Editing tools:/ })).toBeVisible();
@@ -69,5 +79,30 @@ test.describe('Responsive transport bar', () => {
         await page.getByRole('button', { name: 'Punch recording settings' }).click();
         await expect(page.getByLabel('Punch-in beat')).toBeVisible();
         await expect(page.getByLabel('Punch-out beat')).toBeVisible();
+
+        await page.keyboard.press('Escape');
+        await page.getByRole('button', { name: 'More transport controls' }).click();
+        await page.getByRole('button', { name: 'Transport settings' }).click();
+        await expect(page.getByRole('button', { name: 'Overdub' })).toBeVisible();
+        await expect(page.getByRole('button', { name: 'Metronome' })).toBeVisible();
+        await expect(page.getByRole('button', { name: 'Punch in/out' })).toBeVisible();
+        await expect(page.getByRole('button', { name: 'Count-in' })).toBeVisible();
+
+        await page.keyboard.press('Escape');
+        await expect(page.getByRole('button', { name: 'Transport settings' })).toBeFocused();
+    });
+
+    test('does not duplicate compact actions when More is open', async ({ page }) => {
+        test.setTimeout(120_000);
+        await page.setViewportSize({ width: 1440, height: 900 });
+        await setupWorkspace(page);
+        await launch_new_project(page);
+        await page.setViewportSize({ width: 819, height: 900 });
+
+        await page.getByRole('button', { name: 'More transport controls' }).click();
+        await expect(page.getByRole('button', { name: 'Auto-scroll follows playhead' })).toHaveCount(1);
+        await expect(page.getByRole('button', { name: /Editing tools:/ })).toHaveCount(1);
+        await expect(page.getByRole('button', { name: /Solo mode:/ })).toHaveCount(1);
+        await expect(page.locator('button[aria-label="Undo"]:visible')).toHaveCount(1);
     });
 });

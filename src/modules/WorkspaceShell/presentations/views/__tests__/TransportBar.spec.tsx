@@ -371,14 +371,14 @@ describe('TransportBar', () => {
         renderTransportBar();
 
         // showOverdub requires an armed MIDI track; audio-only → no overdub control.
-        fireEvent.click(screen.getByRole('button', { name: 'Transport settings' }));
+        fireEvent.click(screen.getAllByRole('button', { name: 'Transport settings' })[0]);
         expect(screen.queryByRole('button', { name: /overdub/i })).not.toBeInTheDocument();
     });
 
     it('hides the overdub control when no tracks are armed', () => {
         renderTransportBar();
 
-        fireEvent.click(screen.getByRole('button', { name: 'Transport settings' }));
+        fireEvent.click(screen.getAllByRole('button', { name: 'Transport settings' })[0]);
         expect(screen.queryByRole('button', { name: /overdub/i })).not.toBeInTheDocument();
     });
 

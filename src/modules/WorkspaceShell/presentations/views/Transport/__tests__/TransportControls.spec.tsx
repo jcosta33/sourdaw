@@ -39,7 +39,7 @@ const renderWithTooltip = (ui: React.ReactElement) => {
 };
 
 const openTransportSettings = (): void => {
-    fireEvent.click(screen.getByRole('button', { name: 'Transport settings' }));
+    fireEvent.click(screen.getAllByRole('button', { name: 'Transport settings' })[0]);
 };
 
 describe('TransportControls', () => {
