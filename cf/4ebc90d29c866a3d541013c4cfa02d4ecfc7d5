@@ -1,0 +1,25 @@
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  s_a40848e8f8cca9::t_a9e042722cbd95 23,376-378,381
+src/modules/AiRuntime/transformers/llmActionStrategies/transportTimelineStrategy.ts
+  s_a40848e8f8cca9::t_fc1160d2534b83 292-298,301,305
+  s_a40848e8f8cca9::t_a29fddba0032bf 304,306-307,311-313
+  s_a40848e8f8cca9::t_a9e042722cbd95 1-291,299-300,302-303,308-310
+src/modules/AiRuntime/transformers/llmActionStrategies/__tests__/transportTimelineStrategy.spec.ts
+  s_a40848e8f8cca9::t_a29fddba0032bf 1-81
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "cf4ebc90d29c866a3d541013c4cfa02d4ecfc7d5",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
