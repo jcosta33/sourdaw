@@ -8,15 +8,18 @@
 //! not the path to it.
 
 use super::*;
-use crate::traits::{take_pending_process_refusal_signal, PROCESS_REFUSAL_HINT_TEST_LOCK};
+use crate::runtime::HostedRuntime;
+use crate::traits::{
+    take_pending_process_refusal_signal, PluginHostRequest, PROCESS_REFUSAL_HINT_TEST_LOCK,
+};
 use crate::vst3_host::tuid_from_guid;
 use std::ffi::{CStr, CString};
 use std::sync::atomic::{AtomicBool, AtomicI32, AtomicPtr, AtomicU32, AtomicU64, Ordering};
 use std::thread::ThreadId;
 use vst3::Steinberg::Vst::{
-    BusInfo, BusTypes_, IComponentHandler, IComponentHandlerTrait, IHostApplication,
-    IHostApplicationTrait, IMessage, IMessageTrait, RestartFlags_, RoutingInfo, SpeakerArr,
-    SpeakerArrangement, TChar,
+    BusInfo, BusTypes_, IComponentHandler, IComponentHandler2, IComponentHandler2Trait,
+    IComponentHandlerTrait, IHostApplication, IHostApplicationTrait, IMessage, IMessageTrait,
+    RestartFlags_, RoutingInfo, SpeakerArr, SpeakerArrangement, TChar,
 };
 use vst3::Steinberg::{
     char16, char8, int16, kNoInterface, kNotImplemented, kResultFalse, kResultTrue, tresult,
@@ -276,6 +279,21 @@ impl FakeState {
         unsafe {
             handler.restartComponent(RestartFlags_::kLatencyChanged as int32);
         }
+    }
+
+    /// The plugin's own editor reporting unsaved state, the way a real one
+    /// does: `setDirty(true)` on the handler the host handed its controller,
+    /// queried for `IComponentHandler2` — the only route VST3 gives it.
+    fn mark_own_state_dirty(&self) {
+        let handler = self.handler.lock().expect("handler mutex");
+        let Some(handler) = handler.as_ref() else {
+            panic!("the host never gave the plugin a component handler");
+        };
+        let Some(handler2) = handler.cast::<IComponentHandler2>() else {
+            panic!("the host's handler answers queryInterface for IComponentHandler2");
+        };
+        // SAFETY: the handler is live for as long as the wrapper is.
+        unsafe { handler2.setDirty(1) };
     }
 }
 
@@ -2338,6 +2356,46 @@ fn a_blob_shorter_than_its_header_declares_is_refused() {
 fn an_empty_blob_is_refused_rather_than_read_as_two_empty_chunks() {
     assert!(decode_state(&[]).is_err());
     assert!(decode_state(b"SDV3").is_err());
+}
+
+// ── Plugin-initiated host requests ──────────────────────────────────────
+
+/// #2913: the engine installs the wake on the runtime it is about to own, and
+/// the watcher drains the flag through [`AudioPlugin::take_state_dirty`]. No
+/// test observed that chain at the wrapper level, so any hop back at its
+/// pre-fix form — the runtime arm answering `false`, the wrapper installing
+/// nothing, the flag never drained — left a plugin's own edit recorded where
+/// nothing ever carried it to the project's dirty mark, and
+/// close-without-save lost it. This drives the whole route against a real COM
+/// plugin: install through the runtime the way the engine's loader does,
+/// raise through the handler the fake controller actually holds, and observe
+/// the ask and its flag exactly once.
+#[test]
+fn a_set_dirty_crosses_the_runtime_wake_installation_and_is_consumed_once() {
+    let state = FakeState::new();
+    let mut runtime = HostedRuntime::Vst3(load(&state, COMBINED_CID));
+
+    let requests: Arc<Mutex<Vec<PluginHostRequest>>> = Arc::new(Mutex::new(Vec::new()));
+    let recorded = Arc::clone(&requests);
+    assert!(
+        runtime.set_plugin_host_request_notifier(Box::new(move |request| {
+            recorded.lock().expect("request log").push(request);
+        })),
+        "the runtime accepts the wake the engine's loader installs on it"
+    );
+
+    state.mark_own_state_dirty();
+
+    assert_eq!(
+        requests.lock().expect("request log").as_slice(),
+        [PluginHostRequest::StateDirty],
+        "the wake installed through the runtime is the one the handler fires"
+    );
+    assert!(AudioPlugin::take_state_dirty(&mut runtime));
+    assert!(
+        !AudioPlugin::take_state_dirty(&mut runtime),
+        "one edit marks the project dirty once, not on every later control-path visit"
+    );
 }
 
 // ── Identity ────────────────────────────────────────────────────────────

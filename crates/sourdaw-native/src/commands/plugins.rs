@@ -1174,10 +1174,10 @@ pub async fn load_plugin(
             // false, and a plugin that is refused can lay itself out to the size
             // it has.
             //
-            // The answer is discarded rather than reported, because a refusal is
-            // the ordinary case for a format that raises none of these asks: only
-            // CLAP routes an editor resize and a state change back through the
-            // host.
+            // The answer is discarded rather than reported, because a refusal
+            // means a second install: CLAP routes an editor resize, a parameter
+            // rescan and a state change back through the host, and VST3 a state
+            // change through `IComponentHandler2::setDirty`.
             let requesting_instance_id = instance_id.0.clone();
             let _ = wrapper.set_plugin_host_request_notifier(Box::new(move |request| {
                 crate::host::plugin_host_requests::notify_plugin_host_request(
