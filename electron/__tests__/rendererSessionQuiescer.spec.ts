@@ -7,15 +7,9 @@ import {
 } from '../rendererSessionQuiescer.js';
 
 describe('renderer session quiescer', () => {
-    it('waits for the exact renderer acknowledgement and bounds a missing acknowledgement', async () => {
-        let timeout: (() => void) | undefined;
+    it('waits for the exact renderer acknowledgement', async () => {
         const window = { isDestroyed: () => false, webContents: { send: vi.fn() } };
-        const quiescer = createRendererSessionQuiescer('renderer:quiesce', {
-            setTimer: (callback) => {
-                timeout = callback;
-                return { cancel: vi.fn() };
-            },
-        });
+        const quiescer = createRendererSessionQuiescer('renderer:quiesce');
 
         const first = quiescer.request(window);
         expect(window.webContents.send).toHaveBeenCalledWith('renderer:quiesce', 1);
@@ -23,11 +17,47 @@ describe('renderer session quiescer', () => {
         quiescer.resolve(window, { requestId: 1, outcome: 'success' });
         await expect(first).resolves.toBe('success');
         await expect(quiescer.request(window)).resolves.toBe('success');
+    });
 
-        const secondWindow = { isDestroyed: () => false, webContents: { send: vi.fn() } };
-        const second = quiescer.request(secondWindow);
-        timeout?.();
-        await expect(second).resolves.toBe('rejected');
+    it('bounds a missing final acknowledgement and keeps recovery request-correlated', async () => {
+        const requestTimers: Array<() => void> = [];
+        const timers = {
+            setTimer: vi.fn((callback: () => void) => {
+                requestTimers.push(callback);
+                return { cancel: vi.fn() };
+            }),
+        };
+        const window = { isDestroyed: () => false, webContents: { send: vi.fn() } };
+        const quiescer = createRendererSessionQuiescer('renderer:quiesce', 'renderer:cancel', timers);
+
+        let settled = false;
+        const missingAcknowledgement = quiescer.request(window).finally(() => {
+            settled = true;
+        });
+        expect(window.webContents.send).toHaveBeenCalledWith('renderer:quiesce', 1);
+        expect(quiescer.start(window, 1)).toBe(true);
+        await Promise.resolve();
+        expect(settled).toBe(false);
+
+        const requestTimeout = requestTimers[0];
+        expect(requestTimeout).toBeTypeOf('function');
+        requestTimeout?.();
+        await Promise.resolve();
+        expect(settled).toBe(true);
+
+        await expect(missingAcknowledgement).resolves.toBe('rejected');
+        expect(window.webContents.send).toHaveBeenLastCalledWith('renderer:cancel', 1);
+        await expect(quiescer.request(window)).resolves.toBe('rejected');
+
+        quiescer.resolve(window, { requestId: 2, outcome: 'rejected' });
+        await expect(quiescer.request(window)).resolves.toBe('rejected');
+        quiescer.resolve(window, { requestId: 1, outcome: 'rejected' });
+
+        const retry = quiescer.request(window);
+        expect(window.webContents.send).toHaveBeenLastCalledWith('renderer:quiesce', 2);
+        quiescer.resolve(window, { requestId: 2, outcome: 'rejected' });
+        await expect(retry).resolves.toBe('rejected');
+
         expect(RENDERER_SESSION_QUIESCE_TIMEOUT_MS).toBe(5_000);
     });
 
