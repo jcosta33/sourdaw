@@ -1,0 +1,35 @@
+src/modules/ContentBrowser/presentations/views/Sidebar/EffectsTab.tsx
+  s_ae074277795b45::t_3c0662773d6a88 7,83-86
+src/modules/ContentBrowser/presentations/views/Sidebar/InstrumentsTab.tsx
+  s_ae074277795b45::t_c12c5527840fc5 11,161-164
+src/modules/Project/stores/__tests__/arrangementProbabilitySeedRawProjectionLoss.spec.ts
+  s_ab242b2dab84a5::t_980e5812738907 1-113
+src/modules/Project/stores/__tests__/arrangementStore.spec.ts
+  s_ab242b2dab84a5::t_d6b6687cfed41b 43-50
+src/modules/Project/stores/arrangementStore.ts
+  s_ab242b2dab84a5::t_e34405db9d2e7b 3,330-332,377,644,647-651,663
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "123b2b80c3882609155f2f0bd16c99d55a744103",
+  "prompts": {},
+  "sessions": {
+    "s_ab242b2dab84a5": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a053f4-ab62-74d3-83f9-9ed42d1b0453",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ae074277795b45": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04ab5-5234-7100-be1c-76ebfaba88d3",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
