@@ -480,10 +480,11 @@ describe('settleConfirmedCommandExecution', () => {
         );
 
         expect(result).toEqual({ status: 'failed', reason: 'flight failed' });
-        expect(mocks.recordFailure).toHaveBeenCalledWith(
-            confirmation,
-            expect.objectContaining({ category: 'internal', knownDomain: false })
-        );
+        expect(mocks.recordFailure).toHaveBeenCalledWith(confirmation, {
+            category: 'internal',
+            retriable: false,
+            knownDomain: false,
+        });
         expect(mocks.settleResources).toHaveBeenCalledWith({
             confirmationId: 'confirmation-1',
             disposition: 'discard',
@@ -709,9 +710,10 @@ describe('settleConfirmedCommandExecution', () => {
             createInput({ status: 'failed', error: new AiProposalInvalidatedError('proposal invalidated') })
         );
 
-        expect(mocks.recordFailure).toHaveBeenCalledWith(
-            confirmation,
-            expect.objectContaining({ category: 'conflict', knownDomain: true })
-        );
+        expect(mocks.recordFailure).toHaveBeenCalledWith(confirmation, {
+            category: 'conflict',
+            retriable: false,
+            knownDomain: true,
+        });
     });
 });
