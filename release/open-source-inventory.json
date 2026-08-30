@@ -1128,10 +1128,10 @@
                 "sha256:517fc1306f4c8efaf3c10ef65745658d014ad68725c5f8218877d36288d64cf4:public/favicon.ico",
                 "sha256:0f5f1435a632f0fac52ed7cf59f60387be55a597235bdee96df2fa2ac1cddbbb:public/icon-192.png",
                 "sha256:c2da95a42f825cc8cb0ed208ae4441bfc4400e84548723c5b1b96526de53eef7:public/icon-transparent.png",
-                "sha256:f0520cf9febf63733577684160316901499a16b89c469fbbfc7a62613376a447:public/icon.png",
-                "sha256:f0520cf9febf63733577684160316901499a16b89c469fbbfc7a62613376a447:sourdaw.png",
+                "sha256:200e032a1b2c9bbcfeef4fcd5f6a6bedba7a19eebebc51e3ac5e11def43a7efe:public/icon.png",
+                "sha256:200e032a1b2c9bbcfeef4fcd5f6a6bedba7a19eebebc51e3ac5e11def43a7efe:sourdaw.png",
                 "tree-sha256:fa5dd4f455fd2a2176fb9c3a166b2a002104ac9528bb94e517aac35910cbebc2:public/logo-parts",
-                "tree-sha256:2192dad880ac845c75c42e8c170185a2e5f3e66e4bcc9203bdf8d5a81b03939f:build/icons"
+                "tree-sha256:c422723c49186ca69e7aff5e1d70b81589ac5dfa7d89090642c5a488573fa521:build/icons"
             ],
             "licenses": ["Apache-2.0"],
             "productSurfaces": ["application icons", "brand logo", "release screenshots"],
